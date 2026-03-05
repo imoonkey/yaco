@@ -45,20 +45,19 @@ High standards like kernel code. Find:
 ## Severity Levels
 
 ### Critical (Must Fix)
-- Security: secrets, injection, SSRF bypass, leaks
-- Crashes: unhandled exceptions, uncaught promise rejections
+- Security: secrets, injection, leaks
+- Crashes: unhandled exceptions, null dereferences
 - Data loss: state corruption, race conditions
 
 ### High (Should Fix)
 - Correctness: errors / bugs
-- Maintainability: Spaghetti code, confusing logic, significant code duplication
-- Efficiency: significant efficiency issue
-- Resource leaks (file handles, browser contexts)
-- Unhandled async errors
-- Missing input validation at system boundaries
+- Maintainability: spaghetti code, confusing logic, significant code duplication
+- Efficiency: significant efficiency issues
+- Resource leaks (memory, handles, connections)
+- Missing validation at system boundaries
 
 ### Medium (Consider)
-- Readability: Hard to read logic, moderate code duplication
+- Readability: hard to read logic, moderate code duplication
 - Missing tests
 - Large files/functions
 - Poor naming
@@ -67,15 +66,6 @@ High standards like kernel code. Find:
 - Style consistency
 - Documentation gaps
 - Minor optimizations
-
-## Project-Specific Checks
-
-- [ ] Async operations properly awaited?
-- [ ] No resource leaks (Playwright browsers, file handles)?
-- [ ] SSRF protection on outbound HTTP requests?
-- [ ] CLI exit codes and stderr/stdout used correctly?
-- [ ] OpenAPI output conforms to 3.1 spec?
-- [ ] TypeScript strict mode satisfied (no `any` leaks)?
 
 ## Output Format
 
@@ -100,5 +90,5 @@ High standards like kernel code. Find:
 
 ## Reference
 
-- Treat `doc/` as context (code is source-of-truth)
+- Treat project docs as context (code is source-of-truth)
 - Update docs after fixing issues

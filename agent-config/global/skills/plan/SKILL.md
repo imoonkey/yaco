@@ -27,7 +27,7 @@ Structured planning before implementation.
 
 ```bash
 # Find related code
-grep -rn "RelatedModule" src/ --include="*.ts"
+grep -rn "RelatedTerm" src/ --include="*.*"
 ```
 
 Questions:
@@ -45,8 +45,8 @@ Questions:
 
 ```markdown
 ## Phase 1: [Foundation]
-- [Task 1]: path/to/file.ts
-- [Task 2]: path/to/file.ts
+- [Task 1]: path/to/file
+- [Task 2]: path/to/file
 Risk: Low
 
 ## Phase 2: [Core Logic]
@@ -85,7 +85,7 @@ Risk: High
 ## Phases
 
 ### Phase 1: [Name]
-1. **[Step]** (`path/to/file.ts`)
+1. **[Step]** (`path/to/file`)
    - Action: [specific change]
    - Risk: Low/Medium/High
 
@@ -101,14 +101,6 @@ Risk: High
 
 **Proceed? (yes/modify/no)**
 ```
-
-## Project-Specific Considerations
-
-- CLI UX (exit codes, stderr for errors, stdout for output)
-- OpenAPI 3.1 spec compliance
-- Playwright integration (browser lifecycle, CDP)
-- SSRF protection on runtime HTTP requests
-- HAR parsing and schema inference correctness
 
 ## After Confirmation
 

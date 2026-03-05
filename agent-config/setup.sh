@@ -30,7 +30,7 @@ echo ""
 # --- 1. Create .claude/skills ---
 mkdir -p "$PROJECT/.claude/skills"
 
-# --- 2. Symlink stack skills (skip existing) ---
+# --- 2. Symlink stack-specific skills (e.g., coding-standards; skip existing) ---
 echo "=== Stack skills ==="
 for skill in "$STACK_DIR/skills"/*/; do
   [ -d "$skill" ] || continue
@@ -60,7 +60,7 @@ else
   echo "  linked: ~/.claude/skills/ -> global/skills/"
 fi
 
-# --- 4. Global: ~/.claude/CLAUDE.md -> agent-config/CLAUDE.md ---
+# --- 4. Global: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md ---
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
 if [ -L "$GLOBAL_CLAUDE" ]; then
   echo "  ~/.claude/CLAUDE.md already symlinked -> $(readlink "$GLOBAL_CLAUDE")"
@@ -75,7 +75,7 @@ else
   echo "  linked: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md"
 fi
 
-# --- 5. Global: ~/.codex/AGENTS.md -> agent-config/CLAUDE.md ---
+# --- 5. Global: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md ---
 mkdir -p "$HOME/.codex"
 GLOBAL_CODEX="$HOME/.codex/AGENTS.md"
 if [ -L "$GLOBAL_CODEX" ]; then

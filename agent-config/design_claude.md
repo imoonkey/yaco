@@ -69,28 +69,22 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
       align/
         SKILL.md
         scripts/align_poll.sh
-      last30days/SKILL.md                   # Moved from ~/.claude/skills/ (submodule)
+      multmux/SKILL.md
+      tdd/SKILL.md                         # Methodology skills (language-agnostic)
+      plan/SKILL.md
+      code-review/SKILL.md
+      orchestrate/SKILL.md
 
-  # --- Per tech-stack ---
+  # --- Per tech-stack (command-heavy or language-specific skills) ---
   stacks/
     kotlin-android/
       skills/
-        verify/SKILL.md
-        build-fix/SKILL.md
-        tdd/SKILL.md
-        plan/SKILL.md
-        code-review/SKILL.md
-        coding-standards/SKILL.md
-        orchestrate/SKILL.md
+        verify/SKILL.md                     # Stack-specific build/lint/test commands
+        coding-standards/SKILL.md           # Language idioms, naming, patterns
     typescript-node/
       skills/
         verify/SKILL.md
-        build-fix/SKILL.md
-        tdd/SKILL.md
-        plan/SKILL.md
-        code-review/SKILL.md
         coding-standards/SKILL.md
-        orchestrate/SKILL.md
 ```
 
 ### How Projects Connect
@@ -104,7 +98,8 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
 
 # Global skills (entire directory symlinked, Cursor reads this too)
 ~/.claude/skills/          -> ~/workspace/agent-config/global/skills/
-  # contains: ultra-think, strategic-compact, align, last30days
+  # contains: ultra-think, strategic-compact, align, multmux,
+  #           tdd, plan, code-review, orchestrate
 
 # Global skills for Codex
 ~/.agents/skills/        -> ~/.claude/skills/     # Codex reads ~/.agents/skills/
@@ -120,10 +115,8 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
 # Project skills directory (.claude/ is canonical)
 ~/workspace/Investment/.claude/
   skills/
+    coding-standards/    -> ~/workspace/agent-config/stacks/kotlin-android/skills/coding-standards
     verify/              -> ~/workspace/agent-config/stacks/kotlin-android/skills/verify
-    build-fix/           -> ~/workspace/agent-config/stacks/kotlin-android/skills/build-fix
-    code-review/         -> ~/workspace/agent-config/stacks/kotlin-android/skills/code-review
-    ...                  (other stack skills symlinked)
     cog-tune/            (LOCAL, project-specific)
     ux-visual-debug/     (LOCAL, project-specific)
     update-docs/         (LOCAL, project-specific doc-map)
@@ -155,8 +148,8 @@ Cursor reads `AGENTS.md` at project root + subdirectories.
 
 | Tier | Skills | Location |
 |------|--------|----------|
-| Global | ultra-think, strategic-compact, align | `global/skills/` -> `~/.claude/skills/` |
-| Stack | verify, build-fix, tdd, plan, code-review, coding-standards, orchestrate | `stacks/<stack>/skills/` -> project `.claude/skills/` |
+| Global | ultra-think, strategic-compact, align, multmux, tdd, plan, code-review, orchestrate | `global/skills/` -> `~/.claude/skills/` |
+| Stack | verify, coding-standards | `stacks/<stack>/skills/` -> project `.claude/skills/` |
 | Project | cog-tune, ux-visual-debug, action-debug, update-docs, autotune | stays in project `.claude/skills/` |
 
 ### CLAUDE.md
@@ -175,8 +168,8 @@ Usage: ./setup.sh <project-path> <stack-name>
 
 Actions:
   1. mkdir -p .claude/skills
-  2. Symlink stack skills (skip existing local ones)
-  3. Symlink ~/.claude/skills/ -> agent-config/global/skills/ (one-time, moves existing skills into repo)
+  2. Symlink stack-specific skills like coding-standards (skip existing local ones)
+  3. Symlink ~/.claude/skills/ -> agent-config/global/skills/ (one-time; includes methodology skills)
   4. Symlink ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md (one-time)
   5. Create Codex symlinks: .agents/ -> .claude/, ~/.agents/skills/ -> ~/.claude/skills/
   6. Create AGENTS.md, GEMINI.md -> CLAUDE.md symlinks (if not exist)
@@ -196,7 +189,7 @@ cd ~/workspace/agent-config && git commit -am "update git conventions"
 
 **Update a stack skill:**
 ```bash
-vim ~/workspace/agent-config/stacks/kotlin-android/skills/verify/SKILL.md
+vim ~/workspace/agent-config/stacks/kotlin-android/skills/coding-standards/SKILL.md
 # Done — symlinks propagate instantly to all tools (Claude, Codex, Cursor)
 ```
 
@@ -220,17 +213,16 @@ Move from project `.claude/skills/X` -> `agent-config/global/X` or `agent-config
 
 ## Skill Classification Detail
 
-### Tier 2: Stack-Parameterized (what differs)
+### Design Decision: Language-Agnostic Methodology Skills
 
-| Skill | Generic % | What differs |
-|-------|-----------|-------------|
-| `verify` | 95% | Build/lint/test commands, file extensions |
-| `build-fix` | 80% | Error catalog (Gradle vs TypeScript), build commands |
-| `tdd` | 80% | Test framework (JUnit vs Vitest), language idioms |
-| `plan` | 90% | "Project-Specific Considerations" section, path examples |
-| `code-review` | 85% | Tech-specific checklists (Android lifecycle vs Playwright/SSRF) |
-| `coding-standards` | 40% | Language idioms, code examples (most divergent) |
-| `orchestrate` | 75% | Pipeline topology (Android has visual-debug stage) |
+Skills like tdd, plan, code-review, and orchestrate were originally per-stack with language-specific commands and examples. They were merged to global because:
+
+- 80-95% of content was identical across stacks
+- The agent already knows the project's language/tools from the project CLAUDE.md
+- Skills should teach **process**, not **tooling**
+- Adding a new stack (Python, Go, etc.) requires zero skill changes
+
+Only `coding-standards` and `verify` remain per-stack — coding-standards because language idioms are fundamentally different (~20% overlap), verify because it's command-heavy and needs exact build/lint/test commands per stack.
 
 ---
 

@@ -25,13 +25,21 @@ agent-config/
       strategic-compact/             # Context compaction
       align/                         # Cross-agent design alignment
       multmux/                       # Multi-agent orchestration via tmux
+      tdd/                           # Test-driven development
+      plan/                          # Implementation planning
+      code-review/                   # Systematic code review
+      orchestrate/                   # Chain skills for complex workflows
 
-  stacks/
-    kotlin-android/skills/           # Android-specific skills
-    typescript-node/skills/          # Node.js-specific skills
+  stacks/                            # Command-heavy or language-specific skills
+    kotlin-android/skills/
+      verify/                        # Gradle build/lint/test commands
+      coding-standards/              # Kotlin/Android idioms
+    typescript-node/skills/
+      verify/                        # pnpm/tsc/vitest commands
+      coding-standards/              # TypeScript/Node.js idioms
 ```
 
-Each stack includes: `verify`, `build-fix`, `tdd`, `plan`, `code-review`, `coding-standards`, `orchestrate`.
+Methodology skills (tdd, plan, etc.) are language-agnostic. Command-heavy skills (verify) and language-specific skills (coding-standards) stay per-stack.
 
 ## Multi-Tool Support
 
@@ -55,17 +63,17 @@ Works with Claude Code, Codex, Cursor, and Gemini CLI through symlinks:
 ```
 
 This will:
-1. Create `.claude/skills/` and symlink stack skills
+1. Create `.claude/skills/` and symlink stack-specific skills (verify, coding-standards)
 2. Set up global config (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`)
-3. Set up global skills (`~/.claude/skills/` -> this repo)
+3. Set up global skills (`~/.claude/skills/` -> this repo's `global/skills/`)
 4. Create IDE compatibility symlinks (`.agents/`, `.codex/`)
 5. Create `AGENTS.md`, `GEMINI.md` -> `CLAUDE.md` symlinks
 
 **Add a new stack:**
 
 ```bash
-cp -r stacks/typescript-node stacks/python-fastapi
-# Edit skills for the new stack
+mkdir -p stacks/python-fastapi/skills/{coding-standards,verify}
+# Write SKILL.md for each with language-specific content
 ```
 
 ## Maintenance
@@ -76,18 +84,23 @@ Edit files in this repo — symlinks propagate changes instantly to all projects
 # Update a global rule
 vim global/CLAUDE.md
 
-# Update a stack skill
+# Update a methodology skill
+vim global/skills/tdd/SKILL.md
+
+# Update stack-specific verify commands
 vim stacks/kotlin-android/skills/verify/SKILL.md
 
-# Promote a project-local skill to shared
-mv <project>/.claude/skills/X stacks/<stack>/skills/X
-# Replace with symlink in project
+# Update language-specific coding standards
+vim stacks/kotlin-android/skills/coding-standards/SKILL.md
+
+# Promote a project-local skill to global
+mv <project>/.claude/skills/X global/skills/X
 ```
 
 ## Skill Tiers
 
 | Tier | Examples | Location |
 |------|----------|----------|
-| Global | ultra-think, strategic-compact, align | `global/skills/` |
-| Stack | verify, build-fix, tdd, plan, code-review | `stacks/<stack>/skills/` |
+| Global | ultra-think, tdd, plan, code-review, orchestrate, ... | `global/skills/` |
+| Stack | verify, coding-standards | `stacks/<stack>/skills/` |
 | Project | project-specific skills | stays in project `.claude/skills/` |

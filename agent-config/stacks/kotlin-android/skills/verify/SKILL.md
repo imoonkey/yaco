@@ -26,7 +26,7 @@ Pre-commit quality gates for Android projects.
 ./gradlew assembleDebug 2>&1 | tail -30
 ```
 
-If fails, STOP and report errors. Use `/build-fix` to resolve.
+If fails, STOP and report errors.
 
 ### 2. Lint
 
