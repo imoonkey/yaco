@@ -64,6 +64,10 @@ Read all code written in Steps 1-3. Verify it fully implements the goal/task.
 
 DO NOT STOP UNTIL THE TARGETED SCOPE IS FULLY IMPLEMENTED.
 
+## Step 5: Update Docs
+
+Run `/write-doc` to sync `doc/main/`, `doc/dev/`, and `doc/changelog.md` with the changes.
+
 ## Context Management
 
 - Use TodoWrite to track phases and progress
