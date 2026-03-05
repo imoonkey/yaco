@@ -68,8 +68,7 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
       align/
         SKILL.md
         scripts/align_poll.sh
-      continue/SKILL.md                     # Moved from ~/.claude/skills/
-      last30days/SKILL.md                   # Moved from ~/.claude/skills/
+      last30days/SKILL.md                   # Moved from ~/.claude/skills/ (submodule)
     agents/
       code-simplifier.md                  # 100% identical across all projects
 
@@ -116,7 +115,7 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
 
 # Global skills (entire directory symlinked, Cursor reads this too)
 ~/.claude/skills/          -> ~/workspace/agent-config/global/skills/
-  # contains: ultra-think, strategic-compact, align, continue, last30days
+  # contains: ultra-think, strategic-compact, align, last30days
 
 # Global skills for Codex
 ~/.agents/skills/        -> ~/.claude/skills/     # Codex reads ~/.agents/skills/
