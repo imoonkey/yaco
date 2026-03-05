@@ -1,0 +1,1 @@
+/Users/moonkey/workspace/multmux/skill/SKILL.md
