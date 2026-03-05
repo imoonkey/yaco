@@ -61,7 +61,7 @@ SEQ=0000 NEXT=CODEX CODEX=PENDING CLAUDE=PENDING
 2. 用轮询脚本阻塞等待（**不要自己手写 sleep 循环，会污染 context**）：
 
    ```bash
-   .ai-dev/skills/align/scripts/align_poll.sh <path/to/discussion/status.txt> <Your agent name:CLAUDE|CODEX>
+   scripts/align_poll.sh <path/to/discussion/status.txt> <Your agent name:CLAUDE|CODEX>
    ```
 
    脚本会阻塞，仅在轮到你或 DONE 时输出一行（`YOUR_TURN` / `DONE`），所有轮询细节写入 `poll.log`。
@@ -87,7 +87,7 @@ SEQ=0000 NEXT=CODEX CODEX=PENDING CLAUDE=PENDING
 5. 写完后再次调用轮询脚本等待对方回应或 DONE：
 
    ```bash
-   .ai-dev/skills/align/scripts/align_poll.sh <path/to/discussion/status.txt> <CLAUDE|CODEX>
+   scripts/align_poll.sh <path/to/discussion/status.txt> <CLAUDE|CODEX>
    ```
 
 ### C) 如果 `status.txt` 里 `NEXT=DONE`
