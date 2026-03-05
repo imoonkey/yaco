@@ -5,7 +5,7 @@ description: Create implementation plan before coding. WAIT for confirmation. Us
 
 # Plan
 
-Structured planning before implementation. Invokes the planner agent.
+Structured planning before implementation.
 
 ## When to Use
 

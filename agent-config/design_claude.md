@@ -2,9 +2,9 @@
 
 ## Context
 
-AI agent config (CLAUDE.md, skills/, agents/, settings) is copy-pasted across 4+ projects (androidagent, Investment, multmux, web-skill). Updating anything requires editing every project. This repo is the single source of truth, with symlinks into projects.
+AI agent config (CLAUDE.md, skills/, settings) is copy-pasted across 4+ projects (androidagent, Investment, multmux, web-skill). Updating anything requires editing every project. This repo is the single source of truth, with symlinks into projects.
 
-**Scope:** CLAUDE.md, skills/, agents/, hooks/ — the full `.claude/` config.
+**Scope:** CLAUDE.md, skills/, hooks/ — the full `.claude/` config.
 
 Current tech stacks: **kotlin-android** (androidagent, Investment) and **typescript-node** (multmux, web-skill).
 
@@ -38,8 +38,8 @@ Codex explicitly supports symlinked skill folders in `.agents/skills/`.
 | What | Canonical | Symlinks |
 |------|-----------|----------|
 | **Project config** | `CLAUDE.md` | `AGENTS.md -> CLAUDE.md`, `GEMINI.md -> CLAUDE.md` |
-| **Project skills/agents** | `.claude/` | `.agents/ -> .claude/`, `.codex/ -> .claude/` |
-| **Global config** | `~/.claude/CLAUDE.md` -> `agent-config/CLAUDE.md` | `~/.codex/AGENTS.md` -> `agent-config/CLAUDE.md` |
+| **Project skills** | `.claude/` | `.agents/ -> .claude/`, `.codex/ -> .claude/` |
+| **Global config** | `global/CLAUDE.md` | `~/.claude/CLAUDE.md` -> `agent-config/global/CLAUDE.md`, `~/.codex/AGENTS.md` -> `agent-config/global/CLAUDE.md` |
 | **Global skills** | `~/.claude/skills/` -> `agent-config/global/skills/` | `~/.agents/skills/` -> `~/.claude/skills/` (for Codex) |
 
 Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
@@ -56,12 +56,13 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
   README.md
   setup.sh                                # Symlink installer
 
-  # --- Global CLAUDE.md (symlinked to ~/.claude/CLAUDE.md) ---
-  CLAUDE.md                               # Generic rules: critical rules, git conventions,
-                                          #   agent skills reference, output style
+  CLAUDE.md                                 # Project-level config for agent-config itself
 
-  # --- Global (identical everywhere) ---
+  # --- Global CLAUDE.md (symlinked to ~/.claude/CLAUDE.md) ---
+
   global/
+    CLAUDE.md                               # Generic rules: critical rules, git conventions,
+                                            #   agent skills reference, output style
     skills/                                 # Entire dir symlinked as ~/.claude/skills/
       ultra-think/SKILL.md
       strategic-compact/SKILL.md
@@ -69,8 +70,6 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
         SKILL.md
         scripts/align_poll.sh
       last30days/SKILL.md                   # Moved from ~/.claude/skills/ (submodule)
-    agents/
-      code-simplifier.md                  # 100% identical across all projects
 
   # --- Per tech-stack ---
   stacks/
@@ -83,11 +82,6 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
         code-review/SKILL.md
         coding-standards/SKILL.md
         orchestrate/SKILL.md
-      agents/
-        architect.md
-        build-error-resolver.md
-        code-reviewer.md
-        planner.md
     typescript-node/
       skills/
         verify/SKILL.md
@@ -97,11 +91,6 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
         code-review/SKILL.md
         coding-standards/SKILL.md
         orchestrate/SKILL.md
-      agents/
-        architect.md
-        build-error-resolver.md
-        code-reviewer.md
-        planner.md
 ```
 
 ### How Projects Connect
@@ -110,8 +99,8 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
 # === GLOBAL (one-time setup) ===
 
 # Global config
-~/.claude/CLAUDE.md      -> ~/workspace/agent-config/CLAUDE.md
-~/.codex/AGENTS.md       -> ~/workspace/agent-config/CLAUDE.md
+~/.claude/CLAUDE.md      -> ~/workspace/agent-config/global/CLAUDE.md
+~/.codex/AGENTS.md       -> ~/workspace/agent-config/global/CLAUDE.md
 
 # Global skills (entire directory symlinked, Cursor reads this too)
 ~/.claude/skills/          -> ~/workspace/agent-config/global/skills/
@@ -128,7 +117,7 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
   AGENTS.md -> CLAUDE.md
   GEMINI.md -> CLAUDE.md
 
-# Project skills/agents directory (.claude/ is canonical)
+# Project skills directory (.claude/ is canonical)
 ~/workspace/Investment/.claude/
   skills/
     verify/              -> ~/workspace/agent-config/stacks/kotlin-android/skills/verify
@@ -138,11 +127,6 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
     cog-tune/            (LOCAL, project-specific)
     ux-visual-debug/     (LOCAL, project-specific)
     update-docs/         (LOCAL, project-specific doc-map)
-  agents/
-    architect.md         -> ~/workspace/agent-config/stacks/kotlin-android/agents/architect.md
-    code-simplifier.md   -> ~/workspace/agent-config/global/agents/code-simplifier.md
-    planner.md           -> ~/workspace/agent-config/stacks/kotlin-android/agents/planner.md
-    ...
 
 # IDE compatibility symlinks (project-level)
 .agents/ -> .claude/                     # Codex reads .agents/skills/
@@ -155,7 +139,7 @@ Cursor reads `.claude/skills/` natively, so no `.cursor/` symlinks needed.
 
 Claude Code reads both `~/.claude/CLAUDE.md` (global) and `<project>/CLAUDE.md` (project-level), merging them into context.
 
-- **Global:** `~/.claude/CLAUDE.md` -> `agent-config/CLAUDE.md` — critical rules, git conventions, skill reference, output style
+- **Global:** `~/.claude/CLAUDE.md` -> `agent-config/global/CLAUDE.md` — critical rules, git conventions, skill reference, output style
 - **Project:** `<project>/CLAUDE.md` — stack-specific + project-specific content (file structure, build commands, key patterns)
 
 No concatenation needed. No generation step. Just a symlink for the global part.
@@ -175,18 +159,11 @@ Cursor reads `AGENTS.md` at project root + subdirectories.
 | Stack | verify, build-fix, tdd, plan, code-review, coding-standards, orchestrate | `stacks/<stack>/skills/` -> project `.claude/skills/` |
 | Project | cog-tune, ux-visual-debug, action-debug, update-docs, autotune | stays in project `.claude/skills/` |
 
-### Agents
-
-| Tier | Agents | Location |
-|------|--------|----------|
-| Global | code-simplifier | `global/agents/` -> project `.claude/agents/` |
-| Stack | architect, build-error-resolver, code-reviewer, planner | `stacks/<stack>/agents/` -> project `.claude/agents/` |
-
 ### CLAUDE.md
 
 | Part | Content | Location |
 |------|---------|----------|
-| Global | Critical rules, git conventions, output style, skill reference | `agent-config/CLAUDE.md` -> `~/.claude/CLAUDE.md` |
+| Global | Critical rules, git conventions, output style, skill reference | `agent-config/global/CLAUDE.md` -> `~/.claude/CLAUDE.md` |
 | Project | Stack-specific + project-specific: file map, build commands, patterns | `<project>/CLAUDE.md` (local) |
 
 ---
@@ -197,13 +174,12 @@ Cursor reads `AGENTS.md` at project root + subdirectories.
 Usage: ./setup.sh <project-path> <stack-name>
 
 Actions:
-  1. mkdir -p .claude/{skills,agents}
-  2. Symlink stack skills and agents (skip existing local ones)
-  3. Symlink global agents (skip existing)
-  4. Symlink ~/.claude/skills/ -> agent-config/global/skills/ (one-time, moves existing skills into repo)
-  5. Symlink ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md -> agent-config/CLAUDE.md (one-time)
-  6. Create Codex symlinks: .agents/ -> .claude/, ~/.agents/skills/ -> ~/.claude/skills/
-  7. Create AGENTS.md, GEMINI.md -> CLAUDE.md symlinks (if not exist)
+  1. mkdir -p .claude/skills
+  2. Symlink stack skills (skip existing local ones)
+  3. Symlink ~/.claude/skills/ -> agent-config/global/skills/ (one-time, moves existing skills into repo)
+  4. Symlink ~/.claude/CLAUDE.md and ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md (one-time)
+  5. Create Codex symlinks: .agents/ -> .claude/, ~/.agents/skills/ -> ~/.claude/skills/
+  6. Create AGENTS.md, GEMINI.md -> CLAUDE.md symlinks (if not exist)
 ```
 
 ---
@@ -212,7 +188,7 @@ Actions:
 
 **Update generic rules:**
 ```bash
-vim ~/workspace/agent-config/CLAUDE.md
+vim ~/workspace/agent-config/global/CLAUDE.md
 cd ~/workspace/agent-config && git commit -am "update git conventions"
 # Done — ~/.claude/CLAUDE.md is a symlink, changes apply to all projects instantly
 # Codex also picks it up via ~/.codex/AGENTS.md symlink
@@ -227,7 +203,7 @@ vim ~/workspace/agent-config/stacks/kotlin-android/skills/verify/SKILL.md
 **Onboard new project:**
 ```bash
 ~/workspace/agent-config/setup.sh ~/workspace/new-project typescript-node
-# Creates .claude/, .agents/ -> .claude/, symlinks skills/agents
+# Creates .claude/, .agents/ -> .claude/, symlinks skills
 # Then write new-project/CLAUDE.md with project-specific content
 ```
 

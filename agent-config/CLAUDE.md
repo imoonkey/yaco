@@ -1,32 +1,27 @@
-# Global Agent Rules
+# agent-config
 
-## Critical Rules
+Centralized AI agent configuration repo. Single source of truth for CLAUDE.md, skills, and settings across all projects.
 
-### Security
-- No hardcoded API keys or secrets
-- Environment variables for sensitive data
-- Validate all external input
+## Structure
 
-### Code Quality
-- Max 400 lines/file, extract when larger
-- Immutability by default
-- Explicit error handling, no silent failures
+- `global/CLAUDE.md` — Global rules (symlinked as `~/.claude/CLAUDE.md`)
+- `global/skills/` — Global skills (symlinked as `~/.claude/skills/`)
+- `stacks/<stack>/skills/` — Stack-specific skills (symlinked into project `.claude/skills/`)
+- `setup.sh` — Symlink installer
+- `design_claude.md` — Architecture & design doc
 
-### Git
-- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`
+## Usage
 
-## Agent Skills
+```bash
+# Onboard a project
+./setup.sh ~/workspace/my-project kotlin-android
 
-### Global (available everywhere)
-- `/ultra-think` - Deep strategic thinking for high-impact decisions
-- `/strategic-compact` - Context compaction at task boundaries
-- `/align` - Align design between Codex and Claude
+# Available stacks: kotlin-android, typescript-node
+```
 
-### Per-Project (stack-specific)
-- `/plan` - Create implementation plan before coding
-- `/verify` - Run build + lint + tests
-- `/build-fix` - Fix build errors incrementally
-- `/tdd` - Test-driven development
-- `/code-review` - Systematic code review
-- `/coding-standards` - Language/framework conventions (auto-applied)
-- `/orchestrate` - Chain skills/agents for complex workflows
+## Conventions
+
+- Skills follow Agent Skills spec (SKILL.md per directory)
+- Symlinks are canonical — never copy config files
+- Stack skills go in `stacks/<stack>/skills/`, global skills in `global/skills/`
+- Project-specific skills stay local in the project's `.claude/skills/`

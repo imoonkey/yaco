@@ -27,8 +27,8 @@ echo "Setting up $PROJECT with stack: $STACK"
 echo "Source: $SCRIPT_DIR"
 echo ""
 
-# --- 1. Create .claude/{skills,agents} ---
-mkdir -p "$PROJECT/.claude/skills" "$PROJECT/.claude/agents"
+# --- 1. Create .claude/skills ---
+mkdir -p "$PROJECT/.claude/skills"
 
 # --- 2. Symlink stack skills (skip existing) ---
 echo "=== Stack skills ==="
@@ -44,35 +44,7 @@ for skill in "$STACK_DIR/skills"/*/; do
   fi
 done
 
-# --- 3. Symlink stack agents (skip existing) ---
-echo "=== Stack agents ==="
-for agent in "$STACK_DIR/agents"/*.md; do
-  [ -f "$agent" ] || continue
-  agent_name=$(basename "$agent")
-  target="$PROJECT/.claude/agents/$agent_name"
-  if [ -e "$target" ] || [ -L "$target" ]; then
-    echo "  skip (exists): agents/$agent_name"
-  else
-    ln -s "$agent" "$target"
-    echo "  linked: agents/$agent_name"
-  fi
-done
-
-# --- 4. Symlink global agents (skip existing) ---
-echo "=== Global agents ==="
-for agent in "$SCRIPT_DIR/global/agents"/*.md; do
-  [ -f "$agent" ] || continue
-  agent_name=$(basename "$agent")
-  target="$PROJECT/.claude/agents/$agent_name"
-  if [ -e "$target" ] || [ -L "$target" ]; then
-    echo "  skip (exists): agents/$agent_name"
-  else
-    ln -s "$agent" "$target"
-    echo "  linked: agents/$agent_name"
-  fi
-done
-
-# --- 5. Global: ~/.claude/skills/ -> agent-config/global/skills/ ---
+# --- 3. Global: ~/.claude/skills/ -> agent-config/global/skills/ ---
 echo ""
 echo "=== Global setup (one-time) ==="
 GLOBAL_SKILLS="$HOME/.claude/skills"
@@ -88,7 +60,7 @@ else
   echo "  linked: ~/.claude/skills/ -> global/skills/"
 fi
 
-# --- 6. Global: ~/.claude/CLAUDE.md -> agent-config/CLAUDE.md ---
+# --- 4. Global: ~/.claude/CLAUDE.md -> agent-config/CLAUDE.md ---
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
 if [ -L "$GLOBAL_CLAUDE" ]; then
   echo "  ~/.claude/CLAUDE.md already symlinked -> $(readlink "$GLOBAL_CLAUDE")"
@@ -96,14 +68,14 @@ elif [ -s "$GLOBAL_CLAUDE" ]; then
   echo "  WARNING: ~/.claude/CLAUDE.md exists and is non-empty"
   echo "  Back it up and replace:"
   echo "    mv ~/.claude/CLAUDE.md ~/.claude/CLAUDE.md.bak"
-  echo "    ln -s $SCRIPT_DIR/CLAUDE.md ~/.claude/CLAUDE.md"
+  echo "    ln -s $SCRIPT_DIR/global/CLAUDE.md ~/.claude/CLAUDE.md"
 else
   rm -f "$GLOBAL_CLAUDE"  # remove empty file
-  ln -s "$SCRIPT_DIR/CLAUDE.md" "$GLOBAL_CLAUDE"
-  echo "  linked: ~/.claude/CLAUDE.md -> agent-config/CLAUDE.md"
+  ln -s "$SCRIPT_DIR/global/CLAUDE.md" "$GLOBAL_CLAUDE"
+  echo "  linked: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md"
 fi
 
-# --- 7. Global: ~/.codex/AGENTS.md -> agent-config/CLAUDE.md ---
+# --- 5. Global: ~/.codex/AGENTS.md -> agent-config/CLAUDE.md ---
 mkdir -p "$HOME/.codex"
 GLOBAL_CODEX="$HOME/.codex/AGENTS.md"
 if [ -L "$GLOBAL_CODEX" ]; then
@@ -112,11 +84,11 @@ elif [ -s "$GLOBAL_CODEX" ]; then
   echo "  WARNING: ~/.codex/AGENTS.md exists and is non-empty"
 else
   rm -f "$GLOBAL_CODEX"
-  ln -s "$SCRIPT_DIR/CLAUDE.md" "$GLOBAL_CODEX"
-  echo "  linked: ~/.codex/AGENTS.md -> agent-config/CLAUDE.md"
+  ln -s "$SCRIPT_DIR/global/CLAUDE.md" "$GLOBAL_CODEX"
+  echo "  linked: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md"
 fi
 
-# --- 8. Global: ~/.agents/skills/ -> ~/.claude/skills/ (for Codex) ---
+# --- 6. Global: ~/.agents/skills/ -> ~/.claude/skills/ (for Codex) ---
 mkdir -p "$HOME/.agents"
 GLOBAL_AGENTS_SKILLS="$HOME/.agents/skills"
 if [ -L "$GLOBAL_AGENTS_SKILLS" ]; then
@@ -126,7 +98,7 @@ elif [ ! -e "$GLOBAL_AGENTS_SKILLS" ]; then
   echo "  linked: ~/.agents/skills/ -> ~/.claude/skills/"
 fi
 
-# --- 9. Project: IDE compatibility symlinks ---
+# --- 7. Project: IDE compatibility symlinks ---
 echo ""
 echo "=== IDE compatibility ==="
 cd "$PROJECT"
@@ -147,7 +119,7 @@ else
   echo "  skip (exists): .codex/"
 fi
 
-# --- 10. Project: AGENTS.md, GEMINI.md -> CLAUDE.md ---
+# --- 8. Project: AGENTS.md, GEMINI.md -> CLAUDE.md ---
 if [ -f CLAUDE.md ] || [ -L CLAUDE.md ]; then
   if [ ! -e AGENTS.md ] && [ ! -L AGENTS.md ]; then
     ln -s CLAUDE.md AGENTS.md
