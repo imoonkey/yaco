@@ -9,7 +9,22 @@ Given a goal or task (system design, feature, refactor), drive it from plan to d
 
 ## Usage
 
-`/implement [task or design doc reference]`
+```
+/implement [task or design doc reference]
+/implement --worktree <task description>
+```
+
+### Worktree Mode (`--worktree`)
+
+When `--worktree` is specified, the task runs in an isolated git worktree:
+
+- **Step 0**: Check if worktree `task-<slug>` already exists.
+  - **New task**: `/worktree-task create <slug>` — creates worktree, initializes artifacts, `cd` into it.
+  - **Existing task**: `/worktree-task resume <slug>` — reads state, verifies baseline, picks next checklist item, `cd` into it.
+- **Steps 1-5**: Run normally inside the worktree. `/worktree-task` owns session artifacts (checklist, PROGRESS); `/implement` doesn't touch them.
+- **Step 6**: After final check, `/worktree-task merge <slug>` to merge back, then `/worktree-task cleanup <slug>`.
+
+Without `--worktree`, behavior is unchanged.
 
 ## Principles
 
