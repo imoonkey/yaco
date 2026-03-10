@@ -19,11 +19,7 @@ Manage isolated task development in git worktrees with structured state for cros
 
 Repo defaults to current working directory. Worktrees live at `../worktrees/`.
 
-Helper scripts are at `~/.claude/skills/worktree-task/scripts/`. Alias for brevity:
-
-```bash
-WT_SCRIPTS=~/.claude/skills/worktree-task/scripts
-```
+Helper scripts are in `./scripts/` relative to this SKILL.md.
 
 ## Directory Layout
 
@@ -47,7 +43,7 @@ Branch naming: `task/<slug>`.
 
 ### `create <slug>`
 
-1. Run `$WT_SCRIPTS/worktree-create.sh "$(pwd)" <slug>`
+1. Run `./scripts/worktree-create.sh "$(pwd)" <slug>`
 2. `cd` into the new worktree
 3. Analyze the task description
 4. Write `checklist.json` — decompose into verifiable acceptance items
@@ -71,20 +67,20 @@ Fixed SOP — this is a contract, not advice:
 
 ### `merge <slug>`
 
-1. Run `$WT_SCRIPTS/worktree-merge.sh "$(pwd)" <slug>`
+1. Run `./scripts/worktree-merge.sh "$(pwd)" <slug>`
 2. If rebase conflicts: resolve in task worktree, re-verify, then retry
 3. If merge conflicts on main: `git merge --abort`, go back to task worktree, sync again
 4. Verify on main after merge
 
 ### `cleanup <slug>`
 
-1. Run `$WT_SCRIPTS/worktree-cleanup.sh "$(pwd)" <slug>`
+1. Run `./scripts/worktree-cleanup.sh "$(pwd)" <slug>`
 2. Removes worktree + branch. Preserves `.state/<slug>/` by default
 3. Pass `--purge-state` to also delete state files
 
 ### `status`
 
-1. Run `$WT_SCRIPTS/worktree-status.sh "$(pwd)"`
+1. Run `./scripts/worktree-status.sh "$(pwd)"`
 2. Shows all active worktrees with checklist progress
 
 ---
