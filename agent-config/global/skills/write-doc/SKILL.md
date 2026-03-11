@@ -17,7 +17,7 @@ Keep documentation in sync with code. Maintain a living changelog as project mem
 doc/
   main/                    # SOTA memory: architecture, runtime, system overview
   dev/                     # SOTA memory: dev workflow, build, tooling
-  changelog.md             # History trace
+  PROGRESS.md              # History trace
   todo/                    # Active projects
     priority.md            # Priority ordering across projects
     <project>/             # Per-project design docs, notes, status
@@ -26,7 +26,7 @@ doc/
 ```
 
 `doc/main/` and `doc/dev/` are **SOTA memory** — always reflect current best understanding.
-`doc/changelog.md` is **history trace** — what happened and when, so future context windows can catch up.
+`doc/PROGRESS.md` is **history trace** — what happened and when, so future context windows can catch up.
 
 ## Process
 
@@ -55,9 +55,9 @@ Map code changes to affected docs in `doc/main/` and `doc/dev/`.
 - Verify referenced files/classes still exist
 - Ensure links still work
 
-### 4. Update Changelog
+### 4. Update Progress
 
-Append to `doc/changelog.md` (create if missing).
+Prepend to `doc/PROGRESS.md` (create if missing). This is the **canonical format** — all entries follow it.
 
 ```markdown
 ## YYYY-MM-DD: [Short title]
@@ -69,6 +69,10 @@ Append to `doc/changelog.md` (create if missing).
 - [Motivation, problem solved, trade-off chosen]
 
 **Key files:** [list main files affected]
+**Verification:** [what was verified and how, e.g. `./gradlew build` passed]
+**Commit:** [short hash or range]
+**Next:** [what to work on next, if applicable]
+**Blockers:** [any blockers, or None]
 ```
 
 Keep entries concise. One entry per logical change, not per commit.

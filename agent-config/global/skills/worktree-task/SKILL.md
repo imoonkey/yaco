@@ -1,25 +1,25 @@
 ---
 name: worktree-task
-description: Worktree-based task isolation with cross-session continuity. Create, resume, merge, and clean up isolated task branches.
+description: "Infrastructure: worktree isolation + state artifacts. Create, resume, merge, clean up task branches. Does NOT drive execution."
 ---
 
 # Worktree Task
 
-Manage isolated task development in git worktrees with structured state for cross-session handoff.
+**Infrastructure layer** for isolated task development. Manages worktree lifecycle and state artifacts. Does NOT drive execution — the caller (e.g. `/implement`) decides what to work on and how.
 
-## Usage
+## User Workflow
 
 ```
-/worktree-task create <slug> [task description]
-/worktree-task resume <slug>
-/worktree-task merge <slug>
-/worktree-task cleanup <slug> [--purge-state]
-/worktree-task status
+# New task (from main repo)
+/implement --worktree <slug> <task description>
+
+# Resume (new session)
+cd ../worktrees/task-<slug>
+# start claude/codex
+/implement --worktree <slug>
 ```
 
-Repo defaults to current working directory. Worktrees live at `../worktrees/`.
-
-Helper scripts are in `./scripts/` relative to this SKILL.md.
+You can also use `/worktree-task` commands directly for simple tasks without `/implement`.
 
 ## Directory Layout
 
@@ -30,12 +30,13 @@ Helper scripts are in `./scripts/` relative to this SKILL.md.
     task-<slug>/             # worktree (clean git checkout)
     .state/
       <slug>/
-        manifest.json        # metadata (scripts only)
-        checklist.json       # acceptance criteria (agent flips status only)
-        PROGRESS.md          # operational memory for session handoff
+        manifest.json        # metadata (scripts manage)
+        checklist.json       # acceptance criteria (caller writes & updates)
 ```
 
 Branch naming: `task/<slug>`.
+
+Helper scripts are in `./scripts/` relative to this SKILL.md.
 
 ---
 
@@ -43,27 +44,23 @@ Branch naming: `task/<slug>`.
 
 ### `create <slug>`
 
+Sets up isolation and initializes state. **Returns control to the caller.**
+
 1. Run `./scripts/worktree-create.sh "$(pwd)" <slug>`
 2. `cd` into the new worktree
-3. Analyze the task description
-4. Write `checklist.json` — decompose into verifiable acceptance items
-5. Determine `verify_command` from stack (e.g., `./gradlew build`, `npm test`) and update `manifest.json` via: `python3 -c "import json; m=json.load(open('<state>/manifest.json')); m['verify_command']='<cmd>'; m['initialized']=True; json.dump(m, open('<state>/manifest.json','w'), indent=2)"`
-6. Run `verify_command` to confirm clean baseline
-7. Write initial `PROGRESS.md` entry
-8. Begin work on the first checklist item
+3. Determine `verify_command` from stack (e.g., `./gradlew build`, `npm test`) and update `manifest.json` via: `python3 -c "import json; m=json.load(open('<state>/manifest.json')); m['verify_command']='<cmd>'; m['initialized']=True; json.dump(m, open('<state>/manifest.json','w'), indent=2)"`
+4. Run `verify_command` to confirm clean baseline
 
 ### `resume <slug>`
 
-Fixed SOP — this is a contract, not advice:
+Restores context and verifies baseline. **Returns control to the caller.**
 
-1. `cd` into the worktree at `../worktrees/task-<slug>`
-2. Read `manifest.json`, `checklist.json`, `PROGRESS.md`
+1. `cd` into the worktree at `../worktrees/task-<slug>` (if not already there)
+2. Read `manifest.json`, `checklist.json`, `doc/PROGRESS.md`
 3. Read recent git log for the task branch
 4. Run `verify_command` to check baseline health
-5. If broken: **fix before any new work**
-6. If last session left a blocker: attempt to resolve it first
-7. Pick the highest-priority `pending` checklist item
-8. Execute (see Per-Session Execution below)
+5. If broken: **fix before returning control**
+6. Report: current checklist status, last session's progress, any blockers
 
 ### `merge <slug>`
 
@@ -85,36 +82,13 @@ Fixed SOP — this is a contract, not advice:
 
 ---
 
-## Per-Session Execution
+## State Artifacts (Format Reference)
 
-Each session works on **one bounded checklist item**:
-
-1. Mark item `in_progress` in `checklist.json`
-2. Implement the item
-3. Run `verify_command` + any item-specific checks
-4. Only mark `done` after verification passes
-5. Commit with a descriptive message
-
-**Clean-state rule**: every commit must leave the branch buildable. Never commit half-implemented features.
-
----
-
-## Exit Contract (Every Session)
-
-Mandatory before ending any session:
-
-1. Update `checklist.json` — clear any `in_progress` (revert to `pending` or mark `done`)
-2. Update `PROGRESS.md` with this session's entry
-3. Create a descriptive commit if the branch advanced
-4. If blocked: document the blocker in `PROGRESS.md`, leave the branch clean
-
----
-
-## Task Artifacts
+The caller (e.g. `/implement`) owns writing and updating content. This section defines the **format**.
 
 ### manifest.json
 
-Written by helper scripts. Agent may update `verify_command` and `initialized` via the python3 one-liner in `create` step 5. Otherwise read-only.
+Written by helper scripts. Caller may update `verify_command` and `initialized`.
 
 ```json
 {
@@ -130,8 +104,6 @@ Written by helper scripts. Agent may update `verify_command` and `initialized` v
 
 ### checklist.json
 
-Agent may only flip the `status` field. Never edit descriptions.
-
 ```json
 {
   "task": "Add user login screen",
@@ -144,22 +116,7 @@ Agent may only flip the `status` field. Never edit descriptions.
 
 Valid statuses: `pending`, `in_progress`, `done`, `blocked`.
 
-`in_progress` is transient — on exit, every item must be `pending`, `done`, or `blocked`.
-
-### PROGRESS.md
-
-Rolling window: keep last 5 session entries. Archive older to a summary section.
-
-```markdown
-## Session 3 — 2026-03-10
-
-**Objective**: Implement form validation (checklist item #2)
-**Changes**: Added validation logic to LoginForm, error display component
-**Verification**: `./gradlew build` passed
-**Commit**: abc1234
-**Next**: Item #3 — API integration
-**Blockers**: None
-```
+`in_progress` is transient — on session exit, every item must be `pending`, `done`, or `blocked`.
 
 ---
 
