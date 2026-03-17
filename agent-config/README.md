@@ -22,13 +22,19 @@ agent-config/
     CLAUDE.md                        # Global rules (-> ~/.claude/CLAUDE.md)
     skills/                          # Symlinked as ~/.claude/skills/
       ultra-think/                   # Deep strategic thinking
+      scope-review/                  # Scope and problem framing review
+      ux-design/                     # User-facing product and flow design
+      design/                        # System and architecture design
+      eng-plan-review/               # Pre-implementation engineering review
+      implement/                     # End-to-end implementation workflow
+      code-review/                   # Systematic code review
+      write-doc/                     # Keep docs and skills in sync
       strategic-compact/             # Context compaction
       align/                         # Cross-agent design alignment
       multmux/                       # Multi-agent orchestration via tmux
       tdd/                           # Test-driven development
-      plan/                          # Implementation planning
-      code-review/                   # Systematic code review
-      orchestrate/                   # Chain skills for complex workflows
+      worktree-task/                 # Worktree lifecycle for isolated tasks
+      skill-creator/                 # Create or improve skills
 
   stacks/                            # Command-heavy or language-specific skills
     kotlin-android/skills/
@@ -39,7 +45,7 @@ agent-config/
       coding-standards/              # TypeScript/Node.js idioms
 ```
 
-Methodology skills (tdd, plan, etc.) are language-agnostic. Command-heavy skills (verify) and language-specific skills (coding-standards) stay per-stack.
+Methodology skills (`scope-review`, `ux-design`, `design`, `eng-plan-review`, `tdd`, etc.) are language-agnostic. Command-heavy skills (`verify`) and language-specific skills (`coding-standards`) stay per-stack.
 
 ## Multi-Tool Support
 
@@ -101,6 +107,6 @@ mv <project>/.claude/skills/X global/skills/X
 
 | Tier | Examples | Location |
 |------|----------|----------|
-| Global | ultra-think, tdd, plan, code-review, orchestrate, ... | `global/skills/` |
+| Global | ultra-think, scope-review, ux-design, design, eng-plan-review, implement, code-review, ... | `global/skills/` |
 | Stack | verify, coding-standards | `stacks/<stack>/skills/` |
 | Project | project-specific skills | stays in project `.claude/skills/` |

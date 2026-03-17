@@ -1,6 +1,6 @@
 ---
 name: ux-design
-description: Product & UX design from the user's problem. Produce a UX spec with flows as state machines. Use before /design for user-facing features.
+description: Product & UX design from the user's problem. Produce a UX spec with flows as state machines. Use after `/scope-review` and before `/design` for user-facing features.
 ---
 
 # UX Design
@@ -63,4 +63,4 @@ Re-read against the original goal:
 
 If gaps exist, iterate steps 2-6.
 
-After approval, hand off to `/design` (system) then `/implement`.
+After approval, hand off to `/design` (system), then `/eng-plan-review`, then `/implement`.
