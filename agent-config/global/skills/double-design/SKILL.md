@@ -34,6 +34,8 @@ doc/todo/<project>/
 All orchestration is done by the invoking agent via `multmux`.
 Reuse sessions across steps (`multmux send`) to preserve context.
 
+When this doc references `./scripts/...`, that path is relative to the installed skill directory, not the repo cwd. If an agent seems likely to misread that, resolve the installed skill directory first or use an absolute installed path as a fallback.
+
 ### Step 1: Independent Design
 
 Start both agents in parallel. Each runs `/design` independently — no reading the other's output.
@@ -88,11 +90,29 @@ multmux send codex-design "Run /align. Read all files in doc/todo/<project>/init
 
 If the cross-reviews pick Codex, swap the role assignment in both prompts. The key invariant is that exactly one side is named the first mover in both messages.
 
-**Do NOT use `capture --wait` here** — it can deadlock. Agents self-poll via `/align`, but may go idle prematurely (especially Codex). Run the monitor script to detect idle agents and nudge them:
+**Do NOT use `capture --wait` here** — it can deadlock. Agents self-poll via `/align`, but may go idle prematurely (especially Codex). The invoking agent should manually monitor and nudge the side whose turn it is.
+
+Minimal manual monitoring loop:
 
 ```bash
-./scripts/align_monitor.sh doc/todo/<project>/discussion/status.txt claude-design codex-design
+cat doc/todo/<project>/discussion/status.txt
+multmux status claude-design
+multmux status codex-design
 ```
+
+If `status.txt` says `NEXT=CLAUDE` and `multmux status claude-design` returns `idle`, send:
+
+```bash
+multmux send claude-design "It's your turn. Read the latest discussion files and continue /align."
+```
+
+If `status.txt` says `NEXT=CODEX` and `multmux status codex-design` returns `idle`, send:
+
+```bash
+multmux send codex-design "It's your turn. Read the latest discussion files and continue /align."
+```
+
+Repeat until `status.txt` reaches `NEXT=DONE`.
 
 ## Output
 
@@ -104,6 +124,6 @@ Hand off to `/implement` when ready.
 - Both agents must NOT read each other's work during Step 1 — independent thinking is the whole point
 - Session reuse (`send` instead of `start`) keeps prior context so agents build on their own reasoning
 - Steps 1 & 2: `capture --wait` is safe (bounded tasks, agents will finish)
-- Step 3: never `capture --wait` — use `align_monitor.sh` to avoid deadlock
+- Step 3: never `capture --wait` — manually monitor `status.txt` plus `multmux status`, then nudge the side whose turn it is if that session is idle
 - Step 3: the first mover owns the first draft, but that draft should mostly record shared ground plus explicit open questions, not force unresolved choices
 - Final output must remain self-contained throughout alignment; resolving an open question is not complete until the resolved design is reflected in `final/*.md`

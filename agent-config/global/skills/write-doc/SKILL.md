@@ -23,10 +23,24 @@ doc/
     <project>/             # Per-project design docs, notes, status
   archive/
     YYYYMMDD_<project>/    # Completed projects (archived with date)
+
+/.claude/
+  skills/
+    <skill>/               # Project-local skill: instructions that must match reality
+      SKILL.md
+      process.*            # Optional process/runbook referenced by the skill
+      scripts/             # Optional helper scripts used by the skill
+
+/.ai-dev/
+  skills/ -> .claude/skills/   # Optional symlink alias
+
+/.agents/
+  skills/ -> .claude/skills/   # Optional symlink alias
 ```
 
-`doc/main/` and `doc/dev/` are **SOTA memory** — always reflect current best understanding.
+`doc/main/`, `doc/dev/`, and project-local skills exposed via `./.claude/skills/*`, `./.ai-dev/skills/*`, or `./.agents/skills/*` are **SOTA memory** — always reflect current best understanding.
 `doc/PROGRESS.md` is **history trace** — what happened and when, so future context windows can catch up.
+Project-local skills are peers of `doc/dev/`, not an afterthought.
 
 ## Process
 
@@ -36,24 +50,30 @@ doc/
 git diff --name-only <baseline>..HEAD
 ```
 
-If no baseline given, use the last `doc/` update commit or recent commits.
+If no baseline given, use the last docs/local-skill update commit or recent commits.
 
 ### 2. Update Docs
 
-Map code changes to affected docs in `doc/main/` and `doc/dev/`.
+Map code changes to affected docs in `doc/main/`, `doc/dev/`, and any project-local skill exposed via the project's local skill directory.
 
 **Principles:**
 - Match the detail level of surrounding content
 - Prefer `-> See: path/to/file` pointers over large code blocks
 - Link rather than duplicate explanations
 - Don't over-document tiny new details, unless they are really important pitfalls or non-obvious logic.
+- Check local skill directories in this order: `./.claude/skills/`, then `./.ai-dev/skills/`, then `./.agents/skills/`.
+- These directories are usually symlinked aliases, so update one real location rather than editing duplicates.
+- If behavior or workflow changed and a local skill teaches that behavior, update the skill in the same pass.
+- When a local skill has `process.*` or `scripts/`, keep those artifacts in sync with the `SKILL.md` instructions.
 - Update timestamps/commit hashes on touched docs
 
 ### 3. Verify
 
-- Search for removed/renamed symbols in docs
-- Verify referenced files/classes still exist
+- Search for removed/renamed symbols in docs and local skills
+- Verify referenced files/classes/scripts still exist
 - Ensure links still work
+- For touched local skills, verify the documented process still resolves to real commands and paths
+- If you changed a local skill's `scripts/`, run the narrowest meaningful smoke check so the script still works after the doc/process update
 
 ### 4. Update Progress
 
@@ -82,4 +102,5 @@ Keep entries concise. One entry per logical change, not per commit.
 - After architecture or workflow changes
 - After modifying public APIs or interfaces
 - After changing build/setup process
+- After changing project-local skill behavior, process docs, or helper scripts
 - At the end of `/implement` phases

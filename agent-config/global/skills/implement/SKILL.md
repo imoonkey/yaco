@@ -18,7 +18,7 @@ Given a goal or task (system design, feature, refactor), drive it from plan to d
 
 When invoked with `--worktree`:
 
-1. **Setup**: New task → `/worktree-task create <slug>`. Existing → `/worktree-task resume <slug>`.
+1. **Setup**: New task → `/worktree-task create <slug>`  (**MUST USE the mentioned skills**) . Existing → `/worktree-task resume <slug>`.
 2. **Execute**: Run Steps 1-5 inside the worktree. Use checklist items as phases.
 3. **Checklist**: Mark items `in_progress` → `done` as you complete them.
 4. **Session exit**: Follow Step 6 (exit contract).
@@ -56,7 +56,7 @@ For each phase (or checklist item in worktree mode), repeat:
 ### 2.1 Implement
 - In worktree mode: mark checklist item `in_progress`
 - Execute the phase, ideally in a fresh subagent for context cleanliness
-- Use `/coding-standards` (stack-specific) and `/tdd` when the logic warrants it
+- Use `/coding-standards` (stack-specific) and `/tdd` (**MUST USE the mentioned skills**) when the logic warrants it
 - Test and verify before moving on
 
 ### 2.2 Code Review
@@ -85,7 +85,7 @@ DO NOT STOP UNTIL THE TARGETED SCOPE IS FULLY IMPLEMENTED.
 
 ## Step 5: Update Docs
 
-Run `/write-doc` to sync `doc/main/`, `doc/dev/`, and `doc/PROGRESS.md` with the changes.
+Run `/write-doc`  (**MUST USE the mentioned skills**) to sync `doc/main/`, `doc/dev/`, any project-local skills exposed via `./.claude/skills/*`, `./.ai-dev/skills/*`, or `./.agents/skills/*`, and `doc/PROGRESS.md` with the changes.
 
 ## Step 6: Session Exit (Worktree Mode)
 
