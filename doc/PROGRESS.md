@@ -1,5 +1,36 @@
 # Progress
 
+## 2026-03-19: Codex icon uses ChatGPT SVG asset
+
+**What changed:**
+- Replaced the `codex` provider's inline OpenAI path mark with a static `ChatGPT-Logo.svg` asset in `ui/public/`
+- Simplified the shared provider icon component so both Claude and Codex now load their provider marks through static image assets
+
+**Why:**
+- The previous inline mark looked soft at small sizes, and the ChatGPT SVG should render more cleanly in the compact session list
+
+**Key files:** ui/src/components/SessionIcons.tsx, ui/public/chatgpt-logo.svg
+**Verification:** `npm run build` passed in `ui/`; `rg -n "openAiMarkPath|chatgpt-logo\\.svg|provider === 'codex'" ui/src/components/SessionIcons.tsx` confirmed the `codex` icon now uses the static ChatGPT SVG asset with no inline path left
+**Commit:** None
+**Next:** If this still feels soft, inspect the rendered CSS box and consider per-provider sizing instead of changing the source asset again
+**Blockers:** None
+
+## 2026-03-19: Claude session icon uses Claude symbol
+
+**What changed:**
+- Replaced the Claude session icon asset with a Claude-specific SVG in `ui/public/`
+- Updated the shared provider icon component to load the new SVG instead of the old Anthropic company mark
+- Added a small effort note under `doc/todo/v0/efforts/claude-code-icon/`
+
+**Why:**
+- The Workspace should identify Claude sessions with a Claude-specific mark, not the Anthropic corporate logo
+
+**Key files:** ui/src/components/SessionIcons.tsx, ui/public/claude-code-symbol.svg, doc/todo/v0/efforts/claude-code-icon/plan.md
+**Verification:** `npm run build` passed in `ui/`; `rg -n "anthropic-mark\\.png" .` only returned a historical `doc/PROGRESS.md` entry, with no live code references left
+**Commit:** None
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-19: Restore terminal mouse selection visibility
 
 **What changed:**
