@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { serve } from '@hono/node-server'
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
+import { isIP } from 'node:net'
 import { projectRoutes } from './routes/projects.js'
 import { workstreamRoutes } from './routes/workstreams.js'
 import { progressRoutes } from './routes/progress.js'
@@ -14,15 +15,54 @@ import { startWatching } from './lib/watcher.js'
 import { attachSession } from './lib/terminal.js'
 import type { IPty } from 'node-pty'
 
-const ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:5174')
+const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
   .split(',')
   .map(s => s.trim())
+  .filter(Boolean)
 
 const SESSION_NAME_RE = /^[a-zA-Z0-9_.-]+$/
+const DEFAULT_ALLOWED_HOSTNAMES = new Set(['localhost', '::1', 'moonkeys-mbp'])
+
+function isPrivateHostname(hostname: string): boolean {
+  if (DEFAULT_ALLOWED_HOSTNAMES.has(hostname) || hostname.endsWith('.local')) {
+    return true
+  }
+
+  const ipVersion = isIP(hostname)
+  if (ipVersion === 0) return false
+  if (ipVersion === 6) return hostname === '::1'
+
+  if (hostname.startsWith('127.')) return true
+
+  const [a, b] = hostname.split('.').map(Number)
+  return a === 10
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 168)
+    || (a === 169 && b === 254)
+}
+
+function isAllowedOrigin(origin?: string | null): boolean {
+  if (!origin) return true
+
+  try {
+    const url = new URL(origin)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false
+
+    if (EXPLICIT_ALLOWED_ORIGINS.length > 0) {
+      return EXPLICIT_ALLOWED_ORIGINS.includes(origin)
+    }
+
+    return isPrivateHostname(url.hostname)
+  } catch {
+    return false
+  }
+}
 
 const app = new Hono()
 
-app.use('*', cors({ origin: ALLOWED_ORIGINS }))
+app.use('*', cors({
+  origin: (origin) => isAllowedOrigin(origin) ? origin : undefined,
+}))
 
 app.route('/api/projects', projectRoutes)
 app.route('/api/workstreams', workstreamRoutes)
@@ -49,7 +89,10 @@ const server = serve({ fetch: app.fetch, port }, () => {
 
 // WebSocket server on the same HTTP server
 const wss = new WebSocketServer({ noServer: true })
-const ptyMap = new Map<WebSocket, IPty>()
+type PtySubscription = ReturnType<IPty['onData']>
+
+const ptyMap = new Map<WebSocket, ReturnType<typeof attachSession>>()
+const subscriptionMap = new Map<WebSocket, { data: PtySubscription; exit: PtySubscription }>()
 
 server.on('upgrade', (req: IncomingMessage, socket, head) => {
   const url = new URL(req.url ?? '', `http://localhost:${port}`)
@@ -61,7 +104,7 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
 
   // Validate origin
   const origin = req.headers.origin
-  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+  if (!isAllowedOrigin(origin)) {
     socket.destroy()
     return
   }
@@ -82,19 +125,24 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
 
 wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number) => {
   try {
-    const proc = attachSession(sessionName, cols, rows)
+    const attached = attachSession(sessionName, cols, rows)
+    const { proc } = attached
 
-    proc.onData((data: string) => {
+    const dataSubscription = proc.onData((data: string) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(data)
     })
 
-    proc.onExit(() => {
-      ptyMap.delete(ws)
+    const exitSubscription = proc.onExit(() => {
       if (ws.readyState === WebSocket.OPEN) ws.close()
     })
 
-    ptyMap.set(ws, proc)
+    ptyMap.set(ws, attached)
+    subscriptionMap.set(ws, { data: dataSubscription, exit: exitSubscription })
     console.log(`[ws] terminal attached: ${sessionName} (pid=${proc.pid})`)
+
+    if (attached.initialData && ws.readyState === WebSocket.OPEN) {
+      ws.send(attached.initialData)
+    }
   } catch (err) {
     console.error(`[ws] failed to attach: ${sessionName}`, err)
     ws.close()
@@ -102,8 +150,9 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
   }
 
   ws.on('message', (raw) => {
-    const proc = ptyMap.get(ws)
-    if (!proc) return
+    const attached = ptyMap.get(ws)
+    if (!attached) return
+    const { proc } = attached
 
     const str = raw.toString()
     if (str[0] === '{') {
@@ -123,11 +172,19 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
   })
 
   ws.on('close', () => {
-    const proc = ptyMap.get(ws)
-    if (proc) {
-      proc.kill()
+    const attached = ptyMap.get(ws)
+    const subscription = subscriptionMap.get(ws)
+
+    subscription?.data.dispose()
+    subscription?.exit.dispose()
+
+    if (attached) {
+      if (!attached.persistent) {
+        attached.proc.kill()
+      }
       ptyMap.delete(ws)
     }
+    subscriptionMap.delete(ws)
     console.log(`[ws] terminal detached: ${sessionName}`)
   })
 })

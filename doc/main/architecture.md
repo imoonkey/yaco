@@ -13,7 +13,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 | Project | `~/.workflow/projects.json` | Registered repo with name + absolute path |
 | Workstream | `doc/todo/<name>/workstream.json` | Unit of work: status, doc ref, checkpoints |
 | Progress | `doc/todo/<name>/progress.json` | Append-only notification log per workstream |
-| Session | Live from `multmux status` | Agent session (processing/idle), not persisted |
+| Session | Live from `multmux status` + in-memory shell registry | Claude/Codex agent sessions plus direct shell sessions |
 
 ## State Model
 
@@ -41,11 +41,11 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 ```
 ┌────────────────────────────────────────────────┐
 │  Browser (React + Vite)                        │
-│  ┌──────────┐ ┌───────────┐ ┌────────────┐    │
-│  │ Monitor  │ │ Workspace │ │  Roadmap   │    │
-│  └────┬─────┘ └─────┬─────┘ └─────┬──────┘    │
-│       │    HTTP/WS   │             │           │
-├───────┴──────────────┴─────────────┴───────────┤
+│  ┌──────────┐ ┌───────────┐                    │
+│  │ Monitor  │ │ Workspace │                    │
+│  └────┬─────┘ └─────┬─────┘                    │
+│       │    HTTP/WS   │                          │
+├───────┴──────────────┴──────────────────────────┤
 │  Hono Server (Node.js)        :3001            │
 │  ├── /api/projects        (projects.json)      │
 │  ├── /api/workstreams     (scan workstream.json)│
@@ -64,14 +64,26 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 └────────────────────────────────────────────────┘
 ```
 
+## App Shell
+
+- **Top nav** — Monitor and Workspace remain top-level view tabs in the header
+- **Bottom project bar** — project switching lives in a bottom tab strip shared across views; `All Projects` is available in Monitor and hidden in Workspace, which always targets one concrete repo; when space is tight the project list scrolls horizontally and the add action collapses to a `+` button
+- **Mobile pane switching** — on narrow screens the app keeps the same views but swaps multi-column content for a single full-width pane controlled by an explicit segmented switcher
+
 ## Workspace Features
 
 - **Multi-tab editor** — open/close/switch files, Cmd-W to close, Cmd-P file search, Cmd-B sidebar toggle
 - **File type icons** — colored SVG icons by extension (Seti-like)
 - **Git integration** — file tree shows M/U/A/D badges, folder change dots, Source Control section with diff viewer
-- **Unsaved indicator** — dirty tabs show black dot instead of close button
+- **Session actions** — sidebar shows provider logos, can start Claude, Codex, or direct `shell-N` sessions
+- **Empty-editor layout** — when no file tabs are open, the terminal/session pane expands to occupy the full main content area
+- **Terminal clipboard bridge** — browser terminal handles terminal-side `OSC 52` clipboard writes and browser copy shortcuts for selected terminal text
+- **Workspace state persistence** — open tabs, active session, sidebar toggles, and panel sizes are stored per project in localStorage and restored on refresh
+- **Unsaved indicator** — dirty tabs show black dot instead of close button, and the dirty/close affordance sits on the right side of each editor tab
 - **Markdown preview** — toggle Edit/Preview for .md files
 - **Collapsible sidebar** — Explorer, Changes, Sessions sections with draggable dividers
+- **Window close hijack** — Workspace does a best-effort Cmd-W interception: normal keydown capture plus `Keyboard Lock` for `KeyW` when the browser supports it in a secure context; when that succeeds, Cmd-W closes the focused in-app editor tab or attached terminal session instead of the browser tab
+- **Mobile single-pane flow** — Workspace shows one full-width pane at a time on mobile (`Files`, `Editor`, `Terminal`); selecting a file jumps to `Editor`, selecting a session jumps to `Terminal`, and background updates never force pane changes
 
 ## Security
 
@@ -79,6 +91,6 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 - File paths resolved via `realpath()` to prevent symlink traversal
 - Write restricted to `.md` and `.json` in v0
 - WebSocket origin validation against allowed origins
-- CORS configurable via `WORKFLOW_CORS_ORIGINS` env var
+- CORS/WebSocket origins configurable via `WORKFLOW_CORS_ORIGINS`; when unset, localhost, `moonkeys-mbp`, `.local`, and private-LAN HTTP(S) origins are allowed for local/mobile development
 - File write operations use in-process locks to prevent race conditions
 - Git commands use `spawnSync`/`execFileSync` with array args (no shell injection)

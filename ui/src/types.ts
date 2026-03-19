@@ -4,6 +4,7 @@ export type WorkstreamStatus = 'active' | 'human_review' | 'blocked' | 'parked' 
 export type ProgressType = 'info' | 'human_review' | 'blocked'
 export type ProgressStatus = 'active' | 'dismissed'
 export type SessionStatus = 'processing' | 'idle'
+export type SessionProvider = 'claude' | 'codex' | 'shell'
 
 export interface Project {
   name: string
@@ -28,6 +29,7 @@ export interface Workstream {
 
 export interface AgentSession {
   name: string
+  provider: SessionProvider
   status: SessionStatus
   project: string
 }

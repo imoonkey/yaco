@@ -1,5 +1,6 @@
 import { spawn, execSync } from 'child_process'
 import type { Project } from './projects'
+import { resolveTmuxSession, validateSessionName } from './session-names'
 
 // Resolve multmux path at startup
 const MULTMUX_PATH = (() => {
@@ -12,20 +13,17 @@ const MULTMUX_PATH = (() => {
 
 export interface MultmuxSession {
   name: string
+  provider: 'claude' | 'codex'
   status: 'processing' | 'idle'
   project: string
 }
 
-const SESSION_NAME_RE = /^[a-zA-Z0-9_.-]+$/
-
-function validateSessionName(name: string): void {
-  if (!SESSION_NAME_RE.test(name)) {
-    throw new Error(`Invalid session name: ${name}`)
-  }
+export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
+  return name.toLowerCase().includes('codex') ? 'codex' : 'claude'
 }
 
 /** Query multmux status for a specific project directory */
-async function getSessionsForProject(project: Project): Promise<MultmuxSession[]> {
+export async function getSessionsForProject(project: Project): Promise<MultmuxSession[]> {
   try {
     const output = await spawnOutput(MULTMUX_PATH, ['status'], 5000, project.path)
     return parseMultmuxOutput(output, project.name)
@@ -37,15 +35,13 @@ async function getSessionsForProject(project: Project): Promise<MultmuxSession[]
 /** Get sessions across all projects */
 export async function getAllSessions(projects: Project[]): Promise<MultmuxSession[]> {
   const results = await Promise.all(projects.map(getSessionsForProject))
-  // Deduplicate by name (a session might show up if cwd is ambiguous)
   const seen = new Set<string>()
   const all: MultmuxSession[] = []
   for (const sessions of results) {
-    for (const s of sessions) {
-      if (!seen.has(s.name)) {
-        seen.add(s.name)
-        all.push(s)
-      }
+    for (const session of sessions) {
+      if (seen.has(session.name)) continue
+      seen.add(session.name)
+      all.push(session)
     }
   }
   return all
@@ -59,8 +55,10 @@ export function parseMultmuxOutput(output: string, projectName: string): Multmux
   for (const line of lines) {
     const match = line.match(/^(\S+)\s+(processing|idle)\s*$/i)
     if (match) {
+      const name = match[1].trim()
       sessions.push({
-        name: match[1].trim(),
+        name,
+        provider: inferMultmuxProvider(name),
         status: match[2].toLowerCase() as 'processing' | 'idle',
         project: projectName,
       })
@@ -76,12 +74,18 @@ export async function sendToSession(handle: string, message: string): Promise<vo
 }
 
 /** Start a new multmux session: multmux <provider> -n <name> */
-export async function startMultmuxSession(provider: string, name: string, cwd: string, prompt?: string): Promise<void> {
+export async function startMultmuxSession(provider: 'claude' | 'codex', name: string, cwd: string, prompt?: string): Promise<void> {
   validateSessionName(name)
-  const args = [provider]
+  const args: string[] = [provider]
   if (prompt) args.push(prompt)
   args.push('-n', name)
   await spawnOutput(MULTMUX_PATH, args, 10000, cwd)
+}
+
+export async function closeMultmuxSession(handle: string): Promise<void> {
+  validateSessionName(handle)
+  const tmuxName = resolveTmuxSession(handle)
+  await spawnOutput('tmux', ['kill-session', '-t', tmuxName], 5000)
 }
 
 /** Collect stdout from a spawned process */

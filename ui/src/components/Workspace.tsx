@@ -1,9 +1,12 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useFileTree, useFileContent, useSessions, useGitStatus, saveFileContent, startSession, fetchGitDiff } from '../hooks/useApi'
+import { useFileTree, useFileContent, useSessions, useGitStatus, saveFileContent, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
+import { useIsMobile } from '../hooks/useIsMobile'
 import { Editor } from './Editor'
 import { Terminal } from './Terminal'
+import { ProviderIcon } from './SessionIcons'
+import { PaneSwitch } from './PaneSwitch'
 import { marked } from 'marked'
-import type { FileNode, AgentSession, GitChange } from '../types'
+import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
 
 // --- VS Code Solarized Light palette ---
 const C = {
@@ -20,6 +23,80 @@ const FILE_COLORS: Record<string, string> = {
   svg: '#FFB13B', txt: '#93A1A1',
 }
 const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
+type FocusTarget = 'editor' | 'session' | 'terminal'
+type WorkspaceMobilePane = 'files' | 'editor' | 'terminal'
+const SECTION_HEADER_HEIGHT = 22
+const RESIZE_HANDLE_HEIGHT = 1
+const MIN_SESSION_BODY_HEIGHT = 72
+type KeyboardLockHandle = {
+  lock?: (keyCodes?: string[]) => Promise<void>
+  unlock?: () => void
+}
+
+interface WorkspaceState {
+  openTabs: string[]
+  activeTab: string | null
+  activeSession: string
+  showSidebar: boolean
+  showExplorer: boolean
+  showSessions: boolean
+  showChanges: boolean
+  previewMode: boolean
+  leftSize: number
+  rightSize: number
+  explorerSize: number
+  changesSize: number
+}
+
+const DEFAULT_WORKSPACE_STATE: WorkspaceState = {
+  openTabs: [],
+  activeTab: null,
+  activeSession: '',
+  showSidebar: true,
+  showExplorer: true,
+  showSessions: true,
+  showChanges: true,
+  previewMode: false,
+  leftSize: 220,
+  rightSize: 420,
+  explorerSize: 250,
+  changesSize: 150,
+}
+
+function workspaceStorageKey(projectName: string): string {
+  return `workflow-workspace-state:${projectName}`
+}
+
+function loadWorkspaceState(projectName: string): WorkspaceState {
+  try {
+    const raw = localStorage.getItem(workspaceStorageKey(projectName))
+    if (!raw) return DEFAULT_WORKSPACE_STATE
+
+    const parsed = JSON.parse(raw) as Partial<WorkspaceState>
+    const openTabs = Array.isArray(parsed.openTabs) ? parsed.openTabs.filter((tab): tab is string => typeof tab === 'string') : []
+    const activeTab = typeof parsed.activeTab === 'string' && openTabs.includes(parsed.activeTab) ? parsed.activeTab : openTabs[0] ?? null
+
+    return {
+      ...DEFAULT_WORKSPACE_STATE,
+      ...parsed,
+      openTabs,
+      activeTab,
+      activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
+    }
+  } catch {
+    return DEFAULT_WORKSPACE_STATE
+  }
+}
+
+function saveWorkspaceState(projectName: string, state: WorkspaceState) {
+  localStorage.setItem(workspaceStorageKey(projectName), JSON.stringify(state))
+}
+
+function inferMobilePane(openTabs: string[], activeSession: string): WorkspaceMobilePane {
+  if (openTabs.length > 0) return 'editor'
+  if (activeSession) return 'terminal'
+  return 'files'
+}
 
 function FileTypeIcon({ name }: { name: string }) {
   const ext = name.split('.').pop()?.toLowerCase() || ''
@@ -50,27 +127,31 @@ function useResize(initial: number, min: number, max: number, direction: 'left' 
   const dragging = useRef(false)
   const startPos = useRef(0)
   const startSize = useRef(0)
+  const clamp = useCallback((value: number) => Math.min(max, Math.max(min, value)), [max, min])
+  const setClampedSize = useCallback((value: number) => {
+    setSize(clamp(value))
+  }, [clamp])
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     dragging.current = true; setIsDragging(true)
     startPos.current = direction === 'down' ? e.clientY : e.clientX
     startSize.current = size; e.preventDefault()
-  }, [size, direction])
+  }, [direction, size])
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!dragging.current) return
       const pos = direction === 'down' ? e.clientY : e.clientX
       const delta = direction === 'right' ? startPos.current - pos : pos - startPos.current
-      setSize(Math.min(max, Math.max(min, startSize.current + delta)))
+      setSize(clamp(startSize.current + delta))
     }
     const onMouseUp = () => { dragging.current = false; setIsDragging(false) }
     document.addEventListener('mousemove', onMouseMove)
     document.addEventListener('mouseup', onMouseUp)
     return () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp) }
-  }, [min, max, direction])
+  }, [clamp, direction])
 
-  return { size, isDragging, onMouseDown }
+  return { size, setSize: setClampedSize, isDragging, onMouseDown }
 }
 
 // --- Resize Handles ---
@@ -163,17 +244,11 @@ function SessionItem({ session, isActive, onClick }: { session: AgentSession; is
       style={isActive ? undefined : { color: C.text }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
+      <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[#859900] animate-pulse' : 'bg-[#93a1a1]'}`} />
       <span className="truncate">{session.name}</span>
     </div>
   )
-}
-
-function ClaudeIcon() {
-  return <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#D97706" /><path d="M8 12l2.5 2.5L16 9" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-}
-function CodexIcon() {
-  return <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none"><rect x="3" y="3" width="18" height="18" rx="4" fill="#10B981" /><path d="M8 12h8M12 8v8" stroke="white" strokeWidth="2" strokeLinecap="round" /></svg>
 }
 
 function flattenTree(nodes: FileNode[], result: FileNode[] = []): FileNode[] {
@@ -275,21 +350,28 @@ function MarkdownPreview({ content }: { content: string }) {
 // Main Workspace
 // ============================================================
 export function Workspace({ projectName, projectPath }: { projectName: string; projectPath: string }) {
-  const [openTabs, setOpenTabs] = useState<string[]>([])
-  const [activeTab, setActiveTab] = useState<string | null>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const sidebarRef = useRef<HTMLDivElement>(null)
+  const initialState = loadWorkspaceState(projectName)
+  const isMobile = useIsMobile()
+  const [openTabs, setOpenTabs] = useState<string[]>(initialState.openTabs)
+  const [activeTab, setActiveTab] = useState<string | null>(initialState.activeTab)
   const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set())
-  const [activeSession, setActiveSession] = useState('')
-  const [showSidebar, setShowSidebar] = useState(true)
-  const [showExplorer, setShowExplorer] = useState(true)
-  const [showSessions, setShowSessions] = useState(true)
-  const [showChanges, setShowChanges] = useState(true)
+  const [activeSession, setActiveSession] = useState(initialState.activeSession)
+  const [mobilePane, setMobilePane] = useState<WorkspaceMobilePane>(() => inferMobilePane(initialState.openTabs, initialState.activeSession))
+  const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
+  const [showSidebar, setShowSidebar] = useState(initialState.showSidebar)
+  const [showExplorer, setShowExplorer] = useState(initialState.showExplorer)
+  const [showSessions, setShowSessions] = useState(initialState.showSessions)
+  const [showChanges, setShowChanges] = useState(initialState.showChanges)
   const [showSearch, setShowSearch] = useState(false)
-  const [previewMode, setPreviewMode] = useState(false)
+  const [previewMode, setPreviewMode] = useState(initialState.previewMode)
   const [diffContent, setDiffContent] = useState<string | null>(null)
-  const [diffLoading, setDiffLoading] = useState(false)
+  const [diffError, setDiffError] = useState(false)
+  const [sidebarHeight, setSidebarHeight] = useState(0)
 
   const { data: fileTree } = useFileTree(projectName)
-  const { data: sessions, refresh: refreshSessions } = useSessions()
+  const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitChanges } = useGitStatus(projectName)
 
   // Only fetch file content for non-diff tabs
@@ -298,22 +380,30 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   // Fetch diff when a diff tab is active
   useEffect(() => {
-    if (!activeTab?.startsWith('diff:')) { setDiffContent(null); return }
+    if (!activeTab?.startsWith('diff:')) return
     const path = activeTab.slice(5)
     let cancelled = false
-    setDiffLoading(true)
     fetchGitDiff(projectName, path)
-      .then(d => { if (!cancelled) setDiffContent(d) })
-      .catch(() => { if (!cancelled) setDiffContent(null) })
-      .finally(() => { if (!cancelled) setDiffLoading(false) })
+      .then(d => {
+        if (cancelled) return
+        setDiffContent(d)
+        setDiffError(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setDiffContent(null)
+        setDiffError(true)
+      })
     return () => { cancelled = true }
   }, [activeTab, projectName])
 
-  const allSessions = sessions ?? []
-  const processing = allSessions.filter(s => s.status === 'processing')
-  const idle = allSessions.filter(s => s.status === 'idle')
+  const projectSessions = useMemo(() => sessions ?? [], [sessions])
+  const processing = projectSessions.filter(s => s.status === 'processing')
+  const idle = projectSessions.filter(s => s.status === 'idle')
   const allFiles = fileTree ? flattenTree(fileTree) : []
-  const changes = gitChanges ?? []
+  const changes = useMemo(() => gitChanges ?? [], [gitChanges])
+  const attachedSession = projectSessions.some(session => session.name === activeSession) ? activeSession : ''
+  const activeSessionInfo = projectSessions.find(s => s.name === attachedSession) ?? null
 
   // Git status maps for file tree
   const gitMap = useMemo(() => {
@@ -331,21 +421,42 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     return s
   }, [changes])
 
-  const left = useResize(220, 140, 400)
-  const right = useResize(420, 250, 700, 'right')
-  const sidebarSplit = useResize(250, 60, 800, 'down')
+  const visibleSectionCount = [showExplorer, showChanges, showSessions].filter(Boolean).length
+  const visibleHandleCount = (showExplorer && (showChanges || showSessions) ? 1 : 0) + (showChanges && showSessions ? 1 : 0)
+  const availableSectionHeight = Math.max(
+    0,
+    sidebarHeight - visibleSectionCount * SECTION_HEADER_HEIGHT - visibleHandleCount * RESIZE_HANDLE_HEIGHT
+  )
+  const left = useResize(initialState.leftSize, 140, 600)
+  const right = useResize(initialState.rightSize, 250, 900, 'right')
+  const explorerMax = Math.max(0, availableSectionHeight - (showChanges ? 0 : 0) - (showSessions ? MIN_SESSION_BODY_HEIGHT : 0))
+  const explorerSplit = useResize(initialState.explorerSize, 0, explorerMax, 'down')
+  const explorerHeight = showExplorer ? Math.min(explorerSplit.size, explorerMax) : 0
+  const changesMax = Math.max(
+    0,
+    availableSectionHeight - explorerHeight - (showSessions ? MIN_SESSION_BODY_HEIGHT : 0)
+  )
+  const changesSplit = useResize(initialState.changesSize, 0, changesMax, 'down')
+  const changesHeight = showChanges ? Math.min(changesSplit.size, changesMax) : 0
 
   const isMd = activeTab?.endsWith('.md')
+  const hasOpenFiles = openTabs.length > 0
 
   const openFile = useCallback((path: string) => {
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
     setActiveTab(path)
+    setFocusTarget('editor')
+    setMobilePane('editor')
   }, [])
 
   const openDiff = useCallback((path: string) => {
     const tab = `diff:${path}`
     setOpenTabs(tabs => tabs.includes(tab) ? tabs : [...tabs, tab])
     setActiveTab(tab)
+    setDiffContent(null)
+    setDiffError(false)
+    setFocusTarget('editor')
+    setMobilePane('editor')
   }, [])
 
   const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
@@ -358,25 +469,164 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     setDirtyTabs(prev => { const n = new Set(prev); n.delete(path); return n })
   }, [])
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.metaKey && e.key === 'b') { e.preventDefault(); setShowSidebar(v => !v) }
-      if (e.metaKey && e.key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
-      if (e.metaKey && e.key === 'w') { e.preventDefault(); if (activeTab) closeTab(activeTab) }
+  const closeActiveSession = useCallback(async () => {
+    if (!attachedSession) return
+
+    const sessionName = attachedSession
+    setActiveSession('')
+
+    try {
+      await closeRemoteSession(sessionName)
+      refreshSessions()
+    } catch (err) {
+      console.error('Failed to close session:', err)
+      setActiveSession(sessionName)
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
+  }, [attachedSession, refreshSessions])
+
+  const closeActiveTab = useCallback((): boolean => {
+    if (!activeTab) return false
+    closeTab(activeTab)
+    return true
   }, [activeTab, closeTab])
 
-  const handleNewSession = async (agent: 'claude' | 'codex') => {
-    try { await startSession(agent, projectPath); refreshSessions() }
+  const closeAttachedSession = useCallback((): boolean => {
+    if (!attachedSession) return false
+    void closeActiveSession()
+    return true
+  }, [attachedSession, closeActiveSession])
+
+  const closeFocusedSurface = useCallback((): boolean => {
+    if (showSearch) {
+      setShowSearch(false)
+      return true
+    }
+
+    if ((focusTarget === 'terminal' || focusTarget === 'session') && closeAttachedSession()) {
+      return true
+    }
+
+    if (focusTarget === 'editor' && closeActiveTab()) {
+      return true
+    }
+
+    if (closeActiveTab() || closeAttachedSession()) {
+      return true
+    }
+
+    return true
+  }, [closeActiveTab, closeAttachedSession, focusTarget, showSearch])
+
+  const getKeyboardLock = useCallback((): KeyboardLockHandle | null => {
+    if (!window.isSecureContext) return null
+    const keyboard = (navigator as Navigator & { keyboard?: KeyboardLockHandle }).keyboard
+    if (!keyboard?.lock || !keyboard.unlock) return null
+    return keyboard
+  }, [])
+
+  const lockCloseShortcut = useCallback(async () => {
+    const keyboard = getKeyboardLock()
+    if (!keyboard?.lock) return
+
+    try {
+      await keyboard.lock(['KeyW'])
+    } catch {
+      // Browser support and allowed key capture vary by host/browser/runtime.
+    }
+  }, [getKeyboardLock])
+
+  const unlockCloseShortcut = useCallback(() => {
+    const keyboard = getKeyboardLock()
+    keyboard?.unlock?.()
+  }, [getKeyboardLock])
+
+  useEffect(() => {
+    if (!sidebarRef.current) return
+    const observer = new ResizeObserver(([entry]) => {
+      setSidebarHeight(entry.contentRect.height)
+    })
+    observer.observe(sidebarRef.current)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    saveWorkspaceState(projectName, {
+      openTabs,
+      activeTab,
+      activeSession: attachedSession,
+      showSidebar,
+      showExplorer,
+      showSessions,
+      showChanges,
+      previewMode,
+      leftSize: left.size,
+      rightSize: right.size,
+      explorerSize: explorerSplit.size,
+      changesSize: changesSplit.size,
+    })
+  }, [
+    attachedSession,
+    activeTab,
+    changesSplit.size,
+    explorerSplit.size,
+    left.size,
+    openTabs,
+    previewMode,
+    projectName,
+    right.size,
+    showChanges,
+    showExplorer,
+    showSessions,
+    showSidebar,
+  ])
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase()
+      if (e.metaKey && key === 'b') { e.preventDefault(); setShowSidebar(v => !v) }
+      if (e.metaKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
+      if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'w' && closeFocusedSurface()) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [closeFocusedSurface])
+
+  useEffect(() => {
+    const handleBlur = () => {
+      unlockCloseShortcut()
+    }
+    const handleVisibilityChange = () => {
+      if (document.hidden) unlockCloseShortcut()
+    }
+
+    window.addEventListener('blur', handleBlur)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('blur', handleBlur)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      unlockCloseShortcut()
+    }
+  }, [unlockCloseShortcut])
+
+  const handleNewSession = async (provider: SessionProvider) => {
+    try {
+      const name = await startSession(provider, projectPath)
+      setActiveSession(name)
+      setFocusTarget(provider === 'shell' ? 'terminal' : 'session')
+      setMobilePane('terminal')
+      refreshSessions()
+    }
     catch (err) { console.error('Failed to start session:', err) }
   }
 
   const sessionActions = (
     <div className="flex gap-1">
-      <button onClick={() => handleNewSession('claude')} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title="New Claude"><ClaudeIcon /> <span className="text-[9px]">+</span></button>
-      <button onClick={() => handleNewSession('codex')} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title="New Codex"><CodexIcon /> <span className="text-[9px]">+</span></button>
+      <button onClick={() => handleNewSession('claude')} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title="New Claude"><ProviderIcon provider="claude" className="w-3.5 h-3.5" /> <span className="text-[9px]">+</span></button>
+      <button onClick={() => handleNewSession('codex')} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title="New Codex"><ProviderIcon provider="codex" className="w-3.5 h-3.5 text-[#111111]" /> <span className="text-[9px]">+</span></button>
+      <button onClick={() => handleNewSession('shell')} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title="New Shell"><ProviderIcon provider="shell" className="w-3.5 h-3.5" /> <span className="text-[9px]">+</span></button>
     </div>
   )
 
@@ -386,124 +636,253 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     return tab.split('/').pop() || tab
   }
 
-  return (
-    <div className="flex h-full select-none">
-      {showSearch && <FileSearch files={allFiles} onSelect={openFile} onClose={() => setShowSearch(false)} />}
-
-      {/* Left sidebar */}
-      {showSidebar && (
-        <>
-          <div className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
-            {/* Explorer */}
-            <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
-            {showExplorer && (
-              <div className="overflow-y-auto py-1 px-1 shrink-0" style={{ height: (showSessions || showChanges) ? sidebarSplit.size : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }}>
-                {(fileTree ?? []).map(node => (
-                  <FileTreeNode key={node.path} node={node} depth={0} selected={activeTab} onSelect={openFile} gitMap={gitMap} gitFolders={gitFolders} />
-                ))}
-                {!fileTree && <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>}
-              </div>
-            )}
-
-            {showExplorer && (showSessions || showChanges) && <HResizeHandle onMouseDown={sidebarSplit.onMouseDown} isDragging={sidebarSplit.isDragging} />}
-
-            {/* Source Control */}
-            <SectionHeader title="Changes" collapsed={!showChanges} onToggle={() => setShowChanges(v => !v)} badge={changes.length || undefined} />
-            {showChanges && (
-              <div className="overflow-y-auto py-1 px-1 min-h-0" style={{ flex: showSessions ? 'none' : 1, maxHeight: showSessions ? 150 : undefined }}>
-                {changes.map(c => (
-                  <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onClick={() => openDiff(c.path)} />
-                ))}
-                {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
-              </div>
-            )}
-
-            {/* Sessions */}
-            <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => setShowSessions(v => !v)} actions={sessionActions} />
-            {showSessions && (
-              <div className="flex-1 overflow-y-auto py-1 px-1 min-h-0">
-                {processing.map(s => <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />)}
-                {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
-                {idle.map(s => <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />)}
-                {allSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
-              </div>
-            )}
+  const filesPaneMobile = (
+    <div className="h-full overflow-y-auto" style={{ backgroundColor: C.bg }}>
+      <div className="flex flex-col min-h-full">
+        <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
+        {showExplorer && (
+          <div className="py-1 px-1">
+            {(fileTree ?? []).map(node => (
+              <FileTreeNode key={node.path} node={node} depth={0} selected={activeTab} onSelect={openFile} gitMap={gitMap} gitFolders={gitFolders} />
+            ))}
+            {!fileTree && <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>}
           </div>
-          <VResizeHandle onMouseDown={left.onMouseDown} isDragging={left.isDragging} />
-        </>
-      )}
+        )}
 
-      {/* Center: Editor */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-[200px]" style={{ backgroundColor: C.editorBg }}>
-        {/* Tab bar */}
-        <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 35, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-          {openTabs.length === 0 ? (
-            <span className="px-4 text-[11px]" style={{ color: C.textDim }}>No files open</span>
-          ) : openTabs.map(tab => {
-            const isActive = tab === activeTab
-            const isDirty = dirtyTabs.has(tab)
-            const isDiff = tab.startsWith('diff:')
-            return (
-              <div key={tab} onClick={() => setActiveTab(tab)}
-                className="group flex items-center gap-1 px-3 h-full cursor-pointer text-[12px] shrink-0"
-                style={{
-                  backgroundColor: isActive ? C.editorBg : C.bg, color: isActive ? C.textDark : C.textDim,
-                  borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isDiff ? '#C4A241' : C.text}` : '2px solid transparent',
-                  borderBottom: isActive ? `1px solid ${C.editorBg}` : `1px solid ${C.border}`, marginBottom: -1,
-                }} title={tab}>
-                {isDirty ? (
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: C.textDark }} />
-                ) : (
-                  <button onClick={(e) => closeTab(tab, e)}
-                    className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-[10px] cursor-pointer" style={{ color: C.textDim }}
-                    onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.hover)} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>×</button>
-                )}
-                <span className="truncate max-w-[120px]">{tabName(tab)}</span>
-              </div>
-            )
-          })}
-          {isMd && !isDiffTab && (
-            <button onClick={() => setPreviewMode(!previewMode)} className="ml-auto mr-2 text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
-              style={{ backgroundColor: previewMode ? '#268bd215' : C.bg, color: previewMode ? C.accent : C.text, borderColor: previewMode ? '#268bd230' : C.border }}>
-              {previewMode ? 'Edit' : 'Preview'}
-            </button>
-          )}
-        </div>
+        <SectionHeader title="Changes" collapsed={!showChanges} onToggle={() => setShowChanges(v => !v)} badge={changes.length || undefined} />
+        {showChanges && (
+          <div className="py-1 px-1">
+            {changes.map(c => (
+              <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onClick={() => openDiff(c.path)} />
+            ))}
+            {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
+          </div>
+        )}
 
-        {/* Editor / Diff content */}
-        <div className="flex-1 overflow-y-auto">
-          {isDiffTab ? (
-            diffLoading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
-            : diffContent != null ? <DiffView diff={diffContent} />
-            : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
-          ) : activeTab ? (
-            loading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
-            : content !== null ? (
-              isMd && previewMode ? <MarkdownPreview content={content} /> : (
-                <Editor content={content} filePath={activeTab}
-                  readOnly={!activeTab.endsWith('.md') && !activeTab.endsWith('.json')}
-                  onDirty={(dirty) => setDirtyTabs(prev => { const n = new Set(prev); dirty ? n.add(activeTab!) : n.delete(activeTab!); return n })}
-                  onSave={async (newContent) => { await saveFileContent(projectName, activeTab!, newContent); setDirtyTabs(prev => { const n = new Set(prev); n.delete(activeTab!); return n }) }}
-                />
-              )
-            ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>
-          ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Select a file</div>}
-        </div>
-      </div>
-
-      <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />
-
-      {/* Right: Terminal */}
-      <div className="flex flex-col overflow-hidden" style={{ width: right.size, backgroundColor: C.bg, boxShadow: '-1px 0 3px rgba(0,0,0,0.06)' }}>
-        {activeSession ? (
-          <>
-            <div className="h-8 flex items-center px-3 text-[11px] shrink-0" style={{ borderBottom: `1px solid ${C.border}`, color: C.text }}><span className="truncate">{activeSession}</span></div>
-            <div className="flex-1 overflow-hidden p-1.5"><Terminal sessionName={activeSession} /></div>
-          </>
-        ) : (
-          <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a session to attach terminal</div>
+        <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => setShowSessions(v => !v)} actions={sessionActions} />
+        {showSessions && (
+          <div className="py-1 px-1">
+            {processing.map(s => (
+              <SessionItem
+                key={s.name}
+                session={s}
+                isActive={s.name === attachedSession}
+                onClick={() => {
+                  setActiveSession(s.name)
+                  setFocusTarget('session')
+                  setMobilePane('terminal')
+                }}
+              />
+            ))}
+            {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
+            {idle.map(s => (
+              <SessionItem
+                key={s.name}
+                session={s}
+                isActive={s.name === attachedSession}
+                onClick={() => {
+                  setActiveSession(s.name)
+                  setFocusTarget('session')
+                  setMobilePane('terminal')
+                }}
+              />
+            ))}
+            {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
+          </div>
         )}
       </div>
+    </div>
+  )
+
+  const editorPane = (
+    <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: C.editorBg }} onMouseDown={() => setFocusTarget('editor')}>
+      <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 35, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+        {openTabs.length === 0 ? (
+          <span className="px-4 text-[11px] shrink-0" style={{ color: C.textDim }}>No files open</span>
+        ) : openTabs.map(tab => {
+          const isActive = tab === activeTab
+          const isDirty = dirtyTabs.has(tab)
+          const isDiff = tab.startsWith('diff:')
+          return (
+            <div key={tab} onClick={() => {
+              setActiveTab(tab)
+              setFocusTarget('editor')
+              if (tab.startsWith('diff:')) {
+                setDiffContent(null)
+                setDiffError(false)
+              }
+            }}
+              className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
+              style={{
+                backgroundColor: isActive ? C.editorBg : C.bg, color: isActive ? C.textDark : C.textDim,
+                borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isDiff ? '#C4A241' : C.text}` : '2px solid transparent',
+                borderBottom: isActive ? `1px solid ${C.editorBg}` : `1px solid ${C.border}`, marginBottom: -1,
+              }} title={tab}>
+              <span className="truncate max-w-[120px]">{tabName(tab)}</span>
+              {isDirty ? (
+                <span className="w-4 h-4 flex items-center justify-center shrink-0">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: C.textDark }} />
+                </span>
+              ) : (
+                <button onClick={(e) => closeTab(tab, e)}
+                  className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-[10px] cursor-pointer" style={{ color: C.textDim }}
+                  onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.hover)} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>×</button>
+              )}
+            </div>
+          )
+        })}
+        {isMd && !isDiffTab && (
+          <button onClick={() => setPreviewMode(!previewMode)} className="ml-auto mr-2 text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
+            style={{ backgroundColor: previewMode ? '#268bd215' : C.bg, color: previewMode ? C.accent : C.text, borderColor: previewMode ? '#268bd230' : C.border }}>
+            {previewMode ? 'Edit' : 'Preview'}
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {isDiffTab ? (
+          !diffError && diffContent == null ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
+          : diffContent != null ? <DiffView diff={diffContent} />
+          : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
+        ) : activeTab ? (
+          loading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
+          : content !== null ? (
+            isMd && previewMode ? <MarkdownPreview content={content} /> : (
+              <Editor content={content} filePath={activeTab}
+                onFocus={() => setFocusTarget('editor')}
+                onCloseRequest={() => {
+                  closeTab(activeTab)
+                }}
+                readOnly={!activeTab.endsWith('.md') && !activeTab.endsWith('.json')}
+                onDirty={(dirty) => setDirtyTabs(prev => {
+                  const n = new Set(prev)
+                  if (dirty) n.add(activeTab!)
+                  else n.delete(activeTab!)
+                  return n
+                })}
+                onSave={async (newContent) => { await saveFileContent(projectName, activeTab!, newContent); setDirtyTabs(prev => { const n = new Set(prev); n.delete(activeTab!); return n }) }}
+              />
+            )
+          ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>
+        ) : <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a file from Files</div>}
+      </div>
+    </div>
+  )
+
+  const terminalPane = (
+    <div
+      className="flex flex-col overflow-hidden min-w-0"
+      style={{
+        flex: isMobile || !hasOpenFiles ? 1 : undefined,
+        width: !isMobile && hasOpenFiles ? right.size : undefined,
+        backgroundColor: C.bg,
+        boxShadow: isMobile ? 'none' : '-1px 0 3px rgba(0,0,0,0.06)',
+      }}
+    >
+      {attachedSession ? (
+        <>
+          <div className="h-8 flex items-center gap-2 px-3 text-[11px] shrink-0" style={{ borderBottom: `1px solid ${C.border}`, color: C.text }}>
+            {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
+            <span className="truncate">{attachedSession}</span>
+          </div>
+          <div className="flex-1 overflow-hidden p-1.5" onMouseDown={() => setFocusTarget('terminal')}>
+            <Terminal
+              sessionName={attachedSession}
+              onInteract={() => setFocusTarget('terminal')}
+              onCloseRequest={() => {
+                void closeActiveSession()
+              }}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a session to attach terminal</div>
+      )}
+    </div>
+  )
+
+  return (
+    <div
+      ref={rootRef}
+      className="flex h-full select-none"
+      onMouseDownCapture={() => { void lockCloseShortcut() }}
+      onTouchStartCapture={() => { void lockCloseShortcut() }}
+      onKeyDownCapture={() => { void lockCloseShortcut() }}
+    >
+      {showSearch && <FileSearch files={allFiles} onSelect={openFile} onClose={() => setShowSearch(false)} />}
+
+      {isMobile ? (
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="shrink-0 border-b border-[#eee8d5] px-3 py-2" style={{ backgroundColor: C.editorBg }}>
+            <PaneSwitch
+              options={[
+                { id: 'files', label: 'Files' },
+                { id: 'editor', label: 'Editor' },
+                { id: 'terminal', label: 'Terminal' },
+              ]}
+              value={mobilePane}
+              onChange={(value) => setMobilePane(value as WorkspaceMobilePane)}
+            />
+          </div>
+          <div className="flex-1 min-h-0">
+            {mobilePane === 'files' && filesPaneMobile}
+            {mobilePane === 'editor' && editorPane}
+            {mobilePane === 'terminal' && terminalPane}
+          </div>
+        </div>
+      ) : (
+        <>
+          {showSidebar && (
+            <>
+              <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
+                <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
+                {showExplorer && (
+                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }}>
+                    {(fileTree ?? []).map(node => (
+                      <FileTreeNode key={node.path} node={node} depth={0} selected={activeTab} onSelect={openFile} gitMap={gitMap} gitFolders={gitFolders} />
+                    ))}
+                    {!fileTree && <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>}
+                  </div>
+                )}
+
+                {showExplorer && (showSessions || showChanges) && <HResizeHandle onMouseDown={explorerSplit.onMouseDown} isDragging={explorerSplit.isDragging} />}
+
+                <SectionHeader title="Changes" collapsed={!showChanges} onToggle={() => setShowChanges(v => !v)} badge={changes.length || undefined} />
+                {showChanges && (
+                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: showSessions ? changesHeight : undefined, flex: showSessions ? 'none' : 1 }}>
+                    {changes.map(c => (
+                      <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onClick={() => openDiff(c.path)} />
+                    ))}
+                    {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
+                  </div>
+                )}
+
+                {showChanges && showSessions && <HResizeHandle onMouseDown={changesSplit.onMouseDown} isDragging={changesSplit.isDragging} />}
+
+                <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => setShowSessions(v => !v)} actions={sessionActions} />
+                {showSessions && (
+                  <div className="flex-1 overflow-y-auto py-1 px-1 min-h-0" style={{ minHeight: MIN_SESSION_BODY_HEIGHT }}>
+                    {processing.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
+                    {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
+                    {idle.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
+                    {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
+                  </div>
+                )}
+              </div>
+              <VResizeHandle onMouseDown={left.onMouseDown} isDragging={left.isDragging} />
+            </>
+          )}
+
+          {hasOpenFiles && (
+            <>
+              {editorPane}
+              <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />
+            </>
+          )}
+
+          {terminalPane}
+        </>
+      )}
     </div>
   )
 }

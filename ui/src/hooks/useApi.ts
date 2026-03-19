@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange } from '../types'
+import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
 
 const API = '/api'
 
@@ -60,8 +60,11 @@ export function useProgress() {
   return usePolling(fetcher, 3_000)
 }
 
-export function useSessions() {
-  const fetcher = useCallback(() => fetchJson<AgentSession[]>('/sessions'), [])
+export function useSessions(projectName?: string | null) {
+  const fetcher = useCallback(
+    () => fetchJson<AgentSession[]>(projectName ? `/sessions?project=${encodeURIComponent(projectName)}` : '/sessions'),
+    [projectName]
+  )
   return usePolling(fetcher, 3_000)
 }
 
@@ -103,9 +106,14 @@ export async function addProject(name: string, path: string): Promise<void> {
   await postJson('/projects', { name, path })
 }
 
-export async function startSession(provider: 'claude' | 'codex', projectPath: string): Promise<void> {
-  const name = `${provider}-${Date.now().toString(36)}`
-  await postJson('/sessions/start', { provider, name, cwd: projectPath })
+export async function startSession(provider: SessionProvider, projectPath: string): Promise<string> {
+  const name = provider === 'shell' ? undefined : `${provider}-${Date.now().toString(36)}`
+  const result = await postJson<{ ok: true; name: string }>('/sessions/start', { provider, name, cwd: projectPath })
+  return result.name
+}
+
+export async function closeSession(name: string): Promise<void> {
+  await postJson(`/sessions/${encodeURIComponent(name)}/close`)
 }
 
 export async function saveFileContent(projectName: string, filePath: string, content: string): Promise<void> {

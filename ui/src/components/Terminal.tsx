@@ -5,10 +5,10 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 
 const SOLARIZED_THEME = {
-  background: '#fdf6e3',
+  background: '#eee8d5',
   foreground: '#657b83',
   cursor: '#586e75',
-  cursorAccent: '#fdf6e3',
+  cursorAccent: '#eee8d5',
   selectionBackground: '#eee8d5',
   black: '#073642',
   red: '#dc322f',
@@ -25,20 +25,79 @@ const SOLARIZED_THEME = {
   brightBlue: '#839496',
   brightMagenta: '#6c71c4',
   brightCyan: '#93a1a1',
-  brightWhite: '#fdf6e3',
+  brightWhite: '#eee8d5',
 }
 
 interface TerminalProps {
   sessionName: string
+  onInteract?: () => void
+  onCloseRequest?: () => void
 }
 
-export function Terminal({ sessionName }: TerminalProps) {
+async function writeToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall back to the legacy copy path below.
+  }
+
+  try {
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.setAttribute('readonly', 'true')
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    textarea.style.pointerEvents = 'none'
+    document.body.appendChild(textarea)
+    textarea.select()
+    const copied = document.execCommand('copy')
+    document.body.removeChild(textarea)
+    return copied
+  } catch {
+    return false
+  }
+}
+
+function decodeOsc52Payload(payload: string): string | null {
+  try {
+    const bytes = Uint8Array.from(window.atob(payload.replace(/\s+/g, '')), char => char.charCodeAt(0))
+    return new TextDecoder().decode(bytes)
+  } catch {
+    return null
+  }
+}
+
+function isCopyShortcut(event: KeyboardEvent): boolean {
+  if (event.key.toLowerCase() !== 'c') return false
+  return event.metaKey || (event.ctrlKey && event.shiftKey)
+}
+
+function isCloseShortcut(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === 'w' && event.metaKey && !event.ctrlKey && !event.altKey
+}
+
+export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
+  const onInteractRef = useRef(onInteract)
+  const onCloseRequestRef = useRef(onCloseRequest)
+
+  useEffect(() => {
+    onInteractRef.current = onInteract
+  }, [onInteract])
+
+  useEffect(() => {
+    onCloseRequestRef.current = onCloseRequest
+  }, [onCloseRequest])
 
   useEffect(() => {
     if (!containerRef.current) return
+
+    const container = containerRef.current
 
     const term = new XTerm({
       theme: SOLARIZED_THEME,
@@ -52,8 +111,51 @@ export function Terminal({ sessionName }: TerminalProps) {
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.loadAddon(new WebLinksAddon())
-    term.open(containerRef.current)
+    term.open(container)
     fitAddon.fit()
+
+    const handleFocusIn = () => {
+      onInteractRef.current?.()
+    }
+    container.addEventListener('focusin', handleFocusIn)
+
+    const osc52Disposable = term.parser.registerOscHandler(52, (data) => {
+      const separatorIndex = data.indexOf(';')
+      if (separatorIndex === -1) return false
+
+      const payload = data.slice(separatorIndex + 1)
+      if (!payload || payload === '?') return true
+
+      const text = decodeOsc52Payload(payload)
+      if (text == null) return true
+
+      void writeToClipboard(text)
+      return true
+    })
+
+    term.attachCustomKeyEventHandler((event) => {
+      if (event.type === 'keydown') {
+        onInteractRef.current?.()
+      }
+
+      if (event.type === 'keydown' && onCloseRequestRef.current && isCloseShortcut(event)) {
+        event.preventDefault()
+        event.stopPropagation()
+        onCloseRequestRef.current()
+        return false
+      }
+
+      if (event.type !== 'keydown' || !term.hasSelection() || !isCopyShortcut(event)) {
+        return true
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      void writeToClipboard(term.getSelection()).then((copied) => {
+        if (copied) term.clearSelection()
+      })
+      return false
+    })
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsHost = window.location.host
@@ -86,9 +188,11 @@ export function Terminal({ sessionName }: TerminalProps) {
     term.onResize(() => sendResize())
 
     const observer = new ResizeObserver(() => fitAddon.fit())
-    observer.observe(containerRef.current)
+    observer.observe(container)
 
     return () => {
+      container.removeEventListener('focusin', handleFocusIn)
+      osc52Disposable.dispose()
       observer.disconnect()
       ws.close()
       term.dispose()
@@ -97,5 +201,5 @@ export function Terminal({ sessionName }: TerminalProps) {
     }
   }, [sessionName])
 
-  return <div ref={containerRef} className="h-full w-full" />
+  return <div ref={containerRef} className="h-full w-full" style={{ backgroundColor: SOLARIZED_THEME.background }} onMouseDown={onInteract} onFocusCapture={onInteract} />
 }

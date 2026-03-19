@@ -80,22 +80,48 @@ interface EditorProps {
   filePath: string
   onSave?: (content: string) => void
   onDirty?: (dirty: boolean) => void
+  onFocus?: () => void
+  onCloseRequest?: () => void
   readOnly?: boolean
 }
 
-export function Editor({ content, filePath, onSave, onDirty, readOnly = false }: EditorProps) {
+function isCloseShortcut(event: KeyboardEvent): boolean {
+  return event.key.toLowerCase() === 'w' && event.metaKey && !event.ctrlKey && !event.altKey
+}
+
+export function Editor({ content, filePath, onSave, onDirty, onFocus, onCloseRequest, readOnly = false }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const contentRef = useRef(content)
   const initialRef = useRef(content)
+  const onSaveRef = useRef(onSave)
+  const onDirtyRef = useRef(onDirty)
+  const onFocusRef = useRef(onFocus)
+  const onCloseRequestRef = useRef(onCloseRequest)
+
+  useEffect(() => {
+    onSaveRef.current = onSave
+  }, [onSave])
+
+  useEffect(() => {
+    onDirtyRef.current = onDirty
+  }, [onDirty])
+
+  useEffect(() => {
+    onFocusRef.current = onFocus
+  }, [onFocus])
+
+  useEffect(() => {
+    onCloseRequestRef.current = onCloseRequest
+  }, [onCloseRequest])
 
   useEffect(() => {
     if (!containerRef.current) return
 
     initialRef.current = content
 
-    const saveKeymap = onSave ? [
-      { key: 'Mod-s', run: (view: EditorView) => { onSave(view.state.doc.toString()); return true } },
+    const saveKeymap = onSaveRef.current ? [
+      { key: 'Mod-s', run: (view: EditorView) => { onSaveRef.current?.(view.state.doc.toString()); return true } },
     ] : []
 
     const state = EditorState.create({
@@ -119,9 +145,25 @@ export function Editor({ content, filePath, onSave, onDirty, readOnly = false }:
         langExtension(filePath),
         EditorView.lineWrapping,
         EditorState.readOnly.of(readOnly),
+        EditorView.domEventHandlers({
+          focus: () => {
+            onFocusRef.current?.()
+            return false
+          },
+          mousedown: () => {
+            onFocusRef.current?.()
+            return false
+          },
+          keydown: (event) => {
+            if (!onCloseRequestRef.current || !isCloseShortcut(event)) return false
+            event.preventDefault()
+            onCloseRequestRef.current()
+            return true
+          },
+        }),
         EditorView.updateListener.of(update => {
-          if (update.docChanged && onDirty) {
-            onDirty(update.state.doc.toString() !== initialRef.current)
+          if (update.docChanged && onDirtyRef.current) {
+            onDirtyRef.current(update.state.doc.toString() !== initialRef.current)
           }
         }),
       ],

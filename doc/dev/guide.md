@@ -3,8 +3,8 @@
 ## Prerequisites
 
 - Node.js >= 22
-- tmux (for terminal integration)
-- multmux (for session management)
+- tmux (for Claude/Codex terminal attach)
+- multmux (for Claude/Codex session management)
 
 ## Project Structure
 
@@ -58,7 +58,7 @@ npm run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server port |
-| `WORKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://localhost:5174` | Comma-separated allowed origins |
+| `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, the server allows localhost, `moonkeys-mbp`, `.local`, and private-LAN HTTP(S) origins for local/mobile development |
 
 ## Project Registration
 
@@ -83,10 +83,12 @@ Or use the UI: project dropdown → "+ Add Project..."
 | POST | `/api/workstreams/:project/:name/status` | Update workstream status |
 | GET | `/api/progress` | All progress entries |
 | POST | `/api/progress/:project/:ws/:id/dismiss` | Dismiss a notification |
-| GET | `/api/sessions` | Live multmux sessions |
-| POST | `/api/sessions/start` | Start new agent session |
+| GET | `/api/sessions` | Live Claude/Codex sessions plus direct shell sessions |
+| GET | `/api/sessions?project=<name>` | Sessions scoped to one registered project |
+| POST | `/api/sessions/start` | Start new Claude/Codex/shell session |
 | POST | `/api/sessions/:handle/pause` | Pause (send /stop) |
 | POST | `/api/sessions/:handle/resume` | Resume with prompt |
+| POST | `/api/sessions/:handle/close` | Close a Claude/Codex/shell session |
 | GET | `/api/files/:project` | File tree |
 | GET | `/api/files/:project/content?path=...` | Read file |
 | PUT | `/api/files/:project/content?path=...` | Write file (.md/.json only) |
@@ -96,7 +98,22 @@ Or use the UI: project dropdown → "+ Add Project..."
 
 ## Terminal Integration
 
-The terminal connects to tmux sessions via node-pty. The WebSocket URL accepts `cols` and `rows` query params so the PTY spawns at the correct size (no initial resize flicker). Session names are resolved from multmux short names (e.g. `1-claude`) to full tmux names (e.g. `1-claude-workflow-mt`).
+The terminal WebSocket supports two backends:
+
+- Claude/Codex sessions attach to tmux via node-pty. Session names are resolved from multmux short names (e.g. `1-claude`) to full tmux names (e.g. `1-claude-workflow-mt`).
+- Shell sessions are direct long-lived PTYs managed in-process and named `shell-1`, `shell-2`, `shell-3`, ...
+
+The WebSocket URL accepts `cols` and `rows` query params so the PTY starts or resizes at the correct dimensions. Direct shell sessions keep a bounded scrollback buffer on the server so re-attaching restores recent output.
+
+## Workspace Persistence
+
+The Workspace view stores per-project UI state in localStorage:
+
+- open tabs + active tab
+- selected session
+- sidebar section visibility
+- left/right panel widths
+- explorer/changes split heights
 
 ## Build
 
