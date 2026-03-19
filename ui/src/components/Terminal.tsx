@@ -28,6 +28,8 @@ const SOLARIZED_THEME = {
   brightWhite: '#eee8d5',
 }
 
+const TERMINAL_RIGHT_GUTTER_PX = 4
+
 interface TerminalProps {
   sessionName: string
   onInteract?: () => void
@@ -112,6 +114,11 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     term.loadAddon(fitAddon)
     term.loadAddon(new WebLinksAddon())
     term.open(container)
+    if (term.element) {
+      term.element.style.boxSizing = 'border-box'
+      term.element.style.height = '100%'
+      term.element.style.paddingRight = `${TERMINAL_RIGHT_GUTTER_PX}px`
+    }
     fitAddon.fit()
 
     const handleFocusIn = () => {

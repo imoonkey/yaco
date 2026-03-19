@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars } from '@codemirror/view'
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, scrollPastEnd } from '@codemirror/view'
 import { EditorState } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
@@ -55,6 +55,7 @@ const solarizedLight = EditorView.theme({
     color: '#657b83',
     fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
     fontSize: '13px',
+    height: '100%',
   },
   '.cm-content': { caretColor: '#586e75' },
   '.cm-cursor': { borderLeftColor: '#586e75' },
@@ -133,6 +134,7 @@ export function Editor({ content, filePath, onSave, onDirty, onFocus, onCloseReq
         highlightSelectionMatches(),
         bracketMatching(),
         history(),
+        scrollPastEnd(),
         syntaxHighlighting(solarizedHighlight),
         solarizedLight,
         keymap.of([
@@ -186,5 +188,5 @@ export function Editor({ content, filePath, onSave, onDirty, onFocus, onCloseReq
     })
   }, [content])
 
-  return <div ref={containerRef} className="h-full overflow-auto" />
+  return <div ref={containerRef} className="h-full overflow-hidden" />
 }

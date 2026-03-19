@@ -1,5 +1,36 @@
 # Progress
 
+## 2026-03-19: Terminal right-edge gutter
+
+**What changed:**
+- Added a small right-side gutter to the embedded xterm instance before running `fit()`
+- Let xterm's own fit calculation subtract that gutter from the available width so the last visible column no longer sits under the terminal edge
+
+**Why:**
+- The terminal's rightmost character cell could be partially clipped at the pane boundary, which made the last column hard to read
+
+**Key files:** ui/src/components/Terminal.tsx
+**Verification:** `npm run build` passed in `ui/`
+**Commit:** None
+**Next:** If needed, tune the gutter by platform if a browser still renders a clipped last column with a different scrollbar model
+**Blockers:** None
+
+## 2026-03-19: Editor scroll past end
+
+**What changed:**
+- Enabled CodeMirror's built-in `scrollPastEnd()` extension for the file editor
+- The editor can now keep scrolling after EOF until the last line reaches the top of the viewport, but not past it
+- Added a short implementation note in `doc/todo/editor-scroll-past-end/plan.md`
+
+**Why:**
+- With the viewport rotated vertically, pinning the last line to the bottom edge made editing near EOF uncomfortable. The editor needed the standard "scroll past end" behavior without custom spacer logic
+
+**Key files:** ui/src/components/Editor.tsx, doc/todo/editor-scroll-past-end/plan.md
+**Verification:** `npm run build` passed in `ui/`
+**Commit:** None
+**Next:** If needed, manually sanity-check the feel on very short files and long wrapped Markdown documents in the browser
+**Blockers:** None
+
 ## 2026-03-19: Editable text files + Markdown preview shortcut
 
 **What changed:**
