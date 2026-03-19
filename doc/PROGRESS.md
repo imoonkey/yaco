@@ -15,7 +15,7 @@
 
 **Key files:** ui/src/components/Workspace.tsx, ui/src/components/Editor.tsx, doc/main/architecture.md, doc/dev/guide.md, doc/todo/sessionhist/preview-edit-alignment-fix-plan.md, doc/PROGRESS.md
 **Verification:** `npm run build` passed; `npm run lint` in `ui/` still fails on pre-existing React hooks lint errors in `ui/src/App.tsx`, `ui/src/components/Workspace.tsx`, and `ui/src/hooks/useApi.ts`
-**Commit:** 52d8d68
+**Commit:** 52d8d68, 79c5071
 **Next:** If the preview click jump needs higher fidelity later, add finer-grained inline/source-span mapping inside markdown blocks instead of the current block-level approximation
 **Blockers:** None
 
