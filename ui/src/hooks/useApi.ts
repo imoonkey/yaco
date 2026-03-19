@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
 
 const API = '/api'
+const FILE_TREE_POLL_MS = 10_000
+const fileTreeCache = new Map<string, FileNode[]>()
+const fileTreeInflight = new Map<string, Promise<FileNode[]>>()
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`)
@@ -17,6 +20,23 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
   })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
+}
+
+async function fetchFileTree(projectName: string): Promise<FileNode[]> {
+  const existing = fileTreeInflight.get(projectName)
+  if (existing) return existing
+
+  const request = fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`)
+    .then((tree) => {
+      fileTreeCache.set(projectName, tree)
+      return tree
+    })
+    .finally(() => {
+      fileTreeInflight.delete(projectName)
+    })
+
+  fileTreeInflight.set(projectName, request)
+  return request
 }
 
 /** Generic polling hook */
@@ -69,11 +89,59 @@ export function useSessions(projectName?: string | null) {
 }
 
 export function useFileTree(projectName: string | null) {
-  const fetcher = useCallback(
-    () => projectName ? fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`) : Promise.resolve([]),
-    [projectName]
-  )
-  return usePolling(fetcher, 30_000)
+  const [data, setData] = useState<FileNode[] | null>(() => (
+    projectName ? (fileTreeCache.get(projectName) ?? null) : []
+  ))
+  const [error, setError] = useState<Error | null>(null)
+  const [tick, setTick] = useState(0)
+
+  const refresh = useCallback(() => setTick(t => t + 1), [])
+
+  useEffect(() => {
+    if (!projectName) {
+      setData([])
+      setError(null)
+      return
+    }
+
+    setData(fileTreeCache.get(projectName) ?? null)
+    setError(null)
+  }, [projectName])
+
+  useEffect(() => {
+    if (!projectName) return
+
+    let cancelled = false
+    const load = async () => {
+      try {
+        const result = await fetchFileTree(projectName)
+        if (!cancelled) {
+          setData(result)
+          setError(null)
+        }
+      } catch (e) {
+        if (!cancelled) setError(e as Error)
+      }
+    }
+
+    const refreshOnForeground = () => {
+      if (!document.hidden) void load()
+    }
+
+    void load()
+    const id = window.setInterval(() => { void load() }, FILE_TREE_POLL_MS)
+    window.addEventListener('focus', refreshOnForeground)
+    document.addEventListener('visibilitychange', refreshOnForeground)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+      window.removeEventListener('focus', refreshOnForeground)
+      document.removeEventListener('visibilitychange', refreshOnForeground)
+    }
+  }, [projectName, tick])
+
+  return { data, error, refresh }
 }
 
 export function useFileContent(projectName: string | null, filePath: string | null) {

@@ -1,5 +1,39 @@
 # Progress
 
+## 2026-03-19: Changes click toggle, explorer reveal, and effort doc relocation
+
+**What changed:**
+- Changed `Changes` row behavior so one click opens a diff tab, and clicking the same row again while that diff tab is active opens the raw file
+- Made Explorer follow the active real file tab and auto-expand parent folders so the current editor file is always revealed and selected
+- Moved the supporting workspace explorer/session plan from `doc/dev/` into the correct v0 workstream effort folder and updated doc references
+
+**Why:**
+- Double-click semantics were avoidable complexity here. The cleaner interaction is a stateful single click that reuses the existing active diff as the pivot into the editable file. The plan document also needed to follow the repo's own `/write-doc` rules instead of leaking into `doc/dev/`.
+
+**Key files:** ui/src/components/Workspace.tsx, doc/main/architecture.md, doc/dev/guide.md, doc/todo/v0/efforts/README.md, doc/todo/v0/efforts/workspace-explorer-session/plan.md, doc/PROGRESS.md
+**Verification:** `npm --prefix ui run build` passed; `./ui/node_modules/.bin/tsc -p server/tsconfig.json --noEmit` passed
+**Commit:** None
+**Next:** If the source-control panel needs more depth later, add an explicit icon affordance for “open diff” versus “open file” rather than more click variants
+**Blockers:** None
+
+## 2026-03-19: Explorer self-heal, cached tree refresh, and right-pane shortcut
+
+**What changed:**
+- Reworked the file-tree route to build directory nodes concurrently, cache each project's tree in-process, and invalidate that cache on structural filesystem changes
+- Added a client-side per-project file-tree cache plus focus-based refresh so switching back to a large repo can reuse the previous tree immediately instead of cold-loading every time
+- Sanitized persisted Workspace split sizes so a broken zero-height explorer restores to a visible default instead of rendering blank
+- Added `Cmd+Shift+B` to toggle the right-side session pane independently from the existing left-sidebar `Cmd+B`
+- Documented the new tree-refresh behavior and shortcut in architecture/dev docs and added a small implementation plan note
+
+**Why:**
+- The explorer could end up visually empty even though the file tree data still existed, and larger repos paid the full tree-loading cost on every revisit. The workspace also needed a dedicated shortcut for hiding the session pane without collapsing the file sidebar.
+
+**Key files:** server/src/routes/files.ts, ui/src/hooks/useApi.ts, ui/src/components/Workspace.tsx, doc/main/architecture.md, doc/dev/guide.md, doc/todo/v0/efforts/workspace-explorer-session/plan.md
+**Verification:** `npm --prefix ui run build` passed; `./ui/node_modules/.bin/tsc -p server/tsconfig.json --noEmit` passed
+**Commit:** None
+**Next:** If explorer updates still feel slow on very large repos, the next step is directory-by-directory lazy loading instead of sending the whole tree payload
+**Blockers:** None
+
 ## 2026-03-19: VS Code-like markdown preview styling
 
 **What changed:**

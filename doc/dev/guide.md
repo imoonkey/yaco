@@ -123,10 +123,16 @@ Projects can also be reordered from the bottom project bar by dragging tabs, or 
 ## UI Shortcuts
 
 - `Cmd+1` … `Cmd+9` — switch to the visible project tab in the current view
-- `Cmd+B` — toggle Workspace sidebar
+- `Cmd+B` — toggle the left Workspace sidebar
+- `Cmd+Shift+B` — toggle the right Workspace session pane
 - `Cmd+P` — open file search
 - `Cmd+Shift+V` — toggle Markdown preview for the active `.md` tab
 - `Cmd+C` in Explorer focus — copy the selected file path
+
+## Workspace Navigation Details
+
+- Opening a real file tab keeps the same file selected in Explorer and auto-expands its parent folders
+- In `Changes`, clicking a file opens its diff tab; clicking the same row again while that diff tab is active opens the raw file instead
 
 ## Terminal Integration
 
@@ -145,9 +151,12 @@ The Workspace view stores per-project UI state in localStorage:
 
 - open tabs + active tab
 - selected session
+- left/right pane visibility
 - sidebar section visibility
 - left/right panel widths
 - explorer/changes split heights
+
+The file tree is also cached per project in memory on both the client and server. Revisiting a large project should show the previous tree immediately, then refresh in the background. Structural file changes (move/create/delete) invalidate the server cache so the next foreground refresh or poll picks them up without waiting for a full cold rebuild every time.
 
 ## Build
 

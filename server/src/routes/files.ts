@@ -1,6 +1,6 @@
+import { watch, existsSync, type FSWatcher } from 'fs'
 import { readdir, stat, readFile, writeFile, realpath } from 'fs/promises'
 import { join, relative } from 'path'
-import { existsSync } from 'fs'
 import { Hono } from 'hono'
 import { loadProjects } from '../lib/projects'
 
@@ -16,32 +16,55 @@ const IGNORE = new Set([
   '.DS_Store', 'bun.lock', 'package-lock.json',
 ])
 
+interface TreeCacheEntry {
+  build?: Promise<FileNode[]>
+  path: string
+  tree: FileNode[]
+  valid: boolean
+  watcher?: FSWatcher
+}
+
+const treeCache = new Map<string, TreeCacheEntry>()
+
+function shouldIgnoreEntry(name: string): boolean {
+  return IGNORE.has(name) || name.startsWith('.')
+}
+
+function shouldIgnoreRelativePath(relPath: string): boolean {
+  return relPath
+    .split(/[\\/]/)
+    .some(part => part.length > 0 && shouldIgnoreEntry(part))
+}
+
 async function buildTree(absPath: string, basePath: string, depth: number, maxDepth: number): Promise<FileNode[]> {
   if (depth >= maxDepth) return []
   if (!existsSync(absPath)) return []
 
-  const entries = await readdir(absPath, { withFileTypes: true })
-  const nodes: FileNode[] = []
+  let entries
+  try {
+    entries = await readdir(absPath, { withFileTypes: true })
+  } catch {
+    return []
+  }
 
   const sorted = entries
-    .filter(e => !IGNORE.has(e.name) && !e.name.startsWith('.'))
+    .filter(e => !shouldIgnoreEntry(e.name))
     .sort((a, b) => {
       if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
       return a.name.localeCompare(b.name)
     })
 
-  for (const entry of sorted) {
+  return Promise.all(sorted.map(async (entry) => {
     const absEntry = join(absPath, entry.name)
     const relPath = relative(basePath, absEntry)
 
     if (entry.isDirectory()) {
       const children = await buildTree(absEntry, basePath, depth + 1, maxDepth)
-      nodes.push({ name: entry.name, path: relPath, type: 'dir', children })
-    } else {
-      nodes.push({ name: entry.name, path: relPath, type: 'file' })
+      return { name: entry.name, path: relPath, type: 'dir', children } satisfies FileNode
     }
-  }
-  return nodes
+
+    return { name: entry.name, path: relPath, type: 'file' } satisfies FileNode
+  }))
 }
 
 /** Resolve real path and verify it stays within the project */
@@ -54,6 +77,75 @@ async function resolveAndValidate(projectPath: string, filePath: string): Promis
   return resolved
 }
 
+function closeTreeWatcher(projectName: string) {
+  const entry = treeCache.get(projectName)
+  entry?.watcher?.close()
+}
+
+function invalidateTree(projectName: string) {
+  const entry = treeCache.get(projectName)
+  if (!entry) return
+  entry.valid = false
+}
+
+function ensureProjectWatcher(projectName: string, projectPath: string) {
+  const existing = treeCache.get(projectName)
+  if (!existing) return
+  if (existing.watcher) return
+
+  try {
+    existing.watcher = watch(projectPath, { recursive: true }, (eventType, filename) => {
+      if (!filename) {
+        invalidateTree(projectName)
+        return
+      }
+
+      if (eventType !== 'rename') return
+
+      const relPath = filename.toString()
+      if (shouldIgnoreRelativePath(relPath)) return
+      invalidateTree(projectName)
+    })
+  } catch {
+    // Recursive watching is best-effort. The tree still refreshes on the next fetch.
+  }
+}
+
+function getOrCreateCacheEntry(projectName: string, projectPath: string): TreeCacheEntry {
+  const existing = treeCache.get(projectName)
+  if (existing && existing.path === projectPath) return existing
+
+  if (existing) closeTreeWatcher(projectName)
+
+  const created: TreeCacheEntry = {
+    path: projectPath,
+    tree: [],
+    valid: false,
+  }
+  treeCache.set(projectName, created)
+  return created
+}
+
+async function getProjectTree(projectName: string, projectPath: string): Promise<FileNode[]> {
+  const entry = getOrCreateCacheEntry(projectName, projectPath)
+  ensureProjectWatcher(projectName, projectPath)
+
+  if (entry.valid) return entry.tree
+  if (entry.build) return entry.build
+
+  entry.build = buildTree(projectPath, projectPath, 0, 6)
+    .then((tree) => {
+      entry.tree = tree
+      entry.valid = true
+      return tree
+    })
+    .finally(() => {
+      entry.build = undefined
+    })
+
+  return entry.build
+}
+
 const app = new Hono()
 
 app.get('/:project', async (c) => {
@@ -62,7 +154,7 @@ app.get('/:project', async (c) => {
   const proj = projects.find(p => p.name === projectName)
   if (!proj) return c.json({ error: 'project not found' }, 404)
 
-  const tree = await buildTree(proj.path, proj.path, 0, 6)
+  const tree = await getProjectTree(projectName, proj.path)
   return c.json(tree)
 })
 

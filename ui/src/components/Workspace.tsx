@@ -101,6 +101,7 @@ interface WorkspaceState {
   activeTab: string | null
   activeSession: string
   showSidebar: boolean
+  showRightPanel: boolean
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
@@ -116,6 +117,7 @@ const DEFAULT_WORKSPACE_STATE: WorkspaceState = {
   activeTab: null,
   activeSession: '',
   showSidebar: true,
+  showRightPanel: true,
   showExplorer: true,
   showSessions: true,
   showChanges: true,
@@ -128,6 +130,10 @@ const DEFAULT_WORKSPACE_STATE: WorkspaceState = {
 
 function workspaceStorageKey(projectName: string): string {
   return `workflow-workspace-state:${projectName}`
+}
+
+function loadStoredSize(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
 }
 
 function loadWorkspaceState(projectName: string): WorkspaceState {
@@ -145,6 +151,11 @@ function loadWorkspaceState(projectName: string): WorkspaceState {
       openTabs,
       activeTab,
       activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
+      showRightPanel: typeof parsed.showRightPanel === 'boolean' ? parsed.showRightPanel : DEFAULT_WORKSPACE_STATE.showRightPanel,
+      leftSize: loadStoredSize(parsed.leftSize, DEFAULT_WORKSPACE_STATE.leftSize),
+      rightSize: loadStoredSize(parsed.rightSize, DEFAULT_WORKSPACE_STATE.rightSize),
+      explorerSize: loadStoredSize(parsed.explorerSize, DEFAULT_WORKSPACE_STATE.explorerSize),
+      changesSize: loadStoredSize(parsed.changesSize, DEFAULT_WORKSPACE_STATE.changesSize),
     }
   } catch {
     return DEFAULT_WORKSPACE_STATE
@@ -258,13 +269,23 @@ function SectionHeader({ title, collapsed, onToggle, actions, badge }: {
 }
 
 // --- File Tree ---
+function pathContainsSelection(path: string, target: string | null): boolean {
+  if (!target) return false
+  return target === path || target.startsWith(`${path}/`)
+}
+
 function FileTreeNode({ node, depth, selected, onSelect, gitMap, gitFolders }: {
   node: FileNode; depth: number; selected: string | null; onSelect: (path: string) => void
   gitMap: Map<string, string>; gitFolders: Set<string>
 }) {
-  const [open, setOpen] = useState(depth < 1)
+  const containsSelected = node.type === 'dir' && pathContainsSelection(node.path, selected)
+  const [open, setOpen] = useState(depth < 1 || containsSelected)
   const gitStatus = gitMap.get(node.path)
   const folderHasChanges = node.type === 'dir' && gitFolders.has(node.path)
+
+  useEffect(() => {
+    if (containsSelected) setOpen(true)
+  }, [containsSelected])
 
   if (node.type === 'dir') {
     return (
@@ -340,11 +361,11 @@ function flattenTree(nodes: FileNode[], result: FileNode[] = []): FileNode[] {
 }
 
 // --- Git Change Item (Source Control list) ---
-function GitChangeItem({ change, isActive, onClick }: { change: GitChange; isActive: boolean; onClick: () => void }) {
+function GitChangeItem({ change, isActive, onActivate }: { change: GitChange; isActive: boolean; onActivate: () => void }) {
   const name = change.path.split('/').pop() || change.path
   const dir = change.path.includes('/') ? change.path.slice(0, change.path.lastIndexOf('/')) : ''
   return (
-    <div onClick={onClick}
+    <div onClick={onActivate}
       className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15' : ''}`}
       title={change.path}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
@@ -439,6 +460,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [mobilePane, setMobilePane] = useState<WorkspaceMobilePane>(() => inferMobilePane(initialState.openTabs, initialState.activeSession))
   const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
   const [showSidebar, setShowSidebar] = useState(initialState.showSidebar)
+  const [showRightPanel, setShowRightPanel] = useState(initialState.showRightPanel)
   const [showExplorer, setShowExplorer] = useState(initialState.showExplorer)
   const [showSessions, setShowSessions] = useState(initialState.showSessions)
   const [showChanges, setShowChanges] = useState(initialState.showChanges)
@@ -544,6 +566,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   const isMd = activeTab?.endsWith('.md')
   const hasOpenFiles = openTabs.length > 0
+  const shouldShowEditorPane = hasOpenFiles || !showRightPanel
   const canTogglePreview = !!isMd && !isDiffTab
 
   const openFile = useCallback((path: string, focus: FocusTarget = 'editor') => {
@@ -565,6 +588,15 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     setFocusTarget('editor')
     setMobilePane('editor')
   }, [])
+
+  const activateChange = useCallback((path: string) => {
+    if (activeTab === `diff:${path}`) {
+      openFile(path)
+      return
+    }
+
+    openDiff(path)
+  }, [activeTab, openDiff, openFile])
 
   const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -669,6 +701,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       activeTab,
       activeSession: attachedSession,
       showSidebar,
+      showRightPanel,
       showExplorer,
       showSessions,
       showChanges,
@@ -690,6 +723,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     right.size,
     showChanges,
     showExplorer,
+    showRightPanel,
     showSessions,
     showSidebar,
   ])
@@ -697,8 +731,19 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
-      if (e.metaKey && key === 'b') { e.preventDefault(); setShowSidebar(v => !v) }
-      if (e.metaKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
+        e.preventDefault()
+        e.stopPropagation()
+        setShowRightPanel(v => !v)
+        return
+      }
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
+        e.preventDefault()
+        e.stopPropagation()
+        setShowSidebar(v => !v)
+        return
+      }
+      if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
       if (!showSearch && e.metaKey && !e.ctrlKey && !e.altKey && key === 'c' && focusTarget === 'explorer' && selectedFilePath) {
         e.preventDefault()
         e.stopPropagation()
@@ -762,6 +807,11 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     return tab.split('/').pop() || tab
   }
 
+  useEffect(() => {
+    if (!activeTab || activeTab.startsWith('diff:')) return
+    setSelectedFilePath(activeTab)
+  }, [activeTab])
+
   const filesPaneMobile = (
     <div className="h-full overflow-y-auto" style={{ backgroundColor: C.bg }} onMouseDown={() => setFocusTarget('explorer')}>
       <div className="flex flex-col min-h-full">
@@ -779,7 +829,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         {showChanges && (
           <div className="py-1 px-1">
             {changes.map(c => (
-              <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onClick={() => openDiff(c.path)} />
+              <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onActivate={() => activateChange(c.path)} />
             ))}
             {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
           </div>
@@ -981,7 +1031,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 {showChanges && (
                   <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: showSessions ? changesHeight : undefined, flex: showSessions ? 'none' : 1 }}>
                     {changes.map(c => (
-                      <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onClick={() => openDiff(c.path)} />
+                      <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onActivate={() => activateChange(c.path)} />
                     ))}
                     {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
                   </div>
@@ -1003,14 +1053,14 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
             </>
           )}
 
-          {hasOpenFiles && (
+          {shouldShowEditorPane && (
             <>
               {editorPane}
-              <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />
+              {showRightPanel && <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />}
             </>
           )}
 
-          {terminalPane}
+          {showRightPanel && terminalPane}
         </>
       )}
     </div>
