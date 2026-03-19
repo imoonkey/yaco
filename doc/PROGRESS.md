@@ -12,7 +12,7 @@
 
 **Key files:** ui/src/components/Terminal.tsx, ui/src/components/Workspace.tsx, doc/main/architecture.md, doc/dev/guide.md
 **Verification:** `npm run build` passed in `ui/`
-**Commit:** None
+**Commit:** 99094f6
 **Next:** If terminal selection regresses again, inspect xterm mouse-selection events before changing clipboard handling
 **Blockers:** None
 
