@@ -92,7 +92,8 @@ High standards like kernel code. Find:
 
 When working inside a `doc/todo/<name>/` folder that has a `workstream.json`, follow `/workstream update` protocol:
 
-- **After documenting findings** (Step 3): append a `human_review` entry to `progress.json` summarizing findings (e.g., "Code review complete — 1 critical, 2 high, 1 medium finding."). Set workstream status to `human_review`.
+- **After the full review completes** (Steps 3-5 — document findings, fix small issues, create design docs for big issues): append a `human_review` entry to `progress.json` summarizing findings (e.g., "Code review complete — 1 critical, 2 high, 1 medium finding."). Set workstream status to `human_review`.
+- **If blocked**: set workstream status to `blocked`, append a `blocked` entry, and stop.
 
 ## Reference
 

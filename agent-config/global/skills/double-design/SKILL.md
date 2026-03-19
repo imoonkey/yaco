@@ -132,7 +132,7 @@ Hand off to `/implement` when ready.
 
 When the target folder has a `workstream.json`, the **orchestrating agent** follows `/workstream update` protocol:
 
-- **Sub-agent prompts** must include: "Do NOT change workstream.json. Only append to progress.json."
+- **Sub-agent prompts** must include: "Do NOT change workstream.json. Do NOT append to progress.json directly. Report your status back to the orchestrating agent."
 - **After alignment reaches `NEXT=DONE`** (Step 3 complete): set workstream status to `human_review`, append a `human_review` entry to `progress.json`, and stop.
 - **If blocked**: set workstream status to `blocked`, append a `blocked` entry, and stop.
-- Sub-agents may append `info` entries to `progress.json` for cross-review findings or alignment progress.
+- The orchestrating agent owns all `progress.json` writes — append `info` entries for cross-review findings or alignment milestones as needed.

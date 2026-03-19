@@ -103,7 +103,7 @@ Before ending a session in worktree mode:
 When working inside a `doc/todo/<name>/` folder that has a `workstream.json`, follow `/workstream update` protocol:
 
 - **After each phase commit** (Step 2.4): append an `info` entry to `progress.json` summarizing what was completed.
-- **After Final Check** (Step 4): set workstream status to `human_review`, append a `human_review` entry to `progress.json`, and stop.
+- **After Update Docs** (Step 5): set workstream status to `human_review`, append a `human_review` entry to `progress.json`, and stop. In worktree mode, complete Step 6 (exit contract) before stopping.
 - **If blocked**: set workstream status to `blocked`, append a `blocked` entry, and stop.
 - Mark workstream checkpoints `done: true` as you complete them — check `need_human_review` to decide whether to continue or stop.
 

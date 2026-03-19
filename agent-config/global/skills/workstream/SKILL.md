@@ -69,6 +69,8 @@ Runtime protocol. Follow this when working inside any `doc/todo/<name>/` folder 
 
 At the start, read `workstream.json` to understand current status and checkpoints.
 
+**Resume guard**: only proceed automatically when status is `active`. If status is `human_review`, `blocked`, `parked`, or `done`, stop and wait for the human to reactivate the workstream.
+
 ## 2. Update workstream.json status
 
 Set status when appropriate:
@@ -87,22 +89,22 @@ When something noteworthy happens, append a JSON object to the progress.json arr
 
 ```json
 {
-  "id": "<timestamp-based-unique-id>",
+  "id": "claude-1710787200000",
   "agent": "claude",
   "type": "info",
   "message": "One-line summary of what happened.",
-  "timestamp": "2026-03-18T17:30:00",
+  "timestamp": "2026-03-18T17:30:00Z",
   "status": "active"
 }
 ```
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `id` | Yes | Unique ID (timestamp-based, e.g. `p-1710787200`) |
+| `id` | Yes | Unique ID: `<agent>-<epoch-ms>` (e.g. `claude-1710787200000`) |
 | `agent` | Yes | `claude` or `codex` |
 | `type` | Yes | `info`, `human_review`, `blocked` |
 | `message` | Yes | One-line summary |
-| `timestamp` | Yes | ISO timestamp |
+| `timestamp` | Yes | RFC 3339 timestamp with offset (e.g. `2026-03-18T17:30:00Z`) |
 | `status` | Yes | `active` (show in Monitor) or `dismissed` (hide) |
 
 Types:
@@ -116,6 +118,6 @@ Each new entry triggers a notification to the human (desktop or browser alert).
 
 When you use multmux to start sub-agents (e.g., in `/double-design`), include in their prompt:
 
-> "Do NOT change workstream.json. Only append to progress.json."
+> "Do NOT change workstream.json. Do NOT append to progress.json directly. Report your status back to the orchestrating agent."
 
-The orchestrating agent owns workstream.json status changes.
+The orchestrating agent owns both `workstream.json` status changes and `progress.json` writes. This avoids concurrent write conflicts on the shared JSON array.
