@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-19: Terminal fit and spacing tuning
+
+**What changed:**
+- Replaced the default xterm fit pass with a local fit helper that measures the real viewport scrollbar width before computing terminal columns
+- Matched the xterm root and viewport background to the Solarized terminal background so exposed gutter areas no longer show a black frame
+- Tuned the attached terminal layout to a `2px` inner right gutter plus `2px` outer pane padding, which keeps the last column readable without the terminal feeling over-padded
+
+**Why:**
+- The first gutter fix stopped right-edge clipping, but it exposed xterm's black viewport background and still needed iterative spacing tweaks to balance readability against wasted horizontal space
+
+**Key files:** ui/src/components/Terminal.tsx, ui/src/components/Workspace.tsx
+**Verification:** `npm run build` passed in `ui/`
+**Commit:** None
+**Next:** If needed, re-check the terminal fit on overlay-scrollbar browsers where the measured scrollbar width may collapse to zero
+**Blockers:** None
+
 ## 2026-03-19: Terminal right-edge gutter
 
 **What changed:**

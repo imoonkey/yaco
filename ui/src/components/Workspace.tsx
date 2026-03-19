@@ -823,7 +823,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
             {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
             <span className="truncate">{attachedSession}</span>
           </div>
-          <div className="flex-1 overflow-hidden p-1.5" onMouseDown={() => setFocusTarget('terminal')}>
+          <div className="flex-1 overflow-hidden p-[2px]" onMouseDown={() => setFocusTarget('terminal')}>
             <Terminal
               sessionName={attachedSession}
               onInteract={() => setFocusTarget('terminal')}

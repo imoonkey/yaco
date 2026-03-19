@@ -28,7 +28,43 @@ const SOLARIZED_THEME = {
   brightWhite: '#eee8d5',
 }
 
-const TERMINAL_RIGHT_GUTTER_PX = 4
+const TERMINAL_RIGHT_GUTTER_PX = 2
+
+type TerminalWithCore = XTerm & {
+  _core?: {
+    _renderService?: {
+      clear?: () => void
+      dimensions?: {
+        css?: {
+          cell?: {
+            width: number
+            height: number
+          }
+        }
+      }
+    }
+  }
+}
+
+function fitTerminal(term: XTerm): void {
+  const element = term.element
+  const parent = element?.parentElement
+  const core = (term as TerminalWithCore)._core
+  const cell = core?._renderService?.dimensions?.css?.cell
+  if (!element || !parent || !cell?.width || !cell.height) return
+
+  const style = window.getComputedStyle(element)
+  const paddingX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+  const paddingY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+  const viewport = element.querySelector<HTMLElement>('.xterm-viewport')
+  const scrollbarWidth = viewport ? Math.max(0, viewport.offsetWidth - viewport.clientWidth) : 0
+  const cols = Math.max(2, Math.floor((parent.clientWidth - paddingX - scrollbarWidth) / cell.width))
+  const rows = Math.max(1, Math.floor((parent.clientHeight - paddingY) / cell.height))
+  if (term.cols === cols && term.rows === rows) return
+
+  core?._renderService?.clear?.()
+  term.resize(cols, rows)
+}
 
 interface TerminalProps {
   sessionName: string
@@ -117,9 +153,13 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     if (term.element) {
       term.element.style.boxSizing = 'border-box'
       term.element.style.height = '100%'
+      term.element.style.backgroundColor = SOLARIZED_THEME.background
       term.element.style.paddingRight = `${TERMINAL_RIGHT_GUTTER_PX}px`
+      const viewport = term.element.querySelector<HTMLElement>('.xterm-viewport')
+      if (viewport) viewport.style.backgroundColor = SOLARIZED_THEME.background
     }
     fitAddon.fit()
+    fitTerminal(term)
 
     const handleFocusIn = () => {
       onInteractRef.current?.()
@@ -194,7 +234,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
 
     term.onResize(() => sendResize())
 
-    const observer = new ResizeObserver(() => fitAddon.fit())
+    const observer = new ResizeObserver(() => fitTerminal(term))
     observer.observe(container)
 
     return () => {
