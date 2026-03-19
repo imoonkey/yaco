@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
 import { RoadmapView } from './components/RoadmapView'
@@ -12,11 +12,27 @@ const navItems: { id: View; label: string; icon: string }[] = [
   { id: 'roadmap', label: 'Roadmap', icon: 'M' },
 ]
 
+const STORAGE_KEY = 'workflow-ui-state'
+
+function loadState(): { view: View; project: string } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw) return JSON.parse(raw)
+  } catch { /* ignore */ }
+  return { view: 'monitor', project: 'all' }
+}
+
+function saveState(view: View, project: string) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, project }))
+}
+
 function App() {
-  const [view, setView] = useState<View>('monitor')
-  const [projectName, setProjectName] = useState<string>('all')
-  const [lastConcreteProject, setLastConcreteProject] = useState<string>('')
-  const folderInputRef = useRef<HTMLInputElement>(null)
+  const saved = loadState()
+  const [view, setView] = useState<View>(saved.view)
+  const [projectName, setProjectName] = useState<string>(saved.project)
+  const [lastConcreteProject, setLastConcreteProject] = useState<string>(
+    saved.project !== 'all' ? saved.project : ''
+  )
 
   const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: progress } = useProgress()
@@ -24,34 +40,34 @@ function App() {
   const uncleared = progress?.filter(e => e.status === 'active').length ?? 0
   const concreteProject = lastConcreteProject || (projects?.[0]?.name ?? '')
 
+  // Persist state changes
+  useEffect(() => {
+    saveState(view, projectName)
+  }, [view, projectName])
+
   const handleProjectChange = (name: string) => {
     if (name === '__add__') {
-      folderInputRef.current?.click()
+      handleAddProject()
       return
     }
     setProjectName(name)
     if (name !== 'all') setLastConcreteProject(name)
   }
 
-  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-    // webkitRelativePath gives us "foldername/file" — extract folder name
-    const firstPath = files[0].webkitRelativePath
-    const folderName = firstPath.split('/')[0]
-    // We can't get absolute path from browser, so prompt user
-    const absPath = prompt(`Enter the absolute path for "${folderName}":`)
-    if (!absPath) return
+  const handleAddProject = async () => {
+    const path = prompt('Project path (absolute):')
+    if (!path) return
+    // Derive name from last path segment
+    const name = prompt('Project name:', path.split('/').filter(Boolean).pop() || '')
+    if (!name) return
     try {
-      await addProject(folderName, absPath)
+      await addProject(name, path)
       refreshProjects()
-      setProjectName(folderName)
-      setLastConcreteProject(folderName)
+      setProjectName(name)
+      setLastConcreteProject(name)
     } catch (err) {
       alert(`Failed to add project: ${err}`)
     }
-    // Reset input
-    e.target.value = ''
   }
 
   const handleViewChange = (v: View) => {
@@ -93,16 +109,6 @@ function App() {
         </div>
 
         <div className="flex-1" />
-
-        {/* Hidden folder input for add project */}
-        <input
-          ref={folderInputRef}
-          type="file"
-          // @ts-expect-error webkitdirectory is not in types
-          webkitdirectory=""
-          className="hidden"
-          onChange={handleFolderSelect}
-        />
 
         <select
           value={view === 'workspace' ? workspaceProject : projectName}

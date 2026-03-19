@@ -29,6 +29,7 @@ export interface Workstream {
 export interface AgentSession {
   name: string
   status: SessionStatus
+  project: string
 }
 
 export interface ProgressEntry {

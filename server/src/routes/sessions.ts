@@ -1,18 +1,22 @@
 import { Hono } from 'hono'
-import { getMultmuxSessions, sendToSession, startMultmuxSession } from '../lib/multmux'
+import { getAllSessions, sendToSession, startMultmuxSession } from '../lib/multmux'
+import { loadProjects } from '../lib/projects'
 
 const app = new Hono()
 
 app.get('/', async (c) => {
-  const sessions = await getMultmuxSessions()
+  const projects = await loadProjects()
+  const sessions = await getAllSessions(projects)
   return c.json(sessions)
 })
 
-app.post('/:handle/start', async (c) => {
-  const handle = c.req.param('handle')
-  const { cmd, cwd } = await c.req.json<{ cmd: string; cwd: string }>()
+app.post('/start', async (c) => {
+  const { provider, name, cwd, prompt } = await c.req.json<{ provider: string; name: string; cwd: string; prompt?: string }>()
+  if (!provider || !name || !cwd) {
+    return c.json({ error: 'provider, name, and cwd required' }, 400)
+  }
   try {
-    await startMultmuxSession(handle, cmd, cwd)
+    await startMultmuxSession(provider, name, cwd, prompt)
     return c.json({ ok: true })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
