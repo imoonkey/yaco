@@ -15,7 +15,7 @@
 
 **Key files:** ui/src/components/Workspace.tsx, ui/src/components/Editor.tsx, doc/main/architecture.md, doc/dev/guide.md, doc/todo/sessionhist/preview-edit-alignment-fix-plan.md, doc/PROGRESS.md
 **Verification:** `npm run build` passed; `npm run lint` in `ui/` still fails on pre-existing React hooks lint errors in `ui/src/App.tsx`, `ui/src/components/Workspace.tsx`, and `ui/src/hooks/useApi.ts`
-**Commit:** None
+**Commit:** 52d8d68
 **Next:** If the preview click jump needs higher fidelity later, add block-level source mapping instead of the current document-position approximation
 **Blockers:** None
 
