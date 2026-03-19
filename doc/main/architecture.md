@@ -67,14 +67,15 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 ## App Shell
 
 - **Top nav** — Monitor and Workspace remain top-level view tabs in the header
-- **Bottom project bar** — project switching lives in a bottom tab strip shared across views; `All Projects` is available in Monitor and hidden in Workspace, which always targets one concrete repo; when space is tight the project list scrolls horizontally and the add action collapses to a `+` button
+- **Bottom project bar** — project switching lives in a bottom tab strip shared across views; `All Projects` is available in Monitor and hidden in Workspace, which always targets one concrete repo; when space is tight the project list scrolls horizontally and the add action collapses to a `+` button; project tabs can be drag-reordered and `Cmd+1` through `Cmd+9` jump to the visible project slots for the current view
 - **Mobile pane switching** — on narrow screens the app keeps the same views but swaps multi-column content for a single full-width pane controlled by an explicit segmented switcher
 
 ## Workspace Features
 
 - **Multi-tab editor** — open/close/switch files, edit any text file in the workspace, Cmd-W to close, Cmd-P file search, Cmd-B sidebar toggle
+- **Explorer path copy** — when the Explorer owns focus, `Cmd+C` copies the selected file path instead of browser page text
 - **File type icons** — colored SVG icons by extension (Seti-like)
-- **Git integration** — file tree shows M/U/A/D badges, folder change dots, Source Control section with diff viewer
+- **Git integration** — file tree shows M/U/A/D badges, folder change dots, Source Control section with diff viewer, and diff tabs keep their fetched content cached when reselected so switching back to the same change does not flash a reload state
 - **Session actions** — sidebar shows provider logos, can start Claude, Codex, or direct `shell-N` sessions; `Cmd+W` detaches the attached session, while each session row exposes an explicit `Kill` button for hard termination
 - **Empty-editor layout** — when no file tabs are open, the terminal/session pane expands to occupy the full main content area
 - **Terminal clipboard bridge** — browser terminal handles terminal-side `OSC 52` clipboard writes and browser copy shortcuts for selected terminal text

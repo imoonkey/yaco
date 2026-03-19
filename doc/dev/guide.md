@@ -91,7 +91,9 @@ curl -X POST http://localhost:3001/api/projects \
   -d '{"name":"MyProject","path":"/absolute/path/to/repo"}'
 ```
 
-Or use the UI: project dropdown → "+ Add Project..."
+Or use the UI: bottom project bar → `+`
+
+Projects can also be reordered from the bottom project bar by dragging tabs, or via the API below.
 
 ## API Endpoints
 
@@ -99,6 +101,7 @@ Or use the UI: project dropdown → "+ Add Project..."
 |--------|------|-------------|
 | GET | `/api/projects` | List registered projects |
 | POST | `/api/projects` | Register a project |
+| POST | `/api/projects/reorder` | Persist a full ordered list of project names |
 | DELETE | `/api/projects/:name` | Unregister a project |
 | GET | `/api/workstreams` | All workstreams across projects |
 | POST | `/api/workstreams/:project/:name/status` | Update workstream status |
@@ -112,10 +115,18 @@ Or use the UI: project dropdown → "+ Add Project..."
 | POST | `/api/sessions/:handle/close` | Close a Claude/Codex/shell session |
 | GET | `/api/files/:project` | File tree |
 | GET | `/api/files/:project/content?path=...` | Read file |
-| PUT | `/api/files/:project/content?path=...` | Write file (.md/.json only) |
+| PUT | `/api/files/:project/content?path=...` | Write a validated text file inside the project |
 | GET | `/api/git/:project/status` | Git status (changed files) |
 | GET | `/api/git/:project/diff?path=...` | Unified diff for a file |
 | WS | `/ws/terminal/:name?cols=N&rows=N` | Terminal PTY via WebSocket |
+
+## UI Shortcuts
+
+- `Cmd+1` … `Cmd+9` — switch to the visible project tab in the current view
+- `Cmd+B` — toggle Workspace sidebar
+- `Cmd+P` — open file search
+- `Cmd+Shift+V` — toggle Markdown preview for the active `.md` tab
+- `Cmd+C` in Explorer focus — copy the selected file path
 
 ## Terminal Integration
 

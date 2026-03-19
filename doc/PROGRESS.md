@@ -1,5 +1,37 @@
 # Progress
 
+## 2026-03-19: Project tab shortcuts, reordering, and Explorer copy-path
+
+**What changed:**
+- Added drag-reorder support for bottom project tabs and persisted the order through a new `POST /api/projects/reorder` endpoint
+- Added `Cmd+1` through `Cmd+9` to jump to the visible project tabs for the current view
+- Made Explorer selection own `Cmd+C`, so copying from the file tree now copies the selected project-relative path
+- Extracted the browser clipboard helper into `ui/src/lib/clipboard.ts` so Workspace and Terminal share the same copy path
+
+**Why:**
+- The bottom project bar already replaced the old selector, but it still lacked the fast keyboard/mouse workflows expected from a real workspace shell. Explorer copy-path also removes a common context-switch to the terminal just to grab a file path.
+
+**Key files:** ui/src/App.tsx, server/src/routes/projects.ts, ui/src/components/Workspace.tsx, ui/src/components/Terminal.tsx, ui/src/lib/clipboard.ts, doc/main/architecture.md, doc/dev/guide.md
+**Verification:** `npm run build` passed in `ui/`
+**Commit:** 434b0ce, e7212f2
+**Next:** If needed, add visible drag affordances or a keyboard-only project reordering path
+**Blockers:** None
+
+## 2026-03-19: Git diff tab resilience and status-line normalization
+
+**What changed:**
+- Changed Workspace diff state from one global payload to a per-path cache, so reselecting an already opened change tab preserves the fetched diff instead of resetting to a loading flash
+- Normalized `git status --porcelain` lines by stripping trailing `\r` without trimming the whole output, which keeps changed-file parsing stable for CRLF line endings and avoids dropping legitimate blank-state behavior
+
+**Why:**
+- The old single diff buffer made revisiting a changed file feel stateless, and the server-side status parsing was brittle on repositories or environments that emit CRLF porcelain output.
+
+**Key files:** ui/src/components/Workspace.tsx, server/src/routes/git.ts, doc/main/architecture.md, doc/dev/guide.md
+**Verification:** `npm run build` passed in `ui/`; `../ui/node_modules/.bin/tsc -p tsconfig.json --noEmit` passed in `server/`
+**Commit:** d51cf68, 0f6e165
+**Next:** If needed, add a small regression check around `git status` parsing and diff-tab caching once the project has a lightweight UI/server test harness
+**Blockers:** None
+
 ## 2026-03-19: Consolidate v0 todo efforts
 
 **What changed:**
@@ -12,7 +44,7 @@
 
 **Key files:** doc/todo/v0/efforts/README.md, doc/todo/v0/efforts/dev-tmux/plan.md, doc/todo/v0/efforts/dev-tmux/review.md, doc/todo/v0/efforts/cmd-w-close-focus/plan.md, doc/todo/v0/efforts/mobile-pane/plan.md, doc/todo/v0/efforts/session-shell-ui/plan.md, doc/todo/v0/efforts/editor-scroll-past-end/plan.md, doc/todo/v0/impl-plan.md
 **Verification:** `find doc/todo/v0/efforts -maxdepth 2 -type f | sort` returned the expected effort files; `rg -n "doc/todo/(dev-tmux-plan|dev-tmux-review|editor-scroll-past-end/plan|cmd-w-close-focus-plan|mobile-pane-plan|session-shell-ui-plan)" doc ui server .` returned no matches
-**Commit:** None
+**Commit:** 76e0dc0
 **Next:** Keep new v0-specific effort notes under `doc/todo/v0/efforts/<effort>/`
 **Blockers:** None
 
@@ -28,7 +60,7 @@
 
 **Key files:** ui/src/components/Terminal.tsx, ui/src/components/Workspace.tsx
 **Verification:** `npm run build` passed in `ui/`
-**Commit:** None
+**Commit:** 05b4295
 **Next:** If needed, re-check the terminal fit on overlay-scrollbar browsers where the measured scrollbar width may collapse to zero
 **Blockers:** None
 
@@ -44,7 +76,7 @@
 
 **Key files:** scripts/dev-tmux.sh, package.json, doc/dev/guide.md, doc/todo/v0/efforts/dev-tmux/plan.md
 **Verification:** `bash -n scripts/dev-tmux.sh` passed; `bash scripts/dev-tmux.sh --help` passed; detached smoke tests confirmed session create/reuse/reset; invalid names such as `bad:name` were rejected; `tmux show-window-options -t <session>:dev remain-on-exit` returned `on`; after a 4s wait both panes were running `node`, with backend serving on `http://localhost:3001` and Vite up on `:5173`
-**Commit:** None
+**Commit:** 474aafb
 **Next:** Verify the script creates, reuses, and resets the `tmux` session correctly on a local machine
 **Blockers:** None
 
