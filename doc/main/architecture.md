@@ -83,7 +83,8 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 - **Terminal selection and clipboard bridge** — browser terminal explicitly re-enables text selection inside the terminal pane, uses a visible selection tint, handles terminal-side `OSC 52` clipboard writes, and supports browser copy shortcuts for selected terminal text
 - **Workspace state persistence** — open tabs, active session, sidebar toggles, and panel sizes are stored per project in localStorage and restored on refresh
 - **Unsaved indicator** — dirty tabs show black dot instead of close button, and the dirty/close affordance sits on the right side of each editor tab
-- **Markdown preview** — toggle Edit/Preview for .md files with the header button or `Cmd+Shift+V`
+- **Draft-backed editor state** — each real file tab keeps an in-memory draft and scroll position in Workspace state, so unsaved content and reading position survive preview toggles and file-tab switches until the tab is closed or the draft is saved
+- **Markdown preview** — toggle Edit/Preview for `.md` files with the header button or `Cmd+Shift+V`; preview renders the same live draft content as the editor instead of refetching the file, and clicking in preview reopens `Edit` near the same document position
 - **Collapsible sidebar** — Explorer, Changes, Sessions sections with draggable dividers
 - **Window close hijack** — Workspace does a best-effort Cmd-W interception: normal keydown capture plus `Keyboard Lock` for `KeyW` when the browser supports it in a secure context; when that succeeds, Cmd-W closes the focused in-app editor tab or attached terminal session instead of the browser tab
 - **Mobile single-pane flow** — Workspace shows one full-width pane at a time on mobile (`Files`, `Editor`, `Terminal`); selecting a file jumps to `Editor`, selecting a session jumps to `Terminal`, and background updates never force pane changes

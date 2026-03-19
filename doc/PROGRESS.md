@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-03-19: Workspace preview/edit draft and position alignment
+
+**What changed:**
+- Moved Workspace file editing onto a per-tab draft buffer instead of relying on CodeMirror-local state plus refetched file content
+- Changed Markdown preview to render the active tab's draft, so `Preview` and `Edit` now stay aligned
+- Added shared per-tab scroll progress so switching between `Preview` and `Edit` no longer resets the view to the top
+- Added preview click-to-edit handoff that jumps back into the editor near the clicked document position with an approximate corresponding cursor line
+- Made unsaved file edits survive switching between open file tabs, and documented the new in-memory draft/scroll behavior in architecture/dev docs
+- Added a small plan note under `doc/todo/sessionhist/` for the bugfix
+
+**Why:**
+- The previous flow let preview mode and remounted editors fall back to stale fetched content. That could display an older snapshot and, after `Cmd+S`, write that stale snapshot back to disk. It also reset reading position on every mode switch. The fix is to make preview, editor, save, and view position all read the same current per-tab state.
+
+**Key files:** ui/src/components/Workspace.tsx, ui/src/components/Editor.tsx, doc/main/architecture.md, doc/dev/guide.md, doc/todo/sessionhist/preview-edit-alignment-fix-plan.md, doc/PROGRESS.md
+**Verification:** `npm run build` passed; `npm run lint` in `ui/` still fails on pre-existing React hooks lint errors in `ui/src/App.tsx`, `ui/src/components/Workspace.tsx`, and `ui/src/hooks/useApi.ts`
+**Commit:** None
+**Next:** If the preview click jump needs higher fidelity later, add block-level source mapping instead of the current document-position approximation
+**Blockers:** None
+
 ## 2026-03-19: Changes click toggle, explorer reveal, and effort doc relocation
 
 **What changed:**

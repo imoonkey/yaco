@@ -32,6 +32,16 @@ type DiffState = {
   error: boolean
   loading: boolean
 }
+type FileBuffer = {
+  saved: string
+  draft: string
+  scrollProgress: number
+}
+type JumpRequest = {
+  key: number
+  path: string
+  line: number
+}
 const SECTION_HEADER_HEIGHT = 22
 const RESIZE_HANDLE_HEIGHT = 1
 const MIN_SESSION_BODY_HEIGHT = 72
@@ -90,6 +100,11 @@ function renderMarkdown(content: string): string {
   }
 
   return marked.parse(content, { async: false, renderer }) as string
+}
+
+function clampProgress(progress: number): number {
+  if (!Number.isFinite(progress)) return 0
+  return Math.max(0, Math.min(1, progress))
 }
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
@@ -437,9 +452,57 @@ function FileSearch({ files, onSelect, onClose }: { files: FileNode[]; onSelect:
 }
 
 // --- Markdown Preview ---
-function MarkdownPreview({ content }: { content: string }) {
+function MarkdownPreview({
+  content,
+  scrollProgress,
+  onScrollProgress,
+  onActivatePosition,
+}: {
+  content: string
+  scrollProgress: number
+  onScrollProgress?: (progress: number) => void
+  onActivatePosition?: (progress: number) => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const applyScrollRef = useRef(false)
   const html = renderMarkdown(content)
-  return <div className="markdown-preview" dangerouslySetInnerHTML={{ __html: html }} />
+
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+    const max = Math.max(0, element.scrollHeight - element.clientHeight)
+    const nextTop = max * clampProgress(scrollProgress)
+    if (Math.abs(element.scrollTop - nextTop) < 1) return
+    applyScrollRef.current = true
+    element.scrollTop = nextTop
+  }, [html, scrollProgress])
+
+  return (
+    <div
+      ref={containerRef}
+      className="markdown-preview"
+      onScroll={() => {
+        const element = containerRef.current
+        if (!element) return
+        if (applyScrollRef.current) {
+          applyScrollRef.current = false
+          return
+        }
+        const max = Math.max(0, element.scrollHeight - element.clientHeight)
+        onScrollProgress?.(max === 0 ? 0 : clampProgress(element.scrollTop / max))
+      }}
+      onClick={(event) => {
+        if (!onActivatePosition) return
+        const element = containerRef.current
+        if (!element) return
+        const rect = element.getBoundingClientRect()
+        const offsetY = event.clientY - rect.top
+        const absoluteY = element.scrollTop + offsetY
+        onActivatePosition(clampProgress(absoluteY / Math.max(1, element.scrollHeight)))
+      }}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
 }
 
 // ============================================================
@@ -455,7 +518,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
     initialState.activeTab && !initialState.activeTab.startsWith('diff:') ? initialState.activeTab : null
   ))
-  const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set())
+  const [fileBuffers, setFileBuffers] = useState<Record<string, FileBuffer>>({})
   const [activeSession, setActiveSession] = useState(initialState.activeSession)
   const [mobilePane, setMobilePane] = useState<WorkspaceMobilePane>(() => inferMobilePane(initialState.openTabs, initialState.activeSession))
   const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
@@ -468,6 +531,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [previewMode, setPreviewMode] = useState(initialState.previewMode)
   const [diffs, setDiffs] = useState<Record<string, DiffState>>({})
   const [sidebarHeight, setSidebarHeight] = useState(0)
+  const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
 
   const { data: fileTree } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
@@ -478,6 +542,14 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const activeDiffPath = activeTab?.startsWith('diff:') ? activeTab.slice(5) : null
   const activeDiff = activeDiffPath ? diffs[activeDiffPath] : null
   const { content, loading } = useFileContent(projectName, isDiffTab ? null : activeTab)
+  const activeFileBuffer = activeTab && !isDiffTab ? fileBuffers[activeTab] ?? null : null
+  const activeFileContent = activeFileBuffer?.draft ?? content
+  const activeScrollProgress = activeFileBuffer?.scrollProgress ?? 0
+  const dirtyTabs = useMemo(() => new Set(
+    Object.entries(fileBuffers)
+      .filter(([, buffer]) => buffer.draft !== buffer.saved)
+      .map(([path]) => path)
+  ), [fileBuffers])
 
   // Fetch diff when a diff tab is active
   useEffect(() => {
@@ -569,6 +641,28 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const shouldShowEditorPane = hasOpenFiles || !showRightPanel
   const canTogglePreview = !!isMd && !isDiffTab
 
+  const updateFileBuffer = useCallback((path: string, fallbackContent: string | null, updater: (current: FileBuffer) => FileBuffer) => {
+    setFileBuffers(prev => {
+      const current = prev[path] ?? {
+        saved: fallbackContent ?? '',
+        draft: fallbackContent ?? '',
+        scrollProgress: 0,
+      }
+      const next = updater(current)
+      if (
+        current.saved === next.saved &&
+        current.draft === next.draft &&
+        current.scrollProgress === next.scrollProgress
+      ) {
+        return prev
+      }
+      return {
+        ...prev,
+        [path]: next,
+      }
+    })
+  }, [])
+
   const openFile = useCallback((path: string, focus: FocusTarget = 'editor') => {
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
     setActiveTab(path)
@@ -605,8 +699,37 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       setActiveTab(prev => prev !== path ? prev : next[Math.min(tabs.indexOf(path), next.length - 1)] ?? null)
       return next
     })
-    setDirtyTabs(prev => { const n = new Set(prev); n.delete(path); return n })
+    if (!path.startsWith('diff:')) {
+      setFileBuffers(prev => {
+        if (!(path in prev)) return prev
+        const next = { ...prev }
+        delete next[path]
+        return next
+      })
+    }
   }, [])
+
+  const handleActiveFileScrollProgress = useCallback((progress: number) => {
+    if (!activeTab || activeTab.startsWith('diff:')) return
+    updateFileBuffer(activeTab, content, current => ({
+      ...current,
+      scrollProgress: clampProgress(progress),
+    }))
+  }, [activeTab, content, updateFileBuffer])
+
+  const handlePreviewActivatePosition = useCallback((progress: number) => {
+    if (!activeTab || activeTab.startsWith('diff:')) return
+    const draft = activeFileContent ?? ''
+    const lineCount = draft.split('\n').length
+    const line = Math.max(1, Math.min(lineCount, Math.floor(clampProgress(progress) * Math.max(1, lineCount - 1)) + 1))
+    updateFileBuffer(activeTab, content, current => ({
+      ...current,
+      scrollProgress: clampProgress(progress),
+    }))
+    setJumpRequest({ key: Date.now(), path: activeTab, line })
+    setPreviewMode(false)
+    setFocusTarget('editor')
+  }, [activeFileContent, activeTab, content, updateFileBuffer])
 
   const killSession = useCallback(async (sessionName: string) => {
     if (!sessionName) return
@@ -922,21 +1045,39 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           : activeDiff?.content != null ? <DiffView diff={activeDiff.content} />
           : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
         ) : activeTab ? (
-          loading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
-          : content !== null ? (
-            isMd && previewMode ? <MarkdownPreview content={content} /> : (
-              <Editor content={content} filePath={activeTab}
+          loading && activeFileContent === null ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
+          : activeFileContent !== null ? (
+            isMd && previewMode ? (
+              <MarkdownPreview
+                content={activeFileContent}
+                scrollProgress={activeScrollProgress}
+                onScrollProgress={handleActiveFileScrollProgress}
+                onActivatePosition={handlePreviewActivatePosition}
+              />
+            ) : (
+              <Editor content={activeFileContent} filePath={activeTab}
+                scrollProgress={activeScrollProgress}
+                onScrollProgress={handleActiveFileScrollProgress}
+                jumpToLine={jumpRequest?.path === activeTab ? jumpRequest.line : null}
+                jumpRequestKey={jumpRequest?.path === activeTab ? jumpRequest.key : undefined}
                 onFocus={() => setFocusTarget('editor')}
                 onCloseRequest={() => {
                   closeTab(activeTab)
                 }}
-                onDirty={(dirty) => setDirtyTabs(prev => {
-                  const n = new Set(prev)
-                  if (dirty) n.add(activeTab!)
-                  else n.delete(activeTab!)
-                  return n
-                })}
-                onSave={async (newContent) => { await saveFileContent(projectName, activeTab!, newContent); setDirtyTabs(prev => { const n = new Set(prev); n.delete(activeTab!); return n }) }}
+                onChange={(newContent) => {
+                  updateFileBuffer(activeTab, content, current => ({
+                    ...current,
+                    draft: newContent,
+                  }))
+                }}
+                onSave={async (newContent) => {
+                  await saveFileContent(projectName, activeTab!, newContent)
+                  updateFileBuffer(activeTab!, newContent, current => ({
+                    ...current,
+                    saved: newContent,
+                    draft: newContent,
+                  }))
+                }}
               />
             )
           ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>
