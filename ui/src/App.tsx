@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
 import { RoadmapView } from './components/RoadmapView'
-import { progressEntries, projects } from './data'
+import { useProjects, useProgress } from './hooks/useApi'
 
 type View = 'monitor' | 'workspace' | 'roadmap'
 
@@ -13,32 +13,35 @@ const navItems: { id: View; label: string; icon: string }[] = [
 ]
 
 function App() {
-  const [view, setView] = useState<View>('workspace')
-  const [projectId, setProjectId] = useState<string>('all')
-  const [lastConcreteProject, setLastConcreteProject] = useState(projects[0].id)
-  const uncleared = progressEntries.filter(e => e.status === 'active').length
+  const [view, setView] = useState<View>('monitor')
+  const [projectName, setProjectName] = useState<string>('all')
+  const [lastConcreteProject, setLastConcreteProject] = useState<string>('')
 
-  const handleProjectChange = (id: string) => {
-    setProjectId(id)
-    if (id !== 'all') setLastConcreteProject(id)
+  const { data: projects } = useProjects()
+  const { data: progress } = useProgress()
+
+  const uncleared = progress?.filter(e => e.status === 'active').length ?? 0
+
+  // Initialize lastConcreteProject when projects load
+  const concreteProject = lastConcreteProject || (projects?.[0]?.name ?? '')
+
+  const handleProjectChange = (name: string) => {
+    setProjectName(name)
+    if (name !== 'all') setLastConcreteProject(name)
   }
 
   const handleViewChange = (v: View) => {
     setView(v)
-    // Workspace requires a concrete project
-    if (v === 'workspace' && projectId === 'all') {
-      setProjectId(lastConcreteProject)
+    if (v === 'workspace' && projectName === 'all') {
+      setProjectName(concreteProject)
     }
   }
 
-  // Workspace always uses a concrete project
-  const workspaceProjectId = projectId === 'all' ? lastConcreteProject : projectId
+  const workspaceProject = projectName === 'all' ? concreteProject : projectName
 
   return (
     <div className="flex flex-col h-screen bg-[#fdf6e3]">
-      {/* Top nav bar */}
       <header className="h-10 shrink-0 border-b border-[#eee8d5] flex items-center px-3 bg-[#eee8d5]/50 gap-1">
-        {/* Tab buttons */}
         <div className="flex items-center gap-0.5">
           {navItems.map(item => {
             const isActive = view === item.id
@@ -64,27 +67,24 @@ function App() {
           })}
         </div>
 
-        {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Global project selector */}
         <select
-          value={view === 'workspace' ? workspaceProjectId : projectId}
+          value={view === 'workspace' ? workspaceProject : projectName}
           onChange={e => handleProjectChange(e.target.value)}
           className="text-[12px] bg-[#fdf6e3] border border-[#eee8d5] rounded-md px-2 py-1 text-[#586e75] cursor-pointer focus:outline-none focus:border-[#268bd2]/40"
         >
           {view !== 'workspace' && <option value="all">All Projects</option>}
-          {projects.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
+          {projects?.map(p => (
+            <option key={p.name} value={p.name}>{p.name}</option>
           ))}
         </select>
       </header>
 
-      {/* Main content */}
       <main className="flex-1 overflow-hidden">
-        {view === 'monitor' && <Monitor filterProject={projectId === 'all' ? null : projectId} />}
-        {view === 'workspace' && <Workspace projectId={workspaceProjectId} />}
-        {view === 'roadmap' && <RoadmapView filterProject={projectId === 'all' ? null : projectId} />}
+        {view === 'monitor' && <Monitor filterProject={projectName === 'all' ? null : projectName} />}
+        {view === 'workspace' && <Workspace projectName={workspaceProject} />}
+        {view === 'roadmap' && <RoadmapView filterProject={projectName === 'all' ? null : projectName} />}
       </main>
     </div>
   )
