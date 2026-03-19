@@ -35,7 +35,7 @@ type DiffState = {
 type FileBuffer = {
   saved: string
   draft: string
-  scrollProgress: number
+  viewportLine: number
 }
 type JumpRequest = {
   key: number
@@ -91,7 +91,7 @@ function renderHighlightedCode(text: string, lang: string | undefined): string {
   return html
 }
 
-function renderMarkdown(content: string): string {
+function createMarkdownRenderer() {
   const renderer = new marked.Renderer()
 
   renderer.code = ({ text, lang }: Tokens.Code) => {
@@ -99,12 +99,55 @@ function renderMarkdown(content: string): string {
     return `<pre><code${languageClass}>${renderHighlightedCode(text, lang)}</code></pre>`
   }
 
-  return marked.parse(content, { async: false, renderer }) as string
+  return renderer
 }
 
-function clampProgress(progress: number): number {
-  if (!Number.isFinite(progress)) return 0
-  return Math.max(0, Math.min(1, progress))
+function countNewlines(value: string): number {
+  let count = 0
+  for (const char of value) {
+    if (char === '\n') count += 1
+  }
+  return count
+}
+
+function clampLine(line: number): number {
+  if (!Number.isFinite(line)) return 1
+  return Math.max(1, Math.round(line))
+}
+
+function renderMarkdown(content: string): string {
+  const renderer = createMarkdownRenderer()
+  const tokens = marked.lexer(content)
+  let html = ''
+  let cursor = 0
+  let currentLine = 1
+
+  for (const token of tokens) {
+    const raw = token.raw ?? ''
+    const start = raw ? content.indexOf(raw, cursor) : cursor
+    const resolvedStart = start >= 0 ? start : cursor
+    currentLine += countNewlines(content.slice(cursor, resolvedStart))
+
+    if (token.type === 'space') {
+      currentLine += countNewlines(raw)
+      cursor = resolvedStart + raw.length
+      continue
+    }
+
+    const lineStart = currentLine
+    const trimmedRaw = raw.replace(/\n+$/, '')
+    const lineEnd = trimmedRaw ? lineStart + countNewlines(trimmedRaw) : lineStart
+    const blockHtml = marked.parse(raw, { async: false, renderer }) as string
+
+    if (blockHtml.trim()) {
+      html += `<div class="markdown-block" data-source-line-start="${lineStart}" data-source-line-end="${lineEnd}">${blockHtml}</div>`
+    }
+
+    currentLine += countNewlines(raw)
+    cursor = resolvedStart + raw.length
+  }
+
+  return html
 }
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
@@ -452,53 +495,106 @@ function FileSearch({ files, onSelect, onClose }: { files: FileNode[]; onSelect:
 }
 
 // --- Markdown Preview ---
+type MarkdownBlockAnchor = {
+  element: HTMLElement
+  lineStart: number
+  lineEnd: number
+}
+
+function getMarkdownBlockAnchors(container: HTMLDivElement): MarkdownBlockAnchor[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('.markdown-block[data-source-line-start]')).map(element => ({
+    element,
+    lineStart: clampLine(Number(element.dataset.sourceLineStart)),
+    lineEnd: clampLine(Number(element.dataset.sourceLineEnd ?? element.dataset.sourceLineStart)),
+  }))
+}
+
+function lineFromBlockPosition(block: MarkdownBlockAnchor, absoluteY: number): number {
+  const blockTop = block.element.offsetTop
+  const blockHeight = Math.max(1, block.element.offsetHeight)
+  const relativeY = Math.max(0, Math.min(blockHeight, absoluteY - blockTop))
+  const ratio = relativeY / blockHeight
+  const span = Math.max(0, block.lineEnd - block.lineStart)
+  return clampLine(block.lineStart + ratio * span)
+}
+
+function lineFromPreviewScroll(container: HTMLDivElement): number {
+  const blocks = getMarkdownBlockAnchors(container)
+  if (blocks.length === 0) return 1
+
+  const scrollTop = container.scrollTop
+  const block = blocks.find(candidate => candidate.element.offsetTop + candidate.element.offsetHeight > scrollTop) ?? blocks[blocks.length - 1]
+  return lineFromBlockPosition(block, scrollTop)
+}
+
+function applyPreviewViewportLine(container: HTMLDivElement, viewportLine: number): boolean {
+  const blocks = getMarkdownBlockAnchors(container)
+  if (blocks.length === 0) return false
+
+  const targetLine = clampLine(viewportLine)
+  const block = blocks.find(candidate => targetLine >= candidate.lineStart && targetLine <= candidate.lineEnd)
+    ?? [...blocks].reverse().find(candidate => candidate.lineStart <= targetLine)
+    ?? blocks[0]
+
+  const span = Math.max(0, block.lineEnd - block.lineStart)
+  const ratio = span === 0 ? 0 : Math.max(0, Math.min(1, (targetLine - block.lineStart) / span))
+  const targetTop = block.element.offsetTop + ratio * Math.max(1, block.element.offsetHeight)
+  if (Math.abs(container.scrollTop - targetTop) < 1) return false
+  container.scrollTop = targetTop
+  return true
+}
+
 function MarkdownPreview({
   content,
-  scrollProgress,
-  onScrollProgress,
-  onActivatePosition,
+  viewportLine,
+  onViewportLine,
+  onActivateLine,
 }: {
   content: string
-  scrollProgress: number
-  onScrollProgress?: (progress: number) => void
-  onActivatePosition?: (progress: number) => void
+  viewportLine: number
+  onViewportLine?: (line: number) => void
+  onActivateLine?: (line: number) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const applyScrollRef = useRef(false)
+  const applyingViewportRef = useRef(false)
   const html = renderMarkdown(content)
 
   useEffect(() => {
     const element = containerRef.current
     if (!element) return
-    const max = Math.max(0, element.scrollHeight - element.clientHeight)
-    const nextTop = max * clampProgress(scrollProgress)
-    if (Math.abs(element.scrollTop - nextTop) < 1) return
-    applyScrollRef.current = true
-    element.scrollTop = nextTop
-  }, [html, scrollProgress])
+    applyingViewportRef.current = applyPreviewViewportLine(element, viewportLine)
+  }, [html, viewportLine])
 
   return (
     <div
       ref={containerRef}
-      className="markdown-preview"
+      className="markdown-preview h-full overflow-y-auto"
       onScroll={() => {
         const element = containerRef.current
         if (!element) return
-        if (applyScrollRef.current) {
-          applyScrollRef.current = false
+        if (applyingViewportRef.current) {
+          applyingViewportRef.current = false
           return
         }
-        const max = Math.max(0, element.scrollHeight - element.clientHeight)
-        onScrollProgress?.(max === 0 ? 0 : clampProgress(element.scrollTop / max))
+        onViewportLine?.(lineFromPreviewScroll(element))
       }}
       onClick={(event) => {
-        if (!onActivatePosition) return
+        if (!onActivateLine) return
         const element = containerRef.current
         if (!element) return
+        const blockElement = (event.target as HTMLElement | null)?.closest<HTMLElement>('.markdown-block[data-source-line-start]')
+        if (!blockElement) {
+          onActivateLine(lineFromPreviewScroll(element))
+          return
+        }
+        const block: MarkdownBlockAnchor = {
+          element: blockElement,
+          lineStart: clampLine(Number(blockElement.dataset.sourceLineStart)),
+          lineEnd: clampLine(Number(blockElement.dataset.sourceLineEnd ?? blockElement.dataset.sourceLineStart)),
+        }
         const rect = element.getBoundingClientRect()
-        const offsetY = event.clientY - rect.top
-        const absoluteY = element.scrollTop + offsetY
-        onActivatePosition(clampProgress(absoluteY / Math.max(1, element.scrollHeight)))
+        const absoluteY = element.scrollTop + (event.clientY - rect.top)
+        onActivateLine(lineFromBlockPosition(block, absoluteY))
       }}
       dangerouslySetInnerHTML={{ __html: html }}
     />
@@ -544,7 +640,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const { content, loading } = useFileContent(projectName, isDiffTab ? null : activeTab)
   const activeFileBuffer = activeTab && !isDiffTab ? fileBuffers[activeTab] ?? null : null
   const activeFileContent = activeFileBuffer?.draft ?? content
-  const activeScrollProgress = activeFileBuffer?.scrollProgress ?? 0
+  const activeViewportLine = activeFileBuffer?.viewportLine ?? 1
   const dirtyTabs = useMemo(() => new Set(
     Object.entries(fileBuffers)
       .filter(([, buffer]) => buffer.draft !== buffer.saved)
@@ -646,13 +742,13 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       const current = prev[path] ?? {
         saved: fallbackContent ?? '',
         draft: fallbackContent ?? '',
-        scrollProgress: 0,
+        viewportLine: 1,
       }
       const next = updater(current)
       if (
         current.saved === next.saved &&
         current.draft === next.draft &&
-        current.scrollProgress === next.scrollProgress
+        current.viewportLine === next.viewportLine
       ) {
         return prev
       }
@@ -709,27 +805,25 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     }
   }, [])
 
-  const handleActiveFileScrollProgress = useCallback((progress: number) => {
+  const handleActiveFileViewportLine = useCallback((line: number) => {
     if (!activeTab || activeTab.startsWith('diff:')) return
     updateFileBuffer(activeTab, content, current => ({
       ...current,
-      scrollProgress: clampProgress(progress),
+      viewportLine: clampLine(line),
     }))
   }, [activeTab, content, updateFileBuffer])
 
-  const handlePreviewActivatePosition = useCallback((progress: number) => {
+  const handlePreviewActivateLine = useCallback((line: number) => {
     if (!activeTab || activeTab.startsWith('diff:')) return
-    const draft = activeFileContent ?? ''
-    const lineCount = draft.split('\n').length
-    const line = Math.max(1, Math.min(lineCount, Math.floor(clampProgress(progress) * Math.max(1, lineCount - 1)) + 1))
+    const targetLine = clampLine(line)
     updateFileBuffer(activeTab, content, current => ({
       ...current,
-      scrollProgress: clampProgress(progress),
+      viewportLine: targetLine,
     }))
-    setJumpRequest({ key: Date.now(), path: activeTab, line })
+    setJumpRequest({ key: Date.now(), path: activeTab, line: targetLine })
     setPreviewMode(false)
     setFocusTarget('editor')
-  }, [activeFileContent, activeTab, content, updateFileBuffer])
+  }, [activeTab, content, updateFileBuffer])
 
   const killSession = useCallback(async (sessionName: string) => {
     if (!sessionName) return
@@ -1039,7 +1133,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0">
         {isDiffTab ? (
           !activeDiff || (activeDiff.loading && activeDiff.content == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
           : activeDiff?.content != null ? <DiffView diff={activeDiff.content} />
@@ -1050,14 +1144,14 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
             isMd && previewMode ? (
               <MarkdownPreview
                 content={activeFileContent}
-                scrollProgress={activeScrollProgress}
-                onScrollProgress={handleActiveFileScrollProgress}
-                onActivatePosition={handlePreviewActivatePosition}
+                viewportLine={activeViewportLine}
+                onViewportLine={handleActiveFileViewportLine}
+                onActivateLine={handlePreviewActivateLine}
               />
             ) : (
               <Editor content={activeFileContent} filePath={activeTab}
-                scrollProgress={activeScrollProgress}
-                onScrollProgress={handleActiveFileScrollProgress}
+                viewportLine={activeViewportLine}
+                onViewportLine={handleActiveFileViewportLine}
                 jumpToLine={jumpRequest?.path === activeTab ? jumpRequest.line : null}
                 jumpRequestKey={jumpRequest?.path === activeTab ? jumpRequest.key : undefined}
                 onFocus={() => setFocusTarget('editor')}

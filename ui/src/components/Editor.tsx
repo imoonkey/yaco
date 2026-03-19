@@ -25,8 +25,8 @@ interface EditorProps {
   filePath: string
   onSave?: (content: string) => void
   onChange?: (content: string) => void
-  scrollProgress?: number
-  onScrollProgress?: (progress: number) => void
+  viewportLine?: number
+  onViewportLine?: (line: number) => void
   jumpToLine?: number | null
   jumpRequestKey?: number
   onFocus?: () => void
@@ -38,26 +38,17 @@ function isCloseShortcut(event: KeyboardEvent): boolean {
   return event.key.toLowerCase() === 'w' && event.metaKey && !event.ctrlKey && !event.altKey
 }
 
-function clampProgress(progress: number): number {
-  if (!Number.isFinite(progress)) return 0
-  return Math.max(0, Math.min(1, progress))
+function readViewportLine(view: EditorView): number {
+  const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop)
+  return view.state.doc.lineAt(block.from).number
 }
 
-function maxScrollTop(element: HTMLElement): number {
-  return Math.max(0, element.scrollHeight - element.clientHeight)
-}
-
-function readScrollProgress(element: HTMLElement): number {
-  const max = maxScrollTop(element)
-  if (max === 0) return 0
-  return clampProgress(element.scrollTop / max)
-}
-
-function applyScrollProgress(element: HTMLElement, progress: number): boolean {
-  const max = maxScrollTop(element)
-  const nextTop = max * clampProgress(progress)
-  if (Math.abs(element.scrollTop - nextTop) < 1) return false
-  element.scrollTop = nextTop
+function applyViewportLine(view: EditorView, lineNumber: number): boolean {
+  const clampedLine = Math.max(1, Math.min(lineNumber, view.state.doc.lines))
+  const line = view.state.doc.line(clampedLine)
+  const block = view.lineBlockAt(line.from)
+  if (Math.abs(view.scrollDOM.scrollTop - block.top) < 1) return false
+  view.scrollDOM.scrollTop = block.top
   return true
 }
 
@@ -66,8 +57,8 @@ export function Editor({
   filePath,
   onSave,
   onChange,
-  scrollProgress = 0,
-  onScrollProgress,
+  viewportLine = 1,
+  onViewportLine,
   jumpToLine = null,
   jumpRequestKey,
   onFocus,
@@ -79,10 +70,10 @@ export function Editor({
   const contentRef = useRef(content)
   const onSaveRef = useRef(onSave)
   const onChangeRef = useRef(onChange)
-  const onScrollProgressRef = useRef(onScrollProgress)
+  const onViewportLineRef = useRef(onViewportLine)
   const onFocusRef = useRef(onFocus)
   const onCloseRequestRef = useRef(onCloseRequest)
-  const applyingScrollRef = useRef(false)
+  const applyingViewportRef = useRef(false)
   const jumpRequestKeyRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
@@ -94,8 +85,8 @@ export function Editor({
   }, [onChange])
 
   useEffect(() => {
-    onScrollProgressRef.current = onScrollProgress
-  }, [onScrollProgress])
+    onViewportLineRef.current = onViewportLine
+  }, [onViewportLine])
 
   useEffect(() => {
     onFocusRef.current = onFocus
@@ -163,14 +154,14 @@ export function Editor({
     const view = new EditorView({ state, parent: containerRef.current })
     viewRef.current = view
     contentRef.current = content
-    applyScrollProgress(view.scrollDOM, scrollProgress)
+    applyViewportLine(view, viewportLine)
 
     const handleScroll = () => {
-      if (applyingScrollRef.current) {
-        applyingScrollRef.current = false
+      if (applyingViewportRef.current) {
+        applyingViewportRef.current = false
         return
       }
-      onScrollProgressRef.current?.(readScrollProgress(view.scrollDOM))
+      onViewportLineRef.current?.(readViewportLine(view))
     }
 
     view.scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
@@ -195,8 +186,8 @@ export function Editor({
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
-    applyingScrollRef.current = applyScrollProgress(view.scrollDOM, scrollProgress)
-  }, [scrollProgress])
+    applyingViewportRef.current = applyViewportLine(view, viewportLine)
+  }, [viewportLine])
 
   useEffect(() => {
     const view = viewRef.current
@@ -209,7 +200,7 @@ export function Editor({
       effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
     })
     view.focus()
-    onScrollProgressRef.current?.(readScrollProgress(view.scrollDOM))
+    onViewportLineRef.current?.(readViewportLine(view))
   }, [jumpRequestKey, jumpToLine])
 
   return <div ref={containerRef} className="h-full overflow-hidden" />

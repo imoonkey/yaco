@@ -133,8 +133,8 @@ Projects can also be reordered from the bottom project bar by dragging tabs, or 
 
 - Opening a real file tab keeps the same file selected in Explorer and auto-expands its parent folders
 - In `Changes`, clicking a file opens its diff tab; clicking the same row again while that diff tab is active opens the raw file instead
-- Markdown `Preview` and `Edit` share the same in-memory draft and scroll progress, so toggling modes does not discard unsaved edits or reset the reading position
-- Clicking inside Markdown preview reopens `Edit` near the clicked document position and moves the cursor to an approximate corresponding source line
+- Markdown `Preview` and `Edit` share the same in-memory draft and viewport source-line anchor, so toggling modes does not discard unsaved edits or reset the reading position
+- Clicking inside Markdown preview reopens `Edit` near the clicked block and moves the cursor to an approximate corresponding source line
 - Unsaved file drafts also survive switching between open file tabs; the draft is dropped only when the tab is closed or after a save replaces its saved base
 
 ## Terminal Integration
@@ -159,7 +159,7 @@ The Workspace view stores per-project UI state in localStorage:
 - left/right panel widths
 - explorer/changes split heights
 
-Unsaved drafts and per-file scroll progress are kept in Workspace memory for open tabs, not persisted to localStorage.
+Unsaved drafts and per-file viewport source-line anchors are kept in Workspace memory for open tabs, not persisted to localStorage.
 
 The file tree is also cached per project in memory on both the client and server. Revisiting a large project should show the previous tree immediately, then refresh in the background. Structural file changes (move/create/delete) invalidate the server cache so the next foreground refresh or poll picks them up without waiting for a full cold rebuild every time.
 
