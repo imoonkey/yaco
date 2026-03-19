@@ -1,4 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
+import { markdown } from '@codemirror/lang-markdown'
+import { python } from '@codemirror/lang-python'
+import { languages } from '@codemirror/language-data'
+import { LanguageDescription } from '@codemirror/language'
+import { classHighlighter, highlightCode } from '@lezer/highlight'
 import { useFileTree, useFileContent, useSessions, useGitStatus, saveFileContent, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { Editor } from './Editor'
@@ -6,15 +13,9 @@ import { Terminal } from './Terminal'
 import { ProviderIcon } from './SessionIcons'
 import { PaneSwitch } from './PaneSwitch'
 import { writeTextToClipboard } from '../lib/clipboard'
-import { marked } from 'marked'
+import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { marked, type Tokens } from 'marked'
 import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
-
-// --- VS Code Solarized Light palette ---
-const C = {
-  bg:       '#EEE8D5', editorBg: '#FDF6E3', headerBg: '#D3CBB7', border: '#D3CBB7',
-  text:     '#586E75', textDim:  '#657B83', textDark: '#073642', textBrown:'#584B2E',
-  muted:    '#93A1A1', accent:   '#268BD2', hover: '#E2D9C2', sash: '#584B2E',
-}
 
 // --- File type icon colors (VS Code Seti-like) ---
 const FILE_COLORS: Record<string, string> = {
@@ -34,6 +35,62 @@ type DiffState = {
 const SECTION_HEADER_HEIGHT = 22
 const RESIZE_HANDLE_HEIGHT = 1
 const MIN_SESSION_BODY_HEIGHT = 72
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function parserForCodeFence(lang: string | undefined) {
+  const normalized = (lang || '').trim().toLowerCase()
+  if (!normalized) return null
+  if (normalized === 'ts' || normalized === 'typescript') return javascript({ typescript: true }).language.parser
+  if (normalized === 'tsx') return javascript({ typescript: true, jsx: true }).language.parser
+  if (normalized === 'js' || normalized === 'javascript') return javascript().language.parser
+  if (normalized === 'jsx') return javascript({ jsx: true }).language.parser
+  if (normalized === 'json' || normalized === 'jsonc') return json().language.parser
+  if (normalized === 'py' || normalized === 'python') return python().language.parser
+  if (normalized === 'md' || normalized === 'markdown') return markdown({ codeLanguages: languages }).language.parser
+
+  const match = LanguageDescription.matchLanguageName(languages, normalized, true)
+  return match?.support ? match.support.language.parser : null
+}
+
+function renderHighlightedCode(text: string, lang: string | undefined): string {
+  const parser = parserForCodeFence(lang)
+  if (!parser) return escapeHtml(text)
+
+  const tree = parser.parse(text)
+  let html = ''
+  highlightCode(
+    text,
+    tree,
+    classHighlighter,
+    (code, classes) => {
+      const escaped = escapeHtml(code)
+      html += classes ? `<span class="${classes}">${escaped}</span>` : escaped
+    },
+    () => {
+      html += '\n'
+    },
+  )
+  return html
+}
+
+function renderMarkdown(content: string): string {
+  const renderer = new marked.Renderer()
+
+  renderer.code = ({ text, lang }: Tokens.Code) => {
+    const languageClass = lang ? ` class="language-${escapeHtml(lang)}"` : ''
+    return `<pre><code${languageClass}>${renderHighlightedCode(text, lang)}</code></pre>`
+  }
+
+  return marked.parse(content, { async: false, renderer }) as string
+}
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
   unlock?: () => void
@@ -360,19 +417,8 @@ function FileSearch({ files, onSelect, onClose }: { files: FileNode[]; onSelect:
 
 // --- Markdown Preview ---
 function MarkdownPreview({ content }: { content: string }) {
-  const html = marked.parse(content, { async: false }) as string
-  return (
-    <div className="p-5 prose prose-sm max-w-none text-[13px] leading-relaxed
-        [&_h1]:text-[#cb4b16] [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-3
-        [&_h2]:text-[#cb4b16] [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-5 [&_h2]:mb-2
-        [&_h3]:text-[#cb4b16] [&_h3]:text-base [&_h3]:font-bold [&_h3]:mt-4 [&_h3]:mb-2
-        [&_code]:text-[#2aa198] [&_code]:bg-[#eee8d5] [&_code]:px-1 [&_code]:rounded [&_code]:text-[12px]
-        [&_pre]:bg-[#eee8d5] [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0
-        [&_a]:text-[#268bd2] [&_a]:underline [&_blockquote]:border-l-2 [&_blockquote]:border-[#93a1a1] [&_blockquote]:pl-3 [&_blockquote]:text-[#93a1a1] [&_blockquote]:italic
-        [&_table]:border-collapse [&_th]:border [&_th]:border-[#eee8d5] [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[#eee8d5]
-        [&_td]:border [&_td]:border-[#eee8d5] [&_td]:px-2 [&_td]:py-1 [&_li]:my-0.5 [&_hr]:border-[#eee8d5]"
-      style={{ color: C.textDark }} dangerouslySetInnerHTML={{ __html: html }} />
-  )
+  const html = renderMarkdown(content)
+  return <div className="markdown-preview" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
 // ============================================================

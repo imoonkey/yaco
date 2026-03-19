@@ -18,6 +18,17 @@
   --sol-blue:    #268bd2;
   --sol-cyan:    #2aa198;
   --sol-green:   #859900;
+  --sol-focus-border: #b49471;
+  --sol-input-bg: #ddd6c1;
+  --sol-border: #ddd6c1;
+  --sol-tabs-bg: #d9d2c2;
+  --sol-tab-bg: #d3cbb7;
+  --sol-sidebar-bg: #eee8d5;
+  --sol-editor-bg: #fdf6e3;
+  --sol-list-active-bg: #dfca88;
+  --sol-list-active-fg: #6c6c6c;
+  --sol-list-hover-bg: #dfca8844;
+  --vscode-text-preformat-fg: #a31515;
 }
 
 html, body {
@@ -26,7 +37,7 @@ html, body {
 
 body {
   margin: 0;
-  background: var(--sol-base3);
+  background: var(--sol-editor-bg);
   color: var(--sol-base00);
   font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
   font-size: 13px;
@@ -35,4 +46,257 @@ body {
 #root {
   width: 100%;
   height: 100vh;
+}
+
+.markdown-preview {
+  padding: 1em 26px 40px;
+  color: var(--sol-base00);
+  background: var(--sol-editor-bg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", system-ui, "Ubuntu", "Droid Sans", sans-serif;
+  font-size: 14px;
+  line-height: 22px;
+  word-wrap: break-word;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6,
+.markdown-preview p,
+.markdown-preview ol,
+.markdown-preview ul,
+.markdown-preview pre {
+  margin-top: 0;
+}
+
+.markdown-preview h1,
+.markdown-preview h2,
+.markdown-preview h3,
+.markdown-preview h4,
+.markdown-preview h5,
+.markdown-preview h6 {
+  color: var(--sol-base01);
+  font-weight: 600;
+  margin-top: 24px;
+  margin-bottom: 16px;
+  line-height: 1.25;
+}
+
+.markdown-preview h1 {
+  font-size: 2em;
+  margin-top: 0;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.markdown-preview h2 {
+  font-size: 1.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.markdown-preview h3 {
+  font-size: 1.25em;
+}
+
+.markdown-preview h4 {
+  font-size: 1em;
+}
+
+.markdown-preview h5 {
+  font-size: 0.875em;
+}
+
+.markdown-preview h6 {
+  font-size: 0.85em;
+}
+
+.markdown-preview p {
+  margin-bottom: 16px;
+}
+
+.markdown-preview li p {
+  margin-bottom: 0.7em;
+}
+
+.markdown-preview ul,
+.markdown-preview ol {
+  margin-bottom: 0.7em;
+  padding-left: 2em;
+  list-style-position: outside;
+}
+
+.markdown-preview ul {
+  list-style-type: disc;
+}
+
+.markdown-preview ol {
+  list-style-type: decimal;
+}
+
+.markdown-preview li::marker {
+  color: var(--sol-yellow);
+}
+
+.markdown-preview a {
+  color: var(--sol-blue);
+  text-decoration: none;
+}
+
+.markdown-preview a:hover {
+  text-decoration: underline;
+}
+
+.markdown-preview em {
+  color: var(--sol-magenta);
+  font-style: italic;
+}
+
+.markdown-preview strong {
+  color: var(--sol-magenta);
+  font-weight: 700;
+}
+
+.markdown-preview del {
+  text-decoration: line-through;
+}
+
+.markdown-preview hr {
+  border: 0;
+  height: 1px;
+  margin: 24px 0;
+  border-bottom: 1px solid var(--sol-border);
+}
+
+.markdown-preview blockquote {
+  margin: 0 0 16px;
+  padding: 0 16px 0 10px;
+  color: var(--sol-green);
+  border-left: 5px solid var(--sol-green);
+  border-radius: 2px;
+}
+
+.markdown-preview code {
+  color: var(--vscode-text-preformat-fg);
+  background: var(--sol-base2);
+  border-radius: 3px;
+  padding: 0.1em 0.35em;
+  font-family: "SF Mono", Monaco, Menlo, Consolas, "Ubuntu Mono", "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  font-size: 1em;
+  line-height: 1.357em;
+}
+
+.markdown-preview pre {
+  margin-bottom: 16px;
+  overflow: auto;
+  background: var(--sol-base2);
+  border: 1px solid var(--sol-border);
+  border-radius: 3px;
+}
+
+.markdown-preview pre code {
+  display: block;
+  padding: 16px;
+  color: var(--sol-base00);
+  background: none;
+  border-radius: 0;
+}
+
+.markdown-preview .tok-link,
+.markdown-preview .tok-url,
+.markdown-preview .tok-tag {
+  color: var(--sol-blue);
+}
+
+.markdown-preview .tok-heading {
+  color: var(--sol-base01);
+  font-weight: 600;
+}
+
+.markdown-preview .tok-emphasis {
+  color: var(--sol-magenta);
+  font-style: italic;
+}
+
+.markdown-preview .tok-strong {
+  color: var(--sol-magenta);
+  font-weight: 700;
+}
+
+.markdown-preview .tok-keyword {
+  color: var(--sol-green);
+}
+
+.markdown-preview .tok-atom,
+.markdown-preview .tok-bool {
+  color: var(--sol-yellow);
+}
+
+.markdown-preview .tok-literal,
+.markdown-preview .tok-number {
+  color: var(--sol-magenta);
+}
+
+.markdown-preview .tok-string {
+  color: var(--sol-cyan);
+}
+
+.markdown-preview .tok-string2,
+.markdown-preview .tok-invalid {
+  color: var(--sol-red);
+}
+
+.markdown-preview .tok-variableName,
+.markdown-preview .tok-propertyName {
+  color: var(--sol-blue);
+}
+
+.markdown-preview .tok-typeName,
+.markdown-preview .tok-className,
+.markdown-preview .tok-namespace,
+.markdown-preview .tok-meta {
+  color: var(--sol-orange);
+}
+
+.markdown-preview .tok-comment {
+  color: var(--sol-base1);
+  font-style: italic;
+}
+
+.markdown-preview .tok-operator,
+.markdown-preview .tok-punctuation {
+  color: var(--sol-base00);
+}
+
+.markdown-preview table {
+  border-collapse: collapse;
+  margin-bottom: 0.7em;
+}
+
+.markdown-preview th {
+  text-align: left;
+  background: var(--sol-base2);
+  border-bottom: 1px solid var(--sol-border);
+}
+
+.markdown-preview th,
+.markdown-preview td {
+  padding: 5px 10px;
+}
+
+.markdown-preview table > tbody > tr + tr > td {
+  border-top: 1px solid var(--sol-border);
+}
+
+.markdown-preview img,
+.markdown-preview video {
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.markdown-preview sub,
+.markdown-preview sup {
+  line-height: 0;
 }

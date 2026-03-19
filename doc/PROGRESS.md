@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-19: VS Code-like markdown preview styling
+
+**What changed:**
+- Switched the Workspace markdown preview to a dedicated `.markdown-preview` style surface instead of inline utility classes
+- Matched inline code in the preview to VS Code light preview behavior with a red preformatted-text foreground
+- Restored ordered-list numbers and unordered-list bullets in the preview after the global reset removed native marker styles
+
+**Why:**
+- The preview should read like VS Code's markdown preview in light mode, and list markers are basic readability affordances that cannot disappear in a document-first workspace
+
+**Key files:** ui/src/components/Workspace.tsx, ui/src/components/Editor.tsx, ui/src/lib/solarizedLight.ts, ui/src/index.css
+**Verification:** `npm --prefix ui run build` passed
+**Commit:** None
+**Next:** If more visual mismatches show up, compare the preview against VS Code's light-side markdown token and typography defaults before changing editor colors
+**Blockers:** None
+
 ## 2026-03-19: Codex icon uses ChatGPT SVG asset
 
 **What changed:**
