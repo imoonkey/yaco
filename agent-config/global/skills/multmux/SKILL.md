@@ -51,13 +51,15 @@ multmux send "$NAME" "Now also add tests for the edge cases"
 multmux kill "$NAME"
 ```
 
+## Session Scoping
+
+Sessions are scoped to the project folder where they were created. All commands (`start`, `send`, `capture`, `status`, `kill`) resolve handles against the **current working directory** — a session created in `/workspace/project-a` is invisible from `/workspace/project-b`.
+
+When working across multiple projects, `cd` into the target project before running any multmux command, or run the command inside a subshell: `(cd /path/to/project && multmux status)`.
+
 ## Notes
 
 - Agent-facing names stay project-local: default `<index>-<provider>`, explicit `--name` stays `<name>`
-- Full tmux session names use: default `<index>-<provider>-<project>-mt`, explicit `--name` becomes `<name>-<project>-mt`
-- In this repo, `multmux start claude ... --name fixer` prints `fixer` and creates tmux session `fixer-multmux-mt`
-- Handle resolution is path-dependent: `start`, `send`, `capture`, `kill`, and `status` resolve names against the current working directory's project suffix
-- `kill --all` only removes multmux sessions visible from the current working directory
-- Run follow-up `multmux` commands from the same project root, or store the returned handle from `start` and reuse it there
-- For tests, prefer `bun run test` for pure unit coverage and `bun run test:integration` when tmux-backed checks are needed
+- Full tmux session names use: `<handle>-<project-slug>-mt`
+- `kill --all` only removes sessions scoped to the current directory
 - `capture` returns clean text (ANSI codes stripped by default)
