@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
-import { useProjects, useProgress, addProject } from './hooks/useApi'
+import { useProjects, useProgress, addProject, reorderProjects } from './hooks/useApi'
+import type { Project } from './types'
 
 type View = 'monitor' | 'workspace'
 
@@ -24,6 +25,26 @@ function saveState(view: View, project: string) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, project }))
 }
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
+function buildVisibleProjectOrder(view: View, projects: Project[], includeAllProjects: boolean): string[] {
+  const names = projects.map((project) => project.name)
+  if (view !== 'workspace' && includeAllProjects) {
+    return ['all', ...names]
+  }
+  return names
+}
+
+function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
+  if (fromIndex === toIndex) return items
+  const next = [...items]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, moved)
+  return next
+}
+
 function ProjectTabs({
   view,
   projectName,
@@ -31,16 +52,19 @@ function ProjectTabs({
   projects,
   onSelect,
   onAdd,
+  onReorder,
 }: {
   view: View
   projectName: string
   workspaceProject: string
-  projects?: { name: string }[]
+  projects?: Project[]
   onSelect: (name: string) => void
   onAdd: () => void
+  onReorder: (fromName: string, toName: string) => void
 }) {
   const showAllProjects = view !== 'workspace'
   const activeProject = view === 'workspace' ? workspaceProject : projectName
+  const [draggedProject, setDraggedProject] = useState<string | null>(null)
 
   return (
     <div
@@ -71,12 +95,27 @@ function ProjectTabs({
             return (
               <button
                 key={project.name}
+                draggable
+                onDragStart={() => setDraggedProject(project.name)}
+                onDragEnd={() => setDraggedProject(null)}
+                onDragOver={(event) => {
+                  event.preventDefault()
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  if (!draggedProject || draggedProject === project.name) return
+                  onReorder(draggedProject, project.name)
+                  setDraggedProject(null)
+                }}
                 onClick={() => onSelect(project.name)}
                 className={`px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer shrink-0 transition-colors ${
                   isActive
                     ? 'bg-[#268bd2]/15 text-[#268bd2]'
                     : 'text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]'
                 }`}
+                style={{
+                  opacity: draggedProject === project.name ? 0.55 : 1,
+                }}
               >
                 {project.name}
               </button>
@@ -104,26 +143,53 @@ function App() {
   const [lastConcreteProject, setLastConcreteProject] = useState<string>(
     saved.project !== 'all' ? saved.project : ''
   )
+  const [projectOrder, setProjectOrder] = useState<string[]>([])
 
   const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: progress } = useProgress()
 
+  useEffect(() => {
+    if (!projects) return
+    const names = projects.map((project) => project.name)
+    setProjectOrder((currentOrder) => {
+      const remaining = new Set(names)
+      const nextOrder = currentOrder.filter((name) => remaining.delete(name))
+      nextOrder.push(...names.filter((name) => remaining.has(name)))
+      return arraysEqual(currentOrder, nextOrder) ? currentOrder : nextOrder
+    })
+  }, [projects])
+
+  const orderedProjects = useMemo(() => {
+    if (!projects) return []
+    if (projectOrder.length === 0) return projects
+    const byName = new Map(projects.map((project) => [project.name, project]))
+    const ordered = projectOrder
+      .map((name) => byName.get(name))
+      .filter((project): project is Project => Boolean(project))
+    for (const project of projects) {
+      if (!projectOrder.includes(project.name)) {
+        ordered.push(project)
+      }
+    }
+    return ordered
+  }, [projectOrder, projects])
+
   const uncleared = progress?.filter(e => e.status === 'active').length ?? 0
-  const concreteProject = lastConcreteProject || (projects?.[0]?.name ?? '')
+  const concreteProject = lastConcreteProject || (orderedProjects[0]?.name ?? '')
 
   // Persist state changes
   useEffect(() => {
     saveState(view, projectName)
   }, [view, projectName])
 
-  const handleProjectChange = (name: string) => {
+  const handleProjectChange = useCallback((name: string) => {
     if (name === '__add__') {
       handleAddProject()
       return
     }
     setProjectName(name)
     if (name !== 'all') setLastConcreteProject(name)
-  }
+  }, [])
 
   const handleAddProject = async () => {
     const path = prompt('Project path (absolute):')
@@ -135,10 +201,29 @@ function App() {
       refreshProjects()
       setProjectName(name)
       setLastConcreteProject(name)
+      setProjectOrder((currentOrder) => currentOrder.includes(name) ? currentOrder : [...currentOrder, name])
     } catch (err) {
       alert(`Failed to add project: ${err}`)
     }
   }
+
+  const handleProjectReorder = useCallback(async (fromName: string, toName: string) => {
+    const currentOrder = projectOrder.length > 0 ? projectOrder : orderedProjects.map((project) => project.name)
+    if (fromName === toName) return
+    const fromIndex = currentOrder.indexOf(fromName)
+    const toIndex = currentOrder.indexOf(toName)
+    if (fromIndex === -1 || toIndex === -1) return
+
+    const nextOrder = moveItem(currentOrder, fromIndex, toIndex)
+    setProjectOrder(nextOrder)
+    try {
+      await reorderProjects(nextOrder)
+      refreshProjects()
+    } catch (err) {
+      setProjectOrder(projects?.map((project) => project.name) ?? [])
+      alert(`Failed to reorder projects: ${err}`)
+    }
+  }, [orderedProjects, projectOrder, projects, refreshProjects])
 
   const handleViewChange = (v: View) => {
     setView(v)
@@ -147,8 +232,26 @@ function App() {
     }
   }
 
+  useEffect(() => {
+    const visibleProjectOrder = buildVisibleProjectOrder(view, orderedProjects, true)
+    const handler = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (!/^[1-9]$/.test(event.key)) return
+
+      const index = Number(event.key) - 1
+      const targetProject = visibleProjectOrder[index]
+      if (!targetProject) return
+
+      event.preventDefault()
+      handleProjectChange(targetProject)
+    }
+
+    document.addEventListener('keydown', handler, true)
+    return () => document.removeEventListener('keydown', handler, true)
+  }, [handleProjectChange, orderedProjects, view])
+
   const workspaceProject = projectName === 'all' ? concreteProject : projectName
-  const currentProjectPath = projects?.find(p => p.name === workspaceProject)?.path ?? ''
+  const currentProjectPath = orderedProjects.find(p => p.name === workspaceProject)?.path ?? ''
 
   return (
     <div className="flex flex-col h-screen bg-[#fdf6e3]">
@@ -188,9 +291,10 @@ function App() {
         view={view}
         projectName={projectName}
         workspaceProject={workspaceProject}
-        projects={projects ?? undefined}
+        projects={orderedProjects}
         onSelect={handleProjectChange}
         onAdd={handleAddProject}
+        onReorder={handleProjectReorder}
       />
     </div>
   )

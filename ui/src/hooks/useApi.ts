@@ -106,6 +106,10 @@ export async function addProject(name: string, path: string): Promise<void> {
   await postJson('/projects', { name, path })
 }
 
+export async function reorderProjects(order: string[]): Promise<Project[]> {
+  return postJson<Project[]>('/projects/reorder', { order })
+}
+
 export async function startSession(provider: SessionProvider, projectPath: string): Promise<string> {
   const name = provider === 'shell' ? undefined : `${provider}-${Date.now().toString(36)}`
   const result = await postJson<{ ok: true; name: string }>('/sessions/start', { provider, name, cwd: projectPath })

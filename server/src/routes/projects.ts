@@ -36,6 +36,41 @@ app.post('/', async (c) => {
   return c.json(body, 201)
 })
 
+app.post('/reorder', async (c) => {
+  const body = await c.req.json<{ order?: string[] }>()
+  const order = Array.isArray(body.order) ? body.order : null
+  if (!order || order.length === 0 || !order.every((name) => typeof name === 'string' && name.length > 0)) {
+    return c.json({ error: 'order must be a non-empty array of project names' }, 400)
+  }
+
+  const projects = await loadProjects()
+  if (order.length !== projects.length) {
+    return c.json({ error: 'order must include every project exactly once' }, 400)
+  }
+
+  const byName = new Map(projects.map((project) => [project.name, project]))
+  if (byName.size !== projects.length) {
+    return c.json({ error: 'project names must be unique before reordering' }, 409)
+  }
+
+  const seen = new Set<string>()
+  const reordered: Project[] = []
+  for (const name of order) {
+    if (seen.has(name)) {
+      return c.json({ error: 'order must not contain duplicates' }, 400)
+    }
+    const project = byName.get(name)
+    if (!project) {
+      return c.json({ error: `unknown project: ${name}` }, 400)
+    }
+    seen.add(name)
+    reordered.push(project)
+  }
+
+  await saveProjects(reordered)
+  return c.json(reordered)
+})
+
 app.delete('/:name', async (c) => {
   const name = c.req.param('name')
   const projects = await loadProjects()
