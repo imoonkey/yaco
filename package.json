@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "npm run dev:server & npm run dev:ui",
+    "dev:tmux": "bash scripts/dev-tmux.sh",
     "dev:server": "cd server && npm run dev",
     "dev:ui": "cd ui && npm run dev",
     "build": "cd ui && npm run build"

@@ -48,9 +48,30 @@ workflow/
 # Both server + UI (concurrent)
 npm run dev
 
+# Both server + UI in one tmux session (hot reload on both panes)
+npm run dev:tmux
+
 # Or separately:
 npm run dev:server    # Backend on :3001 (tsx watch)
 npm run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
+```
+
+`npm run dev:tmux` creates or reuses a `tmux` session named `workflow-dev` with two panes:
+
+- left pane: `npm run dev:server`
+- right pane: `npm run dev:ui`
+
+Useful options:
+
+```bash
+# Start without attaching
+npm run dev:tmux -- --detached
+
+# Recreate the session from scratch
+npm run dev:tmux -- --reset
+
+# Override the session name
+WORKFLOW_DEV_TMUX_SESSION=workflow-api npm run dev:tmux
 ```
 
 ## Configuration
