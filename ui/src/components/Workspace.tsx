@@ -237,7 +237,17 @@ function FileTreeNode({ node, depth, selected, onSelect, gitMap, gitFolders }: {
 }
 
 // --- Session Item ---
-function SessionItem({ session, isActive, onClick }: { session: AgentSession; isActive: boolean; onClick: () => void }) {
+function SessionItem({
+  session,
+  isActive,
+  onClick,
+  onKill,
+}: {
+  session: AgentSession
+  isActive: boolean
+  onClick: () => void
+  onKill: () => void
+}) {
   return (
     <div onClick={onClick}
       className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15 text-[#268bd2]' : ''}`}
@@ -246,7 +256,17 @@ function SessionItem({ session, isActive, onClick }: { session: AgentSession; is
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
       <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[#859900] animate-pulse' : 'bg-[#93a1a1]'}`} />
-      <span className="truncate">{session.name}</span>
+      <span className="min-w-0 flex-1 truncate">{session.name}</span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation()
+          onKill()
+        }}
+        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] cursor-pointer border border-[#dc322f]/20 text-[#dc322f] hover:bg-[#dc322f]/8"
+        title={`Kill ${session.name}`}
+      >
+        Kill
+      </button>
     </div>
   )
 }
@@ -262,13 +282,16 @@ function GitChangeItem({ change, isActive, onClick }: { change: GitChange; isAct
   const dir = change.path.includes('/') ? change.path.slice(0, change.path.lastIndexOf('/')) : ''
   return (
     <div onClick={onClick}
-      className={`flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15' : ''}`}
+      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15' : ''}`}
+      title={change.path}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
       <FileTypeIcon name={name} />
-      <span className="truncate" style={{ color: GIT_COLORS[change.status] || C.text }}>{name}</span>
-      {dir && <span className="text-[10px] truncate" style={{ color: C.muted }}>{dir}</span>}
-      <span className="ml-auto text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[change.status] }}>{change.status}</span>
+      <div className="min-w-0 flex-1 overflow-hidden leading-tight">
+        <div className="truncate" style={{ color: GIT_COLORS[change.status] || C.text }}>{name}</div>
+        {dir && <div className="truncate pt-0.5 text-[10px]" style={{ color: C.muted }}>{dir}</div>}
+      </div>
+      <span className="ml-auto pt-[1px] text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[change.status] }}>{change.status}</span>
     </div>
   )
 }
@@ -441,6 +464,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   const isMd = activeTab?.endsWith('.md')
   const hasOpenFiles = openTabs.length > 0
+  const canTogglePreview = !!isMd && !isDiffTab
 
   const openFile = useCallback((path: string) => {
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
@@ -469,20 +493,29 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     setDirtyTabs(prev => { const n = new Set(prev); n.delete(path); return n })
   }, [])
 
-  const closeActiveSession = useCallback(async () => {
-    if (!attachedSession) return
-
-    const sessionName = attachedSession
-    setActiveSession('')
+  const killSession = useCallback(async (sessionName: string) => {
+    if (!sessionName) return
+    const shouldDetach = attachedSession === sessionName
+    if (shouldDetach) {
+      setActiveSession('')
+    }
 
     try {
       await closeRemoteSession(sessionName)
       refreshSessions()
     } catch (err) {
       console.error('Failed to close session:', err)
-      setActiveSession(sessionName)
+      if (shouldDetach) {
+        setActiveSession(sessionName)
+      }
     }
   }, [attachedSession, refreshSessions])
+
+  const detachActiveSession = useCallback(() => {
+    if (!attachedSession) return false
+    setActiveSession('')
+    return true
+  }, [attachedSession])
 
   const closeActiveTab = useCallback((): boolean => {
     if (!activeTab) return false
@@ -491,10 +524,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   }, [activeTab, closeTab])
 
   const closeAttachedSession = useCallback((): boolean => {
-    if (!attachedSession) return false
-    void closeActiveSession()
-    return true
-  }, [attachedSession, closeActiveSession])
+    return detachActiveSession()
+  }, [detachActiveSession])
 
   const closeFocusedSurface = useCallback((): boolean => {
     if (showSearch) {
@@ -585,6 +616,12 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       const key = e.key.toLowerCase()
       if (e.metaKey && key === 'b') { e.preventDefault(); setShowSidebar(v => !v) }
       if (e.metaKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canTogglePreview) {
+        e.preventDefault()
+        e.stopPropagation()
+        setPreviewMode(v => !v)
+        return
+      }
       if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'w' && closeFocusedSurface()) {
         e.preventDefault()
         e.stopPropagation()
@@ -592,7 +629,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [closeFocusedSurface])
+  }, [canTogglePreview, closeFocusedSurface])
 
   useEffect(() => {
     const handleBlur = () => {
@@ -667,6 +704,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 key={s.name}
                 session={s}
                 isActive={s.name === attachedSession}
+                onKill={() => { void killSession(s.name) }}
                 onClick={() => {
                   setActiveSession(s.name)
                   setFocusTarget('session')
@@ -680,6 +718,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 key={s.name}
                 session={s}
                 isActive={s.name === attachedSession}
+                onKill={() => { void killSession(s.name) }}
                 onClick={() => {
                   setActiveSession(s.name)
                   setFocusTarget('session')
@@ -731,7 +770,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
             </div>
           )
         })}
-        {isMd && !isDiffTab && (
+        {canTogglePreview && (
           <button onClick={() => setPreviewMode(!previewMode)} className="ml-auto mr-2 text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
             style={{ backgroundColor: previewMode ? '#268bd215' : C.bg, color: previewMode ? C.accent : C.text, borderColor: previewMode ? '#268bd230' : C.border }}>
             {previewMode ? 'Edit' : 'Preview'}
@@ -753,7 +792,6 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 onCloseRequest={() => {
                   closeTab(activeTab)
                 }}
-                readOnly={!activeTab.endsWith('.md') && !activeTab.endsWith('.json')}
                 onDirty={(dirty) => setDirtyTabs(prev => {
                   const n = new Set(prev)
                   if (dirty) n.add(activeTab!)
@@ -790,7 +828,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               sessionName={attachedSession}
               onInteract={() => setFocusTarget('terminal')}
               onCloseRequest={() => {
-                void closeActiveSession()
+                detachActiveSession()
               }}
             />
           </div>
@@ -862,9 +900,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => setShowSessions(v => !v)} actions={sessionActions} />
                 {showSessions && (
                   <div className="flex-1 overflow-y-auto py-1 px-1 min-h-0" style={{ minHeight: MIN_SESSION_BODY_HEIGHT }}>
-                    {processing.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
+                    {processing.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
                     {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
-                    {idle.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
+                    {idle.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
                     {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
                   </div>
                 )}

@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-19: Editable text files + Markdown preview shortcut
+
+**What changed:**
+- Removed the old Workspace restriction that only allowed `.md` and `.json` files to enter edit mode
+- Removed the matching backend save restriction so validated project files can be written regardless of extension
+- Added `Cmd+Shift+V` as a Markdown preview toggle shortcut alongside the existing preview button
+- Changed session-side `Cmd+W` from hard close to detach-only, and moved hard termination to an explicit `Kill` button on each session row
+- Kept the `Changes` panel behavior as-is, so changed files still open into diff tabs rather than editable file tabs
+
+**Why:**
+- The previous split between editable and read-only files made docs and source files feel inconsistent in the same editor surface, and Markdown preview needed a keyboard path instead of only a mouse target
+
+**Key files:** ui/src/components/Workspace.tsx, server/src/routes/files.ts, doc/main/architecture.md
+**Verification:** `npm run build` passed in `ui/`; `../ui/node_modules/.bin/tsc -p tsconfig.json --noEmit` passed in `server/`
+**Commit:** None
+**Next:** If needed, add a clearer visual label for diff tabs versus editable file tabs so the read-only state is more obvious
+**Blockers:** None
+
 ## 2026-03-19: Focus-aware Cmd+W close handling in Workspace
 
 **What changed:**

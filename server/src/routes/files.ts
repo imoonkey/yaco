@@ -16,9 +16,6 @@ const IGNORE = new Set([
   '.DS_Store', 'bun.lock', 'package-lock.json',
 ])
 
-// Writable file extensions in v0 (markdown + json)
-const WRITABLE_EXTS = new Set(['.md', '.json'])
-
 async function buildTree(absPath: string, basePath: string, depth: number, maxDepth: number): Promise<FileNode[]> {
   if (depth >= maxDepth) return []
   if (!existsSync(absPath)) return []
@@ -93,12 +90,6 @@ app.put('/:project/content', async (c) => {
   const projectName = c.req.param('project')
   const filePath = c.req.query('path')
   if (!filePath) return c.json({ error: 'path required' }, 400)
-
-  // D6: Only allow writing to markdown and json files in v0
-  const ext = filePath.substring(filePath.lastIndexOf('.'))
-  if (!WRITABLE_EXTS.has(ext)) {
-    return c.json({ error: 'only .md and .json files are writable in v0' }, 403)
-  }
 
   const projects = await loadProjects()
   const proj = projects.find(p => p.name === projectName)
