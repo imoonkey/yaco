@@ -10,7 +10,7 @@ const SOLARIZED_THEME = {
   foreground: '#657b83',
   cursor: '#586e75',
   cursorAccent: '#eee8d5',
-  selectionBackground: '#eee8d5',
+  selectionBackground: 'rgba(38, 139, 210, 0.28)',
   black: '#073642',
   red: '#dc322f',
   green: '#859900',
@@ -222,5 +222,17 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     }
   }, [sessionName])
 
-  return <div ref={containerRef} className="h-full w-full" style={{ backgroundColor: SOLARIZED_THEME.background }} onMouseDown={onInteract} onFocusCapture={onInteract} />
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full select-text"
+      style={{
+        backgroundColor: SOLARIZED_THEME.background,
+        userSelect: 'text',
+        WebkitUserSelect: 'text',
+      }}
+      onMouseDown={onInteract}
+      onFocusCapture={onInteract}
+    />
+  )
 }

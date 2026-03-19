@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-19: Restore terminal mouse selection visibility
+
+**What changed:**
+- Re-enabled text selection on the Workspace terminal pane so the root `select-none` shell chrome no longer blocks mouse selection inside xterm
+- Changed the xterm selection background from the terminal background color to a visible Solarized-blue tint so drag selection is obvious again
+- Left the existing terminal clipboard bridge in place, but removed the extra global copy interception experiment after confirming the real bug was selection, not clipboard routing
+
+**Why:**
+- Terminal copy only works if users can first select text. The regression was that shell sessions looked non-selectable because the terminal pane inherited `user-select: none`, and even successful selections blended into the background.
+
+**Key files:** ui/src/components/Terminal.tsx, ui/src/components/Workspace.tsx, doc/main/architecture.md, doc/dev/guide.md
+**Verification:** `npm run build` passed in `ui/`
+**Commit:** None
+**Next:** If terminal selection regresses again, inspect xterm mouse-selection events before changing clipboard handling
+**Blockers:** None
+
 ## 2026-03-19: Project tab shortcuts, reordering, and Explorer copy-path
 
 **What changed:**

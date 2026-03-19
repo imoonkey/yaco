@@ -78,7 +78,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 - **Git integration** — file tree shows M/U/A/D badges, folder change dots, Source Control section with diff viewer, and diff tabs keep their fetched content cached when reselected so switching back to the same change does not flash a reload state
 - **Session actions** — sidebar shows provider logos, can start Claude, Codex, or direct `shell-N` sessions; `Cmd+W` detaches the attached session, while each session row exposes an explicit `Kill` button for hard termination
 - **Empty-editor layout** — when no file tabs are open, the terminal/session pane expands to occupy the full main content area
-- **Terminal clipboard bridge** — browser terminal handles terminal-side `OSC 52` clipboard writes and browser copy shortcuts for selected terminal text
+- **Terminal selection and clipboard bridge** — browser terminal explicitly re-enables text selection inside the terminal pane, uses a visible selection tint, handles terminal-side `OSC 52` clipboard writes, and supports browser copy shortcuts for selected terminal text
 - **Workspace state persistence** — open tabs, active session, sidebar toggles, and panel sizes are stored per project in localStorage and restored on refresh
 - **Unsaved indicator** — dirty tabs show black dot instead of close button, and the dirty/close affordance sits on the right side of each editor tab
 - **Markdown preview** — toggle Edit/Preview for .md files with the header button or `Cmd+Shift+V`

@@ -137,6 +137,8 @@ The terminal WebSocket supports two backends:
 
 The WebSocket URL accepts `cols` and `rows` query params so the PTY starts or resizes at the correct dimensions. Direct shell sessions keep a bounded scrollback buffer on the server so re-attaching restores recent output.
 
+The Workspace root uses `select-none` for general shell-like interactions, so the terminal pane must explicitly restore `user-select: text`. The xterm theme also needs a visible `selectionBackground`, otherwise mouse selection can appear broken even when xterm is selecting correctly.
+
 ## Workspace Persistence
 
 The Workspace view stores per-project UI state in localStorage:
