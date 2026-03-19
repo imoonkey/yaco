@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
 import { RoadmapView } from './components/RoadmapView'
-import { useProjects, useProgress } from './hooks/useApi'
+import { useProjects, useProgress, addProject } from './hooks/useApi'
 
 type View = 'monitor' | 'workspace' | 'roadmap'
 
@@ -16,18 +16,42 @@ function App() {
   const [view, setView] = useState<View>('monitor')
   const [projectName, setProjectName] = useState<string>('all')
   const [lastConcreteProject, setLastConcreteProject] = useState<string>('')
+  const folderInputRef = useRef<HTMLInputElement>(null)
 
-  const { data: projects } = useProjects()
+  const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: progress } = useProgress()
 
   const uncleared = progress?.filter(e => e.status === 'active').length ?? 0
-
-  // Initialize lastConcreteProject when projects load
   const concreteProject = lastConcreteProject || (projects?.[0]?.name ?? '')
 
   const handleProjectChange = (name: string) => {
+    if (name === '__add__') {
+      folderInputRef.current?.click()
+      return
+    }
     setProjectName(name)
     if (name !== 'all') setLastConcreteProject(name)
+  }
+
+  const handleFolderSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    // webkitRelativePath gives us "foldername/file" — extract folder name
+    const firstPath = files[0].webkitRelativePath
+    const folderName = firstPath.split('/')[0]
+    // We can't get absolute path from browser, so prompt user
+    const absPath = prompt(`Enter the absolute path for "${folderName}":`)
+    if (!absPath) return
+    try {
+      await addProject(folderName, absPath)
+      refreshProjects()
+      setProjectName(folderName)
+      setLastConcreteProject(folderName)
+    } catch (err) {
+      alert(`Failed to add project: ${err}`)
+    }
+    // Reset input
+    e.target.value = ''
   }
 
   const handleViewChange = (v: View) => {
@@ -38,6 +62,7 @@ function App() {
   }
 
   const workspaceProject = projectName === 'all' ? concreteProject : projectName
+  const currentProjectPath = projects?.find(p => p.name === workspaceProject)?.path ?? ''
 
   return (
     <div className="flex flex-col h-screen bg-[#fdf6e3]">
@@ -69,6 +94,16 @@ function App() {
 
         <div className="flex-1" />
 
+        {/* Hidden folder input for add project */}
+        <input
+          ref={folderInputRef}
+          type="file"
+          // @ts-expect-error webkitdirectory is not in types
+          webkitdirectory=""
+          className="hidden"
+          onChange={handleFolderSelect}
+        />
+
         <select
           value={view === 'workspace' ? workspaceProject : projectName}
           onChange={e => handleProjectChange(e.target.value)}
@@ -78,12 +113,13 @@ function App() {
           {projects?.map(p => (
             <option key={p.name} value={p.name}>{p.name}</option>
           ))}
+          <option value="__add__">+ Add Project...</option>
         </select>
       </header>
 
       <main className="flex-1 overflow-hidden">
         {view === 'monitor' && <Monitor filterProject={projectName === 'all' ? null : projectName} />}
-        {view === 'workspace' && <Workspace projectName={workspaceProject} />}
+        {view === 'workspace' && <Workspace projectName={workspaceProject} projectPath={currentProjectPath} />}
         {view === 'roadmap' && <RoadmapView filterProject={projectName === 'all' ? null : projectName} />}
       </main>
     </div>

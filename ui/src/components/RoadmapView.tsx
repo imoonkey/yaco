@@ -10,7 +10,6 @@ const statusBadge: Record<WorkstreamStatus, { label: string; text: string; bg: s
   done:         { label: 'Done',    text: 'text-[#268bd2]', bg: 'bg-[#268bd2]/10' },
 }
 
-// Human-only statuses that can be set from the UI
 const humanStatuses: WorkstreamStatus[] = ['active', 'parked', 'done']
 
 function CheckpointDots({ checkpoints }: { checkpoints: Checkpoint[] }) {
@@ -27,17 +26,39 @@ function CheckpointDots({ checkpoints }: { checkpoints: Checkpoint[] }) {
   )
 }
 
+function CheckpointList({ checkpoints }: { checkpoints: Checkpoint[] }) {
+  return (
+    <div className="space-y-1">
+      {checkpoints.map((cp, i) => (
+        <div key={i} className="flex items-center gap-2 text-[12px]">
+          <span className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
+            cp.done ? 'bg-[#859900] border-[#859900]' : 'border-[#93a1a1]/40'
+          }`}>
+            {cp.done && <span className="text-white text-[8px]">✓</span>}
+          </span>
+          <span className={cp.done ? 'text-[#93a1a1] line-through' : 'text-[#073642]'}>
+            {cp.label}
+          </span>
+          {cp.need_human_review && (
+            <span className="text-[9px] px-1 py-0 rounded bg-[#6c71c4]/10 text-[#6c71c4]">review</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function WorkstreamRow({ ws, onStatusChange }: {
   ws: { id: string; name: string; status: WorkstreamStatus; project: string; doc?: string; checkpoints: Checkpoint[] }
   onStatusChange: (project: string, id: string, status: WorkstreamStatus) => void
 }) {
-  const [showActions, setShowActions] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const badge = statusBadge[ws.status]
 
   return (
     <div
       className="border border-[#eee8d5] rounded-lg p-4 hover:border-[#93a1a1]/40 cursor-pointer transition-colors bg-[#fdf6e3]"
-      onClick={() => setShowActions(!showActions)}
+      onClick={() => setExpanded(!expanded)}
     >
       <div className="flex items-start justify-between mb-2">
         <div>
@@ -50,7 +71,7 @@ function WorkstreamRow({ ws, onStatusChange }: {
           {badge.label}
         </span>
       </div>
-      {ws.checkpoints.length > 0 && (
+      {ws.checkpoints.length > 0 && !expanded && (
         <div className="flex items-center gap-3 mt-3">
           <CheckpointDots checkpoints={ws.checkpoints} />
           <span className="text-[11px] text-[#93a1a1]">
@@ -58,17 +79,23 @@ function WorkstreamRow({ ws, onStatusChange }: {
           </span>
         </div>
       )}
-      {showActions && (
-        <div className="flex items-center gap-1.5 mt-3 pt-3 border-t border-[#eee8d5]">
-          {humanStatuses.filter(s => s !== ws.status).map(s => (
-            <button
-              key={s}
-              onClick={(e) => { e.stopPropagation(); onStatusChange(ws.project, ws.id, s) }}
-              className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer ${statusBadge[s].text} ${statusBadge[s].bg} border-[#93a1a1]/20 hover:border-[#93a1a1]/40`}
-            >
-              {statusBadge[s].label}
-            </button>
-          ))}
+      {expanded && (
+        <div className="mt-3 pt-3 border-t border-[#eee8d5] space-y-3">
+          {ws.checkpoints.length > 0 && (
+            <CheckpointList checkpoints={ws.checkpoints} />
+          )}
+          <div className="flex items-center gap-1.5 pt-2">
+            <span className="text-[10px] text-[#93a1a1] mr-1">Set status:</span>
+            {humanStatuses.filter(s => s !== ws.status).map(s => (
+              <button
+                key={s}
+                onClick={(e) => { e.stopPropagation(); onStatusChange(ws.project, ws.id, s) }}
+                className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer ${statusBadge[s].text} ${statusBadge[s].bg} border-[#93a1a1]/20 hover:border-[#93a1a1]/40`}
+              >
+                {statusBadge[s].label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useFileTree, useFileContent, useSessions, saveFileContent } from '../hooks/useApi'
+import { useFileTree, useFileContent, useSessions, saveFileContent, startSession } from '../hooks/useApi'
 import { Editor } from './Editor'
 import { Terminal } from './Terminal'
 import type { FileNode, AgentSession } from '../types'
@@ -135,13 +135,32 @@ function SessionItem({ session, isActive, onClick }: {
   )
 }
 
+// --- Claude / Codex icons (product colors) ---
+function ClaudeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="#D97706" />
+      <path d="M8 12l2.5 2.5L16 9" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function CodexIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none">
+      <rect x="3" y="3" width="18" height="18" rx="4" fill="#10B981" />
+      <path d="M8 12h8M12 8v8" stroke="white" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 // --- Main Workspace ---
-export function Workspace({ projectName }: { projectName: string }) {
+export function Workspace({ projectName, projectPath }: { projectName: string; projectPath: string }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [activeSession, setActiveSession] = useState<string>('')
   const { data: fileTree } = useFileTree(projectName)
   const { content, loading } = useFileContent(projectName, selectedFile)
-  const { data: sessions } = useSessions()
+  const { data: sessions, refresh: refreshSessions } = useSessions()
 
   const allSessions = sessions ?? []
   const processing = allSessions.filter(s => s.status === 'processing')
@@ -149,6 +168,15 @@ export function Workspace({ projectName }: { projectName: string }) {
 
   const left = useResize(220, 140, 400)
   const right = useResizeRight(420, 250, 700)
+
+  const handleNewSession = async (agent: 'claude' | 'codex') => {
+    try {
+      await startSession(agent, projectPath)
+      refreshSessions()
+    } catch (err) {
+      console.error('Failed to start session:', err)
+    }
+  }
 
   return (
     <div className="flex h-full select-none">
@@ -165,7 +193,25 @@ export function Workspace({ projectName }: { projectName: string }) {
 
         {/* Sessions */}
         <div className="h-[40%] shrink-0 overflow-y-auto py-1 px-1">
-          <div className="text-[10px] text-[#93a1a1] uppercase tracking-wider px-2 mb-1">Sessions</div>
+          <div className="flex items-center justify-between px-2 mb-1">
+            <div className="text-[10px] text-[#93a1a1] uppercase tracking-wider">Sessions</div>
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleNewSession('claude')}
+                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[#eee8d5] hover:bg-[#ddd6c1] border border-[#93a1a1]/20 text-[#586e75] cursor-pointer"
+                title="New Claude session"
+              >
+                <ClaudeIcon /> Claude
+              </button>
+              <button
+                onClick={() => handleNewSession('codex')}
+                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[#eee8d5] hover:bg-[#ddd6c1] border border-[#93a1a1]/20 text-[#586e75] cursor-pointer"
+                title="New Codex session"
+              >
+                <CodexIcon /> Codex
+              </button>
+            </div>
+          </div>
           {processing.map(s => (
             <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />
           ))}
@@ -174,7 +220,7 @@ export function Workspace({ projectName }: { projectName: string }) {
             <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />
           ))}
           {allSessions.length === 0 && (
-            <div className="px-2 py-2 text-[11px] text-[#93a1a1]">No live sessions</div>
+            <div className="px-2 py-3 text-[11px] text-[#93a1a1] text-center">No live sessions</div>
           )}
         </div>
       </div>
@@ -208,7 +254,7 @@ export function Workspace({ projectName }: { projectName: string }) {
 
       <ResizeHandle onMouseDown={right.onMouseDown} />
 
-      {/* Right: Terminal placeholder */}
+      {/* Right: Terminal */}
       <div className="flex flex-col overflow-hidden" style={{ width: right.width }}>
         {activeSession ? (
           <>

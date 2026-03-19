@@ -46,6 +46,12 @@ export async function sendToSession(handle: string, message: string): Promise<vo
   await spawnOutput('multmux', ['send', handle, message], 5000)
 }
 
+/** Start a new multmux session */
+export async function startMultmuxSession(handle: string, cmd: string, cwd: string): Promise<void> {
+  validateSessionName(handle)
+  await spawnOutput('multmux', ['start', handle, cmd, '--cwd', cwd], 10000)
+}
+
 /** Collect stdout from a spawned process */
 function spawnOutput(cmd: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {

@@ -99,6 +99,19 @@ export async function updateWorkstreamStatus(project: string, workstreamId: stri
   await postJson(`/workstreams/${encodeURIComponent(project)}/${encodeURIComponent(workstreamId)}/status`, { status })
 }
 
+export async function addProject(name: string, path: string): Promise<void> {
+  await postJson('/projects', { name, path })
+}
+
+export async function startSession(agent: 'claude' | 'codex', projectPath: string): Promise<void> {
+  // Start a new multmux session
+  const handle = `${agent}-${Date.now().toString(36)}`
+  const cmd = agent === 'claude'
+    ? `claude --dangerously-skip-permissions`
+    : `codex`
+  await postJson(`/sessions/${encodeURIComponent(handle)}/start`, { cmd, cwd: projectPath })
+}
+
 export async function saveFileContent(projectName: string, filePath: string, content: string): Promise<void> {
   const res = await fetch(`${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
     method: 'PUT',
