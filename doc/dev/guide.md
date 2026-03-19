@@ -2,8 +2,7 @@
 
 ## Prerequisites
 
-- Bun >= 1.3
-- Node.js (for Vite dev server)
+- Node.js >= 22
 - tmux (for terminal integration)
 - multmux (for session management)
 
@@ -11,33 +10,34 @@
 
 ```
 workflow/
-├── server/           # Hono backend (Bun)
+├── server/           # Hono backend (Node.js)
 │   └── src/
-│       ├── index.ts         # Entry: Bun.serve + Hono + WebSocket
+│       ├── index.ts         # Entry: @hono/node-server + ws WebSocket
 │       ├── lib/
 │       │   ├── projects.ts  # ~/.workflow/projects.json CRUD
 │       │   ├── scanner.ts   # Scan workstream.json + progress.json
 │       │   ├── multmux.ts   # Shell out to multmux (spawn, no shell)
 │       │   ├── watcher.ts   # fs.watch on progress.json files
 │       │   ├── notify.ts    # macOS desktop notifications
-│       │   └── terminal.ts  # tmux send-keys + capture-pane
+│       │   └── terminal.ts  # node-pty → tmux attach-session
 │       └── routes/
 │           ├── projects.ts
 │           ├── workstreams.ts
 │           ├── progress.ts
 │           ├── sessions.ts
-│           └── files.ts
+│           ├── files.ts
+│           └── git.ts       # git status + diff endpoints
 ├── ui/               # React frontend (Vite)
 │   └── src/
 │       ├── App.tsx
 │       ├── types.ts
-│       ├── hooks/useApi.ts  # API hooks with polling
+│       ├── hooks/useApi.ts  # API hooks with polling + git hooks
 │       └── components/
 │           ├── Monitor.tsx     # Sessions + notifications
-│           ├── Workspace.tsx   # File tree + editor + terminal
+│           ├── Workspace.tsx   # File tree + tabs + editor + terminal + git
 │           ├── RoadmapView.tsx # Workstream tracking
-│           ├── Editor.tsx      # CodeMirror 6 wrapper
-│           └── Terminal.tsx    # xterm.js wrapper
+│           ├── Editor.tsx      # CodeMirror 6 wrapper (Solarized Light)
+│           └── Terminal.tsx    # xterm.js wrapper (Solarized Light)
 ├── doc/              # Documentation + design
 └── package.json      # Root scripts
 ```
@@ -46,11 +46,11 @@ workflow/
 
 ```bash
 # Both server + UI (concurrent)
-bun run dev
+npm run dev
 
 # Or separately:
-bun run dev:server    # Backend on :3001
-bun run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
+npm run dev:server    # Backend on :3001 (tsx watch)
+npm run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
 ```
 
 ## Configuration
@@ -58,7 +58,7 @@ bun run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server port |
-| `WORKFLOW_CORS_ORIGINS` | `http://localhost:5173` | Comma-separated allowed origins |
+| `WORKFLOW_CORS_ORIGINS` | `http://localhost:5173,http://localhost:5174` | Comma-separated allowed origins |
 
 ## Project Registration
 
@@ -69,6 +69,8 @@ curl -X POST http://localhost:3001/api/projects \
   -H 'Content-Type: application/json' \
   -d '{"name":"MyProject","path":"/absolute/path/to/repo"}'
 ```
+
+Or use the UI: project dropdown → "+ Add Project..."
 
 ## API Endpoints
 
@@ -82,15 +84,22 @@ curl -X POST http://localhost:3001/api/projects \
 | GET | `/api/progress` | All progress entries |
 | POST | `/api/progress/:project/:ws/:id/dismiss` | Dismiss a notification |
 | GET | `/api/sessions` | Live multmux sessions |
+| POST | `/api/sessions/start` | Start new agent session |
 | POST | `/api/sessions/:handle/pause` | Pause (send /stop) |
 | POST | `/api/sessions/:handle/resume` | Resume with prompt |
 | GET | `/api/files/:project` | File tree |
 | GET | `/api/files/:project/content?path=...` | Read file |
 | PUT | `/api/files/:project/content?path=...` | Write file (.md/.json only) |
-| WS | `/ws/terminal/:sessionName` | Terminal I/O via WebSocket |
+| GET | `/api/git/:project/status` | Git status (changed files) |
+| GET | `/api/git/:project/diff?path=...` | Unified diff for a file |
+| WS | `/ws/terminal/:name?cols=N&rows=N` | Terminal PTY via WebSocket |
+
+## Terminal Integration
+
+The terminal connects to tmux sessions via node-pty. The WebSocket URL accepts `cols` and `rows` query params so the PTY spawns at the correct size (no initial resize flicker). Session names are resolved from multmux short names (e.g. `1-claude`) to full tmux names (e.g. `1-claude-workflow-mt`).
 
 ## Build
 
 ```bash
-bun run build    # Produces ui/dist/
+npm run build    # Produces ui/dist/
 ```

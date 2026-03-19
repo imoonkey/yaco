@@ -27,12 +27,13 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 
 | Layer | Tech |
 |-------|------|
-| Runtime | Bun |
-| Backend | Hono (HTTP + WebSocket) |
+| Runtime | Node.js 22 + tsx |
+| Backend | Hono (HTTP via @hono/node-server) + ws (WebSocket) |
+| Terminal | node-pty 1.0 → tmux attach via PTY |
 | Frontend | React 19 + Vite 8 |
-| Editor | CodeMirror 6 (markdown) |
-| Terminal | xterm.js → tmux via WebSocket |
-| Styling | Tailwind CSS 4 (Solarized Light) |
+| Editor | CodeMirror 6 (multi-language, Solarized Light) |
+| Terminal UI | xterm.js 6 (Solarized Light) |
+| Styling | Tailwind CSS 4 (VS Code Solarized Light palette) |
 | Notifications | macOS `osascript` |
 
 ## Architecture
@@ -45,13 +46,14 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 │  └────┬─────┘ └─────┬─────┘ └─────┬──────┘    │
 │       │    HTTP/WS   │             │           │
 ├───────┴──────────────┴─────────────┴───────────┤
-│  Hono Server (Bun)          :3001              │
+│  Hono Server (Node.js)        :3001            │
 │  ├── /api/projects        (projects.json)      │
 │  ├── /api/workstreams     (scan workstream.json)│
 │  ├── /api/progress        (scan progress.json) │
 │  ├── /api/sessions        (multmux status)     │
 │  ├── /api/files           (file tree + r/w)    │
-│  └── /ws/terminal/:name   (tmux via WebSocket) │
+│  ├── /api/git             (status + diff)      │
+│  └── /ws/terminal/:name   (tmux via node-pty)  │
 ├────────────────────────────────────────────────┤
 │  File System                                   │
 │  ~/.workflow/projects.json                     │
@@ -62,11 +64,21 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 └────────────────────────────────────────────────┘
 ```
 
+## Workspace Features
+
+- **Multi-tab editor** — open/close/switch files, Cmd-W to close, Cmd-P file search, Cmd-B sidebar toggle
+- **File type icons** — colored SVG icons by extension (Seti-like)
+- **Git integration** — file tree shows M/U/A/D badges, folder change dots, Source Control section with diff viewer
+- **Unsaved indicator** — dirty tabs show black dot instead of close button
+- **Markdown preview** — toggle Edit/Preview for .md files
+- **Collapsible sidebar** — Explorer, Changes, Sessions sections with draggable dividers
+
 ## Security
 
-- Session names validated: `[a-zA-Z0-9_-]` only
+- Session names validated: `[a-zA-Z0-9_.-]` only
 - File paths resolved via `realpath()` to prevent symlink traversal
 - Write restricted to `.md` and `.json` in v0
 - WebSocket origin validation against allowed origins
 - CORS configurable via `WORKFLOW_CORS_ORIGINS` env var
 - File write operations use in-process locks to prevent race conditions
+- Git commands use `spawnSync`/`execFileSync` with array args (no shell injection)

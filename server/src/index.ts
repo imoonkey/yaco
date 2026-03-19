@@ -8,6 +8,7 @@ import { workstreamRoutes } from './routes/workstreams.js'
 import { progressRoutes } from './routes/progress.js'
 import { sessionRoutes } from './routes/sessions.js'
 import { fileRoutes } from './routes/files.js'
+import { gitRoutes } from './routes/git.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
 import { attachSession } from './lib/terminal.js'
@@ -28,6 +29,7 @@ app.route('/api/workstreams', workstreamRoutes)
 app.route('/api/progress', progressRoutes)
 app.route('/api/sessions', sessionRoutes)
 app.route('/api/files', fileRoutes)
+app.route('/api/git', gitRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 
@@ -70,14 +72,17 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
     return
   }
 
+  const cols = Math.max(1, Math.min(500, Number(url.searchParams.get('cols')) || 80))
+  const rows = Math.max(1, Math.min(200, Number(url.searchParams.get('rows')) || 24))
+
   wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req, sessionName)
+    wss.emit('connection', ws, req, sessionName, cols, rows)
   })
 })
 
-wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string) => {
+wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number) => {
   try {
-    const proc = attachSession(sessionName, 80, 24)
+    const proc = attachSession(sessionName, cols, rows)
 
     proc.onData((data: string) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(data)

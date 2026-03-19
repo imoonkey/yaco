@@ -20,6 +20,10 @@
   --sol-green:   #859900;
 }
 
+html, body {
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background: var(--sol-base3);

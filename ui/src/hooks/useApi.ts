@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { Project, Workstream, ProgressEntry, AgentSession, FileNode } from '../types'
+import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange } from '../types'
 
 const API = '/api'
 
@@ -115,4 +115,19 @@ export async function saveFileContent(projectName: string, filePath: string, con
     body: JSON.stringify({ content }),
   })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
+// --- Git ---
+
+export function useGitStatus(projectName: string | null) {
+  const fetcher = useCallback(
+    () => projectName ? fetchJson<GitChange[]>(`/git/${encodeURIComponent(projectName)}/status`) : Promise.resolve([]),
+    [projectName]
+  )
+  return usePolling(fetcher, 5_000)
+}
+
+export async function fetchGitDiff(projectName: string, filePath: string): Promise<string> {
+  const r = await fetchJson<{ diff: string }>(`/git/${encodeURIComponent(projectName)}/diff?path=${encodeURIComponent(filePath)}`)
+  return r.diff
 }

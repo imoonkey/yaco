@@ -49,3 +49,8 @@ export interface FileNode {
   type: 'file' | 'dir'
   children?: FileNode[]
 }
+
+export interface GitChange {
+  path: string
+  status: 'M' | 'A' | 'D' | 'U'
+}

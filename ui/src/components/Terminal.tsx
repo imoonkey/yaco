@@ -5,11 +5,11 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 
 const SOLARIZED_THEME = {
-  background: '#002b36',
-  foreground: '#839496',
-  cursor: '#93a1a1',
-  cursorAccent: '#002b36',
-  selectionBackground: '#073642',
+  background: '#fdf6e3',
+  foreground: '#657b83',
+  cursor: '#586e75',
+  cursorAccent: '#fdf6e3',
+  selectionBackground: '#eee8d5',
   black: '#073642',
   red: '#dc322f',
   green: '#859900',
@@ -57,7 +57,7 @@ export function Terminal({ sessionName }: TerminalProps) {
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsHost = window.location.host
-    const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}`)
+    const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${term.cols}&rows=${term.rows}`)
     wsRef.current = ws
 
     const sendResize = () => {

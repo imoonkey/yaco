@@ -81,7 +81,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-[#fdf6e3]">
-      <header className="h-10 shrink-0 border-b border-[#eee8d5] flex items-center px-3 bg-[#eee8d5]/50 gap-1">
+      <header className="h-10 shrink-0 flex items-center px-3 gap-1" style={{ backgroundColor: '#EEE8D5', borderBottom: '1px solid #D3CBB7' }}>
         <div className="flex items-center gap-0.5">
           {navItems.map(item => {
             const isActive = view === item.id
@@ -92,7 +92,7 @@ function App() {
                 className={`relative flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium cursor-pointer transition-colors ${
                   isActive
                     ? 'bg-[#268bd2]/15 text-[#268bd2]'
-                    : 'text-[#93a1a1] hover:text-[#586e75] hover:bg-[#eee8d5]'
+                    : 'text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]'
                 }`}
               >
                 <span className="font-bold text-[11px]">{item.icon}</span>
@@ -112,7 +112,8 @@ function App() {
         <select
           value={view === 'workspace' ? workspaceProject : projectName}
           onChange={e => handleProjectChange(e.target.value)}
-          className="text-[12px] bg-[#fdf6e3] border border-[#eee8d5] rounded-md px-2 py-1 text-[#586e75] cursor-pointer focus:outline-none focus:border-[#268bd2]/40"
+          className="text-[12px] rounded-md px-2 py-1 cursor-pointer focus:outline-none"
+          style={{ backgroundColor: '#FDF6E3', border: '1px solid #D3CBB7', color: '#586E75' }}
         >
           {view !== 'workspace' && <option value="all">All Projects</option>}
           {projects?.map(p => (

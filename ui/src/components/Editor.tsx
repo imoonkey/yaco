@@ -79,16 +79,20 @@ interface EditorProps {
   content: string
   filePath: string
   onSave?: (content: string) => void
+  onDirty?: (dirty: boolean) => void
   readOnly?: boolean
 }
 
-export function Editor({ content, filePath, onSave, readOnly = false }: EditorProps) {
+export function Editor({ content, filePath, onSave, onDirty, readOnly = false }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const contentRef = useRef(content)
+  const initialRef = useRef(content)
 
   useEffect(() => {
     if (!containerRef.current) return
+
+    initialRef.current = content
 
     const saveKeymap = onSave ? [
       { key: 'Mod-s', run: (view: EditorView) => { onSave(view.state.doc.toString()); return true } },
@@ -115,6 +119,11 @@ export function Editor({ content, filePath, onSave, readOnly = false }: EditorPr
         langExtension(filePath),
         EditorView.lineWrapping,
         EditorState.readOnly.of(readOnly),
+        EditorView.updateListener.of(update => {
+          if (update.docChanged && onDirty) {
+            onDirty(update.state.doc.toString() !== initialRef.current)
+          }
+        }),
       ],
     })
 
