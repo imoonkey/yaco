@@ -26,6 +26,11 @@ const FILE_COLORS: Record<string, string> = {
 const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type WorkspaceMobilePane = 'files' | 'editor' | 'terminal'
+type DiffState = {
+  content: string | null
+  error: boolean
+  loading: boolean
+}
 const SECTION_HEADER_HEIGHT = 22
 const RESIZE_HANDLE_HEIGHT = 1
 const MIN_SESSION_BODY_HEIGHT = 72
@@ -393,8 +398,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [showChanges, setShowChanges] = useState(initialState.showChanges)
   const [showSearch, setShowSearch] = useState(false)
   const [previewMode, setPreviewMode] = useState(initialState.previewMode)
-  const [diffContent, setDiffContent] = useState<string | null>(null)
-  const [diffError, setDiffError] = useState(false)
+  const [diffs, setDiffs] = useState<Record<string, DiffState>>({})
   const [sidebarHeight, setSidebarHeight] = useState(0)
 
   const { data: fileTree } = useFileTree(projectName)
@@ -403,26 +407,52 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   // Only fetch file content for non-diff tabs
   const isDiffTab = activeTab?.startsWith('diff:')
+  const activeDiffPath = activeTab?.startsWith('diff:') ? activeTab.slice(5) : null
+  const activeDiff = activeDiffPath ? diffs[activeDiffPath] : null
   const { content, loading } = useFileContent(projectName, isDiffTab ? null : activeTab)
 
   // Fetch diff when a diff tab is active
   useEffect(() => {
-    if (!activeTab?.startsWith('diff:')) return
-    const path = activeTab.slice(5)
+    if (!activeDiffPath) return
+    const path = activeDiffPath
     let cancelled = false
+    setDiffs(prev => {
+      const current = prev[path]
+      if (current?.loading) return prev
+      return {
+        ...prev,
+        [path]: {
+          content: current?.content ?? null,
+          error: false,
+          loading: true,
+        },
+      }
+    })
     fetchGitDiff(projectName, path)
       .then(d => {
         if (cancelled) return
-        setDiffContent(d)
-        setDiffError(false)
+        setDiffs(prev => ({
+          ...prev,
+          [path]: {
+            content: d,
+            error: false,
+            loading: false,
+          },
+        }))
       })
       .catch(() => {
         if (cancelled) return
-        setDiffContent(null)
-        setDiffError(true)
+        setDiffs(prev => ({
+          ...prev,
+          [path]: {
+            content: prev[path]?.content ?? null,
+            error: true,
+            loading: false,
+          },
+        }))
       })
     return () => { cancelled = true }
-  }, [activeTab, projectName])
+  }, [activeDiffPath, projectName])
 
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
   const processing = projectSessions.filter(s => s.status === 'processing')
@@ -486,8 +516,6 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     const tab = `diff:${path}`
     setOpenTabs(tabs => tabs.includes(tab) ? tabs : [...tabs, tab])
     setActiveTab(tab)
-    setDiffContent(null)
-    setDiffError(false)
     setFocusTarget('editor')
     setMobilePane('editor')
   }, [])
@@ -761,10 +789,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
             <div key={tab} onClick={() => {
               setActiveTab(tab)
               setFocusTarget('editor')
-              if (tab.startsWith('diff:')) {
-                setDiffContent(null)
-                setDiffError(false)
-              } else {
+              if (!tab.startsWith('diff:')) {
                 setSelectedFilePath(tab)
               }
             }}
@@ -797,8 +822,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
       <div className="flex-1 overflow-y-auto">
         {isDiffTab ? (
-          !diffError && diffContent == null ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
-          : diffContent != null ? <DiffView diff={diffContent} />
+          !activeDiff || (activeDiff.loading && activeDiff.content == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
+          : activeDiff?.content != null ? <DiffView diff={activeDiff.content} />
           : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
         ) : activeTab ? (
           loading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
