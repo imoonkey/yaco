@@ -31,8 +31,8 @@ app.get('/:project/status', async (c) => {
   if (result.error || result.status !== 0) return c.json([])
 
   const changes: GitChange[] = result.stdout
-    .trim()
     .split('\n')
+    .map(line => line.replace(/\r$/, ''))
     .filter(Boolean)
     .map(line => ({
       path: line.substring(3),
