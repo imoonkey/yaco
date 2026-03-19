@@ -3,6 +3,7 @@ import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
+import { writeTextToClipboard } from '../lib/clipboard'
 
 const SOLARIZED_THEME = {
   background: '#eee8d5',
@@ -70,33 +71,6 @@ interface TerminalProps {
   sessionName: string
   onInteract?: () => void
   onCloseRequest?: () => void
-}
-
-async function writeToClipboard(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // Fall back to the legacy copy path below.
-  }
-
-  try {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.setAttribute('readonly', 'true')
-    textarea.style.position = 'fixed'
-    textarea.style.opacity = '0'
-    textarea.style.pointerEvents = 'none'
-    document.body.appendChild(textarea)
-    textarea.select()
-    const copied = document.execCommand('copy')
-    document.body.removeChild(textarea)
-    return copied
-  } catch {
-    return false
-  }
 }
 
 function decodeOsc52Payload(payload: string): string | null {
@@ -176,7 +150,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       const text = decodeOsc52Payload(payload)
       if (text == null) return true
 
-      void writeToClipboard(text)
+      void writeTextToClipboard(text)
       return true
     })
 
@@ -198,7 +172,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
 
       event.preventDefault()
       event.stopPropagation()
-      void writeToClipboard(term.getSelection()).then((copied) => {
+      void writeTextToClipboard(term.getSelection()).then((copied) => {
         if (copied) term.clearSelection()
       })
       return false

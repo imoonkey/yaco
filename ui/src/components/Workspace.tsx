@@ -5,6 +5,7 @@ import { Editor } from './Editor'
 import { Terminal } from './Terminal'
 import { ProviderIcon } from './SessionIcons'
 import { PaneSwitch } from './PaneSwitch'
+import { writeTextToClipboard } from '../lib/clipboard'
 import { marked } from 'marked'
 import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
 
@@ -23,7 +24,7 @@ const FILE_COLORS: Record<string, string> = {
   svg: '#FFB13B', txt: '#93A1A1',
 }
 const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
-type FocusTarget = 'editor' | 'session' | 'terminal'
+type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type WorkspaceMobilePane = 'files' | 'editor' | 'terminal'
 const SECTION_HEADER_HEIGHT = 22
 const RESIZE_HANDLE_HEIGHT = 1
@@ -379,6 +380,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const isMobile = useIsMobile()
   const [openTabs, setOpenTabs] = useState<string[]>(initialState.openTabs)
   const [activeTab, setActiveTab] = useState<string | null>(initialState.activeTab)
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
+    initialState.activeTab && !initialState.activeTab.startsWith('diff:') ? initialState.activeTab : null
+  ))
   const [dirtyTabs, setDirtyTabs] = useState<Set<string>>(new Set())
   const [activeSession, setActiveSession] = useState(initialState.activeSession)
   const [mobilePane, setMobilePane] = useState<WorkspaceMobilePane>(() => inferMobilePane(initialState.openTabs, initialState.activeSession))
@@ -466,12 +470,17 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const hasOpenFiles = openTabs.length > 0
   const canTogglePreview = !!isMd && !isDiffTab
 
-  const openFile = useCallback((path: string) => {
+  const openFile = useCallback((path: string, focus: FocusTarget = 'editor') => {
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
     setActiveTab(path)
-    setFocusTarget('editor')
+    setSelectedFilePath(path)
+    setFocusTarget(focus)
     setMobilePane('editor')
   }, [])
+
+  const openFileFromExplorer = useCallback((path: string) => {
+    openFile(path, 'explorer')
+  }, [openFile])
 
   const openDiff = useCallback((path: string) => {
     const tab = `diff:${path}`
@@ -616,6 +625,12 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       const key = e.key.toLowerCase()
       if (e.metaKey && key === 'b') { e.preventDefault(); setShowSidebar(v => !v) }
       if (e.metaKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
+      if (!showSearch && e.metaKey && !e.ctrlKey && !e.altKey && key === 'c' && focusTarget === 'explorer' && selectedFilePath) {
+        e.preventDefault()
+        e.stopPropagation()
+        void writeTextToClipboard(selectedFilePath)
+        return
+      }
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canTogglePreview) {
         e.preventDefault()
         e.stopPropagation()
@@ -629,7 +644,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [canTogglePreview, closeFocusedSurface])
+  }, [canTogglePreview, closeFocusedSurface, focusTarget, selectedFilePath, showSearch])
 
   useEffect(() => {
     const handleBlur = () => {
@@ -674,13 +689,13 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   }
 
   const filesPaneMobile = (
-    <div className="h-full overflow-y-auto" style={{ backgroundColor: C.bg }}>
+    <div className="h-full overflow-y-auto" style={{ backgroundColor: C.bg }} onMouseDown={() => setFocusTarget('explorer')}>
       <div className="flex flex-col min-h-full">
         <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
         {showExplorer && (
           <div className="py-1 px-1">
             {(fileTree ?? []).map(node => (
-              <FileTreeNode key={node.path} node={node} depth={0} selected={activeTab} onSelect={openFile} gitMap={gitMap} gitFolders={gitFolders} />
+              <FileTreeNode key={node.path} node={node} depth={0} selected={selectedFilePath} onSelect={openFileFromExplorer} gitMap={gitMap} gitFolders={gitFolders} />
             ))}
             {!fileTree && <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>}
           </div>
@@ -749,6 +764,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               if (tab.startsWith('diff:')) {
                 setDiffContent(null)
                 setDiffError(false)
+              } else {
+                setSelectedFilePath(tab)
               }
             }}
               className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
@@ -875,9 +892,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
                 {showExplorer && (
-                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }}>
+                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }} onMouseDown={() => setFocusTarget('explorer')}>
                     {(fileTree ?? []).map(node => (
-                      <FileTreeNode key={node.path} node={node} depth={0} selected={activeTab} onSelect={openFile} gitMap={gitMap} gitFolders={gitFolders} />
+                      <FileTreeNode key={node.path} node={node} depth={0} selected={selectedFilePath} onSelect={openFileFromExplorer} gitMap={gitMap} gitFolders={gitFolders} />
                     ))}
                     {!fileTree && <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>}
                   </div>
