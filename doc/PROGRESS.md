@@ -22,7 +22,7 @@
 
 **Key files:** server/src/index.ts, server/src/routes/git.ts (new), ui/src/components/Workspace.tsx, ui/src/components/Editor.tsx, ui/src/components/Terminal.tsx, ui/src/hooks/useApi.ts, ui/src/types.ts, ui/src/index.css, ui/src/App.tsx
 **Verification:** `tsc --noEmit` clean on both server and UI, `vite build` succeeds
-**Commit:** (pending)
+**Commit:** 3d74520
 **Next:** E2E testing with real sessions, further VS Code UX refinements
 **Blockers:** None
 
