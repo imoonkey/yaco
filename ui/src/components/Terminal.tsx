@@ -28,7 +28,7 @@ const SOLARIZED_THEME = {
   brightWhite: '#eee8d5',
 }
 
-const TERMINAL_RIGHT_GUTTER_PX = 2
+const TERMINAL_RIGHT_GUTTER_PX = 3
 
 type TerminalWithCore = XTerm & {
   _core?: {
