@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-19: Consolidate v0 todo efforts
+
+**What changed:**
+- Moved the small v0 plan/review notes from `doc/todo/` root into `doc/todo/v0/efforts/`
+- Grouped each effort into its own subfolder so related `plan.md` and `review.md` files stay together
+- Added a short `README.md` under `doc/todo/v0/efforts/` and linked the folder from `doc/todo/v0/impl-plan.md`
+
+**Why:**
+- The v0 workstream already had its main design and state under `doc/todo/v0/`, but several supporting effort notes were still scattered at the root. Keeping them under one folder makes the todo tree easier to scan and keeps v0 artifacts together
+
+**Key files:** doc/todo/v0/efforts/README.md, doc/todo/v0/efforts/dev-tmux/plan.md, doc/todo/v0/efforts/dev-tmux/review.md, doc/todo/v0/efforts/cmd-w-close-focus/plan.md, doc/todo/v0/efforts/mobile-pane/plan.md, doc/todo/v0/efforts/session-shell-ui/plan.md, doc/todo/v0/efforts/editor-scroll-past-end/plan.md, doc/todo/v0/impl-plan.md
+**Verification:** `find doc/todo/v0/efforts -maxdepth 2 -type f | sort` returned the expected effort files; `rg -n "doc/todo/(dev-tmux-plan|dev-tmux-review|editor-scroll-past-end/plan|cmd-w-close-focus-plan|mobile-pane-plan|session-shell-ui-plan)" doc ui server .` returned no matches
+**Commit:** None
+**Next:** Keep new v0-specific effort notes under `doc/todo/v0/efforts/<effort>/`
+**Blockers:** None
+
 ## 2026-03-19: Terminal fit and spacing tuning
 
 **What changed:**
@@ -14,6 +30,22 @@
 **Verification:** `npm run build` passed in `ui/`
 **Commit:** None
 **Next:** If needed, re-check the terminal fit on overlay-scrollbar browsers where the measured scrollbar width may collapse to zero
+**Blockers:** None
+
+## 2026-03-19: tmux dev server launcher
+
+**What changed:**
+- Added `scripts/dev-tmux.sh` to start frontend and backend dev servers in one `tmux` session with two panes
+- Added `npm run dev:tmux` at the repo root as the entrypoint
+- Documented the new workflow plus `--detached`, `--reset`, and custom session-name usage in the dev guide
+
+**Why:**
+- The repo already had hot-reload commands for both services, but no stable terminal workflow to launch and manage them together in a reusable `tmux` session
+
+**Key files:** scripts/dev-tmux.sh, package.json, doc/dev/guide.md, doc/todo/v0/efforts/dev-tmux/plan.md
+**Verification:** `bash -n scripts/dev-tmux.sh` passed; `bash scripts/dev-tmux.sh --help` passed; detached smoke tests confirmed session create/reuse/reset; invalid names such as `bad:name` were rejected; `tmux show-window-options -t <session>:dev remain-on-exit` returned `on`; after a 4s wait both panes were running `node`, with backend serving on `http://localhost:3001` and Vite up on `:5173`
+**Commit:** None
+**Next:** Verify the script creates, reuses, and resets the `tmux` session correctly on a local machine
 **Blockers:** None
 
 ## 2026-03-19: Terminal right-edge gutter
@@ -36,12 +68,12 @@
 **What changed:**
 - Enabled CodeMirror's built-in `scrollPastEnd()` extension for the file editor
 - The editor can now keep scrolling after EOF until the last line reaches the top of the viewport, but not past it
-- Added a short implementation note in `doc/todo/editor-scroll-past-end/plan.md`
+- Added a short implementation note in `doc/todo/v0/efforts/editor-scroll-past-end/plan.md`
 
 **Why:**
 - With the viewport rotated vertically, pinning the last line to the bottom edge made editing near EOF uncomfortable. The editor needed the standard "scroll past end" behavior without custom spacer logic
 
-**Key files:** ui/src/components/Editor.tsx, doc/todo/editor-scroll-past-end/plan.md
+**Key files:** ui/src/components/Editor.tsx, doc/todo/v0/efforts/editor-scroll-past-end/plan.md
 **Verification:** `npm run build` passed in `ui/`
 **Commit:** None
 **Next:** If needed, manually sanity-check the feel on very short files and long wrapped Markdown documents in the browser
@@ -77,7 +109,7 @@
 **Why:**
 - The previous shortcut handling depended on coarse focus state and a normal bubbling listener, so `Cmd+W` could still close the whole window instead of the focused file or terminal session. Standard browser key listeners are also not enough on every runtime, so this needed a platform-level fallback where available
 
-**Key files:** ui/src/components/Workspace.tsx, ui/src/components/Editor.tsx, ui/src/components/Terminal.tsx, doc/main/architecture.md, doc/todo/cmd-w-close-focus-plan.md
+**Key files:** ui/src/components/Workspace.tsx, ui/src/components/Editor.tsx, ui/src/components/Terminal.tsx, doc/main/architecture.md, doc/todo/v0/efforts/cmd-w-close-focus/plan.md
 **Verification:** `npm run build` passed in `ui/`
 **Commit:** None
 **Next:** If needed, add a small shortcut smoke test layer once the UI has an automated browser test harness
@@ -106,12 +138,12 @@
 - Monitor now keeps the desktop three-column layout on wide screens but collapses to one full-width pane at a time on mobile: `Sessions`, `Notifications`, or `Roadmap`
 - Workspace now keeps the desktop sidebar/editor/terminal layout on wide screens but collapses to one full-width pane at a time on mobile: `Files`, `Editor`, or `Terminal`
 - File selection now auto-switches the mobile Workspace to `Editor`, and session selection or new session creation auto-switches it to `Terminal`
-- Added a short implementation note in `doc/todo/mobile-pane-plan.md` and updated architecture docs to describe the mobile pane model
+- Added a short implementation note in `doc/todo/v0/efforts/mobile-pane/plan.md` and updated architecture docs to describe the mobile pane model
 
 **Why:**
 - The previous layout relied on multi-column density that does not survive phone widths. Mobile needed an explicit single-pane navigation model instead of squeezing desktop panels into a narrow viewport.
 
-**Key files:** ui/src/components/Monitor.tsx, ui/src/components/Workspace.tsx, ui/src/components/PaneSwitch.tsx, ui/src/hooks/useIsMobile.ts, ui/src/App.tsx, doc/main/architecture.md, doc/todo/mobile-pane-plan.md
+**Key files:** ui/src/components/Monitor.tsx, ui/src/components/Workspace.tsx, ui/src/components/PaneSwitch.tsx, ui/src/hooks/useIsMobile.ts, ui/src/App.tsx, doc/main/architecture.md, doc/todo/v0/efforts/mobile-pane/plan.md
 **Verification:** `npm run build` passed in `ui/`; `npm run lint` in `ui/` now only fails on a pre-existing `react-hooks/set-state-in-effect` issue in `ui/src/hooks/useApi.ts`
 **Commit:** None
 **Next:** If needed, tighten touch affordances for editor tabs and session actions on mobile
