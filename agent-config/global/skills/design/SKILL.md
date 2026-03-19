@@ -61,3 +61,10 @@ If gaps exist, iterate steps 3-5.
 
 Present the design doc for review (human or `/eng-plan-review`).
 After approval, proceed to `/implement`.
+
+## Workstream Integration
+
+When working inside a `doc/todo/<name>/` folder that has a `workstream.json`, follow `/workstream update` protocol:
+
+- **After Step 6** (design ready for review): set workstream status to `human_review`, append a `human_review` entry to `progress.json`, and stop.
+- **If blocked**: set workstream status to `blocked`, append a `blocked` entry, and stop.

@@ -127,3 +127,12 @@ Hand off to `/implement` when ready.
 - Step 3: never `capture --wait` — manually monitor `status.txt` plus `multmux status`, then nudge the side whose turn it is if that session is idle
 - Step 3: the first mover owns the first draft, but that draft should mostly record shared ground plus explicit open questions, not force unresolved choices
 - Final output must remain self-contained throughout alignment; resolving an open question is not complete until the resolved design is reflected in `final/*.md`
+
+## Workstream Integration
+
+When the target folder has a `workstream.json`, the **orchestrating agent** follows `/workstream update` protocol:
+
+- **Sub-agent prompts** must include: "Do NOT change workstream.json. Only append to progress.json."
+- **After alignment reaches `NEXT=DONE`** (Step 3 complete): set workstream status to `human_review`, append a `human_review` entry to `progress.json`, and stop.
+- **If blocked**: set workstream status to `blocked`, append a `blocked` entry, and stop.
+- Sub-agents may append `info` entries to `progress.json` for cross-review findings or alignment progress.

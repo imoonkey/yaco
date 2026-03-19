@@ -71,6 +71,14 @@ call the function under test
 verify the result
 ```
 
+## Workstream Integration
+
+When working inside a `doc/todo/<name>/` folder that has a `workstream.json`, follow `/workstream update` protocol:
+
+- **After Step 6** (verify coverage): append an `info` entry to `progress.json` summarizing test results (e.g., "TDD complete — 12 tests passing, 85% coverage on core logic.").
+- Do **not** change workstream status — `/tdd` is a supporting skill, not a phase boundary.
+- If blocked (e.g., test infra missing), escalate to the calling skill rather than setting workstream status directly.
+
 ## Coverage Target
 
 - 80% minimum for core logic

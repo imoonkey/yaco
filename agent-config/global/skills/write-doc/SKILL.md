@@ -97,6 +97,14 @@ Prepend to `doc/PROGRESS.md` (create if missing). This is the **canonical format
 
 Keep entries concise. One entry per logical change, not per commit.
 
+## Workstream Integration
+
+When working inside a `doc/todo/<name>/` folder that has a `workstream.json`, follow `/workstream update` protocol:
+
+- **After Step 4** (update progress): append an `info` entry to `progress.json` summarizing what docs were updated.
+- Do **not** change workstream status — `/write-doc` is a supporting skill, not a phase boundary.
+- If blocked, escalate to the calling skill rather than setting workstream status directly.
+
 ## When to Use
 
 - After architecture or workflow changes

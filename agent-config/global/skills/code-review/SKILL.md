@@ -88,6 +88,12 @@ High standards like kernel code. Find:
 [APPROVE / CHANGES_REQUESTED]
 ```
 
+## Workstream Integration
+
+When working inside a `doc/todo/<name>/` folder that has a `workstream.json`, follow `/workstream update` protocol:
+
+- **After documenting findings** (Step 3): append a `human_review` entry to `progress.json` summarizing findings (e.g., "Code review complete — 1 critical, 2 high, 1 medium finding."). Set workstream status to `human_review`.
+
 ## Reference
 
 - Treat project docs as context (code is source-of-truth)
