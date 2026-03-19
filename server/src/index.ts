@@ -7,20 +7,20 @@ import { sessionRoutes } from './routes/sessions'
 import { fileRoutes } from './routes/files'
 import { ensureWorkflowDir, loadProjects } from './lib/projects'
 import { startWatching } from './lib/watcher'
-import { sendKeys, capturePane, resizePane } from './lib/terminal'
+import { attachSession, resizePty } from './lib/terminal'
+import type { IPty } from 'node-pty'
 import type { ServerWebSocket } from 'bun'
 
-const ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? 'http://localhost:5173')
+const ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:5174')
   .split(',')
   .map(s => s.trim())
 
-const SESSION_NAME_RE = /^[a-zA-Z0-9_-]+$/
+const SESSION_NAME_RE = /^[a-zA-Z0-9_.-]+$/
 
 const app = new Hono()
 
 app.use('*', cors({ origin: ALLOWED_ORIGINS }))
 
-// API routes
 app.route('/api/projects', projectRoutes)
 app.route('/api/workstreams', workstreamRoutes)
 app.route('/api/progress', progressRoutes)
@@ -42,39 +42,15 @@ interface WsData {
   sessionName: string
 }
 
-const terminalClients = new Map<string, Set<ServerWebSocket<WsData>>>()
-const pollIntervals = new Map<string, ReturnType<typeof setInterval>>()
-
-function startPolling(sessionName: string) {
-  if (pollIntervals.has(sessionName)) return
-  let lastOutput = ''
-  const interval = setInterval(async () => {
-    const clients = terminalClients.get(sessionName)
-    if (!clients || clients.size === 0) {
-      clearInterval(interval)
-      pollIntervals.delete(sessionName)
-      return
-    }
-    const output = await capturePane(sessionName)
-    if (output !== lastOutput) {
-      lastOutput = output
-      const msg = JSON.stringify({ type: 'output', data: output })
-      for (const ws of clients) {
-        ws.send(msg)
-      }
-    }
-  }, 300)
-  pollIntervals.set(sessionName, interval)
-}
+// Each WebSocket gets its own PTY process attached to the tmux session
+const ptyMap = new Map<ServerWebSocket<WsData>, IPty>()
 
 const server = Bun.serve<WsData>({
   port,
   fetch(req, server) {
     const url = new URL(req.url)
 
-    // WebSocket upgrade for terminal
     if (url.pathname.startsWith('/ws/terminal/')) {
-      // Validate origin
       const origin = req.headers.get('origin')
       if (origin && !ALLOWED_ORIGINS.includes(origin)) {
         return new Response('Origin not allowed', { status: 403 })
@@ -95,34 +71,59 @@ const server = Bun.serve<WsData>({
   websocket: {
     open(ws: ServerWebSocket<WsData>) {
       const { sessionName } = ws.data
-      if (!terminalClients.has(sessionName)) {
-        terminalClients.set(sessionName, new Set())
+      try {
+        const proc = attachSession(sessionName, 80, 24)
+
+        // Pipe PTY output → WebSocket (raw binary)
+        proc.onData((data: string) => {
+          if (ws.readyState === 1) ws.send(data)
+        })
+
+        proc.onExit(() => {
+          ptyMap.delete(ws)
+          if (ws.readyState === 1) ws.close()
+        })
+
+        ptyMap.set(ws, proc)
+        console.log(`[ws] terminal attached: ${sessionName} (pty pid=${proc.pid})`)
+      } catch (err) {
+        console.error(`[ws] failed to attach: ${sessionName}`, err)
+        ws.close()
       }
-      terminalClients.get(sessionName)!.add(ws)
-      startPolling(sessionName)
-      console.log(`[ws] terminal attached: ${sessionName}`)
     },
     message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
-      const { sessionName } = ws.data
-      try {
-        const msg = JSON.parse(typeof message === 'string' ? message : message.toString())
-        if (msg.type === 'input') {
-          sendKeys(sessionName, msg.data)
-        } else if (msg.type === 'resize') {
-          resizePane(sessionName, msg.cols, msg.rows)
+      const proc = ptyMap.get(ws)
+      if (!proc) return
+
+      const str = typeof message === 'string' ? message : message.toString()
+
+      // Try JSON (for resize messages), fall back to raw input
+      if (str[0] === '{') {
+        try {
+          const msg = JSON.parse(str)
+          if (msg.type === 'resize') {
+            resizePty(proc, msg.cols, msg.rows)
+            return
+          }
+          if (msg.type === 'input') {
+            proc.write(msg.data)
+            return
+          }
+        } catch {
+          // not JSON, treat as raw input
         }
-      } catch {
-        // ignore malformed messages
       }
+
+      // Raw input passthrough
+      proc.write(str)
     },
     close(ws: ServerWebSocket<WsData>) {
-      const { sessionName } = ws.data
-      const clients = terminalClients.get(sessionName)
-      if (clients) {
-        clients.delete(ws)
-        if (clients.size === 0) terminalClients.delete(sessionName)
+      const proc = ptyMap.get(ws)
+      if (proc) {
+        proc.kill()
+        ptyMap.delete(ws)
       }
-      console.log(`[ws] terminal detached: ${sessionName}`)
+      console.log(`[ws] terminal detached: ${ws.data.sessionName}`)
     },
   },
 })

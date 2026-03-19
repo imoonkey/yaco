@@ -46,7 +46,6 @@ export function Terminal({ sessionName }: TerminalProps) {
       fontSize: 12,
       lineHeight: 1.4,
       cursorBlink: true,
-      convertEol: true,
     })
     termRef.current = term
 
@@ -61,7 +60,6 @@ export function Terminal({ sessionName }: TerminalProps) {
     const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}`)
     wsRef.current = ws
 
-    // Send resize on open and on every fit
     const sendResize = () => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
@@ -70,33 +68,21 @@ export function Terminal({ sessionName }: TerminalProps) {
 
     ws.onopen = () => sendResize()
 
+    // Raw PTY output — write directly to xterm
     ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data)
-        if (msg.type === 'output') {
-          term.clear()
-          term.write(msg.data)
-        }
-      } catch {
-        term.write(event.data)
-      }
+      term.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data))
     }
 
-    ws.onerror = () => {
-      term.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
-    }
+    ws.onerror = () => term.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
+    ws.onclose = () => term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
 
-    ws.onclose = () => {
-      term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
-    }
-
+    // Raw input — send directly
     term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
       }
     })
 
-    // Resize: fit terminal, then tell server to resize tmux pane
     term.onResize(() => sendResize())
 
     const observer = new ResizeObserver(() => fitAddon.fit())
