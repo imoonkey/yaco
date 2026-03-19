@@ -7,8 +7,7 @@ import { sessionRoutes } from './routes/sessions'
 import { fileRoutes } from './routes/files'
 import { ensureWorkflowDir, loadProjects } from './lib/projects'
 import { startWatching } from './lib/watcher'
-import { attachSession, resizePty } from './lib/terminal'
-import type { IPty } from 'node-pty'
+import { attachSession, type PtyHandle } from './lib/terminal'
 import type { ServerWebSocket } from 'bun'
 
 const ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:5174')
@@ -43,7 +42,7 @@ interface WsData {
 }
 
 // Each WebSocket gets its own PTY process attached to the tmux session
-const ptyMap = new Map<ServerWebSocket<WsData>, IPty>()
+const ptyMap = new Map<ServerWebSocket<WsData>, PtyHandle>()
 
 const server = Bun.serve<WsData>({
   port,
@@ -72,41 +71,39 @@ const server = Bun.serve<WsData>({
     open(ws: ServerWebSocket<WsData>) {
       const { sessionName } = ws.data
       try {
-        const proc = attachSession(sessionName, 80, 24)
+        const handle = attachSession(sessionName, 80, 24)
 
-        // Pipe PTY output → WebSocket (raw binary)
-        proc.onData((data: string) => {
+        handle.onData((data: string) => {
           if (ws.readyState === 1) ws.send(data)
         })
 
-        proc.onExit(() => {
+        handle.onExit(() => {
           ptyMap.delete(ws)
           if (ws.readyState === 1) ws.close()
         })
 
-        ptyMap.set(ws, proc)
-        console.log(`[ws] terminal attached: ${sessionName} (pty pid=${proc.pid})`)
+        ptyMap.set(ws, handle)
+        console.log(`[ws] terminal attached: ${sessionName} (pid=${handle.proc.pid})`)
       } catch (err) {
         console.error(`[ws] failed to attach: ${sessionName}`, err)
         ws.close()
       }
     },
     message(ws: ServerWebSocket<WsData>, message: string | Buffer) {
-      const proc = ptyMap.get(ws)
-      if (!proc) return
+      const handle = ptyMap.get(ws)
+      if (!handle) return
 
       const str = typeof message === 'string' ? message : message.toString()
 
-      // Try JSON (for resize messages), fall back to raw input
       if (str[0] === '{') {
         try {
           const msg = JSON.parse(str)
           if (msg.type === 'resize') {
-            resizePty(proc, msg.cols, msg.rows)
+            handle.resize(msg.cols, msg.rows)
             return
           }
           if (msg.type === 'input') {
-            proc.write(msg.data)
+            handle.write(msg.data)
             return
           }
         } catch {
@@ -114,13 +111,12 @@ const server = Bun.serve<WsData>({
         }
       }
 
-      // Raw input passthrough
-      proc.write(str)
+      handle.write(str)
     },
     close(ws: ServerWebSocket<WsData>) {
-      const proc = ptyMap.get(ws)
-      if (proc) {
-        proc.kill()
+      const handle = ptyMap.get(ws)
+      if (handle) {
+        handle.kill()
         ptyMap.delete(ws)
       }
       console.log(`[ws] terminal detached: ${ws.data.sessionName}`)
