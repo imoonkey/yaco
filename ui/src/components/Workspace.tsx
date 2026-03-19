@@ -2,10 +2,11 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useFileTree, useFileContent, useSessions, saveFileContent, startSession } from '../hooks/useApi'
 import { Editor } from './Editor'
 import { Terminal } from './Terminal'
+import { marked } from 'marked'
 import type { FileNode, AgentSession } from '../types'
 
 // --- Resize Hook ---
-function useResize(initialWidth: number, minWidth: number, maxWidth: number) {
+function useResize(initialWidth: number, minWidth: number, maxWidth: number, direction: 'left' | 'right' = 'left') {
   const [width, setWidth] = useState(initialWidth)
   const dragging = useRef(false)
   const startX = useRef(0)
@@ -21,7 +22,9 @@ function useResize(initialWidth: number, minWidth: number, maxWidth: number) {
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!dragging.current) return
-      const delta = e.clientX - startX.current
+      const delta = direction === 'left'
+        ? e.clientX - startX.current
+        : startX.current - e.clientX
       setWidth(Math.min(maxWidth, Math.max(minWidth, startW.current + delta)))
     }
     const onMouseUp = () => { dragging.current = false }
@@ -31,38 +34,7 @@ function useResize(initialWidth: number, minWidth: number, maxWidth: number) {
       document.removeEventListener('mousemove', onMouseMove)
       document.removeEventListener('mouseup', onMouseUp)
     }
-  }, [minWidth, maxWidth])
-
-  return { width, onMouseDown }
-}
-
-function useResizeRight(initialWidth: number, minWidth: number, maxWidth: number) {
-  const [width, setWidth] = useState(initialWidth)
-  const dragging = useRef(false)
-  const startX = useRef(0)
-  const startW = useRef(0)
-
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    dragging.current = true
-    startX.current = e.clientX
-    startW.current = width
-    e.preventDefault()
-  }, [width])
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!dragging.current) return
-      const delta = startX.current - e.clientX
-      setWidth(Math.min(maxWidth, Math.max(minWidth, startW.current + delta)))
-    }
-    const onMouseUp = () => { dragging.current = false }
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-    return () => {
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-    }
-  }, [minWidth, maxWidth])
+  }, [minWidth, maxWidth, direction])
 
   return { width, onMouseDown }
 }
@@ -71,7 +43,7 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
   return (
     <div
       onMouseDown={onMouseDown}
-      className="w-[3px] shrink-0 cursor-col-resize hover:bg-[#268bd2]/30 active:bg-[#268bd2]/50 transition-colors"
+      className="w-[1px] shrink-0 cursor-col-resize bg-[#93a1a1]/30 hover:bg-[#268bd2]/50 active:bg-[#268bd2]/70 transition-colors"
     />
   )
 }
@@ -135,7 +107,7 @@ function SessionItem({ session, isActive, onClick }: {
   )
 }
 
-// --- Claude / Codex icons (product colors) ---
+// --- Claude / Codex icons ---
 function ClaudeIcon() {
   return (
     <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none">
@@ -154,10 +126,106 @@ function CodexIcon() {
   )
 }
 
+// --- Flatten file tree for search ---
+function flattenTree(nodes: FileNode[], result: FileNode[] = []): FileNode[] {
+  for (const n of nodes) {
+    if (n.type === 'file') result.push(n)
+    if (n.children) flattenTree(n.children, result)
+  }
+  return result
+}
+
+// --- File Search Overlay ---
+function FileSearch({ files, onSelect, onClose }: {
+  files: FileNode[]; onSelect: (path: string) => void; onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [selectedIdx, setSelectedIdx] = useState(0)
+
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const q = query.toLowerCase()
+  const filtered = q
+    ? files.filter(f => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q))
+    : files
+  const visible = filtered.slice(0, 20)
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') { onClose(); return }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, visible.length - 1)); return }
+    if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
+    if (e.key === 'Enter' && visible[selectedIdx]) { onSelect(visible[selectedIdx].path); onClose(); return }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15%]" onClick={onClose}>
+      <div
+        className="w-[500px] bg-[#fdf6e3] border border-[#93a1a1]/40 rounded-lg shadow-lg overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <input
+          ref={inputRef}
+          value={query}
+          onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }}
+          onKeyDown={handleKey}
+          placeholder="Search files..."
+          className="w-full px-3 py-2 text-[13px] bg-transparent border-b border-[#eee8d5] outline-none text-[#073642] placeholder-[#93a1a1]"
+        />
+        <div className="max-h-[300px] overflow-y-auto">
+          {visible.map((f, i) => (
+            <div
+              key={f.path}
+              onClick={() => { onSelect(f.path); onClose() }}
+              className={`px-3 py-1.5 text-[12px] cursor-pointer ${
+                i === selectedIdx ? 'bg-[#268bd2]/15 text-[#268bd2]' : 'text-[#586e75] hover:bg-[#eee8d5]'
+              }`}
+            >
+              <span className="text-[#073642]">{f.name}</span>
+              <span className="ml-2 text-[#93a1a1] text-[11px]">{f.path}</span>
+            </div>
+          ))}
+          {visible.length === 0 && (
+            <div className="px-3 py-3 text-[12px] text-[#93a1a1] text-center">No files found</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// --- Markdown Preview ---
+function MarkdownPreview({ content }: { content: string }) {
+  const html = marked.parse(content, { async: false }) as string
+  return (
+    <div
+      className="p-5 prose prose-sm max-w-none text-[13px] text-[#073642] leading-relaxed
+        [&_h1]:text-[#cb4b16] [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-3
+        [&_h2]:text-[#cb4b16] [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mt-5 [&_h2]:mb-2
+        [&_h3]:text-[#cb4b16] [&_h3]:text-base [&_h3]:font-bold [&_h3]:mt-4 [&_h3]:mb-2
+        [&_code]:text-[#2aa198] [&_code]:bg-[#eee8d5] [&_code]:px-1 [&_code]:rounded [&_code]:text-[12px]
+        [&_pre]:bg-[#eee8d5] [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto
+        [&_pre_code]:bg-transparent [&_pre_code]:p-0
+        [&_a]:text-[#268bd2] [&_a]:underline
+        [&_blockquote]:border-l-2 [&_blockquote]:border-[#93a1a1] [&_blockquote]:pl-3 [&_blockquote]:text-[#93a1a1] [&_blockquote]:italic
+        [&_table]:border-collapse [&_th]:border [&_th]:border-[#eee8d5] [&_th]:px-2 [&_th]:py-1 [&_th]:bg-[#eee8d5]
+        [&_td]:border [&_td]:border-[#eee8d5] [&_td]:px-2 [&_td]:py-1
+        [&_li]:my-0.5
+        [&_hr]:border-[#eee8d5]
+        [&_strong]:text-[#586e75]
+        [&_em]:text-[#586e75]"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  )
+}
+
 // --- Main Workspace ---
 export function Workspace({ projectName, projectPath }: { projectName: string; projectPath: string }) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [activeSession, setActiveSession] = useState<string>('')
+  const [showSidebar, setShowSidebar] = useState(true)
+  const [showSearch, setShowSearch] = useState(false)
+  const [previewMode, setPreviewMode] = useState(false)
   const { data: fileTree } = useFileTree(projectName)
   const { content, loading } = useFileContent(projectName, selectedFile)
   const { data: sessions, refresh: refreshSessions } = useSessions()
@@ -165,9 +233,22 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const allSessions = sessions ?? []
   const processing = allSessions.filter(s => s.status === 'processing')
   const idle = allSessions.filter(s => s.status === 'idle')
+  const allFiles = fileTree ? flattenTree(fileTree) : []
 
   const left = useResize(220, 140, 400)
-  const right = useResizeRight(420, 250, 700)
+  const right = useResize(420, 250, 700, 'right')
+
+  const isMd = selectedFile?.endsWith('.md')
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.metaKey && e.key === 'b') { e.preventDefault(); setShowSidebar(v => !v) }
+      if (e.metaKey && e.key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   const handleNewSession = async (agent: 'claude' | 'codex') => {
     try {
@@ -180,69 +261,95 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   return (
     <div className="flex h-full select-none">
-      {/* Left sidebar: files + sessions */}
-      <div className="flex flex-col overflow-hidden" style={{ width: left.width }}>
-        {/* File tree */}
-        <div className="flex-1 overflow-y-auto py-2 px-1 border-b border-[#eee8d5]">
-          <div className="text-[10px] text-[#93a1a1] uppercase tracking-wider px-2 mb-1">{projectName || 'Project'}</div>
-          {(fileTree ?? []).map(node => (
-            <FileTreeNode key={node.path} node={node} depth={0} selected={selectedFile} onSelect={setSelectedFile} />
-          ))}
-          {!fileTree && <div className="px-2 py-2 text-[11px] text-[#93a1a1]">Loading...</div>}
-        </div>
+      {/* File search overlay */}
+      {showSearch && (
+        <FileSearch
+          files={allFiles}
+          onSelect={setSelectedFile}
+          onClose={() => setShowSearch(false)}
+        />
+      )}
 
-        {/* Sessions */}
-        <div className="h-[40%] shrink-0 overflow-y-auto py-1 px-1">
-          <div className="flex items-center justify-between px-2 mb-1">
-            <div className="text-[10px] text-[#93a1a1] uppercase tracking-wider">Sessions</div>
-            <div className="flex gap-1">
-              <button
-                onClick={() => handleNewSession('claude')}
-                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[#eee8d5] hover:bg-[#ddd6c1] border border-[#93a1a1]/20 text-[#586e75] cursor-pointer"
-                title="New Claude session"
-              >
-                <ClaudeIcon /> Claude
-              </button>
-              <button
-                onClick={() => handleNewSession('codex')}
-                className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[#eee8d5] hover:bg-[#ddd6c1] border border-[#93a1a1]/20 text-[#586e75] cursor-pointer"
-                title="New Codex session"
-              >
-                <CodexIcon /> Codex
-              </button>
+      {/* Left sidebar */}
+      {showSidebar && (
+        <>
+          <div className="flex flex-col overflow-hidden" style={{ width: left.width }}>
+            <div className="flex-1 overflow-y-auto py-2 px-1 border-b border-[#93a1a1]/20">
+              <div className="text-[10px] text-[#93a1a1] uppercase tracking-wider px-2 mb-1">{projectName || 'Project'}</div>
+              {(fileTree ?? []).map(node => (
+                <FileTreeNode key={node.path} node={node} depth={0} selected={selectedFile} onSelect={setSelectedFile} />
+              ))}
+              {!fileTree && <div className="px-2 py-2 text-[11px] text-[#93a1a1]">Loading...</div>}
+            </div>
+
+            <div className="h-[35%] shrink-0 overflow-y-auto py-1 px-1">
+              <div className="flex items-center justify-between px-2 mb-1">
+                <div className="text-[10px] text-[#93a1a1] uppercase tracking-wider">Sessions</div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => handleNewSession('claude')}
+                    className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[#eee8d5] hover:bg-[#ddd6c1] border border-[#93a1a1]/20 text-[#586e75] cursor-pointer"
+                    title="New Claude session"
+                  >
+                    <ClaudeIcon /> Claude
+                  </button>
+                  <button
+                    onClick={() => handleNewSession('codex')}
+                    className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-[#eee8d5] hover:bg-[#ddd6c1] border border-[#93a1a1]/20 text-[#586e75] cursor-pointer"
+                    title="New Codex session"
+                  >
+                    <CodexIcon /> Codex
+                  </button>
+                </div>
+              </div>
+              {processing.map(s => (
+                <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />
+              ))}
+              {processing.length > 0 && idle.length > 0 && <div className="border-t border-[#93a1a1]/20 my-1" />}
+              {idle.map(s => (
+                <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />
+              ))}
+              {allSessions.length === 0 && (
+                <div className="px-2 py-3 text-[11px] text-[#93a1a1] text-center">No live sessions</div>
+              )}
             </div>
           </div>
-          {processing.map(s => (
-            <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />
-          ))}
-          {processing.length > 0 && idle.length > 0 && <div className="border-t border-[#eee8d5] my-1" />}
-          {idle.map(s => (
-            <SessionItem key={s.name} session={s} isActive={s.name === activeSession} onClick={() => setActiveSession(s.name)} />
-          ))}
-          {allSessions.length === 0 && (
-            <div className="px-2 py-3 text-[11px] text-[#93a1a1] text-center">No live sessions</div>
-          )}
-        </div>
-      </div>
+          <ResizeHandle onMouseDown={left.onMouseDown} />
+        </>
+      )}
 
-      <ResizeHandle onMouseDown={left.onMouseDown} />
-
-      {/* Center: Doc editor */}
+      {/* Center: Doc editor / preview */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-[200px]">
-        <div className="h-8 border-b border-[#eee8d5] flex items-center px-4 text-[11px] text-[#93a1a1] shrink-0 bg-[#eee8d5]/50">
-          {selectedFile || 'No file selected'}
+        <div className="h-8 border-b border-[#93a1a1]/20 flex items-center px-4 text-[11px] text-[#93a1a1] shrink-0 bg-[#eee8d5]/50 gap-2">
+          <span className="flex-1 truncate">{selectedFile || 'No file selected'}</span>
+          {isMd && (
+            <button
+              onClick={() => setPreviewMode(!previewMode)}
+              className={`text-[10px] px-2 py-0.5 rounded border cursor-pointer ${
+                previewMode
+                  ? 'bg-[#268bd2]/15 text-[#268bd2] border-[#268bd2]/30'
+                  : 'bg-[#eee8d5] text-[#586e75] border-[#93a1a1]/20 hover:border-[#93a1a1]/40'
+              }`}
+            >
+              {previewMode ? 'Edit' : 'Preview'}
+            </button>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto">
           {selectedFile ? (
             loading ? (
               <div className="flex items-center justify-center h-full text-[#93a1a1]">Loading...</div>
             ) : content !== null ? (
-              <Editor
-                content={content}
-                filePath={selectedFile}
-                readOnly={!selectedFile.endsWith('.md') && !selectedFile.endsWith('.json')}
-                onSave={(newContent) => saveFileContent(projectName, selectedFile!, newContent)}
-              />
+              isMd && previewMode ? (
+                <MarkdownPreview content={content} />
+              ) : (
+                <Editor
+                  content={content}
+                  filePath={selectedFile}
+                  readOnly={!selectedFile.endsWith('.md') && !selectedFile.endsWith('.json')}
+                  onSave={(newContent) => saveFileContent(projectName, selectedFile!, newContent)}
+                />
+              )
             ) : (
               <div className="flex items-center justify-center h-full text-[#93a1a1]">Unable to load file</div>
             )
@@ -258,7 +365,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       <div className="flex flex-col overflow-hidden" style={{ width: right.width }}>
         {activeSession ? (
           <>
-            <div className="h-8 border-b border-[#eee8d5] flex items-center px-3 text-[11px] shrink-0 bg-[#eee8d5]/50 gap-2">
+            <div className="h-8 border-b border-[#93a1a1]/20 flex items-center px-3 text-[11px] shrink-0 bg-[#eee8d5]/50 gap-2">
               <span className="text-[#93a1a1] truncate">{activeSession}</span>
             </div>
             <div className="flex-1 overflow-hidden p-1.5">

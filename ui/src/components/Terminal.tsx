@@ -4,7 +4,6 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 
-// Solarized Dark colors for terminal
 const SOLARIZED_THEME = {
   background: '#002b36',
   foreground: '#839496',
@@ -57,22 +56,28 @@ export function Terminal({ sessionName }: TerminalProps) {
     term.open(containerRef.current)
     fitAddon.fit()
 
-    // Connect WebSocket to server
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsHost = window.location.host
     const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}`)
     wsRef.current = ws
 
+    // Send resize on open and on every fit
+    const sendResize = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+      }
+    }
+
+    ws.onopen = () => sendResize()
+
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
         if (msg.type === 'output') {
-          // Clear and rewrite with full pane content (capture-pane approach)
           term.clear()
           term.write(msg.data)
         }
       } catch {
-        // raw data fallback
         term.write(event.data)
       }
     }
@@ -85,14 +90,15 @@ export function Terminal({ sessionName }: TerminalProps) {
       term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
     }
 
-    // Forward user input to server
     term.onData((data) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
       }
     })
 
-    // Handle resize
+    // Resize: fit terminal, then tell server to resize tmux pane
+    term.onResize(() => sendResize())
+
     const observer = new ResizeObserver(() => fitAddon.fit())
     observer.observe(containerRef.current)
 

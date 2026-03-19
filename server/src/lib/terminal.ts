@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 
-const SESSION_NAME_RE = /^[a-zA-Z0-9_-]+$/
+const SESSION_NAME_RE = /^[a-zA-Z0-9_.-]+$/
 
 function validateSessionName(name: string): void {
   if (!SESSION_NAME_RE.test(name)) {
@@ -8,10 +8,17 @@ function validateSessionName(name: string): void {
   }
 }
 
-/** Send input to a tmux session (uses spawn with args array — no shell) */
+/** Send input to a tmux session */
 export function sendKeys(sessionName: string, keys: string): void {
   validateSessionName(sessionName)
   spawn('tmux', ['send-keys', '-t', sessionName, keys], { stdio: 'ignore' })
+}
+
+/** Resize tmux window to match terminal dimensions */
+export function resizePane(sessionName: string, cols: number, rows: number): void {
+  validateSessionName(sessionName)
+  // Resize the tmux window so capture-pane output matches the web terminal
+  spawn('tmux', ['resize-window', '-t', sessionName, '-x', String(cols), '-y', String(rows)], { stdio: 'ignore' })
 }
 
 /** Capture current pane content */

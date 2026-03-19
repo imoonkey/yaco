@@ -7,7 +7,7 @@ import { sessionRoutes } from './routes/sessions'
 import { fileRoutes } from './routes/files'
 import { ensureWorkflowDir, loadProjects } from './lib/projects'
 import { startWatching } from './lib/watcher'
-import { sendKeys, capturePane } from './lib/terminal'
+import { sendKeys, capturePane, resizePane } from './lib/terminal'
 import type { ServerWebSocket } from 'bun'
 
 const ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? 'http://localhost:5173')
@@ -108,6 +108,8 @@ const server = Bun.serve<WsData>({
         const msg = JSON.parse(typeof message === 'string' ? message : message.toString())
         if (msg.type === 'input') {
           sendKeys(sessionName, msg.data)
+        } else if (msg.type === 'resize') {
+          resizePane(sessionName, msg.cols, msg.rows)
         }
       } catch {
         // ignore malformed messages

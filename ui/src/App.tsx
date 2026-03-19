@@ -57,8 +57,7 @@ function App() {
   const handleAddProject = async () => {
     const path = prompt('Project path (absolute):')
     if (!path) return
-    // Derive name from last path segment
-    const name = prompt('Project name:', path.split('/').filter(Boolean).pop() || '')
+    const name = path.replace(/\/+$/, '').split('/').pop() || ''
     if (!name) return
     try {
       await addProject(name, path)

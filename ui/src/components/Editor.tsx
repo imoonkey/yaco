@@ -9,6 +9,7 @@ import { syntaxHighlighting, HighlightStyle, bracketMatching } from '@codemirror
 import { tags } from '@lezer/highlight'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
+import { python } from '@codemirror/lang-python'
 
 // Solarized Light syntax highlighting
 const solarizedHighlight = HighlightStyle.define([
@@ -70,7 +71,7 @@ function langExtension(filePath: string) {
   if (filePath.endsWith('.json')) return json()
   if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) return javascript({ typescript: true, jsx: filePath.endsWith('.tsx') })
   if (filePath.endsWith('.js') || filePath.endsWith('.jsx')) return javascript({ jsx: filePath.endsWith('.jsx') })
-  // Fallback: markdown for unknown
+  if (filePath.endsWith('.py')) return python()
   return markdown({ codeLanguages: languages })
 }
 
