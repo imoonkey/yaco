@@ -175,7 +175,7 @@ app.get('/:project/content', async (c) => {
   if (info.size > 1_000_000) return c.json({ error: 'file too large' }, 413)
 
   const content = await readFile(resolved, 'utf-8')
-  return c.json({ content, path: filePath })
+  return c.json({ content, path: filePath, revision: info.mtimeMs })
 })
 
 /** Validate a relative path for creation (path may not exist yet) */
@@ -198,9 +198,19 @@ app.put('/:project/content', async (c) => {
   const resolved = await resolveAndValidate(proj.path, filePath)
   if (!resolved) return c.json({ error: 'path not found or traversal denied' }, 403)
 
-  const { content } = await c.req.json<{ content: string }>()
+  const { content, baseRevision } = await c.req.json<{ content: string; baseRevision?: number }>()
+
+  // Revision conflict check: if baseRevision is provided, compare against current mtime
+  if (baseRevision != null) {
+    const info = await stat(resolved)
+    if (info.mtimeMs !== baseRevision) {
+      return c.json({ error: 'revision conflict', currentRevision: info.mtimeMs }, 409)
+    }
+  }
+
   await writeFile(resolved, content, 'utf-8')
-  return c.json({ ok: true })
+  const updated = await stat(resolved)
+  return c.json({ ok: true, revision: updated.mtimeMs })
 })
 
 app.post('/:project/create-file', async (c) => {

@@ -13,8 +13,6 @@ const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const IGNORE = [
   /^\.git\/objects\//,
   /^\.git\/logs\//,
-  /^\.git\/refs\/stash/,
-  /^\.git\/COMMIT_EDITMSG$/,
   /node_modules\//,
   /\.DS_Store$/,
 ]
@@ -24,9 +22,8 @@ function routeChange(filename: string): string | null {
   if (IGNORE.some(re => re.test(filename))) return null
 
   if (/^doc\/todo\/[^/]+\/workstream\.json$/.test(filename)) return 'workstreams'
-  if (/^\.git\/(index|HEAD)$/.test(filename)) return 'git'
+  if (/^\.git\//.test(filename)) return 'git'
 
-  // Default: structural file change
   return 'filetree'
 }
 
@@ -49,7 +46,10 @@ export function startProjectWatchers(projects: Project[]): void {
       const watcher = watch(project.path, { recursive: true }, (_event, filename) => {
         if (!filename) return
         const channel = routeChange(filename)
-        if (channel) debouncedEmit(channel)
+        if (channel) {
+          debouncedEmit(channel)
+          if (channel === 'filetree') debouncedEmit('git')
+        }
       })
       watchers.push(watcher)
     } catch (err) {

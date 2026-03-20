@@ -14,12 +14,16 @@ function parseStatus(xy: string): GitChange['status'] {
   return 'M'
 }
 
+/** Last-known-good git snapshots per project */
+const gitSnapshots = new Map<string, GitChange[]>()
+
 const app = new Hono()
 
 // GET /:project/status — git status for a project
 app.get('/:project/status', async (c) => {
+  const projectName = c.req.param('project')
   const projects = await loadProjects()
-  const proj = projects.find(p => p.name === c.req.param('project'))
+  const proj = projects.find(p => p.name === projectName)
   if (!proj) return c.json({ error: 'project not found' }, 404)
 
   const result = spawnSync('git', ['status', '--porcelain'], {
@@ -28,7 +32,11 @@ app.get('/:project/status', async (c) => {
     timeout: 5000,
   })
 
-  if (result.error || result.status !== 0) return c.json([])
+  if (result.error || result.status !== 0) {
+    // Transient failure — return last-known-good snapshot with stale marker
+    const snapshot = gitSnapshots.get(projectName)
+    return c.json({ changes: snapshot ?? [], stale: true })
+  }
 
   const changes: GitChange[] = result.stdout
     .split('\n')
@@ -39,7 +47,8 @@ app.get('/:project/status', async (c) => {
       status: parseStatus(line.substring(0, 2)),
     }))
 
-  return c.json(changes)
+  gitSnapshots.set(projectName, changes)
+  return c.json({ changes, stale: false })
 })
 
 // GET /:project/diff?path=... — git diff for a specific file

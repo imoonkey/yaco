@@ -6,7 +6,8 @@ import { python } from '@codemirror/lang-python'
 import { languages } from '@codemirror/language-data'
 import { LanguageDescription } from '@codemirror/language'
 import { classHighlighter, highlightCode } from '@lezer/highlight'
-import { useFileTree, useFileContent, useSessions, useGitStatus, saveFileContent, createFile, createDir, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
+import { useFileTree, useFileContent, useSessions, useGitStatus, createFile, createDir, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
+import { useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { Editor } from './Editor'
 import { Terminal } from './Terminal'
@@ -19,16 +20,10 @@ import { marked, type Tokens } from 'marked'
 import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
-type WorkspaceMobilePane = 'files' | 'editor' | 'terminal'
 type DiffState = {
   content: string | null
   error: boolean
   loading: boolean
-}
-type FileBuffer = {
-  saved: string
-  draft: string
-  viewportLine: number
 }
 type JumpRequest = {
   key: number
@@ -145,82 +140,6 @@ function renderMarkdown(content: string): string {
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
   unlock?: () => void
-}
-
-interface WorkspaceState {
-  openTabs: string[]
-  activeTab: string | null
-  activeSession: string
-  showSidebar: boolean
-  showRightPanel: boolean
-  showExplorer: boolean
-  showSessions: boolean
-  showChanges: boolean
-  previewMode: boolean
-  leftSize: number
-  rightSize: number
-  explorerSize: number
-  changesSize: number
-}
-
-const DEFAULT_WORKSPACE_STATE: WorkspaceState = {
-  openTabs: [],
-  activeTab: null,
-  activeSession: '',
-  showSidebar: true,
-  showRightPanel: true,
-  showExplorer: true,
-  showSessions: true,
-  showChanges: true,
-  previewMode: false,
-  leftSize: 220,
-  rightSize: 420,
-  explorerSize: 250,
-  changesSize: 150,
-}
-
-function workspaceStorageKey(projectName: string): string {
-  return `workflow-workspace-state:${projectName}`
-}
-
-function loadStoredSize(value: unknown, fallback: number): number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
-}
-
-function loadWorkspaceState(projectName: string): WorkspaceState {
-  try {
-    const raw = localStorage.getItem(workspaceStorageKey(projectName))
-    if (!raw) return DEFAULT_WORKSPACE_STATE
-
-    const parsed = JSON.parse(raw) as Partial<WorkspaceState>
-    const openTabs = Array.isArray(parsed.openTabs) ? parsed.openTabs.filter((tab): tab is string => typeof tab === 'string') : []
-    const activeTab = typeof parsed.activeTab === 'string' && openTabs.includes(parsed.activeTab) ? parsed.activeTab : openTabs[0] ?? null
-
-    return {
-      ...DEFAULT_WORKSPACE_STATE,
-      ...parsed,
-      openTabs,
-      activeTab,
-      activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
-      showRightPanel: typeof parsed.showRightPanel === 'boolean' ? parsed.showRightPanel : DEFAULT_WORKSPACE_STATE.showRightPanel,
-      leftSize: loadStoredSize(parsed.leftSize, DEFAULT_WORKSPACE_STATE.leftSize),
-      rightSize: loadStoredSize(parsed.rightSize, DEFAULT_WORKSPACE_STATE.rightSize),
-      explorerSize: loadStoredSize(parsed.explorerSize, DEFAULT_WORKSPACE_STATE.explorerSize),
-      changesSize: loadStoredSize(parsed.changesSize, DEFAULT_WORKSPACE_STATE.changesSize),
-    }
-  } catch {
-    return DEFAULT_WORKSPACE_STATE
-  }
-}
-
-function saveWorkspaceState(projectName: string, state: WorkspaceState) {
-  localStorage.setItem(workspaceStorageKey(projectName), JSON.stringify(state))
-}
-
-function inferMobilePane(openTabs: string[], activeSession: string): WorkspaceMobilePane {
-  if (openTabs.length > 0) return 'editor'
-  if (activeSession) return 'terminal'
-  return 'files'
 }
 
 // --- Resize Hook ---
@@ -526,47 +445,39 @@ function MarkdownPreview({
 export function Workspace({ projectName, projectPath }: { projectName: string; projectPath: string }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
-  const initialState = loadWorkspaceState(projectName)
   const isMobile = useIsMobile()
   const isTouch = useIsTouch()
-  const [openTabs, setOpenTabs] = useState<string[]>(initialState.openTabs)
-  const [activeTab, setActiveTab] = useState<string | null>(initialState.activeTab)
+
+  // Centralized workspace state
+  const ws = useWorkspaceState(projectName)
+  const { openTabs, activeTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, actions } = ws
+
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
-    initialState.activeTab && !initialState.activeTab.startsWith('diff:') ? initialState.activeTab : null
+    activeTab && !activeTab.startsWith('diff:') ? activeTab : null
   ))
-  const [fileBuffers, setFileBuffers] = useState<Record<string, FileBuffer>>({})
-  const [activeSession, setActiveSession] = useState(initialState.activeSession)
-  const [mobilePane, setMobilePane] = useState<WorkspaceMobilePane>(() => inferMobilePane(initialState.openTabs, initialState.activeSession))
   const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
-  const [showSidebar, setShowSidebar] = useState(initialState.showSidebar)
-  const [showRightPanel, setShowRightPanel] = useState(initialState.showRightPanel)
-  const [showExplorer, setShowExplorer] = useState(initialState.showExplorer)
-  const [showSessions, setShowSessions] = useState(initialState.showSessions)
-  const [showChanges, setShowChanges] = useState(initialState.showChanges)
   const [showSearch, setShowSearch] = useState(false)
-  const [previewMode, setPreviewMode] = useState(initialState.previewMode)
   const [diffs, setDiffs] = useState<Record<string, DiffState>>({})
   const [sidebarHeight, setSidebarHeight] = useState(0)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [contextFolder, setContextFolder] = useState('')
 
+  // Convenience aliases for layout props
+  const { showSidebar, showRightPanel, showExplorer, showSessions, showChanges, previewMode } = layout
+
   const { data: fileTree } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
-  const { data: gitChanges } = useGitStatus(projectName)
+  const { data: gitData } = useGitStatus(projectName)
 
   // Only fetch file content for non-diff tabs
   const isDiffTab = activeTab?.startsWith('diff:')
   const activeDiffPath = activeTab?.startsWith('diff:') ? activeTab.slice(5) : null
   const activeDiff = activeDiffPath ? diffs[activeDiffPath] : null
-  const { content, loading } = useFileContent(projectName, isDiffTab ? null : activeTab)
-  const activeFileBuffer = activeTab && !isDiffTab ? fileBuffers[activeTab] ?? null : null
-  const activeFileContent = activeFileBuffer?.draft ?? content
-  const activeViewportLine = activeFileBuffer?.viewportLine ?? 1
-  const dirtyTabs = useMemo(() => new Set(
-    Object.entries(fileBuffers)
-      .filter(([, buffer]) => buffer.draft !== buffer.saved)
-      .map(([path]) => path)
-  ), [fileBuffers])
+  const activeFilePath = activeTab && !isDiffTab ? activeTab : null
+  const { content, loading } = useFileContent(projectName, activeFilePath)
+  const activeFileState = activeFilePath ? files[activeFilePath] : null
+  const activeFileContent = activeFileState?.draft ?? content
+  const activeViewportLine = activeFileState?.viewportLine ?? 1
 
   // Fetch diff when a diff tab is active
   useEffect(() => {
@@ -615,7 +526,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const processing = projectSessions.filter(s => s.status === 'processing')
   const idle = projectSessions.filter(s => s.status === 'idle')
   const allFiles = fileTree ? flattenTree(fileTree) : []
-  const changes = useMemo(() => gitChanges ?? [], [gitChanges])
+  const changes = useMemo(() => gitData?.changes ?? [], [gitData])
+  const gitStale = gitData?.stale ?? false
   const attachedSession = projectSessions.some(session => session.name === activeSession) ? activeSession : ''
   const activeSessionInfo = projectSessions.find(s => s.name === attachedSession) ?? null
 
@@ -641,16 +553,16 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     0,
     sidebarHeight - visibleSectionCount * SECTION_HEADER_HEIGHT - visibleHandleCount * RESIZE_HANDLE_HEIGHT
   )
-  const left = useResize(initialState.leftSize, 140, 600)
-  const right = useResize(initialState.rightSize, 250, 900, 'right')
+  const left = useResize(layout.leftSize, 140, 600)
+  const right = useResize(layout.rightSize, 250, 900, 'right')
   const explorerMax = Math.max(0, availableSectionHeight - (showChanges ? 0 : 0) - (showSessions ? MIN_SESSION_BODY_HEIGHT : 0))
-  const explorerSplit = useResize(initialState.explorerSize, 0, explorerMax, 'down')
+  const explorerSplit = useResize(layout.explorerSize, 0, explorerMax, 'down')
   const explorerHeight = showExplorer ? Math.min(explorerSplit.size, explorerMax) : 0
   const changesMax = Math.max(
     0,
     availableSectionHeight - explorerHeight - (showSessions ? MIN_SESSION_BODY_HEIGHT : 0)
   )
-  const changesSplit = useResize(initialState.changesSize, 0, changesMax, 'down')
+  const changesSplit = useResize(layout.changesSize, 0, changesMax, 'down')
   const changesHeight = showChanges ? Math.min(changesSplit.size, changesMax) : 0
 
   const isMd = activeTab?.endsWith('.md')
@@ -658,35 +570,12 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const shouldShowEditorPane = hasOpenFiles || !showRightPanel
   const canTogglePreview = !!isMd && !isDiffTab
 
-  const updateFileBuffer = useCallback((path: string, fallbackContent: string | null, updater: (current: FileBuffer) => FileBuffer) => {
-    setFileBuffers(prev => {
-      const current = prev[path] ?? {
-        saved: fallbackContent ?? '',
-        draft: fallbackContent ?? '',
-        viewportLine: 1,
-      }
-      const next = updater(current)
-      if (
-        current.saved === next.saved &&
-        current.draft === next.draft &&
-        current.viewportLine === next.viewportLine
-      ) {
-        return prev
-      }
-      return {
-        ...prev,
-        [path]: next,
-      }
-    })
-  }, [])
-
   const openFile = useCallback((path: string, focus: FocusTarget = 'editor') => {
-    setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
-    setActiveTab(path)
+    actions.openFileTab(path)
     setSelectedFilePath(path)
     setFocusTarget(focus)
-    setMobilePane('editor')
-  }, [])
+    actions.setMobilePane('editor')
+  }, [actions])
 
   const openFileFromExplorer = useCallback((path: string) => {
     openFile(path, 'explorer')
@@ -723,12 +612,10 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   )
 
   const openDiff = useCallback((path: string) => {
-    const tab = `diff:${path}`
-    setOpenTabs(tabs => tabs.includes(tab) ? tabs : [...tabs, tab])
-    setActiveTab(tab)
+    actions.openDiffTab(path)
     setFocusTarget('editor')
-    setMobilePane('editor')
-  }, [])
+    actions.setMobilePane('editor')
+  }, [actions])
 
   const activateChange = useCallback((path: string) => {
     if (activeTab === `diff:${path}`) {
@@ -741,46 +628,28 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    setOpenTabs(tabs => {
-      const next = tabs.filter(t => t !== path)
-      setActiveTab(prev => prev !== path ? prev : next[Math.min(tabs.indexOf(path), next.length - 1)] ?? null)
-      return next
-    })
-    if (!path.startsWith('diff:')) {
-      setFileBuffers(prev => {
-        if (!(path in prev)) return prev
-        const next = { ...prev }
-        delete next[path]
-        return next
-      })
-    }
-  }, [])
+    actions.closeTab(path)
+  }, [actions])
 
   const handleActiveFileViewportLine = useCallback((line: number) => {
     if (!activeTab || activeTab.startsWith('diff:')) return
-    updateFileBuffer(activeTab, content, current => ({
-      ...current,
-      viewportLine: clampLine(line),
-    }))
-  }, [activeTab, content, updateFileBuffer])
+    actions.updateFileViewport(activeTab, clampLine(line))
+  }, [activeTab, actions])
 
   const handlePreviewActivateLine = useCallback((line: number) => {
     if (!activeTab || activeTab.startsWith('diff:')) return
     const targetLine = clampLine(line)
-    updateFileBuffer(activeTab, content, current => ({
-      ...current,
-      viewportLine: targetLine,
-    }))
+    actions.updateFileViewport(activeTab, targetLine)
     setJumpRequest({ key: Date.now(), path: activeTab, line: targetLine })
-    setPreviewMode(false)
+    actions.updateLayout({ previewMode: false })
     setFocusTarget('editor')
-  }, [activeTab, content, updateFileBuffer])
+  }, [activeTab, actions])
 
   const killSession = useCallback(async (sessionName: string) => {
     if (!sessionName) return
     const shouldDetach = attachedSession === sessionName
     if (shouldDetach) {
-      setActiveSession('')
+      actions.setActiveSession('')
     }
 
     try {
@@ -789,16 +658,16 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     } catch (err) {
       console.error('Failed to close session:', err)
       if (shouldDetach) {
-        setActiveSession(sessionName)
+        actions.setActiveSession(sessionName)
       }
     }
-  }, [attachedSession, refreshSessions])
+  }, [attachedSession, refreshSessions, actions])
 
   const detachActiveSession = useCallback(() => {
     if (!attachedSession) return false
-    setActiveSession('')
+    actions.setActiveSession('')
     return true
-  }, [attachedSession])
+  }, [attachedSession, actions])
 
   const closeActiveTab = useCallback((): boolean => {
     if (!activeTab) return false
@@ -863,38 +732,15 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     return () => observer.disconnect()
   }, [])
 
+  // Sync resize handle sizes back to layout state for persistence
   useEffect(() => {
-    saveWorkspaceState(projectName, {
-      openTabs,
-      activeTab,
-      activeSession: attachedSession,
-      showSidebar,
-      showRightPanel,
-      showExplorer,
-      showSessions,
-      showChanges,
-      previewMode,
+    actions.updateLayout({
       leftSize: left.size,
       rightSize: right.size,
       explorerSize: explorerSplit.size,
       changesSize: changesSplit.size,
     })
-  }, [
-    attachedSession,
-    activeTab,
-    changesSplit.size,
-    explorerSplit.size,
-    left.size,
-    openTabs,
-    previewMode,
-    projectName,
-    right.size,
-    showChanges,
-    showExplorer,
-    showRightPanel,
-    showSessions,
-    showSidebar,
-  ])
+  }, [left.size, right.size, explorerSplit.size, changesSplit.size, actions])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -902,13 +748,13 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
         e.preventDefault()
         e.stopPropagation()
-        setShowRightPanel(v => !v)
+        actions.updateLayout({ showRightPanel: !showRightPanel })
         return
       }
       if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
         e.preventDefault()
         e.stopPropagation()
-        setShowSidebar(v => !v)
+        actions.updateLayout({ showSidebar: !showSidebar })
         return
       }
       if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
@@ -921,7 +767,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canTogglePreview) {
         e.preventDefault()
         e.stopPropagation()
-        setPreviewMode(v => !v)
+        actions.updateLayout({ previewMode: !previewMode })
         return
       }
       if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'w' && closeFocusedSurface()) {
@@ -931,7 +777,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [canTogglePreview, closeFocusedSurface, focusTarget, selectedFilePath, showSearch])
+  }, [actions, canTogglePreview, closeFocusedSurface, focusTarget, previewMode, selectedFilePath, showRightPanel, showSearch, showSidebar])
 
   useEffect(() => {
     const handleBlur = () => {
@@ -953,9 +799,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const handleNewSession = async (provider: SessionProvider) => {
     try {
       const name = await startSession(provider, projectPath)
-      setActiveSession(name)
+      actions.setActiveSession(name)
       setFocusTarget(provider === 'shell' ? 'terminal' : 'session')
-      setMobilePane('terminal')
+      actions.setMobilePane('terminal')
       refreshSessions()
     }
     catch (err) { console.error('Failed to start session:', err) }
@@ -982,7 +828,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   const filesPaneMobile = (
     <div className="h-full flex flex-col" style={{ backgroundColor: C.bg }} onMouseDown={() => setFocusTarget('explorer')}>
-        <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} actions={explorerActions} />
+        <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => actions.updateLayout({ showExplorer: !showExplorer })} actions={explorerActions} />
         {showExplorer && (
           <div className="flex-1 min-h-0 flex flex-col">
             <FileExplorer
@@ -998,7 +844,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           </div>
         )}
 
-        <SectionHeader title="Changes" collapsed={!showChanges} onToggle={() => setShowChanges(v => !v)} badge={changes.length || undefined} />
+        <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => actions.updateLayout({ showChanges: !showChanges })} badge={changes.length || undefined} />
         {showChanges && (
           <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">
             {changes.map(c => (
@@ -1008,7 +854,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           </div>
         )}
 
-        <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => setShowSessions(v => !v)} actions={sessionActions} />
+        <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => actions.updateLayout({ showSessions: !showSessions })} actions={sessionActions} />
         {showSessions && (
           <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">
             {processing.map(s => (
@@ -1018,9 +864,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 isActive={s.name === attachedSession}
                 onKill={() => { void killSession(s.name) }}
                 onClick={() => {
-                  setActiveSession(s.name)
+                  actions.setActiveSession(s.name)
                   setFocusTarget('session')
-                  setMobilePane('terminal')
+                  actions.setMobilePane('terminal')
                 }}
               />
             ))}
@@ -1032,9 +878,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 isActive={s.name === attachedSession}
                 onKill={() => { void killSession(s.name) }}
                 onClick={() => {
-                  setActiveSession(s.name)
+                  actions.setActiveSession(s.name)
                   setFocusTarget('session')
-                  setMobilePane('terminal')
+                  actions.setMobilePane('terminal')
                 }}
               />
             ))}
@@ -1052,10 +898,11 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         ) : openTabs.map(tab => {
           const isActive = tab === activeTab
           const isDirty = dirtyTabs.has(tab)
+          const isConflict = conflictTabs.has(tab)
           const isDiff = tab.startsWith('diff:')
           return (
             <div key={tab} onClick={() => {
-              setActiveTab(tab)
+              actions.setActiveTab(tab)
               setFocusTarget('editor')
               if (!tab.startsWith('diff:')) {
                 setSelectedFilePath(tab)
@@ -1064,11 +911,13 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
               style={{
                 backgroundColor: isActive ? C.editorBg : C.bg, color: isActive ? C.textDark : C.textDim,
-                borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isDiff ? '#C4A241' : C.text}` : '2px solid transparent',
+                borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : C.text}` : '2px solid transparent',
                 borderBottom: isActive ? `1px solid ${C.editorBg}` : `1px solid ${C.border}`, marginBottom: -1,
               }} title={tab}>
               <span className="truncate max-w-[120px]">{tabName(tab)}</span>
-              {isDirty ? (
+              {isConflict ? (
+                <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[12px]" style={{ color: '#C4A241' }} title="File changed on disk">&#9888;</span>
+              ) : isDirty ? (
                 <span className="w-4 h-4 flex items-center justify-center shrink-0">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: C.textDark }} />
                 </span>
@@ -1081,14 +930,38 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           )
         })}
         {canTogglePreview && (
-          <button onClick={() => setPreviewMode(!previewMode)} className="ml-auto mr-2 text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
+          <button onClick={() => actions.updateLayout({ previewMode: !previewMode })} className="ml-auto mr-2 text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
             style={{ backgroundColor: previewMode ? '#268bd215' : C.bg, color: previewMode ? C.accent : C.text, borderColor: previewMode ? '#268bd230' : C.border }}>
             {previewMode ? 'Edit' : 'Preview'}
           </button>
         )}
       </div>
 
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 flex flex-col">
+        {activeFilePath && conflictTabs.has(activeFilePath) && (
+          <div className="flex items-center gap-3 px-3 py-1.5 text-[12px] shrink-0" style={{ backgroundColor: '#C4A24118', borderBottom: `1px solid #C4A24140`, color: '#C4A241' }}>
+            <span>&#9888; File changed on disk.</span>
+            <button
+              onClick={() => actions.acceptDisk(activeFilePath)}
+              className="px-2 py-0.5 rounded text-[11px] cursor-pointer border"
+              style={{ borderColor: '#C4A24140', color: '#C4A241' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#C4A24120')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            >
+              Accept Disk Version
+            </button>
+            <button
+              onClick={() => { void actions.forceSave(activeFilePath, activeFileContent ?? '') }}
+              className="px-2 py-0.5 rounded text-[11px] cursor-pointer border"
+              style={{ borderColor: '#C4A24140', color: '#C4A241' }}
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#C4A24120')}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            >
+              Keep Mine &amp; Save
+            </button>
+          </div>
+        )}
+        <div className="flex-1 min-h-0">
         {isDiffTab ? (
           !activeDiff || (activeDiff.loading && activeDiff.content == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
           : activeDiff?.content != null ? <DiffView diff={activeDiff.content} />
@@ -1114,23 +987,16 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                   closeTab(activeTab)
                 }}
                 onChange={(newContent) => {
-                  updateFileBuffer(activeTab, content, current => ({
-                    ...current,
-                    draft: newContent,
-                  }))
+                  actions.updateFileDraft(activeTab, newContent)
                 }}
                 onSave={async (newContent) => {
-                  await saveFileContent(projectName, activeTab!, newContent)
-                  updateFileBuffer(activeTab!, newContent, current => ({
-                    ...current,
-                    saved: newContent,
-                    draft: newContent,
-                  }))
+                  await actions.saveFile(activeTab!, newContent)
                 }}
               />
             )
           ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>
         ) : <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a file from Files</div>}
+        </div>
       </div>
     </div>
   )
@@ -1191,7 +1057,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 { id: 'terminal', label: 'Terminal' },
               ]}
               value={mobilePane}
-              onChange={(value) => setMobilePane(value as WorkspaceMobilePane)}
+              onChange={(value) => actions.setMobilePane(value as 'files' | 'editor' | 'terminal')}
             />
           </div>
           <div className="flex-1 min-h-0 flex flex-col">
@@ -1205,7 +1071,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           {showSidebar && (
             <>
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
-                <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} actions={explorerActions} />
+                <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => actions.updateLayout({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && (
                   <div className="shrink-0 min-h-0 flex flex-col" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }}>
                     <FileExplorer
@@ -1222,7 +1088,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
                 {showExplorer && (showSessions || showChanges) && <HResizeHandle onMouseDown={explorerSplit.onMouseDown} isDragging={explorerSplit.isDragging} />}
 
-                <SectionHeader title="Changes" collapsed={!showChanges} onToggle={() => setShowChanges(v => !v)} badge={changes.length || undefined} />
+                <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => actions.updateLayout({ showChanges: !showChanges })} badge={changes.length || undefined} />
                 {showChanges && (
                   <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: showSessions ? changesHeight : undefined, flex: showSessions ? 'none' : 1 }}>
                     {changes.map(c => (
@@ -1234,12 +1100,12 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
                 {showChanges && showSessions && <HResizeHandle onMouseDown={changesSplit.onMouseDown} isDragging={changesSplit.isDragging} />}
 
-                <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => setShowSessions(v => !v)} actions={sessionActions} />
+                <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => actions.updateLayout({ showSessions: !showSessions })} actions={sessionActions} />
                 {showSessions && (
                   <div className="flex-1 overflow-y-auto py-1 px-1 min-h-0" style={{ minHeight: MIN_SESSION_BODY_HEIGHT }}>
-                    {processing.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
+                    {processing.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session') }} />)}
                     {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
-                    {idle.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { setActiveSession(s.name); setFocusTarget('session') }} />)}
+                    {idle.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session') }} />)}
                     {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
                   </div>
                 )}

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
 import { useSSERefresh } from './useSSE'
 
-const API = '/api'
+export const API = '/api'
 const FILE_TREE_FALLBACK_MS = 60_000
 const fileTreeCache = new Map<string, FileNode[]>()
 const fileTreeInflight = new Map<string, Promise<FileNode[]>>()
@@ -153,20 +153,21 @@ export function useFileTree(projectName: string | null) {
 
 export function useFileContent(projectName: string | null, filePath: string | null) {
   const [content, setContent] = useState<string | null>(null)
+  const [revision, setRevision] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!projectName || !filePath) { setContent(null); return }
+    if (!projectName || !filePath) { setContent(null); setRevision(null); return }
     let cancelled = false
     setLoading(true)
-    fetchJson<{ content: string }>(`/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
-      .then(r => { if (!cancelled) setContent(r.content) })
-      .catch(() => { if (!cancelled) setContent(null) })
+    fetchJson<{ content: string; revision: number }>(`/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
+      .then(r => { if (!cancelled) { setContent(r.content); setRevision(r.revision) } })
+      .catch(() => { if (!cancelled) { setContent(null); setRevision(null) } })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [projectName, filePath])
 
-  return { content, loading }
+  return { content, revision, loading }
 }
 
 export async function dismissProgress(project: string, workstream: string, id: string): Promise<void> {
@@ -196,13 +197,21 @@ export async function closeSession(name: string): Promise<void> {
   await postJson(`/sessions/${encodeURIComponent(name)}/close`)
 }
 
-export async function saveFileContent(projectName: string, filePath: string, content: string): Promise<void> {
+export async function saveFileContent(projectName: string, filePath: string, content: string, baseRevision?: number): Promise<{ revision: number }> {
   const res = await fetch(`${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, baseRevision }),
   })
+  if (res.status === 409) {
+    const body = await res.json() as { error: string; currentRevision: number }
+    const err = new Error('revision conflict') as Error & { status: number; currentRevision: number }
+    err.status = 409
+    err.currentRevision = body.currentRevision
+    throw err
+  }
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  return res.json()
 }
 
 export async function createFile(projectName: string, path: string): Promise<void> {
@@ -228,9 +237,14 @@ export async function deleteFile(projectName: string, path: string): Promise<voi
 
 // --- Git ---
 
+export interface GitStatusResponse {
+  changes: GitChange[]
+  stale: boolean
+}
+
 export function useGitStatus(projectName: string | null) {
   const fetcher = useCallback(
-    () => projectName ? fetchJson<GitChange[]>(`/git/${encodeURIComponent(projectName)}/status`) : Promise.resolve([]),
+    () => projectName ? fetchJson<GitStatusResponse>(`/git/${encodeURIComponent(projectName)}/status`) : Promise.resolve({ changes: [], stale: false }),
     [projectName]
   )
   return usePolling(fetcher, 30_000, 'git')
