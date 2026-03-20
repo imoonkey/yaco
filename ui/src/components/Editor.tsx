@@ -142,7 +142,7 @@ export function Editor({
           },
         }),
         EditorView.updateListener.of(update => {
-          if (update.docChanged) {
+          if (update.docChanged && !suppressChangeRef.current) {
             const nextContent = update.state.doc.toString()
             contentRef.current = nextContent
             onChangeRef.current?.(nextContent)
@@ -174,13 +174,18 @@ export function Editor({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, readOnly])
 
+  // Suppress onChange during programmatic content updates (server-driven refreshes)
+  const suppressChangeRef = useRef(false)
+
   useEffect(() => {
     const view = viewRef.current
     if (!view || content === contentRef.current) return
     contentRef.current = content
+    suppressChangeRef.current = true
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: content },
     })
+    suppressChangeRef.current = false
   }, [content])
 
   useEffect(() => {
