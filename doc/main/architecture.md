@@ -79,7 +79,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 ## Workspace Features
 
 - **Multi-tab editor** — open/close/switch files, edit any text file in the workspace, Cmd-W to close, Cmd-P file search, Cmd-B left sidebar toggle, and Cmd-Shift-B right session-pane toggle
-- **Explorer tree** — react-arborist virtualized tree with custom node renderer; supports drag-and-drop file move, inline rename (F2), right-click context menu (New File, New Folder, Rename, Delete, Copy Path), keyboard navigation, and per-directory create
+- **Explorer tree** — react-arborist virtualized tree with custom node renderer; supports drag-and-drop file move, inline rename (F2), right-click context menu (New File, New Folder, Rename, Delete, Copy Path), keyboard navigation, and per-directory create; header New File/Folder buttons create inside the last-focused folder (or root if nothing selected)
 - **Explorer tree refresh** — file trees are cached per project on both the server and client; the server invalidates cache entries on structural filesystem changes (`rename` / create / delete), and the client reuses the last tree immediately when revisiting a project before refreshing in the background
 - **Explorer file reveal** — when a real file tab is active in the editor, Explorer keeps that file selected and auto-expands parent folders so the current editing context is always visible in the tree
 - **Explorer path copy** — when the Explorer owns focus, `Cmd+C` copies the selected file path instead of browser page text
