@@ -36,6 +36,7 @@ workflow/
 │       ├── types.ts
 │       ├── hooks/useApi.ts           # API hooks (SSE-triggered + fallback polling)
 │       ├── hooks/useSSE.ts           # Shared EventSource singleton + refresh dispatch
+│       ├── hooks/useWorkspaceState.ts # Centralized workspace state (persistence, hydration, conflict detection)
 │       ├── hooks/useBrowserNotifications.ts  # SSE + Notification API
 │       └── components/
 │           ├── Monitor.tsx     # Sessions + notifications
@@ -125,14 +126,14 @@ Projects can also be reordered from the bottom project bar by dragging tabs, or 
 | POST | `/api/sessions/:handle/resume` | Resume with prompt |
 | POST | `/api/sessions/:handle/close` | Close a Claude/Codex/shell session |
 | GET | `/api/files/:project` | File tree |
-| GET | `/api/files/:project/content?path=...` | Read file |
-| PUT | `/api/files/:project/content?path=...` | Write a validated text file inside the project |
+| GET | `/api/files/:project/content?path=...` | Read file content + revision (mtime) |
+| PUT | `/api/files/:project/content?path=...` | Write file; optional `baseRevision` for conflict check (409) |
 | POST | `/api/files/:project/create-file` | Create empty file (mkdir -p parents) |
 | POST | `/api/files/:project/create-dir` | Create directory (mkdir -p) |
 | POST | `/api/files/:project/rename` | Rename file or folder |
 | POST | `/api/files/:project/move` | Move file/folder to different directory |
 | POST | `/api/files/:project/delete` | Delete file or folder (recursive) |
-| GET | `/api/git/:project/status` | Git status (changed files) |
+| GET | `/api/git/:project/status` | Git status `{ changes, stale }` with last-known-good fallback |
 | GET | `/api/git/:project/diff?path=...` | Unified diff for a file |
 | WS | `/ws/terminal/:name?cols=N&rows=N` | Terminal PTY via WebSocket |
 | GET | `/api/notifications/stream` | SSE stream for real-time notification events |
@@ -152,7 +153,8 @@ Projects can also be reordered from the bottom project bar by dragging tabs, or 
 - In `Changes`, clicking a file opens its diff tab; clicking the same row again while that diff tab is active opens the raw file instead
 - Markdown `Preview` and `Edit` share the same in-memory draft and viewport source-line anchor, so toggling modes does not discard unsaved edits or reset the reading position
 - Clicking inside Markdown preview reopens `Edit` near the clicked block and moves the cursor to an approximate corresponding source line
-- Unsaved file drafts also survive switching between open file tabs; the draft is dropped only when the tab is closed or after a save replaces its saved base
+- Unsaved file drafts survive switching between open file tabs and page refresh; drafts are persisted to localStorage with the file's base revision for conflict detection
+- When an external process (agent, git checkout) changes a file on disk while a draft exists, the tab enters `conflict` state with a yellow warning icon and an inline banner offering "Accept Disk Version" or "Keep Mine & Save"
 
 ## Terminal Integration
 
@@ -167,18 +169,54 @@ The Workspace root uses `select-none` for general shell-like interactions, so th
 
 ## Workspace Persistence
 
-The Workspace view stores per-project UI state in localStorage:
+The Workspace view stores per-project UI state in localStorage using two separate keys:
 
-- open tabs + active tab
-- selected session
-- left/right pane visibility
-- sidebar section visibility
-- left/right panel widths
-- explorer/changes split heights
+- **`workflow-workspace:${projectName}`** — layout/tabs state:
+  - open tabs + active tab
+  - selected session
+  - sidebar/panel visibility and sizes
+  - preview mode
+  - mobile pane selection
+- **`workflow-drafts:${projectName}`** — per-file state (separated to avoid bloating layout with file content):
+  - unsaved draft content
+  - base revision (mtime) for conflict detection
+  - per-file viewport line (scroll position)
 
-Unsaved drafts and per-file viewport source-line anchors are kept in Workspace memory for open tabs, not persisted to localStorage.
+Drafts and viewport positions survive refresh. Clean files re-render from server content.
 
-The file tree is also cached per project in memory on both the client and server. Revisiting a large project should show the previous tree immediately, then refresh in the background. Structural file changes (move/create/delete) invalidate the server cache so the next foreground refresh or poll picks them up without waiting for a full cold rebuild every time.
+Persistence uses quota-error-driven eviction: if localStorage fills up, the oldest drafts (by `updatedAt`) are evicted first. Layout state is always persisted (tiny).
+
+Multi-tab policy: last writer wins. Browser tabs share localStorage; no cross-tab sync.
+
+-> See: `ui/src/hooks/useWorkspaceState.ts`
+
+## File Content API
+
+The file content endpoints are revision-aware to support conflict detection:
+
+- `GET /api/files/:project/content?path=...` returns `{ content, path, revision }` where `revision` is `mtimeMs`
+- `PUT /api/files/:project/content?path=...` accepts `{ content, baseRevision? }`. If `baseRevision` is provided and doesn't match current mtime, returns `409` with `{ error, currentRevision }`
+
+This enables optimistic locking for agent-edited files: the editor tracks the base revision and detects when disk content changed externally.
+
+## Git Status API
+
+The git status endpoint returns a structured response with a stale marker:
+
+- `GET /api/git/:project/status` returns `{ changes: GitChange[], stale: boolean }`
+- On transient `git status` failure, returns the last-known-good snapshot with `stale: true` instead of an empty array
+- The Changes panel indicates stale state in its header
+
+## File System Invalidation
+
+`project-watcher.ts` routes filesystem changes to SSE channels:
+
+- `.git/objects/`, `.git/logs/`, `node_modules/`, `.DS_Store` → ignored
+- `doc/todo/<name>/workstream.json` → `workstreams`
+- `.git/*` (all other git internals) → `git`
+- All other files → `filetree` + `git` (any file change can affect git status)
+
+The workspace state hook listens to both `filetree` and `git` channels to refetch open file content when changes occur.
 
 ## Build
 

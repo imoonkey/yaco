@@ -1,5 +1,47 @@
 # Progress
 
+## 2026-03-20: Workspace state synchronization
+
+**What changed:**
+- Fixed git invalidation: broader `.git/` routing, emit `git` alongside `filetree` for working-tree changes
+- Added last-known-good git snapshot with stale marker (no more empty Changes panel on transient failures)
+- Revision-aware file API: `GET content` returns mtime revision, `PUT content` accepts `baseRevision` with 409 on conflict
+- New `useWorkspaceState` hook: centralized state with localStorage persistence for layout/tabs and drafts (separate keys), hydration from server truth, SSE-driven refetch for open files
+- Conflict detection and resolution UX: yellow tab indicator, inline banner with "Accept Disk Version" / "Keep Mine & Save"
+- Quota-error-driven eviction for draft localStorage persistence
+- Migrated Workspace.tsx from inline state management to the new hook
+
+**Why:**
+- Four linked failures in Workspace: clean tabs not updating after agent edits, refresh losing unsaved edits, empty Changes panel on transient git failures, lost scroll position on refresh
+- Root cause was fragmented state ownership — some state in React memory, some in localStorage, some derived from server with coarse invalidation
+
+**Key files:** `server/src/lib/project-watcher.ts`, `server/src/routes/git.ts`, `server/src/routes/files.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useApi.ts`, `ui/src/components/Workspace.tsx`
+**Verification:** TypeScript type check passed. Vite production build passed.
+**Commit:** 12bfc56
+**Next:** End-to-end testing of conflict resolution flow; consider persisting viewport for clean files more aggressively
+**Blockers:** None
+
+## 2026-03-20: doc/main hierarchy and UI spec recovery (codebase-health Phase 1-2)
+
+**What changed:**
+- Created 25-file `doc/main/` structured hierarchy per the codebase-health aligned design, replacing the single `architecture.md`
+- New sections: `backend/` (server, routes, libs), `data-model/` (overview, types, api-contracts, persistence), `frontend/` (components, hooks, state), `ui/` (7 spec pages + 6 workspace spec pages), `security.md`
+- Each page has ownership sections (Owns, Does Not Own, Related Code) to prevent the hierarchy from collapsing back into a monolith
+- Created `ui/history.md` recovery ledger tracing 25 git-history entries to permanent spec pages
+- Workspace state machine formalized: 4 document states (Empty, FileEdit, FilePreview, Diff) + 4 layout states (Desktop, Mobile Files/Editor/Terminal)
+- All 12 canonical workspace behaviors documented across spec pages
+- Retired `architecture.md` with redirect to `README.md`
+
+**Why:**
+- `architecture.md` compressed system overview, stack, app shell, workspace behavior, and security into one file — impossible to answer focused questions about ownership boundaries
+- UI specs must exist as explicit regression contracts before the Phase 3 behavior-preserving refactor can begin
+
+**Key files:** `doc/main/README.md`, `doc/main/backend/*.md`, `doc/main/data-model/*.md`, `doc/main/frontend/*.md`, `doc/main/ui/*.md`, `doc/main/ui/workspace/*.md`, `doc/main/security.md`
+**Verification:** Code review verified: all 25 files present, types match source, keyboard shortcuts match source, all canonical behaviors covered, localStorage keys and draft persistence model corrected against `useWorkspaceState.ts`
+**Commit:** 8c25b0a
+**Next:** Phase 3 — behavior-preserving refactor of App.tsx and Workspace.tsx around documented seams
+**Blockers:** None
+
 ## 2026-03-20: Single-origin mobile app shell and PWA assets
 
 **What changed:**
