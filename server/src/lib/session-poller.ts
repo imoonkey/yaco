@@ -5,13 +5,18 @@ import { loadProjects, type Project } from './projects'
 import { querySessionsForProject, type MultmuxSession } from './multmux'
 import { withFileLock, type ProgressEntry } from './scanner'
 
-const POLL_INTERVAL = 5_000
+const POLL_INTERVAL = 3_000
+/** Require N consecutive idle polls before firing notification.
+ *  Filters out brief status flickers from multmux's regex-based detection.
+ *  At 3s poll interval, 2 polls = 6s worst-case latency. */
+const IDLE_DEBOUNCE_COUNT = 2
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollInFlight = false
 let firstPollDone = false
 
 const lastStatusBySession = new Map<string, 'processing' | 'idle'>()
+const idleStreakBySession = new Map<string, number>()
 const cachedSessionsByProject = new Map<string, MultmuxSession[]>()
 
 function sessionKey(project: string, name: string): string {
@@ -40,7 +45,6 @@ export function getCachedMultmuxSessions(projectName?: string): MultmuxSession[]
   return all
 }
 
-/** Returns true if the cache has been populated at least once */
 export function hasCachedSessions(): boolean {
   return firstPollDone
 }
@@ -54,7 +58,6 @@ async function poll(): Promise<void> {
   pollInFlight = true
 
   try {
-    // Reload projects each cycle so runtime-added projects are picked up
     const projects = await loadProjects()
     await Promise.all(projects.map(pollProject))
     firstPollDone = true
@@ -69,7 +72,6 @@ async function pollProject(project: Project): Promise<void> {
   try {
     sessions = await querySessionsForProject(project)
   } catch {
-    // Failed — keep previous state, emit nothing
     return
   }
 
@@ -81,16 +83,25 @@ async function pollProject(project: Project): Promise<void> {
     const prev = lastStatusBySession.get(key)
     lastStatusBySession.set(key, session.status)
 
-    // Only notify on processing → idle transition (not first sight)
-    if (prev === 'processing' && session.status === 'idle') {
-      await writeSessionIdleEntry(project, session)
+    if (session.status === 'idle') {
+      // Start counting idle streak only from a processing→idle edge
+      const prevStreak = idleStreakBySession.get(key) ?? 0
+      const streak = prev === 'processing' ? 1 : (prevStreak > 0 ? prevStreak + 1 : 0)
+      idleStreakBySession.set(key, streak)
+
+      // Fire notification exactly when streak reaches threshold
+      if (streak === IDLE_DEBOUNCE_COUNT) {
+        await writeSessionIdleEntry(project, session)
+      }
+    } else {
+      idleStreakBySession.set(key, 0)
     }
   }
 
-  // Remove disappeared sessions from this project
   for (const [key] of lastStatusBySession) {
     if (key.startsWith(`${project.name}:`) && !currentKeys.has(key)) {
       lastStatusBySession.delete(key)
+      idleStreakBySession.delete(key)
     }
   }
 
