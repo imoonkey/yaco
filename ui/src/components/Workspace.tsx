@@ -548,6 +548,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [diffs, setDiffs] = useState<Record<string, DiffState>>({})
   const [sidebarHeight, setSidebarHeight] = useState(0)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
+  const [contextFolder, setContextFolder] = useState('')
 
   const { data: fileTree } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
@@ -694,23 +695,25 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const handleNewFile = useCallback(async () => {
     const name = prompt('New file name:')
     if (!name || name.includes('..')) return
+    const fullPath = contextFolder ? `${contextFolder}/${name}` : name
     try {
-      await createFile(projectName, name)
-      openFile(name, 'explorer')
+      await createFile(projectName, fullPath)
+      openFile(fullPath, 'explorer')
     } catch (err) {
       console.error('Failed to create file:', err)
     }
-  }, [projectName, openFile])
+  }, [projectName, openFile, contextFolder])
 
   const handleNewFolder = useCallback(async () => {
     const name = prompt('New folder name:')
     if (!name || name.includes('..')) return
+    const fullPath = contextFolder ? `${contextFolder}/${name}` : name
     try {
-      await createDir(projectName, name)
+      await createDir(projectName, fullPath)
     } catch (err) {
       console.error('Failed to create folder:', err)
     }
-  }, [projectName])
+  }, [projectName, contextFolder])
 
   const explorerActions = (
     <div className="flex gap-0.5">
@@ -990,6 +993,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               selectedFile={selectedFilePath}
               onSelectFile={openFileFromExplorer}
               onFocusExplorer={() => setFocusTarget('explorer')}
+              onContextFolder={setContextFolder}
             />
           </div>
         )}

@@ -63,7 +63,8 @@ const ExplorerContext = createContext<{
   gitMap: Map<string, string>
   gitFolders: Set<string>
   openContextMenu: (e: React.MouseEvent, path: string, type: 'file' | 'dir') => void
-}>({ gitMap: new Map(), gitFolders: new Set(), openContextMenu: () => {} })
+  reportContextFolder: (path: string, type: 'file' | 'dir') => void
+}>({ gitMap: new Map(), gitFolders: new Set(), openContextMenu: () => {}, reportContextFolder: () => {} })
 
 // --- Context menu ---
 function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
@@ -86,7 +87,7 @@ function MenuDivider() {
 
 // --- Custom node renderer ---
 function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
-  const { gitMap, gitFolders, openContextMenu } = useContext(ExplorerContext)
+  const { gitMap, gitFolders, openContextMenu, reportContextFolder } = useContext(ExplorerContext)
   const d = node.data
   const gitStatus = gitMap.get(d.path)
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
@@ -119,6 +120,7 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
+    reportContextFolder(d.path, d.type)
     if (d.type === 'dir') {
       node.select()
       node.focus()
@@ -155,9 +157,10 @@ interface FileExplorerProps {
   selectedFile: string | null
   onSelectFile: (path: string) => void
   onFocusExplorer: () => void
+  onContextFolder?: (path: string) => void
 }
 
-export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onFocusExplorer }: FileExplorerProps) {
+export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onFocusExplorer, onContextFolder }: FileExplorerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -230,6 +233,11 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
     setCtxMenu({ x: e.clientX, y: e.clientY, path, type })
   }, [])
 
+  const reportContextFolder = useCallback((path: string, type: 'file' | 'dir') => {
+    const folder = type === 'dir' ? path : parentOf(path)
+    onContextFolder?.(folder)
+  }, [onContextFolder])
+
   const parentOf = (path: string) => {
     const i = path.lastIndexOf('/')
     return i > 0 ? path.slice(0, i) : ''
@@ -301,7 +309,7 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
     : ''
 
   return (
-    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu }}>
+    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0" onMouseDown={onFocusExplorer}>
         {size.width > 0 && size.height > 0 && (
           <Tree
