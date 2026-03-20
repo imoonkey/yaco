@@ -1030,7 +1030,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   }, [activeTab])
 
   const filesPaneMobile = (
-    <div className="h-full overflow-y-auto" style={{ backgroundColor: C.bg }} onMouseDown={() => setFocusTarget('explorer')}>
+    <div className="h-full overflow-y-auto" style={{ backgroundColor: C.bg, touchAction: 'pan-y' }} onMouseDown={() => setFocusTarget('explorer')}>
       <div className="flex flex-col min-h-full">
         <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
         {showExplorer && (
@@ -1198,7 +1198,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           </div>
           <div
             className="flex-1 overflow-hidden p-[3px] select-text"
-            style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+            style={{ userSelect: 'text', WebkitUserSelect: 'text', touchAction: 'pan-y' }}
             onMouseDown={() => setFocusTarget('terminal')}
           >
             <Terminal
@@ -1219,7 +1219,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   return (
     <div
       ref={rootRef}
-      className="flex h-full select-none"
+      className={`flex h-full ${isMobile ? '' : 'select-none'}`}
       onMouseDownCapture={() => { void lockCloseShortcut() }}
       onTouchStartCapture={() => { void lockCloseShortcut() }}
       onKeyDownCapture={() => { void lockCloseShortcut() }}

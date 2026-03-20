@@ -135,6 +135,27 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     fitAddon.fit()
     fitTerminal(term)
 
+    // Touch scroll bridge: xterm v6 custom scrollbar ignores touch events.
+    // Translate single-finger vertical pans into viewport.scrollTop changes.
+    let touchY: number | null = null
+    const viewport = term.element?.querySelector<HTMLElement>('.xterm-viewport')
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) touchY = e.touches[0].clientY
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchY === null || e.touches.length !== 1 || !viewport) return
+      const currentY = e.touches[0].clientY
+      viewport.scrollTop += touchY - currentY
+      touchY = currentY
+      e.preventDefault()
+    }
+    const onTouchEnd = () => { touchY = null }
+
+    container.addEventListener('touchstart', onTouchStart, { passive: false })
+    container.addEventListener('touchmove', onTouchMove, { passive: false })
+    container.addEventListener('touchend', onTouchEnd, { passive: true })
+
     const handleFocusIn = () => {
       onInteractRef.current?.()
     }
@@ -213,6 +234,9 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
 
     return () => {
       container.removeEventListener('focusin', handleFocusIn)
+      container.removeEventListener('touchstart', onTouchStart)
+      container.removeEventListener('touchmove', onTouchMove)
+      container.removeEventListener('touchend', onTouchEnd)
       osc52Disposable.dispose()
       observer.disconnect()
       ws.close()
