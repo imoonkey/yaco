@@ -135,13 +135,18 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     fitAddon.fit()
     fitTerminal(term)
 
-    // Touch scroll bridge: xterm v6 custom scrollbar ignores touch events.
-    // Translate single-finger vertical pans into viewport.scrollTop changes.
+    // Touch scroll bridge: xterm v6 registers document-level touch handlers
+    // (from VS Code's scrollable element) that call preventDefault(), stealing
+    // all touch events. We handle scrolling here and stopPropagation to prevent
+    // xterm's gesture system from interfering.
     let touchY: number | null = null
     const viewport = term.element?.querySelector<HTMLElement>('.xterm-viewport')
 
     const onTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 1) touchY = e.touches[0].clientY
+      if (e.touches.length === 1) {
+        touchY = e.touches[0].clientY
+        e.stopPropagation()
+      }
     }
     const onTouchMove = (e: TouchEvent) => {
       if (touchY === null || e.touches.length !== 1 || !viewport) return
@@ -149,8 +154,12 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       viewport.scrollTop += touchY - currentY
       touchY = currentY
       e.preventDefault()
+      e.stopPropagation()
     }
-    const onTouchEnd = () => { touchY = null }
+    const onTouchEnd = (e: TouchEvent) => {
+      if (touchY !== null) e.stopPropagation()
+      touchY = null
+    }
 
     container.addEventListener('touchstart', onTouchStart, { passive: false })
     container.addEventListener('touchmove', onTouchMove, { passive: false })

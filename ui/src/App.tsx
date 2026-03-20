@@ -256,7 +256,7 @@ function App() {
   const currentProjectPath = orderedProjects.find(p => p.name === workspaceProject)?.path ?? ''
 
   return (
-    <div className="flex flex-col h-screen bg-[#fdf6e3]">
+    <div className="flex flex-col h-dvh bg-[#fdf6e3]">
       <header className="h-10 shrink-0 flex items-center px-3 gap-1" style={{ backgroundColor: '#EEE8D5', borderBottom: '1px solid #D3CBB7' }}>
         <div className="flex items-center gap-0.5">
           {navItems.map(item => {
