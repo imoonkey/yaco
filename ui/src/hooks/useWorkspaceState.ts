@@ -258,37 +258,60 @@ export function useWorkspaceState(projectName: string) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectName])
 
-  // --- Persist layout (debounced) ---
+  // --- Persist layout ---
+  // Refs hold latest state for synchronous flush on beforeunload
+  const layoutRef = useRef({ openTabs, activeTab, activeSession, mobilePane, layout })
+  layoutRef.current = { openTabs, activeTab, activeSession, mobilePane, layout }
+
+  const flushLayout = useCallback(() => {
+    const s = layoutRef.current
+    saveLayout(projectName, s)
+  }, [projectName])
+
+  // Debounced persist on state changes (handles rapid resize etc.)
   const layoutTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {
     clearTimeout(layoutTimer.current)
-    layoutTimer.current = setTimeout(() => {
-      saveLayout(projectName, { openTabs, activeTab, activeSession, mobilePane, layout })
-    }, 300)
+    layoutTimer.current = setTimeout(flushLayout, 300)
     return () => clearTimeout(layoutTimer.current)
-  }, [projectName, openTabs, activeTab, activeSession, mobilePane, layout])
+  }, [openTabs, activeTab, activeSession, mobilePane, layout, flushLayout])
 
-  // --- Persist drafts (debounced) ---
-  // Uses editedAt from file state so eviction order reflects true edit recency (fix M2)
+  // --- Persist drafts ---
+  const filesRef = useRef(files)
+  filesRef.current = files
+
+  const flushDrafts = useCallback(() => {
+    const entries: PersistedDrafts['files'] = {}
+    for (const [path, state] of Object.entries(filesRef.current)) {
+      if (state.draft != null || state.viewportLine > 1) {
+        entries[path] = {
+          draft: state.draft,
+          baseRevision: state.baseRevision,
+          viewportLine: state.viewportLine,
+          updatedAt: state.editedAt || Date.now(),
+        }
+      }
+    }
+    saveDrafts(projectName, { files: entries })
+  }, [projectName])
+
+  // Debounced persist on file state changes
   const draftsTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {
     clearTimeout(draftsTimer.current)
-    draftsTimer.current = setTimeout(() => {
-      const entries: PersistedDrafts['files'] = {}
-      for (const [path, state] of Object.entries(files)) {
-        if (state.draft != null || state.viewportLine > 1) {
-          entries[path] = {
-            draft: state.draft,
-            baseRevision: state.baseRevision,
-            viewportLine: state.viewportLine,
-            updatedAt: state.editedAt || Date.now(),
-          }
-        }
-      }
-      saveDrafts(projectName, { files: entries })
-    }, 500)
+    draftsTimer.current = setTimeout(flushDrafts, 500)
     return () => clearTimeout(draftsTimer.current)
-  }, [projectName, files])
+  }, [files, flushDrafts])
+
+  // Synchronous flush on page unload — catches state that the debounced timer hasn't persisted yet
+  useEffect(() => {
+    const onBeforeUnload = () => {
+      flushLayout()
+      flushDrafts()
+    }
+    window.addEventListener('beforeunload', onBeforeUnload)
+    return () => window.removeEventListener('beforeunload', onBeforeUnload)
+  }, [flushLayout, flushDrafts])
 
   // --- SSE: refetch open file tabs on filetree or git changes ---
   // Iterates openTabs, not files keys, so clean tabs without file state are included (fix H1)
