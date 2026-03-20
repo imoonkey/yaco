@@ -7,16 +7,20 @@ import { withFileLock, type ProgressEntry } from './scanner'
 import { emitRefresh } from './notify'
 
 const POLL_INTERVAL = 3_000
-/** Require N consecutive idle polls before firing notification.
- *  Filters out brief status flickers from multmux's regex-based detection.
- *  At 3s poll interval, 2 polls = 6s worst-case latency. */
+/** Require N consecutive idle polls before firing notification. */
 const IDLE_DEBOUNCE_COUNT = 2
+/** Minimum time (ms) a session must be "processing" before an idle transition
+ *  can trigger a notification. Filters out user typing at the prompt, which
+ *  multmux misclassifies as "processing" because the idle prompt regex
+ *  no longer matches when there are characters after ❯. */
+const MIN_PROCESSING_MS = 15_000
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollInFlight = false
 let firstPollDone = false
 
 const lastStatusBySession = new Map<string, 'processing' | 'idle'>()
+const processingStartBySession = new Map<string, number>()
 const idleStreakBySession = new Map<string, number>()
 const cachedSessionsByProject = new Map<string, MultmuxSession[]>()
 
@@ -65,7 +69,6 @@ async function poll(): Promise<void> {
     await Promise.all(projects.map(pollProject))
     firstPollDone = true
 
-    // Emit refresh signal if session list changed
     const snapshot = JSON.stringify(getCachedMultmuxSessions())
     if (snapshot !== lastSessionSnapshot) {
       lastSessionSnapshot = snapshot
@@ -85,6 +88,7 @@ async function pollProject(project: Project): Promise<void> {
     return
   }
 
+  const now = Date.now()
   const currentKeys = new Set<string>()
 
   for (const session of sessions) {
@@ -93,24 +97,37 @@ async function pollProject(project: Project): Promise<void> {
     const prev = lastStatusBySession.get(key)
     lastStatusBySession.set(key, session.status)
 
-    if (session.status === 'idle') {
-      // Start counting idle streak only from a processing→idle edge
+    // Claude sessions use the Stop hook for idle detection — skip polling-based detection.
+    // Only Codex sessions need the polling heuristic.
+    if (session.provider === 'claude') continue
+
+    if (session.status === 'processing') {
+      // Record when processing started (only on idle→processing edge)
+      if (prev !== 'processing') {
+        processingStartBySession.set(key, now)
+      }
+      idleStreakBySession.set(key, 0)
+    } else {
+      // idle — check if we should count toward notification
+      const processingStart = processingStartBySession.get(key)
+      const processingDuration = processingStart ? now - processingStart : 0
+      const wasRealWork = processingDuration >= MIN_PROCESSING_MS
+
       const prevStreak = idleStreakBySession.get(key) ?? 0
-      const streak = prev === 'processing' ? 1 : (prevStreak > 0 ? prevStreak + 1 : 0)
+      const streak = (prev === 'processing' && wasRealWork) ? 1
+        : (prevStreak > 0 ? prevStreak + 1 : 0)
       idleStreakBySession.set(key, streak)
 
-      // Fire notification exactly when streak reaches threshold
       if (streak === IDLE_DEBOUNCE_COUNT) {
         await writeSessionIdleEntry(project, session)
       }
-    } else {
-      idleStreakBySession.set(key, 0)
     }
   }
 
   for (const [key] of lastStatusBySession) {
     if (key.startsWith(`${project.name}:`) && !currentKeys.has(key)) {
       lastStatusBySession.delete(key)
+      processingStartBySession.delete(key)
       idleStreakBySession.delete(key)
     }
   }
