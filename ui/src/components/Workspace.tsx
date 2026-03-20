@@ -6,7 +6,7 @@ import { python } from '@codemirror/lang-python'
 import { languages } from '@codemirror/language-data'
 import { LanguageDescription } from '@codemirror/language'
 import { classHighlighter, highlightCode } from '@lezer/highlight'
-import { useFileTree, useFileContent, useSessions, useGitStatus, createFile, createDir, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
+import { useFileTree, useSessions, useGitStatus, createFile, createDir, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
 import { useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { Editor } from './Editor'
@@ -474,9 +474,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const activeDiffPath = activeTab?.startsWith('diff:') ? activeTab.slice(5) : null
   const activeDiff = activeDiffPath ? diffs[activeDiffPath] : null
   const activeFilePath = activeTab && !isDiffTab ? activeTab : null
-  const { content, loading } = useFileContent(projectName, activeFilePath)
   const activeFileState = activeFilePath ? files[activeFilePath] : null
-  const activeFileContent = activeFileState?.draft ?? content
+  const activeFileContent = activeFileState?.draft ?? activeFileState?.serverContent ?? null
+  const activeFileLoading = activeFilePath != null && activeFileContent === null && activeFileState?.status !== 'missing'
   const activeViewportLine = activeFileState?.viewportLine ?? 1
 
   // Fetch diff when a diff tab is active
@@ -967,7 +967,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           : activeDiff?.content != null ? <DiffView diff={activeDiff.content} />
           : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
         ) : activeTab ? (
-          loading && activeFileContent === null ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
+          activeFileLoading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
           : activeFileContent !== null ? (
             isMd && previewMode ? (
               <MarkdownPreview

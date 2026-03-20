@@ -7,10 +7,12 @@ import { API } from './useApi'
 export type FileStatus = 'clean' | 'dirty' | 'saving' | 'conflict' | 'missing'
 
 export type FileState = {
+  serverContent: string | null
   draft: string | null
   baseRevision: number | null
   viewportLine: number
   status: FileStatus
+  editedAt: number
 }
 
 export type WorkspaceLayout = {
@@ -26,8 +28,15 @@ export type WorkspaceLayout = {
   changesSize: number
 }
 
+type PersistedDraftEntry = {
+  draft: string | null
+  baseRevision: number | null
+  viewportLine: number
+  updatedAt: number
+}
+
 type PersistedDrafts = {
-  files: Record<string, { draft: string | null; baseRevision: number | null; viewportLine: number; updatedAt: number }>
+  files: Record<string, PersistedDraftEntry>
 }
 
 // --- Storage keys ---
@@ -53,6 +62,10 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   rightSize: 420,
   explorerSize: 250,
   changesSize: 150,
+}
+
+function defaultFileState(): FileState {
+  return { serverContent: null, draft: null, baseRevision: null, viewportLine: 1, status: 'clean', editedAt: 0 }
 }
 
 // --- localStorage helpers ---
@@ -147,7 +160,8 @@ function saveDrafts(project: string, drafts: PersistedDrafts): void {
           return
         } catch { continue }
       }
-      try { localStorage.removeItem(draftsKey(project)) } catch { /* noop */ }
+      // All evicted — persist empty so next load doesn't restore stale data
+      try { localStorage.setItem(draftsKey(project), JSON.stringify({ files: {} })) } catch { /* noop */ }
     }
   }
 }
@@ -161,6 +175,36 @@ async function fetchContent(project: string, path: string): Promise<{ content: s
     return res.json()
   } catch {
     return null
+  }
+}
+
+// --- Reconciliation helper ---
+
+/** Apply server fetch result to file state. Handles clean→update, dirty→conflict, missing. */
+function reconcileFile(prev: FileState | undefined, result: { content: string; revision: number } | null): FileState {
+  const existing = prev ?? defaultFileState()
+
+  if (!result) {
+    return { ...existing, status: 'missing' }
+  }
+
+  // Dirty/conflict file: check if revision diverged
+  if (existing.draft != null && existing.status !== 'clean') {
+    if (existing.baseRevision != null && existing.baseRevision !== result.revision) {
+      return { ...existing, serverContent: result.content, status: 'conflict' }
+    }
+    // Revision matches — keep draft, update server content + revision
+    return { ...existing, serverContent: result.content, baseRevision: result.revision }
+  }
+
+  // Clean file: adopt server content
+  return {
+    serverContent: result.content,
+    draft: null,
+    baseRevision: result.revision,
+    viewportLine: existing.viewportLine,
+    status: 'clean',
+    editedAt: existing.editedAt,
   }
 }
 
@@ -179,10 +223,12 @@ export function useWorkspaceState(projectName: string) {
     const restored: Record<string, FileState> = {}
     for (const [path, entry] of Object.entries(draftsLoaded.files)) {
       restored[path] = {
+        serverContent: null, // will be populated by hydration
         draft: entry.draft,
         baseRevision: entry.baseRevision,
         viewportLine: entry.viewportLine,
         status: entry.draft != null ? 'dirty' : 'clean',
+        editedAt: entry.updatedAt,
       }
     }
     return restored
@@ -191,9 +237,8 @@ export function useWorkspaceState(projectName: string) {
   const projectRef = useRef(projectName)
   projectRef.current = projectName
 
-  // Ref to access latest files without causing callback identity changes (fix H1/H2)
-  const filesRef = useRef(files)
-  filesRef.current = files
+  const openTabsRef = useRef(openTabs)
+  openTabsRef.current = openTabs
 
   // --- Hydration: fetch server truth for open file tabs on mount ---
   const hydrated = useRef(false)
@@ -206,20 +251,8 @@ export function useWorkspaceState(projectName: string) {
 
     for (const path of fileTabs) {
       fetchContent(projectName, path).then(result => {
-        if (!result || projectRef.current !== projectName) return
-        setFiles(prev => {
-          const existing = prev[path]
-          if (existing?.draft != null && existing.status === 'dirty') {
-            if (existing.baseRevision != null && existing.baseRevision !== result.revision) {
-              return { ...prev, [path]: { ...existing, status: 'conflict' } }
-            }
-            return { ...prev, [path]: { ...existing, baseRevision: result.revision } }
-          }
-          return {
-            ...prev,
-            [path]: { draft: null, baseRevision: result.revision, viewportLine: existing?.viewportLine ?? 1, status: 'clean' },
-          }
-        })
+        if (projectRef.current !== projectName) return
+        setFiles(prev => ({ ...prev, [path]: reconcileFile(prev[path], result) }))
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -236,15 +269,20 @@ export function useWorkspaceState(projectName: string) {
   }, [projectName, openTabs, activeTab, activeSession, mobilePane, layout])
 
   // --- Persist drafts (debounced) ---
+  // Uses editedAt from file state so eviction order reflects true edit recency (fix M2)
   const draftsTimer = useRef<ReturnType<typeof setTimeout>>()
   useEffect(() => {
     clearTimeout(draftsTimer.current)
     draftsTimer.current = setTimeout(() => {
       const entries: PersistedDrafts['files'] = {}
       for (const [path, state] of Object.entries(files)) {
-        // Persist dirty/conflict drafts and viewport lines for all tracked files
         if (state.draft != null || state.viewportLine > 1) {
-          entries[path] = { draft: state.draft, baseRevision: state.baseRevision, viewportLine: state.viewportLine, updatedAt: Date.now() }
+          entries[path] = {
+            draft: state.draft,
+            baseRevision: state.baseRevision,
+            viewportLine: state.viewportLine,
+            updatedAt: state.editedAt || Date.now(),
+          }
         }
       }
       saveDrafts(projectName, { files: entries })
@@ -252,37 +290,16 @@ export function useWorkspaceState(projectName: string) {
     return () => clearTimeout(draftsTimer.current)
   }, [projectName, files])
 
-  // --- SSE: refetch open files on filetree or git changes (fix M7) ---
+  // --- SSE: refetch open file tabs on filetree or git changes ---
+  // Iterates openTabs, not files keys, so clean tabs without file state are included (fix H1)
   const refetchOpenFiles = useCallback(() => {
-    // Read from ref to avoid stale closure on `files` (fix H2)
-    const currentFiles = filesRef.current
-    const filePaths = Object.keys(currentFiles)
-    if (filePaths.length === 0) return
+    const tabs = openTabsRef.current.filter(t => !t.startsWith('diff:'))
+    if (tabs.length === 0) return
 
-    for (const path of filePaths) {
+    for (const path of tabs) {
       fetchContent(projectName, path).then(result => {
         if (projectRef.current !== projectName) return
-        setFiles(current => {
-          const fs = current[path]
-          if (!fs) return current
-
-          if (!result) {
-            return { ...current, [path]: { ...fs, status: 'missing' as const } }
-          }
-
-          if (fs.status === 'clean' || fs.draft == null) {
-            return {
-              ...current,
-              [path]: { draft: null, baseRevision: result.revision, viewportLine: fs.viewportLine, status: 'clean' },
-            }
-          }
-
-          if (fs.baseRevision != null && fs.baseRevision !== result.revision) {
-            return { ...current, [path]: { ...fs, status: 'conflict' } }
-          }
-
-          return current
-        })
+        setFiles(prev => ({ ...prev, [path]: reconcileFile(prev[path], result) }))
       })
     }
   }, [projectName])
@@ -290,7 +307,7 @@ export function useWorkspaceState(projectName: string) {
   useSSERefresh('filetree', refetchOpenFiles)
   useSSERefresh('git', refetchOpenFiles)
 
-  // --- Derived (memoized, fix M2) ---
+  // --- Derived (memoized) ---
   const { dirtyTabs, conflictTabs } = useMemo(() => {
     const dirty = new Set<string>()
     const conflict = new Set<string>()
@@ -306,7 +323,23 @@ export function useWorkspaceState(projectName: string) {
   const openFileTab = useCallback((path: string) => {
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
     setActiveTab(path)
-  }, [])
+    // Fetch content + revision for the newly opened tab (fix C2: baseRevision initialization)
+    fetchContent(projectName, path).then(result => {
+      if (projectRef.current !== projectName) return
+      setFiles(prev => {
+        const existing = prev[path]
+        // If user already started editing before fetch returned, don't clobber the draft
+        if (existing?.draft != null) {
+          // But do seed baseRevision if it was null
+          if (existing.baseRevision == null && result) {
+            return { ...prev, [path]: { ...existing, serverContent: result.content, baseRevision: result.revision } }
+          }
+          return prev
+        }
+        return { ...prev, [path]: reconcileFile(existing, result) }
+      })
+    })
+  }, [projectName])
 
   const openDiffTab = useCallback((path: string) => {
     const tab = `diff:${path}`
@@ -341,26 +374,34 @@ export function useWorkspaceState(projectName: string) {
   const updateFileDraft = useCallback((path: string, draft: string) => {
     setFiles(prev => {
       const existing = prev[path]
-      const base = existing ?? { draft: null, baseRevision: null, viewportLine: 1, status: 'clean' as const }
-      return { ...prev, [path]: { ...base, draft, status: base.status === 'conflict' ? 'conflict' : 'dirty' } }
+      const base = existing ?? defaultFileState()
+      return {
+        ...prev,
+        [path]: {
+          ...base,
+          draft,
+          status: base.status === 'conflict' ? 'conflict' : 'dirty',
+          editedAt: Date.now(),
+        },
+      }
     })
   }, [])
 
   const updateFileViewport = useCallback((path: string, line: number) => {
     setFiles(prev => {
       const existing = prev[path]
-      if (!existing) return { ...prev, [path]: { draft: null, baseRevision: null, viewportLine: line, status: 'clean' } }
+      if (!existing) return { ...prev, [path]: { ...defaultFileState(), viewportLine: line } }
       if (existing.viewportLine === line) return prev
       return { ...prev, [path]: { ...existing, viewportLine: line } }
     })
   }, [])
 
-  // Read baseRevision from ref to avoid depending on `files` (fix H1)
   const saveFile = useCallback(async (path: string, content: string): Promise<{ conflict: boolean }> => {
-    const baseRevision = filesRef.current[path]?.baseRevision ?? undefined
-
+    // Read from current state via functional updater to get baseRevision
+    let baseRevision: number | undefined
     setFiles(prev => {
       const s = prev[path]
+      baseRevision = s?.baseRevision ?? undefined
       return s ? { ...prev, [path]: { ...s, status: 'saving' } } : prev
     })
 
@@ -385,7 +426,7 @@ export function useWorkspaceState(projectName: string) {
       setFiles(prev => {
         const s = prev[path]
         return s
-          ? { ...prev, [path]: { draft: null, baseRevision: body.revision, viewportLine: s.viewportLine, status: 'clean' } }
+          ? { ...prev, [path]: { ...s, serverContent: content, draft: null, baseRevision: body.revision, status: 'clean' } }
           : prev
       })
       return { conflict: false }
@@ -398,7 +439,6 @@ export function useWorkspaceState(projectName: string) {
     }
   }, [projectName])
 
-  // Fix M4: add error recovery to forceSave
   const forceSave = useCallback(async (path: string, content: string) => {
     setFiles(prev => {
       const s = prev[path]
@@ -417,11 +457,10 @@ export function useWorkspaceState(projectName: string) {
       setFiles(prev => {
         const s = prev[path]
         return s
-          ? { ...prev, [path]: { draft: null, baseRevision: body.revision, viewportLine: s.viewportLine, status: 'clean' } }
+          ? { ...prev, [path]: { ...s, serverContent: content, draft: null, baseRevision: body.revision, status: 'clean' } }
           : prev
       })
     } catch {
-      // Revert to dirty on failure
       setFiles(prev => {
         const s = prev[path]
         return s ? { ...prev, [path]: { ...s, status: 'dirty' } } : prev
@@ -434,7 +473,14 @@ export function useWorkspaceState(projectName: string) {
       if (!result) return
       setFiles(prev => ({
         ...prev,
-        [path]: { draft: null, baseRevision: result.revision, viewportLine: prev[path]?.viewportLine ?? 1, status: 'clean' },
+        [path]: {
+          serverContent: result.content,
+          draft: null,
+          baseRevision: result.revision,
+          viewportLine: prev[path]?.viewportLine ?? 1,
+          status: 'clean',
+          editedAt: prev[path]?.editedAt ?? 0,
+        },
       }))
     })
   }, [projectName])
