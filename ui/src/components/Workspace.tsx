@@ -1199,7 +1199,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           </div>
           <div
             className="flex-1 overflow-hidden p-[3px] select-text"
-            style={{ userSelect: 'text', WebkitUserSelect: 'text', touchAction: 'pan-y' }}
+            style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
             onMouseDown={() => setFocusTarget('terminal')}
           >
             <Terminal
