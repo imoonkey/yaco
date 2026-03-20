@@ -91,6 +91,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 - **Collapsible sidebar** — Explorer, Changes, Sessions sections with draggable dividers
 - **Window close hijack** — Workspace does a best-effort Cmd-W interception: normal keydown capture plus `Keyboard Lock` for `KeyW` when the browser supports it in a secure context; when that succeeds, Cmd-W closes the focused in-app editor tab or attached terminal session instead of the browser tab
 - **Mobile single-pane flow** — Workspace shows one full-width pane at a time on mobile (`Files`, `Editor`, `Terminal`); selecting a file jumps to `Editor`, selecting a session jumps to `Terminal`, and background updates never force pane changes
+- **Mobile touch scrolling** — files pane, CodeMirror editor, and xterm terminal all support touch scrolling on mobile and touch-enabled devices; the terminal uses a touch-to-WheelEvent bridge that goes through xterm's normal wheel pipeline (scrollback for shell sessions, mouse escape sequences for tmux); `useIsTouch()` hook detects touch-capable devices via `(pointer: coarse)` media query to remove `user-select: none` that blocks iOS gesture recognition; layout uses `100dvh` for correct iOS Safari viewport sizing
 
 ## Security
 

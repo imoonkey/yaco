@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-03-19: Mobile touch scrolling for files, editor, and terminal
+
+**What changed:**
+- Terminal touch bridge: converts touch pans to synthetic WheelEvent on xterm's screen element, going through xterm's normal wheel pipeline (scrollback for shell, mouse escape sequences for tmux)
+- `stopPropagation()` on terminal touch handlers prevents xterm v6's document-level gesture system (inherited from VS Code) from stealing touch events via `preventDefault()`
+- Mobile content area changed from `display:block` to `flex flex-col` so editor/terminal panes get proper height via `flex:1` instead of collapsing to content height
+- `100vh` → `100dvh` on `#root` and App root for correct iOS Safari viewport sizing (address bar offset)
+- `useIsTouch()` hook using `(pointer: coarse)` media query to conditionally remove `user-select:none` on touch devices (covers iPad landscape, touch laptops)
+- `touch-action: pan-y` on files pane and desktop sidebar explorer for native scroll
+- `touchcancel` handler on terminal bridge for iOS Safari system interruptions
+
+**Why:**
+- Three independent root causes: (1) xterm v6 custom scrollbar has zero touch support and actively steals touch events, (2) mobile content area was not a flex container so panes had no height constraint, (3) `100vh` on iOS includes area behind address bar causing oversized containers
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/Workspace.tsx`, `ui/src/hooks/useIsMobile.ts`, `ui/src/index.css`, `ui/src/App.tsx`
+**Verification:** `tsc --noEmit` clean, `vite build` succeeds, touch scrolling verified on mobile for all three surfaces
+**Commit:** 822d69d..d0378f3
+**Next:** None
+**Blockers:** Tmux terminal scroll requires `set -g mouse on` in tmux config
+
 ## 2026-03-19: Notification system — session idle + browser notifications
 
 **What changed:**
