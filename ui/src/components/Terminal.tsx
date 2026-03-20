@@ -137,10 +137,11 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
 
     // Touch scroll bridge: xterm v6 registers document-level touch handlers
     // (from VS Code's scrollable element) that call preventDefault(), stealing
-    // all touch events. We handle scrolling here and stopPropagation to prevent
-    // xterm's gesture system from interfering.
+    // all touch events. We intercept touch, convert to WheelEvent, and dispatch
+    // on xterm's screen element. This goes through xterm's normal wheel pipeline:
+    // scrollback buffer for shell sessions, mouse escape sequences for tmux.
     let touchY: number | null = null
-    const viewport = term.element?.querySelector<HTMLElement>('.xterm-viewport')
+    const screenEl = term.element?.querySelector('.xterm-screen') ?? term.element
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
@@ -149,10 +150,18 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       }
     }
     const onTouchMove = (e: TouchEvent) => {
-      if (touchY === null || e.touches.length !== 1 || !viewport) return
+      if (touchY === null || e.touches.length !== 1 || !screenEl) return
       const currentY = e.touches[0].clientY
-      viewport.scrollTop += touchY - currentY
+      const deltaY = touchY - currentY
       touchY = currentY
+      screenEl.dispatchEvent(new WheelEvent('wheel', {
+        deltaY,
+        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+        clientX: e.touches[0].clientX,
+        clientY: e.touches[0].clientY,
+        bubbles: true,
+        cancelable: true,
+      }))
       e.preventDefault()
       e.stopPropagation()
     }
