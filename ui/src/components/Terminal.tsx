@@ -155,6 +155,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     container.addEventListener('touchstart', onTouchStart, { passive: false })
     container.addEventListener('touchmove', onTouchMove, { passive: false })
     container.addEventListener('touchend', onTouchEnd, { passive: true })
+    container.addEventListener('touchcancel', onTouchEnd, { passive: true })
 
     const handleFocusIn = () => {
       onInteractRef.current?.()
@@ -237,6 +238,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       container.removeEventListener('touchstart', onTouchStart)
       container.removeEventListener('touchmove', onTouchMove)
       container.removeEventListener('touchend', onTouchEnd)
+      container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
       observer.disconnect()
       ws.close()

@@ -7,7 +7,7 @@ import { languages } from '@codemirror/language-data'
 import { LanguageDescription } from '@codemirror/language'
 import { classHighlighter, highlightCode } from '@lezer/highlight'
 import { useFileTree, useFileContent, useSessions, useGitStatus, saveFileContent, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { Editor } from './Editor'
 import { Terminal } from './Terminal'
 import { ProviderIcon } from './SessionIcons'
@@ -609,6 +609,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const sidebarRef = useRef<HTMLDivElement>(null)
   const initialState = loadWorkspaceState(projectName)
   const isMobile = useIsMobile()
+  const isTouch = useIsTouch()
   const [openTabs, setOpenTabs] = useState<string[]>(initialState.openTabs)
   const [activeTab, setActiveTab] = useState<string | null>(initialState.activeTab)
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
@@ -1219,7 +1220,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   return (
     <div
       ref={rootRef}
-      className={`flex h-full ${isMobile ? '' : 'select-none'}`}
+      className={`flex h-full ${isTouch ? '' : 'select-none'}`}
       onMouseDownCapture={() => { void lockCloseShortcut() }}
       onTouchStartCapture={() => { void lockCloseShortcut() }}
       onKeyDownCapture={() => { void lockCloseShortcut() }}
@@ -1252,7 +1253,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
                 {showExplorer && (
-                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }} onMouseDown={() => setFocusTarget('explorer')}>
+                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1, touchAction: 'pan-y' }} onMouseDown={() => setFocusTarget('explorer')}>
                     {(fileTree ?? []).map(node => (
                       <FileTreeNode key={node.path} node={node} depth={0} selected={selectedFilePath} onSelect={openFileFromExplorer} gitMap={gitMap} gitFolders={gitFolders} />
                     ))}
