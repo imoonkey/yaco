@@ -28,10 +28,10 @@ Mobile: one full-width pane at a time with PaneSwitch between `Sessions`, `Notif
 
 Displays all active agent and shell sessions.
 
-- Each session shows: provider icon, session name, status badge, project name
-- Processing sessions show a `PROCESSING` badge
-- Idle sessions show an `IDLE` badge (green)
-- Sessions grouped by project when viewing `All Projects`
+- Each session shows: provider icon, status dot, status label, session name
+- Processing sessions show a green pulsing dot with `Running` label
+- Idle sessions show a gray dot with `Idle` label
+- Sessions grouped by status (Processing / Idle), not by project
 - When a project is selected, only that project's sessions are shown
 
 ## Notifications Pane
@@ -42,7 +42,7 @@ Displays progress entries sorted newest-first.
 
 | Type | Style | Description |
 |------|-------|-------------|
-| `human_review` | Yellow accent | Agent requests human review |
+| `human_review` | Violet accent | Agent requests human review |
 | `blocked` | Red accent | Agent is blocked |
 | `info` | Default | Informational update |
 | `session_idle` | Green IDLE badge | Agent finished processing |
@@ -51,7 +51,7 @@ Displays progress entries sorted newest-first.
 
 - Each card shows: agent name, type badge, message, timestamp, project, workstream
 - Active notifications can be dismissed (calls `POST /api/progress/:project/:ws/:id/dismiss`)
-- Dismissed notifications are hidden
+- Dismissed notifications are shown in a separate "Dismissed" section with reduced opacity
 - "Enable Browser Alerts" action appears when browser notification permission is not yet granted
 - Badge count on Monitor tab reflects undismissed active notifications
 

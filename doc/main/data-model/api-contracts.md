@@ -42,9 +42,14 @@ data: <channel>
 
 Channels: `projects`, `workstreams`, `progress`, `sessions`, `filetree`, `git`
 
-### Heartbeat
+### `heartbeat` event
 
-30-second keepalive comment to prevent connection timeout.
+The server sends an explicit `heartbeat` SSE event (not a comment) every 30 seconds to keep the connection alive through proxies.
+
+```
+event: heartbeat
+data:
+```
 
 ### Reconnect Behavior
 
@@ -57,11 +62,11 @@ On EventSource reconnect (`open` event), all registered refresh callbacks fire t
 | File create/delete/rename in project | `filetree` | project-watcher.ts |
 | `workstream.json` change | `workstreams` | project-watcher.ts |
 | `.git/` change | `git` | project-watcher.ts |
-| `progress.json` change | `progress` | watcher.ts |
+| `progress.json` change | `notification` event (client derives `progress` refresh) | watcher.ts → useSSE.ts |
 | Session status change | `sessions` | session-poller.ts |
 | `projects.json` change | `projects` | project-watcher.ts |
 
-All filesystem events are debounced at 200ms to batch rapid changes.
+Project-watcher filesystem events (`filetree`, `git`, `workstreams`, `projects`) are debounced at 200ms. The `progress.json` watcher fires immediately on change (no debounce).
 
 ## Polling Fallbacks
 
@@ -83,3 +88,24 @@ Each frontend hook has a safety-net polling interval in case SSE disconnects:
 - Client caches per project and shows the cached tree immediately on project switch
 - Background refresh updates the tree without blocking the UI
 - Focus/visibility events trigger immediate refresh
+
+## Revision-Aware File Content API
+
+The file content endpoints use mtime-based revision tracking for conflict detection.
+
+### Read: `GET /api/files/:project/content?path=...`
+
+Response: `{ content: string, path: string, revision: number }`
+
+`revision` is the file's `mtimeMs` at read time.
+
+### Write: `PUT /api/files/:project/content?path=...`
+
+Request: `{ content: string, baseRevision?: number }`
+
+- If `baseRevision` is omitted: unconditional write (force save)
+- If `baseRevision` is provided: server compares against current `mtimeMs`
+  - Match → write succeeds, returns `{ ok: true, revision: number }` (new mtime)
+  - Mismatch → returns HTTP 409 `{ error: "revision conflict", currentRevision: number }`
+
+The frontend's `useWorkspaceState` hook stores the revision from reads and sends it on saves to detect concurrent edits (e.g. agent writing to a file while the user has unsaved changes).

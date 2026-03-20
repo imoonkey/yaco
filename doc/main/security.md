@@ -13,6 +13,10 @@ Cross-cutting security controls for the workflow system.
 - Authentication (none — single-user local app)
 - Per-route authorization logic (see [backend/routes.md](backend/routes.md))
 
+## Related Code
+
+`server/src/index.ts`, `server/src/routes/files.ts`, `server/src/lib/scanner.ts`, `server/src/lib/session-names.ts`, `server/src/routes/git.ts`
+
 ## Session Name Validation
 
 Session names must match `[a-zA-Z0-9_.-]+`. The regex is enforced at both the HTTP route layer and the WebSocket upgrade handler.

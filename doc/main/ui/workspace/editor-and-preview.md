@@ -78,7 +78,7 @@ Available for `.md` files only. Toggled via Preview button or `Cmd+Shift+V`.
 - Uses `marked` library for markdown → HTML
 - Renders inside a `.markdown-preview` styled container
 - Renders the draft content (not refetched from disk)
-- Syntax highlighting on code blocks via highlight.js
+- Syntax highlighting on code blocks via `@lezer/highlight` (classHighlighter + language parsers)
 
 ### Source-Line Anchored Sync
 
@@ -100,7 +100,7 @@ Clicking inside the preview:
 
 ## Editor Features
 
-- **Syntax highlighting**: TypeScript, TSX, JavaScript, JSX, JSON, Python, Markdown, HTML, CSS
+- **Syntax highlighting**: TypeScript, TSX, JavaScript, JSX, JSON, Python, Markdown (fallback for other types)
 - **Search**: CodeMirror built-in search (`Cmd+F`)
 - **Scroll past end**: enabled, so last line can scroll to top of viewport
 - **Line numbers**: shown in gutter
@@ -109,7 +109,7 @@ Clicking inside the preview:
 
 ## Diff View
 
-Unified diff rendering for git-changed files.
+Unified diff rendering for git-changed files. Uses a custom `DiffView` component (not CodeMirror).
 
 - Green background for added lines
 - Red background for deleted lines

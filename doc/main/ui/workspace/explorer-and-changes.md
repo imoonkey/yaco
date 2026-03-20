@@ -26,7 +26,7 @@ Virtualized file tree using react-arborist with react-window.
 ### Rendering
 
 - Custom node renderer with file-type icons (colored SVGs by extension)
-- Directory nodes: folder icon, expand/collapse chevron
+- Directory nodes: folder icon (open/closed states)
 - Indentation shows hierarchy depth
 - Selected node has highlight background
 
@@ -48,7 +48,6 @@ Virtualized file tree using react-arborist with react-window.
 When a real file tab is active in the editor:
 1. Explorer selects the matching tree node
 2. Parent folders are auto-expanded
-3. The file is scrolled into view
 
 This keeps the current editing context visible in the explorer at all times.
 
@@ -79,7 +78,7 @@ Explorer header has two buttons:
 |-----------|---------|----------|
 | Create file | Header button, context menu | `POST /api/files/:project/create-file` |
 | Create directory | Header button, context menu | `POST /api/files/:project/create-dir` |
-| Rename | F2, context menu | `POST /api/files/:project/rename` |
+| Rename | Context menu | `POST /api/files/:project/rename` |
 | Move | Drag and drop | `POST /api/files/:project/move` |
 | Delete | Context menu | `POST /api/files/:project/delete` |
 
@@ -87,7 +86,7 @@ All operations trigger file tree refresh via SSE `filetree` channel.
 
 ## Inline Rename
 
-1. Select file → press `F2` or context menu → Rename
+1. Right-click file → context menu → Rename
 2. react-arborist shows an input field over the node name
 3. Enter confirms, Escape cancels
 4. On confirm: `POST /api/files/:project/rename` called

@@ -2,6 +2,20 @@
 
 Local-first web app for coordinating Claude Code and Codex across multiple repos. One user, doc-centric, file-based state. No database.
 
+## Owns
+
+- Top-level system description and documentation map
+- Navigation entrypoint for doc/main hierarchy
+
+## Does Not Own
+
+- Individual subsystem specs (see section pages)
+- Implementation details (see source code)
+
+## Related Code
+
+`server/src/index.ts`, `ui/src/App.tsx`
+
 ## Architecture
 
 ```

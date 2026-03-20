@@ -56,8 +56,8 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/files/:project` | File tree (cached, max 6 levels deep) |
-| GET | `/api/files/:project/content?path=...` | Read file (max 1MB, path-validated) |
-| PUT | `/api/files/:project/content?path=...` | Write file (`{ content }`) |
+| GET | `/api/files/:project/content?path=...` | Read file — returns `{ content, path, revision }` (max 1MB, path-validated) |
+| PUT | `/api/files/:project/content?path=...` | Write file (`{ content, baseRevision? }`) — returns `{ ok, revision }` or 409 on conflict |
 | POST | `/api/files/:project/create-file` | Create empty file (`{ path }`) — mkdir -p parents |
 | POST | `/api/files/:project/create-dir` | Create directory (`{ path }`) |
 | POST | `/api/files/:project/rename` | Rename file/folder (`{ oldPath, newPath }`) |
