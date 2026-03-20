@@ -32,6 +32,12 @@ export async function getSessionsForProject(project: Project): Promise<MultmuxSe
   }
 }
 
+/** Like getSessionsForProject but throws on failure — for the session poller */
+export async function querySessionsForProject(project: Project): Promise<MultmuxSession[]> {
+  const output = await spawnOutput(MULTMUX_PATH, ['status'], 5000, project.path)
+  return parseMultmuxOutput(output, project.name)
+}
+
 /** Get sessions across all projects */
 export async function getAllSessions(projects: Project[]): Promise<MultmuxSession[]> {
   const results = await Promise.all(projects.map(getSessionsForProject))

@@ -72,19 +72,20 @@ function watchProgressFile(
   initAndWatch(progressFile, projectName, workstream, onChange)
 }
 
-function initAndWatch(
+async function initAndWatch(
   progressFile: string,
   projectName: string,
   workstream: string,
   onChange: ChangeCallback,
-): void {
-  // Initialize count synchronously-ish
-  readFile(progressFile, 'utf-8')
-    .then(raw => {
-      const data: ProgressEntry[] = JSON.parse(raw)
-      lastCounts.set(progressFile, data.length)
-    })
-    .catch(() => { lastCounts.set(progressFile, 0) })
+): Promise<void> {
+  // Initialize count BEFORE installing the watcher to avoid re-notifying old entries
+  try {
+    const raw = await readFile(progressFile, 'utf-8')
+    const data: ProgressEntry[] = JSON.parse(raw)
+    lastCounts.set(progressFile, data.length)
+  } catch {
+    lastCounts.set(progressFile, 0)
+  }
 
   const label = workstream ? `${projectName}/${workstream}` : projectName
 

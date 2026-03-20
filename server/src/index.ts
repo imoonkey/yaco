@@ -82,7 +82,7 @@ const projects = await loadProjects()
 await startWatching(projects, (project, workstream) => {
   console.log(`[watch] progress.json changed: ${project}/${workstream}`)
 })
-startSessionPoller(projects)
+startSessionPoller()
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
 

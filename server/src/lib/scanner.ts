@@ -46,7 +46,7 @@ export interface ProgressEntryWithContext extends ProgressEntry {
 // Simple per-file lock to prevent concurrent read-modify-write races
 const fileLocks = new Map<string, Promise<void>>()
 
-async function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
+export async function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
   const prev = fileLocks.get(path) ?? Promise.resolve()
   let resolve: () => void
   const next = new Promise<void>(r => { resolve = r })

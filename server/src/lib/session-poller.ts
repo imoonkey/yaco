@@ -1,15 +1,15 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import type { Project } from './projects'
-import { getSessionsForProject, type MultmuxSession } from './multmux'
-import type { ProgressEntry } from './scanner'
+import { loadProjects, type Project } from './projects'
+import { querySessionsForProject, type MultmuxSession } from './multmux'
+import { withFileLock, type ProgressEntry } from './scanner'
 
 const POLL_INTERVAL = 5_000
 
-let projects: Project[] = []
 let pollTimer: ReturnType<typeof setTimeout> | null = null
 let pollInFlight = false
+let firstPollDone = false
 
 const lastStatusBySession = new Map<string, 'processing' | 'idle'>()
 const cachedSessionsByProject = new Map<string, MultmuxSession[]>()
@@ -18,8 +18,7 @@ function sessionKey(project: string, name: string): string {
   return `${project}:${name}`
 }
 
-export function startSessionPoller(projectList: Project[]): void {
-  projects = projectList
+export function startSessionPoller(): void {
   schedulePoll()
 }
 
@@ -43,7 +42,7 @@ export function getCachedMultmuxSessions(projectName?: string): MultmuxSession[]
 
 /** Returns true if the cache has been populated at least once */
 export function hasCachedSessions(): boolean {
-  return cachedSessionsByProject.size > 0
+  return firstPollDone
 }
 
 function schedulePoll(): void {
@@ -51,11 +50,14 @@ function schedulePoll(): void {
 }
 
 async function poll(): Promise<void> {
-  if (pollInFlight) { schedulePoll(); return }
+  if (pollInFlight) return
   pollInFlight = true
 
   try {
+    // Reload projects each cycle so runtime-added projects are picked up
+    const projects = await loadProjects()
     await Promise.all(projects.map(pollProject))
+    firstPollDone = true
   } finally {
     pollInFlight = false
     schedulePoll()
@@ -65,15 +67,11 @@ async function poll(): Promise<void> {
 async function pollProject(project: Project): Promise<void> {
   let sessions: MultmuxSession[]
   try {
-    sessions = await getSessionsForProject(project)
+    sessions = await querySessionsForProject(project)
   } catch {
     // Failed — keep previous state, emit nothing
     return
   }
-
-  // Note: getSessionsForProject returns [] on failure (catches internally).
-  // We treat that as "success with 0 sessions" which is correct for the
-  // transition logic — if multmux is genuinely not running, there are no sessions.
 
   const currentKeys = new Set<string>()
 
@@ -103,25 +101,25 @@ async function writeSessionIdleEntry(project: Project, session: MultmuxSession):
   const todoDir = join(project.path, 'doc', 'todo')
   const progressFile = join(todoDir, 'progress.json')
 
-  const entry: ProgressEntry = {
-    id: `session-idle-${session.name}-${Date.now()}`,
-    agent: session.provider as 'claude' | 'codex',
-    type: 'session_idle' as ProgressEntry['type'],
-    message: `${session.name} finished processing`,
-    timestamp: new Date().toISOString(),
-    status: 'active',
-  }
-
   try {
     if (!existsSync(todoDir)) await mkdir(todoDir, { recursive: true })
 
-    let entries: ProgressEntry[] = []
-    if (existsSync(progressFile)) {
-      const raw = await readFile(progressFile, 'utf-8')
-      entries = JSON.parse(raw)
-    }
-    entries.push(entry)
-    await writeFile(progressFile, JSON.stringify(entries, null, 2), 'utf-8')
+    await withFileLock(progressFile, async () => {
+      let entries: ProgressEntry[] = []
+      if (existsSync(progressFile)) {
+        const raw = await readFile(progressFile, 'utf-8')
+        entries = JSON.parse(raw)
+      }
+      entries.push({
+        id: `session-idle-${session.name}-${Date.now()}`,
+        agent: session.provider as 'claude' | 'codex',
+        type: 'session_idle' as ProgressEntry['type'],
+        message: `${session.name} finished processing`,
+        timestamp: new Date().toISOString(),
+        status: 'active',
+      })
+      await writeFile(progressFile, JSON.stringify(entries, null, 2), 'utf-8')
+    })
   } catch (err) {
     console.error(`[session-poller] failed to write session_idle entry for ${session.name}:`, err)
   }
