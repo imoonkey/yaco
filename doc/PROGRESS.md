@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-03-19: Event-based UI updates via SSE refresh signals
+
+**What changed:**
+- Replaced blind polling (3-10s) with event-driven SSE "poke" signals for all 6 UI hooks
+- Server: recursive `fs.watch` per project (macOS FSEvents, one fd each) routes file changes through a filename router → SSE refresh channels (filetree, workstreams, git)
+- Server: session poller emits `refresh:sessions` on any change; `~/.workflow/projects.json` watched for project list changes
+- Server: `emitRefresh(channel)` added to notify.ts for lightweight SSE-only signals (no osascript)
+- UI: shared EventSource singleton (`useSSE.ts`) dispatches refresh signals to registered hooks; fires all callbacks on reconnect
+- UI: all polling hooks wired to SSE channels with 30-60s fallback intervals (safety net for SSE disconnection; can be removed if SSE proves reliable on localhost)
+- 200ms debounce on all fs.watch events to batch rapid changes (e.g., `git checkout`)
+
+**Why:**
+- 6 hooks were blind-polling every 3-10s regardless of changes — wasteful and adds latency vs event-driven
+- macOS FSEvents is kernel-level push with zero scanning overhead, same approach as VS Code
+
+**Key files:** `server/src/lib/project-watcher.ts`, `server/src/lib/notify.ts`, `ui/src/hooks/useSSE.ts`, `ui/src/hooks/useApi.ts`
+**Verification:** SSE refresh events fire correctly on file create/delete, session changes detected, type-check clean, build passes
+**Commit:** 9fb473d
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-19: Mobile touch scrolling for files, editor, and terminal
 
 **What changed:**

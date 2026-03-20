@@ -18,8 +18,9 @@ workflow/
 │       │   ├── scanner.ts   # Scan workstream.json + progress.json
 │       │   ├── multmux.ts   # Shell out to multmux (spawn, no shell)
 │       │   ├── watcher.ts   # fs.watch on progress.json files → emitNotification
-│       │   ├── notify.ts    # Notification bus: osascript + SSE fanout
-│       │   ├── session-poller.ts # 5s poll for processing→idle transitions
+│       │   ├── notify.ts    # Notification bus: osascript + SSE fanout + refresh signals
+│       │   ├── session-poller.ts # 3s poll for processing→idle transitions
+│       │   ├── project-watcher.ts # Recursive fs.watch per project (FSEvents)
 │       │   └── terminal.ts  # node-pty → tmux attach-session
 │       └── routes/
 │           ├── projects.ts
@@ -33,7 +34,8 @@ workflow/
 │   └── src/
 │       ├── App.tsx
 │       ├── types.ts
-│       ├── hooks/useApi.ts           # API hooks with polling + git hooks
+│       ├── hooks/useApi.ts           # API hooks (SSE-triggered + fallback polling)
+│       ├── hooks/useSSE.ts           # Shared EventSource singleton + refresh dispatch
 │       ├── hooks/useBrowserNotifications.ts  # SSE + Notification API
 │       └── components/
 │           ├── Monitor.tsx     # Sessions + notifications
