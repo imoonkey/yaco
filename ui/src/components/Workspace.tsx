@@ -6,25 +6,18 @@ import { python } from '@codemirror/lang-python'
 import { languages } from '@codemirror/language-data'
 import { LanguageDescription } from '@codemirror/language'
 import { classHighlighter, highlightCode } from '@lezer/highlight'
-import { useFileTree, useFileContent, useSessions, useGitStatus, saveFileContent, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
+import { useFileTree, useFileContent, useSessions, useGitStatus, saveFileContent, createFile, createDir, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { Editor } from './Editor'
 import { Terminal } from './Terminal'
 import { ProviderIcon } from './SessionIcons'
 import { PaneSwitch } from './PaneSwitch'
+import { FileExplorer, FileTypeIcon, GIT_COLORS, NewFileIcon, NewFolderIcon } from './FileExplorer'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { marked, type Tokens } from 'marked'
 import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
 
-// --- File type icon colors (VS Code Seti-like) ---
-const FILE_COLORS: Record<string, string> = {
-  ts: '#3178C6', tsx: '#3178C6', js: '#CBCB41', jsx: '#CBCB41', json: '#B58900',
-  md: '#519ABA', py: '#3776AB', css: '#42A5F5', scss: '#CD6799', html: '#E44D26',
-  yml: '#F44D27', yaml: '#F44D27', sh: '#4EAA25', toml: '#9C4121', lock: '#93A1A1',
-  svg: '#FFB13B', txt: '#93A1A1',
-}
-const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type WorkspaceMobilePane = 'files' | 'editor' | 'terminal'
 type DiffState = {
@@ -230,28 +223,6 @@ function inferMobilePane(openTabs: string[], activeSession: string): WorkspaceMo
   return 'files'
 }
 
-function FileTypeIcon({ name }: { name: string }) {
-  const ext = name.split('.').pop()?.toLowerCase() || ''
-  const c = FILE_COLORS[ext] || C.muted
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
-      <path d="M3.5 1C2.67 1 2 1.67 2 2.5v11c0 .83.67 1.5 1.5 1.5h9c.83 0 1.5-.67 1.5-1.5V5.5L9.5 1H3.5z" fill={c} fillOpacity="0.15" stroke={c} strokeOpacity="0.5" strokeWidth="0.8" />
-      <path d="M9.5 1V5.5H13" fill="none" stroke={c} strokeOpacity="0.5" strokeWidth="0.8" />
-    </svg>
-  )
-}
-
-function FolderIcon({ open }: { open?: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
-      {open
-        ? <path d="M1.5 14h13c.28 0 .5-.22.5-.5V5H7.5L6 3.5H2c-.28 0-.5.22-.5.5v10c0 .28.22.5.5.5z" fill="#C09553" fillOpacity="0.75" />
-        : <path d="M1.5 14h13c.28 0 .5-.22.5-.5V4.5c0-.28-.22-.5-.5-.5H7L5.5 2.5c-.2-.3-.5-.5-.8-.5H2c-.28 0-.5.22-.5.5v11c0 .28.22.5.5.5z" fill="#C09553" fillOpacity="0.75" />
-      }
-    </svg>
-  )
-}
-
 // --- Resize Hook ---
 function useResize(initial: number, min: number, max: number, direction: 'left' | 'right' | 'down' = 'left') {
   const [size, setSize] = useState(initial)
@@ -322,58 +293,6 @@ function SectionHeader({ title, collapsed, onToggle, actions, badge }: {
         <span className="w-[18px] h-[14px] rounded-full text-[9px] flex items-center justify-center font-bold" style={{ backgroundColor: '#C4A24130', color: '#C4A241' }}>{badge}</span>
       )}
       {!collapsed && actions && <div onClick={e => e.stopPropagation()}>{actions}</div>}
-    </div>
-  )
-}
-
-// --- File Tree ---
-function pathContainsSelection(path: string, target: string | null): boolean {
-  if (!target) return false
-  return target === path || target.startsWith(`${path}/`)
-}
-
-function FileTreeNode({ node, depth, selected, onSelect, gitMap, gitFolders }: {
-  node: FileNode; depth: number; selected: string | null; onSelect: (path: string) => void
-  gitMap: Map<string, string>; gitFolders: Set<string>
-}) {
-  const containsSelected = node.type === 'dir' && pathContainsSelection(node.path, selected)
-  const [open, setOpen] = useState(depth < 1 || containsSelected)
-  const gitStatus = gitMap.get(node.path)
-  const folderHasChanges = node.type === 'dir' && gitFolders.has(node.path)
-
-  useEffect(() => {
-    if (containsSelected) setOpen(true)
-  }, [containsSelected])
-
-  if (node.type === 'dir') {
-    return (
-      <div>
-        <div className="flex items-center gap-1 py-[2px] px-1 rounded cursor-pointer"
-          style={{ paddingLeft: `${depth * 12 + 4}px`, color: folderHasChanges ? '#C4A241' : C.text }}
-          onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.hover)}
-          onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-          onClick={() => setOpen(!open)}>
-          <FolderIcon open={open} />
-          <span className="text-[12px] flex-1">{node.name}</span>
-          {folderHasChanges && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#C4A241' }} />}
-        </div>
-        {open && node.children?.map(c => (
-          <FileTreeNode key={c.path} node={c} depth={depth + 1} selected={selected} onSelect={onSelect} gitMap={gitMap} gitFolders={gitFolders} />
-        ))}
-      </div>
-    )
-  }
-  const isSel = selected === node.path
-  const nameColor = gitStatus ? (GIT_COLORS[gitStatus] || C.text) : isSel ? C.accent : C.text
-  return (
-    <div className={`flex items-center gap-1 py-[2px] px-1 rounded cursor-pointer text-[12px] ${isSel ? 'bg-[#268bd2]/15' : ''}`}
-      style={{ paddingLeft: `${depth * 12 + 4}px` }}
-      onMouseEnter={e => { if (!isSel) e.currentTarget.style.backgroundColor = C.hover }}
-      onMouseLeave={e => { if (!isSel) e.currentTarget.style.backgroundColor = '' }}
-      onClick={() => onSelect(node.path)}>
-      <FileTypeIcon name={node.name} />
-      <span className="flex-1 truncate" style={{ color: nameColor }}>{node.name}</span>
-      {gitStatus && <span className="text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }}>{gitStatus}</span>}
     </div>
   )
 }
@@ -772,6 +691,34 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     openFile(path, 'explorer')
   }, [openFile])
 
+  const handleNewFile = useCallback(async () => {
+    const name = prompt('New file name:')
+    if (!name || name.includes('..')) return
+    try {
+      await createFile(projectName, name)
+      openFile(name, 'explorer')
+    } catch (err) {
+      console.error('Failed to create file:', err)
+    }
+  }, [projectName, openFile])
+
+  const handleNewFolder = useCallback(async () => {
+    const name = prompt('New folder name:')
+    if (!name || name.includes('..')) return
+    try {
+      await createDir(projectName, name)
+    } catch (err) {
+      console.error('Failed to create folder:', err)
+    }
+  }, [projectName])
+
+  const explorerActions = (
+    <div className="flex gap-0.5">
+      <button onClick={handleNewFile} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
+      <button onClick={handleNewFolder} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
+    </div>
+  )
+
   const openDiff = useCallback((path: string) => {
     const tab = `diff:${path}`
     setOpenTabs(tabs => tabs.includes(tab) ? tabs : [...tabs, tab])
@@ -1031,21 +978,25 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   }, [activeTab])
 
   const filesPaneMobile = (
-    <div className="h-full overflow-y-auto" style={{ backgroundColor: C.bg, touchAction: 'pan-y' }} onMouseDown={() => setFocusTarget('explorer')}>
-      <div className="flex flex-col min-h-full">
-        <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
+    <div className="h-full flex flex-col" style={{ backgroundColor: C.bg }} onMouseDown={() => setFocusTarget('explorer')}>
+        <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} actions={explorerActions} />
         {showExplorer && (
-          <div className="py-1 px-1">
-            {(fileTree ?? []).map(node => (
-              <FileTreeNode key={node.path} node={node} depth={0} selected={selectedFilePath} onSelect={openFileFromExplorer} gitMap={gitMap} gitFolders={gitFolders} />
-            ))}
-            {!fileTree && <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>}
+          <div className="flex-1 min-h-0 flex flex-col">
+            <FileExplorer
+              projectName={projectName}
+              tree={fileTree}
+              gitMap={gitMap}
+              gitFolders={gitFolders}
+              selectedFile={selectedFilePath}
+              onSelectFile={openFileFromExplorer}
+              onFocusExplorer={() => setFocusTarget('explorer')}
+            />
           </div>
         )}
 
         <SectionHeader title="Changes" collapsed={!showChanges} onToggle={() => setShowChanges(v => !v)} badge={changes.length || undefined} />
         {showChanges && (
-          <div className="py-1 px-1">
+          <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">
             {changes.map(c => (
               <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onActivate={() => activateChange(c.path)} />
             ))}
@@ -1055,7 +1006,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
         <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => setShowSessions(v => !v)} actions={sessionActions} />
         {showSessions && (
-          <div className="py-1 px-1">
+          <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">
             {processing.map(s => (
               <SessionItem
                 key={s.name}
@@ -1086,7 +1037,6 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
             {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
           </div>
         )}
-      </div>
     </div>
   )
 
@@ -1251,13 +1201,18 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           {showSidebar && (
             <>
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
-                <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} />
+                <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => setShowExplorer(v => !v)} actions={explorerActions} />
                 {showExplorer && (
-                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1, touchAction: 'pan-y' }} onMouseDown={() => setFocusTarget('explorer')}>
-                    {(fileTree ?? []).map(node => (
-                      <FileTreeNode key={node.path} node={node} depth={0} selected={selectedFilePath} onSelect={openFileFromExplorer} gitMap={gitMap} gitFolders={gitFolders} />
-                    ))}
-                    {!fileTree && <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>}
+                  <div className="shrink-0 min-h-0 flex flex-col" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }}>
+                    <FileExplorer
+                      projectName={projectName}
+                      tree={fileTree}
+                      gitMap={gitMap}
+                      gitFolders={gitFolders}
+                      selectedFile={selectedFilePath}
+                      onSelectFile={openFileFromExplorer}
+                      onFocusExplorer={() => setFocusTarget('explorer')}
+                    />
                   </div>
                 )}
 

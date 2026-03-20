@@ -1,5 +1,29 @@
 # Progress
 
+## 2026-03-20: File explorer migration to react-arborist
+
+**What changed:**
+- Replaced hand-rolled recursive `FileTreeNode` with `react-arborist` virtualized tree in new `FileExplorer.tsx`
+- Added backend endpoints: `create-file`, `create-dir`, `rename`, `move`, `delete` in `files.ts`
+- Added client API functions: `createFile`, `createDir`, `moveFile`, `renameFile`, `deleteFile`
+- Custom node renderer preserves all existing visuals: file type icons, git status badges (M/A/D/U), folder change indicators, selection highlight, hover effects
+- Context menu (right-click): New File, New Folder, Rename, Delete, Copy Path — works on any node, creates in parent directory for files
+- Drag-and-drop file/folder move via react-arborist + backend `move` endpoint
+- Inline rename via F2 or context menu + backend `rename` endpoint
+- Keyboard navigation (arrow keys, Enter, F2) built into react-arborist
+- Virtual scrolling for large trees via react-window (inside react-arborist)
+- Fixed mobile layout: explorer container needs `flex flex-col` for FileExplorer to get measurable height
+
+**Why:**
+- Old explorer couldn't create files in subdirectories, had no rename/move/delete, no keyboard nav, no virtualization
+- react-arborist chosen over react-complex-tree and @headless-tree/react for best feature completeness with least integration work
+
+**Key files:** `ui/src/components/FileExplorer.tsx` (new), `ui/src/components/Workspace.tsx`, `server/src/routes/files.ts`, `ui/src/hooks/useApi.ts`
+**Verification:** Backend APIs tested via curl (create, rename, delete all return ok). Frontend verified in Playwright by Codex (files visible, click-to-open, folder expand/collapse, context menu). Mobile fix verified by user.
+**Commit:** pending
+**Next:** Switch delete to `trash` npm package for recycle-bin behavior; consider lazy-loading for very large trees
+**Blockers:** None
+
 ## 2026-03-20: Claude Stop hook for session idle detection
 
 **What changed:**

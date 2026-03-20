@@ -205,6 +205,27 @@ export async function saveFileContent(projectName: string, filePath: string, con
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
 }
 
+export async function createFile(projectName: string, path: string): Promise<void> {
+  await postJson(`/files/${encodeURIComponent(projectName)}/create-file`, { path })
+}
+
+export async function createDir(projectName: string, path: string): Promise<void> {
+  await postJson(`/files/${encodeURIComponent(projectName)}/create-dir`, { path })
+}
+
+export async function moveFile(projectName: string, sourcePath: string, destDir: string): Promise<string> {
+  const r = await postJson<{ newPath: string }>(`/files/${encodeURIComponent(projectName)}/move`, { sourcePath, destDir })
+  return r.newPath
+}
+
+export async function renameFile(projectName: string, oldPath: string, newPath: string): Promise<void> {
+  await postJson(`/files/${encodeURIComponent(projectName)}/rename`, { oldPath, newPath })
+}
+
+export async function deleteFile(projectName: string, path: string): Promise<void> {
+  await postJson(`/files/${encodeURIComponent(projectName)}/delete`, { path })
+}
+
 // --- Git ---
 
 export function useGitStatus(projectName: string | null) {

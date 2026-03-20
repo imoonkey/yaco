@@ -33,6 +33,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 | Terminal | node-pty 1.0 → tmux attach via PTY |
 | Frontend | React 19 + Vite 8 |
 | Editor | CodeMirror 6 (multi-language, Solarized Light) |
+| File Explorer | react-arborist (virtualized tree, DnD, inline rename) |
 | Terminal UI | xterm.js 6 (Solarized Light) |
 | Styling | Tailwind CSS 4 (VS Code Solarized Light palette) |
 | Notifications | macOS `osascript` + SSE → browser Notification API |
@@ -54,7 +55,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 │  ├── /api/workstreams     (scan workstream.json)│
 │  ├── /api/progress        (scan progress.json) │
 │  ├── /api/sessions        (poller cache / multmux)│
-│  ├── /api/files           (file tree + r/w)    │
+│  ├── /api/files           (file tree + CRUD + move) │
 │  ├── /api/git             (status + diff)      │
 │  ├── /api/notifications/stream (SSE)           │
 │  └── /ws/terminal/:name   (tmux via node-pty)  │
@@ -78,6 +79,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 ## Workspace Features
 
 - **Multi-tab editor** — open/close/switch files, edit any text file in the workspace, Cmd-W to close, Cmd-P file search, Cmd-B left sidebar toggle, and Cmd-Shift-B right session-pane toggle
+- **Explorer tree** — react-arborist virtualized tree with custom node renderer; supports drag-and-drop file move, inline rename (F2), right-click context menu (New File, New Folder, Rename, Delete, Copy Path), keyboard navigation, and per-directory create
 - **Explorer tree refresh** — file trees are cached per project on both the server and client; the server invalidates cache entries on structural filesystem changes (`rename` / create / delete), and the client reuses the last tree immediately when revisiting a project before refreshing in the background
 - **Explorer file reveal** — when a real file tab is active in the editor, Explorer keeps that file selected and auto-expands parent folders so the current editing context is always visible in the tree
 - **Explorer path copy** — when the Explorer owns focus, `Cmd+C` copies the selected file path instead of browser page text

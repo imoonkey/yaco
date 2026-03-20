@@ -1,6 +1,6 @@
 import { watch, existsSync, type FSWatcher } from 'fs'
-import { readdir, stat, readFile, writeFile, realpath } from 'fs/promises'
-import { join, relative } from 'path'
+import { readdir, stat, readFile, writeFile, mkdir, realpath, rename as fsRename, rm } from 'fs/promises'
+import { join, relative, dirname, normalize, basename } from 'path'
 import { Hono } from 'hono'
 import { loadProjects } from '../lib/projects'
 
@@ -178,6 +178,14 @@ app.get('/:project/content', async (c) => {
   return c.json({ content, path: filePath })
 })
 
+/** Validate a relative path for creation (path may not exist yet) */
+function validateNewPath(projectPath: string, filePath: string): string | null {
+  if (!filePath || filePath.includes('..') || normalize(filePath) !== filePath.replace(/\\/g, '/')) return null
+  const absPath = join(projectPath, filePath)
+  if (!absPath.startsWith(projectPath + '/')) return null
+  return absPath
+}
+
 app.put('/:project/content', async (c) => {
   const projectName = c.req.param('project')
   const filePath = c.req.query('path')
@@ -192,6 +200,97 @@ app.put('/:project/content', async (c) => {
 
   const { content } = await c.req.json<{ content: string }>()
   await writeFile(resolved, content, 'utf-8')
+  return c.json({ ok: true })
+})
+
+app.post('/:project/create-file', async (c) => {
+  const projectName = c.req.param('project')
+  const { path: filePath } = await c.req.json<{ path: string }>()
+  if (!filePath) return c.json({ error: 'path required' }, 400)
+
+  const projects = await loadProjects()
+  const proj = projects.find(p => p.name === projectName)
+  if (!proj) return c.json({ error: 'project not found' }, 404)
+
+  const absPath = validateNewPath(proj.path, filePath)
+  if (!absPath) return c.json({ error: 'invalid path' }, 400)
+  if (existsSync(absPath)) return c.json({ error: 'already exists' }, 409)
+
+  await mkdir(dirname(absPath), { recursive: true })
+  await writeFile(absPath, '', 'utf-8')
+  return c.json({ ok: true, path: filePath })
+})
+
+app.post('/:project/create-dir', async (c) => {
+  const projectName = c.req.param('project')
+  const { path: dirPath } = await c.req.json<{ path: string }>()
+  if (!dirPath) return c.json({ error: 'path required' }, 400)
+
+  const projects = await loadProjects()
+  const proj = projects.find(p => p.name === projectName)
+  if (!proj) return c.json({ error: 'project not found' }, 404)
+
+  const absPath = validateNewPath(proj.path, dirPath)
+  if (!absPath) return c.json({ error: 'invalid path' }, 400)
+  if (existsSync(absPath)) return c.json({ error: 'already exists' }, 409)
+
+  await mkdir(absPath, { recursive: true })
+  return c.json({ ok: true, path: dirPath })
+})
+
+app.post('/:project/rename', async (c) => {
+  const projectName = c.req.param('project')
+  const { oldPath, newPath } = await c.req.json<{ oldPath: string; newPath: string }>()
+  if (!oldPath || !newPath) return c.json({ error: 'oldPath and newPath required' }, 400)
+
+  const projects = await loadProjects()
+  const proj = projects.find(p => p.name === projectName)
+  if (!proj) return c.json({ error: 'project not found' }, 404)
+
+  const resolvedOld = await resolveAndValidate(proj.path, oldPath)
+  if (!resolvedOld) return c.json({ error: 'source path not found or traversal denied' }, 403)
+
+  const absNew = validateNewPath(proj.path, newPath)
+  if (!absNew) return c.json({ error: 'invalid new path' }, 400)
+
+  await fsRename(resolvedOld, absNew)
+  return c.json({ ok: true })
+})
+
+app.post('/:project/move', async (c) => {
+  const projectName = c.req.param('project')
+  const { sourcePath, destDir } = await c.req.json<{ sourcePath: string; destDir: string }>()
+  if (!sourcePath || !destDir) return c.json({ error: 'sourcePath and destDir required' }, 400)
+
+  const projects = await loadProjects()
+  const proj = projects.find(p => p.name === projectName)
+  if (!proj) return c.json({ error: 'project not found' }, 404)
+
+  const resolvedSource = await resolveAndValidate(proj.path, sourcePath)
+  if (!resolvedSource) return c.json({ error: 'source path not found or traversal denied' }, 403)
+
+  const targetRel = join(destDir, basename(sourcePath))
+  const absTarget = validateNewPath(proj.path, targetRel)
+  if (!absTarget) return c.json({ error: 'invalid target path' }, 400)
+  if (existsSync(absTarget)) return c.json({ error: 'target already exists' }, 409)
+
+  await fsRename(resolvedSource, absTarget)
+  return c.json({ ok: true, newPath: targetRel })
+})
+
+app.post('/:project/delete', async (c) => {
+  const projectName = c.req.param('project')
+  const { path: filePath } = await c.req.json<{ path: string }>()
+  if (!filePath) return c.json({ error: 'path required' }, 400)
+
+  const projects = await loadProjects()
+  const proj = projects.find(p => p.name === projectName)
+  if (!proj) return c.json({ error: 'project not found' }, 404)
+
+  const resolved = await resolveAndValidate(proj.path, filePath)
+  if (!resolved) return c.json({ error: 'path not found or traversal denied' }, 403)
+
+  await rm(resolved, { recursive: true })
   return c.json({ ok: true })
 })
 

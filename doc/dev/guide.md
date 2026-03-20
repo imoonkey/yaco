@@ -39,7 +39,8 @@ workflow/
 │       ├── hooks/useBrowserNotifications.ts  # SSE + Notification API
 │       └── components/
 │           ├── Monitor.tsx     # Sessions + notifications
-│           ├── Workspace.tsx   # File tree + tabs + editor + terminal + git
+│           ├── Workspace.tsx   # Tabs + editor + terminal + git
+│           ├── FileExplorer.tsx # react-arborist tree + context menu
 │           ├── RoadmapView.tsx # Workstream tracking
 │           ├── Editor.tsx      # CodeMirror 6 wrapper (Solarized Light)
 │           └── Terminal.tsx    # xterm.js wrapper (Solarized Light)
@@ -121,6 +122,11 @@ Projects can also be reordered from the bottom project bar by dragging tabs, or 
 | GET | `/api/files/:project` | File tree |
 | GET | `/api/files/:project/content?path=...` | Read file |
 | PUT | `/api/files/:project/content?path=...` | Write a validated text file inside the project |
+| POST | `/api/files/:project/create-file` | Create empty file (mkdir -p parents) |
+| POST | `/api/files/:project/create-dir` | Create directory (mkdir -p) |
+| POST | `/api/files/:project/rename` | Rename file or folder |
+| POST | `/api/files/:project/move` | Move file/folder to different directory |
+| POST | `/api/files/:project/delete` | Delete file or folder (recursive) |
 | GET | `/api/git/:project/status` | Git status (changed files) |
 | GET | `/api/git/:project/diff?path=...` | Unified diff for a file |
 | WS | `/ws/terminal/:name?cols=N&rows=N` | Terminal PTY via WebSocket |
