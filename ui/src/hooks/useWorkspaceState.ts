@@ -180,24 +180,30 @@ async function fetchContent(project: string, path: string): Promise<{ content: s
 
 // --- Reconciliation helper ---
 
-/** Apply server fetch result to file state. Handles clean→update, dirty→conflict, missing. */
+/** Apply server fetch result to file state. Returns prev unchanged if nothing differs. */
 function reconcileFile(prev: FileState | undefined, result: { content: string; revision: number } | null): FileState {
   const existing = prev ?? defaultFileState()
 
   if (!result) {
-    return { ...existing, status: 'missing' }
+    return existing.status === 'missing' ? existing : { ...existing, status: 'missing' }
   }
 
   // Dirty/conflict file: check if revision diverged
   if (existing.draft != null && existing.status !== 'clean') {
     if (existing.baseRevision != null && existing.baseRevision !== result.revision) {
+      if (existing.status === 'conflict' && existing.serverContent === result.content) return existing
       return { ...existing, serverContent: result.content, status: 'conflict' }
     }
-    // Revision matches — keep draft, update server content + revision
+    // Revision matches — keep draft, update server content if changed
+    if (existing.serverContent === result.content && existing.baseRevision === result.revision) return existing
     return { ...existing, serverContent: result.content, baseRevision: result.revision }
   }
 
-  // Clean file: adopt server content
+  // Clean file: adopt server content (skip if identical)
+  if (existing.serverContent === result.content && existing.baseRevision === result.revision && existing.status === 'clean') {
+    return existing
+  }
+
   return {
     serverContent: result.content,
     draft: null,
@@ -252,7 +258,10 @@ export function useWorkspaceState(projectName: string) {
     for (const path of fileTabs) {
       fetchContent(projectName, path).then(result => {
         if (projectRef.current !== projectName) return
-        setFiles(prev => ({ ...prev, [path]: reconcileFile(prev[path], result) }))
+        setFiles(prev => {
+          const next = reconcileFile(prev[path], result)
+          return next === prev[path] ? prev : { ...prev, [path]: next }
+        })
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -322,7 +331,10 @@ export function useWorkspaceState(projectName: string) {
     for (const path of tabs) {
       fetchContent(projectName, path).then(result => {
         if (projectRef.current !== projectName) return
-        setFiles(prev => ({ ...prev, [path]: reconcileFile(prev[path], result) }))
+        setFiles(prev => {
+          const next = reconcileFile(prev[path], result)
+          return next === prev[path] ? prev : { ...prev, [path]: next }
+        })
       })
     }
   }, [projectName])
@@ -359,7 +371,8 @@ export function useWorkspaceState(projectName: string) {
           }
           return prev
         }
-        return { ...prev, [path]: reconcileFile(existing, result) }
+        const next = reconcileFile(existing, result)
+        return next === existing ? prev : { ...prev, [path]: next }
       })
     })
   }, [projectName])
@@ -508,6 +521,21 @@ export function useWorkspaceState(projectName: string) {
     })
   }, [projectName])
 
+  const actions = useMemo(() => ({
+    openFileTab,
+    openDiffTab,
+    closeTab: closeTabByKey,
+    setActiveTab,
+    setActiveSession,
+    setMobilePane,
+    updateLayout,
+    updateFileDraft,
+    updateFileViewport,
+    saveFile,
+    forceSave,
+    acceptDisk,
+  }), [openFileTab, openDiffTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
+
   return {
     openTabs,
     activeTab,
@@ -517,19 +545,6 @@ export function useWorkspaceState(projectName: string) {
     files,
     dirtyTabs,
     conflictTabs,
-    actions: {
-      openFileTab,
-      openDiffTab,
-      closeTab: closeTabByKey,
-      setActiveTab,
-      setActiveSession,
-      setMobilePane,
-      updateLayout,
-      updateFileDraft,
-      updateFileViewport,
-      saveFile,
-      forceSave,
-      acceptDisk,
-    },
+    actions,
   }
 }
