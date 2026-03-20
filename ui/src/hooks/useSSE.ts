@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 type SSEListener = (event: MessageEvent) => void
 
@@ -45,14 +45,20 @@ export function addSSEListener(event: string, fn: SSEListener): () => void {
   return () => { set!.delete(fn) }
 }
 
-/** Register a callback to fire when a refresh signal arrives for a channel */
+/** Register a callback to fire when a refresh signal arrives for a channel.
+ *  Uses a stable wrapper so the effect only runs once per channel, even if
+ *  the callback identity changes between renders. */
 export function useSSERefresh(channel: string, callback: () => void): void {
+  const callbackRef = useRef(callback)
+  callbackRef.current = callback
+
   useEffect(() => {
     if (!channel) return
     getSource()
+    const wrapper = () => callbackRef.current()
     let set = refreshCallbacks.get(channel)
     if (!set) { set = new Set(); refreshCallbacks.set(channel, set) }
-    set.add(callback)
-    return () => { set!.delete(callback) }
-  }, [channel, callback])
+    set.add(wrapper)
+    return () => { set!.delete(wrapper) }
+  }, [channel]) // only re-register if channel changes
 }

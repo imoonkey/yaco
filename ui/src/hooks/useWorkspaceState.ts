@@ -273,9 +273,8 @@ export function useWorkspaceState(projectName: string) {
   layoutRef.current = { openTabs, activeTab, activeSession, mobilePane, layout }
 
   const flushLayout = useCallback(() => {
-    const s = layoutRef.current
-    saveLayout(projectName, s)
-  }, [projectName])
+    saveLayout(projectRef.current, layoutRef.current)
+  }, [])
 
   // Debounced persist on state changes (handles rapid resize etc.)
   const layoutTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -301,8 +300,8 @@ export function useWorkspaceState(projectName: string) {
         }
       }
     }
-    saveDrafts(projectName, { files: entries })
-  }, [projectName])
+    saveDrafts(projectRef.current, { files: entries })
+  }, [])
 
   // Debounced persist on file state changes
   const draftsTimer = useRef<ReturnType<typeof setTimeout>>()
@@ -323,21 +322,23 @@ export function useWorkspaceState(projectName: string) {
   }, [flushLayout, flushDrafts])
 
   // --- SSE: refetch open file tabs on filetree or git changes ---
-  // Iterates openTabs, not files keys, so clean tabs without file state are included (fix H1)
+  // Zero-dep callback — reads everything from refs so identity never changes.
+  // This prevents useSSERefresh from ever re-registering the callback.
   const refetchOpenFiles = useCallback(() => {
+    const project = projectRef.current
     const tabs = openTabsRef.current.filter(t => !t.startsWith('diff:'))
     if (tabs.length === 0) return
 
     for (const path of tabs) {
-      fetchContent(projectName, path).then(result => {
-        if (projectRef.current !== projectName) return
+      fetchContent(project, path).then(result => {
+        if (projectRef.current !== project) return
         setFiles(prev => {
           const next = reconcileFile(prev[path], result)
           return next === prev[path] ? prev : { ...prev, [path]: next }
         })
       })
     }
-  }, [projectName])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useSSERefresh('filetree', refetchOpenFiles)
   useSSERefresh('git', refetchOpenFiles)
@@ -358,14 +359,14 @@ export function useWorkspaceState(projectName: string) {
   const openFileTab = useCallback((path: string) => {
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
     setActiveTab(path)
-    // Fetch content + revision for the newly opened tab (fix C2: baseRevision initialization)
-    fetchContent(projectName, path).then(result => {
-      if (projectRef.current !== projectName) return
+    // Fetch content + revision for the newly opened tab
+    const project = projectRef.current
+    fetchContent(project, path).then(result => {
+      if (projectRef.current !== project) return
       setFiles(prev => {
         const existing = prev[path]
         // If user already started editing before fetch returned, don't clobber the draft
         if (existing?.draft != null) {
-          // But do seed baseRevision if it was null
           if (existing.baseRevision == null && result) {
             return { ...prev, [path]: { ...existing, serverContent: result.content, baseRevision: result.revision } }
           }
@@ -375,7 +376,7 @@ export function useWorkspaceState(projectName: string) {
         return next === existing ? prev : { ...prev, [path]: next }
       })
     })
-  }, [projectName])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openDiffTab = useCallback((path: string) => {
     const tab = `diff:${path}`
@@ -433,7 +434,7 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const saveFile = useCallback(async (path: string, content: string): Promise<{ conflict: boolean }> => {
-    // Read from current state via functional updater to get baseRevision
+    const project = projectRef.current
     let baseRevision: number | undefined
     setFiles(prev => {
       const s = prev[path]
@@ -442,7 +443,7 @@ export function useWorkspaceState(projectName: string) {
     })
 
     try {
-      const res = await fetch(`${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(path)}`, {
+      const res = await fetch(`${API}/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, baseRevision }),
@@ -473,16 +474,17 @@ export function useWorkspaceState(projectName: string) {
       })
       return { conflict: false }
     }
-  }, [projectName])
+  }, [])
 
   const forceSave = useCallback(async (path: string, content: string) => {
+    const project = projectRef.current
     setFiles(prev => {
       const s = prev[path]
       return s ? { ...prev, [path]: { ...s, status: 'saving' } } : prev
     })
 
     try {
-      const res = await fetch(`${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(path)}`, {
+      const res = await fetch(`${API}/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
@@ -502,10 +504,11 @@ export function useWorkspaceState(projectName: string) {
         return s ? { ...prev, [path]: { ...s, status: 'dirty' } } : prev
       })
     }
-  }, [projectName])
+  }, [])
 
   const acceptDisk = useCallback((path: string) => {
-    fetchContent(projectName, path).then(result => {
+    const project = projectRef.current
+    fetchContent(project, path).then(result => {
       if (!result) return
       setFiles(prev => ({
         ...prev,
@@ -519,7 +522,7 @@ export function useWorkspaceState(projectName: string) {
         },
       }))
     })
-  }, [projectName])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const actions = useMemo(() => ({
     openFileTab,
