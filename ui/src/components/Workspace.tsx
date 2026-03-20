@@ -1240,7 +1240,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               onChange={(value) => setMobilePane(value as WorkspaceMobilePane)}
             />
           </div>
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && filesPaneMobile}
             {mobilePane === 'editor' && editorPane}
             {mobilePane === 'terminal' && terminalPane}
