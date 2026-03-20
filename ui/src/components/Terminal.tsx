@@ -170,7 +170,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       touchY = null
     }
 
-    container.addEventListener('touchstart', onTouchStart, { passive: false })
+    container.addEventListener('touchstart', onTouchStart, { passive: true })
     container.addEventListener('touchmove', onTouchMove, { passive: false })
     container.addEventListener('touchend', onTouchEnd, { passive: true })
     container.addEventListener('touchcancel', onTouchEnd, { passive: true })
