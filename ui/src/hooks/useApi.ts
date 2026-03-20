@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
+import { useSSERefresh } from './useSSE'
 
 const API = '/api'
-const FILE_TREE_POLL_MS = 10_000
+const FILE_TREE_FALLBACK_MS = 60_000
 const fileTreeCache = new Map<string, FileNode[]>()
 const fileTreeInflight = new Map<string, Promise<FileNode[]>>()
 
@@ -39,13 +40,16 @@ async function fetchFileTree(projectName: string): Promise<FileNode[]> {
   return request
 }
 
-/** Generic polling hook */
-function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number): { data: T | null; error: Error | null; refresh: () => void } {
+/** Generic polling hook with optional SSE-triggered refresh */
+function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel?: string): { data: T | null; error: Error | null; refresh: () => void } {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [tick, setTick] = useState(0)
 
   const refresh = useCallback(() => setTick(t => t + 1), [])
+
+  // Wire SSE refresh signal to immediate re-fetch
+  useSSERefresh(sseChannel ?? '', refresh)
 
   useEffect(() => {
     let cancelled = false
@@ -67,17 +71,17 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number): { data: T
 
 export function useProjects() {
   const fetcher = useCallback(() => fetchJson<Project[]>('/projects'), [])
-  return usePolling(fetcher, 30_000)
+  return usePolling(fetcher, 60_000, 'projects')
 }
 
 export function useWorkstreams() {
   const fetcher = useCallback(() => fetchJson<Workstream[]>('/workstreams'), [])
-  return usePolling(fetcher, 5_000)
+  return usePolling(fetcher, 30_000, 'workstreams')
 }
 
 export function useProgress() {
   const fetcher = useCallback(() => fetchJson<ProgressEntry[]>('/progress'), [])
-  return usePolling(fetcher, 3_000)
+  return usePolling(fetcher, 30_000, 'progress')
 }
 
 export function useSessions(projectName?: string | null) {
@@ -85,7 +89,7 @@ export function useSessions(projectName?: string | null) {
     () => fetchJson<AgentSession[]>(projectName ? `/sessions?project=${encodeURIComponent(projectName)}` : '/sessions'),
     [projectName]
   )
-  return usePolling(fetcher, 3_000)
+  return usePolling(fetcher, 30_000, 'sessions')
 }
 
 export function useFileTree(projectName: string | null) {
@@ -96,6 +100,9 @@ export function useFileTree(projectName: string | null) {
   const [tick, setTick] = useState(0)
 
   const refresh = useCallback(() => setTick(t => t + 1), [])
+
+  // SSE-triggered refresh for file tree changes
+  useSSERefresh('filetree', refresh)
 
   useEffect(() => {
     if (!projectName) {
@@ -129,7 +136,7 @@ export function useFileTree(projectName: string | null) {
     }
 
     void load()
-    const id = window.setInterval(() => { void load() }, FILE_TREE_POLL_MS)
+    const id = window.setInterval(() => { void load() }, FILE_TREE_FALLBACK_MS)
     window.addEventListener('focus', refreshOnForeground)
     document.addEventListener('visibilitychange', refreshOnForeground)
 
@@ -205,7 +212,7 @@ export function useGitStatus(projectName: string | null) {
     () => projectName ? fetchJson<GitChange[]>(`/git/${encodeURIComponent(projectName)}/status`) : Promise.resolve([]),
     [projectName]
   )
-  return usePolling(fetcher, 5_000)
+  return usePolling(fetcher, 30_000, 'git')
 }
 
 export async function fetchGitDiff(projectName: string, filePath: string): Promise<string> {

@@ -13,7 +13,7 @@ export interface NotificationEvent {
   progressType: ProgressType
 }
 
-export type SSEWriter = (event: NotificationEvent) => void
+export type SSEWriter = (event: string, data: string) => void
 
 const sseClients = new Set<SSEWriter>()
 
@@ -24,7 +24,14 @@ export function emitNotification(event: NotificationEvent): void {
 
   // Sink 2: broadcast to connected SSE clients (best-effort)
   for (const writer of sseClients) {
-    try { writer(event) } catch { sseClients.delete(writer) }
+    try { writer('notification', JSON.stringify(event)) } catch { sseClients.delete(writer) }
+  }
+}
+
+/** Push a lightweight refresh signal to all SSE clients (no osascript) */
+export function emitRefresh(channel: string): void {
+  for (const writer of sseClients) {
+    try { writer('refresh', channel) } catch { sseClients.delete(writer) }
   }
 }
 

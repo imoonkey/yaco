@@ -4,6 +4,7 @@ import { join } from 'path'
 import { loadProjects, type Project } from './projects'
 import { querySessionsForProject, type MultmuxSession } from './multmux'
 import { withFileLock, type ProgressEntry } from './scanner'
+import { emitRefresh } from './notify'
 
 const POLL_INTERVAL = 3_000
 /** Require N consecutive idle polls before firing notification.
@@ -53,6 +54,8 @@ function schedulePoll(): void {
   pollTimer = setTimeout(poll, POLL_INTERVAL)
 }
 
+let lastSessionSnapshot = ''
+
 async function poll(): Promise<void> {
   if (pollInFlight) return
   pollInFlight = true
@@ -61,6 +64,13 @@ async function poll(): Promise<void> {
     const projects = await loadProjects()
     await Promise.all(projects.map(pollProject))
     firstPollDone = true
+
+    // Emit refresh signal if session list changed
+    const snapshot = JSON.stringify(getCachedMultmuxSessions())
+    if (snapshot !== lastSessionSnapshot) {
+      lastSessionSnapshot = snapshot
+      emitRefresh('sessions')
+    }
   } finally {
     pollInFlight = false
     schedulePoll()

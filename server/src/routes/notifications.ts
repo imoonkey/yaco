@@ -1,14 +1,13 @@
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { addSSEClient, removeSSEClient } from '../lib/notify'
-import type { NotificationEvent } from '../lib/notify'
 
 const app = new Hono()
 
 app.get('/stream', (c) => {
   return streamSSE(c, async (stream) => {
-    const writer = (event: NotificationEvent) => {
-      stream.writeSSE({ data: JSON.stringify(event), event: 'notification' })
+    const writer = (event: string, data: string) => {
+      stream.writeSSE({ data, event })
     }
     addSSEClient(writer)
     stream.onAbort(() => removeSSEClient(writer))

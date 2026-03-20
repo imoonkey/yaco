@@ -14,6 +14,7 @@ import { notificationRoutes } from './routes/notifications.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
 import { startSessionPoller } from './lib/session-poller.js'
+import { startProjectWatchers } from './lib/project-watcher.js'
 import { attachSession } from './lib/terminal.js'
 import type { IPty } from 'node-pty'
 
@@ -83,6 +84,7 @@ await startWatching(projects, (project, workstream) => {
   console.log(`[watch] progress.json changed: ${project}/${workstream}`)
 })
 startSessionPoller()
+startProjectWatchers(projects)
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
 
