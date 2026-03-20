@@ -19,7 +19,7 @@ workflow/
 │       │   ├── multmux.ts   # Shell out to multmux (spawn, no shell)
 │       │   ├── watcher.ts   # fs.watch on progress.json files → emitNotification
 │       │   ├── notify.ts    # Notification bus: osascript + SSE fanout + refresh signals
-│       │   ├── session-poller.ts # 3s poll for processing→idle transitions
+│       │   ├── session-poller.ts # 3s poll for Codex idle detection + session cache
 │       │   ├── project-watcher.ts # Recursive fs.watch per project (FSEvents)
 │       │   └── terminal.ts  # node-pty → tmux attach-session
 │       └── routes/

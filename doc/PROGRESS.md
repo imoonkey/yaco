@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-20: Claude Stop hook for session idle detection
+
+**What changed:**
+- Claude sessions now use the `Stop` hook (`~/.claude/settings.json`) to write `session_idle` entries directly to `doc/todo/progress.json` — eliminates all false positives from multmux regex heuristics
+- Hook script at `~/.claude/hooks/on-stop.sh` reads JSON stdin (cwd, session_id), appends progress entry with file locking, skips projects without `doc/todo/`
+- Session poller skips idle detection for Claude sessions, only retains polling heuristic for Codex (no hook mechanism available)
+- Codex polling still uses 15s min processing duration + 2× debounce as best-effort filter
+
+**Why:**
+- multmux detects idle/processing via regex on tmux pane content — user typing at the prompt is indistinguishable from agent processing, causing persistent false "finished processing" notifications
+- Claude's Stop hook is 100% reliable (agent reports its own state)
+
+**Key files:** `~/.claude/hooks/on-stop.sh`, `~/.claude/settings.json`, `server/src/lib/session-poller.ts`
+**Verification:** Hook tested with simulated Stop event, writes entry correctly, skips non-workflow projects
+**Commit:** 8c6f505
+**Next:** None
+**Blockers:** Codex has no equivalent hook — polling heuristic is the only option
+
 ## 2026-03-19: Event-based UI updates via SSE refresh signals
 
 **What changed:**

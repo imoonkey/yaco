@@ -36,6 +36,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 | Terminal UI | xterm.js 6 (Solarized Light) |
 | Styling | Tailwind CSS 4 (VS Code Solarized Light palette) |
 | Notifications | macOS `osascript` + SSE → browser Notification API |
+| Session idle detection | Claude: `Stop` hook (writes progress entry directly). Codex: polling heuristic (15s min processing + debounce) |
 | File watching | Recursive `fs.watch` per project (macOS FSEvents) → SSE refresh signals |
 
 ## Architecture
