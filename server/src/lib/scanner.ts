@@ -4,7 +4,7 @@ import { join } from 'path'
 import type { Project } from './projects'
 
 export type WorkstreamStatus = 'active' | 'human_review' | 'blocked' | 'parked' | 'done'
-export type ProgressType = 'info' | 'human_review' | 'blocked'
+export type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
 export type ProgressStatus = 'active' | 'dismissed'
 
 export interface Checkpoint {
@@ -97,17 +97,14 @@ export async function scanWorkstreams(projects: Project[]): Promise<WorkstreamIn
   return all.flat()
 }
 
-/** Read progress.json for a specific workstream */
-async function readProgress(project: Project, workstreamId: string): Promise<ProgressEntryWithContext[]> {
-  const file = join(project.path, 'doc', 'todo', workstreamId, 'progress.json')
-  if (!existsSync(file)) return []
-
+/** Read a progress.json file and attach context */
+async function readProgressFile(file: string, projectName: string, workstreamId: string): Promise<ProgressEntryWithContext[]> {
   try {
     const raw = await readFile(file, 'utf-8')
     const entries: ProgressEntry[] = JSON.parse(raw)
     return entries.map(e => ({
       ...e,
-      project: project.name,
+      project: projectName,
       workstream: workstreamId,
     }))
   } catch {
@@ -123,12 +120,20 @@ export async function scanProgress(projects: Project[]): Promise<ProgressEntryWi
     const todoDir = join(project.path, 'doc', 'todo')
     if (!existsSync(todoDir)) continue
 
+    // Project-level progress.json
+    const projectProgress = join(todoDir, 'progress.json')
+    if (existsSync(projectProgress)) {
+      const items = await readProgressFile(projectProgress, project.name, '')
+      all.push(...items)
+    }
+
+    // Workstream-level progress.json files
     const entries = await readdir(todoDir, { withFileTypes: true })
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
       const progressFile = join(todoDir, entry.name, 'progress.json')
       if (!existsSync(progressFile)) continue
-      const items = await readProgress(project, entry.name)
+      const items = await readProgressFile(progressFile, project.name, entry.name)
       all.push(...items)
     }
   }
@@ -152,13 +157,15 @@ export async function updateWorkstreamStatus(
   })
 }
 
-/** Dismiss a progress entry (with file lock) */
+/** Dismiss a progress entry (with file lock). Empty workstreamId = project-level. */
 export async function dismissProgress(
   projectPath: string,
   workstreamId: string,
   entryId: string
 ): Promise<void> {
-  const file = join(projectPath, 'doc', 'todo', workstreamId, 'progress.json')
+  const file = workstreamId
+    ? join(projectPath, 'doc', 'todo', workstreamId, 'progress.json')
+    : join(projectPath, 'doc', 'todo', 'progress.json')
   await withFileLock(file, async () => {
     const raw = await readFile(file, 'utf-8')
     const entries: ProgressEntry[] = JSON.parse(raw)

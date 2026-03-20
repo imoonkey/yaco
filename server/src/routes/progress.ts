@@ -16,8 +16,11 @@ app.post('/:project/:workstream/:id/dismiss', async (c) => {
   const proj = projects.find(p => p.name === project)
   if (!proj) return c.json({ error: 'project not found' }, 404)
 
+  // '_' is the sentinel for project-level entries (empty workstream)
+  const ws = workstream === '_' ? '' : workstream
+
   try {
-    await dismissProgress(proj.path, workstream, id)
+    await dismissProgress(proj.path, ws, id)
     return c.json({ ok: true })
   } catch {
     return c.json({ error: 'not found' }, 404)

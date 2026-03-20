@@ -17,21 +17,24 @@ workflow/
 │       │   ├── projects.ts  # ~/.workflow/projects.json CRUD
 │       │   ├── scanner.ts   # Scan workstream.json + progress.json
 │       │   ├── multmux.ts   # Shell out to multmux (spawn, no shell)
-│       │   ├── watcher.ts   # fs.watch on progress.json files
-│       │   ├── notify.ts    # macOS desktop notifications
+│       │   ├── watcher.ts   # fs.watch on progress.json files → emitNotification
+│       │   ├── notify.ts    # Notification bus: osascript + SSE fanout
+│       │   ├── session-poller.ts # 5s poll for processing→idle transitions
 │       │   └── terminal.ts  # node-pty → tmux attach-session
 │       └── routes/
 │           ├── projects.ts
 │           ├── workstreams.ts
 │           ├── progress.ts
-│           ├── sessions.ts
+│           ├── sessions.ts       # Uses poller cache for multmux sessions
+│           ├── notifications.ts  # SSE endpoint /api/notifications/stream
 │           ├── files.ts
 │           └── git.ts       # git status + diff endpoints
 ├── ui/               # React frontend (Vite)
 │   └── src/
 │       ├── App.tsx
 │       ├── types.ts
-│       ├── hooks/useApi.ts  # API hooks with polling + git hooks
+│       ├── hooks/useApi.ts           # API hooks with polling + git hooks
+│       ├── hooks/useBrowserNotifications.ts  # SSE + Notification API
 │       └── components/
 │           ├── Monitor.tsx     # Sessions + notifications
 │           ├── Workspace.tsx   # File tree + tabs + editor + terminal + git
@@ -106,7 +109,7 @@ Projects can also be reordered from the bottom project bar by dragging tabs, or 
 | GET | `/api/workstreams` | All workstreams across projects |
 | POST | `/api/workstreams/:project/:name/status` | Update workstream status |
 | GET | `/api/progress` | All progress entries |
-| POST | `/api/progress/:project/:ws/:id/dismiss` | Dismiss a notification |
+| POST | `/api/progress/:project/:ws/:id/dismiss` | Dismiss a notification (`_` for project-level) |
 | GET | `/api/sessions` | Live Claude/Codex sessions plus direct shell sessions |
 | GET | `/api/sessions?project=<name>` | Sessions scoped to one registered project |
 | POST | `/api/sessions/start` | Start new Claude/Codex/shell session |
@@ -119,6 +122,7 @@ Projects can also be reordered from the bottom project bar by dragging tabs, or 
 | GET | `/api/git/:project/status` | Git status (changed files) |
 | GET | `/api/git/:project/diff?path=...` | Unified diff for a file |
 | WS | `/ws/terminal/:name?cols=N&rows=N` | Terminal PTY via WebSocket |
+| GET | `/api/notifications/stream` | SSE stream for real-time notification events |
 
 ## UI Shortcuts
 

@@ -13,7 +13,8 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 | Project | `~/.workflow/projects.json` | Registered repo with name + absolute path |
 | Workstream | `doc/todo/<name>/workstream.json` | Unit of work: status, doc ref, checkpoints |
 | Progress | `doc/todo/<name>/progress.json` | Append-only notification log per workstream |
-| Session | Live from `multmux status` + in-memory shell registry | Claude/Codex agent sessions plus direct shell sessions |
+| Progress (project) | `doc/todo/progress.json` | Project-level notification log (session idle, non-workstream work) |
+| Session | Live from `multmux status` (cached by session poller) + in-memory shell registry | Claude/Codex agent sessions plus direct shell sessions |
 
 ## State Model
 
@@ -34,7 +35,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 | Editor | CodeMirror 6 (multi-language, Solarized Light) |
 | Terminal UI | xterm.js 6 (Solarized Light) |
 | Styling | Tailwind CSS 4 (VS Code Solarized Light palette) |
-| Notifications | macOS `osascript` |
+| Notifications | macOS `osascript` + SSE → browser Notification API |
 
 ## Architecture
 
@@ -50,13 +51,15 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 │  ├── /api/projects        (projects.json)      │
 │  ├── /api/workstreams     (scan workstream.json)│
 │  ├── /api/progress        (scan progress.json) │
-│  ├── /api/sessions        (multmux status)     │
+│  ├── /api/sessions        (poller cache / multmux)│
 │  ├── /api/files           (file tree + r/w)    │
 │  ├── /api/git             (status + diff)      │
+│  ├── /api/notifications/stream (SSE)           │
 │  └── /ws/terminal/:name   (tmux via node-pty)  │
 ├────────────────────────────────────────────────┤
 │  File System                                   │
 │  ~/.workflow/projects.json                     │
+│  <repo>/doc/todo/progress.json  (project-level)│
 │  <repo>/doc/todo/*/workstream.json             │
 │  <repo>/doc/todo/*/progress.json               │
 ├────────────────────────────────────────────────┤

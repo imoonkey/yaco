@@ -12,6 +12,7 @@ const typeConfig: Record<ProgressType, { label: string; text: string; bg: string
   blocked:      { label: 'BLOCKED', text: 'text-[#dc322f]', bg: 'bg-[#dc322f]/8',  border: 'border-[#dc322f]/20' },
   human_review: { label: 'REVIEW',  text: 'text-[#6c71c4]', bg: 'bg-[#6c71c4]/8',  border: 'border-[#6c71c4]/20' },
   info:         { label: 'INFO',    text: 'text-[#268bd2]', bg: 'bg-[#268bd2]/5',   border: 'border-[#268bd2]/15' },
+  session_idle: { label: 'IDLE',    text: 'text-[#859900]', bg: 'bg-[#859900]/5',   border: 'border-[#859900]/15' },
 }
 
 function timeAgo(dateStr: string): string {
@@ -160,7 +161,10 @@ function WorkstreamRow({ ws, onStatusChange }: {
 }
 
 // --- Three-column Monitor ---
-export function Monitor({ filterProject }: { filterProject: string | null }) {
+export function Monitor({ filterProject, browserNotifications }: {
+  filterProject: string | null
+  browserNotifications: { permission: NotificationPermission | 'unsupported'; requestPermission: () => void }
+}) {
   const isMobile = useIsMobile()
   const [mobilePane, setMobilePane] = useState<MonitorPane>('notifications')
   const { data: sessions } = useSessions()
@@ -235,7 +239,20 @@ export function Monitor({ filterProject }: { filterProject: string | null }) {
 
   const notificationsPane = (
     <div className="h-full overflow-y-auto p-5">
-      <h2 className="text-base font-medium text-[#073642] mb-1">Notifications</h2>
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-base font-medium text-[#073642]">Notifications</h2>
+        {browserNotifications.permission === 'default' && (
+          <button
+            onClick={browserNotifications.requestPermission}
+            className="text-[10px] px-2 py-1 rounded bg-[#268bd2]/10 hover:bg-[#268bd2]/20 text-[#268bd2] border border-[#268bd2]/20 cursor-pointer"
+          >
+            Enable Browser Alerts
+          </button>
+        )}
+        {browserNotifications.permission === 'denied' && (
+          <span className="text-[10px] text-[#93a1a1]">Browser alerts blocked</span>
+        )}
+      </div>
       <p className="text-[12px] text-[#93a1a1] mb-4">
         {activeEntries.length} active
       </p>

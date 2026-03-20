@@ -2,30 +2,33 @@ import { Hono } from 'hono'
 import { closeMultmuxSession, getAllSessions, getSessionsForProject, sendToSession, startMultmuxSession } from '../lib/multmux'
 import { loadProjects } from '../lib/projects'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
+import { getCachedMultmuxSessions, hasCachedSessions } from '../lib/session-poller'
 
 const app = new Hono()
 
 app.get('/', async (c) => {
-  const projects = await loadProjects()
   const projectName = c.req.query('project')
   const shellSessions = listShellSessions()
-  let sessions
+  const useCache = hasCachedSessions()
 
-  if (projectName) {
-    const project = projects.find(item => item.name === projectName)
-    if (!project) return c.json([])
-    sessions = [
-      ...(await getSessionsForProject(project)),
-      ...shellSessions.filter(session => session.project === projectName),
-    ]
+  let multmuxSessions
+  if (useCache) {
+    multmuxSessions = getCachedMultmuxSessions(projectName ?? undefined)
   } else {
-    sessions = [
-      ...(await getAllSessions(projects)),
-      ...shellSessions,
-    ]
+    const projects = await loadProjects()
+    if (projectName) {
+      const project = projects.find(item => item.name === projectName)
+      multmuxSessions = project ? await getSessionsForProject(project) : []
+    } else {
+      multmuxSessions = await getAllSessions(projects)
+    }
   }
 
-  return c.json(sessions)
+  const filteredShell = projectName
+    ? shellSessions.filter(s => s.project === projectName)
+    : shellSessions
+
+  return c.json([...multmuxSessions, ...filteredShell])
 })
 
 app.post('/start', async (c) => {

@@ -163,7 +163,8 @@ export function useFileContent(projectName: string | null, filePath: string | nu
 }
 
 export async function dismissProgress(project: string, workstream: string, id: string): Promise<void> {
-  await postJson(`/progress/${encodeURIComponent(project)}/${encodeURIComponent(workstream)}/${encodeURIComponent(id)}/dismiss`)
+  const ws = workstream || '_'
+  await postJson(`/progress/${encodeURIComponent(project)}/${encodeURIComponent(ws)}/${encodeURIComponent(id)}/dismiss`)
 }
 
 export async function updateWorkstreamStatus(project: string, workstreamId: string, status: string): Promise<void> {

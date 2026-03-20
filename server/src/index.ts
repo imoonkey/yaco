@@ -10,8 +10,10 @@ import { progressRoutes } from './routes/progress.js'
 import { sessionRoutes } from './routes/sessions.js'
 import { fileRoutes } from './routes/files.js'
 import { gitRoutes } from './routes/git.js'
+import { notificationRoutes } from './routes/notifications.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
+import { startSessionPoller } from './lib/session-poller.js'
 import { attachSession } from './lib/terminal.js'
 import type { IPty } from 'node-pty'
 
@@ -70,6 +72,7 @@ app.route('/api/progress', progressRoutes)
 app.route('/api/sessions', sessionRoutes)
 app.route('/api/files', fileRoutes)
 app.route('/api/git', gitRoutes)
+app.route('/api/notifications', notificationRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 
@@ -79,6 +82,7 @@ const projects = await loadProjects()
 await startWatching(projects, (project, workstream) => {
   console.log(`[watch] progress.json changed: ${project}/${workstream}`)
 })
+startSessionPoller(projects)
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
 

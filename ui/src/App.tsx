@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, addProject, reorderProjects } from './hooks/useApi'
+import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import type { Project } from './types'
 
 type View = 'monitor' | 'workspace'
@@ -147,6 +148,7 @@ function App() {
 
   const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: progress } = useProgress()
+  const browserNotifications = useBrowserNotifications()
 
   useEffect(() => {
     if (!projects) return
@@ -283,7 +285,7 @@ function App() {
       </header>
 
       <main className="flex-1 overflow-hidden">
-        {view === 'monitor' && <Monitor filterProject={projectName === 'all' ? null : projectName} />}
+        {view === 'monitor' && <Monitor filterProject={projectName === 'all' ? null : projectName} browserNotifications={browserNotifications} />}
         {view === 'workspace' && <Workspace key={workspaceProject} projectName={workspaceProject} projectPath={currentProjectPath} />}
       </main>
 

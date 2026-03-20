@@ -1,7 +1,7 @@
 // Types matching the design doc — shared between UI and API responses
 
 export type WorkstreamStatus = 'active' | 'human_review' | 'blocked' | 'parked' | 'done'
-export type ProgressType = 'info' | 'human_review' | 'blocked'
+export type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
 export type ProgressStatus = 'active' | 'dismissed'
 export type SessionStatus = 'processing' | 'idle'
 export type SessionProvider = 'claude' | 'codex' | 'shell'

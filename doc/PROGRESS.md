@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-03-19: Notification system — session idle + browser notifications
+
+**What changed:**
+- Unified notification model: all notifications (workstream progress, session idle, non-workstream) flow through `progress.json` entries
+- Added project-level `doc/todo/progress.json` for entries without a workstream
+- Session poller (`session-poller.ts`): 5s `setTimeout` loop detects `processing→idle` transitions, writes `session_idle` entries, caches sessions for `/api/sessions`
+- Notification bus (`notify.ts`): `emitNotification()` fans out to macOS osascript + SSE broadcast with sink isolation
+- SSE endpoint (`/api/notifications/stream`): Hono `streamSSE`, 30s heartbeat
+- Browser hook (`useBrowserNotifications.ts`): unconditional EventSource, visibility-gated `Notification` API, per-tab seen-id dedup
+- Monitor: "Enable Browser Alerts" action in Notifications pane, `session_idle` card styling (green IDLE badge)
+- Dismiss route handles project-level entries via `_` sentinel
+
+**Why:**
+- Agents finishing work produced no notification unless they wrote to progress.json — the main polling pain point
+- osascript doesn't reach remote/Tailscale access — browser notifications close that gap
+
+**Key files:** `server/src/lib/session-poller.ts`, `server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/routes/notifications.ts`, `ui/src/hooks/useBrowserNotifications.ts`
+**Verification:** SSE stream connects, notification events flow through pipeline end-to-end, dismiss works for project-level entries, both server and UI type-check clean
+**Next:** Design review from Codex
+**Blockers:** None
+
 ## 2026-03-19: Workspace preview/edit draft and position alignment
 
 **What changed:**
