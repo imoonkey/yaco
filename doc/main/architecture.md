@@ -4,6 +4,8 @@
 
 Local-first web app for coordinating Claude Code and Codex across multiple repos. One user, doc-centric, file-based state. No database.
 
+For installed/mobile use, the Hono backend can also serve the built React app from `ui/dist`, so the app shell, API, WebSocket terminal, and SSE notifications can all share the same origin on `:3001`.
+
 -> Design doc: `doc/todo/v0/final/design_aligned.md`
 
 ## Core Model
@@ -51,6 +53,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 │       │  HTTP/WS/SSE │                          │
 ├───────┴──────────────┴──────────────────────────┤
 │  Hono Server (Node.js)        :3001            │
+│  ├── /                    (built UI shell)     │
 │  ├── /api/projects        (projects.json)      │
 │  ├── /api/workstreams     (scan workstream.json)│
 │  ├── /api/progress        (scan progress.json) │
@@ -75,6 +78,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 - **Top nav** — Monitor and Workspace remain top-level view tabs in the header
 - **Bottom project bar** — project switching lives in a bottom tab strip shared across views; `All Projects` is available in Monitor and hidden in Workspace, which always targets one concrete repo; when space is tight the project list scrolls horizontally and the add action collapses to a `+` button; project tabs can be drag-reordered and `Cmd+1` through `Cmd+9` jump to the visible project slots for the current view
 - **Mobile pane switching** — on narrow screens the app keeps the same views but swaps multi-column content for a single full-width pane controlled by an explicit segmented switcher
+- **PWA shell** — `ui/public/manifest.webmanifest`, Apple touch icon, and `apple-mobile-web-app-*` metadata make the backend-served app installable as an iPhone home-screen web app without a native wrapper
 
 ## Workspace Features
 
@@ -103,6 +107,6 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 - File paths resolved via `realpath()` to prevent symlink traversal
 - File reads and writes stay constrained to validated paths inside the selected project root
 - WebSocket origin validation against allowed origins
-- CORS/WebSocket origins configurable via `WORKFLOW_CORS_ORIGINS`; when unset, localhost, `moonkeys-mbp`, `.local`, and private-LAN HTTP(S) origins are allowed for local/mobile development
+- CORS/WebSocket origins configurable via `WORKFLOW_CORS_ORIGINS`; when unset, localhost, `laptop`, `laptop.tailnet-example.ts.net`, `.local`, and private-LAN HTTP(S) origins are allowed for local/mobile development
 - File write operations use in-process locks to prevent race conditions
 - Git commands use `spawnSync`/`execFileSync` with array args (no shell injection)

@@ -57,10 +57,15 @@ npm run dev
 # Both server + UI in one tmux session (hot reload on both panes)
 npm run dev:tmux
 
+# Build UI and run the backend as the single-origin app entrypoint on :3001
+npm run start:app
+
 # Or separately:
 npm run dev:server    # Backend on :3001 (tsx watch)
 npm run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
 ```
+
+`npm run start:app` is the intended local shape for installed/mobile use: it builds `ui/dist` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
 
 `npm run dev:tmux` creates or reuses a `tmux` session named `workflow-dev` with two panes:
 
@@ -85,7 +90,7 @@ WORKFLOW_DEV_TMUX_SESSION=workflow-api npm run dev:tmux
 | Env Var | Default | Description |
 |---------|---------|-------------|
 | `WORKFLOW_PORT` | `3001` | Server port |
-| `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, the server allows localhost, `moonkeys-mbp`, `.local`, and private-LAN HTTP(S) origins for local/mobile development |
+| `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins. When unset, the server allows localhost, `laptop`, `laptop.tailnet-example.ts.net`, `.local`, and private-LAN HTTP(S) origins for local/mobile development |
 
 ## Project Registration
 
@@ -180,3 +185,5 @@ The file tree is also cached per project in memory on both the client and server
 ```bash
 npm run build    # Produces ui/dist/
 ```
+
+After a build, the backend can serve the built UI directly at `http://localhost:3001/`.

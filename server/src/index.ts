@@ -4,6 +4,9 @@ import { serve } from '@hono/node-server'
 import { WebSocketServer, WebSocket } from 'ws'
 import type { IncomingMessage } from 'http'
 import { isIP } from 'node:net'
+import { dirname, extname, resolve, sep } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { readFile } from 'node:fs/promises'
 import { projectRoutes } from './routes/projects.js'
 import { workstreamRoutes } from './routes/workstreams.js'
 import { progressRoutes } from './routes/progress.js'
@@ -24,7 +27,27 @@ const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
   .filter(Boolean)
 
 const SESSION_NAME_RE = /^[a-zA-Z0-9_.-]+$/
-const DEFAULT_ALLOWED_HOSTNAMES = new Set(['localhost', '::1', 'moonkeys-mbp'])
+const DEFAULT_ALLOWED_HOSTNAMES = new Set([
+  'localhost',
+  '::1',
+  'laptop',
+  'laptop.tailnet-example.ts.net',
+])
+const SERVER_SRC_DIR = dirname(fileURLToPath(import.meta.url))
+const UI_DIST_DIR = resolve(SERVER_SRC_DIR, '../../ui/dist')
+const MIME_TYPES = new Map([
+  ['.css', 'text/css; charset=utf-8'],
+  ['.html', 'text/html; charset=utf-8'],
+  ['.js', 'text/javascript; charset=utf-8'],
+  ['.json', 'application/json; charset=utf-8'],
+  ['.mjs', 'text/javascript; charset=utf-8'],
+  ['.png', 'image/png'],
+  ['.svg', 'image/svg+xml'],
+  ['.txt', 'text/plain; charset=utf-8'],
+  ['.webmanifest', 'application/manifest+json; charset=utf-8'],
+  ['.woff', 'font/woff'],
+  ['.woff2', 'font/woff2'],
+])
 
 function isPrivateHostname(hostname: string): boolean {
   if (DEFAULT_ALLOWED_HOSTNAMES.has(hostname) || hostname.endsWith('.local')) {
@@ -61,6 +84,60 @@ function isAllowedOrigin(origin?: string | null): boolean {
   }
 }
 
+function resolveUiPath(pathname: string): string | null {
+  try {
+    const decoded = decodeURIComponent(pathname)
+    const relativePath = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '')
+    const resolved = resolve(UI_DIST_DIR, relativePath)
+    const rootPrefix = `${UI_DIST_DIR}${sep}`
+    if (resolved !== UI_DIST_DIR && !resolved.startsWith(rootPrefix)) return null
+    return resolved
+  } catch {
+    return null
+  }
+}
+
+function getContentType(filePath: string): string {
+  return MIME_TYPES.get(extname(filePath)) ?? 'application/octet-stream'
+}
+
+async function serveUiFile(pathname: string): Promise<Response | null> {
+  const filePath = resolveUiPath(pathname)
+  if (!filePath) return new Response('Not found', { status: 404 })
+
+  try {
+    const body = await readFile(filePath)
+    const headers = new Headers({
+      'Content-Type': getContentType(filePath),
+      'Cache-Control': pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+    })
+    return new Response(body, { headers })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+    throw error
+  }
+}
+
+async function serveUiApp(pathname: string): Promise<Response> {
+  const direct = await serveUiFile(pathname)
+  if (direct) return direct
+
+  if (pathname !== '/' && extname(pathname)) {
+    return new Response('Not found', { status: 404 })
+  }
+
+  const indexFile = await serveUiFile('/')
+  if (indexFile) return indexFile
+
+  return new Response(
+    'Workflow UI build not found. Run `npm run build` from the repo root before using the backend as the app entrypoint.',
+    {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    },
+  )
+}
+
 const app = new Hono()
 
 app.use('*', cors({
@@ -76,6 +153,7 @@ app.route('/api/git', gitRoutes)
 app.route('/api/notifications', notificationRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
+app.get('*', async (c) => serveUiApp(c.req.path))
 
 // Init
 await ensureWorkflowDir()

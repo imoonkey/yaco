@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-03-20: Single-origin mobile app shell and PWA assets
+
+**What changed:**
+- Added backend UI serving in `server/src/index.ts`, so `http://localhost:3001/` now serves the built React app from `ui/dist` with SPA fallback and static asset delivery
+- Added iPhone/PWA shell metadata in `ui/index.html`: manifest link, Apple touch icon, theme color, Apple standalone tags, final app title
+- Added `ui/public/manifest.webmanifest` plus generated `icon-192.png`, `icon-512.png`, and `apple-touch-icon.png`
+- Added root scripts `start:server` and `start:app` so the backend can be used as the stable app entrypoint without Vite
+- Updated local hostname/origin defaults from `moonkeys-mbp` to `laptop`, including the full tailnet hostname `laptop.tailnet-example.ts.net`
+
+**Why:**
+- The mobile app needed a stable single-origin entrypoint and install metadata before it could be used as an iPhone home-screen web app
+- Keeping the installed app on Vite `:5173` would leave the product tied to development infrastructure instead of the real backend runtime
+
+**Key files:** `server/src/index.ts`, `ui/index.html`, `ui/public/manifest.webmanifest`, `package.json`, `ui/vite.config.ts`
+**Verification:** `npm run build` passed. Verified `http://127.0.0.1:3001/`, `/manifest.webmanifest`, SPA fallback route, API health, Vite host acceptance for `laptop.tailnet-example.ts.net`, CORS with `Origin: https://laptop.tailnet-example.ts.net`, and WebSocket handshake using a temporary shell session. Tried `tailscale serve --bg 3001` and `tailscale cert laptop.tailnet-example.ts.net`; both are currently blocked by tailnet/account settings rather than local code.
+**Commit:** Uncommitted
+**Next:** Enable Tailscale Serve / HTTPS certificates in the tailnet admin settings, then verify `https://laptop.tailnet-example.ts.net` on iPhone Home Screen
+**Blockers:** Tailnet/account currently does not allow `tailscale serve` or TLS cert issuance
+
 ## 2026-03-20: File explorer migration to react-arborist
 
 **What changed:**
