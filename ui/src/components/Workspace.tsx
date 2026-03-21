@@ -10,6 +10,9 @@ import { FileExplorer, FileTypeIcon, GIT_COLORS, NewFileIcon, NewFolderIcon } fr
 import { writeTextToClipboard } from '../lib/clipboard'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { escapeHtml, clampLine, countNewlines, renderMarkdown } from '../workspace/markdown'
+import { useResize } from '../workspace/useResize'
+import { VResizeHandle, HResizeHandle } from '../workspace/ResizeHandle'
+import { SectionHeader } from '../workspace/SectionHeader'
 import mermaid from 'mermaid'
 import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
 
@@ -30,80 +33,6 @@ const MIN_SESSION_BODY_HEIGHT = 72
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
   unlock?: () => void
-}
-
-// --- Resize Hook ---
-function useResize(initial: number, min: number, max: number, direction: 'left' | 'right' | 'down' = 'left') {
-  const [size, setSize] = useState(initial)
-  const [isDragging, setIsDragging] = useState(false)
-  const dragging = useRef(false)
-  const startPos = useRef(0)
-  const startSize = useRef(0)
-  const clamp = useCallback((value: number) => Math.min(max, Math.max(min, value)), [max, min])
-  const setClampedSize = useCallback((value: number) => {
-    setSize(clamp(value))
-  }, [clamp])
-
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    dragging.current = true; setIsDragging(true)
-    startPos.current = direction === 'down' ? e.clientY : e.clientX
-    startSize.current = size; e.preventDefault()
-  }, [direction, size])
-
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (!dragging.current) return
-      const pos = direction === 'down' ? e.clientY : e.clientX
-      const delta = direction === 'right' ? startPos.current - pos : pos - startPos.current
-      setSize(clamp(startSize.current + delta))
-    }
-    const onMouseUp = () => { dragging.current = false; setIsDragging(false) }
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-    return () => { document.removeEventListener('mousemove', onMouseMove); document.removeEventListener('mouseup', onMouseUp) }
-  }, [clamp, direction])
-
-  return { size, setSize: setClampedSize, isDragging, onMouseDown }
-}
-
-// --- Resize Handles ---
-function VResizeHandle({ onMouseDown, isDragging }: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }) {
-  return (
-    <div onMouseDown={onMouseDown}
-      className={`shrink-0 cursor-col-resize transition-all ${isDragging ? 'w-[3px]' : 'w-[1px] hover:w-[3px]'}`}
-      style={{ backgroundColor: isDragging ? C.sash : C.border }}
-      onMouseEnter={e => { if (!isDragging) (e.target as HTMLElement).style.backgroundColor = C.sash }}
-      onMouseLeave={e => { if (!isDragging) (e.target as HTMLElement).style.backgroundColor = C.border }}
-    />
-  )
-}
-
-function HResizeHandle({ onMouseDown, isDragging }: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }) {
-  return (
-    <div onMouseDown={onMouseDown}
-      className={`shrink-0 cursor-row-resize transition-all ${isDragging ? 'h-[3px]' : 'h-[1px] hover:h-[3px]'}`}
-      style={{ backgroundColor: isDragging ? C.sash : C.border }}
-      onMouseEnter={e => { if (!isDragging) (e.target as HTMLElement).style.backgroundColor = C.sash }}
-      onMouseLeave={e => { if (!isDragging) (e.target as HTMLElement).style.backgroundColor = C.border }}
-    />
-  )
-}
-
-// --- Section Header ---
-function SectionHeader({ title, collapsed, onToggle, actions, badge }: {
-  title: string; collapsed: boolean; onToggle: () => void; actions?: React.ReactNode; badge?: number
-}) {
-  return (
-    <div className="flex items-center h-[22px] px-2 text-[11px] font-semibold uppercase tracking-wider cursor-pointer select-none shrink-0"
-      style={{ backgroundColor: C.headerBg, color: C.textBrown }} onClick={onToggle}>
-      <span className="text-[9px] w-3 text-center">{collapsed ? '▸' : '▾'}</span>
-      <span className="flex-1 ml-0.5">{title}</span>
-      {badge != null && badge > 0 && (
-        <span className="w-[18px] h-[14px] rounded-full text-[9px] flex items-center justify-center font-bold" style={{ backgroundColor: '#C4A24130', color: '#C4A241' }}>{badge}</span>
-      )}
-      {!collapsed && actions && <div onClick={e => e.stopPropagation()}>{actions}</div>}
-    </div>
-  )
 }
 
 // --- Session Item ---
