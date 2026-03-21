@@ -63,7 +63,7 @@ On EventSource reconnect (`open` event), all registered refresh callbacks fire t
 | `workstream.json` change | `workstreams` | project-watcher.ts |
 | `.git/` change | `git` | project-watcher.ts |
 | `progress.json` change | `notification` event (client derives `progress` refresh) | watcher.ts → useSSE.ts |
-| Session status change | `sessions` | session-poller.ts |
+| Session status change | `sessions` | project-watcher.ts (`.multmux/*.json`), terminal.ts (shell lifecycle), session-reconciler.ts (drift) |
 | `projects.json` change | `projects` | project-watcher.ts |
 
 Project-watcher filesystem events (`filetree`, `git`, `workstreams`, `projects`) are debounced at 200ms. The `progress.json` watcher fires immediately on change (no debounce).

@@ -1,5 +1,29 @@
 # Progress
 
+## 2026-03-21: Event-driven session state from .multmux/*.json state files
+
+**What changed:**
+- Replaced 3s `multmux status` text polling with direct reads of `.multmux/<handle>.json` state files as primary session source
+- `multmux.ts`: added `readSessionsFromStateFiles()`, removed text-parsing functions. Status normalization: `starting→idle`, `stopped→excluded`
+- `project-watcher.ts`: `.multmux/*.json` changes route to `sessions` channel (event-driven updates)
+- `terminal.ts`: shell session lifecycle callback emits `refresh:sessions` on start/close/exit
+- `sessions.ts`: reads state files directly, no longer depends on poller cache
+- `session-reconciler.ts` (new): 60s health-check loop replaces 3s poller. Verifies tmux liveness for all active sessions, writes `stopped` to stale state files, keeps Codex idle detection
+- `session-poller.ts`: deleted
+- `dev-tmux.sh`: added `--restart` flag for one-command server restart
+- `.gitignore`: added `.multmux/`, `progress.json.lock`
+
+**Why:**
+- `multmux status` text parsing was brittle and added latency vs structured JSON state files
+- Event-driven updates via file watcher provide near-instant session state changes in UI
+- Reconciler demoted to safety net (catch missed watcher events, health-check dead sessions)
+
+**Key files:** `server/src/lib/multmux.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/project-watcher.ts`, `server/src/lib/terminal.ts`, `server/src/routes/sessions.ts`, `server/src/index.ts`
+**Verification:** Code review (delegated subagent), server hot-reload confirmed working, state file reads verified against live `.multmux/*.json` files
+**Commit:** 42f6382
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-21: Codebase Health Phase 3 — behavior-preserving workspace refactor
 
 **What changed:**

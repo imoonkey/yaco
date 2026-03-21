@@ -33,15 +33,16 @@ Core scanning engine for workstream metadata and progress entries across project
 - `withFileLock()` provides in-process locking for read-modify-write operations on JSON files
 - Handles both workstream-level and project-level (`doc/todo/progress.json`) progress entries
 
-### multmux.ts (117 lines)
+### multmux.ts (138 lines)
 
-Wraps the external `multmux` CLI to manage Claude/Codex agent sessions.
+Reads multmux session state from `.multmux/<handle>.json` state files and wraps the `multmux` CLI for session commands.
 
-**Exports**: `getSessionsForProject()`, `querySessionsForProject()`, `getAllSessions()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
+**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
 
-- Spawns `multmux` as a child process with timeout protection
-- Parses session output to extract provider, status, and project
-- Infers provider (claude/codex) from session name conventions
+- Primary session source: reads `.multmux/*.json` state files (written by multmux hooks)
+- Normalizes status: `starting → idle`, `stopped → excluded`, `processing → processing`
+- Exports `MultmuxSession` and `MultmuxStateFile` interfaces
+- Spawns `multmux` as a child process with timeout protection for commands (start, send, close)
 
 ### watcher.ts (136 lines)
 
@@ -63,17 +64,18 @@ Notification dispatch to two sinks: macOS desktop and SSE broadcast.
 - `emitRefresh(channel)` — lightweight SSE-only signal for UI refresh (no osascript)
 - Manages SSE client registry for connected browsers
 
-### session-poller.ts (165 lines)
+### session-reconciler.ts (204 lines)
 
-Background polling service for session status detection.
+Low-frequency background reconciler for session health and idle detection.
 
-**Exports**: `startSessionPoller()`, `stopSessionPoller()`, `getCachedMultmuxSessions()`, `hasCachedSessions()`
+**Exports**: `startSessionReconciler()`, `stopSessionReconciler()`
 
-- Polls multmux every 3 seconds via `setTimeout` loop
-- Detects `processing → idle` transitions and writes `session_idle` progress entries
-- Skips idle detection for Claude sessions (uses Stop hook instead)
-- Codex idle detection uses 15s minimum processing duration + 2x debounce
-- Caches session list for use by the sessions route
+- Runs every 60 seconds as a safety net (not primary session source)
+- Reads `.multmux/*.json` state files and compares against previous snapshot
+- Emits `refresh:sessions` if drift detected (missed watcher events)
+- Health-checks all active sessions via `tmux has-session`; writes `stopped` to stale state files
+- Codex idle detection: 15s minimum processing duration + 2× debounce, writes `session_idle` entries
+- Claude sessions skip idle detection (use Stop hook instead)
 
 ### project-watcher.ts (76 lines)
 
@@ -82,7 +84,8 @@ Recursive filesystem watcher per project directory.
 **Exports**: `startProjectWatchers()`, `stopProjectWatchers()`
 
 - Uses `fs.watch` with `recursive: true` (macOS FSEvents, one fd per project)
-- Routes filename changes to SSE refresh channels: `workstreams`, `git`, `filetree`
+- Routes filename changes to SSE refresh channels: `sessions`, `workstreams`, `git`, `filetree`
+- `.multmux/*.json` changes → `sessions` channel (event-driven session updates)
 - Also watches `~/.workflow/projects.json` for project list changes
 - 200ms debounce on all events to batch rapid changes
 
@@ -90,10 +93,11 @@ Recursive filesystem watcher per project directory.
 
 PTY management for terminal sessions.
 
-**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `attachSession()`
+**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `attachSession()`, `setShellSessionChangeCallback()`
 
 - Direct shell sessions: long-lived in-process PTYs named `shell-1`, `shell-2`, etc.
 - Shell sessions keep a bounded scrollback buffer so re-attaching restores recent output
+- Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
 - `attachSession()` resolves session names and returns a PTY handle with initial data
 

@@ -15,7 +15,7 @@ Notification pipeline: macOS desktop, SSE broadcast, and browser Notification AP
 
 ## Related Code
 
-`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-poller.ts`, `ui/src/hooks/useBrowserNotifications.ts`, `~/.claude/hooks/on-stop.sh`
+`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useBrowserNotifications.ts`, `~/.claude/hooks/on-stop.sh`
 
 ## Pipeline
 
@@ -46,14 +46,14 @@ Two mechanisms depending on provider:
 - Script writes a `session_idle` entry directly to `doc/todo/progress.json` with file locking
 - Skips projects without `doc/todo/`
 
-#### Codex: Polling Heuristic (best-effort)
+#### Codex: Reconciler Heuristic (best-effort)
 
-- Session poller queries multmux every 3 seconds
+- Session reconciler reads `.multmux/*.json` state files every 60 seconds
 - Detects `processing → idle` transitions
 - Filters: minimum 15 seconds processing duration + 2× debounce
 - Writes `session_idle` entry to project-level progress.json
 
-The poller skips Claude sessions entirely — they use the Stop hook.
+The reconciler skips Claude sessions entirely — they use the Stop hook.
 
 ## SSE Delivery
 

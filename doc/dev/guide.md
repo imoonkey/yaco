@@ -16,17 +16,17 @@ workflow/
 │       ├── lib/
 │       │   ├── projects.ts  # ~/.workflow/projects.json CRUD
 │       │   ├── scanner.ts   # Scan workstream.json + progress.json
-│       │   ├── multmux.ts   # Shell out to multmux (spawn, no shell)
+│       │   ├── multmux.ts   # Read .multmux/*.json state files + multmux CLI commands
 │       │   ├── watcher.ts   # fs.watch on progress.json files → emitNotification
 │       │   ├── notify.ts    # Notification bus: osascript + SSE fanout + refresh signals
-│       │   ├── session-poller.ts # 3s poll for Codex idle detection + session cache
+│       │   ├── session-reconciler.ts # 60s health-check + Codex idle detection
 │       │   ├── project-watcher.ts # Recursive fs.watch per project (FSEvents)
-│       │   └── terminal.ts  # node-pty → tmux attach-session
+│       │   └── terminal.ts  # node-pty → tmux attach-session + shell lifecycle
 │       └── routes/
 │           ├── projects.ts
 │           ├── workstreams.ts
 │           ├── progress.ts
-│           ├── sessions.ts       # Uses poller cache for multmux sessions
+│           ├── sessions.ts       # Reads .multmux state files + shell sessions
 │           ├── notifications.ts  # SSE endpoint /api/notifications/stream
 │           ├── files.ts
 │           └── git.ts       # git status + diff endpoints
@@ -81,6 +81,9 @@ npm run dev:tmux -- --detached
 
 # Recreate the session from scratch
 npm run dev:tmux -- --reset
+
+# Restart both dev servers in-place (C-c + re-run)
+npm run dev:tmux -- --restart
 
 # Override the session name
 WORKFLOW_DEV_TMUX_SESSION=workflow-api npm run dev:tmux
@@ -212,6 +215,7 @@ The git status endpoint returns a structured response with a stale marker:
 `project-watcher.ts` routes filesystem changes to SSE channels:
 
 - `.git/objects/`, `.git/logs/`, `node_modules/`, `.DS_Store` → ignored
+- `.multmux/*.json` → `sessions` (event-driven session state updates)
 - `doc/todo/<name>/workstream.json` → `workstreams`
 - `.git/*` (all other git internals) → `git`
 - All other files → `filetree` + `git` (any file change can affect git status)
