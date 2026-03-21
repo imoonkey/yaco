@@ -401,23 +401,23 @@ function MarkdownPreview({
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const applyingViewportRef = useRef(false)
-  const html = renderMarkdown(content)
+  const rawHtml = renderMarkdown(content)
+  const [html, setHtml] = useState(rawHtml)
 
+  // When content changes, reset to raw HTML and process mermaid async
   useEffect(() => {
-    const element = containerRef.current
-    if (!element) return
-    applyingViewportRef.current = applyPreviewViewportLine(element, viewportLine)
-  }, [html, viewportLine])
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-    const mermaidDivs = container.querySelectorAll<HTMLElement>('.mermaid:not([data-processed])')
+    setHtml(rawHtml)
+    // Process mermaid diagrams by parsing the HTML string, rendering SVGs, and replacing placeholders
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(rawHtml, 'text/html')
+    const mermaidDivs = doc.querySelectorAll<HTMLElement>('.mermaid')
     if (mermaidDivs.length === 0) return
 
+    let cancelled = false
     let counter = 0
     const renderAll = async () => {
       for (const div of mermaidDivs) {
+        if (cancelled) return
         const source = div.textContent?.trim()
         if (!source) continue
         try {
@@ -429,9 +429,19 @@ function MarkdownPreview({
         }
         div.setAttribute('data-processed', 'true')
       }
+      if (!cancelled) {
+        setHtml(doc.body.innerHTML)
+      }
     }
     renderAll()
-  }, [html])
+    return () => { cancelled = true }
+  }, [rawHtml])
+
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+    applyingViewportRef.current = applyPreviewViewportLine(element, viewportLine)
+  }, [html, viewportLine])
 
   return (
     <div
