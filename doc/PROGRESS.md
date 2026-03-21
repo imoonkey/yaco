@@ -17,8 +17,8 @@
 - Safe-area padding prevents project tabs from being occluded by iPhone gesture zone
 
 **Key files:** `ui/src/workspace/WorkspaceLayout.tsx` (new), `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/App.tsx`, `ui/src/index.css`, `ui/index.html`
-**Verification:** TypeScript type check passed, Vite build passed, code review (subagent) with all critical/major findings fixed
-**Commit:** pending
+**Verification:** TypeScript type check passed, Vite build passed, code review (subagent) with all critical/major findings fixed, Codex review medium finding fixed (session click mobilePane guard), QA 7/8 PASS (test 5 expected 0px in Playwright emulation)
+**Commit:** df5d9ba, f0d45da
 **Next:** None
 **Blockers:** None
 
