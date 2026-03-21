@@ -459,14 +459,14 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       {processing.map(s => (
         <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
           onKill={() => { void killSession(s.name) }}
-          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); actions.setMobilePane('terminal') }}
+          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
         />
       ))}
       {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
       {idle.map(s => (
         <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
           onKill={() => { void killSession(s.name) }}
-          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); actions.setMobilePane('terminal') }}
+          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
         />
       ))}
       {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
