@@ -13,6 +13,9 @@ import { escapeHtml, clampLine, countNewlines, renderMarkdown } from '../workspa
 import { useResize } from '../workspace/useResize'
 import { VResizeHandle, HResizeHandle } from '../workspace/ResizeHandle'
 import { SectionHeader } from '../workspace/SectionHeader'
+import { FileSearch, flattenTree } from '../workspace/WorkspaceSearch'
+import { SessionItem } from '../workspace/WorkspaceSessionList'
+import { GitChangeItem } from '../workspace/WorkspaceSidebar'
 import mermaid from 'mermaid'
 import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
 
@@ -35,66 +38,6 @@ type KeyboardLockHandle = {
   unlock?: () => void
 }
 
-// --- Session Item ---
-function SessionItem({
-  session,
-  isActive,
-  onClick,
-  onKill,
-}: {
-  session: AgentSession
-  isActive: boolean
-  onClick: () => void
-  onKill: () => void
-}) {
-  return (
-    <div onClick={onClick}
-      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15 text-[#268bd2]' : ''}`}
-      style={isActive ? undefined : { color: C.text }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
-      onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
-      <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[#859900] animate-pulse' : 'bg-[#93a1a1]'}`} />
-      <span className="min-w-0 flex-1 truncate">{session.name}</span>
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onKill()
-        }}
-        className="shrink-0 rounded px-1.5 py-0.5 text-[10px] cursor-pointer border border-[#dc322f]/20 text-[#dc322f] hover:bg-[#dc322f]/8"
-        title={`Kill ${session.name}`}
-      >
-        Kill
-      </button>
-    </div>
-  )
-}
-
-function flattenTree(nodes: FileNode[], result: FileNode[] = []): FileNode[] {
-  for (const n of nodes) { if (n.type === 'file') result.push(n); if (n.children) flattenTree(n.children, result) }
-  return result
-}
-
-// --- Git Change Item (Source Control list) ---
-function GitChangeItem({ change, isActive, onActivate }: { change: GitChange; isActive: boolean; onActivate: () => void }) {
-  const name = change.path.split('/').pop() || change.path
-  const dir = change.path.includes('/') ? change.path.slice(0, change.path.lastIndexOf('/')) : ''
-  return (
-    <div onClick={onActivate}
-      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15' : ''}`}
-      title={change.path}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
-      onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
-      <FileTypeIcon name={name} />
-      <div className="min-w-0 flex-1 overflow-hidden leading-tight">
-        <div className="truncate" style={{ color: GIT_COLORS[change.status] || C.text }}>{name}</div>
-        {dir && <div className="truncate pt-0.5 text-[10px]" style={{ color: C.muted }}>{dir}</div>}
-      </div>
-      <span className="ml-auto pt-[1px] text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[change.status] }}>{change.status}</span>
-    </div>
-  )
-}
-
 // --- Diff View ---
 function DiffView({ diff }: { diff: string }) {
   if (!diff) return <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>No changes</div>
@@ -110,43 +53,6 @@ function DiffView({ diff }: { diff: string }) {
         else if (line.startsWith('diff ')) { color = C.textDark; bg = C.bg }
         return <div key={i} style={{ backgroundColor: bg, color, paddingLeft: 12, paddingRight: 12, minHeight: 20 }}>{line || '\u00A0'}</div>
       })}
-    </div>
-  )
-}
-
-// --- File Search ---
-function FileSearch({ files, onSelect, onClose }: { files: FileNode[]; onSelect: (path: string) => void; onClose: () => void }) {
-  const [query, setQuery] = useState(''); const inputRef = useRef<HTMLInputElement>(null); const [selectedIdx, setSelectedIdx] = useState(0)
-  useEffect(() => { inputRef.current?.focus() }, [])
-  const q = query.toLowerCase()
-  const filtered = q ? files.filter(f => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q)) : files
-  const visible = filtered.slice(0, 20)
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') { onClose(); return }
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, visible.length - 1)); return }
-    if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
-    if (e.key === 'Enter' && visible[selectedIdx]) { onSelect(visible[selectedIdx].path); onClose() }
-  }
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15%]" onClick={onClose}>
-      <div className="w-[500px] rounded-lg shadow-lg overflow-hidden" style={{ backgroundColor: C.editorBg, border: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
-        <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-          placeholder="Search files..." className="w-full px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: C.textDark, borderBottom: `1px solid ${C.border}` }} />
-        <div className="max-h-[300px] overflow-y-auto">
-          {visible.map((f, i) => (
-            <div key={f.path} onClick={() => { onSelect(f.path); onClose() }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${i === selectedIdx ? 'bg-[#268bd2]/15 text-[#268bd2]' : ''}`}
-              style={i !== selectedIdx ? { color: C.text } : undefined}
-              onMouseEnter={e => { if (i !== selectedIdx) e.currentTarget.style.backgroundColor = C.hover }}
-              onMouseLeave={e => { if (i !== selectedIdx) e.currentTarget.style.backgroundColor = '' }}>
-              <FileTypeIcon name={f.name} />
-              <span style={{ color: i === selectedIdx ? undefined : C.textDark }}>{f.name}</span>
-              <span className="text-[10px]" style={{ color: C.muted }}>{f.path}</span>
-            </div>
-          ))}
-          {visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: C.muted }}>No files found</div>}
-        </div>
-      </div>
     </div>
   )
 }
