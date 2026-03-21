@@ -302,11 +302,10 @@ body {
 }
 
 .markdown-preview .mermaid {
-  display: flex;
-  justify-content: center;
+  overflow-x: auto;
   padding: 1rem 0;
 }
 
 .markdown-preview .mermaid svg {
-  max-width: 100%;
+  min-width: min-content;
 }
