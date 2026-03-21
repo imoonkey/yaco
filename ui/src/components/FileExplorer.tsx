@@ -64,6 +64,8 @@ const ExplorerContext = createContext<{
   gitFolders: Set<string>
   openContextMenu: (e: React.MouseEvent, path: string, type: 'file' | 'dir') => void
   reportContextFolder: (path: string, type: 'file' | 'dir') => void
+  onPreviewFile?: (path: string) => void
+  onPinFile?: (path: string) => void
 }>({ gitMap: new Map(), gitFolders: new Set(), openContextMenu: () => {}, reportContextFolder: () => {} })
 
 // --- Context menu ---
@@ -87,7 +89,7 @@ function MenuDivider() {
 
 // --- Custom node renderer ---
 function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
-  const { gitMap, gitFolders, openContextMenu, reportContextFolder } = useContext(ExplorerContext)
+  const { gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile } = useContext(ExplorerContext)
   const d = node.data
   const gitStatus = gitMap.get(d.path)
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
@@ -127,7 +129,18 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
       node.toggle()
       return
     }
-    node.handleClick(e)
+    if (onPreviewFile) {
+      onPreviewFile(d.path)
+    } else {
+      node.handleClick(e)
+    }
+  }
+
+  const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    if (d.type === 'file' && onPinFile) {
+      onPinFile(d.path)
+    }
   }
 
   return (
@@ -135,6 +148,7 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
       <div
         className={`flex w-full items-center gap-1 h-full px-1 rounded cursor-pointer text-[12px] ${isSelected ? 'bg-[#268bd2]/15' : ''}`}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = C.hover }}
         onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = '' }}
         onContextMenu={e => { e.preventDefault(); openContextMenu(e, d.path, d.type) }}
@@ -156,11 +170,12 @@ interface FileExplorerProps {
   gitFolders: Set<string>
   selectedFile: string | null
   onSelectFile: (path: string) => void
+  onPreviewFile?: (path: string) => void
   onFocusExplorer: () => void
   onContextFolder?: (path: string) => void
 }
 
-export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onFocusExplorer, onContextFolder }: FileExplorerProps) {
+export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onFocusExplorer, onContextFolder }: FileExplorerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -309,7 +324,7 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
     : ''
 
   return (
-    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder }}>
+    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0" onMouseDown={onFocusExplorer}>
         {size.width > 0 && size.height > 0 && (
           <Tree

@@ -32,7 +32,7 @@ export const SOLARIZED_LIGHT = {
   editorCursorForeground: '#657B83',
   editorWhitespaceForeground: '#586E7580',
   editorLineHighlightBackground: '#EEE8D5',
-  editorSelectionBackground: '#EEE8D5',
+  editorSelectionBackground: '#D5CCB5',
   editorIndentGuideBackground: '#586E7580',
   editorIndentGuideActiveBackground: '#081E2580',
   editorLineNumberActiveForeground: '#567983',

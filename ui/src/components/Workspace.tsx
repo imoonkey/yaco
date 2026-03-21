@@ -17,7 +17,10 @@ import { FileExplorer, FileTypeIcon, GIT_COLORS, NewFileIcon, NewFolderIcon } fr
 import { writeTextToClipboard } from '../lib/clipboard'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { marked, type Tokens } from 'marked'
+import mermaid from 'mermaid'
 import type { FileNode, AgentSession, GitChange, SessionProvider } from '../types'
+
+mermaid.initialize({ startOnLoad: false, theme: 'neutral' })
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type DiffState = {
@@ -83,6 +86,9 @@ function createMarkdownRenderer() {
   const renderer = new marked.Renderer()
 
   renderer.code = ({ text, lang }: Tokens.Code) => {
+    if (lang?.toLowerCase() === 'mermaid') {
+      return `<div class="mermaid">${escapeHtml(text)}</div>`
+    }
     const languageClass = lang ? ` class="language-${escapeHtml(lang)}"` : ''
     return `<pre><code${languageClass}>${renderHighlightedCode(text, lang)}</code></pre>`
   }
@@ -403,6 +409,15 @@ function MarkdownPreview({
     applyingViewportRef.current = applyPreviewViewportLine(element, viewportLine)
   }, [html, viewportLine])
 
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const mermaidDivs = container.querySelectorAll<HTMLElement>('.mermaid:not([data-processed])')
+    if (mermaidDivs.length > 0) {
+      mermaid.run({ nodes: mermaidDivs }).catch(() => {})
+    }
+  }, [html])
+
   return (
     <div
       ref={containerRef}
@@ -450,7 +465,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   // Centralized workspace state
   const ws = useWorkspaceState(projectName)
-  const { openTabs, activeTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, actions } = ws
+  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, actions } = ws
 
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
     activeTab && !activeTab.startsWith('diff:') ? activeTab : null
@@ -580,6 +595,13 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const openFileFromExplorer = useCallback((path: string) => {
     openFile(path, 'explorer')
   }, [openFile])
+
+  const openPreviewFromExplorer = useCallback((path: string) => {
+    actions.openPreviewTab(path)
+    setSelectedFilePath(path)
+    setFocusTarget('explorer')
+    actions.setMobilePane('editor')
+  }, [actions])
 
   const handleNewFile = useCallback(async () => {
     const name = prompt('New file name:')
@@ -838,6 +860,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
               gitFolders={gitFolders}
               selectedFile={selectedFilePath}
               onSelectFile={openFileFromExplorer}
+              onPreviewFile={openPreviewFromExplorer}
               onFocusExplorer={() => setFocusTarget('explorer')}
               onContextFolder={setContextFolder}
             />
@@ -900,6 +923,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           const isDirty = dirtyTabs.has(tab)
           const isConflict = conflictTabs.has(tab)
           const isDiff = tab.startsWith('diff:')
+          const isPreview = tab === previewTab
           return (
             <div key={tab} onClick={() => {
               actions.setActiveTab(tab)
@@ -908,13 +932,16 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                 setSelectedFilePath(tab)
               }
             }}
+              onDoubleClick={() => {
+                if (isPreview) actions.openFileTab(tab)
+              }}
               className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
               style={{
                 backgroundColor: isActive ? C.editorBg : C.bg, color: isActive ? C.textDark : C.textDim,
                 borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : C.text}` : '2px solid transparent',
                 borderBottom: isActive ? `1px solid ${C.editorBg}` : `1px solid ${C.border}`, marginBottom: -1,
               }} title={tab}>
-              <span className="truncate max-w-[120px]">{tabName(tab)}</span>
+              <span className="truncate max-w-[120px]" style={isPreview ? { fontStyle: 'italic' } : undefined}>{tabName(tab)}</span>
               {isConflict ? (
                 <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[12px]" style={{ color: '#C4A241' }} title="File changed on disk">&#9888;</span>
               ) : isDirty ? (
@@ -1081,6 +1108,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                       gitFolders={gitFolders}
                       selectedFile={selectedFilePath}
                       onSelectFile={openFileFromExplorer}
+                      onPreviewFile={openPreviewFromExplorer}
                       onFocusExplorer={() => setFocusTarget('explorer')}
                     />
                   </div>

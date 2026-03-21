@@ -27,6 +27,7 @@
     "@xterm/xterm": "^6.0.0",
     "codemirror": "^6.0.2",
     "marked": "^17.0.4",
+    "mermaid": "^11.13.0",
     "react": "^19.2.4",
     "react-arborist": "^3.4.3",
     "react-dom": "^19.2.4",

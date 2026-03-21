@@ -77,6 +77,7 @@ function loadStoredSize(value: unknown, fallback: number): number {
 type PersistedState = {
   openTabs: string[]
   activeTab: string | null
+  previewTab: string | null
   activeSession: string
   mobilePane: 'files' | 'editor' | 'terminal'
   layout: WorkspaceLayout
@@ -86,6 +87,7 @@ function loadPersistedState(project: string): PersistedState {
   const defaults: PersistedState = {
     openTabs: [],
     activeTab: null,
+    previewTab: null,
     activeSession: '',
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
@@ -108,6 +110,7 @@ function loadPersistedState(project: string): PersistedState {
     return {
       openTabs,
       activeTab,
+      previewTab: typeof parsed.previewTab === 'string' && openTabs.includes(parsed.previewTab) ? parsed.previewTab : null,
       activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
       mobilePane: parsed.mobilePane === 'files' || parsed.mobilePane === 'editor' || parsed.mobilePane === 'terminal'
         ? parsed.mobilePane as PersistedState['mobilePane'] : 'files',
@@ -222,6 +225,7 @@ export function useWorkspaceState(projectName: string) {
 
   const [openTabs, setOpenTabs] = useState<string[]>(persisted.openTabs)
   const [activeTab, setActiveTab] = useState<string | null>(persisted.activeTab)
+  const [previewTab, setPreviewTab] = useState<string | null>(persisted.previewTab)
   const [activeSession, setActiveSession] = useState(persisted.activeSession)
   const [mobilePane, setMobilePane] = useState(persisted.mobilePane)
   const [layout, setLayout] = useState<WorkspaceLayout>(persisted.layout)
@@ -246,6 +250,9 @@ export function useWorkspaceState(projectName: string) {
   const openTabsRef = useRef(openTabs)
   openTabsRef.current = openTabs
 
+  const previewTabRef = useRef(previewTab)
+  previewTabRef.current = previewTab
+
   // --- Hydration: fetch server truth for open file tabs on mount ---
   const hydrated = useRef(false)
   useEffect(() => {
@@ -269,8 +276,8 @@ export function useWorkspaceState(projectName: string) {
 
   // --- Persist layout ---
   // Refs hold latest state for synchronous flush on beforeunload
-  const layoutRef = useRef({ openTabs, activeTab, activeSession, mobilePane, layout })
-  layoutRef.current = { openTabs, activeTab, activeSession, mobilePane, layout }
+  const layoutRef = useRef({ openTabs, activeTab, previewTab, activeSession, mobilePane, layout })
+  layoutRef.current = { openTabs, activeTab, previewTab, activeSession, mobilePane, layout }
 
   const flushLayout = useCallback(() => {
     saveLayout(projectRef.current, layoutRef.current)
@@ -282,7 +289,7 @@ export function useWorkspaceState(projectName: string) {
     clearTimeout(layoutTimer.current)
     layoutTimer.current = setTimeout(flushLayout, 300)
     return () => clearTimeout(layoutTimer.current)
-  }, [openTabs, activeTab, activeSession, mobilePane, layout, flushLayout])
+  }, [openTabs, activeTab, previewTab, activeSession, mobilePane, layout, flushLayout])
 
   // --- Persist drafts ---
   const filesRef = useRef(files)
@@ -357,6 +364,8 @@ export function useWorkspaceState(projectName: string) {
   // --- Tab actions ---
 
   const openFileTab = useCallback((path: string) => {
+    // Pin if this tab was a preview
+    setPreviewTab(prev => prev === path ? null : prev)
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
     setActiveTab(path)
     // Fetch content + revision for the newly opened tab
@@ -378,6 +387,51 @@ export function useWorkspaceState(projectName: string) {
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const openPreviewTab = useCallback((path: string) => {
+    // Close existing preview tab if it's a different file and not dirty (dirty = auto-pinned)
+    const oldPreview = previewTabRef.current
+    if (oldPreview && oldPreview !== path) {
+      setFiles(prev => {
+        const oldState = prev[oldPreview]
+        if (oldState && (oldState.status === 'dirty' || oldState.status === 'saving' || oldState.status === 'conflict')) {
+          // Auto-pinned by edit — don't remove
+          return prev
+        }
+        if (!(oldPreview in prev)) return prev
+        const next = { ...prev }
+        delete next[oldPreview]
+        return next
+      })
+      setOpenTabs(tabs => {
+        // Only remove if file state wasn't dirty (check via files ref)
+        const oldState = filesRef.current[oldPreview]
+        if (oldState && (oldState.status === 'dirty' || oldState.status === 'saving' || oldState.status === 'conflict')) {
+          return tabs
+        }
+        return tabs.filter(t => t !== oldPreview)
+      })
+    }
+    setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
+    setActiveTab(path)
+    setPreviewTab(path)
+    // Fetch content
+    const project = projectRef.current
+    fetchContent(project, path).then(result => {
+      if (projectRef.current !== project) return
+      setFiles(prev => {
+        const existing = prev[path]
+        if (existing?.draft != null) {
+          if (existing.baseRevision == null && result) {
+            return { ...prev, [path]: { ...existing, serverContent: result.content, baseRevision: result.revision } }
+          }
+          return prev
+        }
+        const next = reconcileFile(existing, result)
+        return next === existing ? prev : { ...prev, [path]: next }
+      })
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const openDiffTab = useCallback((path: string) => {
     const tab = `diff:${path}`
     setOpenTabs(tabs => tabs.includes(tab) ? tabs : [...tabs, tab])
@@ -385,6 +439,7 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const closeTabByKey = useCallback((tab: string) => {
+    setPreviewTab(prev => prev === tab ? null : prev)
     setOpenTabs(tabs => {
       const idx = tabs.indexOf(tab)
       if (idx === -1) return tabs
@@ -409,6 +464,8 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const updateFileDraft = useCallback((path: string, draft: string) => {
+    // Auto-pin on edit
+    setPreviewTab(prev => prev === path ? null : prev)
     setFiles(prev => {
       const existing = prev[path]
       const base = existing ?? defaultFileState()
@@ -526,6 +583,7 @@ export function useWorkspaceState(projectName: string) {
 
   const actions = useMemo(() => ({
     openFileTab,
+    openPreviewTab,
     openDiffTab,
     closeTab: closeTabByKey,
     setActiveTab,
@@ -537,11 +595,12 @@ export function useWorkspaceState(projectName: string) {
     saveFile,
     forceSave,
     acceptDisk,
-  }), [openFileTab, openDiffTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
+  }), [openFileTab, openPreviewTab, openDiffTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
 
   return {
     openTabs,
     activeTab,
+    previewTab,
     activeSession,
     mobilePane,
     layout,
