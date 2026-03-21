@@ -625,6 +625,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
                       onSelectFile={openFileFromExplorer}
                       onPreviewFile={openPreviewFromExplorer}
                       onFocusExplorer={() => setFocusTarget('explorer')}
+                      onContextFolder={setContextFolder}
                     />
                   </div>
                 )}

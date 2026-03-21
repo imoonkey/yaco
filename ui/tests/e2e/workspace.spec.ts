@@ -216,8 +216,9 @@ test.describe('Workspace regression', () => {
     await page.waitForTimeout(1000)
 
     // Verify dirty indicator (tab should show dot)
-    // The tab with the file should exist
-    const tab = page.locator('[title="__e2e_test_draft.txt"]')
+    // The tab with the file should exist — scope to tab bar to avoid matching git changes row
+    const tabBar = page.locator('.overflow-x-auto')
+    const tab = tabBar.locator('[title="__e2e_test_draft.txt"]')
     await expect(tab).toBeVisible()
 
     // Refresh the page — localStorage is flushed on beforeunload
@@ -229,7 +230,8 @@ test.describe('Workspace regression', () => {
     await page.waitForTimeout(2000)
 
     // Tab should survive the refresh
-    const restoredTab = page.locator('[title="__e2e_test_draft.txt"]')
+    const restoredTabBar = page.locator('.overflow-x-auto')
+    const restoredTab = restoredTabBar.locator('[title="__e2e_test_draft.txt"]')
     await expect(restoredTab).toBeVisible({ timeout: 10_000 })
 
     // Click the tab to make it active
