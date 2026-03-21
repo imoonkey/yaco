@@ -85,7 +85,7 @@ DO NOT STOP UNTIL THE TARGETED SCOPE IS FULLY IMPLEMENTED.
 
 ## Step 5: Update Docs
 
-Run `/write-doc`  (**MUST USE the mentioned skills**) to sync `doc/main/`, `doc/dev/`, any project-local skills exposed via `./.claude/skills/*`, `./.ai-dev/skills/*`, or `./.agents/skills/*`, and `doc/PROGRESS.md` with the changes.
+Run `/update-doc`  (**MUST USE the mentioned skills**) to sync `doc/main/`, `doc/dev/`, project-local skills in `./.claude/skills/*`, and `doc/PROGRESS.md` with the changes.
 
 ## Step 6: Session Exit (Worktree Mode)
 

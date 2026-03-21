@@ -28,7 +28,7 @@ agent-config/
       eng-plan-review/               # Pre-implementation engineering review
       implement/                     # End-to-end implementation workflow
       code-review/                   # Systematic code review
-      write-doc/                     # Keep docs and skills in sync
+      update-doc/                    # Keep docs and skills in sync
       strategic-compact/             # Context compaction
       align/                         # Cross-agent design alignment
       multmux/                       # Multi-agent orchestration via tmux

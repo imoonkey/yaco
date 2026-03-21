@@ -92,7 +92,7 @@ Repeat until all tasks are `done`:
      - `designing` → `/design` or `/double-design` (use `/double-design` for high risk)
      - `implementing` → `/implement`
      - `reviewing` → `/code-review` (use a DIFFERENT agent than the implementer)
-     - `documenting` → `/write-doc`
+     - `documenting` → `/update-doc`
    - Launch worker via multmux:
      ```bash
      multmux start <provider> "<skill> <brief-path>" --name "w-<task-id>"
@@ -134,7 +134,7 @@ designing → implementing → reviewing → documenting → complete
 | designing      | /design or /double-design | Claude                |
 | implementing   | /implement         | Claude or Codex          |
 | reviewing      | /code-review       | Different than implementer |
-| documenting    | /write-doc         | Any                      |
+| documenting    | /update-doc         | Any                      |
 
 ## Brief.md Template
 
