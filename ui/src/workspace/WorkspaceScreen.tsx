@@ -17,7 +17,7 @@ import { SessionItem } from './WorkspaceSessionList'
 import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
-import type { FileNode, AgentSession, SessionProvider } from '../types'
+import type { SessionProvider } from '../types'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type DiffState = {
