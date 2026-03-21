@@ -388,6 +388,12 @@ export function useWorkspaceState(projectName: string) {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openPreviewTab = useCallback((path: string) => {
+    // If the tab is already open as a pinned tab, just activate it — don't demote to preview
+    if (openTabsRef.current.includes(path) && previewTabRef.current !== path) {
+      setActiveTab(path)
+      return
+    }
+
     // Close existing preview tab if it's a different file and not dirty (dirty = auto-pinned)
     const oldPreview = previewTabRef.current
     if (oldPreview && oldPreview !== path) {

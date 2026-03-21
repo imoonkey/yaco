@@ -414,7 +414,14 @@ function MarkdownPreview({
     if (!container) return
     const mermaidDivs = container.querySelectorAll<HTMLElement>('.mermaid:not([data-processed])')
     if (mermaidDivs.length > 0) {
-      mermaid.run({ nodes: mermaidDivs }).catch(() => {})
+      mermaid.run({ nodes: mermaidDivs }).catch((err: unknown) => {
+        for (const div of mermaidDivs) {
+          if (!div.querySelector('svg')) {
+            const msg = err instanceof Error ? err.message : 'Diagram render failed'
+            div.innerHTML = `<pre style="color:#dc322f;font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
+          }
+        }
+      })
     }
   }, [html])
 
