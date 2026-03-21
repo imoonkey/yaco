@@ -16,7 +16,7 @@ Custom React hooks for data fetching, real-time updates, and device detection.
 
 `ui/src/hooks/*.ts`
 
-## useWorkspaceState.ts (466 lines)
+## useWorkspaceState.ts (618 lines)
 
 Per-project workspace state management: tabs, layout, file drafts, conflict detection, and persistence.
 

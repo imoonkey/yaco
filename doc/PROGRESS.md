@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-03-21: Codebase Health Phase 3 — behavior-preserving workspace refactor
+
+**What changed:**
+- Decomposed `Workspace.tsx` (1,182 lines) into 10 modules in `ui/src/workspace/`
+- `WorkspaceScreen.tsx` (671 lines) — controller + layout composition
+- `WorkspaceEditorArea.tsx` (266 lines) — editor, preview, diff, conflict banner
+- `markdown.ts` (118 lines) — rendering utilities, syntax highlighting, mermaid
+- `WorkspaceTabBar.tsx`, `WorkspaceSearch.tsx`, `WorkspaceSessionList.tsx`, `WorkspaceSidebar.tsx`, `SectionHeader.tsx`, `ResizeHandle.tsx`, `useResize.ts` — small extracted components/hooks
+- Added Playwright e2e test infrastructure (`playwright.config.ts`, `tests/e2e/workspace.spec.ts`) with 3 regression tests: SSE refresh, conflict detection, draft persistence
+
+**Why:**
+- Workspace.tsx was a 1,182-line monolith mixing markdown utils, resize hooks, presentational components, keyboard shortcuts, and layout JSX
+- Refactor creates seams aligned with future workstreams (workspace-layout, editor-ux, workspace-state)
+- Playwright tests formalize the regression safety net validated in M1 QA
+
+**Key files:** `ui/src/workspace/*.tsx`, `ui/src/workspace/*.ts`, `ui/playwright.config.ts`, `ui/tests/e2e/workspace.spec.ts`
+**Verification:** Vite production build passed. TypeScript type check passed (exit 0). Code review found 1 unused-import fix (applied).
+**Commits:** 7fe5d18..023aefb (8 commits)
+**Next:** Browser QA to verify must-not-regress behaviors. Downstream workstreams (workspace-layout, editor-ux) can now proceed against cleaner seams.
+**Blockers:** None
+
 ## 2026-03-20: Editor UX — preview tabs, cursor visibility, mermaid rendering
 
 **What changed:**

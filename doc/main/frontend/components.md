@@ -15,7 +15,7 @@ React component tree, props interfaces, and responsibilities.
 
 ## Related Code
 
-`ui/src/App.tsx`, `ui/src/components/*.tsx`
+`ui/src/App.tsx`, `ui/src/components/*.tsx`, `ui/src/workspace/*.tsx`
 
 ## Component Tree
 
@@ -25,14 +25,28 @@ App (305 lines)
 │   ├── ProviderIcon
 │   ├── RoadmapView (160 lines)
 │   └── PaneSwitch (35 lines)
-└── Workspace (1,129 lines)
-    ├── useWorkspaceState (466 lines) — state hook
-    ├── FileExplorer (358 lines)
-    ├── Editor (207 lines)
-    ├── Terminal (283 lines)
-    ├── ProviderIcon
-    └── PaneSwitch
+└── Workspace (re-export → workspace/WorkspaceScreen)
+    └── WorkspaceScreen (671 lines) — controller + layout
+        ├── WorkspaceTabBar (75 lines)
+        ├── WorkspaceEditorArea (266 lines)
+        │   ├── DiffView
+        │   ├── MarkdownPreview
+        │   └── Editor (207 lines)
+        ├── FileExplorer (372 lines)
+        ├── Terminal (283 lines)
+        ├── SessionItem (37 lines)
+        ├── GitChangeItem (22 lines)
+        ├── SectionHeader (17 lines)
+        ├── FileSearch (45 lines)
+        ├── VResizeHandle / HResizeHandle (23 lines)
+        ├── ProviderIcon
+        └── PaneSwitch
 ```
+
+**Supporting modules (non-component):**
+- `workspace/markdown.ts` (118 lines) — escapeHtml, renderMarkdown, code highlighting, mermaid init
+- `workspace/useResize.ts` (34 lines) — drag-to-resize hook
+- `hooks/useWorkspaceState.ts` (618 lines) — domain state, persistence, SSE reconciliation
 
 ## App
 
@@ -50,24 +64,35 @@ Top-level shell. Manages view switching (Monitor/Workspace), project selection, 
 - Persist view/project/order to localStorage
 - Unread notification badge on Monitor tab
 
-## Workspace
+## Workspace / WorkspaceScreen
 
-**File**: `ui/src/components/Workspace.tsx` (1,129 lines)
+**File**: `ui/src/components/Workspace.tsx` (re-export) → `ui/src/workspace/WorkspaceScreen.tsx` (671 lines)
 
-Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook.
+Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition (desktop/mobile) is inline.
 
-**Props**: `{ project: Project }`
+**Props**: `{ projectName: string; projectPath: string }`
 
 **Responsibilities**:
-- Layout rendering (sidebar, editor area, right pane)
-- Markdown preview with source-line sync
-- Git diff viewing
-- Terminal/session attachment
-- Resizable sidebar and right pane
-- File search modal
-- Keyboard shortcuts: `Cmd+B`, `Cmd+Shift+B`, `Cmd+P`, `Cmd+W`, `Cmd+Shift+V`
-- Mobile pane switching
-- Delegates state to `useWorkspaceState` hook
+- Controller: local UI state, API hooks, callbacks, keyboard shortcuts
+- Layout: desktop sidebar + editor + terminal, mobile pane switching
+- Delegates domain state to `useWorkspaceState` hook
+- Delegates tab strip to `WorkspaceTabBar`
+- Delegates editor/preview/diff to `WorkspaceEditorArea`
+
+### Extracted modules in `ui/src/workspace/`
+
+| Module | Lines | Purpose |
+|--------|-------|---------|
+| `WorkspaceScreen.tsx` | 671 | Controller + layout composition |
+| `WorkspaceEditorArea.tsx` | 266 | Editor, preview, diff, conflict banner |
+| `markdown.ts` | 118 | Markdown rendering, syntax highlighting, mermaid |
+| `WorkspaceTabBar.tsx` | 75 | Tab strip with dirty/conflict/preview indicators |
+| `WorkspaceSearch.tsx` | 45 | File search modal + flattenTree |
+| `WorkspaceSessionList.tsx` | 37 | SessionItem component |
+| `useResize.ts` | 34 | Drag-to-resize hook |
+| `ResizeHandle.tsx` | 23 | VResizeHandle + HResizeHandle |
+| `WorkspaceSidebar.tsx` | 22 | GitChangeItem component |
+| `SectionHeader.tsx` | 17 | Shared collapsible section header |
 
 ## Monitor
 
@@ -75,7 +100,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 Three-column dashboard: Sessions, Notifications, Roadmap.
 
-**Props**: `{ project: string | null, allProjects: boolean }`
+**Props**: `{ filterProject: string | null; browserNotifications: ... }`
 
 **Responsibilities**:
 - Session list with provider icons and status
@@ -86,11 +111,9 @@ Three-column dashboard: Sessions, Notifications, Roadmap.
 
 ## FileExplorer
 
-**File**: `ui/src/components/FileExplorer.tsx` (358 lines)
+**File**: `ui/src/components/FileExplorer.tsx` (372 lines)
 
 Virtualized file tree using react-arborist.
-
-**Props**: `{ tree, gitChanges, activeFilePath, onSelect, onCreateFile, onCreateDir, onRename, onMove, onDelete, lastFocusedDir, onFocusDir }`
 
 **Responsibilities**:
 - Tree rendering with file-type icons and git badges
@@ -98,15 +121,13 @@ Virtualized file tree using react-arborist.
 - Right-click context menu (New File, New Folder, Rename, Delete, Copy Path)
 - Inline rename (F2)
 - Selection sync with active editor tab
-- Header buttons for New File/Folder in focused directory
+- Preview tab support (single-click opens preview, double-click pins)
 
 ## Editor
 
 **File**: `ui/src/components/Editor.tsx` (207 lines)
 
 CodeMirror 6 wrapper with Solarized Light theme.
-
-**Props**: `{ content, filePath, onChange, onSave, onViewportLine, jumpToLine, readOnly }`
 
 **Responsibilities**:
 - Language detection and syntax highlighting (TS, TSX, JS, JSX, JSON, Python, Markdown, HTML, CSS)
@@ -120,8 +141,6 @@ CodeMirror 6 wrapper with Solarized Light theme.
 **File**: `ui/src/components/Terminal.tsx` (283 lines)
 
 xterm.js wrapper with WebSocket PTY connection.
-
-**Props**: `{ sessionName, onData, onClose, focusRef, onFocusChange }`
 
 **Responsibilities**:
 - WebSocket connection management
