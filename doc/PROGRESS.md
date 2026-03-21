@@ -5,7 +5,11 @@
 **What changed:**
 - Preview tabs: single-click in file explorer opens a temporary preview tab (italic title, replaced by next click). Double-click or edit pins it. `previewTab` state added to `useWorkspaceState` with localStorage persistence.
 - Cursor visibility: changed `editorSelectionBackground` from `#EEE8D5` to `#D5CCB5` so text selections are distinguishable from the active line highlight.
-- Mermaid rendering: ` ```mermaid ` code fences render as SVG diagrams in markdown preview via the `mermaid` library. Early return in `renderer.code`, `useEffect` with `mermaid.run()` after HTML mount.
+- Mermaid rendering: ` ```mermaid ` code fences render as SVG diagrams in markdown preview via `mermaid.render()`. Early return in `renderer.code`, per-diagram `useEffect` with inline error display on failure.
+
+**Post-review fixes:**
+- `openPreviewTab()` no longer demotes already-pinned tabs to preview state (codex review)
+- Mermaid: switched from `mermaid.run()` to `mermaid.render()` — root cause was `run()` reading `innerHTML` (HTML-escaped entities `--&gt;` broke the parser). `render()` takes `textContent` (browser-decoded) directly.
 
 **Why:**
 - Preview tabs reduce tab clutter — browsing files no longer accumulates persistent tabs
@@ -13,9 +17,9 @@
 - Mermaid code blocks rendered as plain text, requiring external tools to visualize diagrams
 
 **Key files:** `ui/src/hooks/useWorkspaceState.ts`, `ui/src/components/Workspace.tsx`, `ui/src/components/FileExplorer.tsx`, `ui/src/lib/solarizedLight.ts`, `ui/src/index.css`, `ui/package.json`
-**Verification:** Vite production build passed. TypeScript pre-existing errors only (unrelated `useRef` strict mode).
-**Commit:** 3d2bbb9
-**Next:** End-to-end manual testing of preview tab lifecycle; consider lazy-loading mermaid for bundle size
+**Verification:** QA 5/5 PASS (see `doc/todo/editor-ux/qa_1.md`). Vite production build passed.
+**Commits:** 3d2bbb9, 9dc451a, feae6d7
+**Next:** M4 codebase-health Phase 3 — no roadmap adjustments needed from M3
 **Blockers:** None
 
 ## 2026-03-20: Workspace state synchronization
