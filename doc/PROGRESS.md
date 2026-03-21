@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-03-21: Workspace layout extraction + desktop sessions to activity column
+
+**What changed:**
+- Extracted `WorkspaceLayout.tsx` (175 lines) from `WorkspaceScreen.tsx` — separates layout composition from controller logic
+- Desktop: sessions moved from left sidebar to right-column ActivityColumn (below Terminal)
+- Mobile: layout unchanged — sessions remain in Files pane
+- Session UI defined once in WorkspaceScreen, placed via slot assignment in WorkspaceLayout
+- Added `viewport-fit=cover` to viewport meta and safe-area CSS for iPhone home indicator
+- Bottom project tab bar applies `padding-bottom: var(--safe-area-bottom)` with `minHeight` instead of fixed `height`
+- Desktop sidebar simplified: only Explorer + Changes, section header count fixed to constant 2
+
+**Why:**
+- WorkspaceScreen.tsx was 673 lines mixing controller logic with layout JSX — now 570 lines (controller only)
+- Sessions next to terminal is more natural for desktop workflows (select session → see output immediately)
+- Safe-area padding prevents project tabs from being occluded by iPhone gesture zone
+
+**Key files:** `ui/src/workspace/WorkspaceLayout.tsx` (new), `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/App.tsx`, `ui/src/index.css`, `ui/index.html`
+**Verification:** TypeScript type check passed, Vite build passed, code review (subagent) with all critical/major findings fixed
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-21: Event-driven session state from .multmux/*.json state files
 
 **What changed:**

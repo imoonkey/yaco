@@ -16,7 +16,7 @@ Responsive layouts, pane switching, touch handling, and mobile-specific behavior
 
 ## Related Code
 
-`ui/src/hooks/useIsMobile.ts`, `ui/src/components/PaneSwitch.tsx`, `ui/src/components/Workspace.tsx`, `ui/src/components/Monitor.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
+`ui/src/hooks/useIsMobile.ts`, `ui/src/components/PaneSwitch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Monitor.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
 
 ## Breakpoint
 
@@ -76,9 +76,14 @@ Touch scrolling uses a synthetic event bridge:
 
 ## Viewport
 
+- `viewport-fit=cover` in viewport meta tag — required for `env(safe-area-inset-*)` to return non-zero values
 - Layout root uses `100dvh` (dynamic viewport height) instead of `100vh`
 - This accounts for iOS Safari's address bar, which makes `100vh` taller than the visible area
 - Content area is a flex column (`flex flex-col`) so panes get proper height via `flex: 1`
+
+## Safe-Area
+
+The bottom project tab bar applies `padding-bottom: var(--safe-area-bottom)` (defined in `index.css`) to lift content above the iPhone home indicator / system gesture zone. See [app-shell.md](app-shell.md) for details.
 
 ## Overscroll
 

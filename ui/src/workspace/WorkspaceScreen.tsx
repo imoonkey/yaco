@@ -4,19 +4,17 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { Terminal } from '../components/Terminal'
 import { ProviderIcon } from '../components/SessionIcons'
-import { PaneSwitch } from '../components/PaneSwitch'
 import { FileExplorer, NewFileIcon, NewFolderIcon } from '../components/FileExplorer'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { clampLine } from './markdown'
 import { useResize } from './useResize'
-import { VResizeHandle, HResizeHandle } from './ResizeHandle'
-import { SectionHeader } from './SectionHeader'
 import { FileSearch, flattenTree } from './WorkspaceSearch'
 import { SessionItem } from './WorkspaceSessionList'
 import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
+import { WorkspaceLayout } from './WorkspaceLayout'
 import type { SessionProvider } from '../types'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
@@ -32,7 +30,6 @@ type JumpRequest = {
 }
 const SECTION_HEADER_HEIGHT = 22
 const RESIZE_HANDLE_HEIGHT = 1
-const MIN_SESSION_BODY_HEIGHT = 72
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
   unlock?: () => void
@@ -62,7 +59,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [contextFolder, setContextFolder] = useState('')
 
   // Convenience aliases for layout props
-  const { showSidebar, showRightPanel, showExplorer, showSessions, showChanges, previewMode } = layout
+  const { showSidebar, showRightPanel, showExplorer, showChanges, previewMode } = layout
 
   const { data: fileTree } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
@@ -146,27 +143,22 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     return s
   }, [changes])
 
-  const visibleSectionCount = [showExplorer, showChanges, showSessions].filter(Boolean).length
-  const visibleHandleCount = (showExplorer && (showChanges || showSessions) ? 1 : 0) + (showChanges && showSessions ? 1 : 0)
+  // Desktop sidebar section math (Explorer + Changes only; Sessions moved to ActivityColumn)
+  // Both section headers are always rendered (even when collapsed), so count is constant
+  const sidebarHeaderCount = 2
+  const visibleHandleCount = showExplorer && showChanges ? 1 : 0
   const availableSectionHeight = Math.max(
     0,
-    sidebarHeight - visibleSectionCount * SECTION_HEADER_HEIGHT - visibleHandleCount * RESIZE_HANDLE_HEIGHT
+    sidebarHeight - sidebarHeaderCount * SECTION_HEADER_HEIGHT - visibleHandleCount * RESIZE_HANDLE_HEIGHT
   )
   const left = useResize(layout.leftSize, 140, 600)
   const right = useResize(layout.rightSize, 250, 900, 'right')
-  const explorerMax = Math.max(0, availableSectionHeight - (showChanges ? 0 : 0) - (showSessions ? MIN_SESSION_BODY_HEIGHT : 0))
+  const explorerMax = availableSectionHeight
   const explorerSplit = useResize(layout.explorerSize, 0, explorerMax, 'down')
   const explorerHeight = showExplorer ? Math.min(explorerSplit.size, explorerMax) : 0
-  const changesMax = Math.max(
-    0,
-    availableSectionHeight - explorerHeight - (showSessions ? MIN_SESSION_BODY_HEIGHT : 0)
-  )
-  const changesSplit = useResize(layout.changesSize, 0, changesMax, 'down')
-  const changesHeight = showChanges ? Math.min(changesSplit.size, changesMax) : 0
 
   const isMd = activeTab?.endsWith('.md')
   const hasOpenFiles = openTabs.length > 0
-  const shouldShowEditorPane = hasOpenFiles || !showRightPanel
   const canTogglePreview = !!isMd && !isDiffTab
 
   const openFile = useCallback((path: string, focus: FocusTarget = 'editor') => {
@@ -344,9 +336,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       leftSize: left.size,
       rightSize: right.size,
       explorerSize: explorerSplit.size,
-      changesSize: changesSplit.size,
     })
-  }, [left.size, right.size, explorerSplit.size, changesSplit.size, actions])
+  }, [left.size, right.size, explorerSplit.size, actions])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -438,69 +429,48 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     setSelectedFilePath(activeTab)
   }, [activeTab])
 
-  const filesPaneMobile = (
-    <div className="h-full flex flex-col" style={{ backgroundColor: C.bg }} onMouseDown={() => setFocusTarget('explorer')}>
-        <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => actions.updateLayout({ showExplorer: !showExplorer })} actions={explorerActions} />
-        {showExplorer && (
-          <div className="flex-1 min-h-0 flex flex-col">
-            <FileExplorer
-              projectName={projectName}
-              tree={fileTree}
-              gitMap={gitMap}
-              gitFolders={gitFolders}
-              selectedFile={selectedFilePath}
-              onSelectFile={openFileFromExplorer}
-              onPreviewFile={openPreviewFromExplorer}
-              onFocusExplorer={() => setFocusTarget('explorer')}
-              onContextFolder={setContextFolder}
-            />
-          </div>
-        )}
+  // --- Section content slots ---
 
-        <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => actions.updateLayout({ showChanges: !showChanges })} badge={changes.length || undefined} />
-        {showChanges && (
-          <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">
-            {changes.map(c => (
-              <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onActivate={() => activateChange(c.path)} />
-            ))}
-            {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
-          </div>
-        )}
+  const explorerBody = (
+    <FileExplorer
+      projectName={projectName}
+      tree={fileTree}
+      gitMap={gitMap}
+      gitFolders={gitFolders}
+      selectedFile={selectedFilePath}
+      onSelectFile={openFileFromExplorer}
+      onPreviewFile={openPreviewFromExplorer}
+      onFocusExplorer={() => setFocusTarget('explorer')}
+      onContextFolder={setContextFolder}
+    />
+  )
 
-        <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => actions.updateLayout({ showSessions: !showSessions })} actions={sessionActions} />
-        {showSessions && (
-          <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">
-            {processing.map(s => (
-              <SessionItem
-                key={s.name}
-                session={s}
-                isActive={s.name === attachedSession}
-                onKill={() => { void killSession(s.name) }}
-                onClick={() => {
-                  actions.setActiveSession(s.name)
-                  setFocusTarget('session')
-                  actions.setMobilePane('terminal')
-                }}
-              />
-            ))}
-            {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
-            {idle.map(s => (
-              <SessionItem
-                key={s.name}
-                session={s}
-                isActive={s.name === attachedSession}
-                onKill={() => { void killSession(s.name) }}
-                onClick={() => {
-                  actions.setActiveSession(s.name)
-                  setFocusTarget('session')
-                  actions.setMobilePane('terminal')
-                }}
-              />
-            ))}
-            {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
-          </div>
-        )}
-    </div>
+  const changesBody = (
+    <>
+      {changes.map(c => (
+        <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onActivate={() => activateChange(c.path)} />
+      ))}
+      {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
+    </>
+  )
+
+  const sessionsBody = (
+    <>
+      {processing.map(s => (
+        <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
+          onKill={() => { void killSession(s.name) }}
+          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); actions.setMobilePane('terminal') }}
+        />
+      ))}
+      {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
+      {idle.map(s => (
+        <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
+          onKill={() => { void killSession(s.name) }}
+          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); actions.setMobilePane('terminal') }}
+        />
+      ))}
+      {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
+    </>
   )
 
   const editorPane = (
@@ -543,131 +513,58 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     </div>
   )
 
-  const terminalPane = (
-    <div
-      className="flex flex-col overflow-hidden min-w-0"
-      style={{
-        flex: isMobile || !hasOpenFiles ? 1 : undefined,
-        width: !isMobile && hasOpenFiles ? right.size : undefined,
-        backgroundColor: C.bg,
-        boxShadow: isMobile ? 'none' : '-1px 0 3px rgba(0,0,0,0.06)',
-      }}
-    >
-      {attachedSession ? (
-        <>
-          <div className="h-8 flex items-center gap-2 px-3 text-[11px] shrink-0" style={{ borderBottom: `1px solid ${C.border}`, color: C.text }}>
-            {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
-            <span className="truncate">{attachedSession}</span>
-          </div>
-          <div
-            className="flex-1 overflow-hidden p-[3px] select-text"
-            style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
-            onMouseDown={() => setFocusTarget('terminal')}
-          >
-            <Terminal
-              sessionName={attachedSession}
-              onInteract={() => setFocusTarget('terminal')}
-              onCloseRequest={() => {
-                detachActiveSession()
-              }}
-            />
-          </div>
-        </>
-      ) : (
-        <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a session to attach terminal</div>
-      )}
-    </div>
+  const terminalContent = attachedSession ? (
+    <>
+      <div className="h-8 flex items-center gap-2 px-3 text-[11px] shrink-0" style={{ borderBottom: `1px solid ${C.border}`, color: C.text }}>
+        {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
+        <span className="truncate">{attachedSession}</span>
+      </div>
+      <div
+        className="flex-1 overflow-hidden p-[3px] select-text"
+        style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+        onMouseDown={() => setFocusTarget('terminal')}
+      >
+        <Terminal
+          sessionName={attachedSession}
+          onInteract={() => setFocusTarget('terminal')}
+          onCloseRequest={() => {
+            detachActiveSession()
+          }}
+        />
+      </div>
+    </>
+  ) : (
+    <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a session to attach terminal</div>
   )
 
   return (
-    <div
-      ref={rootRef}
-      className={`flex h-full ${isTouch ? '' : 'select-none'}`}
-      onMouseDownCapture={() => { void lockCloseShortcut() }}
-      onTouchStartCapture={() => { void lockCloseShortcut() }}
-      onKeyDownCapture={() => { void lockCloseShortcut() }}
-    >
-      {showSearch && <FileSearch files={allFiles} onSelect={openFile} onClose={() => setShowSearch(false)} />}
-
-      {isMobile ? (
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="shrink-0 border-b border-[#eee8d5] px-3 py-2" style={{ backgroundColor: C.editorBg }}>
-            <PaneSwitch
-              options={[
-                { id: 'files', label: 'Files' },
-                { id: 'editor', label: 'Editor' },
-                { id: 'terminal', label: 'Terminal' },
-              ]}
-              value={mobilePane}
-              onChange={(value) => actions.setMobilePane(value as 'files' | 'editor' | 'terminal')}
-            />
-          </div>
-          <div className="flex-1 min-h-0 flex flex-col">
-            {mobilePane === 'files' && filesPaneMobile}
-            {mobilePane === 'editor' && editorPane}
-            {mobilePane === 'terminal' && terminalPane}
-          </div>
-        </div>
-      ) : (
-        <>
-          {showSidebar && (
-            <>
-              <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
-                <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => actions.updateLayout({ showExplorer: !showExplorer })} actions={explorerActions} />
-                {showExplorer && (
-                  <div className="shrink-0 min-h-0 flex flex-col" style={{ height: (showSessions || showChanges) ? explorerHeight : undefined, flex: (showSessions || showChanges) ? 'none' : 1 }}>
-                    <FileExplorer
-                      projectName={projectName}
-                      tree={fileTree}
-                      gitMap={gitMap}
-                      gitFolders={gitFolders}
-                      selectedFile={selectedFilePath}
-                      onSelectFile={openFileFromExplorer}
-                      onPreviewFile={openPreviewFromExplorer}
-                      onFocusExplorer={() => setFocusTarget('explorer')}
-                      onContextFolder={setContextFolder}
-                    />
-                  </div>
-                )}
-
-                {showExplorer && (showSessions || showChanges) && <HResizeHandle onMouseDown={explorerSplit.onMouseDown} isDragging={explorerSplit.isDragging} />}
-
-                <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => actions.updateLayout({ showChanges: !showChanges })} badge={changes.length || undefined} />
-                {showChanges && (
-                  <div className="overflow-y-auto py-1 px-1 shrink-0 min-h-0" style={{ height: showSessions ? changesHeight : undefined, flex: showSessions ? 'none' : 1 }}>
-                    {changes.map(c => (
-                      <GitChangeItem key={c.path} change={c} isActive={activeTab === `diff:${c.path}`} onActivate={() => activateChange(c.path)} />
-                    ))}
-                    {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
-                  </div>
-                )}
-
-                {showChanges && showSessions && <HResizeHandle onMouseDown={changesSplit.onMouseDown} isDragging={changesSplit.isDragging} />}
-
-                <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => actions.updateLayout({ showSessions: !showSessions })} actions={sessionActions} />
-                {showSessions && (
-                  <div className="flex-1 overflow-y-auto py-1 px-1 min-h-0" style={{ minHeight: MIN_SESSION_BODY_HEIGHT }}>
-                    {processing.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session') }} />)}
-                    {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
-                    {idle.map(s => <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} onKill={() => { void killSession(s.name) }} onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session') }} />)}
-                    {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
-                  </div>
-                )}
-              </div>
-              <VResizeHandle onMouseDown={left.onMouseDown} isDragging={left.isDragging} />
-            </>
-          )}
-
-          {shouldShowEditorPane && (
-            <>
-              {editorPane}
-              {showRightPanel && <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />}
-            </>
-          )}
-
-          {showRightPanel && terminalPane}
-        </>
-      )}
-    </div>
+    <WorkspaceLayout
+      isMobile={isMobile}
+      isTouch={isTouch}
+      layout={layout}
+      mobilePane={mobilePane}
+      onLayoutUpdate={actions.updateLayout}
+      onMobilePaneChange={actions.setMobilePane}
+      projectName={projectName}
+      explorerActions={explorerActions}
+      explorerBody={explorerBody}
+      gitStale={gitStale}
+      changesBadge={changes.length || undefined}
+      changesBody={changesBody}
+      sessionsActions={sessionActions}
+      sessionsBody={sessionsBody}
+      editorPane={editorPane}
+      terminalContent={terminalContent}
+      rootRef={rootRef}
+      sidebarRef={sidebarRef}
+      left={left}
+      right={right}
+      explorerSplit={explorerSplit}
+      explorerHeight={explorerHeight}
+      hasOpenFiles={hasOpenFiles}
+      onInteractionCapture={() => { void lockCloseShortcut() }}
+      onFilesPaneFocus={() => setFocusTarget('explorer')}
+      searchOverlay={showSearch ? <FileSearch files={allFiles} onSelect={openFile} onClose={() => setShowSearch(false)} /> : null}
+    />
   )
 }

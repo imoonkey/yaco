@@ -15,7 +15,7 @@ Surface summary and desktop/mobile composition for the Workspace view.
 
 ## Related Code
 
-`ui/src/components/Workspace.tsx`
+`ui/src/components/Workspace.tsx` (re-export), `ui/src/workspace/WorkspaceScreen.tsx` (controller), `ui/src/workspace/WorkspaceLayout.tsx` (layout composition)
 
 ## Surface
 
@@ -33,14 +33,13 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 ┌─────────────────────────────────────────────────────────┐
 │  Tab Bar (open file tabs)                               │
 ├──────────────┬──────────────────────┬───────────────────┤
-│  Left Sidebar│  Editor Area         │  Right Pane       │
+│  Left Sidebar│  Editor Area         │  Activity Column  │
 │  ┌──────────┐│  ┌──────────────────┐│  ┌───────────────┐│
 │  │ Explorer ││  │ CodeMirror /     ││  │ Terminal      ││
 │  │          ││  │ Preview /        ││  │               ││
 │  ├──────────┤│  │ Diff             ││  │               ││
-│  │ Changes  ││  │                  ││  │               ││
-│  ├──────────┤│  │                  ││  ├───────────────┤│
-│  │ Sessions ││  │                  ││  │ Session List  ││
+│  │ Changes  ││  │                  ││  ├───────────────┤│
+│  │          ││  │                  ││  │ Sessions      ││
 │  └──────────┘│  └──────────────────┘│  └───────────────┘│
 ├──────────────┴──────────────────────┴───────────────────┤
 │  Project Tabs (shared with Monitor via App shell)       │
@@ -52,20 +51,20 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 | Panel | Toggle | Default | Resizable |
 |-------|--------|---------|-----------|
 | Left sidebar | `Cmd+B` | Visible | Yes (horizontal drag) |
-| Right pane | `Cmd+Shift+B` | Visible | Yes (horizontal drag) |
+| Activity column | `Cmd+Shift+B` | Visible | Yes (horizontal drag) |
 | Explorer section | Click header | Open | Yes (vertical drag) |
-| Changes section | Click header | Open | Yes (vertical drag) |
-| Sessions section | Click header | Open | Yes (vertical drag) |
+| Changes section | Click header | Open | No (fills remaining sidebar space) |
+| Sessions tray | Click header | Open | No (fixed max-height 180px, scrollable) |
 
 ### Empty Editor
 
-When no file tabs are open, the terminal/session pane expands to occupy the full main content area.
+When no file tabs are open, the activity column (terminal + sessions) expands to occupy the full main content area.
 
 ## Mobile Composition
 
 Single full-width pane with PaneSwitch: `Files` | `Editor` | `Terminal`
 
-- `Files`: shows explorer tree only (no changes or sessions)
+- `Files`: shows explorer, changes, and sessions sections
 - `Editor`: shows editor or preview for the active tab
 - `Terminal`: shows terminal for the active session
 

@@ -64,6 +64,11 @@ The app is installable as an iPhone home-screen web app:
 - `apple-touch-icon.png` — 180px iOS home screen icon
 - `icon-192.png`, `icon-512.png` — standard PWA icons
 - `apple-mobile-web-app-capable` and `apple-mobile-web-app-status-bar-style` meta tags
+- `viewport-fit=cover` in viewport meta tag — enables `env(safe-area-inset-*)` for notch/gesture-zone padding
 - Theme color matches Solarized Light base3 (`#FDF6E3`)
+
+### Safe-Area Handling
+
+The bottom project tab bar applies `padding-bottom: var(--safe-area-bottom)` to lift it above the iPhone home indicator / system gesture zone. The CSS variable `--safe-area-bottom` is defined in `ui/src/index.css` via `env(safe-area-inset-bottom)`.
 
 For installed/mobile use, `npm run start:app` builds the UI and has the Hono server serve everything from one origin on `:3001`.

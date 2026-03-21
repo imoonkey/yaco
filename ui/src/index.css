@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Safe-area inset for mobile devices */
+:root {
+  --safe-area-bottom: env(safe-area-inset-bottom);
+}
+
 /* Solarized Light palette */
 :root {
   --sol-base03:  #002b36;

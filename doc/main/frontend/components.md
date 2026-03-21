@@ -26,7 +26,11 @@ App (305 lines)
 │   ├── RoadmapView (160 lines)
 │   └── PaneSwitch (35 lines)
 └── Workspace (re-export → workspace/WorkspaceScreen)
-    └── WorkspaceScreen (671 lines) — controller + layout
+    └── WorkspaceScreen (570 lines) — controller
+        └── WorkspaceLayout (175 lines) — layout composition
+            ├── SectionHeader (17 lines)
+            ├── VResizeHandle / HResizeHandle (23 lines)
+            └── PaneSwitch
         ├── WorkspaceTabBar (75 lines)
         ├── WorkspaceEditorArea (266 lines)
         │   ├── DiffView
@@ -36,11 +40,8 @@ App (305 lines)
         ├── Terminal (283 lines)
         ├── SessionItem (37 lines)
         ├── GitChangeItem (22 lines)
-        ├── SectionHeader (17 lines)
         ├── FileSearch (45 lines)
-        ├── VResizeHandle / HResizeHandle (23 lines)
-        ├── ProviderIcon
-        └── PaneSwitch
+        └── ProviderIcon
 ```
 
 **Supporting modules (non-component):**
@@ -66,24 +67,33 @@ Top-level shell. Manages view switching (Monitor/Workspace), project selection, 
 
 ## Workspace / WorkspaceScreen
 
-**File**: `ui/src/components/Workspace.tsx` (re-export) → `ui/src/workspace/WorkspaceScreen.tsx` (671 lines)
+**File**: `ui/src/components/Workspace.tsx` (re-export) → `ui/src/workspace/WorkspaceScreen.tsx` (570 lines)
 
-Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition (desktop/mobile) is inline.
+Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition is delegated to `WorkspaceLayout`.
 
 **Props**: `{ projectName: string; projectPath: string }`
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
-- Layout: desktop sidebar + editor + terminal, mobile pane switching
+- Builds section content (explorer, changes, sessions, editor, terminal) as React nodes
+- Passes content slots to `WorkspaceLayout` for placement
 - Delegates domain state to `useWorkspaceState` hook
-- Delegates tab strip to `WorkspaceTabBar`
-- Delegates editor/preview/diff to `WorkspaceEditorArea`
+
+### WorkspaceLayout
+
+**File**: `ui/src/workspace/WorkspaceLayout.tsx` (175 lines)
+
+Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
+
+**Desktop**: `Sidebar(Explorer + Changes) | Editor | ActivityColumn(Terminal + Sessions)`
+**Mobile**: `PaneSwitch → Files(Explorer + Changes + Sessions) | Editor | Terminal`
 
 ### Extracted modules in `ui/src/workspace/`
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `WorkspaceScreen.tsx` | 671 | Controller + layout composition |
+| `WorkspaceScreen.tsx` | 570 | Controller (state, callbacks, keyboard) |
+| `WorkspaceLayout.tsx` | 175 | Layout composition (desktop/mobile) |
 | `WorkspaceEditorArea.tsx` | 266 | Editor, preview, diff, conflict banner |
 | `markdown.ts` | 118 | Markdown rendering, syntax highlighting, mermaid |
 | `WorkspaceTabBar.tsx` | 75 | Tab strip with dirty/conflict/preview indicators |

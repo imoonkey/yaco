@@ -70,7 +70,7 @@ function ProjectTabs({
   return (
     <div
       className="shrink-0 flex items-center gap-2 px-3 min-w-0"
-      style={{ height: 40, backgroundColor: '#EEE8D5', borderTop: '1px solid #D3CBB7' }}
+      style={{ minHeight: 40, backgroundColor: '#EEE8D5', borderTop: '1px solid #D3CBB7', paddingBottom: 'var(--safe-area-bottom)' }}
     >
       <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0 text-[#93a1a1]">
         Projects

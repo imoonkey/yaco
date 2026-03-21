@@ -17,11 +17,11 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/components/Workspace.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
+`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
 
 ## Session List
 
-Located in the left sidebar Sessions section (desktop) or right pane (when terminal is active).
+On desktop, located in the activity column (right panel) below the terminal. On mobile, located in the Files pane below Explorer and Changes. The session UI is defined once in WorkspaceScreen and placed by WorkspaceLayout via slot assignment.
 
 ### Display
 
