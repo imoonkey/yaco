@@ -37,10 +37,11 @@ Virtualized file tree using react-arborist with react-window.
 
 ### Navigation
 
-- Click file → opens in editor
+- Single-click file → opens in **preview tab** (italic title, replaced by next single-click)
+- Double-click file → opens as **pinned tab** (normal title, persists)
 - Click directory → expands/collapses
 - Arrow keys → navigate up/down
-- Enter → open selected file
+- Enter → open selected file (pinned)
 - Tree is keyboard-accessible
 
 ### Selection Sync (File Reveal)

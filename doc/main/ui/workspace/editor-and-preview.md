@@ -33,7 +33,22 @@ Multi-tab editor, dirty state, draft model, markdown preview, and diff view.
 |-------|-----------|----------------|
 | Clean | Close button (`×`) on right side | Close immediately |
 | Dirty | Black dot on right side (replaces `×`) | Close immediately (draft discarded) |
+| Preview | *Italic* tab title | Replaced by next single-click in explorer |
 | Diff | File path + "diff" styling | Close immediately |
+
+### Preview Tabs
+
+VS Code-style preview behavior. At most one preview tab exists at a time.
+
+| Action | Result |
+|--------|--------|
+| Single-click in explorer | Opens **preview tab** — italic title, replaced by next single-click |
+| Double-click in explorer | Opens **pinned tab** — normal title, persists |
+| Double-click preview tab header | Pins it |
+| Edit content in preview tab | Auto-pins it |
+| `Cmd+P` file search | Opens pinned (intentional navigation) |
+
+State is persisted to localStorage alongside other workspace state.
 
 ## Draft Model
 
@@ -79,6 +94,7 @@ Available for `.md` files only. Toggled via Preview button or `Cmd+Shift+V`.
 - Renders inside a `.markdown-preview` styled container
 - Renders the draft content (not refetched from disk)
 - Syntax highlighting on code blocks via `@lezer/highlight` (classHighlighter + language parsers)
+- **Mermaid diagrams**: ` ```mermaid ` code fences render as SVG diagrams inline via the `mermaid` library (initialized with `startOnLoad: false`, theme `neutral`). Rendering is triggered by a `useEffect` after HTML mount using `mermaid.run()`.
 
 ### Source-Line Anchored Sync
 

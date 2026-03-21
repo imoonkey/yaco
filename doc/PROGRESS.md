@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-20: Editor UX — preview tabs, cursor visibility, mermaid rendering
+
+**What changed:**
+- Preview tabs: single-click in file explorer opens a temporary preview tab (italic title, replaced by next click). Double-click or edit pins it. `previewTab` state added to `useWorkspaceState` with localStorage persistence.
+- Cursor visibility: changed `editorSelectionBackground` from `#EEE8D5` to `#D5CCB5` so text selections are distinguishable from the active line highlight.
+- Mermaid rendering: ` ```mermaid ` code fences render as SVG diagrams in markdown preview via the `mermaid` library. Early return in `renderer.code`, `useEffect` with `mermaid.run()` after HTML mount.
+
+**Why:**
+- Preview tabs reduce tab clutter — browsing files no longer accumulates persistent tabs
+- Selection color was identical to active line highlight, making cursor invisible during selection
+- Mermaid code blocks rendered as plain text, requiring external tools to visualize diagrams
+
+**Key files:** `ui/src/hooks/useWorkspaceState.ts`, `ui/src/components/Workspace.tsx`, `ui/src/components/FileExplorer.tsx`, `ui/src/lib/solarizedLight.ts`, `ui/src/index.css`, `ui/package.json`
+**Verification:** Vite production build passed. TypeScript pre-existing errors only (unrelated `useRef` strict mode).
+**Commit:** 3d2bbb9
+**Next:** End-to-end manual testing of preview tab lifecycle; consider lazy-loading mermaid for bundle size
+**Blockers:** None
+
 ## 2026-03-20: Workspace state synchronization
 
 **What changed:**

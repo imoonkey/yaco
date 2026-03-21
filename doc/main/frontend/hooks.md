@@ -20,7 +20,7 @@ Custom React hooks for data fetching, real-time updates, and device detection.
 
 Per-project workspace state management: tabs, layout, file drafts, conflict detection, and persistence.
 
-**Export**: `useWorkspaceState(projectName)` → `{ openTabs, activeTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, actions }`
+**Export**: `useWorkspaceState(projectName)` → `{ openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, actions }`
 
 ### State
 
@@ -28,6 +28,7 @@ Per-project workspace state management: tabs, layout, file drafts, conflict dete
 |-------|------|-----------|
 | `openTabs` | `string[]` | localStorage (`workflow-workspace:<project>`) |
 | `activeTab` | `string \| null` | localStorage |
+| `previewTab` | `string \| null` | localStorage |
 | `activeSession` | `string` | localStorage |
 | `mobilePane` | `'files' \| 'editor' \| 'terminal'` | localStorage |
 | `layout` | `WorkspaceLayout` | localStorage |

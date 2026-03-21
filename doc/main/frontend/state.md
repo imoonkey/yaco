@@ -53,7 +53,7 @@ The `tick` state variable forces re-fetch: SSE callbacks increment it, which tri
 
 The `useWorkspaceState` hook (466 lines) is the primary state manager for the Workspace view. It owns:
 
-- Open tabs, active tab, active session, mobile pane selection
+- Open tabs, active tab, preview tab, active session, mobile pane selection
 - Layout visibility and panel sizes
 - Per-file draft state with conflict detection
 - Persistence to localStorage (layout + dirty drafts)
