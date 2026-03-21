@@ -413,16 +413,24 @@ function MarkdownPreview({
     const container = containerRef.current
     if (!container) return
     const mermaidDivs = container.querySelectorAll<HTMLElement>('.mermaid:not([data-processed])')
-    if (mermaidDivs.length > 0) {
-      mermaid.run({ nodes: mermaidDivs }).catch((err: unknown) => {
-        for (const div of mermaidDivs) {
-          if (!div.querySelector('svg')) {
-            const msg = err instanceof Error ? err.message : 'Diagram render failed'
-            div.innerHTML = `<pre style="color:#dc322f;font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
-          }
+    if (mermaidDivs.length === 0) return
+
+    let counter = 0
+    const renderAll = async () => {
+      for (const div of mermaidDivs) {
+        const source = div.textContent?.trim()
+        if (!source) continue
+        try {
+          const { svg } = await mermaid.render(`mermaid-${Date.now()}-${counter++}`, source)
+          div.innerHTML = svg
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Diagram render failed'
+          div.innerHTML = `<pre style="color:#dc322f;font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
         }
-      })
+        div.setAttribute('data-processed', 'true')
+      }
     }
+    renderAll()
   }, [html])
 
   return (
