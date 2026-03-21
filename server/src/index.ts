@@ -16,9 +16,10 @@ import { gitRoutes } from './routes/git.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
-import { startSessionPoller } from './lib/session-poller.js'
+import { startSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers } from './lib/project-watcher.js'
-import { attachSession } from './lib/terminal.js'
+import { emitRefresh } from './lib/notify.js'
+import { attachSession, setShellSessionChangeCallback } from './lib/terminal.js'
 import type { IPty } from 'node-pty'
 
 const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
@@ -161,8 +162,9 @@ const projects = await loadProjects()
 await startWatching(projects, (project, workstream) => {
   console.log(`[watch] progress.json changed: ${project}/${workstream}`)
 })
-startSessionPoller()
+startSessionReconciler()
 startProjectWatchers(projects)
+setShellSessionChangeCallback(() => emitRefresh('sessions'))
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
 

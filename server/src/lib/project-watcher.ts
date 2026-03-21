@@ -21,6 +21,7 @@ const IGNORE = [
 function routeChange(filename: string): string | null {
   if (IGNORE.some(re => re.test(filename))) return null
 
+  if (/^\.multmux\/[^/]+\.json$/.test(filename)) return 'sessions'
   if (/^doc\/todo\/[^/]+\/workstream\.json$/.test(filename)) return 'workstreams'
   if (/^\.git\//.test(filename)) return 'git'
 

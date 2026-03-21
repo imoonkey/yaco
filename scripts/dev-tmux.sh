@@ -6,10 +6,11 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SESSION_NAME="${WORKFLOW_DEV_TMUX_SESSION:-workflow-dev}"
 ATTACH=1
 RESET=0
+RESTART=0
 
 usage() {
   cat <<'EOF'
-Usage: scripts/dev-tmux.sh [--detached] [--reset] [--session NAME]
+Usage: scripts/dev-tmux.sh [--detached] [--reset] [--restart] [--session NAME]
 
 Starts a tmux session with two panes:
 - left: backend dev server
@@ -18,6 +19,7 @@ Starts a tmux session with two panes:
 Options:
   --detached       Start or reuse the session without attaching
   --reset          Kill an existing session with the same name before starting
+  --restart        Send C-c + re-run dev commands in both panes (no session kill)
   --session NAME   Override tmux session name
   -h, --help       Show this help
 
@@ -68,6 +70,10 @@ while [ "$#" -gt 0 ]; do
       RESET=1
       shift
       ;;
+    --restart)
+      RESTART=1
+      shift
+      ;;
     --session)
       if [ "$#" -lt 2 ]; then
         echo "--session requires a value" >&2
@@ -93,6 +99,18 @@ require_cmd npm
 validate_session_name
 
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+  if [ "$RESTART" -eq 1 ]; then
+    echo "Restarting dev servers in: $SESSION_NAME"
+    for pane in 0 1; do
+      tmux send-keys -t "$SESSION_NAME:dev.$pane" C-c
+      tmux send-keys -t "$SESSION_NAME:dev.$pane" "cd \"$ROOT_DIR\"" C-m
+    done
+    sleep 1
+    tmux send-keys -t "$SESSION_NAME:dev.0" 'npm run dev:server' C-m
+    tmux send-keys -t "$SESSION_NAME:dev.1" 'npm run dev:ui' C-m
+    attach_session
+    exit 0
+  fi
   if [ "$RESET" -eq 1 ]; then
     tmux kill-session -t "$SESSION_NAME"
   else

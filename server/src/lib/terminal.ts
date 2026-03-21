@@ -26,6 +26,13 @@ export interface AttachedSession {
 
 const shellSessions = new Map<string, ShellSession>()
 
+let onSessionChange: (() => void) | null = null
+
+/** Register a callback invoked on shell session start, close, or process exit */
+export function setShellSessionChangeCallback(cb: () => void): void {
+  onSessionChange = cb
+}
+
 function trimBuffer(buffer: string): string {
   return buffer.length > MAX_BUFFER_SIZE ? buffer.slice(-MAX_BUFFER_SIZE) : buffer
 }
@@ -74,9 +81,11 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
 
   proc.onExit(() => {
     shellSessions.delete(name)
+    onSessionChange?.()
   })
 
   shellSessions.set(name, session)
+  onSessionChange?.()
   return name
 }
 
@@ -87,6 +96,7 @@ export function closeShellSession(name: string): boolean {
 
   session.proc.kill()
   shellSessions.delete(name)
+  onSessionChange?.()
   return true
 }
 

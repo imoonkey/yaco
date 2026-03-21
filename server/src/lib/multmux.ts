@@ -1,4 +1,6 @@
 import { spawn, execSync } from 'child_process'
+import { existsSync, readFileSync, readdirSync } from 'fs'
+import { join } from 'path'
 import type { Project } from './projects'
 import { resolveTmuxSession, validateSessionName } from './session-names'
 
@@ -22,55 +24,74 @@ export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
   return name.toLowerCase().includes('codex') ? 'codex' : 'claude'
 }
 
-/** Query multmux status for a specific project directory */
-export async function getSessionsForProject(project: Project): Promise<MultmuxSession[]> {
+/** Raw shape of .multmux/<handle>.json state files */
+export interface MultmuxStateFile {
+  handle: string
+  provider: 'claude' | 'codex'
+  tmuxSession: string
+  pid: number
+  status: 'starting' | 'idle' | 'processing' | 'stopped'
+  createdAt: string
+}
+
+/** Normalize state file status to workflow UI semantics.
+ *  starting → idle (pre-work bootstrap, not real processing)
+ *  stopped  → null (excluded from active list) */
+function normalizeStateFileStatus(status: string): 'processing' | 'idle' | null {
+  if (status === 'processing') return 'processing'
+  if (status === 'idle' || status === 'starting') return 'idle'
+  return null // stopped or unknown → exclude
+}
+
+/** Read sessions from .multmux/*.json state files (primary source of truth) */
+export function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): MultmuxSession[] {
+  const dir = join(project.path, '.multmux')
+  if (!existsSync(dir)) return []
+
+  let files: string[]
   try {
-    const output = await spawnOutput(MULTMUX_PATH, ['status'], 5000, project.path)
-    return parseMultmuxOutput(output, project.name)
+    files = readdirSync(dir).filter(f => f.endsWith('.json'))
   } catch {
     return []
   }
+
+  const sessions: MultmuxSession[] = []
+  for (const file of files) {
+    try {
+      const raw = readFileSync(join(dir, file), 'utf-8')
+      const state = JSON.parse(raw) as MultmuxStateFile
+      const status = normalizeStateFileStatus(state.status)
+      if (!status) continue
+
+      const provider = state.provider === 'codex' || state.provider === 'claude'
+        ? state.provider
+        : inferMultmuxProvider(state.handle)
+
+      sessions.push({
+        name: state.handle,
+        provider,
+        status,
+        project: project.name,
+      })
+    } catch {
+      continue
+    }
+  }
+  return sessions
 }
 
-/** Like getSessionsForProject but throws on failure — for the session poller */
-export async function querySessionsForProject(project: Project): Promise<MultmuxSession[]> {
-  const output = await spawnOutput(MULTMUX_PATH, ['status'], 5000, project.path)
-  return parseMultmuxOutput(output, project.name)
-}
-
-/** Get sessions across all projects */
-export async function getAllSessions(projects: Project[]): Promise<MultmuxSession[]> {
-  const results = await Promise.all(projects.map(getSessionsForProject))
+/** Read sessions from state files across all projects */
+export function readAllSessionsFromStateFiles(projects: Pick<Project, 'name' | 'path'>[]): MultmuxSession[] {
   const seen = new Set<string>()
   const all: MultmuxSession[] = []
-  for (const sessions of results) {
-    for (const session of sessions) {
+  for (const project of projects) {
+    for (const session of readSessionsFromStateFiles(project)) {
       if (seen.has(session.name)) continue
       seen.add(session.name)
       all.push(session)
     }
   }
   return all
-}
-
-/** Parse multmux status output — format: "name<whitespace>idle|processing" */
-export function parseMultmuxOutput(output: string, projectName: string): MultmuxSession[] {
-  const sessions: MultmuxSession[] = []
-  const lines = output.trim().split('\n').filter(l => l.trim())
-
-  for (const line of lines) {
-    const match = line.match(/^(\S+)\s+(processing|idle)\s*$/i)
-    if (match) {
-      const name = match[1].trim()
-      sessions.push({
-        name,
-        provider: inferMultmuxProvider(name),
-        status: match[2].toLowerCase() as 'processing' | 'idle',
-        project: projectName,
-      })
-    }
-  }
-  return sessions
 }
 
 /** Send a message to a multmux session */
