@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, createContext, useContext } from 'react'
 import { Tree } from 'react-arborist'
 import type { NodeRendererProps } from 'react-arborist'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
@@ -66,7 +66,9 @@ const ExplorerContext = createContext<{
   reportContextFolder: (path: string, type: 'file' | 'dir') => void
   onPreviewFile?: (path: string) => void
   onPinFile?: (path: string) => void
-}>({ gitMap: new Map(), gitFolders: new Set(), openContextMenu: () => {}, reportContextFolder: () => {} })
+  pendingNewId: string | null
+  cancelCreate: () => void
+}>({ gitMap: new Map(), gitFolders: new Set(), openContextMenu: () => {}, reportContextFolder: () => {}, pendingNewId: null, cancelCreate: () => {} })
 
 // --- Context menu ---
 function MenuItem({ label, onClick }: { label: string; onClick: () => void }) {
@@ -89,7 +91,7 @@ function MenuDivider() {
 
 // --- Custom node renderer ---
 function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
-  const { gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile } = useContext(ExplorerContext)
+  const { gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile, pendingNewId, cancelCreate } = useContext(ExplorerContext)
   const d = node.data
   const gitStatus = gitMap.get(d.path)
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
@@ -100,6 +102,7 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
     : C.text
 
   if (node.isEditing) {
+    const isNew = d.path === pendingNewId
     return (
       <div style={style} ref={dragHandle}>
         <div className="flex items-center gap-1 h-full px-1">
@@ -108,11 +111,15 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
             autoFocus
             className="flex-1 text-[12px] bg-transparent outline-none border-b min-w-0"
             style={{ color: C.text, borderColor: C.accent }}
-            defaultValue={d.name}
-            onBlur={() => node.reset()}
+            defaultValue={isNew ? '' : d.name}
+            onBlur={() => { node.reset(); if (isNew) cancelCreate() }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') node.submit(e.currentTarget.value)
-              if (e.key === 'Escape') node.reset()
+              if (e.key === 'Enter') {
+                const val = e.currentTarget.value.trim()
+                if (val) node.submit(val)
+                else { node.reset(); if (isNew) cancelCreate() }
+              }
+              if (e.key === 'Escape') { node.reset(); if (isNew) cancelCreate() }
             }}
           />
         </div>
@@ -169,7 +176,25 @@ function filterDotfiles(nodes: FileNode[]): FileNode[] {
     .map(n => n.children ? { ...n, children: filterDotfiles(n.children) } : n)
 }
 
+function insertPendingNode(nodes: FileNode[], pending: FileNode): FileNode[] {
+  const i = pending.path.lastIndexOf('/')
+  const parentPath = i > 0 ? pending.path.slice(0, i) : ''
+  if (!parentPath) return [...nodes, pending]
+  return nodes.map(n => {
+    if (n.path === parentPath && n.type === 'dir') {
+      return { ...n, children: [...(n.children || []), pending] }
+    }
+    return n.children ? { ...n, children: insertPendingNode(n.children, pending) } : n
+  })
+}
+
 // --- FileExplorer component ---
+export interface FileExplorerHandle {
+  createFile: (parentPath?: string) => void
+  createFolder: (parentPath?: string) => void
+  expandToPath: (folderPath: string) => void
+}
+
 interface FileExplorerProps {
   projectName: string
   tree: FileNode[] | null
@@ -182,7 +207,8 @@ interface FileExplorerProps {
   onContextFolder?: (path: string) => void
 }
 
-export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onFocusExplorer, onContextFolder }: FileExplorerProps) {
+export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(
+function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onFocusExplorer, onContextFolder }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -190,6 +216,14 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
   const treeRef = useRef<any>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [ctxMenu, setCtxMenu] = useState<ContextMenuState>(null)
+  const [pendingCreate, setPendingCreate] = useState<{ path: string; type: 'file' | 'dir' } | null>(null)
+  const pendingRef = useRef(pendingCreate)
+  pendingRef.current = pendingCreate
+
+  const cancelCreate = useCallback(() => {
+    pendingRef.current = null
+    setPendingCreate(null)
+  }, [])
 
   const measureContainer = useCallback((node?: HTMLDivElement | null) => {
     const container = node ?? containerRef.current
@@ -265,25 +299,15 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
     return i > 0 ? path.slice(0, i) : ''
   }
 
-  const handleNewFile = useCallback(async (parentPath: string) => {
+  const handleNewFile = useCallback((parentPath: string) => {
     setCtxMenu(null)
-    const name = prompt('New file name:')
-    if (!name || name.includes('..')) return
-    const fullPath = parentPath ? `${parentPath}/${name}` : name
-    try {
-      await createFile(projectName, fullPath)
-      onSelectFile(fullPath)
-    } catch (err) { console.error('Failed to create file:', err) }
-  }, [projectName, onSelectFile])
+    treeRef.current?.create({ type: 'leaf', parentId: parentPath || null })
+  }, [])
 
-  const handleNewFolder = useCallback(async (parentPath: string) => {
+  const handleNewFolder = useCallback((parentPath: string) => {
     setCtxMenu(null)
-    const name = prompt('New folder name:')
-    if (!name || name.includes('..')) return
-    const fullPath = parentPath ? `${parentPath}/${name}` : name
-    try { await createDir(projectName, fullPath) }
-    catch (err) { console.error('Failed to create folder:', err) }
-  }, [projectName])
+    treeRef.current?.create({ type: 'internal', parentId: parentPath || null })
+  }, [])
 
   const handleRename = useCallback(async (path: string) => {
     setCtxMenu(null)
@@ -313,18 +337,72 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
     catch (err) { console.error('Failed to move:', err) }
   }, [projectName])
 
+  const onCreate = useCallback(({ parentId, type }: { parentId: string | null; type: 'internal' | 'leaf' }) => {
+    const parentPath = parentId || ''
+    const tempPath = parentPath ? `${parentPath}/__new__` : '__new__'
+    const nodeType = type === 'internal' ? 'dir' as const : 'file' as const
+    const pending = { path: tempPath, type: nodeType }
+    pendingRef.current = pending
+    setPendingCreate(pending)
+    return { id: tempPath }
+  }, [])
+
   const onRename = useCallback(async ({ id, name }: { id: string; name: string }) => {
+    const pending = pendingRef.current
+    if (pending && id === pending.path) {
+      pendingRef.current = null
+      setPendingCreate(null)
+      if (!name.trim() || name.includes('..') || name.includes('/')) return
+      const parentPath = parentOf(id)
+      const fullPath = parentPath ? `${parentPath}/${name}` : name
+      try {
+        if (pending.type === 'dir') {
+          await createDir(projectName, fullPath)
+        } else {
+          await createFile(projectName, fullPath)
+          onSelectFile(fullPath)
+        }
+      } catch (err) { console.error('Failed to create:', err) }
+      return
+    }
     const oldPath = id
     const parent = parentOf(oldPath)
     const newPath = parent ? `${parent}/${name}` : name
     if (newPath === oldPath) return
     try { await renameFile(projectName, oldPath, newPath) }
     catch (err) { console.error('Failed to rename:', err) }
-  }, [projectName])
+  }, [projectName, onSelectFile])
 
-  const filteredTree = useMemo(() => tree ? filterDotfiles(tree) : null, [tree])
+  const treeData = useMemo(() => {
+    if (!tree) return null
+    let result = filterDotfiles(tree)
+    if (pendingCreate) {
+      result = insertPendingNode(result, { name: '', path: pendingCreate.path, type: pendingCreate.type })
+    }
+    return result
+  }, [tree, pendingCreate])
 
-  if (!filteredTree) {
+  useImperativeHandle(ref, () => ({
+    createFile: (parentPath) => {
+      treeRef.current?.create({ type: 'leaf', parentId: parentPath || null })
+    },
+    createFolder: (parentPath) => {
+      treeRef.current?.create({ type: 'internal', parentId: parentPath || null })
+    },
+    expandToPath: (folderPath) => {
+      if (!treeRef.current) return
+      const parts = folderPath.split('/')
+      for (let i = 1; i <= parts.length; i++) {
+        const p = parts.slice(0, i).join('/')
+        const node = treeRef.current.get(p)
+        if (node && !node.isOpen) node.open()
+      }
+      const target = treeRef.current.get(folderPath)
+      if (target) target.select()
+    },
+  }), [])
+
+  if (!treeData) {
     return <div className="flex-1 px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>
   }
 
@@ -333,12 +411,12 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
     : ''
 
   return (
-    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile }}>
+    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0" onMouseDown={onFocusExplorer}>
         {size.width > 0 && size.height > 0 && (
           <Tree
             ref={treeRef}
-            data={filteredTree}
+            data={treeData}
             idAccessor="path"
             childrenAccessor="children"
             width={size.width}
@@ -348,6 +426,7 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
             openByDefault={false}
             disableMultiSelection
             selection={selectedFile ?? undefined}
+            onCreate={onCreate}
             onMove={onMove}
             onRename={onRename}
             onActivate={(node) => {
@@ -378,4 +457,4 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
       )}
     </ExplorerContext.Provider>
   )
-}
+})

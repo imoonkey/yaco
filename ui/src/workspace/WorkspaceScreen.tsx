@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useFileTree, useSessions, useGitStatus, createFile, createDir, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
+import { useFileTree, useSessions, useGitStatus, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
 import { useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { Terminal } from '../components/Terminal'
 import { ProviderIcon } from '../components/SessionIcons'
 import { FileExplorer, NewFileIcon, NewFolderIcon } from '../components/FileExplorer'
+import type { FileExplorerHandle } from '../components/FileExplorer'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { clampLine } from './markdown'
@@ -41,6 +42,7 @@ type KeyboardLockHandle = {
 export function Workspace({ projectName, projectPath }: { projectName: string; projectPath: string }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
+  const explorerRef = useRef<FileExplorerHandle>(null)
   const isMobile = useIsMobile()
   const isTouch = useIsTouch()
 
@@ -179,28 +181,13 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     actions.setMobilePane('editor')
   }, [actions])
 
-  const handleNewFile = useCallback(async () => {
-    const name = prompt('New file name:')
-    if (!name || name.includes('..')) return
-    const fullPath = contextFolder ? `${contextFolder}/${name}` : name
-    try {
-      await createFile(projectName, fullPath)
-      openFile(fullPath, 'explorer')
-    } catch (err) {
-      console.error('Failed to create file:', err)
-    }
-  }, [projectName, openFile, contextFolder])
+  const handleNewFile = useCallback(() => {
+    explorerRef.current?.createFile(contextFolder || undefined)
+  }, [contextFolder])
 
-  const handleNewFolder = useCallback(async () => {
-    const name = prompt('New folder name:')
-    if (!name || name.includes('..')) return
-    const fullPath = contextFolder ? `${contextFolder}/${name}` : name
-    try {
-      await createDir(projectName, fullPath)
-    } catch (err) {
-      console.error('Failed to create folder:', err)
-    }
-  }, [projectName, contextFolder])
+  const handleNewFolder = useCallback(() => {
+    explorerRef.current?.createFolder(contextFolder || undefined)
+  }, [contextFolder])
 
   const explorerActions = (
     <div className="flex gap-0.5">
@@ -433,6 +420,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   const explorerBody = (
     <FileExplorer
+      ref={explorerRef}
       projectName={projectName}
       tree={fileTree}
       gitMap={gitMap}
