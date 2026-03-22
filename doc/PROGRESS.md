@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-22: Fix file tree explorer going blank on desktop
+
+**What changed:**
+- FileExplorer: moved Loading state inside the ResizeObserver-tracked container so size is pre-measured when data arrives (prevents stuck `{0,0}` size)
+- FileExplorer: removed `size.width > 0 && size.height > 0` gate — Tree is always rendered with `Math.max(1, dim)` clamping so it stays mounted through layout transitions
+- WorkspaceScreen: added `showSidebar` to sidebar ResizeObserver effect deps so it re-attaches after sidebar toggle (prevents stale `sidebarHeight` → collapsed explorer)
+
+**Why:**
+- The file tree explorer frequently went blank on desktop web with no user action. Root cause: two interacting bugs — (1) the Loading early-return bypassed the measured container, leaving size at `{0,0}` when data arrived; (2) the sidebar ResizeObserver didn't survive sidebar toggle, making `explorerHeight` collapse to 0. Both caused the size-gate to permanently suppress the Tree component.
+
+**Key files:** `ui/src/components/FileExplorer.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** TypeScript build passed (`tsc --noEmit`), code review clean
+**Commit:** `73b12c5`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-22: Fix mobile terminal blank on new session
 
 **What changed:**
