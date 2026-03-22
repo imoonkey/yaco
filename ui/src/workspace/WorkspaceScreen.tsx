@@ -352,11 +352,11 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
-      // Cmd+Shift+[1-9]: switch to session N
-      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+      // Cmd+Shift+[1-9]: switch to session N (use e.code since e.key gives punctuation with shift)
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && /^Digit[1-9]$/.test(e.code)) {
         e.preventDefault()
         e.stopPropagation()
-        const target = orderedSessions[Number(e.key) - 1]
+        const target = orderedSessions[Number(e.code.slice(5)) - 1]
         if (target) {
           actions.setActiveSession(target.name)
           setFocusTarget('session')
