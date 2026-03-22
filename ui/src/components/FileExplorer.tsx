@@ -405,25 +405,23 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     },
   }), [])
 
-  if (!treeData) {
-    return <div className="flex-1 px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>
-  }
-
   const ctxParent = ctxMenu
     ? (ctxMenu.type === 'dir' ? ctxMenu.path : parentOf(ctxMenu.path))
     : ''
 
   return (
     <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
-      <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0" onMouseDown={onFocusExplorer}>
-        {size.width > 0 && size.height > 0 && (
+      <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0 overflow-hidden" onMouseDown={onFocusExplorer}>
+        {!treeData ? (
+          <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>
+        ) : (
           <Tree
             ref={treeRef}
             data={treeData}
             idAccessor="path"
             childrenAccessor="children"
-            width={size.width}
-            height={size.height}
+            width={Math.max(1, size.width)}
+            height={Math.max(1, size.height)}
             rowHeight={22}
             indent={12}
             openByDefault={false}

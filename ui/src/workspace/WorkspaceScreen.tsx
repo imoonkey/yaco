@@ -361,7 +361,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     })
     observer.observe(sidebarRef.current)
     return () => observer.disconnect()
-  }, [])
+  }, [showSidebar])
 
   // Sync resize handle sizes back to layout state for persistence
   useEffect(() => {
