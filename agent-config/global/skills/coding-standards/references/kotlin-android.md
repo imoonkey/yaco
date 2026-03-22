@@ -1,18 +1,4 @@
----
-name: coding-standards
-description: Android/Kotlin coding conventions and patterns. Auto-applied as reference during code changes.
----
-
-# Coding Standards
-
-Android/Kotlin coding conventions and patterns.
-
-## Core Principles
-
-1. **Readability First** - Clear > clever
-2. **KISS** - Simplest solution that works
-3. **DRY** - Extract common logic
-4. **YAGNI** - Don't build unneeded features
+# Kotlin/Android Coding Standards
 
 ## Kotlin Idioms
 
@@ -22,7 +8,7 @@ Android/Kotlin coding conventions and patterns.
 // Classes: PascalCase
 class SessionManager
 
-// Functions/variables: camelCase  
+// Functions/variables: camelCase
 fun processEvent()
 val isRunning: Boolean
 
@@ -33,27 +19,25 @@ const val MAX_RETRIES = 3
 ### Null Safety
 
 ```kotlin
-// ✅ Prefer safe calls
+// Prefer safe calls
 user?.name?.uppercase()
 
-// ✅ Elvis for defaults
+// Elvis for defaults
 val name = user?.name ?: "Unknown"
 
-// ❌ Avoid force unwrap
-user!!.name  // BAD
+// Avoid force unwrap — user!!.name is BAD
 ```
 
 ### Immutability
 
 ```kotlin
-// ✅ Prefer val
+// Prefer val
 val state: SessionState
 
-// ✅ Use copy() for modifications
+// Use copy() for modifications
 val newState = state.copy(status = Running)
 
-// ❌ Avoid var unless necessary
-var mutableState  // BAD if avoidable
+// Avoid var unless necessary
 ```
 
 ### Sealed Classes for State
@@ -70,34 +54,30 @@ sealed class Result<T> {
 ### Coroutines
 
 ```kotlin
-// ✅ Structured concurrency
+// Structured concurrency
 viewModelScope.launch {
     // Cancelled when ViewModel cleared
 }
 
-// ✅ Main-safe
+// Main-safe
 suspend fun fetchData() = withContext(Dispatchers.IO) {
     // Heavy work
 }
 
-// ❌ Avoid GlobalScope
-GlobalScope.launch { }  // BAD
+// Avoid GlobalScope
 ```
 
 ### Lifecycle
 
 ```kotlin
-// ✅ Scope to lifecycle
+// Scope to lifecycle
 lifecycleScope.launch {
     repeatOnLifecycle(Lifecycle.State.STARTED) {
         viewModel.state.collect { }
     }
 }
 
-// ❌ Avoid static Context refs
-companion object {
-    var context: Context  // LEAK!
-}
+// Avoid static Context refs — they leak
 ```
 
 ### State Management
@@ -112,20 +92,10 @@ fun updateState(action: Action) {
 }
 ```
 
-## Code Smells
-
-| Smell | Threshold | Fix |
-|-------|-----------|-----|
-| Large file | >400 lines | Extract class/functions |
-| Deep nesting | >4 levels | Early returns, extract |
-| Long function | >50 lines | Break into smaller |
-| God class | Does everything | Single responsibility |
-| Magic numbers | Unexplained | Named constants |
-
 ## Error Handling
 
 ```kotlin
-// ✅ Comprehensive
+// Comprehensive
 try {
     val result = riskyOperation()
     onSuccess(result)
@@ -134,6 +104,5 @@ try {
     onError(AgentError.from(e))
 }
 
-// ❌ Swallowing
-try { riskyOperation() } catch (e: Exception) { }  // BAD
+// Never swallow: try { riskyOperation() } catch (e: Exception) { }
 ```

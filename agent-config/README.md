@@ -35,17 +35,13 @@ agent-config/
       tdd/                           # Test-driven development
       worktree-task/                 # Worktree lifecycle for isolated tasks
       skill-creator/                 # Create or improve skills
-
-  stacks/                            # Command-heavy or language-specific skills
-    kotlin-android/skills/
-      verify/                        # Gradle build/lint/test commands
-      coding-standards/              # Kotlin/Android idioms
-    typescript-node/skills/
-      verify/                        # pnpm/tsc/vitest commands
-      coding-standards/              # TypeScript/Node.js idioms
+      coding-standards/              # Coding conventions (auto-detects stack)
+        references/                  # Stack-specific: kotlin-android.md, typescript-node.md
+      verify/                        # Pre-commit quality gates (auto-detects stack)
+        references/                  # Stack-specific: kotlin-android.md, typescript-node.md
 ```
 
-Methodology skills (`scope-review`, `ux-design`, `design`, `eng-plan-review`, `tdd`, etc.) are language-agnostic. Command-heavy skills (`verify`) and language-specific skills (`coding-standards`) stay per-stack.
+Skills auto-detect the project stack (Kotlin/Android, TypeScript/Node, etc.) and load the matching reference file. No per-project setup needed.
 
 ## Multi-Tool Support
 
@@ -63,13 +59,11 @@ Works with Claude Code, Codex, Cursor, and Gemini CLI through symlinks:
 **Onboard a project:**
 
 ```bash
-./setup.sh ~/workspace/my-project kotlin-android
-# or
-./setup.sh ~/workspace/my-project typescript-node
+./setup.sh ~/workspace/my-project
 ```
 
 This will:
-1. Create `.claude/skills/` and symlink stack-specific skills (verify, coding-standards)
+1. Create `.claude/skills/` in the project
 2. Set up global config (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`)
 3. Set up global skills (`~/.claude/skills/` -> this repo's `global/skills/`)
 4. Create IDE compatibility symlinks (`.agents/`, `.codex/`)
@@ -77,9 +71,12 @@ This will:
 
 **Add a new stack:**
 
+Add reference files to the skills that need stack-specific content:
 ```bash
-mkdir -p stacks/python-fastapi/skills/{coding-standards,verify}
-# Write SKILL.md for each with language-specific content
+# Add Python/FastAPI support
+vim global/skills/coding-standards/references/python-fastapi.md
+vim global/skills/verify/references/python-fastapi.md
+# Update the stack detection table in each SKILL.md
 ```
 
 ## Maintenance
@@ -94,10 +91,10 @@ vim global/CLAUDE.md
 vim global/skills/tdd/SKILL.md
 
 # Update stack-specific verify commands
-vim stacks/kotlin-android/skills/verify/SKILL.md
+vim global/skills/verify/references/kotlin-android.md
 
 # Update language-specific coding standards
-vim stacks/kotlin-android/skills/coding-standards/SKILL.md
+vim global/skills/coding-standards/references/typescript-node.md
 
 # Promote a project-local skill to global
 mv <project>/.claude/skills/X global/skills/X
@@ -107,6 +104,5 @@ mv <project>/.claude/skills/X global/skills/X
 
 | Tier | Examples | Location |
 |------|----------|----------|
-| Global | ultra-think, scope-review, ux-design, design, eng-plan-review, implement, code-review, ... | `global/skills/` |
-| Stack | verify, coding-standards | `stacks/<stack>/skills/` |
+| Global | all skills | `global/skills/` |
 | Project | project-specific skills | stays in project `.claude/skills/` |

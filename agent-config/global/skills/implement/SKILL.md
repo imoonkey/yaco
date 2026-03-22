@@ -56,7 +56,7 @@ For each phase (or checklist item in worktree mode), repeat:
 ### 2.1 Implement
 - In worktree mode: mark checklist item `in_progress`
 - Execute the phase, ideally in a fresh subagent for context cleanliness
-- Use `/coding-standards` (stack-specific) and `/tdd` (**MUST USE the mentioned skills**) when the logic warrants it
+- Use `/coding-standards` and `/tdd` (**MUST USE the mentioned skills**) when the logic warrants it
 - Test and verify before moving on
 
 ### 2.2 Code Review

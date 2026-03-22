@@ -1,51 +1,26 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage: ./setup.sh <project-path> <stack-name>
-# Example: ./setup.sh ~/workspace/Investment kotlin-android
-# Example: ./setup.sh ~/workspace/multmux typescript-node
+# Usage: ./setup.sh <project-path>
+# Example: ./setup.sh ~/workspace/Investment
+# Example: ./setup.sh ~/workspace/multmux
 
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 <project-path> <stack-name>"
-  echo "Available stacks: kotlin-android, typescript-node"
+if [ $# -lt 1 ]; then
+  echo "Usage: $0 <project-path>"
   exit 1
 fi
 
 PROJECT="$(cd "$1" && pwd)"
-STACK="$2"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-STACK_DIR="$SCRIPT_DIR/stacks/$STACK"
 
-if [ ! -d "$STACK_DIR" ]; then
-  echo "Error: stack '$STACK' not found at $STACK_DIR"
-  echo "Available stacks:"
-  ls "$SCRIPT_DIR/stacks/"
-  exit 1
-fi
-
-echo "Setting up $PROJECT with stack: $STACK"
+echo "Setting up $PROJECT"
 echo "Source: $SCRIPT_DIR"
 echo ""
 
 # --- 1. Create .claude/skills ---
 mkdir -p "$PROJECT/.claude/skills"
 
-# --- 2. Symlink stack-specific skills (e.g., coding-standards; skip existing) ---
-echo "=== Stack skills ==="
-for skill in "$STACK_DIR/skills"/*/; do
-  [ -d "$skill" ] || continue
-  skill_name=$(basename "$skill")
-  target="$PROJECT/.claude/skills/$skill_name"
-  if [ -e "$target" ] || [ -L "$target" ]; then
-    echo "  skip (exists): skills/$skill_name"
-  else
-    ln -s "$skill" "$target"
-    echo "  linked: skills/$skill_name"
-  fi
-done
-
-# --- 3. Global: ~/.claude/skills/ -> agent-config/global/skills/ ---
-echo ""
+# --- 2. Global: ~/.claude/skills/ -> agent-config/global/skills/ ---
 echo "=== Global setup (one-time) ==="
 GLOBAL_SKILLS="$HOME/.claude/skills"
 if [ -L "$GLOBAL_SKILLS" ]; then
@@ -60,7 +35,7 @@ else
   echo "  linked: ~/.claude/skills/ -> global/skills/"
 fi
 
-# --- 4. Global: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md ---
+# --- 3. Global: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md ---
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
 if [ -L "$GLOBAL_CLAUDE" ]; then
   echo "  ~/.claude/CLAUDE.md already symlinked -> $(readlink "$GLOBAL_CLAUDE")"
@@ -75,7 +50,7 @@ else
   echo "  linked: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md"
 fi
 
-# --- 5. Global: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md ---
+# --- 4. Global: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md ---
 mkdir -p "$HOME/.codex"
 GLOBAL_CODEX="$HOME/.codex/AGENTS.md"
 if [ -L "$GLOBAL_CODEX" ]; then
@@ -88,7 +63,7 @@ else
   echo "  linked: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md"
 fi
 
-# --- 6. Global: ~/.agents/skills/ -> ~/.claude/skills/ (for Codex) ---
+# --- 5. Global: ~/.agents/skills/ -> ~/.claude/skills/ (for Codex) ---
 mkdir -p "$HOME/.agents"
 GLOBAL_AGENTS_SKILLS="$HOME/.agents/skills"
 if [ -L "$GLOBAL_AGENTS_SKILLS" ]; then
@@ -98,7 +73,7 @@ elif [ ! -e "$GLOBAL_AGENTS_SKILLS" ]; then
   echo "  linked: ~/.agents/skills/ -> ~/.claude/skills/"
 fi
 
-# --- 7. Project: IDE compatibility symlinks ---
+# --- 6. Project: IDE compatibility symlinks ---
 echo ""
 echo "=== IDE compatibility ==="
 cd "$PROJECT"
@@ -119,7 +94,7 @@ else
   echo "  skip (exists): .codex/"
 fi
 
-# --- 8. Project: AGENTS.md, GEMINI.md -> CLAUDE.md ---
+# --- 7. Project: AGENTS.md, GEMINI.md -> CLAUDE.md ---
 if [ -f CLAUDE.md ] || [ -L CLAUDE.md ]; then
   if [ ! -e AGENTS.md ] && [ ! -L AGENTS.md ]; then
     ln -s CLAUDE.md AGENTS.md
@@ -139,4 +114,4 @@ else
 fi
 
 echo ""
-echo "Done! Project '$PROJECT' configured with stack '$STACK'."
+echo "Done! Project '$PROJECT' configured."

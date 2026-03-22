@@ -1,18 +1,4 @@
----
-name: coding-standards
-description: TypeScript/Node.js coding conventions and patterns. Auto-applied as reference during code changes.
----
-
-# Coding Standards
-
-TypeScript/Node.js coding conventions and patterns.
-
-## Core Principles
-
-1. **Readability First** - Clear > clever
-2. **KISS** - Simplest solution that works
-3. **DRY** - Extract common logic
-4. **YAGNI** - Don't build unneeded features
+# TypeScript/Node.js Coding Standards
 
 ## TypeScript Idioms
 
@@ -38,35 +24,33 @@ const MAX_RETRIES = 3
 ### Strict Typing
 
 ```typescript
-// ✅ Prefer explicit types for public APIs
+// Prefer explicit types for public APIs
 function parseHar(input: HarLog): ParsedRequest[] { ... }
 
-// ✅ Use union types / discriminated unions for state
+// Use union types / discriminated unions for state
 type Result<T> =
   | { ok: true; data: T }
   | { ok: false; error: string }
 
-// ❌ Avoid `any`
-function process(data: any) {}  // BAD
+// Avoid `any`
 ```
 
 ### Immutability
 
 ```typescript
-// ✅ Prefer const
+// Prefer const
 const state: SessionState = { ... }
 
-// ✅ Use spread for modifications
+// Use spread for modifications
 const newState = { ...state, status: 'running' }
 
-// ✅ Use readonly for data structures
+// Use readonly for data structures
 interface Config {
   readonly baseUrl: string
   readonly timeout: number
 }
 
-// ❌ Avoid let unless necessary
-let mutableState  // BAD if avoidable
+// Avoid let unless necessary
 ```
 
 ### Discriminated Unions for State
@@ -83,27 +67,26 @@ type OperationResult<T> =
 ### Async/Await
 
 ```typescript
-// ✅ Proper async with error handling
+// Proper async with error handling
 async function fetchData(url: string): Promise<Response> {
   const response = await fetch(url)
   if (!response.ok) throw new HttpError(response.status)
   return response.json()
 }
 
-// ✅ Concurrent operations
+// Concurrent operations
 const [users, posts] = await Promise.all([
   fetchUsers(),
   fetchPosts(),
 ])
 
-// ❌ Avoid unhandled promises
-fetchData(url)  // BAD - no await, no .catch()
+// Avoid unhandled promises — always await or .catch()
 ```
 
 ### Error Handling
 
 ```typescript
-// ✅ Custom error classes
+// Custom error classes
 class SkillError extends Error {
   constructor(
     message: string,
@@ -114,7 +97,7 @@ class SkillError extends Error {
   }
 }
 
-// ✅ Structured error handling
+// Structured error handling
 try {
   const result = await riskyOperation()
   return { ok: true, data: result }
@@ -126,29 +109,18 @@ try {
   throw e  // Re-throw unexpected errors
 }
 
-// ❌ Swallowing errors
-try { await riskyOperation() } catch (e) { }  // BAD
+// Never swallow: try { await riskyOperation() } catch (e) { }
 ```
 
 ### Module Organization
 
 ```typescript
-// ✅ Named exports (prefer over default)
+// Named exports (prefer over default)
 export function parseHar(har: HarLog): ParsedRequest[] { ... }
 export interface ParsedRequest { ... }
 
-// ✅ Barrel files for public API
+// Barrel files for public API
 // index.ts
 export { parseHar } from './parser.js'
 export type { ParsedRequest } from './types.js'
 ```
-
-## Code Smells
-
-| Smell | Threshold | Fix |
-|-------|-----------|-----|
-| Large file | >400 lines | Extract module/functions |
-| Deep nesting | >4 levels | Early returns, extract |
-| Long function | >50 lines | Break into smaller |
-| God class | Does everything | Single responsibility |
-| Magic numbers | Unexplained | Named constants |
