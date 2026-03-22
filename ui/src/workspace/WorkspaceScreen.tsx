@@ -61,7 +61,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [contextFolder, setContextFolder] = useState('')
 
   // Convenience aliases for layout props
-  const { showSidebar, showRightPanel, showExplorer, showChanges, previewMode } = layout
+  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, previewMode } = layout
 
   const { data: fileTree } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
@@ -158,6 +158,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const explorerMax = availableSectionHeight
   const explorerSplit = useResize(layout.explorerSize, 0, explorerMax, 'down')
   const explorerHeight = showExplorer ? Math.min(explorerSplit.size, explorerMax) : 0
+  const sessionSplit = useResize(layout.sessionSize, 50, 400, 'up')
+  const sessionHeight = showSessions ? sessionSplit.size : 0
 
   const isMd = activeTab?.endsWith('.md')
   const hasOpenFiles = openTabs.length > 0
@@ -332,8 +334,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       leftSize: left.size,
       rightSize: right.size,
       explorerSize: explorerSplit.size,
+      sessionSize: sessionSplit.size,
     })
-  }, [left.size, right.size, explorerSplit.size, actions])
+  }, [left.size, right.size, explorerSplit.size, sessionSplit.size, actions])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -558,6 +561,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       right={right}
       explorerSplit={explorerSplit}
       explorerHeight={explorerHeight}
+      sessionSplit={sessionSplit}
+      sessionHeight={sessionHeight}
       hasOpenFiles={hasOpenFiles}
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}

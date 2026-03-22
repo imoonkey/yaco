@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 
-export function useResize(initial: number, min: number, max: number, direction: 'left' | 'right' | 'down' = 'left') {
+export function useResize(initial: number, min: number, max: number, direction: 'left' | 'right' | 'down' | 'up' = 'left') {
   const [size, setSize] = useState(initial)
   const [isDragging, setIsDragging] = useState(false)
   const dragging = useRef(false)
@@ -13,15 +13,15 @@ export function useResize(initial: number, min: number, max: number, direction: 
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     dragging.current = true; setIsDragging(true)
-    startPos.current = direction === 'down' ? e.clientY : e.clientX
+    startPos.current = direction === 'down' || direction === 'up' ? e.clientY : e.clientX
     startSize.current = size; e.preventDefault()
   }, [direction, size])
 
   useEffect(() => {
     const onMouseMove = (e: MouseEvent) => {
       if (!dragging.current) return
-      const pos = direction === 'down' ? e.clientY : e.clientX
-      const delta = direction === 'right' ? startPos.current - pos : pos - startPos.current
+      const pos = direction === 'down' || direction === 'up' ? e.clientY : e.clientX
+      const delta = direction === 'right' || direction === 'up' ? startPos.current - pos : pos - startPos.current
       setSize(clamp(startSize.current + delta))
     }
     const onMouseUp = () => { dragging.current = false; setIsDragging(false) }

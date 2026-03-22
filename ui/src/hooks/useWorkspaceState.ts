@@ -26,6 +26,7 @@ export type WorkspaceLayout = {
   rightSize: number
   explorerSize: number
   changesSize: number
+  sessionSize: number
 }
 
 type PersistedDraftEntry = {
@@ -62,6 +63,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   rightSize: 420,
   explorerSize: 250,
   changesSize: 150,
+  sessionSize: 180,
 }
 
 function defaultFileState(): FileState {
@@ -125,6 +127,7 @@ function loadPersistedState(project: string): PersistedState {
         rightSize: loadStoredSize(pl.rightSize, DEFAULT_LAYOUT.rightSize),
         explorerSize: loadStoredSize(pl.explorerSize, DEFAULT_LAYOUT.explorerSize),
         changesSize: loadStoredSize(pl.changesSize, DEFAULT_LAYOUT.changesSize),
+        sessionSize: loadStoredSize(pl.sessionSize, DEFAULT_LAYOUT.sessionSize),
       },
     }
   } catch {

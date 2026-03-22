@@ -5,8 +5,6 @@ import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import { SectionHeader } from './SectionHeader'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
 
-const SESSION_TRAY_MAX_HEIGHT = 180
-
 type ResizeState = {
   size: number
   onMouseDown: (e: React.MouseEvent) => void
@@ -42,6 +40,8 @@ export type WorkspaceLayoutProps = {
   right: ResizeState
   explorerSplit: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }
   explorerHeight: number
+  sessionSplit: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }
+  sessionHeight: number
 
   // Derived
   hasOpenFiles: boolean
@@ -60,7 +60,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     gitStale, changesBadge, changesBody,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
-    rootRef, sidebarRef, left, right, explorerSplit, explorerHeight,
+    rootRef, sidebarRef, left, right, explorerSplit, explorerHeight, sessionSplit, sessionHeight,
     hasOpenFiles,
     onInteractionCapture, onFilesPaneFocus, searchOverlay,
   } = props
@@ -160,9 +160,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
                 {terminalContent}
               </div>
+              {showSessions && <HResizeHandle onMouseDown={sessionSplit.onMouseDown} isDragging={sessionSplit.isDragging} />}
               <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
               {showSessions && (
-                <div className="shrink-0 overflow-y-auto py-1 px-1" style={{ maxHeight: SESSION_TRAY_MAX_HEIGHT }}>
+                <div className="shrink-0 overflow-y-auto py-1 px-1" style={{ height: sessionHeight }}>
                   {sessionsBody}
                 </div>
               )}
