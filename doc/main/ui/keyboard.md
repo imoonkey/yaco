@@ -27,6 +27,7 @@ Complete keyboard shortcut reference.
 |----------|---------|--------|
 | `Cmd+B` | Workspace | Toggle left sidebar (Explorer + Changes + Sessions) |
 | `Cmd+Shift+B` | Workspace | Toggle right session/terminal pane |
+| `Cmd+Shift+1` … `Cmd+Shift+9` | Workspace | Switch to session N (in display order) |
 | `Cmd+P` | Workspace | Open file search modal |
 | `Cmd+W` | Workspace (editor focused) | Close active editor tab |
 | `Cmd+W` | Workspace (terminal focused) | Detach active terminal session |

@@ -17,7 +17,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
+`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
 
 ## Session List
 
@@ -27,8 +27,8 @@ On desktop, located in the activity column (right panel) below the terminal. On 
 
 Each session row shows:
 - Provider icon (Claude symbol, ChatGPT logo, or terminal SVG)
-- Session name
-- Status indicator
+- Session name + status indicator
+- Summary line (dimmed, below name) — first prompt or title from Claude/Codex session history. Resolved server-side via `sessionId` from multmux state files. Empty if session just started or provider is shell.
 
 ### Actions
 
@@ -39,6 +39,7 @@ Each session row shows:
 | Start Shell | Click Shell button | `POST /api/sessions/start { provider: 'shell' }` |
 | Select session | Click session row | Attaches terminal to selected session |
 | Kill session | Click Kill button on row | `POST /api/sessions/:handle/close` |
+| Reorder session | Drag session row vertically | Reorders within the session list (client-side only, not persisted) |
 
 ### Session Scoping
 
