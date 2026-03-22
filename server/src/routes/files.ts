@@ -27,7 +27,7 @@ interface TreeCacheEntry {
 const treeCache = new Map<string, TreeCacheEntry>()
 
 function shouldIgnoreEntry(name: string): boolean {
-  return IGNORE.has(name) || name.startsWith('.')
+  return IGNORE.has(name)
 }
 
 function shouldIgnoreRelativePath(relPath: string): boolean {
