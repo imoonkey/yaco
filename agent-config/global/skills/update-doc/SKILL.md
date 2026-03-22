@@ -92,9 +92,9 @@ Prepend to `doc/PROGRESS.md` (create if missing). This is the **canonical format
 
 Keep entries concise. One entry per logical change, not per commit.
 
-### 5. Update Workstream Implementation Summary
+### 5. Update Project Implementation Summary
 
-If changes correspond to a `doc/todo/<workstream>/` folder, write or update `doc/todo/<workstream>/implementation_summary.md` — a concise summary of what was implemented, key decisions made, and current state.
+If changes correspond to a `doc/todo/<project>/` folder, write or update `doc/todo/<project>/implementation_summary.md` — a concise summary of what was implemented, key decisions made, and current state.
 
 ### 6. Commit Docs
 

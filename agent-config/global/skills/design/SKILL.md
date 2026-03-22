@@ -55,7 +55,7 @@ Cover:
 - **Interactions** — how components connect, data flow, state transitions
 - **Trade-offs** — what alternatives were considered, why this approach wins
 
-Keep it concise. The doc should be readable in 5 minutes. Write to doc/todo/<workstream>/*_[codex|claude].md or doc/todo/<workstream>/individual/*_[claude|codex].md if there is a `/double-design` going on.
+Keep it concise. The doc should be readable in 5 minutes. Write to doc/todo/<project>/*_[codex|claude].md or doc/todo/<project>/individual/*_[claude|codex].md if there is a `/double-design` going on.
 
 ### 5. Self-Review
 
