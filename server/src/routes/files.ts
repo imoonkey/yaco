@@ -11,7 +11,10 @@ export interface FileNode {
   children?: FileNode[]
 }
 
-const IGNORE = new Set<string>([])
+const IGNORE = new Set([
+  '.git', '.DS_Store', 'node_modules', '.next', 'dist', 'build',
+  '__pycache__', '.svn', '.hg', 'Thumbs.db',
+])
 
 interface TreeCacheEntry {
   build?: Promise<FileNode[]>
