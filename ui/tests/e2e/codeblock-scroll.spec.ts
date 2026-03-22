@@ -58,23 +58,29 @@ async function deleteTestFile(page: Page, projectName: string, filePath: string)
   }, { projectName, path: filePath })
 }
 
-async function openMarkdownPreview(page: Page, project: { name: string }, testFile: string) {
+async function openMarkdownPreview(page: Page, testFile: string) {
   await page.keyboard.press('Meta+p')
   await page.locator('input[placeholder="Search files..."]').fill(testFile.replace(/^__e2e_/, ''))
   await page.keyboard.press('Enter')
   await page.waitForTimeout(1000)
   await page.keyboard.press('Meta+Shift+v')
-  await page.waitForTimeout(1000)
+  await expect(page.locator('.markdown-preview')).toBeVisible({ timeout: 5000 })
 }
 
 test.describe('Code block horizontal scroll in markdown preview', () => {
   const testFile = '__e2e_codeblock_scroll.md'
+  let projectName = ''
+
+  test.afterEach(async ({ page }) => {
+    if (projectName) await deleteTestFile(page, projectName, testFile).catch(() => {})
+  })
 
   test('scrollLeft persists after set', async ({ page }) => {
     const project = await openWorkspace(page)
+    projectName = project.name
     await createTestFile(page, project.name, testFile, MD_CONTENT)
     await page.waitForTimeout(3000)
-    await openMarkdownPreview(page, project, testFile)
+    await openMarkdownPreview(page, testFile)
 
     const pre = page.locator('.markdown-preview pre').first()
     await expect(pre).toBeVisible({ timeout: 5000 })
@@ -97,15 +103,14 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
     await page.waitForTimeout(500)
     const tagAfter = await pre.evaluate(el => (el as any).__testTag)
     expect(tagAfter).toBe('original')
-
-    await deleteTestFile(page, project.name, testFile)
   })
 
   test('scrollLeft survives content re-render', async ({ page }) => {
     const project = await openWorkspace(page)
+    projectName = project.name
     await createTestFile(page, project.name, testFile, MD_CONTENT)
     await page.waitForTimeout(3000)
-    await openMarkdownPreview(page, project, testFile)
+    await openMarkdownPreview(page, testFile)
 
     const pre = page.locator('.markdown-preview pre').first()
     await expect(pre).toBeVisible({ timeout: 5000 })
@@ -115,12 +120,11 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
     await page.waitForTimeout(200)
     expect(await pre.evaluate(el => el.scrollLeft)).toBeGreaterThanOrEqual(150)
 
-    // Trigger a content change by editing the file externally, then revert
+    // Trigger a content change by editing the file externally
     const getRes = await page.evaluate(async ({ projectName, filePath }) => {
       const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
       return res.json() as Promise<{ content: string; revision: number }>
     }, { projectName: project.name, filePath: testFile })
-    // Write modified content (same structure, different text)
     const modifiedContent = MD_CONTENT.replace('Some text.', 'Some modified text.')
     await page.evaluate(async ({ projectName, filePath, content, revision }) => {
       await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
@@ -130,25 +134,22 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
       })
     }, { projectName: project.name, filePath: testFile, content: modifiedContent, revision: getRes.revision })
 
-    // Wait for SSE to propagate and re-render
-    await page.waitForTimeout(5000)
+    // Wait for SSE to propagate and re-render — verify modified text appears
+    await expect(page.locator('.markdown-preview')).toContainText('Some modified text', { timeout: 10_000 })
 
-    // After content change, the pre should still exist and scrollLeft should be restored
+    // After content change, scrollLeft should be restored
     const preAfter = page.locator('.markdown-preview pre').first()
-    if (await preAfter.isVisible({ timeout: 2000 }).catch(() => false)) {
-      // Content changed so DOM was rebuilt — scrollLeft should be restored
-      const scrollLeft = await preAfter.evaluate(el => el.scrollLeft)
-      expect(scrollLeft).toBeGreaterThanOrEqual(150)
-    }
-
-    await deleteTestFile(page, project.name, testFile)
+    await expect(preAfter).toBeVisible({ timeout: 5000 })
+    const scrollLeft = await preAfter.evaluate(el => el.scrollLeft)
+    expect(scrollLeft).toBeGreaterThanOrEqual(150)
   })
 
   test('no DOM churn: innerHTML only set when html changes', async ({ page }) => {
     const project = await openWorkspace(page)
+    projectName = project.name
     await createTestFile(page, project.name, testFile, MD_CONTENT)
     await page.waitForTimeout(3000)
-    await openMarkdownPreview(page, project, testFile)
+    await openMarkdownPreview(page, testFile)
 
     const pre = page.locator('.markdown-preview pre').first()
     await expect(pre).toBeVisible({ timeout: 5000 })
@@ -172,10 +173,7 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
       })
     })
 
-    console.log(`innerHTML set count in 2s: ${setCount}`)
     // Should be 0 or at most 1 (no churn)
     expect(setCount).toBeLessThanOrEqual(1)
-
-    await deleteTestFile(page, project.name, testFile)
   })
 })
