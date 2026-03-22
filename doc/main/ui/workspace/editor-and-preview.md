@@ -107,6 +107,10 @@ Preview and editor share a viewport position via source-line anchors (not scroll
 
 This is more stable than scroll-percentage sync because editor and preview have different line heights and layouts.
 
+The sync uses two guards to prevent feedback loops:
+- `applyingViewportRef` — suppresses the `onScroll` report when the container was scrolled programmatically by the sync
+- `lastReportedLineRef` — suppresses programmatic scroll when the incoming `viewportLine` prop is just echoing our own scroll report back (prevents round-trip that resets child `<pre>` scroll positions)
+
 ### Preview Click-to-Edit
 
 Clicking inside the preview:

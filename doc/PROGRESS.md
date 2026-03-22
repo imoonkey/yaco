@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-03-22: Fix markdown preview code block horizontal scroll snap-back
+
+**What changed:**
+- Added `lastReportedLineRef` to `MarkdownPreview` — tracks the viewport line last reported from user scroll, skips programmatic scroll-back when the incoming `viewportLine` prop is just echoing our own report
+- Added `overscroll-behavior: contain` on `.markdown-preview pre` to prevent scroll chaining from code blocks to the parent container
+
+**Why:**
+- Horizontal scrolling on overflowing code blocks in markdown preview would snap back to the left. Root cause: user scroll → `onScroll` reports viewportLine → parent echoes it as prop → `useEffect` programmatically sets `container.scrollTop` → browser reflow resets child `<pre>` `scrollLeft` on WebKit.
+
+**Key files:** `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/index.css`
+**Verification:** TypeScript build passed (`tsc --noEmit`), code review clean
+**Commit:** `ea3729c`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-22: Fix file tree explorer going blank on desktop
 
 **What changed:**
