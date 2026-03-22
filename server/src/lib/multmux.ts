@@ -18,6 +18,8 @@ export interface MultmuxSession {
   provider: 'claude' | 'codex'
   status: 'processing' | 'idle'
   project: string
+  sessionId: string
+  pid: number
 }
 
 export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
@@ -30,6 +32,7 @@ export interface MultmuxStateFile {
   provider: 'claude' | 'codex'
   tmuxSession: string
   pid: number
+  sessionId: string
   status: 'starting' | 'idle' | 'processing' | 'stopped'
   createdAt: string
 }
@@ -72,6 +75,8 @@ export function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path
         provider,
         status,
         project: project.name,
+        sessionId: state.sessionId ?? '',
+        pid: state.pid,
       })
     } catch {
       continue

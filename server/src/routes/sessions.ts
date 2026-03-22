@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { closeMultmuxSession, readSessionsFromStateFiles, readAllSessionsFromStateFiles, sendToSession, startMultmuxSession } from '../lib/multmux'
 import { loadProjects } from '../lib/projects'
+import { resolveSessionSummary } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
 
 const app = new Hono()
@@ -11,18 +12,27 @@ app.get('/', async (c) => {
 
   const projects = await loadProjects()
   let multmuxSessions
+  let projectPath = ''
   if (projectName) {
     const project = projects.find(item => item.name === projectName)
     multmuxSessions = project ? readSessionsFromStateFiles(project) : []
+    projectPath = project?.path ?? ''
   } else {
     multmuxSessions = readAllSessionsFromStateFiles(projects)
   }
+
+  const enriched = multmuxSessions.map(s => {
+    const result = s.provider !== 'shell'
+      ? resolveSessionSummary(s.sessionId, s.pid, s.provider, projectPath || projects.find(p => p.name === s.project)?.path || '')
+      : null
+    return { ...s, summary: result?.summary ?? '' }
+  })
 
   const filteredShell = projectName
     ? shellSessions.filter(s => s.project === projectName)
     : shellSessions
 
-  return c.json([...multmuxSessions, ...filteredShell])
+  return c.json([...enriched, ...filteredShell.map(s => ({ ...s, summary: '' }))])
 })
 
 app.post('/start', async (c) => {
