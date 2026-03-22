@@ -101,6 +101,18 @@ PTY management for terminal sessions.
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
 - `attachSession()` resolves session names and returns a PTY handle with initial data
 
+### session-summary.ts (254 lines)
+
+Resolves conversation summaries for session list display.
+
+**Exports**: `resolveSessionSummaries()`
+
+- Batch resolution: one call per `GET /api/sessions` poll, reads each data source at most once
+- Claude: reads first user message from `~/.claude/projects/{encoded}/<sessionId>.jsonl`
+- Codex: queries `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
+- PID fallback (both providers): when `sessionId` is empty in multmux state, resolves via process tree — Claude scans `~/.claude/sessions/*.json` for PID matches; Codex uses `lsof` to find open rollout files containing session IDs
+- Cached Codex DB handle (opened once per server lifecycle, reopened on error)
+
 ### session-names.ts (27 lines)
 
 Session name validation and tmux session resolution.

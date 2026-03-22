@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-03-22: Session summary hover tooltip + Codex summary fix
+
+**What changed:**
+- SessionItem: added hover tooltip for truncated summary text — detects overflow via `scrollWidth > clientWidth`, shows styled tooltip after 300ms delay, dismisses on mouseleave
+- session-summary.ts: removed server-side `truncate(summary, 120)` — full strings now sent to frontend, CSS handles visual truncation
+- session-summary.ts: added `loadCodexPidMap()` — resolves Codex session IDs from PIDs via `lsof` (finds open rollout JSONL files). Codex sessions previously always had empty `sessionId` in multmux state, so summaries were never resolved.
+
+**Why:**
+- Summary lines were clipped with no way to see full content — users had to click into a session to remember its context
+- Codex summaries silently failed because multmux doesn't populate `sessionId` for Codex sessions; the PID fallback (which Claude already had) was missing for Codex
+
+**Key files:** `ui/src/workspace/WorkspaceSessionList.tsx`, `server/src/lib/session-summary.ts`
+**Verification:** TypeScript build passed (UI `tsc --noEmit`)
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-22: Fix markdown preview code block horizontal scroll snap-back
 
 **What changed:**

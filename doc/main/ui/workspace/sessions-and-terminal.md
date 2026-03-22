@@ -44,9 +44,15 @@ Pin state and order are client-side only (not persisted across page reloads).
 
 Server resolves summaries on each `GET /api/sessions` poll:
 1. Read `sessionId` from `.multmux/*.json` state files
-2. If empty, PID fallback: build process tree via `ps`, find descendant of pane PID in `~/.claude/sessions/*.json`
-3. Read first user message from `~/.claude/projects/{encoded}/<sessionId>.jsonl`
-4. For Codex: query `~/.codex/state_5.sqlite` threads table
+2. If empty, PID fallback:
+   - **Claude**: build process tree via `ps`, find descendant of pane PID in `~/.claude/sessions/*.json`
+   - **Codex**: run `lsof` on pane PIDs to find open rollout JSONL files, extract session ID from filename
+3. Claude: read first user message from `~/.claude/projects/{encoded}/<sessionId>.jsonl`
+4. Codex: query `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
+
+Full summary strings are returned (no server-side truncation). The UI truncates with CSS `text-overflow: ellipsis`.
+
+**Hover tooltip**: when a summary line is truncated, hovering (300ms delay) shows a styled tooltip with the full text. Overflow is detected via `scrollWidth > clientWidth` — no tooltip if the text fits. The tooltip is positioned below the summary line and can be hovered into without dismissing.
 
 → See: `server/src/lib/session-summary.ts`
 
