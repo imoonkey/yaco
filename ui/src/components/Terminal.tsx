@@ -135,6 +135,13 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     fitAddon.fit()
     fitTerminal(term)
 
+    // Mobile: container dimensions may not be final in the first frame.
+    // Schedule a refit + canvas repaint after the browser paints.
+    requestAnimationFrame(() => {
+      fitTerminal(term)
+      term.refresh(0, term.rows - 1)
+    })
+
     // Touch scroll bridge: xterm v6 registers document-level touch handlers
     // (from VS Code's scrollable element) that call preventDefault(), stealing
     // all touch events. We intercept touch, convert to WheelEvent, and dispatch

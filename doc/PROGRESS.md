@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-22: Fix mobile terminal blank on new session
+
+**What changed:**
+- Removed `projectSessions.some()` gate on `attachedSession` — Terminal now mounts immediately when `activeSession` is set, instead of waiting for `refreshSessions()` API poll to resolve
+- Added `knownSessionsRef` auto-detach: tracks previously-seen sessions and only clears `activeSession` when a known session disappears (not when a just-created session hasn't appeared in the list yet)
+- Added `requestAnimationFrame` refit + `term.refresh()` in Terminal mount — ensures xterm canvas paints correctly on mobile where container dimensions may not be final in the first frame
+
+**Why:**
+- On mobile, creating a Claude/Codex session auto-switched to the Terminal tab, but the terminal was blank because `attachedSession` was gated by `projectSessions` (which hadn't refreshed yet). Users had to switch away and back to see content. Codex sessions were permanently invisible if the API response was slow.
+
+**Key files:** `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/components/Terminal.tsx`
+**Verification:** TypeScript build passed (`tsc --noEmit`)
+**Commit:** `462b116`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-22: Session display enhancements + inline rename
 
 **What changed:**

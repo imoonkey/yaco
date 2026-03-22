@@ -137,8 +137,19 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const allFiles = fileTree ? flattenTree(fileTree) : []
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
-  const attachedSession = projectSessions.some(session => session.name === activeSession) ? activeSession : ''
+  const attachedSession = activeSession
   const activeSessionInfo = projectSessions.find(s => s.name === attachedSession) ?? null
+
+  // Auto-detach when a previously-known session disappears from the server
+  const knownSessionsRef = useRef(new Set<string>())
+  useEffect(() => {
+    if (!sessions) return // don't act before first fetch
+    const current = new Set(projectSessions.map(s => s.name))
+    if (activeSession && knownSessionsRef.current.has(activeSession) && !current.has(activeSession)) {
+      actions.setActiveSession('')
+    }
+    knownSessionsRef.current = current
+  }, [activeSession, projectSessions, sessions, actions])
 
   // Git status maps for file tree
   const gitMap = useMemo(() => {

@@ -72,6 +72,12 @@ Server resolves summaries on each `GET /api/sessions` poll:
 
 xterm.js 6 terminal emulator with Solarized Light theme.
 
+### Session Attachment
+
+Terminal mounts immediately when `activeSession` is set — no longer gated by the sessions API poll. This eliminates the blank-screen delay on mobile when creating a new session (previously the Terminal wouldn't mount until `refreshSessions()` resolved).
+
+Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. If a session was previously known but disappears from the list, `activeSession` is cleared automatically. Newly-created sessions (not yet in the API response) are not affected.
+
 ### Connection Lifecycle
 
 1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N`
@@ -128,6 +134,7 @@ Custom fit calculation:
 2. Subtracts scrollbar + right gutter (2px inner + 2px outer) from available width
 3. Computes columns and rows from cell dimensions
 4. Initial dimensions sent in WebSocket URL query params
+5. `requestAnimationFrame` refit + `term.refresh()` after mount — ensures xterm canvas paints correctly on mobile where container dimensions may not be final in the first frame
 
 ## Touch Scrolling
 
