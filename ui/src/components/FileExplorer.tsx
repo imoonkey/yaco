@@ -169,13 +169,6 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
   )
 }
 
-// --- Filter hidden files/folders ---
-function filterDotfiles(nodes: FileNode[]): FileNode[] {
-  return nodes
-    .filter(n => !n.name.startsWith('.'))
-    .map(n => n.children ? { ...n, children: filterDotfiles(n.children) } : n)
-}
-
 function insertPendingNode(nodes: FileNode[], pending: FileNode): FileNode[] {
   const i = pending.path.lastIndexOf('/')
   const parentPath = i > 0 ? pending.path.slice(0, i) : ''
@@ -383,11 +376,8 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
 
   const treeData = useMemo(() => {
     if (!tree) return null
-    let result = filterDotfiles(tree)
-    if (pendingCreate) {
-      result = insertPendingNode(result, { name: '', path: pendingCreate.path, type: pendingCreate.type })
-    }
-    return result
+    if (!pendingCreate) return tree
+    return insertPendingNode(tree, { name: '', path: pendingCreate.path, type: pendingCreate.type })
   }, [tree, pendingCreate])
 
   useImperativeHandle(ref, () => ({
