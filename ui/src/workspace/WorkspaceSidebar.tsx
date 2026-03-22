@@ -2,7 +2,7 @@ import { FileTypeIcon, GIT_COLORS } from '../components/FileExplorer'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { GitChange } from '../types'
 
-export function GitChangeItem({ change, isActive, onActivate }: { change: GitChange; isActive: boolean; onActivate: () => void }) {
+export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: { change: GitChange; isActive: boolean; onActivate: () => void; onFolderClick?: (dir: string) => void }) {
   const name = change.path.split('/').pop() || change.path
   const dir = change.path.includes('/') ? change.path.slice(0, change.path.lastIndexOf('/')) : ''
   return (
@@ -14,7 +14,11 @@ export function GitChangeItem({ change, isActive, onActivate }: { change: GitCha
       <FileTypeIcon name={name} />
       <div className="min-w-0 flex-1 overflow-hidden leading-tight">
         <div className="truncate" style={{ color: GIT_COLORS[change.status] || C.text }}>{name}</div>
-        {dir && <div className="truncate pt-0.5 text-[10px]" style={{ color: C.muted }}>{dir}</div>}
+        {dir && <div
+          className="truncate pt-0.5 text-[10px] hover:underline"
+          style={{ color: C.muted }}
+          onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
+        >{dir}</div>}
       </div>
       <span className="ml-auto pt-[1px] text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[change.status] }}>{change.status}</span>
     </div>
