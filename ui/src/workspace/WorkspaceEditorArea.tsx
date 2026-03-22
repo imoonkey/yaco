@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Editor } from '../components/Editor'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { escapeHtml, clampLine, renderMarkdown } from './markdown'
@@ -88,6 +88,7 @@ export function MarkdownPreview({
   const containerRef = useRef<HTMLDivElement>(null)
   const applyingViewportRef = useRef(false)
   const lastReportedLineRef = useRef(viewportLine)
+  const appliedHtmlRef = useRef('')
   const rawHtml = renderMarkdown(content)
   const [html, setHtml] = useState(rawHtml)
 
@@ -122,6 +123,26 @@ export function MarkdownPreview({
     renderAll()
     return () => { cancelled = true }
   }, [rawHtml])
+
+  // Manual innerHTML management — only set when html actually changes,
+  // and preserve <pre> scroll positions across DOM recreation.
+  useLayoutEffect(() => {
+    const el = containerRef.current
+    if (!el || html === appliedHtmlRef.current) return
+
+    // Save <pre> horizontal scroll positions
+    const pres = el.querySelectorAll('pre')
+    const scrollPositions: number[] = []
+    pres.forEach((pre, i) => { scrollPositions[i] = pre.scrollLeft })
+
+    el.innerHTML = html
+    appliedHtmlRef.current = html
+
+    // Restore scroll positions on the new <pre> nodes
+    el.querySelectorAll('pre').forEach((pre, i) => {
+      if (scrollPositions[i] > 0) pre.scrollLeft = scrollPositions[i]
+    })
+  }, [html])
 
   useEffect(() => {
     const element = containerRef.current
@@ -164,7 +185,6 @@ export function MarkdownPreview({
         const absoluteY = element.scrollTop + (event.clientY - rect.top)
         onActivateLine(lineFromBlockPosition(block, absoluteY))
       }}
-      dangerouslySetInnerHTML={{ __html: html }}
     />
   )
 }
