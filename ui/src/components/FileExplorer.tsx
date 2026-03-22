@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, createContext, useContext } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo, createContext, useContext } from 'react'
 import { Tree } from 'react-arborist'
 import type { NodeRendererProps } from 'react-arborist'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
@@ -162,6 +162,13 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
   )
 }
 
+// --- Filter hidden files/folders ---
+function filterDotfiles(nodes: FileNode[]): FileNode[] {
+  return nodes
+    .filter(n => !n.name.startsWith('.'))
+    .map(n => n.children ? { ...n, children: filterDotfiles(n.children) } : n)
+}
+
 // --- FileExplorer component ---
 interface FileExplorerProps {
   projectName: string
@@ -315,7 +322,9 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
     catch (err) { console.error('Failed to rename:', err) }
   }, [projectName])
 
-  if (!tree) {
+  const filteredTree = useMemo(() => tree ? filterDotfiles(tree) : null, [tree])
+
+  if (!filteredTree) {
     return <div className="flex-1 px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>
   }
 
@@ -329,7 +338,7 @@ export function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFi
         {size.width > 0 && size.height > 0 && (
           <Tree
             ref={treeRef}
-            data={tree}
+            data={filteredTree}
             idAccessor="path"
             childrenAccessor="children"
             width={size.width}
