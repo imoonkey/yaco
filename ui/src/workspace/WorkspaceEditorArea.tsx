@@ -87,6 +87,7 @@ export function MarkdownPreview({
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const applyingViewportRef = useRef(false)
+  const lastReportedLineRef = useRef(viewportLine)
   const rawHtml = renderMarkdown(content)
   const [html, setHtml] = useState(rawHtml)
 
@@ -125,13 +126,15 @@ export function MarkdownPreview({
   useEffect(() => {
     const element = containerRef.current
     if (!element) return
+    // Skip programmatic scroll when viewportLine echoes our own scroll report
+    if (viewportLine === lastReportedLineRef.current) return
     applyingViewportRef.current = applyPreviewViewportLine(element, viewportLine)
   }, [html, viewportLine])
 
   return (
     <div
       ref={containerRef}
-      className="markdown-preview h-full overflow-y-auto"
+      className="markdown-preview h-full"
       onScroll={() => {
         const element = containerRef.current
         if (!element) return
@@ -139,7 +142,9 @@ export function MarkdownPreview({
           applyingViewportRef.current = false
           return
         }
-        onViewportLine?.(lineFromPreviewScroll(element))
+        const line = lineFromPreviewScroll(element)
+        lastReportedLineRef.current = line
+        onViewportLine?.(line)
       }}
       onClick={(event) => {
         if (!onActivateLine) return

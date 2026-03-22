@@ -61,6 +61,8 @@ body {
   font-size: 14px;
   line-height: 22px;
   word-wrap: break-word;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .markdown-preview h1,
@@ -196,6 +198,7 @@ body {
 .markdown-preview pre {
   margin-bottom: 16px;
   overflow: auto;
+  overscroll-behavior: contain;
   background: var(--sol-base2);
   border: 1px solid var(--sol-border);
   border-radius: 3px;
@@ -207,6 +210,9 @@ body {
   color: var(--sol-base00);
   background: none;
   border-radius: 0;
+  white-space: pre;
+  width: max-content;
+  min-width: 100%;
 }
 
 .markdown-preview .tok-link,
