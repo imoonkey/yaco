@@ -39,7 +39,8 @@ Each session row shows:
 | Start Shell | Click Shell button | `POST /api/sessions/start { provider: 'shell' }` |
 | Select session | Click session row | Attaches terminal to selected session |
 | Kill session | Click Kill button on row | `POST /api/sessions/:handle/close` |
-| Reorder session | Drag session row vertically | Reorders within the session list (client-side only, not persisted) |
+| Rename session | Right-click → Rename (inline edit) | `POST /api/sessions/:handle/rename { name, cwd }` |
+| Reorder session | Drag pinned session row vertically | Reorders within pinned section (client-side only, not persisted) |
 
 ### Session Scoping
 
