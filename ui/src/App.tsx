@@ -97,7 +97,7 @@ function ProjectTabs({
               <button
                 key={project.name}
                 draggable
-                onDragStart={() => setDraggedProject(project.name)}
+                onDragStart={(e) => { e.dataTransfer.setData('text/plain', project.name); e.dataTransfer.effectAllowed = 'move'; setDraggedProject(project.name) }}
                 onDragEnd={() => setDraggedProject(null)}
                 onDragOver={(event) => {
                   event.preventDefault()

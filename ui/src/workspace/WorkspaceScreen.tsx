@@ -59,7 +59,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [sidebarHeight, setSidebarHeight] = useState(0)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [contextFolder, setContextFolder] = useState('')
-  const [sessionOrder, setSessionOrder] = useState<string[]>([])
+  const [pinnedOrder, setPinnedOrder] = useState<string[]>([])
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
 
   // Convenience aliases for layout props
@@ -123,18 +123,17 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   }, [activeDiffPath, projectName])
 
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
+  const pinnedSet = useMemo(() => new Set(pinnedOrder), [pinnedOrder])
 
-  // Apply custom session order, falling back to default (processing first, then idle)
+  // Display order: pinned (in custom order) → processing → idle
   const orderedSessions = useMemo(() => {
-    if (sessionOrder.length === 0) return [...projectSessions.filter(s => s.status === 'processing'), ...projectSessions.filter(s => s.status === 'idle')]
     const byName = new Map(projectSessions.map(s => [s.name, s]))
-    const ordered = sessionOrder.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
-    // Append any new sessions not yet in the order
-    for (const s of projectSessions) {
-      if (!sessionOrder.includes(s.name)) ordered.push(s)
-    }
-    return ordered
-  }, [projectSessions, sessionOrder])
+    const pinned = pinnedOrder.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
+    const unpinned = projectSessions.filter(s => !pinnedSet.has(s.name))
+    const processing = unpinned.filter(s => s.status === 'processing')
+    const idle = unpinned.filter(s => s.status === 'idle')
+    return [...pinned, ...processing, ...idle]
+  }, [projectSessions, pinnedOrder, pinnedSet])
   const allFiles = fileTree ? flattenTree(fileTree) : []
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
@@ -485,30 +484,61 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     </>
   )
 
-  const handleSessionReorder = useCallback((fromName: string, toName: string) => {
+  const togglePin = useCallback((name: string) => {
+    setPinnedOrder(prev =>
+      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+    )
+  }, [])
+
+  const handlePinnedReorder = useCallback((fromName: string, toName: string) => {
     if (fromName === toName) return
-    setSessionOrder(prev => {
-      const current = prev.length > 0 ? prev : orderedSessions.map(s => s.name)
-      const fromIdx = current.indexOf(fromName)
-      const toIdx = current.indexOf(toName)
+    setPinnedOrder(prev => {
+      const fromIdx = prev.indexOf(fromName)
+      const toIdx = prev.indexOf(toName)
       if (fromIdx === -1 || toIdx === -1) return prev
-      const next = [...current]
+      const next = [...prev]
       const [moved] = next.splice(fromIdx, 1)
       next.splice(toIdx, 0, moved)
       return next
     })
-  }, [orderedSessions])
+  }, [])
+
+  const pinned = orderedSessions.filter(s => pinnedSet.has(s.name))
+  const unpinnedProcessing = orderedSessions.filter(s => !pinnedSet.has(s.name) && s.status === 'processing')
+  const unpinnedIdle = orderedSessions.filter(s => !pinnedSet.has(s.name) && s.status === 'idle')
 
   const sessionsBody = (
     <>
-      {orderedSessions.map(s => (
+      {pinned.map(s => (
+        <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned
+          onKill={() => { void killSession(s.name) }}
+          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
+          onPin={() => togglePin(s.name)}
+          onDragStart={e => { e.dataTransfer.setData('text/plain', s.name); e.dataTransfer.effectAllowed = 'move'; setDraggedSession(s.name) }}
+          onDragEnd={() => setDraggedSession(null)}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); if (draggedSession && pinnedSet.has(draggedSession)) handlePinnedReorder(draggedSession, s.name) }}
+          dragging={draggedSession === s.name}
+        />
+      ))}
+      {pinned.length > 0 && (unpinnedProcessing.length > 0 || unpinnedIdle.length > 0) && (
+        <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />
+      )}
+      {unpinnedProcessing.map(s => (
         <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
-          onDragStart={() => setDraggedSession(s.name)}
-          onDragEnd={() => setDraggedSession(null)}
-          onDragOver={e => e.preventDefault()}
-          onDrop={e => { e.preventDefault(); if (draggedSession) handleSessionReorder(draggedSession, s.name) }}
+          onPin={() => togglePin(s.name)}
+        />
+      ))}
+      {unpinnedProcessing.length > 0 && unpinnedIdle.length > 0 && (
+        <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />
+      )}
+      {unpinnedIdle.map(s => (
+        <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
+          onKill={() => { void killSession(s.name) }}
+          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
+          onPin={() => togglePin(s.name)}
         />
       ))}
       {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
