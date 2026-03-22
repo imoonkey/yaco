@@ -20,15 +20,18 @@
 ## 2026-03-22: Fix markdown preview code block horizontal scroll snap-back
 
 **What changed:**
-- Added `lastReportedLineRef` to `MarkdownPreview` — tracks the viewport line last reported from user scroll, skips programmatic scroll-back when the incoming `viewportLine` prop is just echoing our own report
-- Added `overscroll-behavior: contain` on `.markdown-preview pre` to prevent scroll chaining from code blocks to the parent container
+- Replaced `dangerouslySetInnerHTML` with manual innerHTML management via ref + `useLayoutEffect`
+- `appliedHtmlRef` tracks the last applied HTML string; innerHTML is only set when the value actually changes
+- `<pre>` horizontal scroll positions are saved before and restored after DOM recreation
+- Added `overscroll-behavior: contain` on `.markdown-preview pre` to prevent scroll chaining
+- Added `lastReportedLineRef` to prevent scroll-sync round-trip from resetting scroll positions
 
 **Why:**
-- Horizontal scrolling on overflowing code blocks in markdown preview would snap back to the left. Root cause: user scroll → `onScroll` reports viewportLine → parent echoes it as prop → `useEffect` programmatically sets `container.scrollTop` → browser reflow resets child `<pre>` `scrollLeft` on WebKit.
+- React 19 re-applies `dangerouslySetInnerHTML` on every render when the `{ __html }` wrapper object is a new reference, even if the HTML string is identical. This recreated all DOM nodes ~14 times per 2 seconds, resetting `<pre>` `scrollLeft` to 0 every ~285ms. Diagnosed via Playwright instrumentation: innerHTML setter interception showed React's `commitUpdate → updateProperties → setProp` path calling `element.innerHTML = value` with identical strings.
 
-**Key files:** `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/index.css`
-**Verification:** TypeScript build passed (`tsc --noEmit`), code review clean
-**Commit:** `ea3729c`
+**Key files:** `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/index.css`, `ui/tests/e2e/codeblock-scroll.spec.ts`
+**Verification:** TypeScript build passed, 3 new Playwright E2E tests pass (scrollLeft persistence, content re-render survival, DOM churn elimination), 3 existing workspace E2E tests pass
+**Commit:** `ea3729c`, `ee39481`
 **Next:** None
 **Blockers:** None
 

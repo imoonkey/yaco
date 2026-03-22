@@ -94,6 +94,7 @@ Available for `.md` files only. Toggled via Preview button or `Cmd+Shift+V`.
 - Renders inside a `.markdown-preview` styled container
 - Renders the draft content (not refetched from disk)
 - Syntax highlighting on code blocks via `@lezer/highlight` (classHighlighter + language parsers)
+- **innerHTML management**: does NOT use `dangerouslySetInnerHTML` (React 19 re-applies it on every render). Instead, manages innerHTML manually via `useLayoutEffect` + `appliedHtmlRef`. Only sets innerHTML when the HTML string actually changes. Saves and restores `<pre>` horizontal scroll positions across DOM recreation.
 - **Mermaid diagrams**: ` ```mermaid ` code fences render as SVG diagrams inline via the `mermaid` library (initialized with `startOnLoad: false`, theme `neutral`). Rendering uses `mermaid.render(id, source)` per diagram in a `useEffect`, reading `textContent` (not `innerHTML`) to avoid HTML entity issues. Parse errors display inline as red text.
 
 ### Source-Line Anchored Sync
