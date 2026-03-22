@@ -338,8 +338,16 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
   }, [projectName])
 
   const onCreate = useCallback(({ parentId, type }: { parentId: string | null; type: 'internal' | 'leaf' }) => {
+    // Open parent chain so the pending node will be visible
+    if (parentId) {
+      const segments = parentId.split('/')
+      for (let i = 1; i <= segments.length; i++) {
+        treeRef.current?.open(segments.slice(0, i).join('/'))
+      }
+    }
     const parentPath = parentId || ''
-    const tempPath = parentPath ? `${parentPath}/__new__` : '__new__'
+    const tempId = `\0new:${crypto.randomUUID()}`
+    const tempPath = parentPath ? `${parentPath}/${tempId}` : tempId
     const nodeType = type === 'internal' ? 'dir' as const : 'file' as const
     const pending = { path: tempPath, type: nodeType }
     pendingRef.current = pending
@@ -391,14 +399,19 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     },
     expandToPath: (folderPath) => {
       if (!treeRef.current) return
+      // Open all ancestors using string IDs — works without node visibility
       const parts = folderPath.split('/')
       for (let i = 1; i <= parts.length; i++) {
-        const p = parts.slice(0, i).join('/')
-        const node = treeRef.current.get(p)
-        if (node && !node.isOpen) node.open()
+        treeRef.current.open(parts.slice(0, i).join('/'))
       }
-      const target = treeRef.current.get(folderPath)
-      if (target) target.select()
+      // Select after re-render so the target node is in the visible list
+      setTimeout(() => {
+        const target = treeRef.current?.get(folderPath)
+        if (target) {
+          target.select()
+          target.focus()
+        }
+      })
     },
   }), [])
 
