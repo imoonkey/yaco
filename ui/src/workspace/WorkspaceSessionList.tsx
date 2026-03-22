@@ -33,7 +33,10 @@ export function SessionItem({
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const [showTip, setShowTip] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const summaryRef = useRef<HTMLDivElement>(null)
+  const tipTimer = useRef<ReturnType<typeof setTimeout>>(null)
 
   useEffect(() => {
     if (renaming) inputRef.current?.focus()
@@ -115,8 +118,35 @@ export function SessionItem({
         </button>
       </div>
       {session.summary && !renaming && (
-        <div className="truncate text-[10px]" style={{ color: C.muted, paddingLeft: onPin ? 42 : 26 }}>
-          {session.summary}
+        <div className="relative" style={{ paddingLeft: onPin ? 42 : 26 }}>
+          <div
+            ref={summaryRef}
+            className="truncate text-[10px]"
+
+            style={{ color: C.muted }}
+            onMouseEnter={() => {
+              const el = summaryRef.current
+              if (el && el.scrollWidth > el.clientWidth) {
+                tipTimer.current = setTimeout(() => setShowTip(true), 300)
+              }
+            }}
+            onMouseLeave={() => {
+              if (tipTimer.current) clearTimeout(tipTimer.current)
+              setShowTip(false)
+            }}
+          >
+            {session.summary}
+          </div>
+          {showTip && (
+            <div
+              className="absolute left-0 top-full mt-1 z-40 px-2 py-1 rounded shadow-lg text-[11px] whitespace-pre-wrap break-words"
+              style={{ backgroundColor: C.editorBg, border: `1px solid ${C.border}`, color: C.text }}
+              onMouseEnter={() => { if (tipTimer.current) clearTimeout(tipTimer.current) }}
+              onMouseLeave={() => setShowTip(false)}
+            >
+              {session.summary}
+            </div>
+          )}
         </div>
       )}
       {ctxMenu && (

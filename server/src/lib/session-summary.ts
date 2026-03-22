@@ -146,8 +146,26 @@ function loadClaudePidMap(): Map<number, string> {
   return map
 }
 
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max - 3) + '...' : s
+/** Resolve Codex session ID from PID via lsof (find open rollout file).
+ *  Returns pid → sessionId map for all codex PIDs in one lsof call. */
+function loadCodexPidMap(pids: number[]): Map<number, string> {
+  const map = new Map<number, string>()
+  if (pids.length === 0) return map
+
+  try {
+    const output = execSync(`lsof -p ${pids.join(',')} 2>/dev/null`, { encoding: 'utf-8' })
+    // Match rollout files: rollout-<date>-<sessionId>.jsonl
+    const re = /rollout-\d{4}-\d{2}-\d{2}T[\w-]+-([0-9a-f-]{36})\.jsonl/
+    for (const line of output.split('\n')) {
+      if (!line.includes('rollout-')) continue
+      const pidMatch = line.match(/^\S+\s+(\d+)/)
+      const idMatch = line.match(re)
+      if (pidMatch && idMatch) {
+        map.set(Number(pidMatch[1]), idMatch[1])
+      }
+    }
+  } catch { /* ignore */ }
+  return map
 }
 
 /** Resolve summaries for all sessions in a single batch.
@@ -206,15 +224,30 @@ export function resolveSessionSummaries(
     const resolve = makeClaudeResolver(path)
     for (const s of projectSessions) {
       const r = resolve(s.sessionId)
-      if (r) result.set(s.name, truncate(r.summary, 120))
+      if (r) result.set(s.name, r.summary)
     }
   }
 
-  // Resolve Codex summaries
+  // Resolve Codex summaries (with PID fallback for missing sessionId)
+  const codexNeedsPid = codexSessions.filter(s => !s.sessionId && typeof s.pid === 'number')
+  if (codexNeedsPid.length > 0) {
+    const pidMap = loadCodexPidMap(codexNeedsPid.map(s => s.pid))
+    const procTree = buildProcessTree()
+    for (const s of codexNeedsPid) {
+      let resolved = pidMap.get(s.pid)
+      if (!resolved) {
+        for (const desc of getDescendants(s.pid, procTree)) {
+          resolved = pidMap.get(desc)
+          if (resolved) break
+        }
+      }
+      if (resolved) s.sessionId = resolved
+    }
+  }
   for (const s of codexSessions) {
     if (!s.sessionId) continue
     const r = resolveCodexSummary(s.sessionId)
-    if (r) result.set(s.name, truncate(r.summary, 120))
+    if (r) result.set(s.name, r.summary)
   }
 
   return result
