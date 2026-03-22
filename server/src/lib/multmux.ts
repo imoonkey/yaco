@@ -120,6 +120,12 @@ export async function closeMultmuxSession(handle: string): Promise<void> {
   await spawnOutput('tmux', ['kill-session', '-t', tmuxName], 5000)
 }
 
+export async function renameMultmuxSession(oldHandle: string, newHandle: string, cwd: string): Promise<void> {
+  validateSessionName(oldHandle)
+  validateSessionName(newHandle)
+  await spawnOutput(MULTMUX_PATH, ['rename', oldHandle, newHandle], 5000, cwd)
+}
+
 /** Collect stdout from a spawned process */
 function spawnOutput(cmd: string, args: string[], timeoutMs: number, cwd?: string): Promise<string> {
   return new Promise((resolve, reject) => {

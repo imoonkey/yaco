@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useFileTree, useSessions, useGitStatus, startSession, fetchGitDiff, closeSession as closeRemoteSession } from '../hooks/useApi'
+import { useFileTree, useSessions, useGitStatus, startSession, fetchGitDiff, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { Terminal } from '../components/Terminal'
@@ -270,6 +270,19 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     }
   }, [attachedSession, refreshSessions, actions])
 
+  const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
+    try {
+      await renameSession(oldName, newName, projectPath)
+      // Update pinned order if the renamed session was pinned
+      setPinnedOrder(prev => prev.map(n => n === oldName ? newName : n))
+      // Update active session if attached
+      if (attachedSession === oldName) actions.setActiveSession(newName)
+      refreshSessions()
+    } catch (err) {
+      console.error('Failed to rename session:', err)
+    }
+  }, [attachedSession, actions, projectPath, refreshSessions])
+
   const detachActiveSession = useCallback(() => {
     if (!attachedSession) return false
     actions.setActiveSession('')
@@ -514,6 +527,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
           onPin={() => togglePin(s.name)}
+          onRename={s.provider !== 'shell' ? (newName) => { void handleRenameSession(s.name, newName) } : undefined}
           onDragStart={e => { e.dataTransfer.setData('text/plain', s.name); e.dataTransfer.effectAllowed = 'move'; setDraggedSession(s.name) }}
           onDragEnd={() => setDraggedSession(null)}
           onDragOver={e => e.preventDefault()}
@@ -529,6 +543,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
           onPin={() => togglePin(s.name)}
+          onRename={s.provider !== 'shell' ? (newName) => { void handleRenameSession(s.name, newName) } : undefined}
         />
       ))}
       {unpinnedProcessing.length > 0 && unpinnedIdle.length > 0 && (
@@ -539,6 +554,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
           onPin={() => togglePin(s.name)}
+          onRename={s.provider !== 'shell' ? (newName) => { void handleRenameSession(s.name, newName) } : undefined}
         />
       ))}
       {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}

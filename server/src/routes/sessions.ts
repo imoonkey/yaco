@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { closeMultmuxSession, readSessionsFromStateFiles, readAllSessionsFromStateFiles, sendToSession, startMultmuxSession } from '../lib/multmux'
+import { closeMultmuxSession, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/multmux'
 import { loadProjects } from '../lib/projects'
 import { resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
@@ -78,6 +78,18 @@ app.post('/:handle/resume', async (c) => {
     return c.json({ ok: true })
   } catch {
     return c.json({ error: 'failed to resume session' }, 500)
+  }
+})
+
+app.post('/:handle/rename', async (c) => {
+  const handle = c.req.param('handle')
+  const { name, cwd } = await c.req.json<{ name: string; cwd: string }>()
+  if (!name || !cwd) return c.json({ error: 'name and cwd required' }, 400)
+  try {
+    await renameMultmuxSession(handle, name, cwd)
+    return c.json({ ok: true, name })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
   }
 })
 

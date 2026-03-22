@@ -197,6 +197,10 @@ export async function closeSession(name: string): Promise<void> {
   await postJson(`/sessions/${encodeURIComponent(name)}/close`)
 }
 
+export async function renameSession(name: string, newName: string, cwd: string): Promise<void> {
+  await postJson(`/sessions/${encodeURIComponent(name)}/rename`, { name: newName, cwd })
+}
+
 export async function saveFileContent(projectName: string, filePath: string, content: string, baseRevision?: number): Promise<{ revision: number }> {
   const res = await fetch(`${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
     method: 'PUT',
