@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-03-22: Session display enhancements + inline rename
+
+**What changed:**
+- Session summary: shows first user message below session name, resolved from Claude JSONL (`<sessionId>.jsonl`) and Codex SQLite
+- PID fallback: builds process tree via `ps -eo pid,ppid` to find agent CLI PID when `sessionId` is empty in state file (pane PID ≠ agent PID)
+- Cached Codex SQLite handle (opened once per server lifecycle)
+- Batch summary resolution: one JSONL read per session, one process tree per poll
+- Pin sessions: diamond toggle pins sessions to top; pinned sessions drag-reorderable
+- Session ordering: pinned → processing → idle with dividers
+- `Cmd+Shift+1-9`: switch to Nth session in display order (uses `e.code` for layout-independent digit detection)
+- Right-click rename: context menu → inline input, calls `multmux rename` via `POST /api/sessions/:handle/rename`
+- Project tab drag fix: added `dataTransfer.setData()` for Safari compatibility
+- New dependency: `better-sqlite3` for reading Codex `state_5.sqlite`
+
+**Why:**
+- Sessions named `claude-mn0pgumg` are unidentifiable — first message provides context at a glance
+- PID mismatch (tmux pane shell vs agent CLI) was causing silent summary resolution failures
+- Pin/reorder gives users control over session list priority without changing processing/idle semantics
+
+**Key files:** `server/src/lib/session-summary.ts` (new), `server/src/lib/multmux.ts`, `server/src/routes/sessions.ts`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/hooks/useApi.ts`
+**Verification:** Vite build passed, Codex QA 6/6 PASS (Playwright), code review with fixes applied
+**Commit:** `020389e..4cd3032`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-21: Workspace layout extraction + desktop sessions to activity column
 
 **What changed:**

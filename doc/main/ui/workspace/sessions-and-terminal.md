@@ -26,9 +26,29 @@ On desktop, located in the activity column (right panel) below the terminal. On 
 ### Display
 
 Each session row shows:
+- Pin toggle (diamond icon) — pins session to top of list
 - Provider icon (Claude symbol, ChatGPT logo, or terminal SVG)
-- Session name + status indicator
-- Summary line (dimmed, below name) — first prompt or title from Claude/Codex session history. Resolved server-side via `sessionId` from multmux state files. Empty if session just started or provider is shell.
+- Session name + status indicator (green pulse = processing, gray = idle)
+- Summary line (dimmed, below name) — first user message from Claude/Codex conversation logs. Empty if session just started, JSONL not yet flushed, or provider is shell.
+
+### Ordering
+
+Sessions display in three tiers with dividers between non-empty tiers:
+1. **Pinned** — user-pinned sessions, drag-reorderable among themselves
+2. **Processing** — currently active sessions (not pinned)
+3. **Idle** — waiting sessions (not pinned)
+
+Pin state and order are client-side only (not persisted across page reloads).
+
+### Summary Resolution
+
+Server resolves summaries on each `GET /api/sessions` poll:
+1. Read `sessionId` from `.multmux/*.json` state files
+2. If empty, PID fallback: build process tree via `ps`, find descendant of pane PID in `~/.claude/sessions/*.json`
+3. Read first user message from `~/.claude/projects/{encoded}/<sessionId>.jsonl`
+4. For Codex: query `~/.codex/state_5.sqlite` threads table
+
+→ See: `server/src/lib/session-summary.ts`
 
 ### Actions
 
