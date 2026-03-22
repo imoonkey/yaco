@@ -32,6 +32,7 @@ export interface AgentSession {
   provider: SessionProvider
   status: SessionStatus
   project: string
+  summary: string
 }
 
 export interface ProgressEntry {

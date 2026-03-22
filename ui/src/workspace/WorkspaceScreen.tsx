@@ -59,6 +59,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [sidebarHeight, setSidebarHeight] = useState(0)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [contextFolder, setContextFolder] = useState('')
+  const [sessionOrder, setSessionOrder] = useState<string[]>([])
+  const [draggedSession, setDraggedSession] = useState<string | null>(null)
 
   // Convenience aliases for layout props
   const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, previewMode } = layout
@@ -121,8 +123,18 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   }, [activeDiffPath, projectName])
 
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
-  const processing = projectSessions.filter(s => s.status === 'processing')
-  const idle = projectSessions.filter(s => s.status === 'idle')
+
+  // Apply custom session order, falling back to default (processing first, then idle)
+  const orderedSessions = useMemo(() => {
+    if (sessionOrder.length === 0) return [...projectSessions.filter(s => s.status === 'processing'), ...projectSessions.filter(s => s.status === 'idle')]
+    const byName = new Map(projectSessions.map(s => [s.name, s]))
+    const ordered = sessionOrder.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
+    // Append any new sessions not yet in the order
+    for (const s of projectSessions) {
+      if (!sessionOrder.includes(s.name)) ordered.push(s)
+    }
+    return ordered
+  }, [projectSessions, sessionOrder])
   const allFiles = fileTree ? flattenTree(fileTree) : []
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
@@ -341,6 +353,18 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
+      // Cmd+Shift+[1-9]: switch to session N
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && /^[1-9]$/.test(e.key)) {
+        e.preventDefault()
+        e.stopPropagation()
+        const target = orderedSessions[Number(e.key) - 1]
+        if (target) {
+          actions.setActiveSession(target.name)
+          setFocusTarget('session')
+          if (isMobile) actions.setMobilePane('terminal')
+        }
+        return
+      }
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
         e.preventDefault()
         e.stopPropagation()
@@ -373,7 +397,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, canTogglePreview, closeFocusedSurface, focusTarget, previewMode, selectedFilePath, showRightPanel, showSearch, showSidebar])
+  }, [actions, canTogglePreview, closeFocusedSurface, focusTarget, isMobile, orderedSessions, previewMode, selectedFilePath, showRightPanel, showSearch, showSidebar])
 
   useEffect(() => {
     const handleBlur = () => {
@@ -461,19 +485,30 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     </>
   )
 
+  const handleSessionReorder = useCallback((fromName: string, toName: string) => {
+    if (fromName === toName) return
+    setSessionOrder(prev => {
+      const current = prev.length > 0 ? prev : orderedSessions.map(s => s.name)
+      const fromIdx = current.indexOf(fromName)
+      const toIdx = current.indexOf(toName)
+      if (fromIdx === -1 || toIdx === -1) return prev
+      const next = [...current]
+      const [moved] = next.splice(fromIdx, 1)
+      next.splice(toIdx, 0, moved)
+      return next
+    })
+  }, [orderedSessions])
+
   const sessionsBody = (
     <>
-      {processing.map(s => (
+      {orderedSessions.map(s => (
         <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
-        />
-      ))}
-      {processing.length > 0 && idle.length > 0 && <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />}
-      {idle.map(s => (
-        <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
-          onKill={() => { void killSession(s.name) }}
-          onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
+          onDragStart={() => setDraggedSession(s.name)}
+          onDragEnd={() => setDraggedSession(null)}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); if (draggedSession) handleSessionReorder(draggedSession, s.name) }}
         />
       ))}
       {projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
