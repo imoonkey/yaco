@@ -29,7 +29,6 @@ agent-config/
       implement/                     # End-to-end implementation workflow
       code-review/                   # Systematic code review
       update-doc/                    # Keep docs and skills in sync
-      strategic-compact/             # Context compaction
       align/                         # Cross-agent design alignment
       multmux/                       # Multi-agent orchestration via tmux
       tdd/                           # Test-driven development

@@ -73,4 +73,4 @@ Run `/update-doc`  (**MUST USE the mentioned skills**) to sync `doc/main/`, `doc
 
 - Use TodoWrite to track phases and progress
 - Use subagents to keep context windows fresh
-- Compact context at phase boundaries when needed (`/strategic-compact`)
+- Compact context at phase boundaries when needed
