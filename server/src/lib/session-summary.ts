@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from 'fs'
+import { execSync } from 'child_process'
 import { join } from 'path'
 import { homedir } from 'os'
 import Database from 'better-sqlite3'
@@ -14,26 +15,40 @@ function encodeProjectPath(projectPath: string): string {
   return projectPath.replace(/\//g, '-')
 }
 
-/** Read Claude sessions-index.json once, return a map of sessionId → SummaryResult */
-function loadClaudeIndex(projectPath: string): Map<string, SummaryResult> {
-  const map = new Map<string, SummaryResult>()
-  if (!projectPath) return map
-
+/** Read first user message from Claude session JSONL files.
+ *  Returns a resolver function that reads a specific sessionId on demand. */
+function makeClaudeResolver(projectPath: string): (sessionId: string) => SummaryResult | null {
+  if (!projectPath) return () => null
   const encoded = encodeProjectPath(projectPath)
-  const indexPath = join(homedir(), '.claude', 'projects', encoded, 'sessions-index.json')
-  if (!existsSync(indexPath)) return map
+  const projectDir = join(homedir(), '.claude', 'projects', encoded)
+  if (!existsSync(projectDir)) return () => null
 
-  try {
-    const data = JSON.parse(readFileSync(indexPath, 'utf-8'))
-    for (const entry of data.entries ?? []) {
-      if (!entry.sessionId) continue
-      const summary = entry.firstPrompt || entry.summary || ''
-      if (summary) {
-        map.set(entry.sessionId, { summary, messageCount: entry.messageCount })
+  return (sessionId: string) => {
+    const jsonlPath = join(projectDir, `${sessionId}.jsonl`)
+    if (!existsSync(jsonlPath)) return null
+
+    try {
+      // Read file line by line, find first user message
+      const content = readFileSync(jsonlPath, 'utf-8')
+      for (const line of content.split('\n')) {
+        if (!line) continue
+        try {
+          const entry = JSON.parse(line)
+          if (entry.type === 'user' && entry.message?.content) {
+            // Extract text from content (can be string or array of blocks)
+            const raw = typeof entry.message.content === 'string'
+              ? entry.message.content
+              : Array.isArray(entry.message.content)
+                ? entry.message.content.map((b: { text?: string }) => b.text ?? '').join(' ')
+                : ''
+            const summary = raw.replace(/\s+/g, ' ').trim()
+            if (summary) return { summary }
+          }
+        } catch { continue }
       }
-    }
-  } catch { /* ignore */ }
-  return map
+    } catch { /* ignore */ }
+    return null
+  }
 }
 
 /** Cached Codex database handle (opened once per server lifecycle) */
@@ -77,6 +92,39 @@ function resolveCodexSummary(sessionId: string): SummaryResult | null {
     codexDb = null
     return null
   }
+}
+
+/** Build a parent→children map from ps output (called once per batch) */
+function buildProcessTree(): Map<number, number[]> {
+  try {
+    const output = execSync('ps -eo pid,ppid', { encoding: 'utf-8' })
+    const children = new Map<number, number[]>()
+    for (const line of output.trim().split('\n').slice(1)) {
+      const parts = line.trim().split(/\s+/)
+      if (parts.length < 2) continue
+      const childPid = Number(parts[0])
+      const parentPid = Number(parts[1])
+      if (!childPid || !parentPid) continue
+      const list = children.get(parentPid) ?? []
+      list.push(childPid)
+      children.set(parentPid, list)
+    }
+    return children
+  } catch {
+    return new Map()
+  }
+}
+
+/** Find all descendant PIDs using a pre-built process tree */
+function getDescendants(pid: number, tree: Map<number, number[]>): number[] {
+  const result: number[] = []
+  const queue = tree.get(pid) ?? []
+  while (queue.length > 0) {
+    const p = queue.shift()!
+    result.push(p)
+    queue.push(...(tree.get(p) ?? []))
+  }
+  return result
 }
 
 /** Batch PID fallback for Claude: scan ~/.claude/sessions/*.json once, return pid → sessionId map */
@@ -131,11 +179,18 @@ export function resolveSessionSummaries(
   }
 
   // PID fallback: scan once for all Claude sessions missing sessionId
-  let pidMap: Map<number, string> | null = null
   if (needsPidFallback.length > 0) {
-    pidMap = loadClaudePidMap()
+    const pidMap = loadClaudePidMap()
+    const procTree = buildProcessTree()
     for (const s of needsPidFallback) {
-      const resolved = pidMap.get(s.pid)
+      // Try direct match first, then check descendant processes
+      let resolved = pidMap.get(s.pid)
+      if (!resolved) {
+        for (const descendant of getDescendants(s.pid, procTree)) {
+          resolved = pidMap.get(descendant)
+          if (resolved) break
+        }
+      }
       if (resolved) {
         const list = claudeByProject.get(s.project) ?? []
         list.push({ ...s, sessionId: resolved })
@@ -144,13 +199,13 @@ export function resolveSessionSummaries(
     }
   }
 
-  // Resolve Claude summaries: one index read per project
+  // Resolve Claude summaries: one resolver per project
   for (const [project, projectSessions] of claudeByProject) {
     const path = projectPaths.get(project)
     if (!path) continue
-    const index = loadClaudeIndex(path)
+    const resolve = makeClaudeResolver(path)
     for (const s of projectSessions) {
-      const r = index.get(s.sessionId)
+      const r = resolve(s.sessionId)
       if (r) result.set(s.name, truncate(r.summary, 120))
     }
   }
