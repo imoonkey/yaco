@@ -188,4 +188,93 @@ export const solarizedLight = EditorView.theme({
   '.cm-nonmatchingBracket': {
     color: SOLARIZED_LIGHT.red,
   },
+  // Diff gutter
+  '.cm-diff-gutter': {
+    width: '8px',
+    minWidth: '8px',
+    cursor: 'pointer',
+  },
+  '.cm-diff-gutter .cm-gutterElement': {
+    padding: '0',
+    display: 'flex',
+    justifyContent: 'flex-end',
+  },
+  '.cm-diff-added': {
+    width: '3px',
+    height: '100%',
+    backgroundColor: SOLARIZED_LIGHT.green,
+  },
+  '.cm-diff-modified': {
+    width: '3px',
+    height: '100%',
+    backgroundColor: SOLARIZED_LIGHT.blue,
+  },
+  '.cm-diff-deleted': {
+    width: '0',
+    height: '0',
+    borderTop: '4px solid transparent',
+    borderBottom: '4px solid transparent',
+    borderRight: `6px solid ${SOLARIZED_LIGHT.red}`,
+    alignSelf: 'center',
+  },
+  // Line tints
+  '.cm-diff-added-line': {
+    backgroundColor: 'rgba(133, 153, 0, 0.06)',
+  },
+  '.cm-diff-modified-line': {
+    backgroundColor: 'rgba(38, 139, 210, 0.06)',
+  },
+  // Diff popup
+  '.cm-diff-popup': {
+    backgroundColor: SOLARIZED_LIGHT.editorWidgetBackground,
+    border: `1px solid ${SOLARIZED_LIGHT.border}`,
+    borderLeft: '3px solid',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+    fontSize: '12px',
+    lineHeight: '1.5',
+    maxHeight: '300px',
+    overflowY: 'auto',
+    margin: '2px 0',
+  },
+  '.cm-diff-popup-header': {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '4px 8px',
+    borderBottom: `1px solid ${SOLARIZED_LIGHT.border}`,
+    color: SOLARIZED_LIGHT.base1,
+    fontSize: '11px',
+  },
+  '.cm-diff-popup-close': {
+    background: 'none',
+    border: 'none',
+    color: SOLARIZED_LIGHT.base1,
+    cursor: 'pointer',
+    fontSize: '14px',
+    lineHeight: '1',
+    padding: '0 2px',
+  },
+  '.cm-diff-popup-close:hover': {
+    color: SOLARIZED_LIGHT.base01,
+  },
+  '.cm-diff-popup-body': {
+    padding: '4px 0',
+  },
+  '.cm-diff-popup-line': {
+    padding: '0 8px',
+    whiteSpace: 'pre',
+    minHeight: '18px',
+  },
+  '.cm-diff-popup-add': {
+    backgroundColor: 'rgba(133, 153, 0, 0.1)',
+    color: SOLARIZED_LIGHT.green,
+  },
+  '.cm-diff-popup-del': {
+    backgroundColor: 'rgba(220, 50, 47, 0.1)',
+    color: SOLARIZED_LIGHT.red,
+  },
+  '.cm-diff-popup-normal': {
+    color: SOLARIZED_LIGHT.base00,
+  },
 })

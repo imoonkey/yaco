@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { Editor } from '../components/Editor'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import type { DiffHunk } from '../lib/parseDiff'
 import { escapeHtml, clampLine, renderMarkdown } from './markdown'
 import mermaid from 'mermaid'
 
@@ -210,6 +211,7 @@ export function WorkspaceEditorArea({
   onCloseTab,
   onDraftChange,
   onSave,
+  diffHunks,
 }: {
   activeTab: string | null
   activeFilePath: string | null
@@ -230,6 +232,7 @@ export function WorkspaceEditorArea({
   onCloseTab: () => void
   onDraftChange: (content: string) => void
   onSave: (content: string) => Promise<void>
+  diffHunks?: DiffHunk[]
 }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -281,6 +284,7 @@ export function WorkspaceEditorArea({
               onCloseRequest={onCloseTab}
               onChange={onDraftChange}
               onSave={onSave}
+              diffHunks={diffHunks}
             />
           )
         ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>

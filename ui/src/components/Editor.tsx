@@ -10,6 +10,8 @@ import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
 import { solarizedHighlight, solarizedLight } from '../lib/solarizedLight'
+import { diffGutterExtension, setDiffData } from '../lib/diffGutter'
+import type { DiffHunk } from '../lib/parseDiff'
 
 function langExtension(filePath: string) {
   if (filePath.endsWith('.md')) return markdown({ codeLanguages: languages })
@@ -32,6 +34,7 @@ interface EditorProps {
   onFocus?: () => void
   onCloseRequest?: () => void
   readOnly?: boolean
+  diffHunks?: DiffHunk[]
 }
 
 function isCloseShortcut(event: KeyboardEvent): boolean {
@@ -64,6 +67,7 @@ export function Editor({
   onFocus,
   onCloseRequest,
   readOnly = false,
+  diffHunks,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -106,6 +110,7 @@ export function Editor({
     const state = EditorState.create({
       doc: content,
       extensions: [
+        ...diffGutterExtension(),
         lineNumbers(),
         highlightActiveLine(),
         highlightSpecialChars(),
@@ -207,6 +212,12 @@ export function Editor({
     view.focus()
     onViewportLineRef.current?.(readViewportLine(view))
   }, [jumpRequestKey, jumpToLine])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({ effects: setDiffData.of(diffHunks ?? []) })
+  }, [diffHunks])
 
   return <div ref={containerRef} className="h-full overflow-hidden" />
 }

@@ -8,6 +8,8 @@ import { FileExplorer, NewFileIcon, NewFolderIcon } from '../components/FileExpl
 import type { FileExplorerHandle } from '../components/FileExplorer'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { parseDiff } from '../lib/parseDiff'
+import type { DiffHunk } from '../lib/parseDiff'
 import { clampLine } from './markdown'
 import { useResize } from './useResize'
 import { FileSearch, flattenTree } from './WorkspaceSearch'
@@ -58,6 +60,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [diffs, setDiffs] = useState<Record<string, DiffState>>({})
   const [sidebarHeight, setSidebarHeight] = useState(0)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
+  const [editorDiffHunks, setEditorDiffHunks] = useState<DiffHunk[]>([])
   const [contextFolder, setContextFolder] = useState('')
   const [pinnedOrder, setPinnedOrder] = useState<string[]>([])
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
@@ -138,6 +141,27 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
+
+  // Fetch diff for active editor file (gutter indicators)
+  const activeFileIsChanged = !!activeFilePath && changes.some(c => c.path === activeFilePath)
+  useEffect(() => {
+    if (!activeFilePath || !activeFileIsChanged) {
+      setEditorDiffHunks([])
+      return
+    }
+    let cancelled = false
+    fetchGitDiff(projectName, activeFilePath)
+      .then(diffText => {
+        if (cancelled) return
+        setEditorDiffHunks(parseDiff(diffText))
+      })
+      .catch(() => {
+        if (cancelled) return
+        setEditorDiffHunks([])
+      })
+    return () => { cancelled = true }
+  }, [activeFilePath, activeFileIsChanged, projectName, gitData])
+
   const activeSessionInfo = projectSessions.find(s => s.name === attachedSession) ?? null
 
   // Auto-detach when a previously-known session disappears from the server
@@ -608,6 +632,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         onCloseTab={() => activeTab && closeTab(activeTab)}
         onDraftChange={(content) => activeTab && actions.updateFileDraft(activeTab, content)}
         onSave={async (content) => { if (activeTab) await actions.saveFile(activeTab, content) }}
+        diffHunks={editorDiffHunks}
       />
     </div>
   )
