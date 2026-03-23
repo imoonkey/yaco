@@ -12,7 +12,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
 - **Reorganization**: reparent tasks, adjust dependencies, split or merge tasks as the plan evolves
 - **Progress tracking**: update state as work proceeds, read the graph to report status
 
-## Schema — `doc/todo/tasks.json`
+## Core Schema — `doc/todo/tasks.json`
 
 ```json
 {
@@ -39,8 +39,29 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `state` | yes | `ready \| running \| done \| blocked \| cancelled` |
 | `design` | no | Path to design doc |
 | `scope` | no | File globs this task touches. Parallel tasks must not overlap |
-| `acceptCriteria` | yes | Acceptance criteria as markdown list string. Agent decides what to run as commands vs judge by observation |
+| `acceptCriteria` | yes | Acceptance criteria — what "done" looks like. String or string[]. See "Writing acceptCriteria" below |
+| `resources` | no | Freeform preconditions/resources needed (e.g., "CDP port available", "≥2GB free RAM"). Orchestrate checks availability via agent judgment before dispatch |
+| `requireHumanReview` | no | If true, orchestrate stops after this task completes and waits for human input. Default: false |
 | `note` | no | Free-text annotation — block reason, review comment, human notes |
+
+## Writing acceptCriteria
+
+acceptCriteria is the most important field in a task — it defines what "done" looks like. Spend as much time designing acceptCriteria as designing the task itself.
+
+**Rules:**
+- Required and non-empty on every leaf task. update-tasks.py rejects blank values.
+- Must be **observable and verifiable** — orchestrate will independently check these after the worker claims completion. Do not trust worker self-reports.
+- Include at least one condition checkable via shell command (e.g., `test -f path/to/file`, `pnpm test`, `grep -q "pattern" file`).
+- Define the deliverable, not the process. "openapi.yaml exists and verify passes" — not "run capture then compile."
+
+**Format:** string or string[]. Both accepted. string[] preferred — each criterion is independently verifiable.
+
+**Good:**
+- `["src/fixtures/yelp-fixture/openapi.yaml exists", "pnpm --silent dev verify yelp exits 0", "pnpm build clean"]`
+
+**Bad:**
+- `"complete the yelp discovery"` (not verifiable)
+- `"run capture, then compile, then verify"` (process, not outcome)
 
 ## Analysis
 
