@@ -144,10 +144,17 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   // Fetch diff for active editor file (gutter indicators)
   const activeFileIsChanged = !!activeFilePath && changes.some(c => c.path === activeFilePath)
+  const prevDiffFileRef = useRef(activeFilePath)
   useEffect(() => {
-    // Clear immediately on file switch to avoid showing stale markers
-    setEditorDiffHunks([])
-    if (!activeFilePath || !activeFileIsChanged) return
+    // Clear only on file switch, not on gitData refresh (avoids flicker)
+    if (prevDiffFileRef.current !== activeFilePath) {
+      setEditorDiffHunks([])
+      prevDiffFileRef.current = activeFilePath
+    }
+    if (!activeFilePath || !activeFileIsChanged) {
+      setEditorDiffHunks([])
+      return
+    }
     let cancelled = false
     fetchGitDiff(projectName, activeFilePath)
       .then(diffText => {
