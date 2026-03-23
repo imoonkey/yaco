@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-03-23: Fix file explorer empty gap bug
+
+**What changed:**
+- Defer `react-arborist` Tree mount until container has real dimensions (`size.height >= 1`) instead of rendering with `height=1`
+- Reset virtual-list scroll position (`scrollTo(0)`) when tree data reference changes
+
+**Why:**
+- Intermittent bug: file explorer showed a large empty gap at the top with items pushed to the bottom. Refresh fixed it. Root cause: `react-window` `FixedSizeList` initializing with `height=1` could retain stale `scrollOffset`, and data refreshes (SSE/polling) could leave scroll position desynchronized from the new item count.
+
+**Key files:** `ui/src/components/FileExplorer.tsx`
+**Verification:** TypeScript build passed, page loads correctly
+**Commit:** `a28498a`
+**Next:** Monitor if the bug recurs
+**Blockers:** None
+
 ## 2026-03-23: Mobile IME fix + virtual keyboard viewport
 
 **What changed:**
