@@ -123,11 +123,3 @@ Stage only the files touched by this `/update-doc` run — don't sweep in unrela
 git add <files you created or updated in steps 2–6>
 git commit -m "docs: <short description of what changed>"
 ```
-
-## When to Use
-
-- After architecture or workflow changes
-- After modifying public APIs or interfaces
-- After changing build/setup process
-- After changing project-local skill behavior, process docs, or helper scripts
-- At the end of `/implement` phases
