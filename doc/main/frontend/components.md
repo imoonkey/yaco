@@ -37,8 +37,8 @@ App (305 lines)
         │   ├── MarkdownPreview
         │   └── Editor (223 lines)
         ├── FileExplorer (372 lines)
-        ├── Terminal (297 lines)
-        │   └── TerminalKeyBar (126 lines) — touch-only
+        ├── Terminal (330 lines)
+        │   └── TerminalKeyBar (224 lines) — touch-only
         ├── SessionItem (37 lines)
         ├── GitChangeItem (22 lines)
         ├── FileSearch (45 lines)
@@ -152,7 +152,7 @@ CodeMirror 6 wrapper with Solarized Light theme and git diff gutter.
 
 ## Terminal
 
-**File**: `ui/src/components/Terminal.tsx` (297 lines)
+**File**: `ui/src/components/Terminal.tsx` (330 lines)
 
 xterm.js wrapper with WebSocket PTY connection.
 
@@ -168,17 +168,19 @@ xterm.js wrapper with WebSocket PTY connection.
 
 ### TerminalKeyBar
 
-**File**: `ui/src/components/TerminalKeyBar.tsx` (126 lines)
+**File**: `ui/src/components/TerminalKeyBar.tsx` (224 lines)
 
 Touch-only key bar for terminal special keys missing from virtual keyboards.
 
-**Props**: `{ sendInput: (data: string) => void }`
+**Props**: `{ sendInput: (data: string) => void; resolveInput?: (key: TerminalKeyBarKey, fallback: string) => string }`
 
 **Responsibilities**:
 - Primary row: Esc, Tab, arrows, ^C, expand toggle
 - Secondary row (expandable): ^D, ^Z, ^L, ^R, ^A, ^E, ^W, ^U
 - Hold-to-repeat on arrow keys (400ms delay, 80ms interval)
-- preventDefault on touch to keep terminal focused
+- Dynamic arrow key resolution (CSI vs SS3 via resolveInput)
+- Click fallback for assistive technology, ARIA labels, toolbar role
+- Timer cleanup on unmount and touchcancel
 
 ## Supporting Components
 
