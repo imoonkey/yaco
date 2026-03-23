@@ -34,6 +34,9 @@ agent-config/
       tdd/                           # Test-driven development
       worktree-task/                 # Worktree lifecycle for isolated tasks
       skill-creator/                 # Create or improve skills
+      update-tasks/                  # Manage task graph in doc/todo/tasks.json
+        scripts/                     # update-tasks.py CLI (set, rm with validation)
+      orchestrate/                   # Execute tasks via multmux workers
       coding-standards/              # Coding conventions (auto-detects stack)
         references/                  # Stack-specific: kotlin-android.md, typescript-node.md
       verify/                        # Pre-commit quality gates (auto-detects stack)
