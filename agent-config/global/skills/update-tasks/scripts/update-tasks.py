@@ -17,6 +17,12 @@ def save(tasks):
 def die(msg):
     print(f"error: {msg}", file=sys.stderr); sys.exit(1)
 
+def validate_types(data):
+    checks = {"parent": (str, type(None)), "depends": (list,), "state": (str,), "scope": (list,)}
+    for k, types in checks.items():
+        if k in data and not isinstance(data[k], types):
+            die(f"'{k}' must be {'/'.join(t.__name__ for t in types)}")
+
 def validate_refs(tasks, tid, task):
     if task.get("parent") == tid or tid in task.get("depends", []):
         die("self-reference")
@@ -48,8 +54,13 @@ def check_cycles(tasks):
     for t in tasks:
         if t not in color: dfs(t)
 
+def has_children(tasks, tid):
+    return any(t.get("parent") == tid for t in tasks.values())
+
 def validate_state(tasks, tid, old_state, new_state):
     if new_state not in STATES: die(f"invalid state '{new_state}'")
+    if has_children(tasks, tid) and new_state != old_state:
+        die(f"cannot set state on milestone task (state derived from children)")
     if new_state == "running" and old_state != "running":
         for d in tasks[tid].get("depends", []):
             if tasks[d]["state"] not in TERMINAL:
@@ -63,10 +74,11 @@ def rollup(tasks, tid):
     ps = tasks[pid]["state"]
     if all_term and ps not in TERMINAL:
         tasks[pid]["state"] = "done"; rollup(tasks, pid)
-    elif not all_term and ps in TERMINAL:
+    elif not all_term and ps == "done":
         tasks[pid]["state"] = "running"; rollup(tasks, pid)
 
 def cmd_set(tid, data):
+    validate_types(data)
     tasks = load()
     old_state = tasks.get(tid, {}).get("state")
     if tid in tasks:
