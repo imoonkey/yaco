@@ -1,43 +1,69 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
+import type { MouseEvent, SyntheticEvent, TouchEvent } from 'react'
 
 type KeyDef = {
+  id: TerminalKeyBarKey
   label: string
+  ariaLabel: string
   seq: string
   repeatable?: true
 }
 
+export type TerminalKeyBarKey =
+  | 'escape'
+  | 'tab'
+  | 'arrow-left'
+  | 'arrow-down'
+  | 'arrow-up'
+  | 'arrow-right'
+  | 'ctrl-c'
+  | 'ctrl-d'
+  | 'ctrl-z'
+  | 'ctrl-l'
+  | 'ctrl-r'
+  | 'ctrl-a'
+  | 'ctrl-e'
+  | 'ctrl-w'
+  | 'ctrl-u'
+
 const PRIMARY_KEYS: KeyDef[] = [
-  { label: 'Esc', seq: '\x1b' },
-  { label: 'Tab', seq: '\t' },
-  { label: '←', seq: '\x1b[D', repeatable: true },
-  { label: '↓', seq: '\x1b[B', repeatable: true },
-  { label: '↑', seq: '\x1b[A', repeatable: true },
-  { label: '→', seq: '\x1b[C', repeatable: true },
-  { label: '^C', seq: '\x03' },
+  { id: 'escape', label: 'Esc', ariaLabel: 'Escape', seq: '\x1b' },
+  { id: 'tab', label: 'Tab', ariaLabel: 'Tab', seq: '\t' },
+  { id: 'arrow-left', label: '←', ariaLabel: 'Left arrow', seq: '\x1b[D', repeatable: true },
+  { id: 'arrow-down', label: '↓', ariaLabel: 'Down arrow', seq: '\x1b[B', repeatable: true },
+  { id: 'arrow-up', label: '↑', ariaLabel: 'Up arrow', seq: '\x1b[A', repeatable: true },
+  { id: 'arrow-right', label: '→', ariaLabel: 'Right arrow', seq: '\x1b[C', repeatable: true },
+  { id: 'ctrl-c', label: '^C', ariaLabel: 'Control C', seq: '\x03' },
 ]
 
 const SECONDARY_KEYS: KeyDef[] = [
-  { label: '^D', seq: '\x04' },
-  { label: '^Z', seq: '\x1a' },
-  { label: '^L', seq: '\x0c' },
-  { label: '^R', seq: '\x12' },
-  { label: '^A', seq: '\x01' },
-  { label: '^E', seq: '\x05' },
-  { label: '^W', seq: '\x17' },
-  { label: '^U', seq: '\x15' },
+  { id: 'ctrl-d', label: '^D', ariaLabel: 'Control D', seq: '\x04' },
+  { id: 'ctrl-z', label: '^Z', ariaLabel: 'Control Z', seq: '\x1a' },
+  { id: 'ctrl-l', label: '^L', ariaLabel: 'Control L', seq: '\x0c' },
+  { id: 'ctrl-r', label: '^R', ariaLabel: 'Control R', seq: '\x12' },
+  { id: 'ctrl-a', label: '^A', ariaLabel: 'Control A', seq: '\x01' },
+  { id: 'ctrl-e', label: '^E', ariaLabel: 'Control E', seq: '\x05' },
+  { id: 'ctrl-w', label: '^W', ariaLabel: 'Control W', seq: '\x17' },
+  { id: 'ctrl-u', label: '^U', ariaLabel: 'Control U', seq: '\x15' },
 ]
+
+const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 
 const BTN =
   'min-w-[40px] h-9 px-2 rounded bg-[rgba(0,0,0,0.08)] active:bg-[rgba(0,0,0,0.18)] text-[--sol-base01] font-mono text-sm select-none touch-manipulation'
 
 export function TerminalKeyBar({
   sendInput,
+  resolveInput,
 }: {
   sendInput: (data: string) => void
+  resolveInput?: (key: TerminalKeyBarKey, fallback: string) => string
 }) {
   const [expanded, setExpanded] = useState(false)
   const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const repeatInterval = useRef<ReturnType<typeof setInterval> | null>(null)
+  const suppressClick = useRef(false)
+  const releaseSuppressedClickTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const clearRepeat = useCallback(() => {
     if (repeatTimer.current) {
@@ -50,49 +76,114 @@ export function TerminalKeyBar({
     }
   }, [])
 
+  const clearSuppressedClickTimer = useCallback(() => {
+    if (releaseSuppressedClickTimer.current) {
+      clearTimeout(releaseSuppressedClickTimer.current)
+      releaseSuppressedClickTimer.current = null
+    }
+  }, [])
+
+  const scheduleSuppressedClickReset = useCallback(() => {
+    clearSuppressedClickTimer()
+    releaseSuppressedClickTimer.current = setTimeout(() => {
+      suppressClick.current = false
+      releaseSuppressedClickTimer.current = null
+    }, 500)
+  }, [clearSuppressedClickTimer])
+
+  const getKey = useCallback((keyId: string | undefined) => {
+    if (!keyId) return null
+    return ALL_KEYS.find(key => key.id === keyId) ?? null
+  }, [])
+
+  const activateKey = useCallback((key: KeyDef) => {
+    sendInput(resolveInput?.(key.id, key.seq) ?? key.seq)
+  }, [resolveInput, sendInput])
+
   const handleTouchStart = useCallback(
-    (e: React.TouchEvent, key: KeyDef) => {
+    (e: TouchEvent<HTMLButtonElement>) => {
+      const key = getKey(e.currentTarget.dataset.key)
+      if (!key) return
+
       e.preventDefault()
-      sendInput(key.seq)
+      clearSuppressedClickTimer()
+      suppressClick.current = true
+      activateKey(key)
       if (key.repeatable) {
         clearRepeat()
         repeatTimer.current = setTimeout(() => {
-          repeatInterval.current = setInterval(() => sendInput(key.seq), 80)
+          repeatInterval.current = setInterval(() => activateKey(key), 80)
         }, 400)
       }
     },
-    [sendInput, clearRepeat],
+    [activateKey, clearRepeat, clearSuppressedClickTimer, getKey],
   )
 
   const handleTouchEnd = useCallback(
-    (e: React.TouchEvent) => {
+    (e: TouchEvent<HTMLButtonElement>) => {
       e.preventDefault()
       clearRepeat()
+      scheduleSuppressedClickReset()
     },
-    [clearRepeat],
+    [clearRepeat, scheduleSuppressedClickReset],
   )
 
-  const preventContext = useCallback((e: React.SyntheticEvent) => {
+  const handleClick = useCallback((e: MouseEvent<HTMLButtonElement>) => {
+    const key = getKey(e.currentTarget.dataset.key)
+    if (!key) return
+
+    if (suppressClick.current) {
+      e.preventDefault()
+      suppressClick.current = false
+      clearSuppressedClickTimer()
+      return
+    }
+
+    activateKey(key)
+  }, [activateKey, clearSuppressedClickTimer, getKey])
+
+  const preventContext = useCallback((e: SyntheticEvent) => {
     e.preventDefault()
   }, [])
 
+  const toggleExpanded = useCallback(() => {
+    setExpanded(value => !value)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      clearRepeat()
+      clearSuppressedClickTimer()
+      suppressClick.current = false
+    }
+  }, [clearRepeat, clearSuppressedClickTimer])
+
   return (
-    <div className="bg-[--sol-base2] border-t border-[--sol-border]">
+    <div className="bg-[--sol-base2] border-t border-[--sol-border]" role="toolbar" aria-label="Terminal key bar">
       <div className="flex gap-1 px-1 py-1">
         {PRIMARY_KEYS.map(key => (
           <button
             key={key.label}
+            type="button"
             className={BTN}
-            onTouchStart={e => handleTouchStart(e, key)}
+            aria-label={key.ariaLabel}
+            data-key={key.id}
+            onClick={handleClick}
+            onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
+            onTouchCancel={handleTouchEnd}
             onContextMenu={preventContext}
           >
             {key.label}
           </button>
         ))}
         <button
+          type="button"
           className={BTN}
-          onClick={() => setExpanded(v => !v)}
+          aria-controls="terminal-keybar-secondary"
+          aria-expanded={expanded}
+          aria-label={expanded ? 'Hide more terminal keys' : 'Show more terminal keys'}
+          onClick={toggleExpanded}
           onContextMenu={preventContext}
         >
           <span
@@ -104,16 +195,23 @@ export function TerminalKeyBar({
         </button>
       </div>
       <div
+        id="terminal-keybar-secondary"
         className="overflow-hidden transition-[max-height] duration-150 ease-out"
+        aria-hidden={!expanded}
         style={{ maxHeight: expanded ? 40 : 0 }}
       >
-        <div className="flex gap-1 px-1 py-1">
+        <div className="flex gap-1 px-1 py-1" hidden={!expanded}>
           {SECONDARY_KEYS.map(key => (
             <button
               key={key.label}
+              type="button"
               className={BTN}
-              onTouchStart={e => handleTouchStart(e, key)}
+              aria-label={key.ariaLabel}
+              data-key={key.id}
+              onClick={handleClick}
+              onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
+              onTouchCancel={handleTouchEnd}
               onContextMenu={preventContext}
             >
               {key.label}

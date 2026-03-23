@@ -6,6 +6,7 @@ import '@xterm/xterm/css/xterm.css'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { useIsTouch } from '../hooks/useIsMobile'
 import { TerminalKeyBar } from './TerminalKeyBar'
+import type { TerminalKeyBarKey } from './TerminalKeyBar'
 
 const SOLARIZED_THEME = {
   background: '#eee8d5',
@@ -32,6 +33,12 @@ const SOLARIZED_THEME = {
 }
 
 const TERMINAL_RIGHT_GUTTER_PX = 3
+const ARROW_KEY_SUFFIX: Partial<Record<TerminalKeyBarKey, 'A' | 'B' | 'C' | 'D'>> = {
+  'arrow-left': 'D',
+  'arrow-down': 'B',
+  'arrow-up': 'A',
+  'arrow-right': 'C',
+}
 
 type TerminalWithCore = XTerm & {
   _core?: {
@@ -102,9 +109,18 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
   const isTouch = useIsTouch()
 
   const sendInput = useCallback((data: string) => {
+    onInteractRef.current?.()
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'input', data }))
     }
+  }, [])
+
+  const resolveKeyBarInput = useCallback((key: TerminalKeyBarKey, fallback: string) => {
+    const suffix = ARROW_KEY_SUFFIX[key]
+    if (!suffix) return fallback
+
+    const prefix = termRef.current?.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b['
+    return `${prefix}${suffix}`
   }, [])
 
   useEffect(() => {
@@ -146,7 +162,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
 
     // Mobile: container dimensions may not be final in the first frame.
     // Schedule a refit + canvas repaint after the browser paints.
-    requestAnimationFrame(() => {
+    const fitAnimationFrame = requestAnimationFrame(() => {
       fitTerminal(term)
       term.refresh(0, term.rows - 1)
     })
@@ -237,7 +253,9 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsHost = window.location.host
     const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${term.cols}&rows=${term.rows}`)
+    ws.binaryType = 'arraybuffer'
     wsRef.current = ws
+    let disposed = false
 
     const sendResize = () => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -249,11 +267,16 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
 
     // Raw PTY output — write directly to xterm
     ws.onmessage = (event) => {
+      if (disposed) return
       term.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data))
     }
 
-    ws.onerror = () => term.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
-    ws.onclose = () => term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
+    ws.onerror = () => {
+      if (!disposed) term.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
+    }
+    ws.onclose = () => {
+      if (!disposed) term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
+    }
 
     // Raw input — send directly
     term.onData((data) => {
@@ -268,6 +291,8 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     observer.observe(container)
 
     return () => {
+      disposed = true
+      cancelAnimationFrame(fitAnimationFrame)
       container.removeEventListener('focusin', handleFocusIn)
       container.removeEventListener('touchstart', onTouchStart)
       container.removeEventListener('touchmove', onTouchMove)
@@ -275,6 +300,10 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
       observer.disconnect()
+      ws.onopen = null
+      ws.onmessage = null
+      ws.onerror = null
+      ws.onclose = null
       ws.close()
       term.dispose()
       termRef.current = null
@@ -291,7 +320,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
         onMouseDown={onInteract}
         onFocusCapture={onInteract}
       />
-      {isTouch && <TerminalKeyBar sendInput={sendInput} />}
+      {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} />}
     </div>
   )
 }
