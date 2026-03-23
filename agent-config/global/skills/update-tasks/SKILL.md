@@ -24,7 +24,9 @@ Before writing any task, analyze and decide:
 
 ## Tools
 
-Read tasks.json via jq or file read. Write via `scripts/update-tasks.py`:
+Reads are straightforward — use jq or file read directly on `doc/todo/tasks.json`.
+
+Writes must follow graph constraints (ref validation, cycle detection, state guards, parent rollup), so always use `scripts/update-tasks.py` which has these built in:
 
 ```
 scripts/update-tasks.py set <id> <json>
