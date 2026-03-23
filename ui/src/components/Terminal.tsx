@@ -1,9 +1,11 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useCallback } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { writeTextToClipboard } from '../lib/clipboard'
+import { useIsTouch } from '../hooks/useIsMobile'
+import { TerminalKeyBar } from './TerminalKeyBar'
 
 const SOLARIZED_THEME = {
   background: '#eee8d5',
@@ -97,6 +99,13 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
   const wsRef = useRef<WebSocket | null>(null)
   const onInteractRef = useRef(onInteract)
   const onCloseRequestRef = useRef(onCloseRequest)
+  const isTouch = useIsTouch()
+
+  const sendInput = useCallback((data: string) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'input', data }))
+    }
+  }, [])
 
   useEffect(() => {
     onInteractRef.current = onInteract
@@ -274,16 +283,15 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
   }, [sessionName])
 
   return (
-    <div
-      ref={containerRef}
-      className="h-full w-full select-text"
-      style={{
-        backgroundColor: SOLARIZED_THEME.background,
-        userSelect: 'text',
-        WebkitUserSelect: 'text',
-      }}
-      onMouseDown={onInteract}
-      onFocusCapture={onInteract}
-    />
+    <div className="h-full w-full flex flex-col" style={{ backgroundColor: SOLARIZED_THEME.background }}>
+      <div
+        ref={containerRef}
+        className="flex-1 min-h-0 w-full select-text"
+        style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+        onMouseDown={onInteract}
+        onFocusCapture={onInteract}
+      />
+      {isTouch && <TerminalKeyBar sendInput={sendInput} />}
+    </div>
   )
 }
