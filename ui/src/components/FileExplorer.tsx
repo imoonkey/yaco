@@ -380,6 +380,16 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     return insertPendingNode(tree, { name: '', path: pendingCreate.path, type: pendingCreate.type })
   }, [tree, pendingCreate])
 
+  // Reset virtual-list scroll when tree data changes to prevent stale
+  // scrollOffset leaving items positioned below an empty gap.
+  const prevTreeRef = useRef(treeData)
+  useEffect(() => {
+    if (prevTreeRef.current !== treeData && treeRef.current?.list?.current) {
+      treeRef.current.list.current.scrollTo(0)
+    }
+    prevTreeRef.current = treeData
+  }, [treeData])
+
   useImperativeHandle(ref, () => ({
     createFile: (parentPath) => {
       treeRef.current?.create({ type: 'leaf', parentId: parentPath || null })
@@ -412,7 +422,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
   return (
     <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0 overflow-hidden" onMouseDown={onFocusExplorer}>
-        {!treeData ? (
+        {!treeData || size.height < 1 ? (
           <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>
         ) : (
           <Tree
@@ -420,8 +430,8 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
             data={treeData}
             idAccessor="path"
             childrenAccessor="children"
-            width={Math.max(1, size.width)}
-            height={Math.max(1, size.height)}
+            width={size.width}
+            height={size.height}
             rowHeight={22}
             indent={12}
             openByDefault={false}
