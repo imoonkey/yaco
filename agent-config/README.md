@@ -37,6 +37,8 @@ agent-config/
       update-tasks/                  # Manage task graph in doc/todo/tasks.json
         scripts/                     # update-tasks.py CLI (set, rm with validation)
       orchestrate/                   # Execute tasks via multmux workers
+      init-all/                      # Per-project init for all AI agents
+        scripts/                     # init-symlinks.sh
       coding-standards/              # Coding conventions (auto-detects stack)
         references/                  # Stack-specific: kotlin-android.md, typescript-node.md
       verify/                        # Pre-commit quality gates (auto-detects stack)
@@ -58,18 +60,25 @@ Works with Claude Code, Codex, Cursor, and Gemini CLI through symlinks:
 
 ## Quick Start
 
-**Onboard a project:**
+**Global setup (one-time):**
 
 ```bash
-./setup.sh ~/workspace/my-project
+./setup.sh
 ```
 
-This will:
-1. Create `.claude/skills/` in the project
-2. Set up global config (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`)
-3. Set up global skills (`~/.claude/skills/` -> this repo's `global/skills/`)
-4. Create IDE compatibility symlinks (`.agents/`, `.codex/`)
-5. Create `AGENTS.md`, `GEMINI.md` -> `CLAUDE.md` symlinks
+This sets up global config and skills:
+1. `~/.claude/CLAUDE.md` -> this repo's `global/CLAUDE.md`
+2. `~/.claude/skills/` -> this repo's `global/skills/`
+3. `~/.codex/AGENTS.md` -> this repo's `global/CLAUDE.md`
+4. `~/.agents/skills/` -> `~/.claude/skills/`
+
+**Per-project setup:**
+
+```
+/init-all
+```
+
+This runs `/init` to generate CLAUDE.md, then creates multi-tool symlinks (AGENTS.md, GEMINI.md, .agents/, .codex/) and bootstraps doc/ structure.
 
 **Add a new stack:**
 

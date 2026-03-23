@@ -1,27 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage: ./setup.sh <project-path>
-# Example: ./setup.sh ~/workspace/Investment
-# Example: ./setup.sh ~/workspace/multmux
+# Global one-time setup for agent-config symlinks.
+# Project-level setup is handled by /init-all skill.
+#
+# Usage: ./setup.sh
 
-if [ $# -lt 1 ]; then
-  echo "Usage: $0 <project-path>"
-  exit 1
-fi
-
-PROJECT="$(cd "$1" && pwd)"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Setting up $PROJECT"
+echo "=== Global setup (one-time) ==="
 echo "Source: $SCRIPT_DIR"
 echo ""
 
-# --- 1. Create .claude/skills ---
-mkdir -p "$PROJECT/.claude/skills"
-
-# --- 2. Global: ~/.claude/skills/ -> agent-config/global/skills/ ---
-echo "=== Global setup (one-time) ==="
+# --- 1. Global: ~/.claude/skills/ -> agent-config/global/skills/ ---
 GLOBAL_SKILLS="$HOME/.claude/skills"
 if [ -L "$GLOBAL_SKILLS" ]; then
   echo "  ~/.claude/skills/ already symlinked -> $(readlink "$GLOBAL_SKILLS")"
@@ -35,7 +26,7 @@ else
   echo "  linked: ~/.claude/skills/ -> global/skills/"
 fi
 
-# --- 3. Global: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md ---
+# --- 2. Global: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md ---
 GLOBAL_CLAUDE="$HOME/.claude/CLAUDE.md"
 if [ -L "$GLOBAL_CLAUDE" ]; then
   echo "  ~/.claude/CLAUDE.md already symlinked -> $(readlink "$GLOBAL_CLAUDE")"
@@ -50,7 +41,7 @@ else
   echo "  linked: ~/.claude/CLAUDE.md -> agent-config/global/CLAUDE.md"
 fi
 
-# --- 4. Global: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md ---
+# --- 3. Global: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md ---
 mkdir -p "$HOME/.codex"
 GLOBAL_CODEX="$HOME/.codex/AGENTS.md"
 if [ -L "$GLOBAL_CODEX" ]; then
@@ -63,7 +54,7 @@ else
   echo "  linked: ~/.codex/AGENTS.md -> agent-config/global/CLAUDE.md"
 fi
 
-# --- 5. Global: ~/.agents/skills/ -> ~/.claude/skills/ (for Codex) ---
+# --- 4. Global: ~/.agents/skills/ -> ~/.claude/skills/ (for Codex) ---
 mkdir -p "$HOME/.agents"
 GLOBAL_AGENTS_SKILLS="$HOME/.agents/skills"
 if [ -L "$GLOBAL_AGENTS_SKILLS" ]; then
@@ -73,45 +64,6 @@ elif [ ! -e "$GLOBAL_AGENTS_SKILLS" ]; then
   echo "  linked: ~/.agents/skills/ -> ~/.claude/skills/"
 fi
 
-# --- 6. Project: IDE compatibility symlinks ---
 echo ""
-echo "=== IDE compatibility ==="
-cd "$PROJECT"
-
-# .agents/ -> .claude/
-if [ ! -e .agents ] && [ ! -L .agents ]; then
-  ln -s .claude .agents
-  echo "  linked: .agents/ -> .claude/"
-else
-  echo "  skip (exists): .agents/"
-fi
-
-# .codex/ -> .claude/
-if [ ! -e .codex ] && [ ! -L .codex ]; then
-  ln -s .claude .codex
-  echo "  linked: .codex/ -> .claude/"
-else
-  echo "  skip (exists): .codex/"
-fi
-
-# --- 7. Project: AGENTS.md, GEMINI.md -> CLAUDE.md ---
-if [ -f CLAUDE.md ] || [ -L CLAUDE.md ]; then
-  if [ ! -e AGENTS.md ] && [ ! -L AGENTS.md ]; then
-    ln -s CLAUDE.md AGENTS.md
-    echo "  linked: AGENTS.md -> CLAUDE.md"
-  else
-    echo "  skip (exists): AGENTS.md"
-  fi
-
-  if [ ! -e GEMINI.md ] && [ ! -L GEMINI.md ]; then
-    ln -s CLAUDE.md GEMINI.md
-    echo "  linked: GEMINI.md -> CLAUDE.md"
-  else
-    echo "  skip (exists): GEMINI.md"
-  fi
-else
-  echo "  NOTE: No CLAUDE.md found in project root. Create one with project-specific content."
-fi
-
-echo ""
-echo "Done! Project '$PROJECT' configured."
+echo "Done! Global config linked."
+echo "For per-project setup, use /init-all in the project directory."
