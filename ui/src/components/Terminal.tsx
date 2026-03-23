@@ -279,11 +279,34 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     }
 
     // Raw input — send directly
+    let imeInputHandled = false
     term.onData((data) => {
+      imeInputHandled = true
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
       }
     })
+
+    // Mobile IME fix: xterm v6 silently drops spaces/symbols from Chinese
+    // mobile keyboards. Its _inputEvent() skips insertText when the prior
+    // IME keydown (keyCode 229) left _keyDownSeen=true. We catch dropped
+    // input by checking if onData fired for this input event.
+    // Only on touch devices — desktop keydown/keypress handle input before
+    // _inputEvent runs, which would cause false positives here.
+    const imeTextarea = window.matchMedia('(pointer: coarse)').matches
+      ? container.querySelector<HTMLTextAreaElement>('textarea.xterm-helper-textarea')
+      : null
+    const handleUnprocessedInput = (e: Event) => {
+      const ie = e as InputEvent
+      if (ie.inputType !== 'insertText' || !ie.data) return
+      imeInputHandled = false
+      queueMicrotask(() => {
+        if (!imeInputHandled && ie.data && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'input', data: ie.data }))
+        }
+      })
+    }
+    imeTextarea?.addEventListener('input', handleUnprocessedInput, { capture: true })
 
     term.onResize(() => sendResize())
 
@@ -299,6 +322,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       container.removeEventListener('touchend', onTouchEnd)
       container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
+      imeTextarea?.removeEventListener('input', handleUnprocessedInput, { capture: true })
       observer.disconnect()
       ws.onopen = null
       ws.onmessage = null
