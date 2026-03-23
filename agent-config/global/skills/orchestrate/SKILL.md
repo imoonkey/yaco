@@ -30,7 +30,7 @@ For tasks that change implementation files (judge from scope paths — e.g., `sr
 4. **Review**: start codex review worker scoped to `git diff <base>..HEAD -- <scope globs>`
 5. **Fix**: if critical/high issues, send back to implementation worker. Up to 3 review rounds.
 6. **Verify**: independently check acceptCriteria (see below)
-7. **Doc sync**: remind worker to run /update-doc (non-blocking — do not gate on this)
+7. **Doc sync**: send worker `/update-doc` and wait for it to complete successfully before marking done
 8. **Mark done**: update task state via `/update-tasks`
 
 For non-implementation tasks (docs, design, planning): dispatch → wait → verify → mark done. Skip review, fix, and doc sync.

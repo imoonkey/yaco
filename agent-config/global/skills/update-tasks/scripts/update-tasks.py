@@ -149,16 +149,71 @@ def cmd_rm(tid):
             rollup(tasks, children[0])
     save(tasks)
 
+ARCHIVE_DIR = Path("doc/todo/archive")
+
+def archive_path(slug):
+    from datetime import date
+    stamp = date.today().strftime("%Y%m%d")
+    base = ARCHIVE_DIR / f"{stamp}_{slug}.json"
+    if not base.exists():
+        return base
+    i = 2
+    while True:
+        candidate = ARCHIVE_DIR / f"{stamp}_{slug}_{i}.json"
+        if not candidate.exists():
+            return candidate
+        i += 1
+
+def cmd_archive(tid):
+    tasks = load()
+    if tid not in tasks:
+        die(f"task '{tid}' not found")
+    if tasks[tid]["state"] not in TERMINAL:
+        die(f"task '{tid}' is not terminal (state={tasks[tid]['state']})")
+    # Collect terminal descendants
+    def collect(pid):
+        result = []
+        for c, v in tasks.items():
+            if v.get("parent") == pid:
+                result.append(c)
+                result.extend(collect(c))
+        return result
+    children = collect(tid)
+    non_terminal = [c for c in children if tasks[c]["state"] not in TERMINAL]
+    if non_terminal:
+        die(f"has non-terminal children: {', '.join(non_terminal)}")
+    to_archive = [tid] + children
+    archived = {t: tasks[t] for t in to_archive}
+    slug = tid
+    out = archive_path(slug)
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(archived, indent=2, ensure_ascii=False) + "\n")
+    for t in to_archive:
+        del tasks[t]
+    # Clean up dangling depends references
+    archived_set = set(to_archive)
+    for t in tasks.values():
+        t["depends"] = [d for d in t.get("depends", []) if d not in archived_set]
+    save(tasks)
+    print(f"archived {len(to_archive)} tasks → {out}")
+
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if len(args) < 2: die("usage: update-tasks.py set <id> [json] | rm <id>")
-    cmd, tid = args[0], args[1]
-    if cmd == "set":
-        raw = args[2] if len(args) > 2 else sys.stdin.read()
-        try: data = json.loads(raw)
-        except json.JSONDecodeError as e: die(f"invalid JSON: {e}")
-        cmd_set(tid, data)
-    elif cmd == "rm":
-        cmd_rm(tid)
+    if not args: die("usage: update-tasks.py set <id> [json] | rm <id> | archive <id>")
+    cmd = args[0]
+    if cmd == "archive":
+        if len(args) < 2: die("usage: update-tasks.py archive <id>")
+        cmd_archive(args[1])
+    elif len(args) < 2:
+        die("usage: update-tasks.py set <id> [json] | rm <id> | archive <id>")
     else:
-        die(f"unknown command: {cmd}")
+        tid = args[1]
+        if cmd == "set":
+            raw = args[2] if len(args) > 2 else sys.stdin.read()
+            try: data = json.loads(raw)
+            except json.JSONDecodeError as e: die(f"invalid JSON: {e}")
+            cmd_set(tid, data)
+        elif cmd == "rm":
+            cmd_rm(tid)
+        else:
+            die(f"unknown command: {cmd}")

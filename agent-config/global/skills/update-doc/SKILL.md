@@ -112,3 +112,7 @@ git commit -m "docs: <short description of what changed>"
 - After changing build/setup process
 - After changing project-local skill behavior, process docs, or helper scripts
 - At the end of `/implement` phases
+
+## Archiving
+
+When archiving a project folder (`doc/todo/<project>/` → `doc/archive/YYYYMMDD_<project>/`), check if `doc/todo/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `doc/todo/archive/YYYYMMDD_<slug>.json`.

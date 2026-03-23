@@ -84,6 +84,9 @@ Writes must follow graph constraints (ref validation, cycle detection, state gua
 ```
 scripts/update-tasks.py set <id> <json>
 scripts/update-tasks.py rm <id>
+scripts/update-tasks.py archive <id>
 ```
+
+`archive` moves a terminal task and all its descendants to `doc/todo/archive/YYYYMMDD_<slug>.json` (or `..._<n>.json` if that day's archive file already exists). All descendants must also be terminal. When this is a completed project task, then run `/update-doc` to move the matching project docs from `doc/todo/<project>/` to `doc/archive/YYYYMMDD_<project>/`.
 
 Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.
