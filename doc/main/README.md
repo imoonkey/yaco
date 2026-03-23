@@ -40,5 +40,4 @@ The Hono backend can serve the built React app from `ui/dist`, so the app shell,
 
 ## Related
 
-- **Development guide**: [doc/dev/guide.md](../dev/guide.md)
-- **Design doc**: [doc/todo/codebase-health/final/design_aligned.md](../todo/codebase-health/final/design_aligned.md)
+- **Development guide**: [doc/dev/workflow.md](../dev/workflow.md)

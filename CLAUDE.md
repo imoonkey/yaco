@@ -55,13 +55,13 @@ Hono Server (Node.js :3001)
 ```
 doc/
   main/           # SOTA: architecture, API, component specs — see doc/main/README.md for map
-  dev/guide.md    # Dev setup, full API reference, UI shortcuts — READ THIS FIRST
+  dev/workflow.md # Dev setup, build, test commands — READ THIS FIRST
   PROGRESS.md     # Changelog (prepend new entries, canonical format)
   todo/           # Active project design docs
   archive/        # Completed projects (YYMMDD_<project>/)
 ```
 
-- **Start with `doc/dev/guide.md`** for full API endpoints, env vars, UI shortcuts, persistence details, and terminal integration.
+- **Start with `doc/dev/workflow.md`** for dev setup, build, and test commands.
 - **`doc/main/`** has subsystem specs: [backend/](doc/main/backend/), [frontend/](doc/main/frontend/), [data-model/](doc/main/data-model/), [ui/](doc/main/ui/), [security.md](doc/main/security.md). Read when modifying a specific subsystem.
 - `doc/main/` and `doc/dev/` are always-current SOTA docs. Update them when code changes.
 - `doc/PROGRESS.md` is append-only history. Each entry: What changed, Why, Key files, Verification, Commit, Next, Blockers.
