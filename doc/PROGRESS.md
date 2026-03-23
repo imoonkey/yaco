@@ -5,14 +5,16 @@
 **What changed:**
 - Fixed spaces and symbols being silently dropped when typing with Chinese mobile keyboard in xterm. Root cause: xterm v6 `_inputEvent()` guard drops `insertText` events when `ev.composed=true` and `_keyDownSeen=true` (set by prior IME keydown 229). Workaround: capture-phase `input` listener on xterm textarea, microtask-based detection of unprocessed input, direct WebSocket send.
 - Added `useKeyboardViewport` hook + `interactive-widget=resizes-content` viewport meta for virtual keyboard layout adjustment. `#root` uses `var(--kb-viewport, 100dvh)`.
+- Fixed key bar buttons stealing focus from xterm textarea (dismissing virtual keyboard). `onMouseDown` with `preventDefault()` on the bar container keeps focus on the textarea.
 
 **Why:**
 - Chinese keyboard spaces/symbols were completely unusable in the terminal on mobile — critical for Claude Code chat.
 - Virtual keyboard was covering the terminal content and key bar.
+- Tapping Tab/arrows/etc. dismissed the keyboard, breaking the typing flow.
 
-**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/hooks/useKeyboardViewport.ts`, `ui/src/index.css`, `ui/index.html`
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/TerminalKeyBar.tsx`, `ui/src/hooks/useKeyboardViewport.ts`, `ui/src/index.css`, `ui/index.html`
 **Verification:** TypeScript build passed
-**Commit:** `6d72691..fa6ec68`
+**Commit:** `6d72691..2384266`
 **Next:** Test on real iOS and Android devices
 **Blockers:** iOS standalone PWA doesn't update visualViewport.height until first keystroke (WebKit bug, no workaround)
 
