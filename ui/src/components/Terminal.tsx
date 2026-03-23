@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react'
+import { useRef, useEffect, useCallback, useState } from 'react'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -107,6 +107,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
   const onInteractRef = useRef(onInteract)
   const onCloseRequestRef = useRef(onCloseRequest)
   const isTouch = useIsTouch()
+  const [containerReady, setContainerReady] = useState(false)
 
   const sendInput = useCallback((data: string) => {
     onInteractRef.current?.()
@@ -131,8 +132,29 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     onCloseRequestRef.current = onCloseRequest
   }, [onCloseRequest])
 
+  // Wait for container to have real dimensions before initializing xterm.
+  // On PWA cold start, flex layout may not have settled yet — opening
+  // xterm in a 0-height container breaks its renderer permanently.
   useEffect(() => {
-    if (!containerRef.current) return
+    const el = containerRef.current
+    if (!el) return
+    if (el.clientHeight > 0) {
+      setContainerReady(true)
+      return
+    }
+    const observer = new ResizeObserver(() => {
+      if (el.clientHeight > 0) {
+        observer.disconnect()
+        setContainerReady(true)
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // Main terminal initialization — only runs when container is ready.
+  useEffect(() => {
+    if (!containerReady || !containerRef.current) return
 
     const container = containerRef.current
 
@@ -160,22 +182,12 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     fitAddon.fit()
     fitTerminal(term)
 
-    // Mobile: container dimensions may not be final in the first frame.
-    // Schedule a refit + canvas repaint after the browser paints.
+    // Schedule a refit after the browser paints (container dimensions
+    // may refine slightly after the initial layout pass).
     const fitAnimationFrame = requestAnimationFrame(() => {
       fitTerminal(term)
       term.refresh(0, term.rows - 1)
     })
-
-    // PWA cold start: flex layout may take multiple frames to settle.
-    // Retry fit at 150ms and 500ms to catch delayed layout.
-    const coldStartTimers = [150, 500].map(ms =>
-      setTimeout(() => {
-        if (disposed) return
-        fitTerminal(term)
-        term.refresh(0, term.rows - 1)
-      }, ms),
-    )
 
     // Touch scroll bridge: xterm v6 registers document-level touch handlers
     // (from VS Code's scrollable element) that call preventDefault(), stealing
@@ -329,7 +341,6 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     return () => {
       disposed = true
       cancelAnimationFrame(fitAnimationFrame)
-      coldStartTimers.forEach(clearTimeout)
       container.removeEventListener('focusin', handleFocusIn)
       container.removeEventListener('touchstart', onTouchStart)
       container.removeEventListener('touchmove', onTouchMove)
@@ -347,7 +358,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       termRef.current = null
       wsRef.current = null
     }
-  }, [sessionName])
+  }, [sessionName, containerReady])
 
   return (
     <div className="h-full w-full flex flex-col" style={{ backgroundColor: SOLARIZED_THEME.background }}>
