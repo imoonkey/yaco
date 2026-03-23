@@ -6,12 +6,18 @@ Centralized AI agent configuration repo. Single source of truth for CLAUDE.md, s
 
 - `global/CLAUDE.md` — Global rules (symlinked as `~/.claude/CLAUDE.md`)
 - `global/skills/` — Global skills (symlinked as `~/.claude/skills/`)
-- `setup.sh` — Symlink installer
+- `setup.sh` — Global symlink installer (one-time)
 
 ## Usage
 
+Global setup (one-time):
 ```bash
-./setup.sh ~/workspace/my-project
+./setup.sh
+```
+
+Per-project setup:
+```
+/init-all
 ```
 
 ## Conventions
