@@ -53,6 +53,7 @@ Cover:
 - **Approach** — key design decisions and rationale
 - **Components** — what changes, what's new, what's removed
 - **Interactions** — how components connect, data flow, state transitions
+- **Tasks** — break the design into implementable tasks. Each task: slug, scope (file globs), acceptance criteria, dependencies. This section feeds `/update-tasks` to populate the task graph.
 - **Trade-offs** — what alternatives were considered, why this approach wins
 
 Keep it concise. The doc should be readable in 5 minutes. Write to doc/todo/<project>/*_[codex|claude].md or doc/todo/<project>/individual/*_[claude|codex].md if there is a `/double-design` going on.
@@ -69,4 +70,4 @@ If gaps exist, iterate steps 3-5.
 ### 6. Ready for Review
 
 Present the design doc for review (human or `/eng-plan-review`).
-After approval, proceed to `/implement`.
+After approval, use `/update-tasks` to create the task graph from the Tasks section, then proceed to `/implement` or `/orchestrate`.
