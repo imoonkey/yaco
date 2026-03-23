@@ -81,9 +81,27 @@ On touch devices: `user-select: none` is removed so iOS gesture recognition work
 ## Viewport
 
 - `viewport-fit=cover` in viewport meta tag — required for `env(safe-area-inset-*)` to return non-zero values
+- `interactive-widget=resizes-content` in viewport meta — tells Chrome to resize the layout viewport when the virtual keyboard opens (no effect on browsers that don't support it)
 - Layout root uses `100dvh` (dynamic viewport height) instead of `100vh`
 - This accounts for iOS Safari's address bar, which makes `100vh` taller than the visible area
 - Content area is a flex column (`flex flex-col`) so panes get proper height via `flex: 1`
+
+### Virtual Keyboard
+
+When the virtual keyboard opens on mobile, the layout must shrink so content (terminal cursor, TerminalKeyBar) stays visible above the keyboard.
+
+Two complementary mechanisms:
+
+1. **`interactive-widget=resizes-content`** (viewport meta): Makes `dvh` shrink to exclude the keyboard. Chrome 108+, not iOS Safari.
+2. **`useKeyboardViewport` hook** (Visual Viewport API fallback): Detects keyboard via `innerHeight - visualViewport.height > 50px`, sets `--kb-viewport` CSS variable on `<html>`. `#root` uses `var(--kb-viewport, 100dvh)`. Safari 13+.
+
+When mechanism 1 is active, mechanism 2 is a no-op (both heights match → diff ≈ 0).
+
+The resize propagates through the existing pipeline: `#root` shrinks → flex layout reflows → terminal container shrinks → `ResizeObserver` fires → `fitTerminal()` → `sendResize()` → PTY gets new dimensions.
+
+-> See: `ui/src/hooks/useKeyboardViewport.ts`
+
+**Known limitation**: iOS standalone PWA does not update `visualViewport.height` until the user's first keystroke after the keyboard appears. This is a WebKit limitation with no JS workaround. On Chrome Android, `interactive-widget=resizes-content` provides instant adjustment.
 
 ## Safe-Area
 

@@ -3,6 +3,7 @@ import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, addProject, reorderProjects } from './hooks/useApi'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
+import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import type { Project } from './types'
 
 type View = 'monitor' | 'workspace'
@@ -138,6 +139,7 @@ function ProjectTabs({
 }
 
 function App() {
+  useKeyboardViewport()
   const saved = loadState()
   const [view, setView] = useState<View>(saved.view)
   const [projectName, setProjectName] = useState<string>(saved.project)
