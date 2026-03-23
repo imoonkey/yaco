@@ -159,7 +159,7 @@ export function TerminalKeyBar({
   }, [clearRepeat, clearSuppressedClickTimer])
 
   return (
-    <div className="bg-[--sol-base2] border-t border-[--sol-border]" role="toolbar" aria-label="Terminal key bar">
+    <div className="bg-[--sol-base2] border-t border-[--sol-border]" role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
       <div className="flex gap-1 px-1 py-1">
         {PRIMARY_KEYS.map(key => (
           <button
