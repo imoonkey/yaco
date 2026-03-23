@@ -16,6 +16,8 @@ Keep documentation in sync with code. Maintain a living changelog as project mem
 ```
 doc/
   main/                    # SOTA memory: architecture, runtime, system overview
+    README.md              # Navigation hub: doc map, reading order, key concepts
+    <domain>/              # Subdirectories mirror code architecture
   dev/                     # SOTA memory: dev workflow, build, tooling
   PROGRESS.md              # History trace
   todo/                    # Active projects
@@ -36,6 +38,20 @@ doc/
 
 - `doc/main/`, `doc/dev/`, and project-local skills exposed via `./.claude/skills/*` (symlinked to `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Project-local skills are peers of `doc/dev/`, not an afterthought.
 - `doc/PROGRESS.md` is **history trace** — what happened and when, so future context windows can catch up.
+
+### doc/main/ Guidelines
+
+- **README.md as nav hub.** Every project should have `doc/main/README.md` with a documentation map, reading order, and key concepts table. This is the entry point for any agent or human exploring the project.
+- **Mirror code architecture.** Organize files into subdirectories that reflect the code's domain structure (e.g., `agent/`, `infra/`, `ui/`, `backend/`, `frontend/`). Flat is fine for ≤5 files, but group by domain once it grows beyond that.
+- **One SOTA surface.** All architecture and domain knowledge belongs in `doc/main/` (or `.claude/skills/` for agent-specific workflows). Don't create parallel knowledge directories (doc/knowledge/, doc/ref/) — they fragment the SOTA surface and inevitably diverge.
+- **File size ≤300 lines.** When a doc grows beyond this, split it into a subdirectory with focused files. A 500-line monolith is harder to keep current than three 150-line docs.
+- **Cross-reference, don't duplicate.** Use `-> See: path/to/file` pointers. If the same concept is explained in two places, one will go stale.
+
+### doc/dev/ Guidelines
+
+- **Keep it lean.** dev/ is for practical how-to: setup, build, test, lint, run commands, and development workflow. Architecture belongs in main/, not here.
+- **Typical files:** `workflow.md` or `guide.md` (dev setup + commands), plus specialized guides as needed (e.g., `adding-sites.md`, `visual_debug_guide.md`).
+- **No plans or design docs.** Implementation plans go in `doc/todo/<project>/`, not dev/.
 
 
 ## Process
