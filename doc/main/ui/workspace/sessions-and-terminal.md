@@ -76,7 +76,18 @@ Full summary strings are returned (no server-side truncation). The UI truncates 
 
 ## Terminal
 
-xterm.js 6 terminal emulator with Solarized Light theme.
+xterm.js 6 terminal emulator with Solarized Light theme. On touch devices, renders a `TerminalKeyBar` below the xterm container for special key input.
+
+### Mobile Key Bar
+
+On touch devices (`useIsTouch()`), Terminal wraps its output in a flex column and renders `TerminalKeyBar` as a sibling below xterm. The key bar provides:
+
+- **Primary row** (always visible): Esc, Tab, ←, ↓, ↑, →, ^C, ··· (expand toggle)
+- **Secondary row** (expandable): ^D, ^Z, ^L, ^R, ^A, ^E, ^W, ^U
+
+All buttons send escape sequences via the same WebSocket `{ type: 'input', data }` channel. Arrow keys support hold-to-repeat (400ms initial delay, 80ms interval). The ··· button toggles the secondary row with a max-height CSS transition.
+
+-> See: `ui/src/components/TerminalKeyBar.tsx`, design doc at `doc/todo/keys/design.md`
 
 ### Session Attachment
 

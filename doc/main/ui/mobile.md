@@ -64,7 +64,11 @@ On touch devices: `user-select: none` is removed so iOS gesture recognition work
 
 ### Terminal
 
-Touch scrolling uses a synthetic event bridge:
+**Key Bar**: On touch devices (`useIsTouch()`), a `TerminalKeyBar` renders below the xterm container with special keys missing from virtual keyboards: Esc, Tab, arrows, ^C (primary row) and ^D, ^Z, ^L, ^R, ^A, ^E, ^W, ^U (expandable secondary row). Arrow keys support hold-to-repeat (400ms delay, 80ms interval). All key presses send escape sequences directly via the existing WebSocket input channel.
+
+-> See: `ui/src/components/TerminalKeyBar.tsx`
+
+**Touch scrolling** uses a synthetic event bridge:
 
 1. Terminal captures `touchstart`, `touchmove`, `touchend` events
 2. Touch deltas are converted to synthetic `WheelEvent` on xterm's screen element

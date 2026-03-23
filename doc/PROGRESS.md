@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-22: Mobile terminal key bar
+
+**What changed:**
+- New `TerminalKeyBar` component: touch-only key bar with Esc, Tab, arrows, ^C (primary row) and ^D, ^Z, ^L, ^R, ^A, ^E, ^W, ^U (expandable secondary row)
+- Terminal.tsx wraps xterm in flex column, renders key bar conditionally via `useIsTouch()`
+- All keys send escape sequences through existing WebSocket input channel — no server changes
+- Arrow keys support hold-to-repeat (400ms delay, 80ms interval)
+- 20 unit tests covering key mappings, expand/collapse, repeat timer, cleanup
+
+**Why:**
+- Mobile virtual keyboards lack terminal-essential keys (arrows, Ctrl combos, Esc, Tab), making the terminal nearly unusable on phones. Key bar follows proven Termux/Blink pattern.
+
+**Key files:** `ui/src/components/TerminalKeyBar.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/__tests__/TerminalKeyBar.test.tsx`
+**Verification:** TypeScript build passed, 20/20 vitest tests pass
+**Commit:** `b86b352..91163d6`
+**Next:** Manual mobile testing, consider sticky modifier keys (v2)
+**Blockers:** None
+
 ## 2026-03-22: Git diff gutter indicators in CodeMirror editor
 
 **What changed:**
