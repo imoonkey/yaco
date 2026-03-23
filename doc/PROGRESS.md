@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-03-22: Git diff gutter indicators in CodeMirror editor
+
+**What changed:**
+- Added VS Code-style diff gutter markers (green=added, blue=modified, red=deleted) to the CodeMirror editor
+- Clicking a gutter marker opens an inline hunk popup showing the diff context
+- New `parseDiff.ts` wraps `parse-diff` library to convert unified diff text → `DiffHunk[]`
+- New `diffGutter.ts` implements the full CodeMirror extension: gutter, line decorations, popup widget, dismiss handlers
+- `Editor.tsx` accepts `diffHunks` prop and dispatches `setDiffData` StateEffect
+- `WorkspaceScreen.tsx` fetches per-file diff for git-changed files and threads hunks through to editor
+- `solarizedLight.ts` extended with diff gutter and popup styles
+
+**Why:**
+- Previously users had to switch to the separate diff tab to see what changed in a file. Inline gutter indicators provide at-a-glance feedback while editing, matching VS Code UX expectations.
+
+**Key files:** `ui/src/lib/diffGutter.ts`, `ui/src/lib/parseDiff.ts`, `ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/lib/solarizedLight.ts`
+**Verification:** TypeScript build passed
+**Commit:** `7a85982`
+**Next:** v1 follow-ups — shared diff hook, syntax highlighting in popup, live unsaved-buffer diff
+**Blockers:** None
+
 ## 2026-03-22: Session summary hover tooltip + Codex summary fix
 
 **What changed:**

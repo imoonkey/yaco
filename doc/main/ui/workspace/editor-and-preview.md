@@ -128,6 +128,46 @@ Clicking inside the preview:
 - **Active line**: highlighted
 - **Read-only mode**: used for diff view
 
+## Git Diff Gutter Indicators
+
+VS Code-style gutter markers in the CodeMirror editor showing line-level change status against HEAD.
+
+-> See: `ui/src/lib/diffGutter.ts`, `ui/src/lib/parseDiff.ts`
+
+### Markers
+
+| Change type | Gutter marker | Line tint |
+|-------------|---------------|-----------|
+| Added | 3px green bar | Faint green background |
+| Modified | 3px blue bar | Faint blue background |
+| Deleted | Red triangle at anchor line | None (no current line to tint) |
+
+Markers reflect **saved-file** git state, not the live unsaved buffer. They may drift while the user edits before saving.
+
+### Inline Hunk Popup
+
+Clicking a gutter marker opens a block widget below the anchor line showing the hunk diff:
+- Header row with hunk header (`@@ ... @@`) and close button
+- Body rows: red for deletions, green for additions, muted for context
+- Left border accent matches hunk type color
+- One popup open at a time; dismissed by Escape, clicking outside, close button, or switching files
+
+### Data Flow
+
+```
+git status refresh → active file in changes list?
+  → yes: fetchGitDiff → parseDiff → DiffHunk[] → Editor prop → setDiffData StateEffect
+  → no: empty hunks → gutter clears
+```
+
+Diff data updates on save and git refresh. The extension is always installed; empty data is the no-op case.
+
+### Known Limitations (v1)
+
+- No live unsaved-buffer-vs-HEAD diff
+- No stage/revert controls in popup
+- No syntax highlighting inside popup
+
 ## Diff View
 
 Unified diff rendering for git-changed files. Uses a custom `DiffView` component (not CodeMirror).

@@ -115,3 +115,30 @@ Folders containing changed files show a yellow dot indicator.
 - Code blocks: `#EEE8D5` background with border
 - Syntax tokens colored to match Solarized scheme
 - Tables, blockquotes, images styled for readability
+
+## Git Diff Gutter
+
+Diff gutter indicators in the CodeMirror editor. Styles defined in `solarizedLight.ts`.
+
+### Gutter
+
+- Gutter width: ~8px, placed left of line numbers
+- Visual bar: 3px wide, right-aligned inside gutter
+
+### Marker Colors
+
+| Type | Bar color | Line tint |
+|------|-----------|-----------|
+| Added | `green` (`#859900`) | `#85990010` background |
+| Modified | `blue` (`#268BD2`) | `#268BD210` background |
+| Deleted | `red` (`#DC322F`) triangle | None |
+
+### Inline Popup
+
+- Background: `editorWidgetBackground` (`#EEE8D5`)
+- Border: `1px solid` `border` (`#DDD6C1`)
+- Left accent border: 3px in hunk type color
+- Max height: ~300px with overflow scroll
+- Deleted rows: red text, red-tinted background
+- Added rows: green text, green-tinted background
+- Context rows: muted text (`base0`)
