@@ -28,9 +28,6 @@ multmux kill <name>
 # Rename a session handle
 multmux rename <old-name> <new-name>
 
-# Kill all multmux sessions visible from the current directory
-multmux kill --all
-
 # Check status of all sessions or a specific one
 multmux status [name] [--json]
 ```
@@ -65,7 +62,7 @@ multmux kill "$NAME"
 - Full tmux session names use: default `<index>-<provider>-<project>-mt`, explicit `--name` becomes `<name>-<project>-mt`
 - In this repo, `multmux start claude ... --name fixer` prints `fixer` and creates tmux session `fixer-multmux-mt`
 - Handle resolution is path-dependent: `start`, `send`, `capture`, `kill`, and `status` resolve names against the current working directory's project suffix
-- `kill --all` only removes multmux sessions visible from the current working directory
+- `kill --all` is a **nuclear option** — multiple workstreams may share the same project's multmux sessions; only a human should invoke it
 - Run follow-up `multmux` commands from the same project root, or store the returned handle from `start` and reuse it there
 - For tests, prefer `bun run test` for pure unit coverage and `bun run test:integration` when tmux-backed checks are needed
 - `capture` returns clean text (ANSI codes stripped by default)
