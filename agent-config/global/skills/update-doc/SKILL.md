@@ -36,7 +36,7 @@ doc/
   skills/ -> .claude/skills/   # Optional symlink alias
 ```
 
-- `doc/main/`, `doc/dev/`, `CLAUDE.md`, and project-local skills exposed via `./.claude/skills/*` (symlinked to `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Project-local skills are peers of `doc/dev/`, not an afterthought.
+- `doc/main/`, `doc/dev/`, `CLAUDE.md` (symlinked as `AGENTS.md`, `GEMINI.md`), and project-local skills in `./.claude/skills/*` (symlinked as `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Update the canonical file, not the symlinks.
 - `doc/PROGRESS.md` is **history trace** — what happened and when, so future context windows can catch up.
 
 ### doc/main/ Guidelines
