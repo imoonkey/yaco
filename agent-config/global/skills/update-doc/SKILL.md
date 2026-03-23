@@ -36,14 +36,13 @@ doc/
   skills/ -> .claude/skills/   # Optional symlink alias
 ```
 
-- `doc/main/`, `doc/dev/`, and project-local skills exposed via `./.claude/skills/*` (symlinked to `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Project-local skills are peers of `doc/dev/`, not an afterthought.
+- `doc/main/`, `doc/dev/`, `CLAUDE.md`, and project-local skills exposed via `./.claude/skills/*` (symlinked to `./.agents/skills/*`) are **SOTA memory** — always reflect current best understanding. Project-local skills are peers of `doc/dev/`, not an afterthought.
 - `doc/PROGRESS.md` is **history trace** — what happened and when, so future context windows can catch up.
 
 ### doc/main/ Guidelines
 
 - **README.md as nav hub.** Every project should have `doc/main/README.md` with a documentation map, reading order, and key concepts table. This is the entry point for any agent or human exploring the project.
 - **Mirror code architecture.** Organize files into subdirectories that reflect the code's domain structure (e.g., `agent/`, `infra/`, `ui/`, `backend/`, `frontend/`). Flat is fine for ≤5 files, but group by domain once it grows beyond that.
-- **One SOTA surface.** All architecture and domain knowledge belongs in `doc/main/` (or `.claude/skills/` for agent-specific workflows). Don't create parallel knowledge directories (doc/knowledge/, doc/ref/) — they fragment the SOTA surface and inevitably diverge.
 - **File size ≤300 lines.** When a doc grows beyond this, split it into a subdirectory with focused files. A 500-line monolith is harder to keep current than three 150-line docs.
 - **Cross-reference, don't duplicate.** Use `-> See: path/to/file` pointers. If the same concept is explained in two places, one will go stale.
 
@@ -66,7 +65,7 @@ If no baseline given, use the last docs/local-skill update commit or recent comm
 
 ### 2. Update SOTA Docs
 
-Map code changes to affected docs in `doc/main/`, `doc/dev/`, and any project-local skill exposed via the project's local skill directory.
+Map code changes to affected docs in `CLAUDE.md`, `doc/main/`, `doc/dev/`, and any project-local skill exposed via the project's local skill directory.
 
 **Principles:**
 - Match the detail level of surrounding content
@@ -112,12 +111,16 @@ Keep entries concise. One entry per logical change, not per commit.
 
 If changes correspond to a `doc/todo/<project>/` folder, write or update `doc/todo/<project>/implementation_summary.md` — a concise summary of what was implemented, key decisions made, and current state.
 
-### 6. Commit Docs
+### 6. Archive (if applicable)
+
+When archiving a project folder (`doc/todo/<project>/` → `doc/archive/YYYYMMDD_<project>/`), check if `doc/todo/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `doc/todo/archive/YYYYMMDD_<slug>.json`.
+
+### 7. Commit Docs
 
 Stage only the files touched by this `/update-doc` run — don't sweep in unrelated uncommitted docs.
 
 ```bash
-git add <files you created or updated in steps 2–5>
+git add <files you created or updated in steps 2–6>
 git commit -m "docs: <short description of what changed>"
 ```
 
@@ -128,7 +131,3 @@ git commit -m "docs: <short description of what changed>"
 - After changing build/setup process
 - After changing project-local skill behavior, process docs, or helper scripts
 - At the end of `/implement` phases
-
-## Archiving
-
-When archiving a project folder (`doc/todo/<project>/` → `doc/archive/YYYYMMDD_<project>/`), check if `doc/todo/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `doc/todo/archive/YYYYMMDD_<slug>.json`.
