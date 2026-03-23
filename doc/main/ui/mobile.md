@@ -80,6 +80,8 @@ On touch devices: `user-select: none` is removed so iOS gesture recognition work
 4. `stopPropagation()` on touch handlers prevents xterm v6's document-level gesture system from stealing events via `preventDefault()`
 5. `touchcancel` handler for iOS Safari system interruptions (e.g. swipe to switch apps)
 
+**Cold start refit**: On PWA cold start, the terminal container may have zero height when xterm first mounts (flex layout not yet settled). Terminal.tsx retries `fitTerminal()` + `term.refresh()` at 150ms and 500ms after mount, in addition to the `requestAnimationFrame` refit and `ResizeObserver`. The `ResizeObserver` callback also forces a repaint via `term.refresh()` to ensure xterm redraws buffer content after resize.
+
 ## Viewport
 
 - `viewport-fit=cover` in viewport meta tag — required for `env(safe-area-inset-*)` to return non-zero values

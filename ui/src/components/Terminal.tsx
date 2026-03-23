@@ -167,6 +167,16 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
       term.refresh(0, term.rows - 1)
     })
 
+    // PWA cold start: flex layout may take multiple frames to settle.
+    // Retry fit at 150ms and 500ms to catch delayed layout.
+    const coldStartTimers = [150, 500].map(ms =>
+      setTimeout(() => {
+        if (disposed) return
+        fitTerminal(term)
+        term.refresh(0, term.rows - 1)
+      }, ms),
+    )
+
     // Touch scroll bridge: xterm v6 registers document-level touch handlers
     // (from VS Code's scrollable element) that call preventDefault(), stealing
     // all touch events. We intercept touch, convert to WheelEvent, and dispatch
@@ -310,12 +320,16 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
 
     term.onResize(() => sendResize())
 
-    const observer = new ResizeObserver(() => fitTerminal(term))
+    const observer = new ResizeObserver(() => {
+      fitTerminal(term)
+      term.refresh(0, term.rows - 1)
+    })
     observer.observe(container)
 
     return () => {
       disposed = true
       cancelAnimationFrame(fitAnimationFrame)
+      coldStartTimers.forEach(clearTimeout)
       container.removeEventListener('focusin', handleFocusIn)
       container.removeEventListener('touchstart', onTouchStart)
       container.removeEventListener('touchmove', onTouchMove)
