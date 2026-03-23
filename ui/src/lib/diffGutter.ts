@@ -89,7 +89,7 @@ function markerForType(type: ChangeType): GutterMarker {
 const diffGutter = gutter({
   class: 'cm-diff-gutter',
   lineMarkerChange(update) {
-    return update.transactions.some(tr => tr.effects.some(e => e.is(setDiffData) || e.is(toggleHunkPopup) || e.is(closePopup)))
+    return update.transactions.some(tr => tr.effects.some(e => e.is(setDiffData)))
   },
   markers(view) {
     const { hunks } = view.state.field(diffState)
@@ -171,8 +171,6 @@ const lineDecorations = StateField.define<DecorationSet>({
 class DiffPopupWidget extends WidgetType {
   readonly hunk: DiffHunk
   constructor(hunk: DiffHunk) { super(); this.hunk = hunk }
-
-  eq(other: DiffPopupWidget) { return this.hunk.id === other.hunk.id }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement('div')

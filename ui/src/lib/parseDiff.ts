@@ -36,6 +36,8 @@ export function parseDiff(diffText: string): DiffHunk[] {
 
     for (const change of chunk.changes) {
       const content = change.content.slice(1) // strip leading +/-/space
+      // Skip "\ No newline at end of file" sentinel lines
+      if (change.content.startsWith('\\')) continue
       changes.push({ type: change.type, content })
 
       if (change.type === 'del') {
@@ -46,13 +48,29 @@ export function parseDiff(diffText: string): DiffHunk[] {
       }
     }
 
-    // Pure deletion: anchor to the line after the deletion point.
-    // diffGutter.ts clamps to doc.lines at render time for EOF safety.
+    // Canonical anchor: first marked line for add/modify hunks.
+    // For pure deletions: find the first surviving line after the delete run,
+    // or fall back to newStart + newLines (clamped at render time by diffGutter.ts).
     let anchorLine: number
     if (markedLines.length > 0) {
       anchorLine = markedLines[0]
     } else {
-      anchorLine = chunk.newStart + chunk.newLines
+      // Find the first normal/context line after any deletion in the chunk
+      let found = false
+      let seenDel = false
+      for (const change of chunk.changes) {
+        if (change.content.startsWith('\\')) continue
+        if (change.type === 'del') { seenDel = true; continue }
+        if (seenDel && change.type === 'normal') {
+          anchorLine = change.ln2
+          found = true
+          break
+        }
+      }
+      if (!found) {
+        // Deletion at EOF or no surviving context line
+        anchorLine = chunk.newStart + chunk.newLines
+      }
     }
 
     return {
