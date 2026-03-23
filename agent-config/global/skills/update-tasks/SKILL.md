@@ -18,6 +18,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
 {
   "workspace-state": {
     "title": "修复 editor 刷新/同步/状态持久化",
+    "description": "Extract editor state into a dedicated store module with localStorage persistence. Hook into window beforeunload to save and onload to restore.",
     "parent": null,
     "depends": [],
     "state": "ready",
@@ -34,6 +35,7 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `title` | yes | Human-readable name, renamable |
+| `description` | yes | What the task does and how — approach, context, key decisions. Extracted from design doc Tasks section for subtasks.|
 | `parent` | yes | Parent task ID or null. Parent with children = milestone (state derived by rollup). Leaf task = executable (state managed directly) |
 | `depends` | yes | Task IDs that must be terminal (done/cancelled) before this can start |
 | `state` | yes | `ready \| running \| done \| blocked \| cancelled` |

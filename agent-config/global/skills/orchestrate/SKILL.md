@@ -18,7 +18,7 @@ For each selected task: use `/update-tasks` to set state to `running`, then star
 multmux start claude "<prompt>" --name "w-<task-id>"
 ```
 
-Prompt includes: task title, acceptCriteria, design doc path (if any), scope.
+Prompt includes: task title, description (if any), acceptCriteria, design doc path (if any), scope.
 
 ## Implementation Workflow
 

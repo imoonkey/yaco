@@ -11,7 +11,7 @@ Manage multiple coding agent instances via tmux.
 
 ```bash
 # Start an agent session (providers: claude, codex)
-multmux start <provider> "prompt" [--name <name>]
+multmux start <provider> "prompt" [--name <name>] [--json]
 
 # Send a follow-up message to a running agent
 multmux send <name> "message"
@@ -25,11 +25,14 @@ multmux capture <name> --wait
 # Kill one running session by handle
 multmux kill <name>
 
+# Rename a session handle
+multmux rename <old-name> <new-name>
+
 # Kill all multmux sessions visible from the current directory
 multmux kill --all
 
 # Check status of all sessions or a specific one
-multmux status [name]
+multmux status [name] [--json]
 ```
 
 ## Examples
@@ -54,6 +57,9 @@ multmux kill "$NAME"
 ## Notes
 
 - `status` returns one of: `starting`, `idle`, `processing`, `stopped`, `not found`
+- `--json` on `start` and `status` outputs full session metadata: `handle`, `provider`, `tmuxSession`, `pid`, `sessionId`, `status`, `createdAt`
+- `sessionId` is the agent's conversation UUID — usable with `claude --resume` / `codex resume`
+- Codex empty-start sessions return `"pending:awaiting-first-prompt"` for `sessionId` until a message is sent
 - Status is tracked via agent hooks (primary) with capture-pane regex fallback
 - Agent-facing names stay project-local: default `<index>-<provider>`, explicit `--name` stays `<name>`
 - Full tmux session names use: default `<index>-<provider>-<project>-mt`, explicit `--name` becomes `<name>-<project>-mt`
