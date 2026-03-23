@@ -89,6 +89,10 @@ All buttons send escape sequences via the same WebSocket `{ type: 'input', data 
 
 -> See: `ui/src/components/TerminalKeyBar.tsx`, design doc at `doc/todo/keys/design.md`
 
+### Mobile IME Workaround
+
+xterm v6 drops spaces/symbols from Chinese mobile keyboards due to a guard in `_inputEvent()`. Terminal.tsx adds a capture-phase `input` listener on xterm's textarea (touch devices only) that detects unprocessed `insertText` events and sends them directly via WebSocket. See [../mobile.md](../mobile.md) for details.
+
 ### Session Attachment
 
 Terminal mounts immediately when `activeSession` is set — no longer gated by the sessions API poll. This eliminates the blank-screen delay on mobile when creating a new session (previously the Terminal wouldn't mount until `refreshSessions()` resolved).

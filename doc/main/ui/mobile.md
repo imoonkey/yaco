@@ -68,6 +68,8 @@ On touch devices: `user-select: none` is removed so iOS gesture recognition work
 
 -> See: `ui/src/components/TerminalKeyBar.tsx`
 
+**Mobile IME fix**: xterm v6's `_inputEvent()` silently drops spaces and symbols from Chinese mobile keyboards. The IME keydown (keyCode 229) sets `_keyDownSeen=true`, and subsequent space/symbol `input` events with `ev.composed=true` fail the guard condition `(!ev.composed || !this._keyDownSeen)`. Terminal.tsx works around this with a capture-phase `input` listener on xterm's textarea that detects unprocessed `insertText` events (via an `onData` flag + microtask check) and sends them directly via WebSocket. Only active on touch devices to avoid false positives from desktop keydown/keypress handling.
+
 **Touch scrolling** uses a synthetic event bridge:
 
 1. Terminal captures `touchstart`, `touchmove`, `touchend` events

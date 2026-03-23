@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-23: Mobile IME fix + virtual keyboard viewport
+
+**What changed:**
+- Fixed spaces and symbols being silently dropped when typing with Chinese mobile keyboard in xterm. Root cause: xterm v6 `_inputEvent()` guard drops `insertText` events when `ev.composed=true` and `_keyDownSeen=true` (set by prior IME keydown 229). Workaround: capture-phase `input` listener on xterm textarea, microtask-based detection of unprocessed input, direct WebSocket send.
+- Added `useKeyboardViewport` hook + `interactive-widget=resizes-content` viewport meta for virtual keyboard layout adjustment. `#root` uses `var(--kb-viewport, 100dvh)`.
+
+**Why:**
+- Chinese keyboard spaces/symbols were completely unusable in the terminal on mobile — critical for Claude Code chat.
+- Virtual keyboard was covering the terminal content and key bar.
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/hooks/useKeyboardViewport.ts`, `ui/src/index.css`, `ui/index.html`
+**Verification:** TypeScript build passed
+**Commit:** `6d72691..fa6ec68`
+**Next:** Test on real iOS and Android devices
+**Blockers:** iOS standalone PWA doesn't update visualViewport.height until first keystroke (WebKit bug, no workaround)
+
 ## 2026-03-22: Mobile terminal key bar
 
 **What changed:**
