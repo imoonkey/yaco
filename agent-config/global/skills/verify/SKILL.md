@@ -5,7 +5,7 @@ description: Run verification loop (build, lint, test, security) before commits.
 
 # Verify
 
-Pre-commit quality gates. Detects the project stack and runs the appropriate commands.
+Pre-commit quality gates: build, lint, unit tests, security. For E2E/integration testing of user flows, use `/qa`.
 
 ## When to Use
 

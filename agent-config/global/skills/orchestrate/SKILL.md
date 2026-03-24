@@ -47,6 +47,7 @@ After a worker claims completion, orchestrate **independently verifies** acceptC
    - Looks like a file path → `test -f <path>`
    - Looks like a command → run it, check exit code
    - Looks like an observable condition → use judgment (read files, check git diff)
+   - For implementation tasks with user-facing changes → run `/qa` to verify affected flows
 4. **On pass** → set state to `done` via `/update-tasks`
    - If `requireHumanReview: true` → stop before dispatching next task, report and wait for human
 5. **On fail** → set state to `blocked`, note = "verification failed: <which criteria failed>"

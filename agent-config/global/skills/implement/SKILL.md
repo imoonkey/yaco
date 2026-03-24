@@ -55,7 +55,7 @@ For each phase, repeat:
 
 ## Step 3: E2E Verification
 
-If applicable, manually verify a test case end-to-end beyond unit tests.
+Run `/qa` (**MUST USE**) to verify affected user flows end-to-end. `/qa` analyzes changes, derives impacted flows, and verifies with stack-appropriate tools (Playwright, HTTP calls, CLI tests).
 
 ## Step 4: Final Check
 
