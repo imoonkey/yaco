@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-24: Fix text overflow and accent bar visuals
+
+**What changed:**
+- Text clipping: replaced character-count truncation with SVG `<clipPath>` on task nodes and milestone titles — text now cleanly clips at node boundaries regardless of font width
+- Accent bar: inset left state accent bar by 8px top/bottom to stay within milestone column rounded corners
+- Wider layout: nodes 180→220px, columns 240→280px for more readable titles
+
+**Why:**
+- Task titles were overflowing past node borders; left accent bar was poking out above the rounded corner
+
+**Key files:** `ui/src/tasks/TaskGraphNode.tsx`, `ui/src/tasks/TaskGraphMilestone.tsx`, `ui/src/tasks/taskGraphModel.ts`
+**Verification:** `cd ui && npx vite build` passes, 6/6 Playwright E2E tests pass
+**Commit:** 7f61db5
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-24: Fix task graph click interactions
 
 **What changed:**
