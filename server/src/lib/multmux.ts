@@ -2,7 +2,7 @@ import { spawn, execSync } from 'child_process'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import type { Project } from './projects'
-import { resolveTmuxSession, validateSessionName } from './session-names'
+import { validateSessionName } from './session-names'
 
 // Resolve multmux path at startup
 const MULTMUX_PATH = (() => {
@@ -33,17 +33,17 @@ export interface MultmuxStateFile {
   tmuxSession: string
   pid: number
   sessionId: string
-  status: 'starting' | 'idle' | 'processing' | 'stopped'
+  status: 'starting' | 'idle' | 'processing'
   createdAt: string
 }
 
 /** Normalize state file status to workflow UI semantics.
  *  starting → idle (pre-work bootstrap, not real processing)
- *  stopped  → null (excluded from active list) */
+ *  unknown  → null (file should have been deleted by multmux) */
 function normalizeStateFileStatus(status: string): 'processing' | 'idle' | null {
   if (status === 'processing') return 'processing'
   if (status === 'idle' || status === 'starting') return 'idle'
-  return null // stopped or unknown → exclude
+  return null
 }
 
 /** Read sessions from .multmux/*.json state files (primary source of truth) */
@@ -105,19 +105,31 @@ export async function sendToSession(handle: string, message: string): Promise<vo
   await spawnOutput(MULTMUX_PATH, ['send', handle, message], 5000)
 }
 
-/** Start a new multmux session: multmux <provider> -n <name> */
-export async function startMultmuxSession(provider: 'claude' | 'codex', name: string, cwd: string, prompt?: string): Promise<void> {
+/** Start a new multmux session. Returns handle and sessionId from CLI output. */
+export async function startMultmuxSession(
+  provider: 'claude' | 'codex',
+  name: string,
+  cwd: string,
+  prompt?: string,
+): Promise<{ handle: string; sessionId: string }> {
   validateSessionName(name)
   const args: string[] = [provider]
   if (prompt) args.push(prompt)
-  args.push('-n', name)
-  await spawnOutput(MULTMUX_PATH, args, 10000, cwd)
+  args.push('-n', name, '--json')
+  const output = await spawnOutput(MULTMUX_PATH, args, 15000, cwd)
+  try {
+    const state = JSON.parse(output) as MultmuxStateFile
+    return { handle: state.handle, sessionId: state.sessionId ?? '' }
+  } catch (e) {
+    console.warn('[multmux] failed to parse start --json output:', e)
+    return { handle: name, sessionId: '' }
+  }
 }
 
-export async function closeMultmuxSession(handle: string): Promise<void> {
+/** Close a multmux session via the CLI (handles state file cleanup). */
+export async function closeMultmuxSession(handle: string, cwd: string): Promise<void> {
   validateSessionName(handle)
-  const tmuxName = resolveTmuxSession(handle)
-  await spawnOutput('tmux', ['kill-session', '-t', tmuxName], 5000)
+  await spawnOutput(MULTMUX_PATH, ['kill', handle], 5000, cwd)
 }
 
 export async function renameMultmuxSession(oldHandle: string, newHandle: string, cwd: string): Promise<void> {

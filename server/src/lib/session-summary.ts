@@ -10,6 +10,13 @@ export interface SummaryResult {
   messageCount?: number
 }
 
+/** Sentinel value multmux uses for sessions that haven't received a first prompt */
+const PENDING_SESSION_ID = 'pending:awaiting-first-prompt'
+
+function isResolvableSessionId(id: string): boolean {
+  return !!id && id !== PENDING_SESSION_ID
+}
+
 /** Encode a project path the same way Claude Code does: replace `/` with `-` */
 function encodeProjectPath(projectPath: string): string {
   return projectPath.replace(/\//g, '-')
@@ -94,39 +101,6 @@ function resolveCodexSummary(sessionId: string): SummaryResult | null {
   }
 }
 
-/** Build a parent→children map from ps output (called once per batch) */
-function buildProcessTree(): Map<number, number[]> {
-  try {
-    const output = execSync('ps -eo pid,ppid', { encoding: 'utf-8' })
-    const children = new Map<number, number[]>()
-    for (const line of output.trim().split('\n').slice(1)) {
-      const parts = line.trim().split(/\s+/)
-      if (parts.length < 2) continue
-      const childPid = Number(parts[0])
-      const parentPid = Number(parts[1])
-      if (!childPid || !parentPid) continue
-      const list = children.get(parentPid) ?? []
-      list.push(childPid)
-      children.set(parentPid, list)
-    }
-    return children
-  } catch {
-    return new Map()
-  }
-}
-
-/** Find all descendant PIDs using a pre-built process tree */
-function getDescendants(pid: number, tree: Map<number, number[]>): number[] {
-  const result: number[] = []
-  const queue = tree.get(pid) ?? []
-  while (queue.length > 0) {
-    const p = queue.shift()!
-    result.push(p)
-    queue.push(...(tree.get(p) ?? []))
-  }
-  return result
-}
-
 /** Batch PID fallback for Claude: scan ~/.claude/sessions/*.json once, return pid → sessionId map */
 function loadClaudePidMap(): Map<number, string> {
   const map = new Map<number, string>()
@@ -186,29 +160,22 @@ export function resolveSessionSummaries(
     if (s.provider === 'codex') {
       codexSessions.push(s)
     } else {
-      if (s.sessionId) {
+      if (isResolvableSessionId(s.sessionId)) {
         const list = claudeByProject.get(s.project) ?? []
         list.push(s)
         claudeByProject.set(s.project, list)
-      } else if (typeof s.pid === 'number') {
+      } else if (typeof s.pid === 'number' && s.pid > 0) {
         needsPidFallback.push(s)
       }
     }
   }
 
-  // PID fallback: scan once for all Claude sessions missing sessionId
+  // PID fallback: scan once for all Claude sessions missing sessionId.
+  // With multmux now storing agent CLI PIDs, direct match is the primary path.
   if (needsPidFallback.length > 0) {
     const pidMap = loadClaudePidMap()
-    const procTree = buildProcessTree()
     for (const s of needsPidFallback) {
-      // Try direct match first, then check descendant processes
-      let resolved = pidMap.get(s.pid)
-      if (!resolved) {
-        for (const descendant of getDescendants(s.pid, procTree)) {
-          resolved = pidMap.get(descendant)
-          if (resolved) break
-        }
-      }
+      const resolved = pidMap.get(s.pid)
       if (resolved) {
         const list = claudeByProject.get(s.project) ?? []
         list.push({ ...s, sessionId: resolved })
@@ -229,23 +196,16 @@ export function resolveSessionSummaries(
   }
 
   // Resolve Codex summaries (with PID fallback for missing sessionId)
-  const codexNeedsPid = codexSessions.filter(s => !s.sessionId && typeof s.pid === 'number')
+  const codexNeedsPid = codexSessions.filter(s => !isResolvableSessionId(s.sessionId) && typeof s.pid === 'number' && s.pid > 0)
   if (codexNeedsPid.length > 0) {
     const pidMap = loadCodexPidMap(codexNeedsPid.map(s => s.pid))
-    const procTree = buildProcessTree()
     for (const s of codexNeedsPid) {
-      let resolved = pidMap.get(s.pid)
-      if (!resolved) {
-        for (const desc of getDescendants(s.pid, procTree)) {
-          resolved = pidMap.get(desc)
-          if (resolved) break
-        }
-      }
+      const resolved = pidMap.get(s.pid)
       if (resolved) s.sessionId = resolved
     }
   }
   for (const s of codexSessions) {
-    if (!s.sessionId) continue
+    if (!isResolvableSessionId(s.sessionId)) continue
     const r = resolveCodexSummary(s.sessionId)
     if (r) result.set(s.name, r.summary)
   }

@@ -100,7 +100,17 @@ app.post('/:handle/close', async (c) => {
       return c.json({ ok: true })
     }
 
-    await closeMultmuxSession(handle)
+    // Resolve project path for multmux kill (needs cwd)
+    const projects = await loadProjects()
+    const ownerProject = projects.find(p => {
+      const sessions = readSessionsFromStateFiles(p)
+      return sessions.some(s => s.name === handle)
+    })
+    if (!ownerProject) {
+      return c.json({ error: `session "${handle}" not found` }, 404)
+    }
+
+    await closeMultmuxSession(handle, ownerProject.path)
     return c.json({ ok: true })
   } catch {
     return c.json({ error: 'failed to close session' }, 500)
