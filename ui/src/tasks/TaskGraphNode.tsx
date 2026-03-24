@@ -133,6 +133,11 @@ export function TaskGraphNode({ node, task, highlight, isSelected, isSearchMatch
         />
       )}
 
+      {/* Clip path for text overflow */}
+      <clipPath id={`clip-${node.id}`}>
+        <rect x={node.x + 26} y={node.y} width={NODE_WIDTH - 26 - (depCount > 0 ? 20 : 6)} height={NODE_HEIGHT} />
+      </clipPath>
+
       {/* State dot */}
       <StateDot state={task.state} cx={node.x + 14} cy={node.y + NODE_HEIGHT / 2} />
 
@@ -144,8 +149,9 @@ export function TaskGraphNode({ node, task, highlight, isSelected, isSearchMatch
         fill={SOLARIZED_LIGHT.base01}
         opacity={showLabels ? 1 : 0}
         style={{ transition: 'opacity 150ms ease-out' }}
+        clipPath={`url(#clip-${node.id})`}
       >
-        {task.title.length > 20 ? task.title.slice(0, 20) + '...' : task.title}
+        {task.title}
       </text>
 
       {/* Dependency count badge */}

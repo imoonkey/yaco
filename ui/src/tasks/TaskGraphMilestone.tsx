@@ -105,15 +105,15 @@ export function TaskGraphMilestone({ column, tasks, highlight, isSelected, isCol
         opacity={isDimmed ? 0.4 : 1}
         style={{ height: displayHeight, transition: 'height 200ms ease-out, opacity 150ms ease-out' }}
       />
-      {/* State accent on left border */}
+      {/* State accent on left border — inset to stay within rounded corners */}
       <rect
         x={column.x}
-        y={column.y}
+        y={column.y + 8}
         width={4}
         rx={2}
         fill={stateColor}
         opacity={isDimmed ? 0.2 : 0.6}
-        style={{ height: displayHeight, transition: 'height 200ms ease-out, opacity 150ms ease-out' }}
+        style={{ height: displayHeight - 16, transition: 'height 200ms ease-out, opacity 150ms ease-out' }}
       />
       {/* Clickable header group with keyboard access */}
       <g
@@ -193,6 +193,11 @@ export function TaskGraphMilestone({ column, tasks, highlight, isSelected, isCol
           </g>
         )}
 
+        {/* Clip path for milestone title */}
+        <clipPath id={`clip-ms-${column.id}`}>
+          <rect x={column.x + (hasChildren ? 24 : 10)} y={column.y} width={column.width - (hasChildren ? 24 : 10) - 50} height={HEADER_HEIGHT} />
+        </clipPath>
+
         {/* Title */}
         <text
           x={column.x + (hasChildren ? 26 : 12)}
@@ -202,8 +207,9 @@ export function TaskGraphMilestone({ column, tasks, highlight, isSelected, isCol
           fill={SOLARIZED_LIGHT.base01}
           opacity={isDimmed ? 0.4 : 1}
           style={{ transition: 'opacity 150ms ease-out' }}
+          clipPath={`url(#clip-ms-${column.id})`}
         >
-          {column.title.length > 22 ? column.title.slice(0, 22) + '...' : column.title}
+          {column.title}
         </text>
         {/* Progress text */}
         <text

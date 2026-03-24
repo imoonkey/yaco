@@ -84,11 +84,11 @@ export interface TaskGraphModel {
 
 // Constants
 
-export const COLUMN_WIDTH = 240
+export const COLUMN_WIDTH = 280
 export const COLUMN_GAP = 64
 export const COLUMN_PADDING = 16
 export const HEADER_HEIGHT = 56
-export const NODE_WIDTH = 180
+export const NODE_WIDTH = 220
 export const NODE_HEIGHT = 32
 export const NODE_GAP = 8
 export const GRAPH_PADDING = 40
