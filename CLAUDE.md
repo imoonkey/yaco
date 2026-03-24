@@ -75,3 +75,15 @@ doc/
 - SSE-driven updates with polling fallback (30-60s). Never poll faster than 30s.
 - File revision tracking via mtime for optimistic locking
 - Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`
+
+## Ecosystem
+
+Three repos form the productivity stack. Changes in one may require coordinated changes in the others.
+
+| Repo | What | Path |
+|------|------|------|
+| **multmux** | CLI for orchestrating multiple agents (Claude/Codex) via tmux | `~/workspace/multmux` |
+| **agent-config** | Centralized CLAUDE.md, skills, settings — symlinked into all projects | `~/workspace/agent-config` |
+| **workflow** | Web UI for coordinating agents across repos (monitor, workspace, terminal) | `~/workspace/workflow` |
+
+**Dependencies:** workflow depends on both. Backend reads `.multmux/*.json` state files and calls multmux CLI for session management. Skills and CLAUDE.md come from agent-config via symlinks. When multmux changes its state file format or agent-config changes skill contracts, this repo may need updates.
