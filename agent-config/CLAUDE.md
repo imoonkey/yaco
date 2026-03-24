@@ -2,23 +2,22 @@
 
 Centralized AI agent configuration repo. Single source of truth for CLAUDE.md, skills, and settings across all projects.
 
-## Structure
+## Stack
 
-- `global/CLAUDE.md` — Global rules (symlinked as `~/.claude/CLAUDE.md`)
-- `global/skills/` — Global skills (symlinked as `~/.claude/skills/`)
-- `setup.sh` — Global symlink installer (one-time)
+Shell scripts, Markdown, Python (update-tasks.py)
 
-## Usage
+## Build & Run
 
-Global setup (one-time):
-```bash
-./setup.sh
-```
+Global setup: `./setup.sh`
+Per-project setup: `/init-all`
 
-Per-project setup:
-```
-/init-all
-```
+## Architecture
+
+-> See `doc/main/` (SOTA)
+
+## Dev Workflow
+
+-> See `doc/dev/` (SOTA)
 
 ## Conventions
 
