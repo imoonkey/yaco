@@ -53,7 +53,7 @@ multmux kill "$NAME"
 
 ## Notes
 
-- `status` returns one of: `starting`, `idle`, `processing`, `stopped`, `not found`
+- `status` returns one of: `starting`, `idle`, `processing`, `not found`
 - `--json` on `start` and `status` outputs full session metadata: `handle`, `provider`, `tmuxSession`, `pid`, `sessionId`, `status`, `createdAt`
 - `sessionId` is the agent's conversation UUID — usable with `claude --resume` / `codex resume`
 - Codex empty-start sessions return `"pending:awaiting-first-prompt"` for `sessionId` until a message is sent
