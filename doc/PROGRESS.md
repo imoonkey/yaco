@@ -14,8 +14,8 @@
 - Multmux changed its lifecycle model (commits 2026-03-21 → 2026-03-24): file existence = live session, file deletion = session ended, only 3 status values. Workflow was writing `stopped` back into state files and bypassing the CLI for kill, causing phantom sessions and race conditions with multmux's own GC.
 
 **Key files:** `server/src/lib/multmux.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/session-summary.ts`, `server/src/routes/sessions.ts`
-**Verification:** Zero TS errors in changed files, code review passed
-**Commit:** b0589ed
+**Verification:** Zero TS errors, code review passed, 21 server unit tests passing (vitest)
+**Commit:** b0589ed..4fc49a1
 **Next:** None
 **Blockers:** None
 

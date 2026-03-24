@@ -78,6 +78,7 @@ After a build, the backend can serve the built UI directly at `http://localhost:
 ## Testing
 
 ```bash
+cd server && npm test                                # Server unit tests (vitest)
 cd ui && npx playwright test                         # All E2E tests
 cd ui && npx playwright test tests/e2e/foo.spec.ts   # Single test file
 cd ui && npm run lint                                # ESLint

@@ -14,6 +14,7 @@ npm run dev:tmux         # Same but in a 2-pane tmux session (recommended)
 npm run build            # Build UI to ui/dist/
 npm run start:app        # Build + serve everything from :3001 (production/mobile)
 
+cd server && npm test                              # Server unit tests (vitest)
 cd ui && npx playwright test                    # E2E tests (auto-starts both servers)
 cd ui && npx playwright test tests/e2e/foo.spec.ts  # Single test file
 cd ui && npm run lint                           # ESLint
