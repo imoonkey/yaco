@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-03-24: Fix SSE memory leak causing browser crashes
+
+**What changed:**
+- Replaced EventSource built-in auto-reconnect with manual close-and-recreate + exponential backoff (1s → 30s) in `useSSE.ts`. Prevents listener accumulation and refresh storms on reconnect.
+- Added LRU eviction to `fileTreeCache` in `useApi.ts` (max 20 entries, oldest evicted on insert). Prevents unbounded memory growth across project switches.
+
+**Why:**
+- Chrome "Aw, Snap!" Error code 5 (renderer OOM) was occurring intermittently. Root cause: each EventSource reconnection cycle added duplicate event handlers that amplified refetch work per SSE event. Combined with unbounded cache growth, long sessions would exhaust renderer memory.
+
+**Key files:** `ui/src/hooks/useSSE.ts`, `ui/src/hooks/useApi.ts`
+**Verification:** Zero TS errors in changed files, `vite build` passes, code review approved
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-23: Archive completed projects and align doc structure
 
 **What changed:**

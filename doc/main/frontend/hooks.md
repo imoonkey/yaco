@@ -61,7 +61,7 @@ type FileState = {
 
 - `FileStatus`, `FileState`, `WorkspaceLayout`, `DEFAULT_LAYOUT`
 
-## useApi.ts (243 lines)
+## useApi.ts (284 lines)
 
 Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval.
 
@@ -80,7 +80,7 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 All data hooks return `{ data, error, refresh }`.
 
 `useFileTree` has additional behavior:
-- Client-side per-project cache (shows cached tree immediately on project switch)
+- Client-side per-project LRU cache (max 20 entries, oldest evicted on insert)
 - Focus/visibility-triggered refresh
 - Deduplicates inflight requests per project
 
@@ -104,7 +104,7 @@ Standalone async functions (not hooks):
 - `deleteFile(project, path)`
 - `fetchGitDiff(project, path)`
 
-## useSSE.ts (59 lines)
+## useSSE.ts (99 lines)
 
 Shared EventSource singleton managing SSE connections and event dispatch.
 
@@ -114,7 +114,7 @@ Shared EventSource singleton managing SSE connections and event dispatch.
 
 Behavior:
 - Single EventSource to `/api/notifications/stream`
-- Auto-reconnects on close
+- Manual reconnect with exponential backoff (1s → 30s) on error — disables browser's built-in auto-reconnect to prevent listener accumulation and refresh storms
 - On reconnect: fires all registered refresh callbacks (catch-up)
 - Routes `notification` events to listeners and triggers `progress` refresh
 - Routes `refresh` events to channel-specific callbacks

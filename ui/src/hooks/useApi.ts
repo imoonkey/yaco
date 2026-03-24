@@ -4,8 +4,31 @@ import { useSSERefresh } from './useSSE'
 
 export const API = '/api'
 const FILE_TREE_FALLBACK_MS = 60_000
+const FILE_TREE_CACHE_MAX = 20
 const fileTreeCache = new Map<string, FileNode[]>()
 const fileTreeInflight = new Map<string, Promise<FileNode[]>>()
+
+/** Read from cache and promote to most-recently-used */
+function cacheGet(key: string): FileNode[] | undefined {
+  const value = fileTreeCache.get(key)
+  if (value === undefined) return undefined
+  // Move to end (most recent) by re-inserting
+  fileTreeCache.delete(key)
+  fileTreeCache.set(key, value)
+  return value
+}
+
+/** Write to cache with LRU eviction */
+function cacheSet(key: string, value: FileNode[]): void {
+  // If key already exists, delete first so re-insert moves it to end
+  fileTreeCache.delete(key)
+  fileTreeCache.set(key, value)
+  // Evict oldest entry if over limit
+  if (fileTreeCache.size > FILE_TREE_CACHE_MAX) {
+    const oldest = fileTreeCache.keys().next().value
+    if (oldest !== undefined) fileTreeCache.delete(oldest)
+  }
+}
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`)
@@ -29,7 +52,7 @@ async function fetchFileTree(projectName: string): Promise<FileNode[]> {
 
   const request = fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`)
     .then((tree) => {
-      fileTreeCache.set(projectName, tree)
+      cacheSet(projectName, tree)
       return tree
     })
     .finally(() => {
@@ -111,7 +134,7 @@ export function useFileTree(projectName: string | null) {
       return
     }
 
-    setData(fileTreeCache.get(projectName) ?? null)
+    setData(cacheGet(projectName) ?? null)
     setError(null)
   }, [projectName])
 

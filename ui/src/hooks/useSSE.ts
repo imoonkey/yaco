@@ -3,23 +3,47 @@ import { useEffect, useRef } from 'react'
 type SSEListener = (event: MessageEvent) => void
 
 let source: EventSource | null = null
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+let backoffMs = 1000
+const MAX_BACKOFF_MS = 30000
+
 const listeners = new Map<string, Set<SSEListener>>()
 const refreshCallbacks = new Map<string, Set<() => void>>()
+
+function closeSource() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+  if (source) { source.close(); source = null }
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null
+    getSource()
+  }, backoffMs)
+  backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS)
+}
 
 function getSource(): EventSource {
   if (source && source.readyState !== EventSource.CLOSED) return source
 
-  source = new EventSource('/api/notifications/stream')
+  // Close old source explicitly before creating a new one
+  closeSource()
 
-  // On reconnect, fire all refresh callbacks (state may have changed while disconnected)
-  source.addEventListener('open', () => {
+  const es = new EventSource('/api/notifications/stream')
+  source = es
+
+  es.addEventListener('open', () => {
+    // Successful connection — reset backoff
+    backoffMs = 1000
+    // Fire all refresh callbacks (state may have changed while disconnected)
     for (const cbs of refreshCallbacks.values()) {
       for (const cb of cbs) cb()
     }
   })
 
   // Route events to registered listeners
-  source.addEventListener('notification', (e) => {
+  es.addEventListener('notification', (e) => {
     const set = listeners.get('notification')
     if (set) for (const fn of set) fn(e as MessageEvent)
     // Notification events mean progress.json changed — trigger progress refresh
@@ -27,13 +51,23 @@ function getSource(): EventSource {
     if (progressCbs) for (const cb of progressCbs) cb()
   })
 
-  source.addEventListener('refresh', (e) => {
+  es.addEventListener('refresh', (e) => {
     const channel = (e as MessageEvent).data
     const cbs = refreshCallbacks.get(channel)
     if (cbs) for (const cb of cbs) cb()
   })
 
-  return source
+  // Disable EventSource auto-reconnect: close on error, reconnect manually with backoff.
+  // This prevents the built-in reconnect from re-firing 'open' handlers on an
+  // existing EventSource, which would cause duplicate refresh storms.
+  es.onerror = () => {
+    // Only act if this is still the active source
+    if (source !== es) return
+    closeSource()
+    scheduleReconnect()
+  }
+
+  return es
 }
 
 /** Listen for a specific SSE event type */
