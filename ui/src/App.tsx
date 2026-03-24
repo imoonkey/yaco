@@ -1,16 +1,18 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
+import { TaskGraph } from './components/TaskGraph'
 import { useProjects, useProgress, addProject, reorderProjects } from './hooks/useApi'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import type { Project } from './types'
 
-type View = 'monitor' | 'workspace'
+type View = 'monitor' | 'workspace' | 'tasks'
 
 const navItems: { id: View; label: string; icon: string }[] = [
   { id: 'monitor', label: 'Monitor', icon: '!' },
   { id: 'workspace', label: 'Workspace', icon: 'W' },
+  { id: 'tasks', label: 'Tasks', icon: 'T' },
 ]
 
 const STORAGE_KEY = 'workflow-ui-state'
@@ -33,7 +35,7 @@ function arraysEqual(a: string[], b: string[]): boolean {
 
 function buildVisibleProjectOrder(view: View, projects: Project[], includeAllProjects: boolean): string[] {
   const names = projects.map((project) => project.name)
-  if (view !== 'workspace' && includeAllProjects) {
+  if (view !== 'workspace' && view !== 'tasks' && includeAllProjects) {
     return ['all', ...names]
   }
   return names
@@ -64,8 +66,8 @@ function ProjectTabs({
   onAdd: () => void
   onReorder: (fromName: string, toName: string) => void
 }) {
-  const showAllProjects = view !== 'workspace'
-  const activeProject = view === 'workspace' ? workspaceProject : projectName
+  const showAllProjects = view !== 'workspace' && view !== 'tasks'
+  const activeProject = (view === 'workspace' || view === 'tasks') ? workspaceProject : projectName
   const [draggedProject, setDraggedProject] = useState<string | null>(null)
 
   return (
@@ -231,7 +233,7 @@ function App() {
 
   const handleViewChange = (v: View) => {
     setView(v)
-    if (v === 'workspace' && projectName === 'all') {
+    if ((v === 'workspace' || v === 'tasks') && projectName === 'all') {
       setProjectName(concreteProject)
     }
   }
@@ -289,6 +291,7 @@ function App() {
       <main className="flex-1 overflow-hidden">
         {view === 'monitor' && <Monitor filterProject={projectName === 'all' ? null : projectName} browserNotifications={browserNotifications} />}
         {view === 'workspace' && <Workspace key={workspaceProject} projectName={workspaceProject} projectPath={currentProjectPath} />}
+        {view === 'tasks' && <TaskGraph key={workspaceProject} projectName={workspaceProject} />}
       </main>
 
       <ProjectTabs
