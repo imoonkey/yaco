@@ -52,6 +52,11 @@ export function TaskGraphScreen({ projectName }: { projectName: string }) {
   const graphBounds = displayLayout?.bounds ?? { width: 0, height: 0 }
   const panZoom = usePanZoom({ graphBounds, containerRef })
 
+  // Ref to prevent SVG onClick from clearing selection set by child element clicks.
+  // Child onClick calls stopPropagation, but in React's synthetic event system for SVG
+  // this may not reliably prevent the SVG handler from firing.
+  const clickConsumed = useRef(false)
+
   // --- Tooltip state ---
   const [tooltipTarget, setTooltipTarget] = useState<TooltipTarget | null>(null)
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -87,6 +92,8 @@ export function TaskGraphScreen({ projectName }: { projectName: string }) {
 
   // --- Collapse handlers ---
   const handleToggleCollapse = useCallback((milestoneId: string) => {
+    clickConsumed.current = true
+    queueMicrotask(() => { clickConsumed.current = false })
     clearTooltip()
     setCollapsedMilestones(prev => {
       const next = new Set(prev)
@@ -156,19 +163,25 @@ export function TaskGraphScreen({ projectName }: { projectName: string }) {
   }, [graph, selection])
 
   const handleSelectTask = useCallback((id: string) => {
+    clickConsumed.current = true
+    queueMicrotask(() => { clickConsumed.current = false })
     clearTooltip()
     setSelection(prev => prev?.type === 'task' && prev.id === id ? null : { type: 'task', id })
   }, [clearTooltip])
 
   const handleSelectMilestone = useCallback((id: string) => {
+    clickConsumed.current = true
+    queueMicrotask(() => { clickConsumed.current = false })
     clearTooltip()
     setSelection(prev => prev?.type === 'milestone' && prev.id === id ? null : { type: 'milestone', id })
   }, [clearTooltip])
 
   const handleClearSelection = useCallback(() => {
+    if (panZoom.didDrag.current) return
+    if (clickConsumed.current) return
     clearTooltip()
     setSelection(null)
-  }, [clearTooltip])
+  }, [clearTooltip, panZoom.didDrag])
 
   const handleToggleFilter = useCallback((state: TaskState) => {
     setFilters(prev => {

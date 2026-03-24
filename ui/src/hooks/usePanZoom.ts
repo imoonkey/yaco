@@ -24,10 +24,13 @@ export function usePanZoom(opts: {
 
   // Gesture tracking refs
   const isDragging = useRef(false)
+  const didDrag = useRef(false)
   const lastPointer = useRef({ x: 0, y: 0 })
+  const startPointer = useRef({ x: 0, y: 0 })
   const activePointers = useRef<Map<number, PointerEvent>>(new Map())
   const lastPinchDist = useRef<number | null>(null)
   const animFrameRef = useRef<number>(0)
+  const DRAG_THRESHOLD = 3
 
   const getContainerRect = useCallback(() => {
     return containerRef.current?.getBoundingClientRect() ?? { left: 0, top: 0, width: 0, height: 0 }
@@ -80,9 +83,10 @@ export function usePanZoom(opts: {
     activePointers.current.set(e.pointerId, e.nativeEvent)
 
     if (activePointers.current.size === 1) {
-      isDragging.current = true
+      isDragging.current = false
+      didDrag.current = false
       lastPointer.current = { x: e.clientX, y: e.clientY }
-      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+      startPointer.current = { x: e.clientX, y: e.clientY }
     } else if (activePointers.current.size === 2) {
       // Start pinch
       isDragging.current = false
@@ -92,6 +96,8 @@ export function usePanZoom(opts: {
   }, [])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
+    // Only track pointers registered via onPointerDown — never add new ones here
+    if (!activePointers.current.has(e.pointerId)) return
     activePointers.current.set(e.pointerId, e.nativeEvent)
 
     if (activePointers.current.size === 2) {
@@ -119,11 +125,22 @@ export function usePanZoom(opts: {
       return
     }
 
-    if (isDragging.current && activePointers.current.size === 1) {
-      const dx = e.clientX - lastPointer.current.x
-      const dy = e.clientY - lastPointer.current.y
-      lastPointer.current = { x: e.clientX, y: e.clientY }
-      setState(prev => ({ ...prev, tx: prev.tx + dx, ty: prev.ty + dy }))
+    if (activePointers.current.size === 1) {
+      const dx = e.clientX - startPointer.current.x
+      const dy = e.clientY - startPointer.current.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      if (!isDragging.current && dist >= DRAG_THRESHOLD) {
+        isDragging.current = true
+        didDrag.current = true
+      }
+
+      if (isDragging.current) {
+        const moveDx = e.clientX - lastPointer.current.x
+        const moveDy = e.clientY - lastPointer.current.y
+        lastPointer.current = { x: e.clientX, y: e.clientY }
+        setState(prev => ({ ...prev, tx: prev.tx + moveDx, ty: prev.ty + moveDy }))
+      }
     }
   }, [getContainerRect])
 
@@ -189,6 +206,7 @@ export function usePanZoom(opts: {
     state,
     transform: `translate(${state.tx},${state.ty}) scale(${state.scale})`,
     handlers: { onWheel, onPointerDown, onPointerMove, onPointerUp },
+    didDrag,
     zoomIn,
     zoomOut,
     fitToView,

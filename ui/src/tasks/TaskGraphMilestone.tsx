@@ -174,6 +174,14 @@ export function TaskGraphMilestone({ column, tasks, highlight, isSelected, isCol
             }}
             style={{ cursor: 'pointer' }}
           >
+            {/* Invisible hit rect — SVG <g> only captures events on painted children */}
+            <rect
+              x={column.x + 2}
+              y={column.y + 6}
+              width={22}
+              height={22}
+              fill="transparent"
+            />
             <text
               x={column.x + 12}
               y={column.y + 22}
