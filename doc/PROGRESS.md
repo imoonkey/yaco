@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-03-24: Persist pinned session order across view/project switches
+
+**What changed:**
+- Moved `pinnedSessions` from ephemeral `useState` in `WorkspaceScreen` into `useWorkspaceState` hook, which persists to `localStorage["workflow-workspace:<project>"]` via debounced writes + `beforeunload` flush.
+- `WorkspaceScreen` now consumes `pinnedSessions` and `actions.setPinnedSessions` from the shared hook instead of managing its own local state.
+
+**Why:**
+- Session pins were lost whenever the Workspace component unmounted (switching projects via `key=` prop, switching between Monitor/Workspace/Tasks views). Every other piece of workspace UI state was already persisted — pinned sessions was the only gap.
+
+**Key files:** `ui/src/hooks/useWorkspaceState.ts`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** TypeScript compilation clean, no new lint errors
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-24: Align session handling with multmux state model
 
 **What changed:**

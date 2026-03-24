@@ -83,6 +83,7 @@ type PersistedState = {
   activeSession: string
   mobilePane: 'files' | 'editor' | 'terminal'
   layout: WorkspaceLayout
+  pinnedSessions: string[]
 }
 
 function loadPersistedState(project: string): PersistedState {
@@ -93,6 +94,7 @@ function loadPersistedState(project: string): PersistedState {
     activeSession: '',
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
+    pinnedSessions: [],
   }
 
   try {
@@ -129,6 +131,9 @@ function loadPersistedState(project: string): PersistedState {
         changesSize: loadStoredSize(pl.changesSize, DEFAULT_LAYOUT.changesSize),
         sessionSize: loadStoredSize(pl.sessionSize, DEFAULT_LAYOUT.sessionSize),
       },
+      pinnedSessions: Array.isArray(parsed.pinnedSessions)
+        ? (parsed.pinnedSessions as unknown[]).filter((s): s is string => typeof s === 'string')
+        : [],
     }
   } catch {
     return defaults
@@ -232,6 +237,7 @@ export function useWorkspaceState(projectName: string) {
   const [activeSession, setActiveSession] = useState(persisted.activeSession)
   const [mobilePane, setMobilePane] = useState(persisted.mobilePane)
   const [layout, setLayout] = useState<WorkspaceLayout>(persisted.layout)
+  const [pinnedSessions, setPinnedSessions] = useState<string[]>(persisted.pinnedSessions)
   const [files, setFiles] = useState<Record<string, FileState>>(() => {
     const restored: Record<string, FileState> = {}
     for (const [path, entry] of Object.entries(draftsLoaded.files)) {
@@ -279,8 +285,8 @@ export function useWorkspaceState(projectName: string) {
 
   // --- Persist layout ---
   // Refs hold latest state for synchronous flush on beforeunload
-  const layoutRef = useRef({ openTabs, activeTab, previewTab, activeSession, mobilePane, layout })
-  layoutRef.current = { openTabs, activeTab, previewTab, activeSession, mobilePane, layout }
+  const layoutRef = useRef({ openTabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions })
+  layoutRef.current = { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions }
 
   const flushLayout = useCallback(() => {
     saveLayout(projectRef.current, layoutRef.current)
@@ -292,7 +298,7 @@ export function useWorkspaceState(projectName: string) {
     clearTimeout(layoutTimer.current)
     layoutTimer.current = setTimeout(flushLayout, 300)
     return () => clearTimeout(layoutTimer.current)
-  }, [openTabs, activeTab, previewTab, activeSession, mobilePane, layout, flushLayout])
+  }, [openTabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, flushLayout])
 
   // --- Persist drafts ---
   const filesRef = useRef(files)
@@ -330,6 +336,9 @@ export function useWorkspaceState(projectName: string) {
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [flushLayout, flushDrafts])
+
+  // Synchronous flush on unmount — covers view/project switches where beforeunload doesn't fire
+  useEffect(() => () => { flushLayout(); flushDrafts() }, [flushLayout, flushDrafts])
 
   // --- SSE: refetch open file tabs on filetree or git changes ---
   // Zero-dep callback — reads everything from refs so identity never changes.
@@ -604,6 +613,7 @@ export function useWorkspaceState(projectName: string) {
     saveFile,
     forceSave,
     acceptDisk,
+    setPinnedSessions,
   }), [openFileTab, openPreviewTab, openDiffTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
 
   return {
@@ -616,6 +626,7 @@ export function useWorkspaceState(projectName: string) {
     files,
     dirtyTabs,
     conflictTabs,
+    pinnedSessions,
     actions,
   }
 }

@@ -46,7 +46,7 @@ Hono Server (Node.js :3001)
 
 ## State Persistence
 
-- **Layout/tabs**: `localStorage["workflow-workspace:<project>"]`
+- **Layout/tabs/pins**: `localStorage["workflow-workspace:<project>"]` — includes open tabs, active tab, active session, layout sizes, and pinned session order
 - **Drafts/revisions**: `localStorage["workflow-drafts:<project>"]`
 - **Projects**: `~/.workflow/projects.json`
 - Both localStorage keys flushed on `beforeunload`
