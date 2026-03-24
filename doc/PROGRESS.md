@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-03-23: Archive completed projects and align doc structure
+
+**What changed:**
+- Archived 17 completed projects from `doc/todo/` to `doc/archive/YYMMDD_<project>/`
+- Moved flow research artifacts (`ref_analysis/`, `retro/`) to `doc/archive/`
+- Created `CLAUDE.md` with architecture overview, data flow, and doc pointers
+- Aligned doc structure with `/init-all` and `/update-doc` conventions:
+  - Trimmed `doc/dev/guide.md` → `workflow.md` (dev how-to only, specs point to `doc/main/`)
+  - Created multi-agent symlinks: `AGENTS.md`, `GEMINI.md` → `CLAUDE.md`; `.agents/`, `.codex/` → `.claude/`
+  - Moved stray design doc out of `doc/dev/`
+- Added Ecosystem section to `CLAUDE.md` documenting the three-repo stack (workflow, multmux, agent-config)
+- Gitignored runtime artifacts: `progress.json`, `reference/`, `test-results/`
+- Added vitest, testing-library, jsdom to UI devDependencies
+- Fixed stale doc references to archived projects
+
+**Why:**
+- `doc/todo/` had grown to 18 project folders, most already shipped. Archiving gives a clean view of what's actually in-flight.
+- Doc structure was inconsistent with skill conventions — `guide.md` mixed dev how-to with system specs, no multi-agent symlinks, dead links to archived content.
+
+**Key files:** CLAUDE.md, doc/dev/workflow.md, doc/main/README.md, .gitignore, doc/main/ui/workspace/sessions-and-terminal.md
+**Verification:** All symlinks resolve, no dead links in SOTA docs
+**Commit:** `98a97ba..90d04e7`
+**Next:** Only `sessionhist` remains in `doc/todo/`
+**Blockers:** None
+
 ## 2026-03-23: Fix file explorer empty gap bug
 
 **What changed:**

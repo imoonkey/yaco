@@ -87,7 +87,7 @@ On touch devices (`useIsTouch()`), Terminal wraps its output in a flex column an
 
 All buttons send escape sequences via the same WebSocket `{ type: 'input', data }` channel. Arrow keys support hold-to-repeat (400ms initial delay, 80ms interval) and resolve dynamically via `xterm.modes.applicationCursorKeysMode` (CSI `\x1b[` for normal mode, SS3 `\x1bO` for application mode, e.g. vim). The ··· button toggles the secondary row with a max-height CSS transition. Buttons include ARIA labels, `role="toolbar"`, and a click fallback for assistive technology.
 
--> See: `ui/src/components/TerminalKeyBar.tsx`, design doc at `doc/todo/keys/design.md`
+-> See: `ui/src/components/TerminalKeyBar.tsx`
 
 ### Mobile IME Workaround
 
