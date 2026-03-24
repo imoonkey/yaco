@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-03-24: Fix task graph click interactions
+
+**What changed:**
+- Fixed chevron collapse: SVG `<g>` only captures events on painted children — added transparent hit rect behind the tiny chevron text
+- Fixed task selection: SVG's `onClick={onClearSelection}` was overriding child click handlers via React event ordering — added `clickConsumed` ref guard
+- Fixed hover-panning: `onPointerMove` now guards against unregistered pointers; removed `setPointerCapture` (was stealing clicks from child elements); added 3px drag threshold
+- Added 6 Playwright E2E tests: render, click select, chevron collapse, hover no-pan, drag pan, search
+
+**Why:**
+- Three interaction bugs found during manual testing: individual milestone collapse not working, clicking tasks not showing detail panel, graph panning on hover without click
+
+**Key files:** `ui/src/hooks/usePanZoom.ts`, `ui/src/tasks/TaskGraphMilestone.tsx`, `ui/src/tasks/TaskGraphScreen.tsx`, `ui/tests/e2e/task-graph.spec.ts`
+**Verification:** 6/6 Playwright E2E tests pass, `cd ui && npx vite build` passes
+**Commit:** 32b958f
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-24: Task graph visualization — v1 + granularity control
 
 **What changed:**
