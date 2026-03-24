@@ -24,7 +24,7 @@ cd ui && npm run lint                           # ESLint
 
 ```
 Browser (React 19 + Vite)
-  Monitor view  |  Workspace view
+  Monitor view  |  Workspace view  |  Tasks view
        HTTP / WS / SSE
 Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty
@@ -35,6 +35,8 @@ Hono Server (Node.js :3001)
 - **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar`, `WorkspaceSessionList`
 - **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `Monitor.tsx`, `TerminalKeyBar.tsx` (mobile)
+- **ui/src/tasks/** — Task graph visualization: `TaskGraphScreen` (controller), `taskGraphModel.ts` (layout engine), `taskGraphSelection.ts` (highlight/search), `TaskGraphCanvas` (SVG), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`
+- **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useTaskGraph.ts` (task data fetch + SSE refresh), `usePanZoom.ts` (viewport transform), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/lib/** — Utilities: `solarizedLight.ts` (CodeMirror theme), `diffGutter.ts` (git diff indicators), `parseDiff.ts`
 
 ## Key Data Flow
@@ -43,10 +45,12 @@ Hono Server (Node.js :3001)
 2. **Editor save** → PUT `/api/files/:project/content` with `baseRevision` (mtime) → 409 on conflict → conflict UI in workspace state
 3. **Terminal** → WebSocket `/ws/terminal/:name` → node-pty (shell) or tmux attach (agent sessions)
 4. **Agent sessions** → `.multmux/*.json` state files → watched by project-watcher → SSE `sessions` channel
+5. **Task graph** → GET `/api/files/:project/content?path=doc/todo/tasks.json` → parse → layout engine → SVG render. SSE `filetree` channel triggers refresh when tasks.json changes.
 
 ## State Persistence
 
 - **Layout/tabs/pins**: `localStorage["workflow-workspace:<project>"]` — includes open tabs, active tab, active session, layout sizes, and pinned session order
+- **Task graph collapse state**: `localStorage["workflow-taskgraph:<project>"]` — which milestones are collapsed
 - **Drafts/revisions**: `localStorage["workflow-drafts:<project>"]`
 - **Projects**: `~/.workflow/projects.json`
 - Both localStorage keys flushed on `beforeunload`
@@ -67,7 +71,7 @@ doc/
 - `doc/main/` and `doc/dev/` are always-current SOTA docs. Update them when code changes.
 - `doc/PROGRESS.md` is append-only history. Each entry: What changed, Why, Key files, Verification, Commit, Next, Blockers.
 - Design workflow: `/scope-review` → `/ux-design` → `/design` → `/eng-plan-review` → `/implement`
-- Agent orchestration SOP: `doc/todo/sop.md`
+- Task graph design docs: `doc/todo/task_visualize/` (UX spec, technical design, reviews)
 
 ## Conventions
 

@@ -20,7 +20,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 
 ```
 Browser (React + Vite)
-  Monitor  |  Workspace
+  Monitor  |  Workspace  |  Tasks
      HTTP / WS / SSE
 Hono Server (Node.js :3001)
   File System + tmux/multmux

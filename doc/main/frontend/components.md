@@ -15,7 +15,7 @@ React component tree, props interfaces, and responsibilities.
 
 ## Related Code
 
-`ui/src/App.tsx`, `ui/src/components/*.tsx`, `ui/src/workspace/*.tsx`
+`ui/src/App.tsx`, `ui/src/components/*.tsx`, `ui/src/workspace/*.tsx`, `ui/src/tasks/*.tsx`
 
 ## Component Tree
 
@@ -25,24 +25,34 @@ App (305 lines)
 │   ├── ProviderIcon
 │   ├── RoadmapView (160 lines)
 │   └── PaneSwitch (35 lines)
-└── Workspace (re-export → workspace/WorkspaceScreen)
-    └── WorkspaceScreen (696 lines) — controller
-        └── WorkspaceLayout (175 lines) — layout composition
-            ├── SectionHeader (17 lines)
-            ├── VResizeHandle / HResizeHandle (23 lines)
-            └── PaneSwitch
-        ├── WorkspaceTabBar (75 lines)
-        ├── WorkspaceEditorArea (295 lines)
-        │   ├── DiffView
-        │   ├── MarkdownPreview
-        │   └── Editor (223 lines)
-        ├── FileExplorer (372 lines)
-        ├── Terminal (330 lines)
-        │   └── TerminalKeyBar (224 lines) — touch-only
-        ├── SessionItem (37 lines)
-        ├── GitChangeItem (22 lines)
-        ├── FileSearch (45 lines)
-        └── ProviderIcon
+├── Workspace (re-export → workspace/WorkspaceScreen)
+│   └── WorkspaceScreen (696 lines) — controller
+│       └── WorkspaceLayout (175 lines) — layout composition
+│           ├── SectionHeader (17 lines)
+│           ├── VResizeHandle / HResizeHandle (23 lines)
+│           └── PaneSwitch
+│       ├── WorkspaceTabBar (75 lines)
+│       ├── WorkspaceEditorArea (295 lines)
+│       │   ├── DiffView
+│       │   ├── MarkdownPreview
+│       │   └── Editor (223 lines)
+│       ├── FileExplorer (372 lines)
+│       ├── Terminal (330 lines)
+│       │   └── TerminalKeyBar (224 lines) — touch-only
+│       ├── SessionItem (37 lines)
+│       ├── GitChangeItem (22 lines)
+│       ├── FileSearch (45 lines)
+│       └── ProviderIcon
+└── TaskGraph (re-export → tasks/TaskGraphScreen)
+    └── TaskGraphScreen — controller
+        ├── TaskGraphToolbar — zoom, state filters, search
+        ├── TaskGraphCanvas — SVG container with pan/zoom
+        │   ├── TaskGraphMilestone[] — column backgrounds + headers
+        │   ├── TaskGraphEdges — dependency paths with arrows
+        │   └── TaskGraphNode[] — task cards with state dots
+        ├── TaskGraphMinimap — overview with viewport rect
+        ├── TaskGraphDetailPanel — right rail (desktop) / bottom sheet (mobile)
+        └── TaskGraphTooltip — hover overlay
 ```
 
 **Supporting modules (non-component):**

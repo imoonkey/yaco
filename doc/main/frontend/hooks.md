@@ -137,3 +137,26 @@ Device and viewport detection hooks.
 **Exports**:
 - `useIsMobile(maxWidth?)` — returns `true` when viewport is at or below `maxWidth` (default 768px). Uses `matchMedia` with change listener.
 - `useIsTouch()` — returns `true` on touch-capable devices via `(pointer: coarse)` media query. Used to conditionally remove `user-select: none` on touch devices.
+
+## useTaskGraph.ts
+
+Fetches `doc/todo/tasks.json` via the file content API, parses it, and builds the graph model.
+
+**Export**: `useTaskGraph(project)` → `{ graph, error, loading }`
+
+Behavior:
+- Fetches via `GET /api/files/:project/content?path=doc/todo/tasks.json`
+- SSE `filetree` channel triggers automatic refresh when tasks.json changes on disk
+- Returns `TaskGraphModel` (normalized tasks, computed layout, search index)
+
+## usePanZoom.ts
+
+Viewport transform state for SVG pan/zoom interactions.
+
+**Export**: `usePanZoom(containerRef)` → `{ state, onWheel, onPointerDown, panTo, fitToView, zoomIn, zoomOut }`
+
+Behavior:
+- Manages `{ tx, ty, scale }` transform state
+- Scroll wheel zoom (centered on cursor), pointer drag pan, pinch zoom (touch)
+- `fitToView(bounds)` animates to fit entire graph with 200ms ease-out
+- Scale clamped to 0.25×–3.0× range

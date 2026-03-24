@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-24: Task graph visualization — v1 + granularity control
+
+**What changed:**
+- New "Tasks" view (third top-level view alongside Monitor and Workspace) renders `doc/todo/tasks.json` as an interactive graph
+- V1: Milestone columns with task nodes (parent-child containment), SVG bezier dependency edges, pan/zoom (wheel/pinch/buttons), click-to-select with upstream/downstream chain highlighting, toolbar (zoom, state filters, search), detail panel (desktop right rail / mobile bottom sheet), minimap, keyboard navigation
+- V2 granularity: Milestone collapse/expand with edge aggregation, tooltip on hover (400ms), enhanced detail panel (breadcrumbs, collapsible sections, segmented progress bar, richer milestone view)
+- Bug fixes: desktop milestone detail panel, search bar as-you-type highlight + match count
+- Two rounds of Codex code review with all HIGH findings resolved
+
+**Why:**
+- Need to visualize task graphs from `tasks.json` (used by `/update-tasks` and `/orchestrate` skills) to understand parent-child hierarchies and dependency ordering at a glance
+
+**Key files:** `ui/src/tasks/` (11 files), `ui/src/hooks/useTaskGraph.ts`, `ui/src/hooks/usePanZoom.ts`, `ui/src/App.tsx`
+**Verification:** `cd ui && npx vite build` passes, Codex review × 2 rounds
+**Commit:** ac9e0b9..705138a
+**Next:** Fix remaining bugs found during manual testing
+**Blockers:** None
+
 ## 2026-03-24: Persist pinned session order across view/project switches
 
 **What changed:**
