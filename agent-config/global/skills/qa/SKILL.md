@@ -1,72 +1,89 @@
 ---
 name: qa
-description: QA testing with fix-verify loop. Run tests, fix failures, re-verify until green. Supports stack-specific test commands. Use after implementation, before commit, or when tests are failing.
+description: E2E and integration QA. Analyze changes, derive affected user flows, verify with stack-appropriate tools (Playwright, HTTP calls, CLI tests), fix-verify loop. Use after implementation to validate behavior from the user's perspective. Unit tests belong in /tdd and /verify.
 ---
 
 # QA
 
-Fix-verify loop. Run tests, fix failures, re-run until green.
+Verify changes work from the user's perspective. Integration tests, E2E, browser tests — not unit tests.
+
+## Scope
+
+| Skill | Level | What |
+|-------|-------|------|
+| `/tdd` | Unit | Write unit tests, RED→GREEN→REFACTOR |
+| `/verify` | Gate | Build + lint + unit tests + security |
+| **`/qa`** | **E2E / Integration** | **Verify user flows affected by changes** |
 
 ## When to Use
 
-- After implementation, before commit
-- When tests are failing
-- Before PR creation (after `/verify`)
-
-## Arguments
-
-- *(none)* — run test suite for detected stack
-- `web` — browser testing via Playwright
+- After `/implement` — validate the feature actually works end-to-end
+- Before PR — confirm no user-facing regressions
+- After deploy — smoke test critical flows
 
 ## Stack Detection
 
 | Marker file | Stack | Reference |
 |-------------|-------|-----------|
-| `package.json` | TypeScript/Node | `references/typescript-node.md` |
+| `package.json` + web UI present | Web/Playwright | `references/web-playwright.md` |
+| `package.json` + API/server | TypeScript/Node | `references/typescript-node.md` |
 | `build.gradle.kts` or `build.gradle` | Kotlin/Android | `references/kotlin-android.md` |
-| `/qa web` mode | Web/Playwright | `references/web-playwright.md` |
 
 Read the matching reference file from this skill's directory for stack-specific commands.
 
-## Fix-Verify Loop
+## Process
 
-1. **Run tests** — full suite using stack reference commands
-2. **Analyze failures** — categorize each as:
-   - **Real bug** — code defect causing the failure
-   - **Flaky test** — intermittent, not deterministic
-   - **Environment issue** — missing deps, config, services
-3. **Fix real bugs only** — one atomic commit per fix (`fix: ...`)
-4. **Re-run affected tests** — confirm the fix works
-5. **Loop** — go to step 1. Exit when: all pass OR 3 consecutive fix failures
+### 1. Analyze Changes
 
-### Exit Conditions
+```bash
+git diff --stat main...HEAD
+```
 
-- All tests pass → proceed to post-loop
-- 3 consecutive fix attempts fail → stop, report remaining failures
-- Environment issue detected → report and stop, don't fix
+Identify: what files changed, what features they touch, what user-facing behavior is affected.
 
-### Rules
+### 2. Derive Affected User Flows
 
-- Each bug fix = one atomic commit
-- Flaky tests: note them, don't fix in QA flow
-- Environment issues: report and stop
+List the user flows (actions a user would take) that touch the changed code. Examples:
+- "User signs in → sees dashboard → data loads"
+- "User runs `multmux start claude` → worker spawns in tmux"
+- "API receives POST /items → validates → returns 201"
 
-## Post-Loop
+### 3. Verify Each Flow
 
-6. **Coverage analysis** — `git diff --stat` to find changed code, identify untested paths
-7. **Write missing tests** — for changed code lacking coverage
-8. **Final full test run** — confirm everything passes
+Use stack-appropriate tools from the reference file:
+- **Web UI** → Playwright: navigate, interact, assert
+- **API** → HTTP calls: hit real endpoints, check responses
+- **CLI** → Run commands, check stdout/stderr/exit codes
+- **Manual check** → When automation isn't practical, read code + trace logic
+
+For each flow: **PASS** (works as expected) or **FAIL** (describe what broke).
+
+### 4. Fix-Verify Loop
+
+For each failure:
+1. Categorize: **real bug** / **flaky** / **environment issue**
+2. Fix real bugs only — one atomic commit per fix (`fix: ...`)
+3. Re-verify the affected flow
+4. Loop. Exit when: all flows pass OR 3 consecutive fix failures
+
+**Rules:**
+- Flaky: note it, don't fix in QA
+- Environment issue: report and stop
+- Max 3 consecutive failures → stop, report remaining
+
+### 5. Regression Check
+
+Re-verify all flows (not just the fixed ones) to confirm no regressions.
 
 ## Output Format
 
 ```
 QA: [PASS/FAIL]
 
-Tests:    [X/Y passed]
+Flows verified:
+- [flow description]: PASS/FAIL
+- ...
+
 Fixes:    [N commits]
 Flaky:    [list or none]
-Coverage: [gaps or OK]
-
-Issues:
-1. ...
-```
+Blocked:  [environment issues or none]```

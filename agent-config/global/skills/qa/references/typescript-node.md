@@ -1,44 +1,73 @@
-# TypeScript/Node.js Test Commands
+# TypeScript/Node.js Integration & E2E Commands
 
-## Auto-Detect Test Runner
+## API Integration Testing
+
+### Auto-Detect Server Framework
 
 ```bash
-# Check package.json for test runner
-grep -q '"vitest"' package.json 2>/dev/null && echo "vitest"
-grep -q '"jest"' package.json 2>/dev/null && echo "jest"
+grep -q '"express"' package.json 2>/dev/null && echo "express"
+grep -q '"fastify"' package.json 2>/dev/null && echo "fastify"
+grep -q '"hono"' package.json 2>/dev/null && echo "hono"
+grep -q '"supertest"' package.json 2>/dev/null && echo "supertest available"
 ```
 
-## Run Tests
+### Run Integration Tests
 
 ```bash
-# Vitest
-pnpm vitest run 2>&1 | tail -50
+# Convention: integration tests in __integration__/, *.integration.test.ts, or tests/
+pnpm vitest run --dir tests/ 2>&1 | tail -50
+pnpm vitest run "**/*.integration.test.ts" 2>&1 | tail -50
 
-# Jest
-pnpm jest 2>&1 | tail -50
-
-# Generic (uses package.json "test" script)
-pnpm test 2>&1 | tail -50
+# Jest equivalent
+pnpm jest --testPathPattern="integration" 2>&1 | tail -50
 ```
 
-## Run Specific Tests
+### Quick HTTP Verification
 
 ```bash
-# Vitest — by file or pattern
-pnpm vitest run src/utils.test.ts
-pnpm vitest run -t "should handle edge case"
+# Start server in background, hit endpoints, kill
+pnpm dev &
+SERVER_PID=$!
+sleep 3
 
-# Jest — by file or pattern
-pnpm jest src/utils.test.ts
-pnpm jest -t "should handle edge case"
+curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health
+curl -s http://localhost:3000/api/endpoint | head -20
+
+kill $SERVER_PID
 ```
 
-## Coverage
+### Supertest Pattern
+
+```typescript
+import request from 'supertest';
+import { app } from '../src/app';
+
+test('POST /items returns 201', async () => {
+  const res = await request(app)
+    .post('/items')
+    .send({ name: 'test' })
+    .expect(201);
+  expect(res.body.id).toBeDefined();
+});
+```
+
+## CLI E2E Testing
 
 ```bash
-# Vitest
-pnpm vitest run --coverage 2>&1 | tail -30
+# Run command and check output
+OUTPUT=$(node dist/cli.js start --name test 2>&1)
+echo "$OUTPUT" | grep -q "started" && echo "PASS" || echo "FAIL"
 
-# Jest
-pnpm jest --coverage 2>&1 | tail -30
+# Check exit code
+node dist/cli.js invalid-command 2>/dev/null; [ $? -ne 0 ] && echo "PASS"
+```
+
+## Database Integration
+
+```bash
+# Check if test DB is available
+docker ps | grep -q postgres && echo "DB running"
+
+# Run with test DB
+DATABASE_URL=postgresql://localhost:5432/test pnpm vitest run --dir tests/
 ```
