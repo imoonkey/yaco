@@ -33,16 +33,18 @@ Core scanning engine for workstream metadata and progress entries across project
 - `withFileLock()` provides in-process locking for read-modify-write operations on JSON files
 - Handles both workstream-level and project-level (`doc/todo/progress.json`) progress entries
 
-### multmux.ts (138 lines)
+### multmux.ts (161 lines)
 
-Reads multmux session state from `.multmux/<handle>.json` state files and wraps the `multmux` CLI for session commands.
+Reads multmux session state from `.multmux/<handle>.json` state files and wraps the `multmux` CLI for session commands. Read-only consumer of state files — never writes to them.
 
 **Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
 
 - Primary session source: reads `.multmux/*.json` state files (written by multmux hooks)
-- Normalizes status: `starting → idle`, `stopped → excluded`, `processing → processing`
+- Normalizes status: `starting → idle`, `processing → processing`, unknown → excluded
+- State file schema: `{ handle, provider, tmuxSession, pid, sessionId, status, createdAt }` — status is `starting | idle | processing` (no `stopped`; file deletion = session ended)
+- `startMultmuxSession()` uses `--json` flag and returns `{ handle, sessionId }` from CLI output
+- `closeMultmuxSession()` delegates to `multmux kill` (ensures state file cleanup)
 - Exports `MultmuxSession` and `MultmuxStateFile` interfaces
-- Spawns `multmux` as a child process with timeout protection for commands (start, send, close)
 
 ### watcher.ts (136 lines)
 
@@ -64,16 +66,16 @@ Notification dispatch to two sinks: macOS desktop and SSE broadcast.
 - `emitRefresh(channel)` — lightweight SSE-only signal for UI refresh (no osascript)
 - Manages SSE client registry for connected browsers
 
-### session-reconciler.ts (204 lines)
+### session-reconciler.ts (196 lines)
 
 Low-frequency background reconciler for session health and idle detection.
 
 **Exports**: `startSessionReconciler()`, `stopSessionReconciler()`
 
 - Runs every 60 seconds as a safety net (not primary session source)
-- Reads `.multmux/*.json` state files and compares against previous snapshot
+- Read-only: never writes to `.multmux/*.json` state files (multmux's own GC handles cleanup)
+- Health-checks all active sessions via `tmux has-session`; excludes dead sessions from snapshot
 - Emits `refresh:sessions` if drift detected (missed watcher events)
-- Health-checks all active sessions via `tmux has-session`; writes `stopped` to stale state files
 - Codex idle detection: 15s minimum processing duration + 2× debounce, writes `session_idle` entries
 - Claude sessions skip idle detection (use Stop hook instead)
 
@@ -101,16 +103,17 @@ PTY management for terminal sessions.
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
 - `attachSession()` resolves session names and returns a PTY handle with initial data
 
-### session-summary.ts (254 lines)
+### session-summary.ts (215 lines)
 
 Resolves conversation summaries for session list display.
 
 **Exports**: `resolveSessionSummaries()`
 
 - Batch resolution: one call per `GET /api/sessions` poll, reads each data source at most once
+- Skips sentinel sessionId (`pending:awaiting-first-prompt`) from multmux
 - Claude: reads first user message from `~/.claude/projects/{encoded}/<sessionId>.jsonl`
 - Codex: queries `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
-- PID fallback (both providers): when `sessionId` is empty in multmux state, resolves via process tree — Claude scans `~/.claude/sessions/*.json` for PID matches; Codex uses `lsof` to find open rollout files containing session IDs
+- PID fallback: when `sessionId` is missing, resolves via direct PID match — Claude scans `~/.claude/sessions/*.json`; Codex uses `lsof` to find open rollout files
 - Cached Codex DB handle (opened once per server lifecycle, reopened on error)
 
 ### session-names.ts (27 lines)
