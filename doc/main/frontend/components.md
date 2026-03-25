@@ -107,9 +107,9 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 |--------|-------|---------|
 | `WorkspaceScreen.tsx` | 696 | Controller (state, callbacks, keyboard) |
 | `WorkspaceLayout.tsx` | 175 | Layout composition (desktop/mobile) |
-| `WorkspaceEditorArea.tsx` | 295 | Editor, preview, diff, conflict banner |
+| `WorkspaceEditorArea.tsx` | 340 | Editor, split view, preview, diff, conflict banner |
 | `markdown.ts` | 118 | Markdown rendering, syntax highlighting, mermaid |
-| `WorkspaceTabBar.tsx` | 75 | Tab strip with dirty/conflict/preview indicators |
+| `WorkspaceTabBar.tsx` | 100 | Tab strip with dirty/conflict indicators, md mode toggle |
 | `WorkspaceSearch.tsx` | 45 | File search modal + flattenTree |
 | `WorkspaceSessionList.tsx` | 37 | SessionItem component |
 | `useResize.ts` | 34 | Drag-to-resize hook |

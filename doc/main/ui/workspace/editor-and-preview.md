@@ -86,7 +86,13 @@ This ensures preview, editor, and save are never out of sync.
 
 ## Markdown Preview
 
-Available for `.md` files only. Toggled via Preview button or `Cmd+Shift+V`.
+Available for `.md` files only. Three modes controlled by a 3-segment toggle in the tab bar or `Cmd+Shift+V` (cycles edit → split → preview → edit):
+
+- **Edit**: CodeMirror editor only
+- **Split**: Editor on left, live preview on right, with a draggable divider (20%–80%) and bidirectional scroll sync
+- **Preview**: Rendered markdown only
+
+On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
 
 ### Rendering
 
@@ -103,8 +109,8 @@ Preview and editor share a viewport position via source-line anchors (not scroll
 
 | Direction | Behavior |
 |-----------|----------|
-| Editor → Preview | Editor tracks viewport top line. When switching to preview, scrolls to the heading or block nearest that line. |
-| Preview → Editor | Clicking in preview identifies the nearest source block. When switching back to editor, jumps to that source line. |
+| Editor → Preview | Editor tracks viewport top line. In split mode, preview scrolls in real-time to the corresponding block. When switching from edit to preview mode, scrolls to the heading or block nearest that line. |
+| Preview → Editor | In split mode, scrolling preview updates the editor viewport in real-time. Clicking in preview jumps to that source line (stays in split mode). In preview-only mode, clicking switches to edit mode and jumps to the source line. |
 
 This is more stable than scroll-percentage sync because editor and preview have different line heights and layouts.
 
@@ -116,8 +122,8 @@ The sync uses two guards to prevent feedback loops:
 
 Clicking inside the preview:
 1. Identifies the clicked block's approximate source line
-2. Switches back to FileEdit mode
-3. Moves the editor cursor to the corresponding source line
+2. In split mode: jumps the editor to the corresponding source line (stays in split)
+3. In preview-only mode: switches to edit mode and moves the cursor to the source line
 
 ## Editor Features
 

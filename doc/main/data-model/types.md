@@ -131,16 +131,19 @@ type FileState = {
 ### Workspace Layout
 
 ```typescript
+type MdMode = 'edit' | 'preview' | 'split'
+
 type WorkspaceLayout = {
   showSidebar: boolean
   showRightPanel: boolean
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
-  previewMode: boolean
-  leftSize: number          // pixels
-  rightSize: number         // pixels
-  explorerSize: number      // pixels
-  changesSize: number       // pixels
+  mdMode: MdMode
+  splitSize: number           // percentage (20–80), split divider position
+  leftSize: number            // pixels
+  rightSize: number           // pixels
+  explorerSize: number        // pixels
+  changesSize: number         // pixels
 }
 ```

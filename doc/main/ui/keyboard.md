@@ -32,7 +32,7 @@ Complete keyboard shortcut reference.
 | `Cmd+W` | Workspace (editor focused) | Close active editor tab |
 | `Cmd+W` | Workspace (terminal focused) | Detach active terminal session |
 | `Cmd+W` | Workspace (no focus) | No-op (does not close browser tab) |
-| `Cmd+Shift+V` | Workspace (`.md` tab active) | Toggle markdown preview/edit mode |
+| `Cmd+Shift+V` | Workspace (`.md` tab active) | Cycle markdown mode: edit → split → preview → edit |
 | `Cmd+C` | Workspace (explorer focused) | Copy selected file path |
 | `Cmd+S` | Editor | Save file |
 
