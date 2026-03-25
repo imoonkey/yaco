@@ -34,7 +34,7 @@
 
 **Key files:** `ui/src/components/FileExplorer.tsx`, `ui/src/hooks/useWorkspaceState.ts`
 **Verification:** `cd ui && npx vite build` — success; `cd server && npm test` — 35/35 pass
-**Commit:** pending
+**Commit:** c07768b
 **Design:** `doc/todo/slow/design.md`
 
 ## 2026-03-25: Improve session status indicator visibility
@@ -66,8 +66,7 @@
 
 **Key files:** `server/src/lib/gitignore.ts`, `server/src/routes/files.ts`, `server/src/lib/project-watcher.ts`, `server/src/index.ts`, `ui/src/types.ts`, `ui/src/components/FileExplorer.tsx`
 **Verification:** `cd server && npm test` — 35/35 pass; `cd ui && npx vite build` — success
-**Commit:** pending
-**Design:** `doc/todo/ignore/design.md`
+**Commit:** 5b7a98c
 
 ## 2026-03-25: Backend voice pipeline
 

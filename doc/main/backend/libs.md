@@ -79,7 +79,7 @@ Low-frequency background reconciler for session health and idle detection.
 - Codex idle detection: 15s minimum processing duration + 2× debounce, writes `session_idle` entries
 - Claude sessions skip idle detection (use Stop hook instead)
 
-### project-watcher.ts (76 lines)
+### project-watcher.ts (95 lines)
 
 Recursive filesystem watcher per project directory.
 
@@ -90,6 +90,20 @@ Recursive filesystem watcher per project directory.
 - `.multmux/*.json` changes → `sessions` channel (event-driven session updates)
 - Also watches `~/.workflow/projects.json` for project list changes
 - 200ms debounce on all events to batch rapid changes
+- Per-project `.gitignore` filtering: loads patterns via `gitignore.ts`, skips SSE events for ignored paths (prevents watcher churn in large projects)
+- `.gitignore` changes trigger pattern reload + filetree refresh
+- `startProjectWatchers()` is async (loads gitignore patterns at startup)
+
+### gitignore.ts (41 lines)
+
+Per-project `.gitignore` parser and cache.
+
+**Exports**: `getProjectGitignore()`, `clearGitignoreCache()`
+
+- Parses root `.gitignore` using the `ignore` npm package
+- Caches parsed patterns per project path, keyed by mtime (one `stat()` call per cache check)
+- Used by both `project-watcher.ts` (SSE filtering) and `files.ts` (tree building)
+- `clearGitignoreCache()` called when `.gitignore` changes on disk
 
 ### terminal.ts (121 lines)
 

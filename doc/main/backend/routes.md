@@ -55,7 +55,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/files/:project` | File tree (cached, max 6 levels deep) |
+| GET | `/api/files/:project` | File tree (cached, max 10 levels deep, `.gitignore`-filtered — gitignored entries included with `gitignored: true` but dirs not recursed) |
 | GET | `/api/files/:project/content?path=...` | Read file — returns `{ content, path, revision }` (max 1MB, path-validated) |
 | PUT | `/api/files/:project/content?path=...` | Write file (`{ content, baseRevision? }`) — returns `{ ok, revision }` or 409 on conflict |
 | POST | `/api/files/:project/create-file` | Create empty file (`{ path }`) — mkdir -p parents |

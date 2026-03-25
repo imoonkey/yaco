@@ -134,12 +134,13 @@ Three-column dashboard: Sessions, Notifications, Roadmap.
 
 ## FileExplorer
 
-**File**: `ui/src/components/FileExplorer.tsx` (372 lines)
+**File**: `ui/src/components/FileExplorer.tsx` (480 lines)
 
-Virtualized file tree using react-arborist.
+Virtualized file tree using react-arborist. Wrapped in `React.memo` to prevent re-renders from parent state changes during typing (props are stable between SSE events).
 
 **Responsibilities**:
 - Tree rendering with file-type icons and git badges
+- Gitignored entries rendered dimmed (muted color + 50% icon opacity)
 - Drag-and-drop file/folder move
 - Right-click context menu (New File, New Folder, Rename, Delete, Copy Path)
 - Inline rename (F2)

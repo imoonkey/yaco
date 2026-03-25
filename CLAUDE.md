@@ -31,7 +31,7 @@ Hono Server (Node.js :3001)
 ```
 
 - **server/src/routes/** — REST API (`/api/*`) + SSE (`/api/notifications/stream`) + WebSocket (`/ws/terminal/:name`). Includes `voice.ts` (Groq STT + formatter pipeline).
-- **server/src/lib/** — Core modules: `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
+- **server/src/lib/** — Core modules: `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE, .gitignore-filtered), `gitignore.ts` (.gitignore parse + cache), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
 - **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useVoice.ts` (voice input lifecycle — recording, STT, formatting, compose), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar`, `WorkspaceSessionList`
 - **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `Monitor.tsx`, `TerminalKeyBar.tsx` (mobile), `AddProjectDialog.tsx` (directory autocomplete), `VoiceControl.tsx` (mic button), `ComposeTray.tsx` (voice compose review)
@@ -41,7 +41,7 @@ Hono Server (Node.js :3001)
 
 ## Key Data Flow
 
-1. **File changes on disk** → `project-watcher.ts` routes to SSE channels (`filetree`, `git`, `sessions`) → `useSSE.ts` dispatches refresh → hooks refetch
+1. **File changes on disk** → `project-watcher.ts` routes to SSE channels (`filetree`, `git`, `sessions`), filtered by `.gitignore` → `useSSE.ts` dispatches refresh → hooks refetch
 2. **Editor save** → PUT `/api/files/:project/content` with `baseRevision` (mtime) → 409 on conflict → conflict UI in workspace state
 3. **Terminal** → WebSocket `/ws/terminal/:name` → node-pty (shell) or tmux attach (agent sessions)
 4. **Agent sessions** → `.multmux/*.json` state files → watched by project-watcher → SSE `sessions` channel
@@ -81,6 +81,7 @@ doc/
 - SSE-driven updates with polling fallback (30-60s). Never poll faster than 30s.
 - File revision tracking via mtime for optimistic locking
 - Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`
+- Performance: `React.memo` on expensive leaf components (FileExplorer) to prevent re-render cascade from per-keystroke state updates. Stabilize derived Set references (dirtyTabs, conflictTabs) via structural comparison.
 
 ## Ecosystem
 

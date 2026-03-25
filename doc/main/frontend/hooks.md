@@ -54,6 +54,7 @@ type FileState = {
 - **SSE refetch**: listens on `filetree` and `git` channels to refetch open files and detect external changes
 - **Draft persistence**: dirty drafts saved to localStorage with debounce (500ms). On quota exceeded, evicts oldest drafts.
 - **Layout persistence**: layout saved with 300ms debounce
+- **Stable derived state**: `dirtyTabs` and `conflictTabs` use structural comparison to preserve Set references when content hasn't changed (prevents downstream re-renders on every keystroke)
 - **Force save**: `forceSave()` writes without revision check (for resolving conflicts)
 - **Accept disk**: `acceptDisk()` discards local draft and reloads server content
 
