@@ -80,6 +80,8 @@ interface TerminalProps {
   sessionName: string
   onInteract?: () => void
   onCloseRequest?: () => void
+  sendText?: string | null
+  sendTextKey?: number
 }
 
 function decodeOsc52Payload(payload: string): string | null {
@@ -100,7 +102,7 @@ function isCloseShortcut(event: KeyboardEvent): boolean {
   return event.key.toLowerCase() === 'w' && event.metaKey && !event.ctrlKey && !event.altKey
 }
 
-export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalProps) {
+export function Terminal({ sessionName, onInteract, onCloseRequest, sendText, sendTextKey }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -108,6 +110,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
   const onCloseRequestRef = useRef(onCloseRequest)
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
+  const sendTextKeyRef = useRef<number | undefined>(undefined)
 
   const sendInput = useCallback((data: string) => {
     onInteractRef.current?.()
@@ -123,6 +126,13 @@ export function Terminal({ sessionName, onInteract, onCloseRequest }: TerminalPr
     const prefix = termRef.current?.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b['
     return `${prefix}${suffix}`
   }, [])
+
+  // External text injection (voice compose send) — no trailing newline
+  useEffect(() => {
+    if (sendText == null || sendTextKeyRef.current === sendTextKey) return
+    sendTextKeyRef.current = sendTextKey
+    sendInput(sendText)
+  }, [sendText, sendTextKey, sendInput])
 
   useEffect(() => {
     onInteractRef.current = onInteract

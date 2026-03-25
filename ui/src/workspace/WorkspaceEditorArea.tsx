@@ -212,6 +212,9 @@ export function WorkspaceEditorArea({
   onDraftChange,
   onSave,
   diffHunks,
+  composeTray,
+  insertText,
+  insertRequestKey,
 }: {
   activeTab: string | null
   activeFilePath: string | null
@@ -233,6 +236,9 @@ export function WorkspaceEditorArea({
   onDraftChange: (content: string) => void
   onSave: (content: string) => Promise<void>
   diffHunks?: DiffHunk[]
+  composeTray?: React.ReactNode
+  insertText?: string | null
+  insertRequestKey?: number
 }) {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -259,6 +265,7 @@ export function WorkspaceEditorArea({
           </button>
         </div>
       )}
+      {composeTray}
       <div className="flex-1 min-h-0">
       {isDiffTab ? (
         !activeDiff || (activeDiff.loading && activeDiff.content == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
@@ -285,6 +292,8 @@ export function WorkspaceEditorArea({
               onChange={onDraftChange}
               onSave={onSave}
               diffHunks={diffHunks}
+              insertText={insertText}
+              insertRequestKey={insertRequestKey}
             />
           )
         ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>

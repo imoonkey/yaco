@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-03-25: Voice input feature (v1)
+
+**What changed:**
+- Three-stage voice input pipeline: Groq Whisper STT → LLM formatter → compose tray review
+- Backend: `server/src/routes/voice.ts` with `GET /api/voice/status` and `POST /api/voice/compose`
+- Frontend: `useVoice` hook (recording lifecycle, state machine), `VoiceControl` (mic button), `ComposeTray` (review/edit/confirm)
+- Integrated into editor tab bar and terminal header in `WorkspaceScreen`
+- Editor insert via CodeMirror dispatch (undoable), terminal send via PTY (no trailing newline)
+- Formatter supports multilingual input — preserves original language, does not translate
+- Models: `whisper-large-v3` (STT), `llama-3.1-8b-instant` (formatter), configurable via env vars
+- `dotenv` added to server for `server/.env` loading
+- Fixed TDZ bug: `isMd` referenced before declaration in voice eligibility check
+
+**Why:**
+- Voice input for dictating commands/text into tmux-attached terminals (where inline editing is awkward) and the editor
+- Designed via `/double-design` (Claude + Codex independent designs, cross-review, 5-round alignment)
+
+**Key files:** `server/src/routes/voice.ts`, `ui/src/hooks/useVoice.ts`, `ui/src/components/VoiceControl.tsx`, `ui/src/components/ComposeTray.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/components/Editor.tsx`, `ui/src/components/Terminal.tsx`
+**Verification:** `cd server && npm test` (35 passed), `cd ui && npx vite build` passed, Playwright headless project-switching test passed
+**Commit:** pending
+**Next:** E2E tests, formatter tuning for mixed-language dictation
+**Blockers:** None
+
 ## 2026-03-25: Fix keystroke re-render cascade
 
 **What changed:**

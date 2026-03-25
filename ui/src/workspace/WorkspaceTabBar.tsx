@@ -17,6 +17,7 @@ export function WorkspaceTabBar({
   onDoubleClickTab,
   onCloseTab,
   onTogglePreview,
+  rightActions,
 }: {
   openTabs: string[]
   activeTab: string | null
@@ -29,6 +30,7 @@ export function WorkspaceTabBar({
   onDoubleClickTab: (tab: string) => void
   onCloseTab: (tab: string, e: React.MouseEvent) => void
   onTogglePreview: () => void
+  rightActions?: React.ReactNode
 }) {
   return (
     <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 35, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
@@ -64,12 +66,15 @@ export function WorkspaceTabBar({
           </div>
         )
       })}
-      {canTogglePreview && (
-        <button onClick={onTogglePreview} className="ml-auto mr-2 text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
-          style={{ backgroundColor: previewMode ? '#268bd215' : C.bg, color: previewMode ? C.accent : C.text, borderColor: previewMode ? '#268bd230' : C.border }}>
-          {previewMode ? 'Edit' : 'Preview'}
-        </button>
-      )}
+      <div className="ml-auto flex items-center gap-1 shrink-0 mr-2">
+        {rightActions}
+        {canTogglePreview && (
+          <button onClick={onTogglePreview} className="text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
+            style={{ backgroundColor: previewMode ? '#268bd215' : C.bg, color: previewMode ? C.accent : C.text, borderColor: previewMode ? '#268bd230' : C.border }}>
+            {previewMode ? 'Edit' : 'Preview'}
+          </button>
+        )}
+      </div>
     </div>
   )
 }

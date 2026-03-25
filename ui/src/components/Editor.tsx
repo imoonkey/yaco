@@ -35,6 +35,8 @@ interface EditorProps {
   onCloseRequest?: () => void
   readOnly?: boolean
   diffHunks?: DiffHunk[]
+  insertText?: string | null
+  insertRequestKey?: number
 }
 
 function isCloseShortcut(event: KeyboardEvent): boolean {
@@ -68,6 +70,8 @@ export function Editor({
   onCloseRequest,
   readOnly = false,
   diffHunks,
+  insertText = null,
+  insertRequestKey,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -79,6 +83,7 @@ export function Editor({
   const onCloseRequestRef = useRef(onCloseRequest)
   const applyingViewportRef = useRef(false)
   const jumpRequestKeyRef = useRef<number | undefined>(undefined)
+  const insertRequestKeyRef = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     onSaveRef.current = onSave
@@ -212,6 +217,22 @@ export function Editor({
     view.focus()
     onViewportLineRef.current?.(readViewportLine(view))
   }, [jumpRequestKey, jumpToLine])
+
+  // Insert text at cursor / replace selection as a single undoable edit
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || insertText == null || insertRequestKeyRef.current === insertRequestKey) return
+    insertRequestKeyRef.current = insertRequestKey
+    const { from, to } = view.state.selection.main
+    view.dispatch({
+      changes: { from, to, insert: insertText },
+      selection: EditorSelection.cursor(from + insertText.length),
+    })
+    view.focus()
+    const nextContent = view.state.doc.toString()
+    contentRef.current = nextContent
+    onChangeRef.current?.(nextContent)
+  }, [insertRequestKey, insertText])
 
   useEffect(() => {
     const view = viewRef.current

@@ -2,7 +2,10 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFileTree, useSessions, useGitStatus, startSession, fetchGitDiff, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
+import { useVoice } from '../hooks/useVoice'
 import { Terminal } from '../components/Terminal'
+import { VoiceControl } from '../components/VoiceControl'
+import { ComposeTray } from '../components/ComposeTray'
 import { ProviderIcon } from '../components/SessionIcons'
 import { FileExplorer, NewFileIcon, NewFolderIcon } from '../components/FileExplorer'
 import type { FileExplorerHandle } from '../components/FileExplorer'
@@ -47,6 +50,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const explorerRef = useRef<FileExplorerHandle>(null)
   const isMobile = useIsMobile()
   const isTouch = useIsTouch()
+  const voice = useVoice()
 
   // Centralized workspace state
   const ws = useWorkspaceState(projectName)
@@ -63,6 +67,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [editorDiffHunks, setEditorDiffHunks] = useState<DiffHunk[]>([])
   const [contextFolder, setContextFolder] = useState('')
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
+  const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
+  const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
   // Convenience aliases for layout props
   const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, previewMode } = layout
@@ -141,6 +147,45 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
 
+  const handleTerminalVoiceStart = useCallback(() => {
+    if (!attachedSession) return
+    voice.start({ surface: 'terminal', sessionName: attachedSession })
+  }, [voice, attachedSession])
+
+  const handleVoiceConfirm = useCallback((text: string) => {
+    const target = voice.target
+    if (!target) return
+    if (target.surface === 'editor') {
+      if (!activeFilePath || activeFilePath !== target.filePath) {
+        voice.markTargetLost()
+        return
+      }
+      setEditorInsert({ text, key: Date.now() })
+    } else {
+      if (!attachedSession || attachedSession !== target.sessionName) {
+        voice.markTargetLost()
+        return
+      }
+      setTerminalSend({ text, key: Date.now() })
+    }
+    voice.confirm(text)
+  }, [voice, activeFilePath, attachedSession])
+
+  // Detect target loss while composing
+  useEffect(() => {
+    if (voice.state !== 'composing' || !voice.target) return
+    const t = voice.target
+    if (t.surface === 'editor' && (!activeFilePath || activeFilePath !== t.filePath)) {
+      voice.markTargetLost()
+    }
+    if (t.surface === 'terminal' && (!attachedSession || attachedSession !== t.sessionName)) {
+      voice.markTargetLost()
+    }
+  }, [voice, activeFilePath, attachedSession])
+
+  // Derive current voice surface for ComposeTray
+  const voiceSurface = voice.target?.surface ?? 'editor'
+
   // Fetch diff for active editor file (gutter indicators)
   const activeFileIsChanged = !!activeFilePath && changes.some(c => c.path === activeFilePath)
   const prevDiffFileRef = useRef(activeFilePath)
@@ -215,6 +260,15 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const isMd = activeTab?.endsWith('.md')
   const hasOpenFiles = openTabs.length > 0
   const canTogglePreview = !!isMd && !isDiffTab
+
+  // --- Voice eligibility & handlers ---
+  const editorVoiceEligible = !!activeFilePath && !isDiffTab && !(isMd && previewMode)
+  const terminalVoiceEligible = !!attachedSession
+
+  const handleEditorVoiceStart = useCallback(() => {
+    if (!activeFilePath) return
+    voice.start({ surface: 'editor', filePath: activeFilePath })
+  }, [voice, activeFilePath])
 
   const openFile = useCallback((path: string, focus: FocusTarget = 'editor') => {
     actions.openFileTab(path)
@@ -615,7 +669,30 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         onDoubleClickTab={handleDoubleClickTab}
         onCloseTab={closeTab}
         onTogglePreview={() => actions.updateLayout({ previewMode: !previewMode })}
+        rightActions={editorVoiceEligible ? (
+          <VoiceControl
+            capability={voice.capability}
+            state={voice.state}
+            elapsedMs={voice.elapsedMs}
+            onStart={handleEditorVoiceStart}
+            onStop={voice.stop}
+          />
+        ) : undefined}
       />
+
+      {editorVoiceEligible && (voice.state === 'composing' || voice.state === 'recoverable' || voice.state === 'error') && voiceSurface === 'editor' && (
+        <ComposeTray
+          surface="editor"
+          compose={voice.compose}
+          state={voice.state}
+          errorMessage={voice.errorMessage}
+          onConfirm={handleVoiceConfirm}
+          onDiscard={voice.discard}
+          onCopy={voice.copy}
+          onRetry={voice.retry}
+          onDismiss={voice.dismiss}
+        />
+      )}
 
       <WorkspaceEditorArea
         activeTab={activeTab}
@@ -638,6 +715,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         onDraftChange={(content) => activeTab && actions.updateFileDraft(activeTab, content)}
         onSave={async (content) => { if (activeTab) await actions.saveFile(activeTab, content) }}
         diffHunks={editorDiffHunks}
+        insertText={editorInsert?.text}
+        insertRequestKey={editorInsert?.key}
       />
     </div>
   )
@@ -646,8 +725,30 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     <>
       <div className="h-8 flex items-center gap-2 px-3 text-[11px] shrink-0" style={{ borderBottom: `1px solid ${C.border}`, color: C.text }}>
         {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
-        <span className="truncate">{attachedSession}</span>
+        <span className="truncate flex-1">{attachedSession}</span>
+        {terminalVoiceEligible && (
+          <VoiceControl
+            capability={voice.capability}
+            state={voice.state}
+            elapsedMs={voice.elapsedMs}
+            onStart={handleTerminalVoiceStart}
+            onStop={voice.stop}
+          />
+        )}
       </div>
+      {terminalVoiceEligible && (voice.state === 'composing' || voice.state === 'recoverable' || voice.state === 'error') && voiceSurface === 'terminal' && (
+        <ComposeTray
+          surface="terminal"
+          compose={voice.compose}
+          state={voice.state}
+          errorMessage={voice.errorMessage}
+          onConfirm={handleVoiceConfirm}
+          onDiscard={voice.discard}
+          onCopy={voice.copy}
+          onRetry={voice.retry}
+          onDismiss={voice.dismiss}
+        />
+      )}
       <div
         className="flex-1 overflow-hidden p-[3px] select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
@@ -659,6 +760,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           onCloseRequest={() => {
             detachActiveSession()
           }}
+          sendText={terminalSend?.text}
+          sendTextKey={terminalSend?.key}
         />
       </div>
     </>
