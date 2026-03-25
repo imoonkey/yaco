@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-03-25: Lazy-loading file tree (VS Code pattern)
+
+**What changed:**
+- Replaced eager full-tree `buildTree()` with lazy per-directory loading
+- Server: new `GET /api/files/:project/children?dir=path` endpoint returns one directory's children
+- Root endpoint `GET /api/files/:project` now returns only top-level entries (dirs with `children: []`)
+- Removed: recursive buildTree, tree cache, tree watcher, budget cap, insideIgnored depth hack
+- Frontend: `useFileTree` manages lazy state — `expandDir(path)` fetches children on demand
+- SSE refresh: re-fetches root + all expanded dirs in parallel, preserving expanded state
+- Gitignored directories are now fully expandable and recursive — just dimmed
+
+**Why:**
+- Previous approach needed budget caps and depth hacks to handle large projects (eval/ with 337k files, debug-output/ with 217k files). Gitignored dirs couldn't be fully expanded. VS Code solves this by loading one directory at a time on expand — always fast, no heuristics needed.
+
+**Key files:** `server/src/routes/files.ts`, `ui/src/hooks/useApi.ts`, `ui/src/components/FileExplorer.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** `cd server && npm test` — 35/35 pass; `cd ui && npx vite build` — success
+**Commit:** pending
+**Design:** `doc/todo/lazyloading/design.md`
+
 ## 2026-03-25: Session reconciler deletes stale .multmux state files
 
 **What changed:**

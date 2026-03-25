@@ -1,34 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
 import { useSSERefresh } from './useSSE'
 
 export const API = '/api'
 const FILE_TREE_FALLBACK_MS = 60_000
-const FILE_TREE_CACHE_MAX = 20
-const fileTreeCache = new Map<string, FileNode[]>()
-const fileTreeInflight = new Map<string, Promise<FileNode[]>>()
-
-/** Read from cache and promote to most-recently-used */
-function cacheGet(key: string): FileNode[] | undefined {
-  const value = fileTreeCache.get(key)
-  if (value === undefined) return undefined
-  // Move to end (most recent) by re-inserting
-  fileTreeCache.delete(key)
-  fileTreeCache.set(key, value)
-  return value
-}
-
-/** Write to cache with LRU eviction */
-function cacheSet(key: string, value: FileNode[]): void {
-  // If key already exists, delete first so re-insert moves it to end
-  fileTreeCache.delete(key)
-  fileTreeCache.set(key, value)
-  // Evict oldest entry if over limit
-  if (fileTreeCache.size > FILE_TREE_CACHE_MAX) {
-    const oldest = fileTreeCache.keys().next().value
-    if (oldest !== undefined) fileTreeCache.delete(oldest)
-  }
-}
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API}${path}`)
@@ -44,23 +19,6 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
   })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
-}
-
-async function fetchFileTree(projectName: string): Promise<FileNode[]> {
-  const existing = fileTreeInflight.get(projectName)
-  if (existing) return existing
-
-  const request = fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`)
-    .then((tree) => {
-      cacheSet(projectName, tree)
-      return tree
-    })
-    .finally(() => {
-      fileTreeInflight.delete(projectName)
-    })
-
-  fileTreeInflight.set(projectName, request)
-  return request
 }
 
 /** Generic polling hook with optional SSE-triggered refresh */
@@ -116,62 +74,108 @@ export function useSessions(projectName?: string | null) {
 }
 
 export function useFileTree(projectName: string | null) {
-  const [data, setData] = useState<FileNode[] | null>(() => (
-    projectName ? (fileTreeCache.get(projectName) ?? null) : []
-  ))
+  const [data, setData] = useState<FileNode[] | null>(null)
   const [error, setError] = useState<Error | null>(null)
-  const [tick, setTick] = useState(0)
+  const loadedDirsRef = useRef(new Set<string>())
 
-  const refresh = useCallback(() => setTick(t => t + 1), [])
-
-  // SSE-triggered refresh for file tree changes
-  useSSERefresh('filetree', refresh)
-
-  useEffect(() => {
-    if (!projectName) {
-      setData([])
+  // Fetch root-level entries
+  const loadRoot = useCallback(async () => {
+    if (!projectName) { setData([]); return }
+    try {
+      const root = await fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`)
+      setData(root)
       setError(null)
-      return
+      loadedDirsRef.current.clear()
+    } catch (e) {
+      setError(e as Error)
     }
-
-    setData(cacheGet(projectName) ?? null)
-    setError(null)
   }, [projectName])
 
-  useEffect(() => {
+  // Initial load + project change
+  useEffect(() => { void loadRoot() }, [loadRoot])
+
+  // Helper: merge children into tree at a given dir path
+  const mergeChildren = useCallback((dirPath: string, children: FileNode[]) => {
+    setData(prev => {
+      if (!prev) return prev
+      return updateNodeChildren(prev, dirPath, children)
+    })
+  }, [])
+
+  // Expand a directory: fetch its children and merge into tree
+  const expandDir = useCallback(async (dirPath: string) => {
+    if (!projectName || loadedDirsRef.current.has(dirPath)) return
+    loadedDirsRef.current.add(dirPath)
+    try {
+      const children = await fetchJson<FileNode[]>(
+        `/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`
+      )
+      mergeChildren(dirPath, children)
+    } catch {
+      loadedDirsRef.current.delete(dirPath)
+    }
+  }, [projectName, mergeChildren])
+
+  // SSE refresh: reload root + all expanded dirs
+  const refreshExpanded = useCallback(async () => {
     if (!projectName) return
-
-    let cancelled = false
-    const load = async () => {
-      try {
-        const result = await fetchFileTree(projectName)
-        if (!cancelled) {
-          setData(result)
-          setError(null)
-        }
-      } catch (e) {
-        if (!cancelled) setError(e as Error)
+    try {
+      const root = await fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`)
+      // Re-fetch all expanded dirs in parallel
+      const dirs = [...loadedDirsRef.current]
+      const results = await Promise.all(
+        dirs.map(async (dirPath) => {
+          try {
+            return { dirPath, children: await fetchJson<FileNode[]>(
+              `/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`
+            )}
+          } catch {
+            loadedDirsRef.current.delete(dirPath)
+            return null
+          }
+        })
+      )
+      // Build the tree: start from root, merge in all expanded dirs
+      let tree = root
+      for (const r of results) {
+        if (r) tree = updateNodeChildren(tree, r.dirPath, r.children)
       }
+      setData(tree)
+      setError(null)
+    } catch (e) {
+      setError(e as Error)
     }
+  }, [projectName])
 
-    const refreshOnForeground = () => {
-      if (!document.hidden) void load()
-    }
+  useSSERefresh('filetree', refreshExpanded)
 
-    void load()
-    const id = window.setInterval(() => { void load() }, FILE_TREE_FALLBACK_MS)
-    window.addEventListener('focus', refreshOnForeground)
-    document.addEventListener('visibilitychange', refreshOnForeground)
-
+  // Foreground refresh
+  useEffect(() => {
+    const onForeground = () => { if (!document.hidden) void refreshExpanded() }
+    window.addEventListener('focus', onForeground)
+    document.addEventListener('visibilitychange', onForeground)
+    const id = window.setInterval(() => { void refreshExpanded() }, FILE_TREE_FALLBACK_MS)
     return () => {
-      cancelled = true
+      window.removeEventListener('focus', onForeground)
+      document.removeEventListener('visibilitychange', onForeground)
       window.clearInterval(id)
-      window.removeEventListener('focus', refreshOnForeground)
-      document.removeEventListener('visibilitychange', refreshOnForeground)
     }
-  }, [projectName, tick])
+  }, [refreshExpanded])
 
-  return { data, error, refresh }
+  return { data, error, refresh: refreshExpanded, expandDir }
+}
+
+/** Recursively replace children of a dir node at the given path */
+function updateNodeChildren(nodes: FileNode[], dirPath: string, children: FileNode[]): FileNode[] {
+  return nodes.map(node => {
+    if (node.path === dirPath && node.type === 'dir') {
+      return { ...node, children }
+    }
+    if (node.children && node.children.length > 0) {
+      return { ...node, children: updateNodeChildren(node.children, dirPath, children) }
+    }
+    return node
+  })
 }
 
 export function useFileContent(projectName: string | null, filePath: string | null) {

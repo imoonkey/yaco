@@ -66,6 +66,7 @@ const ExplorerContext = createContext<{
   reportContextFolder: (path: string, type: 'file' | 'dir') => void
   onPreviewFile?: (path: string) => void
   onPinFile?: (path: string) => void
+  onExpandDir?: (path: string) => void
   pendingNewId: string | null
   cancelCreate: () => void
 }>({ gitMap: new Map(), gitFolders: new Set(), openContextMenu: () => {}, reportContextFolder: () => {}, pendingNewId: null, cancelCreate: () => {} })
@@ -91,7 +92,7 @@ function MenuDivider() {
 
 // --- Custom node renderer ---
 function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
-  const { gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile, pendingNewId, cancelCreate } = useContext(ExplorerContext)
+  const { gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile, onExpandDir, pendingNewId, cancelCreate } = useContext(ExplorerContext)
   const d = node.data
   const gitStatus = gitMap.get(d.path)
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
@@ -135,6 +136,7 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
     if (d.type === 'dir') {
       node.select()
       node.focus()
+      if (!node.isOpen) onExpandDir?.(d.path)
       node.toggle()
       return
     }
@@ -200,12 +202,13 @@ interface FileExplorerProps {
   selectedFile: string | null
   onSelectFile: (path: string) => void
   onPreviewFile?: (path: string) => void
+  onExpandDir?: (path: string) => void
   onFocusExplorer: () => void
   onContextFolder?: (path: string) => void
 }
 
 const FileExplorerInner = forwardRef<FileExplorerHandle, FileExplorerProps>(
-function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onFocusExplorer, onContextFolder }, ref) {
+function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -425,7 +428,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     : ''
 
   return (
-    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
+    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, onExpandDir, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0 overflow-hidden" onMouseDown={onFocusExplorer}>
         {!treeData || size.height < 1 ? (
           <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>

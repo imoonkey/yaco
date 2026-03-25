@@ -73,7 +73,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   // Convenience aliases for layout props
   const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, mdMode } = layout
 
-  const { data: fileTree } = useFileTree(projectName)
+  const { data: fileTree, expandDir } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
 
@@ -588,6 +588,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       selectedFile={selectedFilePath}
       onSelectFile={openFileFromExplorer}
       onPreviewFile={openPreviewFromExplorer}
+      onExpandDir={expandDir}
       onFocusExplorer={() => setFocusTarget('explorer')}
       onContextFolder={setContextFolder}
     />
