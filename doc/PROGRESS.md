@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-24: Project management UX improvements
+
+**What changed:**
+- Context menu on project tabs: right-click → Copy Path / Remove (with confirmation, neighbor auto-select)
+- Add Project dialog: replaced `window.prompt()` with modal dialog featuring directory autocomplete via new `/api/browse` endpoint, git repo indicators, drill-down navigation, `~` expansion
+- New backend endpoint: `GET /api/browse?prefix=...` lists subdirectories with `isGit` detection, `$HOME` security boundary
+
+**Why:**
+- Projects could be opened but never closed (backend DELETE existed, no UI)
+- Adding projects required remembering full absolute paths — poor UX
+
+**Key files:** `ui/src/App.tsx`, `ui/src/components/AddProjectDialog.tsx`, `ui/src/hooks/useApi.ts`, `server/src/routes/browse.ts`, `server/src/index.ts`
+**Verification:** `cd ui && npx vite build` passes, `cd server && npm test` 21/21 pass, 12/12 Playwright E2E pass, manual QA of browse/add/remove flows
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-24: Fix text overflow and accent bar visuals
 
 **What changed:**

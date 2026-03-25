@@ -34,7 +34,7 @@ Hono Server (Node.js :3001)
 - **server/src/lib/** — Core modules: `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
 - **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar`, `WorkspaceSessionList`
-- **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `Monitor.tsx`, `TerminalKeyBar.tsx` (mobile)
+- **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `Monitor.tsx`, `TerminalKeyBar.tsx` (mobile), `AddProjectDialog.tsx` (directory autocomplete)
 - **ui/src/tasks/** — Task graph visualization: `TaskGraphScreen` (controller), `taskGraphModel.ts` (layout engine), `taskGraphSelection.ts` (highlight/search), `TaskGraphCanvas` (SVG), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`
 - **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useTaskGraph.ts` (task data fetch + SSE refresh), `usePanZoom.ts` (viewport transform), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/lib/** — Utilities: `solarizedLight.ts` (CodeMirror theme), `diffGutter.ts` (git diff indicators), `parseDiff.ts`

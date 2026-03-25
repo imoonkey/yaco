@@ -206,6 +206,11 @@ export async function addProject(name: string, path: string): Promise<void> {
   await postJson('/projects', { name, path })
 }
 
+export async function removeProject(name: string): Promise<void> {
+  const res = await fetch(`${API}/projects/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+}
+
 export async function reorderProjects(order: string[]): Promise<Project[]> {
   return postJson<Project[]>('/projects/reorder', { order })
 }
@@ -260,6 +265,19 @@ export async function renameFile(projectName: string, oldPath: string, newPath: 
 
 export async function deleteFile(projectName: string, path: string): Promise<void> {
   await postJson(`/files/${encodeURIComponent(projectName)}/delete`, { path })
+}
+
+// --- Browse ---
+
+export interface BrowseEntry {
+  name: string
+  path: string
+  isGit: boolean
+}
+
+export async function browseDirs(prefix: string): Promise<BrowseEntry[]> {
+  const res = await fetchJson<{ entries: BrowseEntry[] }>(`/browse?prefix=${encodeURIComponent(prefix)}`)
+  return res.entries
 }
 
 // --- Git ---

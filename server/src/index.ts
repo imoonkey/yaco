@@ -14,6 +14,7 @@ import { sessionRoutes } from './routes/sessions.js'
 import { fileRoutes } from './routes/files.js'
 import { gitRoutes } from './routes/git.js'
 import { notificationRoutes } from './routes/notifications.js'
+import { browseRoutes } from './routes/browse.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
@@ -152,6 +153,7 @@ app.route('/api/sessions', sessionRoutes)
 app.route('/api/files', fileRoutes)
 app.route('/api/git', gitRoutes)
 app.route('/api/notifications', notificationRoutes)
+app.route('/api/browse', browseRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('*', async (c) => serveUiApp(c.req.path))

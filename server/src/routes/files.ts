@@ -133,7 +133,7 @@ async function getProjectTree(projectName: string, projectPath: string): Promise
   if (entry.valid) return entry.tree
   if (entry.build) return entry.build
 
-  entry.build = buildTree(projectPath, projectPath, 0, 6)
+  entry.build = buildTree(projectPath, projectPath, 0, 10)
     .then((tree) => {
       entry.tree = tree
       entry.valid = true

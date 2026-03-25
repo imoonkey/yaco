@@ -380,15 +380,16 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     return insertPendingNode(tree, { name: '', path: pendingCreate.path, type: pendingCreate.type })
   }, [tree, pendingCreate])
 
-  // Reset virtual-list scroll when tree data changes to prevent stale
-  // scrollOffset leaving items positioned below an empty gap.
-  const prevTreeRef = useRef(treeData)
+  // Reset virtual-list scroll only on first load (null → data) to prevent
+  // stale scrollOffset leaving items below an empty gap. Do NOT reset on
+  // subsequent refetches — the tree reference changes every poll/SSE cycle.
+  const hadTreeRef = useRef(!!tree)
   useEffect(() => {
-    if (prevTreeRef.current !== treeData && treeRef.current?.list?.current) {
+    if (!hadTreeRef.current && tree && treeRef.current?.list?.current) {
       treeRef.current.list.current.scrollTo(0)
     }
-    prevTreeRef.current = treeData
-  }, [treeData])
+    hadTreeRef.current = !!tree
+  }, [tree])
 
   useImperativeHandle(ref, () => ({
     createFile: (parentPath) => {

@@ -2,7 +2,9 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
 import { TaskGraph } from './components/TaskGraph'
-import { useProjects, useProgress, addProject, reorderProjects } from './hooks/useApi'
+import { useProjects, useProgress, removeProject, reorderProjects } from './hooks/useApi'
+import { AddProjectDialog } from './components/AddProjectDialog'
+import { writeTextToClipboard } from './lib/clipboard'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import type { Project } from './types'
@@ -49,6 +51,26 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   return next
 }
 
+function MenuItem({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void }) {
+  return (
+    <div
+      className="px-3 py-1 text-[12px] cursor-pointer"
+      style={{ color: danger ? '#dc322f' : '#586e75' }}
+      onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#EEE8D5')}
+      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+      onClick={onClick}
+    >
+      {label}
+    </div>
+  )
+}
+
+function MenuDivider() {
+  return <div className="my-1" style={{ borderTop: '1px solid #D3CBB7' }} />
+}
+
+type CtxMenu = { x: number; y: number; project: Project }
+
 function ProjectTabs({
   view,
   projectName,
@@ -57,6 +79,7 @@ function ProjectTabs({
   onSelect,
   onAdd,
   onReorder,
+  onRemove,
 }: {
   view: View
   projectName: string
@@ -65,10 +88,21 @@ function ProjectTabs({
   onSelect: (name: string) => void
   onAdd: () => void
   onReorder: (fromName: string, toName: string) => void
+  onRemove: (project: Project) => void
 }) {
   const showAllProjects = view !== 'workspace' && view !== 'tasks'
   const activeProject = (view === 'workspace' || view === 'tasks') ? workspaceProject : projectName
   const [draggedProject, setDraggedProject] = useState<string | null>(null)
+  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
+
+  useEffect(() => {
+    if (!ctxMenu) return
+    const close = () => setCtxMenu(null)
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
+    document.addEventListener('click', close)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', onKey) }
+  }, [ctxMenu])
 
   return (
     <div
@@ -112,6 +146,7 @@ function ProjectTabs({
                   setDraggedProject(null)
                 }}
                 onClick={() => onSelect(project.name)}
+                onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, project }) }}
                 className={`px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer shrink-0 transition-colors ${
                   isActive
                     ? 'bg-[#268bd2]/15 text-[#268bd2]'
@@ -136,6 +171,18 @@ function ProjectTabs({
       >
         +
       </button>
+
+      {ctxMenu && (
+        <div
+          className="fixed z-50 min-w-[160px] py-1 rounded shadow-lg"
+          style={{ left: ctxMenu.x, bottom: window.innerHeight - ctxMenu.y, backgroundColor: '#fdf6e3', border: '1px solid #D3CBB7' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(ctxMenu.project.path); setCtxMenu(null) }} />
+          <MenuDivider />
+          <MenuItem label="Remove" danger onClick={() => { onRemove(ctxMenu.project); setCtxMenu(null) }} />
+        </div>
+      )}
     </div>
   )
 }
@@ -153,6 +200,7 @@ function App() {
   const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: progress } = useProgress()
   const browserNotifications = useBrowserNotifications()
+  const [showAddDialog, setShowAddDialog] = useState(false)
 
   useEffect(() => {
     if (!projects) return
@@ -182,6 +230,8 @@ function App() {
 
   const uncleared = progress?.filter(e => e.status === 'active').length ?? 0
   const concreteProject = lastConcreteProject || (orderedProjects[0]?.name ?? '')
+  const workspaceProject = projectName === 'all' ? concreteProject : projectName
+  const currentProjectPath = orderedProjects.find(p => p.name === workspaceProject)?.path ?? ''
 
   // Persist state changes
   useEffect(() => {
@@ -197,21 +247,37 @@ function App() {
     if (name !== 'all') setLastConcreteProject(name)
   }, [])
 
-  const handleAddProject = async () => {
-    const path = prompt('Project path (absolute):')
-    if (!path) return
-    const name = path.replace(/\/+$/, '').split('/').pop() || ''
-    if (!name) return
-    try {
-      await addProject(name, path)
-      refreshProjects()
-      setProjectName(name)
-      setLastConcreteProject(name)
-      setProjectOrder((currentOrder) => currentOrder.includes(name) ? currentOrder : [...currentOrder, name])
-    } catch (err) {
-      alert(`Failed to add project: ${err}`)
-    }
+  const handleAddProject = () => {
+    setShowAddDialog(true)
   }
+
+  const handleProjectAdded = (name: string) => {
+    setShowAddDialog(false)
+    refreshProjects()
+    setProjectName(name)
+    setLastConcreteProject(name)
+    setProjectOrder((currentOrder) => currentOrder.includes(name) ? currentOrder : [...currentOrder, name])
+  }
+
+  const handleRemoveProject = useCallback(async (project: Project) => {
+    if (!confirm(`Remove project '${project.name}'? (Files on disk are not affected)`)) return
+    try {
+      await removeProject(project.name)
+      refreshProjects()
+      setProjectOrder(prev => prev.filter(n => n !== project.name))
+      // Select neighbor if removed project was active
+      const active = (view === 'workspace' || view === 'tasks') ? workspaceProject : projectName
+      if (active === project.name) {
+        const idx = orderedProjects.findIndex(p => p.name === project.name)
+        const neighbor = orderedProjects[idx + 1] ?? orderedProjects[idx - 1]
+        const next = neighbor?.name ?? 'all'
+        setProjectName(next)
+        if (next !== 'all') setLastConcreteProject(next)
+      }
+    } catch (err) {
+      alert(`Failed to remove project: ${err}`)
+    }
+  }, [orderedProjects, projectName, view, workspaceProject, refreshProjects])
 
   const handleProjectReorder = useCallback(async (fromName: string, toName: string) => {
     const currentOrder = projectOrder.length > 0 ? projectOrder : orderedProjects.map((project) => project.name)
@@ -256,9 +322,6 @@ function App() {
     return () => document.removeEventListener('keydown', handler, true)
   }, [handleProjectChange, orderedProjects, view])
 
-  const workspaceProject = projectName === 'all' ? concreteProject : projectName
-  const currentProjectPath = orderedProjects.find(p => p.name === workspaceProject)?.path ?? ''
-
   return (
     <div className="flex flex-col h-dvh bg-[#fdf6e3]">
       <header className="h-10 shrink-0 flex items-center px-3 gap-1" style={{ backgroundColor: '#EEE8D5', borderBottom: '1px solid #D3CBB7' }}>
@@ -302,7 +365,14 @@ function App() {
         onSelect={handleProjectChange}
         onAdd={handleAddProject}
         onReorder={handleProjectReorder}
+        onRemove={handleRemoveProject}
       />
+      {showAddDialog && (
+        <AddProjectDialog
+          onAdded={handleProjectAdded}
+          onClose={() => setShowAddDialog(false)}
+        />
+      )}
     </div>
   )
 }
