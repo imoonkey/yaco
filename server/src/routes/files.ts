@@ -40,8 +40,10 @@ function shouldIgnoreRelativePath(relPath: string): boolean {
     .some(part => part.length > 0 && shouldIgnoreEntry(part))
 }
 
-async function buildTree(absPath: string, basePath: string, depth: number, maxDepth: number, ig: Ignore | null): Promise<FileNode[]> {
-  if (depth >= maxDepth) return []
+const MAX_TREE_ENTRIES = 10_000
+
+async function buildTree(absPath: string, basePath: string, depth: number, maxDepth: number, ig: Ignore | null, insideIgnored = false, budget = { remaining: MAX_TREE_ENTRIES }): Promise<FileNode[]> {
+  if (depth >= maxDepth || budget.remaining <= 0) return []
   if (!existsSync(absPath)) return []
 
   let entries
@@ -58,19 +60,25 @@ async function buildTree(absPath: string, basePath: string, depth: number, maxDe
       return a.name.localeCompare(b.name)
     })
 
-  return Promise.all(sorted.map(async (entry) => {
+  const result: FileNode[] = []
+  for (const entry of sorted) {
+    if (budget.remaining <= 0) break
+    budget.remaining--
+
     const absEntry = join(absPath, entry.name)
     const relPath = relative(basePath, absEntry)
     const isDir = entry.isDirectory()
-    const ignored = ig ? ig.ignores(isDir ? relPath + '/' : relPath) : false
+    const ignored = insideIgnored || (ig ? ig.ignores(isDir ? relPath + '/' : relPath) : false)
 
     if (isDir) {
-      const children = ignored ? [] : await buildTree(absEntry, basePath, depth + 1, maxDepth, ig)
-      return { name: entry.name, path: relPath, type: 'dir', children, ...(ignored && { gitignored: true }) } satisfies FileNode
+      // Inside gitignored dirs: only show immediate children (no deeper recursion)
+      const children = insideIgnored ? [] : await buildTree(absEntry, basePath, depth + 1, maxDepth, ig, ignored, budget)
+      result.push({ name: entry.name, path: relPath, type: 'dir', children, ...(ignored && { gitignored: true }) } satisfies FileNode)
+    } else {
+      result.push({ name: entry.name, path: relPath, type: 'file', ...(ignored && { gitignored: true }) } satisfies FileNode)
     }
-
-    return { name: entry.name, path: relPath, type: 'file', ...(ignored && { gitignored: true }) } satisfies FileNode
-  }))
+  }
+  return result
 }
 
 /** Resolve real path and verify it stays within the project */
