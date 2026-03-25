@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-25: Session reconciler deletes stale .multmux state files
+
+**What changed:**
+- Session reconciler now deletes `.multmux/*.json` state files when the corresponding tmux session is dead (was read-only before)
+- Added `unlinkSync` import; `checkStaleStates` calls `unlinkSync(stateFile)` on dead sessions
+- Tests updated to reflect new behavior: verify `unlinkSync` import instead of asserting read-only invariant
+
+**Why:**
+- Race between multmux's async `SessionEnd` hook (`sed>tmp&&mv`) and wrapper `EXIT` trap (`rm -f`) can recreate deleted state files, leaving orphaned entries. Reconciler cleanup is defense-in-depth.
+
+**Key files:** `server/src/lib/session-reconciler.ts`, `server/src/lib/__tests__/session-reconciler.test.ts`
+**Verification:** `cd server && npm test` passes
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Two-pane markdown split view
 
 **What changed:**

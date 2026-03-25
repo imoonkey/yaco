@@ -4,17 +4,13 @@ import { mkdirSync, writeFileSync, readFileSync, rmSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 
 /**
- * Tests that the session reconciler never writes to .multmux/*.json state files.
+ * Tests for the session reconciler's behavior with .multmux/*.json state files.
  *
- * Since the reconciler module has side effects (timers, imports), we test the
- * key invariant indirectly: write state files, simulate what checkStaleStates does,
- * and verify files are untouched.
- *
- * The reconciler's checkStaleStates is not exported, so we test the observable
- * behavior: after reconciliation, state files should not be modified.
+ * The reconciler detects dead tmux sessions and deletes their stale state files
+ * (defense-in-depth for when multmux wrapper.sh EXIT trap fails).
  */
 
-describe('session-reconciler read-only invariant', () => {
+describe('session-reconciler behavior', () => {
   let tmpDir: string
   let multmuxDir: string
 
@@ -28,16 +24,12 @@ describe('session-reconciler read-only invariant', () => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('session-reconciler.ts does not import writeFileSync', async () => {
-    // Read the source file and verify it doesn't import writeFileSync
+  it('session-reconciler.ts imports unlinkSync for stale file cleanup', async () => {
     const source = readFileSync(
       join(__dirname, '..', 'session-reconciler.ts'),
       'utf-8',
     )
-    // Check that writeFileSync is not imported from 'fs'
-    expect(source).not.toMatch(/writeFileSync/)
-    // Check that no sync writes to state files occur
-    expect(source).not.toMatch(/\.multmux.*write/i)
+    expect(source).toMatch(/unlinkSync/)
   })
 
   it('session-reconciler.ts does not write stopped status', async () => {

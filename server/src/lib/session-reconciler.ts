@@ -1,5 +1,5 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, unlinkSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { join } from 'path'
 import { loadProjects, type Project } from './projects'
@@ -72,7 +72,8 @@ async function reconcile(): Promise<void> {
 }
 
 /** Health-check: verify tmux liveness for all active sessions.
- *  Read-only: never writes to state files. Multmux's own GC handles cleanup. */
+ *  Deletes state files for sessions whose tmux session no longer exists
+ *  (defense-in-depth for when multmux wrapper.sh EXIT trap fails). */
 function checkStaleStates(sessions: MultmuxSession[], project: Pick<Project, 'path'>): MultmuxSession[] {
   const dir = join(project.path, '.multmux')
   const live: MultmuxSession[] = []
@@ -85,6 +86,7 @@ function checkStaleStates(sessions: MultmuxSession[], project: Pick<Project, 'pa
       const state = JSON.parse(raw) as MultmuxStateFile
       if (!isTmuxAlive(state.tmuxSession)) {
         dead = true
+        try { unlinkSync(stateFile) } catch { /* already gone */ }
       }
     } catch {
       // Can't read state file — keep the session in the list
