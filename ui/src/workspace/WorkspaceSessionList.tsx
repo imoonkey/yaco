@@ -88,7 +88,7 @@ export function SessionItem({
           </button>
         )}
         <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[#859900] animate-pulse' : 'bg-[#93a1a1]'}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[#2aa198] status-pulse' : 'bg-[#93a1a1]'}`} />
         {renaming ? (
           <input
             ref={inputRef}

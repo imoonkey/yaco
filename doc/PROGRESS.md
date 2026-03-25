@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-03-25: Improve session status indicator visibility
+
+**What changed:**
+- Processing session indicator changed from solarized green (`#859900`) to solarized cyan (`#2aa198`) — much higher contrast against idle gray (`#93a1a1`)
+- Replaced Tailwind `animate-pulse` (opacity fade to 50%) with custom `status-glow` animation (solid dot + expanding glow ring) for clearer "active" signal
+- Updated in both Monitor view (`SessionCard`) and Workspace sidebar (`SessionItem`)
+
+**Why:**
+- Solarized green was too muted/olive on the light background, making processing and idle sessions nearly indistinguishable at a glance.
+
+**Key files:** `ui/src/index.css`, `ui/src/components/Monitor.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`
+**Verification:** `tsc --noEmit` clean
+**Commit:** pending
+
 ## 2026-03-25: .gitignore-aware file tree + dimmed UI
 
 **What changed:**

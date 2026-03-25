@@ -40,8 +40,8 @@ VS Code Solarized Light theme adapted for web.
 | magenta | `#D33682` | — |
 | violet | `#6C71C4` | — |
 | blue | `#268BD2` | Links, selection tint, active states |
-| cyan | `#2AA198` | Keywords, markdown file icons |
-| green | `#859900` | Diff additions, IDLE session badge |
+| cyan | `#2AA198` | Keywords, markdown file icons, processing session indicator (glow-pulse) |
+| green | `#859900` | Diff additions |
 
 ### Derived UI Colors
 

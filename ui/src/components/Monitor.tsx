@@ -56,7 +56,7 @@ function NotificationCard({ entry, onDismiss }: { entry: ProgressEntry; onDismis
 
 // --- Sessions ---
 const statusDisplay: Record<SessionStatus, { label: string; text: string; dot: string }> = {
-  processing: { label: 'Running', text: 'text-[#859900]', dot: 'bg-[#859900] animate-pulse' },
+  processing: { label: 'Running', text: 'text-[#2aa198]', dot: 'bg-[#2aa198] status-pulse' },
   idle:       { label: 'Idle',    text: 'text-[#93a1a1]', dot: 'bg-[#93a1a1]' },
 }
 
