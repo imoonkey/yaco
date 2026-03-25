@@ -363,6 +363,8 @@ export function useWorkspaceState(projectName: string) {
   useSSERefresh('git', refetchOpenFiles)
 
   // --- Derived (memoized) ---
+  const prevDirtyRef = useRef(new Set<string>())
+  const prevConflictRef = useRef(new Set<string>())
   const { dirtyTabs, conflictTabs } = useMemo(() => {
     const dirty = new Set<string>()
     const conflict = new Set<string>()
@@ -370,7 +372,14 @@ export function useWorkspaceState(projectName: string) {
       if (state.status === 'dirty' || state.status === 'saving') dirty.add(path)
       if (state.status === 'conflict') { dirty.add(path); conflict.add(path) }
     }
-    return { dirtyTabs: dirty, conflictTabs: conflict }
+    // Stabilize references: return previous Sets if content hasn't changed
+    const dirtyMatch = dirty.size === prevDirtyRef.current.size && [...dirty].every(p => prevDirtyRef.current.has(p))
+    const conflictMatch = conflict.size === prevConflictRef.current.size && [...conflict].every(p => prevConflictRef.current.has(p))
+    const stableDirty = dirtyMatch ? prevDirtyRef.current : dirty
+    const stableConflict = conflictMatch ? prevConflictRef.current : conflict
+    prevDirtyRef.current = stableDirty
+    prevConflictRef.current = stableConflict
+    return { dirtyTabs: stableDirty, conflictTabs: stableConflict }
   }, [files])
 
   // --- Tab actions ---

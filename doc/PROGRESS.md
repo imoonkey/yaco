@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-03-25: Fix keystroke re-render cascade
+
+**What changed:**
+- Wrapped `FileExplorer` in `React.memo` — prevents re-rendering on every keystroke (props are stable during typing)
+- Stabilized `dirtyTabs`/`conflictTabs` Set references in `useWorkspaceState` — structural comparison prevents new Set allocation when content hasn't changed
+
+**Why:**
+- Every keystroke triggered `setFiles()` → WorkspaceScreen re-render → FileExplorer re-render (6.6k nodes for large projects). FileExplorer props don't change during typing, so the re-render was 100% wasted. Cost scaled linearly with tree size.
+
+**Key files:** `ui/src/components/FileExplorer.tsx`, `ui/src/hooks/useWorkspaceState.ts`
+**Verification:** `cd ui && npx vite build` — success; `cd server && npm test` — 35/35 pass
+**Commit:** pending
+**Design:** `doc/todo/slow/design.md`
+
 ## 2026-03-25: Improve session status indicator visibility
 
 **What changed:**

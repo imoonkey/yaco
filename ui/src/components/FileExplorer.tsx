@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, createContext, useContext } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, createContext, useContext, memo } from 'react'
 import { Tree } from 'react-arborist'
 import type { NodeRendererProps } from 'react-arborist'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
@@ -204,7 +204,7 @@ interface FileExplorerProps {
   onContextFolder?: (path: string) => void
 }
 
-export const FileExplorer = forwardRef<FileExplorerHandle, FileExplorerProps>(
+const FileExplorerInner = forwardRef<FileExplorerHandle, FileExplorerProps>(
 function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onFocusExplorer, onContextFolder }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
@@ -474,3 +474,5 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     </ExplorerContext.Provider>
   )
 })
+
+export const FileExplorer = memo(FileExplorerInner) as typeof FileExplorerInner
