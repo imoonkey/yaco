@@ -227,9 +227,7 @@ export function useVoice(): UseVoiceReturn {
     formData.append('audio', blob, 'audio.webm')
     formData.append('surface', ctx.surface)
     if (ctx.filePath) formData.append('filePath', ctx.filePath)
-    // Language hint from browser
-    const lang = navigator.language?.split('-')[0]
-    if (lang) formData.append('language', lang)
+    // No language hint — let Whisper auto-detect to support multilingual/mixed input
 
     try {
       const res = await fetch(`${API}/voice/compose`, { method: 'POST', body: formData })

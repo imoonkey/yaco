@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-03-25: Fix voice multilingual transcription
+
+**What changed:**
+- Removed `navigator.language` hint from voice upload — was sending `language: "en"` causing Whisper to force-transcribe Chinese speech as English
+- Switched formatter model to `openai/gpt-oss-120b` for better multilingual formatting
+
+**Why:**
+- `navigator.language` reflects browser UI language, not spoken language. Passing it as a hint made Whisper ignore the actual spoken language. Auto-detect is correct for multilingual/mixed input.
+
+**Key files:** `ui/src/hooks/useVoice.ts`, `server/.env`
+**Verification:** `cd ui && npx vite build` passed, manual test confirmed Chinese raw transcript
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Voice input feature (v1)
 
 **What changed:**
