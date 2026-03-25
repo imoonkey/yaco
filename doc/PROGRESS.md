@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-03-25: Fix mobile formatting stuck + unify Insert label
+
+**What changed:**
+- Fixed race condition: `setState('formatting')` is async but `stateRef.current` was only synced on render — late guard silently returned before reaching composing state. Now manually sync `stateRef.current` immediately after each `setState` call.
+- Unified confirm button label to "Insert" for both editor and terminal surfaces.
+
+**Why:**
+- Mobile renders are slower, so `stateRef` wasn't updated by the time `await res.json()` resolved, causing the late guard `stateRef.current !== 'formatting'` to be true → silent return → stuck spinner.
+
+**Key files:** `ui/src/hooks/useVoice.ts`, `ui/src/components/ComposeTray.tsx`
+**Verification:** `cd ui && npx vite build` passed
+**Commit:** `6ce8f6f`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Voice compose floating dialog + surface toggle
 
 **What changed:**
