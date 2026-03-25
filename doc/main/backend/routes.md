@@ -83,6 +83,66 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 |----------|------|-------------|
 | WS | `/ws/terminal/:name?cols=N&rows=N` | Terminal PTY (tmux or direct shell) |
 
+### Voice
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/voice/status` | Voice pipeline availability and config |
+| POST | `/api/voice/compose` | Transcribe + format audio recording |
+
+**`GET /api/voice/status`**
+
+Returns pipeline readiness so the UI can gate recording controls.
+
+Enabled (GROQ_API_KEY set):
+```json
+{ "enabled": true, "sttModel": "whisper-large-v3-turbo", "formatterModel": "llama-3.1-8b-instant", "maxUploadBytes": 20000000 }
+```
+
+Disabled (key missing):
+```json
+{ "enabled": false, "reason": "missing_api_key" }
+```
+
+**`POST /api/voice/compose`** (`multipart/form-data`)
+
+Request fields:
+- `audio` (file, required) — recorded audio blob (webm, mp4, ogg, etc.)
+- `surface` (string, required) — `editor` or `terminal`
+- `language` (string, optional) — ISO-639-1 hint for Whisper
+- `filePath` (string, optional) — active editor file path
+
+Pipeline: Whisper STT → formatter LLM (surface-specific system prompt) → response.
+
+Success (`formattingStatus: "formatted"`):
+```json
+{ "rawText": "git status dash s b", "displayText": "git status -sb", "formattingStatus": "formatted" }
+```
+
+Formatter failure (`formattingStatus: "fallback_raw"`):
+```json
+{ "rawText": "...", "displayText": "...", "formattingStatus": "fallback_raw", "warning": "Formatting failed; showing raw transcript." }
+```
+
+Empty transcript (`formattingStatus: "empty"`, 200):
+```json
+{ "rawText": "", "displayText": "", "formattingStatus": "empty" }
+```
+
+**Error responses** — stable JSON `{ error, message }`:
+
+| Condition | HTTP | `error` | `message` |
+|-----------|------|---------|-----------|
+| Missing GROQ_API_KEY | 503 | `service_unavailable` | Voice input is unavailable. Set GROQ_API_KEY. |
+| Invalid/missing upload or surface | 400 | `invalid_request` | Invalid voice recording. |
+| Audio > 20 MB | 413 | `payload_too_large` | Recording too large. Keep it short. |
+| Upstream rate limit | 429 | `rate_limited` | Rate limit reached. Try again shortly. |
+| Upstream timeout/network | 502 | `upstream_error` | Transcription failed. Try again. |
+
+Audio is never persisted to disk. API key is never exposed to the browser.
+
+-> Design doc: `doc/todo/voice/final/voice_input_aligned.md`
+
 ### Health
 
 | Method | Path | Description |

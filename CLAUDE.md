@@ -30,7 +30,7 @@ Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty
 ```
 
-- **server/src/routes/** — REST API (`/api/*`) + SSE (`/api/notifications/stream`) + WebSocket (`/ws/terminal/:name`)
+- **server/src/routes/** — REST API (`/api/*`) + SSE (`/api/notifications/stream`) + WebSocket (`/ws/terminal/:name`). Includes `voice.ts` (Groq STT + formatter pipeline).
 - **server/src/lib/** — Core modules: `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
 - **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar`, `WorkspaceSessionList`

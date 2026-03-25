@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-03-25: Backend voice pipeline
+
+**What changed:**
+- New route group `server/src/routes/voice.ts` with two endpoints: `GET /api/voice/status` and `POST /api/voice/compose`
+- STT via Groq Whisper (`whisper-large-v3-turbo`) + formatter LLM (`llama-3.1-8b-instant`), both configurable via env vars
+- Surface-specific formatter prompts: terminal normalizes CLI syntax, editor fixes punctuation/casing
+- Formatter failure degrades to raw transcript (`fallback_raw`), not a fatal error
+- Error mapping: 503/400/413/429/502 with stable `{ error, message }` JSON
+- 12 new unit tests covering status, compose success, formatter fallback, empty transcript, error mapping
+- `groq-sdk` added to server dependencies
+
+**Why:**
+- First implementation step for voice input feature — backend pipeline must exist before frontend can integrate
+- Groq API key stays server-side to avoid browser exposure
+
+**Key files:** `server/src/routes/voice.ts`, `server/src/routes/__tests__/voice.test.ts`, `server/src/index.ts`, `server/package.json`
+**Verification:** `cd server && npm test` — 35/35 pass
+**Commit:** pending
+**Next:** Frontend voice controller, compose tray UI, surface integrations
+**Blockers:** None
+
 ## 2026-03-24: Project management UX improvements
 
 **What changed:**
