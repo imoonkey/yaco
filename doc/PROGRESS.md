@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-25: .gitignore-aware file tree + dimmed UI
+
+**What changed:**
+- New utility `server/src/lib/gitignore.ts` — parses root `.gitignore` per project, caches by mtime
+- `buildTree()` now skips recursion into gitignored directories (87x speedup for large projects: 1.3s → 15ms)
+- Gitignored entries still appear in the file tree but marked with `gitignored: true` and rendered dimmed
+- `project-watcher.ts` filters SSE events for gitignored paths — no more spurious filetree/git refreshes
+- `FileExplorer.tsx` renders gitignored entries with muted color (#93A1A1) and 50% icon opacity
+- `FileNode` type extended with optional `gitignored` field in both server and UI
+
+**Why:**
+- Typing lag in editor when working with large projects (e.g., androidagent with 650k files). Root cause: `buildTree()` traversed 578k entries including massive gitignored dirs (debug-output, eval, .reference). The constant tree rebuilds and SSE events created background churn competing with keystroke handling.
+
+**Key files:** `server/src/lib/gitignore.ts`, `server/src/routes/files.ts`, `server/src/lib/project-watcher.ts`, `server/src/index.ts`, `ui/src/types.ts`, `ui/src/components/FileExplorer.tsx`
+**Verification:** `cd server && npm test` — 35/35 pass; `cd ui && npx vite build` — success
+**Commit:** pending
+**Design:** `doc/todo/ignore/design.md`
+
 ## 2026-03-25: Backend voice pipeline
 
 **What changed:**

@@ -2,13 +2,16 @@ import { watch, existsSync, type FSWatcher } from 'fs'
 import { readdir, stat, readFile, writeFile, mkdir, realpath, rename as fsRename, rm } from 'fs/promises'
 import { join, relative, dirname, normalize, basename } from 'path'
 import { Hono } from 'hono'
+import type { Ignore } from 'ignore'
 import { loadProjects } from '../lib/projects'
+import { getProjectGitignore, clearGitignoreCache } from '../lib/gitignore'
 
 export interface FileNode {
   name: string
   path: string
   type: 'file' | 'dir'
   children?: FileNode[]
+  gitignored?: boolean
 }
 
 const IGNORE = new Set([
@@ -22,6 +25,7 @@ interface TreeCacheEntry {
   tree: FileNode[]
   valid: boolean
   watcher?: FSWatcher
+  ig?: Ignore | null
 }
 
 const treeCache = new Map<string, TreeCacheEntry>()
@@ -36,7 +40,7 @@ function shouldIgnoreRelativePath(relPath: string): boolean {
     .some(part => part.length > 0 && shouldIgnoreEntry(part))
 }
 
-async function buildTree(absPath: string, basePath: string, depth: number, maxDepth: number): Promise<FileNode[]> {
+async function buildTree(absPath: string, basePath: string, depth: number, maxDepth: number, ig: Ignore | null): Promise<FileNode[]> {
   if (depth >= maxDepth) return []
   if (!existsSync(absPath)) return []
 
@@ -57,13 +61,15 @@ async function buildTree(absPath: string, basePath: string, depth: number, maxDe
   return Promise.all(sorted.map(async (entry) => {
     const absEntry = join(absPath, entry.name)
     const relPath = relative(basePath, absEntry)
+    const isDir = entry.isDirectory()
+    const ignored = ig ? ig.ignores(isDir ? relPath + '/' : relPath) : false
 
-    if (entry.isDirectory()) {
-      const children = await buildTree(absEntry, basePath, depth + 1, maxDepth)
-      return { name: entry.name, path: relPath, type: 'dir', children } satisfies FileNode
+    if (isDir) {
+      const children = ignored ? [] : await buildTree(absEntry, basePath, depth + 1, maxDepth, ig)
+      return { name: entry.name, path: relPath, type: 'dir', children, ...(ignored && { gitignored: true }) } satisfies FileNode
     }
 
-    return { name: entry.name, path: relPath, type: 'file' } satisfies FileNode
+    return { name: entry.name, path: relPath, type: 'file', ...(ignored && { gitignored: true }) } satisfies FileNode
   }))
 }
 
@@ -104,6 +110,18 @@ function ensureProjectWatcher(projectName: string, projectPath: string) {
 
       const relPath = filename.toString()
       if (shouldIgnoreRelativePath(relPath)) return
+
+      // .gitignore changed — clear cached patterns + invalidate tree
+      if (relPath === '.gitignore') {
+        clearGitignoreCache(projectPath)
+        existing.ig = undefined
+        invalidateTree(projectName)
+        return
+      }
+
+      // Skip invalidation for changes inside gitignored paths
+      if (existing.ig && existing.ig.ignores(relPath)) return
+
       invalidateTree(projectName)
     })
   } catch {
@@ -133,7 +151,10 @@ async function getProjectTree(projectName: string, projectPath: string): Promise
   if (entry.valid) return entry.tree
   if (entry.build) return entry.build
 
-  entry.build = buildTree(projectPath, projectPath, 0, 10)
+  const ig = await getProjectGitignore(projectPath)
+  entry.ig = ig
+
+  entry.build = buildTree(projectPath, projectPath, 0, 10, ig)
     .then((tree) => {
       entry.tree = tree
       entry.valid = true

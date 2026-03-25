@@ -51,6 +51,7 @@ export interface FileNode {
   path: string
   type: 'file' | 'dir'
   children?: FileNode[]
+  gitignored?: boolean
 }
 
 export interface GitChange {

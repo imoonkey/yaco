@@ -15,6 +15,7 @@ import { fileRoutes } from './routes/files.js'
 import { gitRoutes } from './routes/git.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { browseRoutes } from './routes/browse.js'
+import { voiceRoutes } from './routes/voice.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
@@ -154,6 +155,7 @@ app.route('/api/files', fileRoutes)
 app.route('/api/git', gitRoutes)
 app.route('/api/notifications', notificationRoutes)
 app.route('/api/browse', browseRoutes)
+app.route('/api/voice', voiceRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('*', async (c) => serveUiApp(c.req.path))
@@ -165,7 +167,7 @@ await startWatching(projects, (project, workstream) => {
   console.log(`[watch] progress.json changed: ${project}/${workstream}`)
 })
 startSessionReconciler()
-startProjectWatchers(projects)
+await startProjectWatchers(projects)
 setShellSessionChangeCallback(() => emitRefresh('sessions'))
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)

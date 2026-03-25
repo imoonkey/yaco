@@ -1,13 +1,16 @@
 import { watch, existsSync, type FSWatcher } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
+import type { Ignore } from 'ignore'
 import type { Project } from './projects'
 import { emitRefresh } from './notify'
+import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 
 const DEBOUNCE_MS = 200
 
 const watchers: FSWatcher[] = []
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const projectIgnores = new Map<string, Ignore | null>()
 
 /** Ignore patterns — no refresh signal for these */
 const IGNORE = [
@@ -38,19 +41,35 @@ function debouncedEmit(channel: string): void {
 }
 
 /** Start recursive fs.watch for each project */
-export function startProjectWatchers(projects: Project[]): void {
+export async function startProjectWatchers(projects: Project[]): Promise<void> {
   stopProjectWatchers()
 
   for (const project of projects) {
     if (!existsSync(project.path)) continue
+
+    const ig = await getProjectGitignore(project.path)
+    projectIgnores.set(project.path, ig)
+
     try {
       const watcher = watch(project.path, { recursive: true }, (_event, filename) => {
         if (!filename) return
         const channel = routeChange(filename)
-        if (channel) {
-          debouncedEmit(channel)
-          if (channel === 'filetree') debouncedEmit('git')
+        if (!channel) return
+
+        // Reload gitignore when .gitignore itself changes
+        if (filename === '.gitignore') {
+          clearGitignoreCache(project.path)
+          void getProjectGitignore(project.path).then(newIg => {
+            projectIgnores.set(project.path, newIg)
+          })
         }
+
+        // Skip SSE for filetree changes inside gitignored paths
+        const currentIg = projectIgnores.get(project.path)
+        if (currentIg && channel === 'filetree' && currentIg.ignores(filename)) return
+
+        debouncedEmit(channel)
+        if (channel === 'filetree') debouncedEmit('git')
       })
       watchers.push(watcher)
     } catch (err) {
@@ -73,4 +92,5 @@ export function stopProjectWatchers(): void {
   watchers.length = 0
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
+  projectIgnores.clear()
 }

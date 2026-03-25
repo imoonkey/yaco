@@ -96,7 +96,9 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
   const gitStatus = gitMap.get(d.path)
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
   const isSelected = node.isSelected
-  const nameColor = gitStatus ? (GIT_COLORS[gitStatus] || C.text)
+  const isGitignored = d.gitignored === true
+  const nameColor = isGitignored ? C.muted
+    : gitStatus ? (GIT_COLORS[gitStatus] || C.text)
     : folderChanged ? '#C4A241'
     : isSelected ? C.accent
     : C.text
@@ -160,10 +162,12 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
         onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = '' }}
         onContextMenu={e => { e.preventDefault(); openContextMenu(e, d.path, d.type) }}
       >
-        {d.type === 'dir' ? <FolderIcon open={node.isOpen} /> : <FileTypeIcon name={d.name} />}
+        {d.type === 'dir'
+          ? <span style={isGitignored ? { opacity: 0.5 } : undefined}><FolderIcon open={node.isOpen} /></span>
+          : <span style={isGitignored ? { opacity: 0.5 } : undefined}><FileTypeIcon name={d.name} /></span>}
         <span className="flex-1 truncate" style={{ color: nameColor }}>{d.name}</span>
-        {gitStatus && <span className="text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }}>{gitStatus}</span>}
-        {folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#C4A241' }} />}
+        {!isGitignored && gitStatus && <span className="text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }}>{gitStatus}</span>}
+        {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#C4A241' }} />}
       </div>
     </div>
   )
