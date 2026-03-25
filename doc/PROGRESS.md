@@ -6,13 +6,22 @@
 - Context menu on project tabs: right-click → Copy Path / Remove (with confirmation, neighbor auto-select)
 - Add Project dialog: replaced `window.prompt()` with modal dialog featuring directory autocomplete via new `/api/browse` endpoint, git repo indicators, drill-down navigation, `~` expansion
 - New backend endpoint: `GET /api/browse?prefix=...` lists subdirectories with `isGit` detection, `$HOME` security boundary
+- Fix: resize handles (explorer/changes, sidebar/editor) had 1px hit target — now 3px transparent padding, same visual
+- Fix: file explorer scroll position reset every SSE/poll cycle — now only resets on first load
+- Fix: file tree maxDepth 6→10 for deep directory structures (e.g. `doc/todo/.../cn/design.md`)
+- Fix: context menu on bottom project tabs opened downward off-screen — now opens upward
+- Fix: `workspaceProject` TDZ crash from variable used before declaration
+- 17 new Playwright E2E tests
 
 **Why:**
 - Projects could be opened but never closed (backend DELETE existed, no UI)
 - Adding projects required remembering full absolute paths — poor UX
+- Resize handles were nearly impossible to grab on retina displays
+- Explorer scroll jumping made it hard to browse files
 
-**Key files:** `ui/src/App.tsx`, `ui/src/components/AddProjectDialog.tsx`, `ui/src/hooks/useApi.ts`, `server/src/routes/browse.ts`, `server/src/index.ts`
-**Verification:** `cd ui && npx vite build` passes, `cd server && npm test` 21/21 pass, 12/12 Playwright E2E pass, manual QA of browse/add/remove flows
+**Key files:** `ui/src/App.tsx`, `ui/src/components/AddProjectDialog.tsx`, `ui/src/hooks/useApi.ts`, `server/src/routes/browse.ts`, `server/src/index.ts`, `ui/src/workspace/ResizeHandle.tsx`, `ui/src/components/FileExplorer.tsx`, `server/src/routes/files.ts`
+**Verification:** `cd ui && npx vite build` passes, `cd server && npm test` 21/21 pass, 28/28 Playwright E2E pass
+**Commit:** 4ab3065
 **Next:** None
 **Blockers:** None
 
