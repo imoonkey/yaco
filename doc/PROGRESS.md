@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-25: Cmd+P file search — independent of lazy tree
+
+**What changed:**
+- Added `GET /api/files/:project/search-index` endpoint — recursive walk returning flat `{name, path}[]` list (respects .gitignore, 10k file budget)
+- `FileSearch` now fetches from this endpoint on mount instead of flattening the lazy tree
+- Removed dead `flattenTree` utility and `allFiles` derivation from `WorkspaceScreen`
+
+**Why:**
+- Lazy-loading broke Cmd+P search — `flattenTree` only saw root-level files since subdirectories aren't loaded until expanded
+
+**Key files:** `server/src/routes/files.ts`, `ui/src/workspace/WorkspaceSearch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** UI type-check clean, lint clean, server tests pass (35/35)
+**Commit:** `14fa5a2`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Archive completed projects — docs + tasks
 
 **What changed:**

@@ -110,7 +110,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceEditorArea.tsx` | 340 | Editor, split view, preview, diff, conflict banner |
 | `markdown.ts` | 118 | Markdown rendering, syntax highlighting, mermaid |
 | `WorkspaceTabBar.tsx` | 100 | Tab strip with dirty/conflict indicators, md mode toggle |
-| `WorkspaceSearch.tsx` | 45 | File search modal + flattenTree |
+| `WorkspaceSearch.tsx` | 60 | File search modal (fetches full index via `/api/files/:project/search-index`) |
 | `WorkspaceSessionList.tsx` | 37 | SessionItem component |
 | `useResize.ts` | 34 | Drag-to-resize hook |
 | `ResizeHandle.tsx` | 23 | VResizeHandle + HResizeHandle |

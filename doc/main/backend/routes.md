@@ -56,6 +56,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/files/:project` | Root-level file listing (lazy — dirs have `children: []`, gitignored entries marked) |
+| GET | `/api/files/:project/search-index` | Flat list of all file paths — recursive walk for Cmd+P search (respects .gitignore, 10k budget) |
 | GET | `/api/files/:project/children?dir=...` | One directory's immediate children (lazy expand on demand) |
 | GET | `/api/files/:project/content?path=...` | Read file — returns `{ content, path, revision }` (max 1MB, path-validated) |
 | PUT | `/api/files/:project/content?path=...` | Write file (`{ content, baseRevision? }`) — returns `{ ok, revision }` or 409 on conflict |
