@@ -7,3 +7,4 @@ progress.json
 progress.json.lock
 reference/
 test-results/
+.env
