@@ -5,24 +5,31 @@ export function ComposeTray({
   surface,
   compose,
   state,
+  elapsedMs,
   errorMessage,
   onConfirm,
   onDiscard,
   onCopy,
   onRetry,
   onDismiss,
+  onStop,
+  onSurfaceToggle,
 }: {
   surface: VoiceSurface
   compose: ComposeData | null
   state: InteractionState
+  elapsedMs: number
   errorMessage: string | null
   onConfirm: (text: string) => void
   onDiscard: () => void
   onCopy: (text: string) => void
   onRetry: () => void
   onDismiss: () => void
+  onStop: () => void
+  onSurfaceToggle: () => void
 }) {
-  const isOpen = state === 'composing' || state === 'recoverable' || state === 'error'
+  const isActive = state === 'recording' || state === 'transcribing' || state === 'formatting'
+    || state === 'composing' || state === 'recoverable' || state === 'error'
   const [editText, setEditText] = useState('')
   const [showRaw, setShowRaw] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -42,13 +49,13 @@ export function ComposeTray({
     }
   }, [state])
 
-  // Auto-size textarea
+  // Auto-size textarea: min 3 rows (~50px), max 50vh
   const autoSize = useCallback(() => {
     const el = textareaRef.current
     if (!el) return
     el.style.height = 'auto'
-    // Clamp between 1 row (~20px) and 4 rows (~80px)
-    el.style.height = `${Math.min(el.scrollHeight, 80)}px`
+    const maxH = window.innerHeight * 0.5
+    el.style.height = `${Math.max(50, Math.min(el.scrollHeight, maxH))}px`
   }, [])
 
   useEffect(() => { autoSize() }, [editText, autoSize])
@@ -56,14 +63,57 @@ export function ComposeTray({
   const confirmLabel = surface === 'terminal' ? 'Send' : 'Insert'
   const isRecoverable = state === 'recoverable'
   const isFallback = compose?.formattingStatus === 'fallback_raw'
+  const canToggleSurface = state === 'recording' || state === 'composing'
+
+  if (!isActive) return null
+
+  const elapsed = Math.floor(elapsedMs / 1000)
+  const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
+  const ss = String(elapsed % 60).padStart(2, '0')
 
   return (
-    <div style={{
-      maxHeight: isOpen ? 300 : 0,
-      overflow: 'hidden',
-      transition: 'max-height 150ms ease-out',
-    }}>
-      <div style={TRAY_STYLE}>
+    <div style={OVERLAY_STYLE} onClick={state === 'recording' ? onStop : onDiscard}
+      onKeyDown={(e) => {
+        if (e.key === 'Tab' && canToggleSurface) {
+          e.preventDefault()
+          onSurfaceToggle()
+        }
+      }}
+    >
+      <div style={DIALOG_STYLE} onClick={(e) => e.stopPropagation()}>
+        {/* Header with toggleable surface */}
+        <div style={HEADER_STYLE}>
+          <button
+            style={{
+              ...SURFACE_TOGGLE_STYLE,
+              ...(canToggleSurface ? { cursor: 'pointer' } : { cursor: 'default', opacity: 0.7 }),
+            }}
+            onClick={canToggleSurface ? onSurfaceToggle : undefined}
+            title={canToggleSurface ? 'Click to switch target' : undefined}
+          >
+            Voice → {surface === 'terminal' ? 'Terminal' : 'Editor'}
+            {canToggleSurface && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.5 }}>Tab ⇄</span>}
+          </button>
+          <button style={CLOSE_BTN_STYLE} onClick={state === 'recording' ? onStop : onDiscard} aria-label="Close">✕</button>
+        </div>
+
+        {/* Recording state */}
+        {state === 'recording' && (
+          <div style={RECORDING_STYLE}>
+            <span style={PULSE_DOT_STYLE} />
+            <span style={{ fontFamily: 'monospace', fontSize: 20 }}>{mm}:{ss}</span>
+            <button style={STOP_BTN_STYLE} onClick={onStop}>Stop</button>
+          </div>
+        )}
+
+        {/* Processing states */}
+        {(state === 'transcribing' || state === 'formatting') && (
+          <div style={PROCESSING_STYLE}>
+            <span style={SPINNER_STYLE} />
+            <span>{state === 'transcribing' ? 'Transcribing…' : 'Formatting…'}</span>
+          </div>
+        )}
+
         {/* Error row */}
         {state === 'error' && errorMessage && (
           <div style={ERROR_ROW_STYLE} role="alert">
@@ -78,14 +128,12 @@ export function ComposeTray({
         {/* Compose content */}
         {compose && (state === 'composing' || state === 'recoverable') && (
           <>
-            {/* Formatter fallback warning */}
             {isFallback && compose.warning && (
               <div style={WARNING_STYLE} role="status" aria-live="polite">
                 {compose.warning}
               </div>
             )}
 
-            {/* Editable textarea */}
             <textarea
               ref={textareaRef}
               value={editText}
@@ -106,7 +154,6 @@ export function ComposeTray({
               placeholder="Enter to send, Shift+Enter for newline, Esc to discard"
             />
 
-            {/* Raw transcript disclosure */}
             {compose.rawText && compose.rawText !== editText && (
               <div style={{ marginTop: 4 }}>
                 <button
@@ -128,7 +175,6 @@ export function ComposeTray({
               </div>
             )}
 
-            {/* Action buttons */}
             <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
               <button
                 style={{
@@ -141,18 +187,8 @@ export function ComposeTray({
               >
                 {confirmLabel}
               </button>
-              <button
-                style={COPY_BTN_STYLE}
-                onClick={() => onCopy(editText)}
-              >
-                Copy
-              </button>
-              <button
-                style={DISCARD_BTN_STYLE}
-                onClick={onDiscard}
-              >
-                Discard
-              </button>
+              <button style={COPY_BTN_STYLE} onClick={() => onCopy(editText)}>Copy</button>
+              <button style={DISCARD_BTN_STYLE} onClick={onDiscard}>Discard</button>
             </div>
           </>
         )}
@@ -163,26 +199,117 @@ export function ComposeTray({
 
 // --- Styles ---
 
-const TRAY_STYLE: React.CSSProperties = {
+const OVERLAY_STYLE: React.CSSProperties = {
+  position: 'fixed',
+  inset: 0,
+  zIndex: 1000,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  background: 'rgba(0,0,0,0.15)',
+}
+
+const DIALOG_STYLE: React.CSSProperties = {
   background: 'var(--sol-base3)',
-  borderTop: '1px solid var(--sol-border)',
-  padding: '8px 12px',
+  border: '1px solid var(--sol-border)',
+  borderRadius: 8,
+  padding: 16,
+  width: '90%',
+  maxWidth: 520,
+  boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+}
+
+const HEADER_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  marginBottom: 10,
+  fontSize: 12,
+  color: 'var(--sol-base01)',
+}
+
+const SURFACE_TOGGLE_STYLE: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  fontWeight: 500,
+  fontSize: 12,
+  color: 'var(--sol-base01)',
+  padding: '2px 4px',
+  borderRadius: 4,
+}
+
+const CLOSE_BTN_STYLE: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  color: 'var(--sol-base1)',
+  fontSize: 14,
+  cursor: 'pointer',
+  padding: '2px 6px',
+  lineHeight: 1,
+}
+
+const RECORDING_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 12,
+  padding: '24px 0',
+  color: '#dc322f',
+}
+
+const PULSE_DOT_STYLE: React.CSSProperties = {
+  width: 10,
+  height: 10,
+  borderRadius: '50%',
+  background: '#dc322f',
+  animation: 'voice-pulse 1.2s ease-in-out infinite',
+}
+
+const STOP_BTN_STYLE: React.CSSProperties = {
+  height: 32,
+  fontSize: 13,
+  borderRadius: 4,
+  border: '1px solid rgba(220,50,47,0.3)',
+  background: 'rgba(220,50,47,0.08)',
+  color: '#dc322f',
+  cursor: 'pointer',
+  padding: '0 16px',
+  fontWeight: 500,
+}
+
+const PROCESSING_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 8,
+  padding: '24px 0',
+  fontSize: 13,
+  color: 'var(--sol-base1)',
+}
+
+const SPINNER_STYLE: React.CSSProperties = {
+  width: 14,
+  height: 14,
+  border: '2px solid var(--sol-border)',
+  borderTopColor: 'var(--sol-base01)',
+  borderRadius: '50%',
+  animation: 'voice-spin 0.8s linear infinite',
 }
 
 const TEXTAREA_STYLE: React.CSSProperties = {
   width: '100%',
   fontFamily: 'monospace',
-  fontSize: 12,
+  fontSize: 13,
   color: 'var(--sol-base02)',
   background: 'var(--sol-input-bg)',
   border: '1px solid var(--sol-border)',
   borderRadius: 4,
-  padding: '6px 8px',
-  resize: 'none',
+  padding: '8px 10px',
+  resize: 'vertical',
   outline: 'none',
   boxSizing: 'border-box',
-  lineHeight: 1.4,
-  minHeight: 20,
+  lineHeight: 1.5,
+  minHeight: 50,
 }
 
 const WARNING_STYLE: React.CSSProperties = {

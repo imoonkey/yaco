@@ -152,25 +152,29 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     voice.start({ surface: 'terminal', sessionName: attachedSession })
   }, [voice, attachedSession])
 
+  // Voice surface selection — user-toggleable
+  const [voiceSurface, setVoiceSurface] = useState<'editor' | 'terminal'>('terminal')
+
+  // Sync surface from voice target when it changes
+  useEffect(() => {
+    if (voice.target?.surface) setVoiceSurface(voice.target.surface)
+  }, [voice.target?.surface])
+
+  const handleSurfaceToggle = useCallback(() => {
+    setVoiceSurface(s => s === 'editor' ? 'terminal' : 'editor')
+  }, [])
+
   const handleVoiceConfirm = useCallback((text: string) => {
-    const target = voice.target
-    if (!target) return
-    if (target.surface === 'editor') {
-      if (!activeFilePath || activeFilePath !== target.filePath) {
-        voice.markTargetLost()
-        return
-      }
+    if (voiceSurface === 'editor') {
+      if (!activeFilePath) return
       setEditorInsert({ text, key: Date.now() })
     } else {
-      if (!attachedSession || attachedSession !== target.sessionName) {
-        voice.markTargetLost()
-        return
-      }
+      if (!attachedSession) return
       setTerminalSend({ text, key: Date.now() })
       setFocusTarget('terminal')
     }
     voice.confirm(text)
-  }, [voice, activeFilePath, attachedSession])
+  }, [voice, voiceSurface, activeFilePath, attachedSession])
 
   // Detect target loss while composing
   useEffect(() => {
@@ -183,9 +187,6 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       voice.markTargetLost()
     }
   }, [voice, activeFilePath, attachedSession])
-
-  // Derive current voice surface for ComposeTray
-  const voiceSurface = voice.target?.surface ?? 'editor'
 
   // Fetch diff for active editor file (gutter indicators)
   const activeFileIsChanged = !!activeFilePath && changes.some(c => c.path === activeFilePath)
@@ -501,8 +502,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         e.preventDefault()
         e.stopPropagation()
       }
-      // Ctrl+Shift+V: toggle voice recording
-      if (key === 'v' && !e.metaKey && e.ctrlKey && !e.altKey && e.shiftKey) {
+      // Ctrl+Shift+V or F5: toggle voice recording
+      if ((key === 'v' && !e.metaKey && e.ctrlKey && !e.altKey && e.shiftKey) || e.key === 'F5') {
         e.preventDefault()
         if (voice.state === 'recording') {
           voice.stop()
@@ -694,20 +695,6 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         ) : undefined}
       />
 
-      {editorVoiceEligible && (voice.state === 'composing' || voice.state === 'recoverable' || voice.state === 'error') && voiceSurface === 'editor' && (
-        <ComposeTray
-          surface="editor"
-          compose={voice.compose}
-          state={voice.state}
-          errorMessage={voice.errorMessage}
-          onConfirm={handleVoiceConfirm}
-          onDiscard={voice.discard}
-          onCopy={voice.copy}
-          onRetry={voice.retry}
-          onDismiss={voice.dismiss}
-        />
-      )}
-
       <WorkspaceEditorArea
         activeTab={activeTab}
         activeFilePath={activeFilePath}
@@ -750,19 +737,6 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
           />
         )}
       </div>
-      {terminalVoiceEligible && (voice.state === 'composing' || voice.state === 'recoverable' || voice.state === 'error') && voiceSurface === 'terminal' && (
-        <ComposeTray
-          surface="terminal"
-          compose={voice.compose}
-          state={voice.state}
-          errorMessage={voice.errorMessage}
-          onConfirm={handleVoiceConfirm}
-          onDiscard={voice.discard}
-          onCopy={voice.copy}
-          onRetry={voice.retry}
-          onDismiss={voice.dismiss}
-        />
-      )}
       <div
         className="flex-1 overflow-hidden p-[3px] select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
@@ -784,6 +758,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   )
 
   return (
+  <>
     <WorkspaceLayout
       isMobile={isMobile}
       isTouch={isTouch}
@@ -814,5 +789,20 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       onFilesPaneFocus={() => setFocusTarget('explorer')}
       searchOverlay={showSearch ? <FileSearch files={allFiles} onSelect={openFile} onClose={() => setShowSearch(false)} /> : null}
     />
+    <ComposeTray
+      surface={voiceSurface}
+      compose={voice.compose}
+      state={voice.state}
+      elapsedMs={voice.elapsedMs}
+      errorMessage={voice.errorMessage}
+      onConfirm={handleVoiceConfirm}
+      onDiscard={voice.discard}
+      onCopy={voice.copy}
+      onRetry={voice.retry}
+      onDismiss={voice.dismiss}
+      onStop={voice.stop}
+      onSurfaceToggle={handleSurfaceToggle}
+    />
+  </>
   )
 }

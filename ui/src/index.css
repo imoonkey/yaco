@@ -45,6 +45,15 @@
   animation: status-glow 1.8s ease-in-out infinite;
 }
 
+/* Voice compose dialog animations */
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+@keyframes voice-spin {
+  to { transform: rotate(360deg); }
+}
+
 html, body {
   overscroll-behavior: none;
 }

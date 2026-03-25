@@ -344,14 +344,17 @@ export function Terminal({ sessionName, onInteract, onCloseRequest, sendText, se
 
     term.onResize(() => sendResize())
 
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null
     const observer = new ResizeObserver(() => {
-      fitTerminal(term)
-      term.refresh(0, term.rows - 1)
+      // Debounce to avoid thrashing during CSS transitions (e.g. compose tray slide)
+      if (resizeTimer) clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => fitTerminal(term), 150)
     })
     observer.observe(container)
 
     return () => {
       disposed = true
+      if (resizeTimer) clearTimeout(resizeTimer)
       cancelAnimationFrame(fitAnimationFrame)
       container.removeEventListener('focusin', handleFocusIn)
       container.removeEventListener('touchstart', onTouchStart)
