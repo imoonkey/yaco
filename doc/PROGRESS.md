@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-03-25: Two-pane markdown split view
+
+**What changed:**
+- Added third markdown viewing mode: Split — editor on left, live preview on right, side-by-side
+- Draggable divider between panes (20%–80% range), size persisted to localStorage
+- Bidirectional scroll sync using existing viewportLine infrastructure
+- 3-segment toggle `[Edit | Split | Preview]` in tab bar (2-segment on touch/mobile — no split)
+- `Cmd+Shift+V` cycles through all three modes
+- State migrated: `previewMode: boolean` → `mdMode: 'edit' | 'preview' | 'split'` + `splitSize: number`
+
+**Why:**
+- Editing markdown with only toggle between edit/preview is awkward — no way to see rendered output while typing
+
+**Key files:** `ui/src/hooks/useWorkspaceState.ts`, `ui/src/workspace/WorkspaceTabBar.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** `npx tsc --noEmit` clean, `npm run lint` no new errors, build passes
+**Commit:** `162fb2e`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Fix mobile formatting stuck + unify Insert label
 
 **What changed:**
