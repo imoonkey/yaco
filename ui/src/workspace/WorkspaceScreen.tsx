@@ -71,7 +71,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
   // Convenience aliases for layout props
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, previewMode } = layout
+  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, mdMode } = layout
 
   const { data: fileTree } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
@@ -261,10 +261,10 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
 
   const isMd = activeTab?.endsWith('.md')
   const hasOpenFiles = openTabs.length > 0
-  const canTogglePreview = !!isMd && !isDiffTab
+  const canToggleMdMode = !!isMd && !isDiffTab
 
   // --- Voice eligibility & handlers ---
-  const editorVoiceEligible = !!activeFilePath && !isDiffTab && !(isMd && previewMode)
+  const editorVoiceEligible = !!activeFilePath && !isDiffTab && !(isMd && mdMode === 'preview')
   const terminalVoiceEligible = !!attachedSession
 
   const handleEditorVoiceStart = useCallback(() => {
@@ -344,9 +344,11 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     const targetLine = clampLine(line)
     actions.updateFileViewport(activeTab, targetLine)
     setJumpRequest({ key: Date.now(), path: activeTab, line: targetLine })
-    actions.updateLayout({ previewMode: false })
+    if (layout.mdMode !== 'split') {
+      actions.updateLayout({ mdMode: 'edit' })
+    }
     setFocusTarget('editor')
-  }, [activeTab, actions])
+  }, [activeTab, actions, layout.mdMode])
 
   const killSession = useCallback(async (sessionName: string) => {
     if (!sessionName) return
@@ -492,10 +494,11 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         void writeTextToClipboard(selectedFilePath)
         return
       }
-      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canTogglePreview) {
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canToggleMdMode) {
         e.preventDefault()
         e.stopPropagation()
-        actions.updateLayout({ previewMode: !previewMode })
+        const cycle = { edit: 'split', split: 'preview', preview: 'edit' } as const
+        actions.updateLayout({ mdMode: cycle[mdMode] })
         return
       }
       if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'w' && closeFocusedSurface()) {
@@ -518,7 +521,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, canTogglePreview, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, previewMode, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice])
+  }, [actions, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice])
 
   useEffect(() => {
     const handleBlur = () => {
@@ -678,12 +681,13 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         previewTab={previewTab}
         dirtyTabs={dirtyTabs}
         conflictTabs={conflictTabs}
-        canTogglePreview={canTogglePreview}
-        previewMode={previewMode}
+        canToggleMdMode={canToggleMdMode}
+        mdMode={mdMode}
+        isTouch={isTouch}
         onSelectTab={handleSelectTab}
         onDoubleClickTab={handleDoubleClickTab}
         onCloseTab={closeTab}
-        onTogglePreview={() => actions.updateLayout({ previewMode: !previewMode })}
+        onMdModeChange={(mode) => actions.updateLayout({ mdMode: mode })}
         rightActions={editorVoiceEligible ? (
           <VoiceControl
             capability={voice.capability}
@@ -704,7 +708,9 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         isDiffTab={isDiffTab}
         activeDiff={activeDiff}
         isMd={isMd}
-        previewMode={previewMode}
+        mdMode={mdMode}
+        splitSize={layout.splitSize}
+        onSplitResize={(size) => actions.updateLayout({ splitSize: size })}
         hasConflict={!!activeFilePath && conflictTabs.has(activeFilePath)}
         jumpRequest={jumpRequest}
         onAcceptDisk={() => activeFilePath && actions.acceptDisk(activeFilePath)}

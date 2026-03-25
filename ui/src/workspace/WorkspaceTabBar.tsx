@@ -1,8 +1,34 @@
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import type { MdMode } from '../hooks/useWorkspaceState'
 
 function tabName(tab: string): string {
   if (tab.startsWith('diff:')) return `${tab.slice(5).split('/').pop()} (diff)`
   return tab.split('/').pop() || tab
+}
+
+function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m: MdMode) => void; isTouch: boolean }) {
+  const modes: { value: MdMode; label: string }[] = isTouch
+    ? [{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]
+    : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
+
+  return (
+    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: C.border }}>
+      {modes.map(({ value, label }) => {
+        const active = mode === value
+        return (
+          <button key={value} onClick={() => onChange(value)}
+            className="text-[10px] px-2 py-0.5 cursor-pointer"
+            style={{
+              backgroundColor: active ? '#268bd215' : C.bg,
+              color: active ? C.accent : C.text,
+              borderRight: value !== modes[modes.length - 1].value ? `1px solid ${C.border}` : undefined,
+            }}>
+            {label}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 export function WorkspaceTabBar({
@@ -11,12 +37,13 @@ export function WorkspaceTabBar({
   previewTab,
   dirtyTabs,
   conflictTabs,
-  canTogglePreview,
-  previewMode,
+  canToggleMdMode,
+  mdMode,
+  isTouch,
   onSelectTab,
   onDoubleClickTab,
   onCloseTab,
-  onTogglePreview,
+  onMdModeChange,
   rightActions,
 }: {
   openTabs: string[]
@@ -24,12 +51,13 @@ export function WorkspaceTabBar({
   previewTab: string | null
   dirtyTabs: Set<string>
   conflictTabs: Set<string>
-  canTogglePreview: boolean
-  previewMode: boolean
+  canToggleMdMode: boolean
+  mdMode: MdMode
+  isTouch: boolean
   onSelectTab: (tab: string) => void
   onDoubleClickTab: (tab: string) => void
   onCloseTab: (tab: string, e: React.MouseEvent) => void
-  onTogglePreview: () => void
+  onMdModeChange: (mode: MdMode) => void
   rightActions?: React.ReactNode
 }) {
   return (
@@ -68,11 +96,8 @@ export function WorkspaceTabBar({
       })}
       <div className="ml-auto flex items-center gap-1 shrink-0 mr-2">
         {rightActions}
-        {canTogglePreview && (
-          <button onClick={onTogglePreview} className="text-[10px] px-2 py-0.5 rounded border cursor-pointer shrink-0"
-            style={{ backgroundColor: previewMode ? '#268bd215' : C.bg, color: previewMode ? C.accent : C.text, borderColor: previewMode ? '#268bd230' : C.border }}>
-            {previewMode ? 'Edit' : 'Preview'}
-          </button>
+        {canToggleMdMode && (
+          <MdModeToggle mode={mdMode} onChange={onMdModeChange} isTouch={isTouch} />
         )}
       </div>
     </div>

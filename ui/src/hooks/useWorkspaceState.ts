@@ -15,13 +15,16 @@ export type FileState = {
   editedAt: number
 }
 
+export type MdMode = 'edit' | 'preview' | 'split'
+
 export type WorkspaceLayout = {
   showSidebar: boolean
   showRightPanel: boolean
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
-  previewMode: boolean
+  mdMode: MdMode
+  splitSize: number
   leftSize: number
   rightSize: number
   explorerSize: number
@@ -58,7 +61,8 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showExplorer: true,
   showSessions: true,
   showChanges: true,
-  previewMode: false,
+  mdMode: 'edit',
+  splitSize: 50,
   leftSize: 220,
   rightSize: 420,
   explorerSize: 250,
@@ -124,7 +128,10 @@ function loadPersistedState(project: string): PersistedState {
         showExplorer: typeof pl.showExplorer === 'boolean' ? pl.showExplorer : DEFAULT_LAYOUT.showExplorer,
         showSessions: typeof pl.showSessions === 'boolean' ? pl.showSessions : DEFAULT_LAYOUT.showSessions,
         showChanges: typeof pl.showChanges === 'boolean' ? pl.showChanges : DEFAULT_LAYOUT.showChanges,
-        previewMode: typeof pl.previewMode === 'boolean' ? pl.previewMode : DEFAULT_LAYOUT.previewMode,
+        mdMode: pl.mdMode === 'edit' || pl.mdMode === 'preview' || pl.mdMode === 'split' ? pl.mdMode
+          : typeof pl.previewMode === 'boolean' ? (pl.previewMode ? 'preview' : 'edit')
+          : DEFAULT_LAYOUT.mdMode,
+        splitSize: typeof pl.splitSize === 'number' && pl.splitSize >= 20 && pl.splitSize <= 80 ? pl.splitSize : DEFAULT_LAYOUT.splitSize,
         leftSize: loadStoredSize(pl.leftSize, DEFAULT_LAYOUT.leftSize),
         rightSize: loadStoredSize(pl.rightSize, DEFAULT_LAYOUT.rightSize),
         explorerSize: loadStoredSize(pl.explorerSize, DEFAULT_LAYOUT.explorerSize),

@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { Editor } from '../components/Editor'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { DiffHunk } from '../lib/parseDiff'
 import { escapeHtml, clampLine, renderMarkdown } from './markdown'
+import { VResizeHandle } from './ResizeHandle'
+import type { MdMode } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
 
 // --- Diff View ---
@@ -200,7 +202,9 @@ export function WorkspaceEditorArea({
   isDiffTab,
   activeDiff,
   isMd,
-  previewMode,
+  mdMode,
+  splitSize,
+  onSplitResize,
   hasConflict,
   jumpRequest,
   onAcceptDisk,
@@ -224,7 +228,9 @@ export function WorkspaceEditorArea({
   isDiffTab: boolean | undefined
   activeDiff: { content: string | null; loading: boolean } | null
   isMd: boolean | undefined
-  previewMode: boolean
+  mdMode: MdMode
+  splitSize: number
+  onSplitResize: (size: number) => void
   hasConflict: boolean
   jumpRequest: { key: number; path: string; line: number } | null
   onAcceptDisk: () => void
@@ -240,6 +246,60 @@ export function WorkspaceEditorArea({
   insertText?: string | null
   insertRequestKey?: number
 }) {
+  const splitContainerRef = useRef<HTMLDivElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleSplitMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startSize = splitSize
+    const container = splitContainerRef.current
+    if (!container) return
+    const containerWidth = container.offsetWidth
+
+    const onMove = (me: MouseEvent) => {
+      const delta = me.clientX - startX
+      const pct = startSize + (delta / containerWidth) * 100
+      onSplitResize(Math.max(20, Math.min(80, pct)))
+    }
+    const onUp = () => {
+      setIsDragging(false)
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    setIsDragging(true)
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [splitSize, onSplitResize])
+
+  const showSplit = isMd && mdMode === 'split'
+  const showPreviewOnly = isMd && mdMode === 'preview'
+
+  const editorElement = (
+    <Editor content={activeFileContent!} filePath={activeTab!}
+      viewportLine={activeViewportLine}
+      onViewportLine={onViewportLine}
+      jumpToLine={jumpRequest?.path === activeTab ? jumpRequest.line : null}
+      jumpRequestKey={jumpRequest?.path === activeTab ? jumpRequest.key : undefined}
+      onFocus={onFocus}
+      onCloseRequest={onCloseTab}
+      onChange={onDraftChange}
+      onSave={onSave}
+      diffHunks={diffHunks}
+      insertText={insertText}
+      insertRequestKey={insertRequestKey}
+    />
+  )
+
+  const previewElement = (
+    <MarkdownPreview
+      content={activeFileContent!}
+      viewportLine={activeViewportLine}
+      onViewportLine={onViewportLine}
+      onActivateLine={onActivateLine}
+    />
+  )
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {activeFilePath && hasConflict && (
@@ -274,27 +334,20 @@ export function WorkspaceEditorArea({
       ) : activeTab ? (
         activeFileLoading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
         : activeFileContent !== null ? (
-          isMd && previewMode ? (
-            <MarkdownPreview
-              content={activeFileContent}
-              viewportLine={activeViewportLine}
-              onViewportLine={onViewportLine}
-              onActivateLine={onActivateLine}
-            />
+          showSplit ? (
+            <div ref={splitContainerRef} className="flex h-full" style={{ userSelect: isDragging ? 'none' : undefined }}>
+              <div className="min-w-0 overflow-hidden" style={{ flex: `0 0 ${splitSize}%` }}>
+                {editorElement}
+              </div>
+              <VResizeHandle onMouseDown={handleSplitMouseDown} isDragging={isDragging} />
+              <div className="flex-1 min-w-0 overflow-hidden">
+                {previewElement}
+              </div>
+            </div>
+          ) : showPreviewOnly ? (
+            previewElement
           ) : (
-            <Editor content={activeFileContent} filePath={activeTab}
-              viewportLine={activeViewportLine}
-              onViewportLine={onViewportLine}
-              jumpToLine={jumpRequest?.path === activeTab ? jumpRequest.line : null}
-              jumpRequestKey={jumpRequest?.path === activeTab ? jumpRequest.key : undefined}
-              onFocus={onFocus}
-              onCloseRequest={onCloseTab}
-              onChange={onDraftChange}
-              onSave={onSave}
-              diffHunks={diffHunks}
-              insertText={insertText}
-              insertRequestKey={insertRequestKey}
-            />
+            editorElement
           )
         ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>
       ) : <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a file from Files</div>}
