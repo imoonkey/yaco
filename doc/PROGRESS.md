@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-03-25: Voice compose floating dialog + surface toggle
+
+**What changed:**
+- ComposeTray changed from inline tray to centered floating dialog — eliminates terminal resize/scroll/jitter
+- Dialog opens at recording start: shows pulsing dot + elapsed timer + Stop button
+- Transcribing/formatting states show spinner inside dialog
+- Surface target (Editor ↔ Terminal) toggleable via click or Tab key in dialog
+- F5 added as voice recording shortcut (alongside Ctrl+Shift+V)
+- Debounced terminal ResizeObserver (150ms) to prevent thrash during layout changes
+
+**Why:**
+- Inline tray caused terminal container to resize → tmux re-render → visible scroll from top to bottom
+- Users frequently needed to change target surface after starting recording
+
+**Key files:** `ui/src/components/ComposeTray.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
+**Verification:** `cd ui && npx vite build` passed, Playwright headless test passed
+**Commit:** `0161dd4`
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Voice input UX improvements
 
 **What changed:**
