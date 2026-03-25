@@ -90,9 +90,20 @@ export function ComposeTray({
               ref={textareaRef}
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && !isRecoverable) {
+                  e.preventDefault()
+                  onConfirm(editText)
+                }
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  onDiscard()
+                }
+              }}
               rows={1}
               style={TEXTAREA_STYLE}
               aria-label="Voice transcript"
+              placeholder="Enter to send, Shift+Enter for newline, Esc to discard"
             />
 
             {/* Raw transcript disclosure */}

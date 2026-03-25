@@ -132,6 +132,8 @@ export function Terminal({ sessionName, onInteract, onCloseRequest, sendText, se
     if (sendText == null || sendTextKeyRef.current === sendTextKey) return
     sendTextKeyRef.current = sendTextKey
     sendInput(sendText)
+    // Focus xterm so user can immediately press Enter to execute
+    termRef.current?.focus()
   }, [sendText, sendTextKey, sendInput])
 
   useEffect(() => {

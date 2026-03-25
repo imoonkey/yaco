@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-25: Voice input UX improvements
+
+**What changed:**
+- Ctrl+Shift+V toggles voice recording (start/stop), auto-detects editor vs terminal surface by focus
+- Enter in compose tray sends/inserts, Shift+Enter for newline, Esc to discard
+- Terminal auto-focuses xterm after Send so user can immediately press Enter to execute
+- Switched formatter model to `openai/gpt-oss-120b`
+
+**Why:**
+- Keyboard-driven workflow: record → review → Enter → execute without touching mouse
+- Terminal focus was broken after Send — text entered PTY but xterm didn't have focus
+
+**Key files:** `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/components/ComposeTray.tsx`, `ui/src/components/Terminal.tsx`
+**Verification:** `cd ui && npx vite build` passed, manual testing confirmed all three fixes
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Fix voice multilingual transcription
 
 **What changed:**

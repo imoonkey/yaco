@@ -167,6 +167,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         return
       }
       setTerminalSend({ text, key: Date.now() })
+      setFocusTarget('terminal')
     }
     voice.confirm(text)
   }, [voice, activeFilePath, attachedSession])
@@ -500,10 +501,23 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         e.preventDefault()
         e.stopPropagation()
       }
+      // Ctrl+Shift+V: toggle voice recording
+      if (key === 'v' && !e.metaKey && e.ctrlKey && !e.altKey && e.shiftKey) {
+        e.preventDefault()
+        if (voice.state === 'recording') {
+          voice.stop()
+        } else if (voice.state === 'idle' && voice.capability.status === 'ready') {
+          if (editorVoiceEligible && focusTarget === 'editor') {
+            handleEditorVoiceStart()
+          } else if (terminalVoiceEligible) {
+            handleTerminalVoiceStart()
+          }
+        }
+      }
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, canTogglePreview, closeFocusedSurface, focusTarget, isMobile, orderedSessions, previewMode, selectedFilePath, showRightPanel, showSearch, showSidebar])
+  }, [actions, canTogglePreview, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, previewMode, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice])
 
   useEffect(() => {
     const handleBlur = () => {
