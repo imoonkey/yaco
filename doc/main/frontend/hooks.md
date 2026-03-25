@@ -80,10 +80,13 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 
 All data hooks return `{ data, error, refresh }`.
 
-`useFileTree` has additional behavior:
-- Client-side per-project LRU cache (max 20 entries, oldest evicted on insert)
+`useFileTree` uses lazy loading (VS Code pattern):
+- Returns `{ data, error, refresh, expandDir }`
+- Initial load fetches only root-level entries (dirs have `children: []`)
+- `expandDir(path)` fetches one directory's children on demand via `/api/files/:project/children?dir=path`
+- Tracks loaded directories in a `Set`; skips re-fetch for already-loaded dirs
+- SSE `filetree` refresh re-fetches root + all expanded dirs in parallel, preserving expanded state
 - Focus/visibility-triggered refresh
-- Deduplicates inflight requests per project
 
 `useFileContent` is one-shot (no polling/SSE) — fetches when project+path change.
 

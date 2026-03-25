@@ -41,7 +41,8 @@ Hono Server (Node.js :3001)
 
 ## Key Data Flow
 
-1. **File changes on disk** → `project-watcher.ts` routes to SSE channels (`filetree`, `git`, `sessions`), filtered by `.gitignore` → `useSSE.ts` dispatches refresh → hooks refetch
+1. **File changes on disk** → `project-watcher.ts` routes to SSE channels (`filetree`, `git`, `sessions`), filtered by `.gitignore` → `useSSE.ts` dispatches refresh → `useFileTree` re-fetches expanded dirs
+2. **File tree** → lazy loading (VS Code pattern): root loaded on mount, dirs expanded on click via `GET /api/files/:project/children?dir=path`. SSE refresh re-fetches all expanded dirs in parallel.
 2. **Editor save** → PUT `/api/files/:project/content` with `baseRevision` (mtime) → 409 on conflict → conflict UI in workspace state
 3. **Terminal** → WebSocket `/ws/terminal/:name` → node-pty (shell) or tmux attach (agent sessions)
 4. **Agent sessions** → `.multmux/*.json` state files → watched by project-watcher → SSE `sessions` channel

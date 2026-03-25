@@ -16,8 +16,7 @@
 
 **Key files:** `server/src/routes/files.ts`, `ui/src/hooks/useApi.ts`, `ui/src/components/FileExplorer.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
 **Verification:** `cd server && npm test` — 35/35 pass; `cd ui && npx vite build` — success
-**Commit:** pending
-**Design:** `doc/todo/lazyloading/design.md`
+**Commit:** 234b3d2
 
 ## 2026-03-25: Session reconciler deletes stale .multmux state files
 
