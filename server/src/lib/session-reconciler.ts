@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync, readFileSync, unlinkSync } from 'fs'
-import { execFileSync } from 'child_process'
+import { execFileSync, execSync } from 'child_process'
 import { join } from 'path'
 import { loadProjects, type Project } from './projects'
 import type { MultmuxSession, MultmuxStateFile } from './multmux'
@@ -14,6 +14,13 @@ const IDLE_DEBOUNCE_COUNT = 2
 /** Minimum time (ms) a session must be "processing" before an idle transition
  *  can trigger a notification. */
 const MIN_PROCESSING_MS = 15_000
+
+/** Sentinel value for sessions that haven't received a first prompt */
+const PENDING_SESSION_ID = 'pending:awaiting-first-prompt'
+
+const multmuxPath = (() => {
+  try { return execSync('which multmux', { encoding: 'utf-8' }).trim() } catch { return 'multmux' }
+})()
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 let reconcileInFlight = false
@@ -51,6 +58,7 @@ async function reconcile(): Promise<void> {
     for (const project of projects) {
       const sessions = readSessionsFromStateFiles(project)
       const healthChecked = checkStaleStates(sessions, project)
+      backfillSessionIds(healthChecked, project)
       await detectIdleTransitions(healthChecked, project)
       allSessions.push(...healthChecked)
     }
@@ -107,6 +115,25 @@ function isTmuxAlive(tmuxSession: string): boolean {
     return true
   } catch {
     return false
+  }
+}
+
+/** Trigger multmux status --json to backfill sessionIds for sessions missing them.
+ *  multmux's backfillSessionId does PID correlation + rollout file scanning. */
+function backfillSessionIds(sessions: MultmuxSession[], project: Pick<Project, 'path'>): void {
+  const needsBackfill = sessions.some(s =>
+    !s.sessionId || s.sessionId === PENDING_SESSION_ID,
+  )
+  if (!needsBackfill) return
+
+  try {
+    execFileSync(multmuxPath, ['status', '--json'], {
+      cwd: project.path,
+      stdio: 'ignore',
+      timeout: 10_000,
+    })
+  } catch {
+    // multmux not available or timed out — skip
   }
 }
 

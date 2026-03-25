@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-25: Codex session summary fallback + reconciler sessionId backfill
+
+**What changed:**
+- fix: Codex session summary — workflow reads optional `summary` field from .multmux state files as fallback when Codex DB has no thread entry. Reverted hacky rollout file scanner — summary resolution now fully delegated to multmux.
+- feat: reconciler triggers multmux sessionId backfill — calls `multmux status --json` for projects with sessions missing sessionIds (defense-in-depth for when hook-based resolution fails)
+- `MultmuxSession` and `MultmuxStateFile` types updated with optional `summary`/`stateFileSummary` fields
+
+**Why:**
+- Codex sessions often lack thread entries in the local DB, leaving summaries blank. multmux already extracts summaries from rollout files — surfacing that via the state file `summary` field is simpler and more reliable than duplicating the scanner in workflow.
+
+**Key files:** `server/src/lib/session-summary.ts`, `server/src/lib/multmux.ts`, `server/src/lib/session-reconciler.ts`
+**Verification:** `cd server && npm test`
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Lazy-loading file tree (VS Code pattern)
 
 **What changed:**

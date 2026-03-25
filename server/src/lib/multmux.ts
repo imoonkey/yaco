@@ -20,6 +20,7 @@ export interface MultmuxSession {
   project: string
   sessionId: string
   pid: number
+  stateFileSummary?: string
 }
 
 export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
@@ -35,6 +36,7 @@ export interface MultmuxStateFile {
   sessionId: string
   status: 'starting' | 'idle' | 'processing'
   createdAt: string
+  summary?: string
 }
 
 /** Normalize state file status to workflow UI semantics.
@@ -77,6 +79,7 @@ export function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path
         project: project.name,
         sessionId: state.sessionId ?? '',
         pid: state.pid,
+        stateFileSummary: state.summary,
       })
     } catch {
       continue

@@ -205,9 +205,14 @@ export function resolveSessionSummaries(
     }
   }
   for (const s of codexSessions) {
-    if (!isResolvableSessionId(s.sessionId)) continue
+    if (!isResolvableSessionId(s.sessionId)) {
+      // Fallback: use summary from state file (populated by multmux from rollout files)
+      if (s.stateFileSummary) result.set(s.name, s.stateFileSummary)
+      continue
+    }
     const r = resolveCodexSummary(s.sessionId)
     if (r) result.set(s.name, r.summary)
+    else if (s.stateFileSummary) result.set(s.name, s.stateFileSummary)
   }
 
   return result
