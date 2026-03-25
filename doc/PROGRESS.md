@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-03-25: Archive completed projects — docs + tasks
+
+**What changed:**
+- Archived design doc folders: `ignore`, `lazyloading`, `slow`, `twopane-md`, `voice` → `doc/archive/260325_*`
+- Archived stale `roadmap.md` (milestones 1-5 all done)
+- Archived all 5 completed task trees (26 tasks total) from `tasks.json` → `doc/todo/archive/260325_*.json`: keys, task-visualize, sse-memleak, project-ux, voice-input
+- Marked voice-input (vi-verify) as done — manual e2e testing passed
+- `tasks.json` is now empty — clean slate
+
+**Why:**
+- Housekeeping — all projects shipped, design docs and tasks cluttering active workspace
+
+**Key files:** `doc/archive/260325_*`, `doc/todo/archive/260325_*.json`, `doc/todo/tasks.json`
+**Verification:** `tasks.json` is `{}`, `doc/todo/` has only `task_visualize/` and `sessionhist/` remaining
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-25: Codex session summary fallback + reconciler sessionId backfill
 
 **What changed:**
