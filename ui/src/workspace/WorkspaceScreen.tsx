@@ -15,7 +15,7 @@ import { parseDiff } from '../lib/parseDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import { clampLine } from './markdown'
 import { useResize } from './useResize'
-import { FileSearch, flattenTree } from './WorkspaceSearch'
+import { FileSearch } from './WorkspaceSearch'
 import { SessionItem } from './WorkspaceSessionList'
 import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
@@ -142,7 +142,6 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     const idle = unpinned.filter(s => s.status === 'idle')
     return [...pinned, ...processing, ...idle]
   }, [projectSessions, pinnedSessions, pinnedSet])
-  const allFiles = fileTree ? flattenTree(fileTree) : []
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
@@ -794,7 +793,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       hasOpenFiles={hasOpenFiles}
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}
-      searchOverlay={showSearch ? <FileSearch files={allFiles} onSelect={openFile} onClose={() => setShowSearch(false)} /> : null}
+      searchOverlay={showSearch ? <FileSearch projectName={projectName!} onSelect={openFile} onClose={() => setShowSearch(false)} /> : null}
     />
     <ComposeTray
       surface={voiceSurface}

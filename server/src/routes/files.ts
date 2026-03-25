@@ -82,6 +82,39 @@ app.get('/:project', async (c) => {
   return c.json(tree)
 })
 
+// GET /:project/search-index — flat list of all file paths (for Cmd+P search)
+app.get('/:project/search-index', async (c) => {
+  const projectName = c.req.param('project')
+  const projects = await loadProjects()
+  const proj = projects.find(p => p.name === projectName)
+  if (!proj) return c.json({ error: 'project not found' }, 404)
+
+  const ig = await getProjectGitignore(proj.path)
+  const files: { name: string; path: string }[] = []
+  const BUDGET = 10_000
+
+  async function walk(dir: string) {
+    if (files.length >= BUDGET) return
+    let entries
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of entries) {
+      if (files.length >= BUDGET) return
+      if (shouldIgnoreEntry(entry.name)) continue
+      const relPath = relative(proj!.path, join(dir, entry.name))
+      const isDir = entry.isDirectory()
+      if (ig && ig.ignores(isDir ? relPath + '/' : relPath)) continue
+      if (isDir) {
+        await walk(join(dir, entry.name))
+      } else {
+        files.push({ name: entry.name, path: relPath })
+      }
+    }
+  }
+
+  await walk(proj.path)
+  return c.json(files)
+})
+
 // GET /:project/children?dir=<relPath> — one directory's immediate children
 app.get('/:project/children', async (c) => {
   const projectName = c.req.param('project')

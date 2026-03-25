@@ -1,16 +1,27 @@
 import { useState, useRef, useEffect } from 'react'
 import { FileTypeIcon } from '../components/FileExplorer'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
-import type { FileNode } from '../types'
 
-export function flattenTree(nodes: FileNode[], result: FileNode[] = []): FileNode[] {
-  for (const n of nodes) { if (n.type === 'file') result.push(n); if (n.children) flattenTree(n.children, result) }
-  return result
-}
+interface SearchFile { name: string; path: string }
 
-export function FileSearch({ files, onSelect, onClose }: { files: FileNode[]; onSelect: (path: string) => void; onClose: () => void }) {
+export function FileSearch({ projectName, onSelect, onClose }: { projectName: string; onSelect: (path: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState(''); const inputRef = useRef<HTMLInputElement>(null); const [selectedIdx, setSelectedIdx] = useState(0)
+  const [files, setFiles] = useState<SearchFile[]>([])
+  const [loading, setLoading] = useState(true)
+
   useEffect(() => { inputRef.current?.focus() }, [])
+
+  // Fetch full file index on mount
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    fetch(`/api/files/${encodeURIComponent(projectName)}/search-index`, { signal: controller.signal })
+      .then(r => r.json())
+      .then((data: SearchFile[]) => { if (!cancelled) { setFiles(data); setLoading(false) } })
+      .catch(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true; controller.abort() }
+  }, [projectName])
+
   const q = query.toLowerCase()
   const filtered = q ? files.filter(f => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q)) : files
   const visible = filtered.slice(0, 20)
@@ -24,7 +35,7 @@ export function FileSearch({ files, onSelect, onClose }: { files: FileNode[]; on
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15%]" onClick={onClose}>
       <div className="w-[500px] rounded-lg shadow-lg overflow-hidden" style={{ backgroundColor: C.editorBg, border: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
         <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-          placeholder="Search files..." className="w-full px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: C.textDark, borderBottom: `1px solid ${C.border}` }} />
+          placeholder={loading ? 'Loading files...' : 'Search files...'} className="w-full px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: C.textDark, borderBottom: `1px solid ${C.border}` }} />
         <div className="max-h-[300px] overflow-y-auto">
           {visible.map((f, i) => (
             <div key={f.path} onClick={() => { onSelect(f.path); onClose() }}
@@ -37,7 +48,7 @@ export function FileSearch({ files, onSelect, onClose }: { files: FileNode[]; on
               <span className="text-[10px]" style={{ color: C.muted }}>{f.path}</span>
             </div>
           ))}
-          {visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: C.muted }}>No files found</div>}
+          {!loading && visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: C.muted }}>No files found</div>}
         </div>
       </div>
     </div>
