@@ -60,7 +60,7 @@ export function ComposeTray({
 
   useEffect(() => { autoSize() }, [editText, autoSize])
 
-  const confirmLabel = surface === 'terminal' ? 'Send' : 'Insert'
+  const confirmLabel = 'Insert'
   const isRecoverable = state === 'recoverable'
   const isFallback = compose?.formattingStatus === 'fallback_raw'
   const canToggleSurface = state === 'recording' || state === 'composing'

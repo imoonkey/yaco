@@ -222,6 +222,7 @@ export function useVoice(): UseVoiceReturn {
     if (stateRef.current !== 'transcribing' && stateRef.current !== 'recording') return
 
     setState('transcribing')
+    stateRef.current = 'transcribing'
 
     const formData = new FormData()
     formData.append('audio', blob, 'audio.webm')
@@ -243,6 +244,7 @@ export function useVoice(): UseVoiceReturn {
       }
 
       setState('formatting')
+      stateRef.current = 'formatting'
 
       const data = await res.json() as ComposeResponse
 
