@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-03-26: File search UX + Changes preview tabs + specs/tests
+
+**What changed:**
+- Search-index uses `git ls-files` (7ms vs 3s walk), with `?ignored=true` toggle for gitignored files
+- Search results include directories (derived from file paths); dir selection expands in explorer
+- File selection from search opens as preview tab + reveals in explorer (sequentially expands ancestors via `expandDir`)
+- Changes sidebar: diff tabs now open as preview (temporary) tabs via `openPreviewDiffTab`
+- UX specs updated: `user-flows.md`, `explorer-and-changes.md` with new file search and changes behavior
+- Playwright tests: `file-search.spec.ts` covering nested search, gitignore toggle, diff preview tabs
+
+**Why:**
+- Lazy-loading broke Cmd+P search (only root files visible); Changes diffs opened as permanent tabs cluttering the tab bar; behavior needed formal specs and test coverage
+
+**Key files:** `server/src/routes/files.ts`, `ui/src/workspace/WorkspaceSearch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/hooks/useWorkspaceState.ts`, `doc/main/ui/workspace/user-flows.md`, `doc/main/ui/workspace/explorer-and-changes.md`, `ui/tests/e2e/file-search.spec.ts`
+**Verification:** UI type-check clean, lint clean, server tests 35/35 pass
+**Commit:** TBD
+**Next:** Run Playwright e2e tests to validate
+**Blockers:** None
+
 ## 2026-03-25: Cmd+P file search — independent of lazy tree
 
 **What changed:**

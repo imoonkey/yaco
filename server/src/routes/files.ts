@@ -83,36 +83,82 @@ app.get('/:project', async (c) => {
 })
 
 // GET /:project/search-index — flat list of all file paths (for Cmd+P search)
+// ?ignored=true to also include gitignored files (filtered by hardcoded IGNORE list)
 app.get('/:project/search-index', async (c) => {
   const projectName = c.req.param('project')
+  const includeIgnored = c.req.query('ignored') === 'true'
   const projects = await loadProjects()
   const proj = projects.find(p => p.name === projectName)
   if (!proj) return c.json({ error: 'project not found' }, 404)
 
-  const ig = await getProjectGitignore(proj.path)
-  const files: { name: string; path: string }[] = []
-  const BUDGET = 10_000
+  const { execFile } = await import('child_process')
+  const { promisify } = await import('util')
+  const exec = promisify(execFile)
 
-  async function walk(dir: string) {
-    if (files.length >= BUDGET) return
-    let entries
-    try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
-    for (const entry of entries) {
-      if (files.length >= BUDGET) return
-      if (shouldIgnoreEntry(entry.name)) continue
-      const relPath = relative(proj!.path, join(dir, entry.name))
-      const isDir = entry.isDirectory()
-      if (ig && ig.ignores(isDir ? relPath + '/' : relPath)) continue
-      if (isDir) {
-        await walk(join(dir, entry.name))
-      } else {
-        files.push({ name: entry.name, path: relPath })
+  const toFile = (p: string) => ({ name: basename(p), path: p, type: 'file' as const })
+
+  /** Derive unique directory paths from a list of file entries */
+  function addDirs(files: { name: string; path: string; type: string }[]) {
+    const seen = new Set(files.map(f => f.path))
+    for (const f of [...files]) {
+      const parts = f.path.split('/')
+      for (let i = 1; i < parts.length; i++) {
+        const dirPath = parts.slice(0, i).join('/')
+        if (seen.has(dirPath)) continue
+        seen.add(dirPath)
+        files.push({ name: parts[i - 1], path: dirPath, type: 'dir' })
       }
     }
   }
 
-  await walk(proj.path)
-  return c.json(files)
+  try {
+    const { stdout } = await exec('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: proj.path, maxBuffer: 50 * 1024 * 1024 })
+    const files = stdout.trimEnd().split('\n').filter(Boolean).map(toFile)
+
+    if (includeIgnored) {
+      try {
+        const { stdout: ignored } = await exec('git', ['ls-files', '--others', '--ignored', '--exclude-standard'], { cwd: proj.path, maxBuffer: 50 * 1024 * 1024 })
+        const seen = new Set(files.map(f => f.path))
+        for (const p of ignored.trimEnd().split('\n')) {
+          if (!p || seen.has(p)) continue
+          // Skip files under hardcoded IGNORE dirs
+          const topDir = p.split('/')[0]
+          if (shouldIgnoreEntry(topDir)) continue
+          files.push(toFile(p))
+        }
+      } catch { /* ignore — git ls-files --ignored can fail on shallow clones */ }
+    }
+
+    addDirs(files)
+    return c.json(files)
+  } catch {
+    // Non-git project: fall back to recursive walk
+    const ig = includeIgnored ? null : await getProjectGitignore(proj.path)
+    const files: { name: string; path: string; type: string }[] = []
+    const BUDGET = 100_000
+
+    async function walk(dir: string) {
+      if (files.length >= BUDGET) return
+      let entries
+      try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+      for (const entry of entries) {
+        if (files.length >= BUDGET) return
+        if (shouldIgnoreEntry(entry.name)) continue
+        const relPath = relative(proj!.path, join(dir, entry.name))
+        const isDir = entry.isDirectory()
+        if (ig && ig.ignores(isDir ? relPath + '/' : relPath)) continue
+        if (isDir) {
+          await walk(join(dir, entry.name))
+        } else {
+          files.push({ name: entry.name, path: relPath, type: 'file' })
+        }
+      }
+    }
+
+    await walk(proj.path)
+    addDirs(files)
+    return c.json(files)
+  }
 })
 
 // GET /:project/children?dir=<relPath> — one directory's immediate children

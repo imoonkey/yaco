@@ -31,19 +31,24 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 ## Flow: Open File from Search
 
 1. `Cmd+P` opens file search modal
-2. User types filename
-3. Matching files shown in dropdown (keyboard navigable)
-4. Enter or click selects file
-5. Modal closes, file opens in new tab (or activates existing)
+2. Modal fetches full recursive file index from `GET /api/files/:project/search-index` (via `git ls-files`)
+3. User types filename — results filter by path or name match
+4. Keyboard navigation: Arrow Up/Down to move, Enter to select, Escape to close
+5. **File selected:** opens as **preview tab** (italic title, replaced by next search open), explorer expands all ancestor directories and highlights the file
+6. **Directory selected:** expands the directory in explorer (no editor tab opened)
+7. `.gitignore` toggle button in search bar: when active, also includes gitignored files (filtered by hardcoded IGNORE list)
+8. Each Cmd+P open re-fetches fresh index (component remounts)
 
 ## Flow: View Git Changes
 
 1. User expands Changes section in sidebar
 2. Changed files listed with M/A/D/U badges
-3. Click a changed file → opens Diff tab
+3. Click a changed file → opens Diff as a **preview tab** (italic title, replaced by next change click)
 4. Diff shows unified format: green additions, red deletions, blue hunks
-5. Click the same change row again while diff is active → opens the raw file for editing
-6. Diff content is cached per path — revisiting a diff tab does not re-fetch
+5. Click the same change row again while diff is active → opens the raw file for editing (pinned tab)
+6. Click a changed **folder** → expands it in the explorer (no diff tab)
+7. Click the parent directory breadcrumb on a change row → expands that parent in the explorer
+8. Diff content is cached per path — revisiting a diff tab does not re-fetch
 
 ## Flow: Markdown Preview
 

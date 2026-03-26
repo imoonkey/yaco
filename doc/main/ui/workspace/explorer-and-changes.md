@@ -109,13 +109,32 @@ Displays git-changed files from `useGitStatus()`.
 ### Behavior
 
 - Each row shows: file path, status badge (M/A/D/U)
-- Click a file → opens Diff tab
-- Click the same row again while its diff tab is active → opens the raw file for editing
-- This stateful single-click replaces double-click semantics
+- Click a file → opens Diff as a **preview tab** (italic title, replaced by next change click)
+- Click the same row again while its diff tab is active → opens the raw file for editing (pinned tab)
+- Click a **folder** row → expands that folder in the file explorer
+- Click the parent directory breadcrumb text → expands that parent in the explorer
+- Preview tab behavior: diff tabs opened from Changes follow the same preview semantics as single-click files in explorer — they are replaced when clicking a different change, unless the user pins them (double-click tab title)
 
 ### Refresh
 
 Git status refreshes via SSE `git` channel with 30s fallback polling.
+
+## File Search (Cmd+P)
+
+Quick-open modal for navigating to any file or directory.
+
+### Data Source
+
+Fetches `GET /api/files/:project/search-index` on each open. Uses `git ls-files --cached --others --exclude-standard` (fast, reads git index). Falls back to recursive walk for non-git projects (100k file budget).
+
+### Behavior
+
+- Search bar with fuzzy match on file path and name
+- Results include both files and directories (directories derived from file paths)
+- File selected → opens as **preview tab** (temporary), explorer reveals the file (expands all ancestor dirs)
+- Directory selected → expands in explorer, no editor tab
+- `.gitignore` toggle: includes gitignored files (except hardcoded IGNORE dirs like `node_modules`, `.git`, `build`)
+- Keyboard: Arrow Up/Down, Enter to select, Escape to close
 
 ## File Tree Caching
 

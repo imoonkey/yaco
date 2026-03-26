@@ -472,6 +472,42 @@ export function useWorkspaceState(projectName: string) {
     setActiveTab(tab)
   }, [])
 
+  // Open diff as a preview (temporary) tab — replaced by next preview open
+  const openPreviewDiffTab = useCallback((path: string) => {
+    const tab = `diff:${path}`
+    // If already open as pinned, just activate
+    if (openTabsRef.current.includes(tab) && previewTabRef.current !== tab) {
+      setActiveTab(tab)
+      return
+    }
+    // Close existing preview tab if different and clean
+    const oldPreview = previewTabRef.current
+    if (oldPreview && oldPreview !== tab) {
+      if (oldPreview.startsWith('diff:')) {
+        // Diff previews are always clean — just remove
+        setOpenTabs(tabs => tabs.filter(t => t !== oldPreview))
+      } else {
+        // File preview — only remove if not dirty
+        setFiles(prev => {
+          const oldState = prev[oldPreview]
+          if (oldState && (oldState.status === 'dirty' || oldState.status === 'saving' || oldState.status === 'conflict')) return prev
+          if (!(oldPreview in prev)) return prev
+          const next = { ...prev }
+          delete next[oldPreview]
+          return next
+        })
+        setOpenTabs(tabs => {
+          const oldState = filesRef.current[oldPreview]
+          if (oldState && (oldState.status === 'dirty' || oldState.status === 'saving' || oldState.status === 'conflict')) return tabs
+          return tabs.filter(t => t !== oldPreview)
+        })
+      }
+    }
+    setOpenTabs(tabs => tabs.includes(tab) ? tabs : [...tabs, tab])
+    setActiveTab(tab)
+    setPreviewTab(tab)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const closeTabByKey = useCallback((tab: string) => {
     setPreviewTab(prev => prev === tab ? null : prev)
     setOpenTabs(tabs => {
@@ -619,6 +655,7 @@ export function useWorkspaceState(projectName: string) {
     openFileTab,
     openPreviewTab,
     openDiffTab,
+    openPreviewDiffTab,
     closeTab: closeTabByKey,
     setActiveTab,
     setActiveSession,
@@ -630,7 +667,7 @@ export function useWorkspaceState(projectName: string) {
     forceSave,
     acceptDisk,
     setPinnedSessions,
-  }), [openFileTab, openPreviewTab, openDiffTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
+  }), [openFileTab, openPreviewTab, openDiffTab, openPreviewDiffTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
 
   return {
     openTabs,

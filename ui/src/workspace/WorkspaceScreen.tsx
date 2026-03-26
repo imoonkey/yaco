@@ -15,7 +15,7 @@ import { parseDiff } from '../lib/parseDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import { clampLine } from './markdown'
 import { useResize } from './useResize'
-import { FileSearch } from './WorkspaceSearch'
+import { FileSearch, type SearchEntry } from './WorkspaceSearch'
 import { SessionItem } from './WorkspaceSessionList'
 import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
@@ -304,20 +304,16 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     </div>
   )
 
-  const openDiff = useCallback((path: string) => {
-    actions.openDiffTab(path)
-    setFocusTarget('editor')
-    actions.setMobilePane('editor')
-  }, [actions])
-
   const activateChange = useCallback((path: string) => {
     if (activeTab === `diff:${path}`) {
       openFile(path)
       return
     }
 
-    openDiff(path)
-  }, [activeTab, openDiff, openFile])
+    actions.openPreviewDiffTab(path)
+    setFocusTarget('editor')
+    actions.setMobilePane('editor')
+  }, [activeTab, actions, openFile])
 
   const handleExpandFolder = useCallback((folderPath: string) => {
     if (!showSidebar || !showExplorer) {
@@ -327,6 +323,30 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       explorerRef.current?.expandToPath(folderPath)
     }
   }, [showSidebar, showExplorer, actions])
+
+  // Expand all ancestor directories so the explorer can reveal a path
+  const revealInExplorer = useCallback(async (filePath: string) => {
+    const parts = filePath.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      await expandDir(parts.slice(0, i).join('/'))
+    }
+  }, [expandDir])
+
+  // Handle search selection: files open in editor, dirs expand in explorer
+  const handleSearchSelect = useCallback(async (entry: SearchEntry) => {
+    if (entry.type === 'dir') {
+      await revealInExplorer(entry.path + '/x') // expand ancestors of the dir
+      await expandDir(entry.path) // expand the dir itself
+      setSelectedFilePath(entry.path)
+      handleExpandFolder(entry.path)
+    } else {
+      await revealInExplorer(entry.path)
+      actions.openPreviewTab(entry.path)
+      setSelectedFilePath(entry.path)
+      setFocusTarget('editor')
+      actions.setMobilePane('editor')
+    }
+  }, [revealInExplorer, expandDir, handleExpandFolder, actions])
 
   const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -793,7 +813,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       hasOpenFiles={hasOpenFiles}
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}
-      searchOverlay={showSearch ? <FileSearch projectName={projectName!} onSelect={openFile} onClose={() => setShowSearch(false)} /> : null}
+      searchOverlay={showSearch ? <FileSearch projectName={projectName!} onSelect={handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}
     />
     <ComposeTray
       surface={voiceSurface}
