@@ -101,7 +101,7 @@ Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. I
 
 ### Connection Lifecycle
 
-1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N`
+1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N&project=<projectName>`
 2. Terminal created and fitted to container dimensions
 3. PTY output streamed to terminal via WebSocket
 4. User input sent to PTY via WebSocket
@@ -119,7 +119,9 @@ Shell sessions keep a scrollback buffer on the server, so re-attaching restores 
 
 ### Session Name Resolution
 
-Short multmux names (e.g. `1-claude`) are resolved to full tmux session names (e.g. `1-claude-workflow-mt`) by `resolveTmuxSession()`.
+When a `project` query param is provided on the WebSocket URL, `attachSession()` reads the project's `.multmux/<handle>.json` state file to get the exact `tmuxSession` value. This ensures sessions with the same handle across different projects (e.g. both `openweb` and `androidagent` having `codex-design`) connect to the correct tmux session.
+
+Fallback: if no project is provided or the state file lookup fails, `resolveTmuxSession()` searches `tmux list-sessions` for a match (short name → full name like `1-claude-workflow-mt`).
 
 ## Detach vs Kill
 

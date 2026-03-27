@@ -770,6 +770,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       >
         <Terminal
           sessionName={attachedSession}
+          projectName={projectName}
           onInteract={() => setFocusTarget('terminal')}
           onCloseRequest={() => {
             detachActiveSession()

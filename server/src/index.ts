@@ -208,15 +208,21 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
 
   const cols = Math.max(1, Math.min(500, Number(url.searchParams.get('cols')) || 80))
   const rows = Math.max(1, Math.min(200, Number(url.searchParams.get('rows')) || 24))
+  const projectParam = url.searchParams.get('project') || ''
 
   wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req, sessionName, cols, rows)
+    wss.emit('connection', ws, req, sessionName, cols, rows, projectParam)
   })
 })
 
-wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number) => {
+wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, projectParam: string) => {
   try {
-    const attached = attachSession(sessionName, cols, rows)
+    let projectPath: string | undefined
+    if (projectParam) {
+      const projects = await loadProjects()
+      projectPath = projects.find(p => p.name === projectParam)?.path
+    }
+    const attached = attachSession(sessionName, cols, rows, projectPath)
     const { proc } = attached
 
     const dataSubscription = proc.onData((data: string) => {

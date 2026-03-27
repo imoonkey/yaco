@@ -83,7 +83,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 
 | Protocol | Path | Description |
 |----------|------|-------------|
-| WS | `/ws/terminal/:name?cols=N&rows=N` | Terminal PTY (tmux or direct shell) |
+| WS | `/ws/terminal/:name?cols=N&rows=N&project=P` | Terminal PTY (tmux or direct shell); `project` scopes tmux lookup |
 
 ### Voice
 

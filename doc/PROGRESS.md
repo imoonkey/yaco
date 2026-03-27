@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-27: Fix session routing collision across projects
+
+**What changed:**
+- Terminal WebSocket now includes `project` query param for project-scoped tmux session lookup
+- New `resolveSessionTmuxName()` reads `.multmux/<handle>.json` state file's `tmuxSession` field
+- `attachSession()` uses project-scoped lookup first, falls back to global `resolveTmuxSession()` search
+
+**Why:**
+- When two projects had sessions with the same handle (e.g. `codex-design` in both openweb and androidagent), clicking a session in one project could attach to the other project's tmux session. `resolveTmuxSession()` returned whichever tmux session appeared first in `tmux list-sessions`.
+
+**Key files:** `server/src/lib/multmux.ts`, `server/src/lib/terminal.ts`, `server/src/index.ts`, `ui/src/components/Terminal.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** UI vite build clean, server module imports verified
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-26: File search UX + Changes preview tabs + specs/tests
 
 **What changed:**

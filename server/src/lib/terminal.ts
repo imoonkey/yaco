@@ -1,6 +1,7 @@
 import pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import { resolveTmuxSession, validateSessionName } from './session-names'
+import { resolveSessionTmuxName } from './multmux'
 
 const MAX_BUFFER_SIZE = 200_000
 
@@ -101,7 +102,7 @@ export function closeShellSession(name: string): boolean {
 }
 
 /** Spawn a PTY attached to a tmux session or a managed shell session. */
-export function attachSession(sessionName: string, cols: number, rows: number): AttachedSession {
+export function attachSession(sessionName: string, cols: number, rows: number, projectPath?: string): AttachedSession {
   validateSessionName(sessionName)
   const shellSession = shellSessions.get(sessionName)
 
@@ -114,7 +115,9 @@ export function attachSession(sessionName: string, cols: number, rows: number): 
     }
   }
 
-  const tmuxName = resolveTmuxSession(sessionName)
+  // Prefer project-scoped tmux name from state file, fall back to global search
+  const tmuxName = (projectPath && resolveSessionTmuxName(projectPath, sessionName))
+    || resolveTmuxSession(sessionName)
   const proc = pty.spawn('tmux', ['attach-session', '-t', tmuxName], {
     name: 'xterm-256color',
     cols,

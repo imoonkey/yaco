@@ -78,6 +78,7 @@ function fitTerminal(term: XTerm): void {
 
 interface TerminalProps {
   sessionName: string
+  projectName?: string
   onInteract?: () => void
   onCloseRequest?: () => void
   sendText?: string | null
@@ -102,7 +103,7 @@ function isCloseShortcut(event: KeyboardEvent): boolean {
   return event.key.toLowerCase() === 'w' && event.metaKey && !event.ctrlKey && !event.altKey
 }
 
-export function Terminal({ sessionName, onInteract, onCloseRequest, sendText, sendTextKey }: TerminalProps) {
+export function Terminal({ sessionName, projectName, onInteract, onCloseRequest, sendText, sendTextKey }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -286,7 +287,7 @@ export function Terminal({ sessionName, onInteract, onCloseRequest, sendText, se
 
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsHost = window.location.host
-    const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${term.cols}&rows=${term.rows}`)
+    const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${term.cols}&rows=${term.rows}${projectName ? `&project=${encodeURIComponent(projectName)}` : ''}`)
     ws.binaryType = 'arraybuffer'
     wsRef.current = ws
     let disposed = false

@@ -49,8 +49,9 @@ The WebSocket server handles upgrade requests at `/ws/terminal/:name`.
 Flow:
 1. Validate origin against allowlist
 2. Validate session name against `[a-zA-Z0-9_.-]+`
-3. Parse `cols` and `rows` from query params (clamped to safe ranges)
-4. Call `attachSession()` to get a PTY handle
+3. Parse `cols`, `rows`, and optional `project` from query params
+4. If `project` provided, resolve to project path for scoped tmux session lookup
+5. Call `attachSession(name, cols, rows, projectPath?)` to get a PTY handle
 5. Pipe PTY output to WebSocket, WebSocket input to PTY
 6. Handle resize messages (`{ type: 'resize', cols, rows }`)
 7. On WebSocket close: dispose subscriptions, kill non-persistent PTYs

@@ -45,7 +45,7 @@ Hono Server (Node.js :3001)
 2. **File tree** → lazy loading (VS Code pattern): root loaded on mount, dirs expanded on click via `GET /api/files/:project/children?dir=path`. SSE refresh re-fetches all expanded dirs in parallel.
 3. **File search (Cmd+P)** → `FileSearch` fetches `GET /api/files/:project/search-index` (full recursive flat list, independent of lazy tree state).
 4. **Editor save** → PUT `/api/files/:project/content` with `baseRevision` (mtime) → 409 on conflict → conflict UI in workspace state
-5. **Terminal** → WebSocket `/ws/terminal/:name` → node-pty (shell) or tmux attach (agent sessions)
+5. **Terminal** → WebSocket `/ws/terminal/:name?project=<projectName>` → node-pty (shell) or tmux attach (agent sessions, project-scoped via state file `tmuxSession` field)
 6. **Agent sessions** → `.multmux/*.json` state files → watched by project-watcher → SSE `sessions` channel
 7. **Task graph** → GET `/api/files/:project/content?path=doc/todo/tasks.json` → parse → layout engine → SVG render. SSE `filetree` channel triggers refresh when tasks.json changes.
 8. **Voice input** → browser `MediaRecorder` captures audio → POST `/api/voice/compose` (multipart) → Groq Whisper STT → Groq LLM formatter → compose tray for user review → Insert (editor) or Send (terminal). Config: `GROQ_API_KEY` + optional model overrides in `server/.env`.

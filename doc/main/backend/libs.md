@@ -37,7 +37,9 @@ Core scanning engine for workstream metadata and progress entries across project
 
 Reads multmux session state from `.multmux/<handle>.json` state files and wraps the `multmux` CLI for session commands. Read-only consumer of state files — never writes to them.
 
-**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
+**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `resolveSessionTmuxName()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
+
+- `resolveSessionTmuxName(projectPath, handle)` reads the state file's `tmuxSession` field for project-scoped tmux session lookup (used by `terminal.ts`)
 
 - Primary session source: reads `.multmux/*.json` state files (written by multmux hooks)
 - Normalizes status: `starting → idle`, `processing → processing`, unknown → excluded
@@ -115,7 +117,7 @@ PTY management for terminal sessions.
 - Shell sessions keep a bounded scrollback buffer so re-attaching restores recent output
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
-- `attachSession()` resolves session names and returns a PTY handle with initial data
+- `attachSession(name, cols, rows, projectPath?)` — when `projectPath` is provided, looks up the exact `tmuxSession` from the project's state file via `resolveSessionTmuxName()`, falling back to global `resolveTmuxSession()` search
 
 ### session-summary.ts (215 lines)
 

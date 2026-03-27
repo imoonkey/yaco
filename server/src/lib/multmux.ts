@@ -102,6 +102,19 @@ export function readAllSessionsFromStateFiles(projects: Pick<Project, 'name' | '
   return all
 }
 
+/** Resolve the actual tmux session name for a handle within a specific project.
+ *  Returns null if the state file doesn't exist or lacks a tmuxSession field. */
+export function resolveSessionTmuxName(projectPath: string, handle: string): string | null {
+  const stateFile = join(projectPath, '.multmux', `${handle}.json`)
+  try {
+    const raw = readFileSync(stateFile, 'utf-8')
+    const state = JSON.parse(raw) as MultmuxStateFile
+    return state.tmuxSession || null
+  } catch {
+    return null
+  }
+}
+
 /** Send a message to a multmux session */
 export async function sendToSession(handle: string, message: string): Promise<void> {
   validateSessionName(handle)
