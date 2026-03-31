@@ -24,19 +24,19 @@ cd ui && npm run lint                           # ESLint
 
 ```
 Browser (React 19 + Vite)
-  Monitor view  |  Workspace view  |  Tasks view
+  Single Workspace shell — project list in sidebar, task graph as workspace tab
        HTTP / WS / SSE
 Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty
 ```
 
+- **ui/src/App.tsx** — Thin shell: header bar, project selection, browser notification permission, renders a single `Workspace` keyed by active project. Project list with unread badges lives in the workspace sidebar (no separate Monitor or Tasks views).
 - **server/src/routes/** — REST API (`/api/*`) + SSE (`/api/notifications/stream`) + WebSocket (`/ws/terminal/:name`). Includes `voice.ts` (Groq STT + formatter pipeline).
 - **server/src/lib/** — Core modules: `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE, .gitignore-filtered), `gitignore.ts` (.gitignore parse + cache), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
-- **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useVoice.ts` (voice input lifecycle — recording, STT, formatting, compose), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
+- **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useTaskGraph.ts` (task data fetch + SSE refresh), `usePanZoom.ts` (viewport transform), `useVoice.ts` (voice input lifecycle), `useSessionUnreadState.ts` (per-session/project unread counts), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar`, `WorkspaceSessionList`
-- **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `Monitor.tsx`, `TerminalKeyBar.tsx` (mobile), `AddProjectDialog.tsx` (directory autocomplete), `VoiceControl.tsx` (mic button), `ComposeTray.tsx` (voice compose review)
-- **ui/src/tasks/** — Task graph visualization: `TaskGraphScreen` (controller), `taskGraphModel.ts` (layout engine), `taskGraphSelection.ts` (highlight/search), `TaskGraphCanvas` (SVG), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`
-- **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useTaskGraph.ts` (task data fetch + SSE refresh), `usePanZoom.ts` (viewport transform), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
+- **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `TerminalKeyBar.tsx` (mobile), `AddProjectDialog.tsx` (directory autocomplete), `VoiceControl.tsx` (mic button), `ComposeTray.tsx` (voice compose review)
+- **ui/src/tasks/** — Task graph visualization (embedded as workspace tab): `TaskGraphScreen` (controller), `taskGraphModel.ts` (layout engine), `taskGraphSelection.ts` (highlight/search), `TaskGraphCanvas` (SVG), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`
 - **ui/src/lib/** — Utilities: `solarizedLight.ts` (CodeMirror theme), `diffGutter.ts` (git diff indicators), `parseDiff.ts`
 
 ## Key Data Flow
@@ -93,6 +93,6 @@ Three repos form the productivity stack. Changes in one may require coordinated 
 |------|------|------|
 | **multmux** | CLI for orchestrating multiple agents (Claude/Codex) via tmux | `~/workspace/multmux` |
 | **agent-config** | Centralized CLAUDE.md, skills, settings — symlinked into all projects | `~/workspace/agent-config` |
-| **workflow** | Web UI for coordinating agents across repos (monitor, workspace, terminal) | `~/workspace/workflow` |
+| **workflow** | Web UI for coordinating agents across repos (workspace, terminal, task graph) | `~/workspace/workflow` |
 
 **Dependencies:** workflow depends on both. Backend reads `.multmux/*.json` state files and calls multmux CLI for session management. Skills and CLAUDE.md come from agent-config via symlinks. When multmux changes its state file format or agent-config changes skill contracts, this repo may need updates.

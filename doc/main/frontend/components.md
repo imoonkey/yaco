@@ -20,40 +20,39 @@ React component tree, props interfaces, and responsibilities.
 ## Component Tree
 
 ```
-App (380 lines)
-├── Monitor (345 lines)
-│   ├── ProviderIcon
-│   ├── RoadmapView (160 lines)
-│   └── PaneSwitch (35 lines)
-├── Workspace (re-export → workspace/WorkspaceScreen)
-│   └── WorkspaceScreen (889 lines) — controller
-│       └── WorkspaceLayout (187 lines) — layout composition
-│           ├── SectionHeader (17 lines)
-│           ├── VResizeHandle / HResizeHandle (23 lines)
-│           └── PaneSwitch
-│       ├── WorkspaceTabBar (113 lines)
-│       ├── WorkspaceEditorArea (363 lines)
-│       │   ├── DiffView
-│       │   ├── MarkdownPreview
-│       │   └── Editor (223 lines)
-│       ├── FileExplorer (372 lines)
-│       ├── Terminal (330 lines)
-│       │   └── TerminalKeyBar (224 lines) — touch-only
-│       ├── SessionItem (37 lines)
-│       ├── GitChangeItem (22 lines)
-│       ├── FileSearch (45 lines)
-│       ├── TaskGraphScreen — rendered as the Tasks workspace tab
-│       └── ProviderIcon
-└── TaskGraph (re-export → tasks/TaskGraphScreen)
-    └── TaskGraphScreen — controller
-        ├── TaskGraphToolbar — zoom, state filters, search
-        ├── TaskGraphCanvas — SVG container with pan/zoom
-        │   ├── TaskGraphMilestone[] — column backgrounds + headers
-        │   ├── TaskGraphEdges — dependency paths with arrows
-        │   └── TaskGraphNode[] — task cards with state dots
-        ├── TaskGraphMinimap — overview with viewport rect
-        ├── TaskGraphDetailPanel — right rail (desktop) / bottom sheet (mobile)
-        └── TaskGraphTooltip — hover overlay
+App (245 lines)
+└── Workspace (re-export → workspace/WorkspaceScreen)
+    └── WorkspaceScreen (889 lines) — controller
+        └── WorkspaceLayout (187 lines) — layout composition
+            ├── SectionHeader (17 lines)
+            ├── VResizeHandle / HResizeHandle (23 lines)
+            └── PaneSwitch
+        ├── WorkspaceTabBar (113 lines)
+        ├── WorkspaceEditorArea (363 lines)
+        │   ├── DiffView
+        │   ├── MarkdownPreview
+        │   └── Editor (223 lines)
+        ├── FileExplorer (372 lines)
+        ├── Terminal (330 lines)
+        │   └── TerminalKeyBar (224 lines) — touch-only
+        ├── SessionItem (37 lines)
+        ├── GitChangeItem (22 lines)
+        ├── FileSearch (45 lines)
+        ├── TaskGraphScreen — rendered as the Tasks workspace tab
+        └── ProviderIcon
+```
+
+**Task graph components (embedded in workspace):**
+```
+TaskGraphScreen — controller
+├── TaskGraphToolbar — zoom, state filters, search
+├── TaskGraphCanvas — SVG container with pan/zoom
+│   ├── TaskGraphMilestone[] — column backgrounds + headers
+│   ├── TaskGraphEdges — dependency paths with arrows
+│   └── TaskGraphNode[] — task cards with state dots
+├── TaskGraphMinimap — overview with viewport rect
+├── TaskGraphDetailPanel — right rail (desktop) / bottom sheet (mobile)
+└── TaskGraphTooltip — hover overlay
 ```
 
 **Supporting modules (non-component):**
@@ -65,33 +64,34 @@ App (380 lines)
 
 ## App
 
-**File**: `ui/src/App.tsx` (305 lines)
+**File**: `ui/src/App.tsx` (245 lines)
 
-Top-level shell. Manages view switching (Monitor/Workspace/Tasks fallback), project selection, and project tab bar.
+Single-workspace shell. Manages project selection, unread state, and browser notifications. Renders one `<Workspace>` keyed by active project.
 
 **Props**: None (root component)
 
 **Responsibilities**:
-- View state: `'monitor' | 'workspace' | 'tasks'`
-- Project selection and ordering
-- Bottom project tab bar with drag-and-drop reorder
-- Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project tabs
-- Persist view/project/order to localStorage
-- Unread notification badge on Monitor tab
+- Project selection and ordering (project list lives in workspace sidebar)
+- Header bar with notification permission and add-project button
+- Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project switching
+- Session/project unread state via `useSessionUnreadState`
+- Browser notification routing (click → project + session)
+- Persist project to localStorage
 
 ## Workspace / WorkspaceScreen
 
-**File**: `ui/src/components/Workspace.tsx` (re-export) → `ui/src/workspace/WorkspaceScreen.tsx` (696 lines)
+**File**: `ui/src/components/Workspace.tsx` (re-export) → `ui/src/workspace/WorkspaceScreen.tsx` (889 lines)
 
 Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition is delegated to `WorkspaceLayout`.
 
-**Props**: `{ projectName: string; projectPath: string }`
+**Props**: `{ projectName: string; projectPath: string; projects; activeProject; projectUnreadCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent }`
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
-- Builds section content (explorer, changes, tasks doorway, sessions, editor, terminal) as React nodes
+- Builds section content (project list, explorer, changes, tasks doorway, sessions, editor, terminal) as React nodes
 - Passes content slots to `WorkspaceLayout` for placement
 - Delegates domain state to `useWorkspaceState` hook
+- Session unread pills and project unread badges
 
 ### WorkspaceLayout
 
@@ -99,8 +99,8 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
-**Desktop**: `Sidebar(Explorer + Changes + Tasks) | CenterTabs(File / Diff / Tasks) | ActivityColumn(Terminal + Sessions)`
-**Mobile**: `PaneSwitch → Files(Explorer + Changes + Tasks + Sessions) | Editor | Terminal`
+**Desktop**: `Sidebar(Projects + Explorer + Changes + Tasks) | CenterTabs(File / Diff / Tasks) | ActivityColumn(Terminal + Sessions)`
+**Mobile**: `PaneSwitch → Files(Projects + Explorer + Changes + Tasks + Sessions) | Editor | Terminal`
 
 ### Extracted modules in `ui/src/workspace/`
 
@@ -117,21 +117,6 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `ResizeHandle.tsx` | 23 | VResizeHandle + HResizeHandle |
 | `WorkspaceSidebar.tsx` | 22 | GitChangeItem component |
 | `SectionHeader.tsx` | 17 | Shared collapsible section header |
-
-## Monitor
-
-**File**: `ui/src/components/Monitor.tsx` (345 lines)
-
-Three-column dashboard: Sessions, Notifications, Roadmap.
-
-**Props**: `{ filterProject: string | null; browserNotifications: ... }`
-
-**Responsibilities**:
-- Session list with provider icons and status
-- Progress notifications with dismiss
-- Inline roadmap with workstream status management
-- Mobile pane switching between sections
-- Browser notification permission prompt
 
 ## FileExplorer
 
@@ -196,11 +181,8 @@ Touch-only key bar for terminal special keys missing from virtual keyboards.
 
 ## Supporting Components
 
-### RoadmapView (160 lines)
-Full-page roadmap with expandable workstream rows, checkpoint details, and status management.
-
 ### PaneSwitch (35 lines)
-Reusable horizontal tab switcher for mobile views. Used by both Monitor and Workspace.
+Reusable horizontal tab switcher for mobile views. Used by Workspace.
 
 ### ProviderIcon (18 lines)
 Session provider icon: SVG terminal icon for shell, static assets for Claude/Codex.

@@ -36,16 +36,17 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 ├──────────────┬──────────────────────┬───────────────────┤
 │  Left Sidebar│  Editor Area         │  Activity Column  │
 │  ┌──────────┐│  ┌──────────────────┐│  ┌───────────────┐│
-│  │ Explorer ││  │ CodeMirror /     ││  │ Terminal      ││
-│  │          ││  │ Preview /        ││  │               ││
-│  ├──────────┤│  │ Diff             ││  │               ││
-│  │ Changes  ││  │ CodeMirror /     ││  ├───────────────┤│
-│  ├──────────┤│  │ Preview / Diff / ││  │ Sessions      ││
-│  │ Tasks    ││  │ Task Graph       ││  │               ││
-│  └──────────┘│  └──────────────────┘│  └───────────────┘│
-├──────────────┴──────────────────────┴───────────────────┤
-│  Project Tabs (shared with Monitor via App shell)       │
-└─────────────────────────────────────────────────────────┘
+│  │ Projects ││  │ CodeMirror /     ││  │ Terminal      ││
+│  │ (list)   ││  │ Preview /        ││  │               ││
+│  ├──────────┤│  │ Diff /           ││  │               ││
+│  │ Explorer ││  │ Task Graph       ││  ├───────────────┤│
+│  │          ││  │                  ││  │ Sessions      ││
+│  ├──────────┤│  │                  ││  │ (unread pills)││
+│  │ Changes  ││  │                  ││  │               ││
+│  ├──────────┤│  │                  ││  │               ││
+│  │ Tasks    ││  └──────────────────┘│  └───────────────┘│
+│  └──────────┘│                      │                   │
+└──────────────┴──────────────────────┴───────────────────┘
 ```
 
 ### Panel Behavior

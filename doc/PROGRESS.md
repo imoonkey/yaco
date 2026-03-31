@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-03-31: Workspace consolidation — remove Monitor, collapse to single-workspace shell
+
+**What changed:**
+- Collapsed the three-view app shell (Monitor / Workspace / Tasks) into a single Workspace shell — App.tsx now renders one `<Workspace>` keyed by active project with no view switcher
+- Moved project list with unread badges and drag-reorder into the workspace sidebar
+- Added session unread pills (per-session new-output counts) and project unread badges (aggregate across sessions)
+- Embedded task graph as a stable workspace tab (synthetic `'\0tasks'` tab ID)
+- Added `useSessionUnreadState` hook for derived unread tracking from progress + sessions + localStorage timestamps
+- Added browser notification routing: clicking a notification navigates to the correct project and session
+- Deleted dead components: `Monitor.tsx`, `TaskGraph.tsx` (re-export), `RoadmapView.tsx`
+- Updated CLAUDE.md architecture section, app-shell.md, workspace overview, frontend/components.md, frontend/hooks.md, and monitor.md docs
+
+**Why:**
+- The Monitor was a separate dashboard that duplicated session info already available in the workspace, and required context-switching away from the code editor. Consolidating into a single workspace shell eliminates the view toggle, reduces cognitive load, and surfaces session status (unread counts, processing indicators) where the user already works.
+
+**Key files:** `ui/src/App.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/hooks/useSessionUnreadState.ts`, `CLAUDE.md`, `doc/main/ui/app-shell.md`, `doc/main/ui/workspace/overview.md`, `doc/main/frontend/components.md`, `doc/main/frontend/hooks.md`, `doc/main/ui/monitor.md`
+**Verification:** `cd ui && npx vite build` exits 0; `cd ui && npm run lint` pre-existing errors only (no new issues from consolidation)
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-31: Embed the task graph as a stable Workspace tab
 
 **What changed:**

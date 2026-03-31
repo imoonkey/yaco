@@ -73,7 +73,6 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 | Hook | Returns | SSE Channel | Fallback |
 |------|---------|-------------|----------|
 | `useProjects()` | `Project[]` | `projects` | 60s |
-| `useWorkstreams()` | `Workstream[]` | `workstreams` | 30s |
 | `useProgress()` | `ProgressEntry[]` | `progress` | 30s |
 | `useSessions(project?)` | `AgentSession[]` | `sessions` | 30s |
 | `useFileTree(project)` | `FileNode[]` | `filetree` | 60s |

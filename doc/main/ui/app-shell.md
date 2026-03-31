@@ -1,61 +1,42 @@
 # App Shell
 
-Top-level application chrome: navigation, project tabs, view switching, and PWA shell.
+Top-level application chrome: header bar, project selection, and single-workspace host.
 
 ## Owns
 
-- Top navigation bar behavior
-- Bottom project tab bar behavior
-- View switching between Monitor, Workspace, and the temporary Tasks fallback
-- PWA metadata and installability
+- Header bar (title, notification permission, add-project button)
+- Project selection and ordering
+- Single Workspace rendering keyed by active project
 
 ## Does Not Own
 
-- Monitor content (see [monitor.md](monitor.md))
 - Workspace content (see [workspace/overview.md](workspace/overview.md))
 - Keyboard shortcuts (see [keyboard.md](keyboard.md))
+- Unread tracking (see `useSessionUnreadState.ts`)
 
 ## Related Code
 
 `ui/src/App.tsx`, `ui/index.html`, `ui/public/manifest.webmanifest`
 
-## Navigation
+## Shell Architecture
 
-Three top-level views in the header:
+The app is a single-workspace shell — no view switcher, no Monitor tab, no separate Tasks view. App.tsx renders one `<Workspace>` component keyed by the active project. The project list with unread badges lives inside the workspace sidebar.
 
-| View | Description |
-|------|-------------|
-| Monitor | Dashboard: sessions, notifications, roadmap |
-| Workspace | File editor + terminal + git integration |
-| Tasks | Temporary top-level task-graph fallback while the workspace Tasks tab is rolled out |
+### Header Bar
 
-The active view is persisted in localStorage and restored on refresh.
+- Left: "Workflow" title
+- Right: notification permission prompt (if `default`), "Alerts blocked" label (if `denied`), `+` add-project button
 
-## Bottom Project Tab Bar
+### Project Selection
 
-Project switching lives in a bottom tab strip shared across both views.
-
-### Layout
-
-- Left side: horizontally scrollable list of project tabs
-- Right side: fixed `+` button for adding projects
-
-### Behavior
-
-- Clicking a tab selects that project
-- Tabs can be drag-reordered (order persisted via `POST /api/projects/reorder`)
-- `Cmd+1` through `Cmd+9` jump to visible project tab slots
-- `All Projects` tab is available in Monitor, hidden in Workspace (which always targets one repo)
-- When space is tight, the project list scrolls horizontally
+- `Cmd+1` through `Cmd+9` switch projects by sidebar order
+- Selected project persisted in localStorage key `workflow-ui-state`
+- Project order persisted server-side via `POST /api/projects/reorder`
 
 ### State
 
-- Selected project and view persisted in localStorage key `workflow-ui-state`
-- Project order persisted server-side via the reorder API
-
-## Unread Badge
-
-Monitor tab shows an unread badge when there are active (non-dismissed) progress notifications.
+- `workflow-ui-state` stores `{ project }` (tolerates old `{ view, project }` shape — ignores `view`)
+- App-level bridge state: `visibilityReport` and `attachIntent` for session unread tracking
 
 ## PWA Shell
 
@@ -70,6 +51,6 @@ The app is installable as an iPhone home-screen web app:
 
 ### Safe-Area Handling
 
-The bottom project tab bar applies `padding-bottom: var(--safe-area-bottom)` to lift it above the iPhone home indicator / system gesture zone. The CSS variable `--safe-area-bottom` is defined in `ui/src/index.css` via `env(safe-area-inset-bottom)`.
+The bottom area applies `padding-bottom: var(--safe-area-bottom)` to lift content above the iPhone home indicator / system gesture zone. The CSS variable `--safe-area-bottom` is defined in `ui/src/index.css` via `env(safe-area-inset-bottom)`.
 
 For installed/mobile use, `npm run start:app` builds the UI and has the Hono server serve everything from one origin on `:3001`.
