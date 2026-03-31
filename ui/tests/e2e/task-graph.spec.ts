@@ -15,10 +15,11 @@ async function openTaskGraph(page: Page) {
   expect(projects.length).toBeGreaterThan(0)
   const project = projects[0]
 
-  // Switch to Tasks view
-  await page.locator('button', { hasText: 'Tasks' }).click()
-  // Select the project tab
+  // Select project in sidebar
   await page.locator('button', { hasText: project.name }).click()
+
+  // Open Tasks tab via keyboard shortcut
+  await page.keyboard.press('Meta+Shift+t')
 
   // Wait for graph to render (SVG nodes layer visible)
   await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
@@ -69,8 +70,8 @@ test.describe('Task Graph', () => {
     await taskNode.click()
 
     // Detail panel should open — the task title should appear in the panel
-    // The panel renders the title in a font-semibold span
-    const detailPanel = page.locator('div.shrink-0.overflow-y-auto')
+    // The panel renders the title in a font-semibold span; locate by the close button inside it
+    const detailPanel = page.locator('div.shrink-0.overflow-y-auto').filter({ has: page.locator('button[title="Close"]') })
     await expect(detailPanel).toBeVisible({ timeout: 3_000 })
     await expect(detailPanel.locator('span.font-semibold')).toContainText(taskTitle)
 
@@ -180,7 +181,7 @@ test.describe('Task Graph', () => {
 
     // Press Enter to navigate to first match — detail panel should open
     await searchInput.press('Enter')
-    const detailPanel = page.locator('div.shrink-0.overflow-y-auto')
+    const detailPanel = page.locator('div.shrink-0.overflow-y-auto').filter({ has: page.locator('button[title="Close"]') })
     await expect(detailPanel).toBeVisible({ timeout: 3_000 })
   })
 })

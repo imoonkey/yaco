@@ -7,14 +7,9 @@ async function waitForApp(page: Page) {
   await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
 }
 
-/** Get the project tab bar at the bottom */
-function projectBar(page: Page) {
-  return page.locator('div', { hasText: /^Projects/ }).first()
-}
-
-/** Get project tab button by name */
+/** Get project button by name in the sidebar project list */
 function projectTab(page: Page, name: string) {
-  return projectBar(page).locator('button', { hasText: name })
+  return page.locator('button', { hasText: name }).first()
 }
 
 // --- Project Tab Context Menu ---
@@ -94,21 +89,6 @@ test.describe('Project tab context menu', () => {
     await page.locator('main').click()
     await expect(menu).not.toBeVisible()
   })
-
-  test('All Projects tab has no context menu', async ({ page }) => {
-    await waitForApp(page)
-
-    // Ensure we're in Monitor view (which shows "All Projects")
-    await page.locator('button', { hasText: 'Monitor' }).click()
-
-    const allBtn = projectTab(page, 'All Projects')
-    if (await allBtn.isVisible()) {
-      await allBtn.click({ button: 'right' })
-      // No fixed menu should appear
-      await page.waitForTimeout(200)
-      await expect(page.locator('.fixed.z-50')).not.toBeVisible()
-    }
-  })
 })
 
 // --- Add Project Dialog ---
@@ -130,7 +110,7 @@ test.describe('Add Project dialog', () => {
 
     // Cancel and Add buttons
     await expect(page.locator('button', { hasText: 'Cancel' })).toBeVisible()
-    await expect(page.locator('button', { hasText: 'Add' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Add', exact: true })).toBeVisible()
   })
 
   test('typing path triggers directory autocomplete', async ({ page }) => {
@@ -186,18 +166,20 @@ test.describe('Add Project dialog', () => {
     await waitForApp(page)
     await page.locator('button[aria-label="Add project"]').click()
 
-    await expect(page.locator('text=Add Project').first()).toBeVisible()
+    const dialogInput = page.locator('input[type="text"]')
+    await expect(dialogInput).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect(page.locator('text=Add Project')).not.toBeVisible()
+    await expect(dialogInput).not.toBeVisible()
   })
 
   test('Cancel button closes the dialog', async ({ page }) => {
     await waitForApp(page)
     await page.locator('button[aria-label="Add project"]').click()
 
-    await expect(page.locator('text=Add Project').first()).toBeVisible()
+    const dialogInput = page.locator('input[type="text"]')
+    await expect(dialogInput).toBeVisible()
     await page.locator('button', { hasText: 'Cancel' }).click()
-    await expect(page.locator('text=Add Project')).not.toBeVisible()
+    await expect(dialogInput).not.toBeVisible()
   })
 
   test('adding duplicate project shows inline error', async ({ page }) => {
@@ -215,7 +197,7 @@ test.describe('Add Project dialog', () => {
     const pathInput = page.locator('input[type="text"]')
     await pathInput.fill(existing.path)
 
-    await page.locator('button', { hasText: 'Add' }).click()
+    await page.getByRole('button', { name: 'Add', exact: true }).click()
 
     // Should show inline error, NOT an alert
     await expect(page.locator('text=already registered')).toBeVisible({ timeout: 3000 })
@@ -272,7 +254,6 @@ test.describe('Workspace sidebar', () => {
     })
     expect(projects.length).toBeGreaterThan(0)
 
-    await page.locator('button', { hasText: 'Workspace' }).click()
     await page.locator('button', { hasText: projects[0].name }).click()
     return projects[0]
   }

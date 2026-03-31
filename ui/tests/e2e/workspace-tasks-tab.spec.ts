@@ -12,7 +12,6 @@ async function openWorkspace(page: Page) {
   await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
   const projects = await loadProjects(page)
   expect(projects.length).toBeGreaterThan(0)
-  await page.locator('button', { hasText: 'Workspace' }).click()
   await page.locator('button', { hasText: projects[0].name }).click()
   return projects
 }
@@ -111,7 +110,6 @@ test.describe('Workspace Tasks tab', () => {
 
     await page.reload()
     await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
-    await page.locator('button', { hasText: 'Workspace' }).click()
 
     await page.locator('button', { hasText: projectA.name }).click()
     await page.keyboard.press('Meta+Shift+t')

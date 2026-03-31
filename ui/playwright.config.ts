@@ -12,6 +12,7 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
     headless: true,
+    actionTimeout: 10_000,
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },

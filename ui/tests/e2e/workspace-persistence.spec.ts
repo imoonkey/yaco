@@ -11,7 +11,6 @@ async function openWorkspace(page: Page) {
   })
   expect(projects.length).toBeGreaterThan(0)
   const project = projects[0]
-  await page.locator('button', { hasText: 'Workspace' }).click()
   await page.locator('button', { hasText: project.name }).click()
   return project
 }
@@ -78,7 +77,6 @@ test.describe('Layout persistence characterization', () => {
     // Reload
     await page.reload()
     await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
-    await page.locator('button', { hasText: 'Workspace' }).click()
     await page.waitForTimeout(2000)
 
     // Still false after reload
@@ -126,7 +124,6 @@ test.describe('Layout persistence characterization', () => {
     // Reload
     await page.reload()
     await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
-    await page.locator('button', { hasText: 'Workspace' }).click()
     await page.waitForTimeout(2000)
 
     // Tab should be restored
@@ -140,16 +137,16 @@ test.describe('Layout persistence characterization', () => {
     await deleteTestFile(page, project.name, testFile)
   })
 
-  test('pinned session order persists in localStorage roundtrip', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('pinned session order persists in localStorage roundtrip', async ({ page, request }) => {
+    // Get the project name from the API directly
+    const resp = await request.get('/api/projects')
+    const projects = await resp.json() as { name: string; path: string }[]
+    expect(projects.length).toBeGreaterThan(0)
+    const project = projects[0]
 
-    // Navigate away from workspace so its debounced persistence won't overwrite our seed
-    await page.locator('button', { hasText: 'Monitor' }).click()
-    await page.waitForTimeout(500)
-
-    // Seed localStorage with specific pinned session order
+    // Seed localStorage via init script so pins are set before React mounts
     const pinnedOrder = ['session-z', 'session-a', 'session-m']
-    await page.evaluate(({ name, pins }) => {
+    await page.addInitScript(({ name, pins }) => {
       const key = `workflow-workspace:${name}`
       const raw = localStorage.getItem(key)
       const state = raw ? JSON.parse(raw) : {}
@@ -157,8 +154,9 @@ test.describe('Layout persistence characterization', () => {
       localStorage.setItem(key, JSON.stringify(state))
     }, { name: project.name, pins: pinnedOrder })
 
-    // Navigate to workspace — triggers loadPersistedState which reads the seeded value
-    await page.locator('button', { hasText: 'Workspace' }).click()
+    // Navigate — workspace mounts and reads the seeded value
+    await page.goto('/')
+    await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
     await page.waitForTimeout(2000)
 
     // Verify order is preserved after workspace mounts and re-persists
@@ -180,8 +178,6 @@ test.describe('Layout persistence characterization', () => {
       return
     }
 
-    await page.locator('button', { hasText: 'Workspace' }).click()
-
     const p1 = projects[0]
     const p2 = projects[1]
 
@@ -191,8 +187,8 @@ test.describe('Layout persistence characterization', () => {
     await page.keyboard.press('Meta+b')
     await page.waitForTimeout(500)
 
-    // Switch to project 2
-    await page.locator('button', { hasText: p2.name }).click()
+    // Switch to project 2 via Cmd+2 (sidebar is hidden, can't click)
+    await page.keyboard.press('Meta+2')
     await page.waitForTimeout(1000)
 
     // Project 2 sidebar should still be on (default)
@@ -244,7 +240,6 @@ test.describe('Keyboard shortcut characterization', () => {
       return
     }
 
-    await page.locator('button', { hasText: 'Workspace' }).click()
     await page.locator('button', { hasText: projects[0].name }).click()
     await page.waitForTimeout(1000)
 
@@ -352,11 +347,11 @@ test.describe('Keyboard shortcut characterization', () => {
 test.describe('Mobile pane flow characterization', () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
 
-  test('mobile layout shows Files/Editor/Terminal pane switcher', async ({ page }) => {
+  test('mobile layout shows Browse/Editor/Terminal pane switcher', async ({ page }) => {
     await openWorkspace(page)
 
     // Should see the pane switcher with three options
-    await expect(page.getByRole('button', { name: 'Files', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Browse', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Editor', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Terminal', exact: true })).toBeVisible()
   })
@@ -388,8 +383,8 @@ test.describe('Mobile pane flow characterization', () => {
   test('mobile files pane shows Explorer, Changes, and Sessions sections', async ({ page }) => {
     await openWorkspace(page)
 
-    // Click Files pane
-    await page.locator('button', { hasText: 'Files' }).click()
+    // Click Browse pane
+    await page.locator('button', { hasText: 'Browse' }).click()
     await page.waitForTimeout(500)
 
     // All three sections should be visible (use .first() to avoid strict mode with substring matches)

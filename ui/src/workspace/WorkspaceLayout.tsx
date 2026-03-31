@@ -21,6 +21,7 @@ export type WorkspaceLayoutProps = {
 
   // Section content
   projectName: string
+  projectListBody: ReactNode
   explorerActions: ReactNode
   explorerBody: ReactNode
   gitStale: boolean
@@ -57,7 +58,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const {
     isMobile, isTouch,
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
-    projectName, explorerActions, explorerBody,
+    projectName, projectListBody, explorerActions, explorerBody,
     gitStale, changesBadge, changesBody, tasksBody,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
@@ -84,7 +85,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           <div className="shrink-0 border-b border-[#eee8d5] px-3 py-2" style={{ backgroundColor: C.editorBg }}>
             <PaneSwitch
               options={[
-                { id: 'files', label: 'Files' },
+                { id: 'files', label: 'Browse' },
                 { id: 'editor', label: 'Editor' },
                 { id: 'terminal', label: 'Terminal' },
               ]}
@@ -94,7 +95,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           </div>
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (
-              <div className="h-full flex flex-col" style={{ backgroundColor: C.bg }} onMouseDown={onFilesPaneFocus}>
+              <div className="h-full flex flex-col overflow-y-auto" style={{ backgroundColor: C.bg }} onMouseDown={onFilesPaneFocus}>
+                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} />
+                <div className="shrink-0">{projectListBody}</div>
+
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && <div className="flex-1 min-h-0 flex flex-col">{explorerBody}</div>}
 
@@ -118,10 +122,13 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         </div>
       ) : (
         <>
-          {/* Desktop sidebar: Explorer + Changes + Tasks */}
+          {/* Desktop sidebar: Projects + Explorer + Changes + Tasks */}
           {showSidebar && (
             <>
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
+                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} />
+                <div className="shrink-0 overflow-y-auto" style={{ maxHeight: 160 }}>{projectListBody}</div>
+
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && (
                   <div className="shrink-0 min-h-0 flex flex-col" style={{ height: showChanges ? explorerHeight : undefined, flex: showChanges ? 'none' : 1 }}>

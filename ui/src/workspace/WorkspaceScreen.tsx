@@ -21,9 +21,10 @@ import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { WorkspaceLayout } from './WorkspaceLayout'
-import type { SessionProvider } from '../types'
+import type { Project, SessionProvider } from '../types'
 import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts } from '../hooks/useSessionUnreadState'
 import { TaskGraphScreen } from '../tasks/TaskGraphScreen'
+import { ProjectList } from '../components/ProjectList'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type DiffState = {
@@ -50,6 +51,13 @@ type KeyboardLockHandle = {
 export function Workspace({
   projectName,
   projectPath,
+  projects,
+  activeProject,
+  projectUnreadCounts,
+  onProjectSelect,
+  onProjectReorder,
+  onProjectRemove,
+  onMarkAllRead,
   sessionUnreadCounts,
   markSessionRead,
   onVisibilityReport,
@@ -57,6 +65,13 @@ export function Workspace({
 }: {
   projectName: string
   projectPath: string
+  projects: Project[]
+  activeProject: string
+  projectUnreadCounts: Record<string, number>
+  onProjectSelect: (name: string) => void
+  onProjectReorder: (fromName: string, toName: string) => void
+  onProjectRemove: (project: Project) => void
+  onMarkAllRead: (projectName: string) => void
   sessionUnreadCounts?: SessionUnreadCounts
   markSessionRead?: (project: string, session: string) => void
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
@@ -677,6 +692,18 @@ export function Workspace({
 
   // --- Section content slots ---
 
+  const projectListBody = (
+    <ProjectList
+      projects={projects}
+      activeProject={activeProject}
+      projectUnreadCounts={projectUnreadCounts}
+      onSelect={onProjectSelect}
+      onReorder={onProjectReorder}
+      onRemove={onProjectRemove}
+      onMarkAllRead={onMarkAllRead}
+    />
+  )
+
   const explorerBody = (
     <FileExplorer
       ref={explorerRef}
@@ -905,6 +932,7 @@ export function Workspace({
       onLayoutUpdate={actions.updateLayout}
       onMobilePaneChange={actions.setMobilePane}
       projectName={projectName}
+      projectListBody={projectListBody}
       explorerActions={explorerActions}
       explorerBody={explorerBody}
       gitStale={gitStale}

@@ -1,48 +1,34 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
-import { TaskGraph } from './components/TaskGraph'
 import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { AddProjectDialog } from './components/AddProjectDialog'
-import { writeTextToClipboard } from './lib/clipboard'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
 
-type View = 'monitor' | 'workspace' | 'tasks'
-
-const navItems: { id: View; label: string; icon: string }[] = [
-  { id: 'monitor', label: 'Monitor', icon: '!' },
-  { id: 'workspace', label: 'Workspace', icon: 'W' },
-  { id: 'tasks', label: 'Tasks', icon: 'T' },
-]
-
 const STORAGE_KEY = 'workflow-ui-state'
 
-function loadState(): { view: View; project: string } {
+function loadProject(): string {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      // Tolerate old shape { view, project } — just read project
+      const p = parsed.project ?? ''
+      return p === 'all' ? '' : p
+    }
   } catch { /* ignore */ }
-  return { view: 'monitor', project: 'all' }
+  return ''
 }
 
-function saveState(view: View, project: string) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ view, project }))
+function saveProject(project: string) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ project }))
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((value, index) => value === b[index])
-}
-
-function buildVisibleProjectOrder(view: View, projects: Project[], includeAllProjects: boolean): string[] {
-  const names = projects.map((project) => project.name)
-  if (view !== 'workspace' && view !== 'tasks' && includeAllProjects) {
-    return ['all', ...names]
-  }
-  return names
 }
 
 function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
@@ -53,164 +39,9 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   return next
 }
 
-function MenuItem({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void }) {
-  return (
-    <div
-      className="px-3 py-1 text-[12px] cursor-pointer"
-      style={{ color: danger ? '#dc322f' : '#586e75' }}
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#EEE8D5')}
-      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-      onClick={onClick}
-    >
-      {label}
-    </div>
-  )
-}
-
-function MenuDivider() {
-  return <div className="my-1" style={{ borderTop: '1px solid #D3CBB7' }} />
-}
-
-type CtxMenu = { x: number; y: number; project: Project }
-
-function ProjectTabs({
-  view,
-  projectName,
-  workspaceProject,
-  projects,
-  projectUnreadCounts,
-  onSelect,
-  onAdd,
-  onReorder,
-  onRemove,
-  onMarkAllRead,
-}: {
-  view: View
-  projectName: string
-  workspaceProject: string
-  projects?: Project[]
-  projectUnreadCounts: Record<string, number>
-  onSelect: (name: string) => void
-  onAdd: () => void
-  onReorder: (fromName: string, toName: string) => void
-  onRemove: (project: Project) => void
-  onMarkAllRead: (projectName: string) => void
-}) {
-  const showAllProjects = view !== 'workspace' && view !== 'tasks'
-  const activeProject = (view === 'workspace' || view === 'tasks') ? workspaceProject : projectName
-  const [draggedProject, setDraggedProject] = useState<string | null>(null)
-  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
-
-  useEffect(() => {
-    if (!ctxMenu) return
-    const close = () => setCtxMenu(null)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    document.addEventListener('click', close)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', onKey) }
-  }, [ctxMenu])
-
-  return (
-    <div
-      className="shrink-0 flex items-center gap-2 px-3 min-w-0"
-      style={{ minHeight: 40, backgroundColor: '#EEE8D5', borderTop: '1px solid #D3CBB7', paddingBottom: 'var(--safe-area-bottom)' }}
-    >
-      <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0 text-[#93a1a1]">
-        Projects
-      </span>
-
-      <div className="flex-1 min-w-0 overflow-x-auto overflow-y-hidden">
-        <div className="flex items-center gap-1 w-max min-w-full pr-2">
-          {showAllProjects && (
-            <button
-              onClick={() => onSelect('all')}
-              className={`px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer shrink-0 transition-colors ${
-                activeProject === 'all'
-                  ? 'bg-[#268bd2]/15 text-[#268bd2]'
-                  : 'text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]'
-              }`}
-            >
-              All Projects
-            </button>
-          )}
-
-          {(projects ?? []).map(project => {
-            const isActive = activeProject === project.name
-            const unreadCount = projectUnreadCounts[project.name] ?? 0
-            return (
-              <button
-                key={project.name}
-                draggable
-                onDragStart={(e) => { e.dataTransfer.setData('text/plain', project.name); e.dataTransfer.effectAllowed = 'move'; setDraggedProject(project.name) }}
-                onDragEnd={() => setDraggedProject(null)}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                }}
-                onDrop={(event) => {
-                  event.preventDefault()
-                  if (!draggedProject || draggedProject === project.name) return
-                  onReorder(draggedProject, project.name)
-                  setDraggedProject(null)
-                }}
-                onClick={() => onSelect(project.name)}
-                onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, project }) }}
-                className={`relative px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer shrink-0 transition-colors ${
-                  isActive
-                    ? 'bg-[#268bd2]/15 text-[#268bd2]'
-                    : 'text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]'
-                }`}
-                style={{
-                  opacity: draggedProject === project.name ? 0.55 : 1,
-                }}
-              >
-                {project.name}
-                {unreadCount > 0 && (
-                  <span
-                    className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
-                    style={{ backgroundColor: '#cb4b16' }}
-                  >
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <button
-        onClick={onAdd}
-        aria-label="Add project"
-        title="Add project"
-        className="w-7 h-7 rounded-md text-[18px] leading-none font-medium cursor-pointer shrink-0 text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2] transition-colors"
-      >
-        +
-      </button>
-
-      {ctxMenu && (
-        <div
-          className="fixed z-50 min-w-[160px] py-1 rounded shadow-lg"
-          style={{ left: ctxMenu.x, bottom: window.innerHeight - ctxMenu.y, backgroundColor: '#fdf6e3', border: '1px solid #D3CBB7' }}
-          onClick={e => e.stopPropagation()}
-        >
-          <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(ctxMenu.project.path); setCtxMenu(null) }} />
-          <MenuItem label="Mark All Read" onClick={() => { onMarkAllRead(ctxMenu.project.name); setCtxMenu(null) }} />
-          <MenuDivider />
-          <MenuItem label="Remove" danger onClick={() => { onRemove(ctxMenu.project); setCtxMenu(null) }} />
-        </div>
-      )}
-    </div>
-  )
-}
-
 function App() {
   useKeyboardViewport()
-  const saved = loadState()
-  const [view, setView] = useState<View>(saved.view)
-  const [projectName, setProjectName] = useState<string>(saved.project)
-  const [lastConcreteProject, setLastConcreteProject] = useState<string>(
-    saved.project !== 'all' ? saved.project : ''
-  )
+  const [projectName, setProjectName] = useState<string>(loadProject)
   const [projectOrder, setProjectOrder] = useState<string[]>([])
 
   const { data: projects, refresh: refreshProjects } = useProjects()
@@ -248,27 +79,25 @@ function App() {
     return ordered
   }, [projectOrder, projects])
 
-  const uncleared = progress?.filter(e => e.status === 'active').length ?? 0
-  const concreteProject = lastConcreteProject || (orderedProjects[0]?.name ?? '')
-  const workspaceProject = projectName === 'all' ? concreteProject : projectName
-  const currentProjectPath = orderedProjects.find(p => p.name === workspaceProject)?.path ?? ''
+  // Resolve active project — fall back to first project if saved one doesn't exist
+  const activeProject = useMemo(() => {
+    if (projectName && orderedProjects.some(p => p.name === projectName)) return projectName
+    return orderedProjects[0]?.name ?? ''
+  }, [projectName, orderedProjects])
+
+  const currentProjectPath = orderedProjects.find(p => p.name === activeProject)?.path ?? ''
 
   // Unread state — purely derived from progress, sessions, and localStorage read timestamps
   const { sessionUnreadCounts, projectUnreadCounts, markSessionRead, markAllRead } = useSessionUnreadState(
     progress,
     allSessions,
-    workspaceProject,
+    activeProject,
     visibilityReport,
   )
 
   // Browser notifications with project/session routing
   const handleNotificationClick = useCallback((project: string, sessionName: string) => {
-    // Select the project
     setProjectName(project)
-    setLastConcreteProject(project)
-    // Switch to workspace view
-    setView('workspace')
-    // Emit attach intent if session is specified
     if (sessionName) {
       setAttachIntent({ token: Date.now(), projectName: project, sessionName })
     }
@@ -276,29 +105,23 @@ function App() {
 
   const browserNotifications = useBrowserNotifications(handleNotificationClick)
 
-  // Persist state changes
+  // Persist project selection
   useEffect(() => {
-    saveState(view, projectName)
-  }, [view, projectName])
+    saveProject(activeProject)
+  }, [activeProject])
 
   const handleProjectChange = useCallback((name: string) => {
-    if (name === '__add__') {
-      handleAddProject()
-      return
-    }
     setProjectName(name)
-    if (name !== 'all') setLastConcreteProject(name)
   }, [])
 
-  const handleAddProject = () => {
+  const handleAddProject = useCallback(() => {
     setShowAddDialog(true)
-  }
+  }, [])
 
   const handleProjectAdded = (name: string) => {
     setShowAddDialog(false)
     refreshProjects()
     setProjectName(name)
-    setLastConcreteProject(name)
     setProjectOrder((currentOrder) => currentOrder.includes(name) ? currentOrder : [...currentOrder, name])
   }
 
@@ -308,19 +131,15 @@ function App() {
       await removeProject(project.name)
       refreshProjects()
       setProjectOrder(prev => prev.filter(n => n !== project.name))
-      // Select neighbor if removed project was active
-      const active = (view === 'workspace' || view === 'tasks') ? workspaceProject : projectName
-      if (active === project.name) {
+      if (activeProject === project.name) {
         const idx = orderedProjects.findIndex(p => p.name === project.name)
         const neighbor = orderedProjects[idx + 1] ?? orderedProjects[idx - 1]
-        const next = neighbor?.name ?? 'all'
-        setProjectName(next)
-        if (next !== 'all') setLastConcreteProject(next)
+        setProjectName(neighbor?.name ?? '')
       }
     } catch (err) {
       alert(`Failed to remove project: ${err}`)
     }
-  }, [orderedProjects, projectName, view, workspaceProject, refreshProjects])
+  }, [orderedProjects, activeProject, refreshProjects])
 
   const handleProjectReorder = useCallback(async (fromName: string, toName: string) => {
     const currentOrder = projectOrder.length > 0 ? projectOrder : orderedProjects.map((project) => project.name)
@@ -340,21 +159,15 @@ function App() {
     }
   }, [orderedProjects, projectOrder, projects, refreshProjects])
 
-  const handleViewChange = (v: View) => {
-    setView(v)
-    if ((v === 'workspace' || v === 'tasks') && projectName === 'all') {
-      setProjectName(concreteProject)
-    }
-  }
-
+  // Cmd+1-9 switches sidebar project list (no 'all' entry)
   useEffect(() => {
-    const visibleProjectOrder = buildVisibleProjectOrder(view, orderedProjects, true)
+    const projectNames = orderedProjects.map(p => p.name)
     const handler = (event: KeyboardEvent) => {
       if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
       if (!/^[1-9]$/.test(event.key)) return
 
       const index = Number(event.key) - 1
-      const targetProject = visibleProjectOrder[index]
+      const targetProject = projectNames[index]
       if (!targetProject) return
 
       event.preventDefault()
@@ -363,65 +176,62 @@ function App() {
 
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [handleProjectChange, orderedProjects, view])
+  }, [handleProjectChange, orderedProjects])
 
   return (
     <div className="flex flex-col h-dvh bg-[#fdf6e3]">
-      <header className="h-10 shrink-0 flex items-center px-3 gap-1" style={{ backgroundColor: '#EEE8D5', borderBottom: '1px solid #D3CBB7' }}>
-        <div className="flex items-center gap-0.5">
-          {navItems.map(item => {
-            const isActive = view === item.id
-            return (
-              <button
-                key={item.id}
-                onClick={() => handleViewChange(item.id)}
-                className={`relative flex items-center gap-1.5 px-3 py-1 rounded-md text-[12px] font-medium cursor-pointer transition-colors ${
-                  isActive
-                    ? 'bg-[#268bd2]/15 text-[#268bd2]'
-                    : 'text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]'
-                }`}
-              >
-                <span className="font-bold text-[11px]">{item.icon}</span>
-                {item.label}
-                {item.id === 'monitor' && uncleared > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-[#dc322f] text-[8px] text-white flex items-center justify-center font-bold">
-                    {uncleared}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
+      <header className="h-10 shrink-0 flex items-center px-3 gap-2" style={{ backgroundColor: '#EEE8D5', borderBottom: '1px solid #D3CBB7' }}>
+        <span className="text-[13px] font-semibold text-[#073642]">Workflow</span>
+        <div className="flex-1" />
+        {browserNotifications.permission === 'default' && (
+          <button
+            onClick={browserNotifications.requestPermission}
+            className="text-[10px] px-2 py-1 rounded bg-[#268bd2]/10 hover:bg-[#268bd2]/20 text-[#268bd2] border border-[#268bd2]/20 cursor-pointer"
+          >
+            Enable Alerts
+          </button>
+        )}
+        {browserNotifications.permission === 'denied' && (
+          <span className="text-[10px] text-[#93a1a1]">Alerts blocked</span>
+        )}
+        <button
+          onClick={handleAddProject}
+          aria-label="Add project"
+          title="Add project"
+          className="w-7 h-7 rounded-md text-[18px] leading-none font-medium cursor-pointer shrink-0 text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2] transition-colors"
+        >
+          +
+        </button>
       </header>
 
       <main className="flex-1 overflow-hidden">
-        {view === 'monitor' && <Monitor filterProject={projectName === 'all' ? null : projectName} browserNotifications={browserNotifications} />}
-        {view === 'workspace' && (
+        {activeProject && (
           <Workspace
-            key={workspaceProject}
-            projectName={workspaceProject}
+            key={activeProject}
+            projectName={activeProject}
             projectPath={currentProjectPath}
+            projects={orderedProjects}
+            activeProject={activeProject}
+            projectUnreadCounts={projectUnreadCounts}
+            onProjectSelect={handleProjectChange}
+            onProjectReorder={handleProjectReorder}
+            onProjectRemove={handleRemoveProject}
+            onMarkAllRead={markAllRead}
             sessionUnreadCounts={sessionUnreadCounts}
             markSessionRead={markSessionRead}
             onVisibilityReport={setVisibilityReport}
             attachIntent={attachIntent}
           />
         )}
-        {view === 'tasks' && <TaskGraph key={workspaceProject} projectName={workspaceProject} />}
+        {!activeProject && (
+          <div className="flex items-center justify-center h-full text-[13px]" style={{ color: '#93a1a1' }}>
+            <button onClick={handleAddProject} className="px-4 py-2 rounded-md bg-[#268bd2]/10 hover:bg-[#268bd2]/20 text-[#268bd2] cursor-pointer">
+              Add a project to get started
+            </button>
+          </div>
+        )}
       </main>
 
-      <ProjectTabs
-        view={view}
-        projectName={projectName}
-        workspaceProject={workspaceProject}
-        projects={orderedProjects}
-        projectUnreadCounts={projectUnreadCounts}
-        onSelect={handleProjectChange}
-        onAdd={handleAddProject}
-        onReorder={handleProjectReorder}
-        onRemove={handleRemoveProject}
-        onMarkAllRead={markAllRead}
-      />
       {showAddDialog && (
         <AddProjectDialog
           onAdded={handleProjectAdded}

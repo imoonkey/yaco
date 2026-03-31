@@ -16,9 +16,7 @@ async function openWorkspace(page: Page) {
   expect(projects.length).toBeGreaterThan(0)
   const project = projects[0]
 
-  // Click Workspace nav
-  await page.locator('button', { hasText: 'Workspace' }).click()
-  // Click the project tab
+  // Click the project in sidebar
   await page.locator('button', { hasText: project.name }).click()
 
   return project
@@ -226,7 +224,6 @@ test.describe('Workspace regression', () => {
     await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
 
     // Switch to workspace if needed
-    await page.locator('button', { hasText: 'Workspace' }).click()
     await page.waitForTimeout(2000)
 
     // Tab should survive the refresh

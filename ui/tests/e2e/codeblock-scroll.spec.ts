@@ -22,7 +22,6 @@ async function openWorkspace(page: Page) {
   })
   expect(projects.length).toBeGreaterThan(0)
   const project = projects[0]
-  await page.locator('button', { hasText: 'Workspace' }).click()
   await page.locator('button', { hasText: project.name }).click()
   return project
 }
