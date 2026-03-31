@@ -200,6 +200,7 @@ export function WorkspaceEditorArea({
   activeFileLoading,
   activeViewportLine,
   isDiffTab,
+  isTasksTab,
   activeDiff,
   isMd,
   mdMode,
@@ -216,6 +217,7 @@ export function WorkspaceEditorArea({
   onDraftChange,
   onSave,
   diffHunks,
+  tasksPane,
   composeTray,
   insertText,
   insertRequestKey,
@@ -226,6 +228,7 @@ export function WorkspaceEditorArea({
   activeFileLoading: boolean
   activeViewportLine: number
   isDiffTab: boolean | undefined
+  isTasksTab: boolean
   activeDiff: { content: string | null; loading: boolean } | null
   isMd: boolean | undefined
   mdMode: MdMode
@@ -242,6 +245,7 @@ export function WorkspaceEditorArea({
   onDraftChange: (content: string) => void
   onSave: (content: string) => Promise<void>
   diffHunks?: DiffHunk[]
+  tasksPane?: React.ReactNode
   composeTray?: React.ReactNode
   insertText?: string | null
   insertRequestKey?: number
@@ -327,7 +331,9 @@ export function WorkspaceEditorArea({
       )}
       {composeTray}
       <div className="flex-1 min-h-0">
-      {isDiffTab ? (
+      {isTasksTab ? (
+        tasksPane
+      ) : isDiffTab ? (
         !activeDiff || (activeDiff.loading && activeDiff.content == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
         : activeDiff?.content != null ? <DiffView diff={activeDiff.content} />
         : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>

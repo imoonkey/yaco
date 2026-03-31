@@ -26,6 +26,7 @@ export type WorkspaceLayoutProps = {
   gitStale: boolean
   changesBadge?: number
   changesBody: ReactNode
+  tasksBody: ReactNode
   sessionsActions: ReactNode
   sessionsBody: ReactNode
 
@@ -44,7 +45,7 @@ export type WorkspaceLayoutProps = {
   sessionHeight: number
 
   // Derived
-  hasOpenFiles: boolean
+  hasOpenTabs: boolean
 
   // Interactions
   onInteractionCapture: () => void
@@ -57,16 +58,16 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     isMobile, isTouch,
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
     projectName, explorerActions, explorerBody,
-    gitStale, changesBadge, changesBody,
+    gitStale, changesBadge, changesBody, tasksBody,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
     rootRef, sidebarRef, left, right, explorerSplit, explorerHeight, sessionSplit, sessionHeight,
-    hasOpenFiles,
+    hasOpenTabs,
     onInteractionCapture, onFilesPaneFocus, searchOverlay,
   } = props
 
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions } = layout
-  const shouldShowEditorPane = hasOpenFiles || !showRightPanel
+  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks } = layout
+  const shouldShowEditorPane = hasOpenTabs || !showRightPanel
 
   return (
     <div
@@ -100,6 +101,9 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
                 {showChanges && <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">{changesBody}</div>}
 
+                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={() => onLayoutUpdate({ showTasks: !showTasks })} />
+                {showTasks && <div className="shrink-0 px-2 py-2">{tasksBody}</div>}
+
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
                 {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">{sessionsBody}</div>}
               </div>
@@ -114,7 +118,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
         </div>
       ) : (
         <>
-          {/* Desktop sidebar: Explorer + Changes */}
+          {/* Desktop sidebar: Explorer + Changes + Tasks */}
           {showSidebar && (
             <>
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
@@ -131,6 +135,13 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 {showChanges && (
                   <div className="flex-1 overflow-y-auto py-1 px-1 min-h-0">
                     {changesBody}
+                  </div>
+                )}
+
+                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={() => onLayoutUpdate({ showTasks: !showTasks })} />
+                {showTasks && (
+                  <div className="shrink-0 px-2 py-2">
+                    {tasksBody}
                   </div>
                 )}
               </div>
@@ -151,8 +162,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
             <div
               className="flex flex-col overflow-hidden min-w-0"
               style={{
-                flex: !hasOpenFiles ? 1 : undefined,
-                width: hasOpenFiles ? right.size : undefined,
+                flex: !hasOpenTabs ? 1 : undefined,
+                width: hasOpenTabs ? right.size : undefined,
                 backgroundColor: C.bg,
                 boxShadow: '-1px 0 3px rgba(0,0,0,0.06)',
               }}

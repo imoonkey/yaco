@@ -36,6 +36,7 @@ export interface ProgressEntry {
   message: string
   timestamp: string
   status: ProgressStatus
+  sessionName?: string
 }
 
 export interface ProgressEntryWithContext extends ProgressEntry {

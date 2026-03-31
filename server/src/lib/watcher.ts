@@ -111,6 +111,7 @@ async function initAndWatch(
               project: projectName,
               workstream,
               progressType: e.type,
+              sessionName: e.sessionName,
             })
           }
         }

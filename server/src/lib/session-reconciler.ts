@@ -215,6 +215,7 @@ async function writeSessionIdleEntry(project: Project, session: MultmuxSession):
         message: `${session.name} finished processing`,
         timestamp: new Date().toISOString(),
         status: 'active',
+        sessionName: session.name,
       })
       await writeFile(progressFile, JSON.stringify(entries, null, 2), 'utf-8')
     })

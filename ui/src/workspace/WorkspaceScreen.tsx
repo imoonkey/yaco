@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFileTree, useSessions, useGitStatus, startSession, fetchGitDiff, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
-import { useWorkspaceState } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { useVoice } from '../hooks/useVoice'
 import { Terminal } from '../components/Terminal'
@@ -22,6 +22,8 @@ import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { WorkspaceLayout } from './WorkspaceLayout'
 import type { SessionProvider } from '../types'
+import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts } from '../hooks/useSessionUnreadState'
+import { TaskGraphScreen } from '../tasks/TaskGraphScreen'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type DiffState = {
@@ -36,6 +38,7 @@ type JumpRequest = {
 }
 const SECTION_HEADER_HEIGHT = 22
 const RESIZE_HANDLE_HEIGHT = 1
+const TASKS_SECTION_BODY_HEIGHT = 52
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
   unlock?: () => void
@@ -44,7 +47,21 @@ type KeyboardLockHandle = {
 // ============================================================
 // Main Workspace
 // ============================================================
-export function Workspace({ projectName, projectPath }: { projectName: string; projectPath: string }) {
+export function Workspace({
+  projectName,
+  projectPath,
+  sessionUnreadCounts,
+  markSessionRead,
+  onVisibilityReport,
+  attachIntent,
+}: {
+  projectName: string
+  projectPath: string
+  sessionUnreadCounts?: SessionUnreadCounts
+  markSessionRead?: (project: string, session: string) => void
+  onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
+  attachIntent?: AttachSessionIntent | null
+}) {
   const rootRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const explorerRef = useRef<FileExplorerHandle>(null)
@@ -57,7 +74,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, actions } = ws
 
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
-    activeTab && !activeTab.startsWith('diff:') ? activeTab : null
+    isFileTab(activeTab) ? activeTab : null
   ))
   const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
   const [showSearch, setShowSearch] = useState(false)
@@ -71,17 +88,44 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
   // Convenience aliases for layout props
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, mdMode } = layout
+  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, mdMode } = layout
 
   const { data: fileTree, expandDir } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
 
+  // --- App/Workspace bridge: visibility report ---
+  useEffect(() => {
+    if (!onVisibilityReport) return
+    const terminalVisible = isMobile ? mobilePane === 'terminal' : showRightPanel
+    onVisibilityReport({ projectName, attachedSession: activeSession, terminalVisible })
+  }, [onVisibilityReport, projectName, activeSession, isMobile, mobilePane, showRightPanel])
+
+  // --- App/Workspace bridge: consume attach intent ---
+  const consumedIntentToken = useRef<number>(0)
+  useEffect(() => {
+    if (!attachIntent) return
+    if (attachIntent.token === consumedIntentToken.current) return
+    if (attachIntent.projectName !== projectName) return
+    consumedIntentToken.current = attachIntent.token
+    // Check if the session still exists
+    if (sessions && !sessions.some(s => s.name === attachIntent.sessionName)) return
+    actions.setActiveSession(attachIntent.sessionName)
+    if (isMobile) actions.setMobilePane('terminal')
+  }, [attachIntent, projectName, sessions, actions, isMobile])
+
+  // --- Mark session as read when attached ---
+  useEffect(() => {
+    if (!activeSession || !markSessionRead) return
+    markSessionRead(projectName, activeSession)
+  }, [activeSession, projectName, markSessionRead])
+
   // Only fetch file content for non-diff tabs
-  const isDiffTab = activeTab?.startsWith('diff:')
-  const activeDiffPath = activeTab?.startsWith('diff:') ? activeTab.slice(5) : null
+  const activeDiffTab = isDiffTab(activeTab)
+  const activeTasksTab = isTasksTab(activeTab)
+  const activeDiffPath = activeDiffTab && activeTab ? activeTab.slice(5) : null
   const activeDiff = activeDiffPath ? diffs[activeDiffPath] : null
-  const activeFilePath = activeTab && !isDiffTab ? activeTab : null
+  const activeFilePath = isFileTab(activeTab) ? activeTab : null
   const activeFileState = activeFilePath ? files[activeFilePath] : null
   const activeFileContent = activeFileState?.draft ?? activeFileState?.serverContent ?? null
   const activeFileLoading = activeFilePath != null && activeFileContent === null && activeFileState?.status !== 'missing'
@@ -133,15 +177,29 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
   const pinnedSet = useMemo(() => new Set(pinnedSessions), [pinnedSessions])
 
-  // Display order: pinned (in custom order) → processing → idle
+  // Helper: get session unread count
+  const getSessionUnread = useCallback((sessionName: string): number => {
+    if (!sessionUnreadCounts) return 0
+    return sessionUnreadCounts[`${projectName}::${sessionName}`] ?? 0
+  }, [sessionUnreadCounts, projectName])
+
+  // Display order: pinned (in custom order) -> processing -> idle
+  // Within unpinned processing and unpinned idle, unread > 0 sorts above unread = 0
   const orderedSessions = useMemo(() => {
     const byName = new Map(projectSessions.map(s => [s.name, s]))
     const pinned = pinnedSessions.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
     const unpinned = projectSessions.filter(s => !pinnedSet.has(s.name))
     const processing = unpinned.filter(s => s.status === 'processing')
     const idle = unpinned.filter(s => s.status === 'idle')
+    const byUnread = (a: { name: string }, b: { name: string }) => {
+      const ua = getSessionUnread(a.name) > 0 ? 0 : 1
+      const ub = getSessionUnread(b.name) > 0 ? 0 : 1
+      return ua - ub
+    }
+    processing.sort(byUnread)
+    idle.sort(byUnread)
     return [...pinned, ...processing, ...idle]
-  }, [projectSessions, pinnedSessions, pinnedSet])
+  }, [projectSessions, pinnedSessions, pinnedSet, getSessionUnread])
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
@@ -242,13 +300,15 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     return s
   }, [changes])
 
-  // Desktop sidebar section math (Explorer + Changes only; Sessions moved to ActivityColumn)
-  // Both section headers are always rendered (even when collapsed), so count is constant
-  const sidebarHeaderCount = 2
+  // Desktop sidebar section math (Explorer + Changes + Tasks; Sessions stay in the ActivityColumn)
+  const sidebarHeaderCount = 3
   const visibleHandleCount = showExplorer && showChanges ? 1 : 0
   const availableSectionHeight = Math.max(
     0,
-    sidebarHeight - sidebarHeaderCount * SECTION_HEADER_HEIGHT - visibleHandleCount * RESIZE_HANDLE_HEIGHT
+    sidebarHeight
+      - sidebarHeaderCount * SECTION_HEADER_HEIGHT
+      - visibleHandleCount * RESIZE_HANDLE_HEIGHT
+      - (showTasks ? TASKS_SECTION_BODY_HEIGHT : 0)
   )
   const left = useResize(layout.leftSize, 140, 600)
   const right = useResize(layout.rightSize, 250, 900, 'right')
@@ -258,12 +318,12 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const sessionSplit = useResize(layout.sessionSize, 50, 400, 'up')
   const sessionHeight = showSessions ? sessionSplit.size : 0
 
-  const isMd = activeTab?.endsWith('.md')
-  const hasOpenFiles = openTabs.length > 0
-  const canToggleMdMode = !!isMd && !isDiffTab
+  const isMd = activeFilePath?.endsWith('.md')
+  const hasOpenTabs = openTabs.length > 0
+  const canToggleMdMode = !!isMd
 
   // --- Voice eligibility & handlers ---
-  const editorVoiceEligible = !!activeFilePath && !isDiffTab && !(isMd && mdMode === 'preview')
+  const editorVoiceEligible = !!activeFilePath && !activeDiffTab && !(isMd && mdMode === 'preview')
   const terminalVoiceEligible = !!attachedSession
 
   const handleEditorVoiceStart = useCallback(() => {
@@ -296,6 +356,16 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const handleNewFolder = useCallback(() => {
     explorerRef.current?.createFolder(contextFolder || undefined)
   }, [contextFolder])
+
+  const handleOpenTasks = useCallback(() => {
+    actions.openTasksTab()
+    setFocusTarget('editor')
+    actions.setMobilePane('editor')
+  }, [actions])
+
+  const handleOpenTasksFile = useCallback(() => {
+    openFile('doc/todo/tasks.json')
+  }, [openFile])
 
   const explorerActions = (
     <div className="flex gap-0.5">
@@ -354,20 +424,20 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   }, [actions])
 
   const handleActiveFileViewportLine = useCallback((line: number) => {
-    if (!activeTab || activeTab.startsWith('diff:')) return
-    actions.updateFileViewport(activeTab, clampLine(line))
-  }, [activeTab, actions])
+    if (!activeFilePath) return
+    actions.updateFileViewport(activeFilePath, clampLine(line))
+  }, [activeFilePath, actions])
 
   const handlePreviewActivateLine = useCallback((line: number) => {
-    if (!activeTab || activeTab.startsWith('diff:')) return
+    if (!activeFilePath) return
     const targetLine = clampLine(line)
-    actions.updateFileViewport(activeTab, targetLine)
-    setJumpRequest({ key: Date.now(), path: activeTab, line: targetLine })
+    actions.updateFileViewport(activeFilePath, targetLine)
+    setJumpRequest({ key: Date.now(), path: activeFilePath, line: targetLine })
     if (layout.mdMode !== 'split') {
       actions.updateLayout({ mdMode: 'edit' })
     }
     setFocusTarget('editor')
-  }, [activeTab, actions, layout.mdMode])
+  }, [activeFilePath, actions, layout.mdMode])
 
   const killSession = useCallback(async (sessionName: string) => {
     if (!sessionName) return
@@ -500,6 +570,14 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         actions.updateLayout({ showRightPanel: !showRightPanel })
         return
       }
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 't') {
+        e.preventDefault()
+        e.stopPropagation()
+        actions.toggleTasksTab()
+        setFocusTarget('editor')
+        actions.setMobilePane('editor')
+        return
+      }
       if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
         e.preventDefault()
         e.stopPropagation()
@@ -581,17 +659,19 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
   const handleSelectTab = useCallback((tab: string) => {
     actions.setActiveTab(tab)
     setFocusTarget('editor')
-    if (!tab.startsWith('diff:')) {
+    if (isFileTab(tab)) {
       setSelectedFilePath(tab)
     }
   }, [actions])
 
   const handleDoubleClickTab = useCallback((tab: string) => {
-    if (tab === previewTab) actions.openFileTab(tab)
+    if (tab !== previewTab) return
+    if (isFileTab(tab)) actions.openFileTab(tab)
+    if (isDiffTab(tab)) actions.openDiffTab(tab.slice(5))
   }, [previewTab, actions])
 
   useEffect(() => {
-    if (!activeTab || activeTab.startsWith('diff:')) return
+    if (!isFileTab(activeTab)) return
     setSelectedFilePath(activeTab)
   }, [activeTab])
 
@@ -629,6 +709,27 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     </>
   )
 
+  const tasksBody = (
+    <div
+      className="rounded px-2 py-2"
+      style={{
+        backgroundColor: activeTasksTab ? '#268bd215' : C.bg,
+        border: `1px solid ${activeTasksTab ? '#268bd260' : C.border}`,
+      }}
+    >
+      <button
+        onClick={handleOpenTasks}
+        className="text-[12px] font-medium cursor-pointer transition-colors"
+        style={{ color: activeTasksTab ? C.textDark : C.text }}
+      >
+        {activeTasksTab ? 'Task graph open' : 'Open task graph'}
+      </button>
+      <div className="pt-0.5 text-[10px]" style={{ color: C.muted }}>
+        View `doc/todo/tasks.json` in the main pane.
+      </div>
+    </div>
+  )
+
   const togglePin = useCallback((name: string) => {
     actions.setPinnedSessions(prev =>
       prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
@@ -656,6 +757,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
     <>
       {pinned.map(s => (
         <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned
+          unreadCount={getSessionUnread(s.name)}
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
           onPin={() => togglePin(s.name)}
@@ -672,6 +774,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       )}
       {unpinnedProcessing.map(s => (
         <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
+          unreadCount={getSessionUnread(s.name)}
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
           onPin={() => togglePin(s.name)}
@@ -683,6 +786,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       )}
       {unpinnedIdle.map(s => (
         <SessionItem key={s.name} session={s} isActive={s.name === attachedSession}
+          unreadCount={getSessionUnread(s.name)}
           onKill={() => { void killSession(s.name) }}
           onClick={() => { actions.setActiveSession(s.name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal') }}
           onPin={() => togglePin(s.name)}
@@ -725,7 +829,8 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         activeFileContent={activeFileContent}
         activeFileLoading={activeFileLoading}
         activeViewportLine={activeViewportLine}
-        isDiffTab={isDiffTab}
+        isDiffTab={activeDiffTab}
+        isTasksTab={activeTasksTab}
         activeDiff={activeDiff}
         isMd={isMd}
         mdMode={mdMode}
@@ -739,9 +844,15 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
         onActivateLine={handlePreviewActivateLine}
         onFocus={() => setFocusTarget('editor')}
         onCloseTab={() => activeTab && closeTab(activeTab)}
-        onDraftChange={(content) => activeTab && actions.updateFileDraft(activeTab, content)}
-        onSave={async (content) => { if (activeTab) await actions.saveFile(activeTab, content) }}
+        onDraftChange={(content) => activeFilePath && actions.updateFileDraft(activeFilePath, content)}
+        onSave={async (content) => { if (activeFilePath) await actions.saveFile(activeFilePath, content) }}
         diffHunks={editorDiffHunks}
+        tasksPane={activeTasksTab ? (
+          <TaskGraphScreen
+            projectName={projectName}
+            onOpenTasksFile={handleOpenTasksFile}
+          />
+        ) : null}
         insertText={editorInsert?.text}
         insertRequestKey={editorInsert?.key}
       />
@@ -799,6 +910,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       gitStale={gitStale}
       changesBadge={changes.length || undefined}
       changesBody={changesBody}
+      tasksBody={tasksBody}
       sessionsActions={sessionActions}
       sessionsBody={sessionsBody}
       editorPane={editorPane}
@@ -811,7 +923,7 @@ export function Workspace({ projectName, projectPath }: { projectName: string; p
       explorerHeight={explorerHeight}
       sessionSplit={sessionSplit}
       sessionHeight={sessionHeight}
-      hasOpenFiles={hasOpenFiles}
+      hasOpenTabs={hasOpenTabs}
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}
       searchOverlay={showSearch ? <FileSearch projectName={projectName!} onSelect={handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}

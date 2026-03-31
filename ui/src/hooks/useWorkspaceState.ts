@@ -23,6 +23,7 @@ export type WorkspaceLayout = {
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
+  showTasks: boolean
   mdMode: MdMode
   splitSize: number
   leftSize: number
@@ -43,6 +44,20 @@ type PersistedDrafts = {
   files: Record<string, PersistedDraftEntry>
 }
 
+export const TASKS_TAB_ID = '\0tasks'
+
+export function isDiffTab(tab: string | null): boolean {
+  return typeof tab === 'string' && tab.startsWith('diff:')
+}
+
+export function isTasksTab(tab: string | null): boolean {
+  return tab === TASKS_TAB_ID
+}
+
+export function isFileTab(tab: string | null): tab is string {
+  return typeof tab === 'string' && tab.length > 0 && !isDiffTab(tab) && !isTasksTab(tab)
+}
+
 // --- Storage keys ---
 
 function layoutKey(project: string): string {
@@ -61,6 +76,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showExplorer: true,
   showSessions: true,
   showChanges: true,
+  showTasks: true,
   mdMode: 'edit',
   splitSize: 50,
   leftSize: 220,
@@ -78,6 +94,17 @@ function defaultFileState(): FileState {
 
 function loadStoredSize(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+function dedupeTabs(tabs: string[]): string[] {
+  const seen = new Set<string>()
+  const next: string[] = []
+  for (const tab of tabs) {
+    if (!tab || seen.has(tab)) continue
+    seen.add(tab)
+    next.push(tab)
+  }
+  return next
 }
 
 type PersistedState = {
@@ -106,9 +133,9 @@ function loadPersistedState(project: string): PersistedState {
     if (!raw) return defaults
     const parsed = JSON.parse(raw) as Record<string, unknown>
 
-    const openTabs = Array.isArray(parsed.openTabs)
+    const openTabs = dedupeTabs(Array.isArray(parsed.openTabs)
       ? (parsed.openTabs as unknown[]).filter((t): t is string => typeof t === 'string')
-      : []
+      : [])
     const activeTab = typeof parsed.activeTab === 'string' && openTabs.includes(parsed.activeTab)
       ? parsed.activeTab
       : openTabs[0] ?? null
@@ -118,7 +145,9 @@ function loadPersistedState(project: string): PersistedState {
     return {
       openTabs,
       activeTab,
-      previewTab: typeof parsed.previewTab === 'string' && openTabs.includes(parsed.previewTab) ? parsed.previewTab : null,
+      previewTab: typeof parsed.previewTab === 'string' && openTabs.includes(parsed.previewTab) && !isTasksTab(parsed.previewTab)
+        ? parsed.previewTab
+        : null,
       activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
       mobilePane: parsed.mobilePane === 'files' || parsed.mobilePane === 'editor' || parsed.mobilePane === 'terminal'
         ? parsed.mobilePane as PersistedState['mobilePane'] : 'files',
@@ -128,6 +157,7 @@ function loadPersistedState(project: string): PersistedState {
         showExplorer: typeof pl.showExplorer === 'boolean' ? pl.showExplorer : DEFAULT_LAYOUT.showExplorer,
         showSessions: typeof pl.showSessions === 'boolean' ? pl.showSessions : DEFAULT_LAYOUT.showSessions,
         showChanges: typeof pl.showChanges === 'boolean' ? pl.showChanges : DEFAULT_LAYOUT.showChanges,
+        showTasks: typeof pl.showTasks === 'boolean' ? pl.showTasks : DEFAULT_LAYOUT.showTasks,
         mdMode: pl.mdMode === 'edit' || pl.mdMode === 'preview' || pl.mdMode === 'split' ? pl.mdMode
           : typeof pl.previewMode === 'boolean' ? (pl.previewMode ? 'preview' : 'edit')
           : DEFAULT_LAYOUT.mdMode,
@@ -153,7 +183,10 @@ function loadPersistedDrafts(project: string): PersistedDrafts {
     if (!raw) return { files: {} }
     const parsed = JSON.parse(raw) as PersistedDrafts
     if (!parsed.files || typeof parsed.files !== 'object') return { files: {} }
-    return parsed
+    const files = Object.fromEntries(
+      Object.entries(parsed.files).filter(([path]) => isFileTab(path))
+    )
+    return { files }
   } catch {
     return { files: {} }
   }
@@ -266,6 +299,9 @@ export function useWorkspaceState(projectName: string) {
   const openTabsRef = useRef(openTabs)
   openTabsRef.current = openTabs
 
+  const activeTabRef = useRef(activeTab)
+  activeTabRef.current = activeTab
+
   const previewTabRef = useRef(previewTab)
   previewTabRef.current = previewTab
 
@@ -275,7 +311,7 @@ export function useWorkspaceState(projectName: string) {
     if (hydrated.current) return
     hydrated.current = true
 
-    const fileTabs = openTabs.filter(t => !t.startsWith('diff:'))
+    const fileTabs = openTabs.filter(isFileTab)
     if (fileTabs.length === 0) return
 
     for (const path of fileTabs) {
@@ -314,6 +350,7 @@ export function useWorkspaceState(projectName: string) {
   const flushDrafts = useCallback(() => {
     const entries: PersistedDrafts['files'] = {}
     for (const [path, state] of Object.entries(filesRef.current)) {
+      if (!isFileTab(path)) continue
       if (state.draft != null || state.viewportLine > 1) {
         entries[path] = {
           draft: state.draft,
@@ -352,7 +389,7 @@ export function useWorkspaceState(projectName: string) {
   // This prevents useSSERefresh from ever re-registering the callback.
   const refetchOpenFiles = useCallback(() => {
     const project = projectRef.current
-    const tabs = openTabsRef.current.filter(t => !t.startsWith('diff:'))
+    const tabs = openTabsRef.current.filter(isFileTab)
     if (tabs.length === 0) return
 
     for (const path of tabs) {
@@ -364,7 +401,7 @@ export function useWorkspaceState(projectName: string) {
         })
       })
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   useSSERefresh('filetree', refetchOpenFiles)
   useSSERefresh('git', refetchOpenFiles)
@@ -392,6 +429,7 @@ export function useWorkspaceState(projectName: string) {
   // --- Tab actions ---
 
   const openFileTab = useCallback((path: string) => {
+    if (!isFileTab(path)) return
     // Pin if this tab was a preview
     setPreviewTab(prev => prev === path ? null : prev)
     setOpenTabs(tabs => tabs.includes(path) ? tabs : [...tabs, path])
@@ -413,9 +451,10 @@ export function useWorkspaceState(projectName: string) {
         return next === existing ? prev : { ...prev, [path]: next }
       })
     })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const openPreviewTab = useCallback((path: string) => {
+    if (!isFileTab(path)) return
     // If the tab is already open as a pinned tab, just activate it — don't demote to preview
     if (openTabsRef.current.includes(path) && previewTabRef.current !== path) {
       setActiveTab(path)
@@ -464,7 +503,7 @@ export function useWorkspaceState(projectName: string) {
         return next === existing ? prev : { ...prev, [path]: next }
       })
     })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const openDiffTab = useCallback((path: string) => {
     const tab = `diff:${path}`
@@ -483,10 +522,10 @@ export function useWorkspaceState(projectName: string) {
     // Close existing preview tab if different and clean
     const oldPreview = previewTabRef.current
     if (oldPreview && oldPreview !== tab) {
-      if (oldPreview.startsWith('diff:')) {
+      if (isDiffTab(oldPreview)) {
         // Diff previews are always clean — just remove
         setOpenTabs(tabs => tabs.filter(t => t !== oldPreview))
-      } else {
+      } else if (isFileTab(oldPreview)) {
         // File preview — only remove if not dirty
         setFiles(prev => {
           const oldState = prev[oldPreview]
@@ -501,12 +540,20 @@ export function useWorkspaceState(projectName: string) {
           if (oldState && (oldState.status === 'dirty' || oldState.status === 'saving' || oldState.status === 'conflict')) return tabs
           return tabs.filter(t => t !== oldPreview)
         })
+      } else {
+        setOpenTabs(tabs => tabs.filter(t => t !== oldPreview))
       }
     }
     setOpenTabs(tabs => tabs.includes(tab) ? tabs : [...tabs, tab])
     setActiveTab(tab)
     setPreviewTab(tab)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
+
+  const openTasksTab = useCallback(() => {
+    setPreviewTab(prev => prev === TASKS_TAB_ID ? null : prev)
+    setOpenTabs(tabs => tabs.includes(TASKS_TAB_ID) ? tabs : [...tabs, TASKS_TAB_ID])
+    setActiveTab(TASKS_TAB_ID)
+  }, [])
 
   const closeTabByKey = useCallback((tab: string) => {
     setPreviewTab(prev => prev === tab ? null : prev)
@@ -517,7 +564,7 @@ export function useWorkspaceState(projectName: string) {
       setActiveTab(prev => prev !== tab ? prev : next[Math.min(idx, next.length - 1)] ?? null)
       return next
     })
-    if (!tab.startsWith('diff:')) {
+    if (isFileTab(tab)) {
       setFiles(prev => {
         if (!(tab in prev)) return prev
         const next = { ...prev }
@@ -527,6 +574,20 @@ export function useWorkspaceState(projectName: string) {
     }
   }, [])
 
+  const toggleTasksTab = useCallback(() => {
+    const isOpen = openTabsRef.current.includes(TASKS_TAB_ID)
+    if (!isOpen) {
+      openTasksTab()
+      return
+    }
+    if (activeTabRef.current === TASKS_TAB_ID) {
+      closeTabByKey(TASKS_TAB_ID)
+      return
+    }
+    setPreviewTab(prev => prev === TASKS_TAB_ID ? null : prev)
+    setActiveTab(TASKS_TAB_ID)
+  }, [closeTabByKey, openTasksTab])
+
   // --- File state actions ---
 
   const updateLayout = useCallback((partial: Partial<WorkspaceLayout>) => {
@@ -534,6 +595,7 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const updateFileDraft = useCallback((path: string, draft: string) => {
+    if (!isFileTab(path)) return
     // Auto-pin on edit
     setPreviewTab(prev => prev === path ? null : prev)
     setFiles(prev => {
@@ -552,6 +614,7 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const updateFileViewport = useCallback((path: string, line: number) => {
+    if (!isFileTab(path)) return
     setFiles(prev => {
       const existing = prev[path]
       if (!existing) return { ...prev, [path]: { ...defaultFileState(), viewportLine: line } }
@@ -561,6 +624,7 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const saveFile = useCallback(async (path: string, content: string): Promise<{ conflict: boolean }> => {
+    if (!isFileTab(path)) return { conflict: false }
     const project = projectRef.current
     let baseRevision: number | undefined
     setFiles(prev => {
@@ -604,6 +668,7 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const forceSave = useCallback(async (path: string, content: string) => {
+    if (!isFileTab(path)) return
     const project = projectRef.current
     setFiles(prev => {
       const s = prev[path]
@@ -634,6 +699,7 @@ export function useWorkspaceState(projectName: string) {
   }, [])
 
   const acceptDisk = useCallback((path: string) => {
+    if (!isFileTab(path)) return
     const project = projectRef.current
     fetchContent(project, path).then(result => {
       if (!result) return
@@ -649,13 +715,15 @@ export function useWorkspaceState(projectName: string) {
         },
       }))
     })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const actions = useMemo(() => ({
     openFileTab,
     openPreviewTab,
     openDiffTab,
     openPreviewDiffTab,
+    openTasksTab,
+    toggleTasksTab,
     closeTab: closeTabByKey,
     setActiveTab,
     setActiveSession,
@@ -667,7 +735,7 @@ export function useWorkspaceState(projectName: string) {
     forceSave,
     acceptDisk,
     setPinnedSessions,
-  }), [openFileTab, openPreviewTab, openDiffTab, openPreviewDiffTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
+  }), [openFileTab, openPreviewTab, openDiffTab, openPreviewDiffTab, openTasksTab, toggleTasksTab, closeTabByKey, updateLayout, updateFileDraft, updateFileViewport, saveFile, forceSave, acceptDisk])
 
   return {
     openTabs,

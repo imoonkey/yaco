@@ -16,7 +16,7 @@ Custom React hooks for data fetching, real-time updates, and device detection.
 
 `ui/src/hooks/*.ts`
 
-## useWorkspaceState.ts (618 lines)
+## useWorkspaceState.ts (753 lines)
 
 Per-project workspace state management: tabs, layout, file drafts, conflict detection, and persistence.
 
@@ -49,11 +49,13 @@ type FileState = {
 
 ### Key Behaviors
 
-- **Hydration**: on mount, fetches server content for all open tabs to detect conflicts
+- **Tab classification**: exports `TASKS_TAB_ID = '\0tasks'` plus `isFileTab()`, `isDiffTab()`, and `isTasksTab()` to keep file-only logic away from the synthetic Tasks tab
+- **Hydration**: on mount, fetches server content only for open file tabs to detect conflicts
 - **Conflict detection**: if `baseRevision` doesn't match server revision, status becomes `'conflict'`
-- **SSE refetch**: listens on `filetree` and `git` channels to refetch open files and detect external changes
-- **Draft persistence**: dirty drafts saved to localStorage with debounce (500ms). On quota exceeded, evicts oldest drafts.
+- **SSE refetch**: listens on `filetree` and `git` channels to refetch open file tabs and detect external changes
+- **Draft persistence**: dirty drafts for real files are saved to localStorage with debounce (500ms). On quota exceeded, evicts oldest drafts.
 - **Layout persistence**: layout saved with 300ms debounce
+- **Tasks tab lifecycle**: `openTasksTab()` and `toggleTasksTab()` keep the Tasks tab unique per project and never treat it as a preview tab
 - **Stable derived state**: `dirtyTabs` and `conflictTabs` use structural comparison to preserve Set references when content hasn't changed (prevents downstream re-renders on every keystroke)
 - **Force save**: `forceSave()` writes without revision check (for resolving conflicts)
 - **Accept disk**: `acceptDisk()` discards local draft and reloads server content

@@ -44,6 +44,7 @@ export interface ProgressEntry {
   status: ProgressStatus
   project: string
   workstream: string
+  sessionName?: string
 }
 
 export interface FileNode {

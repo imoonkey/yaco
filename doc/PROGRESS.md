@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-03-31: Embed the task graph as a stable Workspace tab
+
+**What changed:**
+- Added a synthetic non-file Tasks tab (`'\0tasks'`) with shared `isFileTab()` / `isDiffTab()` / `isTasksTab()` guards so workspace hydration, SSE refetch, and draft persistence only treat real files as files
+- Added `showTasks` layout state plus a sidebar Tasks doorway in desktop and mobile Workspace layouts, and wired `Cmd+Shift+T` to open, focus, or close the Tasks tab without creating duplicates
+- Rendered `TaskGraphScreen` inside the Workspace editor column when the Tasks tab is active, with explicit missing/error wrapper states and new e2e coverage for Tasks-tab behavior
+- Updated workspace, keyboard, mobile, and frontend architecture docs to reflect the embedded Tasks tab and its layout/shortcut behavior
+
+**Why:**
+- The task graph needed to behave like a first-class workspace surface instead of a separate top-level mode, while keeping the existing file-tab, preview-tab, draft, and session behavior stable
+
+**Key files:** `ui/src/hooks/useWorkspaceState.ts`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`, `ui/src/hooks/useTaskGraph.ts`, `ui/src/tasks/TaskGraphScreen.tsx`, `ui/tests/e2e/workspace-tasks-tab.spec.ts`, `doc/main/ui/workspace/overview.md`, `doc/main/ui/keyboard.md`
+**Verification:** `cd ui && npx vite build`; `cd ui && npx playwright test`; `cd server && npm test`; security scan via `rg -n "api_key|apiKey|API_KEY|sk-|key-" ui/src server/src`
+**Commit:** TBD
+**Next:** Reduce the existing repo-wide ESLint baseline so `/verify` can go fully green
+**Blockers:** `cd ui && npm run lint` still fails on pre-existing issues outside this task (`App.tsx`, `ComposeTray.tsx`, `FileExplorer.tsx`, `Terminal.tsx`, `useApi.ts`, `useSSE.ts`, `WorkspaceScreen.tsx`, and several older tests); code-quality check still reports legacy files over 400 lines
+
 ## 2026-03-31: Make `dev:tmux --restart` rebuild pane processes
 
 **What changed:**

@@ -22,8 +22,9 @@ Surface summary and desktop/mobile composition for the Workspace view.
 The Workspace is a multi-pane code editing environment for a single project. It provides:
 
 - File explorer with git status
-- Multi-tab code editor with markdown preview
+- Multi-tab center pane for files, diffs, and the task graph
 - Git changes panel with diff viewer
+- Tasks doorway that opens `doc/todo/tasks.json` as a stable tab
 - Terminal with session management
 - File search
 
@@ -38,8 +39,9 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 │  │ Explorer ││  │ CodeMirror /     ││  │ Terminal      ││
 │  │          ││  │ Preview /        ││  │               ││
 │  ├──────────┤│  │ Diff             ││  │               ││
-│  │ Changes  ││  │                  ││  ├───────────────┤│
-│  │          ││  │                  ││  │ Sessions      ││
+│  │ Changes  ││  │ CodeMirror /     ││  ├───────────────┤│
+│  ├──────────┤│  │ Preview / Diff / ││  │ Sessions      ││
+│  │ Tasks    ││  │ Task Graph       ││  │               ││
 │  └──────────┘│  └──────────────────┘│  └───────────────┘│
 ├──────────────┴──────────────────────┴───────────────────┤
 │  Project Tabs (shared with Monitor via App shell)       │
@@ -54,32 +56,35 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 | Activity column | `Cmd+Shift+B` | Visible | Yes (horizontal drag) |
 | Explorer section | Click header | Open | Yes (vertical drag) |
 | Changes section | Click header | Open | No (fills remaining sidebar space) |
+| Tasks section | Click header | Open | No (doorway body only) |
 | Sessions tray | Click header | Open | No (fixed max-height 180px, scrollable) |
 
 ### Empty Editor
 
-When no file tabs are open, the activity column (terminal + sessions) expands to occupy the full main content area.
+When no center tabs are open, the activity column (terminal + sessions) expands to occupy the full main content area.
 
 ## Mobile Composition
 
 Single full-width pane with PaneSwitch: `Files` | `Editor` | `Terminal`
 
-- `Files`: shows explorer, changes, and sessions sections
-- `Editor`: shows editor or preview for the active tab
+- `Files`: shows explorer, changes, tasks, and sessions sections
+- `Editor`: shows file editor, preview, diff, or task graph for the active tab
 - `Terminal`: shows terminal for the active session
 
 Auto-switching:
 - File select → `Editor` pane
+- Tasks doorway or `Cmd+Shift+T` → `Editor` pane
 - Session select or create → `Terminal` pane
 
 ## State Persistence
 
-Per-project state in localStorage (`workspace-state-<project>`):
+Per-project state in localStorage (`workflow-workspace:<project>` and `workflow-drafts:<project>`):
 - Open tabs and active tab
 - Active session
 - Sidebar visibility (left/right)
-- Section visibility (explorer/changes/sessions)
+- Section visibility (explorer/changes/tasks/sessions)
 - Panel widths (left/right)
 - Section split heights (explorer/changes)
+- Task graph collapse state persists separately in `workflow-taskgraph:<project>`
 
 See [../../data-model/persistence.md](../../data-model/persistence.md) for format details.

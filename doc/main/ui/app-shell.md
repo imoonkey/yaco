@@ -6,7 +6,7 @@ Top-level application chrome: navigation, project tabs, view switching, and PWA 
 
 - Top navigation bar behavior
 - Bottom project tab bar behavior
-- View switching between Monitor and Workspace
+- View switching between Monitor, Workspace, and the temporary Tasks fallback
 - PWA metadata and installability
 
 ## Does Not Own
@@ -21,12 +21,13 @@ Top-level application chrome: navigation, project tabs, view switching, and PWA 
 
 ## Navigation
 
-Two top-level views in the header:
+Three top-level views in the header:
 
 | View | Description |
 |------|-------------|
 | Monitor | Dashboard: sessions, notifications, roadmap |
 | Workspace | File editor + terminal + git integration |
+| Tasks | Temporary top-level task-graph fallback while the workspace Tasks tab is rolled out |
 
 The active view is persisted in localStorage and restored on refresh.
 

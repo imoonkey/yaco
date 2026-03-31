@@ -49,7 +49,7 @@ async function deleteTestFile(page: Page, projectName: string, filePath: string)
 
 test.describe('File search (Cmd+P)', () => {
   test('lists files from subdirectories, not just root', async ({ page }) => {
-    const project = await openWorkspace(page)
+    await openWorkspace(page)
 
     // Open search
     await page.keyboard.press('Meta+p')
@@ -108,7 +108,7 @@ test.describe('File search (Cmd+P)', () => {
   })
 
   test('gitignore toggle includes ignored files', async ({ page }) => {
-    const project = await openWorkspace(page)
+    await openWorkspace(page)
 
     await page.keyboard.press('Meta+p')
     await expect(page.locator('input[placeholder="Search files..."]')).toBeVisible({ timeout: 10_000 })
@@ -139,7 +139,7 @@ test.describe('Changes sidebar', () => {
 
     // Look for the change in the sidebar
     // Changes section should show the test file
-    const changeItem = page.locator('div', { hasText: '__e2e_changes_test.txt' }).first()
+    const changeItem = page.locator(`.items-start[title="${testPath}"]`).first()
 
     // If change is visible, click it
     if (await changeItem.isVisible({ timeout: 5000 }).catch(() => false)) {

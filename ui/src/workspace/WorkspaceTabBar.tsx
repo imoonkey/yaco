@@ -1,9 +1,14 @@
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
-import type { MdMode } from '../hooks/useWorkspaceState'
+import { isDiffTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
 
 function tabName(tab: string): string {
-  if (tab.startsWith('diff:')) return `${tab.slice(5).split('/').pop()} (diff)`
+  if (isTasksTab(tab)) return 'Tasks'
+  if (isDiffTab(tab)) return `${tab.slice(5).split('/').pop()} (diff)`
   return tab.split('/').pop() || tab
+}
+
+function tabTitle(tab: string): string {
+  return isTasksTab(tab) ? 'Tasks' : tab
 }
 
 function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m: MdMode) => void; isTouch: boolean }) {
@@ -68,18 +73,21 @@ export function WorkspaceTabBar({
         const isActive = tab === activeTab
         const isDirty = dirtyTabs.has(tab)
         const isConflict = conflictTabs.has(tab)
-        const isDiff = tab.startsWith('diff:')
+        const isDiff = isDiffTab(tab)
+        const isTasks = isTasksTab(tab)
         const isPreview = tab === previewTab
         return (
           <div key={tab} onClick={() => onSelectTab(tab)}
             onDoubleClick={() => onDoubleClickTab(tab)}
+            data-testid="tab"
             className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
             style={{
               backgroundColor: isActive ? C.editorBg : C.bg, color: isActive ? C.textDark : C.textDim,
-              borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : C.text}` : '2px solid transparent',
+              borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : isTasks ? C.accent : C.text}` : '2px solid transparent',
               borderBottom: isActive ? `1px solid ${C.editorBg}` : `1px solid ${C.border}`, marginBottom: -1,
-            }} title={tab}>
-            <span className="truncate max-w-[120px]" style={isPreview ? { fontStyle: 'italic' } : undefined}>{tabName(tab)}</span>
+              fontStyle: isPreview ? 'italic' : undefined,
+            }} title={tabTitle(tab)}>
+            <span className="truncate max-w-[120px]">{tabName(tab)}</span>
             {isConflict ? (
               <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[12px]" style={{ color: '#C4A241' }} title="File changed on disk">&#9888;</span>
             ) : isDirty ? (

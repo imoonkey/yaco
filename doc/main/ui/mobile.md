@@ -38,9 +38,12 @@ Controlled by PaneSwitch component in the header area.
 
 Controlled by PaneSwitch component.
 
+The `Files` pane stacks the workspace sidebar sections in order: Explorer, Changes, Tasks, Sessions.
+
 ### Auto-Switching
 
 - Selecting a file in `Files` pane → auto-switches to `Editor`
+- Opening the Tasks doorway or toggling the Tasks tab → auto-switches to `Editor`
 - Selecting or creating a session → auto-switches to `Terminal` (terminal mounts immediately, not gated by API poll)
 - Background data updates never force pane changes
 

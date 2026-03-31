@@ -8,6 +8,7 @@ export function SessionItem({
   isActive,
   pinned,
   dragging,
+  unreadCount,
   onClick,
   onKill,
   onPin,
@@ -21,6 +22,7 @@ export function SessionItem({
   isActive: boolean
   pinned?: boolean
   dragging?: boolean
+  unreadCount?: number
   onClick: () => void
   onKill: () => void
   onPin?: () => void
@@ -105,6 +107,14 @@ export function SessionItem({
           />
         ) : (
           <span className="min-w-0 flex-1 truncate">{session.name}</span>
+        )}
+        {!!unreadCount && unreadCount > 0 && (
+          <span
+            className="shrink-0 min-w-[18px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
+            style={{ backgroundColor: '#cb4b16' }}
+          >
+            {unreadCount}
+          </span>
         )}
         <button
           onClick={(e) => {

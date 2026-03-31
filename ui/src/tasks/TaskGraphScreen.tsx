@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
-import { useTaskGraph } from '../hooks/useTaskGraph'
+import { createFile, saveFileContent } from '../hooks/useApi'
+import { TASKS_FILE_PATH, useTaskGraph } from '../hooks/useTaskGraph'
 import { usePanZoom } from '../hooks/usePanZoom'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { TaskState } from './taskGraphModel'
@@ -15,8 +16,56 @@ import { TaskGraphMinimap } from './TaskGraphMinimap'
 
 const ALL_STATES: TaskState[] = ['ready', 'running', 'done', 'blocked', 'cancelled']
 
-export function TaskGraphScreen({ projectName }: { projectName: string }) {
-  const { status, graph, error, warnings } = useTaskGraph(projectName)
+function isInputLikeElement(element: Element | null): boolean {
+  if (!(element instanceof HTMLElement)) return false
+  const tag = element.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || element.isContentEditable
+}
+
+function StateButton({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="px-3 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors disabled:cursor-default disabled:opacity-60"
+      style={{
+        backgroundColor: SOLARIZED_LIGHT.base2,
+        color: SOLARIZED_LIGHT.base01,
+        border: `1px solid ${SOLARIZED_LIGHT.border}`,
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+function StatePane({
+  title,
+  message,
+  tone,
+  actions,
+  detail,
+}: {
+  title: string
+  message: string
+  tone: string
+  actions?: React.ReactNode
+  detail?: string | null
+}) {
+  return (
+    <div className="flex h-full items-center justify-center px-6">
+      <div className="max-w-[440px] rounded-md border px-5 py-4 text-center" style={{ borderColor: SOLARIZED_LIGHT.border, backgroundColor: SOLARIZED_LIGHT.base3 }}>
+        <div className="text-[15px] font-semibold" style={{ color: tone }}>{title}</div>
+        <div className="mt-2 text-[12px]" style={{ color: SOLARIZED_LIGHT.base01 }}>{message}</div>
+        {actions && <div className="mt-4 flex flex-wrap justify-center gap-2">{actions}</div>}
+        {detail && <div className="mt-3 text-[11px]" style={{ color: SOLARIZED_LIGHT.base1 }}>{detail}</div>}
+      </div>
+    </div>
+  )
+}
+
+export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName: string; onOpenTasksFile?: () => void }) {
+  const { status, graph, error, warnings, refresh } = useTaskGraph(projectName)
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
@@ -24,6 +73,8 @@ export function TaskGraphScreen({ projectName }: { projectName: string }) {
   const [selection, setSelection] = useState<Selection>(null)
   const [filters, setFilters] = useState<Set<TaskState>>(() => new Set(ALL_STATES))
   const [searchQuery, setSearchQuery] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // --- Collapse state ---
   const [collapsedMilestones, setCollapsedMilestones] = useState<Set<string>>(() => {
@@ -219,7 +270,7 @@ export function TaskGraphScreen({ projectName }: { projectName: string }) {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return
+      if (isInputLikeElement(document.activeElement)) return
 
       if (e.key === 'Escape') {
         setSelection(null)
@@ -329,6 +380,26 @@ export function TaskGraphScreen({ projectName }: { projectName: string }) {
     return () => document.removeEventListener('keydown', handler)
   }, [graph, selection, panZoom, handleNavigate, clearTooltip, collapsedMilestones, handleToggleCollapse, handleCollapseAll, handleExpandAll])
 
+  const handleCreateTasksFile = useCallback(async () => {
+    if (creating) return
+    setCreating(true)
+    setActionError(null)
+    try {
+      await createFile(projectName, TASKS_FILE_PATH)
+      await saveFileContent(projectName, TASKS_FILE_PATH, '{}\n')
+      refresh()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to create tasks.json'
+      if (message.startsWith('409')) {
+        refresh()
+      } else {
+        setActionError(message)
+      }
+    } finally {
+      setCreating(false)
+    }
+  }, [creating, projectName, refresh])
+
   // Compute hidden nodes from state filter + collapsed milestones
   const hiddenNodeIds = useMemo(() => {
     if (!graph) return new Set<string>()
@@ -350,12 +421,37 @@ export function TaskGraphScreen({ projectName }: { projectName: string }) {
     )
   }
 
+  if (status === 'missing') {
+    return (
+      <StatePane
+        title="No tasks.json yet"
+        message="This project does not have a task graph file yet."
+        tone={SOLARIZED_LIGHT.base01}
+        actions={
+          <>
+            {onOpenTasksFile && <StateButton label="Open tasks.json" onClick={onOpenTasksFile} />}
+            <StateButton label={creating ? 'Creating…' : 'Create tasks.json'} onClick={() => { void handleCreateTasksFile() }} disabled={creating} />
+          </>
+        }
+        detail={actionError}
+      />
+    )
+  }
+
   // Error state
   if (status === 'error' || !graph || !displayLayout) {
     return (
-      <div className="flex items-center justify-center h-full" style={{ color: SOLARIZED_LIGHT.red }}>
-        {error?.message ?? 'Failed to load tasks'}
-      </div>
+      <StatePane
+        title="Unable to load task graph"
+        message={error?.message ?? 'Failed to load tasks'}
+        tone={SOLARIZED_LIGHT.red}
+        actions={
+          <>
+            {onOpenTasksFile && <StateButton label="Open tasks.json" onClick={onOpenTasksFile} />}
+            <StateButton label="Retry" onClick={refresh} />
+          </>
+        }
+      />
     )
   }
 

@@ -21,7 +21,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Session List
 
-On desktop, located in the activity column (right panel) below the terminal. On mobile, located in the Files pane below Explorer and Changes. The session UI is defined once in WorkspaceScreen and placed by WorkspaceLayout via slot assignment.
+On desktop, located in the activity column (right panel) below the terminal. On mobile, located in the Files pane below Explorer, Changes, and Tasks. The session UI is defined once in WorkspaceScreen and placed by WorkspaceLayout via slot assignment.
 
 ### Display
 

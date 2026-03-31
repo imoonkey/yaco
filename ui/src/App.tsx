@@ -2,11 +2,13 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Monitor } from './components/Monitor'
 import { Workspace } from './components/Workspace'
 import { TaskGraph } from './components/TaskGraph'
-import { useProjects, useProgress, removeProject, reorderProjects } from './hooks/useApi'
+import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { writeTextToClipboard } from './lib/clipboard'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
+import { useSessionUnreadState } from './hooks/useSessionUnreadState'
+import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
 
 type View = 'monitor' | 'workspace' | 'tasks'
@@ -76,19 +78,23 @@ function ProjectTabs({
   projectName,
   workspaceProject,
   projects,
+  projectUnreadCounts,
   onSelect,
   onAdd,
   onReorder,
   onRemove,
+  onMarkAllRead,
 }: {
   view: View
   projectName: string
   workspaceProject: string
   projects?: Project[]
+  projectUnreadCounts: Record<string, number>
   onSelect: (name: string) => void
   onAdd: () => void
   onReorder: (fromName: string, toName: string) => void
   onRemove: (project: Project) => void
+  onMarkAllRead: (projectName: string) => void
 }) {
   const showAllProjects = view !== 'workspace' && view !== 'tasks'
   const activeProject = (view === 'workspace' || view === 'tasks') ? workspaceProject : projectName
@@ -130,6 +136,7 @@ function ProjectTabs({
 
           {(projects ?? []).map(project => {
             const isActive = activeProject === project.name
+            const unreadCount = projectUnreadCounts[project.name] ?? 0
             return (
               <button
                 key={project.name}
@@ -147,7 +154,7 @@ function ProjectTabs({
                 }}
                 onClick={() => onSelect(project.name)}
                 onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, project }) }}
-                className={`px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer shrink-0 transition-colors ${
+                className={`relative px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer shrink-0 transition-colors ${
                   isActive
                     ? 'bg-[#268bd2]/15 text-[#268bd2]'
                     : 'text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]'
@@ -157,6 +164,14 @@ function ProjectTabs({
                 }}
               >
                 {project.name}
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
+                    style={{ backgroundColor: '#cb4b16' }}
+                  >
+                    {unreadCount}
+                  </span>
+                )}
               </button>
             )
           })}
@@ -179,6 +194,7 @@ function ProjectTabs({
           onClick={e => e.stopPropagation()}
         >
           <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(ctxMenu.project.path); setCtxMenu(null) }} />
+          <MenuItem label="Mark All Read" onClick={() => { onMarkAllRead(ctxMenu.project.name); setCtxMenu(null) }} />
           <MenuDivider />
           <MenuItem label="Remove" danger onClick={() => { onRemove(ctxMenu.project); setCtxMenu(null) }} />
         </div>
@@ -199,8 +215,12 @@ function App() {
 
   const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: progress } = useProgress()
-  const browserNotifications = useBrowserNotifications()
+  const { data: allSessions } = useSessions()
   const [showAddDialog, setShowAddDialog] = useState(false)
+
+  // App/Workspace bridge state
+  const [visibilityReport, setVisibilityReport] = useState<WorkspaceVisibilityReport | null>(null)
+  const [attachIntent, setAttachIntent] = useState<AttachSessionIntent | null>(null)
 
   useEffect(() => {
     if (!projects) return
@@ -232,6 +252,29 @@ function App() {
   const concreteProject = lastConcreteProject || (orderedProjects[0]?.name ?? '')
   const workspaceProject = projectName === 'all' ? concreteProject : projectName
   const currentProjectPath = orderedProjects.find(p => p.name === workspaceProject)?.path ?? ''
+
+  // Unread state — purely derived from progress, sessions, and localStorage read timestamps
+  const { sessionUnreadCounts, projectUnreadCounts, markSessionRead, markAllRead } = useSessionUnreadState(
+    progress,
+    allSessions,
+    workspaceProject,
+    visibilityReport,
+  )
+
+  // Browser notifications with project/session routing
+  const handleNotificationClick = useCallback((project: string, sessionName: string) => {
+    // Select the project
+    setProjectName(project)
+    setLastConcreteProject(project)
+    // Switch to workspace view
+    setView('workspace')
+    // Emit attach intent if session is specified
+    if (sessionName) {
+      setAttachIntent({ token: Date.now(), projectName: project, sessionName })
+    }
+  }, [])
+
+  const browserNotifications = useBrowserNotifications(handleNotificationClick)
 
   // Persist state changes
   useEffect(() => {
@@ -353,7 +396,17 @@ function App() {
 
       <main className="flex-1 overflow-hidden">
         {view === 'monitor' && <Monitor filterProject={projectName === 'all' ? null : projectName} browserNotifications={browserNotifications} />}
-        {view === 'workspace' && <Workspace key={workspaceProject} projectName={workspaceProject} projectPath={currentProjectPath} />}
+        {view === 'workspace' && (
+          <Workspace
+            key={workspaceProject}
+            projectName={workspaceProject}
+            projectPath={currentProjectPath}
+            sessionUnreadCounts={sessionUnreadCounts}
+            markSessionRead={markSessionRead}
+            onVisibilityReport={setVisibilityReport}
+            attachIntent={attachIntent}
+          />
+        )}
         {view === 'tasks' && <TaskGraph key={workspaceProject} projectName={workspaceProject} />}
       </main>
 
@@ -362,10 +415,12 @@ function App() {
         projectName={projectName}
         workspaceProject={workspaceProject}
         projects={orderedProjects}
+        projectUnreadCounts={projectUnreadCounts}
         onSelect={handleProjectChange}
         onAdd={handleAddProject}
         onReorder={handleProjectReorder}
         onRemove={handleRemoveProject}
+        onMarkAllRead={markAllRead}
       />
       {showAddDialog && (
         <AddProjectDialog

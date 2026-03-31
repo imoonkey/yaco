@@ -5,9 +5,14 @@ interface NotificationEvent {
   id: string
   title: string
   message: string
+  project?: string
+  sessionName?: string
+  progressType?: string
 }
 
-export function useBrowserNotifications(): {
+export function useBrowserNotifications(
+  onNotificationClick?: (project: string, sessionName: string) => void,
+): {
   permission: NotificationPermission | 'unsupported'
   requestPermission: () => void
 } {
@@ -17,6 +22,8 @@ export function useBrowserNotifications(): {
   })
 
   const seenIds = useRef(new Set<string>())
+  const onClickRef = useRef(onNotificationClick)
+  onClickRef.current = onNotificationClick
 
   const requestPermission = useCallback(async () => {
     if (typeof Notification === 'undefined') return
@@ -39,10 +46,25 @@ export function useBrowserNotifications(): {
         if (document.visibilityState === 'visible') return
         if (Notification.permission !== 'granted') return
 
-        new Notification(event.title, {
+        // Build title with project and session context
+        const parts: string[] = []
+        if (event.project) parts.push(event.project)
+        if (event.sessionName) parts.push(event.sessionName)
+        const title = parts.length > 0 ? `${parts.join(' / ')}: ${event.title}` : event.title
+
+        const notification = new Notification(title, {
           body: event.message,
           tag: event.id,
         })
+
+        // Route click to app
+        const project = event.project ?? ''
+        const sessionName = event.sessionName ?? ''
+        notification.onclick = () => {
+          window.focus()
+          onClickRef.current?.(project, sessionName)
+          notification.close()
+        }
       } catch { /* ignore */ }
     })
   }, [])

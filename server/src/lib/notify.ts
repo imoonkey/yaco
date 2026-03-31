@@ -11,6 +11,7 @@ export interface NotificationEvent {
   project: string
   workstream: string
   progressType: ProgressType
+  sessionName?: string
 }
 
 export type SSEWriter = (event: string, data: string) => void

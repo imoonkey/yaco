@@ -20,19 +20,19 @@ React component tree, props interfaces, and responsibilities.
 ## Component Tree
 
 ```
-App (305 lines)
+App (380 lines)
 ├── Monitor (345 lines)
 │   ├── ProviderIcon
 │   ├── RoadmapView (160 lines)
 │   └── PaneSwitch (35 lines)
 ├── Workspace (re-export → workspace/WorkspaceScreen)
-│   └── WorkspaceScreen (696 lines) — controller
-│       └── WorkspaceLayout (175 lines) — layout composition
+│   └── WorkspaceScreen (889 lines) — controller
+│       └── WorkspaceLayout (187 lines) — layout composition
 │           ├── SectionHeader (17 lines)
 │           ├── VResizeHandle / HResizeHandle (23 lines)
 │           └── PaneSwitch
-│       ├── WorkspaceTabBar (75 lines)
-│       ├── WorkspaceEditorArea (295 lines)
+│       ├── WorkspaceTabBar (113 lines)
+│       ├── WorkspaceEditorArea (363 lines)
 │       │   ├── DiffView
 │       │   ├── MarkdownPreview
 │       │   └── Editor (223 lines)
@@ -42,6 +42,7 @@ App (305 lines)
 │       ├── SessionItem (37 lines)
 │       ├── GitChangeItem (22 lines)
 │       ├── FileSearch (45 lines)
+│       ├── TaskGraphScreen — rendered as the Tasks workspace tab
 │       └── ProviderIcon
 └── TaskGraph (re-export → tasks/TaskGraphScreen)
     └── TaskGraphScreen — controller
@@ -58,7 +59,7 @@ App (305 lines)
 **Supporting modules (non-component):**
 - `workspace/markdown.ts` (118 lines) — escapeHtml, renderMarkdown, code highlighting, mermaid init
 - `workspace/useResize.ts` (34 lines) — drag-to-resize hook
-- `hooks/useWorkspaceState.ts` (618 lines) — domain state, persistence, SSE reconciliation
+- `hooks/useWorkspaceState.ts` (753 lines) — domain state, persistence, SSE reconciliation
 - `lib/diffGutter.ts` (283 lines) — CodeMirror diff gutter extension, inline hunk popup widget
 - `lib/parseDiff.ts` (71 lines) — unified diff parser → `DiffHunk[]` (wraps `parse-diff`)
 
@@ -66,12 +67,12 @@ App (305 lines)
 
 **File**: `ui/src/App.tsx` (305 lines)
 
-Top-level shell. Manages view switching (Monitor/Workspace), project selection, and project tab bar.
+Top-level shell. Manages view switching (Monitor/Workspace/Tasks fallback), project selection, and project tab bar.
 
 **Props**: None (root component)
 
 **Responsibilities**:
-- View state: `'monitor' | 'workspace'`
+- View state: `'monitor' | 'workspace' | 'tasks'`
 - Project selection and ordering
 - Bottom project tab bar with drag-and-drop reorder
 - Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project tabs
@@ -88,28 +89,28 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
-- Builds section content (explorer, changes, sessions, editor, terminal) as React nodes
+- Builds section content (explorer, changes, tasks doorway, sessions, editor, terminal) as React nodes
 - Passes content slots to `WorkspaceLayout` for placement
 - Delegates domain state to `useWorkspaceState` hook
 
 ### WorkspaceLayout
 
-**File**: `ui/src/workspace/WorkspaceLayout.tsx` (175 lines)
+**File**: `ui/src/workspace/WorkspaceLayout.tsx` (187 lines)
 
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
-**Desktop**: `Sidebar(Explorer + Changes) | Editor | ActivityColumn(Terminal + Sessions)`
-**Mobile**: `PaneSwitch → Files(Explorer + Changes + Sessions) | Editor | Terminal`
+**Desktop**: `Sidebar(Explorer + Changes + Tasks) | CenterTabs(File / Diff / Tasks) | ActivityColumn(Terminal + Sessions)`
+**Mobile**: `PaneSwitch → Files(Explorer + Changes + Tasks + Sessions) | Editor | Terminal`
 
 ### Extracted modules in `ui/src/workspace/`
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `WorkspaceScreen.tsx` | 696 | Controller (state, callbacks, keyboard) |
-| `WorkspaceLayout.tsx` | 175 | Layout composition (desktop/mobile) |
-| `WorkspaceEditorArea.tsx` | 340 | Editor, split view, preview, diff, conflict banner |
+| `WorkspaceScreen.tsx` | 889 | Controller (state, callbacks, keyboard, Tasks tab routing) |
+| `WorkspaceLayout.tsx` | 187 | Layout composition (desktop/mobile) |
+| `WorkspaceEditorArea.tsx` | 363 | Editor, split view, preview, diff, conflict banner, Tasks tab host |
 | `markdown.ts` | 118 | Markdown rendering, syntax highlighting, mermaid |
-| `WorkspaceTabBar.tsx` | 100 | Tab strip with dirty/conflict indicators, md mode toggle |
+| `WorkspaceTabBar.tsx` | 113 | Tab strip with file/diff/tasks classification and md mode toggle |
 | `WorkspaceSearch.tsx` | 60 | File search modal (fetches full index via `/api/files/:project/search-index`) |
 | `WorkspaceSessionList.tsx` | 37 | SessionItem component |
 | `useResize.ts` | 34 | Drag-to-resize hook |
