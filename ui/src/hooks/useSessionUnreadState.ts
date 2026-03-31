@@ -74,6 +74,14 @@ export function useSessionUnreadState(
   visibilityReport: WorkspaceVisibilityReport | null,
 ) {
   const [readState, setReadState] = useState(loadReadState)
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible')
+
+  // Track document visibility so effects rerun when user returns to tab
+  useEffect(() => {
+    const handler = () => setPageVisible(document.visibilityState === 'visible')
+    document.addEventListener('visibilitychange', handler)
+    return () => document.removeEventListener('visibilitychange', handler)
+  }, [])
 
   // Persist on change
   const readStateRef = useRef(readState)
@@ -96,7 +104,7 @@ export function useSessionUnreadState(
   // Visible-session guard: auto-advance read timestamp for visible sessions
   useEffect(() => {
     if (!visibilityReport) return
-    if (document.visibilityState !== 'visible') return
+    if (!pageVisible) return
     if (!visibilityReport.attachedSession || !visibilityReport.terminalVisible) return
     if (visibilityReport.projectName !== activeProject) return
 
@@ -123,7 +131,7 @@ export function useSessionUnreadState(
         sessionReadAt: { ...prev.sessionReadAt, [key]: maxTs },
       }
     })
-  }, [progress, visibilityReport, activeProject, liveSessions])
+  }, [progress, visibilityReport, activeProject, liveSessions, pageVisible])
 
   // Derive per-session unread counts
   const sessionUnreadCounts = useMemo((): SessionUnreadCounts => {

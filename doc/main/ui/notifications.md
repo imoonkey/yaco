@@ -10,7 +10,6 @@ Notification pipeline: macOS desktop, SSE broadcast, and browser Notification AP
 
 ## Does Not Own
 
-- Notification display in Monitor UI (see [monitor.md](monitor.md))
 - SSE protocol details (see [../data-model/api-contracts.md](../data-model/api-contracts.md))
 
 ## Related Code
@@ -76,7 +75,7 @@ The reconciler skips Claude sessions entirely — they use the Stop hook.
   - Tab is hidden (`document.visibilityState !== 'visible'`)
   - Permission is `'granted'`
 - Per-tab deduplication: seen-ID set (max 500, FIFO eviction)
-- Permission prompt shown as an action button in Monitor's Notifications pane
+- Notification click navigates to the relevant project and session in the Workspace
 
 ## macOS Desktop Notifications
 

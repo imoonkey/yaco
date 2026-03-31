@@ -16,7 +16,7 @@ Responsive layouts, pane switching, touch handling, and mobile-specific behavior
 
 ## Related Code
 
-`ui/src/hooks/useIsMobile.ts`, `ui/src/components/PaneSwitch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Monitor.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
+`ui/src/hooks/useIsMobile.ts`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
 
 ## Breakpoint
 
@@ -24,13 +24,7 @@ Mobile layout activates at viewport width ≤ 768px (configurable via `useIsMobi
 
 ## Pane Switching Model
 
-Both Monitor and Workspace collapse from multi-column to a single full-width pane on mobile.
-
-### Monitor Panes
-
-`Sessions` | `Notifications` | `Roadmap`
-
-Controlled by PaneSwitch component in the header area.
+On mobile, the Workspace collapses from multi-column to a single full-width pane.
 
 ### Workspace Panes
 

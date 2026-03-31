@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Project, Workstream, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
+import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
 import { useSSERefresh } from './useSSE'
 
 export const API = '/api'
@@ -53,11 +53,6 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
 export function useProjects() {
   const fetcher = useCallback(() => fetchJson<Project[]>('/projects'), [])
   return usePolling(fetcher, 60_000, 'projects')
-}
-
-export function useWorkstreams() {
-  const fetcher = useCallback(() => fetchJson<Workstream[]>('/workstreams'), [])
-  return usePolling(fetcher, 30_000, 'workstreams')
 }
 
 export function useProgress() {
@@ -195,15 +190,6 @@ export function useFileContent(projectName: string | null, filePath: string | nu
   }, [projectName, filePath])
 
   return { content, revision, loading }
-}
-
-export async function dismissProgress(project: string, workstream: string, id: string): Promise<void> {
-  const ws = workstream || '_'
-  await postJson(`/progress/${encodeURIComponent(project)}/${encodeURIComponent(ws)}/${encodeURIComponent(id)}/dismiss`)
-}
-
-export async function updateWorkstreamStatus(project: string, workstreamId: string, status: string): Promise<void> {
-  await postJson(`/workstreams/${encodeURIComponent(project)}/${encodeURIComponent(workstreamId)}/status`, { status })
 }
 
 export async function addProject(name: string, path: string): Promise<void> {

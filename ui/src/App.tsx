@@ -221,6 +221,7 @@ function App() {
             markSessionRead={markSessionRead}
             onVisibilityReport={setVisibilityReport}
             attachIntent={attachIntent}
+            clearAttachIntent={() => setAttachIntent(null)}
           />
         )}
         {!activeProject && (

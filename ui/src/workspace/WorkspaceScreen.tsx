@@ -62,6 +62,7 @@ export function Workspace({
   markSessionRead,
   onVisibilityReport,
   attachIntent,
+  clearAttachIntent,
 }: {
   projectName: string
   projectPath: string
@@ -76,6 +77,7 @@ export function Workspace({
   markSessionRead?: (project: string, session: string) => void
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
   attachIntent?: AttachSessionIntent | null
+  clearAttachIntent?: () => void
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
@@ -117,23 +119,28 @@ export function Workspace({
   }, [onVisibilityReport, projectName, activeSession, isMobile, mobilePane, showRightPanel])
 
   // --- App/Workspace bridge: consume attach intent ---
-  const consumedIntentToken = useRef<number>(0)
   useEffect(() => {
-    if (!attachIntent) return
-    if (attachIntent.token === consumedIntentToken.current) return
+    if (!attachIntent || !clearAttachIntent) return
     if (attachIntent.projectName !== projectName) return
-    consumedIntentToken.current = attachIntent.token
-    // Check if the session still exists
-    if (sessions && !sessions.some(s => s.name === attachIntent.sessionName)) return
-    actions.setActiveSession(attachIntent.sessionName)
-    if (isMobile) actions.setMobilePane('terminal')
-  }, [attachIntent, projectName, sessions, actions, isMobile])
+    // Wait for sessions to load before deciding
+    if (!sessions) return
+    const found = sessions.some(s => s.name === attachIntent.sessionName)
+    if (found) {
+      actions.setActiveSession(attachIntent.sessionName)
+      if (isMobile) actions.setMobilePane('terminal')
+      if (!isMobile) actions.updateLayout({ showRightPanel: true })
+    }
+    // Ack whether found or not — session is either attached or conclusively gone
+    clearAttachIntent()
+  }, [attachIntent, clearAttachIntent, projectName, sessions, actions, isMobile])
 
-  // --- Mark session as read when attached ---
+  // --- Mark session as read when attached AND terminal visible ---
   useEffect(() => {
     if (!activeSession || !markSessionRead) return
+    const terminalVisible = isMobile ? mobilePane === 'terminal' : showRightPanel
+    if (!terminalVisible) return
     markSessionRead(projectName, activeSession)
-  }, [activeSession, projectName, markSessionRead])
+  }, [activeSession, projectName, markSessionRead, isMobile, mobilePane, showRightPanel])
 
   // Only fetch file content for non-diff tabs
   const activeDiffTab = isDiffTab(activeTab)
