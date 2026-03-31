@@ -12,6 +12,7 @@ type KeyDef = {
 export type TerminalKeyBarKey =
   | 'escape'
   | 'tab'
+  | 'enter'
   | 'arrow-left'
   | 'arrow-down'
   | 'arrow-up'
@@ -21,6 +22,8 @@ export type TerminalKeyBarKey =
   | 'ctrl-z'
   | 'ctrl-l'
   | 'ctrl-r'
+  | 'ctrl-o'
+  | 'ctrl-b'
   | 'ctrl-a'
   | 'ctrl-e'
   | 'ctrl-w'
@@ -29,18 +32,21 @@ export type TerminalKeyBarKey =
 const PRIMARY_KEYS: KeyDef[] = [
   { id: 'escape', label: 'Esc', ariaLabel: 'Escape', seq: '\x1b' },
   { id: 'tab', label: 'Tab', ariaLabel: 'Tab', seq: '\t' },
+  { id: 'enter', label: '↵', ariaLabel: 'Enter', seq: '\r' },
   { id: 'arrow-left', label: '←', ariaLabel: 'Left arrow', seq: '\x1b[D', repeatable: true },
   { id: 'arrow-down', label: '↓', ariaLabel: 'Down arrow', seq: '\x1b[B', repeatable: true },
   { id: 'arrow-up', label: '↑', ariaLabel: 'Up arrow', seq: '\x1b[A', repeatable: true },
   { id: 'arrow-right', label: '→', ariaLabel: 'Right arrow', seq: '\x1b[C', repeatable: true },
-  { id: 'ctrl-c', label: '^C', ariaLabel: 'Control C', seq: '\x03' },
 ]
 
 const SECONDARY_KEYS: KeyDef[] = [
+  { id: 'ctrl-c', label: '^C', ariaLabel: 'Control C', seq: '\x03' },
   { id: 'ctrl-d', label: '^D', ariaLabel: 'Control D', seq: '\x04' },
   { id: 'ctrl-z', label: '^Z', ariaLabel: 'Control Z', seq: '\x1a' },
   { id: 'ctrl-l', label: '^L', ariaLabel: 'Control L', seq: '\x0c' },
   { id: 'ctrl-r', label: '^R', ariaLabel: 'Control R', seq: '\x12' },
+  { id: 'ctrl-o', label: '^O', ariaLabel: 'Control O', seq: '\x0f' },
+  { id: 'ctrl-b', label: '^B', ariaLabel: 'Control B', seq: '\x02' },
   { id: 'ctrl-a', label: '^A', ariaLabel: 'Control A', seq: '\x01' },
   { id: 'ctrl-e', label: '^E', ariaLabel: 'Control E', seq: '\x05' },
   { id: 'ctrl-w', label: '^W', ariaLabel: 'Control W', seq: '\x17' },

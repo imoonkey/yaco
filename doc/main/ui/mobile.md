@@ -64,7 +64,7 @@ On touch devices: `user-select: none` is removed so iOS gesture recognition work
 
 ### Terminal
 
-**Key Bar**: On touch devices (`useIsTouch()`), a `TerminalKeyBar` renders below the xterm container with special keys missing from virtual keyboards: Esc, Tab, arrows, ^C (primary row) and ^D, ^Z, ^L, ^R, ^A, ^E, ^W, ^U (expandable secondary row). Arrow keys support hold-to-repeat (400ms delay, 80ms interval). All key presses send escape sequences directly via the existing WebSocket input channel. The bar container uses `onMouseDown` with `preventDefault()` to prevent buttons from stealing focus from xterm's textarea (which would dismiss the virtual keyboard).
+**Key Bar**: On touch devices (`useIsTouch()`), a `TerminalKeyBar` renders below the xterm container with special keys missing from virtual keyboards. The primary row now keeps high-frequency navigation and submit keys visible: Esc, Tab, Enter (rendered as `↵`), and arrows. The expandable secondary row holds control shortcuts: ^C, ^D, ^Z, ^L, ^R, ^O, ^B, ^A, ^E, ^W, ^U. Arrow keys support hold-to-repeat (400ms delay, 80ms interval). All key presses send escape sequences directly via the existing WebSocket input channel. The bar container uses `onMouseDown` with `preventDefault()` to prevent buttons from stealing focus from xterm's textarea (which would dismiss the virtual keyboard).
 
 -> See: `ui/src/components/TerminalKeyBar.tsx`
 

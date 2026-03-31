@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-31: Expand mobile terminal key bar shortcuts
+
+**What changed:**
+- Added a dedicated Enter key to the mobile terminal key bar primary row and rendered it as `↵` to save space
+- Moved `^C` into the expandable secondary row and added `^O` / `^B` control shortcuts there
+- Updated the key bar unit tests and touch UI docs to match the new primary/secondary row layout
+
+**Why:**
+- Mobile terminal use needed a visible submit key without widening the always-visible row too much, and the secondary row needed a few extra control shortcuts without turning the bar into a stateful modifier keyboard
+
+**Key files:** `ui/src/components/TerminalKeyBar.tsx`, `ui/src/components/__tests__/TerminalKeyBar.test.tsx`, `doc/main/ui/mobile.md`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/main/frontend/components.md`
+**Verification:** `cd ui && npx vitest run src/components/__tests__/TerminalKeyBar.test.tsx`
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-27: Fix session routing collision across projects
 
 **What changed:**

@@ -21,6 +21,12 @@ function touchButton(label: string) {
   return btn
 }
 
+function touchButtonByAriaLabel(label: string) {
+  const btn = screen.getByRole('button', { name: label })
+  fireEvent.touchStart(btn)
+  return btn
+}
+
 describe('TerminalKeyBar', () => {
   describe('PRIMARY_KEYS produce correct escape sequences', () => {
     it.each([
@@ -30,20 +36,28 @@ describe('TerminalKeyBar', () => {
       ['↓', '\x1b[B'],
       ['↑', '\x1b[A'],
       ['→', '\x1b[C'],
-      ['^C', '\x03'],
     ] as const)('%s sends correct sequence', (label, seq) => {
       render(<TerminalKeyBar sendInput={sendInput} />)
       touchButton(label)
       expect(sendInput).toHaveBeenCalledWith(seq)
     })
+
+    it('Enter sends correct sequence', () => {
+      render(<TerminalKeyBar sendInput={sendInput} />)
+      touchButtonByAriaLabel('Enter')
+      expect(sendInput).toHaveBeenCalledWith('\r')
+    })
   })
 
   describe('SECONDARY_KEYS produce correct escape sequences', () => {
     it.each([
+      ['^C', '\x03'],
       ['^D', '\x04'],
       ['^Z', '\x1a'],
       ['^L', '\x0c'],
       ['^R', '\x12'],
+      ['^O', '\x0f'],
+      ['^B', '\x02'],
       ['^A', '\x01'],
       ['^E', '\x05'],
       ['^W', '\x17'],

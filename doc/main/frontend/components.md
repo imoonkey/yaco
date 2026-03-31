@@ -179,15 +179,15 @@ xterm.js wrapper with WebSocket PTY connection.
 
 ### TerminalKeyBar
 
-**File**: `ui/src/components/TerminalKeyBar.tsx` (224 lines)
+**File**: `ui/src/components/TerminalKeyBar.tsx`
 
 Touch-only key bar for terminal special keys missing from virtual keyboards.
 
 **Props**: `{ sendInput: (data: string) => void; resolveInput?: (key: TerminalKeyBarKey, fallback: string) => string }`
 
 **Responsibilities**:
-- Primary row: Esc, Tab, arrows, ^C, expand toggle
-- Secondary row (expandable): ^D, ^Z, ^L, ^R, ^A, ^E, ^W, ^U
+- Primary row: Esc, Tab, Enter (`↵`), arrows, expand toggle
+- Secondary row (expandable): ^C, ^D, ^Z, ^L, ^R, ^O, ^B, ^A, ^E, ^W, ^U
 - Hold-to-repeat on arrow keys (400ms delay, 80ms interval)
 - Dynamic arrow key resolution (CSI vs SS3 via resolveInput)
 - Click fallback for assistive technology, ARIA labels, toolbar role
