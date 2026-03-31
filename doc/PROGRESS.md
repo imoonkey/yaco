@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-03-31: Make `dev:tmux --restart` rebuild pane processes
+
+**What changed:**
+- Replaced the `--restart` path in `scripts/dev-tmux.sh` from `send-keys C-c` + retyping commands to `tmux respawn-pane -k`
+- Before respawning, the script now syncs key environment variables (`PATH`, `SHELL`, locale vars, `SSH_AUTH_SOCK`, etc.) into the tmux session
+- Updated the dev guide and script help text to reflect the new restart behavior
+
+**Why:**
+- The old restart path reused the existing pane shell, so it kept stale environment like old `SSH_AUTH_SOCK` values and could queue commands into a pane that had not cleanly returned to a shell prompt yet
+
+**Key files:** `scripts/dev-tmux.sh`, `doc/dev/workflow.md`
+**Verification:** `bash -n scripts/dev-tmux.sh`; detached smoke check with a temporary tmux session confirmed `--restart` respawned both panes and both returned to live `node` processes
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
 ## 2026-03-31: Auto-repair SSH auth for spawned terminal sessions
 
 **What changed:**

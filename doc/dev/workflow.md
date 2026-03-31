@@ -56,7 +56,7 @@ Useful options:
 ```bash
 npm run dev:tmux -- --detached     # Start without attaching
 npm run dev:tmux -- --reset        # Recreate session from scratch
-npm run dev:tmux -- --restart      # Restart both dev servers in-place
+npm run dev:tmux -- --restart      # Respawn both dev panes with refreshed environment
 WORKFLOW_DEV_TMUX_SESSION=workflow-api npm run dev:tmux  # Override session name
 ```
 

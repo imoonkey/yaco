@@ -7,6 +7,38 @@ SESSION_NAME="${WORKFLOW_DEV_TMUX_SESSION:-workflow-dev}"
 ATTACH=1
 RESET=0
 RESTART=0
+DEV_WINDOW="dev"
+
+sync_tmux_env() {
+  local target="$1"
+  local vars=(
+    PATH
+    SHELL
+    LANG
+    LC_ALL
+    LC_CTYPE
+    TERM
+    TERM_PROGRAM
+    TERM_PROGRAM_VERSION
+    SSH_AUTH_SOCK
+    SSH_AGENT_PID
+    HOME
+  )
+
+  for var in "${vars[@]}"; do
+    if [ -n "${!var-}" ]; then
+      tmux set-environment -t "$target" "$var" "${!var}"
+    else
+      tmux set-environment -r -t "$target" "$var" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+respawn_dev_panes() {
+  sync_tmux_env "$SESSION_NAME"
+  tmux respawn-pane -k -t "$SESSION_NAME:${DEV_WINDOW}.0" -c "$ROOT_DIR" 'npm run dev:server'
+  tmux respawn-pane -k -t "$SESSION_NAME:${DEV_WINDOW}.1" -c "$ROOT_DIR" 'npm run dev:ui'
+}
 
 usage() {
   cat <<'EOF'
@@ -19,7 +51,7 @@ Starts a tmux session with two panes:
 Options:
   --detached       Start or reuse the session without attaching
   --reset          Kill an existing session with the same name before starting
-  --restart        Send C-c + re-run dev commands in both panes (no session kill)
+  --restart        Respawn both dev panes in place with refreshed environment
   --session NAME   Override tmux session name
   -h, --help       Show this help
 
@@ -101,13 +133,7 @@ validate_session_name
 if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   if [ "$RESTART" -eq 1 ]; then
     echo "Restarting dev servers in: $SESSION_NAME"
-    for pane in 0 1; do
-      tmux send-keys -t "$SESSION_NAME:dev.$pane" C-c
-      tmux send-keys -t "$SESSION_NAME:dev.$pane" "cd \"$ROOT_DIR\"" C-m
-    done
-    sleep 1
-    tmux send-keys -t "$SESSION_NAME:dev.0" 'npm run dev:server' C-m
-    tmux send-keys -t "$SESSION_NAME:dev.1" 'npm run dev:ui' C-m
+    respawn_dev_panes
     attach_session
     exit 0
   fi
@@ -120,15 +146,16 @@ if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   fi
 fi
 
-tmux new-session -d -s "$SESSION_NAME" -n dev -c "$ROOT_DIR"
+tmux new-session -d -s "$SESSION_NAME" -n "$DEV_WINDOW" -c "$ROOT_DIR"
 tmux set-option -t "$SESSION_NAME" remain-on-exit on
-tmux send-keys -t "$SESSION_NAME:dev.0" 'npm run dev:server' C-m
+sync_tmux_env "$SESSION_NAME"
+tmux send-keys -t "$SESSION_NAME:${DEV_WINDOW}.0" 'npm run dev:server' C-m
 
-tmux split-window -h -t "$SESSION_NAME:dev" -c "$ROOT_DIR"
-tmux send-keys -t "$SESSION_NAME:dev.1" 'npm run dev:ui' C-m
+tmux split-window -h -t "$SESSION_NAME:$DEV_WINDOW" -c "$ROOT_DIR"
+tmux send-keys -t "$SESSION_NAME:${DEV_WINDOW}.1" 'npm run dev:ui' C-m
 
-tmux select-layout -t "$SESSION_NAME:dev" even-horizontal
-tmux select-pane -t "$SESSION_NAME:dev.0"
+tmux select-layout -t "$SESSION_NAME:$DEV_WINDOW" even-horizontal
+tmux select-pane -t "$SESSION_NAME:${DEV_WINDOW}.0"
 
 echo "Started tmux session: $SESSION_NAME"
 echo "Backend pane: npm run dev:server"
