@@ -1,7 +1,8 @@
-import pty from 'node-pty'
+import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import { resolveTmuxSession, validateSessionName } from './session-names'
 import { resolveSessionTmuxName } from './multmux'
+import { buildChildProcessEnv } from './ssh-auth'
 
 const MAX_BUFFER_SIZE = 200_000
 
@@ -66,7 +67,7 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
     cols: 80,
     rows: 24,
     cwd,
-    env: process.env as Record<string, string>,
+    env: buildChildProcessEnv(),
   })
 
   const session: ShellSession = {
@@ -122,7 +123,7 @@ export function attachSession(sessionName: string, cols: number, rows: number, p
     name: 'xterm-256color',
     cols,
     rows,
-    env: process.env as Record<string, string>,
+    env: buildChildProcessEnv(),
   })
 
   return {

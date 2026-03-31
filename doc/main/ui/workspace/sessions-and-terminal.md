@@ -117,6 +117,8 @@ Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. I
 
 Shell sessions keep a scrollback buffer on the server, so re-attaching restores recent output.
 
+Before the server spawns a shell PTY or starts a new multmux child process, it repairs the child SSH environment (`SSH_AUTH_SOCK`) and, on macOS, can preload identities from the Apple keychain. This avoids per-project "open a terminal and run one manual git command first" warm-up when repos use SSH remotes.
+
 ### Session Name Resolution
 
 When a `project` query param is provided on the WebSocket URL, `attachSession()` reads the project's `.multmux/<handle>.json` state file to get the exact `tmuxSession` value. This ensures sessions with the same handle across different projects (e.g. both `openweb` and `androidagent` having `codex-design`) connect to the correct tmux session.

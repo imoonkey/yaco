@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import type { Project } from './projects'
 import { validateSessionName } from './session-names'
+import { buildChildProcessEnv } from './ssh-auth'
 
 // Resolve multmux path at startup
 const MULTMUX_PATH = (() => {
@@ -160,6 +161,7 @@ function spawnOutput(cmd: string, args: string[], timeoutMs: number, cwd?: strin
     const proc = spawn(cmd, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       cwd,
+      env: buildChildProcessEnv(),
     })
     let out = ''
     let err = ''

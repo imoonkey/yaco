@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-03-31: Auto-repair SSH auth for spawned terminal sessions
+
+**What changed:**
+- Added `server/src/lib/ssh-auth.ts` to validate `SSH_AUTH_SOCK` before spawning shell or multmux child processes
+- On macOS, stale sockets are repaired by discovering the live `ssh-agent` socket via `pgrep` + `lsof`
+- If the agent is reachable but empty, the server now runs `ssh-add --apple-load-keychain` before starting new sessions
+- `terminal.ts` and `multmux.ts` now use the repaired child env, and new unit tests cover stale-socket and empty-agent cases
+
+**Why:**
+- The workflow server could inherit a dead `SSH_AUTH_SOCK`, so new project sessions started with a broken SSH environment and Git-over-SSH commands inside shell/Codex/Claude sessions got stuck until you manually warmed up auth in a separate terminal
+
+**Key files:** `server/src/lib/ssh-auth.ts`, `server/src/lib/__tests__/ssh-auth.test.ts`, `server/src/lib/terminal.ts`, `server/src/lib/multmux.ts`, `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd server && npm test`; live probe confirmed stale socket, repaired socket, and successful `ssh -T git@github.com` after `ssh-add --apple-load-keychain`
+**Commit:** TBD
+**Next:** Restart the workflow server so new sessions inherit the repaired SSH env path
+**Blockers:** Existing already-running agent processes keep their old environment until restarted
+
 ## 2026-03-31: Expand mobile terminal key bar shortcuts
 
 **What changed:**
@@ -12,6 +29,21 @@
 
 **Key files:** `ui/src/components/TerminalKeyBar.tsx`, `ui/src/components/__tests__/TerminalKeyBar.test.tsx`, `doc/main/ui/mobile.md`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/main/frontend/components.md`
 **Verification:** `cd ui && npx vitest run src/components/__tests__/TerminalKeyBar.test.tsx`
+**Commit:** TBD
+**Next:** None
+**Blockers:** None
+
+## 2026-03-31: Fix terminal attach disconnect for all sessions
+
+**What changed:**
+- `server/src/lib/terminal.ts` now imports `node-pty` via namespace import (`import * as pty`) instead of default import
+- Added `server/src/lib/__tests__/terminal.test.ts` covering project-scoped tmux attach, fallback attach, and the import-shape regression
+
+**Why:**
+- Under the current `tsx` + ESM runtime, `import pty from 'node-pty'` resolved to `undefined`, so `attachSession()` threw before spawning `tmux attach-session`. Session status still rendered correctly from `.multmux/*.json`, but opening any terminal immediately closed the WebSocket and the UI showed `Disconnected`.
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/lib/__tests__/terminal.test.ts`
+**Verification:** `cd server && npm test`; direct WebSocket attach smoke check against `codex-mnb8iog7`
 **Commit:** TBD
 **Next:** None
 **Blockers:** None

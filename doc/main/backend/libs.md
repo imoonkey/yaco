@@ -117,7 +117,18 @@ PTY management for terminal sessions.
 - Shell sessions keep a bounded scrollback buffer so re-attaching restores recent output
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
+- Shell PTYs and tmux attach PTYs both use `buildChildProcessEnv()` so spawned processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`
 - `attachSession(name, cols, rows, projectPath?)` — when `projectPath` is provided, looks up the exact `tmuxSession` from the project's state file via `resolveSessionTmuxName()`, falling back to global `resolveTmuxSession()` search
+
+### ssh-auth.ts (89 lines)
+
+Best-effort SSH environment repair for spawned child processes.
+
+**Exports**: `buildChildProcessEnv()`
+
+- Validates the current `SSH_AUTH_SOCK` by probing `ssh-add -l`
+- On macOS, if the socket is stale, discovers a live `ssh-agent` socket via `pgrep` + `lsof`
+- If the agent is reachable but empty, runs `ssh-add --apple-load-keychain` so new shell/tmux sessions can use SSH-backed Git remotes without a manual warm-up terminal
 
 ### session-summary.ts (215 lines)
 
