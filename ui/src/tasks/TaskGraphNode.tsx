@@ -1,5 +1,5 @@
 import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
-import type { LayoutNode, TaskGraphTask } from './taskGraphModel'
+import type { LayoutNode, TaskGraphTask, LayoutGroup } from './taskGraphModel'
 import { NODE_WIDTH, NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
@@ -60,15 +60,18 @@ function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel): number
   return 1
 }
 
-export function TaskGraphNode({ node, task, highlight, isSelected, isSearchMatch, depCount, scale, onClick, onPointerEnter, onPointerLeave }: {
+export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isCollapsed, depCount, scale, onClick, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   node: LayoutNode
   task: TaskGraphTask
+  group?: LayoutGroup
   highlight: HighlightModel
   isSelected: boolean
   isSearchMatch: boolean
+  isCollapsed: boolean
   depCount: number
   scale: number
   onClick: (id: string) => void
+  onToggleCollapse: (id: string) => void
   onPointerEnter: (target: TooltipTarget) => void
   onPointerLeave: () => void
 }) {
@@ -77,6 +80,12 @@ export function TaskGraphNode({ node, task, highlight, isSelected, isSearchMatch
 
   const strokeColor = isSearchMatch ? SOLARIZED_LIGHT.violet : isSelected ? SOLARIZED_LIGHT.focusBorder : SOLARIZED_LIGHT.border
   const strokeW = isSearchMatch || isSelected ? 2 : 1
+
+  // Group affordances: chevron and progress
+  const hasGroupAffordances = task.hasChildren
+  const chevronWidth = hasGroupAffordances ? 16 : 0
+  const progressText = group ? `${group.progress.done}/${group.progress.total}` : ''
+  const progressWidth = hasGroupAffordances ? 36 : 0
 
   return (
     <g
@@ -93,7 +102,6 @@ export function TaskGraphNode({ node, task, highlight, isSelected, isSearchMatch
       }}
       onPointerEnter={() => onPointerEnter({
         id: node.id,
-        type: 'task',
         graphX: node.x + node.width / 2,
         graphY: node.y,
         graphH: node.height,
@@ -133,19 +141,44 @@ export function TaskGraphNode({ node, task, highlight, isSelected, isSearchMatch
         />
       )}
 
+      {/* Collapse chevron for group tasks */}
+      {hasGroupAffordances && (
+        <g
+          onClick={(e) => { e.stopPropagation(); onToggleCollapse(node.id) }}
+          style={{ cursor: 'pointer' }}
+        >
+          <rect x={node.x} y={node.y} width={16} height={NODE_HEIGHT} fill="transparent" />
+          <text
+            x={node.x + 8}
+            y={node.y + NODE_HEIGHT / 2 + 4}
+            fontSize={9}
+            textAnchor="middle"
+            fill={SOLARIZED_LIGHT.base1}
+          >
+            {isCollapsed ? '\u25B6' : '\u25BC'}
+          </text>
+        </g>
+      )}
+
       {/* Clip path for text overflow */}
       <clipPath id={`clip-${node.id}`}>
-        <rect x={node.x + 26} y={node.y} width={NODE_WIDTH - 26 - (depCount > 0 ? 20 : 6)} height={NODE_HEIGHT} />
+        <rect
+          x={node.x + chevronWidth + 22}
+          y={node.y}
+          width={NODE_WIDTH - chevronWidth - 22 - progressWidth - (depCount > 0 ? 20 : 6)}
+          height={NODE_HEIGHT}
+        />
       </clipPath>
 
       {/* State dot */}
-      <StateDot state={task.state} cx={node.x + 14} cy={node.y + NODE_HEIGHT / 2} />
+      <StateDot state={task.state} cx={node.x + chevronWidth + 12} cy={node.y + NODE_HEIGHT / 2} />
 
       {/* Title */}
       <text
-        x={node.x + 28}
+        x={node.x + chevronWidth + 24}
         y={node.y + NODE_HEIGHT / 2 + 4}
         fontSize={12}
+        fontWeight={hasGroupAffordances ? 600 : 400}
         fill={SOLARIZED_LIGHT.base01}
         opacity={showLabels ? 1 : 0}
         style={{ transition: 'opacity 150ms ease-out' }}
@@ -154,8 +187,23 @@ export function TaskGraphNode({ node, task, highlight, isSelected, isSearchMatch
         {task.title}
       </text>
 
-      {/* Dependency count badge */}
-      {depCount > 0 && (
+      {/* Progress count for groups */}
+      {hasGroupAffordances && progressText && (
+        <text
+          x={node.x + NODE_WIDTH - (depCount > 0 ? 24 : 8)}
+          y={node.y + NODE_HEIGHT / 2 + 4}
+          fontSize={10}
+          textAnchor="end"
+          fill={SOLARIZED_LIGHT.base1}
+          opacity={showLabels ? 0.7 : 0}
+          style={{ transition: 'opacity 150ms ease-out' }}
+        >
+          {progressText}
+        </text>
+      )}
+
+      {/* Dependency count badge (leaf tasks only) */}
+      {!hasGroupAffordances && depCount > 0 && (
         <text
           x={node.x + NODE_WIDTH - 12}
           y={node.y + NODE_HEIGHT / 2 + 4}

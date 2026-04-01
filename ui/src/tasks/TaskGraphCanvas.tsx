@@ -1,22 +1,21 @@
-import type { GraphLayout, TaskGraphModel, TaskGraphTask } from './taskGraphModel'
+import type { GraphLayout, TaskGraphModel } from './taskGraphModel'
 import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { HighlightModel } from './taskGraphSelection'
 import type { Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { TaskGraphEdges } from './TaskGraphEdges'
-import { TaskGraphMilestone } from './TaskGraphMilestone'
+import { TaskGraphGroup } from './TaskGraphGroup'
 import { TaskGraphNode } from './TaskGraphNode'
 
-export function TaskGraphCanvas({ graph, layout, hiddenNodeIds, searchMatchIds, transform, highlight, selection, scale, collapsedMilestones, handlers, onSelectTask, onSelectMilestone, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphCanvas({ graph, layout, searchMatchIds, transform, highlight, selection, scale, collapsedTaskIds, handlers, onSelectTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   graph: TaskGraphModel
   layout: GraphLayout
-  hiddenNodeIds: Set<string>
   searchMatchIds: Set<string>
   transform: string
   highlight: HighlightModel
   selection: Selection
   scale: number
-  collapsedMilestones: Set<string>
+  collapsedTaskIds: Set<string>
   handlers: {
     onWheel: (e: React.WheelEvent) => void
     onPointerDown: (e: React.PointerEvent) => void
@@ -24,16 +23,13 @@ export function TaskGraphCanvas({ graph, layout, hiddenNodeIds, searchMatchIds, 
     onPointerUp: (e: React.PointerEvent) => void
   }
   onSelectTask: (id: string) => void
-  onSelectMilestone: (id: string) => void
   onClearSelection: () => void
   onToggleCollapse: (id: string) => void
   onPointerEnter: (target: TooltipTarget) => void
   onPointerLeave: () => void
 }) {
-  // Build tasks map for milestone progress bar
-  const tasks = graph.tasks as Map<string, TaskGraphTask>
-  // Milestone IDs are always visible — don't filter edges targeting them
-  const milestoneIds = new Set(layout.columns.map(c => c.id))
+  // Build group lookup for node progress info
+  const groupById = new Map(layout.groups.map(g => [g.id, g]))
 
   return (
     <svg
@@ -44,49 +40,44 @@ export function TaskGraphCanvas({ graph, layout, hiddenNodeIds, searchMatchIds, 
     >
       <g transform={transform}>
         <style>{`.tg-focusable:focus-visible { outline: 2px solid ${SOLARIZED_LIGHT.focusBorder}; outline-offset: 2px; }`}</style>
-        {/* Layer 1: Milestone backgrounds */}
-        <g data-layer="milestones">
-          {layout.columns.map(col => (
-            <TaskGraphMilestone
-              key={col.id}
-              column={col}
-              tasks={tasks}
+        {/* Layer 1: Group container frames (shallow-to-deep, skip collapsed groups with no visible children) */}
+        <g data-layer="groups">
+          {[...layout.groups].filter(g => g.childIds.length > 0).sort((a, b) => a.depth - b.depth).map(group => (
+            <TaskGraphGroup
+              key={group.id}
+              group={group}
+              subtreeIds={graph.subtreeIdsByTask.get(group.id) ?? [group.id]}
               highlight={highlight}
-              isSelected={selection?.type === 'milestone' && selection.id === col.id}
-              isCollapsed={collapsedMilestones.has(col.id)}
-              onClick={onSelectMilestone}
-              onToggleCollapse={onToggleCollapse}
-              onPointerEnter={onPointerEnter}
-              onPointerLeave={onPointerLeave}
+              isSelected={selection === group.id}
+              onClick={onSelectTask}
             />
           ))}
         </g>
 
-        {/* Layer 2: Dependency edges (hide edges touching hidden nodes, but not milestone endpoints) */}
-        <TaskGraphEdges edges={layout.edges.filter(e => {
-          const sourceHidden = hiddenNodeIds.has(e.sourceId) && !milestoneIds.has(e.sourceId)
-          const targetHidden = hiddenNodeIds.has(e.targetId) && !milestoneIds.has(e.targetId)
-          return !sourceHidden && !targetHidden
-        })} highlight={highlight} />
+        {/* Layer 2: Dependency edges (display layout already excludes filtered/collapsed nodes) */}
+        <TaskGraphEdges edges={layout.edges} highlight={highlight} />
 
-        {/* Layer 3: Task nodes (hide filtered-out and collapsed nodes) */}
+        {/* Layer 3: Task header cards (all visible tasks — leaf + group headers) */}
         <g data-layer="nodes">
           {Array.from(layout.nodes.values()).map(node => {
-            if (hiddenNodeIds.has(node.id)) return null
             const task = graph.tasks.get(node.id)
             if (!task) return null
             const depCount = task.depends.length
+            const group = groupById.get(node.id)
             return (
               <TaskGraphNode
                 key={node.id}
                 node={node}
                 task={task}
+                group={group}
                 highlight={highlight}
-                isSelected={selection?.type === 'task' && selection.id === node.id}
+                isSelected={selection === node.id}
                 isSearchMatch={searchMatchIds.has(node.id)}
+                isCollapsed={collapsedTaskIds.has(node.id)}
                 depCount={depCount}
                 scale={scale}
                 onClick={onSelectTask}
+                onToggleCollapse={onToggleCollapse}
                 onPointerEnter={onPointerEnter}
                 onPointerLeave={onPointerLeave}
               />

@@ -122,7 +122,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
             onClick={onCollapseAll}
             className="w-7 h-7 rounded text-[12px] cursor-pointer transition-colors"
             style={{ color: SOLARIZED_LIGHT.base01 }}
-            title="Collapse all milestones"
+            title="Collapse all groups"
           >
             {'\u25B6\u25B6'}
           </button>
@@ -132,7 +132,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
             onClick={onExpandAll}
             className="w-7 h-7 rounded text-[12px] cursor-pointer transition-colors"
             style={{ color: SOLARIZED_LIGHT.base01 }}
-            title="Expand all milestones"
+            title="Expand all groups"
           >
             {'\u25BC\u25BC'}
           </button>

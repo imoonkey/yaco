@@ -107,14 +107,11 @@ function SegmentedProgressBar({ tasks }: { tasks: TaskGraphTask[] }) {
   )
 }
 
-function DepRow({ task, graph, onNavigate, showState }: {
+function DepRow({ task, onNavigate, showState }: {
   task: TaskGraphTask
-  graph: TaskGraphModel
   onNavigate: (id: string) => void
   showState?: boolean
 }) {
-  const milestoneTag = task.topLevelId ? graph.tasks.get(task.topLevelId)?.title : null
-
   return (
     <button
       onClick={() => onNavigate(task.id)}
@@ -124,11 +121,6 @@ function DepRow({ task, graph, onNavigate, showState }: {
     >
       <span style={{ color: STATE_COLORS[task.state] }}>{'\u25CF'}</span>
       <span className="flex-1 truncate">{task.title}</span>
-      {milestoneTag && (
-        <span className="text-[10px] shrink-0" style={{ color: SOLARIZED_LIGHT.base1 }}>
-          ({milestoneTag})
-        </span>
-      )}
       {showState && (
         <span className="text-[11px] shrink-0" style={{ color: STATE_COLORS[task.state] }}>
           {STATE_LABELS[task.state]?.toLowerCase()}
@@ -138,10 +130,51 @@ function DepRow({ task, graph, onNavigate, showState }: {
   )
 }
 
-function TaskDetail({ taskId, graph, onNavigate }: {
+// Build full breadcrumb chain (clickable ancestor path)
+function Breadcrumb({ taskId, graph, onNavigate }: {
   taskId: string
   graph: TaskGraphModel
   onNavigate: (id: string) => void
+}) {
+  const ancestors: { id: string; title: string }[] = []
+  let current = graph.tasks.get(taskId)?.parent
+  const visited = new Set<string>()
+  while (current && !visited.has(current)) {
+    visited.add(current)
+    const t = graph.tasks.get(current)
+    if (!t) break
+    ancestors.unshift({ id: current, title: t.title })
+    current = t.parent
+  }
+
+  if (ancestors.length === 0) return null
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap text-[11px]" style={{ color: SOLARIZED_LIGHT.base1 }}>
+      {ancestors.map((a, i) => (
+        <span key={a.id} className="flex items-center gap-1">
+          {i > 0 && <span>{'\u203A'}</span>}
+          <button
+            onClick={() => onNavigate(a.id)}
+            className="cursor-pointer transition-colors"
+            style={{ color: SOLARIZED_LIGHT.base1 }}
+            onMouseEnter={e => (e.currentTarget.style.color = SOLARIZED_LIGHT.base01)}
+            onMouseLeave={e => (e.currentTarget.style.color = SOLARIZED_LIGHT.base1)}
+          >
+            {a.title}
+          </button>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleCollapse }: {
+  taskId: string
+  graph: TaskGraphModel
+  onNavigate: (id: string) => void
+  collapsedTaskIds: Set<string>
+  onToggleCollapse: (id: string) => void
 }) {
   const task = graph.tasks.get(taskId)
   if (!task) return null
@@ -149,20 +182,55 @@ function TaskDetail({ taskId, graph, onNavigate }: {
   const deps = task.depends.map(id => graph.tasks.get(id)).filter(Boolean) as TaskGraphTask[]
   const dependents = ((graph.dependentsByTask.get(taskId) ?? []).map(id => graph.tasks.get(id)).filter(Boolean)) as TaskGraphTask[]
 
+  // Group-specific data
+  const childIds = graph.childIdsByTask.get(taskId) ?? []
+  const children = childIds.map(id => graph.tasks.get(id)).filter(Boolean) as TaskGraphTask[]
+  const sortedChildren = [...children].sort((a, b) => {
+    const sp = (STATE_PRIORITY[a.state] ?? 4) - (STATE_PRIORITY[b.state] ?? 4)
+    if (sp !== 0) return sp
+    return a.title.localeCompare(b.title)
+  })
+
+  const isCollapsed = collapsedTaskIds.has(taskId)
+
+  // Subtree leaf progress
+  const subtreeIds = graph.subtreeIdsByTask.get(taskId) ?? [taskId]
+  const leafTasks = subtreeIds
+    .map(id => graph.tasks.get(id))
+    .filter((t): t is TaskGraphTask => !!t && !t.hasChildren)
+
+  // External dependencies (deps outside this subtree)
+  const subtreeSet = new Set(subtreeIds)
+  const externalDeps = new Map<string, { title: string; count: number }>()
+  for (const tid of subtreeIds) {
+    const t = graph.tasks.get(tid)
+    if (!t) continue
+    for (const depId of t.depends) {
+      if (subtreeSet.has(depId)) continue
+      const depTask = graph.tasks.get(depId)
+      if (!depTask) continue
+      // Find root ancestor of dep for grouping
+      let rootId = depId
+      let p = depTask.parent
+      const vis = new Set<string>()
+      while (p && !vis.has(p)) {
+        vis.add(p)
+        rootId = p
+        p = graph.tasks.get(p)?.parent ?? null
+      }
+      const existing = externalDeps.get(rootId)
+      if (existing) {
+        existing.count++
+      } else {
+        externalDeps.set(rootId, { title: graph.tasks.get(rootId)?.title ?? rootId, count: 1 })
+      }
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3 p-3 text-[12px]" style={{ color: SOLARIZED_LIGHT.base01 }}>
       {/* Breadcrumb */}
-      {task.topLevelId && (
-        <button
-          onClick={() => onNavigate(task.topLevelId!)}
-          className="text-[11px] text-left cursor-pointer transition-colors"
-          style={{ color: SOLARIZED_LIGHT.base1 }}
-          onMouseEnter={e => (e.currentTarget.style.color = SOLARIZED_LIGHT.base01)}
-          onMouseLeave={e => (e.currentTarget.style.color = SOLARIZED_LIGHT.base1)}
-        >
-          {'\u25C0'} {graph.tasks.get(task.topLevelId)?.title}
-        </button>
-      )}
+      <Breadcrumb taskId={taskId} graph={graph} onNavigate={onNavigate} />
 
       {/* Title + state */}
       <div className="flex items-center gap-2">
@@ -171,6 +239,27 @@ function TaskDetail({ taskId, graph, onNavigate }: {
         </span>
         <StateBadge state={task.state} />
       </div>
+
+      {/* Group: progress + collapse toggle */}
+      {task.hasChildren && (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px]" style={{ color: SOLARIZED_LIGHT.base1 }}>
+            {leafTasks.filter(t => t.state === 'done').length}/{leafTasks.length} done
+          </span>
+          <button
+            onClick={() => onToggleCollapse(taskId)}
+            className="px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors"
+            style={{ color: SOLARIZED_LIGHT.base1, border: `1px solid ${SOLARIZED_LIGHT.border}` }}
+          >
+            {isCollapsed ? 'Expand' : 'Collapse'}
+          </button>
+        </div>
+      )}
+
+      {/* Progress bar for groups */}
+      {task.hasChildren && leafTasks.length > 0 && (
+        <SegmentedProgressBar tasks={leafTasks} />
+      )}
 
       {/* Description */}
       {task.description && (
@@ -195,11 +284,20 @@ function TaskDetail({ taskId, graph, onNavigate }: {
         </div>
       )}
 
+      {/* Children (group tasks) */}
+      {sortedChildren.length > 0 && (
+        <CollapsibleSection title="Children" count={sortedChildren.length}>
+          {sortedChildren.map(child => (
+            <DepRow key={child.id} task={child} onNavigate={onNavigate} showState />
+          ))}
+        </CollapsibleSection>
+      )}
+
       {/* Dependencies */}
       {deps.length > 0 && (
         <CollapsibleSection title="Dependencies" count={deps.length}>
           {deps.map(dep => (
-            <DepRow key={dep.id} task={dep} graph={graph} onNavigate={onNavigate} showState />
+            <DepRow key={dep.id} task={dep} onNavigate={onNavigate} showState />
           ))}
         </CollapsibleSection>
       )}
@@ -208,7 +306,28 @@ function TaskDetail({ taskId, graph, onNavigate }: {
       {dependents.length > 0 && (
         <CollapsibleSection title="Dependents" count={dependents.length}>
           {dependents.map(dep => (
-            <DepRow key={dep.id} task={dep} graph={graph} onNavigate={onNavigate} showState />
+            <DepRow key={dep.id} task={dep} onNavigate={onNavigate} showState />
+          ))}
+        </CollapsibleSection>
+      )}
+
+      {/* External dependencies (for groups) */}
+      {task.hasChildren && externalDeps.size > 0 && (
+        <CollapsibleSection title="External Dependencies" count={externalDeps.size}>
+          {Array.from(externalDeps.entries()).map(([rootId, { title, count }]) => (
+            <button
+              key={rootId}
+              onClick={() => onNavigate(rootId)}
+              className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors"
+              onMouseEnter={e => (e.currentTarget.style.backgroundColor = SOLARIZED_LIGHT.listHoverBackground)}
+              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+            >
+              <span style={{ color: SOLARIZED_LIGHT.base1 }}>{'\u2192'}</span>
+              <span>{title}</span>
+              <span className="text-[10px]" style={{ color: SOLARIZED_LIGHT.base1 }}>
+                ({count} dep{count !== 1 ? 's' : ''})
+              </span>
+            </button>
           ))}
         </CollapsibleSection>
       )}
@@ -239,155 +358,26 @@ function TaskDetail({ taskId, graph, onNavigate }: {
   )
 }
 
-function MilestoneDetail({ milestoneId, graph, onNavigate, isCollapsed, onToggleCollapse }: {
-  milestoneId: string
-  graph: TaskGraphModel
-  onNavigate: (id: string) => void
-  isCollapsed: boolean
-  onToggleCollapse: (id: string) => void
-}) {
-  const col = graph.layout.columns.find(c => c.id === milestoneId)
-  if (!col) return null
-
-  const msTask = graph.tasks.get(milestoneId)
-  const tasks = col.taskIds.map(id => graph.tasks.get(id)).filter(Boolean) as TaskGraphTask[]
-
-  // Sort by state priority then title
-  const sortedTasks = [...tasks].sort((a, b) => {
-    const sp = (STATE_PRIORITY[a.state] ?? 4) - (STATE_PRIORITY[b.state] ?? 4)
-    if (sp !== 0) return sp
-    return a.title.localeCompare(b.title)
-  })
-
-  // External dependencies: cross-milestone deps aggregated by milestone
-  const externalDeps = new Map<string, { milestoneTitle: string; count: number }>()
-  for (const task of tasks) {
-    for (const depId of task.depends) {
-      const depTask = graph.tasks.get(depId)
-      if (!depTask) continue
-      const depMsId = depTask.topLevelId
-      if (depMsId && depMsId !== milestoneId) {
-        const existing = externalDeps.get(depMsId)
-        if (existing) {
-          existing.count++
-        } else {
-          externalDeps.set(depMsId, {
-            milestoneTitle: graph.tasks.get(depMsId)?.title ?? depMsId,
-            count: 1,
-          })
-        }
-      }
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3 p-3 text-[12px]" style={{ color: SOLARIZED_LIGHT.base01 }}>
-      {/* Title + progress + collapse toggle */}
-      <div className="flex items-center gap-2">
-        <span className="font-semibold text-[14px] flex-1" style={{ color: SOLARIZED_LIGHT.base02 }}>
-          {col.title}
-        </span>
-        <span className="text-[11px]" style={{ color: SOLARIZED_LIGHT.base1 }}>
-          {col.progress.done}/{col.progress.total}
-        </span>
-        {col.taskIds.length > 0 && (
-          <button
-            onClick={() => onToggleCollapse(milestoneId)}
-            className="px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors"
-            style={{ color: SOLARIZED_LIGHT.base1, border: `1px solid ${SOLARIZED_LIGHT.border}` }}
-          >
-            {isCollapsed ? 'Expand' : 'Collapse'}
-          </button>
-        )}
-      </div>
-
-      {/* Progress bar + legend */}
-      <SegmentedProgressBar tasks={tasks} />
-
-      {/* Description */}
-      {msTask?.description && (
-        <div>
-          <div className="font-medium mb-1" style={{ color: SOLARIZED_LIGHT.base1 }}>Description</div>
-          <div style={{ color: SOLARIZED_LIGHT.base00 }}>{msTask.description}</div>
-        </div>
-      )}
-
-      {/* Accept criteria */}
-      {msTask && msTask.acceptCriteria.length > 0 && (
-        <div>
-          <div className="font-medium mb-1" style={{ color: SOLARIZED_LIGHT.base1 }}>Accept Criteria</div>
-          <ul className="list-none pl-0">
-            {msTask.acceptCriteria.map((ac, i) => (
-              <li key={i} className="flex items-start gap-1.5 mb-0.5">
-                <span style={{ color: SOLARIZED_LIGHT.base1 }}>{'\u2610'}</span>
-                <span>{ac}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Children */}
-      {sortedTasks.length > 0 && (
-        <CollapsibleSection title="Children" count={sortedTasks.length}>
-          {sortedTasks.map(task => (
-            <DepRow key={task.id} task={task} graph={graph} onNavigate={onNavigate} showState />
-          ))}
-        </CollapsibleSection>
-      )}
-
-      {/* External dependencies */}
-      {externalDeps.size > 0 && (
-        <CollapsibleSection title="External Dependencies" count={externalDeps.size}>
-          {Array.from(externalDeps.entries()).map(([msId, { milestoneTitle, count }]) => (
-            <button
-              key={msId}
-              onClick={() => onNavigate(msId)}
-              className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors"
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = SOLARIZED_LIGHT.listHoverBackground)}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-            >
-              <span style={{ color: SOLARIZED_LIGHT.base1 }}>{'\u2192'}</span>
-              <span>{milestoneTitle}</span>
-              <span className="text-[10px]" style={{ color: SOLARIZED_LIGHT.base1 }}>
-                ({count} task{count !== 1 ? 's' : ''} depend)
-              </span>
-            </button>
-          ))}
-        </CollapsibleSection>
-      )}
-
-      {/* Note */}
-      {msTask?.note && (
-        <div>
-          <div className="font-medium mb-1" style={{ color: SOLARIZED_LIGHT.base1 }}>Note</div>
-          <div style={{ color: SOLARIZED_LIGHT.base00 }}>{msTask.note}</div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNavigate, collapsedMilestones, onToggleCollapse }: {
+export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNavigate, collapsedTaskIds, onToggleCollapse }: {
   selection: Selection
   graph: TaskGraphModel
   isMobile: boolean
   onClose: () => void
   onNavigate: (id: string) => void
-  collapsedMilestones: Set<string>
+  collapsedTaskIds: Set<string>
   onToggleCollapse: (id: string) => void
 }) {
   if (!selection) return null
 
-  const content = selection.type === 'task'
-    ? <TaskDetail taskId={selection.id} graph={graph} onNavigate={onNavigate} />
-    : <MilestoneDetail
-        milestoneId={selection.id}
-        graph={graph}
-        onNavigate={onNavigate}
-        isCollapsed={collapsedMilestones.has(selection.id)}
-        onToggleCollapse={onToggleCollapse}
-      />
+  const content = (
+    <TaskDetailView
+      taskId={selection}
+      graph={graph}
+      onNavigate={onNavigate}
+      collapsedTaskIds={collapsedTaskIds}
+      onToggleCollapse={onToggleCollapse}
+    />
+  )
 
   if (isMobile) {
     return (
@@ -399,7 +389,6 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
           borderTop: `1px solid ${SOLARIZED_LIGHT.border}`,
         }}
       >
-        {/* Drag handle */}
         <div className="flex justify-center py-2" onClick={onClose} style={{ cursor: 'pointer' }}>
           <div className="w-10 h-1 rounded-full" style={{ backgroundColor: SOLARIZED_LIGHT.base1 }} />
         </div>
@@ -419,7 +408,6 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
         transition: 'transform 200ms ease-out',
       }}
     >
-      {/* Close button */}
       <div className="flex justify-end p-2">
         <button
           onClick={onClose}

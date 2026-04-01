@@ -18,7 +18,6 @@ function edgeColor(edge: LayoutEdge, highlight: HighlightModel): string {
   if (edge.isCycle) return COLORS.cycle
   if (!highlight.dimUnrelated || !isActiveEdge(edge, highlight)) return COLORS.default
 
-  // Check if this is an upstream or downstream edge
   if (highlight.upstreamTaskIds.has(edge.sourceId)) return COLORS.upstream
   if (highlight.downstreamTaskIds.has(edge.targetId)) return COLORS.downstream
   return COLORS.default
@@ -44,7 +43,6 @@ function markerRef(edge: LayoutEdge, highlight: HighlightModel): string {
   return 'url(#arrow-default)'
 }
 
-// Extract source/target coordinates from SVG path for badge positioning
 function getEdgeMidpoint(path: string): { x: number; y: number } | null {
   const match = path.match(/^M\s+([\d.]+),([\d.]+)\s+C\s+[\d.]+,[\d.]+\s+[\d.]+,[\d.]+\s+([\d.]+),([\d.]+)$/)
   if (!match) return null

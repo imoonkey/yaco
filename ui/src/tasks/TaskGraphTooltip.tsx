@@ -5,7 +5,6 @@ import type { ViewportTransform } from '../hooks/usePanZoom'
 
 export type TooltipTarget = {
   id: string
-  type: 'task' | 'milestone'
   graphX: number   // center X in graph coords
   graphY: number   // top Y in graph coords
   graphH: number   // height in graph coords
@@ -24,10 +23,8 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
   const screenY = target.graphY * scale + ty
   const screenBottom = (target.graphY + target.graphH) * scale + ty
 
-  // Compute flip directly in render (no derived state)
   const flipped = screenY - 8 < 40
 
-  // Measure tooltip and clamp to container bounds before paint
   useLayoutEffect(() => {
     const el = tooltipRef.current
     const container = containerRef.current
@@ -38,11 +35,9 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
     const tw = el.offsetWidth
     const th = el.offsetHeight
 
-    // Center horizontally on anchor, clamp within container
     let left = screenX - tw / 2
     left = Math.max(4, Math.min(left, cw - tw - 4))
 
-    // Position above or below anchor, clamp within container
     let top: number
     if (flipped) {
       top = screenBottom + 8
@@ -57,13 +52,21 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
   }, [screenX, screenY, screenBottom, flipped, containerRef])
 
   const task = graph.tasks.get(target.id)
-  const col = target.type === 'milestone'
-    ? graph.layout.columns.find(c => c.id === target.id)
-    : null
+  if (!task) return null
 
-  const title = col?.title ?? task?.title ?? target.id
-  const description = target.type === 'task' ? task?.description : null
-  const progress = col ? `${col.progress.done}/${col.progress.total} tasks done` : null
+  const title = task.title
+  const description = task.description
+  const progress = task.hasChildren
+    ? (() => {
+        const subtree = graph.subtreeIdsByTask.get(target.id) ?? []
+        const leaves = subtree.filter(id => {
+          const t = graph.tasks.get(id)
+          return t && !t.hasChildren
+        })
+        const done = leaves.filter(id => graph.tasks.get(id)?.state === 'done').length
+        return `${done}/${leaves.length} tasks done`
+      })()
+    : null
 
   return (
     <div

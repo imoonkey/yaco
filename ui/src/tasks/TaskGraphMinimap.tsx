@@ -14,16 +14,14 @@ const STATE_COLORS: Record<string, string> = {
   cancelled: SOLARIZED_LIGHT.base1,
 }
 
-export function TaskGraphMinimap({ graph, hiddenNodeIds, viewport, containerWidth, containerHeight, onPanTo }: {
+export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, containerHeight, onPanTo }: {
+  layout: GraphLayout
   graph: TaskGraphModel
-  hiddenNodeIds: Set<string>
   viewport: ViewportTransform
   containerWidth: number
   containerHeight: number
   onPanTo: (x: number, y: number) => void
 }) {
-  const layout: GraphLayout = graph.layout
-
   const scaleX = layout.bounds.width ? MINIMAP_W / layout.bounds.width : 1
   const scaleY = layout.bounds.height ? MINIMAP_H / layout.bounds.height : 1
   const minimapScale = Math.min(scaleX, scaleY)
@@ -39,7 +37,6 @@ export function TaskGraphMinimap({ graph, hiddenNodeIds, viewport, containerWidt
 
   if (!layout.bounds.width || !layout.bounds.height) return null
 
-  // Viewport rectangle in minimap coordinates
   const vpX = (-viewport.tx / viewport.scale) * minimapScale
   const vpY = (-viewport.ty / viewport.scale) * minimapScale
   const vpW = (containerWidth / viewport.scale) * minimapScale
@@ -57,8 +54,8 @@ export function TaskGraphMinimap({ graph, hiddenNodeIds, viewport, containerWidt
       }}
     >
       <svg width={MINIMAP_W} height={MINIMAP_H} onClick={handleClick} style={{ cursor: 'crosshair' }}>
-        {/* Edges as thin lines (hide edges touching hidden nodes) */}
-        {layout.edges.filter(e => !hiddenNodeIds.has(e.sourceId) && !hiddenNodeIds.has(e.targetId)).map(edge => {
+        {/* Edges as thin lines */}
+        {layout.edges.map(edge => {
           const source = layout.nodes.get(edge.sourceId)
           const target = layout.nodes.get(edge.targetId)
           if (!source || !target) return null
@@ -76,8 +73,8 @@ export function TaskGraphMinimap({ graph, hiddenNodeIds, viewport, containerWidt
           )
         })}
 
-        {/* Nodes as dots (hide filtered-out nodes) */}
-        {Array.from(layout.nodes.values()).filter(n => !hiddenNodeIds.has(n.id)).map(node => {
+        {/* Nodes as dots */}
+        {Array.from(layout.nodes.values()).map(node => {
           const task = graph.tasks.get(node.id)
           return (
             <circle

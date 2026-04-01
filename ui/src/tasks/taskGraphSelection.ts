@@ -2,10 +2,8 @@
 
 import type { TaskGraphModel } from './taskGraphModel'
 
-export type Selection =
-  | null
-  | { type: 'task'; id: string }
-  | { type: 'milestone'; id: string }
+// Selection is just a task id or null — no separate milestone type
+export type Selection = string | null
 
 export type HighlightModel = {
   activeTaskIds: Set<string>
@@ -50,21 +48,40 @@ export function getDownstream(taskId: string, dependents: Map<string, string[]>)
 export function computeHighlight(selection: Selection, model: TaskGraphModel): HighlightModel {
   if (!selection) return EMPTY_HIGHLIGHT
 
-  if (selection.type === 'task') {
-    const { id } = selection
-    const upstream = getUpstream(id, model.dependenciesByTask)
-    const downstream = getDownstream(id, model.dependentsByTask)
-    const allRelevant = new Set([id, ...upstream, ...downstream])
+  const task = model.tasks.get(selection)
+  if (!task) return EMPTY_HIGHLIGHT
+
+  if (task.hasChildren) {
+    // Group task: highlight subtree + boundary edges
+    const subtreeIds = new Set(model.subtreeIdsByTask.get(selection) ?? [selection])
+
+    // Collect upstream/downstream outside subtree
+    const upstream = new Set<string>()
+    const downstream = new Set<string>()
+    for (const tid of subtreeIds) {
+      for (const dep of model.dependenciesByTask.get(tid) ?? []) {
+        if (!subtreeIds.has(dep)) upstream.add(dep)
+      }
+      for (const dep of (model.dependentsByTask.get(tid) ?? [])) {
+        if (!subtreeIds.has(dep)) downstream.add(dep)
+      }
+    }
 
     const activeEdgeIds = new Set<string>()
     for (const edge of model.layout.edges) {
-      if (allRelevant.has(edge.sourceId) && allRelevant.has(edge.targetId)) {
+      const srcInSubtree = subtreeIds.has(edge.sourceId)
+      const tgtInSubtree = subtreeIds.has(edge.targetId)
+      // Edges within subtree or crossing boundary
+      if (srcInSubtree || tgtInSubtree) {
         activeEdgeIds.add(edge.id)
+        if (edge.originalEdgeIds) {
+          for (const eid of edge.originalEdgeIds) activeEdgeIds.add(eid)
+        }
       }
     }
 
     return {
-      activeTaskIds: new Set([id]),
+      activeTaskIds: subtreeIds,
       upstreamTaskIds: upstream,
       downstreamTaskIds: downstream,
       activeEdgeIds,
@@ -72,28 +89,31 @@ export function computeHighlight(selection: Selection, model: TaskGraphModel): H
     }
   }
 
-  // Milestone selection
-  const milestoneTaskIds = model.taskIdsByMilestone.get(selection.id) ?? []
-  const milestoneSet = new Set(milestoneTaskIds)
+  // Leaf task: highlight upstream/downstream dependency closures
+  const upstream = getUpstream(selection, model.dependenciesByTask)
+  const downstream = getDownstream(selection, model.dependentsByTask)
+  const allRelevant = new Set([selection, ...upstream, ...downstream])
 
   const activeEdgeIds = new Set<string>()
   for (const edge of model.layout.edges) {
-    // Edges crossing milestone boundary
-    if (milestoneSet.has(edge.sourceId) || milestoneSet.has(edge.targetId)) {
+    if (allRelevant.has(edge.sourceId) && allRelevant.has(edge.targetId)) {
       activeEdgeIds.add(edge.id)
+      if (edge.originalEdgeIds) {
+        for (const eid of edge.originalEdgeIds) activeEdgeIds.add(eid)
+      }
     }
   }
 
   return {
-    activeTaskIds: milestoneSet,
-    upstreamTaskIds: new Set(),
-    downstreamTaskIds: new Set(),
+    activeTaskIds: new Set([selection]),
+    upstreamTaskIds: upstream,
+    downstreamTaskIds: downstream,
     activeEdgeIds,
     dimUnrelated: true,
   }
 }
 
-// Search: returns matching task IDs (case-insensitive substring match)
+// Search: returns matching task IDs (case-insensitive substring match on all tasks)
 export function searchTasks(query: string, model: TaskGraphModel): string[] {
   if (!query.trim()) return []
   const lower = query.toLowerCase()

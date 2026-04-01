@@ -26,23 +26,22 @@ export type TaskGraphTask = {
   scope: string[]
   acceptCriteria: string[]
   note: string | null
-  topLevelId: string | null
   depth: number
   hasChildren: boolean
 }
 
 // Layout types
 
-export interface LayoutColumn {
+export interface LayoutGroup {
   id: string
-  title: string
   x: number
   y: number
   width: number
   height: number
-  taskIds: string[]
-  progress: { done: number; total: number }
+  depth: number
+  childIds: string[]
   aggregateState: TaskState
+  progress: { done: number; total: number }
 }
 
 export interface LayoutNode {
@@ -51,7 +50,9 @@ export interface LayoutNode {
   y: number
   width: number
   height: number
-  columnId: string
+  parentId: string | null
+  hasChildren: boolean
+  depth: number
 }
 
 export interface LayoutEdge {
@@ -60,15 +61,17 @@ export interface LayoutEdge {
   targetId: string
   path: string
   isCycle: boolean
-  isIntraMilestone: boolean
-  count: number  // 1 for normal, >1 for deduplicated collapsed edges
-  originalEdgeIds?: string[]  // For collapsed edges: IDs of the original edges that were merged
+  isSameLane: boolean
+  count: number
+  originalEdgeIds?: string[]
 }
 
 export interface GraphLayout {
-  columns: LayoutColumn[]
+  groups: LayoutGroup[]
   nodes: Map<string, LayoutNode>
   edges: LayoutEdge[]
+  visibleOrder: string[]
+  visibleChildrenByTask: Map<string, string[]>
   bounds: { width: number; height: number }
   hasCycles: boolean
 }
@@ -78,19 +81,23 @@ export interface TaskGraphModel {
   layout: GraphLayout
   dependenciesByTask: Map<string, string[]>
   dependentsByTask: Map<string, string[]>
-  taskIdsByMilestone: Map<string, string[]>
-  searchIndex: Map<string, string> // lowercase title → id
+  childIdsByTask: Map<string, string[]>
+  rootIds: string[]
+  subtreeIdsByTask: Map<string, string[]>
+  aggregateStateByTask: Map<string, TaskState>
+  leafProgressByTask: Map<string, { done: number; total: number }>
+  cycleEdgeIds: Set<string>
 }
 
 // Constants
 
-export const COLUMN_WIDTH = 280
-export const COLUMN_GAP = 64
-export const COLUMN_PADDING = 16
-export const HEADER_HEIGHT = 56
-export const NODE_WIDTH = 220
+export const NODE_WIDTH = 200
 export const NODE_HEIGHT = 32
 export const NODE_GAP = 8
+export const GROUP_PADDING_X = 12
+export const GROUP_PADDING_TOP = 8
+export const GROUP_PADDING_BOTTOM = 10
+export const COLUMN_GAP = 64
 export const GRAPH_PADDING = 40
 export const ARC_OFFSET = 30
 
@@ -112,18 +119,6 @@ function parseAcceptCriteria(raw: string | string[] | undefined): string[] {
     .split('\n')
     .map(line => line.replace(/^[-\s]*[☐☑]\s*/, '').replace(/^-\s*/, '').trim())
     .filter(Boolean)
-}
-
-function getTopLevelId(id: string, raw: RawTaskMap): string | null {
-  let current = id
-  const visited = new Set<string>()
-  while (true) {
-    const entry = raw[current]
-    if (!entry?.parent || !raw[entry.parent]) return current === id ? null : current
-    if (visited.has(current)) return current // cycle guard
-    visited.add(current)
-    current = entry.parent
-  }
 }
 
 function getDepth(id: string, raw: RawTaskMap): number {
@@ -151,7 +146,6 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
 
   const tasks = new Map<string, TaskGraphTask>()
   for (const [id, entry] of Object.entries(raw)) {
-    // Validate depends
     const validDeps = entry.depends.filter(dep => {
       if (!ids.has(dep)) {
         warnings.push(`Task "${id}" depends on unknown task "${dep}"`)
@@ -160,14 +154,9 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
       return true
     })
 
-    // Validate parent
     if (entry.parent && !ids.has(entry.parent)) {
       warnings.push(`Task "${id}" has unknown parent "${entry.parent}"`)
     }
-
-    const topLevelId = getTopLevelId(id, raw)
-    const isTopLevel = !entry.parent || !ids.has(entry.parent)
-    const hasChildren = childrenOf.has(id)
 
     tasks.set(id, {
       id,
@@ -179,19 +168,100 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
       scope: entry.scope ?? [],
       acceptCriteria: parseAcceptCriteria(entry.acceptCriteria),
       note: entry.note ?? null,
-      topLevelId: isTopLevel ? (hasChildren ? id : null) : topLevelId,
       depth: getDepth(id, raw),
-      hasChildren,
+      hasChildren: childrenOf.has(id),
     })
   }
 
   return { tasks, warnings }
 }
 
-// --- Layout Algorithm ---
+// --- Forest building ---
 
-// Kahn's topological sort with tie-breaking
-function topoSort(nodeIds: string[], edges: [string, string][], tieBreak: (a: string, b: string) => number): { sorted: string[]; hasCycle: boolean; cycleNodes: Set<string> } {
+function buildForest(tasks: Map<string, TaskGraphTask>): {
+  childIdsByTask: Map<string, string[]>
+  rootIds: string[]
+} {
+  const childIdsByTask = new Map<string, string[]>()
+  const rootIds: string[] = []
+
+  for (const [id, task] of tasks) {
+    if (!task.parent) {
+      rootIds.push(id)
+    } else {
+      if (!childIdsByTask.has(task.parent)) childIdsByTask.set(task.parent, [])
+      childIdsByTask.get(task.parent)!.push(id)
+    }
+  }
+
+  return { childIdsByTask, rootIds }
+}
+
+// --- Subtree metadata (post-order traversal) ---
+
+function computeSubtreeMetadata(
+  tasks: Map<string, TaskGraphTask>,
+  childIdsByTask: Map<string, string[]>,
+  rootIds: string[],
+): {
+  subtreeIdsByTask: Map<string, string[]>
+  aggregateStateByTask: Map<string, TaskState>
+  leafProgressByTask: Map<string, { done: number; total: number }>
+} {
+  const subtreeIdsByTask = new Map<string, string[]>()
+  const aggregateStateByTask = new Map<string, TaskState>()
+  const leafProgressByTask = new Map<string, { done: number; total: number }>()
+
+  function visit(id: string): void {
+    const children = childIdsByTask.get(id) ?? []
+    const subtreeIds: string[] = [id]
+
+    for (const childId of children) {
+      visit(childId)
+      subtreeIds.push(...(subtreeIdsByTask.get(childId) ?? [childId]))
+    }
+    subtreeIdsByTask.set(id, subtreeIds)
+
+    if (children.length === 0) {
+      // Leaf
+      const task = tasks.get(id)!
+      aggregateStateByTask.set(id, task.state)
+      leafProgressByTask.set(id, { done: task.state === 'done' ? 1 : 0, total: 1 })
+    } else {
+      // Group: aggregate from children
+      let done = 0, total = 0
+      const childStates: TaskState[] = []
+      for (const childId of children) {
+        const cp = leafProgressByTask.get(childId) ?? { done: 0, total: 0 }
+        done += cp.done
+        total += cp.total
+        childStates.push(aggregateStateByTask.get(childId) ?? 'cancelled')
+      }
+      leafProgressByTask.set(id, { done, total })
+      aggregateStateByTask.set(id, computeAggregateState(childStates))
+    }
+  }
+
+  for (const rootId of rootIds) visit(rootId)
+
+  return { subtreeIdsByTask, aggregateStateByTask, leafProgressByTask }
+}
+
+function computeAggregateState(states: TaskState[]): TaskState {
+  if (states.every(s => s === 'done')) return 'done'
+  if (states.some(s => s === 'running')) return 'running'
+  if (states.some(s => s === 'blocked')) return 'blocked'
+  if (states.some(s => s === 'ready')) return 'ready'
+  return 'cancelled'
+}
+
+// --- Topological sort ---
+
+function topoSort(
+  nodeIds: string[],
+  edges: [string, string][],
+  tieBreak: (a: string, b: string) => number,
+): { sorted: string[]; hasCycle: boolean; cycleNodes: Set<string> } {
   const inDegree = new Map<string, number>()
   const adjacency = new Map<string, string[]>()
   for (const id of nodeIds) {
@@ -204,7 +274,6 @@ function topoSort(nodeIds: string[], edges: [string, string][], tieBreak: (a: st
     inDegree.set(to, (inDegree.get(to) ?? 0) + 1)
   }
 
-  // Use sorted insertion for tie-breaking
   const queue = nodeIds.filter(id => inDegree.get(id) === 0).sort(tieBreak)
   const sorted: string[] = []
 
@@ -215,479 +284,517 @@ function topoSort(nodeIds: string[], edges: [string, string][], tieBreak: (a: st
       const deg = (inDegree.get(neighbor) ?? 1) - 1
       inDegree.set(neighbor, deg)
       if (deg === 0) {
-        // Insert in sorted order
         const idx = queue.findIndex(q => tieBreak(neighbor, q) < 0)
         queue.splice(idx === -1 ? queue.length : idx, 0, neighbor)
       }
     }
   }
 
-  const cycleNodes = new Set(nodeIds.filter(id => !sorted.includes(id)))
+  const sortedSet = new Set(sorted)
+  const cycleNodes = new Set(nodeIds.filter(id => !sortedSet.has(id)))
   return { sorted: [...sorted, ...Array.from(cycleNodes).sort(tieBreak)], hasCycle: cycleNodes.size > 0, cycleNodes }
 }
 
-function getAncestryPath(id: string, tasks: Map<string, TaskGraphTask>): string {
-  const parts: string[] = []
-  let current = id
-  while (tasks.get(current)?.parent) {
-    parts.unshift(tasks.get(current)!.parent!)
-    current = tasks.get(current)!.parent!
-  }
-  return parts.join('/')
-}
+// --- Sibling ordering ---
 
-// Step 1: Build milestone buckets
-function buildMilestoneBuckets(tasks: Map<string, TaskGraphTask>): Map<string, string[]> {
-  const buckets = new Map<string, string[]>()
-
-  for (const [id, task] of tasks) {
-    // Top-level with children = milestone header (not a node)
-    if (!task.parent && task.hasChildren) continue
-
-    // Determine which bucket
-    let milestoneId: string
-    if (!task.parent) {
-      milestoneId = '__ungrouped__'
-    } else {
-      milestoneId = task.topLevelId ?? '__ungrouped__'
-    }
-
-    if (!buckets.has(milestoneId)) buckets.set(milestoneId, [])
-    buckets.get(milestoneId)!.push(id)
+function orderSiblings(
+  siblingIds: string[],
+  tasks: Map<string, TaskGraphTask>,
+  subtreeIdsByTask: Map<string, string[]>,
+  aggregateStateByTask: Map<string, TaskState>,
+): string[] {
+  // Build reverse lookup: task id → owning sibling id
+  const taskToSibling = new Map<string, string>()
+  for (const sibId of siblingIds) {
+    const subtree = subtreeIdsByTask.get(sibId) ?? [sibId]
+    for (const tid of subtree) taskToSibling.set(tid, sibId)
   }
 
-  return buckets
-}
-
-// Step 2: Order milestone columns
-function orderMilestones(buckets: Map<string, string[]>, tasks: Map<string, TaskGraphTask>): { sorted: string[]; hasCycle: boolean; cycleNodes: Set<string> } {
-  const milestoneIds = Array.from(buckets.keys())
-
-  // Build task-to-milestone lookup
-  const taskToMilestone = new Map<string, string>()
-  for (const [msId, taskIds] of buckets) {
-    for (const tid of taskIds) taskToMilestone.set(tid, msId)
-  }
-
-  // Derive inter-milestone edges from task-level depends
+  // Build cross-subtree dependency edges for ordering
   const edges: [string, string][] = []
   const edgeSet = new Set<string>()
-  for (const [msId, taskIds] of buckets) {
-    for (const tid of taskIds) {
+
+  for (const sibId of siblingIds) {
+    const subtree = subtreeIdsByTask.get(sibId) ?? [sibId]
+    for (const tid of subtree) {
       const task = tasks.get(tid)
       if (!task) continue
       for (const dep of task.depends) {
-        const depMs = taskToMilestone.get(dep)
-        if (depMs && depMs !== msId) {
-          const key = `${depMs}->${msId}`
+        const depSibId = taskToSibling.get(dep)
+        if (depSibId && depSibId !== sibId) {
+          const key = `${depSibId}->${sibId}`
           if (!edgeSet.has(key)) {
             edgeSet.add(key)
-            edges.push([depMs, msId])
+            edges.push([depSibId, sibId])
           }
         }
       }
     }
   }
 
-  // Also include milestone-level depends (top-level tasks with children)
-  for (const msId of milestoneIds) {
-    if (msId === '__ungrouped__') continue
-    const msTask = tasks.get(msId)
-    if (!msTask) continue
-    for (const dep of msTask.depends) {
-      // dep could be another milestone or a task within a milestone
-      let depMs: string | undefined
-      if (buckets.has(dep)) {
-        depMs = dep
-      } else {
-        depMs = taskToMilestone.get(dep)
-      }
-      if (depMs && depMs !== msId) {
-        const key = `${depMs}->${msId}`
-        if (!edgeSet.has(key)) {
-          edgeSet.add(key)
-          edges.push([depMs, msId])
-        }
-      }
-    }
-  }
-
-  const titleOf = (id: string) => tasks.get(id)?.title ?? id
-  return topoSort(milestoneIds, edges, (a, b) => {
-    if (a === '__ungrouped__') return 1
-    if (b === '__ungrouped__') return -1
-    return titleOf(a).localeCompare(titleOf(b))
-  })
-}
-
-// Step 3: Order tasks within columns
-function orderTasksInColumn(taskIds: string[], tasks: Map<string, TaskGraphTask>): { sorted: string[]; hasCycle: boolean; cycleNodes: Set<string> } {
-  const edges: [string, string][] = []
-  const idSet = new Set(taskIds)
-  for (const tid of taskIds) {
-    const task = tasks.get(tid)
-    if (!task) continue
-    for (const dep of task.depends) {
-      if (idSet.has(dep)) edges.push([dep, tid])
-    }
-  }
-
-  return topoSort(taskIds, edges, (a, b) => {
-    const ta = tasks.get(a)!
-    const tb = tasks.get(b)!
-    // State priority
-    const sp = STATE_PRIORITY[ta.state] - STATE_PRIORITY[tb.state]
+  const { sorted } = topoSort(siblingIds, edges, (a, b) => {
+    // Group before leaf
+    const aHas = tasks.get(a)?.hasChildren ? 0 : 1
+    const bHas = tasks.get(b)?.hasChildren ? 0 : 1
+    if (aHas !== bHas) return aHas - bHas
+    // Aggregate state priority
+    const aState = aggregateStateByTask.get(a) ?? 'cancelled'
+    const bState = aggregateStateByTask.get(b) ?? 'cancelled'
+    const sp = STATE_PRIORITY[aState] - STATE_PRIORITY[bState]
     if (sp !== 0) return sp
-    // Shallower depth first
-    const dp = ta.depth - tb.depth
-    if (dp !== 0) return dp
-    // Ancestry path groups siblings
-    const ap = getAncestryPath(a, tasks).localeCompare(getAncestryPath(b, tasks))
-    if (ap !== 0) return ap
-    // Title alphabetical
-    const tp = ta.title.localeCompare(tb.title)
+    // Title
+    const tp = (tasks.get(a)?.title ?? a).localeCompare(tasks.get(b)?.title ?? b)
     if (tp !== 0) return tp
     // ID fallback
     return a.localeCompare(b)
   })
+
+  return sorted
 }
 
-// Aggregate state for a set of tasks
-function computeAggregateState(taskIds: string[], tasks: Map<string, TaskGraphTask>): TaskState {
-  const states = taskIds.map(id => tasks.get(id)?.state ?? 'cancelled')
-  if (states.every(s => s === 'done')) return 'done'
-  if (states.some(s => s === 'running')) return 'running'
-  if (states.some(s => s === 'blocked')) return 'blocked'
-  if (states.some(s => s === 'ready')) return 'ready'
-  return 'cancelled'
+// --- SCC cycle detection (Tarjan's) ---
+
+function findSCCCycleEdges(
+  tasks: Map<string, TaskGraphTask>,
+): Set<string> {
+  const index = new Map<string, number>()
+  const lowlink = new Map<string, number>()
+  const onStack = new Set<string>()
+  const stack: string[] = []
+  let idx = 0
+  const sccs: string[][] = []
+
+  function strongConnect(v: string) {
+    index.set(v, idx)
+    lowlink.set(v, idx)
+    idx++
+    stack.push(v)
+    onStack.add(v)
+
+    const task = tasks.get(v)
+    if (task) {
+      for (const w of task.depends) {
+        if (!tasks.has(w)) continue
+        if (!index.has(w)) {
+          strongConnect(w)
+          lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!))
+        } else if (onStack.has(w)) {
+          lowlink.set(v, Math.min(lowlink.get(v)!, index.get(w)!))
+        }
+      }
+    }
+
+    if (lowlink.get(v) === index.get(v)) {
+      const scc: string[] = []
+      let w: string
+      do {
+        w = stack.pop()!
+        onStack.delete(w)
+        scc.push(w)
+      } while (w !== v)
+      if (scc.length > 1) sccs.push(scc)
+    }
+  }
+
+  for (const id of tasks.keys()) {
+    if (!index.has(id)) strongConnect(id)
+  }
+
+  // Mark edges whose both endpoints are in the same SCC
+  const taskToSCC = new Map<string, number>()
+  for (let i = 0; i < sccs.length; i++) {
+    for (const id of sccs[i]) taskToSCC.set(id, i)
+  }
+
+  const cycleEdgeIds = new Set<string>()
+  for (const [tid, task] of tasks) {
+    for (const dep of task.depends) {
+      const tidSCC = taskToSCC.get(tid)
+      const depSCC = taskToSCC.get(dep)
+      if (tidSCC !== undefined && tidSCC === depSCC) {
+        cycleEdgeIds.add(`${dep}->${tid}`)
+      }
+    }
+  }
+
+  return cycleEdgeIds
 }
 
-// Step 5: Compute edge paths
+// --- Display layout ---
+
+interface MeasuredItem {
+  id: string
+  width: number
+  height: number
+  isGroup: boolean
+  children: MeasuredItem[]
+}
+
+function measureTree(
+  id: string,
+  tasks: Map<string, TaskGraphTask>,
+  childIdsByTask: Map<string, string[]>,
+  subtreeIdsByTask: Map<string, string[]>,
+  aggregateStateByTask: Map<string, TaskState>,
+  collapsedTaskIds: Set<string>,
+  visibleFilter: Set<string>,
+): MeasuredItem | null {
+  if (!visibleFilter.has(id)) return null
+
+  const task = tasks.get(id)
+  if (!task) return null
+
+  const isCollapsed = collapsedTaskIds.has(id) && task.hasChildren
+  const rawChildren = childIdsByTask.get(id) ?? []
+
+  if (rawChildren.length === 0 || isCollapsed) {
+    // Leaf or collapsed group — just a header card
+    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: task.hasChildren, children: [] }
+  }
+
+  // Expanded group: order and measure children
+  const visibleChildIds = orderSiblings(
+    rawChildren.filter(cid => visibleFilter.has(cid)),
+    tasks,
+    subtreeIdsByTask,
+    aggregateStateByTask,
+  )
+
+  const measuredChildren: MeasuredItem[] = []
+  for (const cid of visibleChildIds) {
+    const child = measureTree(cid, tasks, childIdsByTask, subtreeIdsByTask, aggregateStateByTask, collapsedTaskIds, visibleFilter)
+    if (child) measuredChildren.push(child)
+  }
+
+  if (measuredChildren.length === 0) {
+    // All children filtered out — render as leaf-like
+    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: true, children: [] }
+  }
+
+  const maxChildWidth = Math.max(...measuredChildren.map(c => c.width))
+  const contentWidth = Math.max(NODE_WIDTH, maxChildWidth)
+  const groupWidth = contentWidth + 2 * GROUP_PADDING_X
+
+  const childrenHeight = measuredChildren.reduce((sum, c) => sum + c.height, 0) +
+    (measuredChildren.length - 1) * NODE_GAP
+
+  const groupHeight = GROUP_PADDING_TOP + NODE_HEIGHT + NODE_GAP + childrenHeight + GROUP_PADDING_BOTTOM
+
+  return { id, width: groupWidth, height: groupHeight, isGroup: true, children: measuredChildren }
+}
+
+function positionTree(
+  item: MeasuredItem,
+  x: number,
+  y: number,
+  depth: number,
+  tasks: Map<string, TaskGraphTask>,
+  aggregateStateByTask: Map<string, TaskState>,
+  leafProgressByTask: Map<string, { done: number; total: number }>,
+  collapsedTaskIds: Set<string>,
+  outGroups: LayoutGroup[],
+  outNodes: Map<string, LayoutNode>,
+  outVisibleOrder: string[],
+  outVisibleChildren: Map<string, string[]>,
+): void {
+  const task = tasks.get(item.id)
+  if (!task) return
+
+  outVisibleOrder.push(item.id)
+
+  if (item.isGroup && item.children.length > 0) {
+    // Group with visible children
+    outGroups.push({
+      id: item.id,
+      x,
+      y,
+      width: item.width,
+      height: item.height,
+      depth,
+      childIds: item.children.map(c => c.id),
+      aggregateState: aggregateStateByTask.get(item.id) ?? 'cancelled',
+      progress: leafProgressByTask.get(item.id) ?? { done: 0, total: 0 },
+    })
+
+    // Header node at top of group
+    outNodes.set(item.id, {
+      id: item.id,
+      x: x + GROUP_PADDING_X,
+      y: y + GROUP_PADDING_TOP,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+      parentId: task.parent,
+      hasChildren: true,
+      depth,
+    })
+
+    outVisibleChildren.set(item.id, item.children.map(c => c.id))
+
+    // Position children below header
+    let childY = y + GROUP_PADDING_TOP + NODE_HEIGHT + NODE_GAP
+    for (const child of item.children) {
+      const childX = x + GROUP_PADDING_X
+      positionTree(child, childX, childY, depth + 1, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
+      childY += child.height + NODE_GAP
+    }
+  } else {
+    // Leaf or collapsed group — just a node
+    outNodes.set(item.id, {
+      id: item.id,
+      x,
+      y,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+      parentId: task.parent,
+      hasChildren: task.hasChildren,
+      depth,
+    })
+
+    // Collapsed group still registers as a group (for container frame)
+    if (task.hasChildren && collapsedTaskIds.has(item.id)) {
+      outGroups.push({
+        id: item.id,
+        x,
+        y,
+        width: item.width,
+        height: item.height,
+        depth,
+        childIds: [],
+        aggregateState: aggregateStateByTask.get(item.id) ?? 'cancelled',
+        progress: leafProgressByTask.get(item.id) ?? { done: 0, total: 0 },
+      })
+    }
+  }
+}
+
+// Compute visible task set considering filters and collapse
+function computeVisibleSet(
+  tasks: Map<string, TaskGraphTask>,
+  childIdsByTask: Map<string, string[]>,
+  rootIds: string[],
+  collapsedTaskIds: Set<string>,
+  filters: Set<TaskState>,
+): Set<string> {
+  const visible = new Set<string>()
+
+  function visit(id: string, ancestorCollapsed: boolean): boolean {
+    const task = tasks.get(id)
+    if (!task) return false
+
+    if (ancestorCollapsed) return false
+
+    const children = childIdsByTask.get(id) ?? []
+    const isCollapsed = collapsedTaskIds.has(id) && task.hasChildren
+    const passesFilter = filters.has(task.state)
+
+    let hasVisibleDescendant = false
+    if (!isCollapsed) {
+      for (const childId of children) {
+        if (visit(childId, false)) hasVisibleDescendant = true
+      }
+    }
+
+    if (passesFilter || hasVisibleDescendant) {
+      visible.add(id)
+      return true
+    }
+
+    return false
+  }
+
+  for (const rootId of rootIds) visit(rootId, false)
+  return visible
+}
+
+// Find root lane for a task (walk to root)
+function getRootLane(id: string, tasks: Map<string, TaskGraphTask>): string {
+  let current = id
+  const visited = new Set<string>()
+  while (true) {
+    const task = tasks.get(current)
+    if (!task?.parent || visited.has(current)) return current
+    visited.add(current)
+    current = task.parent
+  }
+}
+
+// Edge path computation
 function computeEdgePath(
   source: LayoutNode,
   target: LayoutNode,
-  sourceCol: LayoutColumn,
-  targetCol: LayoutColumn,
-): { path: string; isIntraMilestone: boolean } {
-  const isIntra = sourceCol.id === targetCol.id
-
-  if (isIntra) {
-    // Arc to the right of nodes
+  sameLane: boolean,
+): { path: string; isSameLane: boolean } {
+  if (sameLane) {
+    // Arc to the right
     const sx = source.x + NODE_WIDTH
     const sy = source.y + NODE_HEIGHT / 2
     const tx = target.x + NODE_WIDTH
     const ty = target.y + NODE_HEIGHT / 2
-    const cp1x = sx + ARC_OFFSET
-    const cp1y = sy
-    const cp2x = tx + ARC_OFFSET
-    const cp2y = ty
+    const depthDiff = Math.abs(source.depth - target.depth)
+    const arcOffset = ARC_OFFSET + depthDiff * 10
     return {
-      path: `M ${sx},${sy} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${tx},${ty}`,
-      isIntraMilestone: true,
+      path: `M ${sx},${sy} C ${sx + arcOffset},${sy} ${tx + arcOffset},${ty} ${tx},${ty}`,
+      isSameLane: true,
     }
   }
 
-  // Cross-milestone: right edge of source → left edge of target
+  // Cross-lane: right edge → left edge
   const sx = source.x + NODE_WIDTH
   const sy = source.y + NODE_HEIGHT / 2
   const tx = target.x
   const ty = target.y + NODE_HEIGHT / 2
-  const gap = targetCol.x - (sourceCol.x + COLUMN_WIDTH)
-  const cp1x = sx + Math.max(gap / 2, 20)
-  const cp1y = sy
-  const cp2x = tx - Math.max(gap / 2, 20)
-  const cp2y = ty
+  const gap = Math.abs(tx - sx)
+  const cpOffset = Math.max(gap / 2, 20)
   return {
-    path: `M ${sx},${sy} C ${cp1x},${cp1y} ${cp2x},${cp2y} ${tx},${ty}`,
-    isIntraMilestone: false,
+    path: `M ${sx},${sy} C ${sx + cpOffset},${sy} ${tx - cpOffset},${ty} ${tx},${ty}`,
+    isSameLane: false,
   }
 }
 
-export function computeLayout(tasks: Map<string, TaskGraphTask>): GraphLayout {
-  // Step 1: Build milestone buckets
-  const buckets = buildMilestoneBuckets(tasks)
-
-  if (buckets.size === 0) {
-    return { columns: [], nodes: new Map(), edges: [], bounds: { width: 0, height: 0 }, hasCycles: false }
-  }
-
-  // Step 2: Order milestone columns
-  const { sorted: milestoneOrder, hasCycle, cycleNodes: milestoneCycleNodes } = orderMilestones(buckets, tasks)
-
-  // Step 3: Order tasks within each column, collecting intra-milestone cycle info
-  const orderedBuckets = new Map<string, string[]>()
-  const intraCycleNodes = new Set<string>()
-  let hasIntraCycles = false
-  for (const msId of milestoneOrder) {
-    const taskIds = buckets.get(msId) ?? []
-    const { sorted, hasCycle: colHasCycle, cycleNodes: colCycleNodes } = orderTasksInColumn(taskIds, tasks)
-    orderedBuckets.set(msId, sorted)
-    if (colHasCycle) {
-      hasIntraCycles = true
-      for (const n of colCycleNodes) intraCycleNodes.add(n)
-    }
-  }
-
-  // Step 4: Assign coordinates
-  const columns: LayoutColumn[] = []
-  const nodes = new Map<string, LayoutNode>()
-  const columnById = new Map<string, LayoutColumn>()
-
-  milestoneOrder.forEach((msId, colIndex) => {
-    const taskIds = orderedBuckets.get(msId) ?? []
-    const x = GRAPH_PADDING + colIndex * (COLUMN_WIDTH + COLUMN_GAP)
-    const y = GRAPH_PADDING
-    const height = HEADER_HEIGHT + COLUMN_PADDING + Math.max(taskIds.length, 1) * (NODE_HEIGHT + NODE_GAP)
-    const doneCount = taskIds.filter(id => tasks.get(id)?.state === 'done').length
-
-    const col: LayoutColumn = {
-      id: msId,
-      title: msId === '__ungrouped__' ? 'Ungrouped' : (tasks.get(msId)?.title ?? msId),
-      x,
-      y,
-      width: COLUMN_WIDTH,
-      height,
-      taskIds,
-      progress: { done: doneCount, total: taskIds.length },
-      aggregateState: computeAggregateState(taskIds, tasks),
-    }
-    columns.push(col)
-    columnById.set(msId, col)
-
-    // Position nodes within column
-    taskIds.forEach((tid, rowIndex) => {
-      nodes.set(tid, {
-        id: tid,
-        x: x + (COLUMN_WIDTH - NODE_WIDTH) / 2,
-        y: y + HEADER_HEIGHT + COLUMN_PADDING + rowIndex * (NODE_HEIGHT + NODE_GAP),
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
-        columnId: msId,
-      })
-    })
-  })
-
-  // Build task-to-milestone lookup for cycle detection
-  const taskToMilestone = new Map<string, string>()
-  for (const [msId, taskIds] of orderedBuckets) {
-    for (const tid of taskIds) taskToMilestone.set(tid, msId)
-  }
-
-  // Step 5: Compute edge paths
-  const edges: LayoutEdge[] = []
-  for (const [tid, task] of tasks) {
-    const targetNode = nodes.get(tid)
-    if (!targetNode) continue
-    const targetCol = columnById.get(targetNode.columnId)
-    if (!targetCol) continue
-
-    for (const depId of task.depends) {
-      const sourceNode = nodes.get(depId)
-      if (!sourceNode) continue
-      const sourceCol = columnById.get(sourceNode.columnId)
-      if (!sourceCol) continue
-
-      const { path, isIntraMilestone } = computeEdgePath(sourceNode, targetNode, sourceCol, targetCol)
-
-      // Cycle detection: inter-milestone (both in milestone cycle set) or intra-milestone (both in column cycle set)
-      const sourceMs = taskToMilestone.get(depId)
-      const targetMs = taskToMilestone.get(tid)
-      const isInterCycle = !!(sourceMs && targetMs && milestoneCycleNodes.has(sourceMs) && milestoneCycleNodes.has(targetMs))
-      const isIntraCycle = !!(sourceMs === targetMs && intraCycleNodes.has(depId) && intraCycleNodes.has(tid))
-      const isCycle = isInterCycle || isIntraCycle
-
-      edges.push({
-        id: `${depId}->${tid}`,
-        sourceId: depId,
-        targetId: tid,
-        path,
-        isCycle,
-        isIntraMilestone,
-        count: 1,
-      })
-    }
-  }
-
-  // Edges from milestone-level depends (milestone tasks with children that carry depends)
-  for (const col of columns) {
-    if (col.id === '__ungrouped__') continue
-    const msTask = tasks.get(col.id)
-    if (!msTask) continue
-    for (const depId of msTask.depends) {
-      // Resolve source node: if dep is a task node, use it directly;
-      // if dep is a milestone, use its last task as the source
-      let sourceNodeId: string | undefined
-      if (nodes.has(depId)) {
-        sourceNodeId = depId
-      } else {
-        const depCol = columnById.get(depId)
-        if (depCol && depCol.taskIds.length > 0) {
-          sourceNodeId = depCol.taskIds[depCol.taskIds.length - 1]
-        }
-      }
-      if (!sourceNodeId) continue
-
-      // Target: first task in this milestone
-      const firstTaskId = col.taskIds[0]
-      if (!firstTaskId) continue
-
-      const edgeId = `${depId}->${col.id}`
-      if (edges.some(e => e.id === edgeId)) continue
-
-      const sourceNode = nodes.get(sourceNodeId)!
-      const targetNode = nodes.get(firstTaskId)!
-      const sourceCol = columnById.get(sourceNode.columnId)!
-      const targetCol = col
-
-      const { path, isIntraMilestone } = computeEdgePath(sourceNode, targetNode, sourceCol, targetCol)
-
-      const sourceMs = taskToMilestone.get(sourceNodeId)
-      const isInterCycle = !!(sourceMs && milestoneCycleNodes.has(sourceMs) && milestoneCycleNodes.has(col.id))
-
-      edges.push({
-        id: edgeId,
-        sourceId: sourceNodeId,
-        targetId: firstTaskId,
-        path,
-        isCycle: isInterCycle,
-        isIntraMilestone,
-        count: 1,
-      })
-    }
-  }
-  const colCount = columns.length
-  const maxColHeight = Math.max(...columns.map(c => c.height))
-  const bounds = {
-    width: colCount > 0 ? GRAPH_PADDING * 2 + colCount * COLUMN_WIDTH + (colCount - 1) * COLUMN_GAP : 0,
-    height: GRAPH_PADDING * 2 + maxColHeight,
-  }
-
-  return { columns, nodes, edges, bounds, hasCycles: hasCycle || hasIntraCycles }
-}
-
-// --- Collapsed layout transform ---
-
-export function computeCollapsedLayout(
-  layout: GraphLayout,
-  collapsedIds: Set<string>,
+export function computeDisplayLayout(
+  model: {
+    tasks: Map<string, TaskGraphTask>
+    childIdsByTask: Map<string, string[]>
+    rootIds: string[]
+    subtreeIdsByTask: Map<string, string[]>
+    dependenciesByTask: Map<string, string[]>
+  },
+  viewState: {
+    collapsedTaskIds: Set<string>
+    filters: Set<TaskState>
+  },
+  aggregateStateByTask: Map<string, TaskState>,
+  leafProgressByTask: Map<string, { done: number; total: number }>,
+  cycleEdgeIds: Set<string>,
 ): GraphLayout {
-  if (collapsedIds.size === 0) return layout
+  const { tasks, childIdsByTask, rootIds, subtreeIdsByTask } = model
+  const { collapsedTaskIds, filters } = viewState
 
-  // Build node → column lookup from original layout
-  const nodeToColumn = new Map<string, string>()
-  for (const [id, node] of layout.nodes) {
-    nodeToColumn.set(id, node.columnId)
+  // Compute visible set
+  const visibleSet = computeVisibleSet(tasks, childIdsByTask, rootIds, collapsedTaskIds, filters)
+
+  if (visibleSet.size === 0) {
+    return { groups: [], nodes: new Map(), edges: [], visibleOrder: [], visibleChildrenByTask: new Map(), bounds: { width: 0, height: 0 }, hasCycles: cycleEdgeIds.size > 0 }
   }
 
-  const columnById = new Map<string, LayoutColumn>()
-  for (const col of layout.columns) columnById.set(col.id, col)
+  // Order root-level items
+  const visibleRoots = rootIds.filter(id => visibleSet.has(id))
+  const orderedRoots = orderSiblings(visibleRoots, tasks, subtreeIdsByTask, aggregateStateByTask)
 
-  // 1. Adjust column heights
-  const columns = layout.columns.map(col =>
-    collapsedIds.has(col.id)
-      ? { ...col, height: HEADER_HEIGHT }
-      : col
-  )
-  const adjustedColumnById = new Map<string, LayoutColumn>()
-  for (const col of columns) adjustedColumnById.set(col.id, col)
+  // Measure each root tree
+  const measuredRoots: MeasuredItem[] = []
+  for (const rootId of orderedRoots) {
+    const measured = measureTree(rootId, tasks, childIdsByTask, subtreeIdsByTask, aggregateStateByTask, collapsedTaskIds, visibleSet)
+    if (measured) measuredRoots.push(measured)
+  }
 
-  // 2. Filter nodes — remove nodes in collapsed columns
+  // Position roots horizontally
+  const groups: LayoutGroup[] = []
   const nodes = new Map<string, LayoutNode>()
-  for (const [id, node] of layout.nodes) {
-    if (!collapsedIds.has(node.columnId)) nodes.set(id, node)
+  const visibleOrder: string[] = []
+  const visibleChildrenByTask = new Map<string, string[]>()
+
+  let rootX = GRAPH_PADDING
+  for (const root of measuredRoots) {
+    // Ensure minimum lane width
+    const laneWidth = Math.max(root.width, NODE_WIDTH + 2 * GROUP_PADDING_X)
+    positionTree(root, rootX, GRAPH_PADDING, 0, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, groups, nodes, visibleOrder, visibleChildrenByTask)
+    rootX += laneWidth + COLUMN_GAP
   }
 
-  // 3. Reroute + deduplicate edges
-  const edgeGroups = new Map<string, { edges: LayoutEdge[]; effectiveSource: string; effectiveTarget: string }>()
-
-  for (const edge of layout.edges) {
-    const sourceCol = nodeToColumn.get(edge.sourceId)
-    const targetCol = nodeToColumn.get(edge.targetId)
-    const sourceCollapsed = sourceCol ? collapsedIds.has(sourceCol) : false
-    const targetCollapsed = targetCol ? collapsedIds.has(targetCol) : false
-
-    // Skip intra-milestone edges within same collapsed milestone
-    if (sourceCollapsed && targetCollapsed && sourceCol === targetCol) continue
-
-    const effectiveSource = sourceCollapsed && sourceCol ? sourceCol : edge.sourceId
-    const effectiveTarget = targetCollapsed && targetCol ? targetCol : edge.targetId
-
-    const key = `${effectiveSource}->${effectiveTarget}`
-    if (!edgeGroups.has(key)) {
-      edgeGroups.set(key, { edges: [], effectiveSource, effectiveTarget })
-    }
-    edgeGroups.get(key)!.edges.push(edge)
-  }
-
-  // Build collapsed edges with computed paths
+  // Compute edges
   const edges: LayoutEdge[] = []
-  for (const [key, group] of edgeGroups) {
-    const { effectiveSource, effectiveTarget } = group
+  const edgeGroups = new Map<string, { edges: { id: string; isCycle: boolean }[]; sourceId: string; targetId: string }>()
 
-    // Compute anchor points
-    let sx: number, sy: number, sourceColObj: LayoutColumn
-    const srcCol = adjustedColumnById.get(effectiveSource)
-    if (srcCol) {
-      // Source is a collapsed milestone
-      sx = srcCol.x + COLUMN_WIDTH
-      sy = srcCol.y + HEADER_HEIGHT / 2
-      sourceColObj = srcCol
-    } else {
-      const srcNode = layout.nodes.get(effectiveSource)!
-      sx = srcNode.x + NODE_WIDTH
-      sy = srcNode.y + NODE_HEIGHT / 2
-      sourceColObj = adjustedColumnById.get(srcNode.columnId)!
+  for (const [tid, task] of tasks) {
+    for (const dep of task.depends) {
+      // Resolve to visible anchors
+      const sourceAnchor = resolveVisibleAnchor(dep, nodes, tasks)
+      const targetAnchor = resolveVisibleAnchor(tid, nodes, tasks)
+      if (!sourceAnchor || !targetAnchor || sourceAnchor === targetAnchor) continue
+
+      const key = `${sourceAnchor}->${targetAnchor}`
+      const edgeId = `${dep}->${tid}`
+      const isCycle = cycleEdgeIds.has(edgeId)
+
+      if (!edgeGroups.has(key)) {
+        edgeGroups.set(key, { edges: [], sourceId: sourceAnchor, targetId: targetAnchor })
+      }
+      edgeGroups.get(key)!.edges.push({ id: edgeId, isCycle })
     }
+  }
 
-    let tx: number, ty: number, targetColObj: LayoutColumn
-    const tgtCol = adjustedColumnById.get(effectiveTarget)
-    if (tgtCol) {
-      // Target is a collapsed milestone
-      tx = tgtCol.x
-      ty = tgtCol.y + HEADER_HEIGHT / 2
-      targetColObj = tgtCol
-    } else {
-      const tgtNode = layout.nodes.get(effectiveTarget)!
-      tx = tgtNode.x
-      ty = tgtNode.y + NODE_HEIGHT / 2
-      targetColObj = adjustedColumnById.get(tgtNode.columnId)!
-    }
+  for (const [edgeKey, group] of edgeGroups) {
+    const sourceNode = nodes.get(group.sourceId)
+    const targetNode = nodes.get(group.targetId)
+    if (!sourceNode || !targetNode) continue
 
-    // Cross-milestone bezier path
-    const gap = targetColObj.x - (sourceColObj.x + COLUMN_WIDTH)
-    const cp1x = sx + Math.max(gap / 2, 20)
-    const cp2x = tx - Math.max(gap / 2, 20)
-    const path = `M ${sx},${sy} C ${cp1x},${sy} ${cp2x},${ty} ${tx},${ty}`
+    const sourceLane = getRootLane(group.sourceId, tasks)
+    const targetLane = getRootLane(group.targetId, tasks)
+    const sameLane = sourceLane === targetLane
 
+    const { path, isSameLane } = computeEdgePath(sourceNode, targetNode, sameLane)
     const hasCycle = group.edges.some(e => e.isCycle)
 
     edges.push({
-      id: key,
-      sourceId: effectiveSource,
-      targetId: effectiveTarget,
+      id: edgeKey,
+      sourceId: group.sourceId,
+      targetId: group.targetId,
       path,
       isCycle: hasCycle,
-      isIntraMilestone: false,
+      isSameLane,
       count: group.edges.length,
-      originalEdgeIds: group.edges.map(e => e.id),
+      originalEdgeIds: group.edges.length > 1 ? group.edges.map(e => e.id) : undefined,
     })
   }
 
-  // 4. Recompute bounds
-  const maxColHeight = Math.max(...columns.map(c => c.height))
-  const bounds = {
-    width: layout.bounds.width,
-    height: GRAPH_PADDING * 2 + maxColHeight,
+  // Bounds
+  let maxX = 0, maxY = 0
+  for (const node of nodes.values()) {
+    maxX = Math.max(maxX, node.x + node.width)
+    maxY = Math.max(maxY, node.y + node.height)
+  }
+  for (const group of groups) {
+    maxX = Math.max(maxX, group.x + group.width)
+    maxY = Math.max(maxY, group.y + group.height)
   }
 
-  return { columns, nodes, edges, bounds, hasCycles: layout.hasCycles }
+  return {
+    groups,
+    nodes,
+    edges,
+    visibleOrder,
+    visibleChildrenByTask,
+    bounds: { width: maxX + GRAPH_PADDING, height: maxY + GRAPH_PADDING },
+    hasCycles: cycleEdgeIds.size > 0,
+  }
+}
+
+function resolveVisibleAnchor(
+  id: string,
+  nodes: Map<string, LayoutNode>,
+  tasks: Map<string, TaskGraphTask>,
+): string | null {
+  let current = id
+  const visited = new Set<string>()
+  while (current) {
+    if (nodes.has(current)) return current
+    if (visited.has(current)) return null
+    visited.add(current)
+    const task = tasks.get(current)
+    if (!task?.parent) return null
+    current = task.parent
+  }
+  return null
 }
 
 // --- Build full model ---
 
 export function buildTaskGraphModel(raw: RawTaskMap): { model: TaskGraphModel; warnings: string[] } {
   const { tasks, warnings } = normalizeTasks(raw)
-  const layout = computeLayout(tasks)
+
+  const { childIdsByTask, rootIds } = buildForest(tasks)
+  const { subtreeIdsByTask, aggregateStateByTask, leafProgressByTask } = computeSubtreeMetadata(tasks, childIdsByTask, rootIds)
 
   // Build adjacency maps
   const dependenciesByTask = new Map<string, string[]>()
@@ -700,20 +807,32 @@ export function buildTaskGraphModel(raw: RawTaskMap): { model: TaskGraphModel; w
     }
   }
 
-  // Build milestone → task IDs map
-  const taskIdsByMilestone = new Map<string, string[]>()
-  for (const col of layout.columns) {
-    taskIdsByMilestone.set(col.id, col.taskIds)
-  }
+  // Cycle detection
+  const cycleEdgeIds = findSCCCycleEdges(tasks)
 
-  // Build search index
-  const searchIndex = new Map<string, string>()
-  for (const [id, task] of tasks) {
-    searchIndex.set(task.title.toLowerCase(), id)
-  }
+  // Initial layout with all states visible, nothing collapsed
+  const allStates = new Set<TaskState>(['ready', 'running', 'done', 'blocked', 'cancelled'])
+  const layout = computeDisplayLayout(
+    { tasks, childIdsByTask, rootIds, subtreeIdsByTask, dependenciesByTask },
+    { collapsedTaskIds: new Set(), filters: allStates },
+    aggregateStateByTask,
+    leafProgressByTask,
+    cycleEdgeIds,
+  )
 
   return {
-    model: { tasks, layout, dependenciesByTask, dependentsByTask, taskIdsByMilestone, searchIndex },
+    model: {
+      tasks,
+      layout,
+      dependenciesByTask,
+      dependentsByTask,
+      childIdsByTask,
+      rootIds,
+      subtreeIdsByTask,
+      aggregateStateByTask,
+      leafProgressByTask,
+      cycleEdgeIds,
+    },
     warnings,
   }
 }

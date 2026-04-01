@@ -5,7 +5,7 @@ import { TASKS_FILE_PATH, useTaskGraph } from '../hooks/useTaskGraph'
 import { usePanZoom } from '../hooks/usePanZoom'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { TaskState } from './taskGraphModel'
-import { computeCollapsedLayout } from './taskGraphModel'
+import { computeDisplayLayout } from './taskGraphModel'
 import { type Selection, computeHighlight, searchTasks, EMPTY_HIGHLIGHT } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { TaskGraphTooltip } from './TaskGraphTooltip'
@@ -77,12 +77,14 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
   const [actionError, setActionError] = useState<string | null>(null)
 
   // --- Collapse state ---
-  const [collapsedMilestones, setCollapsedMilestones] = useState<Set<string>>(() => {
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem(`workflow-taskgraph:${projectName}`)
       if (stored) {
-        const { collapsedMilestones: cm } = JSON.parse(stored)
-        if (Array.isArray(cm)) return new Set(cm)
+        const parsed = JSON.parse(stored)
+        // Support both old and new format
+        const ids = parsed.collapsedTaskIds ?? parsed.collapsedMilestones
+        if (Array.isArray(ids)) return new Set(ids)
       }
     } catch { /* ignore */ }
     return new Set()
@@ -91,21 +93,24 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
   // Persist collapse state
   useEffect(() => {
     localStorage.setItem(`workflow-taskgraph:${projectName}`,
-      JSON.stringify({ collapsedMilestones: [...collapsedMilestones] }))
-  }, [projectName, collapsedMilestones])
+      JSON.stringify({ collapsedTaskIds: [...collapsedTaskIds] }))
+  }, [projectName, collapsedTaskIds])
 
-  // Compute display layout with collapsed milestones
+  // Compute display layout from model + view state (graph-only data already on model)
   const displayLayout = useMemo(() => {
-    if (!graph || collapsedMilestones.size === 0) return graph?.layout ?? null
-    return computeCollapsedLayout(graph.layout, collapsedMilestones)
-  }, [graph, collapsedMilestones])
+    if (!graph) return null
+    return computeDisplayLayout(
+      { tasks: graph.tasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask },
+      { collapsedTaskIds, filters },
+      graph.aggregateStateByTask,
+      graph.leafProgressByTask,
+      graph.cycleEdgeIds,
+    )
+  }, [graph, collapsedTaskIds, filters])
 
   const graphBounds = displayLayout?.bounds ?? { width: 0, height: 0 }
   const panZoom = usePanZoom({ graphBounds, containerRef })
 
-  // Ref to prevent SVG onClick from clearing selection set by child element clicks.
-  // Child onClick calls stopPropagation, but in React's synthetic event system for SVG
-  // this may not reliably prevent the SVG handler from firing.
   const clickConsumed = useRef(false)
 
   // --- Tooltip state ---
@@ -120,7 +125,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
     setTooltipTarget(null)
   }, [])
 
-  // Dismiss tooltip on viewport changes (pan/zoom)
   const prevViewportRef = useRef(panZoom.state)
   useEffect(() => {
     const prev = prevViewportRef.current
@@ -142,20 +146,22 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
   }, [clearTooltip])
 
   // --- Collapse handlers ---
-  const handleToggleCollapse = useCallback((milestoneId: string) => {
+  const handleToggleCollapse = useCallback((taskId: string) => {
     clickConsumed.current = true
     queueMicrotask(() => { clickConsumed.current = false })
     clearTooltip()
-    setCollapsedMilestones(prev => {
+    setCollapsedTaskIds(prev => {
       const next = new Set(prev)
-      if (next.has(milestoneId)) {
-        next.delete(milestoneId)
+      if (next.has(taskId)) {
+        next.delete(taskId)
       } else {
-        next.add(milestoneId)
-        // Clear selection if selected task is inside this milestone
-        if (selection?.type === 'task' && graph) {
-          const node = graph.layout.nodes.get(selection.id)
-          if (node?.columnId === milestoneId) setSelection(null)
+        next.add(taskId)
+        // If selected task is inside this subtree, move selection to the collapsing task
+        if (selection && graph) {
+          const subtree = graph.subtreeIdsByTask.get(taskId) ?? []
+          if (subtree.includes(selection) && selection !== taskId) {
+            setSelection(taskId)
+          }
         }
       }
       return next
@@ -165,22 +171,42 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
   const handleCollapseAll = useCallback(() => {
     if (!graph) return
     clearTooltip()
-    const allIds = new Set(graph.layout.columns.filter(c => c.taskIds.length > 0).map(c => c.id))
-    setCollapsedMilestones(allIds)
-    if (selection?.type === 'task') setSelection(null)
+    const expandable = new Set<string>()
+    for (const [id, task] of graph.tasks) {
+      if (task.hasChildren) expandable.add(id)
+    }
+    setCollapsedTaskIds(expandable)
+    // Move selection to nearest visible ancestor if needed
+    if (selection) {
+      let current = selection
+      while (current) {
+        const task = graph.tasks.get(current)
+        if (!task?.parent) break
+        if (expandable.has(current) || !expandable.has(task.parent)) break
+        current = task.parent
+      }
+      if (current !== selection) setSelection(current)
+    }
   }, [graph, selection, clearTooltip])
 
   const handleExpandAll = useCallback(() => {
     clearTooltip()
-    setCollapsedMilestones(new Set())
+    setCollapsedTaskIds(new Set())
   }, [clearTooltip])
 
   // Collapse toolbar state
-  const milestoneCount = graph?.layout.columns.filter(c => c.taskIds.length > 0).length ?? 0
-  const allCollapsed = milestoneCount > 0 && collapsedMilestones.size >= milestoneCount
-  const allExpanded = collapsedMilestones.size === 0
+  const expandableCount = useMemo(() => {
+    if (!graph) return 0
+    let count = 0
+    for (const task of graph.tasks.values()) {
+      if (task.hasChildren) count++
+    }
+    return count
+  }, [graph])
+  const allCollapsed = expandableCount > 0 && collapsedTaskIds.size >= expandableCount
+  const allExpanded = collapsedTaskIds.size === 0
 
-  // Derive search match IDs from query
+  // Derive search match IDs
   const searchMatchIds = useMemo(() => {
     if (!graph || !searchQuery.trim()) return new Set<string>()
     return new Set(searchTasks(searchQuery, graph))
@@ -217,14 +243,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
     clickConsumed.current = true
     queueMicrotask(() => { clickConsumed.current = false })
     clearTooltip()
-    setSelection(prev => prev?.type === 'task' && prev.id === id ? null : { type: 'task', id })
-  }, [clearTooltip])
-
-  const handleSelectMilestone = useCallback((id: string) => {
-    clickConsumed.current = true
-    queueMicrotask(() => { clickConsumed.current = false })
-    clearTooltip()
-    setSelection(prev => prev?.type === 'milestone' && prev.id === id ? null : { type: 'milestone', id })
+    setSelection(prev => prev === id ? null : id)
   }, [clearTooltip])
 
   const handleClearSelection = useCallback(() => {
@@ -243,23 +262,43 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
     })
   }, [])
 
+  // Pending pan target — set by handleNavigate, consumed by effect after layout recomputes
+  const pendingPanRef = useRef<string | null>(null)
+
   const handleNavigate = useCallback((id: string) => {
     if (!graph) return
-    // Check if it's a milestone
-    const col = graph.layout.columns.find(c => c.id === id)
-    if (col) {
-      setSelection({ type: 'milestone', id })
-      panZoom.panTo(col.x + col.width / 2, col.y + col.height / 2)
-      return
+    // Auto-expand collapsed ancestors
+    const task = graph.tasks.get(id)
+    if (task) {
+      let ancestor = task.parent
+      const visited = new Set<string>()
+      while (ancestor && !visited.has(ancestor)) {
+        visited.add(ancestor)
+        if (collapsedTaskIds.has(ancestor)) {
+          setCollapsedTaskIds(prev => {
+            const next = new Set(prev)
+            next.delete(ancestor!)
+            return next
+          })
+        }
+        ancestor = graph.tasks.get(ancestor)?.parent ?? null
+      }
     }
-    // Auto-expand collapsed milestone if navigating to a task inside it
-    const node = graph.layout.nodes.get(id)
-    if (node && collapsedMilestones.has(node.columnId)) {
-      setCollapsedMilestones(prev => { const next = new Set(prev); next.delete(node.columnId); return next })
+
+    setSelection(id)
+    pendingPanRef.current = id
+  }, [graph, collapsedTaskIds])
+
+  // Pan to pending target after layout recomputes
+  useEffect(() => {
+    const id = pendingPanRef.current
+    if (!id || !displayLayout) return
+    const node = displayLayout.nodes.get(id)
+    if (node) {
+      pendingPanRef.current = null
+      panZoom.panTo(node.x + node.width / 2, node.y + node.height / 2)
     }
-    setSelection({ type: 'task', id })
-    if (node) panZoom.panTo(node.x + node.width / 2, node.y + node.height / 2)
-  }, [graph, panZoom, collapsedMilestones])
+  }, [displayLayout, panZoom])
 
   const handleSearchSubmit = useCallback(() => {
     if (!graph || !searchQuery.trim()) return
@@ -281,9 +320,9 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
       if (e.key === '-') { panZoom.zoomOut(); return }
       if (e.key === '0') { panZoom.fitToView(); return }
 
-      // Collapse keyboard shortcuts
-      if (e.key === 'c' && !e.shiftKey && selection?.type === 'milestone') {
-        handleToggleCollapse(selection.id)
+      // Collapse shortcuts
+      if (e.key === 'c' && !e.shiftKey && selection && graph?.tasks.get(selection)?.hasChildren) {
+        handleToggleCollapse(selection)
         return
       }
       if (e.key === 'C' && e.shiftKey) {
@@ -295,90 +334,94 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
         return
       }
 
-      // Tab: entry point when nothing selected, or cycle through nodes
-      if (e.key === 'Tab' && graph) {
+      if (!displayLayout) return
+
+      // Tab: DFS traversal
+      if (e.key === 'Tab') {
         e.preventDefault()
-        const allNodes = graph.layout.columns.flatMap(c => c.taskIds)
-        if (allNodes.length === 0) return
-        if (!selection || selection.type !== 'task') {
-          handleNavigate(allNodes[0])
+        const order = displayLayout.visibleOrder
+        if (order.length === 0) return
+        if (!selection) {
+          handleNavigate(order[0])
         } else {
-          const idx = allNodes.indexOf(selection.id)
-          const next = (idx + 1) % allNodes.length
-          handleNavigate(allNodes[next])
+          const idx = order.indexOf(selection)
+          const next = e.shiftKey
+            ? (idx <= 0 ? order.length - 1 : idx - 1)
+            : ((idx + 1) % order.length)
+          handleNavigate(order[next])
         }
         return
       }
 
-      // Arrow key navigation
-      if (!graph || !selection) return
+      if (!selection || !graph) return
 
-      // Handle milestone selected with arrow keys
-      if (selection.type === 'milestone') {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault()
-          const colIdx = graph.layout.columns.findIndex(c => c.id === selection.id)
-          const nextColIdx = e.key === 'ArrowLeft' ? colIdx - 1 : colIdx + 1
-          const nextCol = graph.layout.columns[nextColIdx]
-          if (nextCol) {
-            if (collapsedMilestones.has(nextCol.id)) {
-              setSelection({ type: 'milestone', id: nextCol.id })
-            } else if (nextCol.taskIds.length > 0) {
-              handleNavigate(nextCol.taskIds[0])
-            }
-          }
-        }
-        return
-      }
+      const order = displayLayout.visibleOrder
+      const task = graph.tasks.get(selection)
+      if (!task) return
 
-      if (selection.type !== 'task') return
-      const node = graph.layout.nodes.get(selection.id)
-      if (!node) return
-
-      const col = graph.layout.columns.find(c => c.id === node.columnId)
-      if (!col) return
-
+      // ArrowUp/ArrowDown: previous/next in DFS visible order
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault()
-        const idx = col.taskIds.indexOf(selection.id)
+        const idx = order.indexOf(selection)
+        if (idx === -1) return
         const next = e.key === 'ArrowUp' ? idx - 1 : idx + 1
-        if (next >= 0 && next < col.taskIds.length) {
-          handleNavigate(col.taskIds[next])
+        if (next >= 0 && next < order.length) {
+          handleNavigate(order[next])
         }
+        return
       }
 
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      // ArrowLeft: collapse or go to parent
+      if (e.key === 'ArrowLeft') {
         e.preventDefault()
-        const colIdx = graph.layout.columns.indexOf(col)
-        const nextColIdx = e.key === 'ArrowLeft' ? colIdx - 1 : colIdx + 1
-        const nextCol = graph.layout.columns[nextColIdx]
-        if (nextCol) {
-          // If next column is collapsed, select the milestone
-          if (collapsedMilestones.has(nextCol.id)) {
-            setSelection({ type: 'milestone', id: nextCol.id })
-            panZoom.panTo(nextCol.x + nextCol.width / 2, nextCol.y + nextCol.height / 2)
-            return
-          }
-          if (nextCol.taskIds.length > 0) {
-            // Find nearest node by Y
-            const currentY = node.y + node.height / 2
-            let closest = nextCol.taskIds[0]
-            let minDist = Infinity
-            for (const tid of nextCol.taskIds) {
-              const n = graph.layout.nodes.get(tid)
-              if (!n) continue
-              const dist = Math.abs(n.y + n.height / 2 - currentY)
-              if (dist < minDist) { minDist = dist; closest = tid }
-            }
-            handleNavigate(closest)
+        if (task.hasChildren && !collapsedTaskIds.has(selection)) {
+          // Collapse without changing selection
+          handleToggleCollapse(selection)
+        } else if (task.parent) {
+          handleNavigate(task.parent)
+        } else {
+          // At root level — go to previous root
+          const rootIdx = graph.rootIds.indexOf(selection)
+          if (rootIdx > 0) handleNavigate(graph.rootIds[rootIdx - 1])
+        }
+        return
+      }
+
+      // ArrowRight: expand or go to first child
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        if (task.hasChildren && collapsedTaskIds.has(selection)) {
+          // Expand without changing selection
+          handleToggleCollapse(selection)
+        } else {
+          const visChildren = displayLayout.visibleChildrenByTask.get(selection) ?? []
+          if (visChildren.length > 0) {
+            handleNavigate(visChildren[0])
+          } else if (!task.parent) {
+            // At root level — go to next root
+            const rootIdx = graph.rootIds.indexOf(selection)
+            if (rootIdx !== -1 && rootIdx < graph.rootIds.length - 1) handleNavigate(graph.rootIds[rootIdx + 1])
           }
         }
+        return
+      }
+
+      // Home / End
+      if (e.key === 'Home') {
+        e.preventDefault()
+        if (order.length > 0) handleNavigate(order[0])
+        return
+      }
+      if (e.key === 'End') {
+        e.preventDefault()
+        if (order.length > 0) handleNavigate(order[order.length - 1])
+        return
       }
     }
 
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [graph, selection, panZoom, handleNavigate, clearTooltip, collapsedMilestones, handleToggleCollapse, handleCollapseAll, handleExpandAll])
+  }, [graph, displayLayout, selection, panZoom, handleNavigate, clearTooltip, collapsedTaskIds, handleToggleCollapse, handleCollapseAll, handleExpandAll])
 
   const handleCreateTasksFile = useCallback(async () => {
     if (creating) return
@@ -400,18 +443,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
     }
   }, [creating, projectName, refresh])
 
-  // Compute hidden nodes from state filter + collapsed milestones
-  const hiddenNodeIds = useMemo(() => {
-    if (!graph) return new Set<string>()
-    const hidden = new Set<string>()
-    for (const [id, task] of graph.tasks) {
-      if (!filters.has(task.state)) hidden.add(id)
-    }
-    // Nodes in collapsed milestones are already removed from displayLayout.nodes
-    // but we also want to hide their edges from state filter
-    return hidden
-  }, [graph, filters])
-
   // Loading state
   if (status === 'loading') {
     return (
@@ -430,7 +461,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
         actions={
           <>
             {onOpenTasksFile && <StateButton label="Open tasks.json" onClick={onOpenTasksFile} />}
-            <StateButton label={creating ? 'Creating…' : 'Create tasks.json'} onClick={() => { void handleCreateTasksFile() }} disabled={creating} />
+            <StateButton label={creating ? 'Creating\u2026' : 'Create tasks.json'} onClick={() => { void handleCreateTasksFile() }} disabled={creating} />
           </>
         }
         detail={actionError}
@@ -438,7 +469,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
     )
   }
 
-  // Error state
   if (status === 'error' || !graph || !displayLayout) {
     return (
       <StatePane
@@ -455,7 +485,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
     )
   }
 
-  // Empty state
   if (graph.tasks.size === 0) {
     return (
       <div className="flex items-center justify-center h-full" style={{ color: SOLARIZED_LIGHT.base1 }}>
@@ -483,7 +512,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
         onExpandAll={handleExpandAll}
       />
 
-      {/* Warnings banner */}
       {warnings.length > 0 && (
         <div className="px-3 py-1 text-[11px]" style={{ backgroundColor: SOLARIZED_LIGHT.yellow + '22', color: SOLARIZED_LIGHT.yellow }}>
           {warnings.length} warning{warnings.length > 1 ? 's' : ''}: {warnings[0]}
@@ -492,28 +520,24 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
       )}
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Canvas area */}
         <div ref={containerRef} className="relative flex-1 overflow-hidden">
           <TaskGraphCanvas
             graph={graph}
             layout={displayLayout}
-            hiddenNodeIds={hiddenNodeIds}
             searchMatchIds={searchMatchIds}
             transform={panZoom.transform}
             highlight={highlight}
             selection={selection}
             scale={panZoom.state.scale}
-            collapsedMilestones={collapsedMilestones}
+            collapsedTaskIds={collapsedTaskIds}
             handlers={panZoom.handlers}
             onSelectTask={handleSelectTask}
-            onSelectMilestone={handleSelectMilestone}
             onClearSelection={handleClearSelection}
             onToggleCollapse={handleToggleCollapse}
             onPointerEnter={handlePointerEnter}
             onPointerLeave={handlePointerLeave}
           />
 
-          {/* Tooltip */}
           {tooltipTarget && (
             <TaskGraphTooltip
               target={tooltipTarget}
@@ -525,8 +549,8 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
 
           {!isMobile && (
             <TaskGraphMinimap
+              layout={displayLayout}
               graph={graph}
-              hiddenNodeIds={hiddenNodeIds}
               viewport={panZoom.state}
               containerWidth={containerSize.width}
               containerHeight={containerSize.height}
@@ -534,7 +558,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
             />
           )}
 
-          {/* Mobile detail panel */}
           {isMobile && (
             <TaskGraphDetailPanel
               selection={selection}
@@ -542,13 +565,12 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
               isMobile
               onClose={handleClearSelection}
               onNavigate={handleNavigate}
-              collapsedMilestones={collapsedMilestones}
+              collapsedTaskIds={collapsedTaskIds}
               onToggleCollapse={handleToggleCollapse}
             />
           )}
         </div>
 
-        {/* Desktop detail panel */}
         {!isMobile && selection && (
           <TaskGraphDetailPanel
             selection={selection}
@@ -556,7 +578,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
             isMobile={false}
             onClose={handleClearSelection}
             onNavigate={handleNavigate}
-            collapsedMilestones={collapsedMilestones}
+            collapsedTaskIds={collapsedTaskIds}
             onToggleCollapse={handleToggleCollapse}
           />
         )}
