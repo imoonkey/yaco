@@ -449,7 +449,17 @@ function measureTree(
 
   if (rawChildren.length === 0 || isCollapsed) {
     // Leaf or collapsed group — just a header card
-    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: task.hasChildren, children: [] }
+    // Collapsed groups keep group padding so the header position is stable
+    if (task.hasChildren) {
+      return {
+        id,
+        width: NODE_WIDTH + 2 * GROUP_PADDING_X,
+        height: GROUP_PADDING_TOP + NODE_HEIGHT + GROUP_PADDING_BOTTOM,
+        isGroup: true,
+        children: [],
+      }
+    }
+    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: false, children: [] }
   }
 
   // Expanded group: order and measure children
@@ -467,8 +477,14 @@ function measureTree(
   }
 
   if (measuredChildren.length === 0) {
-    // All children filtered out — render as leaf-like
-    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: true, children: [] }
+    // All children filtered out — render like a collapsed group
+    return {
+      id,
+      width: NODE_WIDTH + 2 * GROUP_PADDING_X,
+      height: GROUP_PADDING_TOP + NODE_HEIGHT + GROUP_PADDING_BOTTOM,
+      isGroup: true,
+      children: [],
+    }
   }
 
   const maxChildWidth = Math.max(...measuredChildren.map(c => c.width))
@@ -537,8 +553,32 @@ function positionTree(
       positionTree(child, childX, childY, depth + 1, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
       childY += child.height + NODE_GAP
     }
+  } else if (item.isGroup) {
+    // Collapsed group — header at padded position (same as expanded) for position stability
+    outNodes.set(item.id, {
+      id: item.id,
+      x: x + GROUP_PADDING_X,
+      y: y + GROUP_PADDING_TOP,
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
+      parentId: task.parent,
+      hasChildren: true,
+      depth,
+    })
+
+    outGroups.push({
+      id: item.id,
+      x,
+      y,
+      width: item.width,
+      height: item.height,
+      depth,
+      childIds: [],
+      aggregateState: aggregateStateByTask.get(item.id) ?? 'cancelled',
+      progress: leafProgressByTask.get(item.id) ?? { done: 0, total: 0 },
+    })
   } else {
-    // Leaf or collapsed group — just a node
+    // Leaf — just a node
     outNodes.set(item.id, {
       id: item.id,
       x,
@@ -546,24 +586,9 @@ function positionTree(
       width: NODE_WIDTH,
       height: NODE_HEIGHT,
       parentId: task.parent,
-      hasChildren: task.hasChildren,
+      hasChildren: false,
       depth,
     })
-
-    // Collapsed group still registers as a group (for container frame)
-    if (task.hasChildren && collapsedTaskIds.has(item.id)) {
-      outGroups.push({
-        id: item.id,
-        x,
-        y,
-        width: item.width,
-        height: item.height,
-        depth,
-        childIds: [],
-        aggregateState: aggregateStateByTask.get(item.id) ?? 'cancelled',
-        progress: leafProgressByTask.get(item.id) ?? { done: 0, total: 0 },
-      })
-    }
   }
 }
 

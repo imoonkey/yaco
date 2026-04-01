@@ -17,11 +17,10 @@ function getDepthStyle(depth: number) {
   return { bgOpacity: 0.90, borderOpacity: 0.5, accentOpacity: 0.4 }
 }
 
-export function TaskGraphGroup({ group, subtreeIds, highlight, isSelected, onClick }: {
+export function TaskGraphGroup({ group, subtreeIds, highlight, onClick }: {
   group: LayoutGroup
   subtreeIds: string[]
   highlight: HighlightModel
-  isSelected: boolean
   onClick: (id: string) => void
 }) {
   const stateColor = STATE_COLORS[group.aggregateState] ?? SOLARIZED_LIGHT.base1
@@ -43,8 +42,8 @@ export function TaskGraphGroup({ group, subtreeIds, highlight, isSelected, onCli
         rx={8}
         fill={SOLARIZED_LIGHT.base3}
         fillOpacity={depthStyle.bgOpacity * dimFactor}
-        stroke={isSelected ? SOLARIZED_LIGHT.focusBorder : SOLARIZED_LIGHT.border}
-        strokeWidth={isSelected ? 2 : 1}
+        stroke={SOLARIZED_LIGHT.border}
+        strokeWidth={1}
         strokeOpacity={depthStyle.borderOpacity * dimFactor}
         onClick={(e) => { e.stopPropagation(); onClick(group.id) }}
         style={{ cursor: 'pointer', transition: 'opacity 150ms ease-out' }}
