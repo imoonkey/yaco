@@ -40,23 +40,22 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, transform, high
     >
       <g transform={transform}>
         <style>{`.tg-focusable { outline: none; } .tg-focusable:focus-visible { outline: 2px solid ${SOLARIZED_LIGHT.focusBorder}; outline-offset: 2px; }`}</style>
-        {/* Layer 1: Group container frames (shallow-to-deep, skip collapsed groups with no visible children) */}
-        <g data-layer="groups">
-          {[...layout.groups].sort((a, b) => a.depth - b.depth).map(group => (
+        {/* Layer 1: Indentation guide lines */}
+        <g data-layer="guides">
+          {layout.groups.map(group => (
             <TaskGraphGroup
               key={group.id}
               group={group}
               subtreeIds={graph.subtreeIdsByTask.get(group.id) ?? [group.id]}
               highlight={highlight}
-              onClick={onSelectTask}
             />
           ))}
         </g>
 
-        {/* Layer 2: Dependency edges (display layout already excludes filtered/collapsed nodes) */}
+        {/* Layer 2: Dependency edges */}
         <TaskGraphEdges edges={layout.edges} highlight={highlight} />
 
-        {/* Layer 3: Task header cards (all visible tasks — leaf + group headers) */}
+        {/* Layer 3: Task cards (all visible tasks) */}
         <g data-layer="nodes">
           {Array.from(layout.nodes.values()).map(node => {
             const task = graph.tasks.get(node.id)

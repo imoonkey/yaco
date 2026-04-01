@@ -30,14 +30,13 @@ export type TaskGraphTask = {
   hasChildren: boolean
 }
 
-// Layout types
+// Layout types — flat indented tree, no nested boxes
 
 export interface LayoutGroup {
   id: string
-  x: number
-  y: number
-  width: number
-  height: number
+  guideX: number        // x of vertical guide line
+  guideY1: number       // top of guide (bottom of parent card)
+  guideY2: number       // bottom of guide (center of last child)
   depth: number
   childIds: string[]
   aggregateState: TaskState
@@ -89,16 +88,13 @@ export interface TaskGraphModel {
   cycleEdgeIds: Set<string>
 }
 
-// Constants
+// Constants — flat indented tree layout
 
-export const NODE_WIDTH = 200
+export const NODE_WIDTH = 220
 export const NODE_HEIGHT = 32
-export const NODE_GAP = 8
-export const GROUP_PADDING_X = 12
-export const GROUP_PADDING_TOP = 8
-export const GROUP_PADDING_BOTTOM = 10
-export const CHILD_INDENT = 16
-export const COLUMN_GAP = 64
+export const NODE_GAP = 6
+export const INDENT = 24
+export const LANE_GAP = 60
 export const GRAPH_PADDING = 40
 export const ARC_OFFSET = 30
 
@@ -448,19 +444,9 @@ function measureTree(
   const isCollapsed = collapsedTaskIds.has(id) && task.hasChildren
   const rawChildren = childIdsByTask.get(id) ?? []
 
+  // Leaf or collapsed group — just the card
   if (rawChildren.length === 0 || isCollapsed) {
-    // Leaf or collapsed group
-    // Collapsed groups keep GROUP_PADDING_TOP/BOTTOM so header position is stable
-    if (task.hasChildren) {
-      return {
-        id,
-        width: NODE_WIDTH,
-        height: GROUP_PADDING_TOP + NODE_HEIGHT + GROUP_PADDING_BOTTOM,
-        isGroup: true,
-        children: [],
-      }
-    }
-    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: false, children: [] }
+    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: task.hasChildren, children: [] }
   }
 
   // Expanded group: order and measure children
@@ -478,26 +464,17 @@ function measureTree(
   }
 
   if (measuredChildren.length === 0) {
-    // All children filtered out — render like a collapsed group
-    return {
-      id,
-      width: NODE_WIDTH,
-      height: GROUP_PADDING_TOP + NODE_HEIGHT + GROUP_PADDING_BOTTOM,
-      isGroup: true,
-      children: [],
-    }
+    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: true, children: [] }
   }
 
   const maxChildWidth = Math.max(...measuredChildren.map(c => c.width))
-  const contentWidth = Math.max(NODE_WIDTH, CHILD_INDENT + maxChildWidth)
-  const groupWidth = contentWidth
+  const width = Math.max(NODE_WIDTH, INDENT + maxChildWidth)
 
   const childrenHeight = measuredChildren.reduce((sum, c) => sum + c.height, 0) +
     (measuredChildren.length - 1) * NODE_GAP
+  const height = NODE_HEIGHT + NODE_GAP + childrenHeight
 
-  const groupHeight = GROUP_PADDING_TOP + NODE_HEIGHT + NODE_GAP + childrenHeight + GROUP_PADDING_BOTTOM
-
-  return { id, width: groupWidth, height: groupHeight, isGroup: true, children: measuredChildren }
+  return { id, width, height, isGroup: true, children: measuredChildren }
 }
 
 function positionTree(
@@ -513,84 +490,67 @@ function positionTree(
   outNodes: Map<string, LayoutNode>,
   outVisibleOrder: string[],
   outVisibleChildren: Map<string, string[]>,
-): void {
+): number {
+  // returns the y of the last positioned node (for guide line end)
   const task = tasks.get(item.id)
-  if (!task) return
+  if (!task) return y
 
   outVisibleOrder.push(item.id)
 
-  if (item.isGroup && item.children.length > 0) {
-    // Group with visible children
+  // Every task is a card at (x, y)
+  outNodes.set(item.id, {
+    id: item.id,
+    x,
+    y,
+    width: NODE_WIDTH,
+    height: NODE_HEIGHT,
+    parentId: task.parent,
+    hasChildren: task.hasChildren,
+    depth,
+  })
+
+  if (item.children.length > 0) {
+    // Expanded group — position children below, indented
+    outVisibleChildren.set(item.id, item.children.map(c => c.id))
+
+    let childY = y + NODE_HEIGHT + NODE_GAP
+    let lastChildEndY = childY
+    for (const child of item.children) {
+      lastChildEndY = positionTree(child, x + INDENT, childY, depth + 1, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
+      childY = lastChildEndY + NODE_GAP
+    }
+
+    // Emit guide line from bottom of parent card to center of last child
+    const lastChildNode = outNodes.get(item.children[item.children.length - 1].id)
     outGroups.push({
       id: item.id,
-      x,
-      y,
-      width: item.width,
-      height: item.height,
+      guideX: x + 8,  // align with chevron center
+      guideY1: y + NODE_HEIGHT,
+      guideY2: lastChildNode ? lastChildNode.y + NODE_HEIGHT / 2 : y + NODE_HEIGHT,
       depth,
       childIds: item.children.map(c => c.id),
       aggregateState: aggregateStateByTask.get(item.id) ?? 'cancelled',
       progress: leafProgressByTask.get(item.id) ?? { done: 0, total: 0 },
     })
 
-    // Header node flush with group frame left edge
-    outNodes.set(item.id, {
-      id: item.id,
-      x,
-      y: y + GROUP_PADDING_TOP,
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-      parentId: task.parent,
-      hasChildren: true,
-      depth,
-    })
+    return lastChildEndY
+  }
 
-    outVisibleChildren.set(item.id, item.children.map(c => c.id))
-
-    // Position children below header, indented by CHILD_INDENT
-    let childY = y + GROUP_PADDING_TOP + NODE_HEIGHT + NODE_GAP
-    for (const child of item.children) {
-      const childX = x + CHILD_INDENT
-      positionTree(child, childX, childY, depth + 1, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
-      childY += child.height + NODE_GAP
-    }
-  } else if (item.isGroup) {
-    // Collapsed group — header flush with frame (same as expanded) for position stability
-    outNodes.set(item.id, {
-      id: item.id,
-      x,
-      y: y + GROUP_PADDING_TOP,
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-      parentId: task.parent,
-      hasChildren: true,
-      depth,
-    })
-
+  // Leaf or collapsed group — emit group data without guide line
+  if (task.hasChildren) {
     outGroups.push({
       id: item.id,
-      x,
-      y,
-      width: item.width,
-      height: item.height,
+      guideX: x + 8,
+      guideY1: y + NODE_HEIGHT,
+      guideY2: y + NODE_HEIGHT,  // zero-length (collapsed)
       depth,
       childIds: [],
       aggregateState: aggregateStateByTask.get(item.id) ?? 'cancelled',
       progress: leafProgressByTask.get(item.id) ?? { done: 0, total: 0 },
     })
-  } else {
-    // Leaf — just a node
-    outNodes.set(item.id, {
-      id: item.id,
-      x,
-      y,
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-      parentId: task.parent,
-      hasChildren: false,
-      depth,
-    })
   }
+
+  return y + NODE_HEIGHT
 }
 
 // Compute visible task set considering filters and collapse
@@ -732,10 +692,8 @@ export function computeDisplayLayout(
 
   let rootX = GRAPH_PADDING
   for (const root of measuredRoots) {
-    // Ensure minimum lane width
-    const laneWidth = Math.max(root.width, NODE_WIDTH)
     positionTree(root, rootX, GRAPH_PADDING, 0, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, groups, nodes, visibleOrder, visibleChildrenByTask)
-    rootX += laneWidth + COLUMN_GAP
+    rootX += Math.max(root.width, NODE_WIDTH) + LANE_GAP
   }
 
   // Compute edges
@@ -784,15 +742,11 @@ export function computeDisplayLayout(
     })
   }
 
-  // Bounds
+  // Bounds — only from nodes now (groups are just guide lines)
   let maxX = 0, maxY = 0
   for (const node of nodes.values()) {
     maxX = Math.max(maxX, node.x + node.width)
     maxY = Math.max(maxY, node.y + node.height)
-  }
-  for (const group of groups) {
-    maxX = Math.max(maxX, group.x + group.width)
-    maxY = Math.max(maxY, group.y + group.height)
   }
 
   return {
