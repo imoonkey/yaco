@@ -113,7 +113,7 @@ If changes correspond to a `doc/todo/<project>/` folder, write or update `doc/to
 
 ### 6. Archive (if applicable)
 
-When archiving a project folder (`doc/todo/<project>/` → `doc/archive/YYYYMMDD_<project>/`), check if `doc/todo/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `doc/todo/archive/YYYYMMDD_<slug>.json`.
+When archiving a project folder (`doc/todo/<project>/` → `doc/archive/YYYYMMDD_<project>/`), check if `doc/todo/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `doc/archive/YYYYMMDD_<slug>.json`.
 
 ### 7. Commit Docs
 
