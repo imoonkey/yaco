@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { FileTypeIcon } from '../components/FileExplorer'
+import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 
 export interface SearchEntry { name: string; path: string; type: 'file' | 'dir' }

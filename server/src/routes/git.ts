@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { spawnSync } from 'child_process'
-import { loadProjects } from '../lib/projects.js'
 import { GIT_COMMAND_TIMEOUT_MS } from '../lib/constants'
+import { withProject, type ProjectEnv } from '../middleware/project'
 
 export interface GitChange {
   path: string
@@ -18,14 +18,11 @@ function parseStatus(xy: string): GitChange['status'] {
 /** Last-known-good git snapshots per project */
 const gitSnapshots = new Map<string, GitChange[]>()
 
-const app = new Hono()
+const app = new Hono<ProjectEnv>()
 
 // GET /:project/status — git status for a project
-app.get('/:project/status', async (c) => {
-  const projectName = c.req.param('project')
-  const projects = await loadProjects()
-  const proj = projects.find(p => p.name === projectName)
-  if (!proj) return c.json({ error: 'project not found' }, 404)
+app.get('/:project/status', withProject, async (c) => {
+  const proj = c.var.project
 
   const result = spawnSync('git', ['status', '--porcelain'], {
     cwd: proj.path,
@@ -35,7 +32,7 @@ app.get('/:project/status', async (c) => {
 
   if (result.error || result.status !== 0) {
     // Transient failure — return last-known-good snapshot with stale marker
-    const snapshot = gitSnapshots.get(projectName)
+    const snapshot = gitSnapshots.get(proj.name)
     return c.json({ changes: snapshot ?? [], stale: true })
   }
 
@@ -48,15 +45,13 @@ app.get('/:project/status', async (c) => {
       status: parseStatus(line.substring(0, 2)),
     }))
 
-  gitSnapshots.set(projectName, changes)
+  gitSnapshots.set(proj.name, changes)
   return c.json({ changes, stale: false })
 })
 
 // GET /:project/diff?path=... — git diff for a specific file
-app.get('/:project/diff', async (c) => {
-  const projects = await loadProjects()
-  const proj = projects.find(p => p.name === c.req.param('project'))
-  if (!proj) return c.json({ error: 'project not found' }, 404)
+app.get('/:project/diff', withProject, async (c) => {
+  const proj = c.var.project
 
   const filePath = c.req.query('path')
   if (!filePath || filePath.includes('..') || filePath.startsWith('/')) {

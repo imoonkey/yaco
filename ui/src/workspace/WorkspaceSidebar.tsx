@@ -1,4 +1,4 @@
-import { FileTypeIcon, FolderIcon, GIT_COLORS } from '../components/FileExplorer'
+import { FileTypeIcon, FolderIcon, GIT_COLORS } from '../components/fileExplorerIcons'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { GitChange } from '../types'
 

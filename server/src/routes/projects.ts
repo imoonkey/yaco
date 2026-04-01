@@ -79,7 +79,7 @@ app.delete('/:name', async (c) => {
     return c.json({ error: 'not found' }, 404)
   }
   await saveProjects(filtered)
-  return c.json({ ok: true })
+  return c.json({})
 })
 
 export const projectRoutes = app

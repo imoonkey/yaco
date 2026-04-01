@@ -1,27 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
 import type { Project } from '../types'
-
-function MenuItem({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void }) {
-  return (
-    <div
-      className="px-3 py-1 text-[12px] cursor-pointer"
-      style={{ color: danger ? SOLARIZED_LIGHT.red : C.text }}
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.bg)}
-      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-      onClick={onClick}
-    >
-      {label}
-    </div>
-  )
-}
-
-function MenuDivider() {
-  return <div className="my-1" style={{ borderTop: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }} />
-}
-
-type CtxMenu = { x: number; y: number; project: Project }
 
 export function ProjectList({
   projects,
@@ -41,16 +22,8 @@ export function ProjectList({
   onMarkAllRead: (projectName: string) => void
 }) {
   const [draggedProject, setDraggedProject] = useState<string | null>(null)
-  const [ctxMenu, setCtxMenu] = useState<CtxMenu | null>(null)
-
-  useEffect(() => {
-    if (!ctxMenu) return
-    const close = () => setCtxMenu(null)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close() }
-    document.addEventListener('click', close)
-    document.addEventListener('keydown', onKey)
-    return () => { document.removeEventListener('click', close); document.removeEventListener('keydown', onKey) }
-  }, [ctxMenu])
+  const menu = useContextMenu()
+  const [menuProject, setMenuProject] = useState<Project | null>(null)
 
   const handleDragStart = useCallback((e: React.DragEvent, name: string) => {
     e.dataTransfer.setData('text/plain', name)
@@ -79,7 +52,7 @@ export function ProjectList({
             onDragOver={e => e.preventDefault()}
             onDrop={e => handleDrop(e, project.name)}
             onClick={() => onSelect(project.name)}
-            onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, project }) }}
+            onContextMenu={e => { menu.open(e); setMenuProject(project) }}
             className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors truncate ${
               isActive
                 ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
@@ -105,17 +78,13 @@ export function ProjectList({
         </div>
       )}
 
-      {ctxMenu && (
-        <div
-          className="fixed z-50 min-w-[160px] py-1 rounded shadow-lg"
-          style={{ left: ctxMenu.x, top: ctxMenu.y, backgroundColor: C.editorBg, border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }}
-          onClick={e => e.stopPropagation()}
-        >
-          <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(ctxMenu.project.path); setCtxMenu(null) }} />
-          <MenuItem label="Mark All Read" onClick={() => { onMarkAllRead(ctxMenu.project.name); setCtxMenu(null) }} />
+      {menu.position && menuProject && (
+        <Menu position={menu.position}>
+          <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(menuProject.path); menu.close() }} />
+          <MenuItem label="Mark All Read" onClick={() => { onMarkAllRead(menuProject.name); menu.close() }} />
           <MenuDivider />
-          <MenuItem label="Remove" danger onClick={() => { onRemove(ctxMenu.project); setCtxMenu(null) }} />
-        </div>
+          <MenuItem label="Remove" danger onClick={() => { onRemove(menuProject); menu.close() }} />
+        </Menu>
       )}
     </div>
   )

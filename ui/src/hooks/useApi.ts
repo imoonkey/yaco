@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
 import { useSSERefresh } from './useSSE'
+import { ApiError } from '../lib/apiError'
 
 export const API = '/api'
 const FILE_TREE_FALLBACK_MS = 60_000
 
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API}${path}`, signal ? { signal } : undefined)
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
+  }
   return res.json()
 }
 
@@ -17,7 +21,10 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const resBody = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, resBody)
+  }
   return res.json()
 }
 
@@ -31,10 +38,21 @@ async function batchMap<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 6
   return results
 }
 
+export type AsyncData<T> = { data: T | null; error: Error | null; loading: boolean }
+
+/** SSE-triggered tick counter for manual fetch loops */
+export function useSSETick(sseChannel: string): { tick: number; refresh: () => void } {
+  const [tick, setTick] = useState(0)
+  const refresh = useCallback(() => setTick(t => t + 1), [])
+  useSSERefresh(sseChannel, refresh)
+  return { tick, refresh }
+}
+
 /** Generic polling hook with optional SSE-triggered refresh */
-function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel?: string): { data: T | null; error: Error | null; refresh: () => void } {
+function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel?: string): AsyncData<T> & { refresh: () => void } {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<Error | null>(null)
+  const [loading, setLoading] = useState(true)
   const [tick, setTick] = useState(0)
 
   const refresh = useCallback(() => setTick(t => t + 1), [])
@@ -47,7 +65,7 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
     const load = async () => {
       try {
         const result = await fetcher()
-        if (!cancelled) { setData(result); setError(null) }
+        if (!cancelled) { setData(result); setError(null); setLoading(false) }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e : new Error(String(e)))
       }
@@ -57,7 +75,7 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
     return () => { cancelled = true; clearInterval(id) }
   }, [fetcher, intervalMs, tick])
 
-  return { data, error, refresh }
+  return { data, error, loading, refresh }
 }
 
 export function useProjects() {
@@ -117,7 +135,8 @@ export function useFileTree(projectName: string | null) {
         `/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`
       )
       mergeChildren(dirPath, children)
-    } catch {
+    } catch (e) {
+      console.warn(`useFileTree: failed to expand dir "${dirPath}"`, e)
       loadedDirsRef.current.delete(dirPath)
     }
   }, [projectName, mergeChildren])
@@ -246,14 +265,10 @@ export async function saveFileContent(projectName: string, filePath: string, con
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content, baseRevision }),
   })
-  if (res.status === 409) {
-    const body = await res.json() as { error: string; currentRevision: number }
-    const err = new Error('revision conflict') as Error & { status: number; currentRevision: number }
-    err.status = 409
-    err.currentRevision = body.currentRevision
-    throw err
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
   }
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
 }
 

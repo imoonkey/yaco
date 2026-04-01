@@ -46,7 +46,7 @@ app.post('/start', async (c) => {
 
     if (provider === 'shell') {
       const shellName = startShellSession(cwd, project, name)
-      return c.json({ ok: true, name: shellName })
+      return c.json({ name: shellName })
     }
 
     if (!name) {
@@ -54,7 +54,7 @@ app.post('/start', async (c) => {
     }
 
     await startMultmuxSession(provider, name, cwd, prompt)
-    return c.json({ ok: true, name })
+    return c.json({ name })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -64,7 +64,7 @@ app.post('/:handle/pause', async (c) => {
   const handle = c.req.param('handle')
   try {
     await sendToSession(handle, '/stop')
-    return c.json({ ok: true })
+    return c.json({})
   } catch {
     return c.json({ error: 'failed to pause session' }, 500)
   }
@@ -75,7 +75,7 @@ app.post('/:handle/resume', async (c) => {
   const { prompt } = await c.req.json<{ prompt: string }>()
   try {
     await sendToSession(handle, prompt || 'continue')
-    return c.json({ ok: true })
+    return c.json({})
   } catch {
     return c.json({ error: 'failed to resume session' }, 500)
   }
@@ -87,7 +87,7 @@ app.post('/:handle/rename', async (c) => {
   if (!name || !cwd) return c.json({ error: 'name and cwd required' }, 400)
   try {
     await renameMultmuxSession(handle, name, cwd)
-    return c.json({ ok: true, name })
+    return c.json({ name })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
@@ -97,7 +97,7 @@ app.post('/:handle/close', async (c) => {
   const handle = c.req.param('handle')
   try {
     if (closeShellSession(handle)) {
-      return c.json({ ok: true })
+      return c.json({})
     }
 
     // Resolve project path for multmux kill (needs cwd)
@@ -111,7 +111,7 @@ app.post('/:handle/close', async (c) => {
     }
 
     await closeMultmuxSession(handle, ownerProject.path)
-    return c.json({ ok: true })
+    return c.json({})
   } catch {
     return c.json({ error: 'failed to close session' }, 500)
   }

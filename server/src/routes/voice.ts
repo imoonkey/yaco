@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
 import Groq from 'groq-sdk'
 import { toFile } from 'groq-sdk/uploads'
+import { VOICE_MAX_UPLOAD_BYTES } from '../lib/constants'
+import { fail } from '../lib/response'
 
-const MAX_UPLOAD_BYTES = 20_000_000 // 20 MB
 const DEFAULT_STT_MODEL = 'whisper-large-v3-turbo'
 const DEFAULT_FORMATTER_MODEL = 'llama-3.1-8b-instant'
 
@@ -49,19 +50,17 @@ function getFormatterPrompt(surface: string): string {
 }
 
 /** Map Groq SDK errors to stable HTTP responses */
-function mapUpstreamError(err: unknown): { status: number; error: string; message: string } {
+function mapUpstreamError(err: unknown): { status: number; error: string } {
   if (err instanceof Groq.APIError) {
     if (err.status === 429) {
-      return { status: 429, error: 'rate_limited', message: 'Rate limit reached. Try again shortly.' }
+      return { status: 429, error: 'Rate limit reached. Try again shortly.' }
     }
-    // Any other upstream error → 502
-    return { status: 502, error: 'upstream_error', message: 'Transcription failed. Try again.' }
+    return { status: 502, error: 'Transcription failed. Try again.' }
   }
-  // Network / timeout errors
   if (err instanceof Groq.APIConnectionError) {
-    return { status: 502, error: 'upstream_error', message: 'Transcription failed. Try again.' }
+    return { status: 502, error: 'Transcription failed. Try again.' }
   }
-  return { status: 502, error: 'upstream_error', message: 'Transcription failed. Try again.' }
+  return { status: 502, error: 'Transcription failed. Try again.' }
 }
 
 const app = new Hono()
@@ -75,7 +74,7 @@ app.get('/status', (c) => {
     enabled: true,
     sttModel: getSttModel(),
     formatterModel: getFormatterModel(),
-    maxUploadBytes: MAX_UPLOAD_BYTES,
+    maxUploadBytes: VOICE_MAX_UPLOAD_BYTES,
   })
 })
 
@@ -83,10 +82,7 @@ app.post('/compose', async (c) => {
   // Check API key
   const groq = getGroqClient()
   if (!groq) {
-    return c.json(
-      { error: 'service_unavailable', message: 'Voice input is unavailable. Set GROQ_API_KEY.' },
-      503,
-    )
+    return fail(c, 503, 'Voice input is unavailable. Set GROQ_API_KEY.')
   }
 
   // Parse multipart form
@@ -94,7 +90,7 @@ app.post('/compose', async (c) => {
   try {
     formData = await c.req.formData()
   } catch {
-    return c.json({ error: 'invalid_request', message: 'Invalid voice recording.' }, 400)
+    return fail(c, 400, 'Invalid voice recording.')
   }
 
   const audio = formData.get('audio')
@@ -103,18 +99,15 @@ app.post('/compose', async (c) => {
 
   // Validate required fields
   if (!audio || !(audio instanceof File)) {
-    return c.json({ error: 'invalid_request', message: 'Invalid voice recording.' }, 400)
+    return fail(c, 400, 'Invalid voice recording.')
   }
   if (!surface || !['editor', 'terminal'].includes(surface)) {
-    return c.json({ error: 'invalid_request', message: 'Invalid voice recording.' }, 400)
+    return fail(c, 400, 'Invalid voice recording.')
   }
 
   // Check size
-  if (audio.size > MAX_UPLOAD_BYTES) {
-    return c.json(
-      { error: 'payload_too_large', message: 'Recording too large. Keep it short.' },
-      413,
-    )
+  if (audio.size > VOICE_MAX_UPLOAD_BYTES) {
+    return fail(c, 413, 'Recording too large. Keep it short.')
   }
 
   // STT via Groq Whisper
@@ -134,7 +127,7 @@ app.post('/compose', async (c) => {
     rawText = transcription.text
   } catch (err) {
     const mapped = mapUpstreamError(err)
-    return c.json({ error: mapped.error, message: mapped.message }, mapped.status as 400)
+    return fail(c, mapped.status as 400, mapped.error)
   }
 
   // Empty transcript

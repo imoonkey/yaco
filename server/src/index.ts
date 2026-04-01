@@ -23,6 +23,8 @@ import { startSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
 import { attachSession, setShellSessionChangeCallback } from './lib/terminal.js'
+import { SESSION_NAME_RE } from './lib/session-names.js'
+import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS } from './lib/constants.js'
 import type { IPty } from 'node-pty'
 
 const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
@@ -30,7 +32,6 @@ const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
   .map(s => s.trim())
   .filter(Boolean)
 
-const SESSION_NAME_RE = /^[a-zA-Z0-9_.-]+$/
 const DEFAULT_ALLOWED_HOSTNAMES = new Set([
   'localhost',
   '::1',
@@ -206,8 +207,8 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
     return
   }
 
-  const cols = Math.max(1, Math.min(500, Number(url.searchParams.get('cols')) || 80))
-  const rows = Math.max(1, Math.min(200, Number(url.searchParams.get('rows')) || 24))
+  const cols = Math.max(1, Math.min(MAX_TERMINAL_COLS, Number(url.searchParams.get('cols')) || DEFAULT_TERMINAL_COLS))
+  const rows = Math.max(1, Math.min(MAX_TERMINAL_ROWS, Number(url.searchParams.get('rows')) || DEFAULT_TERMINAL_ROWS))
   const projectParam = url.searchParams.get('project') || ''
 
   wss.handleUpgrade(req, socket, head, (ws) => {

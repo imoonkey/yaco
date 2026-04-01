@@ -3,8 +3,7 @@ import type { IPty } from 'node-pty'
 import { resolveTmuxSession, validateSessionName } from './session-names'
 import { resolveSessionTmuxName } from './multmux'
 import { buildChildProcessEnv } from './ssh-auth'
-
-const MAX_BUFFER_SIZE = 200_000
+import { PTY_MAX_BUFFER_SIZE } from './constants'
 
 export interface ShellSessionSummary {
   name: string
@@ -36,7 +35,7 @@ export function setShellSessionChangeCallback(cb: () => void): void {
 }
 
 function trimBuffer(buffer: string): string {
-  return buffer.length > MAX_BUFFER_SIZE ? buffer.slice(-MAX_BUFFER_SIZE) : buffer
+  return buffer.length > PTY_MAX_BUFFER_SIZE ? buffer.slice(-PTY_MAX_BUFFER_SIZE) : buffer
 }
 
 function nextShellSessionName(): string {

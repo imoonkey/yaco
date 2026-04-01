@@ -1,20 +1,10 @@
-import { spawn, execSync } from 'child_process'
+import { spawn } from 'child_process'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import type { Project } from './projects'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
-import { MULTMUX_COMMAND_TIMEOUT_MS, MULTMUX_START_TIMEOUT_MS } from './constants'
-
-// Resolve multmux path at startup
-const MULTMUX_PATH = (() => {
-  try {
-    return execSync('which multmux', { encoding: 'utf-8' }).trim()
-  } catch (e) {
-    console.warn('[multmux] could not resolve multmux path, using default:', e)
-    return 'multmux'
-  }
-})()
+import { MULTMUX_COMMAND_TIMEOUT_MS, MULTMUX_START_TIMEOUT_MS, MULTMUX_PATH } from './constants'
 
 export interface MultmuxSession {
   name: string

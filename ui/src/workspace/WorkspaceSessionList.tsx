@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { ProviderIcon } from '../components/SessionIcons'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { Menu, MenuItem, useContextMenu } from '../components/Menu'
 import type { AgentSession } from '../types'
 
 export function SessionItem({
@@ -34,7 +35,7 @@ export function SessionItem({
 }) {
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
-  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null)
+  const menu = useContextMenu()
   const [showTip, setShowTip] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
@@ -44,16 +45,8 @@ export function SessionItem({
     if (renaming) inputRef.current?.focus()
   }, [renaming])
 
-  // Dismiss context menu on outside click
-  useEffect(() => {
-    if (!ctxMenu) return
-    const close = () => setCtxMenu(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [ctxMenu])
-
   const startRename = () => {
-    setCtxMenu(null)
+    menu.close()
     setRenameValue(session.name)
     setRenaming(true)
   }
@@ -73,7 +66,7 @@ export function SessionItem({
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}
+      onContextMenu={menu.open}
       className={`flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
       style={{ ...(isActive ? {} : { color: C.text }), opacity: dragging ? 0.55 : 1 }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
@@ -159,24 +152,10 @@ export function SessionItem({
           )}
         </div>
       )}
-      {ctxMenu && (
-        <div
-          className="fixed z-50 min-w-[120px] py-1 rounded shadow-lg"
-          style={{ left: ctxMenu.x, top: ctxMenu.y, backgroundColor: C.editorBg, border: `1px solid ${C.border}` }}
-          onClick={e => e.stopPropagation()}
-        >
-          {onRename && (
-            <div
-              className="px-3 py-1 text-[12px] cursor-pointer"
-              style={{ color: C.text }}
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.hover)}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
-              onClick={startRename}
-            >
-              Rename
-            </div>
-          )}
-        </div>
+      {menu.position && onRename && (
+        <Menu position={menu.position}>
+          <MenuItem label="Rename" onClick={startRename} />
+        </Menu>
       )}
     </div>
   )

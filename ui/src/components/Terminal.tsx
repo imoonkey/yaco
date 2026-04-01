@@ -1,4 +1,5 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
+import { isCloseShortcut, isCopyShortcut } from '../lib/shortcuts'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
@@ -93,15 +94,6 @@ function decodeOsc52Payload(payload: string): string | null {
   } catch {
     return null
   }
-}
-
-function isCopyShortcut(event: KeyboardEvent): boolean {
-  if (event.key.toLowerCase() !== 'c') return false
-  return event.metaKey || (event.ctrlKey && event.shiftKey)
-}
-
-function isCloseShortcut(event: KeyboardEvent): boolean {
-  return event.key.toLowerCase() === 'w' && event.metaKey && !event.ctrlKey && !event.altKey
 }
 
 export function Terminal({ sessionName, projectName, onInteract, onCloseRequest, sendText, sendTextKey }: TerminalProps) {

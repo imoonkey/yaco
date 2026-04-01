@@ -114,7 +114,7 @@ describe('POST /compose', () => {
     const res = await voiceRoutes.request('/compose', { method: 'POST', body })
     expect(res.status).toBe(503)
     const json = await res.json()
-    expect(json.error).toBe('service_unavailable')
+    expect(json.error).toBe('Voice input is unavailable. Set GROQ_API_KEY.')
   })
 
   it('returns 400 for missing audio', async () => {
@@ -122,7 +122,7 @@ describe('POST /compose', () => {
     const res = await voiceRoutes.request('/compose', { method: 'POST', body })
     expect(res.status).toBe(400)
     const json = await res.json()
-    expect(json.error).toBe('invalid_request')
+    expect(json.error).toBe('Invalid voice recording.')
   })
 
   it('returns 400 for invalid surface', async () => {
@@ -139,7 +139,7 @@ describe('POST /compose', () => {
     const res = await voiceRoutes.request('/compose', { method: 'POST', body })
     expect(res.status).toBe(413)
     const json = await res.json()
-    expect(json.error).toBe('payload_too_large')
+    expect(json.error).toBe('Recording too large. Keep it short.')
   })
 
   it('returns formatted text on success', async () => {
@@ -211,7 +211,7 @@ describe('POST /compose', () => {
     const res = await voiceRoutes.request('/compose', { method: 'POST', body })
     expect(res.status).toBe(429)
     const json = await res.json()
-    expect(json.error).toBe('rate_limited')
+    expect(json.error).toBe('Rate limit reached. Try again shortly.')
   })
 
   it('returns 502 on upstream network error', async () => {
@@ -222,7 +222,7 @@ describe('POST /compose', () => {
     const res = await voiceRoutes.request('/compose', { method: 'POST', body })
     expect(res.status).toBe(502)
     const json = await res.json()
-    expect(json.error).toBe('upstream_error')
+    expect(json.error).toBe('Transcription failed. Try again.')
   })
 
   it('passes language hint to Whisper when provided', async () => {

@@ -2,17 +2,10 @@ import { useCallback } from 'react'
 import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { GraphLayout, TaskGraphModel } from './taskGraphModel'
 import type { ViewportTransform } from '../hooks/usePanZoom'
+import { STATE_COLORS } from './taskGraphConstants'
 
 const MINIMAP_W = 160
 const MINIMAP_H = 100
-
-const STATE_COLORS: Record<string, string> = {
-  ready: SOLARIZED_LIGHT.blue,
-  running: SOLARIZED_LIGHT.yellow,
-  done: SOLARIZED_LIGHT.green,
-  blocked: SOLARIZED_LIGHT.red,
-  cancelled: SOLARIZED_LIGHT.base1,
-}
 
 export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, containerHeight, onPanTo }: {
   layout: GraphLayout

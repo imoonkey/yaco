@@ -3,14 +3,7 @@ import type { LayoutNode, TaskGraphTask, LayoutGroup } from './taskGraphModel'
 import { NODE_WIDTH, NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
-
-const STATE_COLORS: Record<string, string> = {
-  ready: SOLARIZED_LIGHT.blue,
-  running: SOLARIZED_LIGHT.yellow,
-  done: SOLARIZED_LIGHT.green,
-  blocked: SOLARIZED_LIGHT.red,
-  cancelled: SOLARIZED_LIGHT.base1,
-}
+import { STATE_COLORS } from './taskGraphConstants'
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
   const color = STATE_COLORS[state] ?? SOLARIZED_LIGHT.base1

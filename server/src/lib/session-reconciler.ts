@@ -1,13 +1,13 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync, readFileSync, unlinkSync } from 'fs'
-import { execFileSync, execSync } from 'child_process'
+import { execFileSync } from 'child_process'
 import { join } from 'path'
 import { loadProjects, type Project } from './projects'
 import type { MultmuxSession, MultmuxStateFile } from './multmux'
 import { readSessionsFromStateFiles } from './multmux'
 import { withFileLock, type ProgressEntry } from './scanner'
 import { emitRefresh } from './notify'
-import { PENDING_SESSION_ID, MULTMUX_STATUS_TIMEOUT_MS } from './constants'
+import { PENDING_SESSION_ID, MULTMUX_STATUS_TIMEOUT_MS, MULTMUX_PATH } from './constants'
 
 const RECONCILE_INTERVAL = 60_000
 /** Require N consecutive idle reconcile passes before firing notification. */
@@ -15,10 +15,6 @@ const IDLE_DEBOUNCE_COUNT = 2
 /** Minimum time (ms) a session must be "processing" before an idle transition
  *  can trigger a notification. */
 const MIN_PROCESSING_MS = 15_000
-
-const multmuxPath = (() => {
-  try { return execSync('which multmux', { encoding: 'utf-8' }).trim() } catch (e) { console.warn('[session-reconciler] could not resolve multmux path, using default:', e); return 'multmux' }
-})()
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 let reconcileInFlight = false
@@ -125,7 +121,7 @@ function backfillSessionIds(sessions: MultmuxSession[], project: Pick<Project, '
   if (!needsBackfill) return
 
   try {
-    execFileSync(multmuxPath, ['status', '--json'], {
+    execFileSync(MULTMUX_PATH, ['status', '--json'], {
       cwd: project.path,
       stdio: 'ignore',
       timeout: MULTMUX_STATUS_TIMEOUT_MS,

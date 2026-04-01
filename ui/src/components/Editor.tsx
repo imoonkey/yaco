@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react'
+import { isCloseShortcut } from '../lib/shortcuts'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, scrollPastEnd } from '@codemirror/view'
 import { EditorState, EditorSelection } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
@@ -37,10 +38,6 @@ interface EditorProps {
   diffHunks?: DiffHunk[]
   insertText?: string | null
   insertRequestKey?: number
-}
-
-function isCloseShortcut(event: KeyboardEvent): boolean {
-  return event.key.toLowerCase() === 'w' && event.metaKey && !event.ctrlKey && !event.altKey
 }
 
 function readViewportLine(view: EditorView): number {

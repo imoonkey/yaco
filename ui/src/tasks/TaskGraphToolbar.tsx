@@ -2,14 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { TaskState } from './taskGraphModel'
 import { useIsMobile } from '../hooks/useIsMobile'
-
-const STATE_COLORS: Record<TaskState, string> = {
-  ready: SOLARIZED_LIGHT.blue,
-  running: SOLARIZED_LIGHT.yellow,
-  done: SOLARIZED_LIGHT.green,
-  blocked: SOLARIZED_LIGHT.red,
-  cancelled: SOLARIZED_LIGHT.base1,
-}
+import { STATE_COLORS } from './taskGraphConstants'
 
 const STATE_LABELS: Record<TaskState, string> = {
   ready: 'ready',

@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSSERefresh } from './useSSE'
-import { API } from './useApi'
+import { useState, useEffect, useRef } from 'react'
+import { API, useSSETick } from './useApi'
 import { buildTaskGraphModel, type RawTaskMap, type TaskGraphModel } from '../tasks/taskGraphModel'
 
 export const TASKS_FILE_PATH = 'doc/todo/tasks.json'
@@ -8,7 +7,9 @@ export const TASKS_FILE_PATH = 'doc/todo/tasks.json'
 export type UseTaskGraphResult = {
   status: 'loading' | 'ready' | 'missing' | 'error'
   graph: TaskGraphModel | null
+  data: TaskGraphModel | null
   error: Error | null
+  loading: boolean
   warnings: string[]
   refresh: () => void
 }
@@ -20,13 +21,8 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
   const [error, setError] = useState<Error | null>(null)
   const [warnings, setWarnings] = useState<string[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading')
-  const [tick, setTick] = useState(0)
+  const { tick, refresh } = useSSETick('filetree')
   const initialLoad = useRef(true)
-
-  const refresh = useCallback(() => setTick(t => t + 1), [])
-
-  // SSE-triggered refresh when filetree changes
-  useSSERefresh('filetree', refresh)
 
   useEffect(() => {
     let cancelled = false
@@ -77,5 +73,5 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
     return () => { cancelled = true; clearInterval(id) }
   }, [projectName, tick])
 
-  return { status, graph, error, warnings, refresh }
+  return { status, graph, data: graph, error, loading: status === 'loading', warnings, refresh }
 }
