@@ -47,16 +47,16 @@ App (245 lines)
 TaskGraphScreen — controller (collapse state, keyboard nav, search)
 ├── TaskGraphToolbar — zoom, state filters, search, collapse all/expand all
 ├── TaskGraphCanvas — SVG container with pan/zoom
-│   ├── TaskGraphGroup[] — container frames (depth-styled, shallow-to-deep)
+│   ├── TaskGraphGroup[] — vertical indent guide lines (expanded groups only)
 │   ├── TaskGraphEdges — dependency paths with arrows
-│   └── TaskGraphNode[] — header cards (leaf + group, with collapse chevron)
+│   └── TaskGraphNode[] — uniform 220x32 cards (leaf + group, with chevron)
 ├── TaskGraphMinimap — overview with viewport rect
 ├── TaskGraphDetailPanel — unified task/group detail (breadcrumb, progress, children)
 └── TaskGraphTooltip — hover overlay
 ```
 
 **Task graph model (non-component):**
-- `taskGraphModel.ts` — recursive layout engine: forest building, subtree metadata, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics
+- `taskGraphModel.ts` — flat indented tree layout: 24px indent/level, guide lines instead of nested boxes, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 
 **Supporting modules (non-component):**

@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-01: Flat indented tree layout for task graph
+
+**What changed:**
+- Replaced nested-box group model with VS Code-style flat indented tree
+- Groups are now 1px vertical guide lines instead of background rectangles with accent bars
+- All cards uniform 220x32 at full opacity — no depth-dependent styling
+- Hierarchy via 24px/level indentation + bold headers with chevrons
+- Fixed browser `:focus` outline overflow (was rendering around SVG `<g>` bounding box)
+- Same-lane edge arcs now scale by vertical distance to reduce overlap
+
+**Why:**
+The nested-box approach compounded visual noise at each depth level — overlapping borders, stacking padding, accent bars fighting for attention. The flat tree pattern (VS Code / Figma layer panel) eliminates all of this while remaining intuitive.
+
+**Key files:** `taskGraphModel.ts`, `TaskGraphGroup.tsx`, `TaskGraphCanvas.tsx`
+**Verification:** TypeScript clean, ESLint clean, Vite build passes
+**Commit:** a276035..b3575d3
+
+---
+
 ## 2026-04-01: Replace milestone model with recursive parent-child task graph
 
 **What changed:**
