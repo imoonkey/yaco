@@ -52,7 +52,7 @@ type FileState = {
 - **Tab classification**: exports `TASKS_TAB_ID = '\0tasks'` plus `isFileTab()`, `isDiffTab()`, and `isTasksTab()` to keep file-only logic away from the synthetic Tasks tab
 - **Hydration**: on mount, fetches server content only for open file tabs to detect conflicts
 - **Conflict detection**: if `baseRevision` doesn't match server revision, status becomes `'conflict'`
-- **SSE refetch**: listens on `filetree` and `git` channels to refetch open file tabs and detect external changes
+- **SSE refetch**: listens on `filetree` and `git` channels to refetch open file tabs and detect external changes. Uses AbortController to cancel in-flight fetches when a new SSE refresh arrives.
 - **Draft persistence**: dirty drafts for real files are saved to localStorage with debounce (500ms). On quota exceeded, evicts oldest drafts.
 - **Layout persistence**: layout saved with 300ms debounce
 - **Tasks tab lifecycle**: `openTasksTab()` and `toggleTasksTab()` keep the Tasks tab unique per project and never treat it as a preview tab
@@ -86,7 +86,7 @@ All data hooks return `{ data, error, refresh }`.
 - Initial load fetches only root-level entries (dirs have `children: []`)
 - `expandDir(path)` fetches one directory's children on demand via `/api/files/:project/children?dir=path`
 - Tracks loaded directories in a `Set`; skips re-fetch for already-loaded dirs
-- SSE `filetree` refresh re-fetches root + all expanded dirs in parallel, preserving expanded state
+- SSE `filetree` refresh re-fetches root + all expanded dirs in batches of 6 (AbortController cancels previous cycle)
 - Focus/visibility-triggered refresh
 
 `useFileContent` is one-shot (no polling/SSE) — fetches when project+path change.
@@ -120,9 +120,10 @@ Shared EventSource singleton managing SSE connections and event dispatch.
 Behavior:
 - Single EventSource to `/api/notifications/stream`
 - Manual reconnect with exponential backoff (1s → 30s) on error — disables browser's built-in auto-reconnect to prevent listener accumulation and refresh storms
-- On reconnect: fires all registered refresh callbacks (catch-up)
-- Routes `notification` events to listeners and triggers `progress` refresh
-- Routes `refresh` events to channel-specific callbacks
+- On reconnect: fires all registered refresh callbacks immediately (catch-up)
+- Per-channel trailing-edge debounce (500ms) on `refresh` and `notification` events — prevents fetch cascades during rapid file changes
+- Routes `notification` events to listeners and triggers `progress` refresh (debounced)
+- Routes `refresh` events to channel-specific callbacks (debounced)
 
 ## useBrowserNotifications.ts (52 lines)
 

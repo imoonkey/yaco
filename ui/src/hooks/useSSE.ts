@@ -9,9 +9,26 @@ const MAX_BACKOFF_MS = 30000
 
 const listeners = new Map<string, Set<SSEListener>>()
 const refreshCallbacks = new Map<string, Set<() => void>>()
+const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function fireChannel(channel: string): void {
+  const cbs = refreshCallbacks.get(channel)
+  if (cbs) for (const cb of cbs) cb()
+}
+
+function debouncedFireChannel(channel: string): void {
+  const existing = refreshTimers.get(channel)
+  if (existing) clearTimeout(existing)
+  refreshTimers.set(channel, setTimeout(() => {
+    refreshTimers.delete(channel)
+    fireChannel(channel)
+  }, 500))
+}
 
 function closeSource() {
   if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+  for (const timer of refreshTimers.values()) clearTimeout(timer)
+  refreshTimers.clear()
   if (source) { source.close(); source = null }
 }
 
@@ -47,14 +64,12 @@ function getSource(): EventSource {
     const set = listeners.get('notification')
     if (set) for (const fn of set) fn(e as MessageEvent)
     // Notification events mean progress.json changed — trigger progress refresh
-    const progressCbs = refreshCallbacks.get('progress')
-    if (progressCbs) for (const cb of progressCbs) cb()
+    debouncedFireChannel('progress')
   })
 
   es.addEventListener('refresh', (e) => {
     const channel = (e as MessageEvent).data
-    const cbs = refreshCallbacks.get(channel)
-    if (cbs) for (const cb of cbs) cb()
+    debouncedFireChannel(channel)
   })
 
   // Disable EventSource auto-reconnect: close on error, reconnect manually with backoff.

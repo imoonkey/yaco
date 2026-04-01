@@ -5,8 +5,8 @@ import { useSSERefresh } from './useSSE'
 export const API = '/api'
 const FILE_TREE_FALLBACK_MS = 60_000
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`)
+async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${API}${path}`, signal ? { signal } : undefined)
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
 }
@@ -19,6 +19,16 @@ async function postJson<T>(path: string, body?: unknown): Promise<T> {
   })
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
   return res.json()
+}
+
+/** Run async fn over items in batches to limit concurrency */
+async function batchMap<T, R>(items: T[], fn: (item: T) => Promise<R>, limit = 6): Promise<R[]> {
+  const results: R[] = []
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = await Promise.all(items.slice(i, i + limit).map(fn))
+    results.push(...batch)
+  }
+  return results
 }
 
 /** Generic polling hook with optional SSE-triggered refresh */
@@ -72,6 +82,7 @@ export function useFileTree(projectName: string | null) {
   const [data, setData] = useState<FileNode[] | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const loadedDirsRef = useRef(new Set<string>())
+  const refreshAbortRef = useRef<AbortController | null>(null)
 
   // Fetch root-level entries
   const loadRoot = useCallback(async () => {
@@ -114,22 +125,30 @@ export function useFileTree(projectName: string | null) {
   // SSE refresh: reload root + all expanded dirs
   const refreshExpanded = useCallback(async () => {
     if (!projectName) return
+
+    // Abort any in-flight refresh cycle
+    refreshAbortRef.current?.abort()
+    const ac = new AbortController()
+    refreshAbortRef.current = ac
+
     try {
-      const root = await fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`)
-      // Re-fetch all expanded dirs in parallel
-      const dirs = [...loadedDirsRef.current]
-      const results = await Promise.all(
-        dirs.map(async (dirPath) => {
-          try {
-            return { dirPath, children: await fetchJson<FileNode[]>(
-              `/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`
-            )}
-          } catch {
-            loadedDirsRef.current.delete(dirPath)
-            return null
-          }
-        })
+      const root = await fetchJson<FileNode[]>(
+        `/files/${encodeURIComponent(projectName)}`, ac.signal
       )
+      // Re-fetch expanded dirs in batches of 6
+      const dirs = [...loadedDirsRef.current]
+      const results = await batchMap(dirs, async (dirPath) => {
+        try {
+          return { dirPath, children: await fetchJson<FileNode[]>(
+            `/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`,
+            ac.signal
+          )}
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'AbortError') throw e
+          loadedDirsRef.current.delete(dirPath)
+          return null
+        }
+      })
       // Build the tree: start from root, merge in all expanded dirs
       let tree = root
       for (const r of results) {
@@ -138,6 +157,7 @@ export function useFileTree(projectName: string | null) {
       setData(tree)
       setError(null)
     } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
       setError(e as Error)
     }
   }, [projectName])
@@ -154,6 +174,7 @@ export function useFileTree(projectName: string | null) {
       window.removeEventListener('focus', onForeground)
       document.removeEventListener('visibilitychange', onForeground)
       window.clearInterval(id)
+      refreshAbortRef.current?.abort()
     }
   }, [refreshExpanded])
 

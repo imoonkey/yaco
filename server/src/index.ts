@@ -284,4 +284,9 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
     subscriptionMap.delete(ws)
     console.log(`[ws] terminal detached: ${sessionName}`)
   })
+
+  ws.on('error', (err) => {
+    console.error(`[ws] terminal error: ${sessionName}`, err)
+    ws.close()
+  })
 })

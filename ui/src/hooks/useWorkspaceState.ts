@@ -219,12 +219,16 @@ function saveDrafts(project: string, drafts: PersistedDrafts): void {
 
 // --- Fetch helper ---
 
-async function fetchContent(project: string, path: string): Promise<{ content: string; revision: number } | null> {
+async function fetchContent(project: string, path: string, signal?: AbortSignal): Promise<{ content: string; revision: number } | null> {
   try {
-    const res = await fetch(`${API}/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`)
+    const res = await fetch(
+      `${API}/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`,
+      signal ? { signal } : undefined,
+    )
     if (!res.ok) return null
     return res.json()
-  } catch {
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') throw e
     return null
   }
 }
@@ -305,6 +309,8 @@ export function useWorkspaceState(projectName: string) {
   const previewTabRef = useRef(previewTab)
   previewTabRef.current = previewTab
 
+  const refetchAbortRef = useRef<AbortController | null>(null)
+
   // --- Hydration: fetch server truth for open file tabs on mount ---
   const hydrated = useRef(false)
   useEffect(() => {
@@ -382,7 +388,7 @@ export function useWorkspaceState(projectName: string) {
   }, [flushLayout, flushDrafts])
 
   // Synchronous flush on unmount — covers view/project switches where beforeunload doesn't fire
-  useEffect(() => () => { flushLayout(); flushDrafts() }, [flushLayout, flushDrafts])
+  useEffect(() => () => { flushLayout(); flushDrafts(); refetchAbortRef.current?.abort() }, [flushLayout, flushDrafts])
 
   // --- SSE: refetch open file tabs on filetree or git changes ---
   // Zero-dep callback — reads everything from refs so identity never changes.
@@ -392,14 +398,19 @@ export function useWorkspaceState(projectName: string) {
     const tabs = openTabsRef.current.filter(isFileTab)
     if (tabs.length === 0) return
 
+    // Abort any in-flight refetch cycle
+    refetchAbortRef.current?.abort()
+    const ac = new AbortController()
+    refetchAbortRef.current = ac
+
     for (const path of tabs) {
-      fetchContent(project, path).then(result => {
-        if (projectRef.current !== project) return
+      fetchContent(project, path, ac.signal).then(result => {
+        if (ac.signal.aborted || projectRef.current !== project) return
         setFiles(prev => {
           const next = reconcileFile(prev[path], result)
           return next === prev[path] ? prev : { ...prev, [path]: next }
         })
-      })
+      }).catch(() => {/* AbortError or network — ignore */})
     }
   }, [])
 

@@ -443,6 +443,15 @@ export function Workspace({
   const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     actions.closeTab(path)
+    if (isDiffTab(path)) {
+      const diffPath = path.slice(5) // Remove 'diff:' prefix
+      setDiffs(prev => {
+        if (!(diffPath in prev)) return prev
+        const next = { ...prev }
+        delete next[diffPath]
+        return next
+      })
+    }
   }, [actions])
 
   const handleActiveFileViewportLine = useCallback((line: number) => {

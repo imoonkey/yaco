@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-01: Fix SSE fetch cascade and memory leaks
+
+**What changed:**
+- Added 500ms per-channel trailing-edge debounce to SSE refresh dispatch (`useSSE.ts`) — prevents fetch storms during rapid agent file writes
+- Added AbortController to `refreshExpanded` (`useApi.ts`) — cancels in-flight tree refresh when new SSE event arrives
+- Capped parallel directory fetches at 6 concurrent (`batchMap` helper in `useApi.ts`) — was unbounded `Promise.all`
+- Added AbortController to `refetchOpenFiles` (`useWorkspaceState.ts`) — cancels in-flight file content fetches
+- Clean up `diffs` state when diff tabs close (`WorkspaceScreen.tsx`) — was accumulating indefinitely
+- Added `ws.on('error')` handler (`server/src/index.ts`) — triggers existing cleanup on WebSocket transport errors
+
+**Why:**
+- Chrome tab was consuming 10GB memory during long sessions with active agents. Root cause: each SSE refresh event triggered ~71 parallel HTTP requests (root + 50 expanded dirs + 20 open file tabs), with no cancellation or throttling. Multiple overlapping cycles accumulated response buffers.
+
+**Key files:** `ui/src/hooks/useSSE.ts`, `ui/src/hooks/useApi.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/workspace/WorkspaceScreen.tsx`, `server/src/index.ts`
+**Verification:** `server && npm test` — 41 tests pass. ESLint on modified files — no new errors. TypeScript build — no new errors.
+**Commit:** (pending)
+**Next:** Monitor memory in Chrome DevTools during active agent sessions to verify stabilization
+**Blockers:** None
+
 ## 2026-04-01: Flat indented tree layout for task graph
 
 **What changed:**
