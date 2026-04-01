@@ -1,13 +1,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { writeTextToClipboard } from '../lib/clipboard'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { Project } from '../types'
 
 function MenuItem({ label, danger, onClick }: { label: string; danger?: boolean; onClick: () => void }) {
   return (
     <div
       className="px-3 py-1 text-[12px] cursor-pointer"
-      style={{ color: danger ? '#dc322f' : '#586e75' }}
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#EEE8D5')}
+      style={{ color: danger ? SOLARIZED_LIGHT.red : C.text }}
+      onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.bg)}
       onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       onClick={onClick}
     >
@@ -17,7 +18,7 @@ function MenuItem({ label, danger, onClick }: { label: string; danger?: boolean;
 }
 
 function MenuDivider() {
-  return <div className="my-1" style={{ borderTop: '1px solid #D3CBB7' }} />
+  return <div className="my-1" style={{ borderTop: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }} />
 }
 
 type CtxMenu = { x: number; y: number; project: Project }
@@ -81,8 +82,8 @@ export function ProjectList({
             onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY, project }) }}
             className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors truncate ${
               isActive
-                ? 'bg-[#268bd2]/15 text-[#268bd2]'
-                : 'text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]'
+                ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
+                : 'text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[#E2D9C2]'
             }`}
             style={{ opacity: draggedProject === project.name ? 0.55 : 1 }}
           >
@@ -90,7 +91,7 @@ export function ProjectList({
             {unreadCount > 0 && (
               <span
                 className="absolute top-0.5 right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
-                style={{ backgroundColor: '#cb4b16' }}
+                style={{ backgroundColor: SOLARIZED_LIGHT.orange }}
               >
                 {unreadCount}
               </span>
@@ -99,7 +100,7 @@ export function ProjectList({
         )
       })}
       {projects.length === 0 && (
-        <div className="px-2 py-3 text-[11px] text-center" style={{ color: '#93a1a1' }}>
+        <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>
           No projects
         </div>
       )}
@@ -107,7 +108,7 @@ export function ProjectList({
       {ctxMenu && (
         <div
           className="fixed z-50 min-w-[160px] py-1 rounded shadow-lg"
-          style={{ left: ctxMenu.x, top: ctxMenu.y, backgroundColor: '#fdf6e3', border: '1px solid #D3CBB7' }}
+          style={{ left: ctxMenu.x, top: ctxMenu.y, backgroundColor: C.editorBg, border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }}
           onClick={e => e.stopPropagation()}
         >
           <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(ctxMenu.project.path); setCtxMenu(null) }} />

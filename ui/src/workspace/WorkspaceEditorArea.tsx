@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { Editor } from '../components/Editor'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { DiffHunk } from '../lib/parseDiff'
 import { escapeHtml, clampLine, renderMarkdown } from './markdown'
 import { VResizeHandle } from './ResizeHandle'
@@ -16,9 +16,9 @@ export function DiffView({ diff }: { diff: string }) {
       {lines.map((line, i) => {
         let bg = ''; let color = C.textDim
         if (line.startsWith('+++') || line.startsWith('---')) { color = C.textDark }
-        else if (line.startsWith('+')) { bg = 'rgba(133,153,0,0.1)'; color = '#859900' }
-        else if (line.startsWith('-')) { bg = 'rgba(220,50,47,0.1)'; color = '#dc322f' }
-        else if (line.startsWith('@@')) { bg = 'rgba(38,139,210,0.08)'; color = '#268bd2' }
+        else if (line.startsWith('+')) { bg = 'rgba(133,153,0,0.1)'; color = SOLARIZED_LIGHT.green }
+        else if (line.startsWith('-')) { bg = 'rgba(220,50,47,0.1)'; color = SOLARIZED_LIGHT.red }
+        else if (line.startsWith('@@')) { bg = 'rgba(38,139,210,0.08)'; color = SOLARIZED_LIGHT.blue }
         else if (line.startsWith('diff ')) { color = C.textDark; bg = C.bg }
         return <div key={i} style={{ backgroundColor: bg, color, paddingLeft: 12, paddingRight: 12, minHeight: 20 }}>{line || '\u00A0'}</div>
       })}
@@ -115,7 +115,7 @@ export function MarkdownPreview({
           div.innerHTML = svg
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Diagram render failed'
-          div.innerHTML = `<pre style="color:#dc322f;font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
+          div.innerHTML = `<pre style="color:${SOLARIZED_LIGHT.red};font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
         }
         div.setAttribute('data-processed', 'true')
       }

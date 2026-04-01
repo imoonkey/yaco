@@ -1,17 +1,17 @@
 import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, createContext, useContext, memo } from 'react'
 import { Tree } from 'react-arborist'
 import type { NodeRendererProps } from 'react-arborist'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { moveFile, renameFile, deleteFile, createFile, createDir } from '../hooks/useApi'
 import { writeTextToClipboard } from '../lib/clipboard'
 import type { FileNode } from '../types'
 
 // --- Shared icon colors ---
 export const FILE_COLORS: Record<string, string> = {
-  ts: '#3178C6', tsx: '#3178C6', js: '#CBCB41', jsx: '#CBCB41', json: '#B58900',
+  ts: '#3178C6', tsx: '#3178C6', js: '#CBCB41', jsx: '#CBCB41', json: SOLARIZED_LIGHT.yellow,
   md: '#519ABA', py: '#3776AB', css: '#42A5F5', scss: '#CD6799', html: '#E44D26',
-  yml: '#F44D27', yaml: '#F44D27', sh: '#4EAA25', toml: '#9C4121', lock: '#93A1A1',
-  svg: '#FFB13B', txt: '#93A1A1',
+  yml: '#F44D27', yaml: '#F44D27', sh: '#4EAA25', toml: '#9C4121', lock: SOLARIZED_LIGHT.base1,
+  svg: '#FFB13B', txt: SOLARIZED_LIGHT.base1,
 }
 export const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
 
@@ -157,7 +157,7 @@ function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNod
   return (
     <div style={style} ref={dragHandle}>
       <div
-        className={`flex w-full items-center gap-1 h-full px-1 rounded cursor-pointer text-[12px] ${isSelected ? 'bg-[#268bd2]/15' : ''}`}
+        className={`flex w-full items-center gap-1 h-full px-1 rounded cursor-pointer text-[12px] ${isSelected ? 'bg-[var(--sol-blue)]/15' : ''}`}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = C.hover }}

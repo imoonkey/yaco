@@ -10,7 +10,7 @@ import { ProviderIcon } from '../components/SessionIcons'
 import { FileExplorer, NewFileIcon, NewFolderIcon } from '../components/FileExplorer'
 import type { FileExplorerHandle } from '../components/FileExplorer'
 import { writeTextToClipboard } from '../lib/clipboard'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { parseDiff } from '../lib/parseDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import { clampLine } from './markdown'
@@ -777,8 +777,8 @@ export function Workspace({
     <div
       className="rounded px-2 py-2"
       style={{
-        backgroundColor: activeTasksTab ? '#268bd215' : C.bg,
-        border: `1px solid ${activeTasksTab ? '#268bd260' : C.border}`,
+        backgroundColor: activeTasksTab ? `${SOLARIZED_LIGHT.blue}15` : C.bg,
+        border: `1px solid ${activeTasksTab ? `${SOLARIZED_LIGHT.blue}60` : C.border}`,
       }}
     >
       <button

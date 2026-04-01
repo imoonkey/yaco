@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { browseDirs, addProject } from '../hooks/useApi'
 import type { BrowseEntry } from '../hooks/useApi'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 
 const STORAGE_KEY = 'workflow-last-browse-dir'
 const DEFAULT_PREFIX = '~/workspace/'
@@ -173,23 +174,23 @@ export function AddProjectDialog({
         className="rounded-lg shadow-lg w-full mx-4"
         style={{
           maxWidth: 480,
-          backgroundColor: '#fdf6e3',
-          border: '1px solid #D3CBB7',
+          backgroundColor: C.editorBg,
+          border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}`,
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 h-10"
-          style={{ borderBottom: '1px solid #D3CBB7' }}
+          style={{ borderBottom: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }}
         >
-          <span className="text-[13px] font-semibold" style={{ color: '#073642' }}>
+          <span className="text-[13px] font-semibold" style={{ color: C.textDark }}>
             Add Project
           </span>
           <button
             onClick={onClose}
             className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
-            style={{ color: '#93a1a1' }}
+            style={{ color: C.muted }}
             aria-label="Close"
           >
             ×
@@ -198,7 +199,7 @@ export function AddProjectDialog({
 
         {/* Body */}
         <div className="px-4 py-3">
-          <label className="block text-[11px] font-medium mb-1" style={{ color: '#586e75' }}>
+          <label className="block text-[11px] font-medium mb-1" style={{ color: C.text }}>
             Path
           </label>
           <input
@@ -209,12 +210,12 @@ export function AddProjectDialog({
             onKeyDown={handleKeyDown}
             className="w-full h-8 px-2 rounded-md text-[12px] outline-none"
             style={{
-              backgroundColor: '#eee8d5',
-              border: '1px solid #D3CBB7',
-              color: '#073642',
+              backgroundColor: C.bg,
+              border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}`,
+              color: C.textDark,
             }}
-            onFocus={(e) => (e.target.style.borderColor = '#b49471')}
-            onBlur={(e) => (e.target.style.borderColor = '#D3CBB7')}
+            onFocus={(e) => (e.target.style.borderColor = SOLARIZED_LIGHT.focusBorder)}
+            onBlur={(e) => (e.target.style.borderColor = SOLARIZED_LIGHT.tabInactiveBackground)}
             spellCheck={false}
             autoComplete="off"
           />
@@ -226,8 +227,8 @@ export function AddProjectDialog({
               className="mt-1 rounded-md overflow-y-auto"
               style={{
                 maxHeight: 200,
-                backgroundColor: '#eee8d5',
-                border: '1px solid #D3CBB7',
+                backgroundColor: C.bg,
+                border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}`,
               }}
             >
               {entries.map((entry, i) => (
@@ -235,21 +236,21 @@ export function AddProjectDialog({
                   key={entry.path}
                   className="flex items-center gap-2 px-2 h-7 cursor-pointer text-[12px]"
                   style={{
-                    backgroundColor: i === highlighted ? '#dfca8866' : undefined,
-                    color: '#073642',
+                    backgroundColor: i === highlighted ? SOLARIZED_LIGHT.quickInputListFocusBackground : undefined,
+                    color: C.textDark,
                   }}
                   onMouseEnter={() => setHighlighted(i)}
                   onClick={() => selectEntry(entry)}
                 >
                   <span
                     className="text-[8px] leading-none"
-                    style={{ color: entry.isGit ? '#859900' : 'transparent' }}
+                    style={{ color: entry.isGit ? SOLARIZED_LIGHT.green : 'transparent' }}
                   >
                     ●
                   </span>
                   <span className="flex-1 truncate">{entry.name}</span>
                   {entry.isGit && (
-                    <span className="text-[10px] shrink-0" style={{ color: '#93a1a1' }}>
+                    <span className="text-[10px] shrink-0" style={{ color: C.muted }}>
                       git
                     </span>
                   )}
@@ -260,21 +261,21 @@ export function AddProjectDialog({
 
           {/* Empty state */}
           {!loading && entries.length === 0 && path.endsWith('/') && path.length > 1 && (
-            <div className="mt-1 text-[11px] px-1" style={{ color: '#93a1a1' }}>
+            <div className="mt-1 text-[11px] px-1" style={{ color: C.muted }}>
               No subdirectories
             </div>
           )}
 
           {/* Loading */}
           {loading && (
-            <div className="mt-1 text-[11px] px-1" style={{ color: '#93a1a1' }}>
+            <div className="mt-1 text-[11px] px-1" style={{ color: C.muted }}>
               Loading…
             </div>
           )}
 
           {/* Error */}
           {error && (
-            <div className="mt-2 text-[11px] px-1" style={{ color: '#dc322f' }}>
+            <div className="mt-2 text-[11px] px-1" style={{ color: SOLARIZED_LIGHT.red }}>
               {error}
             </div>
           )}
@@ -283,11 +284,11 @@ export function AddProjectDialog({
         {/* Footer */}
         <div
           className="flex items-center justify-end gap-2 px-4 h-11"
-          style={{ borderTop: '1px solid #D3CBB7' }}
+          style={{ borderTop: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }}
         >
           <button
             onClick={onClose}
-            className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2]"
+            className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[#E2D9C2]"
           >
             Cancel
           </button>
@@ -296,8 +297,8 @@ export function AddProjectDialog({
             disabled={submitting || !path.replace(/\/+$/, '')}
             className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors"
             style={{
-              backgroundColor: '#268bd2',
-              color: '#fdf6e3',
+              backgroundColor: C.accent,
+              color: C.editorBg,
               opacity: submitting || !path.replace(/\/+$/, '') ? 0.5 : 1,
             }}
           >

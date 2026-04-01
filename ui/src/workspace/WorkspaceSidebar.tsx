@@ -9,7 +9,7 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
   const dir = cleanPath.includes('/') ? cleanPath.slice(0, cleanPath.lastIndexOf('/')) : ''
   return (
     <div onClick={onActivate}
-      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15' : ''}`}
+      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : ''}`}
       title={cleanPath}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>

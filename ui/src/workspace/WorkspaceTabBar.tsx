@@ -1,4 +1,4 @@
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { isDiffTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
 
 function tabName(tab: string): string {
@@ -24,7 +24,7 @@ function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m:
           <button key={value} onClick={() => onChange(value)}
             className="text-[10px] px-2 py-0.5 cursor-pointer"
             style={{
-              backgroundColor: active ? '#268bd215' : C.bg,
+              backgroundColor: active ? `${SOLARIZED_LIGHT.blue}15` : C.bg,
               color: active ? C.accent : C.text,
               borderRight: value !== modes[modes.length - 1].value ? `1px solid ${C.border}` : undefined,
             }}>

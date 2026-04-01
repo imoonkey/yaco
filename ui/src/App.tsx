@@ -5,6 +5,7 @@ import { AddProjectDialog } from './components/AddProjectDialog'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
+import { SOLARIZED_LIGHT_UI as C } from './lib/solarizedLight'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
 
@@ -179,26 +180,26 @@ function App() {
   }, [handleProjectChange, orderedProjects])
 
   return (
-    <div className="flex flex-col h-dvh bg-[#fdf6e3]">
-      <header className="h-10 shrink-0 flex items-center px-3 gap-2" style={{ backgroundColor: '#EEE8D5', borderBottom: '1px solid #D3CBB7' }}>
-        <span className="text-[13px] font-semibold text-[#073642]">Workflow</span>
+    <div className="flex flex-col h-dvh bg-[var(--sol-base3)]">
+      <header className="h-10 shrink-0 flex items-center px-3 gap-2" style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+        <span className="text-[13px] font-semibold text-[var(--sol-base02)]">Workflow</span>
         <div className="flex-1" />
         {browserNotifications.permission === 'default' && (
           <button
             onClick={browserNotifications.requestPermission}
-            className="text-[10px] px-2 py-1 rounded bg-[#268bd2]/10 hover:bg-[#268bd2]/20 text-[#268bd2] border border-[#268bd2]/20 cursor-pointer"
+            className="text-[10px] px-2 py-1 rounded bg-[var(--sol-blue)]/10 hover:bg-[var(--sol-blue)]/20 text-[var(--sol-blue)] border border-[var(--sol-blue)]/20 cursor-pointer"
           >
             Enable Alerts
           </button>
         )}
         {browserNotifications.permission === 'denied' && (
-          <span className="text-[10px] text-[#93a1a1]">Alerts blocked</span>
+          <span className="text-[10px] text-[var(--sol-base1)]">Alerts blocked</span>
         )}
         <button
           onClick={handleAddProject}
           aria-label="Add project"
           title="Add project"
-          className="w-7 h-7 rounded-md text-[18px] leading-none font-medium cursor-pointer shrink-0 text-[#586e75] hover:text-[#073642] hover:bg-[#E2D9C2] transition-colors"
+          className="w-7 h-7 rounded-md text-[18px] leading-none font-medium cursor-pointer shrink-0 text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[#E2D9C2] transition-colors"
         >
           +
         </button>
@@ -225,8 +226,8 @@ function App() {
           />
         )}
         {!activeProject && (
-          <div className="flex items-center justify-center h-full text-[13px]" style={{ color: '#93a1a1' }}>
-            <button onClick={handleAddProject} className="px-4 py-2 rounded-md bg-[#268bd2]/10 hover:bg-[#268bd2]/20 text-[#268bd2] cursor-pointer">
+          <div className="flex items-center justify-center h-full text-[13px]" style={{ color: C.muted }}>
+            <button onClick={handleAddProject} className="px-4 py-2 rounded-md bg-[var(--sol-blue)]/10 hover:bg-[var(--sol-blue)]/20 text-[var(--sol-blue)] cursor-pointer">
               Add a project to get started
             </button>
           </div>

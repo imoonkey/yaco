@@ -254,14 +254,14 @@ const RECORDING_STYLE: React.CSSProperties = {
   justifyContent: 'center',
   gap: 12,
   padding: '24px 0',
-  color: '#dc322f',
+  color: 'var(--sol-red)',
 }
 
 const PULSE_DOT_STYLE: React.CSSProperties = {
   width: 10,
   height: 10,
   borderRadius: '50%',
-  background: '#dc322f',
+  background: 'var(--sol-red)',
   animation: 'voice-pulse 1.2s ease-in-out infinite',
 }
 
@@ -271,7 +271,7 @@ const STOP_BTN_STYLE: React.CSSProperties = {
   borderRadius: 4,
   border: '1px solid rgba(220,50,47,0.3)',
   background: 'rgba(220,50,47,0.08)',
-  color: '#dc322f',
+  color: 'var(--sol-red)',
   cursor: 'pointer',
   padding: '0 16px',
   fontWeight: 500,
@@ -325,7 +325,7 @@ const WARNING_STYLE: React.CSSProperties = {
 const ERROR_ROW_STYLE: React.CSSProperties = {
   background: 'rgba(220,50,47,0.08)',
   border: '1px solid rgba(220,50,47,0.2)',
-  color: '#dc322f',
+  color: 'var(--sol-red)',
   fontSize: 11,
   padding: '4px 8px',
   borderRadius: 4,
@@ -338,7 +338,7 @@ const ERROR_ROW_STYLE: React.CSSProperties = {
 const ERROR_ACTION_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  color: '#dc322f',
+  color: 'var(--sol-red)',
   fontSize: 11,
   fontWeight: 500,
   cursor: 'pointer',

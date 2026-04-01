@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { ProviderIcon } from '../components/SessionIcons'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { AgentSession } from '../types'
 
 export function SessionItem({
@@ -74,7 +74,7 @@ export function SessionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       onContextMenu={e => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }) }}
-      className={`flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[#268bd2]/15 text-[#268bd2]' : ''}`}
+      className={`flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
       style={{ ...(isActive ? {} : { color: C.text }), opacity: dragging ? 0.55 : 1 }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
@@ -84,13 +84,13 @@ export function SessionItem({
             onClick={e => { e.stopPropagation(); onPin() }}
             className="shrink-0 text-[10px] cursor-pointer opacity-40 hover:opacity-100"
             title={pinned ? 'Unpin' : 'Pin to top'}
-            style={{ color: pinned ? '#268bd2' : C.muted, opacity: pinned ? 0.9 : undefined }}
+            style={{ color: pinned ? SOLARIZED_LIGHT.blue : C.muted, opacity: pinned ? 0.9 : undefined }}
           >
             &#x25C6;
           </button>
         )}
         <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[#2aa198] status-pulse' : 'bg-[#93a1a1]'}`} />
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[var(--sol-cyan)] status-pulse' : 'bg-[var(--sol-base1)]'}`} />
         {renaming ? (
           <input
             ref={inputRef}
@@ -111,7 +111,7 @@ export function SessionItem({
         {!!unreadCount && unreadCount > 0 && (
           <span
             className="shrink-0 min-w-[18px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
-            style={{ backgroundColor: '#cb4b16' }}
+            style={{ backgroundColor: SOLARIZED_LIGHT.orange }}
           >
             {unreadCount}
           </span>
@@ -121,7 +121,7 @@ export function SessionItem({
             e.stopPropagation()
             onKill()
           }}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] cursor-pointer border border-[#dc322f]/20 text-[#dc322f] hover:bg-[#dc322f]/8"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] cursor-pointer border border-[var(--sol-red)]/20 text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
           title={`Kill ${session.name}`}
         >
           Kill

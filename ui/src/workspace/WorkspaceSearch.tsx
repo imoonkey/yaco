@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { FileTypeIcon } from '../components/FileExplorer'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 
 export interface SearchEntry { name: string; path: string; type: 'file' | 'dir' }
 
@@ -48,16 +48,16 @@ export function FileSearch({ projectName, onSelect, onClose }: { projectName: st
             title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
             className="px-2 py-1 mr-1.5 rounded text-[10px] font-medium"
             style={{
-              backgroundColor: includeIgnored ? '#268bd2' : 'transparent',
+              backgroundColor: includeIgnored ? SOLARIZED_LIGHT.blue : 'transparent',
               color: includeIgnored ? '#fff' : C.muted,
-              border: `1px solid ${includeIgnored ? '#268bd2' : C.border}`,
+              border: `1px solid ${includeIgnored ? SOLARIZED_LIGHT.blue : C.border}`,
             }}
           >.gitignore</button>
         </div>
         <div className="max-h-[300px] overflow-y-auto">
           {visible.map((f, i) => (
             <div key={f.path} onClick={() => { onSelect(f); onClose() }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${i === selectedIdx ? 'bg-[#268bd2]/15 text-[#268bd2]' : ''}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${i === selectedIdx ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
               style={i !== selectedIdx ? { color: C.text } : undefined}
               onMouseEnter={e => { if (i !== selectedIdx) e.currentTarget.style.backgroundColor = C.hover }}
               onMouseLeave={e => { if (i !== selectedIdx) e.currentTarget.style.backgroundColor = '' }}>

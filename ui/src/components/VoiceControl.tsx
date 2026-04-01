@@ -89,7 +89,7 @@ const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
   },
   recording: {
     background: 'rgba(220,50,47,0.15)',
-    color: '#dc322f',
+    color: 'var(--sol-red)',
     opacity: 1,
   },
   processing: {
@@ -136,7 +136,7 @@ export function VoiceControl({
           width: 6,
           height: 6,
           borderRadius: '50%',
-          background: '#dc322f',
+          background: 'var(--sol-red)',
           animation: 'voice-pulse 1.2s ease-in-out infinite',
           flexShrink: 0,
         }} />
