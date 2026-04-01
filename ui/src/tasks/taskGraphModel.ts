@@ -651,28 +651,38 @@ function computeEdgePath(
   sameLane: boolean,
 ): { path: string; isSameLane: boolean } {
   if (sameLane) {
-    // Arc to the right
+    // Arc to the right of nodes
     const sx = source.x + NODE_WIDTH
     const sy = source.y + NODE_HEIGHT / 2
     const tx = target.x + NODE_WIDTH
     const ty = target.y + NODE_HEIGHT / 2
-    const depthDiff = Math.abs(source.depth - target.depth)
-    const arcOffset = ARC_OFFSET + depthDiff * 10
+    // Scale arc offset by vertical distance so arcs don't overlap
+    const vertDist = Math.abs(ty - sy)
+    const arcOffset = ARC_OFFSET + Math.min(vertDist * 0.12, 50)
     return {
       path: `M ${sx},${sy} C ${sx + arcOffset},${sy} ${tx + arcOffset},${ty} ${tx},${ty}`,
       isSameLane: true,
     }
   }
 
-  // Cross-lane: right edge → left edge
+  // Cross-lane: right edge of source → left edge of target
   const sx = source.x + NODE_WIDTH
   const sy = source.y + NODE_HEIGHT / 2
   const tx = target.x
   const ty = target.y + NODE_HEIGHT / 2
-  const gap = Math.abs(tx - sx)
-  const cpOffset = Math.max(gap / 2, 20)
+  const gap = tx - sx
+  if (gap > 0) {
+    // Target is to the right — normal bezier
+    const cpOffset = Math.max(gap / 2, 20)
+    return {
+      path: `M ${sx},${sy} C ${sx + cpOffset},${sy} ${tx - cpOffset},${ty} ${tx},${ty}`,
+      isSameLane: false,
+    }
+  }
+  // Target is to the left or overlapping — route around via top/bottom
+  const detour = Math.max(Math.abs(gap) / 2, 30)
   return {
-    path: `M ${sx},${sy} C ${sx + cpOffset},${sy} ${tx - cpOffset},${ty} ${tx},${ty}`,
+    path: `M ${sx},${sy} C ${sx + detour},${sy} ${tx - detour},${ty} ${tx},${ty}`,
     isSameLane: false,
   }
 }

@@ -39,7 +39,7 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, transform, high
       {...handlers}
     >
       <g transform={transform}>
-        <style>{`.tg-focusable:focus-visible { outline: 2px solid ${SOLARIZED_LIGHT.focusBorder}; outline-offset: 2px; }`}</style>
+        <style>{`.tg-focusable { outline: none; } .tg-focusable:focus-visible { outline: 2px solid ${SOLARIZED_LIGHT.focusBorder}; outline-offset: 2px; }`}</style>
         {/* Layer 1: Group container frames (shallow-to-deep, skip collapsed groups with no visible children) */}
         <g data-layer="groups">
           {[...layout.groups].sort((a, b) => a.depth - b.depth).map(group => (
