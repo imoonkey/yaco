@@ -1,5 +1,54 @@
 # Progress
 
+## 2026-04-01: Codebase quality design docs
+
+**What changed:**
+- Added P0/P1/P2 design docs for codebase quality refactoring in `doc/todo/codebase-quality/`
+- P0: god-file decomposition (WorkspaceScreen.tsx 889→~400 lines via controller/view split)
+- P1: server middleware extraction + UI shared component library
+- P2: error standardization (structured error types, centralized handling)
+- Includes double-design review discussions (Claude + Codex) for P0 and P2
+
+**Why:**
+Structured plan for addressing code quality issues identified across the codebase — oversized files, duplicated patterns, inconsistent error handling.
+
+**Key files:** `doc/todo/codebase-quality/review.md`, `doc/todo/codebase-quality/p0-god-file-decomposition/`, `doc/todo/codebase-quality/p1-server-middleware/`, `doc/todo/codebase-quality/p1-ui-shared-components/`, `doc/todo/codebase-quality/p2-error-standardization/`
+**Verification:** Documentation only
+**Commit:** 3afc853
+**Next:** Implement P0 (WorkspaceScreen decomposition)
+**Blockers:** None
+
+## 2026-04-01: Replace 50+ hardcoded hex colors with CSS vars and theme constants
+
+**What changed:**
+- Replaced hardcoded hex color values across 15 UI files with `SOLARIZED_LIGHT` / `SOLARIZED_LIGHT_UI` JS constants (for inline styles) and `var(--sol-*)` CSS variables (for stylesheets)
+- Added `SOLARIZED_LIGHT_UI` semantic palette object (`bg`, `editorBg`, `headerBg`, `border`, `text`, `textDim`, `muted`, `accent`, `hover`, `sash`) to `solarizedLight.ts`
+
+**Why:**
+Hardcoded hex values scattered across components made theme consistency fragile. Centralizing to constants and CSS vars ensures a single source of truth for the Solarized Light palette.
+
+**Key files:** `ui/src/lib/solarizedLight.ts`, `ui/src/App.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/FileExplorer.tsx`, `ui/src/components/AddProjectDialog.tsx`, `ui/src/components/ProjectList.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`, `ui/src/workspace/WorkspaceSearch.tsx`
+**Verification:** `tsc --noEmit` — pass. Visual inspection — no color regressions.
+**Commit:** e236824
+**Next:** None
+**Blockers:** None
+
+## 2026-04-01: Code quality cleanup — constants, error logging, type safety
+
+**What changed:**
+- Extracted `server/src/lib/constants.ts` — shared constants for buffer sizes (`GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`), timeouts (`MULTMUX_COMMAND_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`), and sentinels (`PENDING_SESSION_ID`)
+- Added `console.warn` to 28 silent `catch` blocks across 9 server files (was swallowing errors with empty catch)
+- Fixed unsafe type assertions in UI hooks (`useApi.ts`, `usePanZoom.ts`, `useVoice.ts`)
+
+**Why:**
+Magic numbers were duplicated across files (e.g., `50 * 1024 * 1024` in 3 places, `PENDING_SESSION_ID` string in 2 places). Silent catches masked bugs during development. Unsafe casts risked runtime type errors.
+
+**Key files:** `server/src/lib/constants.ts` (new), `server/src/lib/multmux.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/session-summary.ts`, `server/src/routes/files.ts`, `server/src/routes/git.ts`, `ui/src/hooks/useApi.ts`, `ui/src/hooks/useVoice.ts`
+**Verification:** `cd server && npm test` — all tests pass. `tsc --noEmit` — pass.
+**Commit:** 2a2541e
+**Next:** P0 god-file decomposition
+**Blockers:** None
+
 ## 2026-04-01: Cmd+Arrow session navigation + terminal auto-focus + sidebar resize
 
 **What changed:**

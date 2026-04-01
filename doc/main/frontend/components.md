@@ -63,6 +63,7 @@ TaskGraphScreen — controller (collapse state, keyboard nav, search)
 - `workspace/markdown.ts` (118 lines) — escapeHtml, renderMarkdown, code highlighting, mermaid init
 - `workspace/useResize.ts` (34 lines) — drag-to-resize hook
 - `hooks/useWorkspaceState.ts` (753 lines) — domain state, persistence, SSE reconciliation
+- `lib/solarizedLight.ts` — `SOLARIZED_LIGHT` (raw palette) + `SOLARIZED_LIGHT_UI` (semantic workspace colors) constants for inline styles; CSS vars (`var(--sol-*)`) for stylesheet colors. No hardcoded hex values.
 - `lib/diffGutter.ts` (283 lines) — CodeMirror diff gutter extension, inline hunk popup widget
 - `lib/parseDiff.ts` (71 lines) — unified diff parser → `DiffHunk[]` (wraps `parse-diff`)
 

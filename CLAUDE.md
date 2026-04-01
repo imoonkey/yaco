@@ -32,12 +32,12 @@ Hono Server (Node.js :3001)
 
 - **ui/src/App.tsx** — Thin shell: header bar, project selection, browser notification permission, renders a single `Workspace` keyed by active project. Project list with unread badges lives in the workspace sidebar (no separate Monitor or Tasks views).
 - **server/src/routes/** — REST API (`/api/*`) + SSE (`/api/notifications/stream`) + WebSocket (`/ws/terminal/:name`). Includes `voice.ts` (Groq STT + formatter pipeline).
-- **server/src/lib/** — Core modules: `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE, .gitignore-filtered), `gitignore.ts` (.gitignore parse + cache), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
+- **server/src/lib/** — Core modules: `constants.ts` (shared timeouts, buffer sizes, sentinels), `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE, .gitignore-filtered), `gitignore.ts` (.gitignore parse + cache), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
 - **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useTaskGraph.ts` (task data fetch + SSE refresh), `usePanZoom.ts` (viewport transform), `useVoice.ts` (voice input lifecycle), `useSessionUnreadState.ts` (per-session/project unread counts), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar`, `WorkspaceSessionList`
 - **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `TerminalKeyBar.tsx` (mobile), `AddProjectDialog.tsx` (directory autocomplete), `VoiceControl.tsx` (mic button), `ComposeTray.tsx` (voice compose review)
 - **ui/src/tasks/** — Task graph visualization (embedded as workspace tab): `TaskGraphScreen` (controller), `taskGraphModel.ts` (flat indented tree layout — 24px indent/level, guide lines, SCC cycles), `taskGraphSelection.ts` (highlight/search), `TaskGraphCanvas` (SVG), `TaskGraphGroup` (indent guide lines), `TaskGraphNode` (uniform 220x32 cards), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`, `TaskGraphEdges`, `TaskGraphMinimap`
-- **ui/src/lib/** — Utilities: `solarizedLight.ts` (CodeMirror theme), `diffGutter.ts` (git diff indicators), `parseDiff.ts`
+- **ui/src/lib/** — Utilities: `solarizedLight.ts` (CodeMirror theme + `SOLARIZED_LIGHT` / `SOLARIZED_LIGHT_UI` color constants for inline styles), `diffGutter.ts` (git diff indicators), `parseDiff.ts`
 
 ## Key Data Flow
 
@@ -74,11 +74,11 @@ doc/
 - `doc/main/` and `doc/dev/` are always-current SOTA docs. Update them when code changes.
 - `doc/PROGRESS.md` is append-only history. Each entry: What changed, Why, Key files, Verification, Commit, Next, Blockers.
 - Design workflow: `/scope-review` → `/ux-design` → `/design` → `/eng-plan-review` → `/implement`
-- Task graph design docs: `doc/todo/task_visualize/` (UX spec, technical design, reviews)
+- Active design docs: `doc/todo/codebase-quality/` (P0 god-file decomposition, P1 middleware/shared components, P2 error standardization)
 
 ## Conventions
 
-- Solarized Light color palette — all UI colors come from `ui/src/index.css` CSS variables and `ui/src/lib/solarizedLight.ts`
+- Solarized Light color palette — all UI colors come from `ui/src/index.css` CSS variables (`var(--sol-*)`) and `ui/src/lib/solarizedLight.ts` JS constants (`SOLARIZED_LIGHT` for raw palette, `SOLARIZED_LIGHT_UI` for semantic workspace colors). Never use hardcoded hex values.
 - Mobile-first: touch detection via `useIsTouch()` / `useIsMobile()`, virtual keyboard handling via `useKeyboardViewport`
 - SSE-driven updates with polling fallback (30-60s). Never poll faster than 30s.
 - File revision tracking via mtime for optimistic locking

@@ -17,6 +17,21 @@ Server-side library modules providing business logic, background services, and s
 
 ## Module Reference
 
+### constants.ts (23 lines)
+
+Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, and sentinel values.
+
+**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `MULTMUX_COMMAND_TIMEOUT_MS`, `MULTMUX_START_TIMEOUT_MS`, `MULTMUX_STATUS_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`
+
+- `GIT_MAX_BUFFER` (50 MB) — maxBuffer for git ls-files/status/diff commands
+- `FILE_SIZE_LIMIT` (1 MB) — max file size for the content endpoint
+- `MULTMUX_*_TIMEOUT_MS` — timeouts for multmux CLI commands (5s send/kill/rename, 15s start, 10s status)
+- `GIT_COMMAND_TIMEOUT_MS` (5s) — timeout for git status/diff commands
+- `SSE_HEARTBEAT_MS` (30s) — SSE keep-alive interval
+- `PENDING_SESSION_ID` — sentinel value for sessions that haven't received a first prompt
+
+Consumed by: `files.ts`, `git.ts`, `notifications.ts`, `multmux.ts`, `session-reconciler.ts`, `session-summary.ts`, `scanner.ts`
+
 ### projects.ts (34 lines)
 
 Project registry management. Reads/writes `~/.workflow/projects.json`.
