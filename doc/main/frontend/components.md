@@ -44,16 +44,20 @@ App (245 lines)
 
 **Task graph components (embedded in workspace):**
 ```
-TaskGraphScreen — controller
-├── TaskGraphToolbar — zoom, state filters, search
+TaskGraphScreen — controller (collapse state, keyboard nav, search)
+├── TaskGraphToolbar — zoom, state filters, search, collapse all/expand all
 ├── TaskGraphCanvas — SVG container with pan/zoom
-│   ├── TaskGraphMilestone[] — column backgrounds + headers
+│   ├── TaskGraphGroup[] — container frames (depth-styled, shallow-to-deep)
 │   ├── TaskGraphEdges — dependency paths with arrows
-│   └── TaskGraphNode[] — task cards with state dots
+│   └── TaskGraphNode[] — header cards (leaf + group, with collapse chevron)
 ├── TaskGraphMinimap — overview with viewport rect
-├── TaskGraphDetailPanel — right rail (desktop) / bottom sheet (mobile)
+├── TaskGraphDetailPanel — unified task/group detail (breadcrumb, progress, children)
 └── TaskGraphTooltip — hover overlay
 ```
+
+**Task graph model (non-component):**
+- `taskGraphModel.ts` — recursive layout engine: forest building, subtree metadata, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics
+- `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 
 **Supporting modules (non-component):**
 - `workspace/markdown.ts` (118 lines) — escapeHtml, renderMarkdown, code highlighting, mermaid init
