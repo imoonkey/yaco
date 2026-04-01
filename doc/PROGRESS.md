@@ -1,5 +1,37 @@
 # Progress
 
+## 2026-04-01: Replace milestone model with recursive parent-child task graph
+
+**What changed:**
+- Replaced hardcoded 2-level milestone visualization with generic parent-child hierarchy at any depth
+- New recursive layout algorithm: bottom-up fit-to-content width, DFS-ordered visible tree
+- SCC-based cycle detection (Tarjan's) replaces heuristic per-column detection
+- Unified selection model: `Selection = string | null` (no separate milestone type)
+- Tree-style keyboard navigation: ArrowUp/Down for DFS order, ArrowLeft/Right for parent/child + collapse/expand
+- New `TaskGraphGroup.tsx` component for depth-styled container frames
+- Deleted `TaskGraphMilestone.tsx`
+- Unified detail panel: breadcrumb chain, group progress, collapse toggle for any task with children
+- Search auto-expands collapsed ancestors when navigating to results
+- Removed `hiddenNodeIds` — display layout handles visibility via `computeVisibleSet`
+
+**Why:**
+The data model (`tasks.json`) supports arbitrary-depth parent-child trees via the `parent` field, but the visualization flattened everything into a 2-level milestone/task model. This mismatch lost hierarchy information and prevented multi-level task organization.
+
+**Key files:**
+- `ui/src/tasks/taskGraphModel.ts` — full rewrite (recursive layout, SCC, visible tree)
+- `ui/src/tasks/taskGraphSelection.ts` — unified selection
+- `ui/src/tasks/TaskGraphGroup.tsx` — new
+- `ui/src/tasks/TaskGraphScreen.tsx` — collapsedTaskIds, tree keyboard nav
+- All other task graph components updated
+
+**Verification:** TypeScript clean, ESLint clean, Vite build passes, server tests pass (41/41).
+
+**Commit:** b7beb0d
+
+**Design docs:** `doc/todo/pc-task-graph/final/design_aligned.md` (double-design: Claude + Codex)
+
+---
+
 ## 2026-03-31: Workspace consolidation — remove Monitor, collapse to single-workspace shell
 
 **What changed:**

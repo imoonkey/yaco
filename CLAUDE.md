@@ -36,7 +36,7 @@ Hono Server (Node.js :3001)
 - **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (tabs, drafts, conflicts, persistence), `useTaskGraph.ts` (task data fetch + SSE refresh), `usePanZoom.ts` (viewport transform), `useVoice.ts` (voice input lifecycle), `useSessionUnreadState.ts` (per-session/project unread counts), `useApi.ts` (fetch + SSE-triggered refresh), `useSSE.ts` (EventSource singleton)
 - **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar`, `WorkspaceSessionList`
 - **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6), `Terminal.tsx` (xterm.js), `FileExplorer.tsx` (react-arborist), `TerminalKeyBar.tsx` (mobile), `AddProjectDialog.tsx` (directory autocomplete), `VoiceControl.tsx` (mic button), `ComposeTray.tsx` (voice compose review)
-- **ui/src/tasks/** — Task graph visualization (embedded as workspace tab): `TaskGraphScreen` (controller), `taskGraphModel.ts` (layout engine), `taskGraphSelection.ts` (highlight/search), `TaskGraphCanvas` (SVG), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`
+- **ui/src/tasks/** — Task graph visualization (embedded as workspace tab): `TaskGraphScreen` (controller), `taskGraphModel.ts` (recursive layout engine — parent-child hierarchy at any depth), `taskGraphSelection.ts` (highlight/search), `TaskGraphCanvas` (SVG), `TaskGraphGroup` (container frames), `TaskGraphNode` (header cards), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`, `TaskGraphEdges`, `TaskGraphMinimap`
 - **ui/src/lib/** — Utilities: `solarizedLight.ts` (CodeMirror theme), `diffGutter.ts` (git diff indicators), `parseDiff.ts`
 
 ## Key Data Flow
@@ -53,7 +53,7 @@ Hono Server (Node.js :3001)
 ## State Persistence
 
 - **Layout/tabs/pins**: `localStorage["workflow-workspace:<project>"]` — includes open tabs, active tab, active session, layout sizes, and pinned session order
-- **Task graph collapse state**: `localStorage["workflow-taskgraph:<project>"]` — which milestones are collapsed
+- **Task graph collapse state**: `localStorage["workflow-taskgraph:<project>"]` — which groups are collapsed (stored as `collapsedTaskIds`)
 - **Drafts/revisions**: `localStorage["workflow-drafts:<project>"]`
 - **Projects**: `~/.workflow/projects.json`
 - Both localStorage keys flushed on `beforeunload`
