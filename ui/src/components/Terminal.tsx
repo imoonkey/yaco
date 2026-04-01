@@ -194,6 +194,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     }
     fitAddon.fit()
     fitTerminal(term)
+    term.focus()
 
     // Schedule a refit after the browser paints (container dimensions
     // may refine slightly after the initial layout pass).

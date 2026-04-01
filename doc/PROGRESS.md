@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-01: Cmd+Arrow session navigation + terminal auto-focus + sidebar resize
+
+**What changed:**
+- Added Cmd+ArrowUp/Down keyboard shortcut to cycle through terminal sessions in display order (pinned → processing → idle), wraps around
+- Terminal auto-focuses on session connect — switching sessions (Cmd+Arrow, click, or page load) immediately gives keyboard focus to the terminal
+- Added draggable resize handle between Projects list and File Explorer in the sidebar (was hardcoded `maxHeight: 160`). New `projectSize` persisted in layout state.
+
+**Why:**
+- Quick session switching without mouse or memorizing session numbers
+- Eliminates extra click to focus terminal after switching sessions
+- Projects list height was not adjustable — users with many projects couldn't see them all
+
+**Key files:** `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/hooks/useWorkspaceState.ts`
+**Verification:** `tsc --noEmit` — pass. ESLint — no new errors.
+**Commit:** (pending)
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-01: Fix SSE fetch cascade and memory leaks
 
 **What changed:**

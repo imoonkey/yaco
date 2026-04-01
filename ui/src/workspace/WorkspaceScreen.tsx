@@ -322,14 +322,17 @@ export function Workspace({
     return s
   }, [changes])
 
-  // Desktop sidebar section math (Explorer + Changes + Tasks; Sessions stay in the ActivityColumn)
-  const sidebarHeaderCount = 3
-  const visibleHandleCount = showExplorer && showChanges ? 1 : 0
+  // Desktop sidebar section math (Projects + Explorer + Changes + Tasks; Sessions stay in the ActivityColumn)
+  const projectSplit = useResize(layout.projectSize, 40, 300, 'down')
+  const projectHeight = projectSplit.size
+  const sidebarHeaderCount = 4
+  const visibleHandleCount = (showExplorer ? 1 : 0) + (showExplorer && showChanges ? 1 : 0)
   const availableSectionHeight = Math.max(
     0,
     sidebarHeight
       - sidebarHeaderCount * SECTION_HEADER_HEIGHT
       - visibleHandleCount * RESIZE_HANDLE_HEIGHT
+      - projectHeight
       - (showTasks ? TASKS_SECTION_BODY_HEIGHT : 0)
   )
   const left = useResize(layout.leftSize, 140, 600)
@@ -577,8 +580,9 @@ export function Workspace({
       rightSize: right.size,
       explorerSize: explorerSplit.size,
       sessionSize: sessionSplit.size,
+      projectSize: projectSplit.size,
     })
-  }, [left.size, right.size, explorerSplit.size, sessionSplit.size, actions])
+  }, [left.size, right.size, explorerSplit.size, sessionSplit.size, projectSplit.size, actions])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -593,6 +597,23 @@ export function Workspace({
           setFocusTarget('session')
           if (isMobile) actions.setMobilePane('terminal')
         }
+        return
+      }
+      // Cmd+Arrow Up/Down: cycle sessions
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey
+          && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (orderedSessions.length === 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        const cur = orderedSessions.findIndex(s => s.name === activeSession)
+        const next = cur === -1
+          ? (e.key === 'ArrowDown' ? 0 : orderedSessions.length - 1)
+          : e.key === 'ArrowDown'
+            ? (cur + 1) % orderedSessions.length
+            : (cur - 1 + orderedSessions.length) % orderedSessions.length
+        actions.setActiveSession(orderedSessions[next].name)
+        setFocusTarget('terminal')
+        if (isMobile) actions.setMobilePane('terminal')
         return
       }
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
@@ -649,7 +670,7 @@ export function Workspace({
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice])
+  }, [actions, activeSession, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice])
 
   useEffect(() => {
     const handleBlur = () => {
@@ -965,6 +986,8 @@ export function Workspace({
       right={right}
       explorerSplit={explorerSplit}
       explorerHeight={explorerHeight}
+      projectSplit={projectSplit}
+      projectHeight={projectHeight}
       sessionSplit={sessionSplit}
       sessionHeight={sessionHeight}
       hasOpenTabs={hasOpenTabs}

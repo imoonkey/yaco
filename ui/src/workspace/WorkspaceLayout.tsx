@@ -42,6 +42,8 @@ export type WorkspaceLayoutProps = {
   right: ResizeState
   explorerSplit: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }
   explorerHeight: number
+  projectSplit: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }
+  projectHeight: number
   sessionSplit: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }
   sessionHeight: number
 
@@ -62,7 +64,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     gitStale, changesBadge, changesBody, tasksBody,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
-    rootRef, sidebarRef, left, right, explorerSplit, explorerHeight, sessionSplit, sessionHeight,
+    rootRef, sidebarRef, left, right, explorerSplit, explorerHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
     hasOpenTabs,
     onInteractionCapture, onFilesPaneFocus, searchOverlay,
   } = props
@@ -127,7 +129,9 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
             <>
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
                 <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} />
-                <div className="shrink-0 overflow-y-auto" style={{ maxHeight: 160 }}>{projectListBody}</div>
+                <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>
+
+                {showExplorer && <HResizeHandle onMouseDown={projectSplit.onMouseDown} isDragging={projectSplit.isDragging} />}
 
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && (
