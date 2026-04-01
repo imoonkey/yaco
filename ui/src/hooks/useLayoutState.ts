@@ -3,7 +3,6 @@ import {
   type WorkspaceLayout,
   type PersistedState,
   isFileTab,
-  isDiffTab,
   TASKS_TAB_ID,
 } from './workspaceTypes'
 import type { PreviewLifecycle } from './useFileState'

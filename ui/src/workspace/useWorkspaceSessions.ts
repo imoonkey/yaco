@@ -15,7 +15,7 @@ interface UseWorkspaceSessionsOpts {
   sessions: AgentSession[] | null
   pinnedSessions: string[]
   refreshSessions: () => void
-  isMobile: boolean
+  isMobile?: boolean
   setFocusTarget: (t: FocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   projectName: string
@@ -24,7 +24,7 @@ interface UseWorkspaceSessionsOpts {
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
     actions, projectPath, activeSession, sessions, pinnedSessions,
-    refreshSessions, isMobile, setFocusTarget, sessionUnreadCounts, projectName,
+    refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
   } = opts
 
   const projectSessions = useMemo(() => sessions ?? [], [sessions])

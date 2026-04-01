@@ -133,7 +133,8 @@ export function Workspace({
   const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
 
-  // --- Extracted hooks ---  const sessionsMgr = useWorkspaceSessions({
+  // --- Extracted hooks ---
+  const sessionsMgr = useWorkspaceSessions({
     actions, projectPath, activeSession, sessions, pinnedSessions,
     refreshSessions, isMobile, setFocusTarget, sessionUnreadCounts, projectName,
   })
@@ -155,13 +156,15 @@ export function Workspace({
     setEditorInsert, setTerminalSend, setFocusTarget,
   })
 
-  // --- closeTab with diff cleanup ---  const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
+  // --- closeTab with diff cleanup ---
+  const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
     actions.closeTab(path)
     if (isDiffTab(path)) clearDiff(path.slice(5))
   }, [actions, clearDiff])
 
-  // --- closeFocusedSurface: stays here as cross-cutting wiring ---  const closeActiveTab = useCallback((): boolean => {
+  // --- closeFocusedSurface: stays here as cross-cutting wiring ---
+  const closeActiveTab = useCallback((): boolean => {
     if (!activeTab) return false
     closeTab(activeTab)
     return true
@@ -189,7 +192,8 @@ export function Workspace({
     voice,
   })
 
-  // --- Viewport handlers ---  const handleActiveFileViewportLine = useCallback((line: number) => {
+  // --- Viewport handlers ---
+  const handleActiveFileViewportLine = useCallback((line: number) => {
     if (!activeFilePath) return
     actions.updateFileViewport(activeFilePath, clampLine(line))
   }, [activeFilePath, actions])
@@ -205,7 +209,8 @@ export function Workspace({
     setFocusTarget('editor')
   }, [activeFilePath, actions, layout.mdMode])
 
-  // --- Sidebar resize & observer ---  useEffect(() => {
+  // --- Sidebar resize & observer ---
+  useEffect(() => {
     if (!sidebarRef.current) return
     const observer = new ResizeObserver(([entry]) => {
       setSidebarHeight(entry.contentRect.height)

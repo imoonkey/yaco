@@ -147,8 +147,8 @@ export function usePersistence(projectName: string) {
   }, [])
 
   // Debounce timers
-  const layoutTimer = useRef<ReturnType<typeof setTimeout>>()
-  const draftsTimer = useRef<ReturnType<typeof setTimeout>>()
+  const layoutTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const draftsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const scheduleLayoutSave = useCallback(() => {
     clearTimeout(layoutTimer.current)
