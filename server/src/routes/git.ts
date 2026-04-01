@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { spawnSync } from 'child_process'
 import { loadProjects } from '../lib/projects.js'
+import { GIT_COMMAND_TIMEOUT_MS } from '../lib/constants'
 
 export interface GitChange {
   path: string
@@ -29,7 +30,7 @@ app.get('/:project/status', async (c) => {
   const result = spawnSync('git', ['status', '--porcelain'], {
     cwd: proj.path,
     encoding: 'utf-8',
-    timeout: 5000,
+    timeout: GIT_COMMAND_TIMEOUT_MS,
   })
 
   if (result.error || result.status !== 0) {
@@ -66,7 +67,7 @@ app.get('/:project/diff', async (c) => {
   let result = spawnSync('git', ['diff', 'HEAD', '--', filePath], {
     cwd: proj.path,
     encoding: 'utf-8',
-    timeout: 5000,
+    timeout: GIT_COMMAND_TIMEOUT_MS,
   })
   let diff = result.stdout || ''
 
@@ -75,7 +76,7 @@ app.get('/:project/diff', async (c) => {
     result = spawnSync('git', ['diff', '--no-index', '--', '/dev/null', filePath], {
       cwd: proj.path,
       encoding: 'utf-8',
-      timeout: 5000,
+      timeout: GIT_COMMAND_TIMEOUT_MS,
     })
     diff = result.stdout || ''
   }

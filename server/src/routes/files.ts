@@ -4,6 +4,7 @@ import { join, relative, dirname, normalize, basename } from 'path'
 import { Hono } from 'hono'
 import { loadProjects } from '../lib/projects'
 import { getProjectGitignore } from '../lib/gitignore'
+import { GIT_MAX_BUFFER, FILE_SIZE_LIMIT } from '../lib/constants'
 
 export interface FileNode {
   name: string
@@ -27,7 +28,8 @@ async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof i
   let entries
   try {
     entries = await readdir(absDir, { withFileTypes: true })
-  } catch {
+  } catch (e) {
+    console.warn(`[files] failed to read directory ${absDir}:`, e)
     return []
   }
 
@@ -112,12 +114,12 @@ app.get('/:project/search-index', async (c) => {
   }
 
   try {
-    const { stdout } = await exec('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: proj.path, maxBuffer: 50 * 1024 * 1024 })
+    const { stdout } = await exec('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: proj.path, maxBuffer: GIT_MAX_BUFFER })
     const files = stdout.trimEnd().split('\n').filter(Boolean).map(toFile)
 
     if (includeIgnored) {
       try {
-        const { stdout: ignored } = await exec('git', ['ls-files', '--others', '--ignored', '--exclude-standard'], { cwd: proj.path, maxBuffer: 50 * 1024 * 1024 })
+        const { stdout: ignored } = await exec('git', ['ls-files', '--others', '--ignored', '--exclude-standard'], { cwd: proj.path, maxBuffer: GIT_MAX_BUFFER })
         const seen = new Set(files.map(f => f.path))
         for (const p of ignored.trimEnd().split('\n')) {
           if (!p || seen.has(p)) continue
@@ -126,7 +128,7 @@ app.get('/:project/search-index', async (c) => {
           if (shouldIgnoreEntry(topDir)) continue
           files.push(toFile(p))
         }
-      } catch { /* ignore — git ls-files --ignored can fail on shallow clones */ }
+      } catch (e) { console.warn('[files] git ls-files --ignored failed (may be shallow clone):', e) }
     }
 
     addDirs(files)
@@ -140,7 +142,7 @@ app.get('/:project/search-index', async (c) => {
     async function walk(dir: string) {
       if (files.length >= BUDGET) return
       let entries
-      try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+      try { entries = await readdir(dir, { withFileTypes: true }) } catch (e) { console.warn(`[files] walk readdir failed for ${dir}:`, e); return }
       for (const entry of entries) {
         if (files.length >= BUDGET) return
         if (shouldIgnoreEntry(entry.name)) continue
@@ -196,7 +198,7 @@ app.get('/:project/content', async (c) => {
 
   const info = await stat(resolved)
   if (info.isDirectory()) return c.json({ error: 'is a directory' }, 400)
-  if (info.size > 1_000_000) return c.json({ error: 'file too large' }, 413)
+  if (info.size > FILE_SIZE_LIMIT) return c.json({ error: 'file too large' }, 413)
 
   const content = await readFile(resolved, 'utf-8')
   return c.json({ content, path: filePath, revision: info.mtimeMs })

@@ -83,7 +83,7 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
     try {
       const watcher = watch(projectsFile, () => debouncedEmit('projects'))
       watchers.push(watcher)
-    } catch { /* ignore */ }
+    } catch (e) { console.warn(`[project-watcher] failed to watch projects.json:`, e) }
   }
 }
 

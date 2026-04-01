@@ -4,12 +4,14 @@ import { join } from 'path'
 import type { Project } from './projects'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
+import { MULTMUX_COMMAND_TIMEOUT_MS, MULTMUX_START_TIMEOUT_MS } from './constants'
 
 // Resolve multmux path at startup
 const MULTMUX_PATH = (() => {
   try {
     return execSync('which multmux', { encoding: 'utf-8' }).trim()
-  } catch {
+  } catch (e) {
+    console.warn('[multmux] could not resolve multmux path, using default:', e)
     return 'multmux'
   }
 })()
@@ -57,7 +59,8 @@ export function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path
   let files: string[]
   try {
     files = readdirSync(dir).filter(f => f.endsWith('.json'))
-  } catch {
+  } catch (e) {
+    console.warn(`[multmux] failed to read .multmux directory for ${project.name}:`, e)
     return []
   }
 
@@ -82,7 +85,8 @@ export function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path
         pid: state.pid,
         stateFileSummary: state.summary,
       })
-    } catch {
+    } catch (e) {
+      console.warn(`[multmux] failed to parse state file ${file}:`, e)
       continue
     }
   }
@@ -111,7 +115,8 @@ export function resolveSessionTmuxName(projectPath: string, handle: string): str
     const raw = readFileSync(stateFile, 'utf-8')
     const state = JSON.parse(raw) as MultmuxStateFile
     return state.tmuxSession || null
-  } catch {
+  } catch (e) {
+    console.warn(`[multmux] failed to read state file for ${handle}:`, e)
     return null
   }
 }
@@ -119,7 +124,7 @@ export function resolveSessionTmuxName(projectPath: string, handle: string): str
 /** Send a message to a multmux session */
 export async function sendToSession(handle: string, message: string): Promise<void> {
   validateSessionName(handle)
-  await spawnOutput(MULTMUX_PATH, ['send', handle, message], 5000)
+  await spawnOutput(MULTMUX_PATH, ['send', handle, message], MULTMUX_COMMAND_TIMEOUT_MS)
 }
 
 /** Start a new multmux session. Returns handle and sessionId from CLI output. */
@@ -133,7 +138,7 @@ export async function startMultmuxSession(
   const args: string[] = [provider]
   if (prompt) args.push(prompt)
   args.push('-n', name, '--json')
-  const output = await spawnOutput(MULTMUX_PATH, args, 15000, cwd)
+  const output = await spawnOutput(MULTMUX_PATH, args, MULTMUX_START_TIMEOUT_MS, cwd)
   try {
     const state = JSON.parse(output) as MultmuxStateFile
     return { handle: state.handle, sessionId: state.sessionId ?? '' }
@@ -146,13 +151,13 @@ export async function startMultmuxSession(
 /** Close a multmux session via the CLI (handles state file cleanup). */
 export async function closeMultmuxSession(handle: string, cwd: string): Promise<void> {
   validateSessionName(handle)
-  await spawnOutput(MULTMUX_PATH, ['kill', handle], 5000, cwd)
+  await spawnOutput(MULTMUX_PATH, ['kill', handle], MULTMUX_COMMAND_TIMEOUT_MS, cwd)
 }
 
 export async function renameMultmuxSession(oldHandle: string, newHandle: string, cwd: string): Promise<void> {
   validateSessionName(oldHandle)
   validateSessionName(newHandle)
-  await spawnOutput(MULTMUX_PATH, ['rename', oldHandle, newHandle], 5000, cwd)
+  await spawnOutput(MULTMUX_PATH, ['rename', oldHandle, newHandle], MULTMUX_COMMAND_TIMEOUT_MS, cwd)
 }
 
 /** Collect stdout from a spawned process */

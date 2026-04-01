@@ -83,7 +83,8 @@ async function initAndWatch(
     const raw = await readFile(progressFile, 'utf-8')
     const data: ProgressEntry[] = JSON.parse(raw)
     lastCounts.set(progressFile, data.length)
-  } catch {
+  } catch (e) {
+    console.warn(`[watcher] failed to initialize count for ${progressFile}:`, e)
     lastCounts.set(progressFile, 0)
   }
 
@@ -121,8 +122,9 @@ async function initAndWatch(
         lastCounts.set(progressFile, data.length)
         onChange(projectName, workstream, data)
       }
-    } catch {
-      // file might be mid-write
+    } catch (e) {
+      // file might be mid-write — log for debugging
+      console.warn(`[watcher] failed to read ${progressFile} (may be mid-write):`, e)
     }
   })
 

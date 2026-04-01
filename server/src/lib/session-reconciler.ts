@@ -7,6 +7,7 @@ import type { MultmuxSession, MultmuxStateFile } from './multmux'
 import { readSessionsFromStateFiles } from './multmux'
 import { withFileLock, type ProgressEntry } from './scanner'
 import { emitRefresh } from './notify'
+import { PENDING_SESSION_ID, MULTMUX_STATUS_TIMEOUT_MS } from './constants'
 
 const RECONCILE_INTERVAL = 60_000
 /** Require N consecutive idle reconcile passes before firing notification. */
@@ -15,11 +16,8 @@ const IDLE_DEBOUNCE_COUNT = 2
  *  can trigger a notification. */
 const MIN_PROCESSING_MS = 15_000
 
-/** Sentinel value for sessions that haven't received a first prompt */
-const PENDING_SESSION_ID = 'pending:awaiting-first-prompt'
-
 const multmuxPath = (() => {
-  try { return execSync('which multmux', { encoding: 'utf-8' }).trim() } catch { return 'multmux' }
+  try { return execSync('which multmux', { encoding: 'utf-8' }).trim() } catch (e) { console.warn('[session-reconciler] could not resolve multmux path, using default:', e); return 'multmux' }
 })()
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
@@ -94,10 +92,10 @@ function checkStaleStates(sessions: MultmuxSession[], project: Pick<Project, 'pa
       const state = JSON.parse(raw) as MultmuxStateFile
       if (!isTmuxAlive(state.tmuxSession)) {
         dead = true
-        try { unlinkSync(stateFile) } catch { /* already gone */ }
+        try { unlinkSync(stateFile) } catch (e) { console.warn(`[session-reconciler] failed to remove stale state file ${stateFile}:`, e) }
       }
-    } catch {
-      // Can't read state file — keep the session in the list
+    } catch (e) {
+      console.warn(`[session-reconciler] failed to read state file for ${session.name}:`, e)
     }
 
     if (!dead) {
@@ -130,10 +128,10 @@ function backfillSessionIds(sessions: MultmuxSession[], project: Pick<Project, '
     execFileSync(multmuxPath, ['status', '--json'], {
       cwd: project.path,
       stdio: 'ignore',
-      timeout: 10_000,
+      timeout: MULTMUX_STATUS_TIMEOUT_MS,
     })
-  } catch {
-    // multmux not available or timed out — skip
+  } catch (e) {
+    console.warn('[session-reconciler] multmux status --json backfill failed:', e)
   }
 }
 

@@ -16,7 +16,11 @@ export async function getProjectGitignore(projectPath: string): Promise<Ignore |
   let info
   try {
     info = await stat(filePath)
-  } catch {
+  } catch (e) {
+    // Expected: .gitignore doesn't exist for this project
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+      console.warn(`[gitignore] failed to stat ${filePath}:`, e)
+    }
     return null
   }
 
@@ -26,7 +30,8 @@ export async function getProjectGitignore(projectPath: string): Promise<Ignore |
   let content
   try {
     content = await readFile(filePath, 'utf-8')
-  } catch {
+  } catch (e) {
+    console.warn(`[gitignore] failed to read ${filePath}:`, e)
     return null
   }
 

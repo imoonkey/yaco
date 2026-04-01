@@ -6,6 +6,7 @@ const MIN_SCALE = 0.25
 const MAX_SCALE = 3.0
 const ZOOM_STEP = 0.25
 const ANIM_DURATION = 200
+const DRAG_THRESHOLD = 3
 
 function clamp(val: number, min: number, max: number): number {
   return Math.min(Math.max(val, min), max)
@@ -30,7 +31,6 @@ export function usePanZoom(opts: {
   const activePointers = useRef<Map<number, PointerEvent>>(new Map())
   const lastPinchDist = useRef<number | null>(null)
   const animFrameRef = useRef<number>(0)
-  const DRAG_THRESHOLD = 3
 
   const getContainerRect = useCallback(() => {
     return containerRef.current?.getBoundingClientRect() ?? { left: 0, top: 0, width: 0, height: 0 }

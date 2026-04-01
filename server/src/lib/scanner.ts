@@ -85,8 +85,8 @@ async function scanProject(project: Project): Promise<WorkstreamInfo[]> {
         doc: data.doc,
         checkpoints: data.checkpoints ?? [],
       })
-    } catch {
-      // skip malformed workstream.json
+    } catch (e) {
+      console.warn(`[scanner] failed to parse workstream.json for ${entry.name}:`, e)
     }
   }
   return results
@@ -108,7 +108,8 @@ async function readProgressFile(file: string, projectName: string, workstreamId:
       project: projectName,
       workstream: workstreamId,
     }))
-  } catch {
+  } catch (e) {
+    console.warn(`[scanner] failed to read progress file ${file}:`, e)
     return []
   }
 }

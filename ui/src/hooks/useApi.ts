@@ -49,7 +49,7 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
         const result = await fetcher()
         if (!cancelled) { setData(result); setError(null) }
       } catch (e) {
-        if (!cancelled) setError(e as Error)
+        if (!cancelled) setError(e instanceof Error ? e : new Error(String(e)))
       }
     }
     load()
@@ -93,7 +93,7 @@ export function useFileTree(projectName: string | null) {
       setError(null)
       loadedDirsRef.current.clear()
     } catch (e) {
-      setError(e as Error)
+      setError(e instanceof Error ? e : new Error(String(e)))
     }
   }, [projectName])
 
@@ -158,7 +158,7 @@ export function useFileTree(projectName: string | null) {
       setError(null)
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return
-      setError(e as Error)
+      setError(e instanceof Error ? e : new Error(String(e)))
     }
   }, [projectName])
 

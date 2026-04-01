@@ -21,18 +21,18 @@ const sseClients = new Set<SSEWriter>()
 /** Dispatch a notification to all sinks (osascript + SSE clients) */
 export function emitNotification(event: NotificationEvent): void {
   // Sink 1: macOS desktop notification (best-effort)
-  try { osascriptNotify(event.title, event.message) } catch { /* ignore */ }
+  try { osascriptNotify(event.title, event.message) } catch (e) { console.warn('[notify] osascript notification failed:', e) }
 
   // Sink 2: broadcast to connected SSE clients (best-effort)
   for (const writer of sseClients) {
-    try { writer('notification', JSON.stringify(event)) } catch { sseClients.delete(writer) }
+    try { writer('notification', JSON.stringify(event)) } catch (e) { console.warn('[notify] SSE client write failed, removing:', e); sseClients.delete(writer) }
   }
 }
 
 /** Push a lightweight refresh signal to all SSE clients (no osascript) */
 export function emitRefresh(channel: string): void {
   for (const writer of sseClients) {
-    try { writer('refresh', channel) } catch { sseClients.delete(writer) }
+    try { writer('refresh', channel) } catch (e) { console.warn('[notify] SSE client refresh failed, removing:', e); sseClients.delete(writer) }
   }
 }
 

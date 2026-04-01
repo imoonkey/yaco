@@ -257,10 +257,15 @@ export function useVoice(): UseVoiceReturn {
         return
       }
 
+      const validStatuses: FormattingStatus[] = ['formatted', 'fallback_raw', 'empty']
+      const formattingStatus: FormattingStatus = validStatuses.includes(data.formattingStatus as FormattingStatus)
+        ? data.formattingStatus as FormattingStatus
+        : 'fallback_raw'
+
       setCompose({
         rawText: data.rawText,
         displayText: data.displayText,
-        formattingStatus: data.formattingStatus as FormattingStatus,
+        formattingStatus,
         warning: data.warning,
       })
       setTarget(ctx)
@@ -299,7 +304,13 @@ export function useVoice(): UseVoiceReturn {
         startTimeRef.current = Date.now()
         setElapsedMs(0)
 
-        const mimeType = selectMimeType()!
+        const mimeType = selectMimeType()
+        if (!mimeType) {
+          setState('error')
+          setErrorMessage('No supported audio format found.')
+          stream.getTracks().forEach(t => t.stop())
+          return
+        }
         const recorder = new MediaRecorder(stream, { mimeType })
         mediaRecorderRef.current = recorder
 

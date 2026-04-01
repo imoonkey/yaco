@@ -4,14 +4,12 @@ import { join } from 'path'
 import { homedir } from 'os'
 import Database from 'better-sqlite3'
 import type { MultmuxSession } from './multmux'
+import { PENDING_SESSION_ID } from './constants'
 
 export interface SummaryResult {
   summary: string
   messageCount?: number
 }
-
-/** Sentinel value multmux uses for sessions that haven't received a first prompt */
-const PENDING_SESSION_ID = 'pending:awaiting-first-prompt'
 
 function isResolvableSessionId(id: string): boolean {
   return !!id && id !== PENDING_SESSION_ID
@@ -51,9 +49,9 @@ function makeClaudeResolver(projectPath: string): (sessionId: string) => Summary
             const summary = raw.replace(/\s+/g, ' ').trim()
             if (summary) return { summary }
           }
-        } catch { continue }
+        } catch (e) { console.warn(`[session-summary] failed to parse JSONL line in ${jsonlPath}:`, e); continue }
       }
-    } catch { /* ignore */ }
+    } catch (e) { console.warn(`[session-summary] failed to read Claude JSONL ${jsonlPath}:`, e) }
     return null
   }
 }
@@ -71,13 +69,14 @@ function getCodexDb(): InstanceType<typeof Database> | null {
 
   try {
     codexDb?.close()
-  } catch { /* ignore */ }
+  } catch (e) { console.warn('[session-summary] failed to close previous Codex DB handle:', e) }
 
   try {
     codexDb = new Database(dbPath, { readonly: true })
     codexDbPath = dbPath
     return codexDb
-  } catch {
+  } catch (e) {
+    console.warn('[session-summary] failed to open Codex DB:', e)
     return null
   }
 }
@@ -93,9 +92,10 @@ function resolveCodexSummary(sessionId: string): SummaryResult | null {
     const summary = row.title || row.first_user_message || ''
     if (!summary) return null
     return { summary }
-  } catch {
+  } catch (e) {
     // DB may be stale or locked — drop cached handle and retry next time
-    try { codexDb?.close() } catch { /* ignore */ }
+    console.warn('[session-summary] Codex DB query failed:', e)
+    try { codexDb?.close() } catch (closeErr) { console.warn('[session-summary] failed to close Codex DB after error:', closeErr) }
     codexDb = null
     return null
   }
@@ -114,9 +114,9 @@ function loadClaudePidMap(): Map<number, string> {
         if (typeof data.pid === 'number' && typeof data.sessionId === 'string' && data.sessionId) {
           map.set(data.pid, data.sessionId)
         }
-      } catch { continue }
+      } catch (e) { console.warn(`[session-summary] failed to parse Claude session file ${file}:`, e); continue }
     }
-  } catch { /* ignore */ }
+  } catch (e) { console.warn('[session-summary] failed to read Claude sessions directory:', e) }
   return map
 }
 
@@ -138,7 +138,7 @@ function loadCodexPidMap(pids: number[]): Map<number, string> {
         map.set(Number(pidMatch[1]), idMatch[1])
       }
     }
-  } catch { /* ignore */ }
+  } catch (e) { console.warn('[session-summary] lsof for Codex PID resolution failed:', e) }
   return map
 }
 
