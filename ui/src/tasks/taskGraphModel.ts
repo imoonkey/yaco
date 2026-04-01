@@ -97,6 +97,7 @@ export const NODE_GAP = 8
 export const GROUP_PADDING_X = 12
 export const GROUP_PADDING_TOP = 8
 export const GROUP_PADDING_BOTTOM = 10
+export const CHILD_INDENT = 16
 export const COLUMN_GAP = 64
 export const GRAPH_PADDING = 40
 export const ARC_OFFSET = 30
@@ -488,7 +489,7 @@ function measureTree(
   }
 
   const maxChildWidth = Math.max(...measuredChildren.map(c => c.width))
-  const contentWidth = Math.max(NODE_WIDTH, maxChildWidth)
+  const contentWidth = Math.max(NODE_WIDTH, CHILD_INDENT + maxChildWidth)
   const groupWidth = contentWidth + 2 * GROUP_PADDING_X
 
   const childrenHeight = measuredChildren.reduce((sum, c) => sum + c.height, 0) +
@@ -546,10 +547,10 @@ function positionTree(
 
     outVisibleChildren.set(item.id, item.children.map(c => c.id))
 
-    // Position children below header
+    // Position children below header, indented further
     let childY = y + GROUP_PADDING_TOP + NODE_HEIGHT + NODE_GAP
     for (const child of item.children) {
-      const childX = x + GROUP_PADDING_X
+      const childX = x + GROUP_PADDING_X + CHILD_INDENT
       positionTree(child, childX, childY, depth + 1, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
       childY += child.height + NODE_GAP
     }
