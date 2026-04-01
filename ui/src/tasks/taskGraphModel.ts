@@ -449,12 +449,12 @@ function measureTree(
   const rawChildren = childIdsByTask.get(id) ?? []
 
   if (rawChildren.length === 0 || isCollapsed) {
-    // Leaf or collapsed group — just a header card
-    // Collapsed groups keep group padding so the header position is stable
+    // Leaf or collapsed group
+    // Collapsed groups keep GROUP_PADDING_TOP/BOTTOM so header position is stable
     if (task.hasChildren) {
       return {
         id,
-        width: NODE_WIDTH + 2 * GROUP_PADDING_X,
+        width: NODE_WIDTH,
         height: GROUP_PADDING_TOP + NODE_HEIGHT + GROUP_PADDING_BOTTOM,
         isGroup: true,
         children: [],
@@ -481,7 +481,7 @@ function measureTree(
     // All children filtered out — render like a collapsed group
     return {
       id,
-      width: NODE_WIDTH + 2 * GROUP_PADDING_X,
+      width: NODE_WIDTH,
       height: GROUP_PADDING_TOP + NODE_HEIGHT + GROUP_PADDING_BOTTOM,
       isGroup: true,
       children: [],
@@ -490,7 +490,7 @@ function measureTree(
 
   const maxChildWidth = Math.max(...measuredChildren.map(c => c.width))
   const contentWidth = Math.max(NODE_WIDTH, CHILD_INDENT + maxChildWidth)
-  const groupWidth = contentWidth + 2 * GROUP_PADDING_X
+  const groupWidth = contentWidth
 
   const childrenHeight = measuredChildren.reduce((sum, c) => sum + c.height, 0) +
     (measuredChildren.length - 1) * NODE_GAP
@@ -533,10 +533,10 @@ function positionTree(
       progress: leafProgressByTask.get(item.id) ?? { done: 0, total: 0 },
     })
 
-    // Header node at top of group
+    // Header node flush with group frame left edge
     outNodes.set(item.id, {
       id: item.id,
-      x: x + GROUP_PADDING_X,
+      x,
       y: y + GROUP_PADDING_TOP,
       width: NODE_WIDTH,
       height: NODE_HEIGHT,
@@ -547,18 +547,18 @@ function positionTree(
 
     outVisibleChildren.set(item.id, item.children.map(c => c.id))
 
-    // Position children below header, indented further
+    // Position children below header, indented by CHILD_INDENT
     let childY = y + GROUP_PADDING_TOP + NODE_HEIGHT + NODE_GAP
     for (const child of item.children) {
-      const childX = x + GROUP_PADDING_X + CHILD_INDENT
+      const childX = x + CHILD_INDENT
       positionTree(child, childX, childY, depth + 1, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
       childY += child.height + NODE_GAP
     }
   } else if (item.isGroup) {
-    // Collapsed group — header at padded position (same as expanded) for position stability
+    // Collapsed group — header flush with frame (same as expanded) for position stability
     outNodes.set(item.id, {
       id: item.id,
-      x: x + GROUP_PADDING_X,
+      x,
       y: y + GROUP_PADDING_TOP,
       width: NODE_WIDTH,
       height: NODE_HEIGHT,
@@ -733,7 +733,7 @@ export function computeDisplayLayout(
   let rootX = GRAPH_PADDING
   for (const root of measuredRoots) {
     // Ensure minimum lane width
-    const laneWidth = Math.max(root.width, NODE_WIDTH + 2 * GROUP_PADDING_X)
+    const laneWidth = Math.max(root.width, NODE_WIDTH)
     positionTree(root, rootX, GRAPH_PADDING, 0, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, groups, nodes, visibleOrder, visibleChildrenByTask)
     rootX += laneWidth + COLUMN_GAP
   }
