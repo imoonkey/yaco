@@ -82,7 +82,8 @@ xterm.js 6 terminal emulator with Solarized Light theme. On touch devices, rende
 
 On touch devices (`useIsTouch()`), Terminal wraps its output in a flex column and renders `TerminalKeyBar` as a sibling below xterm. The key bar provides:
 
-- **Primary row** (always visible): Esc, Tab, ↵, ←, ↓, ↑, →, ··· (expand toggle)
+- **Modifier keys** (sticky toggles): Ctrl, ⇧ (Shift) — tap to activate (blue highlight), next keypress applies the modifier and auto-clears. Ctrl+letter sends control character (e.g., Ctrl+C = `\x03`). Shift+arrow sends shifted escape sequence (e.g., `\x1b[1;2A`). Shift+Tab sends `\x1b[Z`. Modifier state is managed by Terminal and shared with `onData` interception so modifiers apply to both key bar buttons and virtual keyboard input.
+- **Primary row** (always visible): Ctrl, ⇧, Esc, Tab, ↵, ←, ↓, ↑, →, ··· (expand toggle)
 - **Secondary row** (expandable): ^C, ^D, ^Z, ^L, ^R, ^O, ^B, ^A, ^E, ^W, ^U
 
 All buttons send escape sequences via the same WebSocket `{ type: 'input', data }` channel. Arrow keys support hold-to-repeat (400ms initial delay, 80ms interval) and resolve dynamically via `xterm.modes.applicationCursorKeysMode` (CSI `\x1b[` for normal mode, SS3 `\x1bO` for application mode, e.g. vim). The ··· button toggles the secondary row with a max-height CSS transition. Buttons include ARIA labels, `role="toolbar"`, and a click fallback for assistive technology.
@@ -91,7 +92,7 @@ All buttons send escape sequences via the same WebSocket `{ type: 'input', data 
 
 ### Mobile IME Workaround
 
-xterm v6 drops spaces/symbols from Chinese mobile keyboards due to a guard in `_inputEvent()`. Terminal.tsx adds a capture-phase `input` listener on xterm's textarea (touch devices only) that detects unprocessed `insertText` events and sends them directly via WebSocket. See [../mobile.md](../mobile.md) for details.
+xterm v6 drops spaces/symbols from Chinese mobile keyboards due to a guard in `_inputEvent()`. Terminal.tsx adds a capture-phase `input` listener on the terminal container (touch devices only) that detects unprocessed `insertText` events and sends them directly via WebSocket. A companion `keydown` listener skips the fallback when the key has a real keyCode (not 229) to prevent double-sending chars that xterm already handled via its keydown path. See [../mobile.md](../mobile.md) for details.
 
 ### Session Attachment
 

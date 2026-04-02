@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-02: Mobile terminal double-space fix + Ctrl/Shift modifier keys
+
+**What changed:**
+- Fixed double-space bug on mobile English keyboard: the IME fallback handler now listens on the container (parent) with capture instead of directly on xterm's textarea, and a companion `keydown` listener skips the fallback when keyCode !== 229 (xterm already handled it via keydown path)
+- Added sticky Ctrl and Shift modifier toggle buttons to the TerminalKeyBar first row — tap to activate (blue highlight), next virtual keyboard or key bar keypress applies the modifier and auto-clears
+- Ctrl+letter sends control character (A-Z → \x01-\x1a), Shift+arrow sends shifted escape sequence, Shift+Tab sends \x1b[Z
+- Modifier state managed by Terminal, shared between key bar and `onData` interception
+
+**Why:**
+- English mobile keyboards fire space with keyCode 32 (not 229), so xterm processes it via keydown. The IME fallback's flag reset ran after `onData` already set it (same-element listeners fire in registration order), causing a duplicate send
+- Ctrl/Shift modifiers enable combining with any virtual keyboard key, not just the fixed set of Ctrl shortcuts in the secondary row
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/TerminalKeyBar.tsx`
+**Verification:** `npx tsc --noEmit` — no type errors. Manual mobile testing confirmed single-space and modifier behavior.
+**Commit:** (pending)
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-01: Margin bar clock, editor cursor fix, session name fix
 
 **What changed:**
