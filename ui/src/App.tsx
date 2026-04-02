@@ -40,6 +40,19 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   return next
 }
 
+function Clock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <span className="text-[13px] tabular-nums">
+      {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+    </span>
+  )
+}
+
 function App() {
   useKeyboardViewport()
   const [projectName, setProjectName] = useState<string>(loadProject)
@@ -181,8 +194,9 @@ function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--sol-base3)]">
-      <div className="hidden md:flex h-10 shrink-0 items-center px-3" style={{ color: C.muted }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: C.textDim }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
+        <Clock />
       </div>
       <main className="flex-1 overflow-hidden">
         {activeProject && (
@@ -213,7 +227,10 @@ function App() {
           </div>
         )}
       </main>
-      <div className="hidden md:block h-10 shrink-0" />
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: C.textDim }}>
+        <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
+        <Clock />
+      </div>
 
       {showAddDialog && (
         <AddProjectDialog

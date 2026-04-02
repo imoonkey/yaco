@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-04-01: Margin bar clock, editor cursor fix, session name fix
+
+**What changed:**
+- Top/bottom margin bars now show project name (left) + live clock (right), using `textDim` color for better readability
+- Bottom margin bar mirrors top bar content (was previously an empty spacer)
+- Editor: preserve cursor position during external content updates via minimal diff (common prefix/suffix) instead of full document swap
+- Diff gutter: defer popup dismiss to next frame to avoid layout shift during mousedown
+- Session name bar: scoped `font-semibold` to session name only, no longer bolding voice icon
+
+**Why:**
+- Clock display needed for fullscreen use where system clock is hidden
+- Cursor jumping on external file changes was disorienting during editing
+- Voice icon inheriting bold weight was a visual bug
+
+**Key files:** `ui/src/App.tsx`, `ui/src/components/Editor.tsx`, `ui/src/lib/diffGutter.ts`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** `npx vite build` passed
+**Commit:** ed6e959..HEAD
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-01: Long-press context menus on mobile
 
 **What changed:**

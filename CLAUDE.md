@@ -30,7 +30,7 @@ Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty
 ```
 
-- **ui/src/App.tsx** — Thin shell: top bar showing active project name, project selection, renders a single `Workspace` keyed by active project. Add-project button lives in the sidebar Projects section header. Project list with unread badges lives in the workspace sidebar (no separate Monitor or Tasks views).
+- **ui/src/App.tsx** — Thin shell: top/bottom margin bars (desktop only) showing active project name + clock, project selection, renders a single `Workspace` keyed by active project. Add-project button lives in the sidebar Projects section header. Project list with unread badges lives in the workspace sidebar (no separate Monitor or Tasks views).
 - **server/src/routes/** — REST API (`/api/*`) + SSE (`/api/notifications/stream`) + WebSocket (`/ws/terminal/:name`). Includes `voice.ts` (Groq STT + formatter pipeline).
 - **server/src/lib/** — Core modules: `constants.ts` (shared timeouts, buffer sizes, sentinels, `MULTMUX_PATH`), `response.ts` (`fail()` helper for standardized error responses), `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE, .gitignore-filtered), `gitignore.ts` (.gitignore parse + cache), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout)
 - **server/src/middleware/** — `project.ts` (`withProject` middleware — resolves `:project` param, 404 if not found, sets `c.var.project`)
