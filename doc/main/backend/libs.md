@@ -21,7 +21,7 @@ Server-side library modules providing business logic, background services, and s
 
 Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, sentinel values, and resolved paths.
 
-**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `MULTMUX_COMMAND_TIMEOUT_MS`, `MULTMUX_START_TIMEOUT_MS`, `MULTMUX_STATUS_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `MULTMUX_PATH`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`
+**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `MULTMUX_COMMAND_TIMEOUT_MS`, `MULTMUX_START_TIMEOUT_MS`, `MULTMUX_STATUS_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `MULTMUX_PATH`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`
 
 - `MULTMUX_PATH` — resolved once at startup via `which multmux`, imported by `multmux.ts` and `session-reconciler.ts` (no duplicate resolution)
 

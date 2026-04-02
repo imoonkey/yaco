@@ -105,9 +105,10 @@ Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. I
 1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N&project=<projectName>`
 2. Terminal created and fitted to container dimensions
 3. PTY output streamed to terminal via WebSocket
-4. User input sent to PTY via WebSocket
+4. User input sent to PTY via WebSocket (with modifier key application if active)
 5. Resize events sent as `{ type: 'resize', cols, rows }`
-6. On disconnect: terminal shows disconnected state
+6. Server sends ping every 30s; dead connections (no pong) are terminated to release PTY FDs
+7. On disconnect: terminal shows disconnected state
 
 ### Two Backend Types
 

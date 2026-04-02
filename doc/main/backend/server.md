@@ -54,7 +54,11 @@ Flow:
 5. Call `attachSession(name, cols, rows, projectPath?)` to get a PTY handle
 5. Pipe PTY output to WebSocket, WebSocket input to PTY
 6. Handle resize messages (`{ type: 'resize', cols, rows }`)
-7. On WebSocket close: dispose subscriptions, kill non-persistent PTYs
+7. On WebSocket close: dispose subscriptions, destroy non-persistent PTYs (`proc.destroy()` to close master FD)
+
+### Dead Connection Detection
+
+A ping/pong heartbeat runs every `WS_PING_INTERVAL_MS` (30s). Each cycle marks all connections as unresponsive, then sends a ping. If a connection doesn't respond with pong before the next cycle, it is terminated. This prevents dead connections (browser crash, network drop) from holding PTY file descriptors for the ~2h TCP keepalive timeout.
 
 ## UI Serving
 

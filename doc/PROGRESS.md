@@ -1,6 +1,21 @@
 # Progress
 
-## 2026-04-02: Mobile terminal double-space fix + Ctrl/Shift modifier keys
+## 2026-04-02: Fix PTY file descriptor leak and dead WebSocket detection
+
+**What changed:**
+- Changed `proc.kill()` to `proc.destroy()` in the WebSocket close handler for non-persistent terminal sessions — `kill()` only signals the child process but leaves the PTY master FD open, causing gradual FD exhaustion
+- Added WebSocket ping/pong heartbeat (30s interval via `WS_PING_INTERVAL_MS`) — dead connections are now detected and terminated within 30s instead of waiting ~2h for TCP keepalive
+
+**Why:**
+- Investigation found 31 leaked PTY master FDs with only 1 active child process on a running server. node-pty's `kill()` sends SIGHUP but doesn't close the master FD or destroy the socket; `destroy()` does both. Combined with no dead connection detection, PTY FDs accumulated until macOS's 511 limit was hit, cascading to tmux server instability.
+
+**Key files:** `server/src/index.ts`, `server/src/lib/constants.ts`
+**Verification:** Server unit tests passed (42/42). PTY leak confirmed via `lsof -p <pid> | grep ptmx`.
+**Commit:** 78765af
+**Next:** None
+**Blockers:** None
+
+## 2026-04-02: Mobile terminal Ctrl/Shift modifier keys + IME double-space fix
 
 **What changed:**
 - Fixed double-space bug on mobile English keyboard: the IME fallback handler now listens on the container (parent) with capture instead of directly on xterm's textarea, and a companion `keydown` listener skips the fallback when keyCode !== 229 (xterm already handled it via keydown path)
@@ -14,7 +29,7 @@
 
 **Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/TerminalKeyBar.tsx`
 **Verification:** `npx tsc --noEmit` — no type errors. Manual mobile testing confirmed single-space and modifier behavior.
-**Commit:** (pending)
+**Commit:** a15a6b3
 **Next:** None
 **Blockers:** None
 

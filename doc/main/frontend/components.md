@@ -165,7 +165,7 @@ CodeMirror 6 wrapper with Solarized Light theme and git diff gutter.
 
 ## Terminal
 
-**File**: `ui/src/components/Terminal.tsx` (330 lines)
+**File**: `ui/src/components/Terminal.tsx`
 
 xterm.js wrapper with WebSocket PTY connection.
 
@@ -174,6 +174,8 @@ xterm.js wrapper with WebSocket PTY connection.
 - Solarized Light terminal theme
 - OSC 52 clipboard bridge
 - Touch-to-WheelEvent bridge for mobile scroll
+- Ctrl/Shift modifier state management (shared with TerminalKeyBar)
+- Mobile IME workaround (capture-phase input listener)
 - Terminal resize handling
 - Copy shortcut (`Cmd+C` / `Ctrl+Shift+C`)
 - Close shortcut (`Cmd+W` for detach)
