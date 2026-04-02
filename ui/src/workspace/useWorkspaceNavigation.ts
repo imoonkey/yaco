@@ -51,21 +51,27 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
     actions.setMobilePane('editor')
   }, [actions, setSelectedFilePath, setFocusTarget])
 
-  const handleExpandFolder = useCallback((folderPath: string) => {
-    if (!showSidebar || !showExplorer) {
-      actions.updateLayout({ showSidebar: true, showExplorer: true })
-      requestAnimationFrame(() => explorerRef.current?.expandToPath(folderPath))
-    } else {
-      explorerRef.current?.expandToPath(folderPath)
-    }
-  }, [showSidebar, showExplorer, actions, explorerRef])
-
+  /** Load all parent directories from the server so their children are available in the tree */
   const revealInExplorer = useCallback(async (filePath: string) => {
     const parts = filePath.split('/')
     for (let i = 1; i < parts.length; i++) {
       await expandDir(parts.slice(0, i).join('/'))
     }
   }, [expandDir])
+
+  const handleExpandFolder = useCallback(async (folderPath: string) => {
+    // Load parent dirs + target dir from server so children are in the tree
+    const parts = folderPath.split('/')
+    for (let i = 1; i <= parts.length; i++) {
+      await expandDir(parts.slice(0, i).join('/'))
+    }
+    if (!showSidebar || !showExplorer) {
+      actions.updateLayout({ showSidebar: true, showExplorer: true })
+      requestAnimationFrame(() => explorerRef.current?.expandToPath(folderPath))
+    } else {
+      explorerRef.current?.expandToPath(folderPath)
+    }
+  }, [showSidebar, showExplorer, actions, explorerRef, expandDir])
 
   const handleSearchSelect = useCallback(async (entry: SearchEntry) => {
     if (entry.type === 'dir') {
@@ -82,15 +88,18 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
     }
   }, [revealInExplorer, expandDir, handleExpandFolder, actions, setSelectedFilePath, setFocusTarget])
 
-  const activateChange = useCallback((path: string) => {
+  const activateChange = useCallback(async (path: string) => {
     if (activeTab === `diff:${path}`) {
       openFile(path)
       return
     }
+    // Reveal in explorer: load parent dirs so the file appears in the tree
+    await revealInExplorer(path)
     actions.openPreviewDiffTab(path)
+    setSelectedFilePath(path)
     setFocusTarget('editor')
     actions.setMobilePane('editor')
-  }, [activeTab, actions, openFile, setFocusTarget])
+  }, [activeTab, actions, openFile, revealInExplorer, setSelectedFilePath, setFocusTarget])
 
   const handleOpenTasks = useCallback(() => {
     actions.openTasksTab()

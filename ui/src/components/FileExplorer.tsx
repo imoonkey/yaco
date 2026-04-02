@@ -165,7 +165,10 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     if (parentId) {
       const segments = parentId.split('/')
       for (let i = 1; i <= segments.length; i++) {
-        treeRef.current?.open(segments.slice(0, i).join('/'))
+        const dirPath = segments.slice(0, i).join('/')
+        treeRef.current?.open(dirPath)
+        // Register with useFileTree so SSE refresh re-fetches children
+        onExpandDir?.(dirPath)
       }
     }
     const parentPath = parentId || ''
@@ -176,7 +179,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     pendingRef.current = pending
     setPendingCreate(pending)
     return { id: tempPath }
-  }, [])
+  }, [onExpandDir])
 
   const onRename = useCallback(async ({ id, name }: { id: string; name: string }) => {
     const pending = pendingRef.current
