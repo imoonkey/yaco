@@ -16,11 +16,18 @@ Custom React hooks for data fetching, real-time updates, and device detection.
 
 `ui/src/hooks/*.ts`
 
-## useWorkspaceState.ts (753 lines)
+## useWorkspaceState.ts (144 lines — composition root)
 
-Per-project workspace state management: tabs, layout, file drafts, conflict detection, and persistence.
+Per-project workspace state management. Thin wiring layer that composes three focused hooks and returns the same public shape.
 
 **Export**: `useWorkspaceState(projectName)` → `{ openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, actions }`
+
+### Decomposed into:
+
+- **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic
+- **`useFileState.ts`** (358 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling
+- **`usePersistence.ts`** (190 lines) — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush
+- **`workspaceTypes.ts`** (116 lines) — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`), constants (`TASKS_TAB_ID`), tab guards (`isFileTab`, `isDiffTab`, `isTasksTab`), localStorage key builders
 
 ### State
 

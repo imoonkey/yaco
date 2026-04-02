@@ -17,20 +17,33 @@ Server-side library modules providing business logic, background services, and s
 
 ## Module Reference
 
-### constants.ts (23 lines)
+### constants.ts (50 lines)
 
-Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, and sentinel values.
+Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, sentinel values, and resolved paths.
 
-**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `MULTMUX_COMMAND_TIMEOUT_MS`, `MULTMUX_START_TIMEOUT_MS`, `MULTMUX_STATUS_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`
+**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `MULTMUX_COMMAND_TIMEOUT_MS`, `MULTMUX_START_TIMEOUT_MS`, `MULTMUX_STATUS_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `MULTMUX_PATH`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`
 
-- `GIT_MAX_BUFFER` (50 MB) — maxBuffer for git ls-files/status/diff commands
-- `FILE_SIZE_LIMIT` (1 MB) — max file size for the content endpoint
-- `MULTMUX_*_TIMEOUT_MS` — timeouts for multmux CLI commands (5s send/kill/rename, 15s start, 10s status)
-- `GIT_COMMAND_TIMEOUT_MS` (5s) — timeout for git status/diff commands
-- `SSE_HEARTBEAT_MS` (30s) — SSE keep-alive interval
-- `PENDING_SESSION_ID` — sentinel value for sessions that haven't received a first prompt
+- `MULTMUX_PATH` — resolved once at startup via `which multmux`, imported by `multmux.ts` and `session-reconciler.ts` (no duplicate resolution)
 
-Consumed by: `files.ts`, `git.ts`, `notifications.ts`, `multmux.ts`, `session-reconciler.ts`, `session-summary.ts`, `scanner.ts`
+Consumed by: `files.ts`, `git.ts`, `notifications.ts`, `multmux.ts`, `session-reconciler.ts`, `session-summary.ts`, `scanner.ts`, `terminal.ts`, `voice.ts`, `index.ts`
+
+### response.ts (7 lines)
+
+Standardized error response helper for Hono routes.
+
+**Exports**: `fail(c, status, error, extra?)`
+
+- Returns `c.json({ error, ...extra }, status)`
+- Used across all route files for consistent error shape
+
+### middleware/project.ts (13 lines)
+
+Hono middleware for project-scoped routes. Resolves `:project` param via `loadProjects()`, returns 404 if not found, sets `c.var.project`.
+
+**Exports**: `withProject`, `ProjectEnv`
+
+- Applied per-handler (not sub-app) to 15 project-scoped routes across files.ts, git.ts, workstreams.ts, progress.ts
+- Routes that scan ALL projects (GET /) keep their own `loadProjects()` call
 
 ### projects.ts (34 lines)
 

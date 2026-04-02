@@ -22,7 +22,12 @@ React component tree, props interfaces, and responsibilities.
 ```
 App (245 lines)
 └── Workspace (re-export → workspace/WorkspaceScreen)
-    └── WorkspaceScreen (889 lines) — controller
+    └── WorkspaceScreen (555 lines) — controller
+        ├── useWorkspaceKeyboard (190 lines)
+        ├── useWorkspaceNavigation (132 lines)
+        ├── useWorkspaceSessions (139 lines)
+        ├── useWorkspaceDiff (96 lines)
+        ├── useWorkspaceVoice (82 lines)
         └── WorkspaceLayout (187 lines) — layout composition
             ├── SectionHeader (17 lines)
             ├── VResizeHandle / HResizeHandle (23 lines)
@@ -32,7 +37,10 @@ App (245 lines)
         │   ├── DiffView
         │   ├── MarkdownPreview
         │   └── Editor (223 lines)
-        ├── FileExplorer (372 lines)
+        ├── FileExplorer (333 lines)
+        │   ├── fileExplorerIcons (51 lines)
+        │   └── fileExplorerNode (105 lines)
+        ├── Menu (75 lines) — shared MenuItem/MenuDivider/useContextMenu
         ├── Terminal (330 lines)
         │   └── TerminalKeyBar (224 lines) — touch-only
         ├── SessionItem (37 lines)
@@ -44,7 +52,10 @@ App (245 lines)
 
 **Task graph components (embedded in workspace):**
 ```
-TaskGraphScreen — controller (collapse state, keyboard nav, search)
+TaskGraphScreen (237 lines) — controller
+├── useTaskGraphInteraction (216 lines) — selection, filters, search, collapse
+├── useTaskGraphKeyboard (131 lines) — keydown handler
+├── TaskGraphStatusPane (111 lines) — loading/missing/error states
 ├── TaskGraphToolbar — zoom, state filters, search, collapse all/expand all
 ├── TaskGraphCanvas — SVG container with pan/zoom
 │   ├── TaskGraphGroup[] — vertical indent guide lines (expanded groups only)

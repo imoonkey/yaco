@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-04-01: Codebase quality refactor — full implementation
+
+**What changed:**
+- **P0 God file decomposition**: Split 5 god files into 22 focused modules
+  - useWorkspaceState (764→144L) → useLayoutState + useFileState + usePersistence + workspaceTypes
+  - WorkspaceScreen (1008→555L) → 5 extracted hooks (Keyboard, Navigation, Sessions, Diff, Voice)
+  - TaskGraphScreen (588→237L) → useTaskGraphInteraction + useTaskGraphKeyboard + TaskGraphStatusPane
+  - FileExplorer (481→333L) → fileExplorerIcons + fileExplorerNode
+  - useVoice (463→169L) → voiceStateMachine (reducer) + voiceRecording (plain module)
+- **P1 Server**: withProject middleware (eliminates 15-handler boilerplate), MULTMUX_PATH dedup, terminal/voice/search constants consolidated
+- **P1 UI**: shared Menu.tsx (MenuItem/MenuDivider/useContextMenu), shortcuts.ts, taskGraphConstants.ts (STATE_COLORS), useSSETick hook
+- **P2 Errors**: ApiError class, fail() server helper, drop ok from success responses, AsyncData<T> type, hook return conformance
+- **Code review fixes**: task graph 404 handling, voice error parsing, stale session type
+
+**Why:**
+Multi-iteration codebase had accumulated god files (5 over 400L), 27+ instances of duplicated project lookup, 5 different error handling patterns, and ~40 hardcoded hex colors. Refactor improves maintainability, consistency, and testability.
+
+**Key files:** 53 files changed — see `git diff 31a784a..adba4f2 --stat`
+**Verification:** Vite build clean, server 41/41 tests pass, tsc --noEmit clean, Codex code review with 4 findings (all fixed)
+**Commit:** 0ff4891..adba4f2
+**Next:** None — refactor complete
+**Blockers:** None
+
 ## 2026-04-01: Codebase quality design docs
 
 **What changed:**
