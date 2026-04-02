@@ -8,7 +8,7 @@ import { writeTextToClipboard } from '../lib/clipboard'
 import { useIsTouch } from '../hooks/useIsMobile'
 import { TerminalKeyBar } from './TerminalKeyBar'
 import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
-import type { TerminalKeyBarKey } from './TerminalKeyBar'
+import type { TerminalKeyBarKey, Modifiers } from './TerminalKeyBar'
 
 const SOLARIZED_THEME = {
   background: SOLARIZED_LIGHT.base2,
@@ -96,6 +96,19 @@ function decodeOsc52Payload(payload: string): string | null {
   }
 }
 
+function applyModifiers(data: string, mods: Modifiers): string {
+  if (mods.ctrl && data.length === 1) {
+    const code = data.toUpperCase().charCodeAt(0)
+    if (code >= 65 && code <= 90) return String.fromCharCode(code - 64) // Ctrl+A-Z
+  }
+  if (mods.shift) {
+    const m = data.match(/^\x1b\[([ABCD])$/)
+    if (m) return `\x1b[1;2${m[1]}` // Shift+arrow
+    if (data === '\t') return '\x1b[Z' // Shift+Tab
+  }
+  return data
+}
+
 export function Terminal({ sessionName, projectName, onInteract, onCloseRequest, sendText, sendTextKey }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
@@ -105,6 +118,9 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
   const sendTextKeyRef = useRef<number | undefined>(undefined)
+  const [modifiers, setModifiers] = useState<Modifiers>({ ctrl: false, shift: false })
+  const modifiersRef = useRef(modifiers)
+  useEffect(() => { modifiersRef.current = modifiers }, [modifiers])
 
   const sendInput = useCallback((data: string) => {
     onInteractRef.current?.()
@@ -114,11 +130,16 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
   }, [])
 
   const resolveKeyBarInput = useCallback((key: TerminalKeyBarKey, fallback: string) => {
+    const mods = modifiersRef.current
     const suffix = ARROW_KEY_SUFFIX[key]
-    if (!suffix) return fallback
-
-    const prefix = termRef.current?.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b['
-    return `${prefix}${suffix}`
+    let seq = fallback
+    if (suffix) {
+      const prefix = termRef.current?.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b['
+      seq = `${prefix}${suffix}`
+    }
+    const out = (mods.ctrl || mods.shift) ? applyModifiers(seq, mods) : seq
+    if (mods.ctrl || mods.shift) setModifiers({ ctrl: false, shift: false })
+    return out
   }, [])
 
   // External text injection (voice compose send) — no trailing newline
@@ -307,12 +328,17 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       if (!disposed) term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
     }
 
-    // Raw input — send directly
+    // Raw input — send directly, applying any active modifiers
     let imeInputHandled = false
     term.onData((data) => {
       imeInputHandled = true
+      const mods = modifiersRef.current
+      const out = (mods.ctrl || mods.shift) ? applyModifiers(data, mods) : data
       if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'input', data }))
+        ws.send(JSON.stringify({ type: 'input', data: out }))
+      }
+      if (mods.ctrl || mods.shift) {
+        setModifiers({ ctrl: false, shift: false })
       }
     })
 
@@ -322,20 +348,41 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     // input by checking if onData fired for this input event.
     // Only on touch devices — desktop keydown/keypress handle input before
     // _inputEvent runs, which would cause false positives here.
-    const imeTextarea = window.matchMedia('(pointer: coarse)').matches
-      ? container.querySelector<HTMLTextAreaElement>('textarea.xterm-helper-textarea')
-      : null
+    const isTouch = window.matchMedia('(pointer: coarse)').matches
+    // Track whether the preceding keydown had a real keyCode (not IME 229).
+    // When keyCode !== 229, xterm handles the char via its keydown path and
+    // fires onData BEFORE the input event — our fallback must not re-send.
+    let keyDownHandledByXterm = false
+    const handleKeyDown = (e: KeyboardEvent) => {
+      keyDownHandledByXterm = e.keyCode !== 229
+    }
     const handleUnprocessedInput = (e: Event) => {
       const ie = e as InputEvent
       if (ie.inputType !== 'insertText' || !ie.data) return
+      if (keyDownHandledByXterm) {
+        keyDownHandledByXterm = false
+        return // xterm already sent this char via the keydown path
+      }
       imeInputHandled = false
       queueMicrotask(() => {
         if (!imeInputHandled && ie.data && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'input', data: ie.data }))
+          const mods = modifiersRef.current
+          const out = (mods.ctrl || mods.shift) ? applyModifiers(ie.data, mods) : ie.data
+          ws.send(JSON.stringify({ type: 'input', data: out }))
+          if (mods.ctrl || mods.shift) {
+            setModifiers({ ctrl: false, shift: false })
+          }
         }
       })
     }
-    imeTextarea?.addEventListener('input', handleUnprocessedInput, { capture: true })
+    // Attach to container (parent) with capture so this runs BEFORE xterm's
+    // own handler on the textarea. On the target element itself, listeners
+    // fire in registration order regardless of capture — xterm registers first,
+    // so attaching there would run our reset AFTER onData already set the flag.
+    if (isTouch) {
+      container.addEventListener('keydown', handleKeyDown, { capture: true })
+      container.addEventListener('input', handleUnprocessedInput, { capture: true })
+    }
 
     term.onResize(() => sendResize())
 
@@ -357,7 +404,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       container.removeEventListener('touchend', onTouchEnd)
       container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
-      imeTextarea?.removeEventListener('input', handleUnprocessedInput, { capture: true })
+      if (isTouch) {
+        container.removeEventListener('keydown', handleKeyDown, { capture: true })
+        container.removeEventListener('input', handleUnprocessedInput, { capture: true })
+      }
       observer.disconnect()
       ws.onopen = null
       ws.onmessage = null
@@ -379,7 +429,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
         onMouseDown={onInteract}
         onFocusCapture={onInteract}
       />
-      {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} />}
+      {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} modifiers={modifiers} onModifierChange={setModifiers} />}
     </div>
   )
 }

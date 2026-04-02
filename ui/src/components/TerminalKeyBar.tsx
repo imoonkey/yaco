@@ -29,6 +29,8 @@ export type TerminalKeyBarKey =
   | 'ctrl-w'
   | 'ctrl-u'
 
+export type Modifiers = { ctrl: boolean; shift: boolean }
+
 const PRIMARY_KEYS: KeyDef[] = [
   { id: 'escape', label: 'Esc', ariaLabel: 'Escape', seq: '\x1b' },
   { id: 'tab', label: 'Tab', ariaLabel: 'Tab', seq: '\t' },
@@ -57,13 +59,19 @@ const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 
 const BTN =
   'min-w-[32px] h-7 px-1.5 rounded bg-[rgba(0,0,0,0.08)] active:bg-[rgba(0,0,0,0.18)] text-[--sol-base01] font-mono text-xs select-none touch-manipulation'
+const BTN_ACTIVE =
+  'min-w-[32px] h-7 px-1.5 rounded bg-[--sol-blue] text-[--sol-base3] font-mono text-xs select-none touch-manipulation'
 
 export function TerminalKeyBar({
   sendInput,
   resolveInput,
+  modifiers,
+  onModifierChange,
 }: {
   sendInput: (data: string) => void
   resolveInput?: (key: TerminalKeyBarKey, fallback: string) => string
+  modifiers: Modifiers
+  onModifierChange: (m: Modifiers) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -156,6 +164,14 @@ export function TerminalKeyBar({
     setExpanded(value => !value)
   }, [])
 
+  const toggleCtrl = useCallback(() => {
+    onModifierChange({ ...modifiers, ctrl: !modifiers.ctrl })
+  }, [modifiers, onModifierChange])
+
+  const toggleShift = useCallback(() => {
+    onModifierChange({ ...modifiers, shift: !modifiers.shift })
+  }, [modifiers, onModifierChange])
+
   useEffect(() => {
     return () => {
       clearRepeat()
@@ -167,6 +183,26 @@ export function TerminalKeyBar({
   return (
     <div className="bg-[--sol-base2] border-t border-[--sol-border] pb-[env(safe-area-inset-bottom)]" role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
       <div className="flex gap-1 px-2 py-1">
+        <button
+          type="button"
+          className={modifiers.ctrl ? BTN_ACTIVE : BTN}
+          aria-label="Control modifier"
+          aria-pressed={modifiers.ctrl}
+          onClick={toggleCtrl}
+          onContextMenu={preventContext}
+        >
+          Ctrl
+        </button>
+        <button
+          type="button"
+          className={modifiers.shift ? BTN_ACTIVE : BTN}
+          aria-label="Shift modifier"
+          aria-pressed={modifiers.shift}
+          onClick={toggleShift}
+          onContextMenu={preventContext}
+        >
+          ⇧
+        </button>
         {PRIMARY_KEYS.map(key => (
           <button
             key={key.label}
