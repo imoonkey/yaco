@@ -479,9 +479,9 @@ export function Workspace({
 
   const terminalContent = attachedSession ? (
     <>
-      <div className="h-8 flex items-center gap-2 px-2 text-[12px] font-semibold shrink-0" style={{ backgroundColor: C.headerBg, borderBottom: `1px solid ${C.border}`, color: C.textBrown }}>
+      <div className="h-8 flex items-center gap-2 px-2 text-[12px] shrink-0" style={{ backgroundColor: C.headerBg, borderBottom: `1px solid ${C.border}`, color: C.textBrown }}>
         {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
-        <span className="truncate flex-1">{attachedSession}</span>
+        <span className="truncate flex-1 font-semibold">{attachedSession}</span>
         {voiceBridge.terminalVoiceEligible && (
           <VoiceControl
             capability={voice.capability}
