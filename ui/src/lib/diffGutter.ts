@@ -262,7 +262,11 @@ const clickOutsideDismiss = EditorView.domEventHandlers({
     if (!view.state.field(diffState).openHunkId) return false
     const target = event.target as HTMLElement
     if (target.closest('.cm-diff-popup') || target.closest('.cm-diff-gutter')) return false
-    view.dispatch({ effects: closePopup.of(null) })
+    // Defer popup close to next frame so the layout shift doesn't
+    // interfere with CM6's click-to-position calculation.
+    requestAnimationFrame(() => {
+      view.dispatch({ effects: closePopup.of(null) })
+    })
     return false
   },
 })

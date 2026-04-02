@@ -188,9 +188,23 @@ export function Editor({
     const view = viewRef.current
     if (!view || content === contentRef.current) return
     contentRef.current = content
+
+    // Compute minimal change (common prefix/suffix) to preserve cursor position
+    const oldText = view.state.doc.toString()
+    let prefix = 0
+    const minLen = Math.min(oldText.length, content.length)
+    while (prefix < minLen && oldText[prefix] === content[prefix]) prefix++
+    let oldSuffix = oldText.length
+    let newSuffix = content.length
+    while (oldSuffix > prefix && newSuffix > prefix && oldText[oldSuffix - 1] === content[newSuffix - 1]) {
+      oldSuffix--
+      newSuffix--
+    }
+
+    if (prefix === oldText.length && prefix === content.length) return // identical
     suppressChangeRef.current = true
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: content },
+      changes: { from: prefix, to: oldSuffix, insert: content.slice(prefix, newSuffix) },
     })
     suppressChangeRef.current = false
   }, [content])
