@@ -46,6 +46,7 @@ export function Workspace({
   onProjectSelect,
   onProjectReorder,
   onProjectRemove,
+  onAddProject,
   onMarkAllRead,
   sessionUnreadCounts,
   markSessionRead,
@@ -61,6 +62,7 @@ export function Workspace({
   onProjectSelect: (name: string) => void
   onProjectReorder: (fromName: string, toName: string) => void
   onProjectRemove: (project: Project) => void
+  onAddProject: () => void
   onMarkAllRead: (projectName: string) => void
   sessionUnreadCounts?: SessionUnreadCounts
   markSessionRead?: (project: string, session: string) => void
@@ -302,6 +304,17 @@ export function Workspace({
     />
   )
 
+  const projectActions = (
+    <button
+      onClick={onAddProject}
+      aria-label="Add project"
+      title="Add project"
+      className="w-[18px] h-[18px] rounded flex items-center justify-center text-[14px] leading-none cursor-pointer text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[var(--sol-base2)] transition-colors"
+    >
+      +
+    </button>
+  )
+
   const explorerBody = (
     <FileExplorer
       ref={explorerRef}
@@ -511,6 +524,7 @@ export function Workspace({
       onMobilePaneChange={actions.setMobilePane}
       projectName={projectName}
       projectListBody={projectListBody}
+      projectActions={projectActions}
       explorerActions={explorerActions}
       explorerBody={explorerBody}
       gitStale={gitStale}

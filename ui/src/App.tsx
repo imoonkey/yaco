@@ -181,30 +181,9 @@ function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--sol-base3)]">
-      <header className="h-10 shrink-0 flex items-center px-3 gap-2" style={{ backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
-        <span className="text-[13px] font-semibold text-[var(--sol-base02)]">Workflow</span>
-        <div className="flex-1" />
-        {browserNotifications.permission === 'default' && (
-          <button
-            onClick={browserNotifications.requestPermission}
-            className="text-[10px] px-2 py-1 rounded bg-[var(--sol-blue)]/10 hover:bg-[var(--sol-blue)]/20 text-[var(--sol-blue)] border border-[var(--sol-blue)]/20 cursor-pointer"
-          >
-            Enable Alerts
-          </button>
-        )}
-        {browserNotifications.permission === 'denied' && (
-          <span className="text-[10px] text-[var(--sol-base1)]">Alerts blocked</span>
-        )}
-        <button
-          onClick={handleAddProject}
-          aria-label="Add project"
-          title="Add project"
-          className="w-7 h-7 rounded-md text-[18px] leading-none font-medium cursor-pointer shrink-0 text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[#E2D9C2] transition-colors"
-        >
-          +
-        </button>
-      </header>
-
+      <div className="h-10 shrink-0 flex items-center px-3" style={{ color: C.muted }}>
+        <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
+      </div>
       <main className="flex-1 overflow-hidden">
         {activeProject && (
           <Workspace
@@ -217,6 +196,7 @@ function App() {
             onProjectSelect={handleProjectChange}
             onProjectReorder={handleProjectReorder}
             onProjectRemove={handleRemoveProject}
+            onAddProject={handleAddProject}
             onMarkAllRead={markAllRead}
             sessionUnreadCounts={sessionUnreadCounts}
             markSessionRead={markSessionRead}
@@ -233,6 +213,7 @@ function App() {
           </div>
         )}
       </main>
+      <div className="h-10 shrink-0" />
 
       {showAddDialog && (
         <AddProjectDialog

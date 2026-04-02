@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-01: Simplify top-level layout — remove header, relocate Add Project
+
+**What changed:**
+- Removed the "Workflow" header bar from App.tsx (saved 40px vertical space)
+- Replaced with a minimal top bar showing only the active project name
+- Moved Add Project (+) button into the sidebar "Projects" section header
+- Added symmetric top/bottom 40px margins for fullscreen breathing room
+- Browser notification permission prompts removed from header (hook still active)
+
+**Why:**
+- Header was wasting vertical space with little value — project name is more useful context
+- Add Project button belongs near the project list, not in a global header
+
+**Key files:** `ui/src/App.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`
+**Verification:** `npx tsc --noEmit` clean
+**Commit:** pending
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-02: Unify session idle detection across all providers
 
 **What changed:**

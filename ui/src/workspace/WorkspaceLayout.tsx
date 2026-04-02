@@ -22,6 +22,7 @@ export type WorkspaceLayoutProps = {
   // Section content
   projectName: string
   projectListBody: ReactNode
+  projectActions: ReactNode
   explorerActions: ReactNode
   explorerBody: ReactNode
   gitStale: boolean
@@ -60,7 +61,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const {
     isMobile, isTouch,
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
-    projectName, projectListBody, explorerActions, explorerBody,
+    projectName, projectListBody, projectActions, explorerActions, explorerBody,
     gitStale, changesBadge, changesBody, tasksBody,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
@@ -98,7 +99,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (
               <div className="h-full flex flex-col overflow-y-auto" style={{ backgroundColor: C.bg }} onMouseDown={onFilesPaneFocus}>
-                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} />
+                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} actions={projectActions} />
                 <div className="shrink-0">{projectListBody}</div>
 
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
@@ -128,7 +129,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {showSidebar && (
             <>
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
-                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} />
+                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} actions={projectActions} />
                 <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>
 
                 {showExplorer && <HResizeHandle onMouseDown={projectSplit.onMouseDown} isDragging={projectSplit.isDragging} />}
