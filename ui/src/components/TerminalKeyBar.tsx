@@ -40,23 +40,23 @@ const PRIMARY_KEYS: KeyDef[] = [
 ]
 
 const SECONDARY_KEYS: KeyDef[] = [
-  { id: 'ctrl-c', label: '^C', ariaLabel: 'Control C', seq: '\x03' },
-  { id: 'ctrl-d', label: '^D', ariaLabel: 'Control D', seq: '\x04' },
-  { id: 'ctrl-z', label: '^Z', ariaLabel: 'Control Z', seq: '\x1a' },
-  { id: 'ctrl-l', label: '^L', ariaLabel: 'Control L', seq: '\x0c' },
-  { id: 'ctrl-r', label: '^R', ariaLabel: 'Control R', seq: '\x12' },
-  { id: 'ctrl-o', label: '^O', ariaLabel: 'Control O', seq: '\x0f' },
-  { id: 'ctrl-b', label: '^B', ariaLabel: 'Control B', seq: '\x02' },
-  { id: 'ctrl-a', label: '^A', ariaLabel: 'Control A', seq: '\x01' },
-  { id: 'ctrl-e', label: '^E', ariaLabel: 'Control E', seq: '\x05' },
-  { id: 'ctrl-w', label: '^W', ariaLabel: 'Control W', seq: '\x17' },
-  { id: 'ctrl-u', label: '^U', ariaLabel: 'Control U', seq: '\x15' },
+  { id: 'ctrl-c', label: 'C', ariaLabel: 'Control C', seq: '\x03' },
+  { id: 'ctrl-d', label: 'D', ariaLabel: 'Control D', seq: '\x04' },
+  { id: 'ctrl-z', label: 'Z', ariaLabel: 'Control Z', seq: '\x1a' },
+  { id: 'ctrl-l', label: 'L', ariaLabel: 'Control L', seq: '\x0c' },
+  { id: 'ctrl-r', label: 'R', ariaLabel: 'Control R', seq: '\x12' },
+  { id: 'ctrl-o', label: 'O', ariaLabel: 'Control O', seq: '\x0f' },
+  { id: 'ctrl-b', label: 'B', ariaLabel: 'Control B', seq: '\x02' },
+  { id: 'ctrl-a', label: 'A', ariaLabel: 'Control A', seq: '\x01' },
+  { id: 'ctrl-e', label: 'E', ariaLabel: 'Control E', seq: '\x05' },
+  { id: 'ctrl-w', label: 'W', ariaLabel: 'Control W', seq: '\x17' },
+  { id: 'ctrl-u', label: 'U', ariaLabel: 'Control U', seq: '\x15' },
 ]
 
 const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 
 const BTN =
-  'min-w-[40px] h-9 px-2 rounded bg-[rgba(0,0,0,0.08)] active:bg-[rgba(0,0,0,0.18)] text-[--sol-base01] font-mono text-sm select-none touch-manipulation'
+  'min-w-[32px] h-7 px-1.5 rounded bg-[rgba(0,0,0,0.08)] active:bg-[rgba(0,0,0,0.18)] text-[--sol-base01] font-mono text-xs select-none touch-manipulation'
 
 export function TerminalKeyBar({
   sendInput,
@@ -165,8 +165,8 @@ export function TerminalKeyBar({
   }, [clearRepeat, clearSuppressedClickTimer])
 
   return (
-    <div className="bg-[--sol-base2] border-t border-[--sol-border]" role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
-      <div className="flex gap-1 px-1 py-1">
+    <div className="bg-[--sol-base2] border-t border-[--sol-border] pb-[env(safe-area-inset-bottom)]" role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
+      <div className="flex gap-1 px-2 py-1">
         {PRIMARY_KEYS.map(key => (
           <button
             key={key.label}
@@ -204,9 +204,10 @@ export function TerminalKeyBar({
         id="terminal-keybar-secondary"
         className="overflow-hidden transition-[max-height] duration-150 ease-out"
         aria-hidden={!expanded}
-        style={{ maxHeight: expanded ? 40 : 0 }}
+        style={{ maxHeight: expanded ? 36 : 0 }}
       >
-        <div className="flex gap-1 px-1 py-1" hidden={!expanded}>
+        <div className="flex gap-1 px-2 py-1 items-center" hidden={!expanded}>
+          <span className="text-[10px] font-mono text-[--sol-base1] shrink-0 pl-0.5 pr-0.5">^</span>
           {SECONDARY_KEYS.map(key => (
             <button
               key={key.label}

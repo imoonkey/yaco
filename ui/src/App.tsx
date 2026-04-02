@@ -181,7 +181,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--sol-base3)]">
-      <div className="h-10 shrink-0 flex items-center px-3" style={{ color: C.muted }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center px-3" style={{ color: C.muted }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
       </div>
       <main className="flex-1 overflow-hidden">
@@ -213,7 +213,7 @@ function App() {
           </div>
         )}
       </main>
-      <div className="h-10 shrink-0" />
+      <div className="hidden md:block h-10 shrink-0" />
 
       {showAddDialog && (
         <AddProjectDialog

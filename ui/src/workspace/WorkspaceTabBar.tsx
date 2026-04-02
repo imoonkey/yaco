@@ -66,7 +66,7 @@ export function WorkspaceTabBar({
   rightActions?: React.ReactNode
 }) {
   return (
-    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 35, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 32, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
       {openTabs.length === 0 ? (
         <span className="px-4 text-[11px] shrink-0" style={{ color: C.textDim }}>No files open</span>
       ) : openTabs.map(tab => {
