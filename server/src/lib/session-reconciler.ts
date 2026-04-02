@@ -131,7 +131,7 @@ function backfillSessionIds(sessions: MultmuxSession[], project: Pick<Project, '
   }
 }
 
-/** Codex idle detection — same logic as before, but at reconcile frequency. */
+/** Detect processing→idle transitions and write session_idle progress entries. */
 async function detectIdleTransitions(sessions: MultmuxSession[], project: Project): Promise<void> {
   const now = Date.now()
   const currentKeys = new Set<string>()
@@ -141,9 +141,6 @@ async function detectIdleTransitions(sessions: MultmuxSession[], project: Projec
     currentKeys.add(key)
     const prev = lastStatusBySession.get(key)
     lastStatusBySession.set(key, session.status)
-
-    // Claude uses Stop hook for idle detection — skip polling-based detection
-    if (session.provider === 'claude') continue
 
     if (session.status === 'processing') {
       if (prev !== 'processing') {

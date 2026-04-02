@@ -14,7 +14,7 @@ Notification pipeline: macOS desktop, SSE broadcast, and browser Notification AP
 
 ## Related Code
 
-`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useBrowserNotifications.ts`, `~/.claude/hooks/on-stop.sh`
+`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useBrowserNotifications.ts`
 
 ## Pipeline
 
@@ -36,23 +36,13 @@ Sinks are isolated: one sink failing does not prevent others from firing.
 
 ### Session Idle Detection
 
-Two mechanisms depending on provider:
+Session reconciler (`session-reconciler.ts`) detects `processing → idle` transitions uniformly for all providers:
 
-#### Claude: Stop Hook (reliable)
+- Reads `.multmux/*.json` state files every 60 seconds
+- Filters: minimum 15 seconds processing duration + 2× debounce (two consecutive idle readings)
+- Writes `session_idle` entry with `sessionName` to project-level `doc/todo/progress.json`
 
-- Claude's `Stop` hook (`~/.claude/settings.json`) triggers `~/.claude/hooks/on-stop.sh`
-- Hook receives JSON stdin with `cwd` and `session_id`
-- Script writes a `session_idle` entry directly to `doc/todo/progress.json` with file locking
-- Skips projects without `doc/todo/`
-
-#### Codex: Reconciler Heuristic (best-effort)
-
-- Session reconciler reads `.multmux/*.json` state files every 60 seconds
-- Detects `processing → idle` transitions
-- Filters: minimum 15 seconds processing duration + 2× debounce
-- Writes `session_idle` entry to project-level progress.json
-
-The reconciler skips Claude sessions entirely — they use the Stop hook.
+Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) while Codex used the reconciler. This was unified — the reconciler now handles all providers. The deprecated `on-stop.sh` hook is cleaned up by `multmux install-hooks`.
 
 ## SSE Delivery
 

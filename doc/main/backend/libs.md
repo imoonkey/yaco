@@ -106,8 +106,7 @@ Low-frequency background reconciler for session health and idle detection.
 - Read-only: never writes to `.multmux/*.json` state files (multmux's own GC handles cleanup)
 - Health-checks all active sessions via `tmux has-session`; excludes dead sessions from snapshot
 - Emits `refresh:sessions` if drift detected (missed watcher events)
-- Codex idle detection: 15s minimum processing duration + 2× debounce, writes `session_idle` entries
-- Claude sessions skip idle detection (use Stop hook instead)
+- Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
 
 ### project-watcher.ts (95 lines)
 

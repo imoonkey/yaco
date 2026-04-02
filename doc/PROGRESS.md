@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-02: Unify session idle detection across all providers
+
+**What changed:**
+- Removed `if (session.provider === 'claude') continue` guard in `session-reconciler.ts` — idle detection now works uniformly for Claude and Codex
+- Claude sessions now get `session_idle` entries with `sessionName`, fixing missing unread pills
+- multmux `ensureClaudeHooks()` now cleans up deprecated `~/.claude/hooks/on-stop.sh` and its settings.json entry
+- Extracted `cleanupDeprecatedHooks()` as testable pure function in multmux
+
+**Why:**
+- Claude unread pills never appeared because `on-stop.sh` (unmanaged local file) wrote entries without `sessionName`. The UI's `isEligible()` requires `sessionName`.
+- Idle detection was split: Claude via external hook, Codex via server reconciler. Unified to single path (reconciler) since `sessionName` is a multmux concept and the server already had the logic.
+
+**Key files:** `server/src/lib/session-reconciler.ts`, `multmux/src/hooks.ts`, `multmux/test/hooks.test.ts`
+**Verification:** All tests pass in both repos (workflow server 41 tests, multmux 130 tests)
+**Commit:** pending
+**Next:** Consider expanding notification model beyond `session_idle` to include `tasks.json` changes
+**Blockers:** None
+
 ## 2026-04-01: Codebase quality refactor — full implementation
 
 **What changed:**

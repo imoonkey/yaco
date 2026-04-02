@@ -52,4 +52,13 @@ describe('session-reconciler behavior', () => {
     expect(interfaceMatch).not.toBeNull()
     expect(interfaceMatch![0]).not.toContain("'stopped'")
   })
+
+  it('session-reconciler.ts does not skip Claude sessions in idle detection', async () => {
+    const source = readFileSync(
+      join(__dirname, '..', 'session-reconciler.ts'),
+      'utf-8',
+    )
+    // Idle detection should be uniform across all providers
+    expect(source).not.toMatch(/provider.*===.*['"]claude['"].*continue/)
+  })
 })
