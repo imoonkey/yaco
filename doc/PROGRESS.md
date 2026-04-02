@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-02: Fix file/folder creation not appearing in tree + CHANGES reveal
+
+**What changed:**
+- Fixed file/folder creation inside directories not appearing in the file tree after creation. `onCreate` in FileExplorer now calls `onExpandDir()` for parent directories, registering them with `useFileTree.loadedDirsRef` so SSE refresh re-fetches their children.
+- Fixed clicking a changed file in the CHANGES panel not revealing it in the explorer tree. `activateChange` now calls `revealInExplorer()` to expand parent directories and `setSelectedFilePath()` to select the file.
+- Fixed `handleExpandFolder` (used by CHANGES dir label click and search dir select) to call `expandDir()` for each path segment, loading children from the server instead of only opening directories in react-arborist's internal state.
+
+**Why:**
+- Root cause: react-arborist's `treeRef.open()` opens a directory in the tree UI but does NOT register it with `useFileTree.loadedDirsRef`. SSE-triggered `refreshExpanded()` only re-fetches dirs in `loadedDirsRef`, so directories opened only via `treeRef.open()` were silently skipped. Files/folders created inside those dirs were written to disk but never appeared in the tree.
+
+**Key files:** `ui/src/components/FileExplorer.tsx`, `ui/src/workspace/useWorkspaceNavigation.ts`
+**Verification:** 4 e2e Playwright tests (file/folder at root + inside subdirectory), 10 server unit tests for create-file/create-dir endpoints. All pass.
+**Commit:** f1e9b42
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-02: Fix PTY file descriptor leak and dead WebSocket detection
 
 **What changed:**

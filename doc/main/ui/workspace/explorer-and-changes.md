@@ -17,7 +17,7 @@ File tree, CRUD operations, git badges, context menu, drag-and-drop, and file re
 
 ## Related Code
 
-`ui/src/components/FileExplorer.tsx`, `ui/src/components/Workspace.tsx`
+`ui/src/components/FileExplorer.tsx`, `ui/src/components/fileExplorerNode.tsx`, `ui/src/workspace/useWorkspaceNavigation.ts`
 
 ## Explorer Tree
 
@@ -83,7 +83,7 @@ Explorer header has two buttons:
 | Move | Drag and drop | `POST /api/files/:project/move` |
 | Delete | Context menu | `POST /api/files/:project/delete` |
 
-All operations trigger file tree refresh via SSE `filetree` channel.
+All operations trigger file tree refresh via SSE `filetree` channel. **Important:** parent directories must be registered via `useFileTree.expandDir()` (not just react-arborist's internal `open()`) for SSE refresh to re-fetch their children. `onCreate` and `handleExpandFolder` both call `expandDir` for this reason.
 
 ## Inline Rename
 
@@ -109,7 +109,7 @@ Displays git-changed files from `useGitStatus()`.
 ### Behavior
 
 - Each row shows: file path, status badge (M/A/D/U)
-- Click a file → opens Diff as a **preview tab** (italic title, replaced by next change click)
+- Click a file → opens Diff as a **preview tab** (italic title, replaced by next change click); parent directories are expanded in the explorer and the file is selected
 - Click the same row again while its diff tab is active → opens the raw file for editing (pinned tab)
 - Click a **folder** row → expands that folder in the file explorer
 - Click the parent directory breadcrumb text → expands that parent in the explorer
