@@ -109,10 +109,8 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     }
   }, [selectedFile])
 
-  const openContextMenu = useCallback((e: React.MouseEvent, path: string, type: 'file' | 'dir') => {
-    menu.open(e)
-    setMenuTarget({ path, type })
-  }, [menu])
+  const bindContextMenu = (path: string, type: 'file' | 'dir') =>
+    menu.bind(() => setMenuTarget({ path, type }))
 
   const reportContextFolder = useCallback((path: string, type: 'file' | 'dir') => {
     const folder = type === 'dir' ? path : parentOf(path)
@@ -253,7 +251,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     : ''
 
   return (
-    <ExplorerContext.Provider value={{ gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, onExpandDir, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
+    <ExplorerContext.Provider value={{ gitMap, gitFolders, bindContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, onExpandDir, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0 overflow-hidden" onMouseDown={onFocusExplorer}>
         {!treeData || size.height < 1 ? (
           <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>

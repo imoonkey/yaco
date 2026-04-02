@@ -52,7 +52,7 @@ export function ProjectList({
             onDragOver={e => e.preventDefault()}
             onDrop={e => handleDrop(e, project.name)}
             onClick={() => onSelect(project.name)}
-            onContextMenu={e => { menu.open(e); setMenuProject(project) }}
+            {...menu.bind(() => setMenuProject(project))}
             className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors truncate ${
               isActive
                 ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'

@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react'
 import type { NodeRendererProps } from 'react-arborist'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { FileTypeIcon, FolderIcon, GIT_COLORS } from './fileExplorerIcons'
+import type { ContextMenuHandlers } from './Menu'
 import type { FileNode } from '../types'
 
 // --- Context for passing data to node renderer ---
@@ -10,18 +11,18 @@ export type ContextMenuState = { x: number; y: number; path: string; type: 'file
 export const ExplorerContext = createContext<{
   gitMap: Map<string, string>
   gitFolders: Set<string>
-  openContextMenu: (e: React.MouseEvent, path: string, type: 'file' | 'dir') => void
+  bindContextMenu: (path: string, type: 'file' | 'dir') => ContextMenuHandlers
   reportContextFolder: (path: string, type: 'file' | 'dir') => void
   onPreviewFile?: (path: string) => void
   onPinFile?: (path: string) => void
   onExpandDir?: (path: string) => void
   pendingNewId: string | null
   cancelCreate: () => void
-}>({ gitMap: new Map(), gitFolders: new Set(), openContextMenu: () => {}, reportContextFolder: () => {}, pendingNewId: null, cancelCreate: () => {} })
+}>({ gitMap: new Map(), gitFolders: new Set(), bindContextMenu: () => ({ onContextMenu: () => {}, onTouchStart: () => {}, onTouchMove: () => {}, onTouchEnd: () => {}, onTouchCancel: () => {} }), reportContextFolder: () => {}, pendingNewId: null, cancelCreate: () => {} })
 
 // --- Custom node renderer ---
 export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
-  const { gitMap, gitFolders, openContextMenu, reportContextFolder, onPreviewFile, onPinFile, onExpandDir, pendingNewId, cancelCreate } = useContext(ExplorerContext)
+  const { gitMap, gitFolders, bindContextMenu, reportContextFolder, onPreviewFile, onPinFile, onExpandDir, pendingNewId, cancelCreate } = useContext(ExplorerContext)
   const d = node.data
   const gitStatus = gitMap.get(d.path)
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
@@ -91,7 +92,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
         onDoubleClick={handleDoubleClick}
         onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = C.hover }}
         onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = '' }}
-        onContextMenu={e => { e.preventDefault(); openContextMenu(e, d.path, d.type) }}
+        {...bindContextMenu(d.path, d.type)}
       >
         {d.type === 'dir'
           ? <span style={isGitignored ? { opacity: 0.5 } : undefined}><FolderIcon open={node.isOpen} /></span>

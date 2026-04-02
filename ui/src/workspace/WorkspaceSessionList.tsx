@@ -66,7 +66,7 @@ export function SessionItem({
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onContextMenu={menu.open}
+      {...menu.bind()}
       className={`flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
       style={{ ...(isActive ? {} : { color: C.text }), opacity: dragging ? 0.55 : 1 }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
