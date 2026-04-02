@@ -247,7 +247,7 @@ export async function reorderProjects(order: string[]): Promise<Project[]> {
 
 export async function startSession(provider: SessionProvider, projectPath: string): Promise<string> {
   const name = provider === 'shell' ? undefined : `${provider}-${Date.now().toString(36)}`
-  const result = await postJson<{ ok: true; name: string }>('/sessions/start', { provider, name, cwd: projectPath })
+  const result = await postJson<{ name: string }>('/sessions/start', { provider, name, cwd: projectPath })
   return result.name
 }
 

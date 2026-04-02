@@ -37,7 +37,7 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
           `${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(TASKS_FILE_PATH)}`
         )
         if (!res.ok) {
-          if (res.status === 403) {
+          if (res.status === 403 || res.status === 404) {
             if (!cancelled) {
               setGraph(null)
               setWarnings([])

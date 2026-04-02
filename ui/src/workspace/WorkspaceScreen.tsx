@@ -136,7 +136,7 @@ export function Workspace({
   // --- Extracted hooks ---
   const sessionsMgr = useWorkspaceSessions({
     actions, projectPath, activeSession, sessions, pinnedSessions,
-    refreshSessions, isMobile, setFocusTarget, sessionUnreadCounts, projectName,
+    refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
   })
 
   const { diffs, editorDiffHunks, clearDiff } = useWorkspaceDiff({

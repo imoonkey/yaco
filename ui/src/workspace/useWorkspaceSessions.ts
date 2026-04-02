@@ -15,7 +15,6 @@ interface UseWorkspaceSessionsOpts {
   sessions: AgentSession[] | null
   pinnedSessions: string[]
   refreshSessions: () => void
-  isMobile?: boolean
   setFocusTarget: (t: FocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   projectName: string

@@ -94,8 +94,8 @@ export function useVoice(): UseVoiceReturn {
     try {
       const res = await fetch(`${API}/voice/compose`, { method: 'POST', body: formData })
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ message: 'Request failed.' })) as { message?: string }
-        dispatch({ type: 'FAIL', message: body.message || `Server error (${res.status}).`, runId })
+        const body = await res.json().catch(() => ({ error: 'Request failed.' })) as { error?: string; message?: string }
+        dispatch({ type: 'FAIL', message: body.error || body.message || `Server error (${res.status}).`, runId })
         return
       }
       const data = await res.json() as ComposeResponse
