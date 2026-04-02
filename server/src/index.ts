@@ -24,7 +24,7 @@ import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
 import { attachSession, setShellSessionChangeCallback } from './lib/terminal.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
-import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS } from './lib/constants.js'
+import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS, WS_PING_INTERVAL_MS } from './lib/constants.js'
 import type { IPty } from 'node-pty'
 
 const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
@@ -185,6 +185,21 @@ type PtySubscription = ReturnType<IPty['onData']>
 
 const ptyMap = new Map<WebSocket, ReturnType<typeof attachSession>>()
 const subscriptionMap = new Map<WebSocket, { data: PtySubscription; exit: PtySubscription }>()
+const aliveMap = new Map<WebSocket, boolean>()
+
+// Ping all connected WebSocket clients periodically to detect dead connections.
+// Without this, dead connections linger for ~2h (TCP keepalive) leaking PTY FDs.
+const pingInterval = setInterval(() => {
+  for (const ws of aliveMap.keys()) {
+    if (!aliveMap.get(ws)) {
+      ws.terminate()
+      continue
+    }
+    aliveMap.set(ws, false)
+    ws.ping()
+  }
+}, WS_PING_INTERVAL_MS)
+pingInterval.unref()
 
 server.on('upgrade', (req: IncomingMessage, socket, head) => {
   const url = new URL(req.url ?? '', `http://localhost:${port}`)
@@ -217,6 +232,9 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
 })
 
 wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, projectParam: string) => {
+  aliveMap.set(ws, true)
+  ws.on('pong', () => aliveMap.set(ws, true))
+
   try {
     let projectPath: string | undefined
     if (projectParam) {
@@ -278,11 +296,12 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
 
     if (attached) {
       if (!attached.persistent) {
-        attached.proc.kill()
+        attached.proc.destroy()
       }
       ptyMap.delete(ws)
     }
     subscriptionMap.delete(ws)
+    aliveMap.delete(ws)
     console.log(`[ws] terminal detached: ${sessionName}`)
   })
 

@@ -49,3 +49,6 @@ export const DEFAULT_TERMINAL_ROWS = 24
 /** Max terminal dimensions */
 export const MAX_TERMINAL_COLS = 500
 export const MAX_TERMINAL_ROWS = 200
+
+/** WebSocket ping interval for dead connection detection (ms) */
+export const WS_PING_INTERVAL_MS = 30_000
