@@ -49,6 +49,16 @@ The `Files` pane stacks the workspace sidebar sections in order: Explorer, Chang
 
 On touch devices: `user-select: none` is removed so iOS gesture recognition works.
 
+### Context Menus (Long-Press)
+
+On desktop, right-click opens context menus (file explorer, project list, session list). On mobile, long-press (500ms hold) triggers the same menus. Implemented via the `bind()` method on `useContextMenu()`:
+
+- 500ms hold threshold, 10px movement tolerance
+- `touchend` calls `preventDefault()` to suppress the click that would otherwise follow
+- Consumers spread `{...menu.bind(onOpen)}` onto target elements — handles both `onContextMenu` and touch events
+
+-> See: `ui/src/components/Menu.tsx`
+
 ### File Pane
 
 - `touch-action: pan-y` for native vertical scrolling

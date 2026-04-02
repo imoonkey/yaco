@@ -40,7 +40,7 @@ App (245 lines)
         ├── FileExplorer (333 lines)
         │   ├── fileExplorerIcons (51 lines)
         │   └── fileExplorerNode (105 lines)
-        ├── Menu (75 lines) — shared MenuItem/MenuDivider/useContextMenu
+        ├── Menu (90 lines) — shared MenuItem/MenuDivider/useContextMenu + long-press
         ├── Terminal (330 lines)
         │   └── TerminalKeyBar (224 lines) — touch-only
         ├── SessionItem (37 lines)
@@ -144,7 +144,7 @@ Virtualized file tree using react-arborist. Wrapped in `React.memo` to prevent r
 - Tree rendering with file-type icons and git badges
 - Gitignored entries rendered dimmed (muted color + 50% icon opacity)
 - Drag-and-drop file/folder move
-- Right-click context menu (New File, New Folder, Rename, Delete, Copy Path)
+- Context menu (right-click on desktop, long-press on mobile): New File, New Folder, Rename, Delete, Copy Path
 - Inline rename (F2)
 - Selection sync with active editor tab
 - Preview tab support (single-click opens preview, double-click pins)

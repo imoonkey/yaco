@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-01: Long-press context menus on mobile
+
+**What changed:**
+- Added touch-based long-press detection (500ms, 10px threshold) to `useContextMenu` hook via new `bind()` method
+- All three context menu sites (file explorer, project list, session list) now support long-press on mobile with the same menu as desktop right-click
+- `touchend` preventDefault suppresses click after long-press activation
+- FileExplorer context changed from `openContextMenu(event, path, type)` to `bindContextMenu(path, type)` returning spreadable handlers
+
+**Why:**
+- Context menus were inaccessible on mobile — right-click has no touch equivalent
+
+**Key files:** `ui/src/components/Menu.tsx`, `ui/src/components/FileExplorer.tsx`, `ui/src/components/fileExplorerNode.tsx`, `ui/src/components/ProjectList.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`
+**Verification:** `npx tsc --noEmit` clean, `npx vite build` passed
+**Commit:** 2489d29
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-01: UI layout polish — remove header, mobile optimizations, aligned bars
 
 **What changed:**
