@@ -1,21 +1,24 @@
 # Progress
 
-## 2026-04-01: Simplify top-level layout — remove header, relocate Add Project
+## 2026-04-01: UI layout polish — remove header, mobile optimizations, aligned bars
 
 **What changed:**
-- Removed the "Workflow" header bar from App.tsx (saved 40px vertical space)
-- Replaced with a minimal top bar showing only the active project name
-- Moved Add Project (+) button into the sidebar "Projects" section header
-- Added symmetric top/bottom 40px margins for fullscreen breathing room
-- Browser notification permission prompts removed from header (hook still active)
+- Removed the "Workflow" header bar, replaced with minimal project name bar (desktop only)
+- Moved Add Project (+) button into sidebar "Projects" section header
+- Top/bottom 40px margins for fullscreen breathing room, hidden on mobile
+- TerminalKeyBar: smaller buttons (32×28px), safe-area bottom padding, Ctrl row shows `^` prefix once
+- PaneSwitch (Browse/Editor/Terminal): tighter padding for more mobile content space
+- Session name bar: styled with SectionHeader background/color, 12px semibold
+- Editor tab bar: 35px → 32px to align with session bar
 
 **Why:**
-- Header was wasting vertical space with little value — project name is more useful context
-- Add Project button belongs near the project list, not in a global header
+- Maximize content area especially on mobile — every pixel counts
+- Visual consistency between editor and terminal header bars
+- iPhone safe area padding prevents buttons being clipped by rounded corners
 
-**Key files:** `ui/src/App.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`
+**Key files:** `ui/src/App.tsx`, `ui/src/components/PaneSwitch.tsx`, `ui/src/components/TerminalKeyBar.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`
 **Verification:** `npx tsc --noEmit` clean
-**Commit:** pending
+**Commit:** 8aa42b8, 51a8cab
 **Next:** None
 **Blockers:** None
 
