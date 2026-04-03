@@ -310,3 +310,18 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
     ws.close()
   })
 })
+
+// On SIGTERM (tsx watch restart), destroy all PTY attach processes to avoid
+// orphaned tmux-client PTYs that leak /dev/ttys devices toward the 511 limit.
+// This only kills the attach clients — tmux sessions themselves keep running.
+process.on('SIGTERM', () => {
+  clearInterval(pingInterval)
+  for (const [ws, attached] of ptyMap) {
+    if (!attached.persistent) attached.proc.destroy()
+    ws.terminate()
+  }
+  ptyMap.clear()
+  subscriptionMap.clear()
+  aliveMap.clear()
+  process.exit(0)
+})

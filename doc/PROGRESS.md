@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-04-03: Graceful PTY cleanup on SIGTERM
+
+**What changed:**
+- Added `process.on('SIGTERM')` handler to destroy all non-persistent PTY attach processes and terminate WebSocket connections before exit. Prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices across `tsx watch` restarts.
+
+**Why:**
+- `posix_spawnp failed` errors observed after prolonged dev sessions. PTY device numbers reached `/dev/ttys509` (macOS limit: 511). Root cause: `tsx watch` restarts kill the Node process but orphaned `tmux attach-session` children could survive, holding PTY slave FDs. The SIGTERM handler ensures all attach-client PTYs are explicitly destroyed before exit. Tmux sessions themselves are unaffected.
+
+**Key files:** `server/src/index.ts`
+**Verification:** Manual — server restart clears PTY accumulation, SIGTERM handler confirmed via `tsx watch` reload
+**Commit:** 307e083
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-02: Fix file/folder creation not appearing in tree + CHANGES reveal
 
 **What changed:**

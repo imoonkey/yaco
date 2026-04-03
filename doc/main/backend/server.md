@@ -60,6 +60,10 @@ Flow:
 
 A ping/pong heartbeat runs every `WS_PING_INTERVAL_MS` (30s). Each cycle marks all connections as unresponsive, then sends a ping. If a connection doesn't respond with pong before the next cycle, it is terminated. This prevents dead connections (browser crash, network drop) from holding PTY file descriptors for the ~2h TCP keepalive timeout.
 
+### Graceful Shutdown
+
+On `SIGTERM` (sent by `tsx watch` during dev restarts), the server destroys all non-persistent PTY attach processes and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
+
 ## UI Serving
 
 When the built UI exists at `ui/dist/`, the server serves it with:
