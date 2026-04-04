@@ -34,9 +34,6 @@ import { markStale as markSearchIndexStale } from './quickOpenIndex'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type JumpRequest = { key: number; path: string; line: number }
-const SECTION_HEADER_HEIGHT = 22
-const RESIZE_HANDLE_HEIGHT = 1
-const TASKS_SECTION_BODY_HEIGHT = 52
 
 // ============================================================
 // Main Workspace
@@ -89,14 +86,14 @@ export function Workspace({
   ))
   const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
   const [showSearch, setShowSearch] = useState(false)
-  const [sidebarHeight, setSidebarHeight] = useState(0)
+
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [contextFolder, setContextFolder] = useState('')
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
   const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, showTextSearch, mdMode } = layout
+  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTextSearch, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
@@ -230,33 +227,15 @@ export function Workspace({
     setFocusTarget('editor')
   }, [activeFilePath, actions, layout.mdMode])
 
-  // --- Sidebar resize & observer ---
-  useEffect(() => {
-    if (!sidebarRef.current) return
-    const observer = new ResizeObserver(([entry]) => {
-      setSidebarHeight(entry.contentRect.height)
-    })
-    observer.observe(sidebarRef.current)
-    return () => observer.disconnect()
-  }, [showSidebar])
-
+  // --- Sidebar resize ---
   const projectSplit = useResize(layout.projectSize, 40, 300, 'down')
   const projectHeight = projectSplit.size
-  const sidebarHeaderCount = 5 // Projects, Explorer, Search, Changes, Tasks
-  const visibleHandleCount = (showExplorer ? 1 : 0) + (showExplorer && showChanges ? 1 : 0)
-  const availableSectionHeight = Math.max(
-    0,
-    sidebarHeight
-      - sidebarHeaderCount * SECTION_HEADER_HEIGHT
-      - visibleHandleCount * RESIZE_HANDLE_HEIGHT
-      - projectHeight
-      - (showTasks ? TASKS_SECTION_BODY_HEIGHT : 0)
-  )
   const left = useResize(layout.leftSize, 140, 600)
   const right = useResize(layout.rightSize, 250, 900, 'right')
-  const explorerMax = availableSectionHeight
-  const explorerSplit = useResize(layout.explorerSize, 0, explorerMax, 'down')
-  const explorerHeight = showExplorer ? Math.min(explorerSplit.size, explorerMax) : 0
+  const searchSplit = useResize(layout.searchSize, 50, 400, 'up')
+  const searchHeight = showTextSearch ? searchSplit.size : 0
+  const changesSplit = useResize(layout.changesSize, 50, 300, 'up')
+  const changesHeight = showChanges ? changesSplit.size : 0
   const sessionSplit = useResize(layout.sessionSize, 50, 400, 'up')
   const sessionHeight = showSessions ? sessionSplit.size : 0
 
@@ -265,11 +244,12 @@ export function Workspace({
     actions.updateLayout({
       leftSize: left.size,
       rightSize: right.size,
-      explorerSize: explorerSplit.size,
+      searchSize: searchSplit.size,
+      changesSize: changesSplit.size,
       sessionSize: sessionSplit.size,
       projectSize: projectSplit.size,
     })
-  }, [left.size, right.size, explorerSplit.size, sessionSplit.size, projectSplit.size, actions])
+  }, [left.size, right.size, searchSplit.size, changesSplit.size, sessionSplit.size, projectSplit.size, actions])
 
   useEffect(() => {
     if (!isFileTab(activeTab)) return
@@ -598,8 +578,10 @@ export function Workspace({
       sidebarRef={sidebarRef}
       left={left}
       right={right}
-      explorerSplit={explorerSplit}
-      explorerHeight={explorerHeight}
+      searchSplit={searchSplit}
+      searchHeight={searchHeight}
+      changesSplit={changesSplit}
+      changesHeight={changesHeight}
       projectSplit={projectSplit}
       projectHeight={projectHeight}
       sessionSplit={sessionSplit}

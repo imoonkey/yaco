@@ -63,6 +63,7 @@ function loadPersistedState(project: string): PersistedState {
         leftSize: loadStoredSize(pl.leftSize, DEFAULT_LAYOUT.leftSize),
         rightSize: loadStoredSize(pl.rightSize, DEFAULT_LAYOUT.rightSize),
         explorerSize: loadStoredSize(pl.explorerSize, DEFAULT_LAYOUT.explorerSize),
+        searchSize: loadStoredSize(pl.searchSize, DEFAULT_LAYOUT.searchSize),
         changesSize: loadStoredSize(pl.changesSize, DEFAULT_LAYOUT.changesSize),
         sessionSize: loadStoredSize(pl.sessionSize, DEFAULT_LAYOUT.sessionSize),
         projectSize: loadStoredSize(pl.projectSize, DEFAULT_LAYOUT.projectSize),

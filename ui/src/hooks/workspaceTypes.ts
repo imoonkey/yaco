@@ -26,6 +26,7 @@ export type WorkspaceLayout = {
   leftSize: number
   rightSize: number
   explorerSize: number
+  searchSize: number
   changesSize: number
   sessionSize: number
   projectSize: number
@@ -70,6 +71,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   leftSize: 220,
   rightSize: 420,
   explorerSize: 250,
+  searchSize: 200,
   changesSize: 150,
   sessionSize: 180,
   projectSize: 120,
