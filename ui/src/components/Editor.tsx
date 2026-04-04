@@ -1,13 +1,13 @@
 import { useRef, useEffect } from 'react'
 import { isCloseShortcut } from '../lib/shortcuts'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, scrollPastEnd } from '@codemirror/view'
-import { EditorState, EditorSelection } from '@codemirror/state'
+import { EditorState, EditorSelection, Compartment } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
-import { syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
+import { syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap, LanguageDescription } from '@codemirror/language'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
@@ -21,7 +21,16 @@ function langExtension(filePath: string) {
   if (filePath.endsWith('.ts') || filePath.endsWith('.tsx')) return javascript({ typescript: true, jsx: filePath.endsWith('.tsx') })
   if (filePath.endsWith('.js') || filePath.endsWith('.jsx')) return javascript({ jsx: filePath.endsWith('.jsx') })
   if (filePath.endsWith('.py')) return python()
-  return markdown({ codeLanguages: languages })
+  return null
+}
+
+function loadDynamicLang(filePath: string, compartment: Compartment, view: EditorView) {
+  const desc = LanguageDescription.matchFilename(languages, filePath)
+  if (desc) {
+    desc.load().then(lang => {
+      view.dispatch({ effects: compartment.reconfigure(lang) })
+    })
+  }
 }
 
 interface EditorProps {
@@ -110,6 +119,9 @@ export function Editor({
       { key: 'Mod-s', run: (view: EditorView) => { onSaveRef.current?.(view.state.doc.toString()); return true } },
     ] : []
 
+    const langCompartment = new Compartment()
+    const staticLang = langExtension(filePath)
+
     const state = EditorState.create({
       doc: content,
       extensions: [
@@ -136,7 +148,7 @@ export function Editor({
           ...searchKeymap,
           ...foldKeymap,
         ]),
-        langExtension(filePath),
+        langCompartment.of(staticLang ?? []),
         EditorView.lineWrapping,
         EditorState.readOnly.of(readOnly),
         EditorView.domEventHandlers({
@@ -168,6 +180,7 @@ export function Editor({
     const view = new EditorView({ state, parent: containerRef.current })
     viewRef.current = view
     contentRef.current = content
+    if (!staticLang) loadDynamicLang(filePath, langCompartment, view)
     applyViewportLine(view, viewportLine)
 
     const handleScroll = () => {
