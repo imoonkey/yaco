@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-03: Fix symlink support in file explorer and search
+
+**What changed:**
+- Symlinked directories now display as folders and expand correctly in the file explorer. `listDir` resolves symlink targets via `stat()` since `Dirent.isDirectory()` returns `false` for symlinks.
+- `resolveAndValidate` now validates the request path (pre-symlink) instead of the resolved target, allowing symlinks that point outside the project (e.g., `doc/todo → ../../openweb-docs/todo`).
+- Trailing slashes in project paths (from `projects.json`) no longer break directory expansion.
+- `/children` endpoint passes the symlink-relative path as `relPrefix` to `listDir`, so child entries get correct paths like `doc/todo/file.txt` instead of `../openweb-docs/todo/file.txt`.
+- Search index (`/search-index`) now includes files inside symlinked directories via `collectSymlinkedFiles`, which walks the tree and adds files reachable through symlinks that `git ls-files` skips.
+
+**Why:**
+- Projects with symlinked doc directories (e.g., `doc/todo`, `doc/archive` pointing to a separate docs repo) were completely broken: symlinked folders appeared as files, couldn't expand, and their contents were invisible to Cmd+P search. Three independent root causes: `Dirent` type flags are mutually exclusive (symlink vs directory), `realpath`-based traversal check rejected external targets, and `git ls-files` doesn't follow directory symlinks.
+
+**Key files:** `server/src/routes/files.ts`
+**Verification:** 52 server unit tests pass. Manual verification of path logic with real symlinks.
+**Commit:** (pending)
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-03: Graceful PTY cleanup on SIGTERM
 
 **What changed:**

@@ -24,8 +24,9 @@ function shouldIgnoreEntry(name: string): boolean {
   return IGNORE.has(name)
 }
 
-/** List one directory level, marking gitignored entries. Dirs get children: [] (expandable). */
-async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof import('ignore').default> | null): Promise<FileNode[]> {
+/** List one directory level, marking gitignored entries. Dirs get children: [] (expandable).
+ *  relPrefix overrides relative-path computation (needed for symlinked dirs outside the project). */
+async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof import('ignore').default> | null, relPrefix?: string): Promise<FileNode[]> {
   let entries
   try {
     entries = await readdir(absDir, { withFileTypes: true })
@@ -34,16 +35,27 @@ async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof i
     return []
   }
 
-  const sorted = entries
-    .filter(e => !shouldIgnoreEntry(e.name))
-    .sort((a, b) => {
-      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1
-      return a.name.localeCompare(b.name)
-    })
+  const filtered = entries.filter(e => !shouldIgnoreEntry(e.name))
 
-  return sorted.map((entry) => {
-    const relPath = relative(basePath, join(absDir, entry.name))
-    const isDir = entry.isDirectory()
+  // Resolve symlinks to determine actual type (Dirent.isDirectory() returns false for symlinks)
+  const resolved = await Promise.all(filtered.map(async (entry) => {
+    let isDir = entry.isDirectory()
+    if (entry.isSymbolicLink()) {
+      try {
+        const info = await stat(join(absDir, entry.name))
+        isDir = info.isDirectory()
+      } catch { /* broken symlink — treat as file */ }
+    }
+    return { entry, isDir }
+  }))
+
+  resolved.sort((a, b) => {
+    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1
+    return a.entry.name.localeCompare(b.entry.name)
+  })
+
+  return resolved.map(({ entry, isDir }) => {
+    const relPath = relPrefix ? join(relPrefix, entry.name) : relative(basePath, join(absDir, entry.name))
     const ignored = ig ? ig.ignores(isDir ? relPath + '/' : relPath) : false
 
     if (isDir) {
@@ -59,9 +71,10 @@ type ResolveResult = { path: string } | { error: 'not_found' | 'forbidden' }
 async function resolveAndValidate(projectPath: string, filePath: string): Promise<ResolveResult> {
   const absPath = join(projectPath, filePath)
   if (!existsSync(absPath)) return { error: 'not_found' }
+  // Block ../../ traversal in the request path itself, but allow symlinks that point outside
+  const normalizedProject = normalize(projectPath).replace(/\/+$/, '')
+  if (!normalize(absPath).startsWith(normalizedProject + '/')) return { error: 'forbidden' }
   const resolved = await realpath(absPath)
-  const resolvedProject = await realpath(projectPath)
-  if (!resolved.startsWith(resolvedProject + '/') && resolved !== resolvedProject) return { error: 'forbidden' }
   return { path: resolved }
 }
 
@@ -71,6 +84,30 @@ function validateNewPath(projectPath: string, filePath: string): string | null {
   const absPath = join(projectPath, filePath)
   if (!absPath.startsWith(projectPath + '/')) return null
   return absPath
+}
+
+/** Walk the project tree, collecting files inside symlinked directories that git ls-files skips. */
+async function collectSymlinkedFiles(
+  dir: string, relPrefix: string, seen: Set<string>,
+  files: { name: string; path: string; type: string }[], inSymlink: boolean
+) {
+  let entries
+  try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+  for (const entry of entries) {
+    if (shouldIgnoreEntry(entry.name)) continue
+    const relPath = relPrefix ? join(relPrefix, entry.name) : entry.name
+    const isLink = entry.isSymbolicLink()
+    let isDir = entry.isDirectory()
+    if (isLink) {
+      try { isDir = (await stat(join(dir, entry.name))).isDirectory() } catch { continue }
+    }
+    if (isDir) {
+      await collectSymlinkedFiles(join(dir, entry.name), relPath, seen, files, inSymlink || isLink)
+    } else if (inSymlink && !seen.has(relPath)) {
+      seen.add(relPath)
+      files.push({ name: entry.name, path: relPath, type: 'file' })
+    }
+  }
 }
 
 const app = new Hono<ProjectEnv>()
@@ -128,6 +165,10 @@ app.get('/:project/search-index', withProject, async (c) => {
       } catch (e) { console.warn('[files] git ls-files --ignored failed (may be shallow clone):', e) }
     }
 
+    // git ls-files doesn't follow symlinked directories — walk them separately
+    const seen = new Set(files.map(f => f.path))
+    await collectSymlinkedFiles(proj.path, '', seen, files, false)
+
     addDirs(files)
     return c.json(files)
   } catch {
@@ -172,7 +213,7 @@ app.get('/:project/children', withProject, async (c) => {
   if (!info.isDirectory()) return c.json({ error: 'not a directory' }, 400)
 
   const ig = await getProjectGitignore(proj.path)
-  const children = await listDir(result.path, proj.path, ig)
+  const children = await listDir(result.path, proj.path, ig, dirPath)
   return c.json(children)
 })
 

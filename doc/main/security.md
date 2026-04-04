@@ -25,9 +25,9 @@ Session names must match `[a-zA-Z0-9_.-]+`. The regex is enforced at both the HT
 
 ## Path Traversal Protection
 
-All file operations resolve paths via `realpath()` and verify the result stays inside the selected project root. Symlink targets are resolved before the boundary check, preventing symlink-based traversal.
+All file operations validate that the requested path (before symlink resolution) stays inside the project root, blocking `../../` traversal in request parameters. Symlinked directories within the project tree are allowed to point outside the project — only the request path is validated, not the resolved symlink target. This enables projects with symlinked `doc/` subdirectories while still preventing path injection.
 
-**Code path**: `server/src/routes/files.ts`
+**Code path**: `server/src/routes/files.ts` (`resolveAndValidate`)
 
 ## File Write Safety
 
