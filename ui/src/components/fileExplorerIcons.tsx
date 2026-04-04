@@ -1,48 +1,27 @@
-import { getIcon } from 'seti-icons'
 import { useMemo } from 'react'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { SETI_ICONS } from './setiIconData'
 
 // --- Git status colors ---
 export const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
 
-// --- Seti color name → hex (matching VS Code's Seti icon theme for light backgrounds) ---
-const SETI_COLORS: Record<string, string> = {
-  blue: '#498ba7',
-  grey: '#808080',
-  'medium-blue': '#498ba7',
-  'dark-blue': '#2d5f7b',
-  red: '#cc3e44',
-  'light-red': '#cc3e44',
-  green: '#7fae42',
-  'medium-green': '#6a9e37',
-  orange: '#cc6d2e',
-  yellow: '#b7b73b',
-  purple: '#9068b0',
-  pink: '#c54b7b',
-  white: '#808080',
-  ignore: '#808080',
-}
-
-// Cache SVG strings per filename to avoid repeated getIcon calls
-const svgCache = new Map<string, { svg: string; color: string }>()
-
 function getSetiIcon(name: string): { svg: string; color: string } {
+  // Try full special names first (.gitignore, Makefile, Dockerfile, etc.)
+  const lower = name.toLowerCase()
+  if (SETI_ICONS[lower]) return SETI_ICONS[lower]
+  if (SETI_ICONS[name]) return SETI_ICONS[name]
+
+  // Try extension
   const ext = name.split('.').pop()?.toLowerCase() || ''
-  const cacheKey = ext || name
-  const cached = svgCache.get(cacheKey)
-  if (cached) return cached
-  const result = getIcon(name)
-  const entry = { svg: result.svg, color: SETI_COLORS[result.color] || C.muted }
-  svgCache.set(cacheKey, entry)
-  return entry
+  if (SETI_ICONS[ext]) return SETI_ICONS[ext]
+
+  return SETI_ICONS['_default'] || { svg: '', color: C.muted }
 }
 
 // --- Icons (shared with Workspace) ---
 export function FileTypeIcon({ name }: { name: string }) {
   const { svg, color } = useMemo(() => getSetiIcon(name), [name])
-  // Seti SVGs use currentColor-style fills; inject the color
-  const colored = svg
-    .replace('<svg ', `<svg width="16" height="16" style="fill:${color}" `)
+  const colored = svg.replace('<svg ', `<svg width="16" height="16" style="fill:${color}" `)
   return <span className="shrink-0 inline-flex" dangerouslySetInnerHTML={{ __html: colored }} />
 }
 
