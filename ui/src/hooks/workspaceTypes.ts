@@ -49,6 +49,7 @@ export type PersistedState = {
   mobilePane: 'files' | 'editor' | 'terminal'
   layout: WorkspaceLayout
   pinnedSessions: string[]
+  recentFiles: string[]
 }
 
 // --- Constants ---

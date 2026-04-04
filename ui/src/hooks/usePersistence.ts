@@ -22,6 +22,7 @@ function loadPersistedState(project: string): PersistedState {
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
     pinnedSessions: [],
+    recentFiles: [],
   }
 
   try {
@@ -67,6 +68,9 @@ function loadPersistedState(project: string): PersistedState {
       },
       pinnedSessions: Array.isArray(parsed.pinnedSessions)
         ? (parsed.pinnedSessions as unknown[]).filter((s): s is string => typeof s === 'string')
+        : [],
+      recentFiles: Array.isArray(parsed.recentFiles)
+        ? (parsed.recentFiles as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 50)
         : [],
     }
   } catch {

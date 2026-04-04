@@ -1,25 +1,46 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+import { fuzzySearch, namePositions, type FuzzyResult } from '../lib/fuzzySearch'
+import { getCached, isCacheStale, fetchIndex } from './quickOpenIndex'
 
-export interface SearchEntry { name: string; path: string; type: 'file' | 'dir' }
+export type { SearchEntry } from '../lib/fuzzySearch'
 
-export function FileSearch({ projectName, onSelect, onClose }: { projectName: string; onSelect: (entry: SearchEntry) => void; onClose: () => void }) {
-  const [query, setQuery] = useState(''); const inputRef = useRef<HTMLInputElement>(null); const [selectedIdx, setSelectedIdx] = useState(0)
-  const [files, setFiles] = useState<SearchEntry[]>([])
-  const [loading, setLoading] = useState(true)
+export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
+  projectName: string
+  recentFiles: string[]
+  onSelect: (entry: { name: string; path: string; type: 'file' | 'dir' }) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const [files, setFiles] = useState(() => getCached(projectName, false) ?? [])
+  const [loading, setLoading] = useState(() => !getCached(projectName, false))
   const [includeIgnored, setIncludeIgnored] = useState(false)
 
   useEffect(() => { inputRef.current?.focus() }, [])
 
-  // Fetch file index (re-fetches when includeIgnored toggles)
+  // Fetch or background-refresh index
   useEffect(() => {
     const controller = new AbortController()
-    const qs = includeIgnored ? '?ignored=true' : ''
-    fetch(`/api/files/${encodeURIComponent(projectName)}/search-index${qs}`, { signal: controller.signal })
-      .then(r => r.json())
-      .then((data: SearchEntry[]) => { setFiles(data); setLoading(false) })
-      .catch(() => { if (!controller.signal.aborted) setLoading(false) })
+    const cached = getCached(projectName, includeIgnored)
+
+    if (cached) {
+      setFiles(cached)
+      setLoading(false)
+      if (isCacheStale(projectName, includeIgnored)) {
+        fetchIndex(projectName, includeIgnored, controller.signal)
+          .then(data => setFiles(data))
+          .catch(() => {})
+      }
+    } else {
+      setLoading(true)
+      fetchIndex(projectName, includeIgnored, controller.signal)
+        .then(data => { setFiles(data); setLoading(false) })
+        .catch(() => { if (!controller.signal.aborted) setLoading(false) })
+    }
+
     return () => controller.abort()
   }, [projectName, includeIgnored])
 
@@ -28,15 +49,19 @@ export function FileSearch({ projectName, onSelect, onClose }: { projectName: st
     setSelectedIdx(0)
   }, [])
 
-  const q = query.toLowerCase()
-  const filtered = q ? files.filter(f => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q)) : files
-  const visible = filtered.slice(0, 20)
+  const scored = useMemo(
+    () => fuzzySearch(files, query, recentFiles),
+    [files, query, recentFiles],
+  )
+  const visible = useDeferredValue(scored)
+
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') { onClose(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, visible.length - 1)); return }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
-    if (e.key === 'Enter' && visible[selectedIdx]) { onSelect(visible[selectedIdx]); onClose() }
+    if (e.key === 'Enter' && visible[selectedIdx]) { onSelect(visible[selectedIdx].entry); onClose() }
   }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15%]" onClick={onClose}>
       <div className="w-[500px] rounded-lg shadow-lg overflow-hidden" style={{ backgroundColor: C.editorBg, border: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
@@ -55,22 +80,96 @@ export function FileSearch({ projectName, onSelect, onClose }: { projectName: st
           >.gitignore</button>
         </div>
         <div className="max-h-[300px] overflow-y-auto">
-          {visible.map((f, i) => (
-            <div key={f.path} onClick={() => { onSelect(f); onClose() }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${i === selectedIdx ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
-              style={i !== selectedIdx ? { color: C.text } : undefined}
-              onMouseEnter={e => { if (i !== selectedIdx) e.currentTarget.style.backgroundColor = C.hover }}
-              onMouseLeave={e => { if (i !== selectedIdx) e.currentTarget.style.backgroundColor = '' }}>
-              {f.type === 'dir'
-                ? <span className="text-[12px]" style={{ color: i === selectedIdx ? undefined : C.muted }}>{'📁'}</span>
-                : <FileTypeIcon name={f.name} />}
-              <span style={{ color: i === selectedIdx ? undefined : C.textDark }}>{f.name}</span>
-              <span className="text-[10px]" style={{ color: C.muted }}>{f.path}{f.type === 'dir' ? '/' : ''}</span>
-            </div>
+          {visible.map((r, i) => (
+            <SearchResultRow
+              key={r.entry.path}
+              result={r}
+              selected={i === selectedIdx}
+              hasQuery={query.trim().length > 0}
+              onClick={() => { onSelect(r.entry); onClose() }}
+              onHover={() => setSelectedIdx(i)}
+            />
           ))}
           {!loading && visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: C.muted }}>No files found</div>}
         </div>
       </div>
+    </div>
+  )
+}
+
+function HighlightedText({ text, positions, color, highlightColor }: {
+  text: string
+  positions: Set<number>
+  color: string
+  highlightColor: string
+}) {
+  if (positions.size === 0) return <span style={{ color }}>{text}</span>
+
+  const chars: React.ReactNode[] = []
+  let inMatch = false
+  let run = ''
+  let runStart = 0
+
+  for (let i = 0; i <= text.length; i++) {
+    const isMatch = i < text.length && positions.has(i)
+    if (isMatch !== inMatch || i === text.length) {
+      if (run) {
+        chars.push(
+          inMatch
+            ? <span key={runStart} style={{ color: highlightColor, fontWeight: 600 }}>{run}</span>
+            : <span key={runStart}>{run}</span>
+        )
+      }
+      run = i < text.length ? text[i] : ''
+      runStart = i
+      inMatch = isMatch
+    } else {
+      run += text[i]
+    }
+  }
+
+  return <span style={{ color }}>{chars}</span>
+}
+
+function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
+  result: FuzzyResult
+  selected: boolean
+  hasQuery: boolean
+  onClick: () => void
+  onHover: () => void
+}) {
+  const { entry, positions } = result
+
+  return (
+    <div onClick={onClick}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
+      style={!selected ? { color: C.text } : undefined}
+      onMouseEnter={e => { onHover(); if (!selected) e.currentTarget.style.backgroundColor = C.hover }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '' }}>
+      <FileTypeIcon name={entry.name} />
+      {hasQuery ? (
+        <>
+          <HighlightedText
+            text={entry.name}
+            positions={namePositions(entry, positions)}
+            color={selected ? '' : C.textDark}
+            highlightColor={SOLARIZED_LIGHT.blue}
+          />
+          <span className="text-[10px]">
+            <HighlightedText
+              text={entry.path}
+              positions={positions}
+              color={C.muted}
+              highlightColor={SOLARIZED_LIGHT.blue}
+            />
+          </span>
+        </>
+      ) : (
+        <>
+          <span style={{ color: selected ? undefined : C.textDark }}>{entry.name}</span>
+          <span className="text-[10px]" style={{ color: C.muted }}>{entry.path}</span>
+        </>
+      )}
     </div>
   )
 }

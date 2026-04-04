@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useFileTree, useSessions, useGitStatus } from '../hooks/useApi'
+import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { useVoice } from '../hooks/useVoice'
@@ -28,6 +29,7 @@ import { useWorkspaceNavigation } from './useWorkspaceNavigation'
 import { useWorkspaceSessions } from './useWorkspaceSessions'
 import { useWorkspaceDiff } from './useWorkspaceDiff'
 import { useWorkspaceVoice } from './useWorkspaceVoice'
+import { markStale as markSearchIndexStale } from './quickOpenIndex'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type JumpRequest = { key: number; path: string; line: number }
@@ -79,7 +81,7 @@ export function Workspace({
   const voice = useVoice()
   // Centralized workspace state
   const ws = useWorkspaceState(projectName)
-  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, actions } = ws
+  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, recentFiles, actions } = ws
 
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
     isFileTab(activeTab) ? activeTab : null
@@ -97,6 +99,10 @@ export function Workspace({
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
+
+  // Mark quick-open search index stale on filetree changes
+  const markStaleForProject = useCallback(() => markSearchIndexStale(projectName), [projectName])
+  useSSERefresh('filetree', markStaleForProject)
 
   useEffect(() => {
     if (!onVisibilityReport) return
@@ -581,7 +587,7 @@ export function Workspace({
       hasOpenTabs={hasOpenTabs}
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}
-      searchOverlay={showSearch ? <FileSearch projectName={projectName!} onSelect={nav.handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}
+      searchOverlay={showSearch ? <FileSearch projectName={projectName!} recentFiles={recentFiles} onSelect={nav.handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}
     />
     <ComposeTray
       surface={voiceBridge.voiceSurface}

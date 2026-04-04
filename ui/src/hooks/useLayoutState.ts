@@ -19,6 +19,7 @@ export function useLayoutState(
   const [mobilePane, setMobilePane] = useState(initialLayout.mobilePane)
   const [layout, setLayout] = useState<WorkspaceLayout>(initialLayout.layout)
   const [pinnedSessions, setPinnedSessions] = useState<string[]>(initialLayout.pinnedSessions)
+  const [recentFiles, setRecentFiles] = useState<string[]>(initialLayout.recentFiles)
 
   const openTabsRef = useRef(openTabs)
   openTabsRef.current = openTabs
@@ -131,6 +132,13 @@ export function useLayoutState(
     setLayout(prev => ({ ...prev, ...partial }))
   }, [])
 
+  const addRecentFile = useCallback((path: string) => {
+    setRecentFiles(prev => {
+      const next = [path, ...prev.filter(p => p !== path)]
+      return next.length > 50 ? next.slice(0, 50) : next
+    })
+  }, [])
+
   /** Retarget tabs when a file or directory is renamed/moved */
   const retargetPaths = useCallback((oldPath: string, newPath: string) => {
     const remap = (tab: string): string => {
@@ -181,6 +189,7 @@ export function useLayoutState(
     mobilePane,
     layout,
     pinnedSessions,
+    recentFiles,
     openFileTab,
     openPreviewTab,
     openDiffTab,
@@ -194,6 +203,7 @@ export function useLayoutState(
     setMobilePane,
     updateLayout,
     setPinnedSessions,
+    addRecentFile,
     retargetPaths,
     closeTabsUnder,
   }

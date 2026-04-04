@@ -29,8 +29,8 @@ export function useWorkspaceState(projectName: string) {
   openTabsRef.current = ls.openTabs
 
   // Phase 3: bind persistence snapshots (once)
-  const layoutRef = useRef({ openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, pinnedSessions: ls.pinnedSessions })
-  layoutRef.current = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, pinnedSessions: ls.pinnedSessions }
+  const layoutRef = useRef({ openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, pinnedSessions: ls.pinnedSessions, recentFiles: ls.recentFiles })
+  layoutRef.current = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, pinnedSessions: ls.pinnedSessions, recentFiles: ls.recentFiles }
 
   const bound = useRef(false)
   if (!bound.current) {
@@ -58,7 +58,7 @@ export function useWorkspaceState(projectName: string) {
   // Schedule persistence on state changes
   useEffect(() => {
     scheduleLayoutSave()
-  }, [ls.openTabs, ls.activeTab, ls.previewTab, ls.activeSession, ls.mobilePane, ls.layout, ls.pinnedSessions, scheduleLayoutSave])
+  }, [ls.openTabs, ls.activeTab, ls.previewTab, ls.activeSession, ls.mobilePane, ls.layout, ls.pinnedSessions, ls.recentFiles, scheduleLayoutSave])
 
   useEffect(() => {
     scheduleDraftsSave()
@@ -68,14 +68,16 @@ export function useWorkspaceState(projectName: string) {
   const openFileTab = useCallback((path: string) => {
     if (!isFileTab(path)) return
     ls.openFileTab(path)
+    ls.addRecentFile(path)
     fetchForTab(path)
-  }, [ls.openFileTab, fetchForTab])
+  }, [ls.openFileTab, ls.addRecentFile, fetchForTab])
 
   const openPreviewTab = useCallback((path: string) => {
     if (!isFileTab(path)) return
     const shouldFetch = ls.openPreviewTab(path)
+    ls.addRecentFile(path)
     if (shouldFetch) fetchForTab(path)
-  }, [ls.openPreviewTab, fetchForTab])
+  }, [ls.openPreviewTab, ls.addRecentFile, fetchForTab])
 
   const closeTab = useCallback((tab: string) => {
     ls.closeTab(tab)
@@ -153,6 +155,7 @@ export function useWorkspaceState(projectName: string) {
     dirtyTabs,
     conflictTabs,
     pinnedSessions: ls.pinnedSessions,
+    recentFiles: ls.recentFiles,
     actions,
   }
 }
