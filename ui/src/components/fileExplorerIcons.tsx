@@ -9,9 +9,39 @@ export const FILE_COLORS: Record<string, string> = {
 }
 export const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
 
+// --- Per-file-type badge config (inspired by vscode-icons, MIT) ---
+// [background, foreground, label]
+const BADGE: Record<string, [string, string, string]> = {
+  ts:   ['#3178C6', '#fff', 'TS'],
+  tsx:  ['#3178C6', '#fff', 'TS'],
+  js:   ['#F7DF1E', '#333', 'JS'],
+  jsx:  ['#F7DF1E', '#333', 'JS'],
+  json: ['#BEB533', '#fff', '{}'],
+  md:   ['#519ABA', '#fff', 'M'],
+  css:  ['#42A5F5', '#fff', '#'],
+  scss: ['#CD6799', '#fff', 'S'],
+  html: ['#E44D26', '#fff', '<>'],
+  py:   ['#3776AB', '#fff', 'Py'],
+  sh:   ['#4EAA25', '#fff', '$'],
+  yml:  ['#F44D27', '#fff', 'Y'],
+  yaml: ['#F44D27', '#fff', 'Y'],
+}
+
 // --- Icons (shared with Workspace) ---
 export function FileTypeIcon({ name }: { name: string }) {
   const ext = name.split('.').pop()?.toLowerCase() || ''
+  const badge = BADGE[ext]
+  if (badge) {
+    const [bg, fg, label] = badge
+    const fs = label.length === 1 ? 9 : 7.5
+    return (
+      <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
+        <rect x="1" y="1" width="14" height="14" rx="2" fill={bg} />
+        <text x="8" y="11.5" textAnchor="middle" fontSize={fs}
+              fontWeight="700" fontFamily="system-ui,sans-serif" fill={fg}>{label}</text>
+      </svg>
+    )
+  }
   const c = FILE_COLORS[ext] || C.muted
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">

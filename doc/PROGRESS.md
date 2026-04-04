@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-03: Per-file-type icons in explorer and tab bar
+
+**What changed:**
+- Replaced generic colored file shape icons with per-extension badge icons (colored rounded rect + short label) for 13 extensions: ts, tsx, js, jsx, json, md, css, scss, html, py, sh, yml, yaml
+- Added `BADGE` config map in `fileExplorerIcons.tsx` — each entry is `[bg, fg, label]`
+- Tab bar now shows file type icons before tab names (skipped for Tasks/Diff tabs)
+- Generic colored document icon retained as fallback for unmapped extensions
+
+**Why:**
+- File type icons were generic (same shape for all files, only color varied), making it hard to distinguish file types at a glance in both explorer and tabs
+
+**Key files:** `ui/src/components/fileExplorerIcons.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`
+**Verification:** `vite build` passed
+**Commit:** pending
+**Next:** Tab path disambiguation, Cmd+P fuzzy search, cross-file text search UI
+**Blockers:** None
+
 ## 2026-04-03: CodeMirror editor polish (brackets, fold, indent)
 
 **What changed:**

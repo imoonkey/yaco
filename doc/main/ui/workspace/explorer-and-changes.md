@@ -25,7 +25,7 @@ Virtualized file tree using react-arborist with react-window.
 
 ### Rendering
 
-- Custom node renderer with file-type icons (colored SVGs by extension)
+- Custom node renderer with per-file-type badge icons (colored rounded rect + label, e.g. blue "TS", yellow "JS") for major extensions (ts, tsx, js, jsx, json, md, css, scss, html, py, sh, yml, yaml); generic colored document shape for others. Icons shared between file explorer and tab bar.
 - Directory nodes: folder icon (open/closed states)
 - Indentation shows hierarchy depth
 - Selected node has highlight background

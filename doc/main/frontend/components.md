@@ -38,7 +38,7 @@ App (245 lines)
         │   ├── MarkdownPreview
         │   └── Editor (223 lines)
         ├── FileExplorer (333 lines)
-        │   ├── fileExplorerIcons (51 lines)
+        │   ├── fileExplorerIcons (82 lines)
         │   └── fileExplorerNode (105 lines)
         ├── Menu (90 lines) — shared MenuItem/MenuDivider/useContextMenu + long-press
         ├── Terminal (330 lines)

@@ -1,5 +1,6 @@
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { isDiffTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
+import { FileTypeIcon } from '../components/fileExplorerIcons'
 
 function tabName(tab: string): string {
   if (isTasksTab(tab)) return 'Tasks'
@@ -87,6 +88,7 @@ export function WorkspaceTabBar({
               borderBottom: isActive ? `1px solid ${C.editorBg}` : `1px solid ${C.border}`, marginBottom: -1,
               fontStyle: isPreview ? 'italic' : undefined,
             }} title={tabTitle(tab)}>
+            {!isTasks && !isDiff && <FileTypeIcon name={tab} />}
             <span className="truncate max-w-[120px]">{tabName(tab)}</span>
             {isConflict ? (
               <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[12px]" style={{ color: '#C4A241' }} title="File changed on disk">&#9888;</span>
