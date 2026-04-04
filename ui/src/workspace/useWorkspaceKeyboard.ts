@@ -23,6 +23,7 @@ interface UseWorkspaceKeyboardOpts {
   showSidebar: boolean
   showRightPanel: boolean
   showSearch: boolean
+  showTextSearch: boolean
   setShowSearch: (fn: (v: boolean) => boolean) => void
   focusTarget: FocusTarget
   setFocusTarget: (t: FocusTarget) => void
@@ -35,6 +36,7 @@ interface UseWorkspaceKeyboardOpts {
   handleEditorVoiceStart: () => void
   handleTerminalVoiceStart: () => void
   voice: Pick<UseVoiceReturn, 'state' | 'stop' | 'capability'>
+  onToggleTextSearch: () => void
 }
 
 export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
@@ -58,6 +60,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     handleEditorVoiceStart,
     handleTerminalVoiceStart,
     voice,
+    onToggleTextSearch,
   } = opts
 
   const getKeyboardLock = useCallback((): KeyboardLockHandle | null => {
@@ -129,6 +132,12 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         actions.setMobilePane('editor')
         return
       }
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'f') {
+        e.preventDefault()
+        e.stopPropagation()
+        onToggleTextSearch()
+        return
+      }
       if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
         e.preventDefault()
         e.stopPropagation()
@@ -169,7 +178,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

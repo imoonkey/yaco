@@ -1,0 +1,486 @@
+import { useState, useRef, useCallback, useEffect, memo } from 'react'
+import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+
+// --- Types ---
+
+type SearchMatch = {
+  line: number
+  column: number
+  matchLength: number
+  text: string
+}
+
+type FileGroup = {
+  file: string
+  matches: SearchMatch[]
+}
+
+type SearchStatus =
+  | { state: 'idle' }
+  | { state: 'searching' }
+  | { state: 'results'; matchCount: number; fileCount: number; durationMs: number; capped: boolean }
+  | { state: 'empty' }
+  | { state: 'error'; message: string }
+
+type SearchOptions = {
+  caseSensitive: boolean
+  regex: boolean
+  wholeWord: boolean
+  glob: string
+}
+
+// --- Constants ---
+
+const MAX_FILES = 30
+const MAX_MATCHES_PER_FILE = 10
+const DEBOUNCE_MS = 300
+const MIN_QUERY_LEN = 3
+
+// --- Component ---
+
+export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
+  projectName,
+  onOpenFileAtLine,
+}: {
+  projectName: string
+  onOpenFileAtLine: (path: string, line: number, column: number) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [options, setOptions] = useState<SearchOptions>({ caseSensitive: false, regex: false, wholeWord: false, glob: '' })
+  const [results, setResults] = useState<FileGroup[]>([])
+  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
+  const [status, setStatus] = useState<SearchStatus>({ state: 'idle' })
+  const [focusIndex, setFocusIndex] = useState(-1)
+
+  const abortRef = useRef<AbortController | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // Build flat list of focusable items for keyboard nav
+  const flatItems = buildFlatItems(results, expandedFiles)
+
+  const executeSearch = useCallback((q: string, opts: SearchOptions) => {
+    abortRef.current?.abort()
+    if (!q.trim()) {
+      setResults([])
+      setStatus({ state: 'idle' })
+      return
+    }
+
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    setStatus({ state: 'searching' })
+    setFocusIndex(-1)
+
+    const params = new URLSearchParams({ q })
+    if (opts.caseSensitive) params.set('caseSensitive', 'true')
+    if (opts.regex) params.set('regex', 'true')
+    if (opts.wholeWord) params.set('wholeWord', 'true')
+    if (opts.glob) params.set('glob', opts.glob)
+    params.set('context', '0')
+
+    const url = `/api/search/${encodeURIComponent(projectName)}/text?${params}`
+
+    fetch(url, { signal: controller.signal })
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.text().catch(() => '')
+          setStatus({ state: 'error', message: body || `HTTP ${res.status}` })
+          return
+        }
+
+        const reader = res.body?.getReader()
+        if (!reader) {
+          setStatus({ state: 'error', message: 'No response body' })
+          return
+        }
+
+        const decoder = new TextDecoder()
+        let remainder = ''
+        const groups = new Map<string, SearchMatch[]>()
+        const fileOrder: string[] = []
+        let totalFilesCapped = false
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          remainder += decoder.decode(value, { stream: true })
+          const lines = remainder.split('\n')
+          remainder = lines.pop()!
+
+          for (const line of lines) {
+            if (!line) continue
+            try {
+              const msg = JSON.parse(line)
+              if (msg.type === 'match') {
+                const file = normalizeFile(msg.file)
+                let group = groups.get(file)
+                if (!group) {
+                  if (fileOrder.length >= MAX_FILES) {
+                    totalFilesCapped = true
+                    continue
+                  }
+                  group = []
+                  groups.set(file, group)
+                  fileOrder.push(file)
+                }
+                if (group.length < MAX_MATCHES_PER_FILE) {
+                  group.push({
+                    line: msg.line,
+                    column: msg.column,
+                    matchLength: msg.matchLength,
+                    text: msg.text,
+                  })
+                }
+              } else if (msg.type === 'done') {
+                const built = fileOrder.map(f => ({ file: f, matches: groups.get(f)! }))
+                setResults(built)
+                setExpandedFiles(new Set(fileOrder))
+                if (msg.matchCount === 0) {
+                  setStatus({ state: 'empty' })
+                } else {
+                  setStatus({
+                    state: 'results',
+                    matchCount: msg.matchCount,
+                    fileCount: msg.fileCount,
+                    durationMs: msg.durationMs,
+                    capped: msg.capped || totalFilesCapped,
+                  })
+                }
+              } else if (msg.type === 'error') {
+                setStatus({ state: 'error', message: msg.message })
+              }
+            } catch {
+              // skip unparseable
+            }
+          }
+
+          // Incremental render
+          if (groups.size > 0) {
+            const built = fileOrder.map(f => ({ file: f, matches: groups.get(f)! }))
+            setResults(built)
+            setExpandedFiles(prev => {
+              const next = new Set(prev)
+              for (const f of fileOrder) next.add(f)
+              return next
+            })
+          }
+        }
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        setStatus({ state: 'error', message: String(err) })
+      })
+  }, [projectName])
+
+  // Debounced search on query/options change
+  const scheduleSearch = useCallback((q: string, opts: SearchOptions) => {
+    clearTimeout(debounceRef.current)
+    if (q.length < MIN_QUERY_LEN) return
+    debounceRef.current = setTimeout(() => executeSearch(q, opts), DEBOUNCE_MS)
+  }, [executeSearch])
+
+  const handleQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value
+    setQuery(v)
+    scheduleSearch(v, options)
+  }, [options, scheduleSearch])
+
+  const handleSubmit = useCallback(() => {
+    clearTimeout(debounceRef.current)
+    if (query.trim()) executeSearch(query, options)
+  }, [query, options, executeSearch])
+
+  const toggleOption = useCallback((key: keyof Omit<SearchOptions, 'glob'>) => {
+    setOptions(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      scheduleSearch(query, next)
+      return next
+    })
+  }, [query, scheduleSearch])
+
+  const handleGlobChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const g = e.target.value
+    setOptions(prev => {
+      const next = { ...prev, glob: g }
+      scheduleSearch(query, next)
+      return next
+    })
+  }, [query, scheduleSearch])
+
+  const toggleFileExpand = useCallback((file: string) => {
+    setExpandedFiles(prev => {
+      const next = new Set(prev)
+      if (next.has(file)) next.delete(file)
+      else next.add(file)
+      return next
+    })
+  }, [])
+
+  const handleClear = useCallback(() => {
+    abortRef.current?.abort()
+    clearTimeout(debounceRef.current)
+    setQuery('')
+    setResults([])
+    setStatus({ state: 'idle' })
+    setFocusIndex(-1)
+    inputRef.current?.focus()
+  }, [])
+
+  // Keyboard navigation
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && document.activeElement === inputRef.current) {
+      e.preventDefault()
+      handleSubmit()
+      return
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      if (query) handleClear()
+      return
+    }
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const len = flatItems.length
+      if (len === 0) return
+      setFocusIndex(prev => {
+        if (e.key === 'ArrowDown') return prev < len - 1 ? prev + 1 : 0
+        return prev > 0 ? prev - 1 : len - 1
+      })
+      return
+    }
+
+    if (e.key === 'Enter' && focusIndex >= 0 && focusIndex < flatItems.length) {
+      e.preventDefault()
+      const item = flatItems[focusIndex]
+      if (item.kind === 'file') {
+        toggleFileExpand(item.file)
+      } else {
+        onOpenFileAtLine(item.file, item.line, item.column)
+      }
+    }
+  }, [handleSubmit, handleClear, query, flatItems, focusIndex, toggleFileExpand, onOpenFileAtLine])
+
+  // Scroll focused item into view
+  useEffect(() => {
+    if (focusIndex < 0 || !listRef.current) return
+    const el = listRef.current.querySelector(`[data-focus-idx="${focusIndex}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [focusIndex])
+
+  // Cleanup on unmount
+  useEffect(() => () => {
+    abortRef.current?.abort()
+    clearTimeout(debounceRef.current)
+  }, [])
+
+  return (
+    <div className="flex flex-col h-full text-[11px]" onKeyDown={handleKeyDown}>
+      {/* Search input */}
+      <div className="px-2 pt-1.5 pb-1">
+        <div className="flex items-center gap-1 rounded px-1.5 py-0.5" style={{ backgroundColor: SOLARIZED_LIGHT.inputBackground, border: `1px solid ${C.border}` }}>
+          <input
+            ref={inputRef}
+            type="text"
+            value={query}
+            onChange={handleQueryChange}
+            placeholder="Search..."
+            className="flex-1 min-w-0 bg-transparent border-none outline-none text-[11px]"
+            style={{ color: SOLARIZED_LIGHT.inputForeground }}
+            spellCheck={false}
+          />
+          {query && (
+            <button onClick={handleClear} className="text-[10px] px-0.5 cursor-pointer opacity-60 hover:opacity-100 leading-none" style={{ color: C.text }}>
+              x
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Option toggles */}
+      <div className="flex items-center gap-1 px-2 pb-1">
+        <ToggleBtn label="Aa" active={options.caseSensitive} title="Case Sensitive" onClick={() => toggleOption('caseSensitive')} />
+        <ToggleBtn label=".*" active={options.regex} title="Regular Expression" onClick={() => toggleOption('regex')} />
+        <ToggleBtn label="W" active={options.wholeWord} title="Whole Word" onClick={() => toggleOption('wholeWord')} />
+        <input
+          type="text"
+          value={options.glob}
+          onChange={handleGlobChange}
+          placeholder="*.ts"
+          className="flex-1 min-w-0 rounded px-1 py-0 text-[10px] bg-transparent border outline-none"
+          style={{ color: SOLARIZED_LIGHT.inputForeground, borderColor: C.border }}
+          spellCheck={false}
+        />
+      </div>
+
+      {/* Results list */}
+      <div ref={listRef} className="flex-1 overflow-y-auto min-h-0">
+        {results.map(group => (
+          <FileGroupView
+            key={group.file}
+            group={group}
+            expanded={expandedFiles.has(group.file)}
+            onToggle={() => toggleFileExpand(group.file)}
+            onMatchClick={(m) => onOpenFileAtLine(group.file, m.line, m.column)}
+            focusIndex={focusIndex}
+            flatItems={flatItems}
+          />
+        ))}
+      </div>
+
+      {/* Status bar */}
+      <StatusBar status={status} />
+    </div>
+  )
+})
+
+// --- Sub-components ---
+
+function ToggleBtn({ label, active, title, onClick }: { label: string; active: boolean; title: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="px-1 py-0 rounded text-[10px] font-mono cursor-pointer transition-colors"
+      style={{
+        backgroundColor: active ? `${SOLARIZED_LIGHT.blue}25` : 'transparent',
+        color: active ? SOLARIZED_LIGHT.blue : C.muted,
+        border: `1px solid ${active ? `${SOLARIZED_LIGHT.blue}50` : C.border}`,
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+function FileGroupView({ group, expanded, onToggle, onMatchClick, focusIndex, flatItems }: {
+  group: FileGroup
+  expanded: boolean
+  onToggle: () => void
+  onMatchClick: (m: SearchMatch) => void
+  focusIndex: number
+  flatItems: FlatItem[]
+}) {
+  const fileIdx = flatItems.findIndex(i => i.kind === 'file' && i.file === group.file)
+  const isFocused = fileIdx === focusIndex
+
+  return (
+    <div>
+      <div
+        data-focus-idx={fileIdx}
+        className="flex items-center gap-1 px-2 py-0.5 cursor-pointer select-none"
+        style={{
+          backgroundColor: isFocused ? C.hover : undefined,
+          color: C.textDark,
+        }}
+        onClick={onToggle}
+      >
+        <span className="text-[9px] w-3 text-center shrink-0">{expanded ? '▾' : '▸'}</span>
+        <span className="truncate flex-1 font-medium">{group.file}</span>
+        <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: C.muted }}>{group.matches.length}</span>
+      </div>
+      {expanded && group.matches.map((m, mi) => {
+        const matchIdx = flatItems.findIndex(i => i.kind === 'match' && i.file === group.file && i.line === m.line && i.column === m.column)
+        const isMatchFocused = matchIdx === focusIndex
+        return (
+          <MatchLine
+            key={`${m.line}:${m.column}:${mi}`}
+            match={m}
+            focused={isMatchFocused}
+            dataIdx={matchIdx}
+            onClick={() => onMatchClick(m)}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
+function MatchLine({ match, focused, dataIdx, onClick }: {
+  match: SearchMatch
+  focused: boolean
+  dataIdx: number
+  onClick: () => void
+}) {
+  const col0 = match.column - 1
+  const before = match.text.slice(0, col0)
+  const highlighted = match.text.slice(col0, col0 + match.matchLength)
+  const after = match.text.slice(col0 + match.matchLength)
+
+  return (
+    <div
+      data-focus-idx={dataIdx}
+      className="flex items-baseline gap-1 pl-6 pr-2 py-px cursor-pointer truncate"
+      style={{
+        backgroundColor: focused ? C.hover : undefined,
+        color: C.text,
+      }}
+      onClick={onClick}
+    >
+      <span className="shrink-0 text-[10px] w-7 text-right" style={{ color: C.muted }}>{match.line}</span>
+      <span className="truncate">
+        {before}
+        <span style={{ backgroundColor: `${SOLARIZED_LIGHT.yellow}30`, color: SOLARIZED_LIGHT.base02, fontWeight: 600 }}>{highlighted}</span>
+        {after}
+      </span>
+    </div>
+  )
+}
+
+function StatusBar({ status }: { status: SearchStatus }) {
+  if (status.state === 'idle') return null
+
+  let text: string
+  let color = C.muted
+
+  switch (status.state) {
+    case 'searching':
+      text = 'Searching...'
+      break
+    case 'results':
+      text = `${status.matchCount} results in ${status.fileCount} files (${status.durationMs}ms)`
+      if (status.capped) text += ' (capped)'
+      break
+    case 'empty':
+      text = 'No results'
+      break
+    case 'error':
+      text = status.message
+      color = SOLARIZED_LIGHT.red
+      break
+  }
+
+  return (
+    <div className="shrink-0 px-2 py-1 text-[10px] truncate" style={{ color, borderTop: `1px solid ${C.border}` }}>
+      {text}
+    </div>
+  )
+}
+
+// --- Helpers ---
+
+type FlatItem =
+  | { kind: 'file'; file: string }
+  | { kind: 'match'; file: string; line: number; column: number }
+
+function buildFlatItems(results: FileGroup[], expandedFiles: Set<string>): FlatItem[] {
+  const items: FlatItem[] = []
+  for (const group of results) {
+    items.push({ kind: 'file', file: group.file })
+    if (expandedFiles.has(group.file)) {
+      for (const m of group.matches) {
+        items.push({ kind: 'match', file: group.file, line: m.line, column: m.column })
+      }
+    }
+  }
+  return items
+}
+
+function normalizeFile(file: string): string {
+  return file.startsWith('./') ? file.slice(2) : file
+}

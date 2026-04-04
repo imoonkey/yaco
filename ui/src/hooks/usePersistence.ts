@@ -55,6 +55,7 @@ function loadPersistedState(project: string): PersistedState {
         showSessions: typeof pl.showSessions === 'boolean' ? pl.showSessions : DEFAULT_LAYOUT.showSessions,
         showChanges: typeof pl.showChanges === 'boolean' ? pl.showChanges : DEFAULT_LAYOUT.showChanges,
         showTasks: typeof pl.showTasks === 'boolean' ? pl.showTasks : DEFAULT_LAYOUT.showTasks,
+        showTextSearch: typeof pl.showTextSearch === 'boolean' ? pl.showTextSearch : DEFAULT_LAYOUT.showTextSearch,
         mdMode: pl.mdMode === 'edit' || pl.mdMode === 'preview' || pl.mdMode === 'split' ? pl.mdMode
           : typeof pl.previewMode === 'boolean' ? (pl.previewMode ? 'preview' : 'edit')
           : DEFAULT_LAYOUT.mdMode,

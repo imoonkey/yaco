@@ -20,6 +20,7 @@ export type WorkspaceLayout = {
   showSessions: boolean
   showChanges: boolean
   showTasks: boolean
+  showTextSearch: boolean
   mdMode: MdMode
   splitSize: number
   leftSize: number
@@ -63,6 +64,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showSessions: true,
   showChanges: true,
   showTasks: true,
+  showTextSearch: false,
   mdMode: 'edit',
   splitSize: 50,
   leftSize: 220,

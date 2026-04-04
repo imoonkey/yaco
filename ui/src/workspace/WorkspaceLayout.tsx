@@ -25,6 +25,7 @@ export type WorkspaceLayoutProps = {
   projectActions: ReactNode
   explorerActions: ReactNode
   explorerBody: ReactNode
+  searchBody: ReactNode
   gitStale: boolean
   changesBadge?: number
   changesBody: ReactNode
@@ -62,6 +63,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     isMobile, isTouch,
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
     projectName, projectListBody, projectActions, explorerActions, explorerBody,
+    searchBody,
     gitStale, changesBadge, changesBody, tasksBody,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
@@ -70,7 +72,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     onInteractionCapture, onFilesPaneFocus, searchOverlay,
   } = props
 
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks } = layout
+  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, showTextSearch } = layout
   const shouldShowEditorPane = hasOpenTabs || !showRightPanel
 
   return (
@@ -104,6 +106,9 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && <div className="flex-1 min-h-0 flex flex-col">{explorerBody}</div>}
+
+                <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
+                {showTextSearch && <div className="flex-1 min-h-0 flex flex-col">{searchBody}</div>}
 
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
                 {showChanges && <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">{changesBody}</div>}
@@ -142,6 +147,13 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 )}
 
                 {showExplorer && showChanges && <HResizeHandle onMouseDown={explorerSplit.onMouseDown} isDragging={explorerSplit.isDragging} />}
+
+                <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
+                {showTextSearch && (
+                  <div className="flex-1 overflow-hidden min-h-0">
+                    {searchBody}
+                  </div>
+                )}
 
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
                 {showChanges && (

@@ -73,6 +73,14 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
     }
   }, [showSidebar, showExplorer, actions, explorerRef, expandDir])
 
+  const openFileAtLine = useCallback(async (path: string, _line: number, _column: number) => {
+    await revealInExplorer(path)
+    actions.openFileTab(path)
+    setSelectedFilePath(path)
+    setFocusTarget('editor')
+    actions.setMobilePane('editor')
+  }, [actions, revealInExplorer, setSelectedFilePath, setFocusTarget])
+
   const handleSearchSelect = useCallback(async (entry: SearchEntry) => {
     if (entry.type === 'dir') {
       await revealInExplorer(entry.path + '/x')
@@ -129,6 +137,7 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
     openFile,
     openFileFromExplorer,
     openPreviewFromExplorer,
+    openFileAtLine,
     handleExpandFolder,
     revealInExplorer,
     handleSearchSelect,

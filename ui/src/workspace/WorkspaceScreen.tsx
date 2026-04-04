@@ -20,6 +20,7 @@ import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { WorkspaceLayout } from './WorkspaceLayout'
+import { WorkspaceTextSearch } from './WorkspaceTextSearch'
 import type { Project } from '../types'
 import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts } from '../hooks/useSessionUnreadState'
 import { TaskGraphScreen } from '../tasks/TaskGraphScreen'
@@ -95,7 +96,7 @@ export function Workspace({
   const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, mdMode } = layout
+  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, showTextSearch, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
@@ -187,9 +188,19 @@ export function Workspace({
     return true
   }, [closeActiveTab, sessionsMgr.detachActiveSession, focusTarget, showSearch])
 
+  const handleToggleTextSearch = useCallback(() => {
+    actions.updateLayout({ showTextSearch: !showTextSearch, showSidebar: true })
+  }, [actions, showTextSearch])
+
+  const handleOpenFileAtLine = useCallback((path: string, line: number, _column: number) => {
+    nav.openFileAtLine(path, line, _column)
+    setJumpRequest({ key: Date.now(), path, line })
+  }, [nav])
+
   const { lockCloseShortcut } = useWorkspaceKeyboard({
     actions, activeSession, orderedSessions: sessionsMgr.orderedSessions,
     isMobile, showSidebar, showRightPanel, showSearch,
+    showTextSearch,
     setShowSearch: (fn) => setShowSearch(fn),
     focusTarget, setFocusTarget,
     selectedFilePath, canToggleMdMode: !!(activeFilePath?.endsWith('.md')),
@@ -199,6 +210,7 @@ export function Workspace({
     handleEditorVoiceStart: voiceBridge.handleEditorVoiceStart,
     handleTerminalVoiceStart: voiceBridge.handleTerminalVoiceStart,
     voice,
+    onToggleTextSearch: handleToggleTextSearch,
   })
 
   // --- Viewport handlers ---
@@ -230,7 +242,7 @@ export function Workspace({
 
   const projectSplit = useResize(layout.projectSize, 40, 300, 'down')
   const projectHeight = projectSplit.size
-  const sidebarHeaderCount = 4
+  const sidebarHeaderCount = 5 // Projects, Explorer, Search, Changes, Tasks
   const visibleHandleCount = (showExplorer ? 1 : 0) + (showExplorer && showChanges ? 1 : 0)
   const availableSectionHeight = Math.max(
     0,
@@ -362,6 +374,13 @@ export function Workspace({
       onFileDeleted={handleFileDeleted}
       patchTree={patchTree}
       refreshTree={refreshTree}
+    />
+  )
+
+  const searchBody = (
+    <WorkspaceTextSearch
+      projectName={projectName}
+      onOpenFileAtLine={handleOpenFileAtLine}
     />
   )
 
@@ -566,6 +585,7 @@ export function Workspace({
       projectActions={projectActions}
       explorerActions={explorerActions}
       explorerBody={explorerBody}
+      searchBody={searchBody}
       gitStale={gitStale}
       changesBadge={changes.length || undefined}
       changesBody={changesBody}
