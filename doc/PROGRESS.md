@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-04-04: Dynamic syntax highlighting for 100+ languages
+
+**What changed:**
+- Editor now async-loads language support for any file type via `@codemirror/language-data` (Kotlin, Go, Rust, Java, C/C++, SQL, YAML, etc.)
+- Uses CodeMirror `Compartment` pattern: static languages (JS/TS/JSON/Python/Markdown) load instantly, all others resolve via `LanguageDescription.matchFilename()` and hot-swap into the editor
+
+**Why:** Needed Kotlin (`.kt`) highlighting; rather than adding one language at a time, leveraged the existing `@codemirror/language-data` dependency to support 100+ languages with zero new packages.
+
+**Key files:** `ui/src/components/Editor.tsx`
+**Verification:** `tsc --noEmit` clean, dev server loads without blank page
+**Commit:** `5abd272`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-04: VS Code Seti file icons + blank page fix
 
 **What changed:**

@@ -17,7 +17,14 @@ Multi-tab editor, dirty state, draft model, markdown preview, and diff view.
 
 ## Related Code
 
-`ui/src/components/Workspace.tsx`, `ui/src/components/Editor.tsx`
+`ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`
+
+## Syntax Highlighting
+
+The editor uses CodeMirror 6 with two-tier language loading:
+
+1. **Static** — JS/TS/JSON/Python/Markdown have dedicated `@codemirror/lang-*` imports for instant highlighting
+2. **Dynamic** — All other file types (Kotlin, Go, Rust, Java, C/C++, SQL, YAML, etc.) are resolved via `LanguageDescription.matchFilename()` from `@codemirror/language-data` and async-loaded into a `Compartment`. No new packages needed — `language-data` bundles 100+ language descriptions that load on demand.
 
 ## Tab Bar
 
