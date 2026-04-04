@@ -144,8 +144,10 @@ Virtualized file tree using react-arborist. Wrapped in `React.memo` to prevent r
 - Tree rendering with file-type icons and git badges
 - Gitignored entries rendered dimmed (muted color + 50% icon opacity)
 - Drag-and-drop file/folder move
-- Context menu (right-click on desktop, long-press on mobile): New File, New Folder, Rename, Delete, Copy Path
-- Inline rename (F2)
+- Context menu (right-click on desktop, long-press on mobile): New File, New Folder, Rename, Delete, Copy Path, Reveal in Finder
+- Inline rename (F2) with stem-only selection (excludes file extension)
+- Optimistic mutations: tree is patched locally before server call completes, reverted on failure
+- Tab retargeting on rename/move: updates openTabs, activeTab, previewTab, file state, selectedFilePath
 - Selection sync with active editor tab
 - Preview tab support (single-click opens preview, double-click pins)
 

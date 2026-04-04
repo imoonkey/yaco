@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react'
+import { createContext, useContext, useRef, useEffect } from 'react'
 import type { NodeRendererProps } from 'react-arborist'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { FileTypeIcon, FolderIcon, GIT_COLORS } from './fileExplorerIcons'
@@ -36,11 +36,27 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
 
   if (node.isEditing) {
     const isNew = d.path === pendingNewId
+    const inputRef = useRef<HTMLInputElement>(null)
+
+    // Select stem only on rename (not new file creation)
+    useEffect(() => {
+      const input = inputRef.current
+      if (!input || isNew) return
+      const name = d.name
+      const dotIndex = name.lastIndexOf('.')
+      if (dotIndex > 0 && d.type === 'file') {
+        input.setSelectionRange(0, dotIndex)
+      } else {
+        input.select()
+      }
+    }, [])
+
     return (
       <div style={style} ref={dragHandle}>
         <div className="flex items-center gap-1 h-full px-1">
           {d.type === 'dir' ? <FolderIcon open={node.isOpen} /> : <FileTypeIcon name={d.name} />}
           <input
+            ref={inputRef}
             autoFocus
             className="flex-1 text-[12px] bg-transparent outline-none border-b min-w-0"
             style={{ color: C.text, borderColor: C.accent }}

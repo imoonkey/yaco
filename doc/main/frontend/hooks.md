@@ -24,8 +24,8 @@ Per-project workspace state management. Thin wiring layer that composes three fo
 
 ### Decomposed into:
 
-- **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic
-- **`useFileState.ts`** (358 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling
+- **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic. Includes `retargetPaths(oldPath, newPath)` to remap tab IDs on rename/move, and `closeTabsUnder(path)` to close tabs under a deleted path.
+- **`useFileState.ts`** (358 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling. Includes `retargetFile(oldPath, newPath)` to remap file state keys, and `removeFilesUnder(path)` to clean up file state on delete.
 - **`usePersistence.ts`** (190 lines) — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush
 - **`workspaceTypes.ts`** (116 lines) — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`), constants (`TASKS_TAB_ID`), tab guards (`isFileTab`, `isDiffTab`, `isTasksTab`), localStorage key builders
 
@@ -89,9 +89,10 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 All data hooks return `{ data, error, refresh }`.
 
 `useFileTree` uses lazy loading (VS Code pattern):
-- Returns `{ data, error, refresh, expandDir }`
+- Returns `{ data, error, refresh, expandDir, patchTree }`
 - Initial load fetches only root-level entries (dirs have `children: []`)
 - `expandDir(path)` fetches one directory's children on demand via `/api/files/:project/children?dir=path`
+- `patchTree(fn)` exposes the tree setter for optimistic mutations from FileExplorer
 - Tracks loaded directories in a `Set`; skips re-fetch for already-loaded dirs
 - SSE `filetree` refresh re-fetches root + all expanded dirs in batches of 6 (AbortController cancels previous cycle)
 - Focus/visibility-triggered refresh
@@ -114,6 +115,7 @@ Standalone async functions (not hooks):
 - `moveFile(project, sourcePath, destDir)`
 - `renameFile(project, oldPath, newPath)`
 - `deleteFile(project, path)`
+- `revealInFinder(project, path)`
 - `fetchGitDiff(project, path)`
 
 ## useSSE.ts (99 lines)

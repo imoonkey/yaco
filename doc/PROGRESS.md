@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-04-03: Optimistic explorer mutations with tab retargeting
+
+**What changed:**
+- File explorer CRUD operations (rename, move, delete) now apply optimistic local tree patches before the server call completes, with automatic revert on failure
+- On rename/move: openTabs, activeTab, previewTab, file state (useFileState), and selectedFilePath are retargeted to the new path. Directory renames retarget all descendant paths. Diff tabs are also retargeted.
+- On delete: affected tabs are closed immediately and file state entries removed
+- Inline rename now selects only the stem (filename without extension) — directories select the full name
+- Inline rename validates names: rejects no-ops, empty names, `..`, and `/`
+- Added "Reveal in Finder" context menu item with `POST /api/files/:project/reveal` server endpoint (`open -R` on macOS, `xdg-open` on Linux)
+- New hooks: `useLayoutState.retargetPaths()`, `useLayoutState.closeTabsUnder()`, `useFileState.retargetFile()`, `useFileState.removeFilesUnder()`
+- `useFileTree` now exposes `patchTree` for optimistic tree mutations from FileExplorer
+
+**Why:**
+- File operations previously waited for SSE refresh before the tree updated, causing a visible delay
+- Renaming or moving a file left stale tabs pointing at the old path
+- Deleting a file left orphaned tabs open
+
+**Key files:** `ui/src/components/FileExplorer.tsx`, `ui/src/components/fileExplorerNode.tsx`, `ui/src/hooks/useLayoutState.ts`, `ui/src/hooks/useFileState.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/hooks/useApi.ts`, `server/src/routes/files.ts`
+**Verification:** `npm run build` passed (pre-existing type errors in test files and parseDiff.ts unchanged), acceptance criteria verified
+**Commit:** pending
+**Next:** Explorer collapse-all, file search cache+ranking, cross-file text search UI
+**Blockers:** None
+
 ## 2026-04-03: Per-file-type icons in explorer and tab bar
 
 **What changed:**

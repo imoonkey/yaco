@@ -1,5 +1,6 @@
 import { existsSync } from 'fs'
 import { readdir, stat, readFile, writeFile, mkdir, realpath, rename as fsRename, rm } from 'fs/promises'
+import { execFile } from 'child_process'
 import { join, relative, dirname, normalize, basename } from 'path'
 import { Hono } from 'hono'
 import { getProjectGitignore } from '../lib/gitignore'
@@ -312,6 +313,20 @@ app.post('/:project/move', withProject, async (c) => {
 
   await fsRename(resolvedSource.path, absTarget)
   return c.json({ newPath: targetRel })
+})
+
+app.post('/:project/reveal', withProject, async (c) => {
+  const proj = c.var.project
+  const { path: filePath } = await c.req.json<{ path: string }>()
+  if (!filePath) return c.json({ error: 'path required' }, 400)
+
+  const result = await resolveAndValidate(proj.path, filePath)
+  if ('error' in result) return fail(c, result.error === 'not_found' ? 404 : 403, result.error === 'not_found' ? 'File not found' : 'Path traversal denied')
+
+  const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open'
+  const args = process.platform === 'darwin' ? ['-R', result.path] : [dirname(result.path)]
+  execFile(cmd, args, (err) => { if (err) console.warn('[files] reveal failed:', err) })
+  return c.json({})
 })
 
 app.post('/:project/delete', withProject, async (c) => {

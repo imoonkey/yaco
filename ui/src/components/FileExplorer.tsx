@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, memo } from 'react'
 import { Tree } from 'react-arborist'
 import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
-import { moveFile, renameFile, deleteFile, createFile, createDir } from '../hooks/useApi'
+import { moveFile, renameFile, deleteFile, createFile, createDir, revealInFinder } from '../hooks/useApi'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
 import type { FileNode } from '../types'
@@ -18,6 +18,77 @@ function insertPendingNode(nodes: FileNode[], pending: FileNode): FileNode[] {
     }
     return n.children ? { ...n, children: insertPendingNode(n.children, pending) } : n
   })
+}
+
+/** Rename a node in the tree (update path, name, and children paths recursively) */
+function renameNodeInTree(nodes: FileNode[], oldPath: string, newPath: string): FileNode[] {
+  const newName = newPath.split('/').pop() || ''
+  return nodes.map(n => {
+    if (n.path === oldPath) {
+      const updated: FileNode = { ...n, path: newPath, name: newName }
+      if (n.children) {
+        updated.children = repathChildren(n.children, oldPath, newPath)
+      }
+      return updated
+    }
+    if (n.children) {
+      return { ...n, children: renameNodeInTree(n.children, oldPath, newPath) }
+    }
+    return n
+  })
+}
+
+/** Recursively update path prefixes for all children under a renamed dir */
+function repathChildren(nodes: FileNode[], oldPrefix: string, newPrefix: string): FileNode[] {
+  return nodes.map(n => {
+    const newNodePath = newPrefix + n.path.slice(oldPrefix.length)
+    const updated: FileNode = { ...n, path: newNodePath }
+    if (n.children) {
+      updated.children = repathChildren(n.children, oldPrefix, newPrefix)
+    }
+    return updated
+  })
+}
+
+/** Remove a node from the tree by path */
+function removeNodeFromTree(nodes: FileNode[], path: string): FileNode[] {
+  return nodes.filter(n => n.path !== path).map(n => {
+    if (n.children) return { ...n, children: removeNodeFromTree(n.children, path) }
+    return n
+  })
+}
+
+/** Move a node from one location to another in the tree */
+function moveNodeInTree(nodes: FileNode[], sourcePath: string, destDir: string): { tree: FileNode[]; newPath: string } | null {
+  // Find and extract the node
+  let sourceNode: FileNode | null = null
+  function findAndRemove(ns: FileNode[]): FileNode[] {
+    return ns.filter(n => {
+      if (n.path === sourcePath) { sourceNode = n; return false }
+      return true
+    }).map(n => n.children ? { ...n, children: findAndRemove(n.children) } : n)
+  }
+  const trimmed = findAndRemove(nodes)
+  if (!sourceNode) return null
+
+  const name = (sourceNode as FileNode).name
+  const newPath = destDir ? `${destDir}/${name}` : name
+  const movedNode: FileNode = { ...(sourceNode as FileNode), path: newPath }
+  if (movedNode.children) {
+    movedNode.children = repathChildren(movedNode.children, sourcePath, newPath)
+  }
+
+  // Insert into destination
+  if (!destDir) return { tree: [...trimmed, movedNode], newPath }
+  function insertInto(ns: FileNode[]): FileNode[] {
+    return ns.map(n => {
+      if (n.path === destDir && n.type === 'dir') {
+        return { ...n, children: [...(n.children || []), movedNode] }
+      }
+      return n.children ? { ...n, children: insertInto(n.children) } : n
+    })
+  }
+  return { tree: insertInto(trimmed), newPath }
 }
 
 // --- FileExplorer component ---
@@ -38,10 +109,14 @@ interface FileExplorerProps {
   onExpandDir?: (path: string) => void
   onFocusExplorer: () => void
   onContextFolder?: (path: string) => void
+  onFileRenamed?: (oldPath: string, newPath: string) => void
+  onFileDeleted?: (path: string) => void
+  patchTree?: (fn: (prev: FileNode[] | null) => FileNode[] | null) => void
+  refreshTree?: () => void
 }
 
 const FileExplorerInner = forwardRef<FileExplorerHandle, FileExplorerProps>(
-function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder }, ref) {
+function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder, onFileRenamed, onFileDeleted, patchTree, refreshTree }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -142,23 +217,45 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     menu.close()
     const name = path.split('/').pop()
     if (!confirm(`Delete "${name}"?`)) return
+    // Optimistic: remove from tree and close tabs
+    patchTree?.(prev => prev ? removeNodeFromTree(prev, path) : prev)
+    onFileDeleted?.(path)
     try { await deleteFile(projectName, path) }
-    catch (err) { console.error('Failed to delete:', err) }
-  }, [projectName, menu])
+    catch (err) {
+      console.error('Failed to delete:', err)
+      refreshTree?.()
+    }
+  }, [projectName, menu, patchTree, refreshTree, onFileDeleted])
 
   const handleCopyPath = useCallback((path: string) => {
     menu.close()
     void writeTextToClipboard(path)
   }, [menu])
 
+  const handleReveal = useCallback((path: string) => {
+    menu.close()
+    void revealInFinder(projectName, path)
+  }, [projectName, menu])
+
   // react-arborist callbacks
   const onMove = useCallback(async ({ dragIds, parentId }: { dragIds: string[]; parentId: string | null; index: number }) => {
     const sourcePath = dragIds[0]
     if (!sourcePath) return
     const destDir = parentId || ''
+    // Optimistic: move node in tree
+    patchTree?.(prev => {
+      if (!prev) return prev
+      const result = moveNodeInTree(prev, sourcePath, destDir)
+      return result ? result.tree : prev
+    })
+    const expectedNewPath = destDir ? `${destDir}/${sourcePath.split('/').pop()}` : sourcePath.split('/').pop() || sourcePath
+    onFileRenamed?.(sourcePath, expectedNewPath)
     try { await moveFile(projectName, sourcePath, destDir) }
-    catch (err) { console.error('Failed to move:', err) }
-  }, [projectName])
+    catch (err) {
+      console.error('Failed to move:', err)
+      refreshTree?.()
+    }
+  }, [projectName, patchTree, refreshTree, onFileRenamed])
 
   const onCreate = useCallback(({ parentId, type }: { parentId: string | null; type: 'internal' | 'leaf' }) => {
     // Open parent chain so the pending node will be visible
@@ -199,13 +296,21 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
       } catch (err) { console.error('Failed to create:', err) }
       return
     }
+    // Validate rename
+    if (!name.trim() || name.includes('..') || name.includes('/')) return
     const oldPath = id
     const parent = parentOf(oldPath)
     const newPath = parent ? `${parent}/${name}` : name
     if (newPath === oldPath) return
+    // Optimistic: rename in tree
+    patchTree?.(prev => prev ? renameNodeInTree(prev, oldPath, newPath) : prev)
+    onFileRenamed?.(oldPath, newPath)
     try { await renameFile(projectName, oldPath, newPath) }
-    catch (err) { console.error('Failed to rename:', err) }
-  }, [projectName, onSelectFile])
+    catch (err) {
+      console.error('Failed to rename:', err)
+      refreshTree?.()
+    }
+  }, [projectName, onSelectFile, patchTree, refreshTree, onFileRenamed])
 
   const treeData = useMemo(() => {
     if (!tree) return null
@@ -294,6 +399,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
           <MenuItem label="Delete" onClick={() => handleDelete(menuTarget.path)} />
           <MenuDivider />
           <MenuItem label="Copy Path" onClick={() => handleCopyPath(menuTarget.path)} />
+          <MenuItem label="Reveal in Finder" onClick={() => handleReveal(menuTarget.path)} />
         </Menu>
       )}
     </ExplorerContext.Provider>

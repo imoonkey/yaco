@@ -65,6 +65,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | POST | `/api/files/:project/rename` | Rename file/folder (`{ oldPath, newPath }`) |
 | POST | `/api/files/:project/move` | Move to directory (`{ sourcePath, destDir }`) |
 | POST | `/api/files/:project/delete` | Delete file/folder recursively (`{ path }`) |
+| POST | `/api/files/:project/reveal` | Reveal file in OS file manager (`{ path }`) — `open -R` on macOS, `xdg-open` on Linux |
 
 ### Git
 

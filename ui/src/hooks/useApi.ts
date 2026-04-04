@@ -197,7 +197,7 @@ export function useFileTree(projectName: string | null) {
     }
   }, [refreshExpanded])
 
-  return { data, error, refresh: refreshExpanded, expandDir }
+  return { data, error, refresh: refreshExpanded, expandDir, patchTree: setData }
 }
 
 /** Recursively replace children of a dir node at the given path */
@@ -291,6 +291,10 @@ export async function renameFile(projectName: string, oldPath: string, newPath: 
 
 export async function deleteFile(projectName: string, path: string): Promise<void> {
   await postJson(`/files/${encodeURIComponent(projectName)}/delete`, { path })
+}
+
+export async function revealInFinder(projectName: string, path: string): Promise<void> {
+  await postJson(`/files/${encodeURIComponent(projectName)}/reveal`, { path })
 }
 
 // --- Browse ---

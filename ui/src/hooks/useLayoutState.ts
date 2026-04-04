@@ -3,6 +3,7 @@ import {
   type WorkspaceLayout,
   type PersistedState,
   isFileTab,
+  isDiffTab,
   TASKS_TAB_ID,
 } from './workspaceTypes'
 import type { PreviewLifecycle } from './useFileState'
@@ -130,6 +131,48 @@ export function useLayoutState(
     setLayout(prev => ({ ...prev, ...partial }))
   }, [])
 
+  /** Retarget tabs when a file or directory is renamed/moved */
+  const retargetPaths = useCallback((oldPath: string, newPath: string) => {
+    const remap = (tab: string): string => {
+      // Exact file match
+      if (tab === oldPath) return newPath
+      // Diff tab for exact file
+      if (tab === `diff:${oldPath}`) return `diff:${newPath}`
+      // Directory prefix match (oldPath is a dir)
+      if (isFileTab(tab) && tab.startsWith(oldPath + '/')) {
+        return newPath + tab.slice(oldPath.length)
+      }
+      if (isDiffTab(tab) && tab.slice(5).startsWith(oldPath + '/')) {
+        return 'diff:' + newPath + tab.slice(5 + oldPath.length)
+      }
+      return tab
+    }
+    setOpenTabs(tabs => {
+      const next = tabs.map(remap)
+      return next.some((t, i) => t !== tabs[i]) ? next : tabs
+    })
+    setActiveTab(prev => prev ? remap(prev) : prev)
+    setPreviewTab(prev => prev ? remap(prev) : prev)
+  }, [])
+
+  /** Close all tabs under a path (file or directory prefix) */
+  const closeTabsUnder = useCallback((path: string) => {
+    const matches = (tab: string): boolean => {
+      if (tab === path) return true
+      if (tab === `diff:${path}`) return true
+      if (isFileTab(tab) && tab.startsWith(path + '/')) return true
+      if (isDiffTab(tab) && tab.slice(5).startsWith(path + '/')) return true
+      return false
+    }
+    setOpenTabs(tabs => {
+      const next = tabs.filter(t => !matches(t))
+      if (next.length === tabs.length) return tabs
+      setActiveTab(prev => prev && matches(prev) ? (next[0] ?? null) : prev)
+      setPreviewTab(prev => prev && matches(prev) ? null : prev)
+      return next
+    })
+  }, [])
+
   return {
     openTabs,
     activeTab,
@@ -151,5 +194,7 @@ export function useLayoutState(
     setMobilePane,
     updateLayout,
     setPinnedSessions,
+    retargetPaths,
+    closeTabsUnder,
   }
 }

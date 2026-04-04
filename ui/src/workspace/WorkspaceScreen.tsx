@@ -93,7 +93,7 @@ export function Workspace({
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
   const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, mdMode } = layout
-  const { data: fileTree, expandDir } = useFileTree(projectName)
+  const { data: fileTree, expandDir, patchTree, refresh: refreshTree } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
 
@@ -285,6 +285,23 @@ export function Workspace({
     explorerRef.current?.createFolder(contextFolder || undefined)
   }, [contextFolder])
 
+  const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
+    actions.retargetPaths(oldPath, newPath)
+    setSelectedFilePath(prev => {
+      if (prev === oldPath) return newPath
+      if (prev && prev.startsWith(oldPath + '/')) return newPath + prev.slice(oldPath.length)
+      return prev
+    })
+  }, [actions])
+
+  const handleFileDeleted = useCallback((path: string) => {
+    actions.onDeletePath(path)
+    setSelectedFilePath(prev => {
+      if (prev === path || (prev && prev.startsWith(path + '/'))) return null
+      return prev
+    })
+  }, [actions])
+
   const explorerActions = (
     <div className="flex gap-0.5">
       <button onClick={handleNewFile} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
@@ -328,6 +345,10 @@ export function Workspace({
       onExpandDir={expandDir}
       onFocusExplorer={() => setFocusTarget('explorer')}
       onContextFolder={setContextFolder}
+      onFileRenamed={handleFileRenamed}
+      onFileDeleted={handleFileDeleted}
+      patchTree={patchTree}
+      refreshTree={refreshTree}
     />
   )
 

@@ -18,7 +18,7 @@ export function useWorkspaceState(projectName: string) {
   const {
     files, filesRef, dirtyTabs, conflictTabs,
     previewLifecycle,
-    fetchForTab, removeFile,
+    fetchForTab, removeFile, retargetFile, removeFilesUnder,
     updateDraft, updateViewport,
     save, forceSave, acceptDisk,
   } = useFileState(projectName, initialDrafts, initialLayout.openTabs, openTabsRef)
@@ -108,6 +108,18 @@ export function useWorkspaceState(projectName: string) {
     acceptDisk(path)
   }, [acceptDisk])
 
+  /** Retarget tabs and file state when a file/dir is renamed or moved */
+  const retargetPaths = useCallback((oldPath: string, newPath: string) => {
+    ls.retargetPaths(oldPath, newPath)
+    retargetFile(oldPath, newPath)
+  }, [ls.retargetPaths, retargetFile])
+
+  /** Close tabs and remove file state when a file/dir is deleted */
+  const onDeletePath = useCallback((path: string) => {
+    ls.closeTabsUnder(path)
+    removeFilesUnder(path)
+  }, [ls.closeTabsUnder, removeFilesUnder])
+
   const actions = useMemo(() => ({
     openFileTab,
     openPreviewTab,
@@ -126,7 +138,9 @@ export function useWorkspaceState(projectName: string) {
     forceSave: wrappedForceSave,
     acceptDisk: wrappedAcceptDisk,
     setPinnedSessions: ls.setPinnedSessions,
-  }), [openFileTab, openPreviewTab, ls.openDiffTab, ls.openPreviewDiffTab, ls.openTasksTab, ls.toggleTasksTab, closeTab, ls.setActiveTab, ls.setActiveSession, ls.setMobilePane, ls.updateLayout, updateFileDraft, updateFileViewport, saveFile, wrappedForceSave, wrappedAcceptDisk, ls.setPinnedSessions])
+    retargetPaths,
+    onDeletePath,
+  }), [openFileTab, openPreviewTab, ls.openDiffTab, ls.openPreviewDiffTab, ls.openTasksTab, ls.toggleTasksTab, closeTab, ls.setActiveTab, ls.setActiveSession, ls.setMobilePane, ls.updateLayout, updateFileDraft, updateFileViewport, saveFile, wrappedForceSave, wrappedAcceptDisk, ls.setPinnedSessions, retargetPaths, onDeletePath])
 
   return {
     openTabs: ls.openTabs,

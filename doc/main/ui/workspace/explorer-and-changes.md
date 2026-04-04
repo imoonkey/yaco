@@ -63,6 +63,7 @@ Right-click on any tree node shows:
 | Rename | Enters inline rename mode on the node |
 | Delete | Deletes the file or folder recursively |
 | Copy Path | Copies project-relative path to clipboard |
+| Reveal in Finder | Opens the containing folder in OS file manager (macOS: Finder, Linux: xdg-open) |
 
 ## Header Actions
 
@@ -82,15 +83,24 @@ Explorer header has two buttons:
 | Rename | Context menu | `POST /api/files/:project/rename` |
 | Move | Drag and drop | `POST /api/files/:project/move` |
 | Delete | Context menu | `POST /api/files/:project/delete` |
+| Reveal | Context menu | `POST /api/files/:project/reveal` |
 
-All operations trigger file tree refresh via SSE `filetree` channel. **Important:** parent directories must be registered via `useFileTree.expandDir()` (not just react-arborist's internal `open()`) for SSE refresh to re-fetch their children. `onCreate` and `handleExpandFolder` both call `expandDir` for this reason.
+All mutations are **optimistic**: the tree is patched locally before the server call completes. On failure, the tree is refreshed from the server.
+
+**Tab retargeting (rename/move):** When a file or directory is renamed or moved, all affected `openTabs`, `activeTab`, `previewTab`, file state entries (in `useFileState`), and `selectedFilePath` are updated to reflect the new path. Diff tabs (`diff:<path>`) are also retargeted. Directory renames retarget all descendant paths.
+
+**Delete cleanup:** When a file or directory is deleted, all tabs under that path are closed immediately, and their file state entries are removed.
+
+All operations also trigger file tree refresh via SSE `filetree` channel. **Important:** parent directories must be registered via `useFileTree.expandDir()` (not just react-arborist's internal `open()`) for SSE refresh to re-fetch their children. `onCreate` and `handleExpandFolder` both call `expandDir` for this reason.
 
 ## Inline Rename
 
 1. Right-click file → context menu → Rename
 2. react-arborist shows an input field over the node name
-3. Enter confirms, Escape cancels
-4. On confirm: `POST /api/files/:project/rename` called
+3. For files, only the stem (name without extension) is pre-selected; for directories, the full name is selected
+4. Enter confirms, Escape cancels
+5. No-ops are rejected (new name same as old name, empty, contains `..` or `/`)
+6. On confirm: tree is optimistically updated, `POST /api/files/:project/rename` called, tabs retargeted
 
 ## Drag and Drop
 

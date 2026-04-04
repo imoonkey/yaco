@@ -225,6 +225,42 @@ export function useFileState(
     })
   }, [])
 
+  /** Retarget file state from oldPath to newPath (rename/move) */
+  const retargetFile = useCallback((oldPath: string, newPath: string) => {
+    setFiles(prev => {
+      const next = { ...prev }
+      let changed = false
+      for (const key of Object.keys(prev)) {
+        if (key === oldPath) {
+          next[newPath] = prev[key]
+          delete next[key]
+          changed = true
+        } else if (key.startsWith(oldPath + '/')) {
+          const newKey = newPath + key.slice(oldPath.length)
+          next[newKey] = prev[key]
+          delete next[key]
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [])
+
+  /** Remove file state for a path and all children (delete) */
+  const removeFilesUnder = useCallback((path: string) => {
+    setFiles(prev => {
+      const next = { ...prev }
+      let changed = false
+      for (const key of Object.keys(prev)) {
+        if (key === path || key.startsWith(path + '/')) {
+          delete next[key]
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [])
+
   const updateDraft = useCallback((path: string, draft: string) => {
     setFiles(prev => {
       const existing = prev[path]
@@ -349,6 +385,8 @@ export function useFileState(
     previewLifecycle,
     fetchForTab,
     removeFile,
+    retargetFile,
+    removeFilesUnder,
     updateDraft,
     updateViewport,
     save,
