@@ -3,33 +3,10 @@ import Groq from 'groq-sdk'
 import { toFile } from 'groq-sdk/uploads'
 import { VOICE_MAX_UPLOAD_BYTES } from '../lib/constants'
 import { fail } from '../lib/response'
+import { buildWhisperPrompt, buildFormatterPrompt } from '../lib/voice-prompts'
+import { resolveFormatterModels, formatWithFallback } from '../lib/voice-formatter'
 
 const DEFAULT_STT_MODEL = 'whisper-large-v3-turbo'
-const DEFAULT_FORMATTER_MODEL = 'llama-3.1-8b-instant'
-
-const TERMINAL_SYSTEM_PROMPT = `You are a speech-to-text cleanup assistant for terminal/CLI input. The user may speak in any language or mix languages freely.
-
-Rules:
-- Convert spoken flag patterns to literal CLI syntax: "dash dash help" → "--help", "dash s b" → "-sb"
-- Convert spoken path patterns: "tilde slash" → "~/", "dot slash" → "./"
-- Convert spoken operators: "pipe" → "|", "greater than" → ">", "less than" → "<", "ampersand" → "&"
-- Preserve exact command names, filenames, and arguments
-- Preserve the original language of non-command text — do not translate
-- Do not add explanations or commentary
-- Do not add a trailing newline
-- Return ONLY the cleaned command text`
-
-const EDITOR_SYSTEM_PROMPT = `You are a speech-to-text cleanup assistant for code editor input. The user may speak in any language or mix languages freely.
-
-Rules:
-- Fix punctuation and capitalization for prose in whatever language it is
-- Preserve code tokens, variable names, filenames, and technical terms exactly
-- Convert spoken punctuation: "open paren close paren" → "()", "backtick" → "\`"
-- Convert spoken code patterns when confidence is high: "promise of string" → "Promise<string>"
-- Preserve the original language — do not translate between languages
-- Do not add explanations or commentary
-- Do not change the meaning or intent of the text
-- Return ONLY the cleaned text`
 
 function getGroqClient(): Groq | null {
   const apiKey = process.env.GROQ_API_KEY
@@ -39,14 +16,6 @@ function getGroqClient(): Groq | null {
 
 function getSttModel(): string {
   return process.env.GROQ_TRANSCRIPTION_MODEL || DEFAULT_STT_MODEL
-}
-
-function getFormatterModel(): string {
-  return process.env.GROQ_FORMATTER_MODEL || DEFAULT_FORMATTER_MODEL
-}
-
-function getFormatterPrompt(surface: string): string {
-  return surface === 'terminal' ? TERMINAL_SYSTEM_PROMPT : EDITOR_SYSTEM_PROMPT
 }
 
 /** Map Groq SDK errors to stable HTTP responses */
@@ -73,7 +42,7 @@ app.get('/status', (c) => {
   return c.json({
     enabled: true,
     sttModel: getSttModel(),
-    formatterModel: getFormatterModel(),
+    formatterModels: resolveFormatterModels(),
     maxUploadBytes: VOICE_MAX_UPLOAD_BYTES,
   })
 })
@@ -96,6 +65,7 @@ app.post('/compose', async (c) => {
   const audio = formData.get('audio')
   const surface = formData.get('surface') as string | null
   const language = formData.get('language') as string | null
+  const filePath = formData.get('filePath') as string | null
 
   // Validate required fields
   if (!audio || !(audio instanceof File)) {
@@ -122,6 +92,7 @@ app.post('/compose', async (c) => {
     const transcription = await groq.audio.transcriptions.create({
       model: getSttModel(),
       file,
+      initial_prompt: buildWhisperPrompt(),
       ...(language ? { language } : {}),
     })
     rawText = transcription.text
@@ -135,38 +106,17 @@ app.post('/compose', async (c) => {
     return c.json({ rawText: '', displayText: '', formattingStatus: 'empty' })
   }
 
-  // Formatter LLM
-  let displayText: string
-  let formattingStatus: string
-  let warning: string | undefined
-  try {
-    const completion = await groq.chat.completions.create({
-      model: getFormatterModel(),
-      messages: [
-        { role: 'system', content: getFormatterPrompt(surface) },
-        { role: 'user', content: rawText },
-      ],
-      temperature: 0.1,
-      max_tokens: 2048,
-    })
-    const formatted = completion.choices[0]?.message?.content
-    if (formatted && formatted.trim()) {
-      displayText = formatted.trim()
-      formattingStatus = 'formatted'
-    } else {
-      displayText = rawText
-      formattingStatus = 'fallback_raw'
-      warning = 'Formatting failed; showing raw transcript.'
-    }
-  } catch {
-    // Formatter failure → degrade to raw transcript
-    displayText = rawText
-    formattingStatus = 'fallback_raw'
-    warning = 'Formatting failed; showing raw transcript.'
-  }
+  // Formatter LLM with multi-model fallback
+  const systemPrompt = buildFormatterPrompt(surface, filePath ?? undefined)
+  const models = resolveFormatterModels()
+  const result = await formatWithFallback(models, systemPrompt, rawText)
 
-  const response: Record<string, string> = { rawText, displayText, formattingStatus }
-  if (warning) response.warning = warning
+  const response: Record<string, string> = {
+    rawText,
+    displayText: result.text,
+    formattingStatus: result.status,
+  }
+  if (result.warning) response.warning = result.warning
   return c.json(response)
 })
 

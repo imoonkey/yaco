@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Shared mock instance - reset each test
 let mockTranscriptionCreate: ReturnType<typeof vi.fn>
-let mockChatCreate: ReturnType<typeof vi.fn>
 
 // Mock groq-sdk before importing the route
 vi.mock('groq-sdk', () => {
@@ -27,11 +26,6 @@ vi.mock('groq-sdk', () => {
         get create() { return mockTranscriptionCreate },
       },
     }
-    chat = {
-      completions: {
-        get create() { return mockChatCreate },
-      },
-    }
   }
   Object.assign(MockGroq, { APIError, APIConnectionError })
   return { default: MockGroq }
@@ -41,9 +35,17 @@ vi.mock('groq-sdk/uploads', () => ({
   toFile: vi.fn().mockResolvedValue({ name: 'audio.webm' }),
 }))
 
+// Mock voice-formatter module
+const mockFormatWithFallback = vi.fn()
+vi.mock('../../lib/voice-formatter', () => ({
+  resolveFormatterModels: vi.fn().mockReturnValue(['test-model']),
+  formatWithFallback: (...args: unknown[]) => mockFormatWithFallback(...args),
+}))
+
 // Import after mocks are set up
 import Groq from 'groq-sdk'
 import { voiceRoutes } from '../voice'
+import { resolveFormatterModels } from '../../lib/voice-formatter'
 
 function makeAudioBlob(size = 1000): File {
   const bytes = new Uint8Array(size)
@@ -63,6 +65,7 @@ describe('GET /status', () => {
     delete process.env.GROQ_API_KEY
     delete process.env.GROQ_TRANSCRIPTION_MODEL
     delete process.env.GROQ_FORMATTER_MODEL
+    delete process.env.VOICE_FORMATTER_MODELS
   })
 
   it('returns enabled:false when GROQ_API_KEY is not set', async () => {
@@ -81,7 +84,7 @@ describe('GET /status', () => {
     expect(json).toEqual({
       enabled: true,
       sttModel: 'whisper-large-v3-turbo',
-      formatterModel: 'llama-3.1-8b-instant',
+      formatterModels: ['test-model'],
       maxUploadBytes: 20_000_000,
     })
   })
@@ -89,11 +92,12 @@ describe('GET /status', () => {
   it('uses custom model env vars', async () => {
     process.env.GROQ_API_KEY = 'test-key'
     process.env.GROQ_TRANSCRIPTION_MODEL = 'whisper-large-v3'
-    process.env.GROQ_FORMATTER_MODEL = 'llama-3.3-70b-versatile'
+    process.env.VOICE_FORMATTER_MODELS = 'model-a,model-b'
+    vi.mocked(resolveFormatterModels).mockReturnValue(['model-a', 'model-b'])
     const res = await voiceRoutes.request('/status')
     const json = await res.json()
     expect(json.sttModel).toBe('whisper-large-v3')
-    expect(json.formatterModel).toBe('llama-3.3-70b-versatile')
+    expect(json.formatterModels).toEqual(['model-a', 'model-b'])
   })
 })
 
@@ -101,7 +105,7 @@ describe('POST /compose', () => {
   beforeEach(() => {
     process.env.GROQ_API_KEY = 'test-key'
     mockTranscriptionCreate = vi.fn()
-    mockChatCreate = vi.fn()
+    mockFormatWithFallback.mockReset()
   })
 
   afterEach(() => {
@@ -144,8 +148,10 @@ describe('POST /compose', () => {
 
   it('returns formatted text on success', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'git status dash s b' })
-    mockChatCreate.mockResolvedValue({
-      choices: [{ message: { content: 'git status -sb' } }],
+    mockFormatWithFallback.mockResolvedValue({
+      text: 'git status -sb',
+      model: 'test-model',
+      status: 'formatted',
     })
 
     const body = makeFormData({ audio: makeAudioBlob(), surface: 'terminal' })
@@ -175,7 +181,12 @@ describe('POST /compose', () => {
 
   it('falls back to raw text on formatter failure', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'some dictated text' })
-    mockChatCreate.mockRejectedValue(new Error('LLM error'))
+    mockFormatWithFallback.mockResolvedValue({
+      text: 'some dictated text',
+      model: '',
+      status: 'fallback_raw',
+      warning: 'Formatting failed; showing raw transcript.',
+    })
 
     const body = makeFormData({ audio: makeAudioBlob(), surface: 'editor' })
     const res = await voiceRoutes.request('/compose', { method: 'POST', body })
@@ -189,10 +200,13 @@ describe('POST /compose', () => {
     })
   })
 
-  it('falls back when formatter returns empty content', async () => {
+  it('falls back when formatter returns raw', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'hello world' })
-    mockChatCreate.mockResolvedValue({
-      choices: [{ message: { content: '' } }],
+    mockFormatWithFallback.mockResolvedValue({
+      text: 'hello world',
+      model: '',
+      status: 'fallback_raw',
+      warning: 'Formatting failed; showing raw transcript.',
     })
 
     const body = makeFormData({ audio: makeAudioBlob(), surface: 'editor' })
@@ -227,8 +241,10 @@ describe('POST /compose', () => {
 
   it('passes language hint to Whisper when provided', async () => {
     mockTranscriptionCreate.mockResolvedValue({ text: 'bonjour' })
-    mockChatCreate.mockResolvedValue({
-      choices: [{ message: { content: 'Bonjour.' } }],
+    mockFormatWithFallback.mockResolvedValue({
+      text: 'Bonjour.',
+      model: 'test-model',
+      status: 'formatted',
     })
 
     const body = makeFormData({ audio: makeAudioBlob(), surface: 'editor', language: 'fr' })
