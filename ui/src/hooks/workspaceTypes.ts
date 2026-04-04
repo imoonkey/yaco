@@ -16,6 +16,7 @@ export type MdMode = 'edit' | 'preview' | 'split'
 export type WorkspaceLayout = {
   showSidebar: boolean
   showRightPanel: boolean
+  showProjects: boolean
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
@@ -61,6 +62,7 @@ export const TASKS_TAB_ID = '\0tasks'
 export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showSidebar: true,
   showRightPanel: true,
+  showProjects: true,
   showExplorer: true,
   showSessions: true,
   showChanges: true,

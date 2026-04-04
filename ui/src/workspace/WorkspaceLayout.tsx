@@ -74,7 +74,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     onInteractionCapture, onFilesPaneFocus, searchOverlay,
   } = props
 
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, showTextSearch } = layout
+  const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTasks, showTextSearch } = layout
   // When Explorer is collapsed, first expanded bottom section gets flex:1
   const flexFallback = !showExplorer
     ? (showTextSearch ? 'search' : showChanges ? 'changes' : showTasks ? 'tasks' : null)
@@ -107,8 +107,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (
               <div className="h-full flex flex-col overflow-y-auto" style={{ backgroundColor: C.bg }} onMouseDown={onFilesPaneFocus}>
-                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} actions={projectActions} />
-                <div className="shrink-0">{projectListBody}</div>
+                <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
+                {showProjects && <div className="shrink-0">{projectListBody}</div>}
 
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && <div className="flex-1 min-h-0 flex flex-col">{explorerBody}</div>}
@@ -140,10 +140,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {showSidebar && (
             <>
               <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
-                <SectionHeader title="Projects" collapsed={false} onToggle={() => {}} actions={projectActions} />
-                <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>
+                <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
+                {showProjects && <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>}
 
-                {showExplorer && <HResizeHandle onMouseDown={projectSplit.onMouseDown} isDragging={projectSplit.isDragging} />}
+                {showProjects && showExplorer && <HResizeHandle onMouseDown={projectSplit.onMouseDown} isDragging={projectSplit.isDragging} />}
 
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && (
