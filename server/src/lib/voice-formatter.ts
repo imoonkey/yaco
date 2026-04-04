@@ -8,6 +8,11 @@ const DEFAULT_MODELS = [
 
 const TIMEOUT_MS = 5000
 
+/** Strip <think>...</think> blocks that some models (e.g. Qwen3) emit */
+function stripThinking(text: string): string {
+  return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+}
+
 /**
  * Parse formatter model list from env vars.
  * Priority: VOICE_FORMATTER_MODELS (comma-separated) > GROQ_FORMATTER_MODEL (single) > defaults.
@@ -61,9 +66,10 @@ export async function formatWithFallback(
         { timeout: TIMEOUT_MS },
       )
 
-      const formatted = completion.choices[0]?.message?.content
-      if (formatted && formatted.trim()) {
-        return { text: formatted.trim(), model, status: 'formatted' }
+      const raw = completion.choices[0]?.message?.content
+      const formatted = raw ? stripThinking(raw).trim() : ''
+      if (formatted) {
+        return { text: formatted, model, status: 'formatted' }
       }
     } catch {
       // Try next model

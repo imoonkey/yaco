@@ -92,7 +92,7 @@ app.post('/compose', async (c) => {
     const transcription = await groq.audio.transcriptions.create({
       model: getSttModel(),
       file,
-      initial_prompt: buildWhisperPrompt(),
+      prompt: buildWhisperPrompt(),
       ...(language ? { language } : {}),
     })
     rawText = transcription.text
