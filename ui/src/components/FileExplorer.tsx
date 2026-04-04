@@ -5,7 +5,7 @@ import { moveFile, renameFile, deleteFile, createFile, createDir, revealInFinder
 import { writeTextToClipboard } from '../lib/clipboard'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
 import type { FileNode } from '../types'
-export { FILE_COLORS, GIT_COLORS, FileTypeIcon, FolderIcon, NewFileIcon, NewFolderIcon } from './fileExplorerIcons'
+export { FILE_COLORS, GIT_COLORS, FileTypeIcon, FolderIcon, NewFileIcon, NewFolderIcon, CollapseAllIcon } from './fileExplorerIcons'
 import { ExplorerContext, FileNodeRenderer } from './fileExplorerNode'
 
 function insertPendingNode(nodes: FileNode[], pending: FileNode): FileNode[] {
@@ -96,6 +96,7 @@ export interface FileExplorerHandle {
   createFile: (parentPath?: string) => void
   createFolder: (parentPath?: string) => void
   expandToPath: (folderPath: string) => void
+  collapseAll: () => void
 }
 
 interface FileExplorerProps {
@@ -351,6 +352,9 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
           target.focus()
         }
       })
+    },
+    collapseAll: () => {
+      treeRef.current?.closeAll()
     },
   }), [])
 

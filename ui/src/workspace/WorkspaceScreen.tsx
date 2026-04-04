@@ -7,7 +7,7 @@ import { Terminal } from '../components/Terminal'
 import { VoiceControl } from '../components/VoiceControl'
 import { ComposeTray } from '../components/ComposeTray'
 import { ProviderIcon } from '../components/SessionIcons'
-import { FileExplorer, NewFileIcon, NewFolderIcon } from '../components/FileExplorer'
+import { FileExplorer, NewFileIcon, NewFolderIcon, CollapseAllIcon } from '../components/FileExplorer'
 import type { FileExplorerHandle } from '../components/FileExplorer'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { clampLine } from './markdown'
@@ -16,6 +16,7 @@ import { FileSearch } from './WorkspaceSearch'
 import { SessionItem } from './WorkspaceSessionList'
 import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
+import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { WorkspaceLayout } from './WorkspaceLayout'
 import type { Project } from '../types'
@@ -93,7 +94,7 @@ export function Workspace({
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
   const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTasks, mdMode } = layout
-  const { data: fileTree, expandDir, patchTree, refresh: refreshTree } = useFileTree(projectName)
+  const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
 
@@ -302,8 +303,14 @@ export function Workspace({
     })
   }, [actions])
 
+  const handleCollapseAll = useCallback(() => {
+    explorerRef.current?.collapseAll()
+    clearLoadedDirs()
+  }, [clearLoadedDirs])
+
   const explorerActions = (
     <div className="flex gap-0.5">
+      <button onClick={handleCollapseAll} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="Collapse All"><CollapseAllIcon /></button>
       <button onClick={handleNewFile} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
       <button onClick={handleNewFolder} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
     </div>
@@ -460,6 +467,11 @@ export function Workspace({
             onStop={voice.stop}
           />
         ) : undefined}
+      />
+
+      <WorkspaceBreadcrumbs
+        activeTab={activeTab}
+        onNavigateDir={nav.handleExpandFolder}
       />
 
       <WorkspaceEditorArea

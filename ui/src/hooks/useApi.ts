@@ -197,7 +197,9 @@ export function useFileTree(projectName: string | null) {
     }
   }, [refreshExpanded])
 
-  return { data, error, refresh: refreshExpanded, expandDir, patchTree: setData }
+  const clearLoadedDirs = useCallback(() => { loadedDirsRef.current.clear() }, [])
+
+  return { data, error, refresh: refreshExpanded, expandDir, patchTree: setData, clearLoadedDirs }
 }
 
 /** Recursively replace children of a dir node at the given path */

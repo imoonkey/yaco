@@ -71,6 +71,14 @@ export function NewFileIcon() {
   )
 }
 
+export function CollapseAllIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
+      <path d="M3 10l5-4 5 4M3 14l5-4 5 4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 export function NewFolderIcon() {
   return (
     <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
