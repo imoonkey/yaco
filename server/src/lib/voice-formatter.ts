@@ -53,16 +53,23 @@ export async function formatWithFallback(
 
   for (const model of models) {
     try {
+      const params: Record<string, unknown> = {
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: text },
+        ],
+        temperature: 0.1,
+        max_tokens: 2048,
+      }
+
+      // Disable thinking for models that support it (Qwen3)
+      if (model.includes('qwen')) {
+        params.reasoning_format = 'none'
+      }
+
       const completion = await client.chat.completions.create(
-        {
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: text },
-          ],
-          temperature: 0.1,
-          max_tokens: 2048,
-        },
+        params as Parameters<typeof client.chat.completions.create>[0],
         { timeout: TIMEOUT_MS },
       )
 
