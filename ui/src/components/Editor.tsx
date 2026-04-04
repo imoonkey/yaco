@@ -1,12 +1,13 @@
 import { useRef, useEffect } from 'react'
 import { isCloseShortcut } from '../lib/shortcuts'
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, scrollPastEnd } from '@codemirror/view'
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, scrollPastEnd } from '@codemirror/view'
 import { EditorState, EditorSelection } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
-import { syntaxHighlighting, bracketMatching } from '@codemirror/language'
+import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
+import { syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language'
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
@@ -115,9 +116,13 @@ export function Editor({
         ...diffGutterExtension(),
         lineNumbers(),
         highlightActiveLine(),
+        highlightActiveLineGutter(),
         highlightSpecialChars(),
         highlightSelectionMatches(),
         bracketMatching(),
+        closeBrackets(),
+        indentOnInput(),
+        foldGutter(),
         history(),
         scrollPastEnd(),
         syntaxHighlighting(solarizedHighlight),
@@ -126,8 +131,10 @@ export function Editor({
           ...saveKeymap,
           indentWithTab,
           ...defaultKeymap,
+          ...closeBracketsKeymap,
           ...historyKeymap,
           ...searchKeymap,
+          ...foldKeymap,
         ]),
         langExtension(filePath),
         EditorView.lineWrapping,

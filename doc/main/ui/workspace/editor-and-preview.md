@@ -131,7 +131,11 @@ Clicking inside the preview:
 - **Search**: CodeMirror built-in search (`Cmd+F`)
 - **Scroll past end**: enabled, so last line can scroll to top of viewport
 - **Line numbers**: shown in gutter
-- **Active line**: highlighted
+- **Active line**: highlighted (both line and gutter)
+- **Bracket matching**: highlights matching brackets
+- **Auto-close brackets**: automatically closes `()`, `[]`, `{}`, quotes (`closeBrackets` + `closeBracketsKeymap` from `@codemirror/autocomplete`)
+- **Indent on input**: auto-indents after language-aware triggers (`indentOnInput`)
+- **Code folding**: fold gutter with clickable markers + keyboard shortcuts (`foldGutter` + `foldKeymap`)
 - **Read-only mode**: used for diff view
 
 ## Git Diff Gutter Indicators

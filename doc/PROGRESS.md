@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-03: CodeMirror editor polish (brackets, fold, indent)
+
+**What changed:**
+- Enabled `closeBrackets()` + `closeBracketsKeymap` for auto-closing brackets and quotes
+- Enabled `indentOnInput()` for language-aware auto-indentation
+- Enabled `foldGutter()` + `foldKeymap` for code folding with clickable gutter markers
+- Enabled `highlightActiveLineGutter()` for active line gutter highlight
+- Added `@codemirror/autocomplete` dependency (for closeBrackets)
+- Kept existing `bracketMatching()`
+
+**Why:**
+- Editor setup was minimal — useful built-in CodeMirror editing behaviors were not enabled, making the editing experience feel bare compared to VS Code. These are low-effort, high-impact improvements from the editor UX design doc.
+
+**Key files:** `ui/src/components/Editor.tsx`, `ui/package.json`
+**Verification:** `vite build` passes, all acceptance criteria grep checks pass
+**Commit:** (pending)
+**Next:** File-path breadcrumbs, tab disambiguation (remaining editor micro-interactions from design doc)
+**Blockers:** None
+
 ## 2026-04-03: Ripgrep cross-file text search backend
 
 **What changed:**

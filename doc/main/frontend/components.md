@@ -151,7 +151,7 @@ Virtualized file tree using react-arborist. Wrapped in `React.memo` to prevent r
 
 ## Editor
 
-**File**: `ui/src/components/Editor.tsx` (223 lines)
+**File**: `ui/src/components/Editor.tsx` (260 lines)
 
 CodeMirror 6 wrapper with Solarized Light theme and git diff gutter.
 
@@ -162,6 +162,10 @@ CodeMirror 6 wrapper with Solarized Light theme and git diff gutter.
 - Jump-to-line support
 - Search functionality
 - Git diff gutter indicators via `diffHunks` prop (-> See: `ui/src/lib/diffGutter.ts`)
+- Auto-close brackets/quotes (`closeBrackets` + `closeBracketsKeymap`)
+- Indent-on-input (`indentOnInput`)
+- Code folding gutter and keybindings (`foldGutter` + `foldKeymap`)
+- Active line gutter highlight (`highlightActiveLineGutter`)
 
 ## Terminal
 
