@@ -178,3 +178,25 @@ Session name validation and tmux session resolution.
 
 - Validates names against `[a-zA-Z0-9_.-]+`
 - Resolves short multmux names (e.g. `1-claude`) to full tmux names (e.g. `1-claude-workflow-mt`)
+
+### voice-prompts.ts (~130 lines)
+
+Prompt templates for the voice formatting pipeline.
+
+**Exports**: `buildWhisperPrompt()`, `buildFormatterPrompt(surface?, filePath?)`, `FILE_TYPE_MAP`
+
+- `buildWhisperPrompt()` — generic bilingual base sentence for Whisper `initial_prompt` conditioning (product names like Claude/Codex to avoid misrecognition)
+- `buildFormatterPrompt()` — shared speech-to-writing core prompt (filler removal, self-correction, CLI syntax, bilingual punctuation, few-shot examples) with optional context snippet derived from surface/filePath
+- `FILE_TYPE_MAP` — extension → human-readable label (~30 entries) for context snippets
+
+### voice-formatter.ts (~80 lines)
+
+Multi-model LLM formatter with fallback chain via `openai` SDK.
+
+**Exports**: `resolveFormatterModels()`, `formatWithFallback(models, systemPrompt, text)`, `FormatResult`
+
+- Tries models in order (default: `qwen3-32b` → `kimi-k2` → `gpt-oss-120b`), all via same Groq API key
+- Leverages per-model rate limits for resilience (429 on one model doesn't block others)
+- Strips `<think>...</think>` blocks from models with thinking mode (Qwen3)
+- Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
+- 5s timeout per model attempt

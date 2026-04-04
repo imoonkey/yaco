@@ -99,7 +99,7 @@ Returns pipeline readiness so the UI can gate recording controls.
 
 Enabled (GROQ_API_KEY set):
 ```json
-{ "enabled": true, "sttModel": "whisper-large-v3-turbo", "formatterModel": "llama-3.1-8b-instant", "maxUploadBytes": 20000000 }
+{ "enabled": true, "sttModel": "whisper-large-v3", "formatterModels": ["qwen/qwen3-32b", "moonshotai/kimi-k2-instruct-0905", "openai/gpt-oss-120b"], "maxUploadBytes": 20000000 }
 ```
 
 Disabled (key missing):
@@ -115,7 +115,7 @@ Request fields:
 - `language` (string, optional) — ISO-639-1 hint for Whisper
 - `filePath` (string, optional) — active editor file path
 
-Pipeline: Whisper STT → formatter LLM (surface-specific system prompt) → response.
+Pipeline: Whisper STT (with bilingual `initial_prompt` conditioning) → multi-model LLM formatter (shared speech-to-writing prompt + optional file-type context, tries models in order via `openai` SDK, strips thinking tokens) → response.
 
 Success (`formattingStatus: "formatted"`):
 ```json
@@ -144,7 +144,7 @@ Empty transcript (`formattingStatus: "empty"`, 200):
 
 Audio is never persisted to disk. API key is never exposed to the browser.
 
--> Design doc: `doc/todo/voice/final/voice_input_aligned.md`
+-> Design doc: `doc/todo/voice-formatting/final/design.md`
 
 ### Search
 

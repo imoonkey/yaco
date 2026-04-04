@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-04-04: Voice formatting pipeline improvement
+
+**What changed:**
+- Replaced inline voice formatter prompts with shared speech-to-writing prompt (`voice-prompts.ts`) covering both terminal commands and editor prose in a single prompt
+- Added Whisper `initial_prompt` conditioning with bilingual base sentence for better term recognition (Claude vs Cloud, etc.)
+- Replaced direct `groq-sdk` formatter call with `openai` SDK multi-model fallback chain (`voice-formatter.ts`): qwen3-32b → kimi-k2 → gpt-oss-120b, leveraging per-model rate limits
+- Added thinking-token stripping for Qwen3 `<think>` blocks
+- Refactored `voice.ts` to thin handler importing new modules
+- Added file-type context snippets derived from `filePath` extension
+- 31 new tests (83 total passing) including golden test cases for bilingual, filler removal, self-correction, and fallback scenarios
+
+**Why:**
+- Voice formatting quality was mediocre — output read like cleaned-up speech, not typed text
+- Groq API reliability issues (rate limits, model unavailability) caused total voice failure
+- No Whisper vocabulary conditioning led to misrecognized product names
+
+**Key files:** `server/src/lib/voice-prompts.ts`, `server/src/lib/voice-formatter.ts`, `server/src/routes/voice.ts`, `server/src/lib/__tests__/voice-*.test.ts`
+**Verification:** 83 server tests passing, manual voice compose QA confirmed working
+**Commit:** 648fbde..398798a
+**Next:** Monitor formatting quality in practice, consider project-specific vocabulary if needed
+**Blockers:** None
+
 ## 2026-04-04: Dynamic syntax highlighting for 100+ languages
 
 **What changed:**
