@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-04-04: Code review fixes for editor-ux-v1
+
+**What changed:**
+- Deferred tab/state cleanup on delete until server confirms (was losing drafts on failed delete)
+- Added rollback for tab retargeting on failed rename/move
+- Extracted editing row in fileExplorerNode to fix Rules of Hooks violation
+- Added `error` listener on spawned rg process to prevent process-fatal crash
+- Validated search-index response before caching (prevents error objects from polluting cache)
+- Text search UI no longer overwrites error state with a later done frame
+- Removed dead directory branch from search navigation (fuzzy search already filters to files only)
+- Replaced byte-offset highlighting with matchedText for non-ASCII safety
+
+**Why:** Codex code review identified 1 CRITICAL, 4 HIGH, 3 MEDIUM issues across the 8 implementation commits.
+
+**Key files:** `FileExplorer.tsx`, `fileExplorerNode.tsx`, `search.ts`, `quickOpenIndex.ts`, `WorkspaceTextSearch.tsx`, `useWorkspaceNavigation.ts`
+**Verification:** `npm run build` clean, `cd server && npm test` 52/52 pass
+**Commit:** `6df5668`
+**Next:** None — editor-ux-v1 milestone complete
+**Blockers:** None
+
 ## 2026-04-03: Optimistic explorer mutations with tab retargeting
 
 **What changed:**
