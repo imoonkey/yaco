@@ -147,7 +147,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && (
-                  <div className="min-h-0 flex flex-col" style={{ flex: 1 }}>
+                  <div className="min-h-0 flex flex-col" style={{ flex: 1, minHeight: 80 }}>
                     {explorerBody}
                   </div>
                 )}
@@ -162,8 +162,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
                 {showTextSearch && (
                   <div
-                    className={`min-h-0 flex flex-col ${flexFallback === 'search' ? '' : 'shrink-0'}`}
-                    style={flexFallback === 'search' ? { flex: 1 } : { height: searchHeight, overflowY: 'auto' }}
+                    className="min-h-0 flex flex-col"
+                    style={flexFallback === 'search' ? { flex: 1 } : { height: searchHeight, minHeight: 50, overflowY: 'auto' }}
                   >
                     {searchBody}
                   </div>
@@ -174,8 +174,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
                 {showChanges && (
                   <div
-                    className={`min-h-0 py-1 px-1 ${flexFallback === 'changes' ? '' : 'shrink-0'}`}
-                    style={flexFallback === 'changes' ? { flex: 1, overflowY: 'auto' } : { height: changesHeight, overflowY: 'auto' }}
+                    className="min-h-0 py-1 px-1"
+                    style={flexFallback === 'changes' ? { flex: 1, overflowY: 'auto' } : { height: changesHeight, minHeight: 50, overflowY: 'auto' }}
                   >
                     {changesBody}
                   </div>
@@ -184,7 +184,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={() => onLayoutUpdate({ showTasks: !showTasks })} />
                 {showTasks && (
                   <div
-                    className={`px-2 py-2 ${flexFallback === 'tasks' ? 'min-h-0' : 'shrink-0'}`}
+                    className={flexFallback === 'tasks' ? 'px-2 py-2 min-h-0' : 'px-2 py-2'}
                     style={flexFallback === 'tasks' ? { flex: 1 } : undefined}
                   >
                     {tasksBody}
