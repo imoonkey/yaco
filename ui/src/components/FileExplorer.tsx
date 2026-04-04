@@ -419,4 +419,3 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
 })
 
 export const FileExplorer = memo(FileExplorerInner) as typeof FileExplorerInner
-xplorerInner
