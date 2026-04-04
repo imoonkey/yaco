@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-04: Sidebar expand/collapse UX redesign
+
+**What changed:**
+- Sidebar sections now use Explorer-flex model: Explorer body is always `flex:1`, bottom sections (Search, Changes, Tasks) have fixed resizable heights
+- Resize handles appear between adjacent expanded section bodies (Explorer↔Search, Search↔Changes)
+- `flexFallback` promotes first expanded bottom section to flex when Explorer is collapsed
+- Eliminated fragile `availableSectionHeight`/`visibleHandleCount`/`explorerMax` calculations and ResizeObserver dependency
+- Added `searchSize`/`changesSize` to layout persistence
+
+**Why:**
+- Sidebar sections had coupled layout behavior — toggling Changes changed Explorer's CSS mode (`flex:1` ↔ fixed height), causing unpredictable jumps. Multiple `flex:1` sections competed for space. Resize handles were sparse (only 2 inside sidebar).
+
+**Key files:** `WorkspaceLayout.tsx`, `WorkspaceScreen.tsx`, `workspaceTypes.ts`, `usePersistence.ts`
+**Verification:** `npx tsc --noEmit` clean, `cd server && npm test` 83/83 pass
+**Commit:** ec67d2e
+**Next:** Manual smoke test (sidebar-verify task, requireHumanReview)
+**Blockers:** None
+
 ## 2026-04-04: Voice formatting pipeline improvement
 
 **What changed:**
