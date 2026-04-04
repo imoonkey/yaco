@@ -25,7 +25,7 @@ Virtualized file tree using react-arborist with react-window.
 
 ### Rendering
 
-- Custom node renderer with per-file-type badge icons (colored rounded rect + label, e.g. blue "TS", yellow "JS") for major extensions (ts, tsx, js, jsx, json, md, css, scss, html, py, sh, yml, yaml); generic colored document shape for others. Icons shared between file explorer and tab bar.
+- Custom node renderer with VS Code Seti icon theme SVGs (135 file-type icons, inlined from `ui/src/lib/setiIcons.ts`). Multi-extension matching (`.spec.ts`, `Dockerfile`, `.gitignore`, etc.) with per-filename caching. Icons shared between file explorer and tab bar.
 - Directory nodes: folder icon (open/closed states)
 - Indentation shows hierarchy depth
 - Selected node has highlight background

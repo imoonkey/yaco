@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-04: VS Code Seti file icons + blank page fix
+
+**What changed:**
+- Replaced hand-drawn badge icons with real VS Code Seti icon theme SVGs (135 icons, full extension matching)
+- Inlined icon dataset as static JSON (seti-definitions.json + seti-icons.json + setiIcons.ts) — no runtime npm dependency
+- Fixed blank page caused by stray `xplorerInner` text at end of FileExplorer.tsx (truncated leftover from worker edit)
+
+**Why:** Badge icons (colored rectangles with "TS"/"JS" text) looked blurry at 14x14. seti-icons npm package crashed in Vite ESM context (CJS/svgo dependency), so data was pre-extracted.
+
+**Key files:** `fileExplorerIcons.tsx`, `ui/src/lib/setiIcons.ts`, `ui/src/lib/seti-icons.json`, `ui/src/lib/seti-definitions.json`, `FileExplorer.tsx`
+**Verification:** `npm run build` clean, Playwright confirms page loads with zero errors
+**Commit:** `6df5668..1c80521`
+**Next:** None — editor-ux-v1 milestone complete
+**Blockers:** None
+
 ## 2026-04-04: Code review fixes for editor-ux-v1
 
 **What changed:**
