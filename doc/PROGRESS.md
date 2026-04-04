@@ -8,14 +8,16 @@
 - `flexFallback` promotes first expanded bottom section to flex when Explorer is collapsed
 - Eliminated fragile `availableSectionHeight`/`visibleHandleCount`/`explorerMax` calculations and ResizeObserver dependency
 - Added `searchSize`/`changesSize` to layout persistence
+- Explorer has `minHeight: 80`, bottom sections drop `shrink-0` with `minHeight: 50` — flex shrinks them on short windows (codex review fix)
+- Projects section is now collapsible (`showProjects` toggle, same pattern as other sections)
 
 **Why:**
 - Sidebar sections had coupled layout behavior — toggling Changes changed Explorer's CSS mode (`flex:1` ↔ fixed height), causing unpredictable jumps. Multiple `flex:1` sections competed for space. Resize handles were sparse (only 2 inside sidebar).
 
 **Key files:** `WorkspaceLayout.tsx`, `WorkspaceScreen.tsx`, `workspaceTypes.ts`, `usePersistence.ts`
-**Verification:** `npx tsc --noEmit` clean, `cd server && npm test` 83/83 pass
-**Commit:** ec67d2e
-**Next:** Manual smoke test (sidebar-verify task, requireHumanReview)
+**Verification:** `npx tsc --noEmit` clean, `cd server && npm test` 83/83 pass, codex review passed
+**Commit:** ec67d2e..39065f2
+**Next:** None
 **Blockers:** None
 
 ## 2026-04-04: Voice formatting pipeline improvement
