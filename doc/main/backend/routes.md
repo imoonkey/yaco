@@ -145,6 +145,30 @@ Audio is never persisted to disk. API key is never exposed to the browser.
 
 -> Design doc: `doc/todo/voice/final/voice_input_aligned.md`
 
+### Search
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/search/:project/text` | Cross-file text search via ripgrep — streams NDJSON |
+
+**Query params:**
+- `q` (required) — search pattern
+- `regex` — treat as regex (default: false)
+- `caseSensitive` — override smart-case (default: unset, smart-case applies)
+- `wholeWord` — word boundary matching (default: false)
+- `glob` — file glob filter (e.g., `*.ts`)
+- `context` — context lines, 0–5 (default: 1)
+
+**NDJSON message types:**
+```
+{"type":"match","file":"src/foo.ts","line":42,"column":8,"matchLength":5,"text":"..."}
+{"type":"context","file":"src/foo.ts","line":41,"text":"..."}
+{"type":"done","matchCount":127,"fileCount":23,"durationMs":45,"capped":false}
+{"type":"error","message":"..."}
+```
+
+Hard-cap: 5000 matches (kills `rg` when reached, `capped: true` in done message). Hard-ignored: `.git`, `node_modules`, `dist`, `build`. Requires `rg` on PATH (returns 503 if missing).
+
 ### Health
 
 | Method | Path | Description |

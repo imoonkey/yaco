@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-04-03: Ripgrep cross-file text search backend
+
+**What changed:**
+- Added `GET /api/search/:project/text` endpoint in new `server/src/routes/search.ts`
+- Spawns `rg --json` with smart-case, context lines, hidden files, and hard-ignore list (`.git`, `node_modules`, `dist`, `build`)
+- Streams NDJSON lines: `match`, `context`, `done`, `error` types
+- Hard-cap at 5000 matches (kills `rg` process when reached)
+- Kills `rg` on client disconnect via `AbortSignal`
+- Checks `rg` availability upfront, returns 503 if missing
+- Supports query params: `q`, `regex`, `caseSensitive`, `wholeWord`, `glob`, `context`
+
+**Why:**
+- No project-wide text search existed in the UI — this provides the backend for the cross-file search feature from the editor UX design doc
+
+**Key files:** `server/src/routes/search.ts` (new), `server/src/index.ts`
+**Verification:** `cd server && npm test` — 52 tests pass
+**Commit:** pending
+**Next:** UI sidebar text search component (`WorkspaceTextSearch.tsx`)
+**Blockers:** None
+
 ## 2026-04-03: Fix symlink support in file explorer and search
 
 **What changed:**
