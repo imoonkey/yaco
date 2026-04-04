@@ -221,6 +221,7 @@ export function WorkspaceEditorArea({
   composeTray,
   insertText,
   insertRequestKey,
+  autocompleteEnabled,
 }: {
   activeTab: string | null
   activeFilePath: string | null
@@ -249,6 +250,7 @@ export function WorkspaceEditorArea({
   composeTray?: React.ReactNode
   insertText?: string | null
   insertRequestKey?: number
+  autocompleteEnabled?: boolean
 }) {
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -292,6 +294,7 @@ export function WorkspaceEditorArea({
       diffHunks={diffHunks}
       insertText={insertText}
       insertRequestKey={insertRequestKey}
+      autocompleteEnabled={autocompleteEnabled}
     />
   )
 

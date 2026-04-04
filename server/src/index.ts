@@ -18,6 +18,7 @@ import { notificationRoutes } from './routes/notifications.js'
 import { browseRoutes } from './routes/browse.js'
 import { voiceRoutes } from './routes/voice.js'
 import { searchRoutes } from './routes/search.js'
+import { autocompleteRoutes } from './routes/autocomplete.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
@@ -160,6 +161,7 @@ app.route('/api/notifications', notificationRoutes)
 app.route('/api/browse', browseRoutes)
 app.route('/api/voice', voiceRoutes)
 app.route('/api/search', searchRoutes)
+app.route('/api/autocomplete', autocompleteRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('*', async (c) => serveUiApp(c.req.path))

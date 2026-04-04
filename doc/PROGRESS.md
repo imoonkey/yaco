@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-04-04: Inline code autocomplete (Copilot-style)
+
+**What changed:**
+- Added GitHub Copilot-style inline code autocomplete to the CodeMirror editor
+- Custom in-repo CM6 ghost text extension (StateField + ViewPlugin + Decoration + Tab/Esc keymap) — not using `codemirror-copilot` npm package due to edge cases with programmatic doc changes and stale cursors
+- Server completion endpoint using OpenAI SDK + Groq baseURL (same pattern as voice formatting)
+- Multi-model rotation with fallback: `qwen/qwen3-32b` → `kimi-k2-instruct` → `llama-3.1-8b-instant` (dodges per-model rate limits, ~3K effective RPD)
+- UI toggle ("AI" button) in editor tab bar, persisted in localStorage
+- Rate limit protection: 1500ms debounce, min 3 non-whitespace chars on line before triggering
+- Context truncation: 6KB prefix (with file header retention) + 2KB suffix, line-aware, byte-measured
+- End-to-end AbortSignal propagation: CM6 plugin → fetch → Hono route → OpenAI SDK
+
+**Why:**
+- Enable faster coding in the workflow editor without leaving the app
+- Groq free tier provides zero-cost inference; multi-model rotation maximizes daily capacity
+
+**Key files:** `server/src/lib/autocomplete.ts`, `server/src/routes/autocomplete.ts`, `ui/src/lib/editor/inlineAutocomplete.ts`, `ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** `cd server && npm test` (83 pass), `cd ui && npx tsc --noEmit` (no errors in changed files)
+**Commit:** pending
+**Next:** observe real completion quality, add normalization if suffix echo/fencing occurs
+**Blockers:** None
+
 ## 2026-04-04: Sidebar expand/collapse UX redesign
 
 **What changed:**

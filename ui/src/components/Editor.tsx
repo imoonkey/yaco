@@ -14,6 +14,20 @@ import { python } from '@codemirror/lang-python'
 import { solarizedHighlight, solarizedLight } from '../lib/solarizedLight'
 import { diffGutterExtension, setDiffData } from '../lib/diffGutter'
 import type { DiffHunk } from '../lib/parseDiff'
+import { inlineAutocomplete, autocompleteCompartment } from '../lib/editor/inlineAutocomplete.js'
+import type { CompletionProvider } from '../lib/editor/inlineAutocomplete.js'
+
+const autocompleteProvider: CompletionProvider = async (prefix, suffix, fp, signal) => {
+  const res = await fetch('/api/autocomplete/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prefix, suffix, filePath: fp }),
+    signal,
+  })
+  if (!res.ok) return ''
+  const { prediction } = await res.json()
+  return prediction || ''
+}
 
 function langExtension(filePath: string) {
   if (filePath.endsWith('.md')) return markdown({ codeLanguages: languages })
@@ -48,6 +62,7 @@ interface EditorProps {
   diffHunks?: DiffHunk[]
   insertText?: string | null
   insertRequestKey?: number
+  autocompleteEnabled?: boolean
 }
 
 function readViewportLine(view: EditorView): number {
@@ -79,6 +94,7 @@ export function Editor({
   diffHunks,
   insertText = null,
   insertRequestKey,
+  autocompleteEnabled = true,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -151,6 +167,7 @@ export function Editor({
         langCompartment.of(staticLang ?? []),
         EditorView.lineWrapping,
         EditorState.readOnly.of(readOnly),
+        readOnly || !autocompleteEnabled ? [] : autocompleteCompartment.of(inlineAutocomplete(autocompleteProvider, filePath)),
         EditorView.domEventHandlers({
           focus: () => {
             onFocusRef.current?.()
@@ -270,6 +287,13 @@ export function Editor({
     if (!view) return
     view.dispatch({ effects: setDiffData.of(diffHunks ?? []) })
   }, [diffHunks])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    const ext = readOnly || !autocompleteEnabled ? [] : inlineAutocomplete(autocompleteProvider, filePath)
+    view.dispatch({ effects: autocompleteCompartment.reconfigure(ext) })
+  }, [autocompleteEnabled, readOnly, filePath])
 
   return <div ref={containerRef} className="h-full overflow-hidden" />
 }

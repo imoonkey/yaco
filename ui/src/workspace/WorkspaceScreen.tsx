@@ -463,15 +463,39 @@ export function Workspace({
         onDoubleClickTab={nav.handleDoubleClickTab}
         onCloseTab={closeTab}
         onMdModeChange={(mode) => actions.updateLayout({ mdMode: mode })}
-        rightActions={voiceBridge.editorVoiceEligible ? (
-          <VoiceControl
-            capability={voice.capability}
-            state={voice.state}
-            elapsedMs={voice.elapsedMs}
-            onStart={voiceBridge.handleEditorVoiceStart}
-            onStop={voice.stop}
-          />
-        ) : undefined}
+        rightActions={<>
+          {voiceBridge.editorVoiceEligible && (
+            <VoiceControl
+              capability={voice.capability}
+              state={voice.state}
+              elapsedMs={voice.elapsedMs}
+              onStart={voiceBridge.handleEditorVoiceStart}
+              onStop={voice.stop}
+            />
+          )}
+          <button
+            onClick={() => actions.updateLayout({ autocompleteEnabled: !layout.autocompleteEnabled })}
+            title={layout.autocompleteEnabled ? 'Disable autocomplete' : 'Enable autocomplete'}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '2px 8px',
+              fontSize: 11,
+              border: 'none',
+              borderRadius: 3,
+              cursor: 'pointer',
+              background: layout.autocompleteEnabled ? C.activeTabBg : 'transparent',
+              color: layout.autocompleteEnabled ? C.tabText : C.tabTextInactive,
+              opacity: layout.autocompleteEnabled ? 1 : 0.6,
+            }}
+          >
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 1v2M8 13v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1 8h2M13 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4" />
+            </svg>
+            AI
+          </button>
+        </>}
       />
 
       <WorkspaceBreadcrumbs
@@ -511,6 +535,7 @@ export function Workspace({
         ) : null}
         insertText={editorInsert?.text}
         insertRequestKey={editorInsert?.key}
+        autocompleteEnabled={layout.autocompleteEnabled}
       />
     </div>
   )

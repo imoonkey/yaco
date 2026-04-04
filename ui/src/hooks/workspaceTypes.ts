@@ -22,6 +22,7 @@ export type WorkspaceLayout = {
   showChanges: boolean
   showTasks: boolean
   showTextSearch: boolean
+  autocompleteEnabled: boolean
   mdMode: MdMode
   splitSize: number
   leftSize: number
@@ -68,6 +69,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showChanges: true,
   showTasks: true,
   showTextSearch: false,
+  autocompleteEnabled: true,
   mdMode: 'edit',
   splitSize: 50,
   leftSize: 220,
