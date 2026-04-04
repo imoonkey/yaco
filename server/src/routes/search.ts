@@ -63,6 +63,7 @@ app.get('/:project/text', withProject, async (c) => {
   let matchCount = 0
   const matchedFiles = new Set<string>()
   let killed = false
+  let stderrText = ''
 
   const { readable, writable } = new TransformStream()
   const writer = writable.getWriter()
@@ -71,6 +72,13 @@ app.get('/:project/text', withProject, async (c) => {
   function writeLine(obj: Record<string, unknown>) {
     return writer.write(encoder.encode(JSON.stringify(obj) + '\n'))
   }
+
+  // Handle spawn errors (e.g., rg vanishes between check and spawn)
+  rg.on('error', (err) => {
+    killed = true
+    writeLine({ type: 'error', message: `Failed to start ripgrep: ${err.message}` })
+      .then(() => writer.close())
+  })
 
   // Handle client disconnect
   c.req.raw.signal.addEventListener('abort', () => {
@@ -102,12 +110,14 @@ app.get('/:project/text', withProject, async (c) => {
           for (const sub of submatches) {
             matchCount++
             matchedFiles.add(filePath)
+            // Send matched text so client can highlight by string match
+            // instead of relying on byte offsets (which differ from JS string indices for non-ASCII)
+            const matchedText = sub.match?.text ?? ''
             writeLine({
               type: 'match',
               file: filePath,
               line: lineNumber,
-              column: (sub.start ?? 0) + 1,
-              matchLength: (sub.end ?? 0) - (sub.start ?? 0),
+              matchedText,
               text: lineText,
             })
           }
@@ -134,18 +144,25 @@ app.get('/:project/text', withProject, async (c) => {
   rg.stderr.on('data', (chunk: Buffer) => {
     const text = chunk.toString().trim()
     if (text) {
+      stderrText += text + '\n'
       writeLine({ type: 'error', message: text })
     }
   })
 
-  rg.on('close', () => {
-    writeLine({
-      type: 'done',
-      matchCount,
-      fileCount: matchedFiles.size,
-      durationMs: Date.now() - startMs,
-      capped: matchCount >= MATCH_CAP,
-    }).then(() => writer.close())
+  rg.on('close', (code) => {
+    // Non-zero exit with stderr (and not from intentional kill/cap) = error
+    if (code && code !== 0 && !killed && stderrText) {
+      writeLine({ type: 'error', message: stderrText.trim() })
+        .then(() => writer.close())
+    } else {
+      writeLine({
+        type: 'done',
+        matchCount,
+        fileCount: matchedFiles.size,
+        durationMs: Date.now() - startMs,
+        capped: matchCount >= MATCH_CAP,
+      }).then(() => writer.close())
+    }
   })
 
   return new Response(readable, {

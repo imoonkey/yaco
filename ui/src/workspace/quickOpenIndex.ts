@@ -49,9 +49,15 @@ export async function fetchIndex(
       `/api/files/${encodeURIComponent(project)}/search-index${qs}`,
       { signal },
     )
-    const data: SearchEntry[] = await res.json()
-    cache.set(k, { entries: data, stale: false, fetching: false })
-    return data
+    if (!res.ok) {
+      throw new Error(`Search index fetch failed: ${res.status}`)
+    }
+    const data = await res.json()
+    if (!Array.isArray(data)) {
+      throw new Error('Search index response is not an array')
+    }
+    cache.set(k, { entries: data as SearchEntry[], stale: false, fetching: false })
+    return data as SearchEntry[]
   } catch (e) {
     if (existing) existing.fetching = false
     throw e

@@ -218,10 +218,13 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     menu.close()
     const name = path.split('/').pop()
     if (!confirm(`Delete "${name}"?`)) return
-    // Optimistic: remove from tree and close tabs
+    // Optimistic: remove from tree visually
     patchTree?.(prev => prev ? removeNodeFromTree(prev, path) : prev)
-    onFileDeleted?.(path)
-    try { await deleteFile(projectName, path) }
+    try {
+      await deleteFile(projectName, path)
+      // Only close tabs and remove state after server confirms
+      onFileDeleted?.(path)
+    }
     catch (err) {
       console.error('Failed to delete:', err)
       refreshTree?.()
@@ -243,17 +246,20 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     const sourcePath = dragIds[0]
     if (!sourcePath) return
     const destDir = parentId || ''
+    if (!destDir) return // Cannot move to root — server rejects empty destDir
     // Optimistic: move node in tree
     patchTree?.(prev => {
       if (!prev) return prev
       const result = moveNodeInTree(prev, sourcePath, destDir)
       return result ? result.tree : prev
     })
-    const expectedNewPath = destDir ? `${destDir}/${sourcePath.split('/').pop()}` : sourcePath.split('/').pop() || sourcePath
+    const expectedNewPath = `${destDir}/${sourcePath.split('/').pop()}`
     onFileRenamed?.(sourcePath, expectedNewPath)
     try { await moveFile(projectName, sourcePath, destDir) }
     catch (err) {
       console.error('Failed to move:', err)
+      // Rollback: undo tab/state retargeting
+      onFileRenamed?.(expectedNewPath, sourcePath)
       refreshTree?.()
     }
   }, [projectName, patchTree, refreshTree, onFileRenamed])
@@ -309,6 +315,8 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     try { await renameFile(projectName, oldPath, newPath) }
     catch (err) {
       console.error('Failed to rename:', err)
+      // Rollback: undo tab/state retargeting
+      onFileRenamed?.(newPath, oldPath)
       refreshTree?.()
     }
   }, [projectName, onSelectFile, patchTree, refreshTree, onFileRenamed])

@@ -5,8 +5,7 @@ import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 
 type SearchMatch = {
   line: number
-  column: number
-  matchLength: number
+  matchedText: string
   text: string
 }
 
@@ -130,26 +129,28 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
                 if (group.length < MAX_MATCHES_PER_FILE) {
                   group.push({
                     line: msg.line,
-                    column: msg.column,
-                    matchLength: msg.matchLength,
+                    matchedText: msg.matchedText,
                     text: msg.text,
                   })
                 }
               } else if (msg.type === 'done') {
-                const built = fileOrder.map(f => ({ file: f, matches: groups.get(f)! }))
-                setResults(built)
-                setExpandedFiles(new Set(fileOrder))
-                if (msg.matchCount === 0) {
-                  setStatus({ state: 'empty' })
-                } else {
-                  setStatus({
+                // Don't overwrite an error state with a completion
+                setStatus(prev => {
+                  if (prev.state === 'error') return prev
+                  const built = fileOrder.map(f => ({ file: f, matches: groups.get(f)! }))
+                  setResults(built)
+                  setExpandedFiles(new Set(fileOrder))
+                  if (msg.matchCount === 0) {
+                    return { state: 'empty' }
+                  }
+                  return {
                     state: 'results',
                     matchCount: msg.matchCount,
                     fileCount: msg.fileCount,
                     durationMs: msg.durationMs,
                     capped: msg.capped || totalFilesCapped,
-                  })
-                }
+                  }
+                })
               } else if (msg.type === 'error') {
                 setStatus({ state: 'error', message: msg.message })
               }
@@ -261,7 +262,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
       if (item.kind === 'file') {
         toggleFileExpand(item.file)
       } else {
-        onOpenFileAtLine(item.file, item.line, item.column)
+        onOpenFileAtLine(item.file, item.line, 1)
       }
     }
   }, [handleSubmit, handleClear, query, flatItems, focusIndex, toggleFileExpand, onOpenFileAtLine])
@@ -326,7 +327,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
             group={group}
             expanded={expandedFiles.has(group.file)}
             onToggle={() => toggleFileExpand(group.file)}
-            onMatchClick={(m) => onOpenFileAtLine(group.file, m.line, m.column)}
+            onMatchClick={(m) => onOpenFileAtLine(group.file, m.line, 1)}
             focusIndex={focusIndex}
             flatItems={flatItems}
           />
@@ -385,11 +386,11 @@ function FileGroupView({ group, expanded, onToggle, onMatchClick, focusIndex, fl
         <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: C.muted }}>{group.matches.length}</span>
       </div>
       {expanded && group.matches.map((m, mi) => {
-        const matchIdx = flatItems.findIndex(i => i.kind === 'match' && i.file === group.file && i.line === m.line && i.column === m.column)
+        const matchIdx = flatItems.findIndex(i => i.kind === 'match' && i.file === group.file && i.line === m.line)
         const isMatchFocused = matchIdx === focusIndex
         return (
           <MatchLine
-            key={`${m.line}:${m.column}:${mi}`}
+            key={`${m.line}:${mi}`}
             match={m}
             focused={isMatchFocused}
             dataIdx={matchIdx}
@@ -407,10 +408,10 @@ function MatchLine({ match, focused, dataIdx, onClick }: {
   dataIdx: number
   onClick: () => void
 }) {
-  const col0 = match.column - 1
-  const before = match.text.slice(0, col0)
-  const highlighted = match.text.slice(col0, col0 + match.matchLength)
-  const after = match.text.slice(col0 + match.matchLength)
+  const idx = match.text.indexOf(match.matchedText)
+  const before = idx >= 0 ? match.text.slice(0, idx) : match.text
+  const highlighted = idx >= 0 ? match.matchedText : ''
+  const after = idx >= 0 ? match.text.slice(idx + match.matchedText.length) : ''
 
   return (
     <div
@@ -466,7 +467,7 @@ function StatusBar({ status }: { status: SearchStatus }) {
 
 type FlatItem =
   | { kind: 'file'; file: string }
-  | { kind: 'match'; file: string; line: number; column: number }
+  | { kind: 'match'; file: string; line: number }
 
 function buildFlatItems(results: FileGroup[], expandedFiles: Set<string>): FlatItem[] {
   const items: FlatItem[] = []
@@ -474,7 +475,7 @@ function buildFlatItems(results: FileGroup[], expandedFiles: Set<string>): FlatI
     items.push({ kind: 'file', file: group.file })
     if (expandedFiles.has(group.file)) {
       for (const m of group.matches) {
-        items.push({ kind: 'match', file: group.file, line: m.line, column: m.column })
+        items.push({ kind: 'match', file: group.file, line: m.line })
       }
     }
   }

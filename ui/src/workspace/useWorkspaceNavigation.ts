@@ -82,19 +82,12 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
   }, [actions, revealInExplorer, setSelectedFilePath, setFocusTarget])
 
   const handleSearchSelect = useCallback(async (entry: SearchEntry) => {
-    if (entry.type === 'dir') {
-      await revealInExplorer(entry.path + '/x')
-      await expandDir(entry.path)
-      setSelectedFilePath(entry.path)
-      handleExpandFolder(entry.path)
-    } else {
-      await revealInExplorer(entry.path)
-      actions.openPreviewTab(entry.path)
-      setSelectedFilePath(entry.path)
-      setFocusTarget('editor')
-      actions.setMobilePane('editor')
-    }
-  }, [revealInExplorer, expandDir, handleExpandFolder, actions, setSelectedFilePath, setFocusTarget])
+    await revealInExplorer(entry.path)
+    actions.openPreviewTab(entry.path)
+    setSelectedFilePath(entry.path)
+    setFocusTarget('editor')
+    actions.setMobilePane('editor')
+  }, [revealInExplorer, actions, setSelectedFilePath, setFocusTarget])
 
   const activateChange = useCallback(async (path: string) => {
     if (activeTab === `diff:${path}`) {

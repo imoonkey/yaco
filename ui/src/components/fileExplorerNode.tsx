@@ -20,6 +20,56 @@ export const ExplorerContext = createContext<{
   cancelCreate: () => void
 }>({ gitMap: new Map(), gitFolders: new Set(), bindContextMenu: () => ({ onContextMenu: () => {}, onTouchStart: () => {}, onTouchMove: () => {}, onTouchEnd: () => {}, onTouchCancel: () => {} }), reportContextFolder: () => {}, pendingNewId: null, cancelCreate: () => {} })
 
+// --- Editing row (separate component to satisfy Rules of Hooks) ---
+function EditingRow({ node, style, dragHandle, data, pendingNewId, cancelCreate }: {
+  node: NodeRendererProps<FileNode>['node']
+  style: React.CSSProperties
+  dragHandle: NodeRendererProps<FileNode>['dragHandle']
+  data: FileNode
+  pendingNewId: string | null
+  cancelCreate: () => void
+}) {
+  const isNew = data.path === pendingNewId
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Select stem only on rename (not new file creation)
+  useEffect(() => {
+    const input = inputRef.current
+    if (!input || isNew) return
+    const name = data.name
+    const dotIndex = name.lastIndexOf('.')
+    if (dotIndex > 0 && data.type === 'file') {
+      input.setSelectionRange(0, dotIndex)
+    } else {
+      input.select()
+    }
+  }, [])
+
+  return (
+    <div style={style} ref={dragHandle}>
+      <div className="flex items-center gap-1 h-full px-1">
+        {data.type === 'dir' ? <FolderIcon open={node.isOpen} /> : <FileTypeIcon name={data.name} />}
+        <input
+          ref={inputRef}
+          autoFocus
+          className="flex-1 text-[12px] bg-transparent outline-none border-b min-w-0"
+          style={{ color: C.text, borderColor: C.accent }}
+          defaultValue={isNew ? '' : data.name}
+          onBlur={() => { node.reset(); if (isNew) cancelCreate() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              const val = e.currentTarget.value.trim()
+              if (val) node.submit(val)
+              else { node.reset(); if (isNew) cancelCreate() }
+            }
+            if (e.key === 'Escape') { node.reset(); if (isNew) cancelCreate() }
+          }}
+        />
+      </div>
+    </div>
+  )
+}
+
 // --- Custom node renderer ---
 export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<FileNode>) {
   const { gitMap, gitFolders, bindContextMenu, reportContextFolder, onPreviewFile, onPinFile, onExpandDir, pendingNewId, cancelCreate } = useContext(ExplorerContext)
@@ -35,45 +85,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
     : C.text
 
   if (node.isEditing) {
-    const isNew = d.path === pendingNewId
-    const inputRef = useRef<HTMLInputElement>(null)
-
-    // Select stem only on rename (not new file creation)
-    useEffect(() => {
-      const input = inputRef.current
-      if (!input || isNew) return
-      const name = d.name
-      const dotIndex = name.lastIndexOf('.')
-      if (dotIndex > 0 && d.type === 'file') {
-        input.setSelectionRange(0, dotIndex)
-      } else {
-        input.select()
-      }
-    }, [])
-
-    return (
-      <div style={style} ref={dragHandle}>
-        <div className="flex items-center gap-1 h-full px-1">
-          {d.type === 'dir' ? <FolderIcon open={node.isOpen} /> : <FileTypeIcon name={d.name} />}
-          <input
-            ref={inputRef}
-            autoFocus
-            className="flex-1 text-[12px] bg-transparent outline-none border-b min-w-0"
-            style={{ color: C.text, borderColor: C.accent }}
-            defaultValue={isNew ? '' : d.name}
-            onBlur={() => { node.reset(); if (isNew) cancelCreate() }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const val = e.currentTarget.value.trim()
-                if (val) node.submit(val)
-                else { node.reset(); if (isNew) cancelCreate() }
-              }
-              if (e.key === 'Escape') { node.reset(); if (isNew) cancelCreate() }
-            }}
-          />
-        </div>
-      </div>
-    )
+    return <EditingRow node={node} style={style} dragHandle={dragHandle} data={d} pendingNewId={pendingNewId} cancelCreate={cancelCreate} />
   }
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
