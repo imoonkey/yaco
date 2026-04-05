@@ -17,8 +17,8 @@
 - Groq free tier provides zero-cost inference; multi-model rotation maximizes daily capacity
 
 **Key files:** `server/src/lib/autocomplete.ts`, `server/src/routes/autocomplete.ts`, `ui/src/lib/editor/inlineAutocomplete.ts`, `ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
-**Verification:** `cd server && npm test` (83 pass), `cd ui && npx tsc --noEmit` (no errors in changed files)
-**Commit:** pending
+**Verification:** `cd server && npm test` (104 pass, including 21 autocomplete tests), `cd ui && npx tsc --noEmit` (no errors in changed files)
+**Commit:** 0d45baa..74b296e
 **Next:** observe real completion quality, add normalization if suffix echo/fencing occurs
 **Blockers:** None
 
