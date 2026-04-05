@@ -277,14 +277,21 @@ const ghostKeymap = Prec.highest(keymap.of([
   },
 ]))
 
-// --- Blur handler (also cancels pending work) ---
+// --- Blur/paste handler (also cancels pending work) ---
 
-const blurHandler = EditorView.domEventHandlers({
+const eventHandlers = EditorView.domEventHandlers({
   blur(_, view) {
     if (view.state.field(suggestionField)) {
       view.dispatch({ effects: setSuggestion.of(null) })
     }
     return false
+  },
+  // Clear ghost text before paste so widget decoration doesn't interfere with paste position
+  paste(_, view) {
+    if (view.state.field(suggestionField)) {
+      view.dispatch({ effects: setSuggestion.of(null) })
+    }
+    return false // let CM6 handle the actual paste
   },
 })
 
@@ -301,6 +308,6 @@ export function inlineAutocomplete(
     ghostDecorations,
     createFetchPlugin(provider, filePath),
     ghostKeymap,
-    blurHandler,
+    eventHandlers,
   ]
 }
