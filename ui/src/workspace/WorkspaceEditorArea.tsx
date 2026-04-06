@@ -230,7 +230,7 @@ export function WorkspaceEditorArea({
   activeViewportLine: number
   isDiffTab: boolean | undefined
   isTasksTab: boolean
-  activeDiff: { content: string | null; loading: boolean } | null
+  activeDiff: { raw: string | null; loading: boolean } | null
   isMd: boolean | undefined
   mdMode: MdMode
   splitSize: number
@@ -337,8 +337,8 @@ export function WorkspaceEditorArea({
       {isTasksTab ? (
         tasksPane
       ) : isDiffTab ? (
-        !activeDiff || (activeDiff.loading && activeDiff.content == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
-        : activeDiff?.content != null ? <DiffView diff={activeDiff.content} />
+        !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
+        : activeDiff?.raw != null ? <DiffView diff={activeDiff.raw} />
         : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
       ) : activeTab ? (
         activeFileLoading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>

@@ -1,12 +1,13 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { fetchGitDiff } from '../hooks/useApi'
-import { parseDiff, type DiffHunk } from '../lib/parseDiff'
+import { parseDiff, type DiffHunk, type ParsedFileDiff } from '../lib/parseDiff'
 import type { GitChange } from '../types'
 
 export type DiffState = {
-  content: string | null
-  error: boolean
+  raw: string | null
+  parsed: ParsedFileDiff | null
   loading: boolean
+  error: boolean
 }
 
 interface UseWorkspaceDiffOpts {
@@ -20,71 +21,99 @@ interface UseWorkspaceDiffOpts {
 export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
   const { activeDiffPath, activeFilePath, projectName, changes, gitData } = opts
 
-  const [diffs, setDiffs] = useState<Record<string, DiffState>>({})
-  const [editorDiffHunks, setEditorDiffHunks] = useState<DiffHunk[]>([])
+  const [cache, setCache] = useState<Record<string, DiffState>>({})
 
-  // Fetch diff when a diff tab is active
-  useEffect(() => {
-    if (!activeDiffPath) return
-    const path = activeDiffPath
-    let cancelled = false
-    setDiffs(prev => {
-      const current = prev[path]
-      if (current?.loading) return prev
-      return {
-        ...prev,
-        [path]: {
-          content: current?.content ?? null,
-          error: false,
-          loading: true,
-        },
-      }
-    })
-    fetchGitDiff(projectName, path)
-      .then(d => {
-        if (cancelled) return
-        setDiffs(prev => ({
-          ...prev,
-          [path]: { content: d, error: false, loading: false },
-        }))
-      })
-      .catch(() => {
-        if (cancelled) return
-        setDiffs(prev => ({
-          ...prev,
-          [path]: { content: prev[path]?.content ?? null, error: true, loading: false },
-        }))
-      })
-    return () => { cancelled = true }
-  }, [activeDiffPath, projectName])
-
-  // Fetch diff for active editor file (gutter indicators)
+  // Paths that need fetching: diff tab + editor gutter (if file is changed)
   const activeFileIsChanged = !!activeFilePath && changes.some(c => c.path === activeFilePath)
-  const prevDiffFileRef = useRef(activeFilePath)
+  const editorDiffPath = activeFileIsChanged ? activeFilePath : null
+
+  // Deduplicated set of paths to keep in cache
+  const pathsToFetch = useMemo(() => {
+    const paths = new Set<string>()
+    if (activeDiffPath) paths.add(activeDiffPath)
+    if (editorDiffPath) paths.add(editorDiffPath)
+    return paths
+  }, [activeDiffPath, editorDiffPath])
+
+  // Single effect that fetches all needed paths
   useEffect(() => {
-    if (prevDiffFileRef.current !== activeFilePath) {
-      setEditorDiffHunks([])
-      prevDiffFileRef.current = activeFilePath
-    }
-    if (!activeFilePath || !activeFileIsChanged) {
-      setEditorDiffHunks([])
-      return
-    }
-    let cancelled = false
-    fetchGitDiff(projectName, activeFilePath)
-      .then(diffText => {
-        if (cancelled) return
-        setEditorDiffHunks(parseDiff(diffText).hunks)
+    const controllers: AbortController[] = []
+
+    for (const path of pathsToFetch) {
+      // Skip if already loaded and not stale
+      const existing = cache[path]
+      if (existing && !existing.loading && !existing.error && existing.parsed) continue
+
+      setCache(prev => {
+        const current = prev[path]
+        if (current?.loading) return prev
+        return {
+          ...prev,
+          [path]: {
+            raw: current?.raw ?? null,
+            parsed: current?.parsed ?? null,
+            loading: true,
+            error: false,
+          },
+        }
       })
-      .catch(() => {
-        if (cancelled) return
-        setEditorDiffHunks([])
-      })
-    return () => { cancelled = true }
-  }, [activeFilePath, activeFileIsChanged, projectName, gitData])
+
+      const controller = new AbortController()
+      controllers.push(controller)
+
+      fetchGitDiff(projectName, path)
+        .then(raw => {
+          if (controller.signal.aborted) return
+          const parsed = parseDiff(raw, path)
+          setCache(prev => ({
+            ...prev,
+            [path]: { raw, parsed, loading: false, error: false },
+          }))
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return
+          setCache(prev => ({
+            ...prev,
+            [path]: {
+              raw: prev[path]?.raw ?? null,
+              parsed: prev[path]?.parsed ?? null,
+              loading: false,
+              error: true,
+            },
+          }))
+        })
+    }
+
+    return () => { controllers.forEach(c => c.abort()) }
+    // gitData triggers re-fetch when git state changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDiffPath, editorDiffPath, projectName, gitData])
+
+  // Invalidate cache entries when paths are no longer needed
+  const prevPathsRef = useRef(pathsToFetch)
+  useEffect(() => {
+    const prev = prevPathsRef.current
+    prevPathsRef.current = pathsToFetch
+    // Clean up paths that dropped out
+    const removed = [...prev].filter(p => !pathsToFetch.has(p))
+    if (removed.length === 0) return
+    setCache(prev => {
+      const next = { ...prev }
+      for (const p of removed) delete next[p]
+      return next
+    })
+  }, [pathsToFetch])
+
+  // Diff tab consumes this (backward compat with WorkspaceEditorArea)
+  const activeDiff = activeDiffPath ? cache[activeDiffPath] ?? null : null
+
+  // Editor gutter consumes this
+  const editorDiffHunks: DiffHunk[] = editorDiffPath
+    ? cache[editorDiffPath]?.parsed?.hunks ?? []
+    : []
 
   const clearDiff = (path: string) => {
-    setDiffs(prev => {
+    setCache(prev => {
       if (!(path in prev)) return prev
       const next = { ...prev }
       delete next[path]
@@ -92,5 +121,5 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
     })
   }
 
-  return { diffs, editorDiffHunks, clearDiff }
+  return { diffs: cache, activeDiff, editorDiffHunks, clearDiff }
 }

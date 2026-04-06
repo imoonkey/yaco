@@ -146,10 +146,9 @@ export function Workspace({
     refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
   })
 
-  const { diffs, editorDiffHunks, clearDiff } = useWorkspaceDiff({
+  const { activeDiff, editorDiffHunks, clearDiff } = useWorkspaceDiff({
     activeDiffPath, activeFilePath, projectName, changes, gitData,
   })
-  const activeDiff = activeDiffPath ? diffs[activeDiffPath] : null
 
   const nav = useWorkspaceNavigation({
     actions, activeTab, previewTab,
