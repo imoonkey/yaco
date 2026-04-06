@@ -4,12 +4,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const {
   spawnMock,
-  resolveTmuxSessionMock,
   resolveSessionTmuxNameMock,
   validateSessionNameMock,
 } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
-  resolveTmuxSessionMock: vi.fn((name: string) => `${name}-fallback-mt`),
   resolveSessionTmuxNameMock: vi.fn(),
   validateSessionNameMock: vi.fn(),
 }))
@@ -19,7 +17,6 @@ vi.mock('node-pty', () => ({
 }))
 
 vi.mock('../session-names', () => ({
-  resolveTmuxSession: resolveTmuxSessionMock,
   validateSessionName: validateSessionNameMock,
 }))
 
@@ -43,20 +40,18 @@ function createPty() {
 describe('attachSession', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    resolveTmuxSessionMock.mockReturnValue('worker-fallback-mt')
   })
 
-  it('attaches to the project-scoped tmux session when the state file provides one', () => {
+  it('attaches to the tmux handle from the global state file', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
-    resolveSessionTmuxNameMock.mockReturnValue('worker-project-mt')
+    resolveSessionTmuxNameMock.mockReturnValue('worker')
 
     const attached = attachSession('worker', 120, 40, '/tmp/project')
 
     expect(validateSessionNameMock).toHaveBeenCalledWith('worker')
-    expect(resolveSessionTmuxNameMock).toHaveBeenCalledWith('/tmp/project', 'worker')
-    expect(resolveTmuxSessionMock).not.toHaveBeenCalled()
-    expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'worker-project-mt'], expect.objectContaining({
+    expect(resolveSessionTmuxNameMock).toHaveBeenCalledWith('worker')
+    expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'worker'], expect.objectContaining({
       cols: 120,
       rows: 40,
       name: 'xterm-256color',
@@ -68,15 +63,15 @@ describe('attachSession', () => {
     })
   })
 
-  it('falls back to global tmux resolution when the state file has no tmux name', () => {
+  it('falls back to the requested session name when the state file is missing', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
     resolveSessionTmuxNameMock.mockReturnValue(null)
 
     attachSession('worker', 80, 24, '/tmp/project')
 
-    expect(resolveTmuxSessionMock).toHaveBeenCalledWith('worker')
-    expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'worker-fallback-mt'], expect.any(Object))
+    expect(resolveSessionTmuxNameMock).toHaveBeenCalledWith('worker')
+    expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'worker'], expect.any(Object))
   })
 
   it('uses a namespace import for node-pty so tsx/ESM gets a real spawn function', () => {

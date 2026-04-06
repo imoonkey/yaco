@@ -1,13 +1,18 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync, readFileSync, unlinkSync } from 'fs'
+import { existsSync, unlinkSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { join } from 'path'
 import { loadProjects, type Project } from './projects'
-import type { MultmuxSession, MultmuxStateFile } from './multmux'
-import { readSessionsFromStateFiles } from './multmux'
+import type { MultmuxSession } from './multmux'
+import { readAllSessionsFromStateFiles } from './multmux'
 import { withFileLock, type ProgressEntry } from './scanner'
 import { emitRefresh } from './notify'
-import { PENDING_SESSION_ID, MULTMUX_STATUS_TIMEOUT_MS, MULTMUX_PATH } from './constants'
+import {
+  MULTMUX_PATH,
+  MULTMUX_SESSIONS_DIR,
+  MULTMUX_STATUS_TIMEOUT_MS,
+  PENDING_SESSION_ID,
+} from './constants'
 
 const RECONCILE_INTERVAL = 60_000
 /** Require N consecutive idle reconcile passes before firing notification. */
@@ -47,14 +52,19 @@ async function reconcile(): Promise<void> {
 
   try {
     const projects = await loadProjects()
-    const allSessions: MultmuxSession[] = []
+    const sessionsByProject = new Map<string, MultmuxSession[]>()
+    const allSessions = checkStaleStates(readAllSessionsFromStateFiles(projects))
+
+    for (const session of allSessions) {
+      const list = sessionsByProject.get(session.project) ?? []
+      list.push(session)
+      sessionsByProject.set(session.project, list)
+    }
 
     for (const project of projects) {
-      const sessions = readSessionsFromStateFiles(project)
-      const healthChecked = checkStaleStates(sessions, project)
-      backfillSessionIds(healthChecked, project)
-      await detectIdleTransitions(healthChecked, project)
-      allSessions.push(...healthChecked)
+      const projectSessions = sessionsByProject.get(project.name) ?? []
+      backfillSessionIds(projectSessions, project)
+      await detectIdleTransitions(projectSessions, project)
     }
 
     // Emit refresh only if snapshot drifted (missed watcher events)
@@ -76,27 +86,19 @@ async function reconcile(): Promise<void> {
 /** Health-check: verify tmux liveness for all active sessions.
  *  Deletes state files for sessions whose tmux session no longer exists
  *  (defense-in-depth for when multmux wrapper.sh EXIT trap fails). */
-function checkStaleStates(sessions: MultmuxSession[], project: Pick<Project, 'path'>): MultmuxSession[] {
-  const dir = join(project.path, '.multmux')
+function checkStaleStates(sessions: MultmuxSession[]): MultmuxSession[] {
   const live: MultmuxSession[] = []
 
   for (const session of sessions) {
-    const stateFile = join(dir, `${session.name}.json`)
-    let dead = false
-    try {
-      const raw = readFileSync(stateFile, 'utf-8')
-      const state = JSON.parse(raw) as MultmuxStateFile
-      if (!isTmuxAlive(state.tmuxSession)) {
-        dead = true
+    if (!isTmuxAlive(session.name)) {
+      const stateFile = join(MULTMUX_SESSIONS_DIR, `${session.name}.json`)
+      if (existsSync(stateFile)) {
         try { unlinkSync(stateFile) } catch (e) { console.warn(`[session-reconciler] failed to remove stale state file ${stateFile}:`, e) }
       }
-    } catch (e) {
-      console.warn(`[session-reconciler] failed to read state file for ${session.name}:`, e)
+      continue
     }
 
-    if (!dead) {
-      live.push(session)
-    }
+    live.push(session)
   }
 
   return live
@@ -121,8 +123,7 @@ function backfillSessionIds(sessions: MultmuxSession[], project: Pick<Project, '
   if (!needsBackfill) return
 
   try {
-    execFileSync(MULTMUX_PATH, ['status', '--json'], {
-      cwd: project.path,
+    execFileSync(MULTMUX_PATH, ['status', '--json', '--path', project.path], {
       stdio: 'ignore',
       timeout: MULTMUX_STATUS_TIMEOUT_MS,
     })

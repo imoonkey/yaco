@@ -1,16 +1,19 @@
-import { watch, existsSync, type FSWatcher } from 'fs'
+import { watch, existsSync, readFileSync, readdirSync, type FSWatcher } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { Ignore } from 'ignore'
-import type { Project } from './projects'
+import { loadProjects, type Project } from './projects'
 import { emitRefresh } from './notify'
 import { getProjectGitignore, clearGitignoreCache } from './gitignore'
+import { MULTMUX_SESSIONS_DIR } from './constants'
+import { isPathDescendantOrEqual } from './multmux'
 
 const DEBOUNCE_MS = 200
 
 const watchers: FSWatcher[] = []
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const projectIgnores = new Map<string, Ignore | null>()
+const sessionPathCache = new Map<string, string>()
 
 /** Ignore patterns — no refresh signal for these */
 const IGNORE = [
@@ -24,7 +27,6 @@ const IGNORE = [
 function routeChange(filename: string): string | null {
   if (IGNORE.some(re => re.test(filename))) return null
 
-  if (/^\.multmux\/[^/]+\.json$/.test(filename)) return 'sessions'
   if (/^doc\/todo\/[^/]+\/workstream\.json$/.test(filename)) return 'workstreams'
   if (/^\.git\//.test(filename)) return 'git'
 
@@ -38,6 +40,54 @@ function debouncedEmit(channel: string): void {
     debounceTimers.delete(channel)
     emitRefresh(channel)
   }, DEBOUNCE_MS))
+}
+
+function readSessionPath(stateFile: string): string | null {
+  try {
+    const raw = readFileSync(stateFile, 'utf-8')
+    const state = JSON.parse(raw) as { sessionPath?: unknown }
+    return typeof state.sessionPath === 'string' && state.sessionPath
+      ? state.sessionPath
+      : null
+  } catch {
+    return null
+  }
+}
+
+function primeSessionPathCache(): void {
+  sessionPathCache.clear()
+  if (!existsSync(MULTMUX_SESSIONS_DIR)) return
+
+  try {
+    for (const file of readdirSync(MULTMUX_SESSIONS_DIR).filter(name => name.endsWith('.json'))) {
+      const sessionPath = readSessionPath(join(MULTMUX_SESSIONS_DIR, file))
+      if (sessionPath) sessionPathCache.set(file, sessionPath)
+    }
+  } catch (e) {
+    console.warn('[project-watcher] failed to prime multmux session cache:', e)
+  }
+}
+
+async function handleGlobalSessionChange(filename: string): Promise<void> {
+  if (!filename.endsWith('.json')) return
+
+  const stateFile = join(MULTMUX_SESSIONS_DIR, filename)
+  const currentSessionPath = existsSync(stateFile) ? readSessionPath(stateFile) : null
+  const previousSessionPath = sessionPathCache.get(filename) ?? null
+
+  if (currentSessionPath) {
+    sessionPathCache.set(filename, currentSessionPath)
+  } else {
+    sessionPathCache.delete(filename)
+  }
+
+  const sessionPath = currentSessionPath ?? previousSessionPath
+  if (!sessionPath) return
+
+  const projects = await loadProjects()
+  if (projects.some(project => isPathDescendantOrEqual(sessionPath, project.path))) {
+    debouncedEmit('sessions')
+  }
 }
 
 /** Start recursive fs.watch for each project */
@@ -85,6 +135,21 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
       watchers.push(watcher)
     } catch (e) { console.warn(`[project-watcher] failed to watch projects.json:`, e) }
   }
+
+  if (existsSync(MULTMUX_SESSIONS_DIR)) {
+    primeSessionPathCache()
+    try {
+      const watcher = watch(MULTMUX_SESSIONS_DIR, (_event, filename) => {
+        if (!filename) return
+        void handleGlobalSessionChange(String(filename)).catch(err => {
+          console.warn(`[project-watcher] failed to handle multmux session change ${String(filename)}:`, err)
+        })
+      })
+      watchers.push(watcher)
+    } catch (e) {
+      console.warn(`[project-watcher] failed to watch ${MULTMUX_SESSIONS_DIR}:`, e)
+    }
+  }
 }
 
 export function stopProjectWatchers(): void {
@@ -93,4 +158,5 @@ export function stopProjectWatchers(): void {
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
   projectIgnores.clear()
+  sessionPathCache.clear()
 }

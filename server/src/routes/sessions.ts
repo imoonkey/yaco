@@ -19,8 +19,7 @@ app.get('/', async (c) => {
     multmuxSessions = readAllSessionsFromStateFiles(projects)
   }
 
-  const projectPaths = new Map(projects.map(p => [p.name, p.path]))
-  const summaries = resolveSessionSummaries(multmuxSessions, projectPaths)
+  const summaries = resolveSessionSummaries(multmuxSessions)
   const enriched = multmuxSessions.map(s => ({ ...s, summary: summaries.get(s.name) ?? '' }))
 
   const filteredShell = projectName

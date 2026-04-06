@@ -24,6 +24,7 @@ function makeSession(overrides: Partial<MultmuxSession> = {}): MultmuxSession {
     provider: 'claude',
     status: 'idle',
     project: 'test-project',
+    sessionPath: '/tmp/test-project',
     sessionId: 'valid-session-id',
     pid: 12345,
     ...overrides,
@@ -42,7 +43,7 @@ describe('resolveSessionSummaries', () => {
   })
 
   it('returns empty map for empty sessions', () => {
-    const result = resolveSessionSummaries([], new Map())
+    const result = resolveSessionSummaries([])
     expect(result.size).toBe(0)
   })
 
@@ -51,16 +52,14 @@ describe('resolveSessionSummaries', () => {
       sessionId: 'pending:awaiting-first-prompt',
       provider: 'claude',
     })
-    const projectPaths = new Map([['test-project', tmpDir]])
-    const result = resolveSessionSummaries([session], projectPaths)
+    const result = resolveSessionSummaries([session])
     // Should not crash and should not resolve a summary for sentinel ID
     expect(result.get('test-session')).toBeUndefined()
   })
 
   it('skips empty sessionId without crashing', () => {
     const session = makeSession({ sessionId: '', pid: 0 })
-    const projectPaths = new Map([['test-project', tmpDir]])
-    const result = resolveSessionSummaries([session], projectPaths)
+    const result = resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
   })
 
@@ -70,7 +69,7 @@ describe('resolveSessionSummaries', () => {
       sessionId: 'pending:awaiting-first-prompt',
       pid: 0,
     })
-    const result = resolveSessionSummaries([session], new Map())
+    const result = resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
   })
 
@@ -89,41 +88,34 @@ describe('resolveSessionSummaries', () => {
     writeFileSync(join(projectDir, `${sessionId}.jsonl`), jsonlContent)
 
     const session = makeSession({ sessionId })
-    // We need to mock homedir to point to our temp dir
-    // Since makeClaudeResolver uses homedir(), we need a different approach
-    // For this test, we verify the function doesn't crash with valid inputs
-    // and that the sentinel guard works
-    const projectPaths = new Map([['test-project', tmpDir]])
-    const result = resolveSessionSummaries([session], projectPaths)
+    // makeClaudeResolver uses homedir(), so this only verifies the batch path
+    // still tolerates a launch path without crashing.
+    const result = resolveSessionSummaries([session])
     // The JSONL file won't be found because homedir() points elsewhere,
     // but the function should not crash
     expect(result).toBeInstanceOf(Map)
   })
 
-  it('groups Claude sessions by project for batch resolution', () => {
+  it('groups Claude sessions by launch path for batch resolution', () => {
     const sessions = [
-      makeSession({ name: 's1', sessionId: 'id1', project: 'p1' }),
-      makeSession({ name: 's2', sessionId: 'id2', project: 'p1' }),
-      makeSession({ name: 's3', sessionId: 'id3', project: 'p2' }),
+      makeSession({ name: 's1', sessionId: 'id1', project: 'p1', sessionPath: '/tmp/p1' }),
+      makeSession({ name: 's2', sessionId: 'id2', project: 'p1', sessionPath: '/tmp/p1' }),
+      makeSession({ name: 's3', sessionId: 'id3', project: 'p2', sessionPath: '/tmp/p2' }),
     ]
-    const projectPaths = new Map([['p1', '/tmp/p1'], ['p2', '/tmp/p2']])
-    // Should not crash even with non-existent project dirs
-    const result = resolveSessionSummaries(sessions, projectPaths)
+    const result = resolveSessionSummaries(sessions)
     expect(result).toBeInstanceOf(Map)
   })
 
   it('falls back to PID resolution for Claude sessions missing sessionId', () => {
     const session = makeSession({ sessionId: '', pid: 99999 })
-    const projectPaths = new Map([['test-project', tmpDir]])
     // Will try PID fallback, find nothing, and return empty
-    const result = resolveSessionSummaries([session], projectPaths)
+    const result = resolveSessionSummaries([session])
     expect(result).toBeInstanceOf(Map)
   })
 
   it('skips PID fallback for pid=0', () => {
     const session = makeSession({ sessionId: '', pid: 0 })
-    const projectPaths = new Map([['test-project', tmpDir]])
-    const result = resolveSessionSummaries([session], projectPaths)
+    const result = resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
   })
 })

@@ -146,13 +146,12 @@ function loadCodexPidMap(pids: number[]): Map<number, string> {
  *  Reads each data source at most once. */
 export function resolveSessionSummaries(
   sessions: MultmuxSession[],
-  projectPaths: Map<string, string>,
 ): Map<string, string> {
   const result = new Map<string, string>()
   if (sessions.length === 0) return result
 
-  // Group sessions by project for Claude index reads
-  const claudeByProject = new Map<string, MultmuxSession[]>()
+  // Group Claude sessions by launch path for JSONL resolution.
+  const claudeByPath = new Map<string, MultmuxSession[]>()
   const codexSessions: MultmuxSession[] = []
   const needsPidFallback: MultmuxSession[] = []
 
@@ -161,9 +160,9 @@ export function resolveSessionSummaries(
       codexSessions.push(s)
     } else {
       if (isResolvableSessionId(s.sessionId)) {
-        const list = claudeByProject.get(s.project) ?? []
+        const list = claudeByPath.get(s.sessionPath) ?? []
         list.push(s)
-        claudeByProject.set(s.project, list)
+        claudeByPath.set(s.sessionPath, list)
       } else if (typeof s.pid === 'number' && s.pid > 0) {
         needsPidFallback.push(s)
       }
@@ -177,19 +176,17 @@ export function resolveSessionSummaries(
     for (const s of needsPidFallback) {
       const resolved = pidMap.get(s.pid)
       if (resolved) {
-        const list = claudeByProject.get(s.project) ?? []
+        const list = claudeByPath.get(s.sessionPath) ?? []
         list.push({ ...s, sessionId: resolved })
-        claudeByProject.set(s.project, list)
+        claudeByPath.set(s.sessionPath, list)
       }
     }
   }
 
-  // Resolve Claude summaries: one resolver per project
-  for (const [project, projectSessions] of claudeByProject) {
-    const path = projectPaths.get(project)
-    if (!path) continue
-    const resolve = makeClaudeResolver(path)
-    for (const s of projectSessions) {
+  // Resolve Claude summaries: one resolver per launch path
+  for (const [sessionPath, pathSessions] of claudeByPath) {
+    const resolve = makeClaudeResolver(sessionPath)
+    for (const s of pathSessions) {
       const r = resolve(s.sessionId)
       if (r) result.set(s.name, r.summary)
     }

@@ -3,6 +3,10 @@ import { join } from 'path'
 import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 
+const { mockedSessionsDir } = vi.hoisted(() => ({
+  mockedSessionsDir: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/workflow-multmux-test-sessions-${process.pid}`,
+}))
+
 // Must mock before importing the module under test
 vi.mock('../session-names', () => ({
   validateSessionName: (name: string) => {
@@ -10,13 +14,20 @@ vi.mock('../session-names', () => ({
   },
 }))
 
-import { readSessionsFromStateFiles, type MultmuxStateFile } from '../multmux'
+vi.mock('../constants', () => ({
+  MULTMUX_COMMAND_TIMEOUT_MS: 5_000,
+  MULTMUX_SESSIONS_DIR: mockedSessionsDir,
+  MULTMUX_START_TIMEOUT_MS: 15_000,
+  MULTMUX_PATH: 'multmux',
+}))
+
+import { readAllSessionsFromStateFiles, readSessionsFromStateFiles, type MultmuxStateFile } from '../multmux'
 
 function writeStateFile(dir: string, handle: string, overrides: Partial<MultmuxStateFile> = {}) {
   const state: MultmuxStateFile = {
     handle,
     provider: 'claude',
-    tmuxSession: `${handle}-project-mt`,
+    sessionPath: '/tmp/project',
     pid: 12345,
     sessionId: 'abc-123',
     status: 'idle',
@@ -28,27 +39,27 @@ function writeStateFile(dir: string, handle: string, overrides: Partial<MultmuxS
 
 describe('readSessionsFromStateFiles', () => {
   let tmpDir: string
-  let multmuxDir: string
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'workflow-test-'))
-    multmuxDir = join(tmpDir, '.multmux')
-    mkdirSync(multmuxDir)
+    rmSync(mockedSessionsDir, { recursive: true, force: true })
+    mkdirSync(mockedSessionsDir, { recursive: true })
   })
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true })
+    rmSync(mockedSessionsDir, { recursive: true, force: true })
   })
 
   const project = () => ({ name: 'test-project', path: tmpDir })
 
-  it('returns empty array when .multmux dir does not exist', () => {
-    rmSync(multmuxDir, { recursive: true })
+  it('returns empty array when the global sessions dir does not exist', () => {
+    rmSync(mockedSessionsDir, { recursive: true })
     expect(readSessionsFromStateFiles(project())).toEqual([])
   })
 
   it('reads idle session correctly', () => {
-    writeStateFile(multmuxDir, '1-claude', { status: 'idle' })
+    writeStateFile(mockedSessionsDir, '1-claude', { status: 'idle', sessionPath: tmpDir })
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]).toMatchObject({
@@ -56,12 +67,13 @@ describe('readSessionsFromStateFiles', () => {
       provider: 'claude',
       status: 'idle',
       project: 'test-project',
+      sessionPath: tmpDir,
       sessionId: 'abc-123',
     })
   })
 
   it('reads processing session correctly', () => {
-    writeStateFile(multmuxDir, 'worker-1', { status: 'processing', provider: 'codex' })
+    writeStateFile(mockedSessionsDir, 'worker-1', { status: 'processing', provider: 'codex', sessionPath: tmpDir })
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]).toMatchObject({
@@ -72,7 +84,7 @@ describe('readSessionsFromStateFiles', () => {
   })
 
   it('normalizes starting → idle', () => {
-    writeStateFile(multmuxDir, 'new-session', { status: 'starting' })
+    writeStateFile(mockedSessionsDir, 'new-session', { status: 'starting', sessionPath: tmpDir })
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.status).toBe('idle')
@@ -83,36 +95,36 @@ describe('readSessionsFromStateFiles', () => {
     const state = {
       handle: 'ghost',
       provider: 'claude',
-      tmuxSession: 'ghost-project-mt',
+      sessionPath: tmpDir,
       pid: 99999,
       sessionId: '',
       status: 'stopped', // multmux no longer writes this, but test the guard
       createdAt: '2026-03-24T00:00:00.000Z',
     }
-    writeFileSync(join(multmuxDir, 'ghost.json'), JSON.stringify(state))
+    writeFileSync(join(mockedSessionsDir, 'ghost.json'), JSON.stringify(state))
     expect(readSessionsFromStateFiles(project())).toEqual([])
   })
 
   it('handles multiple sessions', () => {
-    writeStateFile(multmuxDir, '1-claude', { status: 'idle' })
-    writeStateFile(multmuxDir, '2-codex', { status: 'processing', provider: 'codex' })
-    writeStateFile(multmuxDir, '3-claude', { status: 'starting' })
+    writeStateFile(mockedSessionsDir, '1-claude', { status: 'idle', sessionPath: tmpDir })
+    writeStateFile(mockedSessionsDir, '2-codex', { status: 'processing', provider: 'codex', sessionPath: tmpDir })
+    writeStateFile(mockedSessionsDir, '3-claude', { status: 'starting', sessionPath: tmpDir })
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(3)
     expect(sessions.map(s => s.name).sort()).toEqual(['1-claude', '2-codex', '3-claude'])
   })
 
   it('skips malformed JSON files', () => {
-    writeStateFile(multmuxDir, 'good', { status: 'idle' })
-    writeFileSync(join(multmuxDir, 'bad.json'), 'not json{{{')
+    writeStateFile(mockedSessionsDir, 'good', { status: 'idle', sessionPath: tmpDir })
+    writeFileSync(join(mockedSessionsDir, 'bad.json'), 'not json{{{')
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.name).toBe('good')
   })
 
   it('skips non-json files', () => {
-    writeStateFile(multmuxDir, 'real', { status: 'idle' })
-    writeFileSync(join(multmuxDir, 'readme.txt'), 'not a state file')
+    writeStateFile(mockedSessionsDir, 'real', { status: 'idle', sessionPath: tmpDir })
+    writeFileSync(join(mockedSessionsDir, 'readme.txt'), 'not a state file')
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
   })
@@ -121,21 +133,45 @@ describe('readSessionsFromStateFiles', () => {
     const state = {
       handle: 'my-codex-worker',
       provider: 'unknown-provider', // invalid
-      tmuxSession: 'my-codex-worker-project-mt',
+      sessionPath: tmpDir,
       pid: 12345,
       sessionId: '',
       status: 'idle',
       createdAt: '2026-03-24T00:00:00.000Z',
     }
-    writeFileSync(join(multmuxDir, 'my-codex-worker.json'), JSON.stringify(state))
+    writeFileSync(join(mockedSessionsDir, 'my-codex-worker.json'), JSON.stringify(state))
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.provider).toBe('codex')
   })
 
   it('defaults empty sessionId to empty string', () => {
-    writeStateFile(multmuxDir, 'no-sid', { sessionId: undefined as unknown as string })
+    writeStateFile(mockedSessionsDir, 'no-sid', { sessionId: undefined as unknown as string, sessionPath: tmpDir })
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions[0]!.sessionId).toBe('')
+  })
+
+  it('filters to sessions whose sessionPath is under the project path', () => {
+    writeStateFile(mockedSessionsDir, 'nested', { sessionPath: join(tmpDir, 'server') })
+    writeStateFile(mockedSessionsDir, 'outside', { sessionPath: `${tmpDir}-other` })
+
+    const sessions = readSessionsFromStateFiles(project())
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.name).toBe('nested')
+  })
+
+  it('uses the most specific matching project when reading all sessions', () => {
+    const parent = tmpDir
+    const child = join(tmpDir, 'server')
+    writeStateFile(mockedSessionsDir, 'child-session', { sessionPath: child })
+
+    const sessions = readAllSessionsFromStateFiles([
+      { name: 'parent', path: parent },
+      { name: 'child', path: child },
+    ])
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.project).toBe('child')
   })
 })

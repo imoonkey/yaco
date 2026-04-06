@@ -1,4 +1,6 @@
 import { execSync } from 'child_process'
+import { homedir } from 'os'
+import { join } from 'path'
 
 /** Resolved path to the multmux binary (startup-time resolution) */
 export const MULTMUX_PATH = (() => {
@@ -8,6 +10,9 @@ export const MULTMUX_PATH = (() => {
     return 'multmux'
   }
 })()
+
+/** Global multmux session state directory */
+export const MULTMUX_SESSIONS_DIR = join(homedir(), '.multmux', 'sessions')
 
 /** Git max buffer for ls-files commands (50 MB) */
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024

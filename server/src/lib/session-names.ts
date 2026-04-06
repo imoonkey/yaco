@@ -16,9 +16,6 @@ export function resolveTmuxSession(shortName: string): string {
       .filter(Boolean)
 
     if (sessions.includes(shortName)) return shortName
-
-    const match = sessions.find(session => session.startsWith(`${shortName}-`) && session.endsWith('-mt'))
-    if (match) return match
   } catch {
     // tmux may not be running yet.
   }
