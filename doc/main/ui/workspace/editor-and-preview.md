@@ -149,7 +149,7 @@ Clicking inside the preview:
 
 VS Code-style gutter markers in the CodeMirror editor showing line-level change status against HEAD.
 
--> See: `ui/src/lib/diffGutter.ts`, `ui/src/lib/parseDiff.ts`
+-> See: `ui/src/lib/diffGutter.ts`, `ui/src/lib/parseDiff.ts`, `ui/src/lib/wordDiff.ts`
 
 ### Markers
 
@@ -164,16 +164,19 @@ Markers reflect **saved-file** git state, not the live unsaved buffer. They may 
 ### Inline Hunk Popup
 
 Clicking a gutter marker opens a block widget below the anchor line showing the hunk diff:
-- Header row with hunk header (`@@ ... @@`) and close button
-- Body rows: red for deletions, green for additions, muted for context
+- Change badge (Added/Changed/Deleted) with accent color
+- Header row with hunk context and prev/next navigation buttons
+- Body rows with line numbers and word-level highlights for modified rows
 - Left border accent matches hunk type color
+- Large hunks (>20 rows) truncate with "Show more" button
+- Deleted-only hunks show "N lines deleted nearby" context in header
 - One popup open at a time; dismissed by Escape, clicking outside, close button, or switching files
 
 ### Data Flow
 
 ```
 git status refresh → active file in changes list?
-  → yes: fetchGitDiff → parseDiff → DiffHunk[] → Editor prop → setDiffData StateEffect
+  → yes: fetchGitDiff → parseDiff → ParsedFileDiff → .hunks → Editor prop → setDiffData StateEffect
   → no: empty hunks → gutter clears
 ```
 
@@ -185,13 +188,17 @@ Diff data updates on save and git refresh. The extension is always installed; em
 - No stage/revert controls in popup
 - No syntax highlighting inside popup
 
-## Diff View
+## Diff Tab
 
-Unified diff rendering for git-changed files. Uses a custom `DiffView` component (not CodeMirror).
+Rich diff rendering for git-changed files. Uses `DiffTab` component (`ui/src/workspace/diff/DiffTab.tsx`) consuming the shared `ParsedFileDiff` model.
 
-- Green background for added lines
-- Red background for deleted lines
-- Blue hunk headers
-- Read-only (no editing in diff view)
-- Per-path cache: switching between diff tabs does not re-fetch
-- Opening same change row while diff is active → opens raw file for editing
+-> See: `ui/src/workspace/diff/DiffTab.tsx`, `ui/src/workspace/useWorkspaceDiff.ts`
+
+- **Unified view**: dual old/new line numbers, word-level highlights for modified rows
+- **Split view**: side-by-side 5-column grid (desktop only, hidden on mobile)
+- **View mode**: persisted to `localStorage["workflow-diff-viewmode"]`
+- **Navigation**: `j`/`k` keyboard shortcuts, toolbar prev/next buttons, "Change X of N" indicator
+- **Context collapse**: long in-hunk context runs collapse with expand-on-click; inter-hunk gaps show non-expandable "N unchanged lines omitted"
+- **Single line number column**: all-added files show only new line numbers, all-deleted show only old
+- **Binary files**: placeholder "Binary file changed"
+- **Cache**: `useWorkspaceDiff` stores raw + parsed per path, re-fetches silently on SSE git events without flicker

@@ -17,8 +17,8 @@
 - Gutter popup showed plain added/deleted lines with no context about what changed within a line
 
 **Key files:** `ui/src/workspace/diff/DiffTab.tsx`, `ui/src/lib/wordDiff.ts`, `ui/src/lib/parseDiff.ts`, `ui/src/lib/diffGutter.ts`, `ui/src/workspace/useWorkspaceDiff.ts`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/lib/solarizedLight.ts`
-**Verification:** `ui/src/lib/__tests__/wordDiff.test.ts`, `ui/src/lib/__tests__/parseDiff.test.ts`
-**Commit:** Uncommitted
+**Verification:** `ui/src/lib/__tests__/wordDiff.test.ts` (21 tests), `ui/src/lib/__tests__/parseDiff.test.ts`, server tests (106 passed), TypeScript clean
+**Commit:** b2e039d..95c13cc
 **Next:** Observe real usage, consider file-level diff navigation (prev/next file)
 **Blockers:** None
 

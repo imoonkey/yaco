@@ -26,15 +26,15 @@ App (245 lines)
         ├── useWorkspaceKeyboard (190 lines)
         ├── useWorkspaceNavigation (132 lines)
         ├── useWorkspaceSessions (139 lines)
-        ├── useWorkspaceDiff (96 lines)
+        ├── useWorkspaceDiff (125 lines)
         ├── useWorkspaceVoice (82 lines)
         └── WorkspaceLayout (187 lines) — layout composition
             ├── SectionHeader (17 lines)
             ├── VResizeHandle / HResizeHandle (23 lines)
             └── PaneSwitch
         ├── WorkspaceTabBar (113 lines)
-        ├── WorkspaceEditorArea (363 lines)
-        │   ├── DiffView
+        ├── WorkspaceEditorArea (345 lines)
+        │   ├── DiffTab (diff/ module — unified/split views, navigation)
         │   ├── MarkdownPreview
         │   └── Editor (223 lines)
         ├── FileExplorer (333 lines)
@@ -75,8 +75,9 @@ TaskGraphScreen (237 lines) — controller
 - `workspace/useResize.ts` (34 lines) — drag-to-resize hook
 - `hooks/useWorkspaceState.ts` (753 lines) — domain state, persistence, SSE reconciliation
 - `lib/solarizedLight.ts` — `SOLARIZED_LIGHT` (raw palette) + `SOLARIZED_LIGHT_UI` (semantic workspace colors) constants for inline styles; CSS vars (`var(--sol-*)`) for stylesheet colors. No hardcoded hex values.
-- `lib/diffGutter.ts` (283 lines) — CodeMirror diff gutter extension, inline hunk popup widget
-- `lib/parseDiff.ts` (71 lines) — unified diff parser → `DiffHunk[]` (wraps `parse-diff`)
+- `lib/diffGutter.ts` (400 lines) — CodeMirror diff gutter extension, inline hunk popup with word highlights, badges, nav, Show more
+- `lib/parseDiff.ts` (160 lines) — unified diff parser → `ParsedFileDiff` with canonical `DiffRow[]` per hunk (wraps `parse-diff` + `wordDiff.ts`)
+- `lib/wordDiff.ts` (100 lines) — word-level diff via `diff` package (`computeWordDiff`, `pairChanges`), exports `DiffRow`/`DiffSegment` types
 
 ## App
 
