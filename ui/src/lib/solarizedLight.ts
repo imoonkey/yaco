@@ -260,6 +260,7 @@ export const solarizedLight = EditorView.theme({
   },
   '.cm-diff-popup-body': {
     padding: '4px 0',
+    overflowX: 'auto',
   },
   '.cm-diff-popup-line': {
     padding: '0 8px',
