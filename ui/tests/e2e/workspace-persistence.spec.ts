@@ -206,6 +206,52 @@ test.describe('Layout persistence characterization', () => {
     await page.waitForTimeout(500)
   })
 
+  test('showProjects and projectSize persist across reload', async ({ page, request }) => {
+    const resp = await request.get('/api/projects')
+    const projects = await resp.json() as { name: string; path: string }[]
+    expect(projects.length).toBeGreaterThan(0)
+    const project = projects[0]
+
+    // Seed localStorage with non-default values before mount
+    await page.addInitScript(({ name }) => {
+      const key = `workflow-workspace:${name}`
+      const raw = localStorage.getItem(key)
+      const state = raw ? JSON.parse(raw) : {}
+      state.layout = { ...(state.layout ?? {}), showProjects: false, projectSize: 200 }
+      localStorage.setItem(key, JSON.stringify(state))
+    }, { name: project.name })
+
+    // Mount — workspace reads seeded values
+    await page.goto('/')
+    await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(2000)
+
+    // Verify values survived the load → save roundtrip
+    const state = await getWorkspaceState(page, project.name)
+    expect(state?.layout?.showProjects).toBe(false)
+    expect(state?.layout?.projectSize).toBe(200)
+
+    // Reload — verify again
+    await page.reload()
+    await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(2000)
+
+    const afterReload = await getWorkspaceState(page, project.name)
+    expect(afterReload?.layout?.showProjects).toBe(false)
+    expect(afterReload?.layout?.projectSize).toBe(200)
+
+    // Restore defaults
+    await page.evaluate((name) => {
+      const key = `workflow-workspace:${name}`
+      const raw = localStorage.getItem(key)
+      if (raw) {
+        const state = JSON.parse(raw)
+        state.layout = { ...(state.layout ?? {}), showProjects: true, projectSize: 120 }
+        localStorage.setItem(key, JSON.stringify(state))
+      }
+    }, project.name)
+  })
+
   test('section collapse state persists via layout flags', async ({ page }) => {
     const project = await openWorkspace(page)
 
