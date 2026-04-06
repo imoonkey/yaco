@@ -43,11 +43,11 @@ Pin state and order are client-side only (not persisted across page reloads).
 ### Summary Resolution
 
 Server resolves summaries on each `GET /api/sessions` poll:
-1. Read `sessionId` from `.multmux/*.json` state files
+1. Read `sessionId` and `sessionPath` from `~/.multmux/sessions/*.json` state files
 2. If empty, PID fallback:
    - **Claude**: build process tree via `ps`, find descendant of pane PID in `~/.claude/sessions/*.json`
    - **Codex**: run `lsof` on pane PIDs to find open rollout JSONL files, extract session ID from filename
-3. Claude: read first user message from `~/.claude/projects/{encoded}/<sessionId>.jsonl`
+3. Claude: encode `sessionPath` and read first user message from `~/.claude/projects/{encoded(sessionPath)}/<sessionId>.jsonl`
 4. Codex: query `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
 
 Full summary strings are returned (no server-side truncation). The UI truncates with CSS `text-overflow: ellipsis`.
@@ -123,9 +123,7 @@ Before the server spawns a shell PTY or starts a new multmux child process, it r
 
 ### Session Name Resolution
 
-When a `project` query param is provided on the WebSocket URL, `attachSession()` reads the project's `.multmux/<handle>.json` state file to get the exact `tmuxSession` value. This ensures sessions with the same handle across different projects (e.g. both `openweb` and `androidagent` having `codex-design`) connect to the correct tmux session.
-
-Fallback: if no project is provided or the state file lookup fails, `resolveTmuxSession()` searches `tmux list-sessions` for a match (short name → full name like `1-claude-workflow-mt`).
+`attachSession()` reads the global `~/.multmux/sessions/<handle>.json` state file and attaches directly to that tmux session name, because `handle` now is the tmux session name. If the state file is missing, it falls back to the requested `handle`.
 
 ## Detach vs Kill
 

@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-06: Multmux v2 workflow-state migration
+
+**What changed:**
+- Switched workflow server session discovery from per-project `.multmux/` directories to the global `~/.multmux/sessions/` directory
+- Added `MULTMUX_SESSIONS_DIR`, replaced `tmuxSession` usage with `handle`, and threaded `sessionPath` through session attribution and Claude summary lookup
+- Reworked project-watcher to use one global multmux sessions watcher with `sessionPath`-based project filtering
+- Updated session reconciler to read the global sessions dir, delete stale files there, and backfill via `multmux status --json --path <project-path>`
+- Removed `*-mt` fallback assumptions from terminal attach/name resolution and refreshed the affected server tests/docs
+
+**Why:**
+- Multmux v2 makes session state global and uses `sessionPath` instead of per-project directory scoping
+- Workflow needed to follow the new contract so sessions started in subdirectories still show up under the right registered project
+
+**Key files:** `server/src/lib/constants.ts`, `server/src/lib/multmux.ts`, `server/src/lib/project-watcher.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/terminal.ts`, `server/src/lib/session-summary.ts`, `server/src/routes/sessions.ts`
+**Verification:** `cd server && npm test` (106 pass)
+**Commit:** Uncommitted
+**Next:** Verify against a live multmux v2 install once `~/.multmux/sessions/` exists locally
+**Blockers:** Waiting on the parallel multmux repo refactor to create/populate the new sessions directory in a live environment
+
 ## 2026-04-04: Inline code autocomplete (Copilot-style)
 
 **What changed:**

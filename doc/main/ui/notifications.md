@@ -38,7 +38,7 @@ Sinks are isolated: one sink failing does not prevent others from firing.
 
 Session reconciler (`session-reconciler.ts`) detects `processing → idle` transitions uniformly for all providers:
 
-- Reads `.multmux/*.json` state files every 60 seconds
+- Reads `~/.multmux/sessions/*.json` state files every 60 seconds
 - Filters: minimum 15 seconds processing duration + 2× debounce (two consecutive idle readings)
 - Writes `session_idle` entry with `sessionName` to project-level `doc/todo/progress.json`
 
