@@ -107,12 +107,45 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
 
 // --- Unified row ---
 
-function UnifiedRow({ row }: { row: DiffRow }) {
+function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new' }) {
   let bg = ''
   let color = C.textDim
 
   if (row.kind === 'added') { bg = COLORS.addBg; color = SOLARIZED_LIGHT.green }
   else if (row.kind === 'deleted') { bg = COLORS.delBg; color = SOLARIZED_LIGHT.red }
+
+  // Single-column mode: all-added or all-deleted files only need one line number
+  if (singleCol) {
+    const num = singleCol === 'new'
+      ? (row.kind === 'deleted' ? null : row.kind === 'modified' ? row.newLine : row.newLine)
+      : (row.kind === 'added' ? null : row.kind === 'modified' ? row.oldLine : row.oldLine)
+
+    if (row.kind === 'modified') {
+      return (
+        <>
+          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: SOLARIZED_LIGHT.red, minHeight: 20 }}>
+            <LineNum num={row.oldLine} />
+            <span style={{ flex: 1, paddingRight: 12 }}>
+              <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
+            </span>
+          </div>
+          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: SOLARIZED_LIGHT.green, minHeight: 20 }}>
+            <LineNum num={row.newLine} />
+            <span style={{ flex: 1, paddingRight: 12 }}>
+              <Segments segments={row.newSegments} highlight={COLORS.addWord} />
+            </span>
+          </div>
+        </>
+      )
+    }
+
+    return (
+      <div style={{ display: 'flex', backgroundColor: bg, color, minHeight: 20 }}>
+        <LineNum num={num} />
+        <span style={{ flex: 1, paddingRight: 12 }}>{row.text}</span>
+      </div>
+    )
+  }
 
   return (
     <>
@@ -387,6 +420,10 @@ export function DiffTab({
 
   const hunkCount = parsed.hunks.length
 
+  // All-added or all-deleted files only need one line number column
+  const singleCol: 'old' | 'new' | undefined =
+    parsed.status === 'added' ? 'new' : parsed.status === 'deleted' ? 'old' : undefined
+
   const scrollToHunk = useCallback((index: number) => {
     const el = hunkRefs.current.get(index)
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -506,7 +543,7 @@ export function DiffTab({
                       .map(row => (
                         effectiveMode === 'split'
                           ? <SplitRow key={row.key} row={row} />
-                          : <UnifiedRow key={row.key} row={row} />
+                          : <UnifiedRow key={row.key} row={row} singleCol={singleCol} />
                       ))
                   }
                   return (
