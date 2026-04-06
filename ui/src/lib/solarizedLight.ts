@@ -277,4 +277,45 @@ export const solarizedLight = EditorView.theme({
   '.cm-diff-popup-normal': {
     color: SOLARIZED_LIGHT.base00,
   },
+  '.cm-diff-popup-badge': {
+    fontSize: '11px',
+    fontWeight: '600',
+  },
+  '.cm-diff-popup-nav': {
+    background: 'none',
+    border: `1px solid ${SOLARIZED_LIGHT.border}`,
+    borderRadius: '3px',
+    color: SOLARIZED_LIGHT.base01,
+    cursor: 'pointer',
+    fontSize: '11px',
+    padding: '0 4px',
+    height: '18px',
+    lineHeight: '16px',
+  },
+  '.cm-diff-popup-nav:hover': {
+    backgroundColor: SOLARIZED_LIGHT.base2,
+  },
+  '.cm-diff-popup-nav:disabled': {
+    opacity: '0.3',
+    cursor: 'default',
+  },
+  '.cm-diff-popup-linenum': {
+    display: 'inline-block',
+    width: '36px',
+    textAlign: 'right',
+    paddingRight: '8px',
+    color: SOLARIZED_LIGHT.base1,
+    userSelect: 'none',
+  },
+  '.cm-diff-popup-showmore': {
+    textAlign: 'center',
+    color: SOLARIZED_LIGHT.blue,
+    fontSize: '11px',
+    padding: '4px 0',
+    cursor: 'pointer',
+    userSelect: 'none',
+  },
+  '.cm-diff-popup-showmore:hover': {
+    backgroundColor: 'rgba(38, 139, 210, 0.08)',
+  },
 })

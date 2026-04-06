@@ -8,7 +8,7 @@ import {
 } from '@codemirror/view'
 import type { DecorationSet } from '@codemirror/view'
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state'
-import type { DiffHunk, ChangeType } from './parseDiff'
+import type { DiffHunk, ChangeType, DiffRow } from './parseDiff'
 import { SOLARIZED_LIGHT } from './solarizedLight'
 
 // --- State Effects ---
@@ -30,7 +30,6 @@ const diffState = StateField.define<DiffGutterState>({
     for (const e of tr.effects) {
       if (e.is(setDiffData)) {
         const hunks = e.value
-        // If open hunk no longer exists, close
         const openHunkId = value.openHunkId && hunks.some(h => h.id === value.openHunkId)
           ? value.openHunkId
           : null
@@ -147,7 +146,6 @@ const lineDecorations = StateField.define<DecorationSet>({
     const doc = tr.state.doc
     const builder = new RangeSetBuilder<Decoration>()
 
-    // Collect all decorations sorted by position
     const decos: Array<{ from: number; deco: Decoration }> = []
     for (const hunk of hunks) {
       if (hunk.type === 'deleted') continue
@@ -166,27 +164,163 @@ const lineDecorations = StateField.define<DecorationSet>({
   provide: f => EditorView.decorations.from(f),
 })
 
+// --- Popup helpers ---
+
+const TRUNCATE_ROWS = 20
+
+const BADGE_LABELS: Record<ChangeType, string> = {
+  added: 'Added',
+  modified: 'Changed',
+  deleted: 'Deleted',
+}
+
+const BADGE_COLORS: Record<ChangeType, string> = {
+  added: SOLARIZED_LIGHT.green,
+  modified: SOLARIZED_LIGHT.blue,
+  deleted: SOLARIZED_LIGHT.red,
+}
+
+function renderWordSegments(parent: HTMLElement, segments: { text: string; kind: string }[], highlight: string) {
+  for (const seg of segments) {
+    const span = document.createElement('span')
+    span.textContent = seg.text
+    if (seg.kind !== 'same') span.style.backgroundColor = highlight
+    parent.appendChild(span)
+  }
+}
+
+function renderRow(row: DiffRow, body: HTMLElement) {
+  if (row.kind === 'modified') {
+    // Old line
+    const delEl = document.createElement('div')
+    delEl.className = 'cm-diff-popup-line cm-diff-popup-del'
+    const delNum = document.createElement('span')
+    delNum.className = 'cm-diff-popup-linenum'
+    delNum.textContent = String(row.oldLine)
+    delEl.appendChild(delNum)
+    renderWordSegments(delEl, row.oldSegments, 'rgba(220,50,47,0.25)')
+    body.appendChild(delEl)
+
+    // New line
+    const addEl = document.createElement('div')
+    addEl.className = 'cm-diff-popup-line cm-diff-popup-add'
+    const addNum = document.createElement('span')
+    addNum.className = 'cm-diff-popup-linenum'
+    addNum.textContent = String(row.newLine)
+    addEl.appendChild(addNum)
+    renderWordSegments(addEl, row.newSegments, 'rgba(133,153,0,0.25)')
+    body.appendChild(addEl)
+    return
+  }
+
+  const el = document.createElement('div')
+  const num = document.createElement('span')
+  num.className = 'cm-diff-popup-linenum'
+
+  if (row.kind === 'added') {
+    el.className = 'cm-diff-popup-line cm-diff-popup-add'
+    num.textContent = String(row.newLine)
+    el.appendChild(num)
+    el.appendChild(document.createTextNode(row.text))
+  } else if (row.kind === 'deleted') {
+    el.className = 'cm-diff-popup-line cm-diff-popup-del'
+    num.textContent = String(row.oldLine)
+    el.appendChild(num)
+    el.appendChild(document.createTextNode(row.text))
+  } else {
+    el.className = 'cm-diff-popup-line cm-diff-popup-normal'
+    num.textContent = String(row.newLine)
+    el.appendChild(num)
+    el.appendChild(document.createTextNode(row.text))
+  }
+  body.appendChild(el)
+}
+
 // --- Inline Popup Widget ---
 
 class DiffPopupWidget extends WidgetType {
   readonly hunk: DiffHunk
-  constructor(hunk: DiffHunk) { super(); this.hunk = hunk }
+  readonly hunkIndex: number
+  readonly totalHunks: number
+
+  constructor(hunk: DiffHunk, hunkIndex: number, totalHunks: number) {
+    super()
+    this.hunk = hunk
+    this.hunkIndex = hunkIndex
+    this.totalHunks = totalHunks
+  }
 
   toDOM(view: EditorView) {
     const wrap = document.createElement('div')
     wrap.className = 'cm-diff-popup'
 
-    const accentColor = this.hunk.type === 'added' ? SOLARIZED_LIGHT.green
-      : this.hunk.type === 'modified' ? SOLARIZED_LIGHT.blue
-      : SOLARIZED_LIGHT.red
+    const accentColor = BADGE_COLORS[this.hunk.type]
     wrap.style.borderLeftColor = accentColor
 
     // Header
     const header = document.createElement('div')
     header.className = 'cm-diff-popup-header'
+
+    // Change badge
+    const badge = document.createElement('span')
+    badge.className = 'cm-diff-popup-badge'
+    badge.textContent = BADGE_LABELS[this.hunk.type]
+    badge.style.color = accentColor
+    badge.style.fontWeight = '600'
+    badge.style.fontSize = '11px'
+    header.appendChild(badge)
+
+    // Hunk header text
     const headerText = document.createElement('span')
     headerText.textContent = this.hunk.header
+    headerText.style.marginLeft = '8px'
+    headerText.style.opacity = '0.7'
     header.appendChild(headerText)
+
+    // Nav + close controls
+    const controls = document.createElement('span')
+    controls.style.marginLeft = 'auto'
+    controls.style.display = 'flex'
+    controls.style.gap = '4px'
+    controls.style.alignItems = 'center'
+
+    // Prev button
+    if (this.totalHunks > 1) {
+      const prevBtn = document.createElement('button')
+      prevBtn.className = 'cm-diff-popup-nav'
+      prevBtn.textContent = '\u2191'
+      prevBtn.title = 'Previous change'
+      prevBtn.disabled = this.hunkIndex === 0
+      prevBtn.onclick = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const { hunks } = view.state.field(diffState)
+        const prevHunk = hunks[this.hunkIndex - 1]
+        if (prevHunk) view.dispatch({ effects: toggleHunkPopup.of(prevHunk.id) })
+      }
+      controls.appendChild(prevBtn)
+
+      const nextBtn = document.createElement('button')
+      nextBtn.className = 'cm-diff-popup-nav'
+      nextBtn.textContent = '\u2193'
+      nextBtn.title = 'Next change'
+      nextBtn.disabled = this.hunkIndex === this.totalHunks - 1
+      nextBtn.onclick = (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        const { hunks } = view.state.field(diffState)
+        const nextHunk = hunks[this.hunkIndex + 1]
+        if (nextHunk) view.dispatch({ effects: toggleHunkPopup.of(nextHunk.id) })
+      }
+      controls.appendChild(nextBtn)
+
+      // Hunk counter
+      const counter = document.createElement('span')
+      counter.style.fontSize = '10px'
+      counter.style.opacity = '0.6'
+      counter.textContent = `${this.hunkIndex + 1}/${this.totalHunks}`
+      controls.appendChild(counter)
+    }
 
     const closeBtn = document.createElement('button')
     closeBtn.textContent = '\u00D7'
@@ -196,36 +330,38 @@ class DiffPopupWidget extends WidgetType {
       e.stopPropagation()
       view.dispatch({ effects: closePopup.of(null) })
     }
-    header.appendChild(closeBtn)
+    controls.appendChild(closeBtn)
+    header.appendChild(controls)
     wrap.appendChild(header)
 
     // Body
     const body = document.createElement('div')
     body.className = 'cm-diff-popup-body'
-    for (const row of this.hunk.rows) {
-      const el = document.createElement('div')
-      if (row.kind === 'added') {
-        el.className = 'cm-diff-popup-line cm-diff-popup-add'
-        el.textContent = '+' + row.text
-      } else if (row.kind === 'deleted') {
-        el.className = 'cm-diff-popup-line cm-diff-popup-del'
-        el.textContent = '-' + row.text
-      } else if (row.kind === 'modified') {
-        // Show both old and new lines for modified rows
-        const delEl = document.createElement('div')
-        delEl.className = 'cm-diff-popup-line cm-diff-popup-del'
-        delEl.textContent = '-' + row.oldText
-        body.appendChild(delEl)
-        el.className = 'cm-diff-popup-line cm-diff-popup-add'
-        el.textContent = '+' + row.newText
-      } else {
-        el.className = 'cm-diff-popup-line cm-diff-popup-normal'
-        el.textContent = ' ' + row.text
-      }
-      body.appendChild(el)
-    }
-    wrap.appendChild(body)
 
+    const rows = this.hunk.rows
+    const truncated = rows.length > TRUNCATE_ROWS
+
+    const visibleRows = truncated ? rows.slice(0, TRUNCATE_ROWS) : rows
+    for (const row of visibleRows) {
+      renderRow(row, body)
+    }
+
+    // Show more button
+    if (truncated) {
+      const showMore = document.createElement('div')
+      showMore.className = 'cm-diff-popup-showmore'
+      showMore.textContent = `Show ${rows.length - TRUNCATE_ROWS} more lines`
+      showMore.onclick = () => {
+        // Render remaining rows and remove button
+        for (let i = TRUNCATE_ROWS; i < rows.length; i++) {
+          renderRow(rows[i], body)
+        }
+        showMore.remove()
+      }
+      body.appendChild(showMore)
+    }
+
+    wrap.appendChild(body)
     return wrap
   }
 
@@ -241,8 +377,9 @@ const popupDecoration = StateField.define<DecorationSet>({
     const { hunks, openHunkId } = tr.state.field(diffState)
     if (!openHunkId) return Decoration.none
 
-    const hunk = hunks.find(h => h.id === openHunkId)
-    if (!hunk) return Decoration.none
+    const hunkIndex = hunks.findIndex(h => h.id === openHunkId)
+    if (hunkIndex === -1) return Decoration.none
+    const hunk = hunks[hunkIndex]
 
     const doc = tr.state.doc
     const anchorLine = Math.max(1, Math.min(hunk.anchorLine, doc.lines))
@@ -250,7 +387,7 @@ const popupDecoration = StateField.define<DecorationSet>({
 
     return Decoration.set([
       Decoration.widget({
-        widget: new DiffPopupWidget(hunk),
+        widget: new DiffPopupWidget(hunk, hunkIndex, hunks.length),
         block: true,
         side: 1,
       }).range(line.to),
@@ -277,8 +414,6 @@ const clickOutsideDismiss = EditorView.domEventHandlers({
     if (!view.state.field(diffState).openHunkId) return false
     const target = event.target as HTMLElement
     if (target.closest('.cm-diff-popup') || target.closest('.cm-diff-gutter')) return false
-    // Defer popup close to next frame so the layout shift doesn't
-    // interfere with CM6's click-to-position calculation.
     requestAnimationFrame(() => {
       view.dispatch({ effects: closePopup.of(null) })
     })
