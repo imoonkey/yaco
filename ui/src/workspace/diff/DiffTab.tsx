@@ -557,7 +557,7 @@ export function DiffTab({
                 const row = item as DiffRow
                 return effectiveMode === 'split'
                   ? <SplitRow key={row.key} row={row} />
-                  : <UnifiedRow key={row.key} row={row} />
+                  : <UnifiedRow key={row.key} row={row} singleCol={singleCol} />
               })}
             </div>
           )
