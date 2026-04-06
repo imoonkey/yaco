@@ -270,9 +270,13 @@ class DiffPopupWidget extends WidgetType {
     badge.style.fontSize = '11px'
     header.appendChild(badge)
 
-    // Hunk header text
+    // Hunk header text (with deletion context for deleted-only hunks)
     const headerText = document.createElement('span')
-    headerText.textContent = this.hunk.header
+    if (this.hunk.type === 'deleted') {
+      headerText.textContent = `${this.hunk.stats.deleted} lines deleted nearby`
+    } else {
+      headerText.textContent = this.hunk.header
+    }
     headerText.style.marginLeft = '8px'
     headerText.style.opacity = '0.7'
     header.appendChild(headerText)

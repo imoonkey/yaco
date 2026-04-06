@@ -35,6 +35,15 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
     return paths
   }, [activeDiffPath, editorDiffPath])
 
+  // Invalidate cache when git state changes so diffs are re-fetched
+  const prevGitDataRef = useRef(gitData)
+  useEffect(() => {
+    if (prevGitDataRef.current === gitData) return
+    prevGitDataRef.current = gitData
+    // Clear all cached entries — the fetch effect will re-populate
+    setCache({})
+  }, [gitData])
+
   // Single effect that fetches all needed paths
   useEffect(() => {
     const controllers: AbortController[] = []
