@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../../lib/solarizedLight'
 import type { ParsedFileDiff, DiffRow, DiffSegment } from '../../lib/parseDiff'
 import type { DiffHunk } from '../../lib/parseDiff'
@@ -29,6 +29,43 @@ const COLORS = {
   hunkBg: 'rgba(38,139,210,0.08)',
   gapBorder: C.border,
 } as const
+
+// --- Context collapse ---
+
+const CONTEXT_VISIBLE = 3 // show first/last N context lines before collapsing
+
+function collapseContextRows(rows: DiffRow[]): Array<DiffRow | { kind: 'collapsed'; key: string; count: number; startIndex: number }> {
+  // Find leading and trailing context runs within the hunk
+  const result: Array<DiffRow | { kind: 'collapsed'; key: string; count: number; startIndex: number }> = []
+
+  // Identify contiguous context runs
+  let i = 0
+  while (i < rows.length) {
+    if (rows[i].kind !== 'context') {
+      result.push(rows[i])
+      i++
+      continue
+    }
+
+    // Collect contiguous context run
+    const runStart = i
+    while (i < rows.length && rows[i].kind === 'context') i++
+    const runLength = i - runStart
+
+    if (runLength <= CONTEXT_VISIBLE * 2 + 1) {
+      // Short run — show all
+      for (let j = runStart; j < i; j++) result.push(rows[j])
+    } else {
+      // Long run — show first N, collapse middle, show last N
+      for (let j = runStart; j < runStart + CONTEXT_VISIBLE; j++) result.push(rows[j])
+      const collapsedCount = runLength - CONTEXT_VISIBLE * 2
+      result.push({ kind: 'collapsed', key: `collapse-${runStart}`, count: collapsedCount, startIndex: runStart + CONTEXT_VISIBLE })
+      for (let j = i - CONTEXT_VISIBLE; j < i; j++) result.push(rows[j])
+    }
+  }
+
+  return result
+}
 
 // --- Segment renderer ---
 
@@ -70,13 +107,12 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
 
 // --- Unified row ---
 
-function UnifiedRow({ row, isActive }: { row: DiffRow; isActive: boolean }) {
+function UnifiedRow({ row }: { row: DiffRow }) {
   let bg = ''
   let color = C.textDim
 
   if (row.kind === 'added') { bg = COLORS.addBg; color = SOLARIZED_LIGHT.green }
   else if (row.kind === 'deleted') { bg = COLORS.delBg; color = SOLARIZED_LIGHT.red }
-  else if (row.kind === 'modified') { bg = COLORS.addBg }
 
   return (
     <>
@@ -115,7 +151,7 @@ function UnifiedRow({ row, isActive }: { row: DiffRow; isActive: boolean }) {
 // --- Split row ---
 
 function SplitRow({ row }: { row: DiffRow }) {
-  const placeholderBg = '#f0ece0' // subtle gray for empty side
+  const placeholderBg = '#f0ece0'
 
   if (row.kind === 'context') {
     return (
@@ -205,6 +241,28 @@ function InterHunkGap({ lineCount }: { lineCount: number }) {
       }}
     >
       {lineCount} unchanged lines omitted
+    </div>
+  )
+}
+
+// --- Collapsed context row ---
+
+function CollapsedContextRow({ count, onExpand }: { count: number; onExpand: () => void }) {
+  return (
+    <div
+      style={{
+        textAlign: 'center',
+        color: SOLARIZED_LIGHT.base1,
+        fontSize: 11,
+        padding: '2px 0',
+        cursor: 'pointer',
+        userSelect: 'none',
+      }}
+      onClick={onExpand}
+      onMouseEnter={e => (e.currentTarget.style.backgroundColor = COLORS.hunkBg)}
+      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+    >
+      {count} unchanged lines
     </div>
   )
 }
@@ -309,6 +367,9 @@ export function DiffTab({
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode)
   const [activeHunkIndex, setActiveHunkIndex] = useState(0)
+  const [expandedContexts, setExpandedContexts] = useState<Set<string>>(new Set())
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const hunkRefs = useRef<Map<number, HTMLDivElement>>(new Map())
 
   // Mobile always uses unified
   const effectiveMode = isMobile ? 'unified' : viewMode
@@ -318,18 +379,61 @@ export function DiffTab({
     saveViewMode(mode)
   }
 
-  // Reset active hunk when parsed data changes
-  useEffect(() => { setActiveHunkIndex(0) }, [parsed])
+  // Reset state when parsed data changes
+  useEffect(() => {
+    setActiveHunkIndex(0)
+    setExpandedContexts(new Set())
+  }, [parsed])
 
   const hunkCount = parsed.hunks.length
 
-  const navigatePrev = () => {
-    setActiveHunkIndex(i => Math.max(0, i - 1))
-  }
+  const scrollToHunk = useCallback((index: number) => {
+    const el = hunkRefs.current.get(index)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
 
-  const navigateNext = () => {
-    setActiveHunkIndex(i => Math.min(hunkCount - 1, i + 1))
-  }
+  const navigatePrev = useCallback(() => {
+    setActiveHunkIndex(i => {
+      const next = Math.max(0, i - 1)
+      scrollToHunk(next)
+      return next
+    })
+  }, [scrollToHunk])
+
+  const navigateNext = useCallback(() => {
+    setActiveHunkIndex(i => {
+      const next = Math.min(hunkCount - 1, i + 1)
+      scrollToHunk(next)
+      return next
+    })
+  }, [hunkCount, scrollToHunk])
+
+  // j/k keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Only handle when diff tab has focus (no input/textarea focused)
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      if (e.key === 'j') {
+        e.preventDefault()
+        navigateNext()
+      } else if (e.key === 'k') {
+        e.preventDefault()
+        navigatePrev()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [navigateNext, navigatePrev])
+
+  const handleExpandContext = useCallback((key: string) => {
+    setExpandedContexts(prev => {
+      const next = new Set(prev)
+      next.add(key)
+      return next
+    })
+  }, [])
 
   // Binary placeholder
   if (parsed.mode === 'binary') {
@@ -362,6 +466,7 @@ export function DiffTab({
         isMobile={isMobile}
       />
       <div
+        ref={scrollRef}
         style={{
           flex: 1,
           overflow: 'auto',
@@ -382,15 +487,41 @@ export function DiffTab({
             gapLines = hunk.newStart - prevEnd
           }
 
+          // Collapse long context runs within hunk
+          const displayRows = collapseContextRows(hunk.rows)
+
           return (
-            <div key={hunk.id}>
+            <div
+              key={hunk.id}
+              ref={el => { if (el) hunkRefs.current.set(hunkIdx, el) }}
+            >
               {gapLines > 0 && <InterHunkGap lineCount={gapLines} />}
               <HunkHeader hunk={hunk} isActive={isActive} />
-              {hunk.rows.map(row => (
-                effectiveMode === 'split'
+              {displayRows.map(item => {
+                if ('count' in item && item.kind === 'collapsed') {
+                  if (expandedContexts.has(item.key)) {
+                    // Render the hidden rows
+                    return hunk.rows
+                      .slice(item.startIndex, item.startIndex + item.count)
+                      .map(row => (
+                        effectiveMode === 'split'
+                          ? <SplitRow key={row.key} row={row} />
+                          : <UnifiedRow key={row.key} row={row} />
+                      ))
+                  }
+                  return (
+                    <CollapsedContextRow
+                      key={item.key}
+                      count={item.count}
+                      onExpand={() => handleExpandContext(item.key)}
+                    />
+                  )
+                }
+                const row = item as DiffRow
+                return effectiveMode === 'split'
                   ? <SplitRow key={row.key} row={row} />
-                  : <UnifiedRow key={row.key} row={row} isActive={isActive} />
-              ))}
+                  : <UnifiedRow key={row.key} row={row} />
+              })}
             </div>
           )
         })}
