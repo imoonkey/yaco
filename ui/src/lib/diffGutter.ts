@@ -202,12 +202,27 @@ class DiffPopupWidget extends WidgetType {
     // Body
     const body = document.createElement('div')
     body.className = 'cm-diff-popup-body'
-    for (const change of this.hunk.changes) {
-      const row = document.createElement('div')
-      row.className = `cm-diff-popup-line cm-diff-popup-${change.type}`
-      const prefix = change.type === 'add' ? '+' : change.type === 'del' ? '-' : ' '
-      row.textContent = prefix + change.content
-      body.appendChild(row)
+    for (const row of this.hunk.rows) {
+      const el = document.createElement('div')
+      if (row.kind === 'added') {
+        el.className = 'cm-diff-popup-line cm-diff-popup-add'
+        el.textContent = '+' + row.text
+      } else if (row.kind === 'deleted') {
+        el.className = 'cm-diff-popup-line cm-diff-popup-del'
+        el.textContent = '-' + row.text
+      } else if (row.kind === 'modified') {
+        // Show both old and new lines for modified rows
+        const delEl = document.createElement('div')
+        delEl.className = 'cm-diff-popup-line cm-diff-popup-del'
+        delEl.textContent = '-' + row.oldText
+        body.appendChild(delEl)
+        el.className = 'cm-diff-popup-line cm-diff-popup-add'
+        el.textContent = '+' + row.newText
+      } else {
+        el.className = 'cm-diff-popup-line cm-diff-popup-normal'
+        el.textContent = ' ' + row.text
+      }
+      body.appendChild(el)
     }
     wrap.appendChild(body)
 

@@ -74,7 +74,7 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
     fetchGitDiff(projectName, activeFilePath)
       .then(diffText => {
         if (cancelled) return
-        setEditorDiffHunks(parseDiff(diffText))
+        setEditorDiffHunks(parseDiff(diffText).hunks)
       })
       .catch(() => {
         if (cancelled) return
