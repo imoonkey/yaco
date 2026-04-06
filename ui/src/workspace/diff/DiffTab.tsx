@@ -91,9 +91,9 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
     <span
       style={{
         display: 'inline-block',
-        width: 48,
+        width: 34,
         textAlign: 'right',
-        paddingRight: 8,
+        paddingRight: 6,
         color: SOLARIZED_LIGHT.base1,
         userSelect: 'none',
         flexShrink: 0,
@@ -155,7 +155,7 @@ function SplitRow({ row }: { row: DiffRow }) {
 
   if (row.kind === 'context') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 1px 48px 1fr', minHeight: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
         <LineNum num={row.oldLine} />
         <span style={{ color: C.textDim, paddingRight: 8 }}>{row.text}</span>
         <div style={{ backgroundColor: C.border }} />
@@ -167,7 +167,7 @@ function SplitRow({ row }: { row: DiffRow }) {
 
   if (row.kind === 'deleted') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 1px 48px 1fr', minHeight: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
         <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
         <span style={{ backgroundColor: COLORS.delBg, color: SOLARIZED_LIGHT.red, paddingRight: 8 }}>{row.text}</span>
         <div style={{ backgroundColor: C.border }} />
@@ -179,7 +179,7 @@ function SplitRow({ row }: { row: DiffRow }) {
 
   if (row.kind === 'added') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 1px 48px 1fr', minHeight: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
         <LineNum num={null} style={{ backgroundColor: placeholderBg }} />
         <span style={{ backgroundColor: placeholderBg }} />
         <div style={{ backgroundColor: C.border }} />
@@ -191,7 +191,7 @@ function SplitRow({ row }: { row: DiffRow }) {
 
   // modified
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 1px 48px 1fr', minHeight: 20 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
       <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
       <span style={{ backgroundColor: COLORS.delBg, color: SOLARIZED_LIGHT.red, paddingRight: 8 }}>
         <Segments segments={row.oldSegments} highlight={COLORS.delWord} />

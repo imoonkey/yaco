@@ -301,9 +301,9 @@ export const solarizedLight = EditorView.theme({
   },
   '.cm-diff-popup-linenum': {
     display: 'inline-block',
-    width: '36px',
+    width: '28px',
     textAlign: 'right',
-    paddingRight: '8px',
+    paddingRight: '6px',
     color: SOLARIZED_LIGHT.base1,
     userSelect: 'none',
   },
