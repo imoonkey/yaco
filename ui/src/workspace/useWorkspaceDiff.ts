@@ -35,49 +35,47 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
     return paths
   }, [activeDiffPath, editorDiffPath])
 
-  // Invalidate cache when git state changes so diffs are re-fetched
-  const prevGitDataRef = useRef(gitData)
-  useEffect(() => {
-    if (prevGitDataRef.current === gitData) return
-    prevGitDataRef.current = gitData
-    // Clear all cached entries — the fetch effect will re-populate
-    setCache({})
-  }, [gitData])
-
-  // Single effect that fetches all needed paths
+  // Fetch diffs for active paths. Re-runs on gitData change to pick up
+  // new git state, but keeps stale data visible until the fetch completes
+  // (no flash to "Loading...").
   useEffect(() => {
     const controllers: AbortController[] = []
 
     for (const path of pathsToFetch) {
-      // Skip if already loaded and not stale
-      const existing = cache[path]
-      if (existing && !existing.loading && !existing.error && existing.parsed) continue
+      // On initial load, skip if already cached and not stale.
+      // But always re-fetch when gitData changes — the effect dependency
+      // array includes gitData, so we get a fresh closure each time.
+      // We only skip if we already have data AND gitData hasn't changed
+      // (which React guarantees by re-running the effect on gitData change).
 
+      const controller = new AbortController()
+      controllers.push(controller)
+
+      // Set loading only if we don't have data yet (avoid flash)
       setCache(prev => {
         const current = prev[path]
+        if (current?.parsed) return prev // keep showing stale data while re-fetching
         if (current?.loading) return prev
         return {
           ...prev,
           [path]: {
-            raw: current?.raw ?? null,
-            parsed: current?.parsed ?? null,
+            raw: null,
+            parsed: null,
             loading: true,
             error: false,
           },
         }
       })
 
-      const controller = new AbortController()
-      controllers.push(controller)
-
       fetchGitDiff(projectName, path)
         .then(raw => {
           if (controller.signal.aborted) return
-          const parsed = parseDiff(raw, path)
-          setCache(prev => ({
-            ...prev,
-            [path]: { raw, parsed, loading: false, error: false },
-          }))
+          setCache(prev => {
+            // Skip update if raw diff hasn't changed (avoids re-render)
+            if (prev[path]?.raw === raw) return prev
+            const parsed = parseDiff(raw, path)
+            return { ...prev, [path]: { raw, parsed, loading: false, error: false } }
+          })
         })
         .catch(() => {
           if (controller.signal.aborted) return
@@ -94,16 +92,14 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
     }
 
     return () => { controllers.forEach(c => c.abort()) }
-    // gitData triggers re-fetch when git state changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDiffPath, editorDiffPath, projectName, gitData])
 
-  // Invalidate cache entries when paths are no longer needed
+  // Clean up cache entries when paths are no longer needed
   const prevPathsRef = useRef(pathsToFetch)
   useEffect(() => {
     const prev = prevPathsRef.current
     prevPathsRef.current = pathsToFetch
-    // Clean up paths that dropped out
     const removed = [...prev].filter(p => !pathsToFetch.has(p))
     if (removed.length === 0) return
     setCache(prev => {
@@ -113,7 +109,7 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
     })
   }, [pathsToFetch])
 
-  // Diff tab consumes this (backward compat with WorkspaceEditorArea)
+  // Diff tab consumes this
   const activeDiff = activeDiffPath ? cache[activeDiffPath] ?? null : null
 
   // Editor gutter consumes this
