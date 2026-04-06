@@ -2,10 +2,12 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react
 import { Editor } from '../components/Editor'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { DiffHunk } from '../lib/parseDiff'
+import type { ParsedFileDiff } from '../lib/parseDiff'
 import { escapeHtml, clampLine, renderMarkdown } from './markdown'
 import { VResizeHandle } from './ResizeHandle'
 import type { MdMode } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
+import { DiffTab } from './diff/DiffTab'
 
 // --- Diff View ---
 export function DiffView({ diff }: { diff: string }) {
@@ -230,7 +232,7 @@ export function WorkspaceEditorArea({
   activeViewportLine: number
   isDiffTab: boolean | undefined
   isTasksTab: boolean
-  activeDiff: { raw: string | null; loading: boolean } | null
+  activeDiff: { raw: string | null; parsed: ParsedFileDiff | null; loading: boolean } | null
   isMd: boolean | undefined
   mdMode: MdMode
   splitSize: number
@@ -251,6 +253,7 @@ export function WorkspaceEditorArea({
   insertText?: string | null
   insertRequestKey?: number
   autocompleteEnabled?: boolean
+  isMobile?: boolean
 }) {
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -338,7 +341,7 @@ export function WorkspaceEditorArea({
         tasksPane
       ) : isDiffTab ? (
         !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
-        : activeDiff?.raw != null ? <DiffView diff={activeDiff.raw} />
+        : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} />
         : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
       ) : activeTab ? (
         activeFileLoading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>

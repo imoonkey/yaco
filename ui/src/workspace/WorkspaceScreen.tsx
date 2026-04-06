@@ -535,6 +535,7 @@ export function Workspace({
         insertText={editorInsert?.text}
         insertRequestKey={editorInsert?.key}
         autocompleteEnabled={layout.autocompleteEnabled}
+        isMobile={isMobile}
       />
     </div>
   )
