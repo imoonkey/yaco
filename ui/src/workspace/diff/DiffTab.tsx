@@ -151,7 +151,7 @@ function UnifiedRow({ row }: { row: DiffRow }) {
 // --- Split row ---
 
 function SplitRow({ row }: { row: DiffRow }) {
-  const placeholderBg = '#f0ece0'
+  const placeholderBg = SOLARIZED_LIGHT.base2
 
   if (row.kind === 'context') {
     return (

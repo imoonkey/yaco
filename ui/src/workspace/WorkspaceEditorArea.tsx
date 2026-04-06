@@ -9,25 +9,6 @@ import type { MdMode } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
 import { DiffTab } from './diff/DiffTab'
 
-// --- Diff View ---
-export function DiffView({ diff }: { diff: string }) {
-  if (!diff) return <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>No changes</div>
-  const lines = diff.split('\n')
-  return (
-    <div className="font-mono text-[12px] leading-[1.6] overflow-auto h-full" style={{ backgroundColor: C.editorBg }}>
-      {lines.map((line, i) => {
-        let bg = ''; let color = C.textDim
-        if (line.startsWith('+++') || line.startsWith('---')) { color = C.textDark }
-        else if (line.startsWith('+')) { bg = 'rgba(133,153,0,0.1)'; color = SOLARIZED_LIGHT.green }
-        else if (line.startsWith('-')) { bg = 'rgba(220,50,47,0.1)'; color = SOLARIZED_LIGHT.red }
-        else if (line.startsWith('@@')) { bg = 'rgba(38,139,210,0.08)'; color = SOLARIZED_LIGHT.blue }
-        else if (line.startsWith('diff ')) { color = C.textDark; bg = C.bg }
-        return <div key={i} style={{ backgroundColor: bg, color, paddingLeft: 12, paddingRight: 12, minHeight: 20 }}>{line || '\u00A0'}</div>
-      })}
-    </div>
-  )
-}
-
 // --- Markdown Preview scroll helpers ---
 type MarkdownBlockAnchor = {
   element: HTMLElement
