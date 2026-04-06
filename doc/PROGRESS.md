@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-04-06: Diff viewer — unified/split diff tab + word-level highlights
+
+**What changed:**
+- Added full diff viewer as a workspace tab (`DiffTab.tsx`) with unified and split view modes, j/k keyboard navigation between changes, collapsible unchanged context, and toolbar
+- Rewrote `parseDiff.ts` to return `ParsedFileDiff` with canonical `DiffRow[]` per hunk — one model shared by both the diff tab and the gutter popup card
+- Added `wordDiff.ts` module using `diff` (jsdiff) package for word-level diff computation (`computeWordDiff`, `pairChanges`), pre-computed at parse time so both views get highlights for free
+- Upgraded `diffGutter.ts` popup with word-level highlights, change badges, line numbers, prev/next navigation, and Show more truncation
+- Unified diff cache in `useWorkspaceDiff.ts` — stores raw + parsed per path, invalidates on git SSE changes
+- `WorkspaceEditorArea.tsx` now renders `DiffTab` instead of the old raw `DiffView`
+- Added `diff` + `@types/diff` dependencies to `ui/package.json`
+- Extended `solarizedLight.ts` with CSS classes for popup badge, nav, linenum, and show-more elements
+
+**Why:**
+- The old diff display was raw text with no structure — no word-level highlights, no navigation, no split view
+- Gutter popup showed plain added/deleted lines with no context about what changed within a line
+
+**Key files:** `ui/src/workspace/diff/DiffTab.tsx`, `ui/src/lib/wordDiff.ts`, `ui/src/lib/parseDiff.ts`, `ui/src/lib/diffGutter.ts`, `ui/src/workspace/useWorkspaceDiff.ts`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/lib/solarizedLight.ts`
+**Verification:** `ui/src/lib/__tests__/wordDiff.test.ts`, `ui/src/lib/__tests__/parseDiff.test.ts`
+**Commit:** Uncommitted
+**Next:** Observe real usage, consider file-level diff navigation (prev/next file)
+**Blockers:** None
+
 ## 2026-04-06: Multmux v2 workflow-state migration
 
 **What changed:**
