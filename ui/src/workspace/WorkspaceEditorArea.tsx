@@ -205,6 +205,7 @@ export function WorkspaceEditorArea({
   insertText,
   insertRequestKey,
   autocompleteEnabled,
+  isMobile,
 }: {
   activeTab: string | null
   activeFilePath: string | null
