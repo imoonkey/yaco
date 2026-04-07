@@ -90,9 +90,9 @@ All buttons send escape sequences via the same WebSocket `{ type: 'input', data 
 
 -> See: `ui/src/components/TerminalKeyBar.tsx`
 
-### Mobile IME Workaround
+### IME Input Workaround
 
-xterm v6 drops spaces/symbols from Chinese mobile keyboards due to a guard in `_inputEvent()`. Terminal.tsx adds a capture-phase `input` listener on the terminal container (touch devices only) that detects unprocessed `insertText` events and sends them directly via WebSocket. A companion `keydown` listener skips the fallback when the key has a real keyCode (not 229) to prevent double-sending chars that xterm already handled via its keydown path. See [../mobile.md](../mobile.md) for details.
+xterm v6 can silently drop characters from Chinese/CJK IME input — its `CompositionHelper` may fail to extract committed text from the hidden textarea. Terminal.tsx adds capture-phase `keydown` + `input` listeners on the terminal container (all platforms) that detect unprocessed `insertText` events and send them directly via WebSocket. A `keydown` listener tracks whether the key had a real keyCode (not IME 229) to skip the fallback for chars xterm already handled. Uses `setTimeout(0)` (not `queueMicrotask`) so the check runs after xterm's own composition timeout, avoiding double-send.
 
 ### Session Attachment
 

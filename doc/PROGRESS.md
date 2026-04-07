@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-07: Fix Chinese/CJK IME input in terminal
+
+**What changed:**
+- Extended xterm v6 IME input fallback from touch-only to all platforms
+- Changed `queueMicrotask` to `setTimeout(0)` for correct ordering with xterm's CompositionHelper timeout
+
+**Why:**
+- Chinese characters typed in terminal sessions were silently dropped on desktop — xterm v6's CompositionHelper can fail to extract committed text from its hidden textarea
+
+**Key files:** `ui/src/components/Terminal.tsx`
+**Verification:** Type-check passed, lint clean (no new errors)
+**Commit:** 6aa0bd1
+**Next:** User verification with Chinese IME input
+**Blockers:** None
+
 ## 2026-04-06: Preserve shell sessions across detach
 
 **What changed:**
