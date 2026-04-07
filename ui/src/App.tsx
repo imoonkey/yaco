@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
-import { SOLARIZED_LIGHT_UI as C } from './lib/solarizedLight'
+import { SOLARIZED_LIGHT as S, SOLARIZED_LIGHT_UI as C } from './lib/solarizedLight'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
 
@@ -40,14 +40,45 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   return next
 }
 
-function Clock() {
+const CLOCK_PILL = { backgroundColor: S.base02, color: S.base2 }
+
+function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
   const [now, setNow] = useState(() => new Date())
+  const lastPulseMinRef = useRef(-1)
+
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 60_000)
-    return () => clearInterval(id)
+    // Align to minute boundary so we never skip :00/:15/:30/:45
+    const tick = () => setNow(new Date())
+    const msToNextMin = (60 - new Date().getSeconds()) * 1000
+    const timeout = setTimeout(() => {
+      tick()
+      const id = setInterval(tick, 60_000)
+      cleanup = () => clearInterval(id)
+    }, msToNextMin)
+    let cleanup = () => clearTimeout(timeout)
+    return () => cleanup()
   }, [])
+
+  useEffect(() => {
+    if (!onPulse) return
+    const m = now.getMinutes()
+    if (m === lastPulseMinRef.current) return
+    if (document.visibilityState !== 'visible') return
+
+    if (m === 0 || m === 30) {
+      lastPulseMinRef.current = m
+      onPulse('strong')
+    } else if (m === 15 || m === 45) {
+      lastPulseMinRef.current = m
+      onPulse('light')
+    }
+  }, [now, onPulse])
+
   return (
-    <span className="text-[13px] tabular-nums">
+    <span
+      className="text-[13px] tabular-nums rounded-md px-2.5 py-0.5"
+      style={CLOCK_PILL}
+    >
       {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
     </span>
   )
@@ -57,6 +88,14 @@ function App() {
   useKeyboardViewport()
   const [projectName, setProjectName] = useState<string>(loadProject)
   const [projectOrder, setProjectOrder] = useState<string[]>([])
+  const [pulseType, setPulseType] = useState<'none' | 'light' | 'strong'>('none')
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout>>()
+
+  const handlePulse = useCallback((type: 'light' | 'strong') => {
+    clearTimeout(pulseTimerRef.current)
+    setPulseType(type)
+    pulseTimerRef.current = setTimeout(() => setPulseType('none'), type === 'light' ? 3000 : 4000)
+  }, [])
 
   const { data: projects, refresh: refreshProjects } = useProjects()
   const { data: progress } = useProgress()
@@ -196,7 +235,7 @@ function App() {
     <div className="flex flex-col h-dvh bg-[var(--sol-base3)]">
       <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: C.textDim }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
-        <Clock />
+        <Clock onPulse={handlePulse} />
       </div>
       <main className="flex-1 overflow-hidden">
         {activeProject && (
@@ -236,6 +275,18 @@ function App() {
         <AddProjectDialog
           onAdded={handleProjectAdded}
           onClose={() => setShowAddDialog(false)}
+        />
+      )}
+
+      {pulseType !== 'none' && (
+        <div
+          data-rhythm-pulse
+          className="fixed inset-0 pointer-events-none z-50"
+          style={{
+            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(181, 137, 0, 0.08) 100%)',
+            opacity: pulseType === 'light' ? 0.5 : 1,
+            animation: `rhythm-pulse ${pulseType === 'light' ? '3s' : '4s'} ease-in-out forwards`,
+          }}
         />
       )}
     </div>

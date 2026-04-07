@@ -54,6 +54,15 @@
   to { transform: rotate(360deg); }
 }
 
+/* Rhythm pulse — ambient time awareness vignette */
+@keyframes rhythm-pulse {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-rhythm-pulse] { animation: none !important; }
+}
+
 html, body {
   overscroll-behavior: none;
 }
