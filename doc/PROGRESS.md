@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-04-07: Fix editor scroll jitter, preview click cursor, markdown line breaks
+
+**What changed:**
+- Editor↔preview scroll sync now uses fractional viewport lines (sub-pixel precision) instead of integer line numbers, eliminating visible scroll snapping
+- Added echo-back suppression (`lastSelfReportedLineRef`) so the editor doesn't snap its own scroll position when its reported viewport line round-trips through React state
+- Preview click-to-cursor no longer force-scrolls the editor — uses `scroll: false` on jump request so cursor is placed without `scrollIntoView`
+- Fixed intermittent off-by-one on preview click-to-cursor: each source line now gets equal share of block height via `Math.floor(lineStart + ratio * lineCount)` instead of uneven `Math.round` distribution
+- Enabled `breaks: true` in `marked.parse()` so single newlines in markdown render as `<br>` (was collapsing multi-line text into single lines)
+
+**Why:**
+- Editor scroll was jittery due to viewport line sync feedback loop: scroll → report integer line → state update → prop change → snap scrollTop to line block top → visible position jump on every frame
+- Preview click was scrolling the editor and sometimes placing cursor on wrong line
+- Markdown preview was not rendering line breaks in plain text paragraphs
+
+**Key files:** `ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/markdown.ts`
+**Verification:** TypeScript type-check passed, lint clean
+**Commit:** 60d7b23
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-07: Add time awareness — dark pill clock + rhythm pulse
 
 **What changed:**
