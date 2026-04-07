@@ -342,13 +342,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       }
     })
 
-    // Mobile IME fix: xterm v6 silently drops spaces/symbols from Chinese
-    // mobile keyboards. Its _inputEvent() skips insertText when the prior
-    // IME keydown (keyCode 229) left _keyDownSeen=true. We catch dropped
-    // input by checking if onData fired for this input event.
-    // Only on touch devices — desktop keydown/keypress handle input before
-    // _inputEvent runs, which would cause false positives here.
-    const isTouch = window.matchMedia('(pointer: coarse)').matches
+    // IME fix: xterm v6 silently drops characters from Chinese/CJK IME
+    // input. Its CompositionHelper may fail to extract the committed text
+    // from the hidden textarea, losing the character entirely. We catch
+    // dropped input by checking if onData fired for each input event.
     // Track whether the preceding keydown had a real keyCode (not IME 229).
     // When keyCode !== 229, xterm handles the char via its keydown path and
     // fires onData BEFORE the input event — our fallback must not re-send.
@@ -364,7 +361,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
         return // xterm already sent this char via the keydown path
       }
       imeInputHandled = false
-      queueMicrotask(() => {
+      // Use setTimeout(0) so this runs AFTER xterm's CompositionHelper
+      // timeout (registered on compositionend, which fires before input).
+      // If xterm handled it, onData already set imeInputHandled = true.
+      setTimeout(() => {
         if (!imeInputHandled && ie.data && ws.readyState === WebSocket.OPEN) {
           const mods = modifiersRef.current
           const out = (mods.ctrl || mods.shift) ? applyModifiers(ie.data, mods) : ie.data
@@ -373,16 +373,14 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
             setModifiers({ ctrl: false, shift: false })
           }
         }
-      })
+      }, 0)
     }
     // Attach to container (parent) with capture so this runs BEFORE xterm's
     // own handler on the textarea. On the target element itself, listeners
     // fire in registration order regardless of capture — xterm registers first,
     // so attaching there would run our reset AFTER onData already set the flag.
-    if (isTouch) {
-      container.addEventListener('keydown', handleKeyDown, { capture: true })
-      container.addEventListener('input', handleUnprocessedInput, { capture: true })
-    }
+    container.addEventListener('keydown', handleKeyDown, { capture: true })
+    container.addEventListener('input', handleUnprocessedInput, { capture: true })
 
     term.onResize(() => sendResize())
 
@@ -404,10 +402,8 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       container.removeEventListener('touchend', onTouchEnd)
       container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
-      if (isTouch) {
-        container.removeEventListener('keydown', handleKeyDown, { capture: true })
-        container.removeEventListener('input', handleUnprocessedInput, { capture: true })
-      }
+      container.removeEventListener('keydown', handleKeyDown, { capture: true })
+      container.removeEventListener('input', handleUnprocessedInput, { capture: true })
       observer.disconnect()
       ws.onopen = null
       ws.onmessage = null
