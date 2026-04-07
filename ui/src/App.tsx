@@ -74,12 +74,19 @@ function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
     }
   }, [now, onPulse])
 
+  const weekday = now.toLocaleDateString('en-US', { weekday: 'short' })
+  const monthDay = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const dateStr = `${weekday} ${monthDay}`
+
   return (
-    <span
-      className="text-[13px] tabular-nums rounded-md px-2.5 py-0.5"
-      style={CLOCK_PILL}
-    >
-      {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+    <span className="flex items-center gap-1.5">
+      <span className="text-[13px] tracking-tight" style={{ color: C.textDim }}>{dateStr}</span>
+      <span
+        className="text-[13px] tabular-nums rounded-md px-2.5 py-0.5"
+        style={CLOCK_PILL}
+      >
+        {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+      </span>
     </span>
   )
 }
