@@ -1,10 +1,11 @@
 # App Shell
 
-Top-level application chrome: header bar, project selection, and single-workspace host.
+Top-level application chrome: margin bars, clock, project selection, rhythm pulse, and single-workspace host.
 
 ## Owns
 
-- Header bar (title, notification permission, add-project button)
+- Top/bottom margin bars (desktop only) — project name + clock
+- Clock with dark pill styling and rhythm pulse trigger
 - Project selection and ordering
 - Single Workspace rendering keyed by active project
 
@@ -22,10 +23,25 @@ Top-level application chrome: header bar, project selection, and single-workspac
 
 The app is a single-workspace shell — no view switcher, no Monitor tab, no separate Tasks view. App.tsx renders one `<Workspace>` component keyed by the active project. The project list with unread badges lives inside the workspace sidebar.
 
-### Header Bar
+### Margin Bars
 
-- Left: "Workflow" title
-- Right: notification permission prompt (if `default`), "Alerts blocked" label (if `denied`), `+` add-project button
+Top and bottom margin bars (hidden on mobile via `hidden md:flex`, 40px height each):
+- Left: active project name or "Workflow"
+- Right: Clock component (dark pill style)
+
+### Clock
+
+Styled as a dark pill badge (`base02` background, `base2` text, `rounded-md`) for visual anchoring in the Solarized Light UI. Interval aligned to minute boundaries to prevent skipping quarter-hour marks.
+
+The top Clock triggers rhythm pulse at quarter-hour marks (bottom Clock is display-only):
+- `:15`, `:45` → light pulse (3s, 50% opacity)
+- `:00`, `:30` → strong pulse (4s, full opacity)
+
+### Rhythm Pulse
+
+Full-viewport `pointer-events: none` overlay with radial-gradient vignette (transparent center → warm edges). Triggered by Clock minute checks, managed via `pulseType` state + `setTimeout` auto-clear. Guards: only fires when tab is visible, dedup via `lastPulseMinRef`.
+
+CSS animation (`rhythm-pulse` keyframe in `index.css`) animates opacity for smooth fade. `prefers-reduced-motion` respected via `[data-rhythm-pulse]` selector.
 
 ### Project Selection
 
