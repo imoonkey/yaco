@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-06: PTY leak hardening for terminal attach/detach
+
+**What changed:**
+- Centralized terminal detach cleanup through `releaseSession()` so tmux attach PTYs are always destroyed on WebSocket close and server shutdown
+- Expanded shutdown cleanup from `SIGTERM` only to `SIGINT`, `SIGHUP`, and normal `exit`, covering more `tsx watch` and local dev restart paths
+- Added shell-session idle tracking plus a background reaper that auto-closes detached `shell-N` sessions after 30 minutes
+- Added terminal tests covering shell attach/release behavior and tmux attach cleanup
+- Updated backend and terminal docs to describe detached-shell reaping and the broader shutdown cleanup behavior
+
+**Why:**
+- Workflow terminals were reaching a bad state where new `node-pty` attaches failed with `posix_spawnp failed`, leaving the UI stuck on disconnected shells
+- The immediate trigger was leaked PTY/FD state from repeated terminal attach/detach and dev restarts, especially when cleanup did not run on every exit path
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/index.ts`, `server/src/lib/constants.ts`, `server/src/lib/__tests__/terminal.test.ts`, `doc/main/backend/libs.md`, `doc/main/backend/server.md`, `doc/main/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd server && npm test` (108 passed), `curl http://localhost:3001/api/health`, `curl http://localhost:3001/api/sessions?project=workflow`, manual WebSocket attach smoke tests for `codex-mnnmijav` and `shell-1`
+**Commit:** pending
+**Next:** Add terminal resource-pressure logging when `node-pty` attach fails so future PTY regressions are easier to diagnose
+**Blockers:** None
+
 ## 2026-04-06: Diff viewer — unified/split diff tab + word-level highlights
 
 **What changed:**

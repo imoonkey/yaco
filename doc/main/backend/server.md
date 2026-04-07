@@ -37,7 +37,7 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE notificatio
 4. `ensureWorkflowDir()` — create `~/.workflow/` if missing
 5. `loadProjects()` — read project registry
 6. `startWatching()` — file watchers on `progress.json` files
-7. `startSessionPoller()` — background session status polling
+7. `startSessionReconciler()` — low-frequency session health/drift reconciliation
 8. `startProjectWatchers()` — recursive `fs.watch` per project directory
 9. Start HTTP server on `WORKFLOW_PORT` (default 3001)
 10. Attach WebSocket server for terminal connections
@@ -54,7 +54,7 @@ Flow:
 5. Call `attachSession(name, cols, rows, projectPath?)` to get a PTY handle
 5. Pipe PTY output to WebSocket, WebSocket input to PTY
 6. Handle resize messages (`{ type: 'resize', cols, rows }`)
-7. On WebSocket close: dispose subscriptions, destroy non-persistent PTYs (`proc.destroy()` to close master FD)
+7. On WebSocket close: dispose subscriptions, then call `releaseSession()` so tmux attach PTYs are destroyed and shell sessions are merely detached
 
 ### Dead Connection Detection
 
@@ -62,7 +62,11 @@ A ping/pong heartbeat runs every `WS_PING_INTERVAL_MS` (30s). Each cycle marks a
 
 ### Graceful Shutdown
 
-On `SIGTERM` (sent by `tsx watch` during dev restarts), the server destroys all non-persistent PTY attach processes and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
+On `SIGTERM`, `SIGINT`, `SIGHUP`, and normal `exit`, the server destroys all active tmux attach PTYs and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
+
+### Detached Shell Reaping
+
+Direct shell sessions stay alive across browser detach/re-attach, but they are no longer immortal. A background reaper closes any shell session that has had zero attached clients for `SHELL_SESSION_IDLE_TTL_MS` (30 minutes by default), checked every `SHELL_SESSION_REAP_INTERVAL_MS` (60 seconds). This keeps the convenience of persistent local shells without letting abandoned tabs leak PTYs indefinitely.
 
 ## UI Serving
 

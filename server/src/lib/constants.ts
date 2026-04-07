@@ -57,3 +57,9 @@ export const MAX_TERMINAL_ROWS = 200
 
 /** WebSocket ping interval for dead connection detection (ms) */
 export const WS_PING_INTERVAL_MS = 30_000
+
+/** Auto-close detached shell sessions after idling for this long (ms) */
+export const SHELL_SESSION_IDLE_TTL_MS = 30 * 60_000
+
+/** Detached shell session reap cadence (ms) */
+export const SHELL_SESSION_REAP_INTERVAL_MS = 60_000

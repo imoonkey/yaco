@@ -3,7 +3,7 @@ import type { IPty } from 'node-pty'
 import { validateSessionName } from './session-names'
 import { resolveSessionTmuxName } from './multmux'
 import { buildChildProcessEnv } from './ssh-auth'
-import { PTY_MAX_BUFFER_SIZE } from './constants'
+import { PTY_MAX_BUFFER_SIZE, SHELL_SESSION_IDLE_TTL_MS, SHELL_SESSION_REAP_INTERVAL_MS } from './constants'
 
 export interface ShellSessionSummary {
   name: string
@@ -17,6 +17,8 @@ interface ShellSession {
   project: string
   proc: IPty
   buffer: string
+  attachedClients: number
+  lastDetachedAt: number
 }
 
 export interface AttachedSession {
@@ -26,6 +28,10 @@ export interface AttachedSession {
 }
 
 const shellSessions = new Map<string, ShellSession>()
+const shellSessionReaper = setInterval(() => {
+  reapDetachedShellSessions()
+}, SHELL_SESSION_REAP_INTERVAL_MS)
+shellSessionReaper.unref()
 
 let onSessionChange: (() => void) | null = null
 
@@ -74,6 +80,8 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
     project,
     proc,
     buffer: '',
+    attachedClients: 0,
+    lastDetachedAt: Date.now(),
   }
 
   proc.onData((data) => {
@@ -101,6 +109,32 @@ export function closeShellSession(name: string): boolean {
   return true
 }
 
+function markShellAttached(name: string): void {
+  const session = shellSessions.get(name)
+  if (!session) return
+
+  session.attachedClients += 1
+  session.lastDetachedAt = 0
+}
+
+function markShellDetached(name: string): void {
+  const session = shellSessions.get(name)
+  if (!session) return
+
+  session.attachedClients = Math.max(0, session.attachedClients - 1)
+  if (session.attachedClients === 0) {
+    session.lastDetachedAt = Date.now()
+  }
+}
+
+function reapDetachedShellSessions(now = Date.now()): void {
+  for (const session of shellSessions.values()) {
+    if (session.attachedClients > 0 || session.lastDetachedAt === 0) continue
+    if (now - session.lastDetachedAt < SHELL_SESSION_IDLE_TTL_MS) continue
+    closeShellSession(session.name)
+  }
+}
+
 /** Spawn a PTY attached to a tmux session or a managed shell session. */
 export function attachSession(sessionName: string, cols: number, rows: number, projectPath?: string): AttachedSession {
   validateSessionName(sessionName)
@@ -108,6 +142,7 @@ export function attachSession(sessionName: string, cols: number, rows: number, p
 
   if (shellSession) {
     shellSession.proc.resize(cols, rows)
+    markShellAttached(sessionName)
     return {
       initialData: shellSession.buffer,
       persistent: true,
@@ -128,4 +163,15 @@ export function attachSession(sessionName: string, cols: number, rows: number, p
     persistent: false,
     proc,
   }
+}
+
+export function releaseSession(sessionName: string, attached: AttachedSession): void {
+  validateSessionName(sessionName)
+
+  if (attached.persistent) {
+    markShellDetached(sessionName)
+    return
+  }
+
+  attached.proc.destroy()
 }

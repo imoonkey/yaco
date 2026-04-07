@@ -24,7 +24,7 @@ import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
-import { attachSession, setShellSessionChangeCallback } from './lib/terminal.js'
+import { attachSession, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS, WS_PING_INTERVAL_MS } from './lib/constants.js'
 import type { IPty } from 'node-pty'
@@ -187,7 +187,7 @@ const server = serve({ fetch: app.fetch, port }, () => {
 const wss = new WebSocketServer({ noServer: true })
 type PtySubscription = ReturnType<IPty['onData']>
 
-const ptyMap = new Map<WebSocket, ReturnType<typeof attachSession>>()
+const ptyMap = new Map<WebSocket, { sessionName: string; attached: ReturnType<typeof attachSession> }>()
 const subscriptionMap = new Map<WebSocket, { data: PtySubscription; exit: PtySubscription }>()
 const aliveMap = new Map<WebSocket, boolean>()
 
@@ -256,7 +256,7 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
       if (ws.readyState === WebSocket.OPEN) ws.close()
     })
 
-    ptyMap.set(ws, attached)
+    ptyMap.set(ws, { sessionName, attached })
     subscriptionMap.set(ws, { data: dataSubscription, exit: exitSubscription })
     console.log(`[ws] terminal attached: ${sessionName} (pid=${proc.pid})`)
 
@@ -270,9 +270,9 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
   }
 
   ws.on('message', (raw) => {
-    const attached = ptyMap.get(ws)
-    if (!attached) return
-    const { proc } = attached
+    const entry = ptyMap.get(ws)
+    if (!entry) return
+    const { proc } = entry.attached
 
     const str = raw.toString()
     if (str[0] === '{') {
@@ -292,16 +292,14 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
   })
 
   ws.on('close', () => {
-    const attached = ptyMap.get(ws)
+    const entry = ptyMap.get(ws)
     const subscription = subscriptionMap.get(ws)
 
     subscription?.data.dispose()
     subscription?.exit.dispose()
 
-    if (attached) {
-      if (!attached.persistent) {
-        attached.proc.destroy()
-      }
+    if (entry) {
+      releaseSession(entry.sessionName, entry.attached)
       ptyMap.delete(ws)
     }
     subscriptionMap.delete(ws)
@@ -315,17 +313,30 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
   })
 })
 
-// On SIGTERM (tsx watch restart), destroy all PTY attach processes to avoid
-// orphaned tmux-client PTYs that leak /dev/ttys devices toward the 511 limit.
-// This only kills the attach clients — tmux sessions themselves keep running.
-process.on('SIGTERM', () => {
+// On server shutdown, destroy all PTY attach processes to avoid orphaned
+// tmux-client PTYs that leak /dev/ttys devices over repeated dev restarts.
+// This only kills attach clients — tmux sessions themselves keep running.
+let cleanedUp = false
+function cleanupTerminalResources(): void {
+  if (cleanedUp) return
+  cleanedUp = true
   clearInterval(pingInterval)
-  for (const [ws, attached] of ptyMap) {
-    if (!attached.persistent) attached.proc.destroy()
+  for (const [ws, entry] of ptyMap) {
+    releaseSession(entry.sessionName, entry.attached)
     ws.terminate()
   }
   ptyMap.clear()
   subscriptionMap.clear()
   aliveMap.clear()
-  process.exit(0)
+}
+
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
+  process.on(signal, () => {
+    cleanupTerminalResources()
+    process.exit(0)
+  })
+}
+
+process.on('exit', () => {
+  cleanupTerminalResources()
 })
