@@ -56,6 +56,7 @@ interface EditorProps {
   onViewportLine?: (line: number) => void
   jumpToLine?: number | null
   jumpRequestKey?: number
+  jumpScroll?: boolean
   onFocus?: () => void
   onCloseRequest?: () => void
   readOnly?: boolean
@@ -66,16 +67,22 @@ interface EditorProps {
 }
 
 function readViewportLine(view: EditorView): number {
-  const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop)
-  return view.state.doc.lineAt(block.from).number
+  const scrollTop = view.scrollDOM.scrollTop
+  const block = view.lineBlockAtHeight(scrollTop)
+  const lineNumber = view.state.doc.lineAt(block.from).number
+  const blockHeight = block.bottom - block.top
+  const fraction = blockHeight > 0 ? (scrollTop - block.top) / blockHeight : 0
+  return lineNumber + fraction
 }
 
-function applyViewportLine(view: EditorView, lineNumber: number): boolean {
-  const clampedLine = Math.max(1, Math.min(lineNumber, view.state.doc.lines))
-  const line = view.state.doc.line(clampedLine)
+function applyViewportLine(view: EditorView, target: number): boolean {
+  const intLine = Math.max(1, Math.min(Math.floor(target), view.state.doc.lines))
+  const fraction = target - Math.floor(target)
+  const line = view.state.doc.line(intLine)
   const block = view.lineBlockAt(line.from)
-  if (Math.abs(view.scrollDOM.scrollTop - block.top) < 1) return false
-  view.scrollDOM.scrollTop = block.top
+  const targetTop = block.top + fraction * (block.bottom - block.top)
+  if (Math.abs(view.scrollDOM.scrollTop - targetTop) < 1) return false
+  view.scrollDOM.scrollTop = targetTop
   return true
 }
 
@@ -88,6 +95,7 @@ export function Editor({
   onViewportLine,
   jumpToLine = null,
   jumpRequestKey,
+  jumpScroll = true,
   onFocus,
   onCloseRequest,
   readOnly = false,
@@ -105,6 +113,7 @@ export function Editor({
   const onFocusRef = useRef(onFocus)
   const onCloseRequestRef = useRef(onCloseRequest)
   const applyingViewportRef = useRef(false)
+  const lastSelfReportedLineRef = useRef(viewportLine)
   const jumpRequestKeyRef = useRef<number | undefined>(undefined)
   const insertRequestKeyRef = useRef<number | undefined>(undefined)
 
@@ -205,7 +214,9 @@ export function Editor({
         applyingViewportRef.current = false
         return
       }
-      onViewportLineRef.current?.(readViewportLine(view))
+      const line = readViewportLine(view)
+      lastSelfReportedLineRef.current = line
+      onViewportLineRef.current?.(line)
     }
 
     view.scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
@@ -249,6 +260,8 @@ export function Editor({
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
+    // Skip if this viewport line is just our own scroll report echoing back
+    if (viewportLine === lastSelfReportedLineRef.current) return
     applyingViewportRef.current = applyViewportLine(view, viewportLine)
   }, [viewportLine])
 
@@ -260,11 +273,11 @@ export function Editor({
     const line = view.state.doc.line(lineNumber)
     view.dispatch({
       selection: EditorSelection.cursor(line.from),
-      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+      ...(jumpScroll !== false ? { effects: EditorView.scrollIntoView(line.from, { y: 'center' }) } : {}),
     })
     view.focus()
     onViewportLineRef.current?.(readViewportLine(view))
-  }, [jumpRequestKey, jumpToLine])
+  }, [jumpRequestKey, jumpToLine, jumpScroll])
 
   // Insert text at cursor / replace selection as a single undoable edit
   useEffect(() => {

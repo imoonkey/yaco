@@ -33,7 +33,7 @@ import { useWorkspaceVoice } from './useWorkspaceVoice'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
-type JumpRequest = { key: number; path: string; line: number }
+type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
 
 // ============================================================
 // Main Workspace
@@ -212,14 +212,13 @@ export function Workspace({
   // --- Viewport handlers ---
   const handleActiveFileViewportLine = useCallback((line: number) => {
     if (!activeFilePath) return
-    actions.updateFileViewport(activeFilePath, clampLine(line))
+    actions.updateFileViewport(activeFilePath, Math.max(1, line))
   }, [activeFilePath, actions])
 
   const handlePreviewActivateLine = useCallback((line: number) => {
     if (!activeFilePath) return
     const targetLine = clampLine(line)
-    actions.updateFileViewport(activeFilePath, targetLine)
-    setJumpRequest({ key: Date.now(), path: activeFilePath, line: targetLine })
+    setJumpRequest({ key: Date.now(), path: activeFilePath, line: targetLine, scroll: false })
     if (layout.mdMode !== 'split') {
       actions.updateLayout({ mdMode: 'edit' })
     }

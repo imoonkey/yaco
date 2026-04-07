@@ -104,7 +104,7 @@ export function renderMarkdown(content: string): string {
     const lineStart = currentLine
     const trimmedRaw = raw.replace(/\n+$/, '')
     const lineEnd = trimmedRaw ? lineStart + countNewlines(trimmedRaw) : lineStart
-    const blockHtml = marked.parse(raw, { async: false, renderer }) as string
+    const blockHtml = marked.parse(raw, { async: false, renderer, breaks: true }) as string
 
     if (blockHtml.trim()) {
       html += `<div class="markdown-block" data-source-line-start="${lineStart}" data-source-line-end="${lineEnd}">${blockHtml}</div>`

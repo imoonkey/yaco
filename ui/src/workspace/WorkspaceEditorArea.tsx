@@ -30,7 +30,7 @@ function lineFromBlockPosition(block: MarkdownBlockAnchor, absoluteY: number): n
   const relativeY = Math.max(0, Math.min(blockHeight, absoluteY - blockTop))
   const ratio = relativeY / blockHeight
   const span = Math.max(0, block.lineEnd - block.lineStart)
-  return clampLine(block.lineStart + ratio * span)
+  return Math.max(1, block.lineStart + ratio * span)
 }
 
 function lineFromPreviewScroll(container: HTMLDivElement): number {
@@ -46,7 +46,7 @@ function applyPreviewViewportLine(container: HTMLDivElement, viewportLine: numbe
   const blocks = getMarkdownBlockAnchors(container)
   if (blocks.length === 0) return false
 
-  const targetLine = clampLine(viewportLine)
+  const targetLine = Math.max(1, viewportLine)
   const block = blocks.find(candidate => targetLine >= candidate.lineStart && targetLine <= candidate.lineEnd)
     ?? [...blocks].reverse().find(candidate => candidate.lineStart <= targetLine)
     ?? blocks[0]
@@ -162,14 +162,22 @@ export function MarkdownPreview({
           onActivateLine(lineFromPreviewScroll(element))
           return
         }
-        const block: MarkdownBlockAnchor = {
-          element: blockElement,
-          lineStart: clampLine(Number(blockElement.dataset.sourceLineStart)),
-          lineEnd: clampLine(Number(blockElement.dataset.sourceLineEnd ?? blockElement.dataset.sourceLineStart)),
+        const lineStart = clampLine(Number(blockElement.dataset.sourceLineStart))
+        const lineEnd = clampLine(Number(blockElement.dataset.sourceLineEnd ?? blockElement.dataset.sourceLineStart))
+        if (lineStart === lineEnd) {
+          onActivateLine(lineStart)
+          return
         }
+        // Equal share per source line: each of (lineEnd - lineStart + 1) lines
+        // gets the same fraction of the block's rendered height
+        const blockTop = blockElement.offsetTop
+        const blockHeight = Math.max(1, blockElement.offsetHeight)
         const rect = element.getBoundingClientRect()
         const absoluteY = element.scrollTop + (event.clientY - rect.top)
-        onActivateLine(lineFromBlockPosition(block, absoluteY))
+        const relativeY = Math.max(0, Math.min(blockHeight, absoluteY - blockTop))
+        const ratio = relativeY / blockHeight
+        const lineCount = lineEnd - lineStart + 1
+        onActivateLine(Math.min(lineEnd, Math.floor(lineStart + ratio * lineCount)))
       }}
     />
   )
@@ -220,7 +228,7 @@ export function WorkspaceEditorArea({
   splitSize: number
   onSplitResize: (size: number) => void
   hasConflict: boolean
-  jumpRequest: { key: number; path: string; line: number } | null
+  jumpRequest: { key: number; path: string; line: number; scroll?: boolean } | null
   onAcceptDisk: () => void
   onForceSave: () => void
   onViewportLine: (line: number) => void
@@ -272,6 +280,7 @@ export function WorkspaceEditorArea({
       onViewportLine={onViewportLine}
       jumpToLine={jumpRequest?.path === activeTab ? jumpRequest.line : null}
       jumpRequestKey={jumpRequest?.path === activeTab ? jumpRequest.key : undefined}
+      jumpScroll={jumpRequest?.path === activeTab ? jumpRequest.scroll : undefined}
       onFocus={onFocus}
       onCloseRequest={onCloseTab}
       onChange={onDraftChange}
