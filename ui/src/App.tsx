@@ -283,7 +283,7 @@ function App() {
           data-rhythm-pulse
           className="fixed inset-0 pointer-events-none z-50"
           style={{
-            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(181, 137, 0, 0.08) 100%)',
+            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(181, 137, 0, 0.5) 100%)',
             opacity: pulseType === 'light' ? 0.5 : 1,
             animation: `rhythm-pulse ${pulseType === 'light' ? '3s' : '4s'} ease-in-out forwards`,
           }}

@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-07: Add time awareness — dark pill clock + rhythm pulse
+
+**What changed:**
+- Clock restyled as dark pill badge (`base02` bg / `base2` text, `rounded-md`) for visual anchoring in Solarized Light UI
+- Added rhythm pulse vignette overlay triggered at real clock quarter marks: :15/:45 light pulse (3s, 50% opacity), :00/:30 strong pulse (4s, full opacity)
+- Clock interval aligned to minute boundaries to prevent skipping quarter-hour marks
+- CSS animation uses opacity interpolation on static radial-gradient background for smooth fade
+
+**Why:**
+- Clock was effectively invisible (13px, same `textDim` color as surrounding text)
+- User wanted ambient time awareness without breaking flow state — periodic visual "breathing" at quarter-hour marks
+
+**Key files:** `ui/src/App.tsx`, `ui/src/index.css`, `doc/todo/time-awareness/ux-design.md`
+**Verification:** TypeScript type-check passed, lint clean (no new errors), build succeeded
+**Commit:** 81c133a
+**Next:** User verification — check pill visibility and pulse intensity at next quarter-hour
+**Blockers:** None
+
 ## 2026-04-07: Fix Chinese/CJK IME input in terminal
 
 **What changed:**
