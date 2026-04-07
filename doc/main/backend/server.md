@@ -64,10 +64,6 @@ A ping/pong heartbeat runs every `WS_PING_INTERVAL_MS` (30s). Each cycle marks a
 
 On `SIGTERM`, `SIGINT`, `SIGHUP`, and normal `exit`, the server destroys all active tmux attach PTYs and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
 
-### Detached Shell Reaping
-
-Direct shell sessions stay alive across browser detach/re-attach, but they are no longer immortal. A background reaper closes any shell session that has had zero attached clients for `SHELL_SESSION_IDLE_TTL_MS` (30 minutes by default), checked every `SHELL_SESSION_REAP_INTERVAL_MS` (60 seconds). This keeps the convenience of persistent local shells without letting abandoned tabs leak PTYs indefinitely.
-
 ## UI Serving
 
 When the built UI exists at `ui/dist/`, the server serves it with:

@@ -17,11 +17,11 @@ Server-side library modules providing business logic, background services, and s
 
 ## Module Reference
 
-### constants.ts (56 lines)
+### constants.ts (50 lines)
 
 Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, sentinel values, and resolved paths.
 
-**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `MULTMUX_COMMAND_TIMEOUT_MS`, `MULTMUX_START_TIMEOUT_MS`, `MULTMUX_STATUS_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `MULTMUX_PATH`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`, `SHELL_SESSION_IDLE_TTL_MS`, `SHELL_SESSION_REAP_INTERVAL_MS`
+**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `MULTMUX_COMMAND_TIMEOUT_MS`, `MULTMUX_START_TIMEOUT_MS`, `MULTMUX_STATUS_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `MULTMUX_PATH`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`
 
 - `MULTMUX_PATH` — resolved once at startup via `which multmux`, imported by `multmux.ts` and `session-reconciler.ts` (no duplicate resolution)
 
@@ -136,7 +136,7 @@ Per-project `.gitignore` parser and cache.
 - Used by both `project-watcher.ts` (SSE filtering) and `files.ts` (tree building)
 - `clearGitignoreCache()` called when `.gitignore` changes on disk
 
-### terminal.ts (167 lines)
+### terminal.ts (145 lines)
 
 PTY management for terminal sessions.
 
@@ -144,12 +144,12 @@ PTY management for terminal sessions.
 
 - Direct shell sessions: long-lived in-process PTYs named `shell-1`, `shell-2`, etc.
 - Shell sessions keep a bounded scrollback buffer so re-attaching restores recent output
-- Shell sessions track attach counts and last-detached time; detached shells are reaped after `SHELL_SESSION_IDLE_TTL_MS` (30 minutes by default) so abandoned shells do not accumulate PTYs forever
+- Shell session detach only drops the browser attach; the shell process itself stays alive until the user explicitly kills it or the server exits
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
 - Shell PTYs and tmux attach PTYs both use `buildChildProcessEnv()` so spawned processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`
 - `attachSession(name, cols, rows, projectPath?)` resolves the handle from `~/.multmux/sessions/<handle>.json` and attaches directly to that tmux session name; if the state file is missing, it falls back to `name`
-- `releaseSession(name, attached)` centralizes detach cleanup: shell sessions decrement their attach count, tmux attach PTYs are destroyed immediately
+- `releaseSession(name, attached)` centralizes detach cleanup: shell sessions remain alive, tmux attach PTYs are destroyed immediately
 
 ### ssh-auth.ts (89 lines)
 

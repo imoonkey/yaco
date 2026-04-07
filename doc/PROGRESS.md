@@ -1,11 +1,27 @@
 # Progress
 
+## 2026-04-06: Preserve shell sessions across detach
+
+**What changed:**
+- Removed the detached-shell idle reaper that had been added in the prior PTY cleanup hardening pass
+- Kept the safe part of the fix: tmux attach PTYs are still destroyed on terminal detach and on server shutdown
+- Updated backend and workspace terminal docs to state explicitly that neither shell sessions nor multmux sessions should disappear silently after a UI detach
+
+**Why:**
+- Terminal detach should only sever the browser attach, not mutate session liveness
+- Silent shell cleanup conflicts with the expected workflow model where sessions remain visible and recoverable until the user explicitly kills them
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/lib/constants.ts`, `doc/main/backend/libs.md`, `doc/main/backend/server.md`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/PROGRESS.md`, `CLAUDE.md`
+**Verification:** pending
+**Commit:** pending
+**Next:** Add diagnostics for `node-pty` attach failures without changing session liveness semantics
+**Blockers:** None
+
 ## 2026-04-06: PTY leak hardening for terminal attach/detach
 
 **What changed:**
 - Centralized terminal detach cleanup through `releaseSession()` so tmux attach PTYs are always destroyed on WebSocket close and server shutdown
 - Expanded shutdown cleanup from `SIGTERM` only to `SIGINT`, `SIGHUP`, and normal `exit`, covering more `tsx watch` and local dev restart paths
-- Added shell-session idle tracking plus a background reaper that auto-closes detached `shell-N` sessions after 30 minutes
 - Added terminal tests covering shell attach/release behavior and tmux attach cleanup
 - Updated backend and terminal docs to describe detached-shell reaping and the broader shutdown cleanup behavior
 

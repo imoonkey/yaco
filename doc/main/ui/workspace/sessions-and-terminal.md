@@ -115,9 +115,9 @@ Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. I
 | Type | PTY Source | Persistent? | Scrollback |
 |------|-----------|-------------|------------|
 | Claude/Codex | `tmux attach-session` via node-pty | Yes (tmux survives detach) | tmux-managed |
-| Shell | Direct node-pty spawn | Yes while recently detached; auto-reaped after 30m idle | Server-side bounded buffer |
+| Shell | Direct node-pty spawn | Yes | Server-side bounded buffer |
 
-Shell sessions keep a scrollback buffer on the server, so re-attaching restores recent output. If a shell has no attached clients for 30 minutes, the backend closes it automatically to reclaim PTYs.
+Shell sessions keep a scrollback buffer on the server, so re-attaching restores recent output. Detaching the browser terminal does not kill the shell; only an explicit Kill action or server exit ends it.
 
 Before the server spawns a shell PTY or starts a new multmux child process, it repairs the child SSH environment (`SSH_AUTH_SOCK`) and, on macOS, can preload identities from the Apple keychain. This avoids per-project "open a terminal and run one manual git command first" warm-up when repos use SSH remotes.
 
