@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-04-08: Voice formatter v2 — structure detection and raw copy
+
+**What changed:**
+- Formatter prompt upgraded with structure detection: numbered/bullet lists from 2+ sibling markers, explicit formatting commands (heading, bullet, code block)
+- Added meaning-preservation constraint ("restructure for clarity, never alter intent")
+- Whisper vocabulary conditioning now includes Claude, Codex, multmux
+- Context snippets enriched: markdown files get formatting hints, terminal surface allows structure for agent prompts
+- Contrastive few-shot examples prevent false-positive list detection on single ordinals
+- ComposeTray: raw transcript now has Copy button and is text-selectable
+
+**Why:**
+- Voice formatting was cleanup-only (filler removal, punctuation) with no structural intelligence. Dictated lists came out as run-on sentences. Competitor analysis (SuperWhisper, Tambourine Voice) showed structure detection is table-stakes.
+- Codex design review flagged: restrict implicit structure to 2+ markers, add contrastive examples, keep thinking off.
+
+**Key files:** `server/src/lib/voice-prompts.ts`, `server/src/lib/__tests__/voice-prompts.test.ts`, `ui/src/components/ComposeTray.tsx`
+**Verification:** 111 server tests pass, lint clean (pre-existing errors only)
+**Commit:** 9b51bc7
+**Next:** Test with real voice input, evaluate whether thinking model experiment is worth pursuing
+**Blockers:** None
+
 ## 2026-04-08: Session counts in sidebar, tab context menu, terminal touch improvements
 
 **What changed:**
