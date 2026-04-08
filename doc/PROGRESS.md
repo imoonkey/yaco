@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-08: Reconciler GC switched to log-only mode + tmux server pre-check
+
+**What changed:**
+- `checkStaleStates` no longer deletes state files — dead sessions are filtered from the live set but `.json` files are preserved. Deletion is left to multmux wrapper EXIT trap and `mt kill`.
+- `isTmuxAlive` now pre-checks tmux server availability via `list-sessions` before interpreting `has-session` exit codes. This prevents mass false-positive deletions when tmux server is transiently unavailable (exit 1 is ambiguous: "not found" vs "server down").
+- Added 5s timeout to `has-session` calls to prevent indefinite blocking.
+- Removed `unlinkSync` and `MULTMUX_SESSIONS_DIR` imports (no longer needed).
+- Regenerated 6 missing state files for live sessions whose files had been incorrectly deleted.
+
+**Why:**
+- Investigation found that under heavy load (30+ tmux sessions), the previous three-state `isTmuxAlive` still couldn't prevent false deletions: `tmux has-session` returns exit code 1 for both "session not found" AND "tmux server unavailable." The reconciler's 60s GC cadence matched the observed disappearance pattern. Converting to log-only mode eliminates the reconciler as a deletion vector entirely — multmux's own wrapper EXIT trap is the authoritative cleanup mechanism.
+
+**Key files:** `server/src/lib/session-reconciler.ts`
+**Verification:** 111 server tests pass, all 6 regenerated sessions visible in `mt status --all`
+**Commit:** fde3565
+**Next:** Monitor logs for `[session-reconciler] GC detected dead session` to confirm no false positives before considering re-enabling destructive GC
+**Blockers:** None
+
 ## 2026-04-08: Archive 10 completed design projects
 
 **What changed:**
