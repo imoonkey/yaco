@@ -3,11 +3,15 @@
 // ---------------------------------------------------------------------------
 
 const WHISPER_PROMPT =
-  '我在 IDE 里做开发，说的内容可能插入到 code editor、像 Claude 和 Codex 这样的 AI coding agent 的 chatbox，或者直接输入到 shell terminal。'
+  '我在 IDE 里做开发，用 Claude、Codex 这些 AI coding agent (orchestrated by multmux)。说的内容可能插入到 code editor、agent 的 chatbox，或者直接输入到 shell terminal。'
 
 const FORMATTER_CORE = `You are converting speech into written text. The input is a speech
 transcription — transform it into what the user would have typed.
 The user speaks Chinese, English, or a mix. Preserve the original language.
+
+CRITICAL: preserve the user's meaning exactly. You may restructure for
+clarity (paragraphs, lists, punctuation) but NEVER add, remove, or alter
+any substantive content, opinions, or intent.
 
 Core rules:
 1. Remove filler words (um, uh, like, you know, 就是, 那个, 然后那个)
@@ -30,7 +34,16 @@ Core rules:
    "array of number" → "number[]", "use effect" → "useEffect"
 8. Convert spoken punctuation: "open paren" → "(", "backtick" → "\`"
 9. Do not translate between languages.
-10. No commentary. No trailing newline. Return ONLY the final text.
+10. Structure detection — when the user enumerates multiple items with
+    clear parallel markers (first/second/third, 第一/第二/第三,
+    一是/二是/三是, or 2+ items in a spoken list), format as a list:
+    - Numbered list for ordered sequences (steps, priorities)
+    - Bullet list for unordered items
+    A single ordinal in running prose ("first of all", "首先") is NOT
+    a list — keep it as prose. Require 2+ sibling markers.
+11. When the user explicitly says "bullet point", "numbered list",
+    "heading"/"标题", or "code block"/"代码块", honor the command.
+12. No commentary. No trailing newline. Return ONLY the final text.
 
 Examples:
 Input: um git commit dash m fix the login bug
@@ -58,7 +71,33 @@ Output: We need to add validation to the form. The email field should be
 required and at least 3 characters.
 
 Input: add a TODO comment saying fix error handling before release
-Output: // TODO: fix error handling before release`
+Output: // TODO: fix error handling before release
+
+Input: we need to do three things first set up the database second write the migration script and third run the tests
+Output:
+1. Set up the database
+2. Write the migration script
+3. Run the tests
+
+Input: 主要有三个问题一是性能太慢二是错误信息不清楚三是测试不稳定
+Output:
+主要有三个问题:
+1. 性能太慢
+2. 错误信息不清楚
+3. 测试不稳定
+
+Input: the main issues are um performance is slow the error messages are unclear and the tests are flaky
+Output:
+Main issues:
+- Performance is slow
+- Error messages are unclear
+- Tests are flaky
+
+Input: first of all I think we should understand the problem before jumping to solutions
+Output: First of all, I think we should understand the problem before jumping to solutions.
+
+Input: 首先我觉得这个方案不太行然后而且时间也不够
+Output: 首先我觉得这个方案不太行，而且时间也不够。`
 
 /** Extension → human-readable file type label */
 export const FILE_TYPE_MAP: Record<string, string> = {
@@ -118,10 +157,14 @@ function buildContextSnippet(
     const ext = filePath.split('.').pop()?.toLowerCase()
     const label = ext ? FILE_TYPE_MAP[ext] : undefined
     const typeHint = label ? ` (${label})` : ''
-    return `Context: editing file ${filePath}${typeHint}`
+    const isMarkdown = ext === 'md' || ext === 'mdx'
+    const formatting = isMarkdown
+      ? '\nUse markdown formatting where natural: headings, lists, code blocks.'
+      : ''
+    return `Context: editing file ${filePath}${typeHint}${formatting}`
   }
   if (surface === 'terminal') {
-    return 'Context: terminal session (coding agent)'
+    return 'Context: terminal/agent chatbox. Structure (lists, paragraphs) is fine for agent prompts.'
   }
   return undefined
 }

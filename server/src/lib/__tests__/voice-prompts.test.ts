@@ -28,7 +28,7 @@ describe('buildFormatterPrompt', () => {
 
   it('appends terminal context snippet for terminal surface', () => {
     const prompt = buildFormatterPrompt('terminal')
-    expect(prompt).toContain('Context: terminal session (coding agent)')
+    expect(prompt).toContain('Context: terminal/agent chatbox')
   })
 
   it('appends file context with type label for known extension', () => {
@@ -59,6 +59,26 @@ describe('buildFormatterPrompt', () => {
     expect(prompt).toContain('git commit -m')
     // Chinese example
     expect(prompt).toContain('帮我看一下这个 error')
+    // Structure examples
+    expect(prompt).toContain('1. Set up the database')
+    // Contrastive example (prose with ordinal stays prose)
+    expect(prompt).toContain('First of all, I think')
+  })
+
+  it('adds markdown formatting hint for .md files', () => {
+    const prompt = buildFormatterPrompt(undefined, 'docs/README.md')
+    expect(prompt).toContain('Use markdown formatting')
+  })
+
+  it('does not add markdown hint for non-md files', () => {
+    const prompt = buildFormatterPrompt(undefined, 'src/app.ts')
+    expect(prompt).not.toContain('Use markdown formatting')
+  })
+
+  it('includes structure detection rules', () => {
+    const prompt = buildFormatterPrompt()
+    expect(prompt).toContain('Structure detection')
+    expect(prompt).toContain('Require 2+ sibling markers')
   })
 })
 

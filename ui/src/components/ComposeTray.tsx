@@ -32,6 +32,7 @@ export function ComposeTray({
     || state === 'composing' || state === 'recoverable' || state === 'error'
   const [editText, setEditText] = useState('')
   const [showRaw, setShowRaw] = useState(false)
+  const [copiedRaw, setCopiedRaw] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // Seed textarea when compose data arrives
@@ -156,19 +157,33 @@ export function ComposeTray({
 
             {compose.rawText && compose.rawText !== editText && (
               <div style={{ marginTop: 4 }}>
-                <button
-                  onClick={() => setShowRaw(v => !v)}
-                  style={DISCLOSURE_STYLE}
-                  aria-expanded={showRaw}
-                >
-                  <span style={{
-                    display: 'inline-block',
-                    transition: 'transform 150ms',
-                    transform: showRaw ? 'rotate(90deg)' : 'rotate(0deg)',
-                    fontSize: 10,
-                  }}>&#x25B6;</span>
-                  {' '}Raw transcript
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <button
+                    onClick={() => setShowRaw(v => !v)}
+                    style={DISCLOSURE_STYLE}
+                    aria-expanded={showRaw}
+                  >
+                    <span style={{
+                      display: 'inline-block',
+                      transition: 'transform 150ms',
+                      transform: showRaw ? 'rotate(90deg)' : 'rotate(0deg)',
+                      fontSize: 10,
+                    }}>&#x25B6;</span>
+                    {' '}Raw transcript
+                  </button>
+                  {showRaw && (
+                    <button
+                      style={COPY_RAW_STYLE}
+                      onClick={() => {
+                        navigator.clipboard.writeText(compose.rawText)
+                        setCopiedRaw(true)
+                        setTimeout(() => setCopiedRaw(false), 1200)
+                      }}
+                    >
+                      {copiedRaw ? 'Copied' : 'Copy'}
+                    </button>
+                  )}
+                </div>
                 {showRaw && (
                   <div style={RAW_TEXT_STYLE}>{compose.rawText}</div>
                 )}
@@ -395,4 +410,16 @@ const RAW_TEXT_STYLE: React.CSSProperties = {
   marginTop: 4,
   whiteSpace: 'pre-wrap',
   wordBreak: 'break-word',
+  userSelect: 'text',
+  cursor: 'text',
+}
+
+const COPY_RAW_STYLE: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  color: 'var(--sol-base1)',
+  fontSize: 10,
+  cursor: 'pointer',
+  padding: '0 2px',
+  textDecoration: 'underline',
 }
