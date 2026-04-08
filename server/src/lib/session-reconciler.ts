@@ -1,5 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync, unlinkSync } from 'fs'
+import { existsSync } from 'fs'
+// NOTE: unlinkSync removed — GC is log-only mode (see checkStaleStates)
 import { execFileSync } from 'child_process'
 import { join } from 'path'
 import { loadProjects, type Project } from './projects'
@@ -9,7 +10,6 @@ import { withFileLock, type ProgressEntry } from './scanner'
 import { emitRefresh } from './notify'
 import {
   MULTMUX_PATH,
-  MULTMUX_SESSIONS_DIR,
   MULTMUX_STATUS_TIMEOUT_MS,
   PENDING_SESSION_ID,
 } from './constants'
@@ -84,23 +84,22 @@ async function reconcile(): Promise<void> {
 }
 
 /** Health-check: verify tmux liveness for all active sessions.
- *  Deletes state files for sessions whose tmux session no longer exists
- *  (defense-in-depth for when multmux wrapper.sh EXIT trap fails).
- *  Only deletes on CONFIRMED death — skips sessions on uncertain status. */
+ *  LOG-ONLY mode: detects dead sessions but does NOT delete state files.
+ *  Deletion is left to multmux wrapper EXIT trap and mt kill.
+ *  This avoids false-positive GC when tmux is transiently unavailable
+ *  (tmux has-session returns exit 1 for both "not found" and "server down"). */
 function checkStaleStates(sessions: MultmuxSession[]): MultmuxSession[] {
   const live: MultmuxSession[] = []
 
   for (const session of sessions) {
     const alive = isTmuxAlive(session.name)
     if (alive === false) {
-      console.warn(`[session-reconciler] GC DELETING: ${session.name} (confirmed dead)`)
-      const stateFile = join(MULTMUX_SESSIONS_DIR, `${session.name}.json`)
-      if (existsSync(stateFile)) {
-        try { unlinkSync(stateFile) } catch (e) { console.warn(`[session-reconciler] failed to remove stale state file ${stateFile}:`, e) }
-      }
+      console.warn(`[session-reconciler] GC detected dead session: ${session.name} (NOT deleting — log-only mode)`)
       continue
     }
-    // alive === true or null (uncertain) — keep the session
+    if (alive === null) {
+      console.warn(`[session-reconciler] GC uncertain: ${session.name} (tmux error/timeout — keeping)`)
+    }
     live.push(session)
   }
 
@@ -108,10 +107,21 @@ function checkStaleStates(sessions: MultmuxSession[]): MultmuxSession[] {
 }
 
 /** Direct tmux liveness check for a specific session.
- *  Returns true (alive), false (confirmed dead), null (uncertain — tmux error/timeout). */
+ *  Returns true (alive), false (confirmed dead), null (uncertain — tmux error/timeout).
+ *  Pre-checks tmux server availability to avoid false "dead" when server is down
+ *  (tmux has-session returns exit 1 for both "not found" AND "server unavailable"). */
 function isTmuxAlive(tmuxSession: string): boolean | null {
+  // Pre-check: is the tmux server reachable?
+  // Without this, a downed tmux server makes all sessions look dead (exit 1).
   try {
-    execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'ignore' })
+    execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { stdio: 'ignore', timeout: 5000 })
+  } catch {
+    // tmux server unreachable — return uncertain for ALL sessions
+    return null
+  }
+
+  try {
+    execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'ignore', timeout: 5000 })
     return true
   } catch (e: unknown) {
     // exit code 1 = tmux confirmed session doesn't exist
