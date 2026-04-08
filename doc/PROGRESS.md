@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-08: Reconciler GC uses three-state liveness to prevent false session deletion
+
+**What changed:**
+- `isTmuxAlive` now returns three-state: `true` (alive), `false` (confirmed dead via exit code 1), `null` (uncertain — tmux error, timeout, or unavailable)
+- `checkStaleStates` only deletes state files on confirmed death (`false`); sessions with uncertain status (`null`) are preserved in the live set
+
+**Why:**
+- Previously, any `tmux has-session` failure (including timeouts or tmux being temporarily unresponsive) was treated as "session dead," causing false deletion of `~/.multmux/sessions/<handle>.json` state files. This led to phantom session disappearances in the UI.
+
+**Key files:** `server/src/lib/session-reconciler.ts`
+**Verification:** Existing server tests pass
+**Commit:** 402e4cd
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-08: Voice formatter v2 — structure detection and raw copy
 
 **What changed:**
