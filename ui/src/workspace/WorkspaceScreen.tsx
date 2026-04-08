@@ -451,6 +451,7 @@ export function Workspace({
   const renderSessionItem = (s: typeof pinned[number], isPinned?: boolean) => (
     <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned}
       unreadCount={sessionsMgr.getSessionUnread(s.name)}
+      pendingName={sessionsMgr.pendingRenames[s.name]}
       onKill={() => { void sessionsMgr.killSession(s.name) }}
       onClick={() => handleSessionClick(s.name)}
       onPin={() => sessionsMgr.togglePin(s.name)}

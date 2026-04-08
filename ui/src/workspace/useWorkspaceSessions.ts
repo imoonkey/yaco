@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useEffect } from 'react'
+import { useCallback, useMemo, useRef, useEffect, useState } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import type { AgentSession, SessionProvider } from '../types'
 
@@ -87,7 +87,22 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     }
   }, [activeSession, refreshSessions, actions])
 
-  const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
+  const pendingKey = `workflow-pending-renames:${projectName}`
+  const [pendingRenames, setPendingRenamesRaw] = useState<Record<string, string>>(() => {
+    try {
+      const raw = localStorage.getItem(pendingKey)
+      return raw ? JSON.parse(raw) as Record<string, string> : {}
+    } catch { return {} }
+  })
+  const setPendingRenames = useCallback((fn: (prev: Record<string, string>) => Record<string, string>) => {
+    setPendingRenamesRaw(prev => {
+      const next = fn(prev)
+      try { localStorage.setItem(pendingKey, JSON.stringify(next)) } catch { /* noop */ }
+      return next
+    })
+  }, [pendingKey])
+
+  const executeRename = useCallback(async (oldName: string, newName: string) => {
     try {
       await renameSession(oldName, newName, projectPath)
       actions.setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
@@ -97,6 +112,32 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       console.error('Failed to rename session:', err)
     }
   }, [activeSession, actions, projectPath, refreshSessions])
+
+  const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
+    const session = projectSessions.find(s => s.name === oldName)
+    if (session?.status === 'processing') {
+      setPendingRenames(prev => ({ ...prev, [oldName]: newName }))
+    } else {
+      await executeRename(oldName, newName)
+    }
+  }, [projectSessions, executeRename])
+
+  // Auto-fire pending renames when session becomes idle
+  useEffect(() => {
+    if (!sessions) return // sessions not loaded yet — don't clean up
+    const entries = Object.entries(pendingRenames)
+    if (entries.length === 0) return
+    for (const [oldName, newName] of entries) {
+      const session = projectSessions.find(s => s.name === oldName)
+      if (!session) {
+        // Session gone — clean up
+        setPendingRenames(prev => { const { [oldName]: _, ...rest } = prev; return rest })
+      } else if (session.status === 'idle') {
+        setPendingRenames(prev => { const { [oldName]: _, ...rest } = prev; return rest })
+        void executeRename(oldName, newName)
+      }
+    }
+  }, [sessions, projectSessions, pendingRenames, executeRename])
 
   const detachActiveSession = useCallback(() => {
     if (!activeSession) return false
@@ -131,6 +172,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     handleNewSession,
     killSession,
     handleRenameSession,
+    pendingRenames,
     detachActiveSession,
     togglePin,
     handlePinnedReorder,

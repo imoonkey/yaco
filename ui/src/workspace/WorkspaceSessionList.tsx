@@ -10,6 +10,7 @@ export function SessionItem({
   pinned,
   dragging,
   unreadCount,
+  pendingName,
   onClick,
   onKill,
   onPin,
@@ -24,6 +25,7 @@ export function SessionItem({
   pinned?: boolean
   dragging?: boolean
   unreadCount?: number
+  pendingName?: string
   onClick: () => void
   onKill: () => void
   onPin?: () => void
@@ -99,7 +101,10 @@ export function SessionItem({
             style={{ borderColor: C.accent, color: 'inherit' }}
           />
         ) : (
-          <span className="min-w-0 flex-1 truncate">{session.name}</span>
+          <span className="min-w-0 flex-1 truncate">
+            {session.name}
+            {pendingName && <span style={{ color: C.muted }}>{` → ${pendingName}`}</span>}
+          </span>
         )}
         {!!unreadCount && unreadCount > 0 && (
           <span
