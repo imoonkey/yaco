@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-08: Session counts in sidebar, tab context menu, terminal touch improvements
+
+**What changed:**
+- Project sidebar now shows active/total session count (e.g. `2/5`) next to each project, alongside existing unread badges
+- Tab bar gains right-click context menu with Save (dirty files) and Close/Close Without Saving actions
+- Terminal touch handling distinguishes scroll gestures (>8px delta) from long-press (text selection), enabling native text selection on mobile
+- xterm `screenReaderMode` enabled on touch devices with CSS `::selection` highlight for accessibility tree
+
+**Why:**
+- Session counts give at-a-glance visibility into agent activity per project without switching
+- Tab context menu provides standard editor affordance for save/close workflows
+- Previous terminal touch handling intercepted all touch events, preventing text selection on mobile
+
+**Key files:** `ui/src/App.tsx`, `ui/src/components/ProjectList.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
+**Verification:** TypeScript type-check passed, lint clean (pre-existing errors only)
+**Commit:** fad6bea..f19e750
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-07: Fix editor scroll jitter, preview click cursor, markdown line breaks
 
 **What changed:**
