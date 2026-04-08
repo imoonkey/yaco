@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-04-08: Sidebar reorder (Changes above Search) and dynamic resize max
+
+**What changed:**
+- Reordered sidebar: Changes now renders above Search (higher usage frequency)
+- `useResize` hook accepts `number | (() => number)` for dynamic max via ref
+- Bottom section max heights computed from sidebar height minus fixed overhead (headers, projects, explorer min, tasks, resize handles)
+- Added `shrink-0` to Changes and Search containers to prevent flex compression artifacts
+- Re-clamp effect auto-shrinks sections when available space decreases (section toggle, window resize)
+- `flexFallback` prioritizes Changes over Search when Explorer is collapsed
+
+**Why:**
+- Changes is used far more frequently than Search, deserves higher position
+- Static pixel max (300px) prevented Changes from using available space on large screens
+- Flex-shrink caused visual glitches where Search appeared to grow/shrink when dragging Changes handle
+
+**Key files:** `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/useResize.ts`
+**Verification:** TypeScript passes, Playwright E2E passes, Codex code review (3 findings addressed)
+**Commit:** 8b55d8a
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-08: Reconciler GC uses three-state liveness to prevent false session deletion
 
 **What changed:**

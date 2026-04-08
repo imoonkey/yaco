@@ -72,7 +72,7 @@ TaskGraphScreen (237 lines) — controller
 
 **Supporting modules (non-component):**
 - `workspace/markdown.ts` (118 lines) — escapeHtml, renderMarkdown, code highlighting, mermaid init
-- `workspace/useResize.ts` (34 lines) — drag-to-resize hook
+- `workspace/useResize.ts` (35 lines) — drag-to-resize hook, accepts `number | (() => number)` for dynamic max
 - `hooks/useWorkspaceState.ts` (753 lines) — domain state, persistence, SSE reconciliation
 - `lib/solarizedLight.ts` — `SOLARIZED_LIGHT` (raw palette) + `SOLARIZED_LIGHT_UI` (semantic workspace colors) constants for inline styles; CSS vars (`var(--sol-*)`) for stylesheet colors. No hardcoded hex values.
 - `lib/diffGutter.ts` (400 lines) — CodeMirror diff gutter extension, inline hunk popup with word highlights, badges, nav, Show more
