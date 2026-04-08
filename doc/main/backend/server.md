@@ -80,4 +80,4 @@ When the built UI exists at `ui/dist/`, the server serves it with:
 | `WORKFLOW_CORS_ORIGINS` | unset | Comma-separated allowed origins (overrides private-network defaults) |
 | `GROQ_API_KEY` | unset | Groq API key for voice pipeline (STT + formatter). Set in `server/.env` |
 | `GROQ_TRANSCRIPTION_MODEL` | `whisper-large-v3-turbo` | Whisper model for speech-to-text |
-| `GROQ_FORMATTER_MODEL` | `llama-3.1-8b-instant` | LLM model for post-STT text cleanup |
+| `GROQ_FORMATTER_MODEL` | `qwen/qwen3-32b` | Single LLM formatter model (fallback if `VOICE_FORMATTER_MODELS` unset) |

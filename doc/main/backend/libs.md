@@ -183,14 +183,14 @@ Session name validation and tmux session resolution.
 - Validates names against `[a-zA-Z0-9_.-]+`
 - Resolves short multmux names (e.g. `1-claude`) to full tmux names (e.g. `1-claude-workflow-mt`)
 
-### voice-prompts.ts (~130 lines)
+### voice-prompts.ts (~170 lines)
 
 Prompt templates for the voice formatting pipeline.
 
 **Exports**: `buildWhisperPrompt()`, `buildFormatterPrompt(surface?, filePath?)`, `FILE_TYPE_MAP`
 
-- `buildWhisperPrompt()` — generic bilingual base sentence for Whisper `initial_prompt` conditioning (product names like Claude/Codex to avoid misrecognition)
-- `buildFormatterPrompt()` — shared speech-to-writing core prompt (filler removal, self-correction, CLI syntax, bilingual punctuation, few-shot examples) with optional context snippet derived from surface/filePath
+- `buildWhisperPrompt()` — bilingual base sentence for Whisper `initial_prompt` conditioning (product names: Claude, Codex, multmux)
+- `buildFormatterPrompt()` — speech-to-writing core prompt with structure detection (filler removal, self-correction, CLI syntax, bilingual punctuation, list/bullet formatting from 2+ sibling markers, explicit formatting commands). Includes contrastive few-shot examples. Appends optional context snippet from surface/filePath with formatting directives (markdown hint for .md files, structure allowed for agent chatbox).
 - `FILE_TYPE_MAP` — extension → human-readable label (~30 entries) for context snippets
 
 ### voice-formatter.ts (~80 lines)
