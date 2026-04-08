@@ -71,7 +71,7 @@ TaskGraphScreen (237 lines) — controller
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 
 **Supporting modules (non-component):**
-- `workspace/markdown.ts` (118 lines) — escapeHtml, renderMarkdown, code highlighting, mermaid init
+- `workspace/markdown.ts` (141 lines) — escapeHtml, renderMarkdown, resolveRelativePath, code highlighting, heading slugification, mermaid init
 - `workspace/useResize.ts` (35 lines) — drag-to-resize hook, accepts `number | (() => number)` for dynamic max
 - `hooks/useWorkspaceState.ts` (753 lines) — domain state, persistence, SSE reconciliation
 - `lib/solarizedLight.ts` — `SOLARIZED_LIGHT` (raw palette) + `SOLARIZED_LIGHT_UI` (semantic workspace colors) constants for inline styles; CSS vars (`var(--sol-*)`) for stylesheet colors. No hardcoded hex values.
@@ -125,7 +125,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 |--------|-------|---------|
 | `WorkspaceScreen.tsx` | 889 | Controller (state, callbacks, keyboard, Tasks tab routing) |
 | `WorkspaceLayout.tsx` | 187 | Layout composition (desktop/mobile) |
-| `WorkspaceEditorArea.tsx` | 363 | Editor, split view, preview, diff, conflict banner, Tasks tab host |
+| `WorkspaceEditorArea.tsx` | 535 | Editor, split view, preview, diff, conflict banner, Tasks tab host |
 | `markdown.ts` | 118 | Markdown rendering, syntax highlighting, mermaid |
 | `WorkspaceTabBar.tsx` | 113 | Tab strip with file/diff/tasks classification and md mode toggle |
 | `WorkspaceSearch.tsx` | 60 | File search modal (fetches full index via `/api/files/:project/search-index`) |
