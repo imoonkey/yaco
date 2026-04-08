@@ -191,6 +191,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       fontSize: 12,
       lineHeight: 1.4,
       cursorBlink: true,
+      screenReaderMode: isTouch,
     })
     termRef.current = term
 
@@ -222,34 +223,62 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     // all touch events. We intercept touch, convert to WheelEvent, and dispatch
     // on xterm's screen element. This goes through xterm's normal wheel pipeline:
     // scrollback buffer for shell sessions, mouse escape sequences for tmux.
-    let touchY: number | null = null
+    //
+    // On touch devices, we distinguish scroll (immediate finger drag) from
+    // long-press (finger stays still) so native text selection works.
+    // If the first touchmove has significant delta, it's a scroll — intercept.
+    // If the finger stays still, let the browser handle it (long-press → selection).
+    let touchStartY: number | null = null
+    let isScrollGesture = false
+    let gestureDecided = false
     const screenEl = term.element?.querySelector('.xterm-screen') ?? term.element
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 1) {
-        touchY = e.touches[0].clientY
+        touchStartY = e.touches[0].clientY
+        isScrollGesture = false
+        gestureDecided = false
         e.stopPropagation()
       }
     }
     const onTouchMove = (e: TouchEvent) => {
-      if (touchY === null || e.touches.length !== 1 || !screenEl) return
+      if (touchStartY === null || e.touches.length !== 1 || !screenEl) return
       const currentY = e.touches[0].clientY
-      const deltaY = touchY - currentY
-      touchY = currentY
-      screenEl.dispatchEvent(new WheelEvent('wheel', {
-        deltaY,
-        deltaMode: WheelEvent.DOM_DELTA_PIXEL,
-        clientX: e.touches[0].clientX,
-        clientY: e.touches[0].clientY,
-        bubbles: true,
-        cancelable: true,
-      }))
-      e.preventDefault()
-      e.stopPropagation()
+      const deltaY = touchStartY - currentY
+
+      if (!gestureDecided) {
+        if (Math.abs(deltaY) > 8) {
+          // Finger moved significantly — this is a scroll gesture
+          gestureDecided = true
+          isScrollGesture = true
+        } else {
+          // Finger hasn't moved much yet — wait (allows long-press detection)
+          return
+        }
+      }
+
+      if (isScrollGesture) {
+        // Convert ongoing scroll delta to wheel event
+        const scrollDelta = touchStartY - currentY
+        touchStartY = currentY
+        screenEl.dispatchEvent(new WheelEvent('wheel', {
+          deltaY: scrollDelta,
+          deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+          clientX: e.touches[0].clientX,
+          clientY: e.touches[0].clientY,
+          bubbles: true,
+          cancelable: true,
+        }))
+        e.preventDefault()
+        e.stopPropagation()
+      }
+      // If not a scroll gesture (long-press / selection drag), let browser handle
     }
     const onTouchEnd = (e: TouchEvent) => {
-      if (touchY !== null) e.stopPropagation()
-      touchY = null
+      if (touchStartY !== null && isScrollGesture) e.stopPropagation()
+      touchStartY = null
+      gestureDecided = false
+      isScrollGesture = false
     }
 
     container.addEventListener('touchstart', onTouchStart, { passive: true })
