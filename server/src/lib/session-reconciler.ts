@@ -85,32 +85,40 @@ async function reconcile(): Promise<void> {
 
 /** Health-check: verify tmux liveness for all active sessions.
  *  Deletes state files for sessions whose tmux session no longer exists
- *  (defense-in-depth for when multmux wrapper.sh EXIT trap fails). */
+ *  (defense-in-depth for when multmux wrapper.sh EXIT trap fails).
+ *  Only deletes on CONFIRMED death — skips sessions on uncertain status. */
 function checkStaleStates(sessions: MultmuxSession[]): MultmuxSession[] {
   const live: MultmuxSession[] = []
 
   for (const session of sessions) {
-    if (!isTmuxAlive(session.name)) {
+    const alive = isTmuxAlive(session.name)
+    if (alive === false) {
       const stateFile = join(MULTMUX_SESSIONS_DIR, `${session.name}.json`)
       if (existsSync(stateFile)) {
         try { unlinkSync(stateFile) } catch (e) { console.warn(`[session-reconciler] failed to remove stale state file ${stateFile}:`, e) }
       }
       continue
     }
-
+    // alive === true or null (uncertain) — keep the session
     live.push(session)
   }
 
   return live
 }
 
-/** Direct tmux liveness check for a specific session. */
-function isTmuxAlive(tmuxSession: string): boolean {
+/** Direct tmux liveness check for a specific session.
+ *  Returns true (alive), false (confirmed dead), null (uncertain — tmux error/timeout). */
+function isTmuxAlive(tmuxSession: string): boolean | null {
   try {
     execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'ignore' })
     return true
-  } catch {
-    return false
+  } catch (e: unknown) {
+    // exit code 1 = tmux confirmed session doesn't exist
+    if (typeof e === 'object' && e !== null && 'status' in e && (e as { status: number }).status === 1) {
+      return false
+    }
+    // timeout, signal, tmux unavailable — uncertain
+    return null
   }
 }
 
