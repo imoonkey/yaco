@@ -145,6 +145,20 @@ Clicking inside the preview:
 2. In split mode: jumps the editor to the corresponding source line (stays in split)
 3. In preview-only mode: switches to edit mode and moves the cursor to the source line
 
+### Preview Link Navigation
+
+Clicking links in the preview intercepts navigation to keep the SPA intact:
+
+| Link type | Behavior |
+|-----------|----------|
+| Relative file path (`./foo.md`, `../bar.ts`) | Resolved against current file's directory via `resolveRelativePath()`, opened as editor tab via `onNavigateToFile` |
+| External URL (`http://`, `https://`) | Opens in a new browser tab (`window.open`) |
+| Anchor-only (`#heading`) | Default browser behavior (in-page scroll) |
+
+`resolveRelativePath(currentFilePath, href)` handles `./`, `../`, and bare relative segments. The `MarkdownPreview` component receives `filePath` and `onNavigateToFile` props; click interception is handled via a delegated `onClick` on the preview container that walks up to the nearest `<a>` element.
+
+-> See: `ui/src/workspace/markdown.ts` (`resolveRelativePath`), `ui/src/workspace/WorkspaceEditorArea.tsx` (click handler + props), `ui/src/workspace/WorkspaceScreen.tsx` (wiring)
+
 ## Editor Features
 
 - **Syntax highlighting**: TypeScript, TSX, JavaScript, JSX, JSON, Python, Markdown (fallback for other types)

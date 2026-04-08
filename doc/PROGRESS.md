@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-08: Markdown preview link navigation
+
+**What changed:**
+- Clicking relative file links in markdown preview now opens the target file in an editor tab instead of causing a page refresh
+- External URLs (http/https) open in a new browser tab via `window.open`
+- Anchor-only links (`#heading`) pass through normally for in-page navigation
+- `resolveRelativePath()` utility resolves `./`, `../`, and bare relative paths against the current file's directory
+
+**Why:**
+- Relative links in markdown files (e.g., `[see overview](./overview.md)`) previously triggered a full page navigation, breaking the SPA experience. Now they integrate with the tab system like any other file open action.
+
+**Key files:** `ui/src/workspace/markdown.ts`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** TypeScript clean, manual testing — relative links open in tabs, external links open in new browser tab, anchor links scroll in-page
+**Commit:** 4897629
+
 ## 2026-04-08: Pending rename for processing sessions
 
 **What changed:**
