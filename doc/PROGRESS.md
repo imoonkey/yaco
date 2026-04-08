@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-08: Archive 10 completed design projects
+
+**What changed:**
+- Archived 10 `doc/todo/` folders to `doc/archive/20260408_*/`:
+  diff-viewer, editor-ux, md-link-nav, multmux-redesign, sidebar-collapse,
+  time-awareness, voice-formatting, voice-formatting-v2, session-nav, sync-name
+- Remaining in todo: autocomplete (partial — CM6 bugs), sessionhist (not started), superset-ref (reference only)
+
+**Why:**
+- Housekeeping — these projects are fully implemented and verified
+
+**Key files:** `doc/archive/20260408_*/`
+**Verification:** Each folder checked by agent against codebase for implementation completeness
+**Next:** Fix autocomplete CM6 bugs, decide on sessionhist/superset-ref
+**Blockers:** None
+
 ## 2026-04-08: Markdown link navigation — folder expansion and anchor scrolling
 
 **What changed:**
