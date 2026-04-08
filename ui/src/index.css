@@ -347,12 +347,3 @@ body {
 .markdown-preview .mermaid svg {
   min-width: min-content;
 }
-
-/* On touch devices, make xterm accessibility tree text selection visible.
-   xterm defaults to transparent selection since the canvas draws its own
-   highlight — but on mobile, the accessibility tree IS the selection target. */
-@media (pointer: coarse) {
-  .xterm .xterm-accessibility-tree *::selection {
-    background-color: rgba(38, 139, 210, 0.28);
-  }
-}

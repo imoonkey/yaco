@@ -465,7 +465,7 @@ export function Workspace({
         onCloseTab={closeTab}
         onMdModeChange={(mode) => actions.updateLayout({ mdMode: mode })}
         onSaveTab={(tab) => {
-          const f = files.get(tab)
+          const f = files[tab]
           const content = f?.draft ?? f?.serverContent
           if (isFileTab(tab) && content != null) void actions.saveFile(tab, content)
         }}
@@ -491,8 +491,8 @@ export function Workspace({
               border: 'none',
               borderRadius: 3,
               cursor: 'pointer',
-              background: layout.autocompleteEnabled ? C.activeTabBg : 'transparent',
-              color: layout.autocompleteEnabled ? C.tabText : C.tabTextInactive,
+              background: layout.autocompleteEnabled ? `${SOLARIZED_LIGHT.blue}15` : 'transparent',
+              color: layout.autocompleteEnabled ? C.text : C.textDim,
               opacity: layout.autocompleteEnabled ? 1 : 0.6,
             }}
           >
