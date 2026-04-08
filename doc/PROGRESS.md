@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-08: Markdown link navigation — folder expansion and anchor scrolling
+
+**What changed:**
+- Folder links (hrefs ending with `/`, e.g., `[backend/](backend/)`) now expand the target folder in the file explorer sidebar instead of trying to open it as a file
+- Anchor links (`#heading`) now scroll the preview to the matching heading — headings get slugified `id` attributes via a custom `renderer.heading` override (e.g., `## Key Data Flow` → `id="key-data-flow"`)
+- New `slugify()` utility in `markdown.ts` converts heading text to lowercase, hyphen-separated IDs
+- `WorkspaceEditorArea` detects folder links (trailing `/`) and delegates to `onNavigateDir` prop; anchor links use `scrollIntoView` on the matching `id`
+
+**Why:**
+- Folder links previously attempted to open as files, which failed. Now they integrate with the explorer's expand behavior, making doc navigation seamless.
+- Anchor links had no working target — headings lacked `id` attributes, so `#heading` clicks did nothing.
+
+**Key files:** `ui/src/workspace/markdown.ts`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** TypeScript clean, manual testing — folder links expand in sidebar, anchor links scroll to heading
+**Commit:** f478339
+
 ## 2026-04-08: Markdown preview link navigation
 
 **What changed:**

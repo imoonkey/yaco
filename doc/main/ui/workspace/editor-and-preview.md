@@ -152,12 +152,17 @@ Clicking links in the preview intercepts navigation to keep the SPA intact:
 | Link type | Behavior |
 |-----------|----------|
 | Relative file path (`./foo.md`, `../bar.ts`) | Resolved against current file's directory via `resolveRelativePath()`, opened as editor tab via `onNavigateToFile` |
+| Folder path (trailing `/`, e.g., `backend/`) | Resolved against current file's directory, expands the target folder in the file explorer sidebar via `onNavigateDir` |
 | External URL (`http://`, `https://`) | Opens in a new browser tab (`window.open`) |
-| Anchor-only (`#heading`) | Default browser behavior (in-page scroll) |
+| Anchor-only (`#heading`) | Scrolls the preview to the matching heading via `scrollIntoView` on the element with the corresponding `id` |
 
-`resolveRelativePath(currentFilePath, href)` handles `./`, `../`, and bare relative segments. The `MarkdownPreview` component receives `filePath` and `onNavigateToFile` props; click interception is handled via a delegated `onClick` on the preview container that walks up to the nearest `<a>` element.
+**Folder links** — hrefs ending with `/` are detected as directory references. Instead of opening a non-existent file, the click handler delegates to `onNavigateDir`, which expands the folder in the sidebar explorer.
 
--> See: `ui/src/workspace/markdown.ts` (`resolveRelativePath`), `ui/src/workspace/WorkspaceEditorArea.tsx` (click handler + props), `ui/src/workspace/WorkspaceScreen.tsx` (wiring)
+**Anchor links** — headings in the rendered markdown receive slugified `id` attributes (e.g., `## Key Data Flow` → `id="key-data-flow"`). The `slugify()` function in `markdown.ts` lowercases, strips non-alphanumeric characters, and joins words with hyphens. A custom `renderer.heading` override in `marked` applies the `id` to each heading element. When an anchor link is clicked, the preview container finds the element by `id` and calls `scrollIntoView`.
+
+`resolveRelativePath(currentFilePath, href)` handles `./`, `../`, and bare relative segments. The `MarkdownPreview` component receives `filePath`, `onNavigateToFile`, and `onNavigateDir` props; click interception is handled via a delegated `onClick` on the preview container that walks up to the nearest `<a>` element.
+
+-> See: `ui/src/workspace/markdown.ts` (`resolveRelativePath`, `slugify`, `renderer.heading`), `ui/src/workspace/WorkspaceEditorArea.tsx` (click handler + props), `ui/src/workspace/WorkspaceScreen.tsx` (wiring)
 
 ## Editor Features
 
