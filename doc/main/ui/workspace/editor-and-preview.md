@@ -121,9 +121,22 @@ Preview and editor share a viewport position via source-line anchors (not scroll
 
 This is more stable than scroll-percentage sync because editor and preview have different line heights and layouts.
 
-The sync uses two guards to prevent feedback loops:
-- `applyingViewportRef` — suppresses the `onScroll` report when the container was scrolled programmatically by the sync
-- `lastReportedLineRef` — suppresses programmatic scroll when the incoming `viewportLine` prop is just echoing our own scroll report back (prevents round-trip that resets child `<pre>` scroll positions)
+#### Sync Architecture
+
+**Imperative sync channel** — split-mode scroll sync bypasses React state entirely. `WorkspaceEditorArea` maintains a `syncRef` with `scrollEditor`/`scrollPreview` functions. Each component registers a LERP-based scroll function via `onRegisterSync` on mount; the other side's scroll handler calls it directly.
+
+**LERP interpolation** — passive side uses `scrollTop += (target - scrollTop) * 0.2` in a rAF loop instead of instant `scrollTop = target`. This eliminates micro-jitter during momentum deceleration. `wheel`/`touchstart` events cancel the LERP when the user directly scrolls the passive pane.
+
+**Position cache** — `buildAnchorCache()` caches `{lineStart, lineEnd, top, bottom}` for each `.markdown-block` element. Rebuilt on `html` change (`useLayoutEffect`) and container resize (`ResizeObserver`). Zero DOM queries or layout reads during scroll. Requires `position: relative` on `.markdown-preview` so `offsetTop` is container-relative.
+
+**Local viewport line state** — `localViewportLine` in `WorkspaceEditorArea` avoids re-rendering the full Workspace tree on every scroll frame. Persisted to parent (`useFileState`) via 150ms debounce. `latestLineRef` tracks the true current position; flushed to state on tab or mode change so newly mounted components get the correct position.
+
+**Mobile** — preview uses a native passive `scroll` listener. Touch devices debounce viewport reporting to scroll-end (120ms) for native momentum; desktop reports synchronously.
+
+**Feedback-loop guards:**
+- `applyingViewportRef` — suppresses `onScroll` report after programmatic scroll from initial positioning
+- `lastReportedLineRef` — suppresses programmatic scroll when `viewportLine` prop echoes back our own report
+- `syncActiveRef` — suppresses scroll reporting while LERP is running on the passive side
 
 ### Preview Click-to-Edit
 

@@ -89,6 +89,8 @@ On desktop, right-click opens context menus (file explorer, project list, sessio
 
 **Cold start refit**: On PWA cold start, the terminal container may have zero height when xterm first mounts (flex layout not yet settled). Terminal.tsx retries `fitTerminal()` + `term.refresh()` at 150ms and 500ms after mount, in addition to the `requestAnimationFrame` refit and `ResizeObserver`. The `ResizeObserver` callback also forces a repaint via `term.refresh()` to ensure xterm redraws buffer content after resize.
 
+**Editor/preview scrolling**: MarkdownPreview uses a native passive `scroll` event listener (not React's synthetic `onScroll`). On touch devices, viewport line reporting is debounced to scroll-end (120ms) so the compositor thread stays free for native momentum scrolling. DOM queries are eliminated during scroll via cached anchor positions. -> See: [editor-and-preview.md](workspace/editor-and-preview.md#sync-architecture)
+
 ## Viewport
 
 - `viewport-fit=cover` in viewport meta tag — required for `env(safe-area-inset-*)` to return non-zero values

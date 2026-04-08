@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-04-08: Smooth scroll sync for mobile preview and desktop split mode
+
+**What changed:**
+- Mobile preview scroll: replaced React synthetic `onScroll` with native passive listener; touch devices debounce to scroll-end (120ms) for native momentum
+- Desktop split-mode sync: imperative sync channel bypasses React state entirely — each side registers a LERP scroll function, called directly from the other's scroll handler
+- LERP interpolation (ease=0.2) on the passive side eliminates micro-jitter during momentum deceleration; `wheel`/`touchstart` events cancel LERP on direct user interaction
+- Cached block anchor positions (`buildAnchorCache`) — zero DOM reads during scroll; rebuilt on html change + ResizeObserver
+- `position: relative` on `.markdown-preview` ensures `offsetTop` is container-relative for correct cache coordinates
+- Local viewport line state in `WorkspaceEditorArea` (debounced persist) avoids full Workspace tree re-render; `latestLineRef` flush on tab/mode change prevents stale initial positioning; `useLayoutEffect` prevents mount flash
+
+**Why:**
+- Mobile preview momentum scrolling was choppy — per-frame `querySelectorAll` + React `setState` disrupted the compositor thread
+- Desktop split sync had visible jitter on the passive side — programmatic `scrollTop` jumps are visible during deceleration
+- VS Code has the same known limitation (microsoft/vscode#68623, marked out-of-scope); LERP interpolation is the industry best practice
+
+**Key files:** `ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/index.css`
+**Verification:** TypeScript clean, manual testing on desktop (split sync both directions) and mobile (preview momentum scroll)
+**Commit:** 8537c7d
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-08: Sidebar reorder (Changes above Search) and dynamic resize max
 
 **What changed:**
