@@ -132,6 +132,48 @@ def cmd_set(tid, data):
     rollup(tasks, tid)
     save(tasks)
 
+def cmd_archive(tid):
+    """Move a terminal task and all descendants to doc/archive/YYYYMMDD_<slug>.json."""
+    from datetime import date
+    tasks = load()
+    if tid not in tasks: die(f"task '{tid}' not found")
+    # Collect task + all descendants
+    def collect(root):
+        ids = [root]
+        for oid in tasks:
+            if tasks[oid].get("parent") == root:
+                ids.extend(collect(oid))
+        return ids
+    tree_ids = collect(tid)
+    # All must be terminal
+    for t in tree_ids:
+        if tasks[t]["state"] not in TERMINAL:
+            die(f"task '{t}' is not terminal (state={tasks[t]['state']})")
+    # Check no external tasks depend on any of these
+    tree_set = set(tree_ids)
+    for oid, o in tasks.items():
+        if oid in tree_set: continue
+        for d in o.get("depends", []):
+            if d in tree_set:
+                die(f"external task '{oid}' depends on '{d}'")
+    # Build archive payload
+    archive = {t: tasks[t] for t in tree_ids}
+    # Write archive file
+    archive_dir = Path("doc/archive")
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    today = date.today().strftime("%Y%m%d")
+    dest = archive_dir / f"{today}_{tid}.json"
+    n = 1
+    while dest.exists():
+        n += 1
+        dest = archive_dir / f"{today}_{tid}_{n}.json"
+    dest.write_text(json.dumps(archive, indent=2, ensure_ascii=False) + "\n")
+    # Remove from tasks.json
+    for t in tree_ids:
+        del tasks[t]
+    save(tasks)
+    print(f"archived {len(tree_ids)} tasks to {dest}")
+
 def cmd_rm(tid):
     tasks = load()
     if tid not in tasks: die(f"task '{tid}' not found")
@@ -151,7 +193,7 @@ def cmd_rm(tid):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if len(args) < 2: die("usage: update-tasks.py set <id> [json] | rm <id>")
+    if len(args) < 2: die("usage: update-tasks.py set <id> [json] | rm <id> | archive <id>")
     cmd, tid = args[0], args[1]
     if cmd == "set":
         raw = args[2] if len(args) > 2 else sys.stdin.read()
@@ -160,5 +202,7 @@ if __name__ == "__main__":
         cmd_set(tid, data)
     elif cmd == "rm":
         cmd_rm(tid)
+    elif cmd == "archive":
+        cmd_archive(tid)
     else:
         die(f"unknown command: {cmd}")
