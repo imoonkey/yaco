@@ -1,7 +1,8 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { isDiffTab, isFileTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
+import { useContextMenu, Menu, MenuItem } from '../components/Menu'
 
 function tabName(tab: string): string {
   if (isTasksTab(tab)) return 'Tasks'
@@ -91,6 +92,7 @@ export function WorkspaceTabBar({
   onDoubleClickTab,
   onCloseTab,
   onMdModeChange,
+  onSaveTab,
   rightActions,
 }: {
   openTabs: string[]
@@ -103,13 +105,17 @@ export function WorkspaceTabBar({
   isTouch: boolean
   onSelectTab: (tab: string) => void
   onDoubleClickTab: (tab: string) => void
-  onCloseTab: (tab: string, e: React.MouseEvent) => void
+  onCloseTab: (tab: string, e?: React.MouseEvent) => void
   onMdModeChange: (mode: MdMode) => void
+  onSaveTab?: (tab: string) => void
   rightActions?: React.ReactNode
 }) {
   const disambigSuffixes = useMemo(() => computeDisambigSuffixes(openTabs), [openTabs])
+  const ctxMenu = useContextMenu()
+  const [ctxTab, setCtxTab] = useState<string | null>(null)
 
   return (
+    <>
     <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 32, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
       {openTabs.length === 0 ? (
         <span className="px-4 text-[11px] shrink-0" style={{ color: C.textDim }}>No files open</span>
@@ -121,9 +127,11 @@ export function WorkspaceTabBar({
         const isDiff = isDiffTab(tab)
         const isTasks = isTasksTab(tab)
         const isPreview = tab === previewTab
+        const tabCtx = ctxMenu.bind(() => { setCtxTab(tab) })
         return (
           <div key={tab} onClick={() => onSelectTab(tab)}
             onDoubleClick={() => onDoubleClickTab(tab)}
+            {...tabCtx}
             data-testid="tab"
             className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
             style={{
@@ -156,5 +164,24 @@ export function WorkspaceTabBar({
         )}
       </div>
     </div>
+    {ctxMenu.position && ctxTab && (() => {
+      const tab = ctxTab
+      const isDirty = dirtyTabs.has(tab)
+      const isFile = isFileTab(tab)
+      return (
+        <Menu position={ctxMenu.position}>
+          {isFile && isDirty && onSaveTab && (
+            <MenuItem label="Save" onClick={() => { onSaveTab(tab); ctxMenu.close() }} />
+          )}
+          {isDirty && (
+            <MenuItem label="Close Without Saving" danger onClick={() => { onCloseTab(tab); ctxMenu.close() }} />
+          )}
+          {!isDirty && (
+            <MenuItem label="Close" onClick={() => { onCloseTab(tab); ctxMenu.close() }} />
+          )}
+        </Menu>
+      )
+    })()}
+    </>
   )
 }
