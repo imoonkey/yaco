@@ -557,6 +557,7 @@ export function Workspace({
         onForceSave={() => activeFilePath && void actions.forceSave(activeFilePath, activeFileContent ?? '')}
         onViewportLine={handleActiveFileViewportLine}
         onActivateLine={handlePreviewActivateLine}
+        onNavigateToFile={nav.openFile}
         onFocus={() => setFocusTarget('editor')}
         onCloseTab={() => activeTab && closeTab(activeTab)}
         onDraftChange={(content) => activeFilePath && actions.updateFileDraft(activeFilePath, content)}

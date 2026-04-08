@@ -3,7 +3,7 @@ import { Editor } from '../components/Editor'
 import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
-import { escapeHtml, clampLine, renderMarkdown } from './markdown'
+import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath } from './markdown'
 import { VResizeHandle } from './ResizeHandle'
 import type { MdMode } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
@@ -56,15 +56,19 @@ function scrollToLine(container: HTMLDivElement, anchors: CachedAnchor[], viewpo
 // --- Markdown Preview ---
 export function MarkdownPreview({
   content,
+  filePath,
   viewportLine,
   onViewportLine,
   onActivateLine,
+  onNavigateToFile,
   onRegisterSync,
 }: {
   content: string
+  filePath?: string
   viewportLine: number
   onViewportLine?: (line: number) => void
   onActivateLine?: (line: number) => void
+  onNavigateToFile?: (path: string) => void
   onRegisterSync?: (scrollTo: ((line: number) => void) | null) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -229,6 +233,20 @@ export function MarkdownPreview({
       ref={containerRef}
       className="markdown-preview h-full"
       onClick={(event) => {
+        // --- Link navigation ---
+        const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a')
+        if (anchor) {
+          const href = anchor.getAttribute('href')
+          if (!href || href.startsWith('#')) return // anchor-only → browser handles
+          event.preventDefault()
+          if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
+            window.open(href, '_blank', 'noopener')
+          } else if (filePath && onNavigateToFile) {
+            onNavigateToFile(resolveRelativePath(filePath, href))
+          }
+          return
+        }
+        // --- Click-to-edit line sync ---
         if (!onActivateLine) return
         const element = containerRef.current
         if (!element) return
@@ -276,6 +294,7 @@ export function WorkspaceEditorArea({
   onForceSave,
   onViewportLine,
   onActivateLine,
+  onNavigateToFile,
   onFocus,
   onCloseTab,
   onDraftChange,
@@ -306,6 +325,7 @@ export function WorkspaceEditorArea({
   onForceSave: () => void
   onViewportLine: (line: number) => void
   onActivateLine: (line: number) => void
+  onNavigateToFile?: (path: string) => void
   onFocus: () => void
   onCloseTab: () => void
   onDraftChange: (content: string) => void
@@ -431,9 +451,11 @@ export function WorkspaceEditorArea({
   const previewElement = (
     <MarkdownPreview
       content={activeFileContent!}
+      filePath={activeTab ?? undefined}
       viewportLine={localViewportLine}
       onViewportLine={handlePreviewViewportLine}
       onActivateLine={onActivateLine}
+      onNavigateToFile={onNavigateToFile}
       onRegisterSync={registerPreviewSync}
     />
   )

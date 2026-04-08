@@ -82,6 +82,20 @@ export function clampLine(line: number): number {
   return Math.max(1, Math.round(line))
 }
 
+export function resolveRelativePath(currentFile: string, href: string): string {
+  const clean = href.split('#')[0].split('?')[0]
+  if (clean.startsWith('/')) return clean.slice(1)
+  const dir = currentFile.includes('/') ? currentFile.replace(/\/[^/]*$/, '') : ''
+  const segments = (dir ? dir + '/' + clean : clean).split('/')
+  const resolved: string[] = []
+  for (const s of segments) {
+    if (s === '.' || s === '') continue
+    if (s === '..') resolved.pop()
+    else resolved.push(s)
+  }
+  return resolved.join('/')
+}
+
 export function renderMarkdown(content: string): string {
   const renderer = createMarkdownRenderer()
   const tokens = marked.lexer(content)
