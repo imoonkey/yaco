@@ -67,7 +67,7 @@ export function ProjectList({
             <span className="flex items-center gap-1 shrink-0">
               {unreadCount > 0 && (
                 <span
-                  className="min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
+                  className="min-w-[16px] h-[18px] rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1"
                   style={{ backgroundColor: SOLARIZED_LIGHT.orange }}
                 >
                   {unreadCount}
@@ -75,7 +75,7 @@ export function ProjectList({
               )}
               {sc && sc.total > 0 && (
                 <span
-                  className="text-[9px] tabular-nums opacity-60"
+                  className="text-[12px] tabular-nums opacity-50"
                   title={`${sc.active} active / ${sc.total} total sessions`}
                 >
                   {sc.active}/{sc.total}
