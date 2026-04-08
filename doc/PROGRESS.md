@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-08: Pending rename for processing sessions
+
+**What changed:**
+- Session rename now works while session is processing: queued as pending, auto-fires when idle
+- Session list shows `name → newName` indicator for pending renames
+- Pending state persisted to `localStorage` (`workflow-pending-renames:<project>`) — survives refresh and project switching
+- Guard against premature cleanup: effect skips when sessions haven't loaded yet (`sessions === null`)
+
+**Why:**
+- Rename API only works on idle sessions (multmux CLI constraint). Previously, renaming a processing session silently failed. Now the UI queues it and handles it automatically.
+
+**Key files:** `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** TypeScript clean, manual testing — pending rename persists across refresh/project switch, auto-fires on idle
+**Commit:** b1bd912
+
 ## 2026-04-08: Smooth scroll sync for mobile preview and desktop split mode
 
 **What changed:**

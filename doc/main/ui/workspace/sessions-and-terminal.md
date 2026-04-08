@@ -66,6 +66,7 @@ Full summary strings are returned (no server-side truncation). The UI truncates 
 | Select session | Click session row | Attaches terminal to selected session |
 | Kill session | Click Kill button on row | `POST /api/sessions/:handle/close` |
 | Rename session | Right-click → Rename (inline edit) | `POST /api/sessions/:handle/rename { name, cwd }` |
+| Pending rename | Rename while session is processing | Queued in `pendingRenames` state (persisted to `localStorage`), shown as `name → newName` in session list. Auto-fires rename API when session becomes idle. Re-renaming overwrites the pending value. |
 | Reorder session | Drag pinned session row vertically | Reorders within pinned section (client-side only, not persisted) |
 
 ### Session Scoping

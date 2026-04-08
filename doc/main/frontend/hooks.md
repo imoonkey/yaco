@@ -109,6 +109,7 @@ Standalone async functions (not hooks):
 - `reorderProjects(order)`
 - `startSession(provider, projectPath)`
 - `closeSession(name)`
+- `renameSession(name, newName, cwd)`
 - `saveFileContent(project, path, content)`
 - `createFile(project, path)`
 - `createDir(project, path)`
