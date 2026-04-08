@@ -44,6 +44,7 @@ export function Workspace({
   projects,
   activeProject,
   projectUnreadCounts,
+  projectSessionCounts,
   onProjectSelect,
   onProjectReorder,
   onProjectRemove,
@@ -60,6 +61,7 @@ export function Workspace({
   projects: Project[]
   activeProject: string
   projectUnreadCounts: Record<string, number>
+  projectSessionCounts: Record<string, { active: number; total: number }>
   onProjectSelect: (name: string) => void
   onProjectReorder: (fromName: string, toName: string) => void
   onProjectRemove: (project: Project) => void
@@ -317,6 +319,7 @@ export function Workspace({
       projects={projects}
       activeProject={activeProject}
       projectUnreadCounts={projectUnreadCounts}
+      projectSessionCounts={projectSessionCounts}
       onSelect={onProjectSelect}
       onReorder={onProjectReorder}
       onRemove={onProjectRemove}
@@ -461,6 +464,11 @@ export function Workspace({
         onDoubleClickTab={nav.handleDoubleClickTab}
         onCloseTab={closeTab}
         onMdModeChange={(mode) => actions.updateLayout({ mdMode: mode })}
+        onSaveTab={(tab) => {
+          const f = files.get(tab)
+          const content = f?.draft ?? f?.serverContent
+          if (isFileTab(tab) && content != null) void actions.saveFile(tab, content)
+        }}
         rightActions={<>
           {voiceBridge.editorVoiceEligible && (
             <VoiceControl

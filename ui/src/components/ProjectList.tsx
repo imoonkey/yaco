@@ -8,6 +8,7 @@ export function ProjectList({
   projects,
   activeProject,
   projectUnreadCounts,
+  projectSessionCounts,
   onSelect,
   onReorder,
   onRemove,
@@ -16,6 +17,7 @@ export function ProjectList({
   projects: Project[]
   activeProject: string
   projectUnreadCounts: Record<string, number>
+  projectSessionCounts: Record<string, { active: number; total: number }>
   onSelect: (name: string) => void
   onReorder: (fromName: string, toName: string) => void
   onRemove: (project: Project) => void
@@ -43,6 +45,7 @@ export function ProjectList({
       {projects.map(project => {
         const isActive = activeProject === project.name
         const unreadCount = projectUnreadCounts[project.name] ?? 0
+        const sc = projectSessionCounts[project.name]
         return (
           <button
             key={project.name}
@@ -53,22 +56,32 @@ export function ProjectList({
             onDrop={e => handleDrop(e, project.name)}
             onClick={() => onSelect(project.name)}
             {...menu.bind(() => setMenuProject(project))}
-            className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors truncate ${
+            className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors flex items-center gap-1 ${
               isActive
                 ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
                 : 'text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[#E2D9C2]'
             }`}
             style={{ opacity: draggedProject === project.name ? 0.55 : 1 }}
           >
-            {project.name}
-            {unreadCount > 0 && (
-              <span
-                className="absolute top-0.5 right-1 min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
-                style={{ backgroundColor: SOLARIZED_LIGHT.orange }}
-              >
-                {unreadCount}
-              </span>
-            )}
+            <span className="truncate flex-1">{project.name}</span>
+            <span className="flex items-center gap-1 shrink-0">
+              {unreadCount > 0 && (
+                <span
+                  className="min-w-[16px] h-4 rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
+                  style={{ backgroundColor: SOLARIZED_LIGHT.orange }}
+                >
+                  {unreadCount}
+                </span>
+              )}
+              {sc && sc.total > 0 && (
+                <span
+                  className="text-[9px] tabular-nums opacity-60"
+                  title={`${sc.active} active / ${sc.total} total sessions`}
+                >
+                  {sc.active}/{sc.total}
+                </span>
+              )}
+            </span>
           </button>
         )
       })}

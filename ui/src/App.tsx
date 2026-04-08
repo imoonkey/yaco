@@ -145,6 +145,18 @@ function App() {
     return orderedProjects[0]?.name ?? ''
   }, [projectName, orderedProjects])
 
+  // Per-project session counts: { active, total }
+  const projectSessionCounts = useMemo(() => {
+    const counts: Record<string, { active: number; total: number }> = {}
+    if (!allSessions) return counts
+    for (const s of allSessions) {
+      const c = counts[s.project] ??= { active: 0, total: 0 }
+      c.total++
+      if (s.status === 'processing') c.active++
+    }
+    return counts
+  }, [allSessions])
+
   const currentProjectPath = orderedProjects.find(p => p.name === activeProject)?.path ?? ''
 
   // Unread state — purely derived from progress, sessions, and localStorage read timestamps
@@ -253,6 +265,7 @@ function App() {
             projects={orderedProjects}
             activeProject={activeProject}
             projectUnreadCounts={projectUnreadCounts}
+            projectSessionCounts={projectSessionCounts}
             onProjectSelect={handleProjectChange}
             onProjectReorder={handleProjectReorder}
             onProjectRemove={handleRemoveProject}
