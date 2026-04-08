@@ -93,6 +93,7 @@ function checkStaleStates(sessions: MultmuxSession[]): MultmuxSession[] {
   for (const session of sessions) {
     const alive = isTmuxAlive(session.name)
     if (alive === false) {
+      console.warn(`[session-reconciler] GC DELETING: ${session.name} (confirmed dead)`)
       const stateFile = join(MULTMUX_SESSIONS_DIR, `${session.name}.json`)
       if (existsSync(stateFile)) {
         try { unlinkSync(stateFile) } catch (e) { console.warn(`[session-reconciler] failed to remove stale state file ${stateFile}:`, e) }
