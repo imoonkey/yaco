@@ -77,7 +77,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTasks, showTextSearch } = layout
   // When Explorer is collapsed, first expanded bottom section gets flex:1
   const flexFallback = !showExplorer
-    ? (showTextSearch ? 'search' : showChanges ? 'changes' : showTasks ? 'tasks' : null)
+    ? (showChanges ? 'changes' : showTextSearch ? 'search' : showTasks ? 'tasks' : null)
     : null
   const shouldShowEditorPane = hasOpenTabs || !showRightPanel
 
@@ -113,11 +113,11 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && <div className="flex-1 min-h-0 flex flex-col">{explorerBody}</div>}
 
-                <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
-                {showTextSearch && <div className="flex-1 min-h-0 flex flex-col">{searchBody}</div>}
-
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
                 {showChanges && <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">{changesBody}</div>}
+
+                <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
+                {showTextSearch && <div className="flex-1 min-h-0 flex flex-col">{searchBody}</div>}
 
                 <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={() => onLayoutUpdate({ showTasks: !showTasks })} />
                 {showTasks && <div className="shrink-0 px-2 py-2">{tasksBody}</div>}
@@ -152,32 +152,32 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                   </div>
                 )}
 
-                {showExplorer && (showTextSearch || showChanges) && (
+                {showExplorer && (showChanges || showTextSearch) && (
                   <HResizeHandle
-                    onMouseDown={showTextSearch ? searchSplit.onMouseDown : changesSplit.onMouseDown}
-                    isDragging={showTextSearch ? searchSplit.isDragging : changesSplit.isDragging}
+                    onMouseDown={showChanges ? changesSplit.onMouseDown : searchSplit.onMouseDown}
+                    isDragging={showChanges ? changesSplit.isDragging : searchSplit.isDragging}
                   />
                 )}
-
-                <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
-                {showTextSearch && (
-                  <div
-                    className="min-h-0 flex flex-col"
-                    style={flexFallback === 'search' ? { flex: 1 } : { height: searchHeight, minHeight: 50, overflowY: 'auto' }}
-                  >
-                    {searchBody}
-                  </div>
-                )}
-
-                {showTextSearch && showChanges && <HResizeHandle onMouseDown={changesSplit.onMouseDown} isDragging={changesSplit.isDragging} />}
 
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
                 {showChanges && (
                   <div
-                    className="min-h-0 py-1 px-1"
+                    className="min-h-0 shrink-0 py-1 px-1"
                     style={flexFallback === 'changes' ? { flex: 1, overflowY: 'auto' } : { height: changesHeight, minHeight: 50, overflowY: 'auto' }}
                   >
                     {changesBody}
+                  </div>
+                )}
+
+                {showChanges && showTextSearch && <HResizeHandle onMouseDown={searchSplit.onMouseDown} isDragging={searchSplit.isDragging} />}
+
+                <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
+                {showTextSearch && (
+                  <div
+                    className="min-h-0 shrink-0 flex flex-col"
+                    style={flexFallback === 'search' ? { flex: 1 } : { height: searchHeight, minHeight: 50, overflowY: 'auto' }}
+                  >
+                    {searchBody}
                   </div>
                 )}
 

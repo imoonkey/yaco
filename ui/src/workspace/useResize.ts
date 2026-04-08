@@ -1,12 +1,15 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 
-export function useResize(initial: number, min: number, max: number, direction: 'left' | 'right' | 'down' | 'up' = 'left') {
+export function useResize(initial: number, min: number, max: number | (() => number), direction: 'left' | 'right' | 'down' | 'up' = 'left') {
   const [size, setSize] = useState(initial)
   const [isDragging, setIsDragging] = useState(false)
   const dragging = useRef(false)
   const startPos = useRef(0)
   const startSize = useRef(0)
-  const clamp = useCallback((value: number) => Math.min(max, Math.max(min, value)), [max, min])
+  const maxRef = useRef(max)
+  maxRef.current = max
+  const resolveMax = () => typeof maxRef.current === 'function' ? maxRef.current() : maxRef.current
+  const clamp = useCallback((value: number) => Math.min(resolveMax(), Math.max(min, value)), [min])
   const setClampedSize = useCallback((value: number) => {
     setSize(clamp(value))
   }, [clamp])

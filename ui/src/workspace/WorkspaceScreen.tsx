@@ -95,7 +95,7 @@ export function Workspace({
   const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
 
-  const { showSidebar, showRightPanel, showExplorer, showChanges, showSessions, showTextSearch, mdMode } = layout
+  const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
@@ -232,12 +232,40 @@ export function Workspace({
   const projectHeight = projectSplit.size
   const left = useResize(layout.leftSize, 140, 600)
   const right = useResize(layout.rightSize, 250, 900, 'right')
-  const searchSplit = useResize(layout.searchSize, 50, 400, 'up')
+  // Available space for bottom sections = sidebar - headers - projects - explorer min
+  const bottomAvailable = useCallback(() => {
+    const el = sidebarRef.current
+    if (!el) return 400
+    const sidebarH = el.clientHeight
+    const headers = 5 * 22 // Projects, Explorer, Changes, Search, Tasks
+    const projectsH = showProjects ? projectSplit.size : 0
+    const explorerMinH = showExplorer ? 80 : 0
+    const tasksH = showTasks ? 50 : 0
+    const handles = 6 // ~2 resize handles × 3px
+    return Math.max(100, sidebarH - headers - projectsH - explorerMinH - tasksH - handles)
+  }, [showProjects, showExplorer, showTasks, projectSplit.size])
+  const searchMax = useCallback(() => {
+    const changesMinH = showChanges ? 50 : 0
+    return Math.max(50, bottomAvailable() - changesMinH)
+  }, [bottomAvailable, showChanges])
+  const searchSplit = useResize(layout.searchSize, 50, searchMax, 'up')
   const searchHeight = showTextSearch ? searchSplit.size : 0
-  const changesSplit = useResize(layout.changesSize, 50, 300, 'up')
+  const changesMax = useCallback(() => {
+    const searchMinH = showTextSearch ? 50 : 0
+    return Math.max(50, bottomAvailable() - searchMinH)
+  }, [bottomAvailable, showTextSearch])
+  const changesSplit = useResize(layout.changesSize, 50, changesMax, 'up')
   const changesHeight = showChanges ? changesSplit.size : 0
   const sessionSplit = useResize(layout.sessionSize, 50, 400, 'up')
   const sessionHeight = showSessions ? sessionSplit.size : 0
+
+  // Re-clamp when available space shrinks (section toggled, projects resized, window resize)
+  useEffect(() => {
+    const maxC = changesMax()
+    const maxS = searchMax()
+    if (changesSplit.size > maxC) changesSplit.setSize(maxC)
+    if (searchSplit.size > maxS) searchSplit.setSize(maxS)
+  }, [changesMax, searchMax, changesSplit, searchSplit])
 
   // Sync resize handle sizes back to layout state for persistence
   useEffect(() => {
