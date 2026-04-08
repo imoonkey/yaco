@@ -61,6 +61,7 @@ export function MarkdownPreview({
   onViewportLine,
   onActivateLine,
   onNavigateToFile,
+  onNavigateDir,
   onRegisterSync,
 }: {
   content: string
@@ -69,6 +70,7 @@ export function MarkdownPreview({
   onViewportLine?: (line: number) => void
   onActivateLine?: (line: number) => void
   onNavigateToFile?: (path: string) => void
+  onNavigateDir?: (path: string) => void
   onRegisterSync?: (scrollTo: ((line: number) => void) | null) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -237,12 +239,23 @@ export function MarkdownPreview({
         const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a')
         if (anchor) {
           const href = anchor.getAttribute('href')
-          if (!href || href.startsWith('#')) return // anchor-only → browser handles
+          if (!href) return
           event.preventDefault()
+          if (href.startsWith('#')) {
+            const id = href.slice(1)
+            const target = containerRef.current?.querySelector(`[id="${CSS.escape(id)}"]`)
+            target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            return
+          }
           if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
             window.open(href, '_blank', 'noopener')
-          } else if (filePath && onNavigateToFile) {
-            onNavigateToFile(resolveRelativePath(filePath, href))
+          } else if (filePath) {
+            const clean = href.split('#')[0].split('?')[0]
+            if (clean.endsWith('/')) {
+              onNavigateDir?.(resolveRelativePath(filePath, href))
+            } else {
+              onNavigateToFile?.(resolveRelativePath(filePath, href))
+            }
           }
           return
         }
@@ -295,6 +308,7 @@ export function WorkspaceEditorArea({
   onViewportLine,
   onActivateLine,
   onNavigateToFile,
+  onNavigateDir,
   onFocus,
   onCloseTab,
   onDraftChange,
@@ -326,6 +340,7 @@ export function WorkspaceEditorArea({
   onViewportLine: (line: number) => void
   onActivateLine: (line: number) => void
   onNavigateToFile?: (path: string) => void
+  onNavigateDir?: (path: string) => void
   onFocus: () => void
   onCloseTab: () => void
   onDraftChange: (content: string) => void
@@ -456,6 +471,7 @@ export function WorkspaceEditorArea({
       onViewportLine={handlePreviewViewportLine}
       onActivateLine={onActivateLine}
       onNavigateToFile={onNavigateToFile}
+      onNavigateDir={onNavigateDir}
       onRegisterSync={registerPreviewSync}
     />
   )

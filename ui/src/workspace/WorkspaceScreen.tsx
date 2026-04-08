@@ -558,6 +558,7 @@ export function Workspace({
         onViewportLine={handleActiveFileViewportLine}
         onActivateLine={handlePreviewActivateLine}
         onNavigateToFile={nav.openFile}
+        onNavigateDir={nav.handleExpandFolder}
         onFocus={() => setFocusTarget('editor')}
         onCloseTab={() => activeTab && closeTab(activeTab)}
         onDraftChange={(content) => activeFilePath && actions.updateFileDraft(activeFilePath, content)}

@@ -55,6 +55,10 @@ function renderHighlightedCode(text: string, lang: string | undefined): string {
   return html
 }
 
+function slugify(text: string): string {
+  return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-')
+}
+
 function createMarkdownRenderer() {
   const renderer = new marked.Renderer()
 
@@ -64,6 +68,11 @@ function createMarkdownRenderer() {
     }
     const languageClass = lang ? ` class="language-${escapeHtml(lang)}"` : ''
     return `<pre><code${languageClass}>${renderHighlightedCode(text, lang)}</code></pre>`
+  }
+
+  renderer.heading = ({ text, depth }: Tokens.Heading) => {
+    const id = slugify(text)
+    return `<h${depth} id="${escapeHtml(id)}">${text}</h${depth}>\n`
   }
 
   return renderer
