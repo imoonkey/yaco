@@ -30,36 +30,29 @@ Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty
 ```
 
-- **ui/src/App.tsx** — Thin shell: top/bottom margin bars (desktop only) showing active project name + clock (dark pill style, `base02`/`base2`), project selection, renders a single `Workspace` keyed by active project. Clock triggers rhythm pulse vignette at quarter-hour marks (:15/:45 light, :00/:30 strong) for ambient time awareness. Add-project button lives in the sidebar Projects section header. Project list with unread badges + session counts (active/total) lives in the workspace sidebar (no separate Monitor or Tasks views). `projectSessionCounts` derived from `allSessions` via `useMemo`.
-- **server/src/routes/** — REST API (`/api/*`) + SSE (`/api/notifications/stream`) + WebSocket (`/ws/terminal/:name`). Includes `voice.ts` (Groq Whisper STT + multi-model LLM formatter via `voice-prompts.ts` + `voice-formatter.ts`), `autocomplete.ts` (inline code completion via Groq, delegates to `lib/autocomplete.ts`), `search.ts` (ripgrep cross-file text search, NDJSON streaming).
-- **server/src/lib/** — Core modules: `constants.ts` (shared timeouts, buffer sizes, sentinels, `MULTMUX_PATH`), `response.ts` (`fail()` helper for standardized error responses), `terminal.ts` (node-pty), `multmux.ts` (agent sessions via tmux), `project-watcher.ts` (fs.watch → SSE, .gitignore-filtered), `gitignore.ts` (.gitignore parse + cache), `session-reconciler.ts` (health check), `notify.ts` (SSE fanout), `voice-prompts.ts` (shared speech-to-writing prompt template, Whisper `initial_prompt` builder, file-type context map), `voice-formatter.ts` (OpenAI-compatible multi-model formatter with fallback chain via `openai` SDK, thinking-token stripping), `autocomplete.ts` (code completion logic — OpenAI SDK + Groq baseURL, multi-model rotation with fallback, context truncation, structured prompt)
-- **server/src/middleware/** — `project.ts` (`withProject` middleware — resolves `:project` param, 404 if not found, sets `c.var.project`)
-- **ui/src/hooks/** — State and data: `useWorkspaceState.ts` (thin composition root wiring `useLayoutState` + `useFileState` + `usePersistence`), `useLayoutState.ts` (tabs, active session, mobile pane, panel sizes), `useFileState.ts` (file content, drafts, conflicts, server sync), `usePersistence.ts` (localStorage load/save, debounce, beforeunload flush), `workspaceTypes.ts` (shared types, tab guards), `useTaskGraph.ts` (task data fetch + SSE refresh), `usePanZoom.ts` (viewport transform), `useVoice.ts` (voice input via `voiceStateMachine.ts` reducer + `voiceRecording.ts` module), `useSessionUnreadState.ts` (per-session/project unread counts), `useApi.ts` (fetch + SSE-triggered refresh + `useSSETick` + `AsyncData<T>` type), `useSSE.ts` (EventSource singleton)
-- **ui/src/workspace/** — Extracted workspace modules: `WorkspaceScreen` (controller), `WorkspaceLayout` (responsive slots), `WorkspaceEditorArea`, `WorkspaceSidebar`, `WorkspaceTabBar` (with tab disambiguation for same-name files, right-click context menu for save/close), `WorkspaceSessionList`, `WorkspaceBreadcrumbs` (file-path breadcrumbs between tab bar and editor), `WorkspaceTextSearch` (cross-file text search sidebar, NDJSON streaming from ripgrep), `WorkspaceSearch` (Cmd+P fuzzy file search with fzf, cached index, recency ranking), `quickOpenIndex.ts` (search index cache with SSE-driven stale marking), `diff/DiffTab.tsx` (diff tab renderer — unified/split views, j/k navigation, context collapse, toolbar; uses shared `ParsedFileDiff` model), plus extracted hooks: `useWorkspaceKeyboard`, `useWorkspaceNavigation`, `useWorkspaceSessions`, `useWorkspaceDiff` (unified diff cache storing raw + parsed per path, invalidates on git SSE), `useWorkspaceVoice`
-- **ui/src/components/** — Leaf components: `Editor.tsx` (CodeMirror 6 with closeBrackets, foldGutter, indentOnInput, highlightActiveLineGutter; dynamic language loading via `@codemirror/language-data` Compartment for 100+ languages; inline autocomplete via `inlineAutocomplete.ts` Compartment with UI toggle), `Terminal.tsx` (xterm.js; touch scroll vs long-press detection — scroll gestures intercepted as WheelEvents, long-press falls through for native text selection; `screenReaderMode` on touch with CSS `::selection` highlight), `FileExplorer.tsx` (react-arborist, with `fileExplorerIcons.tsx` (VS Code Seti icons via inlined dataset in `ui/src/lib/setiIcons.ts`) + `fileExplorerNode.tsx`, optimistic mutations with tab retargeting, Reveal in Finder, collapse-all), `Menu.tsx` (shared `MenuItem`/`MenuDivider`/`useContextMenu` with long-press support via `bind()`), `ProjectList.tsx` (draggable project rows with unread badge + active/total session count), `TerminalKeyBar.tsx` (mobile), `AddProjectDialog.tsx` (directory autocomplete), `VoiceControl.tsx` (mic button), `ComposeTray.tsx` (voice compose review)
-- **ui/src/tasks/** — Task graph visualization (embedded as workspace tab): `TaskGraphScreen` (controller), `useTaskGraphInteraction.ts` (selection/filter/search/collapse), `useTaskGraphKeyboard.ts` (keydown handler), `TaskGraphStatusPane.tsx` (loading/error states), `taskGraphModel.ts` (flat indented tree layout — 24px indent/level, guide lines, SCC cycles), `taskGraphSelection.ts` (highlight/search), `taskGraphConstants.ts` (STATE_COLORS), `TaskGraphCanvas` (SVG), `TaskGraphGroup` (indent guide lines), `TaskGraphNode` (uniform 220x32 cards), `TaskGraphDetailPanel`, `TaskGraphToolbar`, `TaskGraphTooltip`, `TaskGraphEdges`, `TaskGraphMinimap`
-- **ui/src/lib/** — Utilities: `solarizedLight.ts` (CodeMirror theme + `SOLARIZED_LIGHT` / `SOLARIZED_LIGHT_UI` color constants for inline styles), `apiError.ts` (`ApiError` class — typed fetch errors with status + body), `shortcuts.ts` (shared `isCloseShortcut`/`isCopyShortcut`), `diffGutter.ts` (git diff gutter indicators + popup with word highlights, badges, line numbers, prev/next nav, Show more truncation), `parseDiff.ts` (unified diff parser — returns `ParsedFileDiff` with canonical `DiffRow[]` per hunk, shared by diff tab and gutter card), `wordDiff.ts` (word-level diff computation via `diff` package — `computeWordDiff`, `pairChanges`, exports `DiffRow`/`DiffSegment` types), `fuzzySearch.ts` (fzf wrapper for Cmd+P file search with recency tiebreaker), `setiIcons.ts` (VS Code Seti icon lookup — 135 icons inlined from `seti-definitions.json` + `seti-icons.json`, MIT), `editor/inlineAutocomplete.ts` (custom CM6 ghost text extension — StateField + ViewPlugin + Decoration + Tab/Esc keymap, provider-agnostic with status caching and AbortController lifecycle)
+- **Server** — Hono routes (`/api/*`, SSE, WebSocket), library modules (terminal, multmux, project-watcher, voice, autocomplete), `withProject` middleware
+- **UI** — `App.tsx` (shell + project selection + session counts), `workspace/` (screen, layout, editor, sidebar, tab bar, sessions, search, diff), `components/` (Editor, Terminal, FileExplorer, ProjectList, Menu, Voice), `hooks/` (state, persistence, API, SSE, voice), `tasks/` (task graph SVG), `lib/` (solarized theme, diff, fuzzy search, autocomplete)
+
+-> See: [doc/main/](doc/main/README.md) for per-file specs organized by subsystem (backend, frontend, data-model, ui)
 
 ## Key Data Flow
 
-1. **File changes on disk** → `project-watcher.ts` routes to SSE channels (`filetree`, `git`, `sessions`), filtered by `.gitignore` → `useSSE.ts` debounces (500ms per channel) then dispatches refresh → `useFileTree` re-fetches expanded dirs (batched, 6 concurrent, with AbortController cancellation)
-2. **File tree** → lazy loading (VS Code pattern): root loaded on mount, dirs expanded on click via `GET /api/files/:project/children?dir=path`. SSE refresh re-fetches expanded dirs in batches of 6 with AbortController — new refresh cancels in-flight requests from previous cycle. **Critical:** directories must be registered via `useFileTree.expandDir()` (which adds to `loadedDirsRef`) for SSE to re-fetch them. Using only `treeRef.open()` (react-arborist internal state) is insufficient — the dir won't be tracked for refresh.
-3. **File search (Cmd+P)** → `quickOpenIndex.ts` caches `GET /api/files/:project/search-index` per project (stale on `filetree` SSE, background refresh). `fuzzySearch.ts` wraps `fzf` package for scoring with recency tiebreaker. `WorkspaceSearch.tsx` renders results with match highlighting and `useDeferredValue` for responsive typing.
-4. **Cross-file text search (Cmd+Shift+F)** → `WorkspaceTextSearch.tsx` sidebar streams `GET /api/search/:project/text` (ripgrep NDJSON) via `fetch` streaming body. Results grouped by file with match highlighting. AbortController cancels on new query or unmount. Server hard-caps at 5000 matches.
-5. **Editor save** → PUT `/api/files/:project/content` with `baseRevision` (mtime) → 409 on conflict → conflict UI in workspace state
-6. **Terminal** → WebSocket `/ws/terminal/:name?project=<projectName>` → node-pty (shell or tmux attach). Shell sessions keep a bounded in-memory scrollback buffer and stay alive across browser detach until explicitly killed or the server exits; agent sessions use the global `~/.multmux/sessions/<handle>.json` state file where `handle` is the tmux session name
-7. **Agent sessions** → `~/.multmux/sessions/*.json` state files → watched by project-watcher's single global sessions watcher (filtered by `sessionPath`) → SSE `sessions` channel
-8. **Task graph** → GET `/api/files/:project/content?path=doc/todo/tasks.json` → parse → layout engine → SVG render. SSE `filetree` channel triggers refresh when tasks.json changes.
-9. **Voice input** → browser `MediaRecorder` captures audio → POST `/api/voice/compose` (multipart) → Groq Whisper STT (with bilingual `initial_prompt` conditioning) → multi-model LLM formatter (tries `qwen3-32b` → `kimi-k2` → `gpt-oss-120b` via `openai` SDK, strips thinking tokens) → compose tray for user review → Insert (editor) or Send (terminal). Single shared prompt handles both terminal commands and editor prose. Config: `GROQ_API_KEY` + optional `VOICE_FORMATTER_MODELS` in `server/.env`.
-10. **Inline autocomplete** → CM6 `ViewPlugin` debounces user typing (1500ms, min 3 non-whitespace chars on line) → POST `/api/autocomplete/complete` with prefix/suffix/filePath → server truncates context (6KB prefix + 2KB suffix, line-aware) → multi-model Groq rotation (`qwen3-32b` → `kimi-k2` → `llama-3.1-8b`, same `openai` SDK pattern as voice) → ghost text rendered via CM6 widget Decoration → Tab accepts (isolated undo), Esc dismisses. UI toggle ("AI" button) in editor tab bar persists to localStorage. Config: `GROQ_API_KEY` + optional `AUTOCOMPLETE_MODELS` in `server/.env`.
+1. **File changes** → fs.watch → SSE channels → debounced refresh → lazy dir re-fetch
+2. **File tree** → lazy loading (expand on click), SSE refresh re-fetches expanded dirs. Dirs must be registered via `useFileTree.expandDir()` for SSE tracking.
+3. **Search** — Cmd+P: cached index + fzf scoring. Cmd+Shift+F: ripgrep NDJSON streaming.
+4. **Editor save** → PUT with mtime `baseRevision` → 409 on conflict
+5. **Terminal** → WebSocket → node-pty. Shell sessions persist across detach; agent sessions use `~/.multmux/sessions/*.json` state files.
+6. **Task graph** → fetches `doc/todo/tasks.json` → layout engine → SVG. SSE triggers refresh.
+7. **Voice** → MediaRecorder → Groq Whisper STT → multi-model LLM formatter → compose tray
+8. **Autocomplete** → CM6 debounced typing → Groq multi-model → ghost text decoration
+
+-> See: [doc/main/](doc/main/README.md#key-data-flows) for detailed flow descriptions
 
 ## State Persistence
 
-- **Layout/tabs/pins**: `localStorage["workflow-workspace:<project>"]` — includes open tabs, active tab, active session, layout sizes, and pinned session order
-- **Task graph collapse state**: `localStorage["workflow-taskgraph:<project>"]` — which groups are collapsed (stored as `collapsedTaskIds`)
-- **Drafts/revisions**: `localStorage["workflow-drafts:<project>"]`
-- **Projects**: `~/.workflow/projects.json`
-- Both localStorage keys flushed on `beforeunload`
+Layout/tabs/pins, task graph collapse, and drafts in `localStorage["workflow-*:<project>"]`. Projects in `~/.workflow/projects.json`. Flushed on `beforeunload`.
+
+-> See: [doc/main/data-model/persistence.md](doc/main/data-model/persistence.md)
 
 ## Documentation Structure
 
@@ -77,7 +70,6 @@ doc/
 - `doc/main/` and `doc/dev/` are always-current SOTA docs. Update them when code changes.
 - `doc/PROGRESS.md` is append-only history. Each entry: What changed, Why, Key files, Verification, Commit, Next, Blockers.
 - Design workflow: `/scope-review` → `/ux-design` → `/design` → `/eng-plan-review` → `/implement`
-- Active design docs: `doc/todo/codebase-quality/` (completed — P0 god-file decomposition, P1 middleware/shared components, P2 error standardization)
 
 ## Conventions
 
@@ -88,7 +80,7 @@ doc/
 - Mobile-first: touch detection via `useIsTouch()` / `useIsMobile()`, virtual keyboard handling via `useKeyboardViewport`
 - SSE-driven updates with polling fallback (30-60s). Never poll faster than 30s.
 - File revision tracking via mtime for optimistic locking
-- Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`. Sidebar uses Explorer-flex model: Explorer body is always `flex:1`, bottom sections (Search, Changes, Tasks) have fixed resizable heights with `useResize` hooks. `flexFallback` logic promotes the first expanded bottom section to flex when Explorer is collapsed.
+- Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`. Sidebar uses Explorer-flex model: Explorer body is always `flex:1`, bottom sections (Search, Changes, Tasks) have fixed resizable heights with `useResize` hooks.
 - Performance: `React.memo` on expensive leaf components (FileExplorer) to prevent re-render cascade from per-keystroke state updates. Stabilize derived Set references (dirtyTabs, conflictTabs) via structural comparison.
 
 ## Ecosystem
