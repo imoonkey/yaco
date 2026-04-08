@@ -9,52 +9,46 @@ import type { MdMode } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
 import { DiffTab } from './diff/DiffTab'
 
-// --- Markdown Preview scroll helpers ---
-type MarkdownBlockAnchor = {
-  element: HTMLElement
+// --- Markdown Preview scroll helpers (cached positions — zero DOM reads during scroll) ---
+type CachedAnchor = {
   lineStart: number
   lineEnd: number
+  top: number
+  bottom: number
 }
 
-function getMarkdownBlockAnchors(container: HTMLDivElement): MarkdownBlockAnchor[] {
-  return Array.from(container.querySelectorAll<HTMLElement>('.markdown-block[data-source-line-start]')).map(element => ({
-    element,
-    lineStart: clampLine(Number(element.dataset.sourceLineStart)),
-    lineEnd: clampLine(Number(element.dataset.sourceLineEnd ?? element.dataset.sourceLineStart)),
+function buildAnchorCache(container: HTMLDivElement): CachedAnchor[] {
+  return Array.from(container.querySelectorAll<HTMLElement>('.markdown-block[data-source-line-start]')).map(el => ({
+    lineStart: clampLine(Number(el.dataset.sourceLineStart)),
+    lineEnd: clampLine(Number(el.dataset.sourceLineEnd ?? el.dataset.sourceLineStart)),
+    top: el.offsetTop,
+    bottom: el.offsetTop + el.offsetHeight,
   }))
 }
 
-function lineFromBlockPosition(block: MarkdownBlockAnchor, absoluteY: number): number {
-  const blockTop = block.element.offsetTop
-  const blockHeight = Math.max(1, block.element.offsetHeight)
-  const relativeY = Math.max(0, Math.min(blockHeight, absoluteY - blockTop))
-  const ratio = relativeY / blockHeight
+function lineFromAnchors(anchors: CachedAnchor[], scrollTop: number): number {
+  if (anchors.length === 0) return 1
+  const block = anchors.find(a => a.bottom > scrollTop) ?? anchors[anchors.length - 1]
+  const height = Math.max(1, block.bottom - block.top)
+  const relativeY = Math.max(0, Math.min(height, scrollTop - block.top))
   const span = Math.max(0, block.lineEnd - block.lineStart)
-  return Math.max(1, block.lineStart + ratio * span)
+  return Math.max(1, block.lineStart + (height > 0 ? relativeY / height : 0) * span)
 }
 
-function lineFromPreviewScroll(container: HTMLDivElement): number {
-  const blocks = getMarkdownBlockAnchors(container)
-  if (blocks.length === 0) return 1
-
-  const scrollTop = container.scrollTop
-  const block = blocks.find(candidate => candidate.element.offsetTop + candidate.element.offsetHeight > scrollTop) ?? blocks[blocks.length - 1]
-  return lineFromBlockPosition(block, scrollTop)
-}
-
-function applyPreviewViewportLine(container: HTMLDivElement, viewportLine: number): boolean {
-  const blocks = getMarkdownBlockAnchors(container)
-  if (blocks.length === 0) return false
-
+function scrollTopForLine(anchors: CachedAnchor[], viewportLine: number): number | null {
+  if (anchors.length === 0) return null
   const targetLine = Math.max(1, viewportLine)
-  const block = blocks.find(candidate => targetLine >= candidate.lineStart && targetLine <= candidate.lineEnd)
-    ?? [...blocks].reverse().find(candidate => candidate.lineStart <= targetLine)
-    ?? blocks[0]
-
+  const block = anchors.find(a => targetLine >= a.lineStart && targetLine <= a.lineEnd)
+    ?? anchors.findLast(a => a.lineStart <= targetLine)
+    ?? anchors[0]
   const span = Math.max(0, block.lineEnd - block.lineStart)
   const ratio = span === 0 ? 0 : Math.max(0, Math.min(1, (targetLine - block.lineStart) / span))
-  const targetTop = block.element.offsetTop + ratio * Math.max(1, block.element.offsetHeight)
-  if (Math.abs(container.scrollTop - targetTop) < 1) return false
+  return block.top + ratio * Math.max(1, block.bottom - block.top)
+}
+
+function scrollToLine(container: HTMLDivElement, anchors: CachedAnchor[], viewportLine: number): boolean {
+  const targetTop = scrollTopForLine(anchors, viewportLine)
+  if (targetTop === null || Math.abs(container.scrollTop - targetTop) < 1) return false
   container.scrollTop = targetTop
   return true
 }
@@ -65,16 +59,24 @@ export function MarkdownPreview({
   viewportLine,
   onViewportLine,
   onActivateLine,
+  onRegisterSync,
 }: {
   content: string
   viewportLine: number
   onViewportLine?: (line: number) => void
   onActivateLine?: (line: number) => void
+  onRegisterSync?: (scrollTo: ((line: number) => void) | null) => void
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const applyingViewportRef = useRef(false)
-  const lastReportedLineRef = useRef(viewportLine)
+  const syncActiveRef = useRef(false)
+  const lastReportedLineRef = useRef(-1)
   const appliedHtmlRef = useRef('')
+  const anchorsRef = useRef<CachedAnchor[]>([])
+  const onViewportLineRef = useRef(onViewportLine)
+  onViewportLineRef.current = onViewportLine
+  const onRegisterSyncRef = useRef(onRegisterSync)
+  onRegisterSyncRef.current = onRegisterSync
   const rawHtml = renderMarkdown(content)
   const [html, setHtml] = useState(rawHtml)
 
@@ -112,6 +114,7 @@ export function MarkdownPreview({
 
   // Manual innerHTML management — only set when html actually changes,
   // and preserve <pre> scroll positions across DOM recreation.
+  // Rebuild anchor cache after DOM update.
   useLayoutEffect(() => {
     const el = containerRef.current
     if (!el || html === appliedHtmlRef.current) return
@@ -123,6 +126,7 @@ export function MarkdownPreview({
 
     el.innerHTML = html
     appliedHtmlRef.current = html
+    anchorsRef.current = buildAnchorCache(el)
 
     // Restore scroll positions on the new <pre> nodes
     el.querySelectorAll('pre').forEach((pre, i) => {
@@ -130,36 +134,107 @@ export function MarkdownPreview({
     })
   }, [html])
 
+  // Rebuild anchor cache on container resize (block positions change on reflow)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => { anchorsRef.current = buildAnchorCache(el) })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  // LERP-based scroll sync from Editor — smooth interpolation eliminates
+  // micro-jitter on the passive side during momentum deceleration.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const EASE = 0.2
+    let lerpTarget = 0
+    let raf = 0
+
+    const lerpStep = () => {
+      const delta = lerpTarget - el.scrollTop
+      if (Math.abs(delta) < 0.5) { raf = 0; syncActiveRef.current = false; return }
+      el.scrollTop += delta * EASE
+      raf = requestAnimationFrame(lerpStep)
+    }
+    const cancelLerp = () => {
+      if (raf) { cancelAnimationFrame(raf); raf = 0 }
+      syncActiveRef.current = false
+    }
+
+    onRegisterSyncRef.current?.((line: number) => {
+      const t = scrollTopForLine(anchorsRef.current, line)
+      if (t === null) return
+      lerpTarget = t
+      lastReportedLineRef.current = line
+      syncActiveRef.current = true
+      if (!raf) raf = requestAnimationFrame(lerpStep)
+    })
+
+    // Cancel LERP on direct user interaction (wheel/touch never fire from programmatic scrollTop)
+    el.addEventListener('wheel', cancelLerp, { passive: true })
+    el.addEventListener('touchstart', cancelLerp, { passive: true })
+    return () => {
+      onRegisterSyncRef.current?.(null); cancelAnimationFrame(raf)
+      el.removeEventListener('wheel', cancelLerp)
+      el.removeEventListener('touchstart', cancelLerp)
+    }
+  }, [])
+
+  // Initial scroll positioning — useLayoutEffect runs before paint to prevent flash.
+  useLayoutEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+    if (viewportLine === lastReportedLineRef.current) return
+    if (scrollToLine(element, anchorsRef.current, viewportLine)) {
+      applyingViewportRef.current = true
+    }
+    lastReportedLineRef.current = viewportLine
+  }, [html, viewportLine])
+
+  // Scroll listener — native passive, synchronous on desktop, debounced on touch.
   useEffect(() => {
     const element = containerRef.current
     if (!element) return
-    // Skip programmatic scroll when viewportLine echoes our own scroll report
-    if (viewportLine === lastReportedLineRef.current) return
-    applyingViewportRef.current = applyPreviewViewportLine(element, viewportLine)
-  }, [html, viewportLine])
+    const isTouch = matchMedia('(pointer: coarse)').matches
+    let timer = 0
+    const reportLine = () => {
+      const line = lineFromAnchors(anchorsRef.current, element.scrollTop)
+      lastReportedLineRef.current = line
+      onViewportLineRef.current?.(line)
+    }
+    const onScroll = () => {
+      if (syncActiveRef.current) return
+      if (applyingViewportRef.current) {
+        applyingViewportRef.current = false
+        return
+      }
+      if (isTouch) {
+        clearTimeout(timer)
+        timer = window.setTimeout(reportLine, 120)
+      } else {
+        reportLine()
+      }
+    }
+    element.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      element.removeEventListener('scroll', onScroll)
+      clearTimeout(timer)
+    }
+  }, [])
 
   return (
     <div
       ref={containerRef}
       className="markdown-preview h-full"
-      onScroll={() => {
-        const element = containerRef.current
-        if (!element) return
-        if (applyingViewportRef.current) {
-          applyingViewportRef.current = false
-          return
-        }
-        const line = lineFromPreviewScroll(element)
-        lastReportedLineRef.current = line
-        onViewportLine?.(line)
-      }}
       onClick={(event) => {
         if (!onActivateLine) return
         const element = containerRef.current
         if (!element) return
         const blockElement = (event.target as HTMLElement | null)?.closest<HTMLElement>('.markdown-block[data-source-line-start]')
         if (!blockElement) {
-          onActivateLine(lineFromPreviewScroll(element))
+          onActivateLine(lineFromAnchors(anchorsRef.current, element.scrollTop))
           return
         }
         const lineStart = clampLine(Number(blockElement.dataset.sourceLineStart))
@@ -168,8 +243,6 @@ export function MarkdownPreview({
           onActivateLine(lineStart)
           return
         }
-        // Equal share per source line: each of (lineEnd - lineStart + 1) lines
-        // gets the same fraction of the block's rendered height
         const blockTop = blockElement.offsetTop
         const blockHeight = Math.max(1, blockElement.offsetHeight)
         const rect = element.getBoundingClientRect()
@@ -248,6 +321,68 @@ export function WorkspaceEditorArea({
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
 
+  // --- Scroll sync channel ---
+  // Editor and Preview register LERP scroll functions here; each side calls
+  // the other's function directly from its scroll handler — bypasses React.
+  const syncRef = useRef<{
+    scrollEditor: ((line: number) => void) | null
+    scrollPreview: ((line: number) => void) | null
+  }>({ scrollEditor: null, scrollPreview: null })
+
+  const registerEditorSync = useCallback((fn: ((line: number) => void) | null) => {
+    syncRef.current.scrollEditor = fn
+  }, [])
+  const registerPreviewSync = useCallback((fn: ((line: number) => void) | null) => {
+    syncRef.current.scrollPreview = fn
+  }, [])
+
+  // Viewport line state — only for initial positioning on tab/mode switch.
+  // Real-time sync goes through the imperative channel above.
+  const [localViewportLine, setLocalViewportLine] = useState(activeViewportLine)
+  const latestLineRef = useRef(activeViewportLine)
+  const persistTimerRef = useRef(0)
+  const onViewportLineRef = useRef(onViewportLine)
+  onViewportLineRef.current = onViewportLine
+
+  // Flush latest viewport line on tab or mode change so newly mounted
+  // components get the current position, not a debounce-stale value.
+  const prevTabRef = useRef(activeTab)
+  const prevMdModeRef = useRef(mdMode)
+  if (activeTab !== prevTabRef.current) {
+    prevTabRef.current = activeTab
+    prevMdModeRef.current = mdMode
+    latestLineRef.current = activeViewportLine
+    setLocalViewportLine(activeViewportLine)
+  } else if (mdMode !== prevMdModeRef.current) {
+    prevMdModeRef.current = mdMode
+    clearTimeout(persistTimerRef.current)
+    setLocalViewportLine(latestLineRef.current)
+  }
+
+  useEffect(() => () => clearTimeout(persistTimerRef.current), [])
+
+  // Editor scroll → sync Preview imperatively, debounce persist
+  const handleEditorViewportLine = useCallback((line: number) => {
+    syncRef.current.scrollPreview?.(line)
+    latestLineRef.current = line
+    clearTimeout(persistTimerRef.current)
+    persistTimerRef.current = window.setTimeout(() => {
+      setLocalViewportLine(line)
+      onViewportLineRef.current(line)
+    }, 150)
+  }, [])
+
+  // Preview scroll → sync Editor imperatively, debounce persist
+  const handlePreviewViewportLine = useCallback((line: number) => {
+    syncRef.current.scrollEditor?.(line)
+    latestLineRef.current = line
+    clearTimeout(persistTimerRef.current)
+    persistTimerRef.current = window.setTimeout(() => {
+      setLocalViewportLine(line)
+      onViewportLineRef.current(line)
+    }, 150)
+  }, [])
+
   const handleSplitMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     const startX = e.clientX
@@ -276,8 +411,9 @@ export function WorkspaceEditorArea({
 
   const editorElement = (
     <Editor content={activeFileContent!} filePath={activeTab!}
-      viewportLine={activeViewportLine}
-      onViewportLine={onViewportLine}
+      viewportLine={localViewportLine}
+      onViewportLine={handleEditorViewportLine}
+      onRegisterSync={registerEditorSync}
       jumpToLine={jumpRequest?.path === activeTab ? jumpRequest.line : null}
       jumpRequestKey={jumpRequest?.path === activeTab ? jumpRequest.key : undefined}
       jumpScroll={jumpRequest?.path === activeTab ? jumpRequest.scroll : undefined}
@@ -295,9 +431,10 @@ export function WorkspaceEditorArea({
   const previewElement = (
     <MarkdownPreview
       content={activeFileContent!}
-      viewportLine={activeViewportLine}
-      onViewportLine={onViewportLine}
+      viewportLine={localViewportLine}
+      onViewportLine={handlePreviewViewportLine}
       onActivateLine={onActivateLine}
+      onRegisterSync={registerPreviewSync}
     />
   )
 

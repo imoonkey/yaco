@@ -54,6 +54,7 @@ interface EditorProps {
   onChange?: (content: string) => void
   viewportLine?: number
   onViewportLine?: (line: number) => void
+  onRegisterSync?: (scrollTo: ((line: number) => void) | null) => void
   jumpToLine?: number | null
   jumpRequestKey?: number
   jumpScroll?: boolean
@@ -93,6 +94,7 @@ export function Editor({
   onChange,
   viewportLine = 1,
   onViewportLine,
+  onRegisterSync,
   jumpToLine = null,
   jumpRequestKey,
   jumpScroll = true,
@@ -110,9 +112,11 @@ export function Editor({
   const onSaveRef = useRef(onSave)
   const onChangeRef = useRef(onChange)
   const onViewportLineRef = useRef(onViewportLine)
+  const onRegisterSyncRef = useRef(onRegisterSync)
   const onFocusRef = useRef(onFocus)
   const onCloseRequestRef = useRef(onCloseRequest)
   const applyingViewportRef = useRef(false)
+  const syncActiveRef = useRef(false)
   const lastSelfReportedLineRef = useRef(viewportLine)
   const jumpRequestKeyRef = useRef<number | undefined>(undefined)
   const insertRequestKeyRef = useRef<number | undefined>(undefined)
@@ -128,6 +132,10 @@ export function Editor({
   useEffect(() => {
     onViewportLineRef.current = onViewportLine
   }, [onViewportLine])
+
+  useEffect(() => {
+    onRegisterSyncRef.current = onRegisterSync
+  }, [onRegisterSync])
 
   useEffect(() => {
     onFocusRef.current = onFocus
@@ -209,7 +217,40 @@ export function Editor({
     if (!staticLang) loadDynamicLang(filePath, langCompartment, view)
     applyViewportLine(view, viewportLine)
 
+    // LERP-based scroll sync from Preview
+    const EASE = 0.2
+    let syncTarget = 0
+    let syncRaf = 0
+
+    const lerpSync = () => {
+      const delta = syncTarget - view.scrollDOM.scrollTop
+      if (Math.abs(delta) < 0.5) { syncRaf = 0; syncActiveRef.current = false; return }
+      view.scrollDOM.scrollTop += delta * EASE
+      syncRaf = requestAnimationFrame(lerpSync)
+    }
+    const cancelLerp = () => {
+      if (syncRaf) { cancelAnimationFrame(syncRaf); syncRaf = 0 }
+      syncActiveRef.current = false
+    }
+
+    onRegisterSyncRef.current?.((line: number) => {
+      const intLine = Math.max(1, Math.min(Math.floor(line), view.state.doc.lines))
+      const fraction = line - Math.floor(line)
+      const lineObj = view.state.doc.line(intLine)
+      const block = view.lineBlockAt(lineObj.from)
+      syncTarget = block.top + fraction * (block.bottom - block.top)
+
+      lastSelfReportedLineRef.current = line
+      syncActiveRef.current = true
+      if (!syncRaf) syncRaf = requestAnimationFrame(lerpSync)
+    })
+
+    // Cancel LERP on direct user interaction
+    view.scrollDOM.addEventListener('wheel', cancelLerp, { passive: true })
+    view.scrollDOM.addEventListener('touchstart', cancelLerp, { passive: true })
+
     const handleScroll = () => {
+      if (syncActiveRef.current) return
       if (applyingViewportRef.current) {
         applyingViewportRef.current = false
         return
@@ -222,6 +263,10 @@ export function Editor({
     view.scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
 
     return () => {
+      onRegisterSyncRef.current?.(null)
+      cancelAnimationFrame(syncRaf)
+      view.scrollDOM.removeEventListener('wheel', cancelLerp)
+      view.scrollDOM.removeEventListener('touchstart', cancelLerp)
       view.scrollDOM.removeEventListener('scroll', handleScroll)
       view.destroy()
       viewRef.current = null

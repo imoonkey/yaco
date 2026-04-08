@@ -81,6 +81,7 @@ body {
 }
 
 .markdown-preview {
+  position: relative;
   padding: 1em 26px 40px;
   color: var(--sol-base00);
   background: var(--sol-editor-bg);
