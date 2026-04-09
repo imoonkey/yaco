@@ -117,9 +117,9 @@ export function WorkspaceTabBar({
 
   return (
     <>
-    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
+    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 32, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
       {openTabs.length === 0 ? (
-        <span className="px-4 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>No files open</span>
+        <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>No files open</span>
       ) : openTabs.map(tab => {
         const parentDirSuffix = disambigSuffixes.get(tab)
         const isActive = tab === activeTab
@@ -134,16 +134,16 @@ export function WorkspaceTabBar({
             onDoubleClick={() => onDoubleClickTab(tab)}
             {...tabCtx}
             data-testid="tab"
-            className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
+            className="group flex items-center gap-1.5 px-2 h-full cursor-pointer text-[12px] shrink-0"
             style={{
               backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
-              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2.5px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2.5px solid transparent',
+              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
               borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)', marginBottom: -1,
               fontStyle: isPreview ? 'italic' : undefined,
               transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
             }} title={tabTitle(tab)}>
             {!isTasks && !isDiff && <FileTypeIcon name={tab} />}
-            <span className="truncate max-w-[120px]">{tabName(tab)}</span>
+            <span className="truncate max-w-[120px]" style={isPreview ? { paddingRight: 2 } : undefined}>{tabName(tab)}</span>
             {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-muted)' }}>{parentDirSuffix}</span>}
             {isConflict ? (
               <span className="w-4 h-4 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={12} /></span>
@@ -159,7 +159,7 @@ export function WorkspaceTabBar({
           </div>
         )
       })}
-      <div className="ml-auto flex items-center gap-1 shrink-0 mr-2">
+      <div className="ml-auto flex items-center gap-1 shrink-0 mr-2 sticky right-0 pl-2" style={{ backgroundColor: 'var(--sol-bg)' }}>
         {rightActions}
         {canToggleMdMode && (
           <MdModeToggle mode={mdMode} onChange={onMdModeChange} isTouch={isTouch} />
