@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useFileTree, useSessions, useGitStatus } from '../hooks/useApi'
+import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
@@ -15,6 +15,7 @@ import { clampLine } from './markdown'
 import { useResize } from './useResize'
 import { FileSearch } from './WorkspaceSearch'
 import { SessionItem } from './WorkspaceSessionList'
+import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
@@ -94,11 +95,14 @@ export function Workspace({
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
   const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
+  const [sessionTab, setSessionTab] = useState<'live' | 'history'>('live')
+  const [resumingId, setResumingId] = useState<string | null>(null)
 
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName)
+  const history = useHistory(projectName)
 
   // Mark quick-open search index stale on filetree changes
   const markStaleForProject = useCallback(() => markSearchIndexStale(projectName), [projectName])
@@ -131,6 +135,15 @@ export function Workspace({
   }, [activeSession, projectName, markSessionRead, isMobile, mobilePane, showRightPanel])
   // Derived tab state
   const activeDiffTab = isDiffTab(activeTab)
+
+  // Auto-fetch history when History tab first opens
+  const historyFetchedRef = useRef(false)
+  useEffect(() => {
+    if (sessionTab === 'history' && !historyFetchedRef.current) {
+      historyFetchedRef.current = true
+      history.refresh()
+    }
+  }, [sessionTab, history])
   const activeTasksTab = isTasksTab(activeTab)
   const activeDiffPath = activeDiffTab && activeTab ? activeTab.slice(5) : null
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
@@ -439,12 +452,37 @@ export function Workspace({
   }, [actions, setFocusTarget, isMobile])
 
   const sessionActions = (
-    <div className="flex gap-1">
-      {(['claude', 'codex', 'shell'] as const).map(p => (
-        <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${p[0].toUpperCase()}${p.slice(1)}`}>
-          <ProviderIcon provider={p} className={`w-3.5 h-3.5${p === 'codex' ? ' text-[#111111]' : ''}`} /> <span className="text-[9px]">+</span>
-        </button>
-      ))}
+    <div className="flex items-center gap-2">
+      <div className="flex text-[10px]" style={{ color: C.muted }}>
+        <button
+          onClick={() => setSessionTab('live')}
+          className="px-1 cursor-pointer"
+          style={{ color: sessionTab === 'live' ? C.textDark : C.muted, fontWeight: sessionTab === 'live' ? 600 : 400 }}
+        >Live</button>
+        <span style={{ color: C.muted }}>|</span>
+        <button
+          onClick={() => setSessionTab('history')}
+          className="px-1 cursor-pointer"
+          style={{ color: sessionTab === 'history' ? C.textDark : C.muted, fontWeight: sessionTab === 'history' ? 600 : 400 }}
+        >History</button>
+      </div>
+      {sessionTab === 'live' && (
+        <div className="flex gap-1">
+          {(['claude', 'codex', 'shell'] as const).map(p => (
+            <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${p[0].toUpperCase()}${p.slice(1)}`}>
+              <ProviderIcon provider={p} className={`w-3.5 h-3.5${p === 'codex' ? ' text-[#111111]' : ''}`} /> <span className="text-[9px]">+</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {sessionTab === 'history' && (
+        <button
+          onClick={() => history.refresh()}
+          className="text-[10px] px-1 cursor-pointer opacity-70 hover:opacity-100"
+          title="Refresh history"
+          style={{ color: C.muted }}
+        >↻</button>
+      )}
     </div>
   )
 
@@ -467,7 +505,7 @@ export function Workspace({
   )
 
   const divider = <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />
-  const sessionsBody = (
+  const liveSessionsBody = (
     <>
       {pinned.map(s => renderSessionItem(s, true))}
       {pinned.length > 0 && (unpinnedProcessing.length > 0 || unpinnedIdle.length > 0) && divider}
@@ -476,6 +514,28 @@ export function Workspace({
       {unpinnedIdle.map(s => renderSessionItem(s))}
       {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
     </>
+  )
+
+  const sessionsBody = sessionTab === 'live' ? liveSessionsBody : (
+    <WorkspaceHistoryList
+      history={history.data}
+      loading={history.loading}
+      resumingId={resumingId}
+      projectPath={projectPath}
+      onRefresh={history.refresh}
+      setResumingId={setResumingId}
+      onResumed={(handle) => {
+        setResumingId(null)
+        setSessionTab('live')
+        actions.setActiveSession(handle)
+        refreshSessions()
+        history.refresh()
+      }}
+      onGoLive={(liveSessionName) => {
+        setSessionTab('live')
+        actions.setActiveSession(liveSessionName)
+      }}
+    />
   )
 
   const editorPane = (
