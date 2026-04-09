@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-04-09: History reader perf (1.5s → 20ms)
+
+**What changed:**
+- `getClaudeHistory()` now reads only head (16KB) + tail (8KB) per JSONL instead of full-reading all 307MB. Head has the first user message, tail has the last custom-title.
+
+**Why:**
+- 240 JSONL files totaling 307MB made the history endpoint take 1.5s. Partial reads bring it to ~20ms (cold 118ms).
+
+**Key files:** `server/src/lib/history.ts`
+**Verification:** 133 server tests pass, benchmark: 240 sessions in 20ms (warm), 56/57 titles found
+**Commit:** 874ce99
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: Dark/Light theme selector
 
 **What changed:**

@@ -83,7 +83,7 @@ Reads session history from Claude Code and Codex local storage for the History t
 
 **Exports**: `getClaudeHistory()`, `getCodexHistory()`, `getHistory()`, `HistorySession`
 
-- `getClaudeHistory(projectPath)` — reads `~/.claude/projects/{encoded}/*.jsonl`. Extracts `custom-title` (last-wins for renames), first user message (with slash-command normalization: strips `<command-message>` wrapper, extracts `<command-args>`, falls back to next plain-text message). Optional enrichment from `sessions-index.json` (accepts both `{ entries: [...] }` and raw array shapes).
+- `getClaudeHistory(projectPath)` — reads `~/.claude/projects/{encoded}/*.jsonl`. Optimized with partial reads: head 16KB for first user message (with slash-command normalization), tail 8KB for last `custom-title` (last-wins for renames). Optional enrichment from `sessions-index.json` (accepts both `{ entries: [...] }` and raw array shapes). ~20ms for 240 files / 307MB.
 - `getCodexHistory(projectPath)` — queries `~/.codex/state_5.sqlite` threads table + reads `~/.codex/session_index.jsonl` for `thread_name` (last entry per id wins — append-only file has duplicates from renames). Does NOT use `threads.title` as handle.
 - `getHistory(projectPath, liveSessions)` — merges both providers, sorts by modified DESC, caps at 200, tags `liveSessionName` via sessionId comparison against live `MultmuxSession[]`.
 - `HistorySession` type: `{ id, provider, title, summary, created, modified, messageCount, gitBranch, liveSessionName }`
