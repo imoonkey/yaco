@@ -117,7 +117,8 @@ export function WorkspaceTabBar({
 
   return (
     <>
-    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 32, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
+    <div className="flex items-center shrink-0" style={{ height: 32, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
+      <div className="flex-1 min-w-0 flex items-center h-full overflow-x-auto">
       {openTabs.length === 0 ? (
         <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>No files open</span>
       ) : openTabs.map(tab => {
@@ -159,7 +160,8 @@ export function WorkspaceTabBar({
           </div>
         )
       })}
-      <div className="ml-auto flex items-center gap-1 shrink-0 mr-2 sticky right-0 pl-2" style={{ backgroundColor: 'var(--sol-bg)' }}>
+      </div>
+      <div className="flex items-center gap-1 shrink-0 px-2" style={{ borderLeft: '1px solid var(--sol-border)' }}>
         {rightActions}
         {canToggleMdMode && (
           <MdModeToggle mode={mdMode} onChange={onMdModeChange} isTouch={isTouch} />
