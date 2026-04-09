@@ -61,7 +61,7 @@ Core scanning engine for workstream metadata and progress entries across project
 - `withFileLock()` provides in-process locking for read-modify-write operations on JSON files
 - Handles both workstream-level and project-level (`doc/todo/progress.json`) progress entries
 
-### multmux.ts (247 lines)
+### multmux.ts (~260 lines)
 
 Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files and wraps the `multmux` CLI for session commands.
 
@@ -73,7 +73,7 @@ Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files
 - Primary session source: reads `~/.multmux/sessions/*.json` state files (written by multmux hooks)
 - Normalizes status: `starting → idle`, `processing → processing`, unknown → excluded
 - State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — status is `starting | idle | processing` (no `stopped`; file deletion = session ended)
-- `startMultmuxSession()` uses `--json` flag and returns `{ handle, sessionId }` from CLI output
+- `startMultmuxSession()` spawns the multmux CLI detached and returns early — as soon as the state file has a non-zero PID (tmux session attachable, ~1-2s). The multmux process continues in the background for `waitForReady`, `/rename`, and `sessionId` resolution. This makes Codex sessions attach instantly instead of blocking 15-30s.
 - `closeMultmuxSession()` delegates to `multmux kill` (ensures state file cleanup)
 - Exports `MultmuxSession` and `MultmuxStateFile` interfaces
 

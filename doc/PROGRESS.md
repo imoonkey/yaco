@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-08: Codex session start returns instantly (no blocking on agent idle)
+
+**What changed:**
+- `startMultmuxSession()` now spawns the multmux CLI detached and polls for the state file to have a non-zero PID (~1-2s), instead of awaiting full process completion (which blocks on `waitForReady` up to 30s).
+- The multmux process continues in the background handling `waitForReady`, Codex `/rename`, and sessionId resolution.
+- Removed unused `MULTMUX_START_TIMEOUT_MS` import from multmux.ts.
+
+**Why:**
+- Codex takes 15-30s to show its idle prompt, while Claude takes 1-3s. The old approach awaited full multmux completion before calling `setActiveSession`, so the UI POST would timeout (15s) or block too long — the session appeared in the sidebar via SSE but was never auto-attached. Users had to click the session manually.
+
+**Key files:** `server/src/lib/multmux.ts`
+**Verification:** 111 server tests pass, build clean
+**Commit:** (pending)
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-08: Reconciler GC restored with tmux server pre-check
 
 **What changed:**
