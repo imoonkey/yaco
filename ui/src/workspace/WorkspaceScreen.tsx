@@ -475,7 +475,7 @@ export function Workspace({
       )}
       <div
         className="flex rounded-full overflow-hidden cursor-pointer"
-        style={{ border: '1px solid var(--sol-border)' }}
+        style={{ border: '1px solid var(--sol-text-dim)' }}
         onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
         title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
       >
