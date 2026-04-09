@@ -117,7 +117,7 @@ export function WorkspaceTabBar({
 
   return (
     <>
-    <div className="flex items-center shrink-0" style={{ height: 28, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
+    <div className="flex items-center shrink-0" style={{ height: 24, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
       <div className="flex-1 min-w-0 flex items-center h-full overflow-x-auto">
       {openTabs.length === 0 ? (
         <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>No files open</span>
