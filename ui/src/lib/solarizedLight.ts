@@ -1,6 +1,4 @@
-import { HighlightStyle } from '@codemirror/language'
 import { EditorView } from '@codemirror/view'
-import { tags } from '@lezer/highlight'
 
 export const SOLARIZED_LIGHT = {
   base03: '#002B36',
@@ -72,51 +70,6 @@ export const SOLARIZED_LIGHT_UI: WorkspacePalette = {
   hover: SOLARIZED_LIGHT.listHoverBackground,
   sash: SOLARIZED_LIGHT.activityBarForeground,
 }
-
-export const solarizedHighlight = HighlightStyle.define([
-  { tag: tags.comment, color: SOLARIZED_LIGHT.base1, fontStyle: 'italic' },
-  { tag: [tags.string, tags.attributeValue, tags.monospace], color: SOLARIZED_LIGHT.cyan },
-  { tag: tags.regexp, color: SOLARIZED_LIGHT.red },
-  { tag: tags.number, color: SOLARIZED_LIGHT.magenta },
-  { tag: [tags.bool, tags.null, tags.atom], color: SOLARIZED_LIGHT.yellow },
-  {
-    tag: [
-      tags.keyword,
-      tags.operator,
-      tags.operatorKeyword,
-      tags.controlKeyword,
-      tags.definitionKeyword,
-      tags.moduleKeyword,
-    ],
-    color: SOLARIZED_LIGHT.green,
-  },
-  { tag: tags.modifier, color: SOLARIZED_LIGHT.base01, fontWeight: 'bold' },
-  {
-    tag: [
-      tags.variableName,
-      tags.propertyName,
-      tags.function(tags.variableName),
-      tags.labelName,
-      tags.link,
-      tags.url,
-      tags.tagName,
-    ],
-    color: SOLARIZED_LIGHT.blue,
-  },
-  { tag: [tags.typeName, tags.className, tags.namespace], color: SOLARIZED_LIGHT.orange },
-  { tag: tags.attributeName, color: SOLARIZED_LIGHT.base1 },
-  { tag: tags.meta, color: SOLARIZED_LIGHT.orange },
-  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: SOLARIZED_LIGHT.blue, fontWeight: 'bold' },
-  { tag: tags.quote, color: SOLARIZED_LIGHT.green },
-  { tag: tags.list, color: SOLARIZED_LIGHT.yellow },
-  { tag: [tags.emphasis, tags.strong], color: SOLARIZED_LIGHT.magenta },
-  { tag: tags.strong, fontWeight: 'bold' },
-  { tag: tags.emphasis, fontStyle: 'italic' },
-  { tag: tags.strikethrough, textDecoration: 'line-through' },
-  { tag: tags.contentSeparator, color: SOLARIZED_LIGHT.border },
-  { tag: tags.invalid, color: SOLARIZED_LIGHT.red },
-  { tag: tags.content, color: SOLARIZED_LIGHT.editorForeground },
-])
 
 export const solarizedLight = EditorView.theme({
   '&': {

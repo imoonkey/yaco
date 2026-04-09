@@ -112,6 +112,9 @@
   --sol-editor-whitespace: #93a1a180;
   --sol-editor-indent-guide: #93a1a180;
   --sol-editor-indent-guide-active: #c3e1e180;
+  /* Syntax highlighting semantic vars (dark: base01=comment, base1=emphasis) */
+  --sol-syntax-comment: #586e75;
+  --sol-syntax-modifier: #93a1a1;
 }
 
 /* Register all Solarized vars as Tailwind color tokens */
@@ -163,6 +166,8 @@
   --color-sol-editor-whitespace: var(--sol-editor-whitespace);
   --color-sol-editor-indent-guide: var(--sol-editor-indent-guide);
   --color-sol-editor-indent-guide-active: var(--sol-editor-indent-guide-active);
+  --color-sol-syntax-comment: var(--sol-syntax-comment);
+  --color-sol-syntax-modifier: var(--sol-syntax-modifier);
 }
 
 /* Session status pulse — solid dot with expanding glow ring */

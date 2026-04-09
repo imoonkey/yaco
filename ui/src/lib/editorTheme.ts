@@ -1,4 +1,6 @@
 import { EditorView } from '@codemirror/view'
+import { HighlightStyle } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
 
 /**
  * Static CodeMirror editor theme using CSS custom properties.
@@ -207,3 +209,56 @@ export const editorTheme = EditorView.theme({
     backgroundColor: 'rgba(38, 139, 210, 0.08)',
   },
 })
+
+/**
+ * Syntax highlighting using CSS custom properties.
+ * HighlightStyle.define() generates CSS class rules (e.g. `.tok-keyword { color: ... }`),
+ * so var() values cascade with data-theme — no compartment needed.
+ *
+ * Accent colors (green, cyan, blue, etc.) are identical across light/dark.
+ * Gray-scale colors (comments, modifiers) use semantic vars that flip per theme.
+ */
+export const editorHighlight = HighlightStyle.define([
+  { tag: tags.comment, color: 'var(--sol-syntax-comment)', fontStyle: 'italic' },
+  { tag: [tags.string, tags.attributeValue, tags.monospace], color: 'var(--sol-cyan)' },
+  { tag: tags.regexp, color: 'var(--sol-red)' },
+  { tag: tags.number, color: 'var(--sol-magenta)' },
+  { tag: [tags.bool, tags.null, tags.atom], color: 'var(--sol-yellow)' },
+  {
+    tag: [
+      tags.keyword,
+      tags.operator,
+      tags.operatorKeyword,
+      tags.controlKeyword,
+      tags.definitionKeyword,
+      tags.moduleKeyword,
+    ],
+    color: 'var(--sol-green)',
+  },
+  { tag: tags.modifier, color: 'var(--sol-syntax-modifier)', fontWeight: 'bold' },
+  {
+    tag: [
+      tags.variableName,
+      tags.propertyName,
+      tags.function(tags.variableName),
+      tags.labelName,
+      tags.link,
+      tags.url,
+      tags.tagName,
+    ],
+    color: 'var(--sol-blue)',
+  },
+  { tag: [tags.typeName, tags.className, tags.namespace], color: 'var(--sol-orange)' },
+  { tag: tags.attributeName, color: 'var(--sol-syntax-comment)' },
+  { tag: tags.meta, color: 'var(--sol-orange)' },
+  { tag: [tags.heading, tags.heading1, tags.heading2, tags.heading3, tags.heading4, tags.heading5, tags.heading6], color: 'var(--sol-blue)', fontWeight: 'bold' },
+  { tag: tags.quote, color: 'var(--sol-green)' },
+  { tag: tags.list, color: 'var(--sol-yellow)' },
+  { tag: [tags.emphasis, tags.strong], color: 'var(--sol-magenta)' },
+  { tag: tags.strong, fontWeight: 'bold' },
+  { tag: tags.emphasis, fontStyle: 'italic' },
+  { tag: tags.strikethrough, textDecoration: 'line-through' },
+  { tag: tags.contentSeparator, color: 'var(--sol-border)' },
+  { tag: tags.invalid, color: 'var(--sol-red)' },
+  { tag: tags.content, color: 'var(--sol-editor-fg)' },
+])
