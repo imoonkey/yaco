@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { getHistory } from '../lib/history'
 import { closeMultmuxSession, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/multmux'
 import { loadProjects } from '../lib/projects'
 import { resolveSessionSummaries } from '../lib/session-summary'
@@ -57,6 +58,18 @@ app.post('/start', async (c) => {
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
+})
+
+app.get('/history', async (c) => {
+  const projectName = c.req.query('project')
+  if (!projectName) return c.json({ error: 'project query param required' }, 400)
+
+  const projects = await loadProjects()
+  const project = projects.find(item => item.name === projectName)
+  if (!project) return c.json({ error: `project "${projectName}" not found` }, 404)
+
+  const liveSessions = readSessionsFromStateFiles(project)
+  return c.json(getHistory(project.path, liveSessions))
 })
 
 app.post('/:handle/pause', async (c) => {
