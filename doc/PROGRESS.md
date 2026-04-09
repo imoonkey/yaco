@@ -3,22 +3,25 @@
 ## 2026-04-09: Visual redesign — "Precision Instrument"
 
 **What changed:**
-- Full visual redesign across 22 UI files using `frontend-design` plugin methodology
+- Full visual redesign across 22+ UI files using `frontend-design` plugin methodology
 - **Typography**: Loaded Instrument Sans (Google Fonts) for UI chrome; code/terminal stays monospace
 - **Elevation system**: 4-level theme-aware box-shadows (`--elevation-0` to `--elevation-3`)
 - **Glass effects**: All dialogs, menus, panels use `backdrop-filter: blur(12px) saturate(150%)` with semi-transparent backgrounds
 - **Motion**: Entry animations for dialogs (`dialog-enter`), menus (`menu-enter`), panels (`panel-slide-in`), overlays (`overlay-enter`). All respect `prefers-reduced-motion`.
-- **Luminous Edge**: Signature 1.5px top-border gradient (yellow->orange->violet) via `::before` pseudo-element on elevated surface headers
-- **Spacing**: Section headers 22->28px, tabs 32->36px, breadcrumbs 24->28px, list items +2px padding
+- **Spacing**: Section headers 22->28px, tabs 32->36px, breadcrumbs 24->28px. List item padding kept at original density.
 - **Transitions**: Unified cubic-bezier timing (fast 120ms, normal 200ms, slow 300ms)
 - **Components**: SectionHeader chevron rotation, resize handle accent color, refined command palette
+- **`--sol-warning` CSS var**: Replaced all hardcoded `#C4A241` hex across badge, tab borders, conflict banner, file explorer
+- **Session/History items**: Summary now inline after title with `line-clamp-2` instead of truncated second row
+- **NotificationPanel**: Fixed positioning, removed luminous-edge
+- **Luminous Edge removed**: Initially added as signature gradient border, removed after review — too decorative for a developer tool
 
 **Why:**
 - UI was functional but flat and utilitarian (6.5/10). The frontend-design plugin emphasizes bold, intentional aesthetics that avoid generic "AI slop". Solarized palette was kept as the distinctive foundation; the redesign added depth, motion, and typographic hierarchy.
 
-**Key files:** `ui/src/index.css` (foundation), `ui/index.html` (font loading), plus 20 component files
+**Key files:** `ui/src/index.css` (foundation), `ui/index.html` (font loading), plus 22 component files
 **Verification:** `vite build` passes, all 6 Playwright E2E test suites pass, lint clean (no new errors)
-**Commit:** a8642e1
+**Commit:** a8642e1..c8ff4df
 **Next:** None
 **Blockers:** None
 
