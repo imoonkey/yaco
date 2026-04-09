@@ -1,21 +1,19 @@
 # Progress
 
-## 2026-04-08: Reconciler GC switched to log-only mode + tmux server pre-check
+## 2026-04-08: Reconciler GC restored with tmux server pre-check
 
 **What changed:**
-- `checkStaleStates` no longer deletes state files — dead sessions are filtered from the live set but `.json` files are preserved. Deletion is left to multmux wrapper EXIT trap and `mt kill`.
-- `isTmuxAlive` now pre-checks tmux server availability via `list-sessions` before interpreting `has-session` exit codes. This prevents mass false-positive deletions when tmux server is transiently unavailable (exit 1 is ambiguous: "not found" vs "server down").
-- Added 5s timeout to `has-session` calls to prevent indefinite blocking.
-- Removed `unlinkSync` and `MULTMUX_SESSIONS_DIR` imports (no longer needed).
-- Regenerated 6 missing state files for live sessions whose files had been incorrectly deleted.
+- Reconciler `checkStaleStates` restored to destructive GC (defense-in-depth for SIGKILL). The earlier log-only mode was reverted once the true root cause was found in multmux.
+- `isTmuxAlive` keeps the tmux server pre-check (`list-sessions`) and 5s timeout — prevents false "dead" when tmux server is unreachable.
+- Root cause was in multmux's wrapper EXIT trap, not the reconciler (see multmux repo commit `9ae23e5`): `tmux display-message` returns a random live session when the caller's session is dead, causing the wrapper to delete the wrong state file. Fixed by passing the handle explicitly as `$1` to the wrapper.
 
 **Why:**
-- Investigation found that under heavy load (30+ tmux sessions), the previous three-state `isTmuxAlive` still couldn't prevent false deletions: `tmux has-session` returns exit code 1 for both "session not found" AND "tmux server unavailable." The reconciler's 60s GC cadence matched the observed disappearance pattern. Converting to log-only mode eliminates the reconciler as a deletion vector entirely — multmux's own wrapper EXIT trap is the authoritative cleanup mechanism.
+- The reconciler GC is useful as defense-in-depth (e.g. wrapper can't fire after SIGKILL). The tmux server pre-check makes false positives from server-down scenarios impossible.
 
 **Key files:** `server/src/lib/session-reconciler.ts`
-**Verification:** 111 server tests pass, all 6 regenerated sessions visible in `mt status --all`
-**Commit:** fde3565
-**Next:** Monitor logs for `[session-reconciler] GC detected dead session` to confirm no false positives before considering re-enabling destructive GC
+**Verification:** 111 server tests pass, state files stable across multiple reconciler cycles
+**Commit:** ce8c2c6
+**Next:** None
 **Blockers:** None
 
 ## 2026-04-08: Archive 10 completed design projects

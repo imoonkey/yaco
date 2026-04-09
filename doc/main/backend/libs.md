@@ -105,7 +105,7 @@ Low-frequency background reconciler for session health and idle detection.
 
 - Runs every 60 seconds as a safety net (not primary session source)
 - Reads the global sessions dir once per pass via `readAllSessionsFromStateFiles()`
-- Health-checks all active sessions via `tmux has-session` with three-state liveness: `true` (alive), `false` (confirmed dead — exit code 1), `null` (uncertain — tmux error/timeout). **Log-only mode**: dead sessions are filtered from the live set but state files are NOT deleted — deletion is left to multmux wrapper EXIT trap and `mt kill`. Pre-checks tmux server availability via `list-sessions` before interpreting `has-session` exit codes (exit 1 is ambiguous: "not found" vs "server down").
+- Health-checks all active sessions via `isTmuxAlive`: pre-checks tmux server availability (`list-sessions`), then per-session `has-session` with 5s timeout. Three-state result: `true` (alive), `false` (confirmed dead — deletes state file), `null` (uncertain — keeps session). Defense-in-depth for when wrapper EXIT trap doesn't fire (e.g. SIGKILL).
 - Emits `refresh:sessions` if drift detected (missed watcher events)
 - Backfills missing session IDs via `multmux status --json --path <project-path>` (never ambient cwd)
 - Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
