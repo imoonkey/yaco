@@ -92,12 +92,9 @@ export function useNotifications(
           // In-app toast
           toast(title, {
             description: event.message,
-            action: (project || sessionName) ? {
-              label: 'Go',
-              onClick: () => {
-                markRead(event.id)
-                onClickRef.current?.(project, sessionName)
-              },
+            onClick: (project || sessionName) ? () => {
+              markRead(event.id)
+              onClickRef.current?.(project, sessionName)
             } : undefined,
           })
         } else {

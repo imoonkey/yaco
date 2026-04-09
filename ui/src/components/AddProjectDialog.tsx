@@ -185,7 +185,7 @@ export function AddProjectDialog({
       >
         {/* Header */}
         <div
-          className="luminous-edge flex items-center justify-between px-4 h-10"
+          className="flex items-center justify-between px-4 h-10"
           style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
         >
           <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}>

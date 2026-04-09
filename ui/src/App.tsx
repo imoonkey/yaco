@@ -374,6 +374,7 @@ function App() {
             border: '1px solid var(--sol-border)',
             fontFamily: 'var(--font-ui)',
             fontSize: '12px',
+            cursor: 'pointer',
           },
         }}
       />
