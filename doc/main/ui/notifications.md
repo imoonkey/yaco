@@ -14,7 +14,7 @@ Dual-mode notification pipeline: in-app toast (foreground) and browser Notificat
 
 ## Related Code
 
-`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useNotifications.ts`
+`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/components/NotificationPanel.tsx`
 
 ## Pipeline
 
@@ -56,11 +56,24 @@ Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) whil
 
 `useNotifications(onNotificationClick)` hook in `ui/src/hooks/useNotifications.ts`:
 
+- Returns `{ notifications, unreadCount, markAllRead, clearAll }`
 - Listens for `notification` SSE events
 - Per-tab deduplication: seen-ID set (max 500, FIFO eviction)
+- Accumulates notifications in-memory (max 50, newest first, FIFO eviction)
 - **Page visible** → sonner `toast()` with title, description, and optional "Go" action button that routes to project/session
 - **Page hidden** → `new Notification()` via Browser Notification API; click calls `window.focus()` + routes to project/session
 - Auto-requests `Notification.requestPermission()` on mount (one-time browser prompt, persists per origin)
+
+## Notification Panel
+
+`NotificationPanel` (`ui/src/components/NotificationPanel.tsx`) — dropdown panel accessible via bell icon in the desktop header bar.
+
+- Shows accumulated notifications with title, message, relative timestamp
+- Unread items highlighted with hover background
+- Click item → navigate to project/session
+- "Mark all read" / "Clear" actions in header
+- Click-outside and Escape to dismiss
+- Bell icon shows unread badge count (orange dot)
 
 ## Confirmation Dialogs
 

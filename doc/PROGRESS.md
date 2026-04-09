@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-09: Notification list panel + session auto-scroll
+
+**What changed:**
+- Notification bell icon in header with unread badge. Click opens dropdown panel showing accumulated notifications (max 50, in-memory). Items show title, message, relative time. Click navigates to project/session.
+- `useNotifications` now accumulates items alongside existing toast/browser notification delivery.
+- `SessionItem` auto-scrolls into view when activated (`scrollIntoView({ block: 'nearest', behavior: 'smooth' })`).
+
+**Why:**
+- Sonner toasts auto-dismiss in ~4s — users miss notifications when not watching. Persistent list solves this.
+- Active session could be off-screen in a long session list, requiring manual scrolling to find it.
+
+**Key files:** `ui/src/components/NotificationPanel.tsx`, `ui/src/hooks/useNotifications.ts`, `ui/src/App.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`
+**Verification:** tsc --noEmit clean, vite build passes
+**Commit:** 0cd1edc
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: UI polish — icons, dialogs, notifications
 
 **What changed:**
