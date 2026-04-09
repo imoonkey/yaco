@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-09: Fix resume timeout + unify icons
+
+**What changed:**
+- **Resume PID fix** (multmux repo): `getAgentPid()` was called once after `createSession()`. If the agent hadn't spawned yet inside the wrapper, it returned null and PID was never written to the state file → downstream poll for `pid > 0` timed out. Fixed by polling for up to 3s with 200ms intervals.
+- **Icon unification**: replaced custom SVG provider icons with lucide-react, unified icon colors to CSS vars.
+
+**Why:**
+- Resume of Claude sessions with large context would timeout (10s) even though the session started successfully. Root cause was in multmux's single-attempt PID capture, not the workflow server's timeout.
+
+**Key files:** `~/workspace/multmux/src/commands/start.ts`, `ui/src/App.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/components/SessionIcons.tsx`
+**Verification:** 133 server tests pass, 150 multmux tests pass
+**Commit:** 23ad001 (multmux), 2f45834..deb3652 (workflow)
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: Notification list panel + session auto-scroll
 
 **What changed:**
