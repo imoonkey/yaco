@@ -72,22 +72,22 @@ export function SessionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`flex items-start gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
+      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
       style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1, fontFamily: 'var(--font-ui)', transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
       {onPin && (
         <button
           onClick={e => { e.stopPropagation(); onPin() }}
-          className="shrink-0 cursor-pointer mt-0.5 hover:opacity-80"
+          className="shrink-0 cursor-pointer hover:opacity-80"
           title={pinned ? 'Unpin' : 'Pin to top'}
           style={{ color: pinned ? 'var(--sol-blue)' : 'var(--sol-muted)' }}
         >
           <Pin size={12} />
         </button>
       )}
-      <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0 mt-0.5" />
-      <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${session.status === 'processing' ? 'bg-[var(--sol-cyan)] status-pulse' : 'bg-[var(--sol-base1)]'}`} />
+      <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[var(--sol-cyan)] status-pulse' : 'bg-[var(--sol-base1)]'}`} />
       {renaming ? (
         <input
           ref={inputRef}
@@ -111,7 +111,7 @@ export function SessionItem({
           )}
         </div>
       )}
-      <span className="flex items-center gap-1 shrink-0 mt-0.5">
+      <span className="flex items-center gap-1 shrink-0">
         {!!unreadCount && unreadCount > 0 && (
           <span
             className="min-w-[18px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
