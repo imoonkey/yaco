@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { encodeProjectPath, getCodexDb } from './session-summary'
@@ -65,84 +65,29 @@ interface ClaudeIndexEntry {
   isSidechain?: boolean
 }
 
-/** Read Claude session history from JSONL files + optional sessions-index.json. */
+/** Max bytes to read from head of each JSONL for first user message. */
+const HEAD_BYTES = 16384
+/** Max bytes to read from tail of each JSONL for last custom-title. */
+const TAIL_BYTES = 8192
+
+/** Read Claude session history from JSONL files + optional sessions-index.json.
+ *  Optimized: reads only head (summary) + tail (title) of each file. */
 export function getClaudeHistory(projectPath: string): HistorySession[] {
   const encoded = encodeProjectPath(projectPath)
   const projectDir = join(homedir(), '.claude', 'projects', encoded)
   if (!existsSync(projectDir)) return []
 
-  // List JSONL files
   let jsonlFiles: string[]
   try {
     jsonlFiles = readdirSync(projectDir).filter(f => f.endsWith('.jsonl'))
   } catch { return [] }
   if (jsonlFiles.length === 0) return []
 
-  // Load optional sessions-index.json
   const indexMap = loadClaudeIndex(projectDir)
-
-  // Build custom-title map and first-user-message map from JSONL content
-  const titleMap = new Map<string, string>()
-  const summaryMap = new Map<string, string>()
-
-  for (const file of jsonlFiles) {
-    const sessionId = file.replace(/\.jsonl$/, '')
-
-    // Skip sidechains from index
-    const indexEntry = indexMap.get(sessionId)
-    if (indexEntry?.isSidechain) continue
-
-    const filePath = join(projectDir, file)
-    try {
-      const content = readFileSync(filePath, 'utf-8')
-      const lines = content.split('\n')
-
-      let commandName: string | null = null
-      let foundSummary = false
-
-      for (const line of lines) {
-        if (!line) continue
-        try {
-          const entry = JSON.parse(line)
-
-          // custom-title: last one wins
-          if (entry.type === 'custom-title' && entry.customTitle) {
-            titleMap.set(sessionId, entry.customTitle)
-          }
-
-          // First user message extraction (only need the first summary)
-          if (!foundSummary && entry.type === 'user' && entry.message?.content) {
-            const raw = extractUserText(entry.message.content).replace(/\s+/g, ' ').trim()
-            if (!raw) continue
-
-            if (isCommandMessage(raw)) {
-              // Try to extract <command-args>
-              const args = extractCommandArgs(raw)
-              if (args) {
-                summaryMap.set(sessionId, args.replace(/\s+/g, ' ').trim())
-                foundSummary = true
-              } else {
-                // Capture command name as fallback, keep looking for plain-text
-                if (!commandName) commandName = extractCommandName(raw)
-              }
-            } else {
-              // Plain-text user message
-              summaryMap.set(sessionId, raw)
-              foundSummary = true
-            }
-          }
-        } catch { continue }
-      }
-
-      // If no summary found, use command name as last resort
-      if (!foundSummary && commandName) {
-        summaryMap.set(sessionId, commandName)
-      }
-    } catch { continue }
-  }
-
-  // Build HistorySession entries
   const sessions: HistorySession[] = []
+
+  const headBuf = Buffer.alloc(HEAD_BYTES)
+  const tailBuf = Buffer.alloc(TAIL_BYTES)
 
   for (const file of jsonlFiles) {
     const sessionId = file.replace(/\.jsonl$/, '')
@@ -152,18 +97,38 @@ export function getClaudeHistory(projectPath: string): HistorySession[] {
     const filePath = join(projectDir, file)
     let created: string
     let modified: string
+    let size: number
     try {
       const stat = statSync(filePath)
       created = (stat.birthtime ?? stat.ctime).toISOString()
       modified = stat.mtime.toISOString()
+      size = stat.size
     } catch { continue }
 
-    // Prefer index enrichment when available
+    // Read head (first user message) and tail (last custom-title) in two reads
+    let title: string | null = null
+    let summary: string | null = null
+    try {
+      const fd = openSync(filePath, 'r')
+      const headRead = readSync(fd, headBuf, 0, Math.min(HEAD_BYTES, size), 0)
+      const head = headBuf.toString('utf-8', 0, headRead)
+      summary = parseFirstUserMessage(head)
+
+      // Read tail for custom-title (last-wins)
+      if (size > TAIL_BYTES) {
+        const tailRead = readSync(fd, tailBuf, 0, TAIL_BYTES, size - TAIL_BYTES)
+        title = parseLastTitle(tailBuf.toString('utf-8', 0, tailRead))
+      }
+      // For small files, head already has everything
+      if (!title) title = parseLastTitle(head)
+      closeSync(fd)
+    } catch { /* skip unreadable files */ }
+
     sessions.push({
       id: sessionId,
       provider: 'claude',
-      title: titleMap.get(sessionId) ?? null,
-      summary: indexEntry?.summary || summaryMap.get(sessionId) || '(no prompt)',
+      title,
+      summary: indexEntry?.summary || summary || '(no prompt)',
       created: indexEntry?.created || created,
       modified: indexEntry?.modified || modified,
       messageCount: indexEntry?.messageCount ?? null,
@@ -173,6 +138,42 @@ export function getClaudeHistory(projectPath: string): HistorySession[] {
   }
 
   return sessions
+}
+
+/** Parse the last custom-title from a chunk of JSONL text. */
+function parseLastTitle(text: string): string | null {
+  let title: string | null = null
+  for (const line of text.split('\n')) {
+    if (!line || !line.includes('custom-title')) continue
+    try {
+      const entry = JSON.parse(line)
+      if (entry.type === 'custom-title' && entry.customTitle) title = entry.customTitle
+    } catch { /* partial line at boundary — skip */ }
+  }
+  return title
+}
+
+/** Parse the first user message from head of a JSONL file. */
+function parseFirstUserMessage(head: string): string | null {
+  let commandName: string | null = null
+  for (const line of head.split('\n')) {
+    if (!line) continue
+    try {
+      const entry = JSON.parse(line)
+      if (entry.type === 'user' && entry.message?.content) {
+        const raw = extractUserText(entry.message.content).replace(/\s+/g, ' ').trim()
+        if (!raw) continue
+        if (isCommandMessage(raw)) {
+          const args = extractCommandArgs(raw)
+          if (args) return args.replace(/\s+/g, ' ').trim()
+          if (!commandName) commandName = extractCommandName(raw)
+        } else {
+          return raw
+        }
+      }
+    } catch { continue }
+  }
+  return commandName
 }
 
 /** Load sessions-index.json as optional enrichment. */
