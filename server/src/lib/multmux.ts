@@ -1,4 +1,4 @@
-import { spawn, execFileSync } from 'child_process'
+import { spawn } from 'child_process'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { isAbsolute, join, normalize, relative, sep } from 'path'
 import type { Project } from './projects'
@@ -192,7 +192,6 @@ export async function sendToSession(handle: string, message: string): Promise<vo
 
 const STATE_POLL_MS = 200
 const STATE_POLL_TIMEOUT_MS = 10_000
-const RESUME_POLL_TIMEOUT_MS = 30_000
 
 /** Start a new multmux session. Returns as soon as the tmux session is
  *  attachable (state file has PID), without waiting for the agent to become
@@ -227,7 +226,7 @@ export async function startMultmuxSession(
   proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
   proc.on('close', (code) => { exitCode = code })
 
-  const deadline = Date.now() + (resumeId ? RESUME_POLL_TIMEOUT_MS : STATE_POLL_TIMEOUT_MS)
+  const deadline = Date.now() + STATE_POLL_TIMEOUT_MS
   while (Date.now() < deadline) {
     if (exitCode !== null && exitCode !== 0) {
       throw new Error(`multmux exit ${exitCode}: ${stderr}`)
@@ -239,14 +238,6 @@ export async function startMultmuxSession(
       if (match && match.pid > 0) {
         return { handle: match.handle, sessionId: match.sessionId ?? resumeId }
       }
-      // Fallback: check if tmux session exists by requested name (state file may lag)
-      try {
-        execFileSync('tmux', ['has-session', '-t', name], { stdio: 'ignore' })
-        // tmux session exists — read state file by name
-        const stateByName = readStateFileByHandle(name)
-        if (stateByName) return { handle: name, sessionId: stateByName.sessionId ?? resumeId }
-        return { handle: name, sessionId: resumeId }
-      } catch { /* tmux session doesn't exist yet */ }
     } else {
       // Normal start: poll expected filename (collisions rare with UI-generated names)
       try {
@@ -270,14 +261,6 @@ function findStateFileBySessionId(sessionId: string): MultmuxStateFile | null {
     if (state.sessionId === sessionId) return state
   }
   return null
-}
-
-/** Read a state file by handle name */
-function readStateFileByHandle(handle: string): MultmuxStateFile | null {
-  try {
-    const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, `${handle}.json`), 'utf-8')
-    return JSON.parse(raw) as MultmuxStateFile
-  } catch { return null }
 }
 
 /** Close a multmux session via the CLI (handles state file cleanup). */
