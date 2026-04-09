@@ -40,10 +40,10 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
         onClick={(e) => e.stopPropagation()}
       >
         <div
-          className="flex items-center justify-between px-4 h-11"
+          className="flex items-center justify-between px-4 h-10"
           style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
         >
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
             {title}
           </span>
           <button
@@ -57,7 +57,7 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
         </div>
 
         {description && (
-          <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>
+          <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--sol-text-dim)' }}>
             {description}
           </div>
         )}
@@ -69,7 +69,7 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
           <button
             onClick={onClose}
             className="px-3.5 py-1.5 rounded-md text-[12px] cursor-pointer"
-            style={{ color: 'var(--sol-text-dim)', backgroundColor: 'var(--sol-input-bg)', fontFamily: 'var(--font-ui)', transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)' }}
+            style={{ color: 'var(--sol-text-dim)', backgroundColor: 'var(--sol-input-bg)', transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)' }}
           >
             Cancel
           </button>
@@ -80,7 +80,6 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
             style={{
               backgroundColor: danger ? 'var(--sol-red)' : 'var(--sol-accent)',
               color: 'var(--sol-base3)',
-              fontFamily: 'var(--font-ui)',
               transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
             }}
           >

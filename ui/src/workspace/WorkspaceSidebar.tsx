@@ -8,11 +8,9 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
   const dir = cleanPath.includes('/') ? cleanPath.slice(0, cleanPath.lastIndexOf('/')) : ''
   return (
     <div onClick={onActivate}
-      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : ''}`}
+      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
       title={cleanPath}
-      style={{ fontFamily: 'var(--font-ui)', transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
-      onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
+      style={{ transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}>
       {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}
       <div className="min-w-0 flex-1 overflow-hidden leading-tight">
         <div className="truncate" style={{ color: GIT_COLORS[change.status] || 'var(--sol-text)' }}>{name}</div>

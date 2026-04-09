@@ -246,7 +246,6 @@ const HEADER_STYLE: React.CSSProperties = {
   marginBottom: 10,
   fontSize: 12,
   color: 'var(--sol-base01)',
-  fontFamily: 'var(--font-ui)',
 }
 
 const SURFACE_TOGGLE_STYLE: React.CSSProperties = {
@@ -377,7 +376,6 @@ const BTN_BASE: React.CSSProperties = {
   touchAction: 'manipulation',
   fontWeight: 500,
   lineHeight: 1,
-  fontFamily: 'var(--font-ui)',
   transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
 }
 

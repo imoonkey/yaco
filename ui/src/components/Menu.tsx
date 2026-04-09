@@ -91,8 +91,24 @@ export function Menu({ position, children }: {
   position: MenuPosition
   children: React.ReactNode
 }) {
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // Adjust position after first paint if menu overflows viewport
+  useEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect()
+      const vw = window.innerWidth
+      const vh = window.innerHeight
+      if (rect.right > vw) el.style.left = `${Math.max(0, vw - rect.width - 4)}px`
+      if (rect.bottom > vh) el.style.top = `${Math.max(0, vh - rect.height - 4)}px`
+    })
+  }, [position])
+
   return (
     <div
+      ref={menuRef}
       className="fixed z-50 min-w-[160px] py-1.5 rounded-lg"
       style={{
         left: position.x,
@@ -118,17 +134,14 @@ export function MenuItem({ label, danger, onClick }: {
 }) {
   return (
     <div
-      className="px-3 py-1.5 text-[12px] cursor-pointer"
+      className="px-3 py-1.5 text-[12px] cursor-pointer hover:bg-sol-hover-bg"
       style={{
         color: danger ? 'var(--sol-red)' : 'var(--sol-text)',
-        fontFamily: 'var(--font-ui)',
         borderRadius: 4,
         marginLeft: 4,
         marginRight: 4,
         transition: 'background-color 120ms',
       }}
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')}
-      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       onClick={onClick}
     >
       {label}

@@ -61,7 +61,7 @@ function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m:
     : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
 
   return (
-    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: 'var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
+    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: 'var(--sol-border)' }}>
       {modes.map(({ value, label }) => {
         const active = mode === value
         return (
@@ -117,10 +117,10 @@ export function WorkspaceTabBar({
 
   return (
     <>
-    <div className="flex items-center shrink-0" style={{ height: 28, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
+    <div className="flex items-center shrink-0" style={{ height: 28, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}>
       <div className="flex-1 min-w-0 flex items-center h-full overflow-x-auto">
       {openTabs.length === 0 ? (
-        <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>No files open</span>
+        <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)' }}>No files open</span>
       ) : openTabs.map(tab => {
         const parentDirSuffix = disambigSuffixes.get(tab)
         const isActive = tab === activeTab
@@ -154,8 +154,8 @@ export function WorkspaceTabBar({
               </span>
             ) : (
               <button onClick={(e) => onCloseTab(tab, e)}
-                className="w-3 h-3 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}><X size={10} /></button>
+                className="w-3 h-3 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer hover:bg-sol-hover-bg" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
+                ><X size={10} /></button>
             )}
           </div>
         )

@@ -67,7 +67,7 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
       <div className="w-[500px] rounded-xl overflow-hidden" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)', border: '1px solid var(--sol-border)', boxShadow: 'var(--elevation-3)', backdropFilter: 'var(--backdrop-blur)', WebkitBackdropFilter: 'var(--backdrop-blur)', animation: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both' }} onClick={e => e.stopPropagation()}>
         <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
           <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-            placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }} />
+            placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: 'var(--sol-text-dark)' }} />
           <button
             onClick={toggleIgnored}
             title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
@@ -142,10 +142,9 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
 
   return (
     <div onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
       style={!selected ? { color: 'var(--sol-text)' } : undefined}
-      onMouseEnter={e => { onHover(); if (!selected) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
-      onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '' }}>
+      onMouseEnter={onHover}>
       <FileTypeIcon name={entry.name} />
       {hasQuery ? (
         <>

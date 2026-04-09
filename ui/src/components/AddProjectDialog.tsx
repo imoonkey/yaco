@@ -188,7 +188,7 @@ export function AddProjectDialog({
           className="flex items-center justify-between px-4 h-10"
           style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
         >
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
             Add Project
           </span>
           <button
@@ -203,7 +203,7 @@ export function AddProjectDialog({
 
         {/* Body */}
         <div className="px-4 py-3">
-          <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)', fontFamily: 'var(--font-ui)' }}>
+          <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)' }}>
             Path
           </label>
           <input
@@ -297,7 +297,6 @@ export function AddProjectDialog({
           <button
             onClick={onClose}
             className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]"
-            style={{ fontFamily: 'var(--font-ui)' }}
           >
             Cancel
           </button>
@@ -309,7 +308,6 @@ export function AddProjectDialog({
               backgroundColor: 'var(--sol-accent)',
               color: 'var(--sol-editor-bg)',
               opacity: submitting || !path.replace(/\/+$/, '') ? 0.5 : 1,
-              fontFamily: 'var(--font-ui)',
             }}
           >
             {submitting ? 'Adding…' : 'Add'}

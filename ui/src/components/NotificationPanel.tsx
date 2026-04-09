@@ -60,10 +60,10 @@ export function NotificationPanel({
       }}
     >
       <div
-        className="flex items-center justify-between px-3 h-9 shrink-0"
+        className="flex items-center justify-between px-3 h-10 shrink-0"
         style={{ borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[12px] font-semibold" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}>
+        <span className="text-[12px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
           Notifications
         </span>
         <div className="flex items-center gap-2">
@@ -72,14 +72,14 @@ export function NotificationPanel({
               <button
                 onClick={onMarkAllRead}
                 className="text-[10px] cursor-pointer hover:underline"
-                style={{ color: 'var(--sol-muted)', fontFamily: 'var(--font-ui)' }}
+                style={{ color: 'var(--sol-muted)' }}
               >
                 Mark all read
               </button>
               <button
                 onClick={onClearAll}
                 className="text-[10px] cursor-pointer hover:underline"
-                style={{ color: 'var(--sol-muted)', fontFamily: 'var(--font-ui)' }}
+                style={{ color: 'var(--sol-muted)' }}
               >
                 Clear
               </button>
@@ -104,17 +104,14 @@ export function NotificationPanel({
           notifications.map(n => (
             <div
               key={n.id}
-              className="px-3 py-2 cursor-pointer"
+              className="px-3 py-2 cursor-pointer hover:bg-sol-hover-bg"
               style={{
                 borderBottom: '1px solid var(--sol-border)',
                 backgroundColor: n.read ? undefined : 'var(--sol-hover-bg)',
-                fontFamily: 'var(--font-ui)',
                 transition: 'background-color 120ms',
                 ...(!n.read ? { borderLeft: '2px solid var(--sol-accent)' } : {}),
               }}
               onClick={() => onClickItem(n)}
-              onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
-              onMouseLeave={e => { e.currentTarget.style.backgroundColor = n.read ? '' : 'var(--sol-hover-bg)' }}
             >
               <div className="flex items-center justify-between gap-2">
                 <span

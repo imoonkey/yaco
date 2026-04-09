@@ -24,7 +24,6 @@
 
   /* Spacing */
   --header-h: 28px;
-  --tab-h: 36px;
   --breadcrumb-h: 28px;
 
   /* Backdrop blur */
@@ -275,7 +274,7 @@ body {
   margin: 0;
   background: var(--sol-editor-bg);
   color: var(--sol-base00);
-  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+  font-family: var(--font-ui);
   font-size: 13px;
 }
 

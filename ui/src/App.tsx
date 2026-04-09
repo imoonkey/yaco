@@ -83,7 +83,7 @@ function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
   const dateStr = `${weekday} ${monthDay}`
 
   return (
-    <span className="flex items-center gap-1.5" style={{ fontFamily: 'var(--font-ui)' }}>
+    <span className="flex items-center gap-1.5">
       <span className="text-[13px] tracking-tight" style={{ color: 'var(--sol-text-dim)' }}>{dateStr}</span>
       <span
         className="text-[13px] tabular-nums rounded-lg px-2.5 py-0.5"
@@ -263,7 +263,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--sol-bg)]">
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <span className="flex items-center gap-2">
           <span className="relative">
@@ -277,7 +277,7 @@ function App() {
             </button>
             {unreadCount > 0 && (
               <span
-                className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full text-[8px] font-bold text-white flex items-center justify-center px-0.5"
+                className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5"
                 style={{ backgroundColor: 'var(--sol-orange)' }}
               >
                 {unreadCount}
@@ -330,7 +330,7 @@ function App() {
           </div>
         )}
       </main>
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <Clock />
       </div>
@@ -372,7 +372,6 @@ function App() {
             background: 'var(--sol-editor-bg)',
             color: 'var(--sol-text)',
             border: '1px solid var(--sol-border)',
-            fontFamily: 'var(--font-ui)',
             fontSize: '12px',
             cursor: 'pointer',
           },

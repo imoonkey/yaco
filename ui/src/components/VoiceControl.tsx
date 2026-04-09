@@ -66,7 +66,6 @@ const BASE_STYLE: React.CSSProperties = {
   gap: 4,
   padding: '3px 10px',
   fontSize: 11,
-  fontFamily: 'var(--font-ui)',
   borderRadius: 6,
   border: 'none',
   cursor: 'pointer',

@@ -61,7 +61,6 @@ export function ProjectList({
                 : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
             }`}
             style={{
-              fontFamily: 'var(--font-ui)',
               transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
               opacity: draggedProject === project.name ? 0.55 : 1,
               ...(isActive ? { borderLeft: '3px solid var(--sol-accent)', paddingLeft: 5 } : {}),
@@ -71,8 +70,8 @@ export function ProjectList({
             <span className="flex items-center gap-1 shrink-0">
               {unreadCount > 0 && (
                 <span
-                  className="min-w-[16px] h-[18px] rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1"
-                  style={{ backgroundColor: 'var(--sol-orange)', fontFamily: 'var(--font-ui)' }}
+                  className="min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
+                  style={{ backgroundColor: 'var(--sol-orange)' }}
                 >
                   {unreadCount}
                 </span>
@@ -81,7 +80,6 @@ export function ProjectList({
                 <span
                   className="text-[12px] tabular-nums opacity-50"
                   title={`${sc.active} active / ${sc.total} total sessions`}
-                  style={{ fontFamily: 'var(--font-ui)' }}
                 >
                   {sc.active}/{sc.total}
                 </span>

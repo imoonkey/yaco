@@ -72,10 +72,8 @@ export function SessionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
-      style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1, fontFamily: 'var(--font-ui)', transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
-      onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
+      className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
+      style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1, transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}>
       {onPin && (
         <button
           onClick={e => { e.stopPropagation(); onPin() }}
@@ -114,7 +112,7 @@ export function SessionItem({
       <span className="flex items-center gap-1 shrink-0">
         {!!unreadCount && unreadCount > 0 && (
           <span
-            className="min-w-[18px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
+            className="min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
             style={{ backgroundColor: 'var(--sol-orange)' }}
           >
             {unreadCount}
@@ -127,7 +125,6 @@ export function SessionItem({
           }}
           className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer border border-[var(--sol-red)]/20 text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
           title={`Kill ${session.name}`}
-          style={{ fontFamily: 'var(--font-ui)' }}
         >
           Kill
         </button>

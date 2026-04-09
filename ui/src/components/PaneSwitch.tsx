@@ -13,7 +13,7 @@ export function PaneSwitch({
   onChange: (value: string) => void
 }) {
   return (
-    <div className="inline-flex w-full rounded border border-[var(--sol-tab-bg)] bg-[var(--sol-base2)] p-1" style={{ fontFamily: 'var(--font-ui)' }}>
+    <div className="inline-flex w-full rounded border border-[var(--sol-tab-bg)] bg-[var(--sol-base2)] p-1">
       {options.map(option => {
         const active = option.id === value
         return (
