@@ -522,7 +522,6 @@ export function Workspace({
       loading={history.loading}
       resumingId={resumingId}
       projectPath={projectPath}
-      onRefresh={history.refresh}
       setResumingId={setResumingId}
       onResumed={(handle) => {
         setResumingId(null)
