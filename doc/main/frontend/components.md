@@ -20,12 +20,12 @@ React component tree, props interfaces, and responsibilities.
 ## Component Tree
 
 ```
-App (245 lines)
+App (260 lines)
 └── Workspace (re-export → workspace/WorkspaceScreen)
-    └── WorkspaceScreen (555 lines) — controller
+    └── WorkspaceScreen (~600 lines) — controller
         ├── useWorkspaceKeyboard (190 lines)
         ├── useWorkspaceNavigation (132 lines)
-        ├── useWorkspaceSessions (139 lines)
+        ├── useWorkspaceSessions (180 lines)
         ├── useWorkspaceDiff (125 lines)
         ├── useWorkspaceVoice (82 lines)
         └── WorkspaceLayout (187 lines) — layout composition
@@ -44,6 +44,7 @@ App (245 lines)
         ├── Terminal (330 lines)
         │   └── TerminalKeyBar (224 lines) — touch-only
         ├── SessionItem (37 lines)
+        ├── WorkspaceHistoryList (116 lines) — History tab items
         ├── GitChangeItem (22 lines)
         ├── FileSearch (45 lines)
         ├── TaskGraphScreen — rendered as the Tasks workspace tab
@@ -74,7 +75,9 @@ TaskGraphScreen (237 lines) — controller
 - `workspace/markdown.ts` (141 lines) — escapeHtml, renderMarkdown, resolveRelativePath, code highlighting, heading slugification, mermaid init
 - `workspace/useResize.ts` (35 lines) — drag-to-resize hook, accepts `number | (() => number)` for dynamic max
 - `hooks/useWorkspaceState.ts` (753 lines) — domain state, persistence, SSE reconciliation
-- `lib/solarizedLight.ts` — `SOLARIZED_LIGHT` (raw palette) + `SOLARIZED_LIGHT_UI` (semantic workspace colors) constants for inline styles; CSS vars (`var(--sol-*)`) for stylesheet colors. No hardcoded hex values.
+- `lib/theme.ts` — `getTheme()`, `setTheme()`, `toggleTheme()` for dark/light mode switching via `data-theme` attribute + localStorage
+- `lib/editorTheme.ts` — CodeMirror `EditorView.theme()` + `HighlightStyle` using CSS vars
+- `lib/formatTime.ts` — `formatRelativeTime()` for relative timestamps in History tab
 - `lib/diffGutter.ts` (400 lines) — CodeMirror diff gutter extension, inline hunk popup with word highlights, badges, nav, Show more
 - `lib/parseDiff.ts` (160 lines) — unified diff parser → `ParsedFileDiff` with canonical `DiffRow[]` per hunk (wraps `parse-diff` + `wordDiff.ts`)
 - `lib/wordDiff.ts` (100 lines) — word-level diff via `diff` package (`computeWordDiff`, `pairChanges`), exports `DiffRow`/`DiffSegment` types

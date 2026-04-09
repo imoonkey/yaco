@@ -71,7 +71,7 @@ type FileState = {
 
 - `FileStatus`, `FileState`, `WorkspaceLayout`, `DEFAULT_LAYOUT`
 
-## useApi.ts (284 lines)
+## useApi.ts (~360 lines)
 
 Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval.
 
@@ -85,8 +85,11 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 | `useFileTree(project)` | `FileNode[]` | `filetree` | 60s |
 | `useFileContent(project, path)` | `string` | — | — |
 | `useGitStatus(project)` | `{ changes: GitChange[], stale: boolean }` | `git` | 30s |
+| `useHistory(project)` | `HistorySession[]` | — | — |
 
 All data hooks return `{ data, error, refresh }`.
+
+`useHistory` is on-demand only — not polled, not SSE-driven. Fetches when `refresh()` is called (first History tab open, after resume/close/rename). Returns `{ data, error, loading, refresh }`.
 
 `useFileTree` uses lazy loading (VS Code pattern):
 - Returns `{ data, error, refresh, expandDir, patchTree }`
@@ -107,7 +110,7 @@ Standalone async functions (not hooks):
 - `updateWorkstreamStatus(project, workstreamId, status)`
 - `addProject(name, path)`
 - `reorderProjects(order)`
-- `startSession(provider, projectPath)`
+- `startSession(provider, projectPath, resumeId?, name?)` — when `resumeId` present, sends to server for resume. Returns resolved handle.
 - `closeSession(name)`
 - `renameSession(name, newName, cwd)`
 - `saveFileContent(project, path, content)`

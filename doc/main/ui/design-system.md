@@ -16,7 +16,7 @@ Visual design language: colors, typography, iconography, and spacing.
 
 ## Related Code
 
-`ui/src/lib/solarizedLight.ts`, `ui/src/index.css`
+`ui/src/index.css`, `ui/src/lib/theme.ts`, `ui/src/lib/editorTheme.ts`
 
 ## Color Palette
 
@@ -118,7 +118,7 @@ Folders containing changed files show a yellow dot indicator.
 
 ## Git Diff Gutter
 
-Diff gutter indicators in the CodeMirror editor. Styles defined in `solarizedLight.ts`.
+Diff gutter indicators in the CodeMirror editor. Styles defined in `diffGutter.ts` using CSS vars.
 
 ### Gutter
 

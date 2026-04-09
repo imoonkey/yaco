@@ -73,7 +73,7 @@ doc/
 
 ## Conventions
 
-- Solarized Light color palette — all UI colors come from `ui/src/index.css` CSS variables (`var(--sol-*)`) and `ui/src/lib/solarizedLight.ts` JS constants (`SOLARIZED_LIGHT` for raw palette, `SOLARIZED_LIGHT_UI` for semantic workspace colors). Never use hardcoded hex values.
+- Solarized Light/Dark color palette — all UI colors come from `ui/src/index.css` CSS variables (`var(--sol-*)`) with both `:root` (light) and `[data-theme="dark"]` blocks. Semantic vars (`--sol-bg`, `--sol-text`, `--sol-header-bg`, etc.) respond to theme changes automatically. Tailwind `@theme` tokens available as `bg-sol-*`, `text-sol-*`, `border-sol-*`. Theme switching via `ui/src/lib/theme.ts` (`getTheme`, `setTheme`, `toggleTheme`). Never use hardcoded hex values or raw palette vars (`--sol-base2`, `--sol-base3`) for UI surfaces — use semantic vars instead.
 - Server error responses use `fail(c, status, error)` from `server/src/lib/response.ts`. Success responses return data directly (no `ok: true` wrapper). Project-scoped routes use `withProject` middleware from `server/src/middleware/project.ts`.
 - UI fetch errors throw `ApiError` (from `ui/src/lib/apiError.ts`) with `status` and `body`. Hooks use `AsyncData<T>` pattern: `{ data, error, loading }`.
 - Hook decomposition: `useWorkspaceState` is a composition root wiring `useLayoutState` + `useFileState` + `usePersistence`. `useVoice` uses a reducer-based state machine (`voiceStateMachine.ts`). Follow this pattern for new complex hooks.

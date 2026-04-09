@@ -61,7 +61,7 @@ Core scanning engine for workstream metadata and progress entries across project
 - `withFileLock()` provides in-process locking for read-modify-write operations on JSON files
 - Handles both workstream-level and project-level (`doc/todo/progress.json`) progress entries
 
-### multmux.ts (~260 lines)
+### multmux.ts (~300 lines)
 
 Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files and wraps the `multmux` CLI for session commands.
 
@@ -73,9 +73,20 @@ Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files
 - Primary session source: reads `~/.multmux/sessions/*.json` state files (written by multmux hooks)
 - Normalizes status: `starting → idle`, `processing → processing`, unknown → excluded
 - State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — status is `starting | idle | processing` (no `stopped`; file deletion = session ended)
-- `startMultmuxSession()` spawns the multmux CLI detached and returns early — as soon as the state file has a non-zero PID (tmux session attachable, ~1-2s). The multmux process continues in the background for `waitForReady`, `/rename`, and `sessionId` resolution. This makes Codex sessions attach instantly instead of blocking 15-30s.
+- `startMultmuxSession(provider, name, cwd, prompt?, resumeId?)` spawns the multmux CLI detached and returns early — as soon as the state file has a non-zero PID (tmux session attachable, ~1-2s). When `resumeId` is present, passes `--resume` to multmux and discovers the handle by scanning all state files for `sessionId = resumeId` (collision-safe). Normal starts poll the expected filename.
 - `closeMultmuxSession()` delegates to `multmux kill` (ensures state file cleanup)
 - Exports `MultmuxSession` and `MultmuxStateFile` interfaces
+
+### history.ts (~300 lines)
+
+Reads session history from Claude Code and Codex local storage for the History tab.
+
+**Exports**: `getClaudeHistory()`, `getCodexHistory()`, `getHistory()`, `HistorySession`
+
+- `getClaudeHistory(projectPath)` — reads `~/.claude/projects/{encoded}/*.jsonl`. Extracts `custom-title` (last-wins for renames), first user message (with slash-command normalization: strips `<command-message>` wrapper, extracts `<command-args>`, falls back to next plain-text message). Optional enrichment from `sessions-index.json` (accepts both `{ entries: [...] }` and raw array shapes).
+- `getCodexHistory(projectPath)` — queries `~/.codex/state_5.sqlite` threads table + reads `~/.codex/session_index.jsonl` for `thread_name` (last entry per id wins — append-only file has duplicates from renames). Does NOT use `threads.title` as handle.
+- `getHistory(projectPath, liveSessions)` — merges both providers, sorts by modified DESC, caps at 200, tags `liveSessionName` via sessionId comparison against live `MultmuxSession[]`.
+- `HistorySession` type: `{ id, provider, title, summary, created, modified, messageCount, gitBranch, liveSessionName }`
 
 ### watcher.ts (136 lines)
 

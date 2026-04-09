@@ -1,5 +1,42 @@
 # Progress
 
+## 2026-04-09: Dark/Light theme selector
+
+**What changed:**
+- CSS variable foundation: semantic vars (`--sol-bg`, `--sol-text`, `--sol-header-bg`, etc.) in `:root` + `[data-theme="dark"]` block with VS Code Solarized Dark values. Tailwind `@theme` block for `bg-sol-*`/`text-sol-*`/`border-sol-*` tokens.
+- Theme module (`ui/src/lib/theme.ts`): `getTheme()`, `setTheme()`, `toggleTheme()`. FOUC prevention via inline `<script>` in `index.html`.
+- CodeMirror: `EditorView.theme()` + `HighlightStyle` using CSS var strings — no compartment needed, vars cascade automatically.
+- Terminal: `MutationObserver` on `data-theme` attribute, rebuilds xterm ITheme from resolved CSS vars.
+- Migrated ~30 component files from `SOLARIZED_LIGHT_UI` JS constants to CSS vars. Deleted `solarizedLight.ts` entirely.
+- Sun/moon toggle in desktop header + mobile PaneSwitch bar. `<meta theme-color>` updates on toggle.
+
+**Why:**
+- Users requested dark mode. CSS vars with `data-theme` attribute is the simplest approach — no React state needed, all surfaces react automatically.
+
+**Key files:** `ui/src/index.css`, `ui/src/lib/theme.ts`, `ui/src/lib/editorTheme.ts`, `ui/src/components/Terminal.tsx`, `ui/src/App.tsx`, `ui/index.html`
+**Verification:** vite build passes, Playwright e2e 29/29 pass, Codex review findings addressed
+**Commit:** 5ed07dd..a8a7cb7
+**Next:** None
+**Blockers:** None
+
+## 2026-04-09: Session History tab
+
+**What changed:**
+- History data reader (`server/src/lib/history.ts`): reads Claude JSONL files (custom-title last-wins, slash-command normalization) + Codex SQLite/session_index.jsonl (thread_name last-wins). Optional sessions-index.json enrichment.
+- `GET /api/sessions/history?project=<name>` route returning `HistorySession[]` sorted by modified DESC, capped at 200, with live session tagging.
+- Resume passthrough: `startMultmuxSession()` accepts `resumeId`, passes `--resume` to multmux CLI. Collision-safe handle discovery (scan state files by sessionId). Idempotency preflight prevents duplicate spawns. Handle return fix (resolved handle, not echoed name).
+- Multmux `--resume` flag in `~/workspace/multmux/src/commands/start.ts`: extracts flag, rewrites Codex to subcommand, writes sessionId in initial state file.
+- UI: `useHistory` hook (on-demand, not polled), `HistorySession` type, `formatRelativeTime()`, Live/History tab toggle in Sessions section, `WorkspaceHistoryList` component with resume/go-live flow.
+
+**Why:**
+- Users need to browse and resume past Claude/Codex sessions. Resume must go through multmux (owns session lifecycle). Claude's sessions-index.json is unreliable (GitHub #25032, #18897) — JSONL files are the primary source.
+
+**Key files:** `server/src/lib/history.ts`, `server/src/routes/sessions.ts`, `server/src/lib/multmux.ts`, `ui/src/workspace/WorkspaceHistoryList.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/hooks/useApi.ts`, `~/workspace/multmux/src/commands/start.ts`
+**Verification:** 133 server tests pass, Playwright e2e 29/29 pass, Codex review findings addressed
+**Commit:** b323789..a8a7cb7
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-08: Codex session start returns instantly (no blocking on agent idle)
 
 **What changed:**
