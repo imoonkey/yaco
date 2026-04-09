@@ -137,7 +137,7 @@ export function WorkspaceTabBar({
             className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
             style={{
               backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
-              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2.5px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2.5px solid transparent',
+              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2.5px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2.5px solid transparent',
               borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)', marginBottom: -1,
               fontStyle: isPreview ? 'italic' : undefined,
               transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
@@ -146,7 +146,7 @@ export function WorkspaceTabBar({
             <span className="truncate max-w-[120px]">{tabName(tab)}</span>
             {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-muted)' }}>{parentDirSuffix}</span>}
             {isConflict ? (
-              <span className="w-4 h-4 flex items-center justify-center shrink-0" style={{ color: '#C4A241' }} title="File changed on disk"><AlertTriangle size={12} /></span>
+              <span className="w-4 h-4 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={12} /></span>
             ) : isDirty ? (
               <span className="w-4 h-4 flex items-center justify-center shrink-0">
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />

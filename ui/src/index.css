@@ -27,9 +27,6 @@
   --tab-h: 36px;
   --breadcrumb-h: 28px;
 
-  /* Luminous edge */
-  --luminous-edge: linear-gradient(90deg, var(--sol-yellow), var(--sol-orange), var(--sol-violet));
-
   /* Backdrop blur */
   --backdrop-blur: blur(12px) saturate(150%);
 
@@ -38,6 +35,9 @@
   --sol-status-idle: var(--sol-base1);
   --sol-status-error: var(--sol-red);
   --sol-status-warning: var(--sol-yellow);
+
+  /* Warning/conflict accent (git modified, conflict banners) */
+  --sol-warning: #C4A241;
 }
 
 [data-theme="dark"] {
@@ -213,6 +213,7 @@
   --color-sol-editor-indent-guide-active: var(--sol-editor-indent-guide-active);
   --color-sol-syntax-comment: var(--sol-syntax-comment);
   --color-sol-syntax-modifier: var(--sol-syntax-modifier);
+  --color-sol-warning: var(--sol-warning);
   /* Design system tokens */
   --font-family-ui: var(--font-ui);
   --font-family-mono: var(--font-mono);
@@ -421,7 +422,7 @@ body {
   background: var(--sol-base2);
   border-radius: 3px;
   padding: 0.1em 0.35em;
-  font-family: "SF Mono", Monaco, Menlo, Consolas, "Ubuntu Mono", "Liberation Mono", "DejaVu Sans Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 1em;
   line-height: 1.357em;
 }
@@ -553,23 +554,6 @@ body {
 }
 
 /* ═══ Design System Utilities ═══ */
-
-/* Luminous edge — spectral gradient top border (works with border-radius) */
-.luminous-edge {
-  position: relative;
-}
-.luminous-edge::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1.5px;
-  background: var(--luminous-edge);
-  border-radius: inherit;
-  z-index: 1;
-  pointer-events: none;
-}
 
 /* Elevation utilities */
 .elevation-1 { box-shadow: var(--elevation-1); }

@@ -9,7 +9,7 @@ export function SectionHeader({ title, collapsed, onToggle, actions, badge }: {
       <span className="w-3 flex items-center justify-center"><ChevronRight size={12} style={{ transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)', transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1)' }} /></span>
       <span className="flex-1 ml-0.5">{title}</span>
       {badge != null && badge > 0 && (
-        <span className="w-[18px] h-[14px] rounded-full text-[9px] flex items-center justify-center font-bold" style={{ backgroundColor: '#C4A24130', color: '#C4A241' }}>{badge}</span>
+        <span className="w-[18px] h-[14px] rounded-full text-[9px] flex items-center justify-center font-bold" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-warning) 19%, transparent)', color: 'var(--sol-warning)' }}>{badge}</span>
       )}
       {!collapsed && actions && <div onClick={e => e.stopPropagation()}>{actions}</div>}
     </div>

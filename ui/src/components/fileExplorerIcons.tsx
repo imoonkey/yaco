@@ -3,7 +3,7 @@ import { Folder, FolderOpen, FilePlus, FolderPlus, ChevronsDownUp } from 'lucide
 import { getIcon } from '../lib/setiIcons'
 
 // --- Git status colors ---
-export const GIT_COLORS: Record<string, string> = { M: '#C4A241', U: '#73C991', A: '#73C991', D: '#C74E39' }
+export const GIT_COLORS: Record<string, string> = { M: 'var(--sol-warning)', U: '#73C991', A: '#73C991', D: '#C74E39' }
 
 // --- Seti color name to hex (VS Code Seti icon theme, light background) ---
 const SETI_COLORS: Record<string, string> = {

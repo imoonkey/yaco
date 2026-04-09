@@ -478,13 +478,13 @@ export function WorkspaceEditorArea({
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {activeFilePath && hasConflict && (
-        <div className="flex items-center gap-3 px-3 py-2 text-[12px] shrink-0" style={{ backgroundColor: '#C4A24118', borderBottom: `1px solid #C4A24140`, color: '#C4A241', fontFamily: 'var(--font-ui)', animation: 'panel-slide-in 200ms cubic-bezier(0.2, 0, 0, 1) both' }}>
+        <div className="flex items-center gap-3 px-3 py-2 text-[12px] shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-warning) 9%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', fontFamily: 'var(--font-ui)', animation: 'panel-slide-in 200ms cubic-bezier(0.2, 0, 0, 1) both' }}>
           <span>&#9888; File changed on disk.</span>
           <button
             onClick={onAcceptDisk}
             className="px-2 py-0.5 rounded text-[11px] cursor-pointer border"
-            style={{ borderColor: '#C4A24140', color: '#C4A241' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#C4A24120')}
+            style={{ borderColor: 'color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', transition: 'background-color 120ms' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--sol-warning) 12%, transparent)')}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
           >
             Accept Disk Version
@@ -492,8 +492,8 @@ export function WorkspaceEditorArea({
           <button
             onClick={onForceSave}
             className="px-2 py-0.5 rounded text-[11px] cursor-pointer border"
-            style={{ borderColor: '#C4A24140', color: '#C4A241' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = '#C4A24120')}
+            style={{ borderColor: 'color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', transition: 'background-color 120ms' }}
+            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--sol-warning) 12%, transparent)')}
             onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
           >
             Keep Mine &amp; Save

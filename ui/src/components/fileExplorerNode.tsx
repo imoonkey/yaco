@@ -79,7 +79,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
   const isGitignored = d.gitignored === true
   const nameColor = isGitignored ? 'var(--sol-muted)'
     : gitStatus ? (GIT_COLORS[gitStatus] || 'var(--sol-text)')
-    : folderChanged ? '#C4A241'
+    : folderChanged ? 'var(--sol-warning)'
     : isSelected ? 'var(--sol-accent)'
     : 'var(--sol-text)'
 
@@ -124,9 +124,9 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
         {d.type === 'dir'
           ? <span style={isGitignored ? { opacity: 0.5 } : undefined}><FolderIcon open={node.isOpen} /></span>
           : <span style={isGitignored ? { opacity: 0.5 } : undefined}><FileTypeIcon name={d.name} /></span>}
-        <span className="flex-1 truncate" style={{ color: nameColor }}>{d.name}</span>
+        <span className="flex-1 truncate" style={{ color: nameColor, fontFamily: 'var(--font-ui)' }}>{d.name}</span>
         {!isGitignored && gitStatus && <span className="text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }}>{gitStatus}</span>}
-        {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#C4A241' }} />}
+        {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-warning)' }} />}
       </div>
     </div>
   )
