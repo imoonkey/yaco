@@ -473,6 +473,7 @@ export function Workspace({
           <RefreshCw size={12} />
         </button>
       )}
+      <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div
         className="flex rounded-full overflow-hidden cursor-pointer"
         style={{ border: '1px solid var(--sol-text-dim)' }}
