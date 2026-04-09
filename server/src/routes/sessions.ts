@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { PENDING_SESSION_ID } from '../lib/constants'
 import { getHistory } from '../lib/history'
 import { closeMultmuxSession, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/multmux'
 import { loadProjects } from '../lib/projects'
@@ -31,11 +32,12 @@ app.get('/', async (c) => {
 })
 
 app.post('/start', async (c) => {
-  const { provider, name, cwd, prompt } = await c.req.json<{
+  const { provider, name, cwd, prompt, resumeId } = await c.req.json<{
     provider: 'claude' | 'codex' | 'shell'
     name?: string
     cwd: string
     prompt?: string
+    resumeId?: string
   }>()
   if (!provider || !cwd) {
     return c.json({ error: 'provider and cwd required' }, 400)
@@ -53,8 +55,20 @@ app.post('/start', async (c) => {
       return c.json({ error: 'name required for agent sessions' }, 400)
     }
 
-    await startMultmuxSession(provider, name, cwd, prompt)
-    return c.json({ name })
+    // Idempotency preflight: if resuming, check if a live session already has this sessionId
+    if (resumeId) {
+      const matchingProject = projects.find(item => item.path === cwd)
+      if (matchingProject) {
+        const liveSessions = readSessionsFromStateFiles(matchingProject)
+        const existing = liveSessions.find(
+          s => s.provider === provider && s.sessionId === resumeId && s.sessionId !== PENDING_SESSION_ID
+        )
+        if (existing) return c.json({ name: existing.name })
+      }
+    }
+
+    const { handle } = await startMultmuxSession(provider, name, cwd, prompt, resumeId)
+    return c.json({ name: handle })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
