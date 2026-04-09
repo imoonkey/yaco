@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-09: Frontend polish — font inheritance, CSS hover, sizing, menu collision
+
+**What changed:**
+- Body `font-family` switched from monospace to `var(--font-ui)` — UI font now inherits everywhere, eliminating ~40 inline `fontFamily` overrides across 18 components
+- JS `onMouseEnter/onMouseLeave` hover handlers replaced with Tailwind `hover:bg-sol-hover-bg` in 8 components (Menu, SessionItem, GitChangeItem, HistoryItem, FileExplorerNode, NotificationPanel, SearchResult, TabBar close button)
+- Dialog header heights unified to `h-10` (ConfirmDialog h-11 → h-10, NotificationPanel h-9 → h-10)
+- Unread badges unified to `16x16px / text-[9px]` across bell icon, session list, project list
+- Menu component now detects viewport overflow and repositions via `requestAnimationFrame`
+- Removed dead `--tab-h: 36px` CSS token
+
+**Why:**
+- Post-redesign review found maintenance burden (inline fontFamily everywhere), fragile hover patterns (JS handlers don't clean up on unmount), visual inconsistencies (badge/dialog sizes), and a functional bug (menus clipped at screen edges).
+
+**Key files:** `ui/src/index.css`, `ui/src/components/Menu.tsx`, plus 20 component files
+**Verification:** TypeScript clean, lint clean (no new errors), all 6 Playwright E2E suites pass
+**Commit:** 3b945ac
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: Visual redesign — "Precision Instrument"
 
 **What changed:**
