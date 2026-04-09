@@ -135,7 +135,7 @@ export function WorkspaceTabBar({
             onDoubleClick={() => onDoubleClickTab(tab)}
             {...tabCtx}
             data-testid="tab"
-            className="group flex items-center gap-1.5 px-2 h-full cursor-pointer text-[12px] shrink-0"
+            className="group flex items-center gap-1 px-1.5 h-full cursor-pointer text-[12px] shrink-0"
             style={{
               backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
               borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
