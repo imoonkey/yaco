@@ -12,7 +12,7 @@
 
 **Key files:** `server/src/lib/multmux.ts`
 **Verification:** 111 server tests pass, build clean
-**Commit:** (pending)
+**Commit:** 381a534
 **Next:** None
 **Blockers:** None
 
