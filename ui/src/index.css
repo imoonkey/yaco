@@ -55,6 +55,9 @@
   --sol-editor-whitespace: #586e7580;
   --sol-editor-indent-guide: #586e7580;
   --sol-editor-indent-guide-active: #081e2580;
+  /* Syntax highlighting semantic vars (light: base1=comment, base01=emphasis) */
+  --sol-syntax-comment: #93a1a1;
+  --sol-syntax-modifier: #586e75;
 }
 
 /* Solarized Dark — VS Code Solarized Dark values */
@@ -188,6 +191,11 @@
 @media (prefers-reduced-motion: reduce) {
   [data-rhythm-pulse] { animation: none !important; }
 }
+
+/* Theme toggle: show sun in light, moon in dark */
+.theme-toggle .icon-moon { display: none; }
+[data-theme="dark"] .theme-toggle .icon-sun { display: none; }
+[data-theme="dark"] .theme-toggle .icon-moon { display: inline; }
 
 html, body {
   overscroll-behavior: none;

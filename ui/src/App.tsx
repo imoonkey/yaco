@@ -6,6 +6,7 @@ import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
 import { SOLARIZED_LIGHT as S, SOLARIZED_LIGHT_UI as C } from './lib/solarizedLight'
+import { toggleTheme } from './lib/theme'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
 
@@ -254,7 +255,18 @@ function App() {
     <div className="flex flex-col h-dvh bg-[var(--sol-base3)]">
       <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: C.textDim }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
-        <Clock onPulse={handlePulse} />
+        <span className="flex items-center gap-2">
+          <Clock onPulse={handlePulse} />
+          <button
+            className="theme-toggle text-[15px] leading-none cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
+            style={{ color: 'var(--sol-muted)' }}
+            onClick={toggleTheme}
+            title="Toggle theme"
+          >
+            <span className="icon-sun">☼</span>
+            <span className="icon-moon">☾</span>
+          </button>
+        </span>
       </div>
       <main className="flex-1 overflow-hidden">
         {activeProject && (
