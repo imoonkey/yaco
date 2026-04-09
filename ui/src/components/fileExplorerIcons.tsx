@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { Folder, FolderOpen, FilePlus, FolderPlus, ChevronsDownUp } from 'lucide-react'
 import { getIcon } from '../lib/setiIcons'
 
 // --- Git status colors ---
@@ -33,38 +34,18 @@ export function FileTypeIcon({ name }: { name: string }) {
 }
 
 export function FolderIcon({ open }: { open?: boolean }) {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
-      {open
-        ? <path d="M1.5 14h13c.28 0 .5-.22.5-.5V5H7.5L6 3.5H2c-.28 0-.5.22-.5.5v10c0 .28.22.5.5.5z" fill="#C09553" fillOpacity="0.75" />
-        : <path d="M1.5 14h13c.28 0 .5-.22.5-.5V4.5c0-.28-.22-.5-.5-.5H7L5.5 2.5c-.2-.3-.5-.5-.8-.5H2c-.28 0-.5.22-.5.5v11c0 .28.22.5.5.5z" fill="#C09553" fillOpacity="0.75" />
-      }
-    </svg>
-  )
+  const Icon = open ? FolderOpen : Folder
+  return <Icon size={14} className="shrink-0" color="#C09553" />
 }
 
 export function NewFileIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
-      <path d="M9.5 1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5L9.5 1z" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M8 7v4M6 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  )
+  return <FilePlus size={14} className="shrink-0" />
 }
 
 export function CollapseAllIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
-      <path d="M3 10l5-4 5 4M3 14l5-4 5 4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
+  return <ChevronsDownUp size={14} className="shrink-0" />
 }
 
 export function NewFolderIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" className="shrink-0">
-      <path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h2.879a1 1 0 0 1 .707.293L8.5 3.707a1 1 0 0 0 .707.293H12.5A1.5 1.5 0 0 1 14 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12.5v-9z" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M8 7v4M6 9h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
-  )
+  return <FolderPlus size={14} className="shrink-0" />
 }

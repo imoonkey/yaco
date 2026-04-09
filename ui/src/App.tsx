@@ -268,8 +268,8 @@ function App() {
         <span className="flex items-center gap-2">
           <span className="relative">
             <button
-              className="flex items-center justify-center cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
-              style={{ color: 'var(--sol-muted)' }}
+              className="flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--sol-text-dim)' }}
               onClick={() => { setShowNotifications(v => !v); if (!showNotifications) markNotificationsRead() }}
               title="Notifications"
             >

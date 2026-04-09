@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { RefreshCw, History, Radio } from 'lucide-react'
+import { RefreshCw, History, Radio, Plus } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
@@ -374,9 +374,9 @@ export function Workspace({
       onClick={onAddProject}
       aria-label="Add project"
       title="Add project"
-      className="w-[18px] h-[18px] rounded flex items-center justify-center text-[14px] leading-none cursor-pointer text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[var(--sol-base2)] transition-colors"
+      className="w-[18px] h-[18px] rounded flex items-center justify-center cursor-pointer text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[var(--sol-base2)] transition-colors"
     >
-      +
+      <Plus size={14} />
     </button>
   )
 
@@ -458,7 +458,7 @@ export function Workspace({
         <div className="flex gap-1">
           {(['claude', 'codex', 'shell'] as const).map(p => (
             <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${p[0].toUpperCase()}${p.slice(1)}`}>
-              <ProviderIcon provider={p} className={`w-3.5 h-3.5${p === 'codex' ? ' text-[#111111]' : ''}`} /> <span className="text-[9px]">+</span>
+              <ProviderIcon provider={p} className={`w-3.5 h-3.5${p === 'codex' ? ' text-[#111111]' : ''}`} />
             </button>
           ))}
         </div>
@@ -466,9 +466,9 @@ export function Workspace({
       {sessionTab === 'history' && (
         <button
           onClick={() => history.refresh()}
-          className="cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
+          className="cursor-pointer hover:opacity-80 transition-opacity"
           title="Refresh history"
-          style={{ color: 'var(--sol-muted)' }}
+          style={{ color: 'var(--sol-text-dim)' }}
         >
           <RefreshCw size={12} />
         </button>
@@ -476,7 +476,7 @@ export function Workspace({
       <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div
         className="flex rounded overflow-hidden cursor-pointer"
-        style={{ border: '1px solid var(--sol-border)', padding: 2 }}
+        style={{ padding: 2 }}
         onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
         title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
       >

@@ -208,11 +208,11 @@
   box-shadow: inset 0 0 0 1px rgba(181, 137, 0, 0.15);
 }
 .theme-toggle .icon-moon {
-  color: var(--sol-muted);
+  color: var(--sol-text-dim);
 }
 [data-theme="dark"] .theme-toggle .icon-sun {
   background: transparent;
-  color: var(--sol-muted);
+  color: var(--sol-text-dim);
   box-shadow: none;
 }
 [data-theme="dark"] .theme-toggle .icon-moon {
