@@ -16,7 +16,7 @@ function isResolvableSessionId(id: string): boolean {
 }
 
 /** Encode a project path the same way Claude Code does: replace `/` with `-` */
-function encodeProjectPath(projectPath: string): string {
+export function encodeProjectPath(projectPath: string): string {
   return projectPath.replace(/\//g, '-')
 }
 
@@ -60,7 +60,7 @@ function makeClaudeResolver(projectPath: string): (sessionId: string) => Summary
 let codexDb: InstanceType<typeof Database> | null = null
 let codexDbPath = ''
 
-function getCodexDb(): InstanceType<typeof Database> | null {
+export function getCodexDb(): InstanceType<typeof Database> | null {
   const dbPath = join(homedir(), '.codex', 'state_5.sqlite')
   if (!existsSync(dbPath)) return null
 
