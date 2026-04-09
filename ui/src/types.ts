@@ -59,3 +59,15 @@ export interface GitChange {
   path: string
   status: 'M' | 'A' | 'D' | 'U'
 }
+
+export interface HistorySession {
+  id: string
+  provider: 'claude' | 'codex'
+  title: string | null
+  summary: string
+  created: string
+  modified: string
+  messageCount: number | null
+  gitBranch: string | null
+  liveSessionName: string | null
+}

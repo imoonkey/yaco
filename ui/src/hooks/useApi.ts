@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider } from '../types'
+import type { Project, ProgressEntry, AgentSession, FileNode, GitChange, SessionProvider, HistorySession } from '../types'
 import { useSSERefresh } from './useSSE'
 import { ApiError } from '../lib/apiError'
 
@@ -247,9 +247,14 @@ export async function reorderProjects(order: string[]): Promise<Project[]> {
   return postJson<Project[]>('/projects/reorder', { order })
 }
 
-export async function startSession(provider: SessionProvider, projectPath: string): Promise<string> {
-  const name = provider === 'shell' ? undefined : `${provider}-${Date.now().toString(36)}`
-  const result = await postJson<{ name: string }>('/sessions/start', { provider, name, cwd: projectPath })
+export async function startSession(provider: SessionProvider, projectPath: string, resumeId?: string, name?: string): Promise<string> {
+  const resolvedName = name ?? (provider === 'shell' ? undefined : `${provider}-${Date.now().toString(36)}`)
+  const result = await postJson<{ name: string }>('/sessions/start', {
+    provider,
+    name: resolvedName,
+    cwd: projectPath,
+    ...(resumeId ? { resumeId } : {}),
+  })
   return result.name
 }
 
@@ -325,6 +330,28 @@ export function useGitStatus(projectName: string | null) {
     [projectName]
   )
   return usePolling(fetcher, 30_000, 'git')
+}
+
+export function useHistory(projectName: string | null): AsyncData<HistorySession[]> & { refresh: () => void } {
+  const [data, setData] = useState<HistorySession[] | null>(null)
+  const [error, setError] = useState<Error | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const refresh = useCallback(async () => {
+    if (!projectName) { setData(null); return }
+    setLoading(true)
+    try {
+      const result = await fetchJson<HistorySession[]>(`/sessions/history?project=${encodeURIComponent(projectName)}`)
+      setData(result)
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e : new Error(String(e)))
+    } finally {
+      setLoading(false)
+    }
+  }, [projectName])
+
+  return { data, error, loading, refresh }
 }
 
 export async function fetchGitDiff(projectName: string, filePath: string): Promise<string> {
