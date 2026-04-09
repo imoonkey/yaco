@@ -3,11 +3,12 @@ import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { NotificationPanel } from './components/NotificationPanel'
 import { useNotifications } from './hooks/useNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
 import { toggleTheme } from './lib/theme'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, Bell } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
@@ -179,7 +180,8 @@ function App() {
     }
   }, [])
 
-  useNotifications(handleNotificationClick)
+  const { notifications, unreadCount, markAllRead: markNotificationsRead, clearAll: clearNotifications } = useNotifications(handleNotificationClick)
+  const [showNotifications, setShowNotifications] = useState(false)
 
   // Persist project selection
   useEffect(() => {
@@ -264,6 +266,33 @@ function App() {
       <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <span className="flex items-center gap-2">
+          <span className="relative">
+            <button
+              className="flex items-center justify-center cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
+              style={{ color: 'var(--sol-muted)' }}
+              onClick={() => { setShowNotifications(v => !v); if (!showNotifications) markNotificationsRead() }}
+              title="Notifications"
+            >
+              <Bell size={15} />
+            </button>
+            {unreadCount > 0 && (
+              <span
+                className="absolute -top-1.5 -right-1.5 min-w-[14px] h-[14px] rounded-full text-[8px] font-bold text-white flex items-center justify-center px-0.5"
+                style={{ backgroundColor: 'var(--sol-orange)' }}
+              >
+                {unreadCount}
+              </span>
+            )}
+            {showNotifications && (
+              <NotificationPanel
+                notifications={notifications}
+                onClickItem={(n) => { handleNotificationClick(n.project, n.sessionName); setShowNotifications(false) }}
+                onMarkAllRead={markNotificationsRead}
+                onClearAll={clearNotifications}
+                onClose={() => setShowNotifications(false)}
+              />
+            )}
+          </span>
           <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme">
             <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
             <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>

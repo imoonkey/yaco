@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { addSSEListener } from './useSSE'
 
@@ -11,12 +11,44 @@ interface NotificationEvent {
   progressType?: string
 }
 
+export interface NotificationItem {
+  id: string
+  title: string
+  message: string
+  project: string
+  sessionName: string
+  timestamp: number
+  read: boolean
+}
+
+const MAX_NOTIFICATIONS = 50
+
 export function useNotifications(
   onNotificationClick?: (project: string, sessionName: string) => void,
-): void {
+): {
+  notifications: NotificationItem[]
+  unreadCount: number
+  markAllRead: () => void
+  clearAll: () => void
+} {
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const seenIds = useRef(new Set<string>())
   const onClickRef = useRef(onNotificationClick)
   onClickRef.current = onNotificationClick
+
+  const unreadCount = notifications.filter(n => !n.read).length
+
+  const markAllRead = useCallback(() => {
+    setNotifications(prev => prev.map(n => n.read ? n : { ...n, read: true }))
+  }, [])
+
+  const clearAll = useCallback(() => {
+    setNotifications([])
+  }, [])
+
+  const markRead = useCallback((id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+  }, [])
 
   // Request browser notification permission once on mount
   useEffect(() => {
@@ -44,13 +76,28 @@ export function useNotifications(
         if (sessionName) parts.push(sessionName)
         const title = parts.length > 0 ? `${parts.join(' / ')}: ${event.title}` : event.title
 
+        // Accumulate in notification list
+        const item: NotificationItem = {
+          id: event.id,
+          title,
+          message: event.message,
+          project,
+          sessionName,
+          timestamp: Date.now(),
+          read: false,
+        }
+        setNotifications(prev => [item, ...prev].slice(0, MAX_NOTIFICATIONS))
+
         if (document.visibilityState === 'visible') {
           // In-app toast
           toast(title, {
             description: event.message,
             action: (project || sessionName) ? {
               label: 'Go',
-              onClick: () => onClickRef.current?.(project, sessionName),
+              onClick: () => {
+                markRead(event.id)
+                onClickRef.current?.(project, sessionName)
+              },
             } : undefined,
           })
         } else {
@@ -62,6 +109,7 @@ export function useNotifications(
             })
             notification.onclick = () => {
               window.focus()
+              markRead(event.id)
               onClickRef.current?.(project, sessionName)
               notification.close()
             }
@@ -69,5 +117,7 @@ export function useNotifications(
         }
       } catch { /* ignore */ }
     })
-  }, [])
+  }, [markRead])
+
+  return { notifications, unreadCount, markAllRead, clearAll }
 }

@@ -42,11 +42,16 @@ export function SessionItem({
   const [showTip, setShowTip] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
+  const itemRef = useRef<HTMLDivElement>(null)
   const tipTimer = useRef<ReturnType<typeof setTimeout>>(null)
 
   useEffect(() => {
     if (renaming) inputRef.current?.focus()
   }, [renaming])
+
+  useEffect(() => {
+    if (isActive) itemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [isActive])
 
   const startRename = () => {
     menu.close()
@@ -63,7 +68,7 @@ export function SessionItem({
   }
 
   return (
-    <div onClick={renaming ? undefined : onClick}
+    <div ref={itemRef} onClick={renaming ? undefined : onClick}
       draggable={!!onDragStart && !renaming}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
