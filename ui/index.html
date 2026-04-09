@@ -15,6 +15,10 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      var t = localStorage.getItem('workflow-theme');
+      if (t === 'dark') document.documentElement.dataset.theme = 'dark';
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
