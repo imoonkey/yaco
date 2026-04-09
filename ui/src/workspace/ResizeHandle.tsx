@@ -1,5 +1,3 @@
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
-
 export function VResizeHandle({ onMouseDown, isDragging }: { onMouseDown: (e: React.MouseEvent) => void; isDragging: boolean }) {
   return (
     <div onMouseDown={onMouseDown}
@@ -8,7 +6,7 @@ export function VResizeHandle({ onMouseDown, isDragging }: { onMouseDown: (e: Re
     >
       <div
         className={`w-full transition-all ${isDragging ? 'w-[3px]' : 'w-[1px]'}`}
-        style={{ height: '100%', backgroundColor: isDragging ? C.sash : C.border, pointerEvents: 'none' }}
+        style={{ height: '100%', backgroundColor: isDragging ? 'var(--sol-sash)' : 'var(--sol-border)', pointerEvents: 'none' }}
       />
     </div>
   )
@@ -22,7 +20,7 @@ export function HResizeHandle({ onMouseDown, isDragging }: { onMouseDown: (e: Re
     >
       <div
         className={`h-full transition-all ${isDragging ? 'h-[3px]' : 'h-[1px]'}`}
-        style={{ width: '100%', backgroundColor: isDragging ? C.sash : C.border, pointerEvents: 'none' }}
+        style={{ width: '100%', backgroundColor: isDragging ? 'var(--sol-sash)' : 'var(--sol-border)', pointerEvents: 'none' }}
       />
     </div>
   )

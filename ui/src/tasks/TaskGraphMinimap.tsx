@@ -1,5 +1,4 @@
 import { useCallback } from 'react'
-import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { GraphLayout, TaskGraphModel } from './taskGraphModel'
 import type { ViewportTransform } from '../hooks/usePanZoom'
 import { STATE_COLORS } from './taskGraphConstants'
@@ -41,8 +40,8 @@ export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, cont
       style={{
         width: MINIMAP_W,
         height: MINIMAP_H,
-        backgroundColor: SOLARIZED_LIGHT.base2,
-        border: `1px solid ${SOLARIZED_LIGHT.border}`,
+        backgroundColor: 'var(--sol-base2)',
+        border: '1px solid var(--sol-border)',
         opacity: 0.85,
       }}
     >
@@ -59,7 +58,7 @@ export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, cont
               y1={(source.y + source.height / 2) * minimapScale}
               x2={(target.x + target.width / 2) * minimapScale}
               y2={(target.y + target.height / 2) * minimapScale}
-              stroke={SOLARIZED_LIGHT.base1}
+              stroke={'var(--sol-base1)'}
               strokeWidth={0.5}
               opacity={0.4}
             />
@@ -75,7 +74,7 @@ export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, cont
               cx={(node.x + node.width / 2) * minimapScale}
               cy={(node.y + node.height / 2) * minimapScale}
               r={2}
-              fill={STATE_COLORS[task?.state ?? 'cancelled'] ?? SOLARIZED_LIGHT.base1}
+              fill={STATE_COLORS[task?.state ?? 'cancelled'] ?? 'var(--sol-base1)'}
             />
           )
         })}
@@ -86,9 +85,9 @@ export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, cont
           y={vpY}
           width={Math.max(vpW, 8)}
           height={Math.max(vpH, 6)}
-          fill={SOLARIZED_LIGHT.blue}
+          fill={'var(--sol-blue)'}
           fillOpacity={0.15}
-          stroke={SOLARIZED_LIGHT.blue}
+          stroke={'var(--sol-blue)'}
           strokeWidth={1}
         />
       </svg>

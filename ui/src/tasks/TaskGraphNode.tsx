@@ -1,4 +1,3 @@
-import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { LayoutNode, TaskGraphTask, LayoutGroup } from './taskGraphModel'
 import { NODE_WIDTH, NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
@@ -6,7 +5,7 @@ import type { TooltipTarget } from './TaskGraphTooltip'
 import { STATE_COLORS } from './taskGraphConstants'
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
-  const color = STATE_COLORS[state] ?? SOLARIZED_LIGHT.base1
+  const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
   const r = 5
 
   if (state === 'done') {
@@ -43,9 +42,9 @@ function getNodeOpacity(node: LayoutNode, highlight: HighlightModel): number {
 }
 
 function getNodeFill(node: LayoutNode, highlight: HighlightModel): string {
-  if (highlight.upstreamTaskIds.has(node.id)) return SOLARIZED_LIGHT.orange
-  if (highlight.downstreamTaskIds.has(node.id)) return SOLARIZED_LIGHT.cyan
-  return SOLARIZED_LIGHT.base3
+  if (highlight.upstreamTaskIds.has(node.id)) return 'var(--sol-orange)'
+  if (highlight.downstreamTaskIds.has(node.id)) return 'var(--sol-cyan)'
+  return 'var(--sol-base3)'
 }
 
 function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel): number {
@@ -71,7 +70,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   const opacity = getNodeOpacity(node, highlight)
   const showLabels = scale >= 0.6
 
-  const strokeColor = isSearchMatch ? SOLARIZED_LIGHT.violet : isSelected ? SOLARIZED_LIGHT.focusBorder : SOLARIZED_LIGHT.border
+  const strokeColor = isSearchMatch ? 'var(--sol-violet)' : isSelected ? 'var(--sol-focus-border)' : 'var(--sol-border)'
   const strokeW = isSearchMatch || isSelected ? 2 : 1
 
   // Group affordances: chevron and progress
@@ -127,7 +126,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           height={NODE_HEIGHT + 6}
           rx={9}
           fill="none"
-          stroke={SOLARIZED_LIGHT.violet}
+          stroke={'var(--sol-violet)'}
           strokeWidth={1.5}
           strokeDasharray="4 2"
           opacity={0.6}
@@ -146,7 +145,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
             y={node.y + NODE_HEIGHT / 2 + 4}
             fontSize={9}
             textAnchor="middle"
-            fill={SOLARIZED_LIGHT.base1}
+            fill={'var(--sol-base1)'}
           >
             {isCollapsed ? '\u25B6' : '\u25BC'}
           </text>
@@ -172,7 +171,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         y={node.y + NODE_HEIGHT / 2 + 4}
         fontSize={12}
         fontWeight={hasGroupAffordances ? 600 : 400}
-        fill={SOLARIZED_LIGHT.base01}
+        fill={'var(--sol-base01)'}
         opacity={showLabels ? 1 : 0}
         style={{ transition: 'opacity 150ms ease-out' }}
         clipPath={`url(#clip-${node.id})`}
@@ -187,7 +186,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           y={node.y + NODE_HEIGHT / 2 + 4}
           fontSize={10}
           textAnchor="end"
-          fill={SOLARIZED_LIGHT.base1}
+          fill={'var(--sol-base1)'}
           opacity={showLabels ? 0.7 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >
@@ -202,7 +201,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           y={node.y + NODE_HEIGHT / 2 + 4}
           fontSize={10}
           textAnchor="end"
-          fill={SOLARIZED_LIGHT.base1}
+          fill={'var(--sol-base1)'}
           opacity={showLabels ? 0.7 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >

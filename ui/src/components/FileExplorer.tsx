@@ -1,6 +1,5 @@
 import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImperativeHandle, memo } from 'react'
 import { Tree } from 'react-arborist'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { moveFile, renameFile, deleteFile, createFile, createDir, revealInFinder } from '../hooks/useApi'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
@@ -374,7 +373,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     <ExplorerContext.Provider value={{ gitMap, gitFolders, bindContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, onExpandDir, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0 overflow-hidden" onMouseDown={onFocusExplorer}>
         {!treeData || size.height < 1 ? (
-          <div className="px-2 py-2 text-[11px]" style={{ color: C.muted }}>Loading...</div>
+          <div className="px-2 py-2 text-[11px]" style={{ color: 'var(--sol-muted)' }}>Loading...</div>
         ) : (
           <Tree
             ref={treeRef}

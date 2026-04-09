@@ -1,11 +1,9 @@
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
-
 export function SectionHeader({ title, collapsed, onToggle, actions, badge }: {
   title: string; collapsed: boolean; onToggle: () => void; actions?: React.ReactNode; badge?: number
 }) {
   return (
     <div className="flex items-center h-[22px] px-2 text-[11px] font-semibold uppercase tracking-wider cursor-pointer select-none shrink-0"
-      style={{ backgroundColor: C.headerBg, color: C.textBrown }} onClick={onToggle}>
+      style={{ backgroundColor: 'var(--sol-header-bg)', color: 'var(--sol-text-brown)' }} onClick={onToggle}>
       <span className="text-[9px] w-3 text-center">{collapsed ? '▸' : '▾'}</span>
       <span className="flex-1 ml-0.5">{title}</span>
       {badge != null && badge > 0 && (

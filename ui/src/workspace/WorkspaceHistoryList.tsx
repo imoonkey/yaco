@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { ProviderIcon } from '../components/SessionIcons'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { formatRelativeTime } from '../lib/formatTime'
 import { startSession } from '../hooks/useApi'
 import type { HistorySession } from '../types'
@@ -30,8 +29,8 @@ function HistoryItem({
     <div
       onClick={isResuming ? undefined : isLive ? onGoLive : onResume}
       className="flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px]"
-      style={{ color: C.text, opacity: isResuming ? 0.6 : 1 }}
-      onMouseEnter={e => { e.currentTarget.style.backgroundColor = C.hover }}
+      style={{ color: 'var(--sol-text)', opacity: isResuming ? 0.6 : 1 }}
+      onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { e.currentTarget.style.backgroundColor = '' }}
     >
       <div className="flex items-center gap-2">
@@ -40,14 +39,14 @@ function HistoryItem({
           <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-[var(--sol-cyan)] status-pulse" />
         )}
         {isResuming && (
-          <span className="w-3 h-3 shrink-0 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: C.muted }} />
+          <span className="w-3 h-3 shrink-0 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--sol-muted)' }} />
         )}
         <span className="min-w-0 flex-1 truncate">{primary}</span>
-        <span className="shrink-0 text-[10px]" style={{ color: C.muted }}>
+        <span className="shrink-0 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
           {formatRelativeTime(entry.modified)}
         </span>
       </div>
-      <div className="truncate text-[10px]" style={{ paddingLeft: 26, color: C.muted }}>
+      <div className="truncate text-[10px]" style={{ paddingLeft: 26, color: 'var(--sol-muted)' }}>
         {secondary}
         {meta.length > 0 && ` · ${meta.join(' · ')}`}
       </div>
@@ -88,11 +87,11 @@ export function WorkspaceHistoryList({
   }
 
   if (loading && !history) {
-    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>Loading…</div>
+    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>Loading…</div>
   }
 
   if (!history || history.length === 0) {
-    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No past sessions</div>
+    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No past sessions</div>
   }
 
   return (

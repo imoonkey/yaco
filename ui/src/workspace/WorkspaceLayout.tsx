@@ -1,6 +1,5 @@
 import type { ReactNode, RefObject } from 'react'
 import { PaneSwitch } from '../components/PaneSwitch'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import { SectionHeader } from './SectionHeader'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
@@ -93,7 +92,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
       {isMobile ? (
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="shrink-0 border-b border-[var(--sol-base2)] px-3 py-1" style={{ backgroundColor: C.editorBg }}>
+          <div className="shrink-0 border-b border-[var(--sol-base2)] px-3 py-1" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
             <PaneSwitch
               options={[
                 { id: 'files', label: 'Browse' },
@@ -106,7 +105,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           </div>
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (
-              <div className="h-full flex flex-col overflow-y-auto" style={{ backgroundColor: C.bg }} onMouseDown={onFilesPaneFocus}>
+              <div className="h-full flex flex-col overflow-y-auto" style={{ backgroundColor: 'var(--sol-bg)' }} onMouseDown={onFilesPaneFocus}>
                 <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
                 {showProjects && <div className="shrink-0">{projectListBody}</div>}
 
@@ -128,7 +127,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
             )}
             {mobilePane === 'editor' && editorPane}
             {mobilePane === 'terminal' && (
-              <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: C.bg }}>
+              <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-bg)' }}>
                 {terminalContent}
               </div>
             )}
@@ -139,7 +138,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {/* Desktop sidebar: Projects + Explorer + Changes + Tasks */}
           {showSidebar && (
             <>
-              <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: C.bg, boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
+              <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: 'var(--sol-bg)', boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
                 <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
                 {showProjects && <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>}
 
@@ -210,7 +209,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               style={{
                 flex: !hasOpenTabs ? 1 : undefined,
                 width: hasOpenTabs ? right.size : undefined,
-                backgroundColor: C.bg,
+                backgroundColor: 'var(--sol-bg)',
                 boxShadow: '-1px 0 3px rgba(0,0,0,0.06)',
               }}
             >

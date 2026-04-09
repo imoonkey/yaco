@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 
 // --- Hook ---
 
@@ -98,8 +97,8 @@ export function Menu({ position, children }: {
       style={{
         left: position.x,
         top: position.y,
-        backgroundColor: C.editorBg,
-        border: `1px solid ${C.border}`,
+        backgroundColor: 'var(--sol-editor-bg)',
+        border: '1px solid var(--sol-border)',
       }}
       onClick={e => e.stopPropagation()}
     >
@@ -116,8 +115,8 @@ export function MenuItem({ label, danger, onClick }: {
   return (
     <div
       className="px-3 py-1 text-[12px] cursor-pointer"
-      style={{ color: danger ? SOLARIZED_LIGHT.red : C.text }}
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.hover)}
+      style={{ color: danger ? 'var(--sol-red)' : 'var(--sol-text)' }}
+      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')}
       onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       onClick={onClick}
     >
@@ -127,5 +126,5 @@ export function MenuItem({ label, danger, onClick }: {
 }
 
 export function MenuDivider() {
-  return <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />
+  return <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
 }

@@ -1,12 +1,11 @@
 import type { LayoutEdge } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
-import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 
 const COLORS = {
-  default: SOLARIZED_LIGHT.base1,
-  upstream: SOLARIZED_LIGHT.orange,
-  downstream: SOLARIZED_LIGHT.cyan,
-  cycle: SOLARIZED_LIGHT.red,
+  default: 'var(--sol-base1)',
+  upstream: 'var(--sol-orange)',
+  downstream: 'var(--sol-cyan)',
+  cycle: 'var(--sol-red)',
 }
 
 function isActiveEdge(edge: LayoutEdge, highlight: HighlightModel): boolean {
@@ -98,7 +97,7 @@ export function TaskGraphEdges({ edges, highlight }: {
                 y={mid.y - 4}
                 fontSize={10}
                 textAnchor="middle"
-                fill={SOLARIZED_LIGHT.base01}
+                fill={'var(--sol-base01)'}
                 opacity={edgeOpacity(edge, highlight)}
               >
                 ({edge.count})

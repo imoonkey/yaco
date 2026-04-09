@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+
 import { fuzzySearch, namePositions, type FuzzyResult } from '../lib/fuzzySearch'
 import { getCached, isCacheStale, fetchIndex } from './quickOpenIndex'
 
@@ -64,18 +64,18 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15%]" onClick={onClose}>
-      <div className="w-[500px] rounded-lg shadow-lg overflow-hidden" style={{ backgroundColor: C.editorBg, border: `1px solid ${C.border}` }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center" style={{ borderBottom: `1px solid ${C.border}` }}>
+      <div className="w-[500px] rounded-lg shadow-lg overflow-hidden" style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)' }} onClick={e => e.stopPropagation()}>
+        <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
           <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-            placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: C.textDark }} />
+            placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: 'var(--sol-text-dark)' }} />
           <button
             onClick={toggleIgnored}
             title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
             className="px-2 py-1 mr-1.5 rounded text-[10px] font-medium"
             style={{
-              backgroundColor: includeIgnored ? SOLARIZED_LIGHT.blue : 'transparent',
-              color: includeIgnored ? '#fff' : C.muted,
-              border: `1px solid ${includeIgnored ? SOLARIZED_LIGHT.blue : C.border}`,
+              backgroundColor: includeIgnored ? 'var(--sol-blue)' : 'transparent',
+              color: includeIgnored ? '#fff' : 'var(--sol-muted)',
+              border: includeIgnored ? '1px solid var(--sol-blue)' : '1px solid var(--sol-border)',
             }}
           >.gitignore</button>
         </div>
@@ -90,7 +90,7 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
               onHover={() => setSelectedIdx(i)}
             />
           ))}
-          {!loading && visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: C.muted }}>No files found</div>}
+          {!loading && visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-muted)' }}>No files found</div>}
         </div>
       </div>
     </div>
@@ -143,8 +143,8 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
   return (
     <div onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
-      style={!selected ? { color: C.text } : undefined}
-      onMouseEnter={e => { onHover(); if (!selected) e.currentTarget.style.backgroundColor = C.hover }}
+      style={!selected ? { color: 'var(--sol-text)' } : undefined}
+      onMouseEnter={e => { onHover(); if (!selected) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { if (!selected) e.currentTarget.style.backgroundColor = '' }}>
       <FileTypeIcon name={entry.name} />
       {hasQuery ? (
@@ -152,22 +152,22 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
           <HighlightedText
             text={entry.name}
             positions={namePositions(entry, positions)}
-            color={selected ? '' : C.textDark}
-            highlightColor={SOLARIZED_LIGHT.blue}
+            color={selected ? '' : 'var(--sol-text-dark)'}
+            highlightColor={'var(--sol-blue)'}
           />
           <span className="text-[10px]">
             <HighlightedText
               text={entry.path}
               positions={positions}
-              color={C.muted}
-              highlightColor={SOLARIZED_LIGHT.blue}
+              color={'var(--sol-muted)'}
+              highlightColor={'var(--sol-blue)'}
             />
           </span>
         </>
       ) : (
         <>
-          <span style={{ color: selected ? undefined : C.textDark }}>{entry.name}</span>
-          <span className="text-[10px]" style={{ color: C.muted }}>{entry.path}</span>
+          <span style={{ color: selected ? undefined : 'var(--sol-text-dark)' }}>{entry.name}</span>
+          <span className="text-[10px]" style={{ color: 'var(--sol-muted)' }}>{entry.path}</span>
         </>
       )}
     </div>

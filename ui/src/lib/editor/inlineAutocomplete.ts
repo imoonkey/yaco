@@ -15,7 +15,6 @@ import {
 } from '@codemirror/view'
 import type { DecorationSet, ViewUpdate } from '@codemirror/view'
 import { isolateHistory } from '@codemirror/commands'
-import { SOLARIZED_LIGHT } from '../solarizedLight'
 
 // --- Provider contract ---
 
@@ -47,7 +46,7 @@ const suggestionField = StateField.define<SuggestionState>({
 // --- Ghost text widgets ---
 
 const GHOST_STYLE = {
-  color: SOLARIZED_LIGHT.base1,
+  color: 'var(--sol-base1)',
   opacity: '0.7',
   fontStyle: 'italic',
 } as const

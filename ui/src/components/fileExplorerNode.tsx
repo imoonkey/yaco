@@ -1,6 +1,5 @@
 import { createContext, useContext, useRef, useEffect } from 'react'
 import type { NodeRendererProps } from 'react-arborist'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { FileTypeIcon, FolderIcon, GIT_COLORS } from './fileExplorerIcons'
 import type { ContextMenuHandlers } from './Menu'
 import type { FileNode } from '../types'
@@ -53,7 +52,7 @@ function EditingRow({ node, style, dragHandle, data, pendingNewId, cancelCreate 
           ref={inputRef}
           autoFocus
           className="flex-1 text-[12px] bg-transparent outline-none border-b min-w-0"
-          style={{ color: C.text, borderColor: C.accent }}
+          style={{ color: 'var(--sol-text)', borderColor: 'var(--sol-accent)' }}
           defaultValue={isNew ? '' : data.name}
           onBlur={() => { node.reset(); if (isNew) cancelCreate() }}
           onKeyDown={(e) => {
@@ -78,11 +77,11 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
   const isSelected = node.isSelected
   const isGitignored = d.gitignored === true
-  const nameColor = isGitignored ? C.muted
-    : gitStatus ? (GIT_COLORS[gitStatus] || C.text)
+  const nameColor = isGitignored ? 'var(--sol-muted)'
+    : gitStatus ? (GIT_COLORS[gitStatus] || 'var(--sol-text)')
     : folderChanged ? '#C4A241'
-    : isSelected ? C.accent
-    : C.text
+    : isSelected ? 'var(--sol-accent)'
+    : 'var(--sol-text)'
 
   if (node.isEditing) {
     return <EditingRow node={node} style={style} dragHandle={dragHandle} data={d} pendingNewId={pendingNewId} cancelCreate={cancelCreate} />
@@ -118,7 +117,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
         className={`flex w-full items-center gap-1 h-full px-1 rounded cursor-pointer text-[12px] ${isSelected ? 'bg-[var(--sol-blue)]/15' : ''}`}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
-        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = C.hover }}
+        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
         onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = '' }}
         {...bindContextMenu(d.path, d.type)}
       >

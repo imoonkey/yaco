@@ -1,5 +1,4 @@
 import { useMemo } from 'react'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { getIcon } from '../lib/setiIcons'
 
 // --- Git status colors ---
@@ -21,7 +20,7 @@ function getSetiIcon(name: string): { svg: string; color: string } {
   const cached = svgCache.get(name)
   if (cached) return cached
   const result = getIcon(name)
-  const entry = { svg: result.svg, color: SETI_COLORS[result.color] || C.muted }
+  const entry = { svg: result.svg, color: SETI_COLORS[result.color] || 'var(--sol-muted)' }
   svgCache.set(name, entry)
   return entry
 }

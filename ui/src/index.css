@@ -46,6 +46,7 @@
   --sol-sash: #584c27;
   --sol-hover-bg: #dfca8844;
   --sol-editor-fg: #657b83;
+  --sol-input-fg: #586e75;
   --sol-editor-cursor: #657b83;
   --sol-editor-selection-bg: #d5ccb5;
   --sol-editor-line-highlight-bg: #eee8d5;
@@ -103,6 +104,7 @@
   --sol-sash: #93a1a1;
   --sol-hover-bg: #004454aa;
   --sol-editor-fg: #839496;
+  --sol-input-fg: #93a1a1;
   --sol-editor-cursor: #d30102;
   --sol-editor-selection-bg: #274642;
   --sol-editor-line-highlight-bg: #073642;
@@ -139,6 +141,7 @@
   --color-sol-bg: var(--sol-bg);
   --color-sol-editor-bg: var(--sol-editor-bg);
   --color-sol-editor-fg: var(--sol-editor-fg);
+  --color-sol-input-fg: var(--sol-input-fg);
   --color-sol-header-bg: var(--sol-header-bg);
   --color-sol-border: var(--sol-border);
   --color-sol-text: var(--sol-text);

@@ -1,5 +1,4 @@
 import { useRef, useLayoutEffect } from 'react'
-import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { TaskGraphModel } from './taskGraphModel'
 import type { ViewportTransform } from '../hooks/usePanZoom'
 
@@ -75,8 +74,8 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
         position: 'absolute',
         left: 0,
         top: 0,
-        background: SOLARIZED_LIGHT.base3,
-        border: `1px solid ${SOLARIZED_LIGHT.border}`,
+        background: 'var(--sol-base3)',
+        border: '1px solid var(--sol-border)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
         padding: '8px 12px',
         maxWidth: 320,
@@ -85,13 +84,13 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
         zIndex: 30,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: SOLARIZED_LIGHT.base02 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--sol-base02)' }}>
         {title}
       </div>
       {description && (
         <div style={{
           fontSize: 12,
-          color: SOLARIZED_LIGHT.base00,
+          color: 'var(--sol-base00)',
           marginTop: 4,
           overflow: 'hidden',
           display: '-webkit-box',
@@ -102,7 +101,7 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
         </div>
       )}
       {progress && (
-        <div style={{ fontSize: 11, color: SOLARIZED_LIGHT.base1, marginTop: 4 }}>
+        <div style={{ fontSize: 11, color: 'var(--sol-base1)', marginTop: 4 }}>
           {progress}
         </div>
       )}

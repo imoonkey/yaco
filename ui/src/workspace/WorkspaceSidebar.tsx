@@ -1,5 +1,4 @@
 import { FileTypeIcon, FolderIcon, GIT_COLORS } from '../components/fileExplorerIcons'
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { GitChange } from '../types'
 
 export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: { change: GitChange; isActive: boolean; onActivate: () => void; onFolderClick?: (dir: string) => void }) {
@@ -11,14 +10,14 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
     <div onClick={onActivate}
       className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : ''}`}
       title={cleanPath}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
+      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
       {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}
       <div className="min-w-0 flex-1 overflow-hidden leading-tight">
-        <div className="truncate" style={{ color: GIT_COLORS[change.status] || C.text }}>{name}</div>
+        <div className="truncate" style={{ color: GIT_COLORS[change.status] || 'var(--sol-text)' }}>{name}</div>
         {dir && <div
           className="truncate pt-0.5 text-[10px] hover:underline"
-          style={{ color: C.muted }}
+          style={{ color: 'var(--sol-muted)' }}
           onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
         >{dir}</div>}
       </div>

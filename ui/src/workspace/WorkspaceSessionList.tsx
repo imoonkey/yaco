@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { ProviderIcon } from '../components/SessionIcons'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+
 import { Menu, MenuItem, useContextMenu } from '../components/Menu'
 import type { AgentSession } from '../types'
 
@@ -70,8 +70,8 @@ export function SessionItem({
       onDrop={onDrop}
       {...menu.bind()}
       className={`flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
-      style={{ ...(isActive ? {} : { color: C.text }), opacity: dragging ? 0.55 : 1 }}
-      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = C.hover }}
+      style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1 }}
+      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
       <div className="flex items-center gap-2">
         {onPin && (
@@ -79,7 +79,7 @@ export function SessionItem({
             onClick={e => { e.stopPropagation(); onPin() }}
             className="shrink-0 text-[10px] cursor-pointer opacity-40 hover:opacity-100"
             title={pinned ? 'Unpin' : 'Pin to top'}
-            style={{ color: pinned ? SOLARIZED_LIGHT.blue : C.muted, opacity: pinned ? 0.9 : undefined }}
+            style={{ color: pinned ? 'var(--sol-blue)' : 'var(--sol-muted)', opacity: pinned ? 0.9 : undefined }}
           >
             &#x25C6;
           </button>
@@ -98,18 +98,18 @@ export function SessionItem({
             }}
             onClick={e => e.stopPropagation()}
             className="min-w-0 flex-1 bg-transparent border-b outline-none text-[12px]"
-            style={{ borderColor: C.accent, color: 'inherit' }}
+            style={{ borderColor: 'var(--sol-accent)', color: 'inherit' }}
           />
         ) : (
           <span className="min-w-0 flex-1 truncate">
             {session.name}
-            {pendingName && <span style={{ color: C.muted }}>{` → ${pendingName}`}</span>}
+            {pendingName && <span style={{ color: 'var(--sol-muted)' }}>{` → ${pendingName}`}</span>}
           </span>
         )}
         {!!unreadCount && unreadCount > 0 && (
           <span
             className="shrink-0 min-w-[18px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
-            style={{ backgroundColor: SOLARIZED_LIGHT.orange }}
+            style={{ backgroundColor: 'var(--sol-orange)' }}
           >
             {unreadCount}
           </span>
@@ -131,7 +131,7 @@ export function SessionItem({
             ref={summaryRef}
             className="truncate text-[10px]"
 
-            style={{ color: C.muted }}
+            style={{ color: 'var(--sol-muted)' }}
             onMouseEnter={() => {
               const el = summaryRef.current
               if (el && el.scrollWidth > el.clientWidth) {
@@ -148,7 +148,7 @@ export function SessionItem({
           {showTip && (
             <div
               className="absolute left-0 top-full mt-1 z-40 px-2 py-1 rounded shadow-lg text-[11px] whitespace-pre-wrap break-words"
-              style={{ backgroundColor: C.editorBg, border: `1px solid ${C.border}`, color: C.text }}
+              style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)', color: 'var(--sol-text)' }}
               onMouseEnter={() => { if (tipTimer.current) clearTimeout(tipTimer.current) }}
               onMouseLeave={() => setShowTip(false)}
             >

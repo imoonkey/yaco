@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../../lib/solarizedLight'
+
 import type { ParsedFileDiff, DiffRow, DiffSegment } from '../../lib/parseDiff'
 import type { DiffHunk } from '../../lib/parseDiff'
 
@@ -27,7 +27,7 @@ const COLORS = {
   addWord: 'rgba(133,153,0,0.25)',
   delWord: 'rgba(220,50,47,0.25)',
   hunkBg: 'rgba(38,139,210,0.08)',
-  gapBorder: C.border,
+  gapBorder: 'var(--sol-border)',
 } as const
 
 // --- Context collapse ---
@@ -94,7 +94,7 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
         width: 34,
         textAlign: 'right',
         paddingRight: 6,
-        color: SOLARIZED_LIGHT.base1,
+        color: 'var(--sol-base1)',
         userSelect: 'none',
         flexShrink: 0,
         ...style,
@@ -109,10 +109,10 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
 
 function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new' }) {
   let bg = ''
-  let color = C.textDim
+  let color = 'var(--sol-text-dim)'
 
-  if (row.kind === 'added') { bg = COLORS.addBg; color = SOLARIZED_LIGHT.green }
-  else if (row.kind === 'deleted') { bg = COLORS.delBg; color = SOLARIZED_LIGHT.red }
+  if (row.kind === 'added') { bg = COLORS.addBg; color = 'var(--sol-green)' }
+  else if (row.kind === 'deleted') { bg = COLORS.delBg; color = 'var(--sol-red)' }
 
   // Single-column mode: all-added or all-deleted files only need one line number
   if (singleCol) {
@@ -123,13 +123,13 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
     if (row.kind === 'modified') {
       return (
         <>
-          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: SOLARIZED_LIGHT.red, minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: 'var(--sol-red)', minHeight: 20 }}>
             <LineNum num={row.oldLine} />
             <span style={{ flex: 1, paddingRight: 12 }}>
               <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
             </span>
           </div>
-          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: SOLARIZED_LIGHT.green, minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: 'var(--sol-green)', minHeight: 20 }}>
             <LineNum num={row.newLine} />
             <span style={{ flex: 1, paddingRight: 12 }}>
               <Segments segments={row.newSegments} highlight={COLORS.addWord} />
@@ -151,14 +151,14 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
     <>
       {row.kind === 'modified' ? (
         <>
-          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: SOLARIZED_LIGHT.red, minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: 'var(--sol-red)', minHeight: 20 }}>
             <LineNum num={row.oldLine} />
             <LineNum num={null} />
             <span style={{ flex: 1, paddingRight: 12 }}>
               <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
             </span>
           </div>
-          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: SOLARIZED_LIGHT.green, minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: 'var(--sol-green)', minHeight: 20 }}>
             <LineNum num={null} />
             <LineNum num={row.newLine} />
             <span style={{ flex: 1, paddingRight: 12 }}>
@@ -184,16 +184,16 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
 // --- Split row ---
 
 function SplitRow({ row }: { row: DiffRow }) {
-  const placeholderBg = SOLARIZED_LIGHT.base2
+  const placeholderBg = 'var(--sol-base2)'
 
   if (row.kind === 'context') {
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
         <LineNum num={row.oldLine} />
-        <span style={{ color: C.textDim, paddingRight: 8 }}>{row.text}</span>
-        <div style={{ backgroundColor: C.border }} />
+        <span style={{ color: 'var(--sol-text-dim)', paddingRight: 8 }}>{row.text}</span>
+        <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={row.newLine} />
-        <span style={{ color: C.textDim, paddingRight: 8 }}>{row.text}</span>
+        <span style={{ color: 'var(--sol-text-dim)', paddingRight: 8 }}>{row.text}</span>
       </div>
     )
   }
@@ -202,8 +202,8 @@ function SplitRow({ row }: { row: DiffRow }) {
     return (
       <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
         <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
-        <span style={{ backgroundColor: COLORS.delBg, color: SOLARIZED_LIGHT.red, paddingRight: 8 }}>{row.text}</span>
-        <div style={{ backgroundColor: C.border }} />
+        <span style={{ backgroundColor: COLORS.delBg, color: 'var(--sol-red)', paddingRight: 8 }}>{row.text}</span>
+        <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={null} style={{ backgroundColor: placeholderBg }} />
         <span style={{ backgroundColor: placeholderBg }} />
       </div>
@@ -215,9 +215,9 @@ function SplitRow({ row }: { row: DiffRow }) {
       <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
         <LineNum num={null} style={{ backgroundColor: placeholderBg }} />
         <span style={{ backgroundColor: placeholderBg }} />
-        <div style={{ backgroundColor: C.border }} />
+        <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={row.newLine} style={{ backgroundColor: COLORS.addBg }} />
-        <span style={{ backgroundColor: COLORS.addBg, color: SOLARIZED_LIGHT.green, paddingRight: 8 }}>{row.text}</span>
+        <span style={{ backgroundColor: COLORS.addBg, color: 'var(--sol-green)', paddingRight: 8 }}>{row.text}</span>
       </div>
     )
   }
@@ -226,12 +226,12 @@ function SplitRow({ row }: { row: DiffRow }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
       <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
-      <span style={{ backgroundColor: COLORS.delBg, color: SOLARIZED_LIGHT.red, paddingRight: 8 }}>
+      <span style={{ backgroundColor: COLORS.delBg, color: 'var(--sol-red)', paddingRight: 8 }}>
         <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
       </span>
-      <div style={{ backgroundColor: C.border }} />
+      <div style={{ backgroundColor: 'var(--sol-border)' }} />
       <LineNum num={row.newLine} style={{ backgroundColor: COLORS.addBg }} />
-      <span style={{ backgroundColor: COLORS.addBg, color: SOLARIZED_LIGHT.green, paddingRight: 8 }}>
+      <span style={{ backgroundColor: COLORS.addBg, color: 'var(--sol-green)', paddingRight: 8 }}>
         <Segments segments={row.newSegments} highlight={COLORS.addWord} />
       </span>
     </div>
@@ -245,12 +245,12 @@ function HunkHeader({ hunk, isActive }: { hunk: DiffHunk; isActive: boolean }) {
     <div
       style={{
         backgroundColor: COLORS.hunkBg,
-        color: SOLARIZED_LIGHT.blue,
+        color: 'var(--sol-blue)',
         padding: '2px 12px',
         fontSize: 12,
         fontFamily: 'monospace',
-        borderTop: isActive ? `2px solid ${SOLARIZED_LIGHT.blue}` : `1px solid ${C.border}`,
-        borderBottom: `1px solid ${C.border}`,
+        borderTop: isActive ? `2px solid ${'var(--sol-blue)'}` : `1px solid ${'var(--sol-border)'}`,
+        borderBottom: `1px solid ${'var(--sol-border)'}`,
       }}
     >
       {hunk.header}
@@ -265,7 +265,7 @@ function InterHunkGap({ lineCount }: { lineCount: number }) {
     <div
       style={{
         textAlign: 'center',
-        color: SOLARIZED_LIGHT.base1,
+        color: 'var(--sol-base1)',
         fontSize: 11,
         padding: '4px 0',
         borderTop: `1px dashed ${COLORS.gapBorder}`,
@@ -285,7 +285,7 @@ function CollapsedContextRow({ count, onExpand }: { count: number; onExpand: () 
     <div
       style={{
         textAlign: 'center',
-        color: SOLARIZED_LIGHT.base1,
+        color: 'var(--sol-base1)',
         fontSize: 11,
         padding: '2px 0',
         cursor: 'pointer',
@@ -325,16 +325,16 @@ function DiffToolbar({
     padding: '0 6px',
     height: 22,
     fontSize: 11,
-    border: `1px solid ${C.border}`,
+    border: `1px solid ${'var(--sol-border)'}`,
     borderRadius: 3,
     cursor: 'pointer',
     backgroundColor: 'transparent',
-    color: C.text,
+    color: 'var(--sol-text)',
   }
 
   const activeBtnStyle: React.CSSProperties = {
     ...btnStyle,
-    backgroundColor: C.bg,
+    backgroundColor: 'var(--sol-bg)',
     fontWeight: 600,
   }
 
@@ -346,17 +346,17 @@ function DiffToolbar({
         gap: 12,
         height: 28,
         padding: '0 12px',
-        backgroundColor: C.headerBg,
-        borderBottom: `1px solid ${C.border}`,
+        backgroundColor: 'var(--sol-header-bg)',
+        borderBottom: `1px solid ${'var(--sol-border)'}`,
         fontSize: 12,
-        color: C.text,
+        color: 'var(--sol-text)',
         flexShrink: 0,
       }}
     >
       <span>
-        <span style={{ color: SOLARIZED_LIGHT.green }}>+{parsed.stats.added}</span>
+        <span style={{ color: 'var(--sol-green)' }}>+{parsed.stats.added}</span>
         {' '}
-        <span style={{ color: SOLARIZED_LIGHT.red }}>-{parsed.stats.deleted}</span>
+        <span style={{ color: 'var(--sol-red)' }}>-{parsed.stats.deleted}</span>
       </span>
 
       {!isMobile && (
@@ -380,7 +380,7 @@ function DiffToolbar({
         <button style={btnStyle} onClick={onPrev} disabled={hunkCount === 0}>&#8593;</button>
         <button style={btnStyle} onClick={onNext} disabled={hunkCount === 0}>&#8595;</button>
         {hunkCount > 0 && (
-          <span style={{ fontSize: 11, color: C.textDim }}>
+          <span style={{ fontSize: 11, color: 'var(--sol-text-dim)' }}>
             Change {activeIndex + 1} of {hunkCount}
           </span>
         )}
@@ -475,7 +475,7 @@ export function DiffTab({
   // Binary placeholder
   if (parsed.mode === 'binary') {
     return (
-      <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>
+      <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
         Binary file changed
       </div>
     )
@@ -484,7 +484,7 @@ export function DiffTab({
   // Empty diff
   if (hunkCount === 0) {
     return (
-      <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>
+      <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
         No changes
       </div>
     )
@@ -510,7 +510,7 @@ export function DiffTab({
           fontFamily: 'monospace',
           fontSize: 12,
           lineHeight: '1.6',
-          backgroundColor: C.editorBg,
+          backgroundColor: 'var(--sol-editor-bg)',
         }}
       >
         {parsed.hunks.map((hunk, hunkIdx) => {

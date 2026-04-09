@@ -10,7 +10,6 @@ import { ComposeTray } from '../components/ComposeTray'
 import { ProviderIcon } from '../components/SessionIcons'
 import { FileExplorer, NewFileIcon, NewFolderIcon, CollapseAllIcon } from '../components/FileExplorer'
 import type { FileExplorerHandle } from '../components/FileExplorer'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { clampLine } from './markdown'
 import { useResize } from './useResize'
 import { FileSearch } from './WorkspaceSearch'
@@ -418,7 +417,7 @@ export function Workspace({
           />
         )
       })}
-      {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: C.muted }}>No changes</div>}
+      {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No changes</div>}
     </>
   )
 
@@ -426,18 +425,18 @@ export function Workspace({
     <div
       className="rounded px-2 py-2"
       style={{
-        backgroundColor: activeTasksTab ? `${SOLARIZED_LIGHT.blue}15` : C.bg,
-        border: `1px solid ${activeTasksTab ? `${SOLARIZED_LIGHT.blue}60` : C.border}`,
+        backgroundColor: activeTasksTab ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
+        border: activeTasksTab ? '1px solid color-mix(in srgb, var(--sol-blue) 37%, transparent)' : '1px solid var(--sol-border)',
       }}
     >
       <button
         onClick={nav.handleOpenTasks}
         className="text-[12px] font-medium cursor-pointer transition-colors"
-        style={{ color: activeTasksTab ? C.textDark : C.text }}
+        style={{ color: activeTasksTab ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}
       >
         {activeTasksTab ? 'Task graph open' : 'Open task graph'}
       </button>
-      <div className="pt-0.5 text-[10px]" style={{ color: C.muted }}>
+      <div className="pt-0.5 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
         View `doc/todo/tasks.json` in the main pane.
       </div>
     </div>
@@ -453,17 +452,17 @@ export function Workspace({
 
   const sessionActions = (
     <div className="flex items-center gap-2">
-      <div className="flex text-[10px]" style={{ color: C.muted }}>
+      <div className="flex text-[10px]" style={{ color: 'var(--sol-muted)' }}>
         <button
           onClick={() => setSessionTab('live')}
           className="px-1 cursor-pointer"
-          style={{ color: sessionTab === 'live' ? C.textDark : C.muted, fontWeight: sessionTab === 'live' ? 600 : 400 }}
+          style={{ color: sessionTab === 'live' ? 'var(--sol-text-dark)' : 'var(--sol-muted)', fontWeight: sessionTab === 'live' ? 600 : 400 }}
         >Live</button>
-        <span style={{ color: C.muted }}>|</span>
+        <span style={{ color: 'var(--sol-muted)' }}>|</span>
         <button
           onClick={() => setSessionTab('history')}
           className="px-1 cursor-pointer"
-          style={{ color: sessionTab === 'history' ? C.textDark : C.muted, fontWeight: sessionTab === 'history' ? 600 : 400 }}
+          style={{ color: sessionTab === 'history' ? 'var(--sol-text-dark)' : 'var(--sol-muted)', fontWeight: sessionTab === 'history' ? 600 : 400 }}
         >History</button>
       </div>
       {sessionTab === 'live' && (
@@ -480,7 +479,7 @@ export function Workspace({
           onClick={() => history.refresh()}
           className="text-[10px] px-1 cursor-pointer opacity-70 hover:opacity-100"
           title="Refresh history"
-          style={{ color: C.muted }}
+          style={{ color: 'var(--sol-muted)' }}
         >↻</button>
       )}
     </div>
@@ -504,7 +503,7 @@ export function Workspace({
     />
   )
 
-  const divider = <div className="my-1" style={{ borderTop: `1px solid ${C.border}` }} />
+  const divider = <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
   const liveSessionsBody = (
     <>
       {pinned.map(s => renderSessionItem(s, true))}
@@ -512,7 +511,7 @@ export function Workspace({
       {unpinnedProcessing.map(s => renderSessionItem(s))}
       {unpinnedProcessing.length > 0 && unpinnedIdle.length > 0 && divider}
       {unpinnedIdle.map(s => renderSessionItem(s))}
-      {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>No live sessions</div>}
+      {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No live sessions</div>}
     </>
   )
 
@@ -538,7 +537,7 @@ export function Workspace({
   )
 
   const editorPane = (
-    <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: C.editorBg }} onMouseDown={() => setFocusTarget('editor')}>
+    <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={() => setFocusTarget('editor')}>
       <WorkspaceTabBar
         openTabs={openTabs}
         activeTab={activeTab}
@@ -579,8 +578,8 @@ export function Workspace({
               border: 'none',
               borderRadius: 3,
               cursor: 'pointer',
-              background: layout.autocompleteEnabled ? `${SOLARIZED_LIGHT.blue}15` : 'transparent',
-              color: layout.autocompleteEnabled ? C.text : C.textDim,
+              background: layout.autocompleteEnabled ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'transparent',
+              color: layout.autocompleteEnabled ? 'var(--sol-text)' : 'var(--sol-text-dim)',
               opacity: layout.autocompleteEnabled ? 1 : 0.6,
             }}
           >
@@ -639,7 +638,7 @@ export function Workspace({
 
   const terminalContent = attachedSession ? (
     <>
-      <div className="h-8 flex items-center gap-2 px-2 text-[12px] shrink-0" style={{ backgroundColor: C.headerBg, borderBottom: `1px solid ${C.border}`, color: C.textBrown }}>
+      <div className="h-8 flex items-center gap-2 px-2 text-[12px] shrink-0" style={{ backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)', color: 'var(--sol-text-brown)' }}>
         {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
         <span className="truncate flex-1 font-semibold">{attachedSession}</span>
         {voiceBridge.terminalVoiceEligible && (
@@ -670,7 +669,7 @@ export function Workspace({
       </div>
     </>
   ) : (
-    <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a session to attach terminal</div>
+    <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-muted)' }}>Select a session to attach terminal</div>
   )
 
   return (

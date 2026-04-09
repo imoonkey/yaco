@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react'
 import { writeTextToClipboard } from '../lib/clipboard'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
 import type { Project } from '../types'
 
@@ -68,7 +67,7 @@ export function ProjectList({
               {unreadCount > 0 && (
                 <span
                   className="min-w-[16px] h-[18px] rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1"
-                  style={{ backgroundColor: SOLARIZED_LIGHT.orange }}
+                  style={{ backgroundColor: 'var(--sol-orange)' }}
                 >
                   {unreadCount}
                 </span>
@@ -86,7 +85,7 @@ export function ProjectList({
         )
       })}
       {projects.length === 0 && (
-        <div className="px-2 py-3 text-[11px] text-center" style={{ color: C.muted }}>
+        <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>
           No projects
         </div>
       )}

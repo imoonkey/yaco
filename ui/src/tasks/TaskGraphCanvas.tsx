@@ -1,5 +1,4 @@
 import type { GraphLayout, TaskGraphModel } from './taskGraphModel'
-import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { HighlightModel } from './taskGraphSelection'
 import type { Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
@@ -39,7 +38,7 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, transform, high
       {...handlers}
     >
       <g transform={transform}>
-        <style>{`.tg-focusable { outline: none; } .tg-focusable:focus-visible { outline: 2px solid ${SOLARIZED_LIGHT.focusBorder}; outline-offset: 2px; }`}</style>
+        <style>{`.tg-focusable { outline: none; } .tg-focusable:focus-visible { outline: 2px solid var(--sol-focus-border); outline-offset: 2px; }`}</style>
         {/* Layer 1: Indentation guide lines */}
         <g data-layer="guides">
           {layout.groups.map(group => (

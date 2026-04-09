@@ -1,5 +1,4 @@
 import { useState, useRef, useCallback, useEffect, memo } from 'react'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 
 // --- Types ---
 
@@ -284,7 +283,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
     <div className="flex flex-col h-full text-[11px]" onKeyDown={handleKeyDown}>
       {/* Search input */}
       <div className="px-2 pt-1.5 pb-1">
-        <div className="flex items-center gap-1 rounded px-1.5 py-0.5" style={{ backgroundColor: SOLARIZED_LIGHT.inputBackground, border: `1px solid ${C.border}` }}>
+        <div className="flex items-center gap-1 rounded px-1.5 py-0.5" style={{ backgroundColor: 'var(--sol-input-bg)', border: '1px solid var(--sol-border)' }}>
           <input
             ref={inputRef}
             type="text"
@@ -292,11 +291,11 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
             onChange={handleQueryChange}
             placeholder="Search..."
             className="flex-1 min-w-0 bg-transparent border-none outline-none text-[11px]"
-            style={{ color: SOLARIZED_LIGHT.inputForeground }}
+            style={{ color: 'var(--sol-input-fg)' }}
             spellCheck={false}
           />
           {query && (
-            <button onClick={handleClear} className="text-[10px] px-0.5 cursor-pointer opacity-60 hover:opacity-100 leading-none" style={{ color: C.text }}>
+            <button onClick={handleClear} className="text-[10px] px-0.5 cursor-pointer opacity-60 hover:opacity-100 leading-none" style={{ color: 'var(--sol-text)' }}>
               x
             </button>
           )}
@@ -314,7 +313,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
           onChange={handleGlobChange}
           placeholder="*.ts"
           className="flex-1 min-w-0 rounded px-1 py-0 text-[10px] bg-transparent border outline-none"
-          style={{ color: SOLARIZED_LIGHT.inputForeground, borderColor: C.border }}
+          style={{ color: 'var(--sol-input-fg)', borderColor: 'var(--sol-border)' }}
           spellCheck={false}
         />
       </div>
@@ -349,9 +348,9 @@ function ToggleBtn({ label, active, title, onClick }: { label: string; active: b
       title={title}
       className="px-1 py-0 rounded text-[10px] font-mono cursor-pointer transition-colors"
       style={{
-        backgroundColor: active ? `${SOLARIZED_LIGHT.blue}25` : 'transparent',
-        color: active ? SOLARIZED_LIGHT.blue : C.muted,
-        border: `1px solid ${active ? `${SOLARIZED_LIGHT.blue}50` : C.border}`,
+        backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 15%, transparent)' : 'transparent',
+        color: active ? 'var(--sol-blue)' : 'var(--sol-muted)',
+        border: active ? '1px solid color-mix(in srgb, var(--sol-blue) 31%, transparent)' : '1px solid var(--sol-border)',
       }}
     >
       {label}
@@ -376,14 +375,14 @@ function FileGroupView({ group, expanded, onToggle, onMatchClick, focusIndex, fl
         data-focus-idx={fileIdx}
         className="flex items-center gap-1 px-2 py-0.5 cursor-pointer select-none"
         style={{
-          backgroundColor: isFocused ? C.hover : undefined,
-          color: C.textDark,
+          backgroundColor: isFocused ? 'var(--sol-hover-bg)' : undefined,
+          color: 'var(--sol-text-dark)',
         }}
         onClick={onToggle}
       >
         <span className="text-[9px] w-3 text-center shrink-0">{expanded ? '▾' : '▸'}</span>
         <span className="truncate flex-1 font-medium">{group.file}</span>
-        <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: C.muted }}>{group.matches.length}</span>
+        <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: 'var(--sol-muted)' }}>{group.matches.length}</span>
       </div>
       {expanded && group.matches.map((m, mi) => {
         const matchIdx = flatItems.findIndex(i => i.kind === 'match' && i.file === group.file && i.line === m.line)
@@ -418,15 +417,15 @@ function MatchLine({ match, focused, dataIdx, onClick }: {
       data-focus-idx={dataIdx}
       className="flex items-baseline gap-1 pl-6 pr-2 py-px cursor-pointer truncate"
       style={{
-        backgroundColor: focused ? C.hover : undefined,
-        color: C.text,
+        backgroundColor: focused ? 'var(--sol-hover-bg)' : undefined,
+        color: 'var(--sol-text)',
       }}
       onClick={onClick}
     >
-      <span className="shrink-0 text-[10px] w-7 text-right" style={{ color: C.muted }}>{match.line}</span>
+      <span className="shrink-0 text-[10px] w-7 text-right" style={{ color: 'var(--sol-muted)' }}>{match.line}</span>
       <span className="truncate">
         {before}
-        <span style={{ backgroundColor: `${SOLARIZED_LIGHT.yellow}30`, color: SOLARIZED_LIGHT.base02, fontWeight: 600 }}>{highlighted}</span>
+        <span style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 19%, transparent)', color: 'var(--sol-base02)', fontWeight: 600 }}>{highlighted}</span>
         {after}
       </span>
     </div>
@@ -437,7 +436,7 @@ function StatusBar({ status }: { status: SearchStatus }) {
   if (status.state === 'idle') return null
 
   let text: string
-  let color = C.muted
+  let color: string = 'var(--sol-muted)'
 
   switch (status.state) {
     case 'searching':
@@ -452,12 +451,12 @@ function StatusBar({ status }: { status: SearchStatus }) {
       break
     case 'error':
       text = status.message
-      color = SOLARIZED_LIGHT.red
+      color = 'var(--sol-red)'
       break
   }
 
   return (
-    <div className="shrink-0 px-2 py-1 text-[10px] truncate" style={{ color, borderTop: `1px solid ${C.border}` }}>
+    <div className="shrink-0 px-2 py-1 text-[10px] truncate" style={{ color, borderTop: '1px solid var(--sol-border)' }}>
       {text}
     </div>
   )

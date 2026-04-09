@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import { createFile, saveFileContent } from '../hooks/useApi'
 import { TASKS_FILE_PATH, useTaskGraph } from '../hooks/useTaskGraph'
 import { usePanZoom } from '../hooks/usePanZoom'
@@ -162,7 +161,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
       />
 
       {warnings.length > 0 && (
-        <div className="px-3 py-1 text-[11px]" style={{ backgroundColor: SOLARIZED_LIGHT.yellow + '22', color: SOLARIZED_LIGHT.yellow }}>
+        <div className="px-3 py-1 text-[11px]" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 13%, transparent)', color: 'var(--sol-yellow)' }}>
           {warnings.length} warning{warnings.length > 1 ? 's' : ''}: {warnings[0]}
           {warnings.length > 1 && ` (+${warnings.length - 1} more)`}
         </div>

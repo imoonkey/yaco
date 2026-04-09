@@ -9,7 +9,6 @@ import {
 import type { DecorationSet } from '@codemirror/view'
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state'
 import type { DiffHunk, ChangeType, DiffRow } from './parseDiff'
-import { SOLARIZED_LIGHT } from './solarizedLight'
 
 // --- State Effects ---
 
@@ -175,9 +174,9 @@ const BADGE_LABELS: Record<ChangeType, string> = {
 }
 
 const BADGE_COLORS: Record<ChangeType, string> = {
-  added: SOLARIZED_LIGHT.green,
-  modified: SOLARIZED_LIGHT.blue,
-  deleted: SOLARIZED_LIGHT.red,
+  added: 'var(--sol-green)',
+  modified: 'var(--sol-blue)',
+  deleted: 'var(--sol-red)',
 }
 
 function renderWordSegments(parent: HTMLElement, segments: { text: string; kind: string }[], highlight: string) {

@@ -1,4 +1,3 @@
-import { SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import { isFileTab } from '../hooks/workspaceTypes'
 
 export function WorkspaceBreadcrumbs({
@@ -19,7 +18,7 @@ export function WorkspaceBreadcrumbs({
   return (
     <div
       className="flex items-center px-3 shrink-0 overflow-x-auto"
-      style={{ height: 24, fontSize: 12, color: C.muted, backgroundColor: C.editorBg, borderBottom: `1px solid ${C.border}` }}
+      style={{ height: 24, fontSize: 12, color: 'var(--sol-muted)', backgroundColor: 'var(--sol-editor-bg)', borderBottom: '1px solid var(--sol-border)' }}
     >
       {dirSegments.map((seg, i) => {
         const dirPath = segments.slice(0, i + 1).join('/')
@@ -27,18 +26,18 @@ export function WorkspaceBreadcrumbs({
           <span key={dirPath} className="flex items-center shrink-0">
             <span
               className="cursor-pointer transition-colors"
-              style={{ color: C.muted }}
-              onMouseEnter={e => (e.currentTarget.style.color = C.accent)}
-              onMouseLeave={e => (e.currentTarget.style.color = C.muted)}
+              style={{ color: 'var(--sol-muted)' }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-accent)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--sol-muted)')}
               onClick={() => onNavigateDir(dirPath)}
             >
               {seg}
             </span>
-            <span className="mx-1" style={{ color: C.muted }}>›</span>
+            <span className="mx-1" style={{ color: 'var(--sol-muted)' }}>›</span>
           </span>
         )
       })}
-      <span style={{ color: C.textDim }}>{fileName}</span>
+      <span style={{ color: 'var(--sol-text-dim)' }}>{fileName}</span>
     </div>
   )
 }

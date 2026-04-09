@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
+
 import { isDiffTab, isFileTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { useContextMenu, Menu, MenuItem } from '../components/Menu'
@@ -60,16 +60,16 @@ function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m:
     : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
 
   return (
-    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: C.border }}>
+    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: 'var(--sol-border)' }}>
       {modes.map(({ value, label }) => {
         const active = mode === value
         return (
           <button key={value} onClick={() => onChange(value)}
             className="text-[10px] px-2 py-0.5 cursor-pointer"
             style={{
-              backgroundColor: active ? `${SOLARIZED_LIGHT.blue}15` : C.bg,
-              color: active ? C.accent : C.text,
-              borderRight: value !== modes[modes.length - 1].value ? `1px solid ${C.border}` : undefined,
+              backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
+              color: active ? 'var(--sol-accent)' : 'var(--sol-text)',
+              borderRight: value !== modes[modes.length - 1].value ? '1px solid var(--sol-border)' : undefined,
             }}>
             {label}
           </button>
@@ -116,9 +116,9 @@ export function WorkspaceTabBar({
 
   return (
     <>
-    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 32, backgroundColor: C.bg, borderBottom: `1px solid ${C.border}` }}>
+    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 32, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}>
       {openTabs.length === 0 ? (
-        <span className="px-4 text-[11px] shrink-0" style={{ color: C.textDim }}>No files open</span>
+        <span className="px-4 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)' }}>No files open</span>
       ) : openTabs.map(tab => {
         const parentDirSuffix = disambigSuffixes.get(tab)
         const isActive = tab === activeTab
@@ -135,24 +135,24 @@ export function WorkspaceTabBar({
             data-testid="tab"
             className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
             style={{
-              backgroundColor: isActive ? C.editorBg : C.bg, color: isActive ? C.textDark : C.textDim,
-              borderRight: `1px solid ${C.border}`, borderTop: isActive ? `2px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : isTasks ? C.accent : C.text}` : '2px solid transparent',
-              borderBottom: isActive ? `1px solid ${C.editorBg}` : `1px solid ${C.border}`, marginBottom: -1,
+              backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
+              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
+              borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)', marginBottom: -1,
               fontStyle: isPreview ? 'italic' : undefined,
             }} title={tabTitle(tab)}>
             {!isTasks && !isDiff && <FileTypeIcon name={tab} />}
             <span className="truncate max-w-[120px]">{tabName(tab)}</span>
-            {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: C.muted }}>{parentDirSuffix}</span>}
+            {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-muted)' }}>{parentDirSuffix}</span>}
             {isConflict ? (
               <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[12px]" style={{ color: '#C4A241' }} title="File changed on disk">&#9888;</span>
             ) : isDirty ? (
               <span className="w-4 h-4 flex items-center justify-center shrink-0">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: C.textDark }} />
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
               </span>
             ) : (
               <button onClick={(e) => onCloseTab(tab, e)}
-                className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-[10px] cursor-pointer" style={{ color: C.textDim }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = C.hover)} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>×</button>
+                className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-[10px] cursor-pointer" style={{ color: 'var(--sol-text-dim)' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>×</button>
             )}
           </div>
         )

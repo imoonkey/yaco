@@ -5,7 +5,6 @@ import { AddProjectDialog } from './components/AddProjectDialog'
 import { useBrowserNotifications } from './hooks/useBrowserNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
-import { SOLARIZED_LIGHT as S, SOLARIZED_LIGHT_UI as C } from './lib/solarizedLight'
 import { toggleTheme } from './lib/theme'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
@@ -41,7 +40,7 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   return next
 }
 
-const CLOCK_PILL = { backgroundColor: S.base02, color: S.base2 }
+const CLOCK_PILL = { backgroundColor: 'var(--sol-base02)', color: 'var(--sol-base2)' }
 
 function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
   const [now, setNow] = useState(() => new Date())
@@ -81,7 +80,7 @@ function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
 
   return (
     <span className="flex items-center gap-1.5">
-      <span className="text-[13px] tracking-tight" style={{ color: C.textDim }}>{dateStr}</span>
+      <span className="text-[13px] tracking-tight" style={{ color: 'var(--sol-text-dim)' }}>{dateStr}</span>
       <span
         className="text-[13px] tabular-nums rounded-md px-2.5 py-0.5"
         style={CLOCK_PILL}
@@ -253,7 +252,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--sol-base3)]">
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: C.textDim }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <span className="flex items-center gap-2">
           <Clock onPulse={handlePulse} />
@@ -291,14 +290,14 @@ function App() {
           />
         )}
         {!activeProject && (
-          <div className="flex items-center justify-center h-full text-[13px]" style={{ color: C.muted }}>
+          <div className="flex items-center justify-center h-full text-[13px]" style={{ color: 'var(--sol-muted)' }}>
             <button onClick={handleAddProject} className="px-4 py-2 rounded-md bg-[var(--sol-blue)]/10 hover:bg-[var(--sol-blue)]/20 text-[var(--sol-blue)] cursor-pointer">
               Add a project to get started
             </button>
           </div>
         )}
       </main>
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: C.textDim }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <Clock />
       </div>

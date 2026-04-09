@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { Editor } from '../components/Editor'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
 import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath } from './markdown'
@@ -106,7 +105,7 @@ export function MarkdownPreview({
           div.innerHTML = svg
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Diagram render failed'
-          div.innerHTML = `<pre style="color:${SOLARIZED_LIGHT.red};font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
+          div.innerHTML = `<pre style="color:var(--sol-red);font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
         }
         div.setAttribute('data-processed', 'true')
       }
@@ -506,11 +505,11 @@ export function WorkspaceEditorArea({
       {isTasksTab ? (
         tasksPane
       ) : isDiffTab ? (
-        !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading diff...</div>
+        !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Loading diff...</div>
         : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} />
-        : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load diff</div>
+        : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load diff</div>
       ) : activeTab ? (
-        activeFileLoading ? <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Loading...</div>
+        activeFileLoading ? <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Loading...</div>
         : activeFileContent !== null ? (
           showSplit ? (
             <div ref={splitContainerRef} className="flex h-full" style={{ userSelect: isDragging ? 'none' : undefined }}>
@@ -527,8 +526,8 @@ export function WorkspaceEditorArea({
           ) : (
             editorElement
           )
-        ) : <div className="flex items-center justify-center h-full" style={{ color: C.muted }}>Unable to load file</div>
-      ) : <div className="flex items-center justify-center h-full text-[12px]" style={{ color: C.muted }}>Select a file from Files</div>}
+        ) : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load file</div>
+      ) : <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-muted)' }}>Select a file from Files</div>}
       </div>
     </div>
   )

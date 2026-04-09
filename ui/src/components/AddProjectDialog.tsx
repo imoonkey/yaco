@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { browseDirs, addProject } from '../hooks/useApi'
 import type { BrowseEntry } from '../hooks/useApi'
-import { SOLARIZED_LIGHT, SOLARIZED_LIGHT_UI as C } from '../lib/solarizedLight'
 
 const STORAGE_KEY = 'workflow-last-browse-dir'
 const DEFAULT_PREFIX = '~/workspace/'
@@ -174,23 +173,23 @@ export function AddProjectDialog({
         className="rounded-lg shadow-lg w-full mx-4"
         style={{
           maxWidth: 480,
-          backgroundColor: C.editorBg,
-          border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}`,
+          backgroundColor: 'var(--sol-editor-bg)',
+          border: '1px solid var(--sol-tab-bg)',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
           className="flex items-center justify-between px-4 h-10"
-          style={{ borderBottom: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }}
+          style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
         >
-          <span className="text-[13px] font-semibold" style={{ color: C.textDark }}>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
             Add Project
           </span>
           <button
             onClick={onClose}
             className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
-            style={{ color: C.muted }}
+            style={{ color: 'var(--sol-muted)' }}
             aria-label="Close"
           >
             ×
@@ -199,7 +198,7 @@ export function AddProjectDialog({
 
         {/* Body */}
         <div className="px-4 py-3">
-          <label className="block text-[11px] font-medium mb-1" style={{ color: C.text }}>
+          <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)' }}>
             Path
           </label>
           <input
@@ -210,12 +209,12 @@ export function AddProjectDialog({
             onKeyDown={handleKeyDown}
             className="w-full h-8 px-2 rounded-md text-[12px] outline-none"
             style={{
-              backgroundColor: C.bg,
-              border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}`,
-              color: C.textDark,
+              backgroundColor: 'var(--sol-bg)',
+              border: '1px solid var(--sol-tab-bg)',
+              color: 'var(--sol-text-dark)',
             }}
-            onFocus={(e) => (e.target.style.borderColor = SOLARIZED_LIGHT.focusBorder)}
-            onBlur={(e) => (e.target.style.borderColor = SOLARIZED_LIGHT.tabInactiveBackground)}
+            onFocus={(e) => (e.target.style.borderColor = 'var(--sol-focus-border)')}
+            onBlur={(e) => (e.target.style.borderColor = 'var(--sol-tab-bg)')}
             spellCheck={false}
             autoComplete="off"
           />
@@ -227,8 +226,8 @@ export function AddProjectDialog({
               className="mt-1 rounded-md overflow-y-auto"
               style={{
                 maxHeight: 200,
-                backgroundColor: C.bg,
-                border: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}`,
+                backgroundColor: 'var(--sol-bg)',
+                border: '1px solid var(--sol-tab-bg)',
               }}
             >
               {entries.map((entry, i) => (
@@ -236,21 +235,21 @@ export function AddProjectDialog({
                   key={entry.path}
                   className="flex items-center gap-2 px-2 h-7 cursor-pointer text-[12px]"
                   style={{
-                    backgroundColor: i === highlighted ? SOLARIZED_LIGHT.quickInputListFocusBackground : undefined,
-                    color: C.textDark,
+                    backgroundColor: i === highlighted ? 'var(--sol-search-match-bg)' : undefined,
+                    color: 'var(--sol-text-dark)',
                   }}
                   onMouseEnter={() => setHighlighted(i)}
                   onClick={() => selectEntry(entry)}
                 >
                   <span
                     className="text-[8px] leading-none"
-                    style={{ color: entry.isGit ? SOLARIZED_LIGHT.green : 'transparent' }}
+                    style={{ color: entry.isGit ? 'var(--sol-green)' : 'transparent' }}
                   >
                     ●
                   </span>
                   <span className="flex-1 truncate">{entry.name}</span>
                   {entry.isGit && (
-                    <span className="text-[10px] shrink-0" style={{ color: C.muted }}>
+                    <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-muted)' }}>
                       git
                     </span>
                   )}
@@ -261,21 +260,21 @@ export function AddProjectDialog({
 
           {/* Empty state */}
           {!loading && entries.length === 0 && path.endsWith('/') && path.length > 1 && (
-            <div className="mt-1 text-[11px] px-1" style={{ color: C.muted }}>
+            <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
               No subdirectories
             </div>
           )}
 
           {/* Loading */}
           {loading && (
-            <div className="mt-1 text-[11px] px-1" style={{ color: C.muted }}>
+            <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
               Loading…
             </div>
           )}
 
           {/* Error */}
           {error && (
-            <div className="mt-2 text-[11px] px-1" style={{ color: SOLARIZED_LIGHT.red }}>
+            <div className="mt-2 text-[11px] px-1" style={{ color: 'var(--sol-red)' }}>
               {error}
             </div>
           )}
@@ -284,7 +283,7 @@ export function AddProjectDialog({
         {/* Footer */}
         <div
           className="flex items-center justify-end gap-2 px-4 h-11"
-          style={{ borderTop: `1px solid ${SOLARIZED_LIGHT.tabInactiveBackground}` }}
+          style={{ borderTop: '1px solid var(--sol-tab-bg)' }}
         >
           <button
             onClick={onClose}
@@ -297,8 +296,8 @@ export function AddProjectDialog({
             disabled={submitting || !path.replace(/\/+$/, '')}
             className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors"
             style={{
-              backgroundColor: C.accent,
-              color: C.editorBg,
+              backgroundColor: 'var(--sol-accent)',
+              color: 'var(--sol-editor-bg)',
               opacity: submitting || !path.replace(/\/+$/, '') ? 0.5 : 1,
             }}
           >
