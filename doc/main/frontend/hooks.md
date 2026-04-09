@@ -138,15 +138,17 @@ Behavior:
 - Routes `notification` events to listeners and triggers `progress` refresh (debounced)
 - Routes `refresh` events to channel-specific callbacks (debounced)
 
-## useBrowserNotifications.ts (52 lines)
+## useNotifications.ts
 
-Browser Notification API integration via SSE.
+Dual-mode notification delivery via SSE.
 
-**Export**: `useBrowserNotifications()` → `{ permission, requestPermission }`
+**Export**: `useNotifications(onNotificationClick?)` → `void`
 
 Behavior:
 - Listens for `notification` SSE events
-- Shows browser notification only when tab is hidden and permission is granted
+- Page visible: shows sonner toast with "Go" action button
+- Page hidden: shows browser Notification (click → window.focus + route)
+- Auto-requests notification permission on mount
 - Per-tab deduplication via seen-ID set (max 500 entries, FIFO eviction)
 
 ## useIsMobile.ts (39 lines)

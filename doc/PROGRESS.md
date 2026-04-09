@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-04-09: UI polish — icons, dialogs, notifications
+
+**What changed:**
+- Replaced all Unicode symbols (☼☾▸▾×⚠◆●↻✕▶⇄···) with lucide-react icons across 11 component files.
+- Added `ConfirmDialog` component for destructive actions (remove project, delete file), replacing native `confirm()`.
+- Replaced native `alert()` with sonner `toast.error()` for error feedback.
+- Removed server-side osascript notifications (fired macOS system alerts that opened wrong app on click).
+- Replaced `useBrowserNotifications` (dead code — permission never requested) with `useNotifications`: foreground → sonner toast, background → Web Notification API. Auto-requests permission on mount.
+- Added `sonner` dependency, removed unused `@codemirror/theme-one-dark`.
+- Theme toggle upgraded from Unicode ☼/☾ to Lucide Sun/Moon pill toggle.
+
+**Why:**
+- Unicode symbols rendered poorly at small sizes. Lucide icons are crisp, consistent, and scalable.
+- Native `alert()`/`confirm()` block the main thread and look out of place in a polished UI.
+- osascript notifications were unreachable (click opened Script Editor, not browser) and redundant with SSE-based browser notifications.
+
+**Key files:** `ui/src/components/ConfirmDialog.tsx`, `ui/src/hooks/useNotifications.ts`, `server/src/lib/notify.ts`, `ui/src/App.tsx`, `ui/src/components/FileExplorer.tsx`, `ui/src/workspace/SectionHeader.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`
+**Verification:** tsc --noEmit clean, vite build passes, 133 server tests pass
+**Commit:** df9be90
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: History reader perf (1.5s → 20ms)
 
 **What changed:**

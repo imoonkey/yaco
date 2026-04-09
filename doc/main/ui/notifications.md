@@ -1,12 +1,12 @@
 # Notifications
 
-Notification pipeline: macOS desktop, SSE broadcast, and browser Notification API.
+Dual-mode notification pipeline: in-app toast (foreground) and browser Notification API (background).
 
 ## Owns
 
 - Notification delivery architecture
 - Session idle detection strategy
-- Browser notification behavior
+- In-app and browser notification behavior
 
 ## Does Not Own
 
@@ -14,19 +14,17 @@ Notification pipeline: macOS desktop, SSE broadcast, and browser Notification AP
 
 ## Related Code
 
-`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useBrowserNotifications.ts`
+`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useNotifications.ts`
 
 ## Pipeline
 
 ```
 Event source (file change / session idle)
   → emitNotification()
-    → Sink 1: macOS osascript display notification
-    → Sink 2: SSE broadcast to all connected browsers
-      → Browser Notification API (if tab hidden + permission granted)
+    → SSE broadcast to all connected browsers
+      → Page visible: sonner toast (auto-dismiss ~4s, with "Go" action)
+      → Page hidden: Browser Notification API (click → window.focus + route)
 ```
-
-Sinks are isolated: one sink failing does not prevent others from firing.
 
 ## Event Sources
 
@@ -52,24 +50,18 @@ Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) whil
 
 ### Full Notifications
 
-`emitNotification(event)` sends both:
-1. macOS desktop notification via `osascript -e 'display notification ...'`
-2. SSE event with `{ id, title, message }` payload
+`emitNotification(event)` broadcasts SSE event with `{ id, title, message, project, sessionName }` payload to all connected clients.
 
-## Browser Notifications
+## Client-Side Notification (`useNotifications`)
 
-`useBrowserNotifications()` hook:
+`useNotifications(onNotificationClick)` hook in `ui/src/hooks/useNotifications.ts`:
 
 - Listens for `notification` SSE events
-- Only shows browser notification when:
-  - Tab is hidden (`document.visibilityState !== 'visible'`)
-  - Permission is `'granted'`
 - Per-tab deduplication: seen-ID set (max 500, FIFO eviction)
-- Notification click navigates to the relevant project and session in the Workspace
+- **Page visible** → sonner `toast()` with title, description, and optional "Go" action button that routes to project/session
+- **Page hidden** → `new Notification()` via Browser Notification API; click calls `window.focus()` + routes to project/session
+- Auto-requests `Notification.requestPermission()` on mount (one-time browser prompt, persists per origin)
 
-## macOS Desktop Notifications
+## Confirmation Dialogs
 
-Fired via `osascript -e 'display notification "message" with title "title"'`.
-
-- No interaction support (one-shot display)
-- Does not reach remote/Tailscale access — browser notifications cover that gap
+Destructive actions (remove project, delete file) use `ConfirmDialog` component (`ui/src/components/ConfirmDialog.tsx`) instead of native `confirm()`. Error feedback uses `toast.error()` from sonner.
