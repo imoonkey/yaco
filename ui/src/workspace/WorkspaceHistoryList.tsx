@@ -29,12 +29,12 @@ function HistoryItem({
   return (
     <div
       onClick={isResuming ? undefined : isLive ? onGoLive : onResume}
-      className="flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px]"
+      className="flex flex-wrap items-baseline gap-x-2 gap-y-0 px-2 py-1.5 rounded cursor-pointer text-[12px]"
       style={{ color: 'var(--sol-text)', opacity: isResuming ? 0.6 : 1, fontFamily: 'var(--font-ui)', transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
       onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { e.currentTarget.style.backgroundColor = '' }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <ProviderIcon provider={entry.provider} className="w-4 h-4 shrink-0" />
         {isLive && (
           <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-[var(--sol-cyan)] status-pulse" />
@@ -42,15 +42,15 @@ function HistoryItem({
         {isResuming && (
           <span className="w-3 h-3 shrink-0 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--sol-muted)' }} />
         )}
-        <span className="min-w-0 flex-1 truncate">{primary}</span>
-        <span className="shrink-0 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
-          {formatRelativeTime(entry.modified)}
-        </span>
+        <span className="min-w-0 truncate">{primary}</span>
       </div>
-      <div className="truncate text-[10px]" style={{ paddingLeft: 26, color: 'var(--sol-muted)' }}>
+      <span className="text-[10px] min-w-0" style={{ color: 'var(--sol-muted)' }}>
         {secondary}
         {meta.length > 0 && ` · ${meta.join(' · ')}`}
-      </div>
+      </span>
+      <span className="shrink-0 text-[10px] ml-auto" style={{ color: 'var(--sol-muted)' }}>
+        {formatRelativeTime(entry.modified)}
+      </span>
     </div>
   )
 }

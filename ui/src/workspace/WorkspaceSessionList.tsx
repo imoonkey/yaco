@@ -75,17 +75,17 @@ export function SessionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
+      className={`flex flex-wrap items-baseline gap-x-2 gap-y-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
       style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1, fontFamily: 'var(--font-ui)', transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {onPin && (
           <button
             onClick={e => { e.stopPropagation(); onPin() }}
-            className="shrink-0 cursor-pointer opacity-40 hover:opacity-100"
+            className="shrink-0 cursor-pointer hover:opacity-100"
             title={pinned ? 'Unpin' : 'Pin to top'}
-            style={{ color: pinned ? 'var(--sol-blue)' : 'var(--sol-muted)', opacity: pinned ? 0.9 : undefined }}
+            style={{ color: pinned ? 'var(--sol-blue)' : 'var(--sol-muted)', opacity: pinned ? 0.9 : 0.6 }}
           >
             <Pin size={12} />
           </button>
@@ -107,14 +107,35 @@ export function SessionItem({
             style={{ borderColor: 'var(--sol-accent)', color: 'inherit' }}
           />
         ) : (
-          <span className="min-w-0 flex-1 truncate">
+          <span className="min-w-0 truncate">
             {session.name}
             {pendingName && <span style={{ color: 'var(--sol-muted)' }}>{` → ${pendingName}`}</span>}
           </span>
         )}
+      </div>
+      {session.summary && !renaming && (
+        <span
+          ref={summaryRef}
+          className="text-[10px] min-w-0"
+          style={{ color: 'var(--sol-muted)' }}
+          onMouseEnter={() => {
+            const el = summaryRef.current
+            if (el && el.scrollWidth > el.clientWidth) {
+              tipTimer.current = setTimeout(() => setShowTip(true), 300)
+            }
+          }}
+          onMouseLeave={() => {
+            if (tipTimer.current) clearTimeout(tipTimer.current)
+            setShowTip(false)
+          }}
+        >
+          {session.summary}
+        </span>
+      )}
+      <span className="flex items-center gap-1 ml-auto shrink-0">
         {!!unreadCount && unreadCount > 0 && (
           <span
-            className="shrink-0 min-w-[18px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
+            className="min-w-[18px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
             style={{ backgroundColor: 'var(--sol-orange)' }}
           >
             {unreadCount}
@@ -131,37 +152,15 @@ export function SessionItem({
         >
           Kill
         </button>
-      </div>
-      {session.summary && !renaming && (
-        <div className="relative" style={{ paddingLeft: onPin ? 42 : 26 }}>
-          <div
-            ref={summaryRef}
-            className="truncate text-[10px]"
-
-            style={{ color: 'var(--sol-muted)' }}
-            onMouseEnter={() => {
-              const el = summaryRef.current
-              if (el && el.scrollWidth > el.clientWidth) {
-                tipTimer.current = setTimeout(() => setShowTip(true), 300)
-              }
-            }}
-            onMouseLeave={() => {
-              if (tipTimer.current) clearTimeout(tipTimer.current)
-              setShowTip(false)
-            }}
-          >
-            {session.summary}
-          </div>
-          {showTip && (
-            <div
-              className="absolute left-0 top-full mt-1 z-40 px-2 py-1 rounded shadow-lg text-[11px] whitespace-pre-wrap break-words"
-              style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)', color: 'var(--sol-text)', boxShadow: 'var(--elevation-2)', animation: 'menu-enter 200ms cubic-bezier(0.2, 0, 0, 1) both' }}
-              onMouseEnter={() => { if (tipTimer.current) clearTimeout(tipTimer.current) }}
-              onMouseLeave={() => setShowTip(false)}
-            >
-              {session.summary}
-            </div>
-          )}
+      </span>
+      {showTip && (
+        <div
+          className="absolute left-0 top-full mt-1 z-40 px-2 py-1 rounded text-[11px] whitespace-pre-wrap break-words"
+          style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)', color: 'var(--sol-text)', boxShadow: 'var(--elevation-2)', animation: 'menu-enter 200ms cubic-bezier(0.2, 0, 0, 1) both' }}
+          onMouseEnter={() => { if (tipTimer.current) clearTimeout(tipTimer.current) }}
+          onMouseLeave={() => setShowTip(false)}
+        >
+          {session.summary}
         </div>
       )}
       {menu.position && onRename && (
