@@ -64,15 +64,16 @@ const BASE_STYLE: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 4,
-  padding: '2px 8px',
+  padding: '3px 10px',
   fontSize: 11,
-  borderRadius: 4,
+  fontFamily: 'var(--font-ui)',
+  borderRadius: 6,
   border: 'none',
   cursor: 'pointer',
   touchAction: 'manipulation',
   lineHeight: 1,
   whiteSpace: 'nowrap',
-  transition: 'background 120ms, color 120ms, opacity 120ms',
+  transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
 }
 
 const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
@@ -91,6 +92,7 @@ const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
     background: 'rgba(220,50,47,0.15)',
     color: 'var(--sol-red)',
     opacity: 1,
+    animation: 'recording-scale 1.2s ease-in-out infinite',
   },
   processing: {
     background: 'rgba(0,0,0,0.06)',

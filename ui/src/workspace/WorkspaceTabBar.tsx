@@ -61,7 +61,7 @@ function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m:
     : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
 
   return (
-    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: 'var(--sol-border)' }}>
+    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: 'var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
       {modes.map(({ value, label }) => {
         const active = mode === value
         return (
@@ -117,9 +117,9 @@ export function WorkspaceTabBar({
 
   return (
     <>
-    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 32, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}>
+    <div className="flex items-center shrink-0 overflow-x-auto" style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
       {openTabs.length === 0 ? (
-        <span className="px-4 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)' }}>No files open</span>
+        <span className="px-4 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>No files open</span>
       ) : openTabs.map(tab => {
         const parentDirSuffix = disambigSuffixes.get(tab)
         const isActive = tab === activeTab
@@ -137,9 +137,10 @@ export function WorkspaceTabBar({
             className="group flex items-center gap-2 px-3 h-full cursor-pointer text-[12px] shrink-0"
             style={{
               backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
-              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
+              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2.5px solid ${isConflict ? '#C4A241' : isDiff ? '#C4A241' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2.5px solid transparent',
               borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)', marginBottom: -1,
               fontStyle: isPreview ? 'italic' : undefined,
+              transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
             }} title={tabTitle(tab)}>
             {!isTasks && !isDiff && <FileTypeIcon name={tab} />}
             <span className="truncate max-w-[120px]">{tabName(tab)}</span>
@@ -152,7 +153,7 @@ export function WorkspaceTabBar({
               </span>
             ) : (
               <button onClick={(e) => onCloseTab(tab, e)}
-                className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" style={{ color: 'var(--sol-text-dim)' }}
+                className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
                 onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}><X size={12} /></button>
             )}
           </div>

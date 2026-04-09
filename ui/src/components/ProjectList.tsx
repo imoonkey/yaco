@@ -55,19 +55,24 @@ export function ProjectList({
             onDrop={e => handleDrop(e, project.name)}
             onClick={() => onSelect(project.name)}
             {...menu.bind(() => setMenuProject(project))}
-            className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors flex items-center gap-1 ${
+            className={`relative w-full text-left px-2.5 py-2 rounded text-[12px] font-medium cursor-pointer flex items-center gap-1 ${
               isActive
                 ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
                 : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
             }`}
-            style={{ opacity: draggedProject === project.name ? 0.55 : 1 }}
+            style={{
+              fontFamily: 'var(--font-ui)',
+              transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
+              opacity: draggedProject === project.name ? 0.55 : 1,
+              ...(isActive ? { borderLeft: '3px solid var(--sol-accent)', paddingLeft: 7 } : {}),
+            }}
           >
             <span className="truncate flex-1">{project.name}</span>
             <span className="flex items-center gap-1 shrink-0">
               {unreadCount > 0 && (
                 <span
                   className="min-w-[16px] h-[18px] rounded-full text-[10px] font-bold text-white flex items-center justify-center px-1"
-                  style={{ backgroundColor: 'var(--sol-orange)' }}
+                  style={{ backgroundColor: 'var(--sol-orange)', fontFamily: 'var(--font-ui)' }}
                 >
                   {unreadCount}
                 </span>
@@ -76,6 +81,7 @@ export function ProjectList({
                 <span
                   className="text-[12px] tabular-nums opacity-50"
                   title={`${sc.active} active / ${sc.total} total sessions`}
+                  style={{ fontFamily: 'var(--font-ui)' }}
                 >
                   {sc.active}/{sc.total}
                 </span>

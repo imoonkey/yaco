@@ -223,16 +223,20 @@ const OVERLAY_STYLE: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'center',
   background: 'rgba(0,0,0,0.15)',
+  animation: 'overlay-enter 200ms ease-out',
 }
 
 const DIALOG_STYLE: React.CSSProperties = {
-  background: 'var(--sol-base3)',
+  background: 'color-mix(in srgb, var(--sol-base3) 90%, transparent)',
   border: '1px solid var(--sol-border)',
   borderRadius: 8,
   padding: 16,
   width: '90%',
   maxWidth: 520,
-  boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+  boxShadow: 'var(--elevation-3)',
+  backdropFilter: 'var(--backdrop-blur)',
+  WebkitBackdropFilter: 'var(--backdrop-blur)',
+  animation: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
 }
 
 const HEADER_STYLE: React.CSSProperties = {
@@ -242,6 +246,7 @@ const HEADER_STYLE: React.CSSProperties = {
   marginBottom: 10,
   fontSize: 12,
   color: 'var(--sol-base01)',
+  fontFamily: 'var(--font-ui)',
 }
 
 const SURFACE_TOGGLE_STYLE: React.CSSProperties = {
@@ -372,6 +377,8 @@ const BTN_BASE: React.CSSProperties = {
   touchAction: 'manipulation',
   fontWeight: 500,
   lineHeight: 1,
+  fontFamily: 'var(--font-ui)',
+  transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
 }
 
 const CONFIRM_BTN_STYLE: React.CSSProperties = {

@@ -48,17 +48,21 @@ export function NotificationPanel({
   return (
     <div
       ref={panelRef}
-      className="absolute right-0 top-full mt-1 z-50 rounded-lg shadow-lg w-[320px] max-h-[400px] flex flex-col"
+      className="luminous-edge absolute right-0 top-full mt-1 z-50 rounded-xl w-[320px] max-h-[400px] flex flex-col"
       style={{
-        backgroundColor: 'var(--sol-editor-bg)',
+        backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)',
         border: '1px solid var(--sol-border)',
+        boxShadow: 'var(--elevation-3)',
+        animation: 'panel-slide-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
+        backdropFilter: 'var(--backdrop-blur)',
+        WebkitBackdropFilter: 'var(--backdrop-blur)',
       }}
     >
       <div
         className="flex items-center justify-between px-3 h-9 shrink-0"
         style={{ borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[12px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+        <span className="text-[12px] font-semibold" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}>
           Notifications
         </span>
         <div className="flex items-center gap-2">
@@ -67,14 +71,14 @@ export function NotificationPanel({
               <button
                 onClick={onMarkAllRead}
                 className="text-[10px] cursor-pointer hover:underline"
-                style={{ color: 'var(--sol-muted)' }}
+                style={{ color: 'var(--sol-muted)', fontFamily: 'var(--font-ui)' }}
               >
                 Mark all read
               </button>
               <button
                 onClick={onClearAll}
                 className="text-[10px] cursor-pointer hover:underline"
-                style={{ color: 'var(--sol-muted)' }}
+                style={{ color: 'var(--sol-muted)', fontFamily: 'var(--font-ui)' }}
               >
                 Clear
               </button>
@@ -103,6 +107,9 @@ export function NotificationPanel({
               style={{
                 borderBottom: '1px solid var(--sol-border)',
                 backgroundColor: n.read ? undefined : 'var(--sol-hover-bg)',
+                fontFamily: 'var(--font-ui)',
+                transition: 'background-color 120ms',
+                ...(!n.read ? { borderLeft: '2px solid var(--sol-accent)' } : {}),
               }}
               onClick={() => onClickItem(n)}
               onMouseEnter={e => { e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}

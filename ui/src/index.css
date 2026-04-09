@@ -5,6 +5,48 @@
   --safe-area-bottom: env(safe-area-inset-bottom);
 }
 
+/* Design system tokens */
+:root {
+  /* Typography */
+  --font-ui: 'Instrument Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Elevation (light) */
+  --elevation-0: none;
+  --elevation-1: 0 1px 2px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+  --elevation-2: 0 2px 8px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  --elevation-3: 0 8px 24px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08);
+
+  /* Transitions */
+  --transition-fast: 120ms cubic-bezier(0.2, 0, 0, 1);
+  --transition-normal: 200ms cubic-bezier(0.2, 0, 0, 1);
+  --transition-slow: 300ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Spacing */
+  --header-h: 28px;
+  --tab-h: 36px;
+  --breadcrumb-h: 28px;
+
+  /* Luminous edge */
+  --luminous-edge: linear-gradient(90deg, var(--sol-yellow), var(--sol-orange), var(--sol-violet));
+
+  /* Backdrop blur */
+  --backdrop-blur: blur(12px) saturate(150%);
+
+  /* Status colors (light) */
+  --sol-status-active: var(--sol-cyan);
+  --sol-status-idle: var(--sol-base1);
+  --sol-status-error: var(--sol-red);
+  --sol-status-warning: var(--sol-yellow);
+}
+
+[data-theme="dark"] {
+  /* Elevation (dark) */
+  --elevation-1: 0 1px 2px rgba(0,0,0,0.2), 0 1px 3px rgba(0,0,0,0.15);
+  --elevation-2: 0 2px 8px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+  --elevation-3: 0 8px 24px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.25);
+}
+
 /* Solarized Light palette */
 :root {
   --sol-base03:  #002b36;
@@ -171,6 +213,9 @@
   --color-sol-editor-indent-guide-active: var(--sol-editor-indent-guide-active);
   --color-sol-syntax-comment: var(--sol-syntax-comment);
   --color-sol-syntax-modifier: var(--sol-syntax-modifier);
+  /* Design system tokens */
+  --font-family-ui: var(--font-ui);
+  --font-family-mono: var(--font-mono);
 }
 
 /* Session status pulse — solid dot with expanding glow ring */
@@ -243,7 +288,7 @@ body {
   padding: 1em 26px 40px;
   color: var(--sol-base00);
   background: var(--sol-editor-bg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", system-ui, "Ubuntu", "Droid Sans", sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 22px;
   word-wrap: break-word;
@@ -505,4 +550,77 @@ body {
 
 .markdown-preview .mermaid svg {
   min-width: min-content;
+}
+
+/* ═══ Design System Utilities ═══ */
+
+/* Luminous edge — spectral gradient top border (works with border-radius) */
+.luminous-edge {
+  position: relative;
+}
+.luminous-edge::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1.5px;
+  background: var(--luminous-edge);
+  border-radius: inherit;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Elevation utilities */
+.elevation-1 { box-shadow: var(--elevation-1); }
+.elevation-2 { box-shadow: var(--elevation-2); }
+.elevation-3 { box-shadow: var(--elevation-3); }
+
+/* Backdrop blur for overlays */
+@supports (backdrop-filter: blur(1px)) {
+  .surface-blur {
+    backdrop-filter: var(--backdrop-blur);
+  }
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--sol-accent) 50%, transparent);
+  outline-offset: 1px;
+}
+
+/* ═══ Keyframe Animations ═══ */
+
+@keyframes dialog-enter {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes overlay-enter {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes menu-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes panel-slide-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes recording-scale {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.02); }
+}
+
+/* ═══ Reduced Motion ═══ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

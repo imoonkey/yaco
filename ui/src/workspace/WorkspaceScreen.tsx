@@ -657,7 +657,7 @@ export function Workspace({
 
   const terminalContent = attachedSession ? (
     <>
-      <div className="h-8 flex items-center gap-2 px-2 text-[12px] shrink-0" style={{ backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)', color: 'var(--sol-text-brown)' }}>
+      <div className="h-9 flex items-center gap-2 px-2 text-[12px] shrink-0 luminous-edge" style={{ backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)', color: 'var(--sol-text-brown)', fontFamily: 'var(--font-ui)' }}>
         {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
         <span className="truncate flex-1 font-semibold">{attachedSession}</span>
         {voiceBridge.terminalVoiceEligible && (

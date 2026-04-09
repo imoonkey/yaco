@@ -23,23 +23,27 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.25)', animation: 'overlay-enter 200ms ease-out' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className="rounded-lg shadow-lg w-full mx-4"
+        className="rounded-xl w-full mx-4"
         style={{
           maxWidth: 360,
-          backgroundColor: 'var(--sol-editor-bg)',
-          border: '1px solid var(--sol-tab-bg)',
+          backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 88%, transparent)',
+          border: '1px solid var(--sol-border)',
+          boxShadow: 'var(--elevation-3)',
+          backdropFilter: 'var(--backdrop-blur)',
+          WebkitBackdropFilter: 'var(--backdrop-blur)',
+          animation: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
-          className="flex items-center justify-between px-4 h-10"
+          className="luminous-edge flex items-center justify-between px-4 h-11"
           style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
         >
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}>
             {title}
           </span>
           <button
@@ -53,7 +57,7 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
         </div>
 
         {description && (
-          <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--sol-text-dim)' }}>
+          <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>
             {description}
           </div>
         )}
@@ -64,18 +68,20 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
         >
           <button
             onClick={onClose}
-            className="px-3 py-1 rounded text-[12px] cursor-pointer"
-            style={{ color: 'var(--sol-text-dim)', backgroundColor: 'var(--sol-input-bg)' }}
+            className="px-3.5 py-1.5 rounded-md text-[12px] cursor-pointer"
+            style={{ color: 'var(--sol-text-dim)', backgroundColor: 'var(--sol-input-bg)', fontFamily: 'var(--font-ui)', transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)' }}
           >
             Cancel
           </button>
           <button
             ref={confirmRef}
             onClick={() => { onConfirm(); onClose() }}
-            className="px-3 py-1 rounded text-[12px] font-medium cursor-pointer"
+            className="px-3.5 py-1.5 rounded-md text-[12px] font-medium cursor-pointer"
             style={{
               backgroundColor: danger ? 'var(--sol-red)' : 'var(--sol-accent)',
               color: 'var(--sol-base3)',
+              fontFamily: 'var(--font-ui)',
+              transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
             }}
           >
             {confirmLabel ?? 'Confirm'}

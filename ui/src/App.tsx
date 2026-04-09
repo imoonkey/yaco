@@ -44,7 +44,7 @@ function moveItem<T>(items: T[], fromIndex: number, toIndex: number): T[] {
   return next
 }
 
-const CLOCK_PILL = { backgroundColor: 'var(--sol-base02)', color: 'var(--sol-base2)' }
+const CLOCK_PILL = { backgroundColor: 'var(--sol-base02)', color: 'var(--sol-base2)', boxShadow: 'var(--elevation-1)' }
 
 function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
   const [now, setNow] = useState(() => new Date())
@@ -83,10 +83,10 @@ function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
   const dateStr = `${weekday} ${monthDay}`
 
   return (
-    <span className="flex items-center gap-1.5">
+    <span className="flex items-center gap-1.5" style={{ fontFamily: 'var(--font-ui)' }}>
       <span className="text-[13px] tracking-tight" style={{ color: 'var(--sol-text-dim)' }}>{dateStr}</span>
       <span
-        className="text-[13px] tabular-nums rounded-md px-2.5 py-0.5"
+        className="text-[13px] tabular-nums rounded-lg px-2.5 py-0.5"
         style={CLOCK_PILL}
       >
         {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -263,13 +263,13 @@ function App() {
 
   return (
     <div className="flex flex-col h-dvh bg-[var(--sol-bg)]">
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <span className="flex items-center gap-2">
           <span className="relative">
             <button
-              className="flex items-center justify-center cursor-pointer hover:opacity-80 transition-opacity"
-              style={{ color: 'var(--sol-text-dim)' }}
+              className="flex items-center justify-center cursor-pointer hover:opacity-80"
+              style={{ color: 'var(--sol-text-dim)', transition: 'color 120ms, transform 120ms' }}
               onClick={() => { setShowNotifications(v => !v); if (!showNotifications) markNotificationsRead() }}
               title="Notifications"
             >
@@ -330,7 +330,7 @@ function App() {
           </div>
         )}
       </main>
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
+      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)', fontFamily: 'var(--font-ui)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <Clock />
       </div>
@@ -359,7 +359,7 @@ function App() {
           className="fixed inset-0 pointer-events-none z-50"
           style={{
             background: 'radial-gradient(ellipse at center, transparent 40%, rgba(181, 137, 0, 0.5) 100%)',
-            opacity: pulseType === 'light' ? 0.5 : 1,
+            opacity: pulseType === 'light' ? 0.35 : 0.7,
             animation: `rhythm-pulse ${pulseType === 'light' ? '3s' : '4s'} ease-in-out forwards`,
           }}
         />
@@ -372,7 +372,7 @@ function App() {
             background: 'var(--sol-editor-bg)',
             color: 'var(--sol-text)',
             border: '1px solid var(--sol-border)',
-            fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+            fontFamily: 'var(--font-ui)',
             fontSize: '12px',
           },
         }}

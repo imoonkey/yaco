@@ -144,7 +144,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {/* Desktop sidebar: Projects + Explorer + Changes + Tasks */}
           {showSidebar && (
             <>
-              <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: 'var(--sol-bg)', boxShadow: '1px 0 3px rgba(0,0,0,0.06)' }}>
+              <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: 'var(--sol-bg)', boxShadow: 'var(--elevation-1)' }}>
                 <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
                 {showProjects && <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>}
 
@@ -216,7 +216,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 flex: !hasOpenTabs ? 1 : undefined,
                 width: hasOpenTabs ? right.size : undefined,
                 backgroundColor: 'var(--sol-bg)',
-                boxShadow: '-1px 0 3px rgba(0,0,0,0.06)',
+                boxShadow: 'var(--elevation-1)',
               }}
             >
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">

@@ -167,24 +167,28 @@ export function AddProjectDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.25)', animation: 'overlay-enter 200ms ease-out' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className="rounded-lg shadow-lg w-full mx-4"
+        className="rounded-xl w-full mx-4"
         style={{
           maxWidth: 480,
-          backgroundColor: 'var(--sol-editor-bg)',
-          border: '1px solid var(--sol-tab-bg)',
+          backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 88%, transparent)',
+          border: '1px solid var(--sol-border)',
+          boxShadow: 'var(--elevation-3)',
+          backdropFilter: 'var(--backdrop-blur)',
+          WebkitBackdropFilter: 'var(--backdrop-blur)',
+          animation: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
         }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
-          className="flex items-center justify-between px-4 h-10"
+          className="luminous-edge flex items-center justify-between px-4 h-10"
           style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
         >
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}>
             Add Project
           </span>
           <button
@@ -199,7 +203,7 @@ export function AddProjectDialog({
 
         {/* Body */}
         <div className="px-4 py-3">
-          <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)' }}>
+          <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)', fontFamily: 'var(--font-ui)' }}>
             Path
           </label>
           <input
@@ -208,14 +212,15 @@ export function AddProjectDialog({
             value={path}
             onChange={(e) => { setPath(e.target.value); setError(null) }}
             onKeyDown={handleKeyDown}
-            className="w-full h-8 px-2 rounded-md text-[12px] outline-none"
+            className="w-full h-9 px-2 rounded-md text-[12px] outline-none"
             style={{
               backgroundColor: 'var(--sol-bg)',
               border: '1px solid var(--sol-tab-bg)',
               color: 'var(--sol-text-dark)',
+              transition: 'border-color 120ms, box-shadow 120ms',
             }}
-            onFocus={(e) => (e.target.style.borderColor = 'var(--sol-focus-border)')}
-            onBlur={(e) => (e.target.style.borderColor = 'var(--sol-tab-bg)')}
+            onFocus={(e) => { e.target.style.borderColor = 'var(--sol-focus-border)'; e.target.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--sol-focus-border) 25%, transparent)' }}
+            onBlur={(e) => { e.target.style.borderColor = 'var(--sol-tab-bg)'; e.target.style.boxShadow = 'none' }}
             spellCheck={false}
             autoComplete="off"
           />
@@ -229,15 +234,18 @@ export function AddProjectDialog({
                 maxHeight: 200,
                 backgroundColor: 'var(--sol-bg)',
                 border: '1px solid var(--sol-tab-bg)',
+                boxShadow: 'var(--elevation-2)',
+                animation: 'menu-enter 200ms cubic-bezier(0.2, 0, 0, 1) both',
               }}
             >
               {entries.map((entry, i) => (
                 <div
                   key={entry.path}
-                  className="flex items-center gap-2 px-2 h-7 cursor-pointer text-[12px]"
+                  className="flex items-center gap-2 px-2 h-8 cursor-pointer text-[12px]"
                   style={{
                     backgroundColor: i === highlighted ? 'var(--sol-search-match-bg)' : undefined,
                     color: 'var(--sol-text-dark)',
+                    transition: 'background-color 120ms',
                   }}
                   onMouseEnter={() => setHighlighted(i)}
                   onClick={() => selectEntry(entry)}
@@ -289,6 +297,7 @@ export function AddProjectDialog({
           <button
             onClick={onClose}
             className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]"
+            style={{ fontFamily: 'var(--font-ui)' }}
           >
             Cancel
           </button>
@@ -300,6 +309,7 @@ export function AddProjectDialog({
               backgroundColor: 'var(--sol-accent)',
               color: 'var(--sol-editor-bg)',
               opacity: submitting || !path.replace(/\/+$/, '') ? 0.5 : 1,
+              fontFamily: 'var(--font-ui)',
             }}
           >
             {submitting ? 'Adding…' : 'Add'}

@@ -18,15 +18,15 @@ export function WorkspaceBreadcrumbs({
   return (
     <div
       className="flex items-center px-3 shrink-0 overflow-x-auto"
-      style={{ height: 24, fontSize: 12, color: 'var(--sol-muted)', backgroundColor: 'var(--sol-editor-bg)', borderBottom: '1px solid var(--sol-border)' }}
+      style={{ height: 28, fontSize: 12, color: 'var(--sol-muted)', backgroundColor: 'var(--sol-editor-bg)', borderBottom: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}
     >
       {dirSegments.map((seg, i) => {
         const dirPath = segments.slice(0, i + 1).join('/')
         return (
           <span key={dirPath} className="flex items-center shrink-0">
             <span
-              className="cursor-pointer transition-colors"
-              style={{ color: 'var(--sol-muted)' }}
+              className="cursor-pointer"
+              style={{ color: 'var(--sol-muted)', transition: 'color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
               onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-accent)')}
               onMouseLeave={e => (e.currentTarget.style.color = 'var(--sol-muted)')}
               onClick={() => onNavigateDir(dirPath)}

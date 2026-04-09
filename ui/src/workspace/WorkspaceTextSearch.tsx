@@ -378,6 +378,7 @@ function FileGroupView({ group, expanded, onToggle, onMatchClick, focusIndex, fl
         style={{
           backgroundColor: isFocused ? 'var(--sol-hover-bg)' : undefined,
           color: 'var(--sol-text-dark)',
+          fontFamily: 'var(--font-ui)',
         }}
         onClick={onToggle}
       >
@@ -457,7 +458,7 @@ function StatusBar({ status }: { status: SearchStatus }) {
   }
 
   return (
-    <div className="shrink-0 px-2 py-1 text-[10px] truncate" style={{ color, borderTop: '1px solid var(--sol-border)' }}>
+    <div className="shrink-0 px-2 py-1 text-[10px] truncate" style={{ color, borderTop: '1px solid var(--sol-border)', fontFamily: 'var(--font-ui)' }}>
       {text}
     </div>
   )

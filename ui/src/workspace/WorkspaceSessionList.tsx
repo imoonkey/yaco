@@ -75,8 +75,8 @@ export function SessionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`flex flex-col gap-0 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
-      style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1 }}
+      className={`flex flex-col gap-0 px-2.5 py-2 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : ''}`}
+      style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1, fontFamily: 'var(--font-ui)', transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
       onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
       onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}>
       <div className="flex items-center gap-2">
@@ -91,7 +91,7 @@ export function SessionItem({
           </button>
         )}
         <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[var(--sol-cyan)] status-pulse' : 'bg-[var(--sol-base1)]'}`} />
+        <span className={`w-2 h-2 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[var(--sol-cyan)] status-pulse' : 'bg-[var(--sol-base1)]'}`} />
         {renaming ? (
           <input
             ref={inputRef}
@@ -125,8 +125,9 @@ export function SessionItem({
             e.stopPropagation()
             onKill()
           }}
-          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] cursor-pointer border border-[var(--sol-red)]/20 text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer border border-[var(--sol-red)]/20 text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
           title={`Kill ${session.name}`}
+          style={{ fontFamily: 'var(--font-ui)' }}
         >
           Kill
         </button>
@@ -154,7 +155,7 @@ export function SessionItem({
           {showTip && (
             <div
               className="absolute left-0 top-full mt-1 z-40 px-2 py-1 rounded shadow-lg text-[11px] whitespace-pre-wrap break-words"
-              style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)', color: 'var(--sol-text)' }}
+              style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)', color: 'var(--sol-text)', boxShadow: 'var(--elevation-2)', animation: 'menu-enter 200ms cubic-bezier(0.2, 0, 0, 1) both' }}
               onMouseEnter={() => { if (tipTimer.current) clearTimeout(tipTimer.current) }}
               onMouseLeave={() => setShowTip(false)}
             >

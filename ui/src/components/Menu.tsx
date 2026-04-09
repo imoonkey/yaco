@@ -93,12 +93,16 @@ export function Menu({ position, children }: {
 }) {
   return (
     <div
-      className="fixed z-50 min-w-[160px] py-1 rounded shadow-lg"
+      className="fixed z-50 min-w-[160px] py-1.5 rounded-lg"
       style={{
         left: position.x,
         top: position.y,
-        backgroundColor: 'var(--sol-editor-bg)',
+        backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 92%, transparent)',
         border: '1px solid var(--sol-border)',
+        boxShadow: 'var(--elevation-2)',
+        animation: 'menu-enter 200ms cubic-bezier(0.2, 0, 0, 1) both',
+        backdropFilter: 'var(--backdrop-blur)',
+        WebkitBackdropFilter: 'var(--backdrop-blur)',
       }}
       onClick={e => e.stopPropagation()}
     >
@@ -114,8 +118,15 @@ export function MenuItem({ label, danger, onClick }: {
 }) {
   return (
     <div
-      className="px-3 py-1 text-[12px] cursor-pointer"
-      style={{ color: danger ? 'var(--sol-red)' : 'var(--sol-text)' }}
+      className="px-3 py-1.5 text-[12px] cursor-pointer"
+      style={{
+        color: danger ? 'var(--sol-red)' : 'var(--sol-text)',
+        fontFamily: 'var(--font-ui)',
+        borderRadius: 4,
+        marginLeft: 4,
+        marginRight: 4,
+        transition: 'background-color 120ms',
+      }}
       onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')}
       onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       onClick={onClick}
@@ -126,5 +137,5 @@ export function MenuItem({ label, danger, onClick }: {
 }
 
 export function MenuDivider() {
-  return <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
+  return <div className="my-1.5" style={{ borderTop: '1px solid var(--sol-border)' }} />
 }

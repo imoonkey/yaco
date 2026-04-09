@@ -13,18 +13,22 @@ export function PaneSwitch({
   onChange: (value: string) => void
 }) {
   return (
-    <div className="inline-flex w-full rounded border border-[var(--sol-tab-bg)] bg-[var(--sol-base2)] p-0.5">
+    <div className="inline-flex w-full rounded border border-[var(--sol-tab-bg)] bg-[var(--sol-base2)] p-1" style={{ fontFamily: 'var(--font-ui)' }}>
       {options.map(option => {
         const active = option.id === value
         return (
           <button
             key={option.id}
             onClick={() => onChange(option.id)}
-            className={`flex-1 rounded px-2 py-0.5 text-[11px] font-medium transition-colors cursor-pointer ${
+            className={`flex-1 rounded px-2.5 py-1 text-[12px] font-medium cursor-pointer ${
               active
-                ? 'bg-[var(--sol-base3)] text-[var(--sol-blue)] shadow-[inset_0_0_0_1px_rgba(38,139,210,0.12)]'
+                ? 'bg-[var(--sol-base3)] text-[var(--sol-blue)]'
                 : 'text-[var(--sol-base01)] hover:text-[var(--sol-base02)]'
             }`}
+            style={{
+              transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
+              ...(active ? { boxShadow: 'var(--elevation-1)' } : {}),
+            }}
           >
             {option.label}
           </button>
