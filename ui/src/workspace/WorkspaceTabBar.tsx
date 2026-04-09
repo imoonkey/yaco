@@ -135,7 +135,7 @@ export function WorkspaceTabBar({
             onDoubleClick={() => onDoubleClickTab(tab)}
             {...tabCtx}
             data-testid="tab"
-            className="group flex items-center gap-1 px-1.5 h-full cursor-pointer text-[12px] shrink-0"
+            className="group flex items-center gap-1 px-1.5 h-full cursor-pointer text-[11px] shrink-0"
             style={{
               backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
               borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
@@ -147,15 +147,15 @@ export function WorkspaceTabBar({
             <span className="truncate max-w-[120px]" style={isPreview ? { paddingRight: 2 } : undefined}>{tabName(tab)}</span>
             {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-muted)' }}>{parentDirSuffix}</span>}
             {isConflict ? (
-              <span className="w-4 h-4 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={12} /></span>
+              <span className="w-3 h-3 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={10} /></span>
             ) : isDirty ? (
-              <span className="w-4 h-4 flex items-center justify-center shrink-0">
-                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
+              <span className="w-3 h-3 flex items-center justify-center shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
               </span>
             ) : (
               <button onClick={(e) => onCloseTab(tab, e)}
-                className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}><X size={12} /></button>
+                className="w-3 h-3 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}><X size={10} /></button>
             )}
           </div>
         )
