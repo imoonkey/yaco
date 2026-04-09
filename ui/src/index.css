@@ -46,6 +46,15 @@
   --sol-sash: #584c27;
   --sol-hover-bg: #dfca8844;
   --sol-editor-fg: #657b83;
+  --sol-editor-cursor: #657b83;
+  --sol-editor-selection-bg: #d5ccb5;
+  --sol-editor-line-highlight-bg: #eee8d5;
+  --sol-editor-widget-bg: #eee8d5;
+  --sol-editor-linenum-active: #567983;
+  --sol-search-match-bg: #dfca8866;
+  --sol-editor-whitespace: #586e7580;
+  --sol-editor-indent-guide: #586e7580;
+  --sol-editor-indent-guide-active: #081e2580;
 }
 
 /* Solarized Dark — VS Code Solarized Dark values */
@@ -91,6 +100,15 @@
   --sol-sash: #93a1a1;
   --sol-hover-bg: #004454aa;
   --sol-editor-fg: #839496;
+  --sol-editor-cursor: #d30102;
+  --sol-editor-selection-bg: #274642;
+  --sol-editor-line-highlight-bg: #073642;
+  --sol-editor-widget-bg: #00212b;
+  --sol-editor-linenum-active: #949494;
+  --sol-search-match-bg: #005a6f;
+  --sol-editor-whitespace: #93a1a180;
+  --sol-editor-indent-guide: #93a1a180;
+  --sol-editor-indent-guide-active: #c3e1e180;
 }
 
 /* Register all Solarized vars as Tailwind color tokens */
@@ -133,6 +151,15 @@
   --color-sol-list-active-fg: var(--sol-list-active-fg);
   --color-sol-list-hover-bg: var(--sol-list-hover-bg);
   --color-sol-focus-border: var(--sol-focus-border);
+  --color-sol-editor-cursor: var(--sol-editor-cursor);
+  --color-sol-editor-selection-bg: var(--sol-editor-selection-bg);
+  --color-sol-editor-line-highlight-bg: var(--sol-editor-line-highlight-bg);
+  --color-sol-editor-widget-bg: var(--sol-editor-widget-bg);
+  --color-sol-editor-linenum-active: var(--sol-editor-linenum-active);
+  --color-sol-search-match-bg: var(--sol-search-match-bg);
+  --color-sol-editor-whitespace: var(--sol-editor-whitespace);
+  --color-sol-editor-indent-guide: var(--sol-editor-indent-guide);
+  --color-sol-editor-indent-guide-active: var(--sol-editor-indent-guide-active);
 }
 
 /* Session status pulse — solid dot with expanding glow ring */

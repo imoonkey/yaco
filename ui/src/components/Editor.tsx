@@ -11,7 +11,8 @@ import { syntaxHighlighting, bracketMatching, indentOnInput, foldGutter, foldKey
 import { json } from '@codemirror/lang-json'
 import { javascript } from '@codemirror/lang-javascript'
 import { python } from '@codemirror/lang-python'
-import { solarizedHighlight, solarizedLight } from '../lib/solarizedLight'
+import { solarizedHighlight } from '../lib/solarizedLight'
+import { editorTheme } from '../lib/editorTheme'
 import { diffGutterExtension, setDiffData } from '../lib/diffGutter'
 import type { DiffHunk } from '../lib/parseDiff'
 import { inlineAutocomplete, autocompleteCompartment } from '../lib/editor/inlineAutocomplete.js'
@@ -171,7 +172,7 @@ export function Editor({
         history(),
         scrollPastEnd(),
         syntaxHighlighting(solarizedHighlight),
-        solarizedLight,
+        editorTheme,
         keymap.of([
           ...saveKeymap,
           indentWithTab,
