@@ -34,6 +34,105 @@
   --sol-list-active-fg: #6c6c6c;
   --sol-list-hover-bg: #dfca8844;
   --vscode-text-preformat-fg: #a31515;
+  /* Semantic workspace vars (light) */
+  --sol-bg: #eee8d5;
+  --sol-text: #586e75;
+  --sol-header-bg: #d9d2c2;
+  --sol-text-dim: #657b83;
+  --sol-text-dark: #073642;
+  --sol-text-brown: #584c27;
+  --sol-muted: #93a1a1;
+  --sol-accent: #268bd2;
+  --sol-sash: #584c27;
+  --sol-hover-bg: #dfca8844;
+  --sol-editor-fg: #657b83;
+}
+
+/* Solarized Dark — VS Code Solarized Dark values */
+[data-theme="dark"] {
+  /* Palette (same Solarized 16, included for completeness) */
+  --sol-base03:  #002b36;
+  --sol-base02:  #073642;
+  --sol-base01:  #586e75;
+  --sol-base00:  #657b83;
+  --sol-base0:   #839496;
+  --sol-base1:   #93a1a1;
+  --sol-base2:   #eee8d5;
+  --sol-base3:   #fdf6e3;
+  --sol-yellow:  #b58900;
+  --sol-orange:  #cb4b16;
+  --sol-red:     #dc322f;
+  --sol-magenta: #d33682;
+  --sol-violet:  #6c71c4;
+  --sol-blue:    #268bd2;
+  --sol-cyan:    #2aa198;
+  --sol-green:   #859900;
+  /* VS Code Solarized Dark semantic overrides */
+  --sol-focus-border: #2aa19899;
+  --sol-input-bg: #003847;
+  --sol-border: #00212b;
+  --sol-tabs-bg: #004052;
+  --sol-tab-bg: #004052;
+  --sol-sidebar-bg: #00212b;
+  --sol-editor-bg: #002b36;
+  --sol-list-active-bg: #005a6f;
+  --sol-list-active-fg: #d6dbdb;
+  --sol-list-hover-bg: #004454aa;
+  --vscode-text-preformat-fg: #ce9178;
+  /* Semantic workspace vars (dark) */
+  --sol-bg: #00212b;
+  --sol-text: #839496;
+  --sol-header-bg: #004052;
+  --sol-text-dim: #657b83;
+  --sol-text-dark: #93a1a1;
+  --sol-text-brown: #93a1a1;
+  --sol-muted: #586e75;
+  --sol-accent: #268bd2;
+  --sol-sash: #93a1a1;
+  --sol-hover-bg: #004454aa;
+  --sol-editor-fg: #839496;
+}
+
+/* Register all Solarized vars as Tailwind color tokens */
+@theme {
+  --color-sol-base03: var(--sol-base03);
+  --color-sol-base02: var(--sol-base02);
+  --color-sol-base01: var(--sol-base01);
+  --color-sol-base00: var(--sol-base00);
+  --color-sol-base0: var(--sol-base0);
+  --color-sol-base1: var(--sol-base1);
+  --color-sol-base2: var(--sol-base2);
+  --color-sol-base3: var(--sol-base3);
+  --color-sol-yellow: var(--sol-yellow);
+  --color-sol-orange: var(--sol-orange);
+  --color-sol-red: var(--sol-red);
+  --color-sol-magenta: var(--sol-magenta);
+  --color-sol-violet: var(--sol-violet);
+  --color-sol-blue: var(--sol-blue);
+  --color-sol-cyan: var(--sol-cyan);
+  --color-sol-green: var(--sol-green);
+  /* Semantic */
+  --color-sol-bg: var(--sol-bg);
+  --color-sol-editor-bg: var(--sol-editor-bg);
+  --color-sol-editor-fg: var(--sol-editor-fg);
+  --color-sol-header-bg: var(--sol-header-bg);
+  --color-sol-border: var(--sol-border);
+  --color-sol-text: var(--sol-text);
+  --color-sol-text-dim: var(--sol-text-dim);
+  --color-sol-text-dark: var(--sol-text-dark);
+  --color-sol-text-brown: var(--sol-text-brown);
+  --color-sol-muted: var(--sol-muted);
+  --color-sol-accent: var(--sol-accent);
+  --color-sol-hover-bg: var(--sol-hover-bg);
+  --color-sol-sash: var(--sol-sash);
+  --color-sol-input-bg: var(--sol-input-bg);
+  --color-sol-tabs-bg: var(--sol-tabs-bg);
+  --color-sol-tab-bg: var(--sol-tab-bg);
+  --color-sol-sidebar-bg: var(--sol-sidebar-bg);
+  --color-sol-list-active-bg: var(--sol-list-active-bg);
+  --color-sol-list-active-fg: var(--sol-list-active-fg);
+  --color-sol-list-hover-bg: var(--sol-list-hover-bg);
+  --color-sol-focus-border: var(--sol-focus-border);
 }
 
 /* Session status pulse — solid dot with expanding glow ring */
