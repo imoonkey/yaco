@@ -40,7 +40,7 @@ export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, cont
       style={{
         width: MINIMAP_W,
         height: MINIMAP_H,
-        backgroundColor: 'var(--sol-base2)',
+        backgroundColor: 'var(--sol-header-bg)',
         border: '1px solid var(--sol-border)',
         opacity: 0.85,
       }}

@@ -6,7 +6,7 @@ function StateButton({ label, onClick, disabled }: { label: string; onClick: () 
       disabled={disabled}
       className="px-3 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors disabled:cursor-default disabled:opacity-60"
       style={{
-        backgroundColor: 'var(--sol-base2)',
+        backgroundColor: 'var(--sol-header-bg)',
         color: 'var(--sol-base01)',
         border: `1px solid var(--sol-border)`,
       }}
@@ -31,7 +31,7 @@ function StatePane({
 }) {
   return (
     <div className="flex h-full items-center justify-center px-6">
-      <div className="max-w-[440px] rounded-md border px-5 py-4 text-center" style={{ borderColor: 'var(--sol-border)', backgroundColor: 'var(--sol-base3)' }}>
+      <div className="max-w-[440px] rounded-md border px-5 py-4 text-center" style={{ borderColor: 'var(--sol-border)', backgroundColor: 'var(--sol-bg)' }}>
         <div className="text-[15px] font-semibold" style={{ color: tone }}>{title}</div>
         <div className="mt-2 text-[12px]" style={{ color: 'var(--sol-base01)' }}>{message}</div>
         {actions && <div className="mt-4 flex flex-wrap justify-center gap-2">{actions}</div>}

@@ -1,5 +1,6 @@
 import type { ReactNode, RefObject } from 'react'
 import { PaneSwitch } from '../components/PaneSwitch'
+import { toggleTheme } from '../lib/theme'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import { SectionHeader } from './SectionHeader'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
@@ -92,7 +93,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
       {isMobile ? (
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="shrink-0 border-b border-[var(--sol-base2)] px-3 py-1" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+          <div className="shrink-0 border-b border-[var(--sol-border)] px-3 py-1 flex items-center justify-between" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
             <PaneSwitch
               options={[
                 { id: 'files', label: 'Browse' },
@@ -102,6 +103,15 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               value={mobilePane}
               onChange={(v) => onMobilePaneChange(v as 'files' | 'editor' | 'terminal')}
             />
+            <button
+              className="theme-toggle text-[15px] leading-none cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
+              style={{ color: 'var(--sol-muted)' }}
+              onClick={toggleTheme}
+              title="Toggle theme"
+            >
+              <span className="icon-sun">☼</span>
+              <span className="icon-moon">☾</span>
+            </button>
           </div>
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (

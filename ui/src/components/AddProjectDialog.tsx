@@ -287,7 +287,7 @@ export function AddProjectDialog({
         >
           <button
             onClick={onClose}
-            className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[#E2D9C2]"
+            className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]"
           >
             Cancel
           </button>

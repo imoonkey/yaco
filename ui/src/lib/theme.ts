@@ -7,6 +7,7 @@ export function getTheme(): ThemeId {
 export function setTheme(theme: ThemeId): void {
   document.documentElement.setAttribute('data-theme', theme)
   localStorage.setItem('workflow-theme', theme)
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#00212b' : '#eee8d5')
 }
 
 export function toggleTheme(): void {

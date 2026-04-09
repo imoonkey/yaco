@@ -14,7 +14,7 @@ export function formatRelativeTime(iso: string): string {
   if (hours < 24) return `${hours}h`
 
   const days = Math.floor(hours / 24)
-  if (days <= 7) return `${days}d`
+  if (days <= 30) return `${days}d`
 
   const date = new Date(iso)
   return `${MONTH_NAMES[date.getMonth()]} ${date.getDate()}`

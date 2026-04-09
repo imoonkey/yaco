@@ -74,7 +74,7 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
         position: 'absolute',
         left: 0,
         top: 0,
-        background: 'var(--sol-base3)',
+        background: 'var(--sol-bg)',
         border: '1px solid var(--sol-border)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
         padding: '8px 12px',

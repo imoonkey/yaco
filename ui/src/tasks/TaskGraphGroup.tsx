@@ -19,7 +19,7 @@ export function TaskGraphGroup({ group, subtreeIds, highlight }: {
       y1={group.guideY1}
       x2={group.guideX}
       y2={group.guideY2}
-      stroke={'var(--sol-base2)'}
+      stroke={'var(--sol-header-bg)'}
       strokeWidth={1}
       opacity={isDimmed ? 0.2 : 0.8}
       style={{ transition: 'opacity 150ms ease-out' }}

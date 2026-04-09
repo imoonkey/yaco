@@ -47,7 +47,7 @@ export const editorTheme = EditorView.theme({
     color: 'var(--sol-editor-linenum-active)',
   },
   '.cm-foldPlaceholder': {
-    backgroundColor: 'var(--sol-base2)',
+    backgroundColor: 'var(--sol-editor-widget-bg)',
     border: '1px solid var(--sol-border)',
     color: 'var(--sol-base01)',
   },
@@ -183,7 +183,7 @@ export const editorTheme = EditorView.theme({
     lineHeight: '16px',
   },
   '.cm-diff-popup-nav:hover': {
-    backgroundColor: 'var(--sol-base2)',
+    backgroundColor: 'var(--sol-editor-widget-bg)',
   },
   '.cm-diff-popup-nav:disabled': {
     opacity: '0.3',

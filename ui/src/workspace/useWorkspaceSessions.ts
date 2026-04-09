@@ -18,12 +18,13 @@ interface UseWorkspaceSessionsOpts {
   setFocusTarget: (t: FocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   projectName: string
+  onSessionChange?: () => void
 }
 
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
     actions, projectPath, activeSession, sessions, pinnedSessions,
-    refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
+    refreshSessions, setFocusTarget, sessionUnreadCounts, projectName, onSessionChange,
   } = opts
 
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
@@ -81,6 +82,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     try {
       await closeRemoteSession(sessionName)
       refreshSessions()
+      onSessionChange?.()
     } catch (err) {
       console.error('Failed to close session:', err)
       if (shouldDetach) actions.setActiveSession(sessionName)
@@ -108,6 +110,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       actions.setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
       if (activeSession === oldName) actions.setActiveSession(newName)
       refreshSessions()
+      onSessionChange?.()
     } catch (err) {
       console.error('Failed to rename session:', err)
     }

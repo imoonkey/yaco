@@ -184,10 +184,13 @@ describe('getClaudeHistory', () => {
     writeJsonl(dir, 'sidechain-session', [
       { type: 'user', message: { content: 'sidechain work' } },
     ])
-    writeFileSync(join(dir, 'sessions-index.json'), JSON.stringify([
-      { sessionId: 'main-session' },
-      { sessionId: 'sidechain-session', isSidechain: true },
-    ]))
+    writeFileSync(join(dir, 'sessions-index.json'), JSON.stringify({
+      version: 1,
+      entries: [
+        { sessionId: 'main-session' },
+        { sessionId: 'sidechain-session', isSidechain: true },
+      ],
+    }))
 
     const result = getClaudeHistory(projectPath)
     expect(result).toHaveLength(1)
@@ -200,16 +203,19 @@ describe('getClaudeHistory', () => {
     writeJsonl(dir, 'enriched', [
       { type: 'user', message: { content: 'raw prompt' } },
     ])
-    writeFileSync(join(dir, 'sessions-index.json'), JSON.stringify([
-      {
-        sessionId: 'enriched',
-        summary: 'AI-generated summary',
-        messageCount: 42,
-        gitBranch: 'feature/auth',
-        created: '2026-01-01T00:00:00.000Z',
-        modified: '2026-01-02T00:00:00.000Z',
-      },
-    ]))
+    writeFileSync(join(dir, 'sessions-index.json'), JSON.stringify({
+      version: 1,
+      entries: [
+        {
+          sessionId: 'enriched',
+          summary: 'AI-generated summary',
+          messageCount: 42,
+          gitBranch: 'feature/auth',
+          created: '2026-01-01T00:00:00.000Z',
+          modified: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+    }))
 
     const result = getClaudeHistory(projectPath)
     expect(result[0]).toMatchObject({

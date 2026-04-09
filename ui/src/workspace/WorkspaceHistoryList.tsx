@@ -19,7 +19,8 @@ function HistoryItem({
 }) {
   const isLive = entry.liveSessionName != null
   const primary = entry.title ?? entry.summary
-  const secondary = entry.title ? entry.summary : entry.id.slice(0, 8)
+  const secondary = entry.title && entry.title !== entry.summary
+    ? entry.summary : entry.id.slice(0, 8)
 
   const meta: string[] = []
   if (entry.gitBranch) meta.push(entry.gitBranch)

@@ -75,7 +75,7 @@ function SegmentedProgressBar({ tasks }: { tasks: TaskGraphTask[] }) {
 
   return (
     <div>
-      <div className="flex rounded-full overflow-hidden" style={{ height: 6, backgroundColor: 'var(--sol-base2)' }}>
+      <div className="flex rounded-full overflow-hidden" style={{ height: 6, backgroundColor: 'var(--sol-header-bg)' }}>
         {segments.map(seg => (
           <div
             key={seg.state}
@@ -331,7 +331,7 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
             <div
               key={i}
               className="px-2 py-0.5 rounded text-[11px] font-mono mb-0.5"
-              style={{ backgroundColor: 'var(--sol-base2)', color: 'var(--sol-base01)' }}
+              style={{ backgroundColor: 'var(--sol-header-bg)', color: 'var(--sol-base01)' }}
             >
               {s}
             </div>
@@ -377,7 +377,7 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
         className="absolute bottom-0 left-0 right-0 rounded-t-xl shadow-lg overflow-y-auto z-20"
         style={{
           maxHeight: '40vh',
-          backgroundColor: 'var(--sol-base3)',
+          backgroundColor: 'var(--sol-bg)',
           borderTop: '1px solid var(--sol-border)',
         }}
       >
@@ -394,7 +394,7 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
       className="shrink-0 overflow-y-auto"
       style={{
         width: 300,
-        backgroundColor: 'var(--sol-base3)',
+        backgroundColor: 'var(--sol-bg)',
         borderLeft: '1px solid var(--sol-border)',
         boxShadow: '-2px 0 8px rgba(0,0,0,0.04)',
         transition: 'transform 200ms ease-out',

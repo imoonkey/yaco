@@ -58,7 +58,7 @@ export function ProjectList({
             className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors flex items-center gap-1 ${
               isActive
                 ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
-                : 'text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[#E2D9C2]'
+                : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
             }`}
             style={{ opacity: draggedProject === project.name ? 0.55 : 1 }}
           >

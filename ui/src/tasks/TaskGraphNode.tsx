@@ -44,7 +44,7 @@ function getNodeOpacity(node: LayoutNode, highlight: HighlightModel): number {
 function getNodeFill(node: LayoutNode, highlight: HighlightModel): string {
   if (highlight.upstreamTaskIds.has(node.id)) return 'var(--sol-orange)'
   if (highlight.downstreamTaskIds.has(node.id)) return 'var(--sol-cyan)'
-  return 'var(--sol-base3)'
+  return 'var(--sol-bg)'
 }
 
 function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel): number {

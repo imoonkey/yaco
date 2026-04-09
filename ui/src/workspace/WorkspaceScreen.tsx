@@ -158,6 +158,7 @@ export function Workspace({
   const sessionsMgr = useWorkspaceSessions({
     actions, projectPath, activeSession, sessions, pinnedSessions,
     refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
+    onSessionChange: history.refresh,
   })
 
   const { activeDiff, editorDiffHunks, clearDiff } = useWorkspaceDiff({
@@ -526,12 +527,14 @@ export function Workspace({
         setResumingId(null)
         setSessionTab('live')
         actions.setActiveSession(handle)
+        if (isMobile) actions.setMobilePane('terminal')
         refreshSessions()
         history.refresh()
       }}
       onGoLive={(liveSessionName) => {
         setSessionTab('live')
         actions.setActiveSession(liveSessionName)
+        if (isMobile) actions.setMobilePane('terminal')
       }}
     />
   )

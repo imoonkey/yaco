@@ -184,10 +184,10 @@ function loadClaudeIndex(projectDir: string): Map<string, ClaudeIndexEntry> {
   try {
     const raw = readFileSync(indexPath, 'utf-8')
     const data = JSON.parse(raw)
-    if (Array.isArray(data)) {
-      for (const entry of data) {
-        if (entry.sessionId) map.set(entry.sessionId, entry)
-      }
+    // Real format: { version, entries: [...] } — but also accept raw array
+    const entries = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : []
+    for (const entry of entries) {
+      if (entry.sessionId) map.set(entry.sessionId, entry)
     }
   } catch { /* index is unreliable, ignore errors */ }
 

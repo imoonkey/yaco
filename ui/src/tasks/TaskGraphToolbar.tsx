@@ -72,7 +72,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
   return (
     <div
       className="shrink-0 flex items-center gap-3 px-3"
-      style={{ height: 40, backgroundColor: 'var(--sol-base2)', borderBottom: '1px solid var(--sol-border)' }}
+      style={{ height: 40, backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)' }}
     >
       {/* Zoom controls */}
       <div className="flex items-center gap-1">
@@ -146,7 +146,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
           {filtersOpen && (
             <div
               className="absolute top-full left-0 mt-1 p-2 rounded-md shadow-md z-10"
-              style={{ backgroundColor: 'var(--sol-base3)', border: '1px solid var(--sol-border)' }}
+              style={{ backgroundColor: 'var(--sol-bg)', border: '1px solid var(--sol-border)' }}
             >
               {filterChips}
             </div>
