@@ -7,7 +7,6 @@ import { buildChildProcessEnv } from './ssh-auth'
 import {
   MULTMUX_COMMAND_TIMEOUT_MS,
   MULTMUX_SESSIONS_DIR,
-  MULTMUX_START_TIMEOUT_MS,
   MULTMUX_PATH,
 } from './constants'
 
@@ -191,7 +190,13 @@ export async function sendToSession(handle: string, message: string): Promise<vo
   await spawnOutput(MULTMUX_PATH, ['send', handle, message], MULTMUX_COMMAND_TIMEOUT_MS)
 }
 
-/** Start a new multmux session. Returns handle and sessionId from CLI output. */
+const STATE_POLL_MS = 200
+const STATE_POLL_TIMEOUT_MS = 10_000
+
+/** Start a new multmux session. Returns as soon as the tmux session is
+ *  attachable (state file has PID), without waiting for the agent to become
+ *  idle. The multmux process continues in the background (waitForReady,
+ *  /rename, sessionId resolution, etc.). */
 export async function startMultmuxSession(
   provider: 'claude' | 'codex',
   name: string,
@@ -202,14 +207,40 @@ export async function startMultmuxSession(
   const args: string[] = [provider]
   if (prompt) args.push(prompt)
   args.push('-n', name, '--json')
-  const output = await spawnOutput(MULTMUX_PATH, args, MULTMUX_START_TIMEOUT_MS, cwd)
-  try {
-    const state = JSON.parse(output) as MultmuxStateFile
-    return { handle: state.handle, sessionId: state.sessionId ?? '' }
-  } catch (e) {
-    console.warn('[multmux] failed to parse start --json output:', e)
-    return { handle: name, sessionId: '' }
+
+  // Spawn multmux — it will handle waitForReady / /rename / sessionId in background
+  const proc = spawn(MULTMUX_PATH, args, {
+    stdio: ['ignore', 'ignore', 'pipe'],
+    cwd,
+    env: buildChildProcessEnv(),
+  })
+  proc.unref()
+
+  let exitCode: number | null = null
+  let stderr = ''
+  proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
+  proc.on('close', (code) => { exitCode = code })
+
+  // Poll for state file with PID > 0 (tmux session created).
+  // Multmux writes the state file immediately, then creates the tmux session
+  // and captures the PID — all within ~1-2s.
+  const stateFile = join(MULTMUX_SESSIONS_DIR, `${name}.json`)
+  const deadline = Date.now() + STATE_POLL_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if (exitCode !== null && exitCode !== 0) {
+      throw new Error(`multmux exit ${exitCode}: ${stderr}`)
+    }
+    try {
+      const raw = readFileSync(stateFile, 'utf-8')
+      const state = JSON.parse(raw) as MultmuxStateFile
+      if (state.pid > 0) {
+        return { handle: state.handle ?? name, sessionId: state.sessionId ?? '' }
+      }
+    } catch { /* state file not yet written */ }
+    await new Promise(r => setTimeout(r, STATE_POLL_MS))
   }
+
+  throw new Error('timeout waiting for session tmux process')
 }
 
 /** Close a multmux session via the CLI (handles state file cleanup). */
