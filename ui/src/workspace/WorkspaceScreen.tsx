@@ -486,7 +486,7 @@ export function Workspace({
             color: sessionTab === 'live' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
           }}
         >
-          <Radio size={13} />
+          <Radio size={14} />
         </span>
         <span
           className="px-1.5 py-0.5 flex items-center transition-colors"
@@ -495,7 +495,7 @@ export function Workspace({
             color: sessionTab === 'history' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
           }}
         >
-          <History size={13} />
+          <History size={14} />
         </span>
       </div>
     </div>
