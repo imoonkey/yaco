@@ -473,11 +473,12 @@ export function Workspace({
           <RefreshCw size={12} />
         </button>
       )}
+      <span className="mx-0.5" style={{ color: 'var(--sol-border)' }}>|</span>
       <button
         onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
-        className="cursor-pointer transition-opacity"
+        className="cursor-pointer transition-opacity hover:opacity-100"
         title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
-        style={{ color: sessionTab === 'history' ? 'var(--sol-accent)' : 'var(--sol-muted)', opacity: sessionTab === 'history' ? 1 : 0.6 }}
+        style={{ color: sessionTab === 'history' ? 'var(--sol-accent)' : 'var(--sol-text)', opacity: sessionTab === 'history' ? 1 : 0.5 }}
       >
         <History size={13} />
       </button>
