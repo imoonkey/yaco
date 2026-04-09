@@ -475,13 +475,13 @@ export function Workspace({
       )}
       <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div
-        className="flex rounded-full overflow-hidden cursor-pointer"
-        style={{ border: '1px solid var(--sol-text-dim)' }}
+        className="flex rounded overflow-hidden cursor-pointer"
+        style={{ border: '1px solid var(--sol-border)', padding: 2 }}
         onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
         title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
       >
         <span
-          className="px-1.5 py-0.5 flex items-center transition-colors"
+          className="px-1.5 py-0.5 flex items-center rounded transition-colors"
           style={{
             backgroundColor: sessionTab === 'live' ? 'var(--sol-accent)' : 'transparent',
             color: sessionTab === 'live' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
@@ -490,7 +490,7 @@ export function Workspace({
           <Radio size={14} />
         </span>
         <span
-          className="px-1.5 py-0.5 flex items-center transition-colors"
+          className="px-1.5 py-0.5 flex items-center rounded transition-colors"
           style={{
             backgroundColor: sessionTab === 'history' ? 'var(--sol-accent)' : 'transparent',
             color: sessionTab === 'history' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
