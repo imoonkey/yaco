@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { RefreshCw, History } from 'lucide-react'
+import { RefreshCw, History, Radio } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
@@ -473,15 +473,30 @@ export function Workspace({
           <RefreshCw size={12} />
         </button>
       )}
-      <span className="mx-0.5 inline-block w-px h-3" style={{ backgroundColor: 'var(--sol-text-dim)' }} />
-      <button
-        onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
-        className="cursor-pointer transition-opacity hover:opacity-100"
-        title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
-        style={{ color: sessionTab === 'history' ? 'var(--sol-accent)' : 'var(--sol-text-dim)', opacity: sessionTab === 'history' ? 1 : 0.7 }}
-      >
-        <History size={13} />
-      </button>
+      <div className="flex rounded-full overflow-hidden" style={{ border: '1px solid var(--sol-border)' }}>
+        <button
+          onClick={() => setSessionTab('live')}
+          className="px-1.5 py-0.5 cursor-pointer transition-colors"
+          title="Live sessions"
+          style={{
+            backgroundColor: sessionTab === 'live' ? 'var(--sol-accent)' : 'transparent',
+            color: sessionTab === 'live' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
+          }}
+        >
+          <Radio size={11} />
+        </button>
+        <button
+          onClick={() => setSessionTab('history')}
+          className="px-1.5 py-0.5 cursor-pointer transition-colors"
+          title="Session history"
+          style={{
+            backgroundColor: sessionTab === 'history' ? 'var(--sol-accent)' : 'transparent',
+            color: sessionTab === 'history' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
+          }}
+        >
+          <History size={11} />
+        </button>
+      </div>
     </div>
   )
 
