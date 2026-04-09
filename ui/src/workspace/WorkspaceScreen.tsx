@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, History } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
@@ -453,20 +453,7 @@ export function Workspace({
   }, [actions, setFocusTarget, isMobile])
 
   const sessionActions = (
-    <div className="flex items-center gap-2">
-      <div className="flex text-[10px]" style={{ color: 'var(--sol-muted)' }}>
-        <button
-          onClick={() => setSessionTab('live')}
-          className="px-1 cursor-pointer"
-          style={{ color: sessionTab === 'live' ? 'var(--sol-text-dark)' : 'var(--sol-muted)', fontWeight: sessionTab === 'live' ? 600 : 400 }}
-        >Live</button>
-        <span style={{ color: 'var(--sol-muted)' }}>|</span>
-        <button
-          onClick={() => setSessionTab('history')}
-          className="px-1 cursor-pointer"
-          style={{ color: sessionTab === 'history' ? 'var(--sol-text-dark)' : 'var(--sol-muted)', fontWeight: sessionTab === 'history' ? 600 : 400 }}
-        >History</button>
-      </div>
+    <div className="flex items-center gap-1">
       {sessionTab === 'live' && (
         <div className="flex gap-1">
           {(['claude', 'codex', 'shell'] as const).map(p => (
@@ -479,13 +466,21 @@ export function Workspace({
       {sessionTab === 'history' && (
         <button
           onClick={() => history.refresh()}
-          className="text-[10px] px-1 cursor-pointer opacity-70 hover:opacity-100"
+          className="cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
           title="Refresh history"
           style={{ color: 'var(--sol-muted)' }}
         >
           <RefreshCw size={12} />
         </button>
       )}
+      <button
+        onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
+        className="cursor-pointer transition-opacity"
+        title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
+        style={{ color: sessionTab === 'history' ? 'var(--sol-accent)' : 'var(--sol-muted)', opacity: sessionTab === 'history' ? 1 : 0.6 }}
+      >
+        <History size={13} />
+      </button>
     </div>
   )
 
