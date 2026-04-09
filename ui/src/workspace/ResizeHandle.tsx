@@ -2,7 +2,7 @@ export function VResizeHandle({ onMouseDown, isDragging }: { onMouseDown: (e: Re
   return (
     <div onMouseDown={onMouseDown}
       className="shrink-0 cursor-col-resize flex items-center"
-      style={{ width: 5, marginLeft: -1, marginRight: -1, zIndex: 1 }}
+      style={{ width: 3, marginLeft: -1, marginRight: -1, zIndex: 1 }}
     >
       <div
         className={`w-full ${isDragging ? 'w-[3px]' : 'w-[1px]'}`}
@@ -16,7 +16,7 @@ export function HResizeHandle({ onMouseDown, isDragging }: { onMouseDown: (e: Re
   return (
     <div onMouseDown={onMouseDown}
       className="shrink-0 cursor-row-resize flex justify-center"
-      style={{ height: 5, marginTop: -1, marginBottom: -1, zIndex: 1 }}
+      style={{ height: 3, marginTop: -1, marginBottom: -1, zIndex: 1 }}
     >
       <div
         className={`h-full ${isDragging ? 'h-[3px]' : 'h-[1px]'}`}
