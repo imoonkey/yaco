@@ -7,31 +7,36 @@ import '@xterm/xterm/css/xterm.css'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { useIsTouch } from '../hooks/useIsMobile'
 import { TerminalKeyBar } from './TerminalKeyBar'
-import { SOLARIZED_LIGHT } from '../lib/solarizedLight'
 import type { TerminalKeyBarKey, Modifiers } from './TerminalKeyBar'
 
-const SOLARIZED_THEME = {
-  background: SOLARIZED_LIGHT.base2,
-  foreground: SOLARIZED_LIGHT.base00,
-  cursor: SOLARIZED_LIGHT.base01,
-  cursorAccent: SOLARIZED_LIGHT.base2,
-  selectionBackground: 'rgba(38, 139, 210, 0.28)',
-  black: SOLARIZED_LIGHT.base02,
-  red: SOLARIZED_LIGHT.red,
-  green: SOLARIZED_LIGHT.green,
-  yellow: SOLARIZED_LIGHT.yellow,
-  blue: SOLARIZED_LIGHT.blue,
-  magenta: SOLARIZED_LIGHT.magenta,
-  cyan: SOLARIZED_LIGHT.cyan,
-  white: SOLARIZED_LIGHT.base2,
-  brightBlack: SOLARIZED_LIGHT.base01,
-  brightRed: SOLARIZED_LIGHT.orange,
-  brightGreen: SOLARIZED_LIGHT.base01,
-  brightYellow: SOLARIZED_LIGHT.base00,
-  brightBlue: SOLARIZED_LIGHT.base0,
-  brightMagenta: SOLARIZED_LIGHT.violet,
-  brightCyan: SOLARIZED_LIGHT.base1,
-  brightWhite: SOLARIZED_LIGHT.base2,
+function getCssVar(name: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+}
+
+function buildXtermTheme() {
+  return {
+    background: getCssVar('--sol-editor-bg'),
+    foreground: getCssVar('--sol-editor-fg'),
+    cursor: getCssVar('--sol-text'),
+    cursorAccent: getCssVar('--sol-editor-bg'),
+    selectionBackground: getCssVar('--sol-blue') + '47',
+    black: getCssVar('--sol-base02'),
+    red: getCssVar('--sol-red'),
+    green: getCssVar('--sol-green'),
+    yellow: getCssVar('--sol-yellow'),
+    blue: getCssVar('--sol-blue'),
+    magenta: getCssVar('--sol-magenta'),
+    cyan: getCssVar('--sol-cyan'),
+    white: getCssVar('--sol-base2'),
+    brightBlack: getCssVar('--sol-base03'),
+    brightRed: getCssVar('--sol-orange'),
+    brightGreen: getCssVar('--sol-base01'),
+    brightYellow: getCssVar('--sol-base00'),
+    brightBlue: getCssVar('--sol-base0'),
+    brightMagenta: getCssVar('--sol-violet'),
+    brightCyan: getCssVar('--sol-base1'),
+    brightWhite: getCssVar('--sol-base3'),
+  }
 }
 
 const TERMINAL_RIGHT_GUTTER_PX = 3
@@ -185,8 +190,9 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
 
     const container = containerRef.current
 
+    const initialTheme = buildXtermTheme()
     const term = new XTerm({
-      theme: SOLARIZED_THEME,
+      theme: initialTheme,
       fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
       fontSize: 12,
       lineHeight: 1.4,
@@ -201,10 +207,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     if (term.element) {
       term.element.style.boxSizing = 'border-box'
       term.element.style.height = '100%'
-      term.element.style.backgroundColor = SOLARIZED_THEME.background
+      term.element.style.backgroundColor = 'var(--sol-editor-bg)'
       term.element.style.paddingRight = `${TERMINAL_RIGHT_GUTTER_PX}px`
       const viewport = term.element.querySelector<HTMLElement>('.xterm-viewport')
-      if (viewport) viewport.style.backgroundColor = SOLARIZED_THEME.background
+      if (viewport) viewport.style.backgroundColor = 'var(--sol-editor-bg)'
     }
     fitAddon.fit()
     fitTerminal(term)
@@ -392,8 +398,18 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     })
     observer.observe(container)
 
+    // Live theme switching — xterm needs resolved hex values, not CSS vars
+    const themeObserver = new MutationObserver(() => {
+      term.options.theme = buildXtermTheme()
+    })
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    })
+
     return () => {
       disposed = true
+      themeObserver.disconnect()
       if (resizeTimer) clearTimeout(resizeTimer)
       cancelAnimationFrame(fitAnimationFrame)
       container.removeEventListener('focusin', handleFocusIn)
@@ -417,7 +433,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
   }, [sessionName, containerReady])
 
   return (
-    <div className="h-full w-full flex flex-col" style={{ backgroundColor: SOLARIZED_THEME.background }}>
+    <div className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
       <div
         ref={containerRef}
         className="flex-1 min-h-0 w-full select-text"
