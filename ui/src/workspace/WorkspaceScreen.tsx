@@ -473,29 +473,30 @@ export function Workspace({
           <RefreshCw size={12} />
         </button>
       )}
-      <div className="flex rounded-full overflow-hidden" style={{ border: '1px solid var(--sol-border)' }}>
-        <button
-          onClick={() => setSessionTab('live')}
-          className="px-1.5 py-0.5 cursor-pointer transition-colors"
-          title="Live sessions"
+      <div
+        className="flex rounded-full overflow-hidden cursor-pointer"
+        style={{ border: '1px solid var(--sol-border)' }}
+        onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
+        title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
+      >
+        <span
+          className="px-1.5 py-0.5 flex items-center transition-colors"
           style={{
             backgroundColor: sessionTab === 'live' ? 'var(--sol-accent)' : 'transparent',
             color: sessionTab === 'live' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
           }}
         >
-          <Radio size={11} />
-        </button>
-        <button
-          onClick={() => setSessionTab('history')}
-          className="px-1.5 py-0.5 cursor-pointer transition-colors"
-          title="Session history"
+          <Radio size={13} />
+        </span>
+        <span
+          className="px-1.5 py-0.5 flex items-center transition-colors"
           style={{
             backgroundColor: sessionTab === 'history' ? 'var(--sol-accent)' : 'transparent',
             color: sessionTab === 'history' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
           }}
         >
-          <History size={11} />
-        </button>
+          <History size={13} />
+        </span>
       </div>
     </div>
   )
