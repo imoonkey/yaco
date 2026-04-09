@@ -2,6 +2,8 @@ import { useRef, useEffect, useState, useCallback, useMemo, forwardRef, useImper
 import { Tree } from 'react-arborist'
 import { moveFile, renameFile, deleteFile, createFile, createDir, revealInFinder } from '../hooks/useApi'
 import { writeTextToClipboard } from '../lib/clipboard'
+import { toast } from 'sonner'
+import { ConfirmDialog } from './ConfirmDialog'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
 import type { FileNode } from '../types'
 export { GIT_COLORS, FileTypeIcon, FolderIcon, NewFileIcon, NewFolderIcon, CollapseAllIcon } from './fileExplorerIcons'
@@ -126,6 +128,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
   const menu = useContextMenu()
   const [menuTarget, setMenuTarget] = useState<{ path: string; type: 'file' | 'dir' } | null>(null)
   const [pendingCreate, setPendingCreate] = useState<{ path: string; type: 'file' | 'dir' } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const pendingRef = useRef(pendingCreate)
   pendingRef.current = pendingCreate
 
@@ -213,22 +216,24 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     if (node) node.edit()
   }, [menu])
 
-  const handleDelete = useCallback(async (path: string) => {
+  const handleDelete = useCallback((path: string) => {
     menu.close()
-    const name = path.split('/').pop()
-    if (!confirm(`Delete "${name}"?`)) return
-    // Optimistic: remove from tree visually
+    setConfirmDelete(path)
+  }, [menu])
+
+  const doDelete = useCallback(async () => {
+    const path = confirmDelete
+    if (!path) return
     patchTree?.(prev => prev ? removeNodeFromTree(prev, path) : prev)
     try {
       await deleteFile(projectName, path)
-      // Only close tabs and remove state after server confirms
       onFileDeleted?.(path)
     }
     catch (err) {
-      console.error('Failed to delete:', err)
+      toast.error(`Failed to delete: ${err}`)
       refreshTree?.()
     }
-  }, [projectName, menu, patchTree, refreshTree, onFileDeleted])
+  }, [confirmDelete, projectName, patchTree, refreshTree, onFileDeleted])
 
   const handleCopyPath = useCallback((path: string) => {
     menu.close()
@@ -412,6 +417,16 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
           <MenuItem label="Copy Path" onClick={() => handleCopyPath(menuTarget.path)} />
           <MenuItem label="Reveal in Finder" onClick={() => handleReveal(menuTarget.path)} />
         </Menu>
+      )}
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title={`Delete "${confirmDelete.split('/').pop()}"?`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={doDelete}
+          onClose={() => setConfirmDelete(null)}
+        />
       )}
     </ExplorerContext.Provider>
   )

@@ -1,6 +1,7 @@
 import type { ReactNode, RefObject } from 'react'
 import { PaneSwitch } from '../components/PaneSwitch'
 import { toggleTheme } from '../lib/theme'
+import { Sun, Moon } from 'lucide-react'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import { SectionHeader } from './SectionHeader'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
@@ -103,15 +104,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               value={mobilePane}
               onChange={(v) => onMobilePaneChange(v as 'files' | 'editor' | 'terminal')}
             />
-            <button
-              className="theme-toggle text-[15px] leading-none cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
-              style={{ color: 'var(--sol-muted)' }}
-              onClick={toggleTheme}
-              title="Toggle theme"
-            >
-              <span className="icon-sun">☼</span>
-              <span className="icon-moon">☾</span>
-            </button>
+            <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme">
+              <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
+              <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
+            </span>
           </div>
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (

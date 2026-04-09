@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { RefreshCw } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
@@ -481,7 +482,9 @@ export function Workspace({
           className="text-[10px] px-1 cursor-pointer opacity-70 hover:opacity-100"
           title="Refresh history"
           style={{ color: 'var(--sol-muted)' }}
-        >↻</button>
+        >
+          <RefreshCw size={12} />
+        </button>
       )}
     </div>
   )

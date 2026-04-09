@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { X, GitBranch } from 'lucide-react'
 import { browseDirs, addProject } from '../hooks/useApi'
 import type { BrowseEntry } from '../hooks/useApi'
 
@@ -192,7 +193,7 @@ export function AddProjectDialog({
             style={{ color: 'var(--sol-muted)' }}
             aria-label="Close"
           >
-            ×
+            <X size={14} />
           </button>
         </div>
 
@@ -242,10 +243,10 @@ export function AddProjectDialog({
                   onClick={() => selectEntry(entry)}
                 >
                   <span
-                    className="text-[8px] leading-none"
+                    className="flex items-center justify-center"
                     style={{ color: entry.isGit ? 'var(--sol-green)' : 'transparent' }}
                   >
-                    ●
+                    <GitBranch size={10} />
                   </span>
                   <span className="flex-1 truncate">{entry.name}</span>
                   {entry.isGit && (

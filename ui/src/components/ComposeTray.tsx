@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { X, ChevronRight, ArrowLeftRight } from 'lucide-react'
 import type { VoiceSurface, ComposeData, InteractionState } from '../hooks/useVoice'
 
 export function ComposeTray({
@@ -93,9 +94,9 @@ export function ComposeTray({
             title={canToggleSurface ? 'Click to switch target' : undefined}
           >
             Voice → {surface === 'terminal' ? 'Terminal' : 'Editor'}
-            {canToggleSurface && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.5 }}>Tab ⇄</span>}
+            {canToggleSurface && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.5, display: 'inline-flex', alignItems: 'center', gap: 2 }}>Tab <ArrowLeftRight size={10} /></span>}
           </button>
-          <button style={CLOSE_BTN_STYLE} onClick={state === 'recording' ? onStop : onDiscard} aria-label="Close">✕</button>
+          <button style={CLOSE_BTN_STYLE} onClick={state === 'recording' ? onStop : onDiscard} aria-label="Close"><X size={14} /></button>
         </div>
 
         {/* Recording state */}
@@ -164,11 +165,11 @@ export function ComposeTray({
                     aria-expanded={showRaw}
                   >
                     <span style={{
-                      display: 'inline-block',
+                      display: 'inline-flex',
+                      alignItems: 'center',
                       transition: 'transform 150ms',
                       transform: showRaw ? 'rotate(90deg)' : 'rotate(0deg)',
-                      fontSize: 10,
-                    }}>&#x25B6;</span>
+                    }}><ChevronRight size={12} /></span>
                     {' '}Raw transcript
                   </button>
                   {showRaw && (

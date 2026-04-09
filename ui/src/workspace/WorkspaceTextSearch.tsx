@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, memo } from 'react'
+import { ChevronRight, ChevronDown } from 'lucide-react'
 
 // --- Types ---
 
@@ -380,7 +381,7 @@ function FileGroupView({ group, expanded, onToggle, onMatchClick, focusIndex, fl
         }}
         onClick={onToggle}
       >
-        <span className="text-[9px] w-3 text-center shrink-0">{expanded ? '▾' : '▸'}</span>
+        <span className="w-3 flex items-center justify-center shrink-0">{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <span className="truncate flex-1 font-medium">{group.file}</span>
         <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: 'var(--sol-muted)' }}>{group.matches.length}</span>
       </div>

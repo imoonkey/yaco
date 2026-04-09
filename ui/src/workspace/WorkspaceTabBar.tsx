@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { X, AlertTriangle } from 'lucide-react'
 
 import { isDiffTab, isFileTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
@@ -144,15 +145,15 @@ export function WorkspaceTabBar({
             <span className="truncate max-w-[120px]">{tabName(tab)}</span>
             {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-muted)' }}>{parentDirSuffix}</span>}
             {isConflict ? (
-              <span className="w-4 h-4 flex items-center justify-center shrink-0 text-[12px]" style={{ color: '#C4A241' }} title="File changed on disk">&#9888;</span>
+              <span className="w-4 h-4 flex items-center justify-center shrink-0" style={{ color: '#C4A241' }} title="File changed on disk"><AlertTriangle size={12} /></span>
             ) : isDirty ? (
               <span className="w-4 h-4 flex items-center justify-center shrink-0">
                 <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
               </span>
             ) : (
               <button onClick={(e) => onCloseTab(tab, e)}
-                className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity text-[10px] cursor-pointer" style={{ color: 'var(--sol-text-dim)' }}
-                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}>×</button>
+                className="w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" style={{ color: 'var(--sol-text-dim)' }}
+                onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)')} onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}><X size={12} /></button>
             )}
           </div>
         )

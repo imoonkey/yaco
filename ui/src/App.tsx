@@ -2,10 +2,13 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { AddProjectDialog } from './components/AddProjectDialog'
-import { useBrowserNotifications } from './hooks/useBrowserNotifications'
+import { ConfirmDialog } from './components/ConfirmDialog'
+import { useNotifications } from './hooks/useNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
 import { toggleTheme } from './lib/theme'
+import { Sun, Moon } from 'lucide-react'
+import { Toaster, toast } from 'sonner'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
 
@@ -108,6 +111,7 @@ function App() {
   const { data: progress } = useProgress()
   const { data: allSessions } = useSessions()
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState<Project | null>(null)
 
   // App/Workspace bridge state
   const [visibilityReport, setVisibilityReport] = useState<WorkspaceVisibilityReport | null>(null)
@@ -175,7 +179,7 @@ function App() {
     }
   }, [])
 
-  const browserNotifications = useBrowserNotifications(handleNotificationClick)
+  useNotifications(handleNotificationClick)
 
   // Persist project selection
   useEffect(() => {
@@ -198,7 +202,12 @@ function App() {
   }
 
   const handleRemoveProject = useCallback(async (project: Project) => {
-    if (!confirm(`Remove project '${project.name}'? (Files on disk are not affected)`)) return
+    setConfirmRemove(project)
+  }, [])
+
+  const doRemoveProject = useCallback(async () => {
+    const project = confirmRemove
+    if (!project) return
     try {
       await removeProject(project.name)
       refreshProjects()
@@ -209,9 +218,9 @@ function App() {
         setProjectName(neighbor?.name ?? '')
       }
     } catch (err) {
-      alert(`Failed to remove project: ${err}`)
+      toast.error(`Failed to remove project: ${err}`)
     }
-  }, [orderedProjects, activeProject, refreshProjects])
+  }, [confirmRemove, orderedProjects, activeProject, refreshProjects])
 
   const handleProjectReorder = useCallback(async (fromName: string, toName: string) => {
     const currentOrder = projectOrder.length > 0 ? projectOrder : orderedProjects.map((project) => project.name)
@@ -227,7 +236,7 @@ function App() {
       refreshProjects()
     } catch (err) {
       setProjectOrder(projects?.map((project) => project.name) ?? [])
-      alert(`Failed to reorder projects: ${err}`)
+      toast.error(`Failed to reorder projects: ${err}`)
     }
   }, [orderedProjects, projectOrder, projects, refreshProjects])
 
@@ -255,16 +264,11 @@ function App() {
       <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <span className="flex items-center gap-2">
+          <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme">
+            <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
+            <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
+          </span>
           <Clock onPulse={handlePulse} />
-          <button
-            className="theme-toggle text-[15px] leading-none cursor-pointer opacity-60 hover:opacity-100 transition-opacity"
-            style={{ color: 'var(--sol-muted)' }}
-            onClick={toggleTheme}
-            title="Toggle theme"
-          >
-            <span className="icon-sun">☼</span>
-            <span className="icon-moon">☾</span>
-          </button>
         </span>
       </div>
       <main className="flex-1 overflow-hidden">
@@ -309,6 +313,17 @@ function App() {
         />
       )}
 
+      {confirmRemove && (
+        <ConfirmDialog
+          title={`Remove '${confirmRemove.name}'?`}
+          description="Files on disk are not affected."
+          confirmLabel="Remove"
+          danger
+          onConfirm={doRemoveProject}
+          onClose={() => setConfirmRemove(null)}
+        />
+      )}
+
       {pulseType !== 'none' && (
         <div
           data-rhythm-pulse
@@ -320,6 +335,19 @@ function App() {
           }}
         />
       )}
+
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          style: {
+            background: 'var(--sol-editor-bg)',
+            color: 'var(--sol-text)',
+            border: '1px solid var(--sol-border)',
+            fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+            fontSize: '12px',
+          },
+        }}
+      />
     </div>
   )
 }

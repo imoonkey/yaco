@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { Pin } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 
 import { Menu, MenuItem, useContextMenu } from '../components/Menu'
@@ -77,11 +78,11 @@ export function SessionItem({
         {onPin && (
           <button
             onClick={e => { e.stopPropagation(); onPin() }}
-            className="shrink-0 text-[10px] cursor-pointer opacity-40 hover:opacity-100"
+            className="shrink-0 cursor-pointer opacity-40 hover:opacity-100"
             title={pinned ? 'Unpin' : 'Pin to top'}
             style={{ color: pinned ? 'var(--sol-blue)' : 'var(--sol-muted)', opacity: pinned ? 0.9 : undefined }}
           >
-            &#x25C6;
+            <Pin size={12} />
           </button>
         )}
         <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />

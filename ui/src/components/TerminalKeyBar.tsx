@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
+import { Ellipsis } from 'lucide-react'
 import type { MouseEvent, SyntheticEvent, TouchEvent } from 'react'
 
 type KeyDef = {
@@ -229,10 +230,10 @@ export function TerminalKeyBar({
           onContextMenu={preventContext}
         >
           <span
-            className="inline-block transition-transform duration-150"
+            className="inline-flex items-center justify-center transition-transform duration-150"
             style={{ transform: expanded ? 'rotate(90deg)' : undefined }}
           >
-            ···
+            <Ellipsis size={14} />
           </span>
         </button>
       </div>
