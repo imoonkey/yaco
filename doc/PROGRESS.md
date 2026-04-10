@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-09: Fix toast notification click navigation + compact git changes
+
+**What changed:**
+- Toast notifications now navigate to project/session on click. Replaced broken `toast()` `onClick` (silently ignored by Sonner v2) with `toast.custom()` full-area click handler.
+- GitChangeItem switched to compact single-line layout (was multi-line with stacked name/dir).
+
+**Why:**
+- Sonner v2.0.7 `ToastT` has no `onClick` property — only `Action.onClick` for action/cancel buttons. The `<li>` element never wires a click handler. `toast.custom()` is the only way to get full-area clickable toasts.
+- Git change items were unnecessarily tall for sidebar density.
+
+**Key files:** `ui/src/hooks/useNotifications.ts`, `ui/src/workspace/WorkspaceSidebar.tsx`
+**Verification:** `tsc --noEmit` clean
+**Commit:** 7ecfcc9
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: Comprehensive frontend polish — 15-task orchestrated pass
 
 **What changed:**

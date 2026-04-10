@@ -147,7 +147,7 @@ Dual-mode notification delivery via SSE.
 
 Behavior:
 - Listens for `notification` SSE events
-- Page visible: shows sonner toast with "Go" action button
+- Page visible: shows `toast.custom()` with full-area click (Sonner v2 ignores `onClick` on toast options)
 - Page hidden: shows browser Notification (click → window.focus + route)
 - Auto-requests notification permission on mount
 - Per-tab deduplication via seen-ID set (max 500 entries, FIFO eviction)

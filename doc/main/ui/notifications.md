@@ -22,7 +22,7 @@ Dual-mode notification pipeline: in-app toast (foreground) and browser Notificat
 Event source (file change / session idle)
   → emitNotification()
     → SSE broadcast to all connected browsers
-      → Page visible: sonner toast (auto-dismiss ~4s, with "Go" action)
+      → Page visible: sonner toast.custom() (full-area clickable, auto-dismiss ~4s)
       → Page hidden: Browser Notification API (click → window.focus + route)
 ```
 
@@ -60,7 +60,7 @@ Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) whil
 - Listens for `notification` SSE events
 - Per-tab deduplication: seen-ID set (max 500, FIFO eviction)
 - Accumulates notifications in-memory (max 50, newest first, FIFO eviction)
-- **Page visible** → sonner `toast()` with title, description, and optional "Go" action button that routes to project/session
+- **Page visible** → `toast.custom()` with full-area click handler that routes to project/session. Sonner v2 does not support `onClick` on toast options (silently ignored), so custom rendering is required for clickable toasts. Inline styles replicate the Solarized theme since `toast.custom()` does not inherit `Toaster.toastOptions.style`.
 - **Page hidden** → `new Notification()` via Browser Notification API; click calls `window.focus()` + routes to project/session
 - Auto-requests `Notification.requestPermission()` on mount (one-time browser prompt, persists per origin)
 
