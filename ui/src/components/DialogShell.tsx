@@ -66,7 +66,7 @@ export function DialogShell({
   // Escape dismissal + focus trap
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onClose(); return }
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); onClose(); return }
       if (e.key !== 'Tab' || e.defaultPrevented) return
 
       const shell = shellRef.current
