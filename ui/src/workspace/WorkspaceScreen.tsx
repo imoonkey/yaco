@@ -424,7 +424,7 @@ export function Workspace({
       </div>
       <div
         className="flex-1 overflow-hidden p-[3px] select-text"
-        style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+        style={{ userSelect: 'text', WebkitUserSelect: 'text', backgroundColor: 'var(--sol-editor-bg)' }}
         onMouseDown={() => setFocusTarget('terminal')}
       >
         <Terminal
