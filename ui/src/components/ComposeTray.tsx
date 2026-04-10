@@ -79,14 +79,14 @@ export function ComposeTray({
   return (
     <DialogShell
       onClose={handleClose}
-      overlayBg="rgba(0,0,0,0.15)"
+      overlayBg="var(--sol-overlay-bg)"
       overlayClassName="z-[1000] items-center justify-center"
       style={{
         borderRadius: 8,
         padding: 16,
         width: '90%',
         maxWidth: 520,
-        backgroundColor: 'color-mix(in srgb, var(--sol-base3) 90%, transparent)',
+        backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)',
       }}
     >
       <div onKeyDown={(e) => {
@@ -273,8 +273,8 @@ const STOP_BTN_STYLE: React.CSSProperties = {
   height: 32,
   fontSize: 13,
   borderRadius: 4,
-  border: '1px solid rgba(220,50,47,0.3)',
-  background: 'rgba(220,50,47,0.08)',
+  border: '1px solid color-mix(in srgb, var(--sol-red) 30%, transparent)',
+  background: 'color-mix(in srgb, var(--sol-red) 8%, transparent)',
   color: 'var(--sol-red)',
   cursor: 'pointer',
   padding: '0 16px',
@@ -304,7 +304,7 @@ const TEXTAREA_STYLE: React.CSSProperties = {
   width: '100%',
   fontFamily: 'monospace',
   fontSize: 13,
-  color: 'var(--sol-base02)',
+  color: 'var(--sol-editor-fg)',
   background: 'var(--sol-input-bg)',
   border: '1px solid var(--sol-border)',
   borderRadius: 4,
@@ -317,8 +317,8 @@ const TEXTAREA_STYLE: React.CSSProperties = {
 }
 
 const WARNING_STYLE: React.CSSProperties = {
-  background: 'rgba(181,137,0,0.08)',
-  border: '1px solid rgba(181,137,0,0.2)',
+  background: 'color-mix(in srgb, var(--sol-yellow) 8%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--sol-yellow) 20%, transparent)',
   color: 'var(--sol-yellow)',
   fontSize: 11,
   padding: '4px 8px',
@@ -327,8 +327,8 @@ const WARNING_STYLE: React.CSSProperties = {
 }
 
 const ERROR_ROW_STYLE: React.CSSProperties = {
-  background: 'rgba(220,50,47,0.08)',
-  border: '1px solid rgba(220,50,47,0.2)',
+  background: 'color-mix(in srgb, var(--sol-red) 8%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--sol-red) 20%, transparent)',
   color: 'var(--sol-red)',
   fontSize: 11,
   padding: '4px 8px',
@@ -365,13 +365,13 @@ const BTN_BASE: React.CSSProperties = {
 
 const CONFIRM_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
-  background: 'var(--sol-blue)',
-  color: 'var(--sol-base3)',
+  background: 'var(--sol-accent)',
+  color: '#fff',
 }
 
 const COPY_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
-  background: 'rgba(0,0,0,0.06)',
+  background: 'var(--sol-subtle-bg)',
   color: 'var(--sol-base01)',
 }
 
@@ -393,8 +393,8 @@ const DISCLOSURE_STYLE: React.CSSProperties = {
 const RAW_TEXT_STYLE: React.CSSProperties = {
   fontFamily: 'monospace',
   fontSize: 11,
-  color: 'var(--sol-base00)',
-  background: 'rgba(0,0,0,0.03)',
+  color: 'var(--sol-text-dim)',
+  background: 'var(--sol-subtle-bg)',
   padding: '4px 8px',
   borderRadius: 4,
   marginTop: 4,

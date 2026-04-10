@@ -71,7 +71,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         <div className="flex gap-1">
           {(['claude', 'codex', 'shell'] as const).map(p => (
             <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${p[0].toUpperCase()}${p.slice(1)}`}>
-              <ProviderIcon provider={p} className={`w-3.5 h-3.5${p === 'codex' ? ' text-[#111111]' : ''}`} />
+              <ProviderIcon provider={p} className="w-3.5 h-3.5" />
             </button>
           ))}
         </div>

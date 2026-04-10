@@ -59,7 +59,7 @@ const SECONDARY_KEYS: KeyDef[] = [
 const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 
 const BTN =
-  'min-w-[32px] h-7 px-1.5 rounded bg-[rgba(0,0,0,0.08)] active:bg-[rgba(0,0,0,0.18)] text-[--sol-base01] font-mono text-xs select-none touch-manipulation'
+  'min-w-[32px] h-7 px-1.5 rounded bg-[--sol-subtle-bg] active:bg-[--sol-subtle-bg-active] text-[--sol-base01] font-mono text-xs select-none touch-manipulation'
 const BTN_ACTIVE =
   'min-w-[32px] h-7 px-1.5 rounded bg-[--sol-blue] text-[--sol-base3] font-mono text-xs select-none touch-manipulation'
 
@@ -182,7 +182,7 @@ export function TerminalKeyBar({
   }, [clearRepeat, clearSuppressedClickTimer])
 
   return (
-    <div className="bg-[--sol-base2] border-t border-[--sol-border] pb-[env(safe-area-inset-bottom)]" role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
+    <div className="bg-[--sol-editor-bg] border-t border-[--sol-border] pb-[env(safe-area-inset-bottom)]" role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
       <div className="flex gap-1 px-2 py-1">
         <button
           type="button"

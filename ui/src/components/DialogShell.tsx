@@ -36,7 +36,7 @@ export function DialogShell({
   onClose,
   children,
   overlay = true,
-  overlayBg = 'rgba(0,0,0,0.25)',
+  overlayBg = 'var(--sol-overlay-bg)',
   overlayClassName = 'z-50 items-center justify-center',
   className = '',
   style,

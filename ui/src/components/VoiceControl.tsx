@@ -83,18 +83,18 @@ const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
     cursor: 'default',
   },
   ready: {
-    background: 'rgba(0,0,0,0.06)',
+    background: 'var(--sol-subtle-bg)',
     color: 'var(--sol-base01)',
     opacity: 1,
   },
   recording: {
-    background: 'rgba(220,50,47,0.15)',
+    background: 'color-mix(in srgb, var(--sol-red) 15%, transparent)',
     color: 'var(--sol-red)',
     opacity: 1,
     animation: 'recording-scale 1.2s ease-in-out infinite',
   },
   processing: {
-    background: 'rgba(0,0,0,0.06)',
+    background: 'var(--sol-subtle-bg)',
     color: 'var(--sol-base1)',
     opacity: 1,
     cursor: 'default',

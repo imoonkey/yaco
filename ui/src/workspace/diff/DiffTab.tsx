@@ -22,11 +22,11 @@ function saveViewMode(mode: ViewMode) {
 // --- Colors ---
 
 const COLORS = {
-  addBg: 'rgba(133,153,0,0.08)',
-  delBg: 'rgba(220,50,47,0.08)',
-  addWord: 'rgba(133,153,0,0.25)',
-  delWord: 'rgba(220,50,47,0.25)',
-  hunkBg: 'rgba(38,139,210,0.08)',
+  addBg: 'color-mix(in srgb, var(--sol-green) 8%, transparent)',
+  delBg: 'color-mix(in srgb, var(--sol-red) 8%, transparent)',
+  addWord: 'color-mix(in srgb, var(--sol-green) 25%, transparent)',
+  delWord: 'color-mix(in srgb, var(--sol-red) 25%, transparent)',
+  hunkBg: 'color-mix(in srgb, var(--sol-blue) 8%, transparent)',
   gapBorder: 'var(--sol-border)',
 } as const
 
