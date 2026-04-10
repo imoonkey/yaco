@@ -12,6 +12,7 @@ export type FileState = {
 }
 
 export type MdMode = 'edit' | 'preview' | 'split'
+export type SplitDirection = 'horizontal' | 'vertical'
 
 export type WorkspaceLayout = {
   showSidebar: boolean
@@ -24,6 +25,7 @@ export type WorkspaceLayout = {
   showTextSearch: boolean
   autocompleteEnabled: boolean
   mdMode: MdMode
+  splitDirection: SplitDirection
   splitSize: number
   leftSize: number
   rightSize: number
@@ -71,6 +73,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showTextSearch: false,
   autocompleteEnabled: true,
   mdMode: 'edit',
+  splitDirection: 'horizontal',
   splitSize: 50,
   leftSize: 220,
   rightSize: 420,

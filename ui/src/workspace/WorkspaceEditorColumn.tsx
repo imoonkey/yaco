@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { isDiffTab, isFileTab, isTasksTab, type FileState, type MdMode } from '../hooks/workspaceTypes'
+import { isDiffTab, isFileTab, isTasksTab, type FileState, type MdMode, type SplitDirection } from '../hooks/workspaceTypes'
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
@@ -29,7 +29,7 @@ export interface WorkspaceEditorColumnProps {
   dirtyTabs: Set<string>
   conflictTabs: Set<string>
   files: Record<string, FileState>
-  layout: { mdMode: MdMode; splitSize: number; autocompleteEnabled: boolean }
+  layout: { mdMode: MdMode; splitDirection: SplitDirection; splitSize: number; autocompleteEnabled: boolean }
   isTouch: boolean
   isMobile: boolean
   activeDiff: DiffState | null
@@ -65,7 +65,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onOpenTasksFile,
   } = props
 
-  const { mdMode, splitSize, autocompleteEnabled } = layout
+  const { mdMode, splitDirection, splitSize, autocompleteEnabled } = layout
 
   // Derive from activeTab
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
@@ -105,11 +105,13 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         conflictTabs={conflictTabs}
         canToggleMdMode={!!isMd}
         mdMode={mdMode}
+        splitDirection={splitDirection}
         isTouch={isTouch}
         onSelectTab={onSelectTab}
         onDoubleClickTab={onDoubleClickTab}
         onCloseTab={onCloseTab}
         onMdModeChange={(mode) => onLayoutUpdate({ mdMode: mode })}
+        onSplitDirectionChange={(dir) => onLayoutUpdate({ splitDirection: dir })}
         onSaveTab={handleSaveTab}
         rightActions={<>
           {voice.eligible && (
@@ -153,6 +155,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         activeDiff={activeDiff}
         isMd={isMd}
         mdMode={mdMode}
+        splitDirection={splitDirection}
         splitSize={splitSize}
         onSplitResize={(size) => onLayoutUpdate({ splitSize: size })}
         hasConflict={hasConflict}

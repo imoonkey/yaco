@@ -3,8 +3,8 @@ import { Editor } from '../components/Editor'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
 import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath } from './markdown'
-import { VResizeHandle } from './ResizeHandle'
-import type { MdMode } from '../hooks/useWorkspaceState'
+import { VResizeHandle, HResizeHandle } from './ResizeHandle'
+import type { MdMode, SplitDirection } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
 import { DiffTab } from './diff/DiffTab'
 
@@ -85,13 +85,17 @@ export function MarkdownPreview({
   const rawHtml = renderMarkdown(content)
   const [html, setHtml] = useState(rawHtml)
 
-  // When content changes, reset to raw HTML and process mermaid async
+  // When content changes, process mermaid async then update HTML.
+  // Key: don't setHtml(rawHtml) eagerly when mermaid is present — that
+  // briefly shows raw mermaid source text, causing a visible flash.
   useEffect(() => {
-    setHtml(rawHtml)
     const parser = new DOMParser()
     const doc = parser.parseFromString(rawHtml, 'text/html')
     const mermaidDivs = doc.querySelectorAll<HTMLElement>('.mermaid')
-    if (mermaidDivs.length === 0) return
+    if (mermaidDivs.length === 0) {
+      setHtml(rawHtml)
+      return
+    }
 
     let cancelled = false
     let counter = 0
@@ -298,6 +302,7 @@ export function WorkspaceEditorArea({
   activeDiff,
   isMd,
   mdMode,
+  splitDirection,
   splitSize,
   onSplitResize,
   hasConflict,
@@ -330,6 +335,7 @@ export function WorkspaceEditorArea({
   activeDiff: { raw: string | null; parsed: ParsedFileDiff | null; loading: boolean } | null
   isMd: boolean | undefined
   mdMode: MdMode
+  splitDirection: SplitDirection
   splitSize: number
   onSplitResize: (size: number) => void
   hasConflict: boolean
@@ -419,15 +425,16 @@ export function WorkspaceEditorArea({
 
   const handleSplitMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
-    const startX = e.clientX
+    const startPos = splitDirection === 'horizontal' ? e.clientX : e.clientY
     const startSize = splitSize
     const container = splitContainerRef.current
     if (!container) return
-    const containerWidth = container.offsetWidth
+    const containerSpan = splitDirection === 'horizontal' ? container.offsetWidth : container.offsetHeight
 
     const onMove = (me: MouseEvent) => {
-      const delta = me.clientX - startX
-      const pct = startSize + (delta / containerWidth) * 100
+      const currentPos = splitDirection === 'horizontal' ? me.clientX : me.clientY
+      const delta = currentPos - startPos
+      const pct = startSize + (delta / containerSpan) * 100
       onSplitResize(Math.max(20, Math.min(80, pct)))
     }
     const onUp = () => {
@@ -438,7 +445,7 @@ export function WorkspaceEditorArea({
     setIsDragging(true)
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [splitSize, onSplitResize])
+  }, [splitSize, splitDirection, onSplitResize])
 
   const showSplit = isMd && mdMode === 'split'
   const showPreviewOnly = isMd && mdMode === 'preview'
@@ -508,12 +515,15 @@ export function WorkspaceEditorArea({
         activeFileLoading ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
         : activeFileContent !== null ? (
           showSplit ? (
-            <div ref={splitContainerRef} className="flex h-full" style={{ userSelect: isDragging ? 'none' : undefined }}>
-              <div className="min-w-0 overflow-hidden" style={{ flex: `0 0 ${splitSize}%` }}>
+            <div ref={splitContainerRef} className={splitDirection === 'vertical' ? 'flex flex-col h-full' : 'flex h-full'} style={{ userSelect: isDragging ? 'none' : undefined }}>
+              <div className={splitDirection === 'vertical' ? 'min-h-0 overflow-hidden' : 'min-w-0 overflow-hidden'} style={{ flex: `0 0 ${splitSize}%` }}>
                 {editorElement}
               </div>
-              <VResizeHandle onMouseDown={handleSplitMouseDown} isDragging={isDragging} />
-              <div className="flex-1 min-w-0 overflow-hidden">
+              {splitDirection === 'vertical'
+                ? <HResizeHandle onMouseDown={handleSplitMouseDown} isDragging={isDragging} />
+                : <VResizeHandle onMouseDown={handleSplitMouseDown} isDragging={isDragging} />
+              }
+              <div className={splitDirection === 'vertical' ? 'flex-1 min-h-0 overflow-hidden' : 'flex-1 min-w-0 overflow-hidden'}>
                 {previewElement}
               </div>
             </div>

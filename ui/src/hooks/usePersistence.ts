@@ -61,6 +61,7 @@ function loadPersistedState(project: string): PersistedState {
         mdMode: pl.mdMode === 'edit' || pl.mdMode === 'preview' || pl.mdMode === 'split' ? pl.mdMode
           : typeof pl.previewMode === 'boolean' ? (pl.previewMode ? 'preview' : 'edit')
           : DEFAULT_LAYOUT.mdMode,
+        splitDirection: pl.splitDirection === 'horizontal' || pl.splitDirection === 'vertical' ? pl.splitDirection : DEFAULT_LAYOUT.splitDirection,
         splitSize: typeof pl.splitSize === 'number' && pl.splitSize >= 20 && pl.splitSize <= 80 ? pl.splitSize : DEFAULT_LAYOUT.splitSize,
         leftSize: loadStoredSize(pl.leftSize, DEFAULT_LAYOUT.leftSize),
         rightSize: loadStoredSize(pl.rightSize, DEFAULT_LAYOUT.rightSize),

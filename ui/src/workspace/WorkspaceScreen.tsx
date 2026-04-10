@@ -377,7 +377,7 @@ export function Workspace({
       dirtyTabs={dirtyTabs}
       conflictTabs={conflictTabs}
       files={files}
-      layout={{ mdMode, splitSize: layout.splitSize, autocompleteEnabled: layout.autocompleteEnabled }}
+      layout={{ mdMode, splitDirection: layout.splitDirection, splitSize: layout.splitSize, autocompleteEnabled: layout.autocompleteEnabled }}
       isTouch={isTouch}
       isMobile={isMobile}
       activeDiff={activeDiff}

@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
-import { X, AlertTriangle } from 'lucide-react'
+import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
 
-import { isDiffTab, isFileTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab, isTasksTab, type MdMode, type SplitDirection } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { useContextMenu, Menu, MenuItem } from '../components/Menu'
 
@@ -66,27 +66,39 @@ const TAB_STYLE_BASE: React.CSSProperties = {
   transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
 }
 
-function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m: MdMode) => void; isTouch: boolean }) {
+function MdModeToggle({ mode, splitDirection, onChange, onDirectionChange, isTouch }: { mode: MdMode; splitDirection: SplitDirection; onChange: (m: MdMode) => void; onDirectionChange: (d: SplitDirection) => void; isTouch: boolean }) {
   const modes: { value: MdMode; label: string }[] = isTouch
     ? [{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]
     : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
 
   return (
-    <div className="flex rounded border overflow-hidden shrink-0" style={{ borderColor: 'var(--sol-border)' }}>
-      {modes.map(({ value, label }) => {
-        const active = mode === value
-        return (
-          <button key={value} onClick={() => onChange(value)}
-            className="text-[10px] px-2 py-0.5 cursor-pointer"
-            style={{
-              backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
-              color: active ? 'var(--sol-accent)' : 'var(--sol-text)',
-              borderRight: value !== modes[modes.length - 1].value ? '1px solid var(--sol-border)' : undefined,
-            }}>
-            {label}
-          </button>
-        )
-      })}
+    <div className="flex items-center gap-1 shrink-0">
+      <div className="flex rounded border overflow-hidden" style={{ borderColor: 'var(--sol-border)' }}>
+        {modes.map(({ value, label }) => {
+          const active = mode === value
+          return (
+            <button key={value} onClick={() => onChange(value)}
+              className="text-[10px] px-2 py-0.5 cursor-pointer"
+              style={{
+                backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
+                color: active ? 'var(--sol-accent)' : 'var(--sol-text)',
+                borderRight: value !== modes[modes.length - 1].value ? '1px solid var(--sol-border)' : undefined,
+              }}>
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      {mode === 'split' && !isTouch && (
+        <button
+          onClick={() => onDirectionChange(splitDirection === 'horizontal' ? 'vertical' : 'horizontal')}
+          className="flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg"
+          style={{ width: 20, height: 20, color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
+          title={splitDirection === 'horizontal' ? 'Switch to vertical split' : 'Switch to horizontal split'}
+        >
+          {splitDirection === 'horizontal' ? <Rows2 size={12} /> : <Columns2 size={12} />}
+        </button>
+      )}
     </div>
   )
 }
@@ -99,11 +111,13 @@ export function WorkspaceTabBar({
   conflictTabs,
   canToggleMdMode,
   mdMode,
+  splitDirection,
   isTouch,
   onSelectTab,
   onDoubleClickTab,
   onCloseTab,
   onMdModeChange,
+  onSplitDirectionChange,
   onSaveTab,
   rightActions,
 }: {
@@ -114,11 +128,13 @@ export function WorkspaceTabBar({
   conflictTabs: Set<string>
   canToggleMdMode: boolean
   mdMode: MdMode
+  splitDirection: SplitDirection
   isTouch: boolean
   onSelectTab: (tab: string) => void
   onDoubleClickTab: (tab: string) => void
   onCloseTab: (tab: string, e?: React.MouseEvent) => void
   onMdModeChange: (mode: MdMode) => void
+  onSplitDirectionChange: (direction: SplitDirection) => void
   onSaveTab?: (tab: string) => void
   rightActions?: React.ReactNode
 }) {
@@ -207,7 +223,7 @@ export function WorkspaceTabBar({
       <div className="flex items-center gap-1 shrink-0 px-2" style={{ borderLeft: '1px solid var(--sol-border)' }}>
         {rightActions}
         {canToggleMdMode && (
-          <MdModeToggle mode={mdMode} onChange={onMdModeChange} isTouch={isTouch} />
+          <MdModeToggle mode={mdMode} splitDirection={splitDirection} onChange={onMdModeChange} onDirectionChange={onSplitDirectionChange} isTouch={isTouch} />
         )}
       </div>
     </div>
