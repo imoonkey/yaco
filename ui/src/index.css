@@ -74,7 +74,6 @@
   --sol-list-active-bg: #dfca88;
   --sol-list-active-fg: #6c6c6c;
   --sol-list-hover-bg: #dfca8844;
-  --vscode-text-preformat-fg: #a31515;
   /* Semantic workspace vars (light) */
   --sol-bg: #eee8d5;
   --sol-text: #586e75;
@@ -100,6 +99,12 @@
   /* Syntax highlighting semantic vars (light: base1=comment, base01=emphasis) */
   --sol-syntax-comment: #93a1a1;
   --sol-syntax-modifier: #586e75;
+  /* Markdown preview semantic vars (light) */
+  --sol-code-bg: #eee8d5;
+  --sol-code-fg: #a31515;
+  --sol-preview-text: #657b83;
+  --sol-preview-heading: #586e75;
+  --sol-preview-heading-border: rgba(0, 0, 0, 0.18);
 }
 
 /* Solarized Dark — VS Code Solarized Dark values */
@@ -132,7 +137,6 @@
   --sol-list-active-bg: #005a6f;
   --sol-list-active-fg: #d6dbdb;
   --sol-list-hover-bg: #004454aa;
-  --vscode-text-preformat-fg: #ce9178;
   /* Semantic workspace vars (dark) */
   --sol-bg: #00212b;
   --sol-text: #839496;
@@ -146,7 +150,7 @@
   --sol-hover-bg: #004454aa;
   --sol-editor-fg: #839496;
   --sol-input-fg: #93a1a1;
-  --sol-editor-cursor: #93a1a1;
+  --sol-editor-cursor: #d30102;
   --sol-editor-selection-bg: #274642;
   --sol-editor-line-highlight-bg: #073642;
   --sol-editor-widget-bg: #00212b;
@@ -158,6 +162,12 @@
   /* Syntax highlighting semantic vars (dark: base01=comment, base1=emphasis) */
   --sol-syntax-comment: #586e75;
   --sol-syntax-modifier: #93a1a1;
+  /* Markdown preview semantic vars (dark) */
+  --sol-code-bg: #073642;
+  --sol-code-fg: #ce9178;
+  --sol-preview-text: #839496;
+  --sol-preview-heading: #93a1a1;
+  --sol-preview-heading-border: rgba(238, 232, 213, 0.15);
 }
 
 /* Register all Solarized vars as Tailwind color tokens */
@@ -292,7 +302,7 @@ body {
 .markdown-preview {
   position: relative;
   padding: 1em 26px 40px;
-  color: var(--sol-base00);
+  color: var(--sol-preview-text);
   background: var(--sol-editor-bg);
   font-family: var(--font-ui);
   font-size: 14px;
@@ -321,7 +331,7 @@ body {
 .markdown-preview h4,
 .markdown-preview h5,
 .markdown-preview h6 {
-  color: var(--sol-base01);
+  color: var(--sol-preview-heading);
   font-weight: 600;
   margin-top: 24px;
   margin-bottom: 16px;
@@ -332,13 +342,13 @@ body {
   font-size: 2em;
   margin-top: 0;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid var(--sol-preview-heading-border);
 }
 
 .markdown-preview h2 {
   font-size: 1.5em;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+  border-bottom: 1px solid var(--sol-preview-heading-border);
 }
 
 .markdown-preview h3 {
@@ -423,8 +433,8 @@ body {
 }
 
 .markdown-preview code {
-  color: var(--vscode-text-preformat-fg);
-  background: var(--sol-base2);
+  color: var(--sol-code-fg);
+  background: var(--sol-code-bg);
   border-radius: 3px;
   padding: 0.1em 0.35em;
   font-family: var(--font-mono);
@@ -436,7 +446,7 @@ body {
   margin-bottom: 16px;
   overflow: auto;
   overscroll-behavior: contain;
-  background: var(--sol-base2);
+  background: var(--sol-code-bg);
   border: 1px solid var(--sol-border);
   border-radius: 3px;
 }
@@ -444,7 +454,7 @@ body {
 .markdown-preview pre code {
   display: block;
   padding: 16px;
-  color: var(--sol-base00);
+  color: var(--sol-preview-text);
   background: none;
   border-radius: 0;
   white-space: pre;
@@ -459,7 +469,7 @@ body {
 }
 
 .markdown-preview .tok-heading {
-  color: var(--sol-base01);
+  color: var(--sol-preview-heading);
   font-weight: 600;
 }
 
@@ -509,13 +519,13 @@ body {
 }
 
 .markdown-preview .tok-comment {
-  color: var(--sol-base1);
+  color: var(--sol-syntax-comment);
   font-style: italic;
 }
 
 .markdown-preview .tok-operator,
 .markdown-preview .tok-punctuation {
-  color: var(--sol-base00);
+  color: var(--sol-preview-text);
 }
 
 .markdown-preview table {
@@ -525,7 +535,7 @@ body {
 
 .markdown-preview th {
   text-align: left;
-  background: var(--sol-base2);
+  background: var(--sol-code-bg);
   border-bottom: 1px solid var(--sol-border);
 }
 
