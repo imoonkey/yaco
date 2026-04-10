@@ -123,7 +123,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 {showExplorer && <div className="flex-1 min-h-0 flex flex-col">{explorerBody}</div>}
 
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
-                {showChanges && <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">{changesBody}</div>}
+                {showChanges && <div className="flex-1 min-h-0 overflow-y-auto py-1">{changesBody}</div>}
 
                 <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
                 {showTextSearch && <div className="flex-1 min-h-0 flex flex-col">{searchBody}</div>}
@@ -132,7 +132,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 {showTasks && <div className="shrink-0 px-2 py-2">{tasksBody}</div>}
 
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
-                {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1 px-1">{sessionsBody}</div>}
+                {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1">{sessionsBody}</div>}
               </div>
             )}
             {mobilePane === 'editor' && editorPane}
@@ -171,7 +171,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title={gitStale ? 'Changes (stale)' : 'Changes'} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} />
                 {showChanges && (
                   <div
-                    className="min-h-0 shrink-0 py-1 px-1"
+                    className="min-h-0 shrink-0 py-1"
                     style={flexFallback === 'changes' ? { flex: 1, overflowY: 'auto' } : { height: changesHeight, minHeight: 50, overflowY: 'auto' }}
                   >
                     {changesBody}
@@ -232,7 +232,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               {showSessions && <HResizeHandle onMouseDown={sessionSplit.onMouseDown} isDragging={sessionSplit.isDragging} />}
               <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
               {showSessions && (
-                <div className="shrink-0 overflow-y-auto py-1 px-1" style={{ height: sessionHeight }}>
+                <div className="shrink-0 overflow-y-auto py-1" style={{ height: sessionHeight }}>
                   {sessionsBody}
                 </div>
               )}

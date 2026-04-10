@@ -29,7 +29,7 @@ function HistoryItem({
   return (
     <div
       onClick={isResuming ? undefined : isLive ? onGoLive : onResume}
-      className="flex items-start gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] hover:bg-sol-hover-bg"
+      className="flex items-start gap-2 px-2 py-0.5 rounded cursor-pointer text-[12px] hover:bg-sol-hover-bg"
       style={{ color: 'var(--sol-text)', opacity: isResuming ? 0.6 : 1, transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
     >
       <ProviderIcon provider={entry.provider} className="w-4 h-4 shrink-0 mt-0.5" />

@@ -8,7 +8,7 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
   const dir = cleanPath.includes('/') ? cleanPath.slice(0, cleanPath.lastIndexOf('/')) : ''
   return (
     <div onClick={onActivate}
-      className={`flex items-center gap-1 px-2 h-[22px] rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
+      className={`flex items-center gap-1 px-1 h-[22px] rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
       title={cleanPath}
       style={{ transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}>
       {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}

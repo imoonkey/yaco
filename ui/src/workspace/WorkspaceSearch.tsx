@@ -155,7 +155,7 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
 
   return (
     <div onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-[12px] cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
+      className={`flex items-center gap-1.5 px-3 py-0.5 text-[12px] cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
       style={!selected ? { color: 'var(--sol-text)' } : undefined}
       onMouseEnter={onHover}>
       <FileTypeIcon name={entry.name} />
