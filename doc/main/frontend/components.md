@@ -98,7 +98,7 @@ Single-workspace shell. Manages project selection, unread state, and browser not
 
 **Responsibilities**:
 - Project selection and ordering (project list lives in workspace sidebar)
-- Header bar with notification permission and add-project button
+- Header bar with notification bell and add-project button
 - Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project switching
 - Session/project unread state via `useSessionUnreadState`
 - Browser notification routing (click → project + session)
@@ -110,7 +110,7 @@ Single-workspace shell. Manages project selection, unread state, and browser not
 
 Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition is delegated to `WorkspaceLayout`. Session management extracted to `useWorkspaceSessionSection`, sidebar resize to `useWorkspaceSidebarResize`, editor column to `WorkspaceEditorColumn`.
 
-**Props**: `{ projectName: string; projectPath: string; projects; activeProject; projectUnreadCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent }`
+**Props**: `{ projectName: string; projectPath: string; projects; activeProject; projectUnreadCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent; notificationBell? }`
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
@@ -244,7 +244,15 @@ Reusable dialog/panel chrome that extracts shared overlay, glass card, animation
 
 **File**: `ui/src/components/BadgeCount.tsx`
 
-Reusable unread count badge (orange circle, white text). Used by App (notification bell), ProjectList, SessionItem.
+Reusable unread count badge (orange circle, white text). Used by NotificationBell, ProjectList, SessionItem.
+
+### NotificationBell
+
+**File**: `ui/src/components/NotificationBell.tsx`
+
+Self-contained bell icon with unread badge and notification panel dropdown. Manages open/close state internally. Used in desktop header (App.tsx) and mobile header (WorkspaceLayout via `notificationBell` ReactNode slot).
+
+-> See: [../ui/notifications.md](../ui/notifications.md) for full notification pipeline docs
 
 ### PaneSwitch (35 lines)
 Reusable horizontal tab switcher for mobile views. Used by Workspace.

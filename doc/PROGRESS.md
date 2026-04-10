@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-10: Add notification bell to mobile header
+
+**What changed:**
+- Extracted `NotificationBell` component from inline App.tsx bell code. Self-contained: manages own open/close state, renders bell icon + badge + panel.
+- Passed as `notificationBell` ReactNode slot through Workspace → WorkspaceLayout for mobile header rendering.
+- Panel width capped at `100vw - 24px` for narrow mobile screens.
+
+**Why:**
+- Mobile had no way to access notification history — only transient toasts. Desktop and mobile now have parity.
+
+**Key files:** `ui/src/components/NotificationBell.tsx` (new), `ui/src/App.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`
+**Verification:** `tsc --noEmit` clean
+**Commit:** 1c7f7fc
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-10: Fix notification bell mark-all-read + panel font sizes
 
 **What changed:**

@@ -14,7 +14,7 @@ Dual-mode notification pipeline: in-app toast (foreground) and browser Notificat
 
 ## Related Code
 
-`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/components/NotificationPanel.tsx`
+`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/components/NotificationBell.tsx`, `ui/src/components/NotificationPanel.tsx`
 
 ## Pipeline
 
@@ -64,9 +64,17 @@ Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) whil
 - **Page hidden** → `new Notification()` via Browser Notification API; click calls `window.focus()` + routes to project/session
 - Auto-requests `Notification.requestPermission()` on mount (one-time browser prompt, persists per origin)
 
+## Notification Bell
+
+`NotificationBell` (`ui/src/components/NotificationBell.tsx`) — self-contained bell icon with badge and panel. Manages its own open/close state internally.
+
+- Used in desktop header (App.tsx) and mobile header (WorkspaceLayout.tsx via `notificationBell` ReactNode slot)
+- Each instance has independent open/close state (only one is ever visible — desktop/mobile are mutually exclusive)
+- Props: `{ notifications, unreadCount, markRead, markAllRead, clearAll, onItemClick, size? }`
+
 ## Notification Panel
 
-`NotificationPanel` (`ui/src/components/NotificationPanel.tsx`) — dropdown panel accessible via bell icon in the desktop header bar.
+`NotificationPanel` (`ui/src/components/NotificationPanel.tsx`) — dropdown panel rendered by `NotificationBell`.
 
 - Shows accumulated notifications with title, message, relative timestamp
 - Unread items highlighted with hover background + left accent border
@@ -74,7 +82,7 @@ Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) whil
 - "Mark all read" / "Clear" actions in header
 - Opening the panel does NOT mark notifications as read — users mark items read explicitly (per-item click or "Mark all read" button)
 - Click-outside and Escape to dismiss
-- Bell icon shows unread badge count (orange dot)
+- Panel width capped at `100vw - 24px` for narrow mobile screens
 
 ## Confirmation Dialogs
 
