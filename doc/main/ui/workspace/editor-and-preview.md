@@ -96,7 +96,10 @@ This ensures preview, editor, and save are never out of sync.
 Available for `.md` files only. Three modes controlled by a 3-segment toggle in the tab bar or `Cmd+Shift+V` (cycles edit → split → preview → edit):
 
 - **Edit**: CodeMirror editor only
-- **Split**: Editor on left, live preview on right, with a draggable divider (20%–80%) and bidirectional scroll sync
+- **Split**: Editor + live preview side-by-side, with a draggable divider (20%–80%) and bidirectional scroll sync. Supports two orientations:
+  - **Horizontal** (default): editor left, preview right, vertical resize handle
+  - **Vertical**: editor top, preview bottom, horizontal resize handle
+  - A direction toggle icon appears next to the mode buttons when split is active
 - **Preview**: Rendered markdown only
 
 On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
@@ -109,7 +112,7 @@ On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
 - Syntax highlighting on code blocks via `@lezer/highlight` (classHighlighter + language parsers). Code blocks use horizontal-only overflow with `overscroll-behavior-x: contain` so vertical wheel events propagate to parent.
 - Tables are wrapped in a `.table-scroll` div via custom `renderer.table` in `markdown.ts`, enabling horizontal scroll for wide tables.
 - **innerHTML management**: does NOT use `dangerouslySetInnerHTML` (React 19 re-applies it on every render). Instead, manages innerHTML manually via `useLayoutEffect` + `appliedHtmlRef`. Only sets innerHTML when the HTML string actually changes. Saves and restores `<pre>` horizontal scroll positions across DOM recreation.
-- **Mermaid diagrams**: ` ```mermaid ` code fences render as SVG diagrams inline via the `mermaid` library (initialized with `startOnLoad: false`, theme `neutral`). Rendering uses `mermaid.render(id, source)` per diagram in a `useEffect`, reading `textContent` (not `innerHTML`) to avoid HTML entity issues. Parse errors display inline as red text.
+- **Mermaid diagrams**: ` ```mermaid ` code fences render as SVG diagrams inline via the `mermaid` library (initialized with `startOnLoad: false`, theme `neutral`). Rendering uses `mermaid.render(id, source)` per diagram in a `useEffect`, reading `textContent` (not `innerHTML`) to avoid HTML entity issues. Parse errors display inline as red text. When mermaid diagrams are present, `setHtml` is deferred until all diagrams are rendered in a detached DOM — prevents flash of raw mermaid source on each keystroke.
 
 ### Source-Line Anchored Sync
 

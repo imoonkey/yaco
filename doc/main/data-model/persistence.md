@@ -103,6 +103,7 @@ Per-project workspace layout state persisted by `useWorkspaceState`:
 - `layout.showExplorer` / `layout.showChanges` / `layout.showSessions` — section visibility
 - `layout.previewMode` — boolean (legacy, migrated to `mdMode` on load)
 - `layout.mdMode` — `'edit' | 'preview' | 'split'`
+- `layout.splitDirection` — `'horizontal' | 'vertical'` (default `'horizontal'`, migrated on load)
 - `layout.splitSize` — number (percentage, 20–80)
 - `layout.leftSize` / `layout.rightSize` — panel widths in pixels
 - `layout.explorerSize` / `layout.changesSize` — sidebar section heights

@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-10: Markdown split direction toggle + mermaid flash fix
+
+**What changed:**
+- Added `SplitDirection` type (`'horizontal' | 'vertical'`) to `WorkspaceLayout`
+- Split mode now supports both orientations: side-by-side (horizontal, default) and top-bottom (vertical)
+- Direction toggle icon appears in tab bar when split mode is active (Rows2/Columns2 lucide icons)
+- Persisted in localStorage with migration fallback for old state missing `splitDirection`
+- Fixed mermaid preview flash: deferred `setHtml` until all mermaid diagrams are rendered in a detached DOM, preventing brief raw-source flicker on each keystroke
+
+**Why:**
+- VS Code-style split flexibility — vertical split useful for wide files or narrow viewports
+- Mermaid flash was a pre-existing UX issue: `setHtml(rawHtml)` eagerly replaced preview with unrendered mermaid source text before async rendering completed
+
+**Key files:** workspaceTypes.ts, usePersistence.ts, WorkspaceEditorArea.tsx, WorkspaceEditorColumn.tsx, WorkspaceScreen.tsx, WorkspaceTabBar.tsx
+**Verification:** TypeScript compiles clean, Playwright mutation observer confirms 1 DOM update per keystroke (no double-render), persisted state migration tested
+**Commit:** c0b9a0f
+**Next:** Full editor split (multiple files side-by-side) as future enhancement
+**Blockers:** None
+
 ## 2026-04-10: Frontend polish — dialog speed, accessibility, CSS consistency
 
 **What changed:**
