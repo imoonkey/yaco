@@ -56,6 +56,8 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
             key={state}
             onClick={() => onToggleFilter(state)}
             className="px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors"
+            aria-label={`Filter: ${STATE_LABELS[state]}`}
+            aria-pressed={active}
             style={{
               backgroundColor: active ? STATE_COLORS[state] + '22' : 'transparent',
               color: active ? STATE_COLORS[state] : 'var(--sol-base1)',

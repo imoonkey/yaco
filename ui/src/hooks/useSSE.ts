@@ -34,10 +34,11 @@ function closeSource() {
 
 function scheduleReconnect() {
   if (reconnectTimer) return
+  const jitter = backoffMs + Math.random() * backoffMs
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     getSource()
-  }, backoffMs)
+  }, jitter)
   backoffMs = Math.min(backoffMs * 2, MAX_BACKOFF_MS)
 }
 

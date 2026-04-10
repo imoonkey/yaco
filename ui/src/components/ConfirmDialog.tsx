@@ -43,7 +43,7 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
       >
         <button
           onClick={onClose}
-          className="px-3.5 py-1.5 rounded-md text-[12px] cursor-pointer"
+          className="px-3.5 py-1.5 rounded-md text-[12px] cursor-pointer hover:opacity-85"
           style={{ color: 'var(--sol-text-dim)', backgroundColor: 'var(--sol-input-bg)', transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)' }}
         >
           Cancel
@@ -51,7 +51,7 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
         <button
           ref={confirmRef}
           onClick={() => { onConfirm(); onClose() }}
-          className="px-3.5 py-1.5 rounded-md text-[12px] font-medium cursor-pointer"
+          className="px-3.5 py-1.5 rounded-md text-[12px] font-medium cursor-pointer hover:opacity-85"
           style={{
             backgroundColor: danger ? 'var(--sol-red)' : 'var(--sol-accent)',
             color: 'var(--sol-base3)',

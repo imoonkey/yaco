@@ -377,8 +377,8 @@ function DiffToolbar({
       )}
 
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-        <button style={btnStyle} onClick={onPrev} disabled={hunkCount === 0}>&#8593;</button>
-        <button style={btnStyle} onClick={onNext} disabled={hunkCount === 0}>&#8595;</button>
+        <button style={btnStyle} onClick={onPrev} disabled={hunkCount === 0} aria-label="Previous change">&#8593;</button>
+        <button style={btnStyle} onClick={onNext} disabled={hunkCount === 0} aria-label="Next change">&#8595;</button>
         {hunkCount > 0 && (
           <span style={{ fontSize: 11, color: 'var(--sol-text-dim)' }}>
             Change {activeIndex + 1} of {hunkCount}

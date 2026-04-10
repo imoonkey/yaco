@@ -14,7 +14,7 @@ const RENAME_INPUT_STYLE: React.CSSProperties = { borderColor: 'var(--sol-accent
 const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   processing: 'bg-[var(--sol-cyan)] status-pulse',
   idle: 'bg-[var(--sol-base1)]',
-  error: 'bg-[var(--sol-red)]',
+  error: 'border border-[var(--sol-red)] bg-transparent',
   completed: 'bg-[var(--sol-green)]',
 }
 
@@ -98,7 +98,7 @@ export function SessionItem({
         </button>
       )}
       <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
-      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={session.status} />
       {renaming ? (
         <input
           ref={inputRef}
@@ -129,7 +129,8 @@ export function SessionItem({
             e.stopPropagation()
             onKill()
           }}
-          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer border border-[var(--sol-red)]/20 text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
+          style={{ border: '1px solid color-mix(in srgb, var(--sol-red) 20%, transparent)' }}
           title={`Kill ${session.name}`}
           aria-label={`Kill session ${session.name}`}
         >

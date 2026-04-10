@@ -124,7 +124,7 @@ export const editorTheme = EditorView.theme({
     backgroundColor: 'var(--sol-editor-widget-bg)',
     border: '1px solid var(--sol-border)',
     borderLeft: '3px solid',
-    boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+    boxShadow: 'var(--elevation-1)',
     fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
     fontSize: '12px',
     lineHeight: '1.5',

@@ -132,7 +132,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 {showTasks && <div className="shrink-0 px-2 py-2">{tasksBody}</div>}
 
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
-                {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1">{sessionsBody}</div>}
+                {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>}
               </div>
             )}
             {mobilePane === 'editor' && editorPane}
@@ -232,7 +232,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               {showSessions && <HResizeHandle onMouseDown={sessionSplit.onMouseDown} isDragging={sessionSplit.isDragging} />}
               <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
               {showSessions && (
-                <div className="shrink-0 overflow-y-auto py-1" style={{ height: sessionHeight }}>
+                <div className="shrink-0 overflow-y-auto py-1" style={{ height: sessionHeight }} aria-live="polite">
                   {sessionsBody}
                 </div>
               )}

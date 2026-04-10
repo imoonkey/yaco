@@ -4,7 +4,7 @@ import type { ReactNode, CSSProperties, RefObject } from 'react'
 const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 
 const GLASS_BASE: CSSProperties = {
-  backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 88%, transparent)',
+  backgroundColor: 'var(--sol-glass-bg)',
   border: '1px solid var(--sol-border)',
   boxShadow: 'var(--elevation-3)',
   backdropFilter: 'var(--backdrop-blur)',
@@ -12,8 +12,8 @@ const GLASS_BASE: CSSProperties = {
 }
 
 const ENTER_ANIM = {
-  dialog: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
-  panel: 'panel-slide-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
+  dialog: 'none',
+  panel: 'panel-slide-in 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
 } as const
 
 const EXIT_ANIM = {

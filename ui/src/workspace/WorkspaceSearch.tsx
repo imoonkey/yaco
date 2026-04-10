@@ -74,7 +74,7 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
       overlayBg="transparent"
       overlayClassName="z-50 items-start justify-center pt-[15%]"
       className="w-[500px] rounded-xl overflow-hidden"
-      style={{ backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)' }}
+      style={{ backgroundColor: 'var(--sol-glass-bg)' }}
     >
       <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
         <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}

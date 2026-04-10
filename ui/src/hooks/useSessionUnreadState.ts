@@ -166,10 +166,21 @@ export function useSessionUnreadState(
 
   // --- Clear actions ---
 
+  const progressRef = useRef(progress)
+  progressRef.current = progress
+
   const markSessionRead = useCallback((project: string, session: string) => {
     const key = sessionKey(project, session)
-    // Find the max eligible timestamp for this session
-    let maxTs = Date.now()
+    // Use the latest entry timestamp for this session, falling back to Date.now()
+    let maxTs = 0
+    if (progressRef.current) {
+      for (const entry of progressRef.current) {
+        if (entry.project !== project || entry.sessionName !== session) continue
+        const ts = entryTimestamp(entry)
+        if (ts > maxTs) maxTs = ts
+      }
+    }
+    if (maxTs === 0) maxTs = Date.now()
     setReadState(prev => ({
       ...prev,
       sessionReadAt: { ...prev.sessionReadAt, [key]: maxTs },
@@ -177,9 +188,19 @@ export function useSessionUnreadState(
   }, [])
 
   const markAllRead = useCallback((project: string) => {
+    // Use the latest entry timestamp for this project, falling back to Date.now()
+    let maxTs = 0
+    if (progressRef.current) {
+      for (const entry of progressRef.current) {
+        if (entry.project !== project) continue
+        const ts = entryTimestamp(entry)
+        if (ts > maxTs) maxTs = ts
+      }
+    }
+    if (maxTs === 0) maxTs = Date.now()
     setReadState(prev => ({
       ...prev,
-      projectReadAt: { ...prev.projectReadAt, [project]: Date.now() },
+      projectReadAt: { ...prev.projectReadAt, [project]: maxTs },
     }))
   }, [])
 
