@@ -199,6 +199,7 @@ function loadClaudeIndex(projectDir: string): Map<string, ClaudeIndexEntry> {
 
 /** Read Codex session history from SQLite + session_index.jsonl. */
 export function getCodexHistory(projectPath: string): HistorySession[] {
+  projectPath = projectPath.replace(/\/+$/, '')
   const db = getCodexDb()
   if (!db) return []
 

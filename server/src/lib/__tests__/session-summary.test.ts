@@ -15,7 +15,7 @@ vi.mock('child_process', () => ({
   execSync: vi.fn(() => ''),
 }))
 
-import { resolveSessionSummaries } from '../session-summary'
+import { resolveSessionSummaries, encodeProjectPath } from '../session-summary'
 import type { MultmuxSession } from '../multmux'
 
 function makeSession(overrides: Partial<MultmuxSession> = {}): MultmuxSession {
@@ -117,5 +117,25 @@ describe('resolveSessionSummaries', () => {
     const session = makeSession({ sessionId: '', pid: 0 })
     const result = resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
+  })
+})
+
+describe('encodeProjectPath', () => {
+  it('replaces slashes with dashes', () => {
+    expect(encodeProjectPath('/Users/test/project')).toBe('-Users-test-project')
+  })
+
+  it('strips trailing slash before encoding', () => {
+    expect(encodeProjectPath('/Users/test/project/')).toBe('-Users-test-project')
+  })
+
+  it('strips multiple trailing slashes', () => {
+    expect(encodeProjectPath('/Users/test/project///')).toBe('-Users-test-project')
+  })
+
+  it('handles path without trailing slash unchanged', () => {
+    expect(encodeProjectPath('/Users/test/project')).toBe(
+      encodeProjectPath('/Users/test/project/'),
+    )
   })
 })

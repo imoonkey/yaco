@@ -35,13 +35,13 @@ vi.mock('../constants', () => ({
 }))
 
 import { getClaudeHistory, getCodexHistory, getHistory } from '../history'
+import { encodeProjectPath } from '../session-summary'
 import type { MultmuxSession } from '../../lib/multmux'
 
 // -- Helpers --
 
 function claudeDir(projectPath: string): string {
-  const encoded = projectPath.replace(/\//g, '-')
-  return join(mockHome, '.claude', 'projects', encoded)
+  return join(mockHome, '.claude', 'projects', encodeProjectPath(projectPath))
 }
 
 function writeJsonl(dir: string, sessionId: string, lines: unknown[]): string {
@@ -265,6 +265,20 @@ describe('getClaudeHistory', () => {
 
     const result = getClaudeHistory(projectPath)
     expect(result[0]!.summary).toBe('valid line')
+  })
+
+  it('finds sessions when project path has a trailing slash', () => {
+    const pathWithSlash = '/Users/test/project/'
+    // Write session files under the canonical (no trailing slash) directory
+    const dir = claudeDir(pathWithSlash)
+    mkdirSync(dir, { recursive: true })
+    writeJsonl(dir, 'trailing-slash-session', [
+      { type: 'user', message: { content: 'trailing slash test' } },
+    ])
+
+    const result = getClaudeHistory(pathWithSlash)
+    expect(result).toHaveLength(1)
+    expect(result[0]!.summary).toBe('trailing slash test')
   })
 })
 

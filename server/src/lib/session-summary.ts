@@ -17,7 +17,7 @@ function isResolvableSessionId(id: string): boolean {
 
 /** Encode a project path the same way Claude Code does: replace `/` with `-` */
 export function encodeProjectPath(projectPath: string): string {
-  return projectPath.replace(/\//g, '-')
+  return projectPath.replace(/\/+$/, '').replace(/\//g, '-')
 }
 
 /** Read first user message from Claude session JSONL files.
