@@ -106,7 +106,8 @@ On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
 - Uses `marked` library for markdown → HTML
 - Renders inside a `.markdown-preview` styled container
 - Renders the draft content (not refetched from disk)
-- Syntax highlighting on code blocks via `@lezer/highlight` (classHighlighter + language parsers)
+- Syntax highlighting on code blocks via `@lezer/highlight` (classHighlighter + language parsers). Code blocks use horizontal-only overflow with `overscroll-behavior-x: contain` so vertical wheel events propagate to parent.
+- Tables are wrapped in a `.table-scroll` div via custom `renderer.table` in `markdown.ts`, enabling horizontal scroll for wide tables.
 - **innerHTML management**: does NOT use `dangerouslySetInnerHTML` (React 19 re-applies it on every render). Instead, manages innerHTML manually via `useLayoutEffect` + `appliedHtmlRef`. Only sets innerHTML when the HTML string actually changes. Saves and restores `<pre>` horizontal scroll positions across DOM recreation.
 - **Mermaid diagrams**: ` ```mermaid ` code fences render as SVG diagrams inline via the `mermaid` library (initialized with `startOnLoad: false`, theme `neutral`). Rendering uses `mermaid.render(id, source)` per diagram in a `useEffect`, reading `textContent` (not `innerHTML`) to avoid HTML entity issues. Parse errors display inline as red text.
 

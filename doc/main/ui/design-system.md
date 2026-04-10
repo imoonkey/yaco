@@ -112,9 +112,10 @@ Folders containing changed files show a yellow dot indicator.
 - Heading hierarchy with bottom borders (h1, h2)
 - Ordered/unordered list markers restored (global reset removes them)
 - Inline code: red foreground (`#DC322F`), light background
-- Code blocks: `#EEE8D5` background with border
+- Code blocks: `#EEE8D5` background with border, horizontal-only overflow (`overflow-x: auto; overflow-y: hidden`) with `overscroll-behavior-x: contain` so vertical wheel events propagate to the parent
 - Syntax tokens colored to match Solarized scheme
-- Tables, blockquotes, images styled for readability
+- Tables wrapped in `.table-scroll` div (`overflow-x: auto`) for horizontal scrolling when content exceeds container width
+- Blockquotes, images styled for readability
 
 ## Git Diff Gutter
 

@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-10: Fix markdown preview scroll issues
+
+**What changed:**
+- Wide tables now horizontally scrollable — custom `renderer.table` in `markdown.ts` wraps `<table>` in `<div class="table-scroll">` with `overflow-x: auto`.
+- Code blocks no longer trap vertical scroll — changed `<pre>` from `overflow: auto; overscroll-behavior: contain` to `overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain`, so vertical wheel events propagate to parent.
+
+**Why:**
+- Tables wider than the preview area were clipped with no way to see right columns (`overflow-x: hidden` on container).
+- Mouse over a code block locked all scrolling because `overscroll-behavior: contain` trapped both axes.
+
+**Key files:** `ui/src/index.css`, `ui/src/workspace/markdown.ts`
+**Verification:** TypeScript compilation clean, lint shows only pre-existing errors
+**Commit:** 308f748
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-10: Dark mode theme adaptation
 
 **What changed:**
