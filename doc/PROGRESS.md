@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-04-10: Dark mode theme adaptation
+
+**What changed:**
+- Markdown preview: replaced hardcoded palette vars (`--sol-base00`, `--sol-base2`, `--sol-base01`) with new semantic vars (`--sol-preview-text`, `--sol-code-bg`, `--sol-code-fg`, `--sol-preview-heading`, `--sol-preview-heading-border`) that flip correctly between light/dark. Light mode values preserved, dark mode aligned with VSCode Solarized Dark.
+- Added `--sol-overlay-bg`, `--sol-subtle-bg`, `--sol-subtle-bg-active` semantic vars for UI surfaces that need to adapt to both themes.
+- Fixed ComposeTray dialog background (`--sol-base3` → `--sol-editor-bg`), VoiceControl button backgrounds, TerminalKeyBar container/button colors, DiffTab highlight colors — all replaced hardcoded `rgba(0,0,0,...)` with `var(--sol-subtle-bg)` or `color-mix()` with theme vars.
+- DialogShell default overlay now uses `var(--sol-overlay-bg)` (light: `rgba(0,0,0,0.25)`, dark: `rgba(0,0,0,0.5)`).
+- Codex icon: switched from `<img>` to inline SVG with `fill="currentColor"` so it adapts to text color in both themes.
+- Dark mode editor cursor: `#93a1a1` → `#d30102` (red, matching VSCode Solarized Dark).
+- Removed unused `--vscode-text-preformat-fg` declarations.
+
+**Why:**
+- Dark mode was added but many components still used hardcoded light-mode colors — invisible buttons, blinding code blocks, cream-colored dialog on dark background.
+
+**Key files:** `ui/src/index.css`, `ui/src/components/ComposeTray.tsx`, `ui/src/components/DialogShell.tsx`, `ui/src/components/VoiceControl.tsx`, `ui/src/components/TerminalKeyBar.tsx`, `ui/src/components/SessionIcons.tsx`, `ui/src/workspace/diff/DiffTab.tsx`
+**Verification:** `vite build` clean, lint shows only pre-existing errors
+**Commit:** 416fee9..754dc34
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-10: Add notification bell to mobile header
 
 **What changed:**
