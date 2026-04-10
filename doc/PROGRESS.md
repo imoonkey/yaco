@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-10: Fix AddProjectDialog path autocomplete filtering
+
+**What changed:**
+- Typing after a `/` in the path input now filters shown subdirectories by typed prefix instead of clearing them.
+- Added "No matches" feedback when the filter yields zero results.
+- Fixed stale entries flash when navigating into a subdirectory by separating `allEntries` (raw server response) from `entries` (derived by case-insensitive prefix filtering).
+
+**Why:**
+- Previously, autocomplete entries were cleared as soon as the user started typing because the path no longer ended with `/`. Now `allEntries` holds the raw server response and `entries` is derived by filtering.
+
+**Key files:** `ui/src/components/AddProjectDialog.tsx`
+**Verification:** Type-check clean, lint clean, 7/7 E2E tests pass
+**Commit:** f19e7fb
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-10: Fix markdown preview scroll issues
 
 **What changed:**
