@@ -39,8 +39,14 @@ export const editorTheme = EditorView.theme({
     color: 'var(--sol-base1)',
     borderRight: 'none',
   },
-  '.cm-lineNumbers .cm-gutterElement, .cm-foldGutter .cm-gutterElement': {
+  '.cm-lineNumbers .cm-gutterElement': {
     color: 'var(--sol-base1)',
+    padding: '0 8px 0 4px',
+    minWidth: '3ch',
+  },
+  '.cm-foldGutter .cm-gutterElement': {
+    color: 'var(--sol-base1)',
+    padding: '0 2px',
   },
   '.cm-activeLineGutter': {
     backgroundColor: 'var(--sol-editor-bg)',
