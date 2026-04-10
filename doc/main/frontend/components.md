@@ -148,7 +148,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `useResize.ts` | 37 | Drag-to-resize hook |
 | `ResizeHandle.tsx` | 18 | VResizeHandle + HResizeHandle (solid 3px sash) |
 | `WorkspaceSidebar.tsx` | 26 | GitChangeItem component |
-| `SectionHeader.tsx` | 17 | Shared collapsible section header (sentence-case, ARIA expand) |
+| `SectionHeader.tsx` | 17 | Shared collapsible section header (uppercase, ARIA expand) |
 
 ## FileExplorer
 
