@@ -1,6 +1,24 @@
 # Progress
 
-## 2026-04-09: Extracted DialogShell component with focus trap + focus restore
+## 2026-04-09: Comprehensive frontend polish — 15-task orchestrated pass
+
+**What changed:**
+- **Accessibility**: ARIA labels on icon-only buttons, landmark roles (main/navigation/complementary), git status letter indicators (M/A/D/U), menu keyboard navigation (Arrow/Enter/Home/End)
+- **DialogShell v2**: stack-safe keyboard (topmost shell wins), focus trap only for overlay mode, exit animations, ARIA dialog semantics (role/aria-modal/aria-labelledby)
+- **New components**: BadgeCount (extracted from 3 duplicates), ShortcutSheet (? key opens cheatsheet)
+- **Interactions**: CSS hover on conflict banner, 350ms long-press, dirty tab close on hover, tab bar scroll fade gradient, preview tab label, Quick Open recent files, search cap banner, session status dots (error/completed), notification timestamp auto-refresh
+- **Architecture**: fileStateMachine.ts (explicit state transitions), WorkspaceScreen 750→499 lines (extracted EditorColumn, SessionSection, SidebarResize), static style extraction from render loops
+- **Visuals**: Solarized scrollbar, skeleton loaders (file tree, diff, mermaid), dark theme tuning (cursor, shadows, rhythm-pulse), simplified 3px solid sash (removed panel elevation shadows)
+- **Performance**: word-diff threshold (skip >500 lines)
+
+**Why:**
+- Independent frontend review identified gaps in accessibility, interaction quality, visual polish, and architecture. Orchestrated 15 parallel workers across 3 batches for efficient implementation.
+
+**Key files:** `ui/src/components/DialogShell.tsx`, `ui/src/components/BadgeCount.tsx`, `ui/src/hooks/fileStateMachine.ts`, `ui/src/workspace/ShortcutSheet.tsx`, `ui/src/workspace/WorkspaceEditorColumn.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/useWorkspaceSidebarResize.ts`, `ui/src/index.css`, `ui/src/components/Menu.tsx`, plus 24 other files
+**Verification:** All accept criteria independently verified per task, Codex review (3 findings fixed: stack-safe keyboard, overlay-only focus trap, ARIA semantics)
+**Commit:** 757bf4b (33 files, +2080 -540)
+**Next:** None
+**Blockers:** None
 
 **What changed:**
 - New `DialogShell` component extracts shared dialog chrome (overlay, glass card, backdrop blur, animation, Escape/click-outside dismissal, focus trapping, focus restoration) from 5 consumers: ConfirmDialog, AddProjectDialog, WorkspaceSearch (FileSearch), ComposeTray, NotificationPanel

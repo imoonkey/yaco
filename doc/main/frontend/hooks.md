@@ -16,7 +16,7 @@ Custom React hooks for data fetching, real-time updates, and device detection.
 
 `ui/src/hooks/*.ts`
 
-## useWorkspaceState.ts (144 lines — composition root)
+## useWorkspaceState.ts (161 lines — composition root)
 
 Per-project workspace state management. Thin wiring layer that composes three focused hooks and returns the same public shape.
 
@@ -25,9 +25,10 @@ Per-project workspace state management. Thin wiring layer that composes three fo
 ### Decomposed into:
 
 - **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic. Includes `retargetPaths(oldPath, newPath)` to remap tab IDs on rename/move, and `closeTabsUnder(path)` to close tabs under a deleted path.
-- **`useFileState.ts`** (358 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling. Includes `retargetFile(oldPath, newPath)` to remap file state keys, and `removeFilesUnder(path)` to clean up file state on delete.
+- **`useFileState.ts`** (342 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling. Uses `fileStateMachine.ts` for explicit state transitions.
+- **`fileStateMachine.ts`** (100 lines) — pure state machine for file status transitions. `FileEvent` discriminated union (9 events: SERVER_SYNC, SERVER_MISSING, FILL_REVISION, EDIT, SAVE_START, SAVE_SUCCESS, SAVE_CONFLICT, SAVE_ERROR, ACCEPT_DISK). `fileTransition(state, event)` returns new state or same reference if unchanged. `reconcileFile()` wraps server fetch results.
 - **`usePersistence.ts`** (190 lines) — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush
-- **`workspaceTypes.ts`** (116 lines) — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`), constants (`TASKS_TAB_ID`), tab guards (`isFileTab`, `isDiffTab`, `isTasksTab`), localStorage key builders
+- **`workspaceTypes.ts`** (125 lines) — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`), constants (`TASKS_TAB_ID`), tab guards (`isFileTab`, `isDiffTab`, `isTasksTab`), localStorage key builders
 
 ### State
 

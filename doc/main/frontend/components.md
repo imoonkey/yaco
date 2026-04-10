@@ -20,34 +20,39 @@ React component tree, props interfaces, and responsibilities.
 ## Component Tree
 
 ```
-App (260 lines)
+App (384 lines)
 └── Workspace (re-export → workspace/WorkspaceScreen)
-    └── WorkspaceScreen (~600 lines) — controller
-        ├── useWorkspaceKeyboard (190 lines)
-        ├── useWorkspaceNavigation (132 lines)
-        ├── useWorkspaceSessions (180 lines)
-        ├── useWorkspaceDiff (125 lines)
+    └── WorkspaceScreen (~499 lines) — controller
+        ├── useWorkspaceKeyboard (199 lines)
+        ├── useWorkspaceNavigation (143 lines)
+        ├── useWorkspaceSessions (183 lines)
+        ├── useWorkspaceDiff (130 lines)
         ├── useWorkspaceVoice (82 lines)
-        └── WorkspaceLayout (187 lines) — layout composition
+        ├── useWorkspaceSidebarResize (88 lines) — resize state + max computation
+        ├── useWorkspaceSessionSection (177 lines) — session tab, drag, resume, history
+        ├── WorkspaceEditorColumn (179 lines) — tab bar + breadcrumbs + editor area
+        └── WorkspaceLayout (238 lines) — layout composition
             ├── SectionHeader (17 lines)
-            ├── VResizeHandle / HResizeHandle (23 lines)
+            ├── VResizeHandle / HResizeHandle
             └── PaneSwitch
-        ├── WorkspaceTabBar (113 lines)
-        ├── WorkspaceEditorArea (345 lines)
+        ├── WorkspaceTabBar (191 lines) — scroll fade, preview label, dirty close
+        ├── WorkspaceEditorArea (534 lines)
         │   ├── DiffTab (diff/ module — unified/split views, navigation)
         │   ├── MarkdownPreview
-        │   └── Editor (223 lines)
-        ├── FileExplorer (333 lines)
-        │   ├── fileExplorerIcons (82 lines)
-        │   └── fileExplorerNode (105 lines)
-        ├── Menu (90 lines) — shared MenuItem/MenuDivider/useContextMenu + long-press
-        ├── Terminal (330 lines)
-        │   └── TerminalKeyBar (224 lines) — touch-only
-        ├── SessionItem (37 lines)
-        ├── WorkspaceHistoryList (116 lines) — History tab items
-        ├── GitChangeItem (22 lines)
-        ├── FileSearch (45 lines)
+        │   └── Editor (357 lines)
+        ├── FileExplorer (435 lines)
+        │   ├── fileExplorerIcons — GIT_COLORS, GIT_STATUS_LABELS, FileTypeIcon
+        │   └── fileExplorerNode — git letter indicators (M/A/D/U)
+        ├── Menu (154 lines) — keyboard nav (Arrow/Enter/Home/End), long-press (350ms)
+        ├── Terminal (447 lines)
+        │   └── TerminalKeyBar (268 lines) — touch-only
+        ├── SessionItem — status dots (processing/idle/error/completed)
+        ├── WorkspaceHistoryList (114 lines)
+        ├── GitChangeItem
+        ├── FileSearch — recent files section, search cap banner
+        ├── ShortcutSheet — ? key opens shortcut cheatsheet
         ├── TaskGraphScreen — rendered as the Tasks workspace tab
+        ├── BadgeCount — reusable unread count badge
         └── ProviderIcon
 ```
 
@@ -74,17 +79,18 @@ TaskGraphScreen (237 lines) — controller
 **Supporting modules (non-component):**
 - `workspace/markdown.ts` (141 lines) — escapeHtml, renderMarkdown, resolveRelativePath, code highlighting, heading slugification, mermaid init
 - `workspace/useResize.ts` (35 lines) — drag-to-resize hook, accepts `number | (() => number)` for dynamic max
-- `hooks/useWorkspaceState.ts` (753 lines) — domain state, persistence, SSE reconciliation
+- `hooks/useWorkspaceState.ts` (161 lines) — composition root wiring useLayoutState + useFileState + usePersistence
+- `hooks/fileStateMachine.ts` (100 lines) — explicit file state transitions (clean→dirty→saving→clean, clean→conflict) via `fileTransition(state, event)` pure function
 - `lib/theme.ts` — `getTheme()`, `setTheme()`, `toggleTheme()` for dark/light mode switching via `data-theme` attribute + localStorage
 - `lib/editorTheme.ts` — CodeMirror `EditorView.theme()` + `HighlightStyle` using CSS vars
 - `lib/formatTime.ts` — `formatRelativeTime()` for relative timestamps in History tab
 - `lib/diffGutter.ts` (400 lines) — CodeMirror diff gutter extension, inline hunk popup with word highlights, badges, nav, Show more
-- `lib/parseDiff.ts` (160 lines) — unified diff parser → `ParsedFileDiff` with canonical `DiffRow[]` per hunk (wraps `parse-diff` + `wordDiff.ts`)
-- `lib/wordDiff.ts` (100 lines) — word-level diff via `diff` package (`computeWordDiff`, `pairChanges`), exports `DiffRow`/`DiffSegment` types
+- `lib/parseDiff.ts` (162 lines) — unified diff parser → `ParsedFileDiff` with canonical `DiffRow[]` per hunk (wraps `parse-diff` + `wordDiff.ts`). Skips word-level diffing for diffs >500 changed lines.
+- `lib/wordDiff.ts` (124 lines) — word-level diff via `diff` package (`computeWordDiff`, `pairChanges`), exports `DiffRow`/`DiffSegment` types. `pairChanges` accepts `skipWordDiff` flag.
 
 ## App
 
-**File**: `ui/src/App.tsx` (245 lines)
+**File**: `ui/src/App.tsx` (384 lines)
 
 Single-workspace shell. Manages project selection, unread state, and browser notifications. Renders one `<Workspace>` keyed by active project.
 
@@ -100,9 +106,9 @@ Single-workspace shell. Manages project selection, unread state, and browser not
 
 ## Workspace / WorkspaceScreen
 
-**File**: `ui/src/components/Workspace.tsx` (re-export) → `ui/src/workspace/WorkspaceScreen.tsx` (889 lines)
+**File**: `ui/src/components/Workspace.tsx` (re-export) → `ui/src/workspace/WorkspaceScreen.tsx` (499 lines)
 
-Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition is delegated to `WorkspaceLayout`.
+Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition is delegated to `WorkspaceLayout`. Session management extracted to `useWorkspaceSessionSection`, sidebar resize to `useWorkspaceSidebarResize`, editor column to `WorkspaceEditorColumn`.
 
 **Props**: `{ projectName: string; projectPath: string; projects; activeProject; projectUnreadCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent }`
 
@@ -115,7 +121,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 ### WorkspaceLayout
 
-**File**: `ui/src/workspace/WorkspaceLayout.tsx` (187 lines)
+**File**: `ui/src/workspace/WorkspaceLayout.tsx` (238 lines)
 
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
@@ -126,17 +132,23 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `WorkspaceScreen.tsx` | 889 | Controller (state, callbacks, keyboard, Tasks tab routing) |
-| `WorkspaceLayout.tsx` | 187 | Layout composition (desktop/mobile) |
-| `WorkspaceEditorArea.tsx` | 535 | Editor, split view, preview, diff, conflict banner, Tasks tab host |
-| `markdown.ts` | 118 | Markdown rendering, syntax highlighting, mermaid |
-| `WorkspaceTabBar.tsx` | 113 | Tab strip with file/diff/tasks classification and md mode toggle |
-| `WorkspaceSearch.tsx` | 60 | File search modal (fetches full index via `/api/files/:project/search-index`) |
-| `WorkspaceSessionList.tsx` | 37 | SessionItem component |
-| `useResize.ts` | 34 | Drag-to-resize hook |
-| `ResizeHandle.tsx` | 23 | VResizeHandle + HResizeHandle |
-| `WorkspaceSidebar.tsx` | 22 | GitChangeItem component |
-| `SectionHeader.tsx` | 17 | Shared collapsible section header |
+| `WorkspaceScreen.tsx` | 499 | Controller (state, callbacks, keyboard, Tasks tab routing) |
+| `WorkspaceLayout.tsx` | 238 | Layout composition (desktop/mobile) with ARIA landmarks |
+| `WorkspaceEditorColumn.tsx` | 179 | Editor pane: tab bar + breadcrumbs + editor area |
+| `WorkspaceEditorArea.tsx` | 534 | Editor, split view, preview, diff, conflict banner, skeleton loaders |
+| `markdown.ts` | 141 | Markdown rendering, syntax highlighting, mermaid |
+| `WorkspaceTabBar.tsx` | 191 | Tab strip with scroll fade, preview label, dirty close on hover |
+| `WorkspaceSearch.tsx` | 174 | File search modal, recent files section |
+| `WorkspaceTextSearch.tsx` | 487 | Full-text search with result cap banner |
+| `ShortcutSheet.tsx` | ~80 | Keyboard shortcut cheatsheet (? key) |
+| `WorkspaceSessionList.tsx` | 139 | SessionItem with status dots (processing/idle/error/completed) |
+| `WorkspaceHistoryList.tsx` | 114 | History tab items |
+| `useWorkspaceSidebarResize.ts` | 88 | Sidebar resize state + max computation |
+| `useWorkspaceSessionSection.tsx` | 177 | Session tab, drag, resume, history JSX |
+| `useResize.ts` | 37 | Drag-to-resize hook |
+| `ResizeHandle.tsx` | 18 | VResizeHandle + HResizeHandle (solid 3px sash) |
+| `WorkspaceSidebar.tsx` | 26 | GitChangeItem component |
+| `SectionHeader.tsx` | 17 | Shared collapsible section header with ARIA expand |
 
 ## FileExplorer
 
@@ -209,22 +221,30 @@ Touch-only key bar for terminal special keys missing from virtual keyboards.
 
 ## Supporting Components
 
-### DialogShell (132 lines)
+### DialogShell (~165 lines)
 
 **File**: `ui/src/components/DialogShell.tsx`
 
 Reusable dialog/panel chrome that extracts shared overlay, glass card, animation, accessibility, and dismissal behavior. Used by ConfirmDialog, AddProjectDialog, WorkspaceSearch (FileSearch), ComposeTray, and NotificationPanel.
 
-**Props**: `{ onClose, children, overlay?, overlayBg?, overlayClassName?, className?, style?, animation?, autoFocusRef?, restoreFocus? }`
+**Props**: `{ onClose, children, overlay?, overlayBg?, overlayClassName?, className?, style?, animation?, autoFocusRef?, restoreFocus?, ariaLabelledBy?, ariaDescribedBy? }`
 
 **Responsibilities**:
 - Full-screen overlay with click-outside dismissal (overlay mode) or document-level click-outside (panel mode)
 - Glass card styling: semi-transparent background, border, elevation-3 shadow, backdrop blur
-- Entry animation: `dialog-enter` (centered dialogs) or `panel-slide-in` (edge panels)
-- Escape key dismissal (stops propagation)
-- Focus trapping: Tab/Shift+Tab cycles within the shell
+- Entry/exit animations: `dialog-enter`/`dialog-exit` (centered dialogs) or `panel-slide-in`/`panel-slide-out` (edge panels)
+- Stack-safe keyboard handling: module-level `shellStack` array ensures only the topmost shell handles Escape/Tab (stacked dialogs close front-to-back)
+- Focus trapping: Tab/Shift+Tab cycles within the shell (overlay mode only — non-overlay panels don't trap to avoid blocking keyboard access to visible content)
 - Focus restoration: saves `document.activeElement` on mount, restores on unmount
 - Auto-focus: optional ref-based initial focus target
+- ARIA dialog semantics: overlay shells get `role="dialog"` + `aria-modal="true"`, with optional `aria-labelledby`/`aria-describedby`
+- `useDialogClose()` context hook for children to trigger animated close
+
+### BadgeCount
+
+**File**: `ui/src/components/BadgeCount.tsx`
+
+Reusable unread count badge (orange circle, white text). Used by App (notification bell), ProjectList, SessionItem.
 
 ### PaneSwitch (35 lines)
 Reusable horizontal tab switcher for mobile views. Used by Workspace.
