@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-04-09: Extracted DialogShell component with focus trap + focus restore
+
+**What changed:**
+- New `DialogShell` component extracts shared dialog chrome (overlay, glass card, backdrop blur, animation, Escape/click-outside dismissal, focus trapping, focus restoration) from 5 consumers: ConfirmDialog, AddProjectDialog, WorkspaceSearch (FileSearch), ComposeTray, NotificationPanel
+
+**Why:**
+- Remove duplicated dialog chrome across 5 components, fix accessibility (focus trapping, focus restoration)
+
+**Key files:** `ui/src/components/DialogShell.tsx` (new), `ui/src/components/ConfirmDialog.tsx`, `ui/src/components/AddProjectDialog.tsx`, `ui/src/workspace/WorkspaceSearch.tsx`, `ui/src/components/ComposeTray.tsx`, `ui/src/components/NotificationPanel.tsx`
+**Verification:** `cd ui && npm run lint` passes (0 new errors)
+**Commit:** 0c3d03e, 4dcd402
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: Frontend polish — font inheritance, CSS hover, sizing, menu collision
 
 **What changed:**

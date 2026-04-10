@@ -209,6 +209,23 @@ Touch-only key bar for terminal special keys missing from virtual keyboards.
 
 ## Supporting Components
 
+### DialogShell (132 lines)
+
+**File**: `ui/src/components/DialogShell.tsx`
+
+Reusable dialog/panel chrome that extracts shared overlay, glass card, animation, accessibility, and dismissal behavior. Used by ConfirmDialog, AddProjectDialog, WorkspaceSearch (FileSearch), ComposeTray, and NotificationPanel.
+
+**Props**: `{ onClose, children, overlay?, overlayBg?, overlayClassName?, className?, style?, animation?, autoFocusRef?, restoreFocus? }`
+
+**Responsibilities**:
+- Full-screen overlay with click-outside dismissal (overlay mode) or document-level click-outside (panel mode)
+- Glass card styling: semi-transparent background, border, elevation-3 shadow, backdrop blur
+- Entry animation: `dialog-enter` (centered dialogs) or `panel-slide-in` (edge panels)
+- Escape key dismissal (stops propagation)
+- Focus trapping: Tab/Shift+Tab cycles within the shell
+- Focus restoration: saves `document.activeElement` on mount, restores on unmount
+- Auto-focus: optional ref-based initial focus target
+
 ### PaneSwitch (35 lines)
 Reusable horizontal tab switcher for mobile views. Used by Workspace.
 
