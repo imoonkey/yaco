@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-10: Fix notification bell mark-all-read + panel font sizes
+
+**What changed:**
+- Bell click no longer marks all notifications as read on panel open — just toggles visibility.
+- Clicking an individual notification item now marks it as read (exported `markRead(id)` from `useNotifications`).
+- NotificationPanel font sizes bumped 1-2px to match app conventions (titles 13px, body 12px, meta 10-11px).
+
+**Why:**
+- Opening the panel was clearing the unread badge immediately, defeating the purpose of unread state.
+- Panel font sizes (9-11px) were manually set below the app's baseline (12-13px), making the list harder to read.
+
+**Key files:** `ui/src/App.tsx`, `ui/src/components/NotificationPanel.tsx`, `ui/src/hooks/useNotifications.ts`
+**Verification:** `tsc --noEmit` clean
+**Commit:** 278da4b
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-09: Fix toast notification click navigation + compact git changes
 
 **What changed:**

@@ -143,7 +143,7 @@ Behavior:
 
 Dual-mode notification delivery via SSE.
 
-**Export**: `useNotifications(onNotificationClick?)` → `void`
+**Export**: `useNotifications(onNotificationClick?)` → `{ notifications, unreadCount, markAllRead, markRead, clearAll }`
 
 Behavior:
 - Listens for `notification` SSE events
