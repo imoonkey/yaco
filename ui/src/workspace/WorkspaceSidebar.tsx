@@ -8,19 +8,17 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
   const dir = cleanPath.includes('/') ? cleanPath.slice(0, cleanPath.lastIndexOf('/')) : ''
   return (
     <div onClick={onActivate}
-      className={`flex items-start gap-2 px-2 py-1 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
+      className={`flex items-center gap-1 px-2 h-[22px] rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
       title={cleanPath}
       style={{ transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}>
       {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}
-      <div className="min-w-0 flex-1 overflow-hidden leading-tight">
-        <div className="truncate" style={{ color: GIT_COLORS[change.status] || 'var(--sol-text)' }}>{name}</div>
-        {dir && <div
-          className="truncate pt-0.5 text-[10px] hover:underline"
-          style={{ color: 'var(--sol-muted)' }}
-          onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
-        >{dir}</div>}
-      </div>
-      <span className="ml-auto pt-[1px] text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[change.status] }}>{change.status}</span>
+      <span className="truncate" style={{ color: GIT_COLORS[change.status] || 'var(--sol-text)' }}>{name}</span>
+      {dir && <span
+        className="truncate text-[10px] hover:underline shrink min-w-0"
+        style={{ color: 'var(--sol-muted)' }}
+        onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
+      >{dir}</span>}
+      <span className="ml-auto text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[change.status] }}>{change.status}</span>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, createElement } from 'react'
 import { toast } from 'sonner'
 import { addSSEListener } from './useSSE'
 
@@ -89,14 +89,32 @@ export function useNotifications(
         setNotifications(prev => [item, ...prev].slice(0, MAX_NOTIFICATIONS))
 
         if (document.visibilityState === 'visible') {
-          // In-app toast
-          toast(title, {
-            description: event.message,
-            onClick: (project || sessionName) ? () => {
-              markRead(event.id)
-              onClickRef.current?.(project, sessionName)
-            } : undefined,
-          })
+          // In-app toast — use toast.custom so the entire area is clickable
+          const hasTarget = !!(project || sessionName)
+          const handleClick = hasTarget ? (toastId: string | number) => () => {
+            toast.dismiss(toastId)
+            markRead(event.id)
+            onClickRef.current?.(project, sessionName)
+          } : undefined
+          toast.custom((id) =>
+            createElement('div', {
+              style: {
+                background: 'var(--sol-editor-bg)',
+                color: 'var(--sol-text)',
+                border: '1px solid var(--sol-border)',
+                fontSize: '12px',
+                cursor: hasTarget ? 'pointer' : undefined,
+                borderRadius: 8,
+                padding: '12px 16px',
+              },
+              onClick: handleClick?.(id),
+            },
+              createElement('div', { style: { fontWeight: 500 } }, title),
+              event.message
+                ? createElement('div', { style: { opacity: 0.7, fontSize: '0.875em', marginTop: 2 } }, event.message)
+                : null,
+            ),
+          )
         } else {
           // Browser notification when backgrounded
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
