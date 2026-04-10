@@ -94,20 +94,22 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
       {isMobile ? (
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="shrink-0 border-b border-[var(--sol-border)] px-3 py-1 flex items-center justify-between" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
-            <PaneSwitch
-              options={[
-                { id: 'files', label: 'Browse' },
-                { id: 'editor', label: 'Editor' },
-                { id: 'terminal', label: 'Terminal' },
-              ]}
-              value={mobilePane}
-              onChange={(v) => onMobilePaneChange(v as 'files' | 'editor' | 'terminal')}
-            />
-            <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
-              <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
-              <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
-            </span>
+          <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-0.5 flex items-center gap-1.5" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+            <div className="flex-1 min-w-0">
+              <PaneSwitch
+                options={[
+                  { id: 'files', label: 'Browse' },
+                  { id: 'editor', label: 'Editor' },
+                  { id: 'terminal', label: 'Terminal' },
+                ]}
+                value={mobilePane}
+                onChange={(v) => onMobilePaneChange(v as 'files' | 'editor' | 'terminal')}
+              />
+            </div>
+            <button className="theme-toggle-single shrink-0 rounded p-1 cursor-pointer text-[var(--sol-text-dim)] hover:text-[var(--sol-text)]" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme" style={{ transition: 'color 120ms' }}>
+              <Sun size={14} strokeWidth={2.5} className="icon-sun" />
+              <Moon size={14} strokeWidth={2.5} className="icon-moon" />
+            </button>
           </div>
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (

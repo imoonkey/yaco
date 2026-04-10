@@ -266,6 +266,12 @@
   box-shadow: inset 0 0 0 1px rgba(38, 139, 210, 0.15);
 }
 
+/* Mobile single-icon theme toggle — show only the active icon */
+.theme-toggle-single .icon-sun { display: block; color: var(--sol-yellow); }
+.theme-toggle-single .icon-moon { display: none; }
+[data-theme="dark"] .theme-toggle-single .icon-sun { display: none; }
+[data-theme="dark"] .theme-toggle-single .icon-moon { display: block; color: var(--sol-blue); }
+
 html, body {
   overscroll-behavior: none;
 }
