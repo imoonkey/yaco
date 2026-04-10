@@ -28,6 +28,7 @@ interface UseWorkspaceKeyboardOpts {
   focusTarget: FocusTarget
   setFocusTarget: (t: FocusTarget) => void
   selectedFilePath: string | null
+  explorerFocusedPath: string | null
   canToggleMdMode: boolean
   mdMode: MdMode
   closeFocusedSurface: () => boolean
@@ -53,6 +54,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     focusTarget,
     setFocusTarget,
     selectedFilePath,
+    explorerFocusedPath,
     canToggleMdMode,
     mdMode,
     closeFocusedSurface,
@@ -147,10 +149,10 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         return
       }
       if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
-      if (!showSearch && e.metaKey && !e.ctrlKey && !e.altKey && key === 'c' && focusTarget === 'explorer' && selectedFilePath) {
+      if (!showSearch && e.metaKey && !e.ctrlKey && !e.altKey && key === 'c' && focusTarget === 'explorer' && explorerFocusedPath) {
         e.preventDefault()
         e.stopPropagation()
-        void writeTextToClipboard(selectedFilePath)
+        void writeTextToClipboard(explorerFocusedPath)
         return
       }
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canToggleMdMode) {
@@ -190,7 +192,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, onToggleShortcutSheet, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, onToggleShortcutSheet, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

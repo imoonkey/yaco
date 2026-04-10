@@ -87,6 +87,7 @@ export function Workspace({
   const [showSearch, setShowSearch] = useState(false)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [contextFolder, setContextFolder] = useState('')
+  const [explorerFocusedPath, setExplorerFocusedPath] = useState<string | null>(null)
   const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
   const [showShortcutSheet, setShowShortcutSheet] = useState(false)
@@ -206,7 +207,7 @@ export function Workspace({
     showTextSearch,
     setShowSearch: (fn) => setShowSearch(fn),
     focusTarget, setFocusTarget,
-    selectedFilePath, canToggleMdMode: !!(activeFilePath?.endsWith('.md')),
+    selectedFilePath, explorerFocusedPath, canToggleMdMode: !!(activeFilePath?.endsWith('.md')),
     mdMode, closeFocusedSurface,
     editorVoiceEligible: voiceBridge.editorVoiceEligible,
     terminalVoiceEligible: voiceBridge.terminalVoiceEligible,
@@ -316,6 +317,7 @@ export function Workspace({
       onExpandDir={expandDir}
       onFocusExplorer={() => setFocusTarget('explorer')}
       onContextFolder={setContextFolder}
+      onNodeFocused={setExplorerFocusedPath}
       onFileRenamed={handleFileRenamed}
       onFileDeleted={handleFileDeleted}
       patchTree={patchTree}

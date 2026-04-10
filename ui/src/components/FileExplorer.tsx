@@ -111,6 +111,7 @@ interface FileExplorerProps {
   onExpandDir?: (path: string) => void
   onFocusExplorer: () => void
   onContextFolder?: (path: string) => void
+  onNodeFocused?: (path: string) => void
   onFileRenamed?: (oldPath: string, newPath: string) => void
   onFileDeleted?: (path: string) => void
   patchTree?: (fn: (prev: FileNode[] | null) => FileNode[] | null) => void
@@ -118,7 +119,7 @@ interface FileExplorerProps {
 }
 
 const FileExplorerInner = forwardRef<FileExplorerHandle, FileExplorerProps>(
-function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder, onFileRenamed, onFileDeleted, patchTree, refreshTree }, ref) {
+function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder, onNodeFocused, onFileRenamed, onFileDeleted, patchTree, refreshTree }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -193,7 +194,8 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
   const reportContextFolder = useCallback((path: string, type: 'file' | 'dir') => {
     const folder = type === 'dir' ? path : parentOf(path)
     onContextFolder?.(folder)
-  }, [onContextFolder])
+    onNodeFocused?.(path)
+  }, [onContextFolder, onNodeFocused])
 
   const parentOf = (path: string) => {
     const i = path.lastIndexOf('/')
