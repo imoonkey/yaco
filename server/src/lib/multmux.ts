@@ -44,7 +44,7 @@ function normalizeStateFileStatus(status: string): 'processing' | 'idle' | 'erro
   if (status === 'processing') return 'processing'
   if (status === 'idle' || status === 'starting') return 'idle'
   if (status === 'error') return 'error'
-  if (status === 'stopped' || status === 'completed') return 'completed'
+  if (status === 'completed') return 'completed'
   return null
 }
 
