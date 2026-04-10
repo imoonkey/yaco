@@ -181,7 +181,7 @@ function App() {
     }
   }, [])
 
-  const { notifications, unreadCount, markAllRead: markNotificationsRead, clearAll: clearNotifications } = useNotifications(handleNotificationClick)
+  const { notifications, unreadCount, markAllRead: markNotificationsRead, markRead, clearAll: clearNotifications } = useNotifications(handleNotificationClick)
   const [showNotifications, setShowNotifications] = useState(false)
 
   // Persist project selection
@@ -271,7 +271,7 @@ function App() {
             <button
               className="flex items-center justify-center cursor-pointer hover:opacity-80"
               style={{ color: 'var(--sol-text-dim)', transition: 'color 120ms, transform 120ms' }}
-              onClick={() => { setShowNotifications(v => !v); if (!showNotifications) markNotificationsRead() }}
+              onClick={() => setShowNotifications(v => !v)}
               title="Notifications"
               aria-label="Notifications"
             >
@@ -281,7 +281,7 @@ function App() {
             {showNotifications && (
               <NotificationPanel
                 notifications={notifications}
-                onClickItem={(n) => { handleNotificationClick(n.project, n.sessionName); setShowNotifications(false) }}
+                onClickItem={(n) => { markRead(n.id); handleNotificationClick(n.project, n.sessionName); setShowNotifications(false) }}
                 onMarkAllRead={markNotificationsRead}
                 onClearAll={clearNotifications}
                 onClose={() => setShowNotifications(false)}

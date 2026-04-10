@@ -58,7 +58,7 @@ export function NotificationPanel({
         className="flex items-center justify-between px-3 h-10 shrink-0"
         style={{ borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[12px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+        <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
           Notifications
         </span>
         <div className="flex items-center gap-2">
@@ -66,14 +66,14 @@ export function NotificationPanel({
             <>
               <button
                 onClick={onMarkAllRead}
-                className="text-[10px] cursor-pointer hover:underline"
+                className="text-[11px] cursor-pointer hover:underline"
                 style={{ color: 'var(--sol-muted)' }}
               >
                 Mark all read
               </button>
               <button
                 onClick={onClearAll}
-                className="text-[10px] cursor-pointer hover:underline"
+                className="text-[11px] cursor-pointer hover:underline"
                 style={{ color: 'var(--sol-muted)' }}
               >
                 Clear
@@ -86,7 +86,7 @@ export function NotificationPanel({
 
       <div className="flex-1 overflow-y-auto">
         {notifications.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[11px]" style={{ color: 'var(--sol-muted)' }}>
+          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--sol-muted)' }}>
             No notifications
           </div>
         ) : (
@@ -104,18 +104,18 @@ export function NotificationPanel({
             >
               <div className="flex items-center justify-between gap-2">
                 <span
-                  className="text-[11px] font-medium truncate flex-1"
+                  className="text-[12px] font-medium truncate flex-1"
                   style={{ color: n.read ? 'var(--sol-text-dim)' : 'var(--sol-text-dark)' }}
                 >
                   {n.title}
                 </span>
-                <span className="text-[9px] shrink-0" style={{ color: 'var(--sol-muted)' }}>
+                <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-muted)' }}>
                   {timeAgo(n.timestamp)}
                 </span>
               </div>
               {n.message && (
                 <div
-                  className="text-[10px] truncate mt-0.5"
+                  className="text-[11px] truncate mt-0.5"
                   style={{ color: 'var(--sol-muted)' }}
                 >
                   {n.message}

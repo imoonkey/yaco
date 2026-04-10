@@ -29,6 +29,7 @@ export function useNotifications(
   notifications: NotificationItem[]
   unreadCount: number
   markAllRead: () => void
+  markRead: (id: string) => void
   clearAll: () => void
 } {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
@@ -134,5 +135,5 @@ export function useNotifications(
     })
   }, [markRead])
 
-  return { notifications, unreadCount, markAllRead, clearAll }
+  return { notifications, unreadCount, markAllRead, markRead, clearAll }
 }
