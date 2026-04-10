@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, ChevronRight, ArrowLeftRight } from 'lucide-react'
+import { DialogShell } from './DialogShell'
 import type { VoiceSurface, ComposeData, InteractionState } from '../hooks/useVoice'
 
 export function ComposeTray({
@@ -73,16 +74,27 @@ export function ComposeTray({
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
   const ss = String(elapsed % 60).padStart(2, '0')
 
+  const handleClose = state === 'recording' ? onStop : onDiscard
+
   return (
-    <div style={OVERLAY_STYLE} onClick={state === 'recording' ? onStop : onDiscard}
-      onKeyDown={(e) => {
+    <DialogShell
+      onClose={handleClose}
+      overlayBg="rgba(0,0,0,0.15)"
+      overlayClassName="z-[1000] items-center justify-center"
+      style={{
+        borderRadius: 8,
+        padding: 16,
+        width: '90%',
+        maxWidth: 520,
+        backgroundColor: 'color-mix(in srgb, var(--sol-base3) 90%, transparent)',
+      }}
+    >
+      <div onKeyDown={(e) => {
         if (e.key === 'Tab' && canToggleSurface) {
           e.preventDefault()
           onSurfaceToggle()
         }
-      }}
-    >
-      <div style={DIALOG_STYLE} onClick={(e) => e.stopPropagation()}>
+      }}>
         {/* Header with toggleable surface */}
         <div style={HEADER_STYLE}>
           <button
@@ -96,7 +108,7 @@ export function ComposeTray({
             Voice → {surface === 'terminal' ? 'Terminal' : 'Editor'}
             {canToggleSurface && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.5, display: 'inline-flex', alignItems: 'center', gap: 2 }}>Tab <ArrowLeftRight size={10} /></span>}
           </button>
-          <button style={CLOSE_BTN_STYLE} onClick={state === 'recording' ? onStop : onDiscard} aria-label="Close"><X size={14} /></button>
+          <button style={CLOSE_BTN_STYLE} onClick={handleClose} aria-label="Close"><X size={14} /></button>
         </div>
 
         {/* Recording state */}
@@ -144,10 +156,6 @@ export function ComposeTray({
                 if (e.key === 'Enter' && !e.shiftKey && !isRecoverable) {
                   e.preventDefault()
                   onConfirm(editText)
-                }
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  onDiscard()
                 }
               }}
               rows={1}
@@ -209,35 +217,11 @@ export function ComposeTray({
           </>
         )}
       </div>
-    </div>
+    </DialogShell>
   )
 }
 
 // --- Styles ---
-
-const OVERLAY_STYLE: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  zIndex: 1000,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  background: 'rgba(0,0,0,0.15)',
-  animation: 'overlay-enter 200ms ease-out',
-}
-
-const DIALOG_STYLE: React.CSSProperties = {
-  background: 'color-mix(in srgb, var(--sol-base3) 90%, transparent)',
-  border: '1px solid var(--sol-border)',
-  borderRadius: 8,
-  padding: 16,
-  width: '90%',
-  maxWidth: 520,
-  boxShadow: 'var(--elevation-3)',
-  backdropFilter: 'var(--backdrop-blur)',
-  WebkitBackdropFilter: 'var(--backdrop-blur)',
-  animation: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
-}
 
 const HEADER_STYLE: React.CSSProperties = {
   display: 'flex',

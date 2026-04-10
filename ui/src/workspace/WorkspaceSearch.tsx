@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, useDeferredValue } from 'react'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
+import { DialogShell } from '../components/DialogShell'
 
 import { fuzzySearch, namePositions, type FuzzyResult } from '../lib/fuzzySearch'
 import { getCached, isCacheStale, fetchIndex } from './quickOpenIndex'
@@ -18,8 +19,6 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
   const [files, setFiles] = useState(() => getCached(projectName, false) ?? [])
   const [loading, setLoading] = useState(() => !getCached(projectName, false))
   const [includeIgnored, setIncludeIgnored] = useState(false)
-
-  useEffect(() => { inputRef.current?.focus() }, [])
 
   // Fetch or background-refresh index
   useEffect(() => {
@@ -56,44 +55,48 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
   const visible = useDeferredValue(scored)
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') { onClose(); return }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, visible.length - 1)); return }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
     if (e.key === 'Enter' && visible[selectedIdx]) { onSelect(visible[selectedIdx].entry); onClose() }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[15%]" style={{ animation: 'overlay-enter 200ms ease-out' }} onClick={onClose}>
-      <div className="w-[500px] rounded-xl overflow-hidden" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)', border: '1px solid var(--sol-border)', boxShadow: 'var(--elevation-3)', backdropFilter: 'var(--backdrop-blur)', WebkitBackdropFilter: 'var(--backdrop-blur)', animation: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both' }} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
-          <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-            placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: 'var(--sol-text-dark)' }} />
-          <button
-            onClick={toggleIgnored}
-            title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
-            className="px-2 py-1 mr-1.5 rounded text-[10px] font-medium"
-            style={{
-              backgroundColor: includeIgnored ? 'var(--sol-blue)' : 'transparent',
-              color: includeIgnored ? '#fff' : 'var(--sol-muted)',
-              border: includeIgnored ? '1px solid var(--sol-blue)' : '1px solid var(--sol-border)',
-            }}
-          >.gitignore</button>
-        </div>
-        <div className="max-h-[300px] overflow-y-auto">
-          {visible.map((r, i) => (
-            <SearchResultRow
-              key={r.entry.path}
-              result={r}
-              selected={i === selectedIdx}
-              hasQuery={query.trim().length > 0}
-              onClick={() => { onSelect(r.entry); onClose() }}
-              onHover={() => setSelectedIdx(i)}
-            />
-          ))}
-          {!loading && visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-muted)' }}>No files found</div>}
-        </div>
+    <DialogShell
+      onClose={onClose}
+      autoFocusRef={inputRef}
+      overlayBg="transparent"
+      overlayClassName="z-50 items-start justify-center pt-[15%]"
+      className="w-[500px] rounded-xl overflow-hidden"
+      style={{ backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)' }}
+    >
+      <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
+        <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
+          placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: 'var(--sol-text-dark)' }} />
+        <button
+          onClick={toggleIgnored}
+          title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
+          className="px-2 py-1 mr-1.5 rounded text-[10px] font-medium"
+          style={{
+            backgroundColor: includeIgnored ? 'var(--sol-blue)' : 'transparent',
+            color: includeIgnored ? '#fff' : 'var(--sol-muted)',
+            border: includeIgnored ? '1px solid var(--sol-blue)' : '1px solid var(--sol-border)',
+          }}
+        >.gitignore</button>
       </div>
-    </div>
+      <div className="max-h-[300px] overflow-y-auto">
+        {visible.map((r, i) => (
+          <SearchResultRow
+            key={r.entry.path}
+            result={r}
+            selected={i === selectedIdx}
+            hasQuery={query.trim().length > 0}
+            onClick={() => { onSelect(r.entry); onClose() }}
+            onHover={() => setSelectedIdx(i)}
+          />
+        ))}
+        {!loading && visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-muted)' }}>No files found</div>}
+      </div>
+    </DialogShell>
   )
 }
 

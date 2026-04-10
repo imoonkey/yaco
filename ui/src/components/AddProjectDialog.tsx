@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { X, GitBranch } from 'lucide-react'
 import { browseDirs, addProject } from '../hooks/useApi'
+import { DialogShell } from './DialogShell'
 import type { BrowseEntry } from '../hooks/useApi'
 
 const STORAGE_KEY = 'workflow-last-browse-dir'
@@ -38,7 +39,7 @@ export function AddProjectDialog({
   const listRef = useRef<HTMLDivElement>(null)
   const fetchId = useRef(0)
 
-  // Focus input on mount
+  // Focus + select input on mount
   useEffect(() => {
     inputRef.current?.focus()
     inputRef.current?.select()
@@ -71,15 +72,6 @@ export function AddProjectDialog({
       setHighlighted(-1)
     }
   }, [path, fetchEntries])
-
-  // Close on Escape
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -165,155 +157,137 @@ export function AddProjectDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.25)', animation: 'overlay-enter 200ms ease-out' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
+    <DialogShell onClose={onClose} className="rounded-xl w-full mx-4" style={{ maxWidth: 480 }}>
+      {/* Header */}
       <div
-        className="rounded-xl w-full mx-4"
-        style={{
-          maxWidth: 480,
-          backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 88%, transparent)',
-          border: '1px solid var(--sol-border)',
-          boxShadow: 'var(--elevation-3)',
-          backdropFilter: 'var(--backdrop-blur)',
-          WebkitBackdropFilter: 'var(--backdrop-blur)',
-          animation: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
-        }}
-        onClick={(e) => e.stopPropagation()}
+        className="flex items-center justify-between px-4 h-10"
+        style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
       >
-        {/* Header */}
-        <div
-          className="flex items-center justify-between px-4 h-10"
-          style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
+        <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+          Add Project
+        </span>
+        <button
+          onClick={onClose}
+          className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
+          style={{ color: 'var(--sol-muted)' }}
+          aria-label="Close"
         >
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
-            Add Project
-          </span>
-          <button
-            onClick={onClose}
-            className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
-            style={{ color: 'var(--sol-muted)' }}
-            aria-label="Close"
-          >
-            <X size={14} />
-          </button>
-        </div>
+          <X size={14} />
+        </button>
+      </div>
 
-        {/* Body */}
-        <div className="px-4 py-3">
-          <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)' }}>
-            Path
-          </label>
-          <input
-            ref={inputRef}
-            type="text"
-            value={path}
-            onChange={(e) => { setPath(e.target.value); setError(null) }}
-            onKeyDown={handleKeyDown}
-            className="w-full h-9 px-2 rounded-md text-[12px] outline-none"
+      {/* Body */}
+      <div className="px-4 py-3">
+        <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)' }}>
+          Path
+        </label>
+        <input
+          ref={inputRef}
+          type="text"
+          value={path}
+          onChange={(e) => { setPath(e.target.value); setError(null) }}
+          onKeyDown={handleKeyDown}
+          className="w-full h-9 px-2 rounded-md text-[12px] outline-none"
+          style={{
+            backgroundColor: 'var(--sol-bg)',
+            border: '1px solid var(--sol-tab-bg)',
+            color: 'var(--sol-text-dark)',
+            transition: 'border-color 120ms, box-shadow 120ms',
+          }}
+          onFocus={(e) => { e.target.style.borderColor = 'var(--sol-focus-border)'; e.target.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--sol-focus-border) 25%, transparent)' }}
+          onBlur={(e) => { e.target.style.borderColor = 'var(--sol-tab-bg)'; e.target.style.boxShadow = 'none' }}
+          spellCheck={false}
+          autoComplete="off"
+        />
+
+        {/* Autocomplete dropdown */}
+        {entries.length > 0 && (
+          <div
+            ref={listRef}
+            className="mt-1 rounded-md overflow-y-auto"
             style={{
+              maxHeight: 200,
               backgroundColor: 'var(--sol-bg)',
               border: '1px solid var(--sol-tab-bg)',
-              color: 'var(--sol-text-dark)',
-              transition: 'border-color 120ms, box-shadow 120ms',
+              boxShadow: 'var(--elevation-2)',
+              animation: 'menu-enter 200ms cubic-bezier(0.2, 0, 0, 1) both',
             }}
-            onFocus={(e) => { e.target.style.borderColor = 'var(--sol-focus-border)'; e.target.style.boxShadow = '0 0 0 2px color-mix(in srgb, var(--sol-focus-border) 25%, transparent)' }}
-            onBlur={(e) => { e.target.style.borderColor = 'var(--sol-tab-bg)'; e.target.style.boxShadow = 'none' }}
-            spellCheck={false}
-            autoComplete="off"
-          />
-
-          {/* Autocomplete dropdown */}
-          {entries.length > 0 && (
-            <div
-              ref={listRef}
-              className="mt-1 rounded-md overflow-y-auto"
-              style={{
-                maxHeight: 200,
-                backgroundColor: 'var(--sol-bg)',
-                border: '1px solid var(--sol-tab-bg)',
-                boxShadow: 'var(--elevation-2)',
-                animation: 'menu-enter 200ms cubic-bezier(0.2, 0, 0, 1) both',
-              }}
-            >
-              {entries.map((entry, i) => (
-                <div
-                  key={entry.path}
-                  className="flex items-center gap-2 px-2 h-8 cursor-pointer text-[12px]"
-                  style={{
-                    backgroundColor: i === highlighted ? 'var(--sol-search-match-bg)' : undefined,
-                    color: 'var(--sol-text-dark)',
-                    transition: 'background-color 120ms',
-                  }}
-                  onMouseEnter={() => setHighlighted(i)}
-                  onClick={() => selectEntry(entry)}
+          >
+            {entries.map((entry, i) => (
+              <div
+                key={entry.path}
+                className="flex items-center gap-2 px-2 h-8 cursor-pointer text-[12px]"
+                style={{
+                  backgroundColor: i === highlighted ? 'var(--sol-search-match-bg)' : undefined,
+                  color: 'var(--sol-text-dark)',
+                  transition: 'background-color 120ms',
+                }}
+                onMouseEnter={() => setHighlighted(i)}
+                onClick={() => selectEntry(entry)}
+              >
+                <span
+                  className="flex items-center justify-center"
+                  style={{ color: entry.isGit ? 'var(--sol-green)' : 'transparent' }}
                 >
-                  <span
-                    className="flex items-center justify-center"
-                    style={{ color: entry.isGit ? 'var(--sol-green)' : 'transparent' }}
-                  >
-                    <GitBranch size={10} />
+                  <GitBranch size={10} />
+                </span>
+                <span className="flex-1 truncate">{entry.name}</span>
+                {entry.isGit && (
+                  <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-muted)' }}>
+                    git
                   </span>
-                  <span className="flex-1 truncate">{entry.name}</span>
-                  {entry.isGit && (
-                    <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-muted)' }}>
-                      git
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
-          {/* Empty state */}
-          {!loading && entries.length === 0 && path.endsWith('/') && path.length > 1 && (
-            <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
-              No subdirectories
-            </div>
-          )}
+        {/* Empty state */}
+        {!loading && entries.length === 0 && path.endsWith('/') && path.length > 1 && (
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
+            No subdirectories
+          </div>
+        )}
 
-          {/* Loading */}
-          {loading && (
-            <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
-              Loading…
-            </div>
-          )}
+        {/* Loading */}
+        {loading && (
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
+            Loading…
+          </div>
+        )}
 
-          {/* Error */}
-          {error && (
-            <div className="mt-2 text-[11px] px-1" style={{ color: 'var(--sol-red)' }}>
-              {error}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div
-          className="flex items-center justify-end gap-2 px-4 h-11"
-          style={{ borderTop: '1px solid var(--sol-tab-bg)' }}
-        >
-          <button
-            onClick={onClose}
-            className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || !path.replace(/\/+$/, '')}
-            className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors"
-            style={{
-              backgroundColor: 'var(--sol-accent)',
-              color: 'var(--sol-editor-bg)',
-              opacity: submitting || !path.replace(/\/+$/, '') ? 0.5 : 1,
-            }}
-          >
-            {submitting ? 'Adding…' : 'Add'}
-          </button>
-        </div>
+        {/* Error */}
+        {error && (
+          <div className="mt-2 text-[11px] px-1" style={{ color: 'var(--sol-red)' }}>
+            {error}
+          </div>
+        )}
       </div>
-    </div>
+
+      {/* Footer */}
+      <div
+        className="flex items-center justify-end gap-2 px-4 h-11"
+        style={{ borderTop: '1px solid var(--sol-tab-bg)' }}
+      >
+        <button
+          onClick={onClose}
+          className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={submitting || !path.replace(/\/+$/, '')}
+          className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors"
+          style={{
+            backgroundColor: 'var(--sol-accent)',
+            color: 'var(--sol-editor-bg)',
+            opacity: submitting || !path.replace(/\/+$/, '') ? 0.5 : 1,
+          }}
+        >
+          {submitting ? 'Adding…' : 'Add'}
+        </button>
+      </div>
+    </DialogShell>
   )
 }

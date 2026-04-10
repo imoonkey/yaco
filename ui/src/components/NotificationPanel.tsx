@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
+import { DialogShell } from './DialogShell'
 import type { NotificationItem } from '../hooks/useNotifications'
 
 function timeAgo(ts: number): string {
@@ -25,39 +25,13 @@ export function NotificationPanel({
   onClearAll: () => void
   onClose: () => void
 }) {
-  const panelRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
-
   return (
-    <div
-      ref={panelRef}
+    <DialogShell
+      onClose={onClose}
+      overlay={false}
+      animation="panel"
       className="fixed right-3 z-50 rounded-xl w-[320px] max-h-[400px] flex flex-col overflow-hidden"
-      style={{
-        top: 44,
-        backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)',
-        border: '1px solid var(--sol-border)',
-        boxShadow: 'var(--elevation-3)',
-        animation: 'panel-slide-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
-        backdropFilter: 'var(--backdrop-blur)',
-        WebkitBackdropFilter: 'var(--backdrop-blur)',
-      }}
+      style={{ top: 44, backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)' }}
     >
       <div
         className="flex items-center justify-between px-3 h-10 shrink-0"
@@ -136,6 +110,6 @@ export function NotificationPanel({
           ))
         )}
       </div>
-    </div>
+    </DialogShell>
   )
 }
