@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-04-10: Frontend polish — dialog speed, accessibility, CSS consistency
+
+**What changed:**
+- Removed dialog enter animation (instant open, IDE-first principle)
+- Added `--sol-glass-bg` CSS var, unified glass-card opacity across DialogShell, NotificationPanel, FileSearch
+- Session status dots: error state now uses hollow ring for color-independent differentiation
+- Added aria-labels to DiffTab hunk nav buttons and TaskGraph filter chips
+- Added `aria-live="polite"` on session list containers
+- Section headers: sentence-case instead of uppercase
+- Resize handles: wider invisible hit area via `::before` pseudo-element
+- SSE reconnect: added random jitter to backoff to prevent thundering herd
+- Session read timestamps: use actual entry timestamps instead of `Date.now()`
+- Replaced hardcoded rgba in status-glow keyframe and editor diff popup shadow
+
+**Why:**
+- Dialog 300ms enter animation felt sluggish for a dev tool (user feedback)
+- Accessibility gaps: color-only status indicators, missing aria-labels
+- Consistency: scattered hardcoded values should use CSS vars
+
+**Key files:** DialogShell.tsx, index.css, WorkspaceSessionList.tsx, useSSE.ts, useSessionUnreadState.ts, ResizeHandle.tsx, SectionHeader.tsx, editorTheme.ts
+**Verification:** TypeScript compiles clean, lint passes (no new errors)
+**Commit:** 87b77aa
+**Next:** None immediate — review doc at `doc/todo/frontend-redesign/independent-review-claude-zh.md` has deferred items (pinch-zoom, SSE heartbeat, batch refetch)
+**Blockers:** None
+
 ## 2026-04-10: Fix AddProjectDialog path autocomplete filtering
 
 **What changed:**

@@ -148,7 +148,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `useResize.ts` | 37 | Drag-to-resize hook |
 | `ResizeHandle.tsx` | 18 | VResizeHandle + HResizeHandle (solid 3px sash) |
 | `WorkspaceSidebar.tsx` | 26 | GitChangeItem component |
-| `SectionHeader.tsx` | 17 | Shared collapsible section header with ARIA expand |
+| `SectionHeader.tsx` | 17 | Shared collapsible section header (sentence-case, ARIA expand) |
 
 ## FileExplorer
 
@@ -231,8 +231,8 @@ Reusable dialog/panel chrome that extracts shared overlay, glass card, animation
 
 **Responsibilities**:
 - Full-screen overlay with click-outside dismissal (overlay mode) or document-level click-outside (panel mode)
-- Glass card styling: semi-transparent background, border, elevation-3 shadow, backdrop blur
-- Entry/exit animations: `dialog-enter`/`dialog-exit` (centered dialogs) or `panel-slide-in`/`panel-slide-out` (edge panels)
+- Glass card styling: `--sol-glass-bg` background, border, elevation-3 shadow, backdrop blur
+- Animations: no enter animation for dialogs (instant, IDE-first), exit animation (`dialog-exit`). Panels use `panel-slide-in`/`panel-slide-out`.
 - Stack-safe keyboard handling: module-level `shellStack` array ensures only the topmost shell handles Escape/Tab (stacked dialogs close front-to-back)
 - Focus trapping: Tab/Shift+Tab cycles within the shell (overlay mode only — non-overlay panels don't trap to avoid blocking keyboard access to visible content)
 - Focus restoration: saves `document.activeElement` on mount, restores on unmount
