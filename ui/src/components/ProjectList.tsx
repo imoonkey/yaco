@@ -56,7 +56,7 @@ export function ProjectList({
             onDrop={e => handleDrop(e, project.name)}
             onClick={() => onSelect(project.name)}
             {...menu.bind(() => setMenuProject(project))}
-            className={`relative w-full text-left px-2 py-1.5 rounded text-[12px] font-medium cursor-pointer flex items-center gap-1 ${
+            className={`relative w-full text-left px-2 py-0.5 rounded text-[12px] font-medium cursor-pointer flex items-center gap-1 ${
               isActive
                 ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
                 : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
