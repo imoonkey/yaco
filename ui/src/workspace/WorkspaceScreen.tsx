@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { Plus } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
@@ -50,6 +50,7 @@ export function Workspace({
   onVisibilityReport,
   attachIntent,
   clearAttachIntent,
+  notificationBell,
 }: {
   projectName: string
   projectPath: string
@@ -67,6 +68,7 @@ export function Workspace({
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void
+  notificationBell?: ReactNode
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
@@ -478,6 +480,7 @@ export function Workspace({
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}
       searchOverlay={showSearch ? <FileSearch projectName={projectName!} recentFiles={recentFiles} onSelect={nav.handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}
+      notificationBell={notificationBell}
     />
     <ComposeTray
       surface={voiceBridge.voiceSurface}

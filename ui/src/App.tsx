@@ -3,13 +3,12 @@ import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
-import { BadgeCount } from './components/BadgeCount'
-import { NotificationPanel } from './components/NotificationPanel'
+import { NotificationBell } from './components/NotificationBell'
 import { useNotifications } from './hooks/useNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
 import { toggleTheme } from './lib/theme'
-import { Sun, Moon, Bell } from 'lucide-react'
+import { Sun, Moon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
@@ -182,7 +181,8 @@ function App() {
   }, [])
 
   const { notifications, unreadCount, markAllRead: markNotificationsRead, markRead, clearAll: clearNotifications } = useNotifications(handleNotificationClick)
-  const [showNotifications, setShowNotifications] = useState(false)
+
+  const notificationBellProps = { notifications, unreadCount, markRead, markAllRead: markNotificationsRead, clearAll: clearNotifications, onItemClick: handleNotificationClick }
 
   // Persist project selection
   useEffect(() => {
@@ -267,27 +267,7 @@ function App() {
       <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <span className="flex items-center gap-2">
-          <span className="relative">
-            <button
-              className="flex items-center justify-center cursor-pointer hover:opacity-80"
-              style={{ color: 'var(--sol-text-dim)', transition: 'color 120ms, transform 120ms' }}
-              onClick={() => setShowNotifications(v => !v)}
-              title="Notifications"
-              aria-label="Notifications"
-            >
-              <Bell size={15} />
-            </button>
-            <BadgeCount count={unreadCount} className="absolute -top-1.5 -right-1.5 px-0.5" />
-            {showNotifications && (
-              <NotificationPanel
-                notifications={notifications}
-                onClickItem={(n) => { markRead(n.id); handleNotificationClick(n.project, n.sessionName); setShowNotifications(false) }}
-                onMarkAllRead={markNotificationsRead}
-                onClearAll={clearNotifications}
-                onClose={() => setShowNotifications(false)}
-              />
-            )}
-          </span>
+          <NotificationBell {...notificationBellProps} />
           <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
             <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
             <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
@@ -315,6 +295,7 @@ function App() {
             onVisibilityReport={setVisibilityReport}
             attachIntent={attachIntent}
             clearAttachIntent={() => setAttachIntent(null)}
+            notificationBell={<NotificationBell {...notificationBellProps} size={14} />}
           />
         )}
         {!activeProject && (

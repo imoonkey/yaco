@@ -59,6 +59,7 @@ export type WorkspaceLayoutProps = {
   onInteractionCapture: () => void
   onFilesPaneFocus: () => void
   searchOverlay: ReactNode | null
+  notificationBell?: ReactNode
 }
 
 export function WorkspaceLayout(props: WorkspaceLayoutProps) {
@@ -72,7 +73,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     editorPane, terminalContent,
     rootRef, sidebarRef, left, right, searchSplit, searchHeight, changesSplit, changesHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
     hasOpenTabs,
-    onInteractionCapture, onFilesPaneFocus, searchOverlay,
+    onInteractionCapture, onFilesPaneFocus, searchOverlay, notificationBell,
   } = props
 
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTasks, showTextSearch } = layout
@@ -106,6 +107,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 onChange={(v) => onMobilePaneChange(v as 'files' | 'editor' | 'terminal')}
               />
             </div>
+            {notificationBell}
             <button className="theme-toggle-single shrink-0 rounded p-1 cursor-pointer text-[var(--sol-text-dim)] hover:text-[var(--sol-text)]" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme" style={{ transition: 'color 120ms' }}>
               <Sun size={14} strokeWidth={2.5} className="icon-sun" />
               <Moon size={14} strokeWidth={2.5} className="icon-moon" />
