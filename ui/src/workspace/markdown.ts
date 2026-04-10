@@ -70,6 +70,11 @@ function createMarkdownRenderer() {
     return `<pre><code${languageClass}>${renderHighlightedCode(text, lang)}</code></pre>`
   }
 
+  renderer.table = (token: Tokens.Table) => {
+    const original = marked.Renderer.prototype.table.call(renderer, token)
+    return `<div class="table-scroll">${original}</div>`
+  }
+
   renderer.heading = ({ text, depth }: Tokens.Heading) => {
     const id = slugify(text)
     return `<h${depth} id="${escapeHtml(id)}">${text}</h${depth}>\n`

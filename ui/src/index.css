@@ -452,8 +452,9 @@ body {
 
 .markdown-preview pre {
   margin-bottom: 16px;
-  overflow: auto;
-  overscroll-behavior: contain;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
   background: var(--sol-code-bg);
   border: 1px solid var(--sol-border);
   border-radius: 3px;
@@ -536,9 +537,13 @@ body {
   color: var(--sol-preview-text);
 }
 
+.markdown-preview .table-scroll {
+  overflow-x: auto;
+  margin-bottom: 0.7em;
+}
+
 .markdown-preview table {
   border-collapse: collapse;
-  margin-bottom: 0.7em;
 }
 
 .markdown-preview th {
