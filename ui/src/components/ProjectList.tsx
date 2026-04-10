@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
+import { BadgeCount } from './BadgeCount'
 import type { Project } from '../types'
 
 export function ProjectList({
@@ -68,14 +69,7 @@ export function ProjectList({
           >
             <span className="truncate flex-1">{project.name}</span>
             <span className="flex items-center gap-1 shrink-0">
-              {unreadCount > 0 && (
-                <span
-                  className="min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
-                  style={{ backgroundColor: 'var(--sol-orange)' }}
-                >
-                  {unreadCount}
-                </span>
-              )}
+              <BadgeCount count={unreadCount} />
               {sc && sc.total > 0 && (
                 <span
                   className="text-[12px] tabular-nums opacity-50"
@@ -95,7 +89,7 @@ export function ProjectList({
       )}
 
       {menu.position && menuProject && (
-        <Menu position={menu.position}>
+        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
           <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(menuProject.path); menu.close() }} />
           <MenuItem label="Mark All Read" onClick={() => { onMarkAllRead(menuProject.name); menu.close() }} />
           <MenuDivider />

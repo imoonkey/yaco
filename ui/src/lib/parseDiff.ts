@@ -55,6 +55,16 @@ export function parseDiff(diffText: string, filePath = ''): ParsedFileDiff {
     }
   }
 
+  // Count total changed lines to decide whether to skip expensive word-level diffing
+  const WORD_DIFF_LINE_THRESHOLD = 500
+  let changedLineCount = 0
+  for (const chunk of file.chunks) {
+    for (const change of chunk.changes) {
+      if (change.type !== 'normal' && !change.content.startsWith('\\')) changedLineCount++
+    }
+  }
+  const skipWordDiff = changedLineCount > WORD_DIFF_LINE_THRESHOLD
+
   let totalAdded = 0
   let totalDeleted = 0
 
@@ -80,7 +90,7 @@ export function parseDiff(diffText: string, filePath = ''): ParsedFileDiff {
       })
     }
 
-    const rows = pairChanges(rawChanges)
+    const rows = pairChanges(rawChanges, skipWordDiff)
 
     // Compute hunk stats from rows
     const stats = { added: 0, deleted: 0, modified: 0 }

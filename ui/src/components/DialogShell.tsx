@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { createContext, useContext, useCallback, useState, useEffect, useRef } from 'react'
 import type { ReactNode, CSSProperties, RefObject } from 'react'
 
 const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
@@ -11,10 +11,26 @@ const GLASS_BASE: CSSProperties = {
   WebkitBackdropFilter: 'var(--backdrop-blur)',
 }
 
-const ANIM = {
+const ENTER_ANIM = {
   dialog: 'dialog-enter 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
   panel: 'panel-slide-in 300ms cubic-bezier(0.16, 1, 0.3, 1) both',
 } as const
+
+const EXIT_ANIM = {
+  dialog: 'dialog-exit 200ms ease-in both',
+  panel: 'panel-slide-out 200ms ease-in both',
+} as const
+
+// --- Stack tracking: only the topmost shell handles Escape/Tab ---
+const shellStack: HTMLDivElement[] = []
+
+/** Context for children to trigger animated close instead of instant unmount. */
+const DialogCloseContext = createContext<(() => void) | null>(null)
+
+/** Call this inside a DialogShell child to get the animated-close function.
+ *  Falls back to null if not inside a DialogShell. */
+// eslint-disable-next-line react-refresh/only-export-components
+export const useDialogClose = () => useContext(DialogCloseContext)
 
 export function DialogShell({
   onClose,
@@ -27,56 +43,73 @@ export function DialogShell({
   animation = 'dialog',
   autoFocusRef,
   restoreFocus = true,
+  ariaLabelledBy,
+  ariaDescribedBy,
 }: {
   onClose: () => void
   children: ReactNode
-  /** Full-screen overlay behind dialog. Default: true */
   overlay?: boolean
-  /** Overlay background color. Default: 'rgba(0,0,0,0.25)' */
   overlayBg?: string
-  /** Overlay layout classes (appended to 'fixed inset-0 flex'). Default: 'z-50 items-center justify-center' */
   overlayClassName?: string
-  /** Extra className on the glass card */
   className?: string
-  /** Extra style on the glass card (merged over glass defaults) */
   style?: CSSProperties
-  /** Entry animation. Default: 'dialog' */
   animation?: 'dialog' | 'panel'
-  /** Element to auto-focus on mount */
   autoFocusRef?: RefObject<HTMLElement | null>
-  /** Restore focus to trigger element on close. Default: true */
   restoreFocus?: boolean
+  ariaLabelledBy?: string
+  ariaDescribedBy?: string
 }) {
   const shellRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<Element | null>(null)
   const restoreFocusRef = useRef(restoreFocus)
   useEffect(() => { restoreFocusRef.current = restoreFocus }, [restoreFocus])
 
-  // Save trigger element, auto-focus, restore on unmount
+  const [exiting, setExiting] = useState(false)
+
+  const requestClose = useCallback(() => {
+    setExiting(true)
+  }, [])
+
+  const handleAnimationEnd = useCallback(() => {
+    if (exiting) onClose()
+  }, [exiting, onClose])
+
+  // Save trigger, auto-focus, register in stack, restore on unmount
   useEffect(() => {
     triggerRef.current = document.activeElement
     autoFocusRef?.current?.focus()
+    const el = shellRef.current
+    if (el) shellStack.push(el)
     return () => {
+      if (el) {
+        const idx = shellStack.indexOf(el)
+        if (idx !== -1) shellStack.splice(idx, 1)
+      }
       if (restoreFocusRef.current && triggerRef.current instanceof HTMLElement) {
         triggerRef.current.focus()
       }
     }
   }, [autoFocusRef])
 
-  // Escape dismissal + focus trap
+  // Escape dismissal + focus trap (only for topmost shell)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopImmediatePropagation(); onClose(); return }
-      if (e.key !== 'Tab' || e.defaultPrevented) return
+      const el = shellRef.current
+      if (!el) return
+      // Only topmost shell in the stack handles keyboard
+      if (shellStack.length > 0 && shellStack[shellStack.length - 1] !== el) return
 
-      const shell = shellRef.current
-      if (!shell) return
-      const focusable = shell.querySelectorAll<HTMLElement>(FOCUSABLE)
+      if (e.key === 'Escape') { e.stopImmediatePropagation(); requestClose(); return }
+
+      // Focus trapping only for overlay (modal) shells
+      if (!overlay || e.key !== 'Tab' || e.defaultPrevented) return
+
+      const focusable = el.querySelectorAll<HTMLElement>(FOCUSABLE)
       if (focusable.length === 0) return
       const first = focusable[0]
       const last = focusable[focusable.length - 1]
 
-      if (!shell.contains(document.activeElement)) {
+      if (!el.contains(document.activeElement)) {
         e.preventDefault()
         first.focus()
         return
@@ -91,31 +124,44 @@ export function DialogShell({
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
+  }, [requestClose, overlay])
 
   // Click-outside for non-overlay (panel) mode
   useEffect(() => {
     if (overlay) return
     const handler = (e: MouseEvent) => {
       if (shellRef.current && !shellRef.current.contains(e.target as Node)) {
-        onClose()
+        requestClose()
       }
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
-  }, [overlay, onClose])
+  }, [overlay, requestClose])
 
-  const cardStyle: CSSProperties = { ...GLASS_BASE, animation: ANIM[animation], ...style }
+  const cardStyle: CSSProperties = {
+    ...GLASS_BASE,
+    animation: exiting ? EXIT_ANIM[animation] : ENTER_ANIM[animation],
+    ...style,
+  }
 
   const card = (
-    <div
-      ref={shellRef}
-      className={className}
-      style={cardStyle}
-      onClick={overlay ? (e) => e.stopPropagation() : undefined}
-    >
-      {children}
-    </div>
+    <DialogCloseContext.Provider value={requestClose}>
+      <div
+        ref={shellRef}
+        className={className}
+        style={cardStyle}
+        onAnimationEnd={handleAnimationEnd}
+        onClick={overlay ? (e) => e.stopPropagation() : undefined}
+        {...(overlay ? {
+          role: 'dialog',
+          'aria-modal': true,
+          'aria-labelledby': ariaLabelledBy,
+          'aria-describedby': ariaDescribedBy,
+        } : {})}
+      >
+        {children}
+      </div>
+    </DialogCloseContext.Provider>
   )
 
   if (!overlay) return card
@@ -123,8 +169,11 @@ export function DialogShell({
   return (
     <div
       className={`fixed inset-0 flex ${overlayClassName}`}
-      style={{ backgroundColor: overlayBg, animation: 'overlay-enter 200ms ease-out' }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      style={{
+        backgroundColor: overlayBg,
+        animation: exiting ? 'overlay-exit 200ms ease-in both' : 'overlay-enter 200ms ease-out',
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) requestClose() }}
     >
       {card}
     </div>

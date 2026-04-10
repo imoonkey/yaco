@@ -378,7 +378,12 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     <ExplorerContext.Provider value={{ gitMap, gitFolders, bindContextMenu, reportContextFolder, onPreviewFile, onPinFile: onSelectFile, onExpandDir, pendingNewId: pendingCreate?.path ?? null, cancelCreate }}>
       <div ref={setContainerNode} className="flex-1 min-h-0 min-w-0 overflow-hidden" onMouseDown={onFocusExplorer}>
         {!treeData || size.height < 1 ? (
-          <div className="px-2 py-2 text-[11px]" style={{ color: 'var(--sol-muted)' }}>Loading...</div>
+          <div className="px-3 py-2 flex flex-col gap-2.5">
+            <div className="skeleton-row" style={{ width: '60%' }} />
+            <div className="skeleton-row" style={{ width: '45%', marginLeft: 12 }} />
+            <div className="skeleton-row" style={{ width: '70%', marginLeft: 12 }} />
+            <div className="skeleton-row" style={{ width: '40%' }} />
+          </div>
         ) : (
           <Tree
             ref={treeRef}
@@ -407,7 +412,7 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
       </div>
 
       {menu.position && menuTarget && (
-        <Menu position={menu.position}>
+        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
           <MenuItem label="New File" onClick={() => handleNewFile(ctxParent)} />
           <MenuItem label="New Folder" onClick={() => handleNewFolder(ctxParent)} />
           <MenuDivider />

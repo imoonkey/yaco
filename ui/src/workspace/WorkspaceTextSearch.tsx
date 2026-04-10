@@ -334,6 +334,13 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
         ))}
       </div>
 
+      {/* Cap banner */}
+      {status.state === 'results' && status.capped && (
+        <div className="shrink-0 px-2 py-1 text-[10px] text-center" style={{ color: 'var(--sol-warning)', backgroundColor: 'color-mix(in srgb, var(--sol-warning) 8%, transparent)', borderTop: '1px solid var(--sol-border)' }}>
+          Results capped at {MAX_FILES} files / {MAX_MATCHES_PER_FILE} matches per file
+        </div>
+      )}
+
       {/* Status bar */}
       <StatusBar status={status} />
     </div>

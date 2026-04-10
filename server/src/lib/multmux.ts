@@ -13,7 +13,7 @@ import {
 export interface MultmuxSession {
   name: string
   provider: 'claude' | 'codex'
-  status: 'processing' | 'idle'
+  status: 'processing' | 'idle' | 'error' | 'completed'
   project: string
   sessionPath: string
   sessionId: string
@@ -40,9 +40,11 @@ export interface MultmuxStateFile {
 /** Normalize state file status to workflow UI semantics.
  *  starting → idle (pre-work bootstrap, not real processing)
  *  unknown  → null (file should have been deleted by multmux) */
-function normalizeStateFileStatus(status: string): 'processing' | 'idle' | null {
+function normalizeStateFileStatus(status: string): 'processing' | 'idle' | 'error' | 'completed' | null {
   if (status === 'processing') return 'processing'
   if (status === 'idle' || status === 'starting') return 'idle'
+  if (status === 'error') return 'error'
+  if (status === 'stopped' || status === 'completed') return 'completed'
   return null
 }
 

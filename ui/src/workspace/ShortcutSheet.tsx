@@ -1,0 +1,86 @@
+import { DialogShell } from '../components/DialogShell'
+
+const isMac = navigator.platform.startsWith('Mac')
+const CMD = isMac ? '⌘' : 'Ctrl'
+
+type Shortcut = { keys: string; label: string }
+type Group = { title: string; shortcuts: Shortcut[] }
+
+const GROUPS: Group[] = [
+  {
+    title: 'Global',
+    shortcuts: [
+      { keys: `${CMD} 1–9`, label: 'Switch project' },
+      { keys: `${CMD} K`, label: 'Notifications' },
+      { keys: '?', label: 'Shortcut cheatsheet' },
+    ],
+  },
+  {
+    title: 'Editor',
+    shortcuts: [
+      { keys: `${CMD} P`, label: 'Quick open' },
+      { keys: `${CMD} S`, label: 'Save' },
+      { keys: `${CMD} F`, label: 'Find' },
+      { keys: `${CMD} ⇧ F`, label: 'Search all files' },
+      { keys: `${CMD} B`, label: 'Toggle sidebar' },
+      { keys: `${CMD} ⇧ B`, label: 'Toggle right panel' },
+      { keys: `${CMD} ⇧ T`, label: 'Toggle tasks' },
+      { keys: `${CMD} W`, label: 'Close tab / surface' },
+    ],
+  },
+  {
+    title: 'Task Graph',
+    shortcuts: [
+      { keys: '+ / − / 0', label: 'Zoom in / out / reset' },
+      { keys: 'C', label: 'Collapse all' },
+      { keys: 'Tab', label: 'Next task' },
+      { keys: '← → ↑ ↓', label: 'Navigate' },
+      { keys: 'Escape', label: 'Deselect' },
+    ],
+  },
+]
+
+export function ShortcutSheet({ onClose }: { onClose: () => void }) {
+  return (
+    <DialogShell onClose={onClose} className="rounded-lg p-6 w-full max-w-lg">
+      <h2
+        className="text-base font-semibold mb-4"
+        style={{ color: 'var(--sol-heading)', fontFamily: 'var(--font-ui)' }}
+      >
+        Keyboard Shortcuts
+      </h2>
+      <div className="flex flex-col gap-5">
+        {GROUPS.map((group) => (
+          <section key={group.title}>
+            <h3
+              className="text-xs font-semibold uppercase tracking-wide mb-2"
+              style={{ color: 'var(--sol-comment)' }}
+            >
+              {group.title}
+            </h3>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+              {group.shortcuts.map((s) => (
+                <div key={s.label} className="flex items-center justify-between gap-2 py-0.5">
+                  <span className="text-sm" style={{ color: 'var(--sol-text)' }}>
+                    {s.label}
+                  </span>
+                  <kbd
+                    className="text-xs px-1.5 py-0.5 rounded shrink-0"
+                    style={{
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--sol-comment)',
+                      backgroundColor: 'var(--sol-bg-alt)',
+                      border: '1px solid var(--sol-border)',
+                    }}
+                  >
+                    {s.keys}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </DialogShell>
+  )
+}

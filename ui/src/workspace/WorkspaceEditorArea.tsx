@@ -482,19 +482,15 @@ export function WorkspaceEditorArea({
           <span>&#9888; File changed on disk.</span>
           <button
             onClick={onAcceptDisk}
-            className="px-2 py-0.5 rounded text-[11px] cursor-pointer border"
+            className="conflict-btn px-2 py-0.5 rounded text-[11px] cursor-pointer border"
             style={{ borderColor: 'color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', transition: 'background-color 120ms' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--sol-warning) 12%, transparent)')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
           >
             Accept Disk Version
           </button>
           <button
             onClick={onForceSave}
-            className="px-2 py-0.5 rounded text-[11px] cursor-pointer border"
+            className="conflict-btn px-2 py-0.5 rounded text-[11px] cursor-pointer border"
             style={{ borderColor: 'color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', transition: 'background-color 120ms' }}
-            onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'color-mix(in srgb, var(--sol-warning) 12%, transparent)')}
-            onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
           >
             Keep Mine &amp; Save
           </button>
@@ -505,11 +501,11 @@ export function WorkspaceEditorArea({
       {isTasksTab ? (
         tasksPane
       ) : isDiffTab ? (
-        !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Loading diff...</div>
+        !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
         : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} />
         : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load diff</div>
       ) : activeTab ? (
-        activeFileLoading ? <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Loading...</div>
+        activeFileLoading ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
         : activeFileContent !== null ? (
           showSplit ? (
             <div ref={splitContainerRef} className="flex h-full" style={{ userSelect: isDragging ? 'none' : undefined }}>
@@ -527,7 +523,12 @@ export function WorkspaceEditorArea({
             editorElement
           )
         ) : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load file</div>
-      ) : <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-muted)' }}>Select a file from Files</div>}
+      ) : <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+          <span className="text-[12px]">No file open</span>
+          <span className="text-[11px]" style={{ opacity: 0.7 }}>
+            Press <kbd className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-muted) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--sol-muted) 20%, transparent)' }}>{navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl'}+P</kbd> to open a file
+          </span>
+        </div>}
       </div>
     </div>
   )

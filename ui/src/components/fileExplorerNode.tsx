@@ -1,8 +1,13 @@
 import { createContext, useContext, useRef, useEffect } from 'react'
 import type { NodeRendererProps } from 'react-arborist'
-import { FileTypeIcon, FolderIcon, GIT_COLORS } from './fileExplorerIcons'
+import { FileTypeIcon, FolderIcon, GIT_COLORS, GIT_STATUS_LABELS } from './fileExplorerIcons'
 import type { ContextMenuHandlers } from './Menu'
 import type { FileNode } from '../types'
+
+// Static style constants extracted from render loops
+const GITIGNORED_STYLE: React.CSSProperties = { opacity: 0.5 }
+const INPUT_STYLE: React.CSSProperties = { color: 'var(--sol-text)', borderColor: 'var(--sol-accent)' }
+const CHANGE_DOT_STYLE: React.CSSProperties = { backgroundColor: 'var(--sol-warning)' }
 
 // --- Context for passing data to node renderer ---
 export type ContextMenuState = { x: number; y: number; path: string; type: 'file' | 'dir' } | null
@@ -52,7 +57,7 @@ function EditingRow({ node, style, dragHandle, data, pendingNewId, cancelCreate 
           ref={inputRef}
           autoFocus
           className="flex-1 text-[12px] bg-transparent outline-none border-b min-w-0"
-          style={{ color: 'var(--sol-text)', borderColor: 'var(--sol-accent)' }}
+          style={INPUT_STYLE}
           defaultValue={isNew ? '' : data.name}
           onBlur={() => { node.reset(); if (isNew) cancelCreate() }}
           onKeyDown={(e) => {
@@ -120,11 +125,11 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
         {...bindContextMenu(d.path, d.type)}
       >
         {d.type === 'dir'
-          ? <span style={isGitignored ? { opacity: 0.5 } : undefined}><FolderIcon open={node.isOpen} /></span>
-          : <span style={isGitignored ? { opacity: 0.5 } : undefined}><FileTypeIcon name={d.name} /></span>}
+          ? <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FolderIcon open={node.isOpen} /></span>
+          : <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FileTypeIcon name={d.name} /></span>}
         <span className="flex-1 truncate" style={{ color: nameColor }}>{d.name}</span>
-        {!isGitignored && gitStatus && <span className="text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }}>{gitStatus}</span>}
-        {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-warning)' }} />}
+        {!isGitignored && gitStatus && <span className="text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }} title={GIT_STATUS_LABELS[gitStatus]}>{gitStatus}</span>}
+        {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={CHANGE_DOT_STYLE} title="Contains changes" />}
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import {
   isFileTab,
   defaultFileState,
 } from './workspaceTypes'
+import { fileTransition, reconcileFile } from './fileStateMachine'
 
 // --- PreviewLifecycle interface ---
 
@@ -36,42 +37,6 @@ async function fetchContent(
     throw new ApiError(res.status, body)
   }
   return res.json()
-}
-
-// --- Reconciliation helper ---
-
-/** Apply server fetch result to file state. Returns prev unchanged if nothing differs. */
-function reconcileFile(prev: FileState | undefined, result: { content: string; revision: number } | null): FileState {
-  const existing = prev ?? defaultFileState()
-
-  if (!result) {
-    return existing.status === 'missing' ? existing : { ...existing, status: 'missing' }
-  }
-
-  // Dirty/conflict file: check if revision diverged
-  if (existing.draft != null && existing.status !== 'clean') {
-    if (existing.baseRevision != null && existing.baseRevision !== result.revision) {
-      if (existing.status === 'conflict' && existing.serverContent === result.content) return existing
-      return { ...existing, serverContent: result.content, status: 'conflict' }
-    }
-    // Revision matches — keep draft, update server content if changed
-    if (existing.serverContent === result.content && existing.baseRevision === result.revision) return existing
-    return { ...existing, serverContent: result.content, baseRevision: result.revision }
-  }
-
-  // Clean file: adopt server content (skip if identical)
-  if (existing.serverContent === result.content && existing.baseRevision === result.revision && existing.status === 'clean') {
-    return existing
-  }
-
-  return {
-    serverContent: result.content,
-    draft: null,
-    baseRevision: result.revision,
-    viewportLine: existing.viewportLine,
-    status: 'clean',
-    editedAt: existing.editedAt,
-  }
 }
 
 // --- Hook ---
@@ -201,12 +166,11 @@ export function useFileState(
       if (projectRef.current !== project) return
       setFiles(prev => {
         const existing = prev[path]
-        // If user already started editing before fetch returned, don't clobber the draft
+        // If user already started editing before fetch returned, gently fill revision
         if (existing?.draft != null) {
-          if (existing.baseRevision == null && result) {
-            return { ...prev, [path]: { ...existing, serverContent: result.content, baseRevision: result.revision } }
-          }
-          return prev
+          if (!result) return prev
+          const next = fileTransition(existing, { type: 'FILL_REVISION', content: result.content, revision: result.revision })
+          return next === existing ? prev : { ...prev, [path]: next }
         }
         const next = reconcileFile(existing, result)
         return next === existing ? prev : { ...prev, [path]: next }
@@ -263,17 +227,9 @@ export function useFileState(
 
   const updateDraft = useCallback((path: string, draft: string) => {
     setFiles(prev => {
-      const existing = prev[path]
-      const base = existing ?? defaultFileState()
-      return {
-        ...prev,
-        [path]: {
-          ...base,
-          draft,
-          status: base.status === 'conflict' ? 'conflict' : 'dirty',
-          editedAt: Date.now(),
-        },
-      }
+      const existing = prev[path] ?? defaultFileState()
+      const next = fileTransition(existing, { type: 'EDIT', draft, editedAt: Date.now() })
+      return { ...prev, [path]: next }
     })
   }, [])
 
@@ -291,8 +247,9 @@ export function useFileState(
     let baseRevision: number | undefined
     setFiles(prev => {
       const s = prev[path]
-      baseRevision = s?.baseRevision ?? undefined
-      return s ? { ...prev, [path]: { ...s, status: 'saving' } } : prev
+      if (!s) return prev
+      baseRevision = s.baseRevision ?? undefined
+      return { ...prev, [path]: fileTransition(s, { type: 'SAVE_START' }) }
     })
 
     try {
@@ -305,7 +262,7 @@ export function useFileState(
       if (res.status === 409) {
         setFiles(prev => {
           const s = prev[path]
-          return s ? { ...prev, [path]: { ...s, status: 'conflict' } } : prev
+          return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_CONFLICT' }) } : prev
         })
         return { conflict: true }
       }
@@ -315,15 +272,13 @@ export function useFileState(
       const body = await res.json() as { revision: number }
       setFiles(prev => {
         const s = prev[path]
-        return s
-          ? { ...prev, [path]: { ...s, serverContent: content, draft: null, baseRevision: body.revision, status: 'clean' } }
-          : prev
+        return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_SUCCESS', content, revision: body.revision }) } : prev
       })
       return { conflict: false }
     } catch {
       setFiles(prev => {
         const s = prev[path]
-        return s ? { ...prev, [path]: { ...s, status: 'dirty' } } : prev
+        return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_ERROR' }) } : prev
       })
       return { conflict: false }
     }
@@ -333,7 +288,7 @@ export function useFileState(
     const project = projectRef.current
     setFiles(prev => {
       const s = prev[path]
-      return s ? { ...prev, [path]: { ...s, status: 'saving' } } : prev
+      return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_START' }) } : prev
     })
 
     try {
@@ -347,14 +302,12 @@ export function useFileState(
       const body = await res.json() as { revision: number }
       setFiles(prev => {
         const s = prev[path]
-        return s
-          ? { ...prev, [path]: { ...s, serverContent: content, draft: null, baseRevision: body.revision, status: 'clean' } }
-          : prev
+        return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_SUCCESS', content, revision: body.revision }) } : prev
       })
     } catch {
       setFiles(prev => {
         const s = prev[path]
-        return s ? { ...prev, [path]: { ...s, status: 'dirty' } } : prev
+        return s ? { ...prev, [path]: fileTransition(s, { type: 'SAVE_ERROR' }) } : prev
       })
     }
   }, [])
@@ -363,17 +316,10 @@ export function useFileState(
     const project = projectRef.current
     fetchContent(project, path).then(result => {
       if (!result) return
-      setFiles(prev => ({
-        ...prev,
-        [path]: {
-          serverContent: result.content,
-          draft: null,
-          baseRevision: result.revision,
-          viewportLine: prev[path]?.viewportLine ?? 1,
-          status: 'clean',
-          editedAt: prev[path]?.editedAt ?? 0,
-        },
-      }))
+      setFiles(prev => {
+        const existing = prev[path] ?? defaultFileState()
+        return { ...prev, [path]: fileTransition(existing, { type: 'ACCEPT_DISK', content: result.content, revision: result.revision }) }
+      })
     }).catch(() => {/* network/server error — keep conflict state */})
   }, [])
 

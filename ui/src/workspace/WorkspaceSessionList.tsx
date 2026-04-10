@@ -3,7 +3,20 @@ import { Pin } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 
 import { Menu, MenuItem, useContextMenu } from '../components/Menu'
-import type { AgentSession } from '../types'
+import { BadgeCount } from '../components/BadgeCount'
+import type { AgentSession, SessionStatus } from '../types'
+
+// Static style constants extracted from render
+const INACTIVE_COLOR: React.CSSProperties = { color: 'var(--sol-text)' }
+const SESSION_TRANSITION: React.CSSProperties = { transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }
+const RENAME_INPUT_STYLE: React.CSSProperties = { borderColor: 'var(--sol-accent)', color: 'inherit' }
+
+const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
+  processing: 'bg-[var(--sol-cyan)] status-pulse',
+  idle: 'bg-[var(--sol-base1)]',
+  error: 'bg-[var(--sol-red)]',
+  completed: 'bg-[var(--sol-green)]',
+}
 
 export function SessionItem({
   session,
@@ -73,7 +86,7 @@ export function SessionItem({
       onDrop={onDrop}
       {...menu.bind()}
       className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
-      style={{ ...(isActive ? {} : { color: 'var(--sol-text)' }), opacity: dragging ? 0.55 : 1, transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}>
+      style={{ ...(isActive ? undefined : INACTIVE_COLOR), opacity: dragging ? 0.55 : 1, ...SESSION_TRANSITION }}>
       {onPin && (
         <button
           onClick={e => { e.stopPropagation(); onPin() }}
@@ -85,7 +98,7 @@ export function SessionItem({
         </button>
       )}
       <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
-      <span className={`w-2 h-2 rounded-full shrink-0 ${session.status === 'processing' ? 'bg-[var(--sol-cyan)] status-pulse' : 'bg-[var(--sol-base1)]'}`} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} />
       {renaming ? (
         <input
           ref={inputRef}
@@ -98,7 +111,7 @@ export function SessionItem({
           }}
           onClick={e => e.stopPropagation()}
           className="min-w-0 flex-1 bg-transparent border-b outline-none text-[12px]"
-          style={{ borderColor: 'var(--sol-accent)', color: 'inherit' }}
+          style={RENAME_INPUT_STYLE}
         />
       ) : (
         <div className="min-w-0 flex-1 line-clamp-2">
@@ -110,14 +123,7 @@ export function SessionItem({
         </div>
       )}
       <span className="flex items-center gap-1 shrink-0">
-        {!!unreadCount && unreadCount > 0 && (
-          <span
-            className="min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-1"
-            style={{ backgroundColor: 'var(--sol-orange)' }}
-          >
-            {unreadCount}
-          </span>
-        )}
+        <BadgeCount count={unreadCount ?? 0} />
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -125,12 +131,13 @@ export function SessionItem({
           }}
           className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer border border-[var(--sol-red)]/20 text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
           title={`Kill ${session.name}`}
+          aria-label={`Kill session ${session.name}`}
         >
           Kill
         </button>
       </span>
       {menu.position && onRename && (
-        <Menu position={menu.position}>
+        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
           <MenuItem label="Rename" onClick={startRename} />
         </Menu>
       )}

@@ -54,10 +54,17 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
   )
   const visible = useDeferredValue(scored)
 
+  const isEmptyQuery = query.trim().length === 0
+  const recentSet = useMemo(() => new Set(recentFiles), [recentFiles])
+  const displayItems = useMemo(
+    () => isEmptyQuery ? visible.filter(r => recentSet.has(r.entry.path)) : visible,
+    [isEmptyQuery, visible, recentSet],
+  )
+
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, visible.length - 1)); return }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, displayItems.length - 1)); return }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
-    if (e.key === 'Enter' && visible[selectedIdx]) { onSelect(visible[selectedIdx].entry); onClose() }
+    if (e.key === 'Enter' && displayItems[selectedIdx]) { onSelect(displayItems[selectedIdx].entry); onClose() }
   }
 
   return (
@@ -84,7 +91,10 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
         >.gitignore</button>
       </div>
       <div className="max-h-[300px] overflow-y-auto">
-        {visible.map((r, i) => (
+        {isEmptyQuery && displayItems.length > 0 && (
+          <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--sol-muted)' }}>Recent</div>
+        )}
+        {displayItems.map((r, i) => (
           <SearchResultRow
             key={r.entry.path}
             result={r}
@@ -94,7 +104,7 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
             onHover={() => setSelectedIdx(i)}
           />
         ))}
-        {!loading && visible.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-muted)' }}>No files found</div>}
+        {!loading && displayItems.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-muted)' }}>{isEmptyQuery ? 'No recent files' : 'No files found'}</div>}
       </div>
     </DialogShell>
   )

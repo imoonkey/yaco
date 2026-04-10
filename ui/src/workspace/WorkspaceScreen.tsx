@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { RefreshCw, History, Radio, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
@@ -11,20 +11,16 @@ import { ComposeTray } from '../components/ComposeTray'
 import { ProviderIcon } from '../components/SessionIcons'
 import { FileExplorer, NewFileIcon, NewFolderIcon, CollapseAllIcon } from '../components/FileExplorer'
 import type { FileExplorerHandle } from '../components/FileExplorer'
-import { clampLine } from './markdown'
-import { useResize } from './useResize'
 import { FileSearch } from './WorkspaceSearch'
-import { SessionItem } from './WorkspaceSessionList'
-import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { GitChangeItem } from './WorkspaceSidebar'
-import { WorkspaceTabBar } from './WorkspaceTabBar'
-import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
-import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { WorkspaceLayout } from './WorkspaceLayout'
 import { WorkspaceTextSearch } from './WorkspaceTextSearch'
+import { WorkspaceEditorColumn } from './WorkspaceEditorColumn'
+import { useWorkspaceSidebarResize } from './useWorkspaceSidebarResize'
+import { useWorkspaceSessionSection } from './useWorkspaceSessionSection'
+import { ShortcutSheet } from './ShortcutSheet'
 import type { Project } from '../types'
 import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts } from '../hooks/useSessionUnreadState'
-import { TaskGraphScreen } from '../tasks/TaskGraphScreen'
 import { ProjectList } from '../components/ProjectList'
 import { useWorkspaceKeyboard } from './useWorkspaceKeyboard'
 import { useWorkspaceNavigation } from './useWorkspaceNavigation'
@@ -36,8 +32,6 @@ import { markStale as markSearchIndexStale } from './quickOpenIndex'
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
 
-// ============================================================
-// Main Workspace
 // ============================================================
 export function Workspace({
   projectName,
@@ -89,14 +83,11 @@ export function Workspace({
   ))
   const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
   const [showSearch, setShowSearch] = useState(false)
-
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [contextFolder, setContextFolder] = useState('')
-  const [draggedSession, setDraggedSession] = useState<string | null>(null)
   const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
-  const [sessionTab, setSessionTab] = useState<'live' | 'history'>('live')
-  const [resumingId, setResumingId] = useState<string | null>(null)
+  const [showShortcutSheet, setShowShortcutSheet] = useState(false)
 
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
@@ -133,24 +124,12 @@ export function Workspace({
     if (!terminalVisible) return
     markSessionRead(projectName, activeSession)
   }, [activeSession, projectName, markSessionRead, isMobile, mobilePane, showRightPanel])
-  // Derived tab state
-  const activeDiffTab = isDiffTab(activeTab)
 
-  // Auto-fetch history when History tab first opens
-  const historyFetchedRef = useRef(false)
-  useEffect(() => {
-    if (sessionTab === 'history' && !historyFetchedRef.current) {
-      historyFetchedRef.current = true
-      history.refresh()
-    }
-  }, [sessionTab, history])
+  // Derived tab state
+  const activeFilePath = isFileTab(activeTab) ? activeTab : null
+  const activeDiffTab = isDiffTab(activeTab)
   const activeTasksTab = isTasksTab(activeTab)
   const activeDiffPath = activeDiffTab && activeTab ? activeTab.slice(5) : null
-  const activeFilePath = isFileTab(activeTab) ? activeTab : null
-  const activeFileState = activeFilePath ? files[activeFilePath] : null
-  const activeFileContent = activeFileState?.draft ?? activeFileState?.serverContent ?? null
-  const activeFileLoading = activeFilePath != null && activeFileContent === null && activeFileState?.status !== 'missing'
-  const activeViewportLine = activeFileState?.viewportLine ?? 1
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
@@ -178,6 +157,17 @@ export function Workspace({
     setEditorInsert, setTerminalSend, setFocusTarget,
   })
 
+  const sessionSection = useWorkspaceSessionSection({
+    sessionsMgr, attachedSession, isMobile, history,
+    projectPath, projectName, actions, refreshSessions, setFocusTarget,
+  })
+
+  const resize = useWorkspaceSidebarResize({
+    layout, sidebarRef,
+    showProjects, showExplorer, showChanges, showTextSearch, showTasks, showSessions,
+    updateLayout: actions.updateLayout,
+  })
+
   // --- closeTab with diff cleanup ---
   const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -185,7 +175,6 @@ export function Workspace({
     if (isDiffTab(path)) clearDiff(path.slice(5))
   }, [actions, clearDiff])
 
-  // --- closeFocusedSurface: stays here as cross-cutting wiring ---
   const closeActiveTab = useCallback((): boolean => {
     if (!activeTab) return false
     closeTab(activeTab)
@@ -223,75 +212,8 @@ export function Workspace({
     handleTerminalVoiceStart: voiceBridge.handleTerminalVoiceStart,
     voice,
     onToggleTextSearch: handleToggleTextSearch,
+    onToggleShortcutSheet: () => setShowShortcutSheet(v => !v),
   })
-
-  // --- Viewport handlers ---
-  const handleActiveFileViewportLine = useCallback((line: number) => {
-    if (!activeFilePath) return
-    actions.updateFileViewport(activeFilePath, Math.max(1, line))
-  }, [activeFilePath, actions])
-
-  const handlePreviewActivateLine = useCallback((line: number) => {
-    if (!activeFilePath) return
-    const targetLine = clampLine(line)
-    setJumpRequest({ key: Date.now(), path: activeFilePath, line: targetLine, scroll: false })
-    if (layout.mdMode !== 'split') {
-      actions.updateLayout({ mdMode: 'edit' })
-    }
-    setFocusTarget('editor')
-  }, [activeFilePath, actions, layout.mdMode])
-
-  // --- Sidebar resize ---
-  const projectSplit = useResize(layout.projectSize, 40, 300, 'down')
-  const projectHeight = projectSplit.size
-  const left = useResize(layout.leftSize, 140, 600)
-  const right = useResize(layout.rightSize, 250, 900, 'right')
-  // Available space for bottom sections = sidebar - headers - projects - explorer min
-  const bottomAvailable = useCallback(() => {
-    const el = sidebarRef.current
-    if (!el) return 400
-    const sidebarH = el.clientHeight
-    const headers = 5 * 22 // Projects, Explorer, Changes, Search, Tasks
-    const projectsH = showProjects ? projectSplit.size : 0
-    const explorerMinH = showExplorer ? 80 : 0
-    const tasksH = showTasks ? 50 : 0
-    const handles = 6 // ~2 resize handles × 3px
-    return Math.max(100, sidebarH - headers - projectsH - explorerMinH - tasksH - handles)
-  }, [showProjects, showExplorer, showTasks, projectSplit.size])
-  const searchMax = useCallback(() => {
-    const changesMinH = showChanges ? 50 : 0
-    return Math.max(50, bottomAvailable() - changesMinH)
-  }, [bottomAvailable, showChanges])
-  const searchSplit = useResize(layout.searchSize, 50, searchMax, 'up')
-  const searchHeight = showTextSearch ? searchSplit.size : 0
-  const changesMax = useCallback(() => {
-    const searchMinH = showTextSearch ? 50 : 0
-    return Math.max(50, bottomAvailable() - searchMinH)
-  }, [bottomAvailable, showTextSearch])
-  const changesSplit = useResize(layout.changesSize, 50, changesMax, 'up')
-  const changesHeight = showChanges ? changesSplit.size : 0
-  const sessionSplit = useResize(layout.sessionSize, 50, 400, 'up')
-  const sessionHeight = showSessions ? sessionSplit.size : 0
-
-  // Re-clamp when available space shrinks (section toggled, projects resized, window resize)
-  useEffect(() => {
-    const maxC = changesMax()
-    const maxS = searchMax()
-    if (changesSplit.size > maxC) changesSplit.setSize(maxC)
-    if (searchSplit.size > maxS) searchSplit.setSize(maxS)
-  }, [changesMax, searchMax, changesSplit, searchSplit])
-
-  // Sync resize handle sizes back to layout state for persistence
-  useEffect(() => {
-    actions.updateLayout({
-      leftSize: left.size,
-      rightSize: right.size,
-      searchSize: searchSplit.size,
-      changesSize: changesSplit.size,
-      sessionSize: sessionSplit.size,
-      projectSize: projectSplit.size,
-    })
-  }, [left.size, right.size, searchSplit.size, changesSplit.size, sessionSplit.size, projectSplit.size, actions])
 
   useEffect(() => {
     if (!isFileTab(activeTab)) return
@@ -314,7 +236,6 @@ export function Workspace({
     return s
   }, [changes])
 
-  const isMd = activeFilePath?.endsWith('.md')
   const hasOpenTabs = openTabs.length > 0
   const activeSessionInfo = sessionsMgr.projectSessions.find(s => s.name === attachedSession) ?? null
 
@@ -444,215 +365,42 @@ export function Workspace({
     </div>
   )
 
-  const pinned = sessionsMgr.orderedSessions.filter(s => sessionsMgr.pinnedSet.has(s.name))
-  const unpinnedProcessing = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && s.status === 'processing')
-  const unpinnedIdle = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && s.status === 'idle')
-
-  const handleSessionClick = useCallback((name: string) => {
-    actions.setActiveSession(name); setFocusTarget('session'); if (isMobile) actions.setMobilePane('terminal')
-  }, [actions, setFocusTarget, isMobile])
-
-  const sessionActions = (
-    <div className="flex items-center gap-1">
-      {sessionTab === 'live' && (
-        <div className="flex gap-1">
-          {(['claude', 'codex', 'shell'] as const).map(p => (
-            <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${p[0].toUpperCase()}${p.slice(1)}`}>
-              <ProviderIcon provider={p} className={`w-3.5 h-3.5${p === 'codex' ? ' text-[#111111]' : ''}`} />
-            </button>
-          ))}
-        </div>
-      )}
-      {sessionTab === 'history' && (
-        <button
-          onClick={() => history.refresh()}
-          className="cursor-pointer hover:opacity-80 transition-opacity"
-          title="Refresh history"
-          style={{ color: 'var(--sol-text-dim)' }}
-        >
-          <RefreshCw size={12} />
-        </button>
-      )}
-      <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
-      <div
-        className="flex rounded overflow-hidden cursor-pointer"
-        style={{ padding: 2 }}
-        onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
-        title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
-      >
-        <span
-          className="px-1.5 py-0.5 flex items-center rounded transition-colors"
-          style={{
-            backgroundColor: sessionTab === 'live' ? 'var(--sol-accent)' : 'transparent',
-            color: sessionTab === 'live' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
-          }}
-        >
-          <Radio size={14} />
-        </span>
-        <span
-          className="px-1.5 py-0.5 flex items-center rounded transition-colors"
-          style={{
-            backgroundColor: sessionTab === 'history' ? 'var(--sol-accent)' : 'transparent',
-            color: sessionTab === 'history' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
-          }}
-        >
-          <History size={14} />
-        </span>
-      </div>
-    </div>
-  )
-
-  const renderSessionItem = (s: typeof pinned[number], isPinned?: boolean) => (
-    <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned}
-      unreadCount={sessionsMgr.getSessionUnread(s.name)}
-      pendingName={sessionsMgr.pendingRenames[s.name]}
-      onKill={() => { void sessionsMgr.killSession(s.name) }}
-      onClick={() => handleSessionClick(s.name)}
-      onPin={() => sessionsMgr.togglePin(s.name)}
-      onRename={s.provider !== 'shell' ? (newName) => { void sessionsMgr.handleRenameSession(s.name, newName) } : undefined}
-      {...(isPinned ? {
-        onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', s.name); e.dataTransfer.effectAllowed = 'move'; setDraggedSession(s.name) },
-        onDragEnd: () => setDraggedSession(null),
-        onDragOver: (e: React.DragEvent) => e.preventDefault(),
-        onDrop: (e: React.DragEvent) => { e.preventDefault(); if (draggedSession && sessionsMgr.pinnedSet.has(draggedSession)) sessionsMgr.handlePinnedReorder(draggedSession, s.name) },
-        dragging: draggedSession === s.name,
-      } : {})}
-    />
-  )
-
-  const divider = <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
-  const liveSessionsBody = (
-    <>
-      {pinned.map(s => renderSessionItem(s, true))}
-      {pinned.length > 0 && (unpinnedProcessing.length > 0 || unpinnedIdle.length > 0) && divider}
-      {unpinnedProcessing.map(s => renderSessionItem(s))}
-      {unpinnedProcessing.length > 0 && unpinnedIdle.length > 0 && divider}
-      {unpinnedIdle.map(s => renderSessionItem(s))}
-      {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No live sessions</div>}
-    </>
-  )
-
-  const sessionsBody = sessionTab === 'live' ? liveSessionsBody : (
-    <WorkspaceHistoryList
-      history={history.data}
-      loading={history.loading}
-      resumingId={resumingId}
-      projectPath={projectPath}
-      setResumingId={setResumingId}
-      onResumed={(handle) => {
-        setResumingId(null)
-        setSessionTab('live')
-        actions.setActiveSession(handle)
-        if (isMobile) actions.setMobilePane('terminal')
-        refreshSessions()
-        history.refresh()
-      }}
-      onGoLive={(liveSessionName) => {
-        setSessionTab('live')
-        actions.setActiveSession(liveSessionName)
-        if (isMobile) actions.setMobilePane('terminal')
-      }}
-    />
-  )
-
   const editorPane = (
-    <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={() => setFocusTarget('editor')}>
-      <WorkspaceTabBar
-        openTabs={openTabs}
-        activeTab={activeTab}
-        previewTab={previewTab}
-        dirtyTabs={dirtyTabs}
-        conflictTabs={conflictTabs}
-        canToggleMdMode={!!(isMd)}
-        mdMode={mdMode}
-        isTouch={isTouch}
-        onSelectTab={nav.handleSelectTab}
-        onDoubleClickTab={nav.handleDoubleClickTab}
-        onCloseTab={closeTab}
-        onMdModeChange={(mode) => actions.updateLayout({ mdMode: mode })}
-        onSaveTab={(tab) => {
-          const f = files[tab]
-          const content = f?.draft ?? f?.serverContent
-          if (isFileTab(tab) && content != null) void actions.saveFile(tab, content)
-        }}
-        rightActions={<>
-          {voiceBridge.editorVoiceEligible && (
-            <VoiceControl
-              capability={voice.capability}
-              state={voice.state}
-              elapsedMs={voice.elapsedMs}
-              onStart={voiceBridge.handleEditorVoiceStart}
-              onStop={voice.stop}
-            />
-          )}
-          <button
-            onClick={() => actions.updateLayout({ autocompleteEnabled: !layout.autocompleteEnabled })}
-            title={layout.autocompleteEnabled ? 'Disable autocomplete' : 'Enable autocomplete'}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '2px 8px',
-              fontSize: 11,
-              border: 'none',
-              borderRadius: 3,
-              cursor: 'pointer',
-              background: layout.autocompleteEnabled ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'transparent',
-              color: layout.autocompleteEnabled ? 'var(--sol-text)' : 'var(--sol-text-dim)',
-              opacity: layout.autocompleteEnabled ? 1 : 0.6,
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 1v2M8 13v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1 8h2M13 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4" />
-            </svg>
-            AI
-          </button>
-        </>}
-      />
-
-      <WorkspaceBreadcrumbs
-        activeTab={activeTab}
-        onNavigateDir={nav.handleExpandFolder}
-      />
-
-      <WorkspaceEditorArea
-        activeTab={activeTab}
-        activeFilePath={activeFilePath}
-        activeFileContent={activeFileContent}
-        activeFileLoading={activeFileLoading}
-        activeViewportLine={activeViewportLine}
-        isDiffTab={activeDiffTab}
-        isTasksTab={activeTasksTab}
-        activeDiff={activeDiff}
-        isMd={isMd}
-        mdMode={mdMode}
-        splitSize={layout.splitSize}
-        onSplitResize={(size) => actions.updateLayout({ splitSize: size })}
-        hasConflict={!!activeFilePath && conflictTabs.has(activeFilePath)}
-        jumpRequest={jumpRequest}
-        onAcceptDisk={() => activeFilePath && actions.acceptDisk(activeFilePath)}
-        onForceSave={() => activeFilePath && void actions.forceSave(activeFilePath, activeFileContent ?? '')}
-        onViewportLine={handleActiveFileViewportLine}
-        onActivateLine={handlePreviewActivateLine}
-        onNavigateToFile={nav.openFile}
-        onNavigateDir={nav.handleExpandFolder}
-        onFocus={() => setFocusTarget('editor')}
-        onCloseTab={() => activeTab && closeTab(activeTab)}
-        onDraftChange={(content) => activeFilePath && actions.updateFileDraft(activeFilePath, content)}
-        onSave={async (content) => { if (activeFilePath) await actions.saveFile(activeFilePath, content) }}
-        diffHunks={editorDiffHunks}
-        tasksPane={activeTasksTab ? (
-          <TaskGraphScreen
-            projectName={projectName}
-            onOpenTasksFile={nav.handleOpenTasksFile}
-          />
-        ) : null}
-        insertText={editorInsert?.text}
-        insertRequestKey={editorInsert?.key}
-        autocompleteEnabled={layout.autocompleteEnabled}
-        isMobile={isMobile}
-      />
-    </div>
+    <WorkspaceEditorColumn
+      openTabs={openTabs}
+      activeTab={activeTab}
+      previewTab={previewTab}
+      dirtyTabs={dirtyTabs}
+      conflictTabs={conflictTabs}
+      files={files}
+      layout={{ mdMode, splitSize: layout.splitSize, autocompleteEnabled: layout.autocompleteEnabled }}
+      isTouch={isTouch}
+      isMobile={isMobile}
+      activeDiff={activeDiff}
+      editorDiffHunks={editorDiffHunks}
+      jumpRequest={jumpRequest}
+      editorInsert={editorInsert}
+      projectName={projectName}
+      voice={{
+        eligible: voiceBridge.editorVoiceEligible,
+        capability: voice.capability, state: voice.state,
+        elapsedMs: voice.elapsedMs, onStart: voiceBridge.handleEditorVoiceStart, onStop: voice.stop,
+      }}
+      onSelectTab={nav.handleSelectTab}
+      onDoubleClickTab={nav.handleDoubleClickTab}
+      onCloseTab={closeTab}
+      onLayoutUpdate={actions.updateLayout}
+      onSaveFile={actions.saveFile}
+      onForceSave={actions.forceSave}
+      onAcceptDisk={actions.acceptDisk}
+      onUpdateDraft={actions.updateFileDraft}
+      onUpdateViewport={actions.updateFileViewport}
+      onSetJumpRequest={setJumpRequest}
+      onNavigateToFile={nav.openFile}
+      onNavigateDir={nav.handleExpandFolder}
+      onFocusEditor={() => setFocusTarget('editor')}
+      onOpenTasksFile={nav.handleOpenTasksFile}
+    />
   )
 
   const terminalContent = attachedSession ? (
@@ -710,22 +458,22 @@ export function Workspace({
       changesBadge={changes.length || undefined}
       changesBody={changesBody}
       tasksBody={tasksBody}
-      sessionsActions={sessionActions}
-      sessionsBody={sessionsBody}
+      sessionsActions={sessionSection.sessionsActions}
+      sessionsBody={sessionSection.sessionsBody}
       editorPane={editorPane}
       terminalContent={terminalContent}
       rootRef={rootRef}
       sidebarRef={sidebarRef}
-      left={left}
-      right={right}
-      searchSplit={searchSplit}
-      searchHeight={searchHeight}
-      changesSplit={changesSplit}
-      changesHeight={changesHeight}
-      projectSplit={projectSplit}
-      projectHeight={projectHeight}
-      sessionSplit={sessionSplit}
-      sessionHeight={sessionHeight}
+      left={resize.left}
+      right={resize.right}
+      searchSplit={resize.searchSplit}
+      searchHeight={resize.searchHeight}
+      changesSplit={resize.changesSplit}
+      changesHeight={resize.changesHeight}
+      projectSplit={resize.projectSplit}
+      projectHeight={resize.projectHeight}
+      sessionSplit={resize.sessionSplit}
+      sessionHeight={resize.sessionHeight}
       hasOpenTabs={hasOpenTabs}
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}
@@ -745,6 +493,7 @@ export function Workspace({
       onStop={voice.stop}
       onSurfaceToggle={voiceBridge.handleSurfaceToggle}
     />
+    {showShortcutSheet && <ShortcutSheet onClose={() => setShowShortcutSheet(false)} />}
   </>
   )
 }

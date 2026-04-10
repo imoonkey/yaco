@@ -1,5 +1,6 @@
+import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
-import { DialogShell } from './DialogShell'
+import { DialogShell, useDialogClose } from './DialogShell'
 import type { NotificationItem } from '../hooks/useNotifications'
 
 function timeAgo(ts: number): string {
@@ -10,6 +11,19 @@ function timeAgo(ts: number): string {
   const hours = Math.floor(minutes / 60)
   if (hours < 24) return `${hours}h ago`
   return `${Math.floor(hours / 24)}d ago`
+}
+
+function PanelCloseButton() {
+  const close = useDialogClose()
+  return (
+    <button
+      onClick={close ?? undefined}
+      className="cursor-pointer"
+      style={{ color: 'var(--sol-muted)' }}
+    >
+      <X size={14} />
+    </button>
+  )
 }
 
 export function NotificationPanel({
@@ -25,6 +39,13 @@ export function NotificationPanel({
   onClearAll: () => void
   onClose: () => void
 }) {
+  // Force re-render every 60s so relative timestamps stay fresh
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
   return (
     <DialogShell
       onClose={onClose}
@@ -59,13 +80,7 @@ export function NotificationPanel({
               </button>
             </>
           )}
-          <button
-            onClick={onClose}
-            className="cursor-pointer"
-            style={{ color: 'var(--sol-muted)' }}
-          >
-            <X size={14} />
-          </button>
+          <PanelCloseButton />
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { X, AlertTriangle } from 'lucide-react'
 
 import { isDiffTab, isFileTab, isTasksTab, type MdMode } from '../hooks/useWorkspaceState'
@@ -53,6 +53,17 @@ function computeDisambigSuffixes(tabs: string[]): Map<string, string> {
 
 function tabTitle(tab: string): string {
   return isTasksTab(tab) ? 'Tasks' : tab
+}
+
+// Static style constants extracted from render loops
+const BAR_STYLE: React.CSSProperties = {
+  height: 28, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)',
+}
+
+const TAB_STYLE_BASE: React.CSSProperties = {
+  borderRight: '1px solid var(--sol-border)',
+  marginBottom: -1,
+  transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
 }
 
 function MdModeToggle({ mode, onChange, isTouch }: { mode: MdMode; onChange: (m: MdMode) => void; isTouch: boolean }) {
@@ -115,10 +126,36 @@ export function WorkspaceTabBar({
   const ctxMenu = useContextMenu()
   const [ctxTab, setCtxTab] = useState<string | null>(null)
 
+  // Scroll fade affordance
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollFade, setScrollFade] = useState<'none' | 'right' | 'left' | 'both'>('none')
+
+  const updateScrollFade = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const canLeft = el.scrollLeft > 1
+    const canRight = el.scrollLeft < el.scrollWidth - el.clientWidth - 1
+    setScrollFade(canLeft && canRight ? 'both' : canLeft ? 'left' : canRight ? 'right' : 'none')
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    el.addEventListener('scroll', updateScrollFade, { passive: true })
+    const ro = new ResizeObserver(updateScrollFade)
+    ro.observe(el)
+    return () => { el.removeEventListener('scroll', updateScrollFade); ro.disconnect() }
+  }, [updateScrollFade, openTabs])
+
+  const fadeMask = scrollFade === 'none' ? undefined
+    : scrollFade === 'right' ? 'linear-gradient(to left, transparent, black 24px)'
+    : scrollFade === 'left' ? 'linear-gradient(to right, transparent, black 24px)'
+    : 'linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent)'
+
   return (
     <>
-    <div className="flex items-center shrink-0" style={{ height: 28, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}>
-      <div className="flex-1 min-w-0 flex items-center h-full overflow-x-auto">
+    <div className="flex items-center shrink-0" style={BAR_STYLE}>
+      <div ref={scrollRef} className="flex-1 min-w-0 flex items-center h-full overflow-x-auto" style={fadeMask ? { maskImage: fadeMask, WebkitMaskImage: fadeMask } : undefined}>
       {openTabs.length === 0 ? (
         <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)' }}>No files open</span>
       ) : openTabs.map(tab => {
@@ -137,24 +174,30 @@ export function WorkspaceTabBar({
             data-testid="tab"
             className="group flex items-center gap-1 px-1.5 h-full cursor-pointer text-[11px] shrink-0"
             style={{
+              ...TAB_STYLE_BASE,
               backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
-              borderRight: '1px solid var(--sol-border)', borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
-              borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)', marginBottom: -1,
+              borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
+              borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
               fontStyle: isPreview ? 'italic' : undefined,
-              transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
             }} title={tabTitle(tab)}>
             {!isTasks && !isDiff && <FileTypeIcon name={tab} />}
             <span className="truncate max-w-[120px]" style={isPreview ? { paddingRight: 2 } : undefined}>{tabName(tab)}</span>
+            {isPreview && <span className="text-[9px] shrink-0" style={{ color: 'var(--sol-muted)', fontStyle: 'italic' }}>(preview)</span>}
             {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-muted)' }}>{parentDirSuffix}</span>}
             {isConflict ? (
               <span className="w-3 h-3 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={10} /></span>
             ) : isDirty ? (
-              <span className="w-3 h-3 flex items-center justify-center shrink-0">
-                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
+              <span className="relative w-3 h-3 flex items-center justify-center shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0 group-hover:hidden" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
+                <button onClick={(e) => onCloseTab(tab, e)}
+                  className="hidden group-hover:flex w-3 h-3 items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg absolute inset-0" style={{ color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
+                  aria-label={`Close ${tabName(tab)}`}
+                ><X size={10} /></button>
               </span>
             ) : (
               <button onClick={(e) => onCloseTab(tab, e)}
                 className="w-3 h-3 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer hover:bg-sol-hover-bg" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
+                aria-label={`Close ${tabName(tab)}`}
                 ><X size={10} /></button>
             )}
           </div>
@@ -173,7 +216,7 @@ export function WorkspaceTabBar({
       const isDirty = dirtyTabs.has(tab)
       const isFile = isFileTab(tab)
       return (
-        <Menu position={ctxMenu.position}>
+        <Menu position={ctxMenu.position} exiting={ctxMenu.exiting} onExitDone={ctxMenu.onExitDone}>
           {isFile && isDirty && onSaveTab && (
             <MenuItem label="Save" onClick={() => { onSaveTab(tab); ctxMenu.close() }} />
           )}

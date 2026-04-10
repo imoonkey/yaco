@@ -3,6 +3,7 @@ import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { BadgeCount } from './components/BadgeCount'
 import { NotificationPanel } from './components/NotificationPanel'
 import { useNotifications } from './hooks/useNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
@@ -272,17 +273,11 @@ function App() {
               style={{ color: 'var(--sol-text-dim)', transition: 'color 120ms, transform 120ms' }}
               onClick={() => { setShowNotifications(v => !v); if (!showNotifications) markNotificationsRead() }}
               title="Notifications"
+              aria-label="Notifications"
             >
               <Bell size={15} />
             </button>
-            {unreadCount > 0 && (
-              <span
-                className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] rounded-full text-[9px] font-bold text-white flex items-center justify-center px-0.5"
-                style={{ backgroundColor: 'var(--sol-orange)' }}
-              >
-                {unreadCount}
-              </span>
-            )}
+            <BadgeCount count={unreadCount} className="absolute -top-1.5 -right-1.5 px-0.5" />
             {showNotifications && (
               <NotificationPanel
                 notifications={notifications}
@@ -293,7 +288,7 @@ function App() {
               />
             )}
           </span>
-          <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme">
+          <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
             <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
             <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
           </span>
@@ -358,7 +353,7 @@ function App() {
           data-rhythm-pulse
           className="fixed inset-0 pointer-events-none z-50"
           style={{
-            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(181, 137, 0, 0.5) 100%)',
+            background: 'radial-gradient(ellipse at center, transparent 40%, color-mix(in srgb, var(--sol-yellow) 50%, transparent) 100%)',
             opacity: pulseType === 'light' ? 0.35 : 0.7,
             animation: `rhythm-pulse ${pulseType === 'light' ? '3s' : '4s'} ease-in-out forwards`,
           }}

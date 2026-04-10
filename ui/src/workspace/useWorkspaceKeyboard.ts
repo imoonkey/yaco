@@ -37,6 +37,7 @@ interface UseWorkspaceKeyboardOpts {
   handleTerminalVoiceStart: () => void
   voice: Pick<UseVoiceReturn, 'state' | 'stop' | 'capability'>
   onToggleTextSearch: () => void
+  onToggleShortcutSheet: () => void
 }
 
 export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
@@ -61,6 +62,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     handleTerminalVoiceStart,
     voice,
     onToggleTextSearch,
+    onToggleShortcutSheet,
   } = opts
 
   const getKeyboardLock = useCallback((): KeyboardLockHandle | null => {
@@ -162,6 +164,16 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         e.preventDefault()
         e.stopPropagation()
       }
+      // ? : toggle shortcut cheatsheet (ignore when typing in input/textarea/contenteditable)
+      if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tag = (e.target as HTMLElement).tagName
+        const editable = (e.target as HTMLElement).isContentEditable
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !editable) {
+          e.preventDefault()
+          onToggleShortcutSheet()
+          return
+        }
+      }
       // Ctrl+Shift+V or F5: toggle voice recording
       if ((key === 'v' && !e.metaKey && e.ctrlKey && !e.altKey && e.shiftKey) || e.key === 'F5') {
         e.preventDefault()
@@ -178,7 +190,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, orderedSessions, mdMode, onToggleShortcutSheet, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

@@ -104,7 +104,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               value={mobilePane}
               onChange={(v) => onMobilePaneChange(v as 'files' | 'editor' | 'terminal')}
             />
-            <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme">
+            <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
               <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
               <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
             </span>
@@ -144,7 +144,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {/* Desktop sidebar: Projects + Explorer + Changes + Tasks */}
           {showSidebar && (
             <>
-              <div ref={sidebarRef} className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: 'var(--sol-bg)', boxShadow: 'var(--elevation-1)' }}>
+              <div ref={sidebarRef} role="navigation" aria-label="Sidebar" className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: 'var(--sol-bg)' }}>
                 <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
                 {showProjects && <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>}
 
@@ -203,7 +203,9 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {/* Editor column */}
           {shouldShowEditorPane && (
             <>
-              {editorPane}
+              <div role="main" className="flex-1 min-w-0 flex flex-col">
+                {editorPane}
+              </div>
               {showRightPanel && <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />}
             </>
           )}
@@ -211,12 +213,13 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {/* Activity column: Terminal + Sessions */}
           {showRightPanel && (
             <div
+              role="complementary"
+              aria-label="Activity panel"
               className="flex flex-col overflow-hidden min-w-0"
               style={{
                 flex: !hasOpenTabs ? 1 : undefined,
                 width: hasOpenTabs ? right.size : undefined,
                 backgroundColor: 'var(--sol-bg)',
-                boxShadow: 'var(--elevation-1)',
               }}
             >
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">

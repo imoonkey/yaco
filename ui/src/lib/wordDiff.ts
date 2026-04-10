@@ -48,7 +48,7 @@ type RawChange = {
   ln2?: number  // normal line number (new file)
 }
 
-export function pairChanges(changes: RawChange[]): DiffRow[] {
+export function pairChanges(changes: RawChange[], skipWordDiff = false): DiffRow[] {
   const rows: DiffRow[] = []
   let pendingDels: RawChange[] = []
   let pendingAdds: RawChange[] = []
@@ -59,7 +59,9 @@ export function pairChanges(changes: RawChange[]): DiffRow[] {
     for (let i = 0; i < paired; i++) {
       const del = pendingDels[i]
       const add = pendingAdds[i]
-      const { oldSegments, newSegments } = computeWordDiff(del.content, add.content)
+      const { oldSegments, newSegments } = skipWordDiff
+        ? { oldSegments: [{ text: del.content, kind: 'deleted' as const }], newSegments: [{ text: add.content, kind: 'added' as const }] }
+        : computeWordDiff(del.content, add.content)
       rows.push({
         kind: 'modified',
         key: `m-${del.ln1}-${add.ln}`,

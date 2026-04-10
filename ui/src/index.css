@@ -41,9 +41,9 @@
 
 [data-theme="dark"] {
   /* Elevation (dark) */
-  --elevation-1: 0 1px 2px rgba(0,0,0,0.2), 0 1px 3px rgba(0,0,0,0.15);
-  --elevation-2: 0 2px 8px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-  --elevation-3: 0 8px 24px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.25);
+  --elevation-1: 0 1px 2px rgba(0,0,0,0.12), 0 1px 3px rgba(0,0,0,0.08);
+  --elevation-2: 0 2px 8px rgba(0,0,0,0.18), 0 1px 2px rgba(0,0,0,0.12);
+  --elevation-3: 0 8px 24px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.15);
 }
 
 /* Solarized Light palette */
@@ -146,7 +146,7 @@
   --sol-hover-bg: #004454aa;
   --sol-editor-fg: #839496;
   --sol-input-fg: #93a1a1;
-  --sol-editor-cursor: #d30102;
+  --sol-editor-cursor: #93a1a1;
   --sol-editor-selection-bg: #274642;
   --sol-editor-line-highlight-bg: #073642;
   --sol-editor-widget-bg: #00212b;
@@ -548,11 +548,32 @@ body {
   padding: 1rem 0;
 }
 
+.markdown-preview .mermaid:not([data-processed="true"]) {
+  min-height: 80px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sol-muted) 8%, transparent) 25%,
+    color-mix(in srgb, var(--sol-muted) 16%, transparent) 50%,
+    color-mix(in srgb, var(--sol-muted) 8%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  color: transparent;
+  overflow: hidden;
+}
+
 .markdown-preview .mermaid svg {
   min-width: min-content;
 }
 
 /* ═══ Design System Utilities ═══ */
+
+/* Scrollbar tint — respects OS auto-hide behavior */
+* {
+  scrollbar-color: color-mix(in srgb, var(--sol-muted) 50%, transparent) transparent;
+  scrollbar-width: thin;
+}
 
 /* Elevation utilities */
 .elevation-1 { box-shadow: var(--elevation-1); }
@@ -570,6 +591,11 @@ body {
 :focus-visible {
   outline: 2px solid color-mix(in srgb, var(--sol-accent) 50%, transparent);
   outline-offset: 1px;
+}
+
+/* Conflict banner buttons — CSS hover instead of JS onMouseEnter/Leave */
+.conflict-btn:hover {
+  background-color: color-mix(in srgb, var(--sol-warning) 12%, transparent);
 }
 
 /* ═══ Keyframe Animations ═══ */
@@ -594,9 +620,62 @@ body {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes dialog-exit {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to   { opacity: 0; transform: scale(0.96) translateY(8px); }
+}
+
+@keyframes overlay-exit {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes menu-exit {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-4px); }
+}
+
+@keyframes panel-slide-out {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-8px); }
+}
+
 @keyframes recording-scale {
   0%, 100% { transform: scale(1); }
   50%      { transform: scale(1.02); }
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes spinner {
+  to { transform: rotate(360deg); }
+}
+
+/* Skeleton loading row */
+.skeleton-row {
+  height: 10px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--sol-muted) 12%, transparent) 25%,
+    color-mix(in srgb, var(--sol-muted) 24%, transparent) 50%,
+    color-mix(in srgb, var(--sol-muted) 12%, transparent) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Loading spinner */
+.loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid color-mix(in srgb, var(--sol-muted) 25%, transparent);
+  border-top-color: var(--sol-muted);
+  border-radius: 50%;
+  animation: spinner 0.8s linear infinite;
 }
 
 /* ═══ Reduced Motion ═══ */

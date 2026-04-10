@@ -5,6 +5,8 @@ import { getIcon } from '../lib/setiIcons'
 // --- Git status colors ---
 export const GIT_COLORS: Record<string, string> = { M: 'var(--sol-warning)', U: '#73C991', A: '#73C991', D: '#C74E39' }
 
+export const GIT_STATUS_LABELS: Record<string, string> = { M: 'Modified', U: 'Untracked', A: 'Added', D: 'Deleted' }
+
 // --- Seti color name to hex (VS Code Seti icon theme, light background) ---
 const SETI_COLORS: Record<string, string> = {
   blue: '#498ba7', grey: '#808080', 'grey-light': '#808080',
