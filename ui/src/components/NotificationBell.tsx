@@ -26,7 +26,7 @@ export function NotificationBell({
   return (
     <span className="relative">
       <button
-        className="flex items-center justify-center cursor-pointer hover:opacity-80"
+        className="flex items-center justify-center cursor-pointer hover:opacity-80 w-7 h-7 rounded"
         style={{ color: 'var(--sol-text-dim)', transition: 'color 120ms' }}
         onClick={() => setOpen(v => !v)}
         title="Notifications"

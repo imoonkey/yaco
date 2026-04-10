@@ -95,8 +95,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
       {isMobile ? (
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-0.5 flex items-center gap-1.5" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
-            <div className="flex-1 min-w-0">
+          <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-0.5 flex items-center gap-2" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+            <div className="flex-1 min-w-0 max-w-[65%]">
               <PaneSwitch
                 options={[
                   { id: 'files', label: 'Browse' },
