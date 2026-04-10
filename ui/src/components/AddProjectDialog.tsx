@@ -30,7 +30,7 @@ export function AddProjectDialog({
   onClose: () => void
 }) {
   const [path, setPath] = useState(getInitialPath)
-  const [entries, setEntries] = useState<BrowseEntry[]>([])
+  const [allEntries, setAllEntries] = useState<BrowseEntry[]>([])
   const [loading, setLoading] = useState(false)
   const [highlighted, setHighlighted] = useState(-1)
   const [error, setError] = useState<string | null>(null)
@@ -38,6 +38,15 @@ export function AddProjectDialog({
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const fetchId = useRef(0)
+
+  // Derive filtered entries from typed suffix after last /
+  const lastSlash = path.lastIndexOf('/')
+  const suffix = lastSlash >= 0 && lastSlash < path.length - 1
+    ? path.slice(lastSlash + 1).toLowerCase()
+    : ''
+  const entries = suffix
+    ? allEntries.filter(e => e.name.toLowerCase().startsWith(suffix))
+    : allEntries
 
   // Focus + select input on mount
   useEffect(() => {
@@ -53,11 +62,11 @@ export function AddProjectDialog({
     try {
       const result = await browseDirs(prefix)
       if (id !== fetchId.current) return
-      setEntries(result)
+      setAllEntries(result)
       setHighlighted(-1)
     } catch {
       if (id !== fetchId.current) return
-      setEntries([])
+      setAllEntries([])
     } finally {
       if (id === fetchId.current) setLoading(false)
     }
@@ -66,11 +75,10 @@ export function AddProjectDialog({
   // Trigger fetch when path changes and ends with /
   useEffect(() => {
     if (path.endsWith('/') && path.length > 1) {
+      setAllEntries([])
       fetchEntries(path)
-    } else {
-      setEntries([])
-      setHighlighted(-1)
     }
+    setHighlighted(-1)
   }, [path, fetchEntries])
 
   // Scroll highlighted item into view
@@ -246,6 +254,11 @@ export function AddProjectDialog({
         {!loading && entries.length === 0 && path.endsWith('/') && path.length > 1 && (
           <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
             No subdirectories
+          </div>
+        )}
+        {!loading && entries.length === 0 && suffix && allEntries.length > 0 && (
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
+            No matches
           </div>
         )}
 
