@@ -24,14 +24,14 @@ cd ui && npm run lint                           # ESLint
 
 ```
 Browser (React 19 + Vite)
-  Single Workspace shell — project list in sidebar, task graph as workspace tab
+  Single Workspace shell — project list in sidebar, task panel toggled from sidebar
        HTTP / WS / SSE
 Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty
 ```
 
 - **Server** — Hono routes (`/api/*`, SSE, WebSocket), library modules (terminal, multmux, project-watcher, voice, autocomplete), `withProject` middleware
-- **UI** — `App.tsx` (shell + project selection + session counts), `workspace/` (screen, layout, editor column, sidebar resize, session section, tab bar, sessions, search, diff), `components/` (Editor, Terminal, FileExplorer, ProjectList, Menu, Voice, DialogShell, BadgeCount), `hooks/` (state, persistence, API, SSE, voice, fileStateMachine), `tasks/` (task graph SVG), `lib/` (solarized theme, diff, fuzzy search, autocomplete)
+- **UI** — `App.tsx` (shell + project selection + session counts), `workspace/` (screen, layout, editor column, sidebar resize, session section, tab bar, sessions, search, diff), `components/` (Editor, Terminal, FileExplorer, ProjectList, Menu, Voice, DialogShell, BadgeCount), `hooks/` (state, persistence, API, SSE, voice, fileStateMachine), `tasks/` (task views: board, list, graph, archive + detail panel + shared components), `lib/` (solarized theme, diff, fuzzy search, autocomplete)
 
 -> See: [doc/main/](doc/main/README.md) for per-file specs organized by subsystem (backend, frontend, data-model, ui)
 
@@ -42,7 +42,7 @@ Hono Server (Node.js :3001)
 3. **Search** — Cmd+P: cached index + fzf scoring. Cmd+Shift+F: ripgrep NDJSON streaming.
 4. **Editor save** → PUT with mtime `baseRevision` → 409 on conflict
 5. **Terminal** → WebSocket → node-pty. Shell sessions persist across detach; agent sessions use `~/.multmux/sessions/*.json` state files.
-6. **Task graph** → fetches `doc/todo/tasks.json` → layout engine → SVG. SSE triggers refresh.
+6. **Task views** → sidebar TASKS toggle opens task panel (full editor column height, replaces tab bar). Four views: Board (kanban), List (virtual scroll table), Graph (SVG pan/zoom), Archive. Shared `TaskDetailPanel` with inline editing. SSE triggers refresh + 60s polling fallback.
 7. **Voice** → MediaRecorder → Groq Whisper STT → multi-model LLM formatter → compose tray
 8. **Autocomplete** → CM6 debounced typing → Groq multi-model → ghost text decoration
 
@@ -81,7 +81,7 @@ doc/
 - Mobile-first: touch detection via `useIsTouch()` / `useIsMobile()`, virtual keyboard handling via `useKeyboardViewport`
 - SSE-driven updates with polling fallback (30-60s). Never poll faster than 30s.
 - File revision tracking via mtime for optimistic locking
-- Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`. Sidebar uses Explorer-flex model: Explorer body is always `flex:1`, bottom sections (Changes, Search, Tasks) have fixed resizable heights with `useResize` hooks. `useResize` accepts dynamic max via `number | (() => number)`, with re-clamp effect when available space shrinks. Bottom section max heights computed from sidebar height minus fixed overhead.
+- Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`. Sidebar uses Explorer-flex model: Explorer body is always `flex:1`, bottom sections (Changes, Search) have fixed resizable heights with `useResize` hooks. `useResize` accepts dynamic max via `number | (() => number)`, with re-clamp effect when available space shrinks. Bottom section max heights computed from sidebar height minus fixed overhead. Tasks toggle is pinned to sidebar bottom via `mt-auto` — not a resizable section, just a `SectionHeader` that toggles the full-height task panel in the editor column.
 - Performance: `React.memo` on expensive leaf components (FileExplorer) to prevent re-render cascade from per-keystroke state updates. Stabilize derived Set references (dirtyTabs, conflictTabs) via structural comparison.
 - Icons: use `lucide-react` for all UI icons. Never use Unicode symbols (☼▸×●) as icons.
 - User feedback: destructive actions use `ConfirmDialog` (`ui/src/components/ConfirmDialog.tsx`). Error/success notifications use `toast`/`toast.error` from `sonner`. Never use native `alert()` or `confirm()`.

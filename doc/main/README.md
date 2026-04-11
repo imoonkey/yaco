@@ -20,7 +20,7 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 
 ```
 Browser (React 19 + Vite)
-  Single Workspace shell — project list in sidebar, task graph as workspace tab
+  Single Workspace shell — project list in sidebar, task panel toggled from sidebar
        HTTP / WS / SSE
 Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty

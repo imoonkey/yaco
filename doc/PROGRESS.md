@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-04-11: Tasks v2 UI polish — UX + visual overhaul
+
+**What changed:**
+- Tasks is no longer an editor tab — toggled from sidebar bottom `TASKS` section header, takes full editor column height (no tab bar / breadcrumbs above)
+- Graph nodes reverted to single-line 36px layout with right-aligned dep count (was 48px two-line with "x deps" text)
+- Native `<select>` dropdown replaced with custom styled popover (keyboard nav, click-outside)
+- Unified detail panel: graph view now uses shared editable `TaskDetailPanel` (was separate read-only `TaskGraphDetailPanel`)
+- Archive rows clickable — opens detail panel with selection highlight and readOnly mode ("Archived" badge)
+- Design doc links open in workspace editor for file paths, new tab for URLs only
+- Task ID displayed in detail panel header (monospace badge)
+- Children section + segmented progress bar added to detail panel for parent tasks
+- Typography audit: font-weight reductions across list headers, column headers, filter pills, graph nodes
+- Board column gap widened (8px → 12px), done column compact card readability improved
+- Fixed broken `StateBadge` in graph detail panel (`STATE_COLORS[state] + '22'` → `color-mix()`)
+
+**Why:**
+- First pass was functional but UX had many rough edges — archive couldn't show detail, two different detail panels, native dropdowns, design doc links broken, graph nodes wasting space
+- Sidebar toggle is more natural than a pseudo-tab for a panel that replaces the editor area
+
+**Key files:** `ui/src/tasks/` (TaskScreen, TaskDetailPanel, InlineEdit, TaskGraphNode, TaskArchiveView, board/*, list/*), `ui/src/workspace/` (WorkspaceEditorColumn, WorkspaceLayout, WorkspaceScreen, WorkspaceTabBar), `ui/src/tasks/taskGraphModel.ts`
+**Verification:** `tsc --noEmit` clean, ESLint clean (no new errors)
+**Commit:** `796369c..9b57d98`
+**Next:** None planned — polish pass complete
+**Blockers:** None
+
 ## 2026-04-11: Compare mode UI + diff/changes UX polish
 
 **What changed:**

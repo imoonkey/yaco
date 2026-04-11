@@ -51,30 +51,39 @@ App (384 lines)
         ├── GitChangeItem
         ├── FileSearch — recent files section, search cap banner
         ├── ShortcutSheet — ? key opens shortcut cheatsheet
-        ├── TaskGraphScreen — rendered as the Tasks workspace tab
+        ├── TaskScreen — task panel toggled from sidebar (full editor column height)
         ├── BadgeCount — reusable unread count badge
         └── ProviderIcon
 ```
 
-**Task graph components (embedded in workspace):**
+**Task system (`ui/src/tasks/`) — multi-view task management:**
 ```
-TaskGraphScreen (237 lines) — controller
-├── useTaskGraphInteraction (216 lines) — selection, filters, search, collapse
-├── useTaskGraphKeyboard (131 lines) — keydown handler
-├── TaskGraphStatusPane (111 lines) — loading/missing/error states
-├── TaskGraphToolbar — zoom, state filters, search, collapse all/expand all
-├── TaskGraphCanvas — SVG container with pan/zoom
-│   ├── TaskGraphGroup[] — vertical indent guide lines (expanded groups only)
-│   ├── TaskGraphEdges — dependency paths with arrows
-│   └── TaskGraphNode[] — uniform 220x32 cards (leaf + group, with chevron)
-├── TaskGraphMinimap — overview with viewport rect
-├── TaskGraphDetailPanel — unified task/group detail (breadcrumb, progress, children)
-└── TaskGraphTooltip — hover overlay
+TaskScreen — master controller (view switcher, filtering, detail panel)
+├── TaskToolbar — view tabs (Board/List/Graph/Archive), filter dropdowns, search
+├── TaskBoardView — kanban columns (Blocked → Ready → Running → Done)
+│   ├── BoardColumn — collapsible column with drag-drop
+│   └── BoardCard — task card (compact mode for done)
+├── TaskListView — virtual-scroll table with sortable columns
+│   ├── ListHeader — resizable column headers
+│   └── ListRow — inline title editing, multi-select
+├── TaskGraphScreen — SVG dependency graph with pan/zoom
+│   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line) + TaskGraphEdges
+│   ├── TaskGraphMinimap — overview with viewport rect
+│   └── TaskGraphTooltip — hover overlay
+├── TaskArchiveView — date-grouped archive with search, click-to-detail
+├── TaskDetailPanel — shared right sidebar (editable, readOnly mode for archives)
+│   ├── InlineEdit — click-to-edit with custom dropdown popover
+│   ├── Children progress bar (for parent tasks)
+│   └── Design doc link → opens in editor (file paths) or new tab (URLs)
+└── shared/ — StateDot, StateBadge, PriorityTag, InlineEdit
 ```
 
-**Task graph model (non-component):**
-- `taskGraphModel.ts` — flat indented tree layout: 24px indent/level, guide lines instead of nested boxes, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics
+**Task data model (non-component):**
+- `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate)
+- `taskGraphModel.ts` — flat indented tree layout: 24px indent/level, guide lines, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics. NODE_WIDTH=280, NODE_HEIGHT=36.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
+- `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
+- `hooks/useTaskViewState.ts` — persisted view state (active view, filters, sort, selection)
 
 **Supporting modules (non-component):**
 - `workspace/markdown.ts` (141 lines) — escapeHtml, renderMarkdown, resolveRelativePath, code highlighting, heading slugification, mermaid init
@@ -127,14 +136,14 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
-**Desktop**: `Sidebar(Projects + Explorer + Changes + Tasks) | CenterTabs(File / Diff / Tasks) | ActivityColumn(Terminal + Sessions)`
-**Mobile**: `PaneSwitch → Files(Projects + Explorer + Changes + Tasks + Sessions) | Editor | Terminal`
+**Desktop**: `Sidebar(Projects + Explorer + Changes + Search + [Tasks toggle]) | Center(File / Diff / TaskPanel) | ActivityColumn(Terminal + Sessions)`
+**Mobile**: `PaneSwitch → Files(Projects + Explorer + Changes + Search + Sessions + [Tasks toggle]) | Editor | Terminal`
 
 ### Extracted modules in `ui/src/workspace/`
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `WorkspaceScreen.tsx` | 499 | Controller (state, callbacks, keyboard, Tasks tab routing) |
+| `WorkspaceScreen.tsx` | 499 | Controller (state, callbacks, keyboard, Tasks toggle routing) |
 | `WorkspaceLayout.tsx` | 238 | Layout composition (desktop/mobile) with ARIA landmarks |
 | `WorkspaceEditorColumn.tsx` | 179 | Editor pane: tab bar + breadcrumbs + editor area |
 | `WorkspaceEditorArea.tsx` | 534 | Editor, split view, preview, diff, conflict banner, skeleton loaders |
