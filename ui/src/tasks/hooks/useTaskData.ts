@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 const API = '/api'
 const POLL_INTERVAL = 60_000
 
-type TaskMutations = {
+export type TaskMutations = {
   updateTask: (id: string, patch: Partial<RawTaskV2>) => Promise<void>
   createTask: (id: string, task: RawTaskV2) => Promise<void>
   deleteTask: (id: string) => Promise<void>
