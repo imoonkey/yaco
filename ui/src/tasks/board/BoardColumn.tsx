@@ -97,13 +97,13 @@ export function BoardColumn({
           : <ChevronDown size={11} style={{ color: 'var(--sol-muted)' }} />
         }
         <span
-          className="text-[10px] font-bold uppercase tracking-[0.06em]"
+          className="text-[10px] font-semibold uppercase tracking-[0.06em]"
           style={{ color: 'var(--sol-muted)' }}
         >
           {STATE_LABELS[state] ?? state}
         </span>
         <span
-          className="text-[10px] font-semibold tabular-nums"
+          className="text-[10px] tabular-nums"
           style={{ color: 'var(--sol-muted)' }}
         >
           {tasks.length}

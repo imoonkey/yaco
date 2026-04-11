@@ -21,10 +21,14 @@ const STATE_PRIORITY: Record<string, number> = {
 }
 
 function StateBadge({ state }: { state: TaskState }) {
+  const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium"
-      style={{ backgroundColor: STATE_COLORS[state] + '22', color: STATE_COLORS[state] }}
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold"
+      style={{
+        backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+        color,
+      }}
     >
       {STATE_LABELS[state]}
     </span>
@@ -44,7 +48,7 @@ function CollapsibleSection({ title, count, defaultExpanded, children }: {
       <button
         onClick={() => setExpanded(e => !e)}
         className="flex items-center gap-1 w-full text-left mb-1 cursor-pointer"
-        style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}
+        style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}
       >
         {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <span>{title} ({count})</span>
@@ -409,7 +413,7 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
         className="flex items-center justify-between px-3 sticky top-0 z-10"
         style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+        <span className="text-[11px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
           Task Details
         </span>
         <button

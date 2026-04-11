@@ -173,7 +173,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         onDraftChange={(content) => activeFilePath && onUpdateDraft(activeFilePath, content)}
         onSave={async (content) => { if (activeFilePath) await onSaveFile(activeFilePath, content) }}
         diffHunks={editorDiffHunks}
-        tasksPane={activeTasksTab ? <TaskScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} /> : null}
+        tasksPane={activeTasksTab ? <TaskScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} /> : null}
         insertText={editorInsert?.text}
         insertRequestKey={editorInsert?.key}
         autocompleteEnabled={autocompleteEnabled}

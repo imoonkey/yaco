@@ -8,6 +8,8 @@ import type { TaskV2 } from '../model/taskModel'
 
 interface TaskArchiveViewProps {
   projectName: string
+  onSelectTask?: (id: string, task: TaskV2) => void
+  selectedTaskId?: string | null
 }
 
 type FlatArchiveEntry = {
@@ -50,7 +52,7 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
-export function TaskArchiveView({ projectName }: TaskArchiveViewProps) {
+export function TaskArchiveView({ projectName, onSelectTask, selectedTaskId }: TaskArchiveViewProps) {
   const { archives, loading, error } = useArchiveData(projectName)
   const [search, setSearch] = useState('')
 
@@ -67,7 +69,6 @@ export function TaskArchiveView({ projectName }: TaskArchiveViewProps) {
 
   const groups = useMemo(() => {
     const g = groupByDate(filtered)
-    // Sort dates descending (most recent first)
     return new Map([...g.entries()].sort((a, b) => b[0].localeCompare(a[0])))
   }, [filtered])
 
@@ -120,7 +121,13 @@ export function TaskArchiveView({ projectName }: TaskArchiveViewProps) {
         ) : (
           <div className="py-1">
             {[...groups.entries()].map(([date, entries]) => (
-              <DateGroup key={date} date={date} entries={entries} />
+              <DateGroup
+                key={date}
+                date={date}
+                entries={entries}
+                onSelectTask={onSelectTask}
+                selectedTaskId={selectedTaskId}
+              />
             ))}
           </div>
         )}
@@ -143,11 +150,16 @@ function EmptyState() {
   )
 }
 
-function DateGroup({ date, entries }: { date: string; entries: FlatArchiveEntry[] }) {
+function DateGroup({ date, entries, onSelectTask, selectedTaskId }: {
+  date: string
+  entries: FlatArchiveEntry[]
+  onSelectTask?: (id: string, task: TaskV2) => void
+  selectedTaskId?: string | null
+}) {
   return (
     <div>
       <div
-        className="sticky top-0 flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em]"
+        className="sticky top-0 flex items-center gap-2 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.06em]"
         style={{
           color: 'var(--sol-muted)',
           backgroundColor: 'var(--sol-header-bg)',
@@ -163,21 +175,32 @@ function DateGroup({ date, entries }: { date: string; entries: FlatArchiveEntry[
         </span>
       </div>
       {entries.map(entry => (
-        <ArchiveRow key={`${entry.file}:${entry.task.id}`} entry={entry} />
+        <ArchiveRow
+          key={`${entry.file}:${entry.task.id}`}
+          entry={entry}
+          selected={selectedTaskId === entry.task.id}
+          onSelect={onSelectTask}
+        />
       ))}
     </div>
   )
 }
 
-function ArchiveRow({ entry }: { entry: FlatArchiveEntry }) {
+function ArchiveRow({ entry, selected, onSelect }: {
+  entry: FlatArchiveEntry
+  selected: boolean
+  onSelect?: (id: string, task: TaskV2) => void
+}) {
   const stateColor = STATE_COLORS[entry.task.state] ?? 'var(--sol-base1)'
   return (
     <div
-      className="flex items-center gap-2 px-3 py-1.5 hover:bg-sol-hover-bg transition-colors"
+      className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-sol-hover-bg transition-colors"
       style={{
         borderBottom: '1px solid var(--sol-border)',
         borderLeft: `2.5px solid ${stateColor}`,
+        backgroundColor: selected ? 'color-mix(in srgb, var(--sol-accent) 8%, transparent)' : undefined,
       }}
+      onClick={() => onSelect?.(entry.task.id, entry.task)}
     >
       <StateDot state={entry.task.state} />
       <span className="flex-1 text-[12px] truncate" style={{ color: 'var(--sol-text)' }}>
@@ -190,7 +213,7 @@ function ArchiveRow({ entry }: { entry: FlatArchiveEntry }) {
         className="shrink-0 p-1 rounded cursor-pointer hover:bg-sol-hover-bg transition-colors"
         style={{ color: 'var(--sol-muted)' }}
         title="Unarchive (coming soon)"
-        onClick={() => {}}
+        onClick={(e) => { e.stopPropagation() }}
       >
         <RotateCcw size={11} />
       </button>

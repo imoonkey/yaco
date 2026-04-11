@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef } from 'react'
-import { X, ExternalLink, Terminal, Tag, FileCode, Link2, ChevronRight } from 'lucide-react'
+import { useMemo, useCallback, useEffect, useRef } from 'react'
+import { X, ExternalLink, Terminal, Tag, FileCode, Link2, ChevronRight, FileText } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { TaskV2, TaskState, Priority, RawTaskV2 } from './model/taskModel'
 import type { TaskMutations } from './hooks/useTaskData'
@@ -35,7 +35,7 @@ function SectionHeader({ children, divider = true }: { children: React.ReactNode
   return (
     <div className={divider ? 'mb-1' : ''}>
       <div
-        className="text-[10px] font-bold uppercase tracking-[0.06em]"
+        className="text-[10px] font-semibold uppercase tracking-[0.06em]"
         style={{ color: 'var(--sol-muted)' }}
       >
         {children}
@@ -121,12 +121,65 @@ function AcceptCriteriaItem({ text, checked, onToggle }: {
   )
 }
 
+const STATE_PRIORITY: Record<string, number> = {
+  blocked: 0, ready: 1, running: 2, done: 3, cancelled: 4,
+}
+
+/** Collect all leaf descendants of a task for progress calculation */
+function getLeafDescendants(taskId: string, allTasks: Map<string, TaskV2>): TaskV2[] {
+  const children = Array.from(allTasks.values()).filter(t => t.parent === taskId)
+  if (children.length === 0) return []
+  const leaves: TaskV2[] = []
+  const stack = [...children]
+  while (stack.length > 0) {
+    const t = stack.pop()!
+    const grandchildren = Array.from(allTasks.values()).filter(c => c.parent === t.id)
+    if (grandchildren.length === 0) {
+      leaves.push(t)
+    } else {
+      stack.push(...grandchildren)
+    }
+  }
+  return leaves
+}
+
+function ChildrenProgressBar({ leaves }: { leaves: TaskV2[] }) {
+  if (leaves.length === 0) return null
+  const counts: Record<string, number> = { done: 0, running: 0, ready: 0, blocked: 0, cancelled: 0 }
+  for (const t of leaves) counts[t.state] = (counts[t.state] ?? 0) + 1
+  const segments = ['done', 'running', 'ready', 'blocked', 'cancelled']
+    .filter(s => counts[s] > 0)
+    .map(s => ({ state: s, pct: (counts[s] / leaves.length) * 100 }))
+
+  return (
+    <div>
+      <div className="flex rounded overflow-hidden" style={{ height: 4, backgroundColor: 'var(--sol-subtle-bg)' }}>
+        {segments.map(seg => (
+          <div
+            key={seg.state}
+            style={{ width: `${seg.pct}%`, backgroundColor: STATE_COLORS[seg.state], transition: 'width 300ms ease-out' }}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+        {segments.map(seg => (
+          <span key={seg.state} className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
+            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATE_COLORS[seg.state] }} />
+            {counts[seg.state]} {seg.state}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export type TaskDetailPanelProps = {
   task: TaskV2 | null
   allTasks: Map<string, TaskV2>
   onClose: () => void
   onSelectTask: (id: string) => void
   onOpenTerminal?: (agent: string) => void
+  onOpenFile?: (path: string) => void
   mutate: TaskMutations
 }
 
@@ -136,6 +189,7 @@ export function TaskDetailPanel({
   onClose,
   onSelectTask,
   onOpenTerminal,
+  onOpenFile,
   mutate,
 }: TaskDetailPanelProps) {
   const isMobile = useIsMobile()
@@ -155,6 +209,21 @@ export function TaskDetailPanel({
     mutate.updateTask(task.id, { [field]: value } as Partial<RawTaskV2>)
   }, [task, mutate])
 
+  const taskId = task?.id
+  const children = useMemo(() => {
+    if (!taskId) return []
+    const kids = Array.from(allTasks.values()).filter(t => t.parent === taskId)
+    return kids.sort((a, b) => {
+      const sp = (STATE_PRIORITY[a.state] ?? 4) - (STATE_PRIORITY[b.state] ?? 4)
+      return sp !== 0 ? sp : a.title.localeCompare(b.title)
+    })
+  }, [allTasks, taskId])
+
+  const leafDescendants = useMemo(
+    () => taskId && children.length > 0 ? getLeafDescendants(taskId, allTasks) : [],
+    [taskId, allTasks, children.length],
+  )
+
   if (!task) return null
 
   const deps = task.depends
@@ -171,8 +240,20 @@ export function TaskDetailPanel({
 
   const content = (
     <div className="flex flex-col gap-4 p-4 text-[12px]" style={{ color: 'var(--sol-text)' }}>
-      {/* Breadcrumb */}
-      <Breadcrumb task={task} allTasks={allTasks} onSelectTask={onSelectTask} />
+      {/* Breadcrumb + ID */}
+      <div className="flex items-center justify-between gap-2">
+        <Breadcrumb task={task} allTasks={allTasks} onSelectTask={onSelectTask} />
+        <span
+          className="shrink-0 text-[11px] px-1.5 py-0.5 rounded"
+          style={{
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--sol-text-dim)',
+            backgroundColor: 'var(--sol-subtle-bg)',
+          }}
+        >
+          {task.id}
+        </span>
+      </div>
 
       {/* Title — editable */}
       <InlineEdit
@@ -295,6 +376,24 @@ export function TaskDetailPanel({
         </div>
       )}
 
+      {/* Children (for parent/milestone tasks) */}
+      {children.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <SectionHeader>Children ({children.length})</SectionHeader>
+          {leafDescendants.length > 0 && (
+            <div className="mb-1">
+              <div className="text-[11px] mb-1" style={{ color: 'var(--sol-muted)' }}>
+                {leafDescendants.filter(t => t.state === 'done').length}/{leafDescendants.length} done
+              </div>
+              <ChildrenProgressBar leaves={leafDescendants} />
+            </div>
+          )}
+          {children.map(child => (
+            <DepRow key={child.id} task={child} onSelect={onSelectTask} />
+          ))}
+        </div>
+      )}
+
       {/* Dependencies */}
       {deps.length > 0 && (
         <div className="flex flex-col gap-1">
@@ -332,21 +431,32 @@ export function TaskDetailPanel({
         </div>
       )}
 
-      {/* Design doc link */}
+      {/* Design doc link — opens in editor for file paths, new tab for URLs */}
       {task.design && (
         <div className="flex flex-col gap-1">
           <SectionHeader>Design Doc</SectionHeader>
-          <a
-            href={task.design}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-[12px] transition-colors hover:underline"
-            style={{ color: 'var(--sol-blue)' }}
-          >
-            <Link2 size={12} />
-            {task.design}
-            <ExternalLink size={10} />
-          </a>
+          {/^https?:\/\//.test(task.design) ? (
+            <a
+              href={task.design}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[12px] transition-colors hover:underline"
+              style={{ color: 'var(--sol-blue)' }}
+            >
+              <Link2 size={12} />
+              {task.design}
+              <ExternalLink size={10} />
+            </a>
+          ) : (
+            <button
+              onClick={() => onOpenFile?.(task.design!)}
+              className="inline-flex items-center gap-1.5 text-[12px] cursor-pointer transition-colors hover:underline text-left"
+              style={{ color: 'var(--sol-blue)' }}
+            >
+              <FileText size={12} />
+              {task.design}
+            </button>
+          )}
         </div>
       )}
 
@@ -405,7 +515,7 @@ export function TaskDetailPanel({
         className="flex items-center justify-between px-3 sticky top-0 z-10"
         style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[10px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
           Task Details
         </span>
         <button

@@ -13,7 +13,7 @@ import { TaskGraphStatusPane } from './TaskGraphStatusPane'
 import { useTaskGraphInteraction } from './useTaskGraphInteraction'
 import { useTaskGraphKeyboard } from './useTaskGraphKeyboard'
 
-export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName: string; onOpenTasksFile?: () => void }) {
+export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, selectedTaskId }: { projectName: string; onOpenTasksFile?: () => void; onSelectTask?: (id: string | null) => void; selectedTaskId?: string | null }) {
   const { status, graph, error, warnings, refresh } = useTaskGraph(projectName)
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -23,6 +23,22 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
   const panZoomBoundsRef = useRef({ width: 0, height: 0 })
   const panZoom = usePanZoom({ graphBounds: panZoomBoundsRef.current, containerRef })
   const ix = useTaskGraphInteraction(projectName, graph, panZoom, isMobile)
+
+  // Sync graph selection → parent (emit selected task ID upward)
+  const prevGraphSelection = useRef(ix.selection)
+  useEffect(() => {
+    if (ix.selection !== prevGraphSelection.current) {
+      prevGraphSelection.current = ix.selection
+      onSelectTask?.(ix.selection)
+    }
+  }, [ix.selection, onSelectTask])
+
+  // Sync parent selection → graph (when cleared externally)
+  useEffect(() => {
+    if (selectedTaskId === null && ix.selection !== null) {
+      ix.handleClearSelection()
+    }
+  }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Compute display layout from graph + interaction view state
   const displayLayout = useMemo(() => {
@@ -218,18 +234,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile }: { projectName:
             />
           )}
         </div>
-
-        {!isMobile && ix.selection && (
-          <TaskGraphDetailPanel
-            selection={ix.selection}
-            graph={graph}
-            isMobile={false}
-            onClose={ix.handleClearSelection}
-            onNavigate={ix.handleNavigate}
-            collapsedTaskIds={ix.collapsedTaskIds}
-            onToggleCollapse={ix.handleToggleCollapse}
-          />
-        )}
       </div>
     </div>
   )

@@ -50,7 +50,7 @@ export function BoardCard({
         className="flex items-center gap-1.5 px-2.5 rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
         style={{
           minHeight: 28,
-          opacity: isDragging ? 0.85 : 0.6,
+          opacity: isDragging ? 0.85 : 0.7,
           backgroundColor: selected
             ? 'color-mix(in srgb, var(--sol-accent) 8%, transparent)'
             : 'var(--sol-editor-bg)',
@@ -62,7 +62,7 @@ export function BoardCard({
         <StateDot state={task.state} size={6} />
         <span
           className="text-[11px] font-medium truncate"
-          style={{ color: 'var(--sol-muted)' }}
+          style={{ color: 'var(--sol-text)' }}
         >
           {task.title}
         </span>

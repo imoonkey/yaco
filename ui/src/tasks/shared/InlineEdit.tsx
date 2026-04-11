@@ -11,6 +11,76 @@ type InlineEditProps = {
   displayClassName?: string
 }
 
+function DropdownPopover({ options, value, onSelect, onClose }: {
+  options: { value: string; label: string; color?: string }[]
+  value: string
+  onSelect: (value: string) => void
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [focusedIdx, setFocusedIdx] = useState(() => {
+    const idx = options.findIndex(o => o.value === value)
+    return idx >= 0 ? idx : 0
+  })
+
+  // Click outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose])
+
+  // Keyboard
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setFocusedIdx(i => Math.min(i + 1, options.length - 1)) }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setFocusedIdx(i => Math.max(i - 1, 0)) }
+      if (e.key === 'Enter') { e.preventDefault(); onSelect(options[focusedIdx].value) }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose, onSelect, options, focusedIdx])
+
+  return (
+    <div
+      ref={ref}
+      className="absolute top-full left-0 mt-1 py-1 rounded-md z-30 min-w-[120px]"
+      style={{
+        backgroundColor: 'var(--sol-editor-bg)',
+        border: '1px solid var(--sol-border)',
+        boxShadow: 'var(--elevation-2)',
+      }}
+    >
+      {options.map((opt, i) => {
+        const isSelected = opt.value === value
+        const isFocused = i === focusedIdx
+        return (
+          <button
+            key={opt.value}
+            onClick={() => onSelect(opt.value)}
+            onMouseEnter={() => setFocusedIdx(i)}
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-left cursor-pointer transition-colors"
+            style={{
+              color: opt.color ?? 'var(--sol-text)',
+              backgroundColor: isFocused
+                ? 'var(--sol-hover-bg)'
+                : isSelected
+                  ? 'color-mix(in srgb, var(--sol-accent) 6%, transparent)'
+                  : 'transparent',
+              fontWeight: isSelected ? 600 : 400,
+            }}
+          >
+            {opt.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function InlineEdit({
   value,
   onSave,
@@ -22,13 +92,13 @@ export function InlineEdit({
 }: InlineEditProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
-  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(null)
+  const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
 
   useEffect(() => { setDraft(value) }, [value])
 
   useEffect(() => {
-    if (editing) inputRef.current?.focus()
-  }, [editing])
+    if (editing && type !== 'dropdown') inputRef.current?.focus()
+  }, [editing, type])
 
   const save = useCallback(() => {
     setEditing(false)
@@ -75,23 +145,26 @@ export function InlineEdit({
 
   if (type === 'dropdown') {
     return (
-      <select
-        ref={inputRef as React.RefObject<HTMLSelectElement>}
-        value={draft}
-        onChange={e => { setDraft(e.target.value); setEditing(false); onSave(e.target.value) }}
-        onBlur={() => setEditing(false)}
-        onKeyDown={handleKeyDown}
-        className={`rounded px-1 py-0.5 outline-none ${className}`}
-        style={{
-          border: '1.5px solid var(--sol-accent)',
-          backgroundColor: 'var(--sol-editor-bg)',
-          color: 'var(--sol-text)',
-        }}
-      >
-        {options?.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
+      <div className="relative inline-block">
+        <button
+          className={`inline-flex items-center gap-1 rounded px-1 py-0.5 ${displayClassName}`}
+          style={{
+            border: '1.5px solid var(--sol-accent)',
+            backgroundColor: 'var(--sol-editor-bg)',
+          }}
+        >
+          <span style={{ color: options?.find(o => o.value === value)?.color ?? 'var(--sol-text)' }}>
+            {options?.find(o => o.value === value)?.label ?? value}
+          </span>
+          <ChevronDown size={10} style={{ color: 'var(--sol-accent)' }} />
+        </button>
+        <DropdownPopover
+          options={options ?? []}
+          value={value}
+          onSelect={(v) => { setEditing(false); if (v !== value) onSave(v) }}
+          onClose={() => setEditing(false)}
+        />
+      </div>
     )
   }
 

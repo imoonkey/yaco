@@ -94,7 +94,7 @@ function FilterDropdown({ label, open, onToggle, children }: {
     <div ref={ref} className="relative">
       <button
         onClick={onToggle}
-        className="h-[22px] px-2 rounded text-[10px] font-semibold uppercase tracking-[0.04em] cursor-pointer transition-colors"
+        className="h-[22px] px-2 rounded text-[10px] font-medium uppercase tracking-[0.04em] cursor-pointer transition-colors"
         style={{
           color: open ? 'var(--sol-text)' : 'var(--sol-muted)',
           backgroundColor: open ? 'var(--sol-subtle-bg-active)' : 'transparent',
@@ -147,7 +147,7 @@ function FilterPill({ label, color, onRemove }: { label: string; color?: string;
   const c = color ?? 'var(--sol-accent)'
   return (
     <span
-      className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] font-semibold"
+      className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] font-medium"
       style={{
         backgroundColor: `color-mix(in srgb, ${c} 10%, transparent)`,
         color: c,

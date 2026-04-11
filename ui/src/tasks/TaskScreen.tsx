@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { useTaskData } from './hooks/useTaskData'
 import { useTaskViewState } from './hooks/useTaskViewState'
 import { TaskToolbar } from './TaskToolbar'
@@ -12,6 +12,7 @@ import type { TaskV2 } from './model/taskModel'
 interface TaskScreenProps {
   projectName: string
   onOpenTasksFile?: () => void
+  onOpenFile?: (path: string) => void
 }
 
 /** Filter tasks by the current view state filters + search query */
@@ -34,10 +35,18 @@ function filterTasks(tasks: Map<string, TaskV2>, filters: ReturnType<typeof useT
   return filtered
 }
 
-export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
+export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScreenProps) {
   const { tasks, loading, error, mutate } = useTaskData(projectName)
   const viewState = useTaskViewState(projectName)
   const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, setParentFilter, setSearchQuery, resetFilters, setSelectedTask, setListSelected, toggleBoardColumn } = viewState
+
+  // Archived tasks aren't in the main `tasks` Map — store a reference when selected from archive
+  const [archivedTaskRef, setArchivedTaskRef] = useState<TaskV2 | null>(null)
+
+  const handleArchiveSelect = useCallback((id: string, task?: TaskV2) => {
+    setSelectedTask(id)
+    setArchivedTaskRef(task ?? null)
+  }, [setSelectedTask])
 
   const filteredTasks = useMemo(
     () => filterTasks(tasks, state.filters, state.searchQuery),
@@ -49,7 +58,9 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
     [filteredTasks],
   )
 
-  const selectedTask = state.selectedTaskId ? tasks.get(state.selectedTaskId) ?? null : null
+  const selectedTask = state.selectedTaskId
+    ? tasks.get(state.selectedTaskId) ?? archivedTaskRef
+    : null
 
   return (
     <div className="flex flex-col h-full">
@@ -107,11 +118,20 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
           </ViewPane>
 
           <ViewPane visible={state.activeView === 'graph'}>
-            <TaskGraphScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} />
+            <TaskGraphScreen
+              projectName={projectName}
+              onOpenTasksFile={onOpenTasksFile}
+              onSelectTask={setSelectedTask}
+              selectedTaskId={state.selectedTaskId}
+            />
           </ViewPane>
 
           <ViewPane visible={state.activeView === 'archive'}>
-            <TaskArchiveView projectName={projectName} />
+            <TaskArchiveView
+              projectName={projectName}
+              onSelectTask={handleArchiveSelect}
+              selectedTaskId={state.selectedTaskId}
+            />
           </ViewPane>
         </div>
 
@@ -122,6 +142,7 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
             allTasks={tasks}
             onClose={() => setSelectedTask(null)}
             onSelectTask={setSelectedTask}
+            onOpenFile={onOpenFile}
             mutate={mutate}
           />
         )}
