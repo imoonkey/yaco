@@ -9,8 +9,18 @@ export type Priority = 'critical' | 'high' | 'normal' | 'low'
 export type Estimate = 'xs' | 's' | 'm' | 'l' | 'xl'
 export type BlockReason = 'verification-failed' | 'human-review' | 'external' | 'dependency'
 
+export type WorktreeStatus = {
+  active: boolean
+  dirty: boolean
+  branch: string
+  ahead: number
+  behind: number
+}
+
 /** Raw V2 task as stored in tasks.json — extends V1 with optional fields */
 export type RawTaskV2 = RawTaskEntry & {
+  worktree?: string | null
+  worktreeStatus?: WorktreeStatus
   priority?: Priority
   agent?: string | null
   tags?: string[]
@@ -44,6 +54,8 @@ export type TaskV2 = {
   design: string | null
   resources: string[]
   requireHumanReview: boolean
+  worktree: string | null
+  worktreeStatus: WorktreeStatus | null
 }
 
 function parseAcceptCriteria(raw: string | string[] | undefined): string[] {
@@ -76,6 +88,8 @@ export function normalizeTask(id: string, raw: RawTaskV2): TaskV2 {
     design: raw.design ?? null,
     resources: Array.isArray(raw.resources) ? raw.resources : raw.resources ? [raw.resources] : [],
     requireHumanReview: raw.requireHumanReview ?? false,
+    worktree: raw.worktree ?? null,
+    worktreeStatus: raw.worktreeStatus ?? null,
   }
 }
 

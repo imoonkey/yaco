@@ -1,5 +1,5 @@
 import { useMemo, useCallback, useEffect, useRef } from 'react'
-import { X, ExternalLink, Terminal, Tag, FileCode, Link2, ChevronRight, FileText } from 'lucide-react'
+import { X, ExternalLink, Terminal, Tag, FileCode, Link2, ChevronRight, FileText, FolderGit2, GitBranch } from 'lucide-react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import type { TaskV2, TaskState, Priority, RawTaskV2 } from './model/taskModel'
 import type { TaskMutations } from './hooks/useTaskData'
@@ -329,6 +329,53 @@ export function TaskDetailPanel({
         </div>
       )}
 
+      {/* Worktree */}
+      {task.worktree && (
+        <div className="flex flex-col gap-1">
+          <SectionHeader>Worktree</SectionHeader>
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-2">
+              <FolderGit2 size={12} style={{ color: task.worktreeStatus?.active ? 'var(--sol-green)' : 'var(--sol-muted)' }} />
+              <span className="font-mono text-[12px]" style={{ color: 'var(--sol-text)' }}>{task.worktree}</span>
+              {task.worktreeStatus?.active && (
+                <span
+                  className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+                  style={{ color: 'var(--sol-green)', backgroundColor: 'color-mix(in srgb, var(--sol-green) 10%, transparent)' }}
+                >
+                  Active
+                </span>
+              )}
+            </div>
+            {task.worktreeStatus?.active && (
+              <>
+                <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--sol-text)' }}>
+                  <GitBranch size={11} style={{ color: 'var(--sol-muted)' }} />
+                  <span className="font-mono">{task.worktreeStatus.branch}</span>
+                  {task.worktreeStatus.dirty && (
+                    <span
+                      className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1 py-px rounded"
+                      style={{ color: 'var(--sol-warning)', backgroundColor: 'color-mix(in srgb, var(--sol-warning) 10%, transparent)' }}
+                    >
+                      Modified
+                    </span>
+                  )}
+                </div>
+                {(task.worktreeStatus.ahead > 0 || task.worktreeStatus.behind > 0) && (
+                  <div className="flex items-center gap-3 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
+                    {task.worktreeStatus.ahead > 0 && (
+                      <span className="tabular-nums">&uarr;{task.worktreeStatus.ahead} ahead</span>
+                    )}
+                    {task.worktreeStatus.behind > 0 && (
+                      <span className="tabular-nums">&darr;{task.worktreeStatus.behind} behind</span>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Tags */}
       {task.tags.length > 0 && (
         <div className="flex flex-col gap-1">
@@ -482,26 +529,64 @@ export function TaskDetailPanel({
     </div>
   )
 
-  // Mobile: bottom sheet
+  // Mobile: bottom sheet with backdrop
   if (isMobile) {
     return (
-      <div
-        ref={panelRef}
-        role="complementary"
-        aria-label="Task details"
-        className="absolute bottom-0 left-0 right-0 rounded-t-xl shadow-lg overflow-y-auto z-20"
-        style={{
-          maxHeight: '50vh',
-          backgroundColor: 'var(--sol-bg)',
-          borderTop: '1px solid var(--sol-border)',
-          animation: 'panel-slide-up 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
-        }}
-      >
-        <div className="flex justify-center py-2 cursor-pointer" onClick={onClose}>
-          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: 'var(--sol-base1)' }} />
+      <>
+        {/* Backdrop */}
+        <div
+          className="absolute inset-0 z-10"
+          style={{ backgroundColor: 'var(--sol-overlay-bg)' }}
+          onClick={onClose}
+          aria-hidden
+        />
+        <div
+          ref={panelRef}
+          role="complementary"
+          aria-label="Task details"
+          className="absolute bottom-0 left-0 right-0 rounded-t-xl shadow-lg overflow-y-auto z-20"
+          style={{
+            maxHeight: '75vh',
+            backgroundColor: 'var(--sol-bg)',
+            borderTop: '1px solid var(--sol-border)',
+            animation: 'panel-slide-up 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
+          }}
+        >
+          {/* Header: drag handle + close button */}
+          <div className="sticky top-0 z-10" style={{ backgroundColor: 'var(--sol-bg)' }}>
+            <div className="flex justify-center pt-2 pb-1 cursor-pointer" onClick={onClose}>
+              <div className="w-10 h-1 rounded-full" style={{ backgroundColor: 'var(--sol-base1)' }} />
+            </div>
+            <div
+              className="flex items-center justify-between px-4 pb-2"
+              style={{ borderBottom: '1px solid var(--sol-border)' }}
+            >
+              <span className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+                  Task Details
+                </span>
+                {readOnly && (
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+                    style={{ color: 'var(--sol-base1)', backgroundColor: 'var(--sol-subtle-bg)' }}
+                  >
+                    Archived
+                  </span>
+                )}
+              </span>
+              <button
+                onClick={onClose}
+                className="w-7 h-7 flex items-center justify-center rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
+                style={{ color: 'var(--sol-base1)' }}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+          {content}
         </div>
-        {content}
-      </div>
+      </>
     )
   }
 

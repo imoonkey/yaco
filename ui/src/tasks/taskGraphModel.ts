@@ -12,6 +12,7 @@ export type RawTaskEntry = {
   scope?: string[]
   acceptCriteria?: string | string[]
   note?: string | null
+  worktree?: string | null
 }
 
 export type RawTaskMap = Record<string, RawTaskEntry>
@@ -28,6 +29,7 @@ export type TaskGraphTask = {
   note: string | null
   depth: number
   hasChildren: boolean
+  worktree: string | null
 }
 
 // Layout types — flat indented tree, no nested boxes
@@ -167,6 +169,7 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
       note: entry.note ?? null,
       depth: getDepth(id, raw),
       hasChildren: childrenOf.has(id),
+      worktree: entry.worktree ?? null,
     })
   }
 

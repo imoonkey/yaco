@@ -1,6 +1,7 @@
 import type { TaskV2 } from '../model/taskModel'
 import { StateDot } from '../shared/StateDot'
 import { PriorityTag } from '../shared/PriorityTag'
+import { FolderGit2 } from 'lucide-react'
 
 const PRIORITY_BORDER: Record<string, { width: number; color: string } | null> = {
   critical: { width: 3, color: 'var(--sol-red)' },
@@ -131,12 +132,26 @@ export function BoardCard({
         </div>
       )}
 
-      {/* Meta line: priority + agent */}
-      {(task.priority !== 'normal' || task.agent) && (
+      {/* Meta line: priority + agent + worktree */}
+      {(task.priority !== 'normal' || task.agent || task.worktree) && (
         <div className="flex items-center gap-2 mt-1.5 ml-[14px] text-[11px]">
           <PriorityTag priority={task.priority} />
           {task.agent && (
             <span className="font-mono text-[10px]" style={{ color: 'var(--sol-muted)' }}>{task.agent}</span>
+          )}
+          {task.worktree && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] font-medium"
+              style={{
+                color: task.worktreeStatus?.active ? 'var(--sol-green)' : 'var(--sol-muted)',
+                backgroundColor: task.worktreeStatus?.active
+                  ? 'color-mix(in srgb, var(--sol-green) 10%, transparent)'
+                  : 'var(--sol-subtle-bg)',
+              }}
+            >
+              <FolderGit2 size={10} />
+              {task.worktree}
+            </span>
           )}
         </div>
       )}

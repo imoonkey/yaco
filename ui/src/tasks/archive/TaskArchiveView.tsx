@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { Search, Archive, RotateCcw } from 'lucide-react'
+import { Search, Archive, RotateCcw, FolderGit2 } from 'lucide-react'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import { useArchiveData } from './useArchiveData'
 import { StateDot } from '../shared/StateDot'
 import { normalizeTask } from '../model/taskModel'
@@ -53,6 +54,7 @@ function formatDate(iso: string): string {
 }
 
 export function TaskArchiveView({ projectName, onSelectTask, selectedTaskId }: TaskArchiveViewProps) {
+  const isMobile = useIsMobile()
   const { archives, loading, error } = useArchiveData(projectName)
   const [search, setSearch] = useState('')
 
@@ -100,7 +102,7 @@ export function TaskArchiveView({ projectName, onSelectTask, selectedTaskId }: T
             value={search}
             onChange={e => setSearch(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') setSearch('') }}
-            className="h-7 w-full pl-7 pr-2 rounded text-[12px] outline-none focus:border-[var(--sol-focus-border)]"
+            className={`${isMobile ? 'h-8' : 'h-7'} w-full pl-7 pr-2 rounded text-[12px] outline-none focus:border-[var(--sol-focus-border)]`}
             style={{
               backgroundColor: 'var(--sol-input-bg)',
               color: 'var(--sol-input-fg)',
@@ -127,6 +129,7 @@ export function TaskArchiveView({ projectName, onSelectTask, selectedTaskId }: T
                 entries={entries}
                 onSelectTask={onSelectTask}
                 selectedTaskId={selectedTaskId}
+                isMobile={isMobile}
               />
             ))}
           </div>
@@ -150,11 +153,12 @@ function EmptyState() {
   )
 }
 
-function DateGroup({ date, entries, onSelectTask, selectedTaskId }: {
+function DateGroup({ date, entries, onSelectTask, selectedTaskId, isMobile }: {
   date: string
   entries: FlatArchiveEntry[]
   onSelectTask?: (id: string, task: TaskV2) => void
   selectedTaskId?: string | null
+  isMobile: boolean
 }) {
   return (
     <div>
@@ -180,22 +184,26 @@ function DateGroup({ date, entries, onSelectTask, selectedTaskId }: {
           entry={entry}
           selected={selectedTaskId === entry.task.id}
           onSelect={onSelectTask}
+          isMobile={isMobile}
         />
       ))}
     </div>
   )
 }
 
-function ArchiveRow({ entry, selected, onSelect }: {
+function ArchiveRow({ entry, selected, onSelect, isMobile }: {
   entry: FlatArchiveEntry
   selected: boolean
   onSelect?: (id: string, task: TaskV2) => void
+  isMobile: boolean
 }) {
   const stateColor = STATE_COLORS[entry.task.state] ?? 'var(--sol-base1)'
   return (
     <div
-      className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-sol-hover-bg transition-colors"
+      className="flex items-center gap-2 px-3 cursor-pointer hover:bg-sol-hover-bg transition-colors"
       style={{
+        minHeight: isMobile ? 44 : undefined,
+        padding: isMobile ? '8px 12px' : '6px 12px',
         borderBottom: '1px solid var(--sol-border)',
         borderLeft: `2.5px solid ${stateColor}`,
         backgroundColor: selected ? 'color-mix(in srgb, var(--sol-accent) 8%, transparent)' : undefined,
@@ -206,17 +214,30 @@ function ArchiveRow({ entry, selected, onSelect }: {
       <span className="flex-1 text-[12px] truncate" style={{ color: 'var(--sol-text)' }}>
         {entry.task.title}
       </span>
-      <span className="shrink-0 text-[10px] font-mono" style={{ color: 'var(--sol-muted)' }}>
-        {entry.task.id}
-      </span>
-      <button
-        className="shrink-0 p-1 rounded cursor-pointer hover:bg-sol-hover-bg transition-colors"
-        style={{ color: 'var(--sol-muted)' }}
-        title="Unarchive (coming soon)"
-        onClick={(e) => { e.stopPropagation() }}
-      >
-        <RotateCcw size={11} />
-      </button>
+      {entry.task.worktree && !isMobile && (
+        <span
+          className="inline-flex items-center gap-1 shrink-0 px-1.5 py-px rounded text-[10px] font-medium"
+          style={{ color: 'var(--sol-muted)', backgroundColor: 'var(--sol-subtle-bg)' }}
+        >
+          <FolderGit2 size={9} />
+          {entry.task.worktree}
+        </span>
+      )}
+      {!isMobile && (
+        <span className="shrink-0 text-[10px] font-mono" style={{ color: 'var(--sol-muted)' }}>
+          {entry.task.id}
+        </span>
+      )}
+      {!isMobile && (
+        <button
+          className="shrink-0 p-1 rounded cursor-pointer hover:bg-sol-hover-bg transition-colors"
+          style={{ color: 'var(--sol-muted)' }}
+          title="Unarchive (coming soon)"
+          onClick={(e) => { e.stopPropagation() }}
+        >
+          <RotateCcw size={11} />
+        </button>
+      )}
     </div>
   )
 }

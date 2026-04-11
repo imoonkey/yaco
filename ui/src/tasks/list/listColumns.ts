@@ -16,6 +16,7 @@ export const COLUMNS: ColumnDef[] = [
   { key: 'priority', label: 'Priority', defaultWidth: 80, minWidth: 60 },
   { key: 'agent', label: 'Agent', defaultWidth: 80, minWidth: 50 },
   { key: 'scope', label: 'Scope', defaultWidth: 50, minWidth: 36 },
+  { key: 'worktree', label: 'Worktree', defaultWidth: 90, minWidth: 60 },
   { key: 'parent', label: 'Parent', defaultWidth: 100, minWidth: 60 },
 ]
 

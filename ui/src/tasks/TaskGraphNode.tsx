@@ -2,7 +2,7 @@ import type { LayoutNode, TaskGraphTask, LayoutGroup } from './taskGraphModel'
 import { NODE_WIDTH, NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
-import { STATE_COLORS } from './taskGraphConstants'
+import { STATE_COLORS, getWorktreeColor } from './taskGraphConstants'
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
   const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
@@ -46,14 +46,16 @@ function getNodeOpacity(node: LayoutNode, highlight: HighlightModel): number {
   return 0.4
 }
 
-function getNodeFill(node: LayoutNode, highlight: HighlightModel): string {
+function getNodeFill(node: LayoutNode, highlight: HighlightModel, worktree: string | null): string {
   if (highlight.upstreamTaskIds.has(node.id)) return 'var(--sol-orange)'
   if (highlight.downstreamTaskIds.has(node.id)) return 'var(--sol-cyan)'
+  if (worktree) return getWorktreeColor(worktree)
   return 'var(--sol-editor-bg)'
 }
 
-function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel): number {
+function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel, worktree: string | null): number {
   if (highlight.upstreamTaskIds.has(node.id) || highlight.downstreamTaskIds.has(node.id)) return 0.12
+  if (worktree) return 0.1
   return 1
 }
 
@@ -119,11 +121,25 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         width={NODE_WIDTH}
         height={NODE_HEIGHT}
         rx={6}
-        fill={getNodeFill(node, highlight)}
-        fillOpacity={getNodeFillOpacity(node, highlight)}
+        fill={getNodeFill(node, highlight, task.worktree)}
+        fillOpacity={getNodeFillOpacity(node, highlight, task.worktree)}
         stroke={strokeColor}
         strokeWidth={strokeW}
       />
+
+      {/* Worktree indicator — right accent bar */}
+      {task.worktree && (
+        <rect
+          x={node.x + NODE_WIDTH - 3}
+          y={node.y + 6}
+          width={2.5}
+          height={NODE_HEIGHT - 12}
+          rx={1.25}
+          fill={getWorktreeColor(task.worktree)}
+          opacity={showLabels ? 0.7 : 0}
+          style={{ transition: 'opacity 150ms ease-out' }}
+        />
+      )}
 
       {/* Selected indicator — subtle left accent */}
       {isSelected && (

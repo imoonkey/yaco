@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { LayoutGrid, List, GitBranch, Archive, Search, X } from 'lucide-react'
+import { LayoutGrid, List, GitBranch, Archive, Search, X, SlidersHorizontal } from 'lucide-react'
+import { useIsMobile } from '../hooks/useIsMobile'
 import type { ActiveView, TaskFilters } from './hooks/useTaskViewState'
 import type { TaskState, Priority, TaskV2 } from './model/taskModel'
 import { STATE_COLORS } from './taskGraphConstants'
@@ -29,7 +30,7 @@ const PRIORITY_COLORS: Record<Priority, string> = {
   low: 'var(--sol-base1)',
 }
 
-type DropdownId = 'state' | 'priority' | 'agent' | 'parent' | null
+type DropdownId = 'state' | 'priority' | 'agent' | 'parent' | 'worktree' | null
 
 interface TaskToolbarProps {
   activeView: ActiveView
@@ -40,6 +41,7 @@ interface TaskToolbarProps {
   onToggleFilterState: (state: TaskState) => void
   onToggleFilterPriority: (priority: Priority) => void
   onToggleFilterAgent: (agent: string) => void
+  onToggleFilterWorktree: (worktree: string) => void
   onSetParentFilter: (parentId: string | null) => void
   onSetSearch: (query: string) => void
   onResetFilters: () => void
@@ -66,10 +68,18 @@ function collectParents(tasks: Map<string, TaskV2>): { id: string; title: string
   return parents.sort((a, b) => a.title.localeCompare(b.title))
 }
 
+function collectWorktrees(tasks: Map<string, TaskV2>): string[] {
+  const wts = new Set<string>()
+  for (const t of tasks.values()) {
+    if (t.worktree) wts.add(t.worktree)
+  }
+  return [...wts].sort()
+}
+
 function hasActiveFilters(filters: TaskFilters): boolean {
   const allStates = filters.states.size === ALL_STATES.length && ALL_STATES.every(s => filters.states.has(s))
   const allPriorities = filters.priorities.size === ALL_PRIORITIES.length && ALL_PRIORITIES.every(p => filters.priorities.has(p))
-  return !allStates || !allPriorities || filters.agents.size > 0 || filters.parentId !== null
+  return !allStates || !allPriorities || filters.agents.size > 0 || filters.parentId !== null || filters.worktrees.size > 0
 }
 
 // --- Dropdown component ---
@@ -165,17 +175,31 @@ export function TaskToolbar(props: TaskToolbarProps) {
   const {
     activeView, filters, searchQuery, tasks,
     onSetView, onToggleFilterState, onToggleFilterPriority,
-    onToggleFilterAgent, onSetParentFilter, onSetSearch, onResetFilters,
+    onToggleFilterAgent, onToggleFilterWorktree, onSetParentFilter, onSetSearch, onResetFilters,
   } = props
 
+  const isMobile = useIsMobile()
   const [openDropdown, setOpenDropdown] = useState<DropdownId>(null)
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const mobileFilterRef = useRef<HTMLDivElement>(null)
 
   const toggleDropdown = useCallback((id: DropdownId) => {
     setOpenDropdown(prev => prev === id ? null : id)
   }, [])
 
-  // Keyboard: 1/2/3 for view switch, / for search
+  // Close mobile filter on outside click
+  useEffect(() => {
+    if (!mobileFiltersOpen) return
+    const handler = (e: MouseEvent) => {
+      if (mobileFilterRef.current && !mobileFilterRef.current.contains(e.target as Node)) setMobileFiltersOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [mobileFiltersOpen])
+
+  // Keyboard: 1/2/3/4 for view switch, / for search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName
@@ -191,14 +215,19 @@ export function TaskToolbar(props: TaskToolbarProps) {
     return () => document.removeEventListener('keydown', handler)
   }, [onSetView])
 
+  // Auto-focus search when opening on mobile
+  useEffect(() => {
+    if (mobileSearchOpen) searchRef.current?.focus()
+  }, [mobileSearchOpen])
+
   const agents = collectAgents(tasks)
   const parents = collectParents(tasks)
+  const worktrees = collectWorktrees(tasks)
   const active = hasActiveFilters(filters)
 
   // Build pills
   const pills: { key: string; label: string; color?: string; onRemove: () => void }[] = []
 
-  // Non-default state filters → show which states are EXCLUDED
   const excludedStates = ALL_STATES.filter(s => !filters.states.has(s))
   for (const s of excludedStates) {
     pills.push({ key: `state-${s}`, label: `- ${STATE_LABELS[s]}`, color: STATE_COLORS[s], onRemove: () => onToggleFilterState(s) })
@@ -210,10 +239,170 @@ export function TaskToolbar(props: TaskToolbarProps) {
   for (const a of filters.agents) {
     pills.push({ key: `agent-${a}`, label: a, color: 'var(--sol-cyan)', onRemove: () => onToggleFilterAgent(a) })
   }
+  for (const w of filters.worktrees) {
+    pills.push({ key: `wt-${w}`, label: w, color: 'var(--sol-green)', onRemove: () => onToggleFilterWorktree(w) })
+  }
   if (filters.parentId) {
     const parent = tasks.get(filters.parentId)
     pills.push({ key: 'parent', label: parent?.title ?? filters.parentId, color: 'var(--sol-violet)', onRemove: () => onSetParentFilter(null) })
   }
+
+  // --- Mobile layout: single compact row ---
+  if (isMobile) {
+    return (
+      <div className="shrink-0" style={{ borderBottom: '1px solid var(--sol-border)' }}>
+        <div className="flex items-center gap-1 px-2" style={{ height: 36, backgroundColor: 'var(--sol-bg)' }}>
+          {/* Search expanded: takes full width */}
+          {mobileSearchOpen ? (
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              <Search size={13} className="shrink-0" style={{ color: 'var(--sol-text-dim)' }} />
+              <input
+                ref={searchRef}
+                type="text"
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={e => onSetSearch(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Escape') { onSetSearch(''); setMobileSearchOpen(false) } }}
+                className="h-7 flex-1 min-w-0 pl-2 pr-2 rounded text-[13px] outline-none"
+                style={{
+                  backgroundColor: 'var(--sol-input-bg)',
+                  color: 'var(--sol-input-fg)',
+                  border: '1px solid var(--sol-border)',
+                }}
+              />
+              <button
+                onClick={() => { onSetSearch(''); setMobileSearchOpen(false) }}
+                className="w-7 h-7 flex items-center justify-center rounded cursor-pointer"
+                style={{ color: 'var(--sol-muted)' }}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* View tabs — icon only */}
+              <div className="flex items-center gap-0">
+                {VIEW_TABS.map(tab => {
+                  const Icon = tab.icon
+                  const isActive = activeView === tab.key
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => onSetView(tab.key)}
+                      className="flex items-center justify-center w-8 h-8 cursor-pointer transition-colors relative rounded"
+                      style={{
+                        color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-muted)',
+                        background: isActive ? 'var(--sol-subtle-bg-active)' : 'none',
+                        border: 'none',
+                      }}
+                      title={tab.label}
+                      aria-label={tab.label}
+                    >
+                      <Icon size={15} />
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />
+
+              {/* Filter toggle */}
+              <div ref={mobileFilterRef} className="relative">
+                <button
+                  onClick={() => setMobileFiltersOpen(v => !v)}
+                  className="flex items-center justify-center w-8 h-8 rounded cursor-pointer transition-colors"
+                  style={{
+                    color: active ? 'var(--sol-accent)' : 'var(--sol-muted)',
+                    background: mobileFiltersOpen ? 'var(--sol-subtle-bg-active)' : 'none',
+                  }}
+                  title="Filters"
+                  aria-label="Filters"
+                >
+                  <SlidersHorizontal size={14} />
+                  {active && (
+                    <span
+                      className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
+                      style={{ backgroundColor: 'var(--sol-accent)' }}
+                    />
+                  )}
+                </button>
+                {mobileFiltersOpen && (
+                  <div
+                    className="absolute top-full left-0 mt-1 py-2 rounded-md z-20 min-w-[180px]"
+                    style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)', boxShadow: 'var(--elevation-2)' }}
+                  >
+                    <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ color: 'var(--sol-muted)' }}>State</div>
+                    {ALL_STATES.map(s => (
+                      <CheckboxItem key={s} checked={filters.states.has(s)} label={STATE_LABELS[s]} color={STATE_COLORS[s]} onToggle={() => onToggleFilterState(s)} />
+                    ))}
+                    <div className="my-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />
+                    <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ color: 'var(--sol-muted)' }}>Priority</div>
+                    {ALL_PRIORITIES.map(p => (
+                      <CheckboxItem key={p} checked={filters.priorities.has(p)} label={PRIORITY_LABELS[p]} color={PRIORITY_COLORS[p]} onToggle={() => onToggleFilterPriority(p)} />
+                    ))}
+                    {agents.length > 0 && (
+                      <>
+                        <div className="my-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />
+                        <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ color: 'var(--sol-muted)' }}>Agent</div>
+                        {agents.map(a => (
+                          <CheckboxItem key={a} checked={filters.agents.has(a)} label={a} color="var(--sol-cyan)" onToggle={() => onToggleFilterAgent(a)} />
+                        ))}
+                      </>
+                    )}
+                    {worktrees.length > 0 && (
+                      <>
+                        <div className="my-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />
+                        <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.04em]" style={{ color: 'var(--sol-muted)' }}>Worktree</div>
+                        {worktrees.map(w => (
+                          <CheckboxItem key={w} checked={filters.worktrees.has(w)} label={w} color="var(--sol-green)" onToggle={() => onToggleFilterWorktree(w)} />
+                        ))}
+                      </>
+                    )}
+                    {active && (
+                      <>
+                        <div className="my-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />
+                        <button
+                          onClick={() => { onResetFilters(); setMobileFiltersOpen(false) }}
+                          className="w-full text-left px-3 py-1 text-[11px] cursor-pointer hover:bg-sol-hover-bg transition-colors"
+                          style={{ color: 'var(--sol-red)' }}
+                        >
+                          Clear all filters
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Active filter pills — inline */}
+              {pills.length > 0 && (
+                <div className="flex items-center gap-1 flex-1 min-w-0 overflow-x-auto no-scrollbar">
+                  {pills.map(p => (
+                    <FilterPill key={p.key} label={p.label} color={p.color} onRemove={p.onRemove} />
+                  ))}
+                </div>
+              )}
+
+              <div className="flex-1" />
+
+              {/* Search icon */}
+              <button
+                onClick={() => setMobileSearchOpen(true)}
+                className="w-8 h-8 flex items-center justify-center rounded cursor-pointer transition-colors"
+                style={{ color: searchQuery ? 'var(--sol-accent)' : 'var(--sol-muted)' }}
+                title="Search"
+                aria-label="Search"
+              >
+                <Search size={14} />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // --- Desktop layout: two rows ---
 
   return (
     <div className="shrink-0" style={{ borderBottom: '1px solid var(--sol-border)' }}>
@@ -310,6 +499,20 @@ export function TaskToolbar(props: TaskToolbarProps) {
                 label={a}
                 color="var(--sol-cyan)"
                 onToggle={() => onToggleFilterAgent(a)}
+              />
+            ))}
+          </FilterDropdown>
+        )}
+
+        {worktrees.length > 0 && (
+          <FilterDropdown label="Worktree" open={openDropdown === 'worktree'} onToggle={() => toggleDropdown('worktree')}>
+            {worktrees.map(w => (
+              <CheckboxItem
+                key={w}
+                checked={filters.worktrees.has(w)}
+                label={w}
+                color="var(--sol-green)"
+                onToggle={() => onToggleFilterWorktree(w)}
               />
             ))}
           </FilterDropdown>

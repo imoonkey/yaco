@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, X, ArrowRight } from 'lucide-react'
+import { ChevronDown, ChevronRight, X, ArrowRight, FolderGit2 } from 'lucide-react'
 import type { TaskGraphModel, TaskState, TaskGraphTask } from './taskGraphModel'
 import type { Selection } from './taskGraphSelection'
 import { STATE_COLORS } from './taskGraphConstants'
@@ -329,6 +329,17 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
         </CollapsibleSection>
       )}
 
+      {/* Worktree */}
+      {task.worktree && (
+        <div>
+          <div className="mb-1" style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>Worktree</div>
+          <div className="flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--sol-text)' }}>
+            <FolderGit2 size={12} style={{ color: 'var(--sol-green)' }} />
+            <span className="font-mono">{task.worktree}</span>
+          </div>
+        </div>
+      )}
+
       {/* Scope */}
       {task.scope.length > 0 && (
         <CollapsibleSection title="Scope" count={task.scope.length}>
@@ -383,13 +394,13 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
         aria-label="Task details"
         className="absolute bottom-0 left-0 right-0 rounded-t-xl shadow-lg overflow-y-auto z-20"
         style={{
-          maxHeight: '50vh',
+          maxHeight: '75vh',
           backgroundColor: 'var(--sol-bg)',
           borderTop: '1px solid var(--sol-border)',
           animation: 'panel-slide-up 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
         }}
       >
-        <div className="flex justify-center py-2" onClick={onClose} style={{ cursor: 'pointer' }}>
+        <div className="flex justify-center pt-2 pb-1" onClick={onClose} style={{ cursor: 'pointer' }}>
           <div className="w-10 h-1 rounded-full" style={{ backgroundColor: 'var(--sol-muted)' }} />
         </div>
         {content}

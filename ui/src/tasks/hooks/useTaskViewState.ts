@@ -12,6 +12,7 @@ export type TaskFilters = {
   agents: Set<string>
   tags: Set<string>
   parentId: string | null
+  worktrees: Set<string>
 }
 
 export type TaskViewState = {
@@ -42,6 +43,7 @@ function defaultState(): TaskViewState {
       agents: new Set(),
       tags: new Set(),
       parentId: null,
+      worktrees: new Set(),
     },
     searchQuery: '',
     listSort: 'priority',
@@ -112,6 +114,7 @@ type Action =
   | { type: 'TOGGLE_FILTER_PRIORITY'; priority: Priority }
   | { type: 'TOGGLE_FILTER_AGENT'; agent: string }
   | { type: 'TOGGLE_FILTER_TAG'; tag: string }
+  | { type: 'TOGGLE_FILTER_WORKTREE'; worktree: string }
   | { type: 'SET_PARENT_FILTER'; parentId: string | null }
   | { type: 'SET_SEARCH'; query: string }
   | { type: 'SET_LIST_SORT'; sort: ListSort }
@@ -147,6 +150,8 @@ function reducer(state: TaskViewState, action: Action): TaskViewState {
       return { ...state, filters: { ...state.filters, agents: toggleInSet(state.filters.agents, action.agent) } }
     case 'TOGGLE_FILTER_TAG':
       return { ...state, filters: { ...state.filters, tags: toggleInSet(state.filters.tags, action.tag) } }
+    case 'TOGGLE_FILTER_WORKTREE':
+      return { ...state, filters: { ...state.filters, worktrees: toggleInSet(state.filters.worktrees, action.worktree) } }
     case 'SET_PARENT_FILTER':
       return { ...state, filters: { ...state.filters, parentId: action.parentId } }
     case 'SET_SEARCH':
@@ -197,6 +202,7 @@ export function useTaskViewState(projectName: string) {
   const toggleFilterPriority = useCallback((p: Priority) => dispatch({ type: 'TOGGLE_FILTER_PRIORITY', priority: p }), [])
   const toggleFilterAgent = useCallback((a: string) => dispatch({ type: 'TOGGLE_FILTER_AGENT', agent: a }), [])
   const toggleFilterTag = useCallback((t: string) => dispatch({ type: 'TOGGLE_FILTER_TAG', tag: t }), [])
+  const toggleFilterWorktree = useCallback((w: string) => dispatch({ type: 'TOGGLE_FILTER_WORKTREE', worktree: w }), [])
   const setParentFilter = useCallback((id: string | null) => dispatch({ type: 'SET_PARENT_FILTER', parentId: id }), [])
   const setSearchQuery = useCallback((q: string) => dispatch({ type: 'SET_SEARCH', query: q }), [])
   const setListSort = useCallback((s: ListSort) => dispatch({ type: 'SET_LIST_SORT', sort: s }), [])
@@ -218,6 +224,7 @@ export function useTaskViewState(projectName: string) {
     toggleFilterPriority,
     toggleFilterAgent,
     toggleFilterTag,
+    toggleFilterWorktree,
     setParentFilter,
     setSearchQuery,
     setListSort,

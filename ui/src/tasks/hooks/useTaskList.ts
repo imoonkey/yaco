@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef } from 'react'
 import type { TaskV2 } from '../model/taskModel'
 
-export type SortColumn = 'id' | 'title' | 'state' | 'priority' | 'agent' | 'scope' | 'parent'
+export type SortColumn = 'id' | 'title' | 'state' | 'priority' | 'agent' | 'scope' | 'parent' | 'worktree'
 export type SortDirection = 'asc' | 'desc'
 
 export type ListGroup = {
@@ -25,6 +25,7 @@ function compare(col: SortColumn, dir: SortDirection, a: TaskV2, b: TaskV2): num
     case 'agent': return m * (a.agent ?? '').localeCompare(b.agent ?? '')
     case 'scope': return m * (a.scope.length - b.scope.length)
     case 'parent': return m * (a.parent ?? '').localeCompare(b.parent ?? '')
+    case 'worktree': return m * (a.worktree ?? '').localeCompare(b.worktree ?? '')
   }
 }
 

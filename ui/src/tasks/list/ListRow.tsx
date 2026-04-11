@@ -2,6 +2,7 @@ import { memo, useState, useCallback } from 'react'
 import type { TaskV2 } from '../model/taskModel'
 import { StateDot } from '../shared/StateDot'
 import { PriorityTag } from '../shared/PriorityTag'
+import { FolderGit2 } from 'lucide-react'
 import { COLUMNS } from './listColumns'
 import type { ColumnWidths } from './listColumns'
 
@@ -140,6 +141,17 @@ export const ListRow = memo(function ListRow({
             return (
               <div key={col.key} className="text-[10px] text-center tabular-nums" style={{ ...cellStyle, color: 'var(--sol-muted)' }}>
                 {task.scope.length || '\u2014'}
+              </div>
+            )
+          case 'worktree':
+            return (
+              <div key={col.key} className="flex items-center gap-1 text-[10px] truncate" style={{ ...cellStyle, color: task.worktree ? (task.worktreeStatus?.active ? 'var(--sol-green)' : 'var(--sol-text)') : 'var(--sol-muted)' }}>
+                {task.worktree ? (
+                  <>
+                    <FolderGit2 size={10} className="shrink-0" />
+                    <span className="truncate">{task.worktree}</span>
+                  </>
+                ) : '\u2014'}
               </div>
             )
           case 'parent':

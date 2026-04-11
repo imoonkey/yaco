@@ -24,6 +24,7 @@ function filterTasks(tasks: Map<string, TaskV2>, filters: ReturnType<typeof useT
     if (!filters.states.has(task.state)) continue
     if (!filters.priorities.has(task.priority)) continue
     if (filters.agents.size > 0 && (!task.agent || !filters.agents.has(task.agent))) continue
+    if (filters.worktrees.size > 0 && (!task.worktree || !filters.worktrees.has(task.worktree))) continue
     if (filters.parentId !== null && task.parent !== filters.parentId) continue
     if (query) {
       const hay = `${task.title} ${task.description ?? ''} ${task.note ?? ''}`.toLowerCase()
@@ -38,7 +39,7 @@ function filterTasks(tasks: Map<string, TaskV2>, filters: ReturnType<typeof useT
 export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScreenProps) {
   const { tasks, loading, error, mutate } = useTaskData(projectName)
   const viewState = useTaskViewState(projectName)
-  const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, setParentFilter, setSearchQuery, resetFilters, setSelectedTask, setListSelected, toggleBoardColumn } = viewState
+  const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, toggleFilterWorktree, setParentFilter, setSearchQuery, resetFilters, setSelectedTask, setListSelected, toggleBoardColumn } = viewState
 
   // Archived tasks aren't in the main `tasks` Map — store a reference when selected from archive
   const [archivedTaskRef, setArchivedTaskRef] = useState<TaskV2 | null>(null)
@@ -73,6 +74,7 @@ export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScr
         onToggleFilterState={toggleFilterState}
         onToggleFilterPriority={toggleFilterPriority}
         onToggleFilterAgent={toggleFilterAgent}
+        onToggleFilterWorktree={toggleFilterWorktree}
         onSetParentFilter={setParentFilter}
         onSetSearch={setSearchQuery}
         onResetFilters={resetFilters}
