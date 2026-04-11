@@ -4,6 +4,7 @@ import { useTaskViewState } from './hooks/useTaskViewState'
 import { TaskToolbar } from './TaskToolbar'
 import { TaskGraphScreen } from './TaskGraphScreen'
 import { TaskBoardView } from './board/TaskBoardView'
+import { TaskListView } from './list/TaskListView'
 import { TaskArchiveView } from './archive/TaskArchiveView'
 import type { TaskV2 } from './model/taskModel'
 
@@ -35,7 +36,7 @@ function filterTasks(tasks: Map<string, TaskV2>, filters: ReturnType<typeof useT
 export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
   const { tasks, loading, error, mutate } = useTaskData(projectName)
   const viewState = useTaskViewState(projectName)
-  const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, setParentFilter, setSearchQuery, resetFilters, setSelectedTask, toggleBoardColumn } = viewState
+  const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, setParentFilter, setSearchQuery, resetFilters, setSelectedTask, setListSelected, toggleBoardColumn } = viewState
 
   const filteredTasks = useMemo(
     () => filterTasks(tasks, state.filters, state.searchQuery),
@@ -88,13 +89,25 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
         </ViewPane>
 
         <ViewPane visible={state.activeView === 'list'}>
-          <PlaceholderView
-            label="List"
-            loading={loading}
-            error={error}
-            count={filteredTasks.size}
-            mutate={mutate}
-          />
+          {loading ? (
+            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-dim)' }}>
+              <div className="text-[12px]">Loading tasks...</div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-red)' }}>
+              <div className="text-[12px]">Error: {error.message}</div>
+            </div>
+          ) : (
+            <TaskListView
+              tasks={tasks}
+              filteredTaskIds={filteredTaskIds}
+              onSelectTask={setSelectedTask}
+              selectedTaskId={state.selectedTaskId}
+              multiSelectedIds={state.listSelectedIds}
+              onSetMultiSelected={setListSelected}
+              mutate={mutate}
+            />
+          )}
         </ViewPane>
 
         <ViewPane visible={state.activeView === 'graph'}>
@@ -121,27 +134,6 @@ function ViewPane({ visible, children }: { visible: boolean; children: React.Rea
       }}
     >
       {children}
-    </div>
-  )
-}
-
-/** Placeholder for Board/List views — will be replaced by real implementations */
-function PlaceholderView({ label, loading, error, count }: {
-  label: string
-  loading: boolean
-  error: Error | null
-  count: number
-  mutate: ReturnType<typeof useTaskData>['mutate']
-}) {
-  return (
-    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-dim)' }}>
-      <div className="text-center">
-        <div className="text-[14px] font-medium" style={{ color: 'var(--sol-text)' }}>{label} View</div>
-        <div className="text-[12px] mt-1">
-          {loading ? 'Loading tasks...' : error ? `Error: ${error.message}` : `${count} tasks`}
-        </div>
-        <div className="text-[11px] mt-2" style={{ opacity: 0.6 }}>Coming soon</div>
-      </div>
     </div>
   )
 }
