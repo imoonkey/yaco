@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Write-only operations on doc/todo/tasks.json with cross-record validation."""
-import fcntl, json, sys
+import fcntl, json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,6 +10,7 @@ TERMINAL = {"done", "cancelled"}
 PRIORITIES = {"critical", "high", "normal", "low"}
 ESTIMATES = {"xs", "s", "m", "l", "xl"}
 BLOCK_REASONS = {"verification-failed", "human-review", "external", "dependency"}
+SLUG_RE = re.compile(r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$')
 
 LOCK_FILE = str(FILE.parent / ("."+FILE.name+".lock"))
 
@@ -80,6 +81,12 @@ def validate_types(data):
         die(f"estimate must be one of: {', '.join(sorted(ESTIMATES))}")
     if "blockReason" in data and data["blockReason"] not in BLOCK_REASONS:
         die(f"blockReason must be one of: {', '.join(sorted(BLOCK_REASONS))}")
+    if "worktree" in data:
+        wt = data["worktree"]
+        if not isinstance(wt, str):
+            die("worktree must be a string")
+        if not SLUG_RE.match(wt):
+            die("worktree must be a valid slug (alphanumeric and hyphens, no leading/trailing hyphens)")
 
 def validate_refs(tasks, tid, task):
     if task.get("parent") == tid or tid in task.get("depends", []):
@@ -147,6 +154,31 @@ def _ac_is_blank(ac):
         return len(ac) == 0 or all(not x.strip() for x in ac)
     return True
 
+def _scope_repo(entry):
+    """Derive repo root hint from a scope glob. Relative → '.', absolute → prefix."""
+    if not (entry.startswith("~/") or entry.startswith("/")):
+        return "."
+    prefix = entry.split("*")[0].rstrip("/")
+    parts = prefix.split("/")
+    # ~/workspace/<name>/... → ~/workspace/<name>
+    if parts[0] == "~" and len(parts) >= 3:
+        return "/".join(parts[:3])
+    return "/".join(parts[:3]) if len(parts) >= 3 else prefix
+
+def _warn_worktree_scope(tasks, wt):
+    """Advisory: warn if tasks sharing a worktree slug have scope in different repo sets."""
+    scoped = [(k, v["scope"]) for k, v in tasks.items()
+              if v.get("worktree") == wt and v.get("scope")]
+    if len(scoped) < 2:
+        return
+    repo_sets = {k: frozenset(_scope_repo(s) for s in sc) for k, sc in scoped}
+    first_key = next(iter(repo_sets))
+    ref = repo_sets[first_key]
+    for k, rs in repo_sets.items():
+        if rs != ref:
+            print(f"advisory: tasks sharing worktree '{wt}' have scope in different repo sets", file=sys.stderr)
+            return
+
 def cmd_set(tid, data):
     validate_types(data)
     def _do():
@@ -170,6 +202,9 @@ def cmd_set(tid, data):
         check_cycles(tasks)
         rollup(tasks, tid)
         save(tasks)
+        wt = tasks[tid].get("worktree")
+        if wt:
+            _warn_worktree_scope(tasks, wt)
     with_lock(_do)
 
 def cmd_rm(tid):

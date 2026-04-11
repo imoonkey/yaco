@@ -50,6 +50,7 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `tags` | no | Free-form string[] for semantic grouping (e.g. `["backend", "refactor"]`) |
 | `estimate` | no | `xs \| s \| m \| l \| xl` — helps scheduling and workload assessment |
 | `blockReason` | no | `verification-failed \| human-review \| external \| dependency` — distinguishes why a task is blocked |
+| `worktree` | no | Worktree slug for isolated execution (alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.worktrees/<slug>/`, branch: `task/<slug>` |
 | `created` | auto | ISO timestamp, set automatically by update-tasks.py on creation |
 | `updated` | auto | ISO timestamp, set automatically by update-tasks.py on every write |
 
@@ -88,6 +89,7 @@ Before writing any task, analyze and decide:
 - **parent**: Where does this task belong? Parent tasks are milestones (derived state). Leaf tasks are executable (managed state).
 - **depends**: What must finish first? Check existing tasks for ordering constraints. Can cross parent boundaries.
 - **scope**: What files will this task touch? Check for overlap with running tasks to enable safe parallelism.
+- **worktree**: Does this task need an isolated checkout? Large-scope work or work that touches build artifacts/dependencies benefits from worktree isolation. Parent typically specifies the slug, subtasks inherit.
 - **acceptCriteria**: What does done look like? Include both observable outcomes and runnable verification commands.
 - **state**: Is it ready to start, or blocked on something?
 
