@@ -3,6 +3,7 @@ import { useTaskData } from './hooks/useTaskData'
 import { useTaskViewState } from './hooks/useTaskViewState'
 import { TaskToolbar } from './TaskToolbar'
 import { TaskGraphScreen } from './TaskGraphScreen'
+import { TaskBoardView } from './board/TaskBoardView'
 import type { TaskV2 } from './model/taskModel'
 
 interface TaskScreenProps {
@@ -33,11 +34,16 @@ function filterTasks(tasks: Map<string, TaskV2>, filters: ReturnType<typeof useT
 export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
   const { tasks, loading, error, mutate } = useTaskData(projectName)
   const viewState = useTaskViewState(projectName)
-  const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, setParentFilter, setSearchQuery, resetFilters } = viewState
+  const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, setParentFilter, setSearchQuery, resetFilters, setSelectedTask, toggleBoardColumn } = viewState
 
   const filteredTasks = useMemo(
     () => filterTasks(tasks, state.filters, state.searchQuery),
     [tasks, state.filters, state.searchQuery],
+  )
+
+  const filteredTaskIds = useMemo(
+    () => new Set(filteredTasks.keys()),
+    [filteredTasks],
   )
 
   return (
@@ -59,13 +65,25 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
       {/* View container with crossfade */}
       <div className="flex-1 min-h-0 relative">
         <ViewPane visible={state.activeView === 'board'}>
-          <PlaceholderView
-            label="Board"
-            loading={loading}
-            error={error}
-            count={filteredTasks.size}
-            mutate={mutate}
-          />
+          {loading ? (
+            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-dim)' }}>
+              <div className="text-[12px]">Loading tasks...</div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-red)' }}>
+              <div className="text-[12px]">Error: {error.message}</div>
+            </div>
+          ) : (
+            <TaskBoardView
+              tasks={tasks}
+              filteredTaskIds={filteredTaskIds}
+              onSelectTask={setSelectedTask}
+              selectedTaskId={state.selectedTaskId}
+              mutate={mutate}
+              collapsedColumns={state.boardColumnCollapsed}
+              onToggleColumn={toggleBoardColumn}
+            />
+          )}
         </ViewPane>
 
         <ViewPane visible={state.activeView === 'list'}>
