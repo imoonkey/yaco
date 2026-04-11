@@ -322,6 +322,7 @@ export async function browseDirs(prefix: string): Promise<BrowseEntry[]> {
 export interface GitStatusResponse {
   changes: GitChange[]
   stale: boolean
+  stats?: { added: number; deleted: number }
 }
 
 export function useGitStatus(projectName: string | null) {
@@ -372,6 +373,6 @@ export async function fetchGitRefs(projectName: string): Promise<GitRefsResult> 
   return fetchJson<GitRefsResult>(`/git/${encodeURIComponent(projectName)}/refs`)
 }
 
-export async function fetchGitCompare(projectName: string, base: string, compare: string): Promise<{ files: GitChange[] }> {
+export async function fetchGitCompare(projectName: string, base: string, compare: string): Promise<{ files: GitChange[]; stats: { added: number; deleted: number } }> {
   return fetchJson(`/git/${encodeURIComponent(projectName)}/compare?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`)
 }

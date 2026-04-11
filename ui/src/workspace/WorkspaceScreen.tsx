@@ -97,7 +97,7 @@ export function Workspace({
   const [compareMode, setCompareMode] = useState(false)
   const [compareBase, setCompareBase] = useState('main')
   const [compareHead, setCompareHead] = useState('HEAD')
-  const [compareResult, setCompareResult] = useState<{ files: GitChange[]; key: string } | null>(null)
+  const [compareResult, setCompareResult] = useState<{ files: GitChange[]; stats: { added: number; deleted: number }; key: string } | null>(null)
 
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
@@ -118,8 +118,8 @@ export function Workspace({
     const key = `${compareBase}:${compareHead}`
     const controller = new AbortController()
     fetchGitCompare(projectName, compareBase, compareHead)
-      .then(data => { if (!controller.signal.aborted) setCompareResult({ files: data.files, key }) })
-      .catch(() => { if (!controller.signal.aborted) setCompareResult({ files: [], key }) })
+      .then(data => { if (!controller.signal.aborted) setCompareResult({ files: data.files, stats: data.stats, key }) })
+      .catch(() => { if (!controller.signal.aborted) setCompareResult({ files: [], stats: { added: 0, deleted: 0 }, key }) })
     return () => controller.abort()
   }, [compareMode, compareBase, compareHead, projectName])
 
@@ -313,8 +313,16 @@ export function Workspace({
 
   const changesTitle = compareMode ? 'Compare' : (gitStale ? 'Changes (stale)' : undefined)
 
+  const changesStats = compareMode ? compareResult?.stats : gitData?.stats
+
   const changesActions = (
-    <div className="flex gap-0.5 items-center">
+    <div className="flex gap-1 items-center">
+      {changesStats && (changesStats.added > 0 || changesStats.deleted > 0) && (
+        <span className="flex items-center gap-1 text-[10px] font-semibold mr-0.5" style={{ letterSpacing: '-0.01em' }}>
+          {changesStats.added > 0 && <span style={{ color: 'var(--sol-green)' }}>+{changesStats.added}</span>}
+          {changesStats.deleted > 0 && <span style={{ color: 'var(--sol-red)' }}>-{changesStats.deleted}</span>}
+        </span>
+      )}
       <button
         onClick={() => setCompareMode(m => !m)}
         className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer"

@@ -16,6 +16,13 @@ function parseStatus(xy: string): GitChange['status'] {
   return 'M'
 }
 
+/** Parse `git diff --shortstat` output → { added, deleted } */
+function parseShortstat(output: string): { added: number; deleted: number } {
+  const added = output.match(/(\d+) insertion/)
+  const deleted = output.match(/(\d+) deletion/)
+  return { added: added ? Number(added[1]) : 0, deleted: deleted ? Number(deleted[1]) : 0 }
+}
+
 /** Last-known-good git snapshots per project */
 const gitSnapshots = new Map<string, GitChange[]>()
 
@@ -90,8 +97,16 @@ app.get('/:project/status', withProject, async (c) => {
       status: parseStatus(line.substring(0, 2)),
     }))
 
+  // Line-level stats via shortstat
+  const statResult = spawnSync('git', ['diff', '--shortstat'], {
+    cwd: proj.path,
+    encoding: 'utf-8',
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+  })
+  const stats = parseShortstat(statResult.stdout || '')
+
   gitSnapshots.set(proj.name, changes)
-  return c.json({ changes, stale: false })
+  return c.json({ changes, stale: false, stats })
 })
 
 // GET /:project/diff?path=...&base=REF&compare=REF — git diff for a specific file
@@ -176,7 +191,15 @@ app.get('/:project/compare', withProject, async (c) => {
       }
     })
 
-  return c.json({ files })
+  // Line-level stats
+  const statResult = spawnSync('git', ['diff', '--shortstat', base, compare], {
+    cwd: proj.path,
+    encoding: 'utf-8',
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+  })
+  const stats = parseShortstat(statResult.stdout || '')
+
+  return c.json({ files, stats })
 })
 
 export const gitRoutes = app
