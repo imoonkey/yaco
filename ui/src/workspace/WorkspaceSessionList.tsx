@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Pin } from 'lucide-react'
+import { Pin, FolderGit2 } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 
 import { Menu, MenuItem, useContextMenu } from '../components/Menu'
@@ -117,6 +117,15 @@ export function SessionItem({
         <div className="min-w-0 flex-1 line-clamp-2">
           <span>{session.name}</span>
           {pendingName && <span style={{ color: 'var(--sol-muted)' }}>{` → ${pendingName}`}</span>}
+          {session.worktree && (
+            <span
+              className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[9px] font-medium ml-1.5 align-middle"
+              style={{ color: 'var(--sol-muted)', backgroundColor: 'var(--sol-subtle-bg)' }}
+            >
+              <FolderGit2 size={9} />
+              {session.worktree}
+            </span>
+          )}
           {session.summary && (
             <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-muted)' }}>{session.summary}</span>
           )}

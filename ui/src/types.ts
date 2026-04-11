@@ -33,6 +33,7 @@ export interface AgentSession {
   status: SessionStatus
   project: string
   summary: string
+  worktree?: string
 }
 
 export interface ProgressEntry {

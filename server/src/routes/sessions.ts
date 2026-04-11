@@ -5,6 +5,7 @@ import { closeMultmuxSession, readSessionsFromStateFiles, readAllSessionsFromSta
 import { loadProjects } from '../lib/projects'
 import { resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
+import { extractWorktreeSlug } from '../lib/worktree'
 
 const app = new Hono()
 
@@ -22,7 +23,11 @@ app.get('/', async (c) => {
   }
 
   const summaries = resolveSessionSummaries(multmuxSessions)
-  const enriched = multmuxSessions.map(s => ({ ...s, summary: summaries.get(s.name) ?? '' }))
+  const enriched = multmuxSessions.map(s => ({
+    ...s,
+    summary: summaries.get(s.name) ?? '',
+    worktree: extractWorktreeSlug(s.sessionPath),
+  }))
 
   const filteredShell = projectName
     ? shellSessions.filter(s => s.project === projectName)

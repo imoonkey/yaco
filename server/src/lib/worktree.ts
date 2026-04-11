@@ -48,6 +48,12 @@ export async function getWorktreeStatus(projectPath: string, slug: string): Prom
   return { active: true, dirty, branch, ...aheadBehind }
 }
 
+/** Extract worktree slug from a session path, if it's inside a .worktrees directory */
+export function extractWorktreeSlug(sessionPath: string): string | undefined {
+  const match = sessionPath.match(/[/\\]\.worktrees[/\\]([^/\\]+)/)
+  return match?.[1]
+}
+
 /** Batch-resolve worktree statuses for all unique slugs found in tasks */
 export async function getWorktreeStatuses(
   projectPath: string,
