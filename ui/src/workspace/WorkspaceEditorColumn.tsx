@@ -6,7 +6,7 @@ import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { VoiceControl } from '../components/VoiceControl'
-import { TaskGraphScreen } from '../tasks/TaskGraphScreen'
+import { TaskScreen } from '../tasks/TaskScreen'
 import { clampLine } from './markdown'
 import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
@@ -173,7 +173,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         onDraftChange={(content) => activeFilePath && onUpdateDraft(activeFilePath, content)}
         onSave={async (content) => { if (activeFilePath) await onSaveFile(activeFilePath, content) }}
         diffHunks={editorDiffHunks}
-        tasksPane={activeTasksTab ? <TaskGraphScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} /> : null}
+        tasksPane={activeTasksTab ? <TaskScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} /> : null}
         insertText={editorInsert?.text}
         insertRequestKey={editorInsert?.key}
         autocompleteEnabled={autocompleteEnabled}
