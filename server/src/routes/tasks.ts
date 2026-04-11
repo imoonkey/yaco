@@ -6,6 +6,7 @@ import { Hono } from 'hono'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
 import { emitRefresh } from '../lib/notify'
+import { getWorktreeStatuses } from '../lib/worktree'
 
 const SCRIPT_NAME = 'scripts/update-tasks.py'
 const GLOBAL_SCRIPT = join(
@@ -62,7 +63,17 @@ app.get('/:project', withProject, async (c) => {
   const tasksPath = join(proj.path, 'doc/todo/tasks.json')
   if (!existsSync(tasksPath)) return fail(c, 404, 'tasks.json not found')
   const raw = await readFile(tasksPath, 'utf-8')
-  return c.json({ tasks: JSON.parse(raw) })
+  const tasks = JSON.parse(raw) as Record<string, Record<string, unknown>>
+
+  const statuses = await getWorktreeStatuses(proj.path, tasks as Record<string, { worktree?: string }>)
+  for (const task of Object.values(tasks)) {
+    const slug = task.worktree as string | undefined
+    if (slug && statuses.has(slug)) {
+      task.worktreeStatus = statuses.get(slug)
+    }
+  }
+
+  return c.json({ tasks })
 })
 
 // PATCH /:project/:taskId — Update task (partial)
