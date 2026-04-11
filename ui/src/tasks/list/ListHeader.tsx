@@ -25,7 +25,7 @@ export function ListHeader({ sortCol, sortDir, onSort }: ListHeaderProps) {
           <button
             key={col.key}
             onClick={() => onSort(col.key)}
-            className="flex items-center gap-0.5 text-[11px] font-bold uppercase tracking-[0.04em] cursor-pointer select-none hover:bg-sol-hover-bg px-1 h-full rounded"
+            className="flex items-center gap-0.5 text-[11px] font-bold uppercase tracking-[0.06em] cursor-pointer select-none hover:bg-sol-hover-bg px-1 h-full rounded"
             style={{
               color: 'var(--sol-muted)',
               width: col.width,

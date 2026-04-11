@@ -22,8 +22,11 @@ export function PriorityTag({ priority }: { priority: Priority }) {
 
   return (
     <span
-      className="text-[10px] font-bold uppercase tracking-wide"
-      style={{ color }}
+      className="text-[10px] font-bold uppercase tracking-[0.04em] rounded px-1 py-px"
+      style={{
+        color,
+        backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)`,
+      }}
     >
       {PRIORITY_LABELS[priority]}
     </span>

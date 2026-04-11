@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ChevronDown, ChevronRight, X, ArrowRight } from 'lucide-react'
 import type { TaskGraphModel, TaskState, TaskGraphTask } from './taskGraphModel'
 import type { Selection } from './taskGraphSelection'
 import { STATE_COLORS } from './taskGraphConstants'
@@ -45,7 +46,7 @@ function CollapsibleSection({ title, count, defaultExpanded, children }: {
         className="flex items-center gap-1 w-full text-left mb-1 cursor-pointer"
         style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}
       >
-        <span className="text-[10px]">{expanded ? '\u25BC' : '\u25B6'}</span>
+        {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
         <span>{title} ({count})</span>
       </button>
       <div style={{
@@ -90,7 +91,10 @@ function SegmentedProgressBar({ tasks }: { tasks: TaskGraphTask[] }) {
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
         {segments.map(seg => (
           <span key={seg.state} className="inline-flex items-center gap-1 text-[11px]" style={{ color: 'var(--sol-muted)', fontWeight: 500 }}>
-            <span style={{ color: STATE_COLORS[seg.state] }}>{'\u25CF'}</span>
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ backgroundColor: STATE_COLORS[seg.state] }}
+            />
             {counts[seg.state]} {STATE_LABELS[seg.state]?.toLowerCase()}
           </span>
         ))}
@@ -107,11 +111,12 @@ function DepRow({ task, onNavigate, showState }: {
   return (
     <button
       onClick={() => onNavigate(task.id)}
-      className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors"
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-list-hover-bg)')}
-      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+      className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
     >
-      <span style={{ color: STATE_COLORS[task.state] }}>{'\u25CF'}</span>
+      <span
+        className="w-1.5 h-1.5 rounded-full shrink-0"
+        style={{ backgroundColor: STATE_COLORS[task.state] }}
+      />
       <span className="flex-1 truncate" style={{ color: 'var(--sol-text)' }}>{task.title}</span>
       {showState && (
         <span className="text-[11px] shrink-0" style={{ color: STATE_COLORS[task.state] }}>
@@ -145,13 +150,11 @@ function Breadcrumb({ taskId, graph, onNavigate }: {
     <div className="flex items-center gap-1 flex-wrap text-[11px]" style={{ color: 'var(--sol-muted)' }}>
       {ancestors.map((a, i) => (
         <span key={a.id} className="flex items-center gap-1">
-          {i > 0 && <span>{'\u203A'}</span>}
+          {i > 0 && <ChevronRight size={10} />}
           <button
             onClick={() => onNavigate(a.id)}
-            className="cursor-pointer transition-colors"
+            className="cursor-pointer transition-colors hover:text-[var(--sol-text)]"
             style={{ color: 'var(--sol-muted)' }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-text)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--sol-muted)')}
           >
             {a.title}
           </button>
@@ -268,7 +271,7 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
           <ul className="list-none pl-0">
             {task.acceptCriteria.map((ac, i) => (
               <li key={i} className="flex items-start gap-1.5 mb-0.5">
-                <span style={{ color: 'var(--sol-muted)' }}>{'\u2610'}</span>
+                <span className="w-3 h-3 mt-0.5 rounded-sm shrink-0" style={{ border: '1px solid var(--sol-muted)' }} />
                 <span>{ac}</span>
               </li>
             ))}
@@ -310,11 +313,9 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
             <button
               key={rootId}
               onClick={() => onNavigate(rootId)}
-              className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors"
-              onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-list-hover-bg)')}
-              onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
+              className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
             >
-              <span style={{ color: 'var(--sol-muted)' }}>{'\u2192'}</span>
+              <ArrowRight size={12} style={{ color: 'var(--sol-muted)' }} />
               <span>{title}</span>
               <span className="text-[10px]" style={{ color: 'var(--sol-muted)' }}>
                 ({count} dep{count !== 1 ? 's' : ''})
@@ -374,11 +375,14 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
   if (isMobile) {
     return (
       <div
+        role="complementary"
+        aria-label="Task details"
         className="absolute bottom-0 left-0 right-0 rounded-t-xl shadow-lg overflow-y-auto z-20"
         style={{
-          maxHeight: '40vh',
+          maxHeight: '50vh',
           backgroundColor: 'var(--sol-bg)',
           borderTop: '1px solid var(--sol-border)',
+          animation: 'panel-slide-up 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
         }}
       >
         <div className="flex justify-center py-2" onClick={onClose} style={{ cursor: 'pointer' }}>
@@ -391,23 +395,28 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
 
   return (
     <div
+      role="complementary"
+      aria-label="Task details"
       className="shrink-0 overflow-y-auto"
       style={{
-        width: 300,
+        width: 360,
         backgroundColor: 'var(--sol-bg)',
         borderLeft: '1px solid var(--sol-border)',
         boxShadow: '-2px 0 8px rgba(0,0,0,0.04)',
-        transition: 'transform 200ms ease-out',
+        animation: 'panel-slide-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
       }}
     >
-      <div className="flex justify-end p-2">
+      <div className="flex items-center justify-between p-2">
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+          Task Details
+        </span>
         <button
           onClick={onClose}
-          className="w-6 h-6 rounded text-[14px] cursor-pointer transition-colors"
-          style={{ color: 'var(--sol-muted)' }}
-          title="Close"
+          className="w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
+          style={{ color: 'var(--sol-base1)' }}
+          title="Close (Esc)"
         >
-          {'\u2715'}
+          <X size={14} />
         </button>
       </div>
       {content}

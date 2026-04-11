@@ -148,7 +148,8 @@ function ViewPane({ visible, children }: { visible: boolean; children: React.Rea
 
 function LoadingState() {
   return (
-    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
+    <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+      <div className="loading-spinner" />
       <div className="text-[12px]">Loading tasks...</div>
     </div>
   )
@@ -156,8 +157,9 @@ function LoadingState() {
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-red)' }}>
-      <div className="text-[12px]">Error: {message}</div>
+    <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-red)' }}>
+      <div className="text-[13px] font-semibold">Failed to load tasks</div>
+      <div className="text-[12px]" style={{ color: 'var(--sol-muted)' }}>{message}</div>
     </div>
   )
 }

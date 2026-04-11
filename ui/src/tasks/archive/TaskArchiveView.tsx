@@ -147,7 +147,7 @@ function DateGroup({ date, entries }: { date: string; entries: FlatArchiveEntry[
   return (
     <div>
       <div
-        className="sticky top-0 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide"
+        className="sticky top-0 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em]"
         style={{
           color: 'var(--sol-text-dim)',
           backgroundColor: 'var(--sol-header-bg)',

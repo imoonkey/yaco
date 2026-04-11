@@ -35,7 +35,7 @@ export function TaskBoardView({
   } = useTaskBoard(tasks, filteredTaskIds, mutate)
 
   return (
-    <div className="flex gap-3 h-full p-3 overflow-x-auto">
+    <div className="flex gap-2 h-full p-2 overflow-x-auto">
       {COLUMN_ORDER.map(state => (
         <BoardColumn
           key={state}

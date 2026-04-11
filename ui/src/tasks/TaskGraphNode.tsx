@@ -146,7 +146,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
             textAnchor="middle"
             fill={'var(--sol-base1)'}
           >
-            {isCollapsed ? '\u25B6' : '\u25BC'}
+            {isCollapsed ? '\u25B8' : '\u25BE'}
           </text>
         </g>
       )}

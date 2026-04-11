@@ -63,6 +63,7 @@ export const ListRow = memo(function ListRow({
 
   return (
     <div
+      role="row"
       className="flex items-center px-2 border-b cursor-pointer hover:bg-sol-hover-bg"
       style={{
         height: rowHeight,
@@ -123,9 +124,6 @@ export const ListRow = memo(function ListRow({
             return (
               <div key={col.key} className="flex items-center" style={cellStyle}>
                 <PriorityTag priority={task.priority} />
-                {task.priority === 'normal' && (
-                  <span className="text-[11px]" style={{ color: 'var(--sol-base1)' }}>&mdash;</span>
-                )}
               </div>
             )
           case 'agent':

@@ -111,7 +111,7 @@ export function TaskListView({
           </div>
         </div>
         <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
-        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0" onScroll={handleScroll}>
+        <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0" role="grid" onScroll={handleScroll}>
           <div style={{ height: topPad }} />
           {sortedTasks.slice(startIdx, endIdx).map(task => (
             <ListRow

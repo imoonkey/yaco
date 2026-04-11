@@ -114,7 +114,7 @@ export function BoardColumn({
 
       {/* Card list */}
       {!collapsed && (
-        <div className="flex-1 overflow-y-auto p-1.5" style={{ gap: 6, display: 'flex', flexDirection: 'column' }}>
+        <div className="flex-1 overflow-y-auto p-1" role="list" aria-label={`${STATE_LABELS[state] ?? state} tasks`} style={{ gap: 6, display: 'flex', flexDirection: 'column' }}>
           {visibleTasks.map(task => (
             <BoardCard
               key={task.id}
@@ -138,10 +138,10 @@ export function BoardColumn({
           )}
           {tasks.length === 0 && (
             <div
-              className="text-[11px] text-center py-4"
+              className="text-[11px] text-center py-6 italic"
               style={{ color: 'var(--sol-muted)' }}
             >
-              No tasks
+              No tasks in this state
             </div>
           )}
         </div>

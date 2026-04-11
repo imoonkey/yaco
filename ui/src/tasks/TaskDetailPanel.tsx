@@ -4,8 +4,6 @@ import { useIsMobile } from '../hooks/useIsMobile'
 import type { TaskV2, TaskState, Priority, RawTaskV2 } from './model/taskModel'
 import type { TaskMutations } from './hooks/useTaskData'
 import { STATE_COLORS } from './taskGraphConstants'
-import { StateBadge } from './shared/StateBadge'
-import { PriorityTag } from './shared/PriorityTag'
 import { StateDot } from './shared/StateDot'
 import { InlineEdit } from './shared/InlineEdit'
 
@@ -33,13 +31,16 @@ const ESTIMATE_OPTIONS = [
   { value: 'xl', label: 'XL' },
 ]
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
+function SectionHeader({ children, divider = true }: { children: React.ReactNode; divider?: boolean }) {
   return (
-    <div
-      className="text-[11px] font-bold uppercase tracking-[0.06em]"
-      style={{ color: 'var(--sol-muted)' }}
-    >
-      {children}
+    <div>
+      <div
+        className="text-[11px] font-bold uppercase tracking-[0.06em]"
+        style={{ color: 'var(--sol-muted)' }}
+      >
+        {children}
+      </div>
+      {divider && <div className="mt-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />}
     </div>
   )
 }
@@ -177,14 +178,14 @@ export function TaskDetailPanel({
       <InlineEdit
         value={task.title}
         onSave={v => patch('title', v)}
-        displayClassName="text-[18px] font-bold"
-        className="text-[18px] font-bold"
+        displayClassName="text-[18px] font-bold tracking-[-0.02em]"
+        className="text-[18px] font-bold tracking-[-0.02em]"
       />
 
       {/* State / Priority / Estimate row */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-1.5">
-          <SectionHeader>State</SectionHeader>
+          <SectionHeader divider={false}>State</SectionHeader>
           <InlineEdit
             value={task.state}
             onSave={v => patch('state', v)}
@@ -194,7 +195,7 @@ export function TaskDetailPanel({
           />
         </div>
         <div className="flex items-center gap-1.5">
-          <SectionHeader>Priority</SectionHeader>
+          <SectionHeader divider={false}>Priority</SectionHeader>
           <InlineEdit
             value={task.priority}
             onSave={v => patch('priority', v)}
@@ -204,7 +205,7 @@ export function TaskDetailPanel({
           />
         </div>
         <div className="flex items-center gap-1.5">
-          <SectionHeader>Estimate</SectionHeader>
+          <SectionHeader divider={false}>Estimate</SectionHeader>
           <InlineEdit
             value={task.estimate ?? ''}
             onSave={v => patch('estimate', v || null)}
@@ -213,12 +214,6 @@ export function TaskDetailPanel({
             displayClassName="text-[11px] font-semibold"
           />
         </div>
-      </div>
-
-      {/* Badges summary */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <StateBadge state={task.state} />
-        <PriorityTag priority={task.priority} />
       </div>
 
       {/* Agent */}
@@ -374,6 +369,8 @@ export function TaskDetailPanel({
     return (
       <div
         ref={panelRef}
+        role="complementary"
+        aria-label="Task details"
         className="absolute bottom-0 left-0 right-0 rounded-t-xl shadow-lg overflow-y-auto z-20"
         style={{
           maxHeight: '50vh',
@@ -394,6 +391,8 @@ export function TaskDetailPanel({
   return (
     <div
       ref={panelRef}
+      role="complementary"
+      aria-label="Task details"
       className="shrink-0 overflow-y-auto"
       style={{
         width: 360,

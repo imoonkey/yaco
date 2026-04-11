@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { Minus, Plus, Maximize2, ChevronsRight, ChevronsDown } from 'lucide-react'
 import type { TaskState } from './taskGraphModel'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { STATE_COLORS } from './taskGraphConstants'
@@ -80,30 +81,30 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
       <div className="flex items-center gap-1">
         <button
           onClick={onZoomOut}
-          className="w-7 h-7 rounded text-[14px] font-bold cursor-pointer transition-colors"
+          className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
           style={{ color: 'var(--sol-text)' }}
           title="Zoom out"
         >
-          -
+          <Minus size={14} />
         </button>
         <span className="text-[11px] font-medium w-10 text-center" style={{ color: 'var(--sol-muted)' }}>
           {pct}%
         </span>
         <button
           onClick={onZoomIn}
-          className="w-7 h-7 rounded text-[14px] font-bold cursor-pointer transition-colors"
+          className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
           style={{ color: 'var(--sol-text)' }}
           title="Zoom in"
         >
-          +
+          <Plus size={14} />
         </button>
         <button
           onClick={onFitToView}
-          className="w-7 h-7 rounded text-[13px] cursor-pointer transition-colors"
+          className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
           style={{ color: 'var(--sol-text)' }}
           title="Fit to view"
         >
-          &#x2B1C;
+          <Maximize2 size={14} />
         </button>
       </div>
 
@@ -114,21 +115,21 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
         {!allCollapsed && (
           <button
             onClick={onCollapseAll}
-            className="w-7 h-7 rounded text-[12px] cursor-pointer transition-colors"
+            className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
             style={{ color: 'var(--sol-text)' }}
             title="Collapse all groups"
           >
-            {'\u25B6\u25B6'}
+            <ChevronsRight size={14} />
           </button>
         )}
         {!allExpanded && (
           <button
             onClick={onExpandAll}
-            className="w-7 h-7 rounded text-[12px] cursor-pointer transition-colors"
+            className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
             style={{ color: 'var(--sol-text)' }}
             title="Expand all groups"
           >
-            {'\u25BC\u25BC'}
+            <ChevronsDown size={14} />
           </button>
         )}
       </div>
