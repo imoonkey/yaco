@@ -31,6 +31,7 @@ export type WorkspaceLayoutProps = {
   changesBadge?: number
   changesTitle?: string
   changesActions?: ReactNode
+  changesStats?: ReactNode
   changesBody: ReactNode
   tasksBody: ReactNode
   sessionsActions: ReactNode
@@ -70,7 +71,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
     projectName, projectListBody, projectActions, explorerActions, explorerBody,
     searchBody,
-    gitStale, changesBadge, changesTitle, changesActions, changesBody, tasksBody,
+    gitStale, changesBadge, changesTitle, changesActions, changesStats, changesBody, tasksBody,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
     rootRef, sidebarRef, left, right, searchSplit, searchHeight, changesSplit, changesHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
@@ -124,7 +125,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title={projectName || 'Explorer'} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
                 {showExplorer && <div className="flex-1 min-h-0 flex flex-col">{explorerBody}</div>}
 
-                <SectionHeader title={changesTitle ?? (gitStale ? 'Changes (stale)' : 'Changes')} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} actions={changesActions} />
+                <SectionHeader title={changesTitle ?? (gitStale ? 'Changes (stale)' : 'Changes')} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} stats={changesStats} actions={changesActions} />
                 {showChanges && <div className="flex-1 min-h-0 overflow-y-auto py-1">{changesBody}</div>}
 
                 <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
@@ -170,7 +171,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                   />
                 )}
 
-                <SectionHeader title={changesTitle ?? (gitStale ? 'Changes (stale)' : 'Changes')} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} actions={changesActions} />
+                <SectionHeader title={changesTitle ?? (gitStale ? 'Changes (stale)' : 'Changes')} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} stats={changesStats} actions={changesActions} />
                 {showChanges && (
                   <div
                     className="min-h-0 shrink-0 py-1"

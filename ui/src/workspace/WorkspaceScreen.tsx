@@ -313,16 +313,16 @@ export function Workspace({
 
   const changesTitle = compareMode ? 'Compare' : (gitStale ? 'Changes (stale)' : undefined)
 
-  const changesStats = compareMode ? compareResult?.stats : gitData?.stats
+  const rawStats = compareMode ? compareResult?.stats : gitData?.stats
+  const changesStatsEl = rawStats && (rawStats.added > 0 || rawStats.deleted > 0) ? (
+    <span className="flex items-center gap-1 text-[10px] font-semibold mr-1" style={{ letterSpacing: '-0.01em' }}>
+      {rawStats.added > 0 && <span style={{ color: 'var(--sol-green)' }}>+{rawStats.added}</span>}
+      {rawStats.deleted > 0 && <span style={{ color: 'var(--sol-red)' }}>-{rawStats.deleted}</span>}
+    </span>
+  ) : null
 
   const changesActions = (
-    <div className="flex gap-1 items-center">
-      {changesStats && (changesStats.added > 0 || changesStats.deleted > 0) && (
-        <span className="flex items-center gap-1 text-[10px] font-semibold mr-0.5" style={{ letterSpacing: '-0.01em' }}>
-          {changesStats.added > 0 && <span style={{ color: 'var(--sol-green)' }}>+{changesStats.added}</span>}
-          {changesStats.deleted > 0 && <span style={{ color: 'var(--sol-red)' }}>-{changesStats.deleted}</span>}
-        </span>
-      )}
+    <div className="flex gap-0.5 items-center">
       <button
         onClick={() => setCompareMode(m => !m)}
         className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer"
@@ -592,6 +592,7 @@ export function Workspace({
       changesBadge={compareMode ? (compareFiles.length || undefined) : (changes.length || undefined)}
       changesTitle={changesTitle}
       changesActions={changesActions}
+      changesStats={changesStatsEl}
       changesBody={changesBody}
       tasksBody={tasksBody}
       sessionsActions={sessionSection.sessionsActions}
