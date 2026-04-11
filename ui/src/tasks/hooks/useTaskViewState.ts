@@ -1,4 +1,4 @@
-import { useReducer, useEffect, useCallback } from 'react'
+import { useReducer, useEffect, useCallback, useRef } from 'react'
 import type { TaskState, Priority } from '../model/taskModel'
 
 export type ActiveView = 'board' | 'list' | 'graph'
@@ -28,8 +28,8 @@ export type TaskViewState = {
   graphCollapsedIds: Set<string>
 }
 
-const ALL_STATES: Set<TaskState> = new Set(['ready', 'running', 'done', 'blocked', 'cancelled'])
-const ALL_PRIORITIES: Set<Priority> = new Set(['critical', 'high', 'normal', 'low'])
+const ALL_STATES = new Set<TaskState>(['ready', 'running', 'done', 'blocked', 'cancelled'])
+const ALL_PRIORITIES = new Set<Priority>(['critical', 'high', 'normal', 'low'])
 
 function defaultState(): TaskViewState {
   return {
@@ -122,6 +122,7 @@ type Action =
   | { type: 'TOGGLE_GRAPH_COLLAPSED'; id: string }
   | { type: 'SET_GRAPH_COLLAPSED'; ids: Set<string> }
   | { type: 'RESET_FILTERS' }
+  | { type: 'LOAD_PROJECT'; project: string }
 
 function toggleInSet<T>(set: Set<T>, value: T): Set<T> {
   const next = new Set(set)
@@ -166,11 +167,22 @@ function reducer(state: TaskViewState, action: Action): TaskViewState {
       return { ...state, graphCollapsedIds: action.ids }
     case 'RESET_FILTERS':
       return { ...state, filters: defaultState().filters, searchQuery: '' }
+    case 'LOAD_PROJECT':
+      return loadState(action.project)
   }
 }
 
 export function useTaskViewState(projectName: string) {
   const [state, dispatch] = useReducer(reducer, projectName, loadState)
+  const prevProjectRef = useRef(projectName)
+
+  // Reset state when project changes
+  useEffect(() => {
+    if (prevProjectRef.current !== projectName) {
+      prevProjectRef.current = projectName
+      dispatch({ type: 'LOAD_PROJECT', project: projectName })
+    }
+  }, [projectName])
 
   // Persist on change
   useEffect(() => {

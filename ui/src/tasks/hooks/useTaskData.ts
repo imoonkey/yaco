@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSSERefresh } from '../../hooks/useSSE'
 import { ApiError } from '../../lib/apiError'
-import { normalizeTaskMap, type TaskV2, type RawTaskV2 } from '../model/taskModel'
+import { normalizeTask, normalizeTaskMap, type TaskV2, type RawTaskV2 } from '../model/taskModel'
 import { toast } from 'sonner'
 
 const API = '/api'
@@ -74,11 +74,10 @@ export function useTaskData(projectName: string): UseTaskDataResult {
   const base = `/tasks/${encodeURIComponent(projectName)}`
 
   const updateTask = useCallback(async (id: string, patch: Partial<RawTaskV2>) => {
-    const prev = new Map(tasks)
-    // Optimistic: merge patch into existing task
     const existing = tasks.get(id)
     if (existing) {
-      setTasks(new Map(tasks).set(id, { ...existing, ...patch }))
+      const merged = { ...existing, ...patch }
+      setTasks(new Map(tasks).set(id, normalizeTask(id, merged as RawTaskV2)))
     }
     try {
       await fetchApi(`${base}/${encodeURIComponent(id)}`, {
@@ -87,15 +86,12 @@ export function useTaskData(projectName: string): UseTaskDataResult {
         body: JSON.stringify(patch),
       })
     } catch (e) {
-      setTasks(prev)
+      refresh()
       toast.error(e instanceof Error ? e.message : 'Failed to update task')
     }
-  }, [tasks, base])
+  }, [tasks, base, refresh])
 
   const createTask = useCallback(async (id: string, task: RawTaskV2) => {
-    const prev = new Map(tasks)
-    // Optimistic: add normalized task
-    const { normalizeTask } = await import('../model/taskModel')
     setTasks(new Map(tasks).set(id, normalizeTask(id, task)))
     try {
       await fetchApi(`${base}/${encodeURIComponent(id)}`, {
@@ -104,30 +100,31 @@ export function useTaskData(projectName: string): UseTaskDataResult {
         body: JSON.stringify(task),
       })
     } catch (e) {
-      setTasks(prev)
+      refresh()
       toast.error(e instanceof Error ? e.message : 'Failed to create task')
     }
-  }, [tasks, base])
+  }, [tasks, base, refresh])
 
   const deleteTask = useCallback(async (id: string) => {
-    const prev = new Map(tasks)
     const next = new Map(tasks)
     next.delete(id)
     setTasks(next)
     try {
       await fetchApi(`${base}/${encodeURIComponent(id)}`, { method: 'DELETE' })
     } catch (e) {
-      setTasks(prev)
+      refresh()
       toast.error(e instanceof Error ? e.message : 'Failed to delete task')
     }
-  }, [tasks, base])
+  }, [tasks, base, refresh])
 
   const bulkUpdate = useCallback(async (ids: string[], patch: Partial<RawTaskV2>) => {
-    const prev = new Map(tasks)
     const next = new Map(tasks)
     for (const id of ids) {
       const existing = next.get(id)
-      if (existing) next.set(id, { ...existing, ...patch })
+      if (existing) {
+        const merged = { ...existing, ...patch }
+        next.set(id, normalizeTask(id, merged as RawTaskV2))
+      }
     }
     setTasks(next)
     try {
@@ -137,10 +134,10 @@ export function useTaskData(projectName: string): UseTaskDataResult {
         body: JSON.stringify({ ids, patch }),
       })
     } catch (e) {
-      setTasks(prev)
+      refresh()
       toast.error(e instanceof Error ? e.message : 'Failed to bulk update tasks')
     }
-  }, [tasks, base])
+  }, [tasks, base, refresh])
 
   return {
     tasks,

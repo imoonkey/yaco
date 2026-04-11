@@ -19,7 +19,7 @@ export type RawTaskV2 = RawTaskEntry & {
   estimate?: Estimate
   blockReason?: BlockReason
   design?: string | null
-  resources?: string[]
+  resources?: string | string[]
   requireHumanReview?: boolean
 }
 
@@ -74,7 +74,7 @@ export function normalizeTask(id: string, raw: RawTaskV2): TaskV2 {
     estimate: raw.estimate ?? null,
     blockReason: raw.blockReason ?? null,
     design: raw.design ?? null,
-    resources: raw.resources ?? [],
+    resources: Array.isArray(raw.resources) ? raw.resources : raw.resources ? [raw.resources] : [],
     requireHumanReview: raw.requireHumanReview ?? false,
   }
 }
