@@ -218,7 +218,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
   return (
     <div className="shrink-0" style={{ borderBottom: '1px solid var(--sol-border)' }}>
       {/* View tabs row */}
-      <div className="flex items-center px-3" style={{ height: 36, backgroundColor: 'var(--sol-header-bg)' }}>
+      <div className="flex items-center px-3" style={{ height: 28, backgroundColor: 'var(--sol-bg)' }}>
         <div className="flex items-center gap-0">
           {VIEW_TABS.map(tab => {
             const Icon = tab.icon
@@ -227,7 +227,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
               <button
                 key={tab.key}
                 onClick={() => onSetView(tab.key)}
-                className="flex items-center gap-1.5 px-2.5 h-[36px] cursor-pointer transition-colors relative"
+                className="flex items-center gap-1.5 px-2.5 h-[28px] cursor-pointer transition-colors relative"
                 style={{
                   color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-muted)',
                   fontWeight: isActive ? 600 : 400,
@@ -276,7 +276,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
       </div>
 
       {/* Filter bar row */}
-      <div className="flex items-center gap-1.5 px-3" style={{ height: 30, backgroundColor: 'var(--sol-bg)', borderTop: '1px solid var(--sol-border)' }}>
+      <div className="flex items-center gap-1.5 px-3" style={{ height: 28, backgroundColor: 'var(--sol-bg)', borderTop: '1px solid var(--sol-border)' }}>
         <FilterDropdown label="State" open={openDropdown === 'state'} onToggle={() => toggleDropdown('state')}>
           {ALL_STATES.map(s => (
             <CheckboxItem
