@@ -90,8 +90,8 @@ export interface TaskGraphModel {
 
 // Constants — flat indented tree layout
 
-export const NODE_WIDTH = 220
-export const NODE_HEIGHT = 32
+export const NODE_WIDTH = 280
+export const NODE_HEIGHT = 48
 export const NODE_GAP = 6
 export const INDENT = 24
 export const LANE_GAP = 60

@@ -68,7 +68,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   onPointerLeave: () => void
 }) {
   const opacity = getNodeOpacity(node, highlight)
-  const showLabels = scale >= 0.6
+  const showLabels = scale >= 0.5
 
   const strokeColor = isSearchMatch ? 'var(--sol-violet)' : isSelected ? 'var(--sol-focus-border)' : 'var(--sol-border)'
   const strokeW = isSearchMatch || isSelected ? 2 : 1
@@ -77,7 +77,6 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   const hasGroupAffordances = task.hasChildren
   const chevronWidth = hasGroupAffordances ? 16 : 0
   const progressText = group ? `${group.progress.done}/${group.progress.total}` : ''
-  const progressWidth = hasGroupAffordances ? 36 : 0
 
   return (
     <g
@@ -142,7 +141,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           <rect x={node.x} y={node.y} width={16} height={NODE_HEIGHT} fill="transparent" />
           <text
             x={node.x + 8}
-            y={node.y + NODE_HEIGHT / 2 + 4}
+            y={node.y + 22}
             fontSize={9}
             textAnchor="middle"
             fill={'var(--sol-base1)'}
@@ -157,18 +156,18 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <rect
           x={node.x + chevronWidth + 22}
           y={node.y}
-          width={NODE_WIDTH - chevronWidth - 22 - progressWidth - (depCount > 0 ? 20 : 6)}
+          width={NODE_WIDTH - chevronWidth - 22 - 6}
           height={NODE_HEIGHT}
         />
       </clipPath>
 
       {/* State dot */}
-      <StateDot state={task.state} cx={node.x + chevronWidth + 12} cy={node.y + NODE_HEIGHT / 2} />
+      <StateDot state={task.state} cx={node.x + chevronWidth + 12} cy={node.y + 18} />
 
       {/* Title */}
       <text
         x={node.x + chevronWidth + 24}
-        y={node.y + NODE_HEIGHT / 2 + 4}
+        y={node.y + 22}
         fontSize={13}
         fontWeight={600}
         fill={'var(--sol-text-dark)'}
@@ -179,35 +178,33 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         {task.title}
       </text>
 
-      {/* Progress count for groups */}
+      {/* Meta line: agent handle + progress for groups, dep count for leaves */}
       {hasGroupAffordances && progressText && (
         <text
-          x={node.x + NODE_WIDTH - (depCount > 0 ? 24 : 8)}
-          y={node.y + NODE_HEIGHT / 2 + 4}
+          x={node.x + chevronWidth + 24}
+          y={node.y + 38}
           fontSize={10}
           fontWeight={500}
-          textAnchor="end"
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 1 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >
-          {progressText}
+          {progressText} done
         </text>
       )}
 
       {/* Dependency count badge (leaf tasks only) */}
       {!hasGroupAffordances && depCount > 0 && (
         <text
-          x={node.x + NODE_WIDTH - 12}
-          y={node.y + NODE_HEIGHT / 2 + 4}
+          x={node.x + chevronWidth + 24}
+          y={node.y + 38}
           fontSize={10}
           fontWeight={500}
-          textAnchor="end"
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 1 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >
-          {depCount}
+          {depCount} {depCount === 1 ? 'dep' : 'deps'}
         </text>
       )}
     </g>
