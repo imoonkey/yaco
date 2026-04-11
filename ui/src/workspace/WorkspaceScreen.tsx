@@ -218,10 +218,14 @@ export function Workspace({
   const closeFocusedSurface = useCallback((): boolean => {
     if (showSearch) { setShowSearch(false); return true }
     if ((focusTarget === 'terminal' || focusTarget === 'session') && sessionsMgr.detachActiveSession()) return true
-    if (focusTarget === 'editor' && closeActiveTab()) return true
+    if (focusTarget === 'editor') {
+      // Closing tasks panel syncs sidebar toggle
+      if (activeTasksTab) { actions.updateLayout({ showTasks: false }) }
+      if (closeActiveTab()) return true
+    }
     if (closeActiveTab() || sessionsMgr.detachActiveSession()) return true
     return true
-  }, [closeActiveTab, sessionsMgr.detachActiveSession, focusTarget, showSearch])
+  }, [closeActiveTab, sessionsMgr.detachActiveSession, focusTarget, showSearch, activeTasksTab, actions])
 
   const handleToggleTextSearch = useCallback(() => {
     actions.updateLayout({ showTextSearch: !showTextSearch, showSidebar: true })

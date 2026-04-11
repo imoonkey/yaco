@@ -100,7 +100,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   // Tasks panel takes the full column — no tab bar, no breadcrumbs
   if (activeTasksTab) {
     return (
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
         <TaskScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} />
       </div>
     )
