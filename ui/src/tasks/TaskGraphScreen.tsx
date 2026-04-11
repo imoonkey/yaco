@@ -7,7 +7,6 @@ import { computeDisplayLayout } from './taskGraphModel'
 import { TaskGraphTooltip } from './TaskGraphTooltip'
 import { TaskGraphCanvas } from './TaskGraphCanvas'
 import { TaskGraphToolbar } from './TaskGraphToolbar'
-import { TaskGraphDetailPanel } from './TaskGraphDetailPanel'
 import { TaskGraphMinimap } from './TaskGraphMinimap'
 import { TaskGraphStatusPane } from './TaskGraphStatusPane'
 import { useTaskGraphInteraction } from './useTaskGraphInteraction'
@@ -219,18 +218,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
               containerWidth={containerSize.width}
               containerHeight={containerSize.height}
               onPanTo={panZoom.panTo}
-            />
-          )}
-
-          {isMobile && (
-            <TaskGraphDetailPanel
-              selection={ix.selection}
-              graph={graph}
-              isMobile
-              onClose={ix.handleClearSelection}
-              onNavigate={ix.handleNavigate}
-              collapsedTaskIds={ix.collapsedTaskIds}
-              onToggleCollapse={ix.handleToggleCollapse}
             />
           )}
         </div>

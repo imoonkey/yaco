@@ -11,6 +11,7 @@ import type { TaskV2 } from './model/taskModel'
 
 interface TaskScreenProps {
   projectName: string
+  onClose?: () => void
   onOpenTasksFile?: () => void
   onOpenFile?: (path: string) => void
 }
@@ -36,7 +37,7 @@ function filterTasks(tasks: Map<string, TaskV2>, filters: ReturnType<typeof useT
   return filtered
 }
 
-export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScreenProps) {
+export function TaskScreen({ projectName, onClose, onOpenTasksFile, onOpenFile }: TaskScreenProps) {
   const { tasks, loading, error, mutate } = useTaskData(projectName)
   const viewState = useTaskViewState(projectName)
   const { state, setActiveView, toggleFilterState, toggleFilterPriority, toggleFilterAgent, toggleFilterWorktree, setParentFilter, setSearchQuery, resetFilters, setSelectedTask, setListSelected, toggleBoardColumn } = viewState
@@ -78,6 +79,7 @@ export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScr
         onSetParentFilter={setParentFilter}
         onSetSearch={setSearchQuery}
         onResetFilters={resetFilters}
+        onClose={onClose}
       />
 
       <div className="flex-1 min-h-0 flex">

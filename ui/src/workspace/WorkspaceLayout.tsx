@@ -135,8 +135,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
                 {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>}
 
-                {/* Tasks toggle — pinned at bottom */}
-                <div className="mt-auto shrink-0">
+                {/* Tasks toggle — pinned at bottom with safe-area padding */}
+                <div className="mt-auto shrink-0" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
                   <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
                 </div>
               </div>

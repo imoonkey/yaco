@@ -75,67 +75,69 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
 
   return (
     <div
-      className="shrink-0 flex items-center gap-3 px-3"
-      style={{ height: 36, backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)' }}
+      className="shrink-0 flex items-center gap-2 px-2"
+      style={{ height: isMobile ? 40 : 36, backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)' }}
     >
       {/* Zoom controls */}
       <div className="flex items-center gap-0.5">
         <button
           onClick={onZoomOut}
-          className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+          className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg`}
           style={{ color: 'var(--sol-text)' }}
           title="Zoom out"
         >
-          <Minus size={13} />
+          <Minus size={isMobile ? 16 : 13} />
         </button>
         <span className="text-[11px] font-medium w-10 text-center tabular-nums" style={{ color: 'var(--sol-muted)' }}>
           {pct}%
         </span>
         <button
           onClick={onZoomIn}
-          className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+          className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg`}
           style={{ color: 'var(--sol-text)' }}
           title="Zoom in"
         >
-          <Plus size={13} />
+          <Plus size={isMobile ? 16 : 13} />
         </button>
         <button
           onClick={onFitToView}
-          className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+          className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg`}
           style={{ color: 'var(--sol-text)' }}
           title="Fit to view"
         >
-          <Maximize2 size={13} />
+          <Maximize2 size={isMobile ? 16 : 13} />
         </button>
       </div>
 
-      <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />
+      {!isMobile && <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />}
 
-      {/* Collapse/expand controls */}
-      <div className="flex items-center gap-0.5">
-        {!allCollapsed && (
-          <button
-            onClick={onCollapseAll}
-            className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
-            style={{ color: 'var(--sol-text)' }}
-            title="Collapse all groups"
-          >
-            <ChevronsRight size={13} />
-          </button>
-        )}
-        {!allExpanded && (
-          <button
-            onClick={onExpandAll}
-            className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
-            style={{ color: 'var(--sol-text)' }}
-            title="Expand all groups"
-          >
-            <ChevronsDown size={13} />
-          </button>
-        )}
-      </div>
+      {/* Collapse/expand controls — hide on mobile to save space */}
+      {!isMobile && (
+        <div className="flex items-center gap-0.5">
+          {!allCollapsed && (
+            <button
+              onClick={onCollapseAll}
+              className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+              style={{ color: 'var(--sol-text)' }}
+              title="Collapse all groups"
+            >
+              <ChevronsRight size={13} />
+            </button>
+          )}
+          {!allExpanded && (
+            <button
+              onClick={onExpandAll}
+              className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+              style={{ color: 'var(--sol-text)' }}
+              title="Expand all groups"
+            >
+              <ChevronsDown size={13} />
+            </button>
+          )}
+        </div>
+      )}
 
-      <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />
+      {!isMobile && <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />}
 
       {/* State filters */}
       {isMobile ? (

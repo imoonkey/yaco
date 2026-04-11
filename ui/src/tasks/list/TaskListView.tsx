@@ -1,11 +1,13 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { Rows3, Group } from 'lucide-react'
+import { useIsMobile } from '../../hooks/useIsMobile'
 import type { TaskV2 } from '../model/taskModel'
 import type { TaskMutations } from '../hooks/useTaskData'
 import { useTaskList } from '../hooks/useTaskList'
 import { useColumnWidths } from '../hooks/useColumnWidths'
 import { ListHeader } from './ListHeader'
 import { ListRow } from './ListRow'
+import { MobileListRow } from './MobileListRow'
 
 type Density = 'compact' | 'comfortable'
 const ROW_HEIGHTS: Record<Density, number> = { compact: 36, comfortable: 48 }
@@ -29,6 +31,7 @@ export function TaskListView({
   onSetMultiSelected,
   mutate,
 }: TaskListViewProps) {
+  const isMobile = useIsMobile()
   const {
     sortCol, sortDir, toggleSort,
     setGroupByParent,
@@ -82,11 +85,13 @@ export function TaskListView({
 
   // Flat render (no grouping)
   if (!groups) {
+    const mobileRowHeight = 44
+    const effectiveRowHeight = isMobile ? mobileRowHeight : rowHeight
     const buffer = 5
-    const startIdx = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer)
-    const endIdx = Math.min(sortedTasks.length, Math.ceil((scrollTop + viewportH) / rowHeight) + buffer)
-    const topPad = startIdx * rowHeight
-    const bottomPad = Math.max(0, (sortedTasks.length - endIdx) * rowHeight)
+    const startIdx = Math.max(0, Math.floor(scrollTop / effectiveRowHeight) - buffer)
+    const endIdx = Math.min(sortedTasks.length, Math.ceil((scrollTop + viewportH) / effectiveRowHeight) + buffer)
+    const topPad = startIdx * effectiveRowHeight
+    const bottomPad = Math.max(0, (sortedTasks.length - endIdx) * effectiveRowHeight)
 
     return (
       <div className="flex flex-col h-full">
@@ -95,42 +100,56 @@ export function TaskListView({
             {sortedTasks.length} task{sortedTasks.length !== 1 ? 's' : ''}
           </div>
           <div className="flex items-center gap-1">
-            <button
-              onClick={() => setGroupByParent(true)}
-              className="p-1 rounded hover:bg-sol-hover-bg"
-              style={{ color: 'var(--sol-base1)' }}
-              title="Group by parent"
-            >
-              <Group size={14} />
-            </button>
-            <button
-              onClick={toggleDensity}
-              className="p-1 rounded hover:bg-sol-hover-bg"
-              style={{ color: 'var(--sol-base1)' }}
-              title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
-            >
-              <Rows3 size={14} />
-            </button>
+            {!isMobile && (
+              <button
+                onClick={() => setGroupByParent(true)}
+                className="p-1 rounded hover:bg-sol-hover-bg"
+                style={{ color: 'var(--sol-base1)' }}
+                title="Group by parent"
+              >
+                <Group size={14} />
+              </button>
+            )}
+            {!isMobile && (
+              <button
+                onClick={toggleDensity}
+                className="p-1 rounded hover:bg-sol-hover-bg"
+                style={{ color: 'var(--sol-base1)' }}
+                title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
+              >
+                <Rows3 size={14} />
+              </button>
+            )}
           </div>
         </div>
-        <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} columnWidths={columnWidths} onResizeColumn={resizeColumn} />
+        {!isMobile && <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} columnWidths={columnWidths} onResizeColumn={resizeColumn} />}
         <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0" role="grid" onScroll={handleScroll}>
           <div style={{ height: topPad }} />
           {sortedTasks.slice(startIdx, endIdx).map(task => (
-            <ListRow
-              key={task.id}
-              task={task}
-              allTasks={tasks}
-              selected={selectedTaskId === task.id}
-              multiSelected={multiSelectedIds.has(task.id)}
-              editing={editingTaskId === task.id}
-              rowHeight={rowHeight}
-              columnWidths={columnWidths}
-              onClick={(e) => handleRowClick(task.id, e)}
-              onDoubleClickTitle={() => setEditingTaskId(task.id)}
-              onSaveTitle={(v) => handleSaveTitle(task.id, v)}
-              onCancelEdit={() => setEditingTaskId(null)}
-            />
+            isMobile ? (
+              <MobileListRow
+                key={task.id}
+                task={task}
+                allTasks={tasks}
+                selected={selectedTaskId === task.id}
+                onClick={(e) => handleRowClick(task.id, e)}
+              />
+            ) : (
+              <ListRow
+                key={task.id}
+                task={task}
+                allTasks={tasks}
+                selected={selectedTaskId === task.id}
+                multiSelected={multiSelectedIds.has(task.id)}
+                editing={editingTaskId === task.id}
+                rowHeight={rowHeight}
+                columnWidths={columnWidths}
+                onClick={(e) => handleRowClick(task.id, e)}
+                onDoubleClickTitle={() => setEditingTaskId(task.id)}
+                onSaveTitle={(v) => handleSaveTitle(task.id, v)}
+                onCancelEdit={() => setEditingTaskId(null)}
+              />
+            )
           ))}
           <div style={{ height: bottomPad }} />
         </div>
@@ -154,17 +173,19 @@ export function TaskListView({
           >
             <Group size={14} />
           </button>
-          <button
-            onClick={toggleDensity}
-            className="p-1 rounded hover:bg-sol-hover-bg"
-            style={{ color: 'var(--sol-base1)' }}
-            title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
-          >
-            <Rows3 size={14} />
-          </button>
+          {!isMobile && (
+            <button
+              onClick={toggleDensity}
+              className="p-1 rounded hover:bg-sol-hover-bg"
+              style={{ color: 'var(--sol-base1)' }}
+              title={density === 'compact' ? 'Comfortable rows' : 'Compact rows'}
+            >
+              <Rows3 size={14} />
+            </button>
+          )}
         </div>
       </div>
-      <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} columnWidths={columnWidths} onResizeColumn={resizeColumn} />
+      {!isMobile && <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} columnWidths={columnWidths} onResizeColumn={resizeColumn} />}
       <div className="flex-1 overflow-y-auto min-h-0">
         {groups.map((group, idx) => (
           <div key={group.parentId ?? '__none'}>
@@ -175,20 +196,30 @@ export function TaskListView({
               isFirst={idx === 0}
             />
             {group.tasks.map(task => (
-              <ListRow
-                key={task.id}
-                task={task}
-                allTasks={tasks}
-                selected={selectedTaskId === task.id}
-                multiSelected={multiSelectedIds.has(task.id)}
-                editing={editingTaskId === task.id}
-                rowHeight={rowHeight}
-                columnWidths={columnWidths}
-                onClick={(e) => handleRowClick(task.id, e)}
-                onDoubleClickTitle={() => setEditingTaskId(task.id)}
-                onSaveTitle={(v) => handleSaveTitle(task.id, v)}
-                onCancelEdit={() => setEditingTaskId(null)}
-              />
+              isMobile ? (
+                <MobileListRow
+                  key={task.id}
+                  task={task}
+                  allTasks={tasks}
+                  selected={selectedTaskId === task.id}
+                  onClick={(e) => handleRowClick(task.id, e)}
+                />
+              ) : (
+                <ListRow
+                  key={task.id}
+                  task={task}
+                  allTasks={tasks}
+                  selected={selectedTaskId === task.id}
+                  multiSelected={multiSelectedIds.has(task.id)}
+                  editing={editingTaskId === task.id}
+                  rowHeight={rowHeight}
+                  columnWidths={columnWidths}
+                  onClick={(e) => handleRowClick(task.id, e)}
+                  onDoubleClickTitle={() => setEditingTaskId(task.id)}
+                  onSaveTitle={(v) => handleSaveTitle(task.id, v)}
+                  onCancelEdit={() => setEditingTaskId(null)}
+                />
+              )
             ))}
           </div>
         ))}
