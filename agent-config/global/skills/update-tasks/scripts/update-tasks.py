@@ -11,7 +11,7 @@ PRIORITIES = {"critical", "high", "normal", "low"}
 ESTIMATES = {"xs", "s", "m", "l", "xl"}
 BLOCK_REASONS = {"verification-failed", "human-review", "external", "dependency"}
 
-LOCK_FILE = str(FILE) + ".lock"
+LOCK_FILE = str(FILE.parent / ("."+FILE.name+".lock"))
 
 def load():
     return json.loads(FILE.read_text()) if FILE.exists() else {}
@@ -69,9 +69,13 @@ def validate_types(data):
         die(f"priority must be one of: {', '.join(sorted(PRIORITIES))}")
     if "agent" in data and not isinstance(data.get("agent"), (str, type(None))):
         die("agent must be string or null")
+    if "agent" in data and isinstance(data["agent"], str) and not data["agent"].strip():
+        die("agent must not be empty")
     if "tags" in data:
         if not isinstance(data["tags"], list) or not all(isinstance(x, str) for x in data["tags"]):
             die("tags must be list of strings")
+        if any(not x.strip() for x in data["tags"]):
+            die("tags must not contain empty or whitespace-only strings")
     if "estimate" in data and data["estimate"] not in ESTIMATES:
         die(f"estimate must be one of: {', '.join(sorted(ESTIMATES))}")
     if "blockReason" in data and data["blockReason"] not in BLOCK_REASONS:
@@ -150,12 +154,13 @@ def cmd_set(tid, data):
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         old_state = tasks.get(tid, {}).get("state")
         if tid in tasks:
+            data.pop("created", None)
             tasks[tid].update(data)
         else:
             missing = {"title", "description"} - data.keys()
             if missing: die(f"new task requires: {', '.join(sorted(missing))}")
             tasks[tid] = {"parent": None, "depends": [], "state": "ready", **data}
-            tasks[tid].setdefault("created", now)
+            tasks[tid]["created"] = now
         tasks[tid]["updated"] = now
         # Enforce non-empty acceptCriteria on leaf tasks
         if not has_children(tasks, tid) and _ac_is_blank(tasks[tid].get("acceptCriteria")):
