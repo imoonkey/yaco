@@ -121,6 +121,7 @@ function CheckboxItem({ checked, label, color, onToggle }: {
   color?: string
   onToggle: () => void
 }) {
+  const c = color ?? 'var(--sol-accent)'
   return (
     <button
       onClick={onToggle}
@@ -131,10 +132,10 @@ function CheckboxItem({ checked, label, color, onToggle }: {
         className="w-3 h-3 rounded-sm border flex items-center justify-center shrink-0"
         style={{
           borderColor: checked && color ? color : 'var(--sol-border)',
-          backgroundColor: checked ? (color ?? 'var(--sol-accent)') + '22' : 'transparent',
+          backgroundColor: checked ? `color-mix(in srgb, ${c} 15%, transparent)` : 'transparent',
         }}
       >
-        {checked && <span className="text-[9px] font-bold" style={{ color: color ?? 'var(--sol-accent)' }}>&#10003;</span>}
+        {checked && <span className="text-[9px] font-bold" style={{ color: c }}>&#10003;</span>}
       </span>
       <span>{label}</span>
     </button>
@@ -143,13 +144,14 @@ function CheckboxItem({ checked, label, color, onToggle }: {
 
 // --- Active filter pills ---
 function FilterPill({ label, color, onRemove }: { label: string; color?: string; onRemove: () => void }) {
+  const c = color ?? 'var(--sol-accent)'
   return (
     <span
       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
       style={{
-        backgroundColor: (color ?? 'var(--sol-accent)') + '18',
-        color: color ?? 'var(--sol-accent)',
-        border: `1px solid ${(color ?? 'var(--sol-accent)')}44`,
+        backgroundColor: `color-mix(in srgb, ${c} 10%, transparent)`,
+        color: c,
+        border: `1px solid color-mix(in srgb, ${c} 25%, transparent)`,
       }}
     >
       {label}
@@ -240,8 +242,8 @@ export function TaskToolbar(props: TaskToolbarProps) {
                 {tab.label}
                 {isActive && (
                   <span
-                    className="absolute bottom-0 left-2.5 right-2.5 h-[2px] rounded-t-full"
-                    style={{ backgroundColor: 'var(--sol-accent)' }}
+                    className="absolute bottom-0 left-2.5 right-2.5 rounded-t-full"
+                    style={{ backgroundColor: 'var(--sol-accent)', height: '2.5px' }}
                   />
                 )}
               </button>
@@ -262,7 +264,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
               value={searchQuery}
               onChange={e => onSetSearch(e.target.value)}
               onKeyDown={e => { if (e.key === 'Escape') { onSetSearch(''); searchRef.current?.blur() } }}
-              className="h-6 pl-6 pr-2 rounded text-[11px] outline-none"
+              className="h-6 pl-6 pr-2 rounded text-[11px] outline-none focus:border-[var(--sol-focus-border)]"
               style={{
                 width: 160,
                 backgroundColor: 'var(--sol-input-bg)',

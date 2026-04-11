@@ -169,7 +169,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         x={node.x + chevronWidth + 24}
         y={node.y + 22}
         fontSize={13}
-        fontWeight={600}
+        fontWeight={hasGroupAffordances ? 600 : 500}
         fill={'var(--sol-text-dark)'}
         opacity={showLabels ? 1 : 0}
         style={{ transition: 'opacity 150ms ease-out' }}

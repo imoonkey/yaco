@@ -33,7 +33,7 @@ const ESTIMATE_OPTIONS = [
 
 function SectionHeader({ children, divider = true }: { children: React.ReactNode; divider?: boolean }) {
   return (
-    <div>
+    <div className={divider ? 'mb-1.5' : ''}>
       <div
         className="text-[11px] font-bold uppercase tracking-[0.06em]"
         style={{ color: 'var(--sol-muted)' }}
@@ -170,7 +170,7 @@ export function TaskDetailPanel({
   }))
 
   const content = (
-    <div className="flex flex-col gap-4 p-4 text-[12px]" style={{ color: 'var(--sol-base01)' }}>
+    <div className="flex flex-col gap-5 p-4 text-[12px]" style={{ color: 'var(--sol-base01)' }}>
       {/* Breadcrumb */}
       <Breadcrumb task={task} allTasks={allTasks} onSelectTask={onSelectTask} />
 
@@ -178,8 +178,8 @@ export function TaskDetailPanel({
       <InlineEdit
         value={task.title}
         onSave={v => patch('title', v)}
-        displayClassName="text-[18px] font-bold tracking-[-0.02em]"
-        className="text-[18px] font-bold tracking-[-0.02em]"
+        displayClassName="text-[18px] font-semibold tracking-[-0.02em]"
+        className="text-[18px] font-semibold tracking-[-0.02em]"
       />
 
       {/* State / Priority / Estimate row */}
@@ -398,11 +398,14 @@ export function TaskDetailPanel({
         width: 360,
         backgroundColor: 'var(--sol-bg)',
         borderLeft: '1px solid var(--sol-border)',
-        boxShadow: '-2px 0 8px rgba(0,0,0,0.04)',
+        boxShadow: 'var(--elevation-1)',
         animation: 'panel-slide-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
       }}
     >
-      <div className="flex items-center justify-between p-3 sticky top-0 z-10" style={{ backgroundColor: 'var(--sol-bg)' }}>
+      <div
+        className="flex items-center justify-between px-3 py-2.5 sticky top-0 z-10"
+        style={{ backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
+      >
         <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
           Task Details
         </span>

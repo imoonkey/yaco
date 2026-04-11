@@ -82,7 +82,7 @@ export function InlineEdit({
         onKeyDown={handleKeyDown}
         className={`rounded px-1 py-0.5 outline-none ${className}`}
         style={{
-          border: '2px solid var(--sol-focus-border)',
+          border: '1px solid var(--sol-focus-border)',
           backgroundColor: 'var(--sol-bg)',
           color: 'var(--sol-text)',
         }}
@@ -104,9 +104,9 @@ export function InlineEdit({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         rows={4}
-        className={`w-full rounded px-2 py-1 outline-none resize-y text-[12px] ${className}`}
+        className={`w-full rounded px-2 py-1.5 outline-none resize-y text-[12px] ${className}`}
         style={{
-          border: '2px solid var(--sol-focus-border)',
+          border: '1px solid var(--sol-focus-border)',
           backgroundColor: 'var(--sol-bg)',
           color: 'var(--sol-text)',
           fontFamily: 'var(--font-ui)',
@@ -123,9 +123,9 @@ export function InlineEdit({
       onBlur={save}
       onKeyDown={handleKeyDown}
       placeholder={placeholder}
-      className={`w-full rounded px-1 py-0.5 outline-none ${className}`}
+      className={`w-full rounded px-1.5 py-0.5 outline-none ${className}`}
       style={{
-        border: '2px solid var(--sol-focus-border)',
+        border: '1px solid var(--sol-focus-border)',
         backgroundColor: 'var(--sol-bg)',
         color: 'var(--sol-text)',
         fontFamily: 'inherit',

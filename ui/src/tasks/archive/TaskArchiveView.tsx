@@ -3,6 +3,7 @@ import { Search, Archive, RotateCcw } from 'lucide-react'
 import { useArchiveData } from './useArchiveData'
 import { StateDot } from '../shared/StateDot'
 import { normalizeTask } from '../model/taskModel'
+import { STATE_COLORS } from '../taskGraphConstants'
 import type { TaskV2 } from '../model/taskModel'
 
 interface TaskArchiveViewProps {
@@ -98,7 +99,7 @@ export function TaskArchiveView({ projectName }: TaskArchiveViewProps) {
             value={search}
             onChange={e => setSearch(e.target.value)}
             onKeyDown={e => { if (e.key === 'Escape') setSearch('') }}
-            className="h-7 w-full pl-7 pr-2 rounded text-[12px] outline-none"
+            className="h-7 w-full pl-7 pr-2 rounded text-[12px] outline-none focus:border-[var(--sol-focus-border)]"
             style={{
               backgroundColor: 'var(--sol-input-bg)',
               color: 'var(--sol-input-fg)',
@@ -147,14 +148,21 @@ function DateGroup({ date, entries }: { date: string; entries: FlatArchiveEntry[
   return (
     <div>
       <div
-        className="sticky top-0 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.06em]"
+        className="sticky top-0 flex items-center gap-2 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.06em]"
         style={{
-          color: 'var(--sol-text-dim)',
+          color: 'var(--sol-text)',
           backgroundColor: 'var(--sol-header-bg)',
           borderBottom: '1px solid var(--sol-border)',
+          borderLeft: '3px solid var(--sol-accent)',
         }}
       >
-        {formatDate(date)}
+        <span>{formatDate(date)}</span>
+        <span
+          className="text-[10px] font-medium normal-case tracking-normal"
+          style={{ color: 'var(--sol-text-dim)' }}
+        >
+          ({entries.length})
+        </span>
       </div>
       {entries.map(entry => (
         <ArchiveRow key={`${entry.file}:${entry.task.id}`} entry={entry} />
@@ -164,10 +172,14 @@ function DateGroup({ date, entries }: { date: string; entries: FlatArchiveEntry[
 }
 
 function ArchiveRow({ entry }: { entry: FlatArchiveEntry }) {
+  const stateColor = STATE_COLORS[entry.task.state] ?? 'var(--sol-base1)'
   return (
     <div
-      className="flex items-center gap-2 px-3 py-1.5 hover:bg-sol-hover-bg transition-colors"
-      style={{ borderBottom: '1px solid var(--sol-border)' }}
+      className="flex items-center gap-2 px-3 py-2 hover:bg-sol-hover-bg transition-colors"
+      style={{
+        borderBottom: '1px solid var(--sol-border)',
+        borderLeft: `3px solid ${stateColor}`,
+      }}
     >
       <StateDot state={entry.task.state} />
       <span className="flex-1 text-[12px] truncate" style={{ color: 'var(--sol-text)' }}>

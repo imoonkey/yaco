@@ -20,6 +20,7 @@ interface BoardColumnProps {
   collapsed: boolean
   selectedTaskId: string | null
   isDragOver: boolean
+  draggingTaskId: string | null
   onToggleCollapse: () => void
   onSelectTask: (id: string) => void
   onDragStart: (id: string) => void
@@ -36,6 +37,7 @@ export function BoardColumn({
   collapsed,
   selectedTaskId,
   isDragOver,
+  draggingTaskId,
   onToggleCollapse,
   onSelectTask,
   onDragStart,
@@ -70,11 +72,9 @@ export function BoardColumn({
 
   return (
     <div
-      className="flex flex-col shrink-0 rounded-lg"
+      className="flex flex-col min-w-0 rounded-lg"
       style={{
-        minWidth: 220,
-        maxWidth: 400,
-        width: collapsed ? 'auto' : '100%',
+        flex: collapsed ? '0 0 auto' : '1 1 0%',
         backgroundColor: 'var(--sol-subtle-bg)',
         border: isDragOver ? '2px dashed var(--sol-accent)' : '2px solid transparent',
       }}
@@ -103,10 +103,14 @@ export function BoardColumn({
           {STATE_LABELS[state] ?? state}
         </span>
         <span
-          className="text-[11px] font-bold"
-          style={{ color: 'var(--sol-muted)' }}
+          className="text-[10px] font-bold rounded-full min-w-[18px] text-center"
+          style={{
+            color: 'var(--sol-muted)',
+            backgroundColor: 'var(--sol-subtle-bg)',
+            padding: '1px 6px',
+          }}
         >
-          ({tasks.length})
+          {tasks.length}
         </span>
       </button>
       {/* Accent bar */}
@@ -122,6 +126,7 @@ export function BoardColumn({
               parentName={task.parent ? allTasks.get(task.parent)?.title ?? null : null}
               selected={task.id === selectedTaskId}
               compact={compact}
+              isDragging={task.id === draggingTaskId}
               onSelect={onSelectTask}
               onDragStart={onDragStart}
               onDragEnd={onDragEnd}

@@ -3,6 +3,7 @@ import type { TaskV2 } from '../model/taskModel'
 import { StateDot } from '../shared/StateDot'
 import { PriorityTag } from '../shared/PriorityTag'
 import { COLUMNS } from './listColumns'
+import type { ColumnWidths } from './listColumns'
 
 interface ListRowProps {
   task: TaskV2
@@ -11,6 +12,7 @@ interface ListRowProps {
   multiSelected: boolean
   editing: boolean
   rowHeight: number
+  columnWidths: ColumnWidths
   onClick: (e: React.MouseEvent) => void
   onDoubleClickTitle: () => void
   onSaveTitle: (value: string) => void
@@ -32,6 +34,7 @@ export const ListRow = memo(function ListRow({
   multiSelected,
   editing,
   rowHeight,
+  columnWidths,
   onClick,
   onDoubleClickTitle,
   onSaveTitle,
@@ -56,10 +59,10 @@ export const ListRow = memo(function ListRow({
   const parentTitle = task.parent ? allTasks.get(task.parent)?.title ?? task.parent : null
 
   const bgStyle = selected
-    ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 6%, transparent)', borderLeft: '3px solid var(--sol-accent)' }
+    ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 8%, transparent)', borderLeft: '2px solid var(--sol-accent)' }
     : multiSelected
-      ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 3%, transparent)', borderLeft: '3px solid color-mix(in srgb, var(--sol-accent) 40%, transparent)' }
-      : { borderLeft: '3px solid transparent' }
+      ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 5%, transparent)', borderLeft: '2px solid color-mix(in srgb, var(--sol-accent) 50%, transparent)' }
+      : { borderLeft: '2px solid transparent' }
 
   return (
     <div
@@ -73,10 +76,11 @@ export const ListRow = memo(function ListRow({
       onClick={onClick}
     >
       {COLUMNS.map(col => {
+        const w = col.defaultWidth != null ? columnWidths[col.key] ?? col.defaultWidth : undefined
         const cellStyle = {
-          width: col.width,
-          flex: col.width ? undefined : 1,
-          minWidth: col.width ? undefined : 0,
+          width: w,
+          flex: w != null ? undefined : 1,
+          minWidth: w != null ? undefined : 0,
           paddingLeft: 4,
           paddingRight: 4,
         }
@@ -98,7 +102,7 @@ export const ListRow = memo(function ListRow({
                     onChange={e => setDraft(e.target.value)}
                     onBlur={() => onSaveTitle(draft)}
                     onKeyDown={handleKeyDown}
-                    className="w-full rounded px-1 py-0.5 outline-none text-[14px] font-semibold"
+                    className="w-full rounded px-1 py-0.5 outline-none text-[14px] font-medium"
                     style={{
                       border: '2px solid var(--sol-focus-border)',
                       backgroundColor: 'var(--sol-bg)',
@@ -107,7 +111,7 @@ export const ListRow = memo(function ListRow({
                     }}
                   />
                 ) : (
-                  <span className="text-[14px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+                  <span className="text-[14px] font-medium" style={{ color: 'var(--sol-text-dark)' }}>
                     {task.title}
                   </span>
                 )}

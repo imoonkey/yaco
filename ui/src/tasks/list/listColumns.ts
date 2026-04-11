@@ -3,15 +3,30 @@ import type { SortColumn } from '../hooks/useTaskList'
 export type ColumnDef = {
   key: SortColumn
   label: string
-  width: string | undefined
+  /** Default width in px. undefined = flex: 1. */
+  defaultWidth: number | undefined
+  /** Minimum width when resizing */
+  minWidth: number
 }
 
 export const COLUMNS: ColumnDef[] = [
-  { key: 'id', label: 'ID', width: '72px' },
-  { key: 'title', label: 'Title', width: undefined },
-  { key: 'state', label: 'State', width: '80px' },
-  { key: 'priority', label: 'Priority', width: '80px' },
-  { key: 'agent', label: 'Agent', width: '80px' },
-  { key: 'scope', label: 'Scope', width: '50px' },
-  { key: 'parent', label: 'Parent', width: '100px' },
+  { key: 'id', label: 'ID', defaultWidth: 72, minWidth: 48 },
+  { key: 'title', label: 'Title', defaultWidth: undefined, minWidth: 120 },
+  { key: 'state', label: 'State', defaultWidth: 80, minWidth: 60 },
+  { key: 'priority', label: 'Priority', defaultWidth: 80, minWidth: 60 },
+  { key: 'agent', label: 'Agent', defaultWidth: 80, minWidth: 50 },
+  { key: 'scope', label: 'Scope', defaultWidth: 50, minWidth: 36 },
+  { key: 'parent', label: 'Parent', defaultWidth: 100, minWidth: 60 },
 ]
+
+export type ColumnWidths = Record<string, number>
+
+export function getDefaultWidths(): ColumnWidths {
+  const widths: ColumnWidths = {}
+  for (const col of COLUMNS) {
+    if (col.defaultWidth != null) {
+      widths[col.key] = col.defaultWidth
+    }
+  }
+  return widths
+}

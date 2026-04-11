@@ -3,6 +3,7 @@ import { Rows3, Group } from 'lucide-react'
 import type { TaskV2 } from '../model/taskModel'
 import type { TaskMutations } from '../hooks/useTaskData'
 import { useTaskList } from '../hooks/useTaskList'
+import { useColumnWidths } from '../hooks/useColumnWidths'
 import { ListHeader } from './ListHeader'
 import { ListRow } from './ListRow'
 
@@ -35,6 +36,8 @@ export function TaskListView({
     editingTaskId, setEditingTaskId,
     computeSelection,
   } = useTaskList(tasks, filteredTaskIds)
+
+  const { widths: columnWidths, resizeColumn } = useColumnWidths()
 
   const [density, setDensity] = useState<Density>('compact')
   const rowHeight = ROW_HEIGHTS[density]
@@ -110,7 +113,7 @@ export function TaskListView({
             </button>
           </div>
         </div>
-        <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+        <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} columnWidths={columnWidths} onResizeColumn={resizeColumn} />
         <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0" role="grid" onScroll={handleScroll}>
           <div style={{ height: topPad }} />
           {sortedTasks.slice(startIdx, endIdx).map(task => (
@@ -122,6 +125,7 @@ export function TaskListView({
               multiSelected={multiSelectedIds.has(task.id)}
               editing={editingTaskId === task.id}
               rowHeight={rowHeight}
+              columnWidths={columnWidths}
               onClick={(e) => handleRowClick(task.id, e)}
               onDoubleClickTitle={() => setEditingTaskId(task.id)}
               onSaveTitle={(v) => handleSaveTitle(task.id, v)}
@@ -160,14 +164,15 @@ export function TaskListView({
           </button>
         </div>
       </div>
-      <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} />
+      <ListHeader sortCol={sortCol} sortDir={sortDir} onSort={toggleSort} columnWidths={columnWidths} onResizeColumn={resizeColumn} />
       <div className="flex-1 overflow-y-auto min-h-0">
-        {groups.map(group => (
+        {groups.map((group, idx) => (
           <div key={group.parentId ?? '__none'}>
             <GroupHeader
               title={group.parentTitle}
               doneCount={group.doneCount}
               totalCount={group.totalCount}
+              isFirst={idx === 0}
             />
             {group.tasks.map(task => (
               <ListRow
@@ -178,6 +183,7 @@ export function TaskListView({
                 multiSelected={multiSelectedIds.has(task.id)}
                 editing={editingTaskId === task.id}
                 rowHeight={rowHeight}
+                columnWidths={columnWidths}
                 onClick={(e) => handleRowClick(task.id, e)}
                 onDoubleClickTitle={() => setEditingTaskId(task.id)}
                 onSaveTitle={(v) => handleSaveTitle(task.id, v)}
@@ -191,32 +197,35 @@ export function TaskListView({
   )
 }
 
-function GroupHeader({ title, doneCount, totalCount }: { title: string; doneCount: number; totalCount: number }) {
+function GroupHeader({ title, doneCount, totalCount, isFirst }: { title: string; doneCount: number; totalCount: number; isFirst: boolean }) {
   const pct = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0
   return (
     <div
       className="flex items-center gap-2 px-3 border-b"
       style={{
-        height: 28,
-        backgroundColor: 'var(--sol-subtle-bg)',
+        height: 32,
+        marginTop: isFirst ? 0 : 8,
+        backgroundColor: 'var(--sol-subtle-bg-active)',
         borderColor: 'var(--sol-border)',
       }}
     >
-      <span className="text-[12px] font-semibold" style={{ color: 'var(--sol-text)' }}>
+      <span className="text-[12px] font-semibold truncate" style={{ color: 'var(--sol-text-dark)' }}>
         {title}
       </span>
-      <div
-        className="h-1.5 rounded-full overflow-hidden"
-        style={{ width: 48, backgroundColor: 'var(--sol-border)' }}
-      >
+      <div className="flex items-center gap-1.5 shrink-0 ml-auto">
         <div
-          className="h-full rounded-full"
-          style={{ width: `${pct}%`, backgroundColor: 'var(--sol-green)' }}
-        />
+          className="h-1.5 rounded-full overflow-hidden"
+          style={{ width: 48, backgroundColor: 'var(--sol-border)' }}
+        >
+          <div
+            className="h-full rounded-full"
+            style={{ width: `${pct}%`, backgroundColor: 'var(--sol-green)' }}
+          />
+        </div>
+        <span className="text-[10px] tabular-nums" style={{ color: 'var(--sol-text-dim)' }}>
+          {doneCount}/{totalCount}
+        </span>
       </div>
-      <span className="text-[10px]" style={{ color: 'var(--sol-text-dim)' }}>
-        {doneCount}/{totalCount}
-      </span>
     </div>
   )
 }
