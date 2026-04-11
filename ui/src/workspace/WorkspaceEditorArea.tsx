@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react
 import { Editor } from '../components/Editor'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
+import type { CompareContext } from './diff/DiffTab'
 import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath } from './markdown'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import type { MdMode, SplitDirection } from '../hooks/useWorkspaceState'
@@ -324,6 +325,7 @@ export function WorkspaceEditorArea({
   insertRequestKey,
   autocompleteEnabled,
   isMobile,
+  compareContext,
 }: {
   activeTab: string | null
   activeFilePath: string | null
@@ -357,6 +359,7 @@ export function WorkspaceEditorArea({
   insertRequestKey?: number
   autocompleteEnabled?: boolean
   isMobile?: boolean
+  compareContext?: CompareContext
 }) {
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -509,7 +512,7 @@ export function WorkspaceEditorArea({
         tasksPane
       ) : isDiffTab ? (
         !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
-        : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} />
+        : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} compareContext={compareContext} />
         : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load diff</div>
       ) : activeTab ? (
         activeFileLoading ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>

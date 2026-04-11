@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
-import { Plus } from 'lucide-react'
-import { useFileTree, useSessions, useGitStatus, useHistory } from '../hooks/useApi'
+import { Plus, GitCompareArrows, X } from 'lucide-react'
+import { useFileTree, useSessions, useGitStatus, useHistory, fetchGitCompare } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
-import { isDiffTab, isFileTab, isTasksTab, useWorkspaceState } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
 import { useVoice } from '../hooks/useVoice'
 import { Terminal } from '../components/Terminal'
@@ -19,7 +19,7 @@ import { WorkspaceEditorColumn } from './WorkspaceEditorColumn'
 import { useWorkspaceSidebarResize } from './useWorkspaceSidebarResize'
 import { useWorkspaceSessionSection } from './useWorkspaceSessionSection'
 import { ShortcutSheet } from './ShortcutSheet'
-import type { Project } from '../types'
+import type { Project, GitChange } from '../types'
 import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts } from '../hooks/useSessionUnreadState'
 import { ProjectList } from '../components/ProjectList'
 import { useWorkspaceKeyboard } from './useWorkspaceKeyboard'
@@ -27,6 +27,7 @@ import { useWorkspaceNavigation } from './useWorkspaceNavigation'
 import { useWorkspaceSessions } from './useWorkspaceSessions'
 import { useWorkspaceDiff } from './useWorkspaceDiff'
 import { useWorkspaceVoice } from './useWorkspaceVoice'
+import { CompareRefPicker } from './CompareRefPicker'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
@@ -92,6 +93,13 @@ export function Workspace({
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
   const [showShortcutSheet, setShowShortcutSheet] = useState(false)
 
+  // Compare mode state
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareBase, setCompareBase] = useState('main')
+  const [compareHead, setCompareHead] = useState('HEAD')
+  const [compareFiles, setCompareFiles] = useState<GitChange[]>([])
+  const [compareLoading, setCompareLoading] = useState(false)
+
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
@@ -101,6 +109,18 @@ export function Workspace({
   // Mark quick-open search index stale on filetree changes
   const markStaleForProject = useCallback(() => markSearchIndexStale(projectName), [projectName])
   useSSERefresh('filetree', markStaleForProject)
+
+  // Fetch compare data when refs change
+  useEffect(() => {
+    if (!compareMode || !projectName) return
+    setCompareLoading(true)
+    const controller = new AbortController()
+    fetchGitCompare(projectName, compareBase, compareHead)
+      .then(data => { if (!controller.signal.aborted) setCompareFiles(data.files) })
+      .catch(() => { if (!controller.signal.aborted) setCompareFiles([]) })
+      .finally(() => { if (!controller.signal.aborted) setCompareLoading(false) })
+    return () => controller.abort()
+  }, [compareMode, compareBase, compareHead, projectName])
 
   useEffect(() => {
     if (!onVisibilityReport) return
@@ -132,7 +152,8 @@ export function Workspace({
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
   const activeDiffTab = isDiffTab(activeTab)
   const activeTasksTab = isTasksTab(activeTab)
-  const activeDiffPath = activeDiffTab && activeTab ? activeTab.slice(5) : null
+  const parsedDiff = activeDiffTab && activeTab ? parseDiffTab(activeTab) : null
+  const activeDiffPath = parsedDiff?.path ?? null
   const changes = useMemo(() => gitData?.changes ?? [], [gitData])
   const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
@@ -146,6 +167,7 @@ export function Workspace({
 
   const { activeDiff, editorDiffHunks, clearDiff } = useWorkspaceDiff({
     activeDiffPath, activeFilePath, projectName, changes, gitData,
+    compareBase: parsedDiff?.base, compareHead: parsedDiff?.compare,
   })
 
   const nav = useWorkspaceNavigation({
@@ -172,10 +194,18 @@ export function Workspace({
   })
 
   // --- closeTab with diff cleanup ---
-  const closeTab = useCallback((path: string, e?: React.MouseEvent) => {
+  const closeTab = useCallback((tab: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    actions.closeTab(path)
-    if (isDiffTab(path)) clearDiff(path.slice(5))
+    actions.closeTab(tab)
+    if (isDiffTab(tab)) {
+      const parsed = parseDiffTab(tab)
+      if (parsed) {
+        const key = parsed.base && parsed.compare
+          ? `${parsed.base}:${parsed.compare}:${parsed.path}`
+          : parsed.path
+        clearDiff(key)
+      }
+    }
   }, [actions, clearDiff])
 
   const closeActiveTab = useCallback((): boolean => {
@@ -280,6 +310,30 @@ export function Workspace({
     </div>
   )
 
+  const changesTitle = compareMode ? 'Compare' : (gitStale ? 'Changes (stale)' : undefined)
+
+  const changesActions = (
+    <div className="flex gap-0.5">
+      <button
+        onClick={() => setCompareMode(m => !m)}
+        className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer"
+        title={compareMode ? 'Exit compare mode' : 'Compare refs'}
+        style={compareMode ? { color: 'var(--sol-accent)' } : { opacity: 0.7 }}
+      >
+        <GitCompareArrows size={12} />
+      </button>
+      {compareMode && (
+        <button
+          onClick={() => setCompareMode(false)}
+          className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100"
+          title="Exit compare mode"
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  )
+
   const projectListBody = (
     <ProjectList
       projects={projects}
@@ -332,7 +386,34 @@ export function Workspace({
     />
   )
 
-  const changesBody = (
+  const changesBody = compareMode ? (
+    <>
+      <CompareRefPicker
+        base={compareBase}
+        compare={compareHead}
+        onChange={(b, c) => { setCompareBase(b); setCompareHead(c) }}
+        projectName={projectName}
+      />
+      {compareLoading && <div className="px-2 py-2 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>Loading...</div>}
+      {!compareLoading && compareFiles.map(c => {
+        const tabId = `diff:${c.path}?base=${encodeURIComponent(compareBase)}&compare=${encodeURIComponent(compareHead)}`
+        return (
+          <GitChangeItem key={c.path} change={c}
+            isActive={activeTab === tabId}
+            onActivate={() => {
+              actions.openPreviewDiffTabById(tabId)
+              setFocusTarget('editor')
+              actions.setMobilePane('editor')
+            }}
+            onFolderClick={nav.handleExpandFolder}
+          />
+        )
+      })}
+      {!compareLoading && compareFiles.length === 0 && (
+        <div className="px-2 py-2 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No differences</div>
+      )}
+    </>
+  ) : (
     <>
       {changes.map(c => {
         const isDir = c.path.endsWith('/')
@@ -369,6 +450,24 @@ export function Workspace({
     </div>
   )
 
+  // Compare file navigation
+  const navigateCompareFile = useCallback((path: string) => {
+    const tabId = `diff:${path}?base=${encodeURIComponent(compareBase)}&compare=${encodeURIComponent(compareHead)}`
+    actions.openPreviewDiffTabById(tabId)
+    setFocusTarget('editor')
+  }, [compareBase, compareHead, actions])
+
+  const editorCompareContext = useMemo(() => {
+    if (!compareMode || !activeDiffTab || !parsedDiff?.base || !parsedDiff?.compare) return undefined
+    return {
+      base: parsedDiff.base,
+      compare: parsedDiff.compare,
+      files: compareFiles,
+      currentPath: parsedDiff.path,
+      onNavigate: navigateCompareFile,
+    }
+  }, [compareMode, activeDiffTab, parsedDiff, compareFiles, navigateCompareFile])
+
   const editorPane = (
     <WorkspaceEditorColumn
       openTabs={openTabs}
@@ -404,6 +503,7 @@ export function Workspace({
       onNavigateDir={nav.handleExpandFolder}
       onFocusEditor={() => setFocusTarget('editor')}
       onOpenTasksFile={nav.handleOpenTasksFile}
+      compareContext={editorCompareContext}
     />
   )
 
@@ -459,7 +559,9 @@ export function Workspace({
       explorerBody={explorerBody}
       searchBody={searchBody}
       gitStale={gitStale}
-      changesBadge={changes.length || undefined}
+      changesBadge={compareMode ? (compareFiles.length || undefined) : (changes.length || undefined)}
+      changesTitle={changesTitle}
+      changesActions={changesActions}
       changesBody={changesBody}
       tasksBody={tasksBody}
       sessionsActions={sessionSection.sessionsActions}

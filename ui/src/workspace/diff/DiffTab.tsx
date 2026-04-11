@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { GitCompare, ChevronLeft, ChevronRight } from 'lucide-react'
 
 import type { ParsedFileDiff, DiffRow, DiffSegment } from '../../lib/parseDiff'
 import type { DiffHunk } from '../../lib/parseDiff'
+import type { GitChange } from '../../types'
+import { FileTypeIcon, GIT_COLORS } from '../../components/fileExplorerIcons'
 
 // --- View mode persistence ---
 
@@ -300,6 +303,129 @@ function CollapsedContextRow({ count, onExpand }: { count: number; onExpand: () 
   )
 }
 
+// --- Compare context type ---
+
+export interface CompareContext {
+  base: string
+  compare: string
+  files: GitChange[]
+  currentPath: string
+  onNavigate: (path: string) => void
+}
+
+// --- File list dropdown ---
+
+function FileListDropdown({
+  files,
+  currentPath,
+  onNavigate,
+  onClose,
+  anchorRef,
+}: {
+  files: GitChange[]
+  currentPath: string
+  onNavigate: (path: string) => void
+  onClose: () => void
+  anchorRef: React.RefObject<HTMLButtonElement | null>
+}) {
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [focusedIdx, setFocusedIdx] = useState(() => files.findIndex(f => f.path === currentPath))
+
+  // Click outside closes
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node) &&
+          anchorRef.current && !anchorRef.current.contains(e.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [onClose, anchorRef])
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setFocusedIdx(i => Math.min(files.length - 1, i + 1)); return }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setFocusedIdx(i => Math.max(0, i - 1)); return }
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const file = files[focusedIdx]
+        if (file) { onNavigate(file.path); onClose() }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [files, focusedIdx, onNavigate, onClose])
+
+  // Scroll focused item into view
+  useEffect(() => {
+    const el = dropdownRef.current?.querySelector(`[data-idx="${focusedIdx}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [focusedIdx])
+
+  // Position: below the anchor button
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  useEffect(() => {
+    const anchor = anchorRef.current
+    if (!anchor) return
+    const rect = anchor.getBoundingClientRect()
+    setPos({ top: rect.bottom + 2, left: rect.left })
+  }, [anchorRef])
+
+  if (!pos) return null
+
+  return (
+    <div
+      ref={dropdownRef}
+      style={{
+        position: 'fixed',
+        top: pos.top,
+        left: pos.left,
+        zIndex: 100,
+        background: 'var(--sol-glass-bg)',
+        border: '1px solid var(--sol-border)',
+        boxShadow: 'var(--elevation-2)',
+        backdropFilter: 'var(--backdrop-blur)',
+        borderRadius: 8,
+        maxHeight: 300,
+        overflowY: 'auto',
+        minWidth: 200,
+        maxWidth: 360,
+        padding: '4px 0',
+      }}
+    >
+      {files.map((file, idx) => {
+        const name = file.path.split('/').pop() || file.path
+        const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''
+        const isCurrent = file.path === currentPath
+        const isFocused = idx === focusedIdx
+        return (
+          <div
+            key={file.path}
+            data-idx={idx}
+            onClick={() => { onNavigate(file.path); onClose() }}
+            onMouseEnter={() => setFocusedIdx(idx)}
+            className="flex items-center h-[22px] px-2 text-[12px] cursor-pointer"
+            style={{
+              backgroundColor: isCurrent
+                ? 'color-mix(in srgb, var(--sol-blue) 15%, transparent)'
+                : isFocused ? 'var(--sol-hover-bg)' : undefined,
+              gap: 4,
+            }}
+          >
+            <FileTypeIcon name={name} />
+            <span className="truncate" style={{ color: 'var(--sol-text)' }}>{name}</span>
+            {dir && <span className="truncate text-[10px] min-w-0 shrink" style={{ color: 'var(--sol-muted)' }}>{dir}</span>}
+            <span className="ml-auto text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[file.status] }}>{file.status}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // --- Toolbar ---
 
 function DiffToolbar({
@@ -311,6 +437,9 @@ function DiffToolbar({
   onPrev,
   onNext,
   isMobile,
+  compareContext,
+  onPrevFile,
+  onNextFile,
 }: {
   parsed: ParsedFileDiff
   viewMode: ViewMode
@@ -320,6 +449,9 @@ function DiffToolbar({
   onPrev: () => void
   onNext: () => void
   isMobile: boolean
+  compareContext?: CompareContext
+  onPrevFile?: () => void
+  onNextFile?: () => void
 }) {
   const btnStyle: React.CSSProperties = {
     padding: '0 6px',
@@ -338,6 +470,12 @@ function DiffToolbar({
     fontWeight: 600,
   }
 
+  const [showFileDropdown, setShowFileDropdown] = useState(false)
+  const fileCountRef = useRef<HTMLButtonElement>(null)
+
+  const currentIdx = compareContext?.files.findIndex(f => f.path === compareContext.currentPath) ?? -1
+  const fileCount = compareContext?.files.length ?? 0
+
   return (
     <div
       style={{
@@ -353,6 +491,13 @@ function DiffToolbar({
         flexShrink: 0,
       }}
     >
+      {compareContext && (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--sol-text-dim)' }}>
+          <GitCompare size={10} />
+          <span>{compareContext.base} → {compareContext.compare}</span>
+        </span>
+      )}
+
       <span>
         <span style={{ color: 'var(--sol-green)' }}>+{parsed.stats.added}</span>
         {' '}
@@ -377,6 +522,23 @@ function DiffToolbar({
       )}
 
       <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+        {compareContext && fileCount > 0 && (
+          <>
+            <button style={btnStyle} onClick={onPrevFile} disabled={currentIdx <= 0} aria-label="Previous file">
+              <ChevronLeft size={12} />
+            </button>
+            <button
+              ref={fileCountRef}
+              onClick={() => setShowFileDropdown(v => !v)}
+              style={{ fontSize: 11, color: 'var(--sol-text-dim)', cursor: 'pointer', background: 'none', border: 'none', padding: '0 2px' }}
+            >
+              {currentIdx + 1} / {fileCount}
+            </button>
+            <button style={btnStyle} onClick={onNextFile} disabled={currentIdx >= fileCount - 1} aria-label="Next file">
+              <ChevronRight size={12} />
+            </button>
+          </>
+        )}
         <button style={btnStyle} onClick={onPrev} disabled={hunkCount === 0} aria-label="Previous change">&#8593;</button>
         <button style={btnStyle} onClick={onNext} disabled={hunkCount === 0} aria-label="Next change">&#8595;</button>
         {hunkCount > 0 && (
@@ -385,6 +547,16 @@ function DiffToolbar({
           </span>
         )}
       </span>
+
+      {showFileDropdown && compareContext && (
+        <FileListDropdown
+          files={compareContext.files}
+          currentPath={compareContext.currentPath}
+          onNavigate={compareContext.onNavigate}
+          onClose={() => setShowFileDropdown(false)}
+          anchorRef={fileCountRef}
+        />
+      )}
     </div>
   )
 }
@@ -394,9 +566,11 @@ function DiffToolbar({
 export function DiffTab({
   parsed,
   isMobile,
+  compareContext,
 }: {
   parsed: ParsedFileDiff
   isMobile: boolean
+  compareContext?: CompareContext
 }) {
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode)
   const [activeHunkIndex, setActiveHunkIndex] = useState(0)
@@ -445,7 +619,20 @@ export function DiffTab({
     })
   }, [hunkCount, scrollToHunk])
 
-  // j/k keyboard navigation
+  // File navigation (compare mode)
+  const currentFileIdx = compareContext?.files.findIndex(f => f.path === compareContext.currentPath) ?? -1
+
+  const navigatePrevFile = useCallback(() => {
+    if (!compareContext || currentFileIdx <= 0) return
+    compareContext.onNavigate(compareContext.files[currentFileIdx - 1].path)
+  }, [compareContext, currentFileIdx])
+
+  const navigateNextFile = useCallback(() => {
+    if (!compareContext || currentFileIdx >= compareContext.files.length - 1) return
+    compareContext.onNavigate(compareContext.files[currentFileIdx + 1].path)
+  }, [compareContext, currentFileIdx])
+
+  // j/k keyboard navigation for hunks, [ / ] for files
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       // Only handle when diff tab has focus (no input/textarea focused)
@@ -458,11 +645,17 @@ export function DiffTab({
       } else if (e.key === 'k') {
         e.preventDefault()
         navigatePrev()
+      } else if (e.key === '[') {
+        e.preventDefault()
+        navigatePrevFile()
+      } else if (e.key === ']') {
+        e.preventDefault()
+        navigateNextFile()
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [navigateNext, navigatePrev])
+  }, [navigateNext, navigatePrev, navigatePrevFile, navigateNextFile])
 
   const handleExpandContext = useCallback((key: string) => {
     setExpandedContexts(prev => {
@@ -501,6 +694,9 @@ export function DiffTab({
         onPrev={navigatePrev}
         onNext={navigateNext}
         isMobile={isMobile}
+        compareContext={compareContext}
+        onPrevFile={navigatePrevFile}
+        onNextFile={navigateNextFile}
       />
       <div
         ref={scrollRef}

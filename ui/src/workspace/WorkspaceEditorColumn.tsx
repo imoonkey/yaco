@@ -10,6 +10,7 @@ import { TaskGraphScreen } from '../tasks/TaskGraphScreen'
 import { clampLine } from './markdown'
 import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
+import type { CompareContext } from './diff/DiffTab'
 
 type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
 
@@ -38,6 +39,7 @@ export interface WorkspaceEditorColumnProps {
   editorInsert: { text: string; key: number } | null
   projectName: string
   voice: EditorColumnVoice
+  compareContext?: CompareContext
   onSelectTab: (tab: string) => void
   onDoubleClickTab: (tab: string) => void
   onCloseTab: (tab: string, e?: React.MouseEvent) => void
@@ -59,7 +61,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     openTabs, activeTab, previewTab, dirtyTabs, conflictTabs,
     files, layout, isTouch, isMobile,
     activeDiff, editorDiffHunks, jumpRequest, editorInsert,
-    projectName, voice,
+    projectName, voice, compareContext,
     onSelectTab, onDoubleClickTab, onCloseTab, onLayoutUpdate,
     onSaveFile, onForceSave, onAcceptDisk, onUpdateDraft, onUpdateViewport,
     onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onOpenTasksFile,
@@ -176,6 +178,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         insertRequestKey={editorInsert?.key}
         autocompleteEnabled={autocompleteEnabled}
         isMobile={isMobile}
+        compareContext={compareContext}
       />
     </div>
   )

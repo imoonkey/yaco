@@ -98,6 +98,16 @@ export function isFileTab(tab: string | null): tab is string {
   return typeof tab === 'string' && tab.length > 0 && !isDiffTab(tab) && !isTasksTab(tab)
 }
 
+export function parseDiffTab(tab: string): { path: string; base?: string; compare?: string } | null {
+  if (!tab.startsWith('diff:')) return null
+  const rest = tab.slice(5)
+  const qIdx = rest.indexOf('?')
+  if (qIdx === -1) return { path: rest }
+  const path = rest.slice(0, qIdx)
+  const params = new URLSearchParams(rest.slice(qIdx + 1))
+  return { path, base: params.get('base') ?? undefined, compare: params.get('compare') ?? undefined }
+}
+
 // --- Helpers ---
 
 export function defaultFileState(): FileState {

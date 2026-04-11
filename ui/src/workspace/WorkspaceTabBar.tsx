@@ -1,13 +1,25 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
 
-import { isDiffTab, isFileTab, isTasksTab, type MdMode, type SplitDirection } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, type MdMode, type SplitDirection } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { useContextMenu, Menu, MenuItem } from '../components/Menu'
 
+function truncateRef(ref: string, max = 12): string {
+  return ref.length > max ? ref.slice(0, max - 1) + '\u2026' : ref
+}
+
 function tabName(tab: string): string {
   if (isTasksTab(tab)) return 'Tasks'
-  if (isDiffTab(tab)) return `${tab.slice(5).split('/').pop()} (diff)`
+  if (isDiffTab(tab)) {
+    const parsed = parseDiffTab(tab)
+    if (!parsed) return tab
+    const filename = parsed.path.split('/').pop() || parsed.path
+    if (parsed.base && parsed.compare) {
+      return `${filename} (${truncateRef(parsed.base)}..${truncateRef(parsed.compare)})`
+    }
+    return `${filename} (diff)`
+  }
   return tab.split('/').pop() || tab
 }
 

@@ -92,6 +92,18 @@ export function useLayoutState(
     setPreviewTab(tab)
   }, [closeOldPreview])
 
+  /** Open a diff tab as preview using a pre-built tab ID (for compare diffs) */
+  const openPreviewDiffTabById = useCallback((tabId: string) => {
+    if (openTabsRef.current.includes(tabId) && previewTabRef.current !== tabId) {
+      setActiveTab(tabId)
+      return
+    }
+    closeOldPreview(tabId)
+    setOpenTabs(tabs => tabs.includes(tabId) ? tabs : [...tabs, tabId])
+    setActiveTab(tabId)
+    setPreviewTab(tabId)
+  }, [closeOldPreview])
+
   const openTasksTab = useCallback(() => {
     setPreviewTab(prev => prev === TASKS_TAB_ID ? null : prev)
     setOpenTabs(tabs => tabs.includes(TASKS_TAB_ID) ? tabs : [...tabs, TASKS_TAB_ID])
@@ -194,6 +206,7 @@ export function useLayoutState(
     openPreviewTab,
     openDiffTab,
     openPreviewDiffTab,
+    openPreviewDiffTabById,
     openTasksTab,
     toggleTasksTab,
     closeTab,

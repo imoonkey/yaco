@@ -354,7 +354,24 @@ export function useHistory(projectName: string | null): AsyncData<HistorySession
   return { data, error, loading, refresh }
 }
 
-export async function fetchGitDiff(projectName: string, filePath: string): Promise<string> {
-  const r = await fetchJson<{ diff: string }>(`/git/${encodeURIComponent(projectName)}/diff?path=${encodeURIComponent(filePath)}`)
+export async function fetchGitDiff(projectName: string, filePath: string, base?: string, compare?: string): Promise<string> {
+  let url = `/git/${encodeURIComponent(projectName)}/diff?path=${encodeURIComponent(filePath)}`
+  if (base) url += `&base=${encodeURIComponent(base)}`
+  if (compare) url += `&compare=${encodeURIComponent(compare)}`
+  const r = await fetchJson<{ diff: string }>(url)
   return r.diff
+}
+
+export interface GitRefsResult {
+  branches: string[]
+  tags: string[]
+  recentCommits: { hash: string; subject: string; date: string }[]
+}
+
+export async function fetchGitRefs(projectName: string): Promise<GitRefsResult> {
+  return fetchJson<GitRefsResult>(`/git/${encodeURIComponent(projectName)}/refs`)
+}
+
+export async function fetchGitCompare(projectName: string, base: string, compare: string): Promise<{ files: GitChange[] }> {
+  return fetchJson(`/git/${encodeURIComponent(projectName)}/compare?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`)
 }

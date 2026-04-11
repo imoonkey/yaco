@@ -5,7 +5,7 @@ import { useFileState } from './useFileState'
 import { useLayoutState } from './useLayoutState'
 
 // Re-export shared types and guards so existing consumers don't break
-export { type FileStatus, type FileState, type MdMode, type SplitDirection, type WorkspaceLayout, TASKS_TAB_ID, DEFAULT_LAYOUT, isDiffTab, isTasksTab, isFileTab } from './workspaceTypes'
+export { type FileStatus, type FileState, type MdMode, type SplitDirection, type WorkspaceLayout, TASKS_TAB_ID, DEFAULT_LAYOUT, isDiffTab, isTasksTab, isFileTab, parseDiffTab } from './workspaceTypes'
 
 export function useWorkspaceState(projectName: string) {
   // Phase 1: load persisted state
@@ -127,6 +127,7 @@ export function useWorkspaceState(projectName: string) {
     openPreviewTab,
     openDiffTab: ls.openDiffTab,
     openPreviewDiffTab: ls.openPreviewDiffTab,
+    openPreviewDiffTabById: ls.openPreviewDiffTabById,
     openTasksTab: ls.openTasksTab,
     toggleTasksTab: ls.toggleTasksTab,
     closeTab,
@@ -142,7 +143,7 @@ export function useWorkspaceState(projectName: string) {
     setPinnedSessions: ls.setPinnedSessions,
     retargetPaths,
     onDeletePath,
-  }), [openFileTab, openPreviewTab, ls.openDiffTab, ls.openPreviewDiffTab, ls.openTasksTab, ls.toggleTasksTab, closeTab, ls.setActiveTab, ls.setActiveSession, ls.setMobilePane, ls.updateLayout, updateFileDraft, updateFileViewport, saveFile, wrappedForceSave, wrappedAcceptDisk, ls.setPinnedSessions, retargetPaths, onDeletePath])
+  }), [openFileTab, openPreviewTab, ls.openDiffTab, ls.openPreviewDiffTab, ls.openPreviewDiffTabById, ls.openTasksTab, ls.toggleTasksTab, closeTab, ls.setActiveTab, ls.setActiveSession, ls.setMobilePane, ls.updateLayout, updateFileDraft, updateFileViewport, saveFile, wrappedForceSave, wrappedAcceptDisk, ls.setPinnedSessions, retargetPaths, onDeletePath])
 
   return {
     openTabs: ls.openTabs,
