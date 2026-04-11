@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-10: Git compare endpoint + diff ref extension
+
+**What changed:**
+- Added `GET /api/git/:project/compare?base=REF&compare=REF` — returns `{ files: GitChange[] }` with M/A/D status (renames mapped to M). Uses `git diff --name-status` with spawnSync args array (injection-safe). Validates params, returns 400/500 via `fail()`.
+- Extended `GET /api/git/:project/diff` with optional `?base=REF&compare=REF` — runs `git diff base compare -- path` when present, falls back to existing HEAD behavior when absent.
+
+**Why:**
+- Server foundation for the git compare feature (design: `doc/todo/git-compare/design.md`). The compare endpoint (T2) provides the file list for the compare sidebar, and the diff extension (T3) enables per-file diffs between arbitrary refs.
+
+**Key files:** server/src/routes/git.ts, doc/main/backend/routes.md
+**Verification:** `cd server && npm test` — 138 tests pass
+**Commit:** pending
+**Next:** UI components — ref picker (T4/T5), compare mode in Changes section (T6), diff tab encoding (T7), toolbar file navigation (T8)
+**Blockers:** None
+
 ## 2026-04-10: Git refs endpoint for compare feature
 
 **What changed:**
