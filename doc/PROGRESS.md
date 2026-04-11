@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-10: Git refs endpoint for compare feature
+
+**What changed:**
+- Added `GET /api/git/:project/refs` endpoint returning branches, tags, and recent commits
+- 5-second in-memory cache per project (same pattern as gitSnapshots)
+- Branches via `git branch -a`, tags via `git tag --sort=-creatordate` (capped at 50), recent commits via `git log -20`
+- Graceful degradation: returns empty arrays on git command failure
+
+**Why:**
+- First server-side piece of the git compare feature (T1 in doc/todo/git-compare/design.md)
+- UI ref picker needs this data to populate branch/tag/commit search dropdown
+
+**Key files:** `server/src/routes/git.ts`
+**Verification:** `cd server && npm test` — 138 tests pass
+**Commit:** pending
+**Next:** T2 (compare endpoint), T3 (extend diff endpoint)
+**Blockers:** None
+
 ## 2026-04-10: Markdown split direction toggle + mermaid flash fix
 
 **What changed:**
