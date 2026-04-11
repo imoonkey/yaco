@@ -45,6 +45,22 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `resources` | no | Freeform preconditions/resources needed (e.g., "CDP port available", "≥2GB free RAM"). Orchestrate checks availability via agent judgment before dispatch |
 | `requireHumanReview` | no | If true, orchestrate stops after this task completes and waits for human input. Default: false |
 | `note` | no | Free-text annotation — block reason, review comment, human notes |
+| `priority` | no | `critical \| high \| normal \| low` — orchestrate uses as tiebreak on scope conflict |
+| `agent` | no | Session handle (e.g. `w-auth-fix`). Set by orchestrate on dispatch, retained after done as audit trail |
+| `tags` | no | Free-form string[] for semantic grouping (e.g. `["backend", "refactor"]`) |
+| `estimate` | no | `xs \| s \| m \| l \| xl` — helps scheduling and workload assessment |
+| `blockReason` | no | `verification-failed \| human-review \| external \| dependency` — distinguishes why a task is blocked |
+| `created` | auto | ISO timestamp, set automatically by update-tasks.py on creation |
+| `updated` | auto | ISO timestamp, set automatically by update-tasks.py on every write |
+
+## State Transitions
+
+Any state can transition to any state, with only two hard constraints:
+
+1. **→ running** requires all `depends` to be terminal (done/cancelled)
+2. **Milestone state** is derived by rollup (cannot be set directly)
+
+This means `blocked → done` (human approve), `done → ready` (reopen), and `cancelled → ready` (restore) are all valid.
 
 ## Writing acceptCriteria
 

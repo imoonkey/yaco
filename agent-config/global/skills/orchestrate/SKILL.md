@@ -12,7 +12,17 @@ Read `doc/todo/tasks.json` via `/update-tasks`. Select tasks where ALL of:
 - `scope` doesn't overlap with any `running` task's scope
 - `resources` (if set) are available — check via agent judgment (run commands, check ports/processes), considering resources held by currently running tasks, tasks already selected in this batch, AND external processes outside the project scope (e.g., `lsof -i :9222` to check if a port is in use by anything)
 
-For each selected task: use `/update-tasks` to set state to `running`, then start a worker:
+### Ordering
+
+All ready tasks with non-overlapping scope are dispatched in parallel. Priority only serves as a tiebreak:
+
+1. On scope overlap → higher priority wins the slot: `critical > high > normal > low`
+2. When agent concurrency is capped → priority determines who gets a slot first
+3. Within the same priority → fewer depends first → smaller estimate first → alphabetical
+
+### Dispatch
+
+For each selected task: use `/update-tasks` to set state to `running` and `agent` to `w-<task-id>`, then start a worker:
 
 ```bash
 multmux start claude "<prompt>" --name "w-<task-id>"
@@ -49,8 +59,8 @@ After a worker claims completion, orchestrate **independently verifies** acceptC
    - Looks like an observable condition → use judgment (read files, check git diff)
    - For implementation tasks with user-facing changes → run `/qa` to verify affected flows
 4. **On pass** → set state to `done` via `/update-tasks`
-   - If `requireHumanReview: true` → stop before dispatching next task, report and wait for human
-5. **On fail** → set state to `blocked`, note = "verification failed: <which criteria failed>"
+   - If `requireHumanReview: true` → set state to `blocked` with `blockReason: "human-review"`, report and wait for human
+5. **On fail** → set state to `blocked` with `blockReason: "verification-failed"`, note = "<which criteria failed>"
    - Continue scanning other ready tasks (do not stop the whole run)
 
 ## Auto-Continue
@@ -61,7 +71,10 @@ After each batch completes, automatically scan for next ready tasks and dispatch
 - **Circuit breaker**: 3 consecutive task failures with no success in between → stop and report all failures
 - No more ready tasks → report final status
 
-If stopped for human review, wait for human to send instructions. Human can set the reviewed task back to `ready` (redo) or `blocked` (reject), or confirm and let orchestrate continue.
+If stopped for human review, wait for human to send instructions. Human can:
+- **Approve**: set state directly to `done`
+- **Request changes**: set state to `ready` with a note
+- **Abandon**: set state to `cancelled`
 
 ## Blocked Tasks
 
