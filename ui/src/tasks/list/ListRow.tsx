@@ -102,7 +102,7 @@ export const ListRow = memo(function ListRow({
                     onChange={e => setDraft(e.target.value)}
                     onBlur={() => onSaveTitle(draft)}
                     onKeyDown={handleKeyDown}
-                    className="w-full rounded px-1 py-0.5 outline-none text-[13px] font-semibold"
+                    className="w-full rounded px-1 py-0.5 outline-none text-[13px] font-medium"
                     style={{
                       border: '1.5px solid var(--sol-accent)',
                       backgroundColor: 'var(--sol-editor-bg)',
@@ -111,7 +111,7 @@ export const ListRow = memo(function ListRow({
                     }}
                   />
                 ) : (
-                  <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)', letterSpacing: '-0.01em' }}>
+                  <span className="text-[13px] font-medium" style={{ color: 'var(--sol-text-dark)', letterSpacing: '-0.01em' }}>
                     {task.title}
                   </span>
                 )}

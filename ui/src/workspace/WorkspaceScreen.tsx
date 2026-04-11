@@ -460,24 +460,18 @@ export function Workspace({
   )
 
   const tasksBody = (
-    <div
-      className="rounded px-2 py-2"
+    <button
+      onClick={nav.handleOpenTasks}
+      className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-colors text-left hover:bg-sol-hover-bg"
       style={{
-        backgroundColor: activeTasksTab ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
-        border: activeTasksTab ? '1px solid color-mix(in srgb, var(--sol-blue) 37%, transparent)' : '1px solid var(--sol-border)',
+        backgroundColor: activeTasksTab ? 'color-mix(in srgb, var(--sol-accent) 8%, transparent)' : undefined,
+        color: activeTasksTab ? 'var(--sol-text-dark)' : 'var(--sol-text)',
       }}
     >
-      <button
-        onClick={nav.handleOpenTasks}
-        className="text-[12px] font-medium cursor-pointer transition-colors"
-        style={{ color: activeTasksTab ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}
-      >
-        {activeTasksTab ? 'Task graph open' : 'Open task graph'}
-      </button>
-      <div className="pt-0.5 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
-        View `doc/todo/tasks.json` in the main pane.
-      </div>
-    </div>
+      <span className="text-[11px] font-medium">
+        {activeTasksTab ? 'Tasks open' : 'Open tasks'}
+      </span>
+    </button>
   )
 
   // Compare file navigation

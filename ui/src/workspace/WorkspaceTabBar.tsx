@@ -193,6 +193,7 @@ export function WorkspaceTabBar({
         const isConflict = conflictTabs.has(tab)
         const isDiff = isDiffTab(tab)
         const isTasks = isTasksTab(tab)
+        if (isTasks) return null  // Tasks is toggled from sidebar, not a tab
         const isPreview = tab === previewTab
         const tabCtx = ctxMenu.bind(() => { setCtxTab(tab) })
         return (

@@ -82,11 +82,11 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   const hasGroupAffordances = task.hasChildren
   const chevronWidth = hasGroupAffordances ? 18 : 0
   const progressText = group ? `${group.progress.done}/${group.progress.total}` : ''
-  const hasMeta = (hasGroupAffordances && !!progressText) || (!hasGroupAffordances && depCount > 0)
+  const hasRightLabel = (hasGroupAffordances && !!progressText) || (!hasGroupAffordances && depCount > 0)
+  const rightLabelWidth = hasRightLabel ? 32 : 6
 
-  // Vertical centering: single-line vs two-line layout
-  const titleY = hasMeta && showLabels ? node.y + 20 : node.y + NODE_HEIGHT / 2 + 4.5
-  const metaY = node.y + 36
+  // Single-line: vertically centered
+  const titleY = node.y + NODE_HEIGHT / 2 + 4.5
 
   return (
     <g
@@ -182,12 +182,12 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <rect
           x={node.x + chevronWidth + 22}
           y={node.y}
-          width={NODE_WIDTH - chevronWidth - 28}
+          width={NODE_WIDTH - chevronWidth - 22 - rightLabelWidth}
           height={NODE_HEIGHT}
         />
       </clipPath>
 
-      {/* Title */}
+      {/* Title — single line */}
       <text
         x={node.x + chevronWidth + 24}
         y={titleY}
@@ -202,33 +202,34 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         {task.title}
       </text>
 
-      {/* Meta line: progress for groups, dep count for leaves */}
+      {/* Right-aligned: progress for groups, dep count for leaves */}
       {hasGroupAffordances && progressText && (
         <text
-          x={node.x + chevronWidth + 24}
-          y={metaY}
+          x={node.x + NODE_WIDTH - 10}
+          y={titleY}
           fontSize={10}
           fontWeight={500}
+          textAnchor="end"
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 0.85 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
-          clipPath={`url(#clip-${node.id})`}
         >
-          {progressText} done
+          {progressText}
         </text>
       )}
 
       {!hasGroupAffordances && depCount > 0 && (
         <text
-          x={node.x + chevronWidth + 24}
-          y={metaY}
+          x={node.x + NODE_WIDTH - 10}
+          y={titleY}
           fontSize={10}
           fontWeight={500}
+          textAnchor="end"
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 0.75 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >
-          {depCount} {depCount === 1 ? 'dep' : 'deps'}
+          {depCount}
         </text>
       )}
     </g>
