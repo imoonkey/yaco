@@ -144,6 +144,7 @@ export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScr
             onSelectTask={setSelectedTask}
             onOpenFile={onOpenFile}
             mutate={mutate}
+            readOnly={!!state.selectedTaskId && !tasks.has(state.selectedTaskId)}
           />
         )}
       </div>

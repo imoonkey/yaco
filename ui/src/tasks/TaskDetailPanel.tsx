@@ -181,6 +181,7 @@ export type TaskDetailPanelProps = {
   onOpenTerminal?: (agent: string) => void
   onOpenFile?: (path: string) => void
   mutate: TaskMutations
+  readOnly?: boolean
 }
 
 export function TaskDetailPanel({
@@ -191,6 +192,7 @@ export function TaskDetailPanel({
   onOpenTerminal,
   onOpenFile,
   mutate,
+  readOnly = false,
 }: TaskDetailPanelProps) {
   const isMobile = useIsMobile()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -259,6 +261,7 @@ export function TaskDetailPanel({
       <InlineEdit
         value={task.title}
         onSave={v => patch('title', v)}
+        readOnly={readOnly}
         displayClassName="text-[16px] font-bold tracking-[-0.02em] leading-tight"
         className="text-[16px] font-bold tracking-[-0.02em]"
       />
@@ -272,6 +275,7 @@ export function TaskDetailPanel({
             onSave={v => patch('state', v)}
             type="dropdown"
             options={stateOptions}
+            readOnly={readOnly}
             displayClassName="text-[11px] font-semibold"
           />
         </div>
@@ -282,6 +286,7 @@ export function TaskDetailPanel({
             onSave={v => patch('priority', v)}
             type="dropdown"
             options={ALL_PRIORITIES}
+            readOnly={readOnly}
             displayClassName="text-[11px] font-semibold"
           />
         </div>
@@ -292,6 +297,7 @@ export function TaskDetailPanel({
             onSave={v => patch('estimate', v || null)}
             type="dropdown"
             options={ESTIMATE_OPTIONS}
+            readOnly={readOnly}
             displayClassName="text-[11px] font-semibold"
           />
         </div>
@@ -353,6 +359,7 @@ export function TaskDetailPanel({
           onSave={v => patch('description', v || null)}
           type="textarea"
           placeholder="Add description..."
+          readOnly={readOnly}
           displayClassName="whitespace-pre-wrap"
         />
       </div>
@@ -468,6 +475,7 @@ export function TaskDetailPanel({
           onSave={v => patch('note', v || null)}
           type="textarea"
           placeholder="Add notes..."
+          readOnly={readOnly}
           displayClassName="whitespace-pre-wrap"
         />
       </div>
@@ -515,8 +523,18 @@ export function TaskDetailPanel({
         className="flex items-center justify-between px-3 sticky top-0 z-10"
         style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
-          Task Details
+        <span className="flex items-center gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+            Task Details
+          </span>
+          {readOnly && (
+            <span
+              className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+              style={{ color: 'var(--sol-base1)', backgroundColor: 'var(--sol-subtle-bg)' }}
+            >
+              Archived
+            </span>
+          )}
         </span>
         <button
           onClick={onClose}

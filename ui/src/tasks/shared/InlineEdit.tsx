@@ -9,6 +9,7 @@ type InlineEditProps = {
   placeholder?: string
   className?: string
   displayClassName?: string
+  readOnly?: boolean
 }
 
 function DropdownPopover({ options, value, onSelect, onClose }: {
@@ -89,6 +90,7 @@ export function InlineEdit({
   placeholder,
   className = '',
   displayClassName = '',
+  readOnly = false,
 }: InlineEditProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(value)
@@ -116,30 +118,30 @@ export function InlineEdit({
     if (e.key === 'Enter' && e.metaKey && type === 'textarea') { e.preventDefault(); save() }
   }, [cancel, save, type])
 
-  if (!editing) {
+  if (!editing || readOnly) {
     if (type === 'dropdown') {
       const selected = options?.find(o => o.value === value)
       return (
-        <button
-          onClick={() => setEditing(true)}
-          className={`inline-flex items-center gap-1 cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-sol-hover-bg ${displayClassName}`}
+        <span
+          onClick={readOnly ? undefined : () => setEditing(true)}
+          className={`inline-flex items-center gap-1 rounded px-1 py-0.5 ${readOnly ? '' : 'cursor-pointer transition-colors hover:bg-sol-hover-bg'} ${displayClassName}`}
         >
           <span style={selected?.color ? { color: selected.color } : undefined}>
             {selected?.label ?? value}
           </span>
-          <ChevronDown size={10} style={{ color: 'var(--sol-muted)' }} />
-        </button>
+          {!readOnly && <ChevronDown size={10} style={{ color: 'var(--sol-muted)' }} />}
+        </span>
       )
     }
 
     return (
-      <button
-        onClick={() => setEditing(true)}
-        className={`cursor-pointer text-left rounded px-1 py-0.5 transition-colors hover:bg-sol-hover-bg ${displayClassName}`}
+      <span
+        onClick={readOnly ? undefined : () => setEditing(true)}
+        className={`text-left rounded px-1 py-0.5 ${readOnly ? '' : 'cursor-pointer transition-colors hover:bg-sol-hover-bg'} ${displayClassName}`}
         style={{ color: 'var(--sol-text-dark)' }}
       >
-        {value || <span style={{ color: 'var(--sol-muted)', fontStyle: 'italic' }}>{placeholder ?? 'Click to edit'}</span>}
-      </button>
+        {value || <span style={{ color: 'var(--sol-muted)', fontStyle: 'italic' }}>{readOnly ? '\u2014' : (placeholder ?? 'Click to edit')}</span>}
+      </span>
     )
   }
 
