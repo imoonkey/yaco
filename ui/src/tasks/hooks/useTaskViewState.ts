@@ -1,7 +1,7 @@
 import { useReducer, useEffect, useCallback, useRef } from 'react'
 import type { TaskState, Priority } from '../model/taskModel'
 
-export type ActiveView = 'board' | 'list' | 'graph'
+export type ActiveView = 'board' | 'list' | 'graph' | 'archive'
 export type ListSort = 'priority' | 'state' | 'title' | 'updated'
 export type ListGroupBy = 'none' | 'state' | 'priority' | 'parent' | 'agent'
 export type ListDensity = 'compact' | 'normal' | 'comfortable'

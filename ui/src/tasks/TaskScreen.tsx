@@ -4,6 +4,7 @@ import { useTaskViewState } from './hooks/useTaskViewState'
 import { TaskToolbar } from './TaskToolbar'
 import { TaskGraphScreen } from './TaskGraphScreen'
 import { TaskBoardView } from './board/TaskBoardView'
+import { TaskArchiveView } from './archive/TaskArchiveView'
 import type { TaskV2 } from './model/taskModel'
 
 interface TaskScreenProps {
@@ -98,6 +99,10 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
 
         <ViewPane visible={state.activeView === 'graph'}>
           <TaskGraphScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} />
+        </ViewPane>
+
+        <ViewPane visible={state.activeView === 'archive'}>
+          <TaskArchiveView projectName={projectName} />
         </ViewPane>
       </div>
     </div>

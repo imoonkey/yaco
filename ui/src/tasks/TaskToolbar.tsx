@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { LayoutGrid, List, GitBranch, Search, X } from 'lucide-react'
+import { LayoutGrid, List, GitBranch, Archive, Search, X } from 'lucide-react'
 import type { ActiveView, TaskFilters } from './hooks/useTaskViewState'
 import type { TaskState, Priority, TaskV2 } from './model/taskModel'
 import { STATE_COLORS } from './taskGraphConstants'
@@ -8,6 +8,7 @@ const VIEW_TABS: { key: ActiveView; label: string; icon: typeof LayoutGrid; shor
   { key: 'board', label: 'Board', icon: LayoutGrid, shortcut: '1' },
   { key: 'list', label: 'List', icon: List, shortcut: '2' },
   { key: 'graph', label: 'Graph', icon: GitBranch, shortcut: '3' },
+  { key: 'archive', label: 'Archive', icon: Archive, shortcut: '4' },
 ]
 
 const ALL_STATES: TaskState[] = ['ready', 'running', 'done', 'blocked', 'cancelled']
@@ -182,6 +183,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
       if (e.key === '1' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onSetView('board') }
       if (e.key === '2' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onSetView('list') }
       if (e.key === '3' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onSetView('graph') }
+      if (e.key === '4' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); onSetView('archive') }
       if (e.key === '/' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); searchRef.current?.focus() }
     }
     document.addEventListener('keydown', handler)
