@@ -149,7 +149,7 @@ def cmd_rm(tid):
             rollup(tasks, children[0])
     save(tasks)
 
-ARCHIVE_DIR = Path("doc/todo/archive")
+ARCHIVE_DIR = Path("doc/archive")
 
 def archive_path(slug):
     from datetime import date
