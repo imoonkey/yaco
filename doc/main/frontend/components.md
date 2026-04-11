@@ -58,20 +58,28 @@ App (384 lines)
 
 **Task system (`ui/src/tasks/`) — multi-view task management:**
 ```
-TaskScreen — master controller (view switcher, filtering, detail panel)
-├── TaskToolbar — view tabs (Board/List/Graph/Archive), filter dropdowns, search
+TaskScreen — master controller (view switcher, filtering, detail panel, onClose)
+├── TaskToolbar — view tabs, filter dropdowns, search, close button
+│   ├── Desktop: two rows (view tabs + search | filter dropdowns + pills)
+│   └── Mobile: single row (icon-only tabs | filter icon | search toggle | X)
 ├── TaskBoardView — kanban columns (Blocked → Ready → Running → Done)
+│   ├── Desktop: flex columns
+│   ├── Mobile: scroll-snap horizontal swipe (one column at a time, 12px inset)
 │   ├── BoardColumn — collapsible column with drag-drop
 │   └── BoardCard — task card (compact mode for done)
 ├── TaskListView — virtual-scroll table with sortable columns
-│   ├── ListHeader — resizable column headers
-│   └── ListRow — inline title editing, multi-select
+│   ├── Desktop: ListHeader (resizable) + ListRow (7 columns)
+│   └── Mobile: MobileListRow (44px, StateDot + title + parent + priority)
 ├── TaskGraphScreen — SVG dependency graph with pan/zoom
 │   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line) + TaskGraphEdges
-│   ├── TaskGraphMinimap — overview with viewport rect
+│   ├── TaskGraphToolbar (mobile: larger touch targets, hides collapse controls)
+│   ├── TaskGraphMinimap — overview with viewport rect (desktop only)
 │   └── TaskGraphTooltip — hover overlay
 ├── TaskArchiveView — date-grouped archive with search, click-to-detail
+│   └── Mobile: hides task ID + unarchive button, taller touch targets
 ├── TaskDetailPanel — shared right sidebar (editable, readOnly mode for archives)
+│   ├── Desktop: 340px right sidebar with slide-right animation
+│   ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
 │   ├── InlineEdit — click-to-edit with custom dropdown popover
 │   ├── Children progress bar (for parent tasks)
 │   └── Design doc link → opens in editor (file paths) or new tab (URLs)

@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-04-11: Tasks v2 mobile polish
+
+**What changed:**
+- Board view: scroll-snap horizontal swipe on mobile (`scrollPaddingInlineStart: 12px`, one column at a time with next-column peek)
+- List view: `MobileListRow` component replaces 7-column table on mobile (44px fixed-height rows, StateDot + title + parent + priority only)
+- TaskToolbar: single-row mobile layout with icon-only view tabs, collapsed SlidersHorizontal filter dropdown, toggle search (full-width when open)
+- Graph toolbar: larger 32px touch targets on mobile, collapse/expand controls hidden to save space
+- Graph view: removed duplicate `TaskGraphDetailPanel` mobile bottom sheet — parent `TaskScreen` handles unified detail panel (was showing two overlapping bottom sheets)
+- Detail panel: mobile bottom sheet increased from 50vh to 75vh, added backdrop overlay (`--sol-overlay-bg`) with dismiss-on-tap, added sticky header with close button
+- X close button added to task panel toolbar (both desktop and mobile) — wires `onLayoutUpdate({ showTasks: false })` + close tab
+- Tasks toggle in Browse pane gets `paddingBottom: max(8px, env(safe-area-inset-bottom))` for notch devices
+- Archive rows: taller touch targets on mobile (minHeight 44px), search input h-8, hide task ID + unarchive button
+- CSS: `.no-scrollbar` utility added for hidden-scrollbar horizontal overflow
+
+**Why:**
+- Tasks desktop UX was polished but mobile was untouched — toolbar overflowed, board squeezed 4 columns into 360px, list showed 7 columns, no touch target optimization, no close button, double bottom sheet bug on graph view
+
+**Key files:** `ui/src/tasks/` (TaskToolbar, TaskScreen, TaskBoardView, TaskListView, MobileListRow, TaskGraphScreen, TaskGraphToolbar, TaskDetailPanel, TaskArchiveView), `ui/src/workspace/` (WorkspaceEditorColumn, WorkspaceLayout), `ui/src/index.css`
+**Verification:** `tsc --noEmit` clean, ESLint clean on all changed files
+**Commit:** `95a5991`
+**Next:** Remaining mixed files (TaskToolbar worktree filters, TaskDetailPanel worktree section, archive worktree indicators, WorkspaceScreen worktree props) to be committed with the worktree feature
+**Blockers:** None
+
 ## 2026-04-11: Tasks v2 UI polish — UX + visual overhaul
 
 **What changed:**
