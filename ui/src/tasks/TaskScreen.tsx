@@ -6,6 +6,7 @@ import { TaskGraphScreen } from './TaskGraphScreen'
 import { TaskBoardView } from './board/TaskBoardView'
 import { TaskListView } from './list/TaskListView'
 import { TaskArchiveView } from './archive/TaskArchiveView'
+import { TaskDetailPanel } from './TaskDetailPanel'
 import type { TaskV2 } from './model/taskModel'
 
 interface TaskScreenProps {
@@ -48,6 +49,8 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
     [filteredTasks],
   )
 
+  const selectedTask = state.selectedTaskId ? tasks.get(state.selectedTaskId) ?? null : null
+
   return (
     <div className="flex flex-col h-full">
       <TaskToolbar
@@ -64,59 +67,64 @@ export function TaskScreen({ projectName, onOpenTasksFile }: TaskScreenProps) {
         onResetFilters={resetFilters}
       />
 
-      {/* View container with crossfade */}
-      <div className="flex-1 min-h-0 relative">
-        <ViewPane visible={state.activeView === 'board'}>
-          {loading ? (
-            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-dim)' }}>
-              <div className="text-[12px]">Loading tasks...</div>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-red)' }}>
-              <div className="text-[12px]">Error: {error.message}</div>
-            </div>
-          ) : (
-            <TaskBoardView
-              tasks={tasks}
-              filteredTaskIds={filteredTaskIds}
-              onSelectTask={setSelectedTask}
-              selectedTaskId={state.selectedTaskId}
-              mutate={mutate}
-              collapsedColumns={state.boardColumnCollapsed}
-              onToggleColumn={toggleBoardColumn}
-            />
-          )}
-        </ViewPane>
+      <div className="flex-1 min-h-0 flex">
+        {/* View container with crossfade */}
+        <div className="flex-1 min-h-0 relative">
+          <ViewPane visible={state.activeView === 'board'}>
+            {loading ? (
+              <LoadingState />
+            ) : error ? (
+              <ErrorState message={error.message} />
+            ) : (
+              <TaskBoardView
+                tasks={tasks}
+                filteredTaskIds={filteredTaskIds}
+                onSelectTask={setSelectedTask}
+                selectedTaskId={state.selectedTaskId}
+                mutate={mutate}
+                collapsedColumns={state.boardColumnCollapsed}
+                onToggleColumn={toggleBoardColumn}
+              />
+            )}
+          </ViewPane>
 
-        <ViewPane visible={state.activeView === 'list'}>
-          {loading ? (
-            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-dim)' }}>
-              <div className="text-[12px]">Loading tasks...</div>
-            </div>
-          ) : error ? (
-            <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-red)' }}>
-              <div className="text-[12px]">Error: {error.message}</div>
-            </div>
-          ) : (
-            <TaskListView
-              tasks={tasks}
-              filteredTaskIds={filteredTaskIds}
-              onSelectTask={setSelectedTask}
-              selectedTaskId={state.selectedTaskId}
-              multiSelectedIds={state.listSelectedIds}
-              onSetMultiSelected={setListSelected}
-              mutate={mutate}
-            />
-          )}
-        </ViewPane>
+          <ViewPane visible={state.activeView === 'list'}>
+            {loading ? (
+              <LoadingState />
+            ) : error ? (
+              <ErrorState message={error.message} />
+            ) : (
+              <TaskListView
+                tasks={tasks}
+                filteredTaskIds={filteredTaskIds}
+                onSelectTask={setSelectedTask}
+                selectedTaskId={state.selectedTaskId}
+                multiSelectedIds={state.listSelectedIds}
+                onSetMultiSelected={setListSelected}
+                mutate={mutate}
+              />
+            )}
+          </ViewPane>
 
-        <ViewPane visible={state.activeView === 'graph'}>
-          <TaskGraphScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} />
-        </ViewPane>
+          <ViewPane visible={state.activeView === 'graph'}>
+            <TaskGraphScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} />
+          </ViewPane>
 
-        <ViewPane visible={state.activeView === 'archive'}>
-          <TaskArchiveView projectName={projectName} />
-        </ViewPane>
+          <ViewPane visible={state.activeView === 'archive'}>
+            <TaskArchiveView projectName={projectName} />
+          </ViewPane>
+        </div>
+
+        {/* Detail panel — right sidebar */}
+        {selectedTask && (
+          <TaskDetailPanel
+            task={selectedTask}
+            allTasks={tasks}
+            onClose={() => setSelectedTask(null)}
+            onSelectTask={setSelectedTask}
+            mutate={mutate}
+          />
+        )}
       </div>
     </div>
   )
@@ -134,6 +142,22 @@ function ViewPane({ visible, children }: { visible: boolean; children: React.Rea
       }}
     >
       {children}
+    </div>
+  )
+}
+
+function LoadingState() {
+  return (
+    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
+      <div className="text-[12px]">Loading tasks...</div>
+    </div>
+  )
+}
+
+function ErrorState({ message }: { message: string }) {
+  return (
+    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-red)' }}>
+      <div className="text-[12px]">Error: {message}</div>
     </div>
   )
 }
