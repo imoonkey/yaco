@@ -1,24 +1,52 @@
 import { FileTypeIcon, FolderIcon, GIT_COLORS } from '../components/fileExplorerIcons'
 import type { GitChange } from '../types'
 
+/** Status badge background at low opacity, derived from the status color */
+const STATUS_BG: Record<string, string> = {
+  M: 'color-mix(in srgb, var(--sol-warning) 14%, transparent)',
+  U: 'color-mix(in srgb, #73C991 14%, transparent)',
+  A: 'color-mix(in srgb, #73C991 14%, transparent)',
+  D: 'color-mix(in srgb, #C74E39 14%, transparent)',
+}
+
 export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: { change: GitChange; isActive: boolean; onActivate: () => void; onFolderClick?: (dir: string) => void }) {
   const isDir = change.path.endsWith('/')
   const cleanPath = isDir ? change.path.slice(0, -1) : change.path
   const name = cleanPath.split('/').pop() || cleanPath
   const dir = cleanPath.includes('/') ? cleanPath.slice(0, cleanPath.lastIndexOf('/')) : ''
+  const statusColor = GIT_COLORS[change.status] || 'var(--sol-text)'
   return (
     <div onClick={onActivate}
-      className={`flex items-center gap-1 px-1 h-[22px] rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
+      className="flex items-center gap-1.5 h-[24px] rounded cursor-pointer text-[12px]"
       title={cleanPath}
-      style={{ transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}>
-      {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}
-      <span className="truncate" style={{ color: GIT_COLORS[change.status] || 'var(--sol-text)' }}>{name}</span>
+      style={{
+        paddingLeft: isActive ? 6 : 8,
+        paddingRight: 6,
+        borderLeft: isActive ? `2px solid ${statusColor}` : '2px solid transparent',
+        backgroundColor: isActive ? 'color-mix(in srgb, var(--sol-blue) 10%, transparent)' : undefined,
+        transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), border-color 120ms, padding-left 120ms',
+      }}
+      onMouseEnter={e => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
+      onMouseLeave={e => { if (!isActive) e.currentTarget.style.backgroundColor = '' }}
+    >
+      <span className="shrink-0 flex items-center" style={{ opacity: isActive ? 1 : 0.8 }}>
+        {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}
+      </span>
+      <span className="truncate font-medium" style={{ color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
       {dir && <span
         className="truncate text-[10px] hover:underline shrink min-w-0"
         style={{ color: 'var(--sol-muted)' }}
         onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
       >{dir}</span>}
-      <span className="ml-auto text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[change.status] }}>{change.status}</span>
+      <span
+        className="ml-auto shrink-0 rounded text-[9px] font-bold leading-none"
+        style={{
+          color: statusColor,
+          backgroundColor: STATUS_BG[change.status],
+          padding: '2px 4px',
+          letterSpacing: '0.02em',
+        }}
+      >{change.status}</span>
     </div>
   )
 }

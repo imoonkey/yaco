@@ -97,8 +97,7 @@ export function Workspace({
   const [compareMode, setCompareMode] = useState(false)
   const [compareBase, setCompareBase] = useState('main')
   const [compareHead, setCompareHead] = useState('HEAD')
-  const [compareFiles, setCompareFiles] = useState<GitChange[]>([])
-  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareResult, setCompareResult] = useState<{ files: GitChange[]; key: string } | null>(null)
 
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
@@ -111,14 +110,16 @@ export function Workspace({
   useSSERefresh('filetree', markStaleForProject)
 
   // Fetch compare data when refs change
+  const compareKey = `${compareBase}:${compareHead}`
+  const compareLoading = compareMode && compareResult?.key !== compareKey
+  const compareFiles = useMemo(() => compareResult?.files ?? [], [compareResult])
   useEffect(() => {
     if (!compareMode || !projectName) return
-    setCompareLoading(true)
+    const key = `${compareBase}:${compareHead}`
     const controller = new AbortController()
     fetchGitCompare(projectName, compareBase, compareHead)
-      .then(data => { if (!controller.signal.aborted) setCompareFiles(data.files) })
-      .catch(() => { if (!controller.signal.aborted) setCompareFiles([]) })
-      .finally(() => { if (!controller.signal.aborted) setCompareLoading(false) })
+      .then(data => { if (!controller.signal.aborted) setCompareResult({ files: data.files, key }) })
+      .catch(() => { if (!controller.signal.aborted) setCompareResult({ files: [], key }) })
     return () => controller.abort()
   }, [compareMode, compareBase, compareHead, projectName])
 
@@ -313,22 +314,28 @@ export function Workspace({
   const changesTitle = compareMode ? 'Compare' : (gitStale ? 'Changes (stale)' : undefined)
 
   const changesActions = (
-    <div className="flex gap-0.5">
+    <div className="flex gap-0.5 items-center">
       <button
         onClick={() => setCompareMode(m => !m)}
         className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer"
         title={compareMode ? 'Exit compare mode' : 'Compare refs'}
-        style={compareMode ? { color: 'var(--sol-accent)' } : { opacity: 0.7 }}
+        style={compareMode
+          ? { color: 'var(--sol-accent)', backgroundColor: 'color-mix(in srgb, var(--sol-accent) 12%, transparent)', padding: '1px 3px', borderRadius: 3, transition: 'all 120ms' }
+          : { opacity: 0.7, transition: 'all 120ms' }
+        }
       >
         <GitCompareArrows size={12} />
       </button>
       {compareMode && (
         <button
           onClick={() => setCompareMode(false)}
-          className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100"
+          className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer"
           title="Exit compare mode"
+          style={{ color: 'var(--sol-muted)', transition: 'color 120ms' }}
+          onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-text)')}
+          onMouseLeave={e => (e.currentTarget.style.color = 'var(--sol-muted)')}
         >
-          <X size={12} />
+          <X size={11} />
         </button>
       )}
     </div>
@@ -394,7 +401,14 @@ export function Workspace({
         onChange={(b, c) => { setCompareBase(b); setCompareHead(c) }}
         projectName={projectName}
       />
-      {compareLoading && <div className="px-2 py-2 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>Loading...</div>}
+      {compareLoading && (
+        <div className="changes-skeleton">
+          <div className="changes-skeleton-row" style={{ width: '85%' }} />
+          <div className="changes-skeleton-row" style={{ width: '60%' }} />
+          <div className="changes-skeleton-row" style={{ width: '72%' }} />
+          <div className="changes-skeleton-row" style={{ width: '50%' }} />
+        </div>
+      )}
       {!compareLoading && compareFiles.map(c => {
         const tabId = `diff:${c.path}?base=${encodeURIComponent(compareBase)}&compare=${encodeURIComponent(compareHead)}`
         return (
@@ -410,7 +424,10 @@ export function Workspace({
         )
       })}
       {!compareLoading && compareFiles.length === 0 && (
-        <div className="px-2 py-2 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No differences</div>
+        <div className="flex flex-col items-center py-4 gap-1">
+          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-muted)' }}>No differences</span>
+          <span className="text-[10px]" style={{ color: 'var(--sol-base1)' }}>These refs are identical</span>
+        </div>
       )}
     </>
   ) : (
@@ -425,7 +442,12 @@ export function Workspace({
           />
         )
       })}
-      {changes.length === 0 && <div className="px-2 py-2 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No changes</div>}
+      {changes.length === 0 && (
+        <div className="flex flex-col items-center py-4 gap-1">
+          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-muted)' }}>No changes</span>
+          <span className="text-[10px]" style={{ color: 'var(--sol-base1)' }}>Working tree is clean</span>
+        </div>
+      )}
     </>
   )
 

@@ -26,7 +26,7 @@ const REFS_CACHE_TTL_MS = 5_000
 interface RefsResult {
   branches: string[]
   tags: string[]
-  recentCommits: { hash: string; subject: string; date: string }[]
+  recentCommits: { hash: string; subject: string; date: string; author: string }[]
 }
 
 const app = new Hono<ProjectEnv>()
@@ -52,15 +52,11 @@ app.get('/:project/refs', withProject, async (c) => {
     ? tagResult.stdout.split('\n').filter(Boolean).slice(0, 50)
     : empty.tags
 
-  const logResult = spawnSync('git', ['log', '--oneline', '-20', '--format=%h %ci %s'], gitOpts)
+  const logResult = spawnSync('git', ['log', '-50', '--format=%h\t%ci\t%an\t%s'], gitOpts)
   const recentCommits = logResult.status === 0
     ? logResult.stdout.split('\n').filter(Boolean).map(line => {
-        const hash = line.slice(0, line.indexOf(' '))
-        const rest = line.slice(hash.length + 1)
-        // date is next 25 chars: "YYYY-MM-DD HH:MM:SS +ZZZZ"
-        const date = rest.slice(0, 25)
-        const subject = rest.slice(26)
-        return { hash, subject, date }
+        const parts = line.split('\t')
+        return { hash: parts[0], date: parts[1], author: parts[2], subject: parts[3] ?? '' }
       })
     : empty.recentCommits
 

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { GitCompare, ChevronLeft, ChevronRight } from 'lucide-react'
+import { GitCompare, ChevronLeft, ChevronRight, ChevronsUpDown, GitBranch } from 'lucide-react'
 
 import type { ParsedFileDiff, DiffRow, DiffSegment } from '../../lib/parseDiff'
 import type { DiffHunk } from '../../lib/parseDiff'
@@ -25,11 +25,11 @@ function saveViewMode(mode: ViewMode) {
 // --- Colors ---
 
 const COLORS = {
-  addBg: 'color-mix(in srgb, var(--sol-green) 8%, transparent)',
-  delBg: 'color-mix(in srgb, var(--sol-red) 8%, transparent)',
-  addWord: 'color-mix(in srgb, var(--sol-green) 25%, transparent)',
-  delWord: 'color-mix(in srgb, var(--sol-red) 25%, transparent)',
-  hunkBg: 'color-mix(in srgb, var(--sol-blue) 8%, transparent)',
+  addBg: 'color-mix(in srgb, var(--sol-green) 10%, transparent)',
+  delBg: 'color-mix(in srgb, var(--sol-red) 10%, transparent)',
+  addWord: 'color-mix(in srgb, var(--sol-green) 30%, transparent)',
+  delWord: 'color-mix(in srgb, var(--sol-red) 30%, transparent)',
+  hunkBg: 'color-mix(in srgb, var(--sol-blue) 6%, transparent)',
   gapBorder: 'var(--sol-border)',
 } as const
 
@@ -100,6 +100,7 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
         color: 'var(--sol-base1)',
         userSelect: 'none',
         flexShrink: 0,
+        fontSize: 11,
         ...style,
       }}
     >
@@ -248,12 +249,14 @@ function HunkHeader({ hunk, isActive }: { hunk: DiffHunk; isActive: boolean }) {
     <div
       style={{
         backgroundColor: COLORS.hunkBg,
-        color: 'var(--sol-blue)',
-        padding: '2px 12px',
-        fontSize: 12,
-        fontFamily: 'monospace',
-        borderTop: isActive ? `2px solid ${'var(--sol-blue)'}` : `1px solid ${'var(--sol-border)'}`,
-        borderBottom: `1px solid ${'var(--sol-border)'}`,
+        color: isActive ? 'var(--sol-blue)' : 'var(--sol-base1)',
+        padding: '3px 12px',
+        fontSize: 11,
+        fontFamily: 'var(--font-mono)',
+        borderTop: isActive ? '2px solid var(--sol-blue)' : '1px solid var(--sol-border)',
+        borderBottom: '1px solid var(--sol-border)',
+        transition: 'color 120ms, border-color 120ms',
+        letterSpacing: '-0.01em',
       }}
     >
       {hunk.header}
@@ -265,18 +268,8 @@ function HunkHeader({ hunk, isActive }: { hunk: DiffHunk; isActive: boolean }) {
 
 function InterHunkGap({ lineCount }: { lineCount: number }) {
   return (
-    <div
-      style={{
-        textAlign: 'center',
-        color: 'var(--sol-base1)',
-        fontSize: 11,
-        padding: '4px 0',
-        borderTop: `1px dashed ${COLORS.gapBorder}`,
-        borderBottom: `1px dashed ${COLORS.gapBorder}`,
-        userSelect: 'none',
-      }}
-    >
-      {lineCount} unchanged lines omitted
+    <div className="collapsed-context-fold" style={{ cursor: 'default' }}>
+      <span>{lineCount} unchanged lines omitted</span>
     </div>
   )
 }
@@ -286,19 +279,11 @@ function InterHunkGap({ lineCount }: { lineCount: number }) {
 function CollapsedContextRow({ count, onExpand }: { count: number; onExpand: () => void }) {
   return (
     <div
-      style={{
-        textAlign: 'center',
-        color: 'var(--sol-base1)',
-        fontSize: 11,
-        padding: '2px 0',
-        cursor: 'pointer',
-        userSelect: 'none',
-      }}
+      className="collapsed-context-fold"
       onClick={onExpand}
-      onMouseEnter={e => (e.currentTarget.style.backgroundColor = COLORS.hunkBg)}
-      onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
     >
-      {count} unchanged lines
+      <ChevronsUpDown size={10} />
+      <span>{count} unchanged lines</span>
     </div>
   )
 }
@@ -371,10 +356,17 @@ function FileListDropdown({
     const anchor = anchorRef.current
     if (!anchor) return
     const rect = anchor.getBoundingClientRect()
-    setPos({ top: rect.bottom + 2, left: rect.left })
+    setPos({ top: rect.bottom + 4, left: Math.max(8, rect.left - 80) })
   }, [anchorRef])
 
   if (!pos) return null
+
+  const STATUS_BG: Record<string, string> = {
+    M: 'color-mix(in srgb, var(--sol-warning) 14%, transparent)',
+    U: 'color-mix(in srgb, #73C991 14%, transparent)',
+    A: 'color-mix(in srgb, #73C991 14%, transparent)',
+    D: 'color-mix(in srgb, #C74E39 14%, transparent)',
+  }
 
   return (
     <div
@@ -389,13 +381,16 @@ function FileListDropdown({
         boxShadow: 'var(--elevation-2)',
         backdropFilter: 'var(--backdrop-blur)',
         borderRadius: 8,
-        maxHeight: 300,
+        maxHeight: 320,
         overflowY: 'auto',
-        minWidth: 200,
-        maxWidth: 360,
+        minWidth: 220,
+        maxWidth: 400,
         padding: '4px 0',
       }}
     >
+      <div className="px-2 pb-1 mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--sol-muted)', borderBottom: '1px solid var(--sol-border)' }}>
+        Files in comparison
+      </div>
       {files.map((file, idx) => {
         const name = file.path.split('/').pop() || file.path
         const dir = file.path.includes('/') ? file.path.slice(0, file.path.lastIndexOf('/')) : ''
@@ -407,18 +402,23 @@ function FileListDropdown({
             data-idx={idx}
             onClick={() => { onNavigate(file.path); onClose() }}
             onMouseEnter={() => setFocusedIdx(idx)}
-            className="flex items-center h-[22px] px-2 text-[12px] cursor-pointer"
+            className="flex items-center h-[26px] px-2 text-[12px] cursor-pointer"
             style={{
               backgroundColor: isCurrent
-                ? 'color-mix(in srgb, var(--sol-blue) 15%, transparent)'
+                ? 'color-mix(in srgb, var(--sol-blue) 12%, transparent)'
                 : isFocused ? 'var(--sol-hover-bg)' : undefined,
-              gap: 4,
+              borderLeft: isCurrent ? '2px solid var(--sol-accent)' : '2px solid transparent',
+              gap: 6,
+              transition: 'background-color 80ms',
             }}
           >
             <FileTypeIcon name={name} />
-            <span className="truncate" style={{ color: 'var(--sol-text)' }}>{name}</span>
+            <span className="truncate font-medium" style={{ color: isCurrent ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
             {dir && <span className="truncate text-[10px] min-w-0 shrink" style={{ color: 'var(--sol-muted)' }}>{dir}</span>}
-            <span className="ml-auto text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[file.status] }}>{file.status}</span>
+            <span
+              className="ml-auto shrink-0 rounded text-[9px] font-bold leading-none"
+              style={{ color: GIT_COLORS[file.status], backgroundColor: STATUS_BG[file.status], padding: '2px 4px' }}
+            >{file.status}</span>
           </div>
         )
       })}
@@ -453,21 +453,32 @@ function DiffToolbar({
   onPrevFile?: () => void
   onNextFile?: () => void
 }) {
-  const btnStyle: React.CSSProperties = {
-    padding: '0 6px',
-    height: 22,
+  const navBtnStyle: React.CSSProperties = {
+    padding: '0 5px',
+    height: 20,
     fontSize: 11,
-    border: `1px solid ${'var(--sol-border)'}`,
+    border: '1px solid var(--sol-border)',
     borderRadius: 3,
     cursor: 'pointer',
     backgroundColor: 'transparent',
     color: 'var(--sol-text)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'background-color 80ms',
   }
 
-  const activeBtnStyle: React.CSSProperties = {
-    ...btnStyle,
-    backgroundColor: 'var(--sol-bg)',
-    fontWeight: 600,
+  const viewBtnBase: React.CSSProperties = {
+    padding: '0 8px',
+    height: 20,
+    fontSize: 10,
+    border: '1px solid var(--sol-border)',
+    cursor: 'pointer',
+    color: 'var(--sol-text)',
+    letterSpacing: '0.02em',
+    textTransform: 'uppercase',
+    fontWeight: 500,
+    transition: 'background-color 80ms, color 80ms',
   }
 
   const [showFileDropdown, setShowFileDropdown] = useState(false)
@@ -481,69 +492,98 @@ function DiffToolbar({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
-        height: 28,
-        padding: '0 12px',
+        gap: 0,
+        height: 30,
+        padding: '0 10px',
         backgroundColor: 'var(--sol-header-bg)',
-        borderBottom: `1px solid ${'var(--sol-border)'}`,
+        borderBottom: '1px solid var(--sol-border)',
         fontSize: 12,
         color: 'var(--sol-text)',
         flexShrink: 0,
       }}
     >
+      {/* Compare context */}
       {compareContext && (
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--sol-text-dim)' }}>
-          <GitCompare size={10} />
-          <span>{compareContext.base} → {compareContext.compare}</span>
-        </span>
+        <>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--sol-text-dim)', marginRight: 10 }}>
+            <GitBranch size={10} style={{ color: 'var(--sol-accent)' }} />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.base}</span>
+            <span style={{ color: 'var(--sol-muted)', fontSize: 10 }}>&rarr;</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.compare}</span>
+          </span>
+          <div className="toolbar-sep" />
+        </>
       )}
 
-      <span>
+      {/* Stats */}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 10px', fontSize: 11, fontWeight: 600 }}>
         <span style={{ color: 'var(--sol-green)' }}>+{parsed.stats.added}</span>
-        {' '}
         <span style={{ color: 'var(--sol-red)' }}>-{parsed.stats.deleted}</span>
       </span>
 
+      <div className="toolbar-sep" />
+
+      {/* View mode */}
       {!isMobile && (
-        <span style={{ display: 'flex', gap: 2 }}>
-          <button
-            style={viewMode === 'unified' ? activeBtnStyle : btnStyle}
-            onClick={() => onViewMode('unified')}
-          >
-            Unified
-          </button>
-          <button
-            style={viewMode === 'split' ? activeBtnStyle : btnStyle}
-            onClick={() => onViewMode('split')}
-          >
-            Split
-          </button>
-        </span>
+        <>
+          <span style={{ display: 'flex', margin: '0 10px' }}>
+            <button
+              style={{ ...viewBtnBase, borderRadius: '3px 0 0 3px', backgroundColor: viewMode === 'unified' ? 'var(--sol-bg)' : 'transparent', fontWeight: viewMode === 'unified' ? 700 : 500, color: viewMode === 'unified' ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)' }}
+              onClick={() => onViewMode('unified')}
+            >Unified</button>
+            <button
+              style={{ ...viewBtnBase, borderRadius: '0 3px 3px 0', borderLeft: 'none', backgroundColor: viewMode === 'split' ? 'var(--sol-bg)' : 'transparent', fontWeight: viewMode === 'split' ? 700 : 500, color: viewMode === 'split' ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)' }}
+              onClick={() => onViewMode('split')}
+            >Split</button>
+          </span>
+          <div className="toolbar-sep" />
+        </>
       )}
 
-      <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-        {compareContext && fileCount > 0 && (
-          <>
-            <button style={btnStyle} onClick={onPrevFile} disabled={currentIdx <= 0} aria-label="Previous file">
-              <ChevronLeft size={12} />
+      {/* Spacer */}
+      <span style={{ flex: 1 }} />
+
+      {/* File navigation (compare mode) */}
+      {compareContext && fileCount > 0 && (
+        <>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 3, marginRight: 10 }}>
+            <button style={navBtnStyle} onClick={onPrevFile} disabled={currentIdx <= 0} aria-label="Previous file">
+              <ChevronLeft size={11} />
             </button>
             <button
               ref={fileCountRef}
               onClick={() => setShowFileDropdown(v => !v)}
-              style={{ fontSize: 11, color: 'var(--sol-text-dim)', cursor: 'pointer', background: 'none', border: 'none', padding: '0 2px' }}
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--sol-text-dim)',
+                cursor: 'pointer',
+                background: showFileDropdown ? 'color-mix(in srgb, var(--sol-blue) 10%, transparent)' : 'transparent',
+                border: '1px solid var(--sol-border)',
+                borderRadius: 3,
+                padding: '1px 6px',
+                height: 20,
+                letterSpacing: '0.02em',
+                transition: 'background-color 80ms',
+              }}
             >
-              {currentIdx + 1} / {fileCount}
+              {currentIdx + 1}<span style={{ color: 'var(--sol-muted)', fontWeight: 400 }}> / </span>{fileCount}
             </button>
-            <button style={btnStyle} onClick={onNextFile} disabled={currentIdx >= fileCount - 1} aria-label="Next file">
-              <ChevronRight size={12} />
+            <button style={navBtnStyle} onClick={onNextFile} disabled={currentIdx >= fileCount - 1} aria-label="Next file">
+              <ChevronRight size={11} />
             </button>
-          </>
-        )}
-        <button style={btnStyle} onClick={onPrev} disabled={hunkCount === 0} aria-label="Previous change">&#8593;</button>
-        <button style={btnStyle} onClick={onNext} disabled={hunkCount === 0} aria-label="Next change">&#8595;</button>
+          </span>
+          <div className="toolbar-sep" />
+        </>
+      )}
+
+      {/* Hunk navigation */}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 3, marginLeft: 10 }}>
+        <button style={navBtnStyle} onClick={onPrev} disabled={hunkCount === 0} aria-label="Previous change">&#8593;</button>
+        <button style={navBtnStyle} onClick={onNext} disabled={hunkCount === 0} aria-label="Next change">&#8595;</button>
         {hunkCount > 0 && (
-          <span style={{ fontSize: 11, color: 'var(--sol-text-dim)' }}>
-            Change {activeIndex + 1} of {hunkCount}
+          <span style={{ fontSize: 10, color: 'var(--sol-text-dim)', marginLeft: 4, fontWeight: 500, whiteSpace: 'nowrap' }}>
+            {activeIndex + 1}<span style={{ color: 'var(--sol-muted)', fontWeight: 400 }}> / </span>{hunkCount}
           </span>
         )}
       </span>
@@ -668,8 +708,10 @@ export function DiffTab({
   // Binary placeholder
   if (parsed.mode === 'binary') {
     return (
-      <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
-        Binary file changed
+      <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+        <div style={{ fontSize: 24, opacity: 0.3 }}>&#x1F4E6;</div>
+        <span className="text-[12px] font-medium">Binary file changed</span>
+        <span className="text-[10px]">Preview not available for binary files</span>
       </div>
     )
   }
@@ -677,8 +719,10 @@ export function DiffTab({
   // Empty diff
   if (hunkCount === 0) {
     return (
-      <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
-        No changes
+      <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+        <GitCompare size={20} style={{ opacity: 0.3 }} />
+        <span className="text-[12px] font-medium">No changes detected</span>
+        <span className="text-[10px]">The files are identical</span>
       </div>
     )
   }
@@ -703,7 +747,7 @@ export function DiffTab({
         style={{
           flex: 1,
           overflow: 'auto',
-          fontFamily: 'monospace',
+          fontFamily: 'var(--font-mono)',
           fontSize: 12,
           lineHeight: '1.6',
           backgroundColor: 'var(--sol-editor-bg)',

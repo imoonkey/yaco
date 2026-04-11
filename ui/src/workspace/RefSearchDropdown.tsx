@@ -3,11 +3,43 @@ import { Fzf } from 'fzf'
 import { DialogShell } from '../components/DialogShell'
 import { fetchGitRefs, type GitRefsResult } from '../hooks/useApi'
 
+type RefGroup = 'special' | 'branches' | 'tags' | 'commits'
+type FilterTab = 'all' | 'branches' | 'tags' | 'commits'
+
 interface RefItem {
   label: string
-  group: 'special' | 'branches' | 'tags' | 'commits'
+  group: RefGroup
   /** For commits: short hash displayed in mono */
   hash?: string
+  /** For commits: author name */
+  author?: string
+  /** For commits: relative time string */
+  relTime?: string
+}
+
+const FILTER_TABS: { id: FilterTab; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'branches', label: 'Branches' },
+  { id: 'tags', label: 'Tags' },
+  { id: 'commits', label: 'Commits' },
+]
+
+/** Convert ISO date to short relative time */
+function relativeTime(dateStr: string): string {
+  const d = new Date(dateStr)
+  const now = Date.now()
+  const diffMs = now - d.getTime()
+  if (diffMs < 0) return 'now'
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months}mo`
+  return `${Math.floor(months / 12)}y`
 }
 
 export function RefSearchDropdown({ open, anchorRef, onSelect, onClose, projectName }: {
@@ -51,6 +83,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
   const [query, setQuery] = useState('')
   const [focusIdx, setFocusIdx] = useState(0)
   const [refs, setRefs] = useState<GitRefsResult | null>(null)
+  const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -72,18 +105,34 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
     if (refs) {
       for (const b of refs.branches) items.push({ label: b, group: 'branches' })
       for (const t of refs.tags) items.push({ label: t, group: 'tags' })
-      for (const c of refs.recentCommits) items.push({ label: `${c.hash} ${c.subject}`, group: 'commits', hash: c.hash })
+      for (const c of refs.recentCommits) items.push({
+        label: `${c.hash} ${c.subject}`,
+        group: 'commits',
+        hash: c.hash,
+        author: c.author,
+        relTime: relativeTime(c.date),
+      })
     }
     return items
   }, [refs])
 
-  // Fuzzy filter
+  // Filter by active tab
+  const tabFiltered = useMemo(() => {
+    if (activeTab === 'all') return allItems
+    // In specific tabs, keep special items only in 'branches' tab
+    return allItems.filter(item => {
+      if (item.group === 'special') return activeTab === 'branches'
+      return item.group === activeTab
+    })
+  }, [allItems, activeTab])
+
+  // Fuzzy filter on top of tab filter
   const filtered = useMemo(() => {
     const trimmed = query.trim()
-    if (!trimmed) return allItems
-    const fzf = new Fzf(allItems, { selector: (item: RefItem) => item.label, limit: 50 })
+    if (!trimmed) return tabFiltered
+    const fzf = new Fzf(tabFiltered, { selector: (item: RefItem) => item.label, limit: 50 })
     return fzf.find(trimmed).map(r => r.item)
-  }, [allItems, query])
+  }, [tabFiltered, query])
 
   // Derive clamped focus index (no effect needed)
   const clampedIdx = Math.min(focusIdx, Math.max(0, filtered.length - 1))
@@ -109,9 +158,30 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
       const idx = Math.min(focusIdx, Math.max(0, filtered.length - 1))
       if (filtered[idx]) selectItem(filtered[idx])
     }
-  }, [filtered, focusIdx, selectItem])
+    else if (e.key === 'Tab') {
+      // Tab cycles through filter tabs
+      e.preventDefault()
+      const tabIds = FILTER_TABS.map(t => t.id)
+      const currentIdx = tabIds.indexOf(activeTab)
+      const nextIdx = e.shiftKey
+        ? (currentIdx - 1 + tabIds.length) % tabIds.length
+        : (currentIdx + 1) % tabIds.length
+      setActiveTab(tabIds[nextIdx])
+      setFocusIdx(0)
+    }
+  }, [filtered, focusIdx, selectItem, activeTab])
 
   const groups = groupItems(filtered)
+
+  // Compute tab counts for badges
+  const tabCounts = useMemo(() => {
+    if (!refs) return { branches: 0, tags: 0, commits: 0 }
+    return {
+      branches: refs.branches.length,
+      tags: refs.tags.length,
+      commits: refs.recentCommits.length,
+    }
+  }, [refs])
 
   return (
     <DialogShell
@@ -122,24 +192,62 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
       className="rounded-lg overflow-hidden z-50"
       style={posStyle}
     >
+      {/* Search input */}
       <input
         ref={inputRef}
         value={query}
         onChange={e => { setQuery(e.target.value); setFocusIdx(0) }}
         onKeyDown={handleKey}
-        placeholder="Search branches, tags, commits..."
+        placeholder="Search refs..."
         className="w-full px-2 py-1.5 text-[12px] bg-transparent outline-none"
         style={{ color: 'var(--sol-text-dark)', borderBottom: '1px solid var(--sol-border)' }}
       />
+
+      {/* Filter tabs */}
+      <div
+        className="flex px-1 py-0.5 gap-0.5"
+        style={{ borderBottom: '1px solid var(--sol-border)', backgroundColor: 'color-mix(in srgb, var(--sol-bg) 60%, var(--sol-header-bg))' }}
+      >
+        {FILTER_TABS.map(tab => {
+          const isActive = activeTab === tab.id
+          const count = tab.id === 'all' ? null : tabCounts[tab.id as keyof typeof tabCounts]
+          return (
+            <button
+              key={tab.id}
+              onClick={() => { setActiveTab(tab.id); setFocusIdx(0) }}
+              className="px-1.5 py-0.5 rounded text-[10px] cursor-pointer"
+              style={{
+                color: isActive ? 'var(--sol-accent)' : 'var(--sol-muted)',
+                backgroundColor: isActive ? 'color-mix(in srgb, var(--sol-accent) 10%, transparent)' : 'transparent',
+                fontWeight: isActive ? 600 : 400,
+                transition: 'all 100ms',
+              }}
+            >
+              {tab.label}
+              {count != null && count > 0 && (
+                <span
+                  className="ml-0.5 text-[9px]"
+                  style={{ opacity: 0.6 }}
+                >{count}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Item list */}
       <div ref={listRef} className="overflow-y-auto" style={{ maxHeight: 'min(300px, 50vh)' }}>
         {groups.map(group => (
           <div key={group.label}>
-            <div
-              className="sticky top-0 px-2 py-1 text-[10px] uppercase tracking-wider font-semibold"
-              style={{ color: 'var(--sol-muted)', backgroundColor: 'var(--sol-glass-bg)' }}
-            >
-              {group.label}
-            </div>
+            {/* Only show group headers in "all" tab */}
+            {activeTab === 'all' && (
+              <div
+                className="sticky top-0 px-2 py-0.5 text-[9px] uppercase tracking-wider font-semibold"
+                style={{ color: 'var(--sol-muted)', backgroundColor: 'var(--sol-glass-bg)' }}
+              >
+                {group.label}
+              </div>
+            )}
             {group.items.map(item => {
               const flatIdx = filtered.indexOf(item)
               const isFocused = flatIdx === clampedIdx
@@ -147,20 +255,17 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
                 <div
                   key={item.hash ? `${item.group}-${item.hash}` : `${item.group}-${item.label}`}
                   data-ref-item
-                  className="flex items-center px-2 h-[22px] text-[12px] cursor-pointer truncate"
+                  className="flex items-center px-2 h-[24px] text-[12px] cursor-pointer"
                   style={{
-                    backgroundColor: isFocused ? 'color-mix(in srgb, var(--sol-blue) 15%, transparent)' : undefined,
+                    backgroundColor: isFocused ? 'color-mix(in srgb, var(--sol-blue) 12%, transparent)' : undefined,
                     color: isFocused ? 'var(--sol-blue)' : 'var(--sol-text)',
-                    transition: 'background-color 120ms',
+                    transition: 'background-color 80ms',
                   }}
                   onClick={() => selectItem(item)}
                   onMouseEnter={() => setFocusIdx(flatIdx)}
                 >
                   {item.group === 'commits' && item.hash ? (
-                    <>
-                      <span style={{ fontFamily: 'var(--font-mono)', marginRight: 6 }}>{item.hash}</span>
-                      <span className="truncate">{item.label.slice(item.hash.length + 1)}</span>
-                    </>
+                    <CommitRow item={item} />
                   ) : (
                     <span className="truncate">{item.label}</span>
                   )}
@@ -179,7 +284,28 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
   )
 }
 
-const GROUP_LABELS: Record<RefItem['group'], string> = {
+/** Commit row with hash, message, author, and relative time */
+function CommitRow({ item }: { item: RefItem }) {
+  return (
+    <div className="flex items-center gap-1.5 w-full min-w-0">
+      <span
+        className="shrink-0 text-[11px]"
+        style={{ fontFamily: 'var(--font-mono)', color: 'var(--sol-accent)', fontWeight: 600 }}
+      >{item.hash}</span>
+      <span className="truncate flex-1 min-w-0">{item.label.slice((item.hash?.length ?? 0) + 1)}</span>
+      <span
+        className="shrink-0 text-[9px]"
+        style={{ color: 'var(--sol-muted)', whiteSpace: 'nowrap' }}
+      >
+        {item.author && <span>{item.author}</span>}
+        {item.author && item.relTime && <span> · </span>}
+        {item.relTime && <span>{item.relTime}</span>}
+      </span>
+    </div>
+  )
+}
+
+const GROUP_LABELS: Record<RefGroup, string> = {
   special: 'Special',
   branches: 'Branches',
   tags: 'Tags',
@@ -187,13 +313,13 @@ const GROUP_LABELS: Record<RefItem['group'], string> = {
 }
 
 function groupItems(items: RefItem[]): { label: string; items: RefItem[] }[] {
-  const map = new Map<RefItem['group'], RefItem[]>()
+  const map = new Map<RefGroup, RefItem[]>()
   for (const item of items) {
     let arr = map.get(item.group)
     if (!arr) { arr = []; map.set(item.group, arr) }
     arr.push(item)
   }
-  const order: RefItem['group'][] = ['special', 'branches', 'tags', 'commits']
+  const order: RefGroup[] = ['special', 'branches', 'tags', 'commits']
   return order
     .filter(g => map.has(g))
     .map(g => ({ label: GROUP_LABELS[g], items: map.get(g)! }))

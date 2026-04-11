@@ -365,7 +365,7 @@ export async function fetchGitDiff(projectName: string, filePath: string, base?:
 export interface GitRefsResult {
   branches: string[]
   tags: string[]
-  recentCommits: { hash: string; subject: string; date: string }[]
+  recentCommits: { hash: string; subject: string; date: string; author: string }[]
 }
 
 export async function fetchGitRefs(projectName: string): Promise<GitRefsResult> {
