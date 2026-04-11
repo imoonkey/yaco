@@ -132,11 +132,13 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
                 {showTextSearch && <div className="flex-1 min-h-0 flex flex-col">{searchBody}</div>}
 
-                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
-                {showTasks && tasksBody && <div className="shrink-0 px-2 py-2">{tasksBody}</div>}
-
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
                 {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>}
+
+                {/* Tasks toggle — pinned at bottom */}
+                <div className="mt-auto shrink-0">
+                  <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
+                </div>
               </div>
             )}
             {mobilePane === 'editor' && editorPane}
@@ -194,15 +196,10 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                   </div>
                 )}
 
-                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
-                {showTasks && tasksBody && (
-                  <div
-                    className={flexFallback === 'tasks' ? 'px-2 py-2 min-h-0' : 'px-2 py-2'}
-                    style={flexFallback === 'tasks' ? { flex: 1 } : undefined}
-                  >
-                    {tasksBody}
-                  </div>
-                )}
+                {/* Tasks toggle — pinned at bottom */}
+                <div className="mt-auto shrink-0">
+                  <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
+                </div>
               </div>
               <VResizeHandle onMouseDown={left.onMouseDown} isDragging={left.isDragging} />
             </>

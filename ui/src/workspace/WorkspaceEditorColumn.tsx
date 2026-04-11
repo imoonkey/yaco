@@ -97,6 +97,15 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     onFocusEditor()
   }, [activeFilePath, mdMode, onSetJumpRequest, onLayoutUpdate, onFocusEditor])
 
+  // Tasks panel takes the full column — no tab bar, no breadcrumbs
+  if (activeTasksTab) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+        <TaskScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} />
+      </div>
+    )
+  }
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
       <WorkspaceTabBar
@@ -153,7 +162,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         activeFileLoading={activeFileLoading}
         activeViewportLine={activeViewportLine}
         isDiffTab={activeDiffTab}
-        isTasksTab={activeTasksTab}
+        isTasksTab={false}
         activeDiff={activeDiff}
         isMd={isMd}
         mdMode={mdMode}
@@ -173,7 +182,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         onDraftChange={(content) => activeFilePath && onUpdateDraft(activeFilePath, content)}
         onSave={async (content) => { if (activeFilePath) await onSaveFile(activeFilePath, content) }}
         diffHunks={editorDiffHunks}
-        tasksPane={activeTasksTab ? <TaskScreen projectName={projectName} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} /> : null}
+        tasksPane={null}
         insertText={editorInsert?.text}
         insertRequestKey={editorInsert?.key}
         autocompleteEnabled={autocompleteEnabled}
