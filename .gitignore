@@ -8,3 +8,4 @@ progress.json.lock
 reference/
 test-results/
 .env
+.worktrees/
