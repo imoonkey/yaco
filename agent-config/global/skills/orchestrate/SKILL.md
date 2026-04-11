@@ -9,23 +9,58 @@ Read `doc/todo/tasks.json` via `/update-tasks`. Select tasks where ALL of:
 - state is `ready`
 - task is a **leaf** (no other task has this task as `parent`)
 - all `depends` are terminal (done/cancelled)
-- `scope` doesn't overlap with any `running` task's scope
+- not blocked by parallelism check (see Two-Level Parallelism below)
 - `resources` (if set) are available — check via agent judgment (run commands, check ports/processes), considering resources held by currently running tasks, tasks already selected in this batch, AND external processes outside the project scope (e.g., `lsof -i :9222` to check if a port is in use by anything)
+
+### CWD Resolution
+
+Each task executes in a **resolved cwd** based on the optional `worktree` field:
+
+| `worktree` field | CWD | Branch |
+|-----------------|-----|--------|
+| Present (e.g. `"auth-v2"`) | `<repo>/.worktrees/<slug>/` | `task/<slug>` |
+| Absent | Main checkout | Current branch |
+
+To resolve a worktree cwd:
+
+```bash
+# Create or reuse worktree — idempotent, prints path on last line of stdout
+worktree_path="$(~/workspace/workflow/scripts/worktree-create.sh <slug>)"
+```
+
+The script creates `<repo>/.worktrees/<slug>/` on branch `task/<slug>`, runs `scripts/worktree-provision.sh` if present, and reuses existing worktrees.
+
+**Cross-repo worktrees:** If task `scope` includes paths in multiple repos, create a worktree in each repo using the same slug. Each repo manages its own `.worktrees/` directory independently.
+
+### Two-Level Parallelism
+
+Parallelism is checked at two independent levels:
+
+| Level | What it isolates | Rule |
+|-------|-----------------|------|
+| **Worktree-level** | `node_modules`, build artifacts, git index | Different `worktree` slug → **always parallel** |
+| **Task-level** | Source files | Same worktree (or both in main checkout) → **scope overlap check** |
+
+In practice:
+1. Tasks in **different worktrees** → always parallel (no shared state)
+2. Tasks in the **same worktree** → scope overlap check (same as today)
+3. Tasks in **main checkout** (no `worktree` field) → scope overlap check (same as today)
+4. Task in a **worktree** + task in **main checkout** → always parallel
 
 ### Ordering
 
-All ready tasks with non-overlapping scope are dispatched in parallel. Priority only serves as a tiebreak:
+All eligible tasks with non-overlapping execution context are dispatched in parallel. Priority only serves as a tiebreak:
 
-1. On scope overlap → higher priority wins the slot: `critical > high > normal > low`
+1. On scope overlap within same worktree → higher priority wins: `critical > high > normal > low`
 2. When agent concurrency is capped → priority determines who gets a slot first
 3. Within the same priority → fewer depends first → smaller estimate first → alphabetical
 
-### Dispatch
+### Dispatch Command
 
 For each selected task: use `/update-tasks` to set state to `running` and `agent` to `w-<task-id>`, then start a worker:
 
 ```bash
-multmux start claude "<prompt>" --name "w-<task-id>"
+cd <resolved_cwd> && multmux start claude "<prompt>" --name "w-<task-id>"
 ```
 
 Prompt includes: task title, description (if any), acceptCriteria, design doc path (if any), scope.
@@ -34,7 +69,7 @@ Prompt includes: task title, description (if any), acceptCriteria, design doc pa
 
 For tasks that change implementation files (judge from scope paths — e.g., `src/**`, not `doc/**`):
 
-1. **Record baseline**: `git rev-parse HEAD`
+1. **Record baseline**: `git rev-parse HEAD` (in the resolved cwd)
 2. **Dispatch**: start worker with task prompt, acceptCriteria, design doc, scope
 3. **Wait**: monitor worker until idle
 4. **Review**: start codex review worker scoped to `git diff <base>..HEAD -- <scope globs>`
@@ -42,8 +77,37 @@ For tasks that change implementation files (judge from scope paths — e.g., `sr
 6. **Verify**: independently check acceptCriteria (see below)
 7. **Doc sync**: send worker `/update-doc` and wait for it to complete successfully before marking done
 8. **Mark done**: update task state via `/update-tasks`
+9. **Worktree completion**: if task has `worktree` field, check for worktree completion (see below)
 
-For non-implementation tasks (docs, design, planning): dispatch → wait → verify → mark done. Skip review, fix, and doc sync.
+For non-implementation tasks (docs, design, planning): dispatch → wait → verify → mark done → worktree completion check. Skip review, fix, and doc sync.
+
+## Worktree Completion
+
+After marking a worktree task as `done`, check whether the worktree can be merged and cleaned up:
+
+1. **Check sibling tasks**: find all tasks sharing the same `worktree` slug
+2. **All terminal?** (done/cancelled) → proceed to merge. **Some non-terminal?** → skip (worktree still in use)
+3. **Merge**:
+
+   ```bash
+   # PR mode (default) — push branch + create PR
+   ~/workspace/workflow/scripts/worktree-merge.sh <slug> --mode pr
+
+   # Local merge mode — rebase + fast-forward merge
+   ~/workspace/workflow/scripts/worktree-merge.sh <slug> --mode local
+   ```
+
+   Default to `pr` mode. Use `local` only when instructed by user or task metadata.
+
+4. **Cleanup**: after successful merge/PR creation
+
+   ```bash
+   ~/workspace/workflow/scripts/worktree-cleanup.sh <slug>
+   ```
+
+5. **Cross-repo**: if the worktree spanned multiple repos, merge and cleanup each repo independently using the same slug.
+
+**Failure handling**: if merge fails (conflicts, dirty state), set the parent task to `blocked` with `blockReason: "merge-conflict"` and report. Do not force-cleanup — the worktree stays on disk for human resolution.
 
 ## Verification
 
