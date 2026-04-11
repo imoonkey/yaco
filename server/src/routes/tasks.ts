@@ -20,6 +20,11 @@ function findScript(projectPath: string): string | null {
   return null
 }
 
+interface ScriptError {
+  stderr: string
+  isValidation: boolean
+}
+
 function runScript(
   script: string,
   args: string[],
@@ -27,10 +32,26 @@ function runScript(
 ): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     execFile('python3', [script, ...args], { cwd }, (err, stdout, stderr) => {
-      if (err) return reject({ code: err.code, stderr: stderr.trim(), stdout: stdout.trim() })
+      if (err) {
+        const trimmed = stderr.trim()
+        // update-tasks.py validation errors print "error: <msg>" to stderr
+        const isValidation = trimmed.startsWith('error:')
+        return reject({ stderr: trimmed, isValidation } satisfies ScriptError)
+      }
       resolve({ stdout: stdout.trim(), stderr: stderr.trim() })
     })
   })
+}
+
+function handleScriptError(c: Parameters<typeof fail>[0], e: unknown): ReturnType<typeof fail> {
+  const err = e as Partial<ScriptError>
+  if (err.isValidation) return fail(c, 400, err.stderr!)
+  return fail(c, 500, 'internal script error')
+}
+
+function parseJsonBody(raw: unknown): Record<string, unknown> | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  return raw as Record<string, unknown>
 }
 
 const app = new Hono<ProjectEnv>()
@@ -48,7 +69,11 @@ app.get('/:project', withProject, async (c) => {
 app.patch('/:project/:taskId', withProject, async (c) => {
   const proj = c.var.project
   const taskId = c.req.param('taskId')
-  const body = await c.req.json()
+
+  let raw: unknown
+  try { raw = await c.req.json() } catch { return fail(c, 400, 'invalid JSON body') }
+  const body = parseJsonBody(raw)
+  if (!body) return fail(c, 400, 'body must be a JSON object')
 
   const script = findScript(proj.path)
   if (!script) return fail(c, 500, 'update-tasks.py not found')
@@ -56,13 +81,12 @@ app.patch('/:project/:taskId', withProject, async (c) => {
   try {
     await runScript(script, ['set', taskId, JSON.stringify(body)], proj.path)
   } catch (e: unknown) {
-    const err = e as { stderr?: string }
-    return fail(c, 400, err.stderr ?? 'script error')
+    return handleScriptError(c, e)
   }
 
   // Read back updated task
-  const raw = await readFile(join(proj.path, 'doc/todo/tasks.json'), 'utf-8')
-  const tasks = JSON.parse(raw)
+  const file = await readFile(join(proj.path, 'doc/todo/tasks.json'), 'utf-8')
+  const tasks = JSON.parse(file)
   emitRefresh('filetree')
   return c.json(tasks[taskId] ?? {})
 })
@@ -71,7 +95,11 @@ app.patch('/:project/:taskId', withProject, async (c) => {
 app.put('/:project/:taskId', withProject, async (c) => {
   const proj = c.var.project
   const taskId = c.req.param('taskId')
-  const body = await c.req.json()
+
+  let raw: unknown
+  try { raw = await c.req.json() } catch { return fail(c, 400, 'invalid JSON body') }
+  const body = parseJsonBody(raw)
+  if (!body) return fail(c, 400, 'body must be a JSON object')
 
   if (!body.title || !body.description || !body.acceptCriteria) {
     return fail(c, 400, 'title, description, and acceptCriteria are required')
@@ -83,12 +111,11 @@ app.put('/:project/:taskId', withProject, async (c) => {
   try {
     await runScript(script, ['set', taskId, JSON.stringify(body)], proj.path)
   } catch (e: unknown) {
-    const err = e as { stderr?: string }
-    return fail(c, 400, err.stderr ?? 'script error')
+    return handleScriptError(c, e)
   }
 
-  const raw = await readFile(join(proj.path, 'doc/todo/tasks.json'), 'utf-8')
-  const tasks = JSON.parse(raw)
+  const file = await readFile(join(proj.path, 'doc/todo/tasks.json'), 'utf-8')
+  const tasks = JSON.parse(file)
   emitRefresh('filetree')
   return c.json(tasks[taskId] ?? {})
 })
@@ -104,8 +131,7 @@ app.delete('/:project/:taskId', withProject, async (c) => {
   try {
     await runScript(script, ['rm', taskId], proj.path)
   } catch (e: unknown) {
-    const err = e as { stderr?: string }
-    return fail(c, 400, err.stderr ?? 'script error')
+    return handleScriptError(c, e)
   }
 
   emitRefresh('filetree')
@@ -122,18 +148,22 @@ app.get('/:project/archive', withProject, async (c) => {
   const entries = await readdir(archiveDir)
   const jsonFiles = entries.filter((f) => f.endsWith('.json')).sort()
 
-  const archives = await Promise.all(
+  const results = await Promise.all(
     jsonFiles.map(async (file) => {
-      const raw = await readFile(join(archiveDir, file), 'utf-8')
-      const dateMatch = file.match(/^(\d{8})_/)
-      const date = dateMatch
-        ? `${dateMatch[1].slice(0, 4)}-${dateMatch[1].slice(4, 6)}-${dateMatch[1].slice(6, 8)}`
-        : ''
-      return { file, date, tasks: JSON.parse(raw) }
+      try {
+        const raw = await readFile(join(archiveDir, file), 'utf-8')
+        const dateMatch = file.match(/^(\d{8})_/)
+        const date = dateMatch
+          ? `${dateMatch[1].slice(0, 4)}-${dateMatch[1].slice(4, 6)}-${dateMatch[1].slice(6, 8)}`
+          : ''
+        return { file, date, tasks: JSON.parse(raw) }
+      } catch {
+        return null
+      }
     }),
   )
 
-  return c.json({ archives })
+  return c.json({ archives: results.filter(Boolean) })
 })
 
 // POST /:project/:taskId/archive — Archive a task
@@ -147,8 +177,7 @@ app.post('/:project/:taskId/archive', withProject, async (c) => {
   try {
     await runScript(script, ['archive', taskId], proj.path)
   } catch (e: unknown) {
-    const err = e as { stderr?: string }
-    return fail(c, 400, err.stderr ?? 'script error')
+    return handleScriptError(c, e)
   }
 
   emitRefresh('filetree')
@@ -158,9 +187,17 @@ app.post('/:project/:taskId/archive', withProject, async (c) => {
 // POST /:project/bulk — Bulk update
 app.post('/:project/bulk', withProject, async (c) => {
   const proj = c.var.project
-  const { ids, patch } = await c.req.json<{ ids: string[]; patch: Record<string, unknown> }>()
 
-  if (!ids?.length || !patch) return fail(c, 400, 'ids and patch are required')
+  let raw: unknown
+  try { raw = await c.req.json() } catch { return fail(c, 400, 'invalid JSON body') }
+  const body = parseJsonBody(raw)
+  if (!body) return fail(c, 400, 'body must be a JSON object')
+
+  const ids = body.ids as string[] | undefined
+  const patch = body.patch as Record<string, unknown> | undefined
+  if (!Array.isArray(ids) || !ids.length || !patch || typeof patch !== 'object') {
+    return fail(c, 400, 'ids and patch are required')
+  }
 
   const script = findScript(proj.path)
   if (!script) return fail(c, 500, 'update-tasks.py not found')
@@ -171,8 +208,9 @@ app.post('/:project/bulk', withProject, async (c) => {
       await runScript(script, ['set', id, JSON.stringify(patch)], proj.path)
       updated.push(id)
     } catch (e: unknown) {
-      const err = e as { stderr?: string }
-      return fail(c, 400, `failed on ${id}: ${err.stderr ?? 'script error'}`)
+      const err = e as Partial<ScriptError>
+      if (err.isValidation) return fail(c, 400, `failed on ${id}: ${err.stderr}`)
+      return fail(c, 500, 'internal script error')
     }
   }
 
