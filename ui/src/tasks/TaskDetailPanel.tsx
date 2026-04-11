@@ -33,9 +33,9 @@ const ESTIMATE_OPTIONS = [
 
 function SectionHeader({ children, divider = true }: { children: React.ReactNode; divider?: boolean }) {
   return (
-    <div className={divider ? 'mb-1.5' : ''}>
+    <div className={divider ? 'mb-1' : ''}>
       <div
-        className="text-[11px] font-bold uppercase tracking-[0.06em]"
+        className="text-[10px] font-bold uppercase tracking-[0.06em]"
         style={{ color: 'var(--sol-muted)' }}
       >
         {children}
@@ -88,7 +88,7 @@ function DepRow({ task, onSelect }: { task: TaskV2; onSelect: (id: string) => vo
     >
       <StateDot state={task.state} />
       <span className="flex-1 truncate text-[12px]">{task.title}</span>
-      <span className="text-[11px] shrink-0" style={{ color: STATE_COLORS[task.state] }}>
+      <span className="text-[10px] font-medium shrink-0" style={{ color: STATE_COLORS[task.state] }}>
         {task.state}
       </span>
     </button>
@@ -170,7 +170,7 @@ export function TaskDetailPanel({
   }))
 
   const content = (
-    <div className="flex flex-col gap-5 p-4 text-[12px]" style={{ color: 'var(--sol-base01)' }}>
+    <div className="flex flex-col gap-4 p-4 text-[12px]" style={{ color: 'var(--sol-text)' }}>
       {/* Breadcrumb */}
       <Breadcrumb task={task} allTasks={allTasks} onSelectTask={onSelectTask} />
 
@@ -178,8 +178,8 @@ export function TaskDetailPanel({
       <InlineEdit
         value={task.title}
         onSave={v => patch('title', v)}
-        displayClassName="text-[18px] font-semibold tracking-[-0.02em]"
-        className="text-[18px] font-semibold tracking-[-0.02em]"
+        displayClassName="text-[16px] font-bold tracking-[-0.02em] leading-tight"
+        className="text-[16px] font-bold tracking-[-0.02em]"
       />
 
       {/* State / Priority / Estimate row */}
@@ -387,7 +387,7 @@ export function TaskDetailPanel({
     )
   }
 
-  // Desktop: right panel 360px
+  // Desktop: right panel
   return (
     <div
       ref={panelRef}
@@ -395,18 +395,17 @@ export function TaskDetailPanel({
       aria-label="Task details"
       className="shrink-0 overflow-y-auto"
       style={{
-        width: 360,
+        width: 340,
         backgroundColor: 'var(--sol-bg)',
         borderLeft: '1px solid var(--sol-border)',
-        boxShadow: 'var(--elevation-1)',
         animation: 'panel-slide-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
       }}
     >
       <div
-        className="flex items-center justify-between px-3 py-2.5 sticky top-0 z-10"
-        style={{ backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
+        className="flex items-center justify-between px-3 sticky top-0 z-10"
+        style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+        <span className="text-[10px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
           Task Details
         </span>
         <button

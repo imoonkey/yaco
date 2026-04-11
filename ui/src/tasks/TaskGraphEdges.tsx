@@ -24,12 +24,12 @@ function edgeColor(edge: LayoutEdge, highlight: HighlightModel): string {
 
 function edgeOpacity(edge: LayoutEdge, highlight: HighlightModel): number {
   if (edge.isCycle) return 0.7
-  if (!highlight.dimUnrelated) return 0.3
-  return isActiveEdge(edge, highlight) ? 1.0 : 0.15
+  if (!highlight.dimUnrelated) return 0.45
+  return isActiveEdge(edge, highlight) ? 0.9 : 0.1
 }
 
 function edgeWidth(edge: LayoutEdge, highlight: HighlightModel): number {
-  if (!highlight.dimUnrelated) return 1
+  if (!highlight.dimUnrelated) return 1.5
   return isActiveEdge(edge, highlight) ? 2 : 1
 }
 

@@ -52,12 +52,12 @@ export function InlineEdit({
       return (
         <button
           onClick={() => setEditing(true)}
-          className={`inline-flex items-center gap-1 cursor-pointer rounded transition-colors hover:bg-sol-hover-bg ${displayClassName}`}
+          className={`inline-flex items-center gap-1 cursor-pointer rounded px-1 py-0.5 transition-colors hover:bg-sol-hover-bg ${displayClassName}`}
         >
           <span style={selected?.color ? { color: selected.color } : undefined}>
             {selected?.label ?? value}
           </span>
-          <ChevronDown size={12} style={{ color: 'var(--sol-base1)' }} />
+          <ChevronDown size={10} style={{ color: 'var(--sol-muted)' }} />
         </button>
       )
     }
@@ -65,9 +65,10 @@ export function InlineEdit({
     return (
       <button
         onClick={() => setEditing(true)}
-        className={`cursor-pointer text-left rounded transition-colors hover:bg-sol-hover-bg ${displayClassName}`}
+        className={`cursor-pointer text-left rounded px-1 py-0.5 transition-colors hover:bg-sol-hover-bg ${displayClassName}`}
+        style={{ color: 'var(--sol-text-dark)' }}
       >
-        {value || <span style={{ color: 'var(--sol-base1)' }}>{placeholder ?? 'Click to edit'}</span>}
+        {value || <span style={{ color: 'var(--sol-muted)', fontStyle: 'italic' }}>{placeholder ?? 'Click to edit'}</span>}
       </button>
     )
   }
@@ -82,8 +83,8 @@ export function InlineEdit({
         onKeyDown={handleKeyDown}
         className={`rounded px-1 py-0.5 outline-none ${className}`}
         style={{
-          border: '1px solid var(--sol-focus-border)',
-          backgroundColor: 'var(--sol-bg)',
+          border: '1.5px solid var(--sol-accent)',
+          backgroundColor: 'var(--sol-editor-bg)',
           color: 'var(--sol-text)',
         }}
       >
@@ -106,10 +107,11 @@ export function InlineEdit({
         rows={4}
         className={`w-full rounded px-2 py-1.5 outline-none resize-y text-[12px] ${className}`}
         style={{
-          border: '1px solid var(--sol-focus-border)',
-          backgroundColor: 'var(--sol-bg)',
+          border: '1.5px solid var(--sol-accent)',
+          backgroundColor: 'var(--sol-editor-bg)',
           color: 'var(--sol-text)',
           fontFamily: 'var(--font-ui)',
+          lineHeight: 1.5,
         }}
       />
     )
@@ -125,9 +127,9 @@ export function InlineEdit({
       placeholder={placeholder}
       className={`w-full rounded px-1.5 py-0.5 outline-none ${className}`}
       style={{
-        border: '1px solid var(--sol-focus-border)',
-        backgroundColor: 'var(--sol-bg)',
-        color: 'var(--sol-text)',
+        border: '1.5px solid var(--sol-accent)',
+        backgroundColor: 'var(--sol-editor-bg)',
+        color: 'var(--sol-text-dark)',
         fontFamily: 'inherit',
         fontSize: 'inherit',
         fontWeight: 'inherit',

@@ -47,28 +47,28 @@ export function BoardCard({
         onDragStart={handleDragStart}
         onDragEnd={onDragEnd}
         onClick={() => onSelect(task.id)}
-        className="flex items-center gap-1.5 px-3 rounded-lg cursor-pointer transition-colors hover:bg-sol-hover-bg"
+        className="flex items-center gap-1.5 px-2.5 rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
         style={{
           minHeight: 28,
-          opacity: isDragging ? 0.85 : 0.65,
+          opacity: isDragging ? 0.85 : 0.6,
           backgroundColor: selected
             ? 'color-mix(in srgb, var(--sol-accent) 8%, transparent)'
-            : 'color-mix(in srgb, var(--sol-bg) 70%, var(--sol-subtle-bg))',
-          border: selected ? '2px solid var(--sol-focus-border)' : '1px solid var(--sol-border)',
+            : 'var(--sol-editor-bg)',
+          border: selected ? '1.5px solid var(--sol-accent)' : '1px solid var(--sol-border)',
           borderLeft: border ? `${border.width}px solid ${border.color}` : undefined,
           boxShadow: isDragging ? 'var(--elevation-2)' : undefined,
         }}
       >
         <StateDot state={task.state} size={6} />
         <span
-          className="text-[12px] font-medium truncate"
+          className="text-[11px] font-medium truncate"
           style={{ color: 'var(--sol-muted)' }}
         >
           {task.title}
         </span>
         {task.estimate && (
           <span
-            className="ml-auto text-[10px] font-semibold uppercase shrink-0"
+            className="ml-auto text-[9px] font-bold uppercase shrink-0"
             style={{ color: 'var(--sol-muted)', opacity: 0.7 }}
           >
             {task.estimate}
@@ -86,24 +86,25 @@ export function BoardCard({
       onDragStart={handleDragStart}
       onDragEnd={onDragEnd}
       onClick={() => onSelect(task.id)}
-      className="rounded-lg p-3.5 cursor-pointer hover:bg-sol-hover-bg transition-colors"
+      className="rounded-lg p-3 cursor-pointer hover:bg-sol-hover-bg transition-colors"
       style={{
-        minHeight: 64,
         opacity: isDragging ? 0.85 : undefined,
         backgroundColor: selected
           ? 'color-mix(in srgb, var(--sol-accent) 8%, transparent)'
-          : 'var(--sol-bg)',
-        border: selected ? '2px solid var(--sol-focus-border)' : '1px solid var(--sol-border)',
+          : 'var(--sol-editor-bg)',
+        border: selected ? '1.5px solid var(--sol-accent)' : '1px solid var(--sol-border)',
         borderLeft: border ? `${border.width}px solid ${border.color}` : undefined,
         boxShadow: isDragging ? 'var(--elevation-2)' : undefined,
       }}
     >
       {/* Title row */}
       <div className="flex items-start gap-1.5">
-        <StateDot state={task.state} />
+        <div className="mt-1 shrink-0">
+          <StateDot state={task.state} />
+        </div>
         <span
-          className="text-[14px] font-medium"
-          style={{ color: 'var(--sol-text-dark)', lineHeight: '1.4' }}
+          className="text-[13px] font-semibold flex-1"
+          style={{ color: 'var(--sol-text-dark)', lineHeight: '1.35', letterSpacing: '-0.01em' }}
         >
           {task.title}
         </span>
@@ -123,8 +124,8 @@ export function BoardCard({
       {/* Parent context */}
       {parentName && (
         <div
-          className="text-[11px] mt-1.5 ml-[14px] truncate"
-          style={{ color: 'var(--sol-muted)', lineHeight: '1.4' }}
+          className="text-[11px] mt-1 ml-[14px] truncate"
+          style={{ color: 'var(--sol-muted)', lineHeight: '1.3' }}
         >
           {parentName}
         </div>
@@ -132,10 +133,10 @@ export function BoardCard({
 
       {/* Meta line: priority + agent */}
       {(task.priority !== 'normal' || task.agent) && (
-        <div className="flex items-center gap-2 mt-2 ml-[14px] text-[11px]">
+        <div className="flex items-center gap-2 mt-1.5 ml-[14px] text-[11px]">
           <PriorityTag priority={task.priority} />
           {task.agent && (
-            <span style={{ color: 'var(--sol-muted)' }}>{task.agent}</span>
+            <span className="font-mono text-[10px]" style={{ color: 'var(--sol-muted)' }}>{task.agent}</span>
           )}
         </div>
       )}

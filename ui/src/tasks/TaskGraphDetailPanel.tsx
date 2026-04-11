@@ -76,7 +76,7 @@ function SegmentedProgressBar({ tasks }: { tasks: TaskGraphTask[] }) {
 
   return (
     <div>
-      <div className="flex rounded-full overflow-hidden" style={{ height: 6, backgroundColor: 'var(--sol-header-bg)' }}>
+      <div className="flex rounded overflow-hidden" style={{ height: 4, backgroundColor: 'var(--sol-subtle-bg)' }}>
         {segments.map(seg => (
           <div
             key={seg.state}
@@ -90,7 +90,7 @@ function SegmentedProgressBar({ tasks }: { tasks: TaskGraphTask[] }) {
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
         {segments.map(seg => (
-          <span key={seg.state} className="inline-flex items-center gap-1 text-[11px]" style={{ color: 'var(--sol-muted)', fontWeight: 500 }}>
+          <span key={seg.state} className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--sol-muted)', fontWeight: 500 }}>
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
               style={{ backgroundColor: STATE_COLORS[seg.state] }}
@@ -111,7 +111,7 @@ function DepRow({ task, onNavigate, showState }: {
   return (
     <button
       onClick={() => onNavigate(task.id)}
-      className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
+      className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors hover:bg-sol-hover-bg text-[12px]"
     >
       <span
         className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -119,7 +119,7 @@ function DepRow({ task, onNavigate, showState }: {
       />
       <span className="flex-1 truncate" style={{ color: 'var(--sol-text)' }}>{task.title}</span>
       {showState && (
-        <span className="text-[11px] shrink-0" style={{ color: STATE_COLORS[task.state] }}>
+        <span className="text-[10px] font-medium shrink-0" style={{ color: STATE_COLORS[task.state] }}>
           {STATE_LABELS[task.state]?.toLowerCase()}
         </span>
       )}
@@ -223,13 +223,13 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
   }
 
   return (
-    <div className="flex flex-col gap-3 p-3 text-[13px]" style={{ color: 'var(--sol-text)' }}>
+    <div className="flex flex-col gap-3 p-3 text-[12px]" style={{ color: 'var(--sol-text)' }}>
       {/* Breadcrumb */}
       <Breadcrumb taskId={taskId} graph={graph} onNavigate={onNavigate} />
 
       {/* Title + state */}
-      <div className="flex items-center gap-2">
-        <span className="font-bold text-[18px]" style={{ color: 'var(--sol-text-dark)' }}>
+      <div className="flex items-start gap-2">
+        <span className="font-bold text-[16px] leading-tight" style={{ color: 'var(--sol-text-dark)', letterSpacing: '-0.02em' }}>
           {task.title}
         </span>
         <StateBadge state={task.state} />
@@ -399,14 +399,16 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
       aria-label="Task details"
       className="shrink-0 overflow-y-auto"
       style={{
-        width: 360,
+        width: 340,
         backgroundColor: 'var(--sol-bg)',
         borderLeft: '1px solid var(--sol-border)',
-        boxShadow: '-2px 0 8px rgba(0,0,0,0.04)',
         animation: 'panel-slide-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
       }}
     >
-      <div className="flex items-center justify-between p-2">
+      <div
+        className="flex items-center justify-between px-3 sticky top-0 z-10"
+        style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
+      >
         <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
           Task Details
         </span>

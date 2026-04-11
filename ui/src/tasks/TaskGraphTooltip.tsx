@@ -74,34 +74,35 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
         position: 'absolute',
         left: 0,
         top: 0,
-        background: 'var(--sol-bg)',
+        background: 'var(--sol-editor-bg)',
         border: '1px solid var(--sol-border)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-        padding: '8px 12px',
-        maxWidth: 320,
-        borderRadius: 6,
+        boxShadow: 'var(--elevation-2)',
+        padding: '6px 10px',
+        maxWidth: 300,
+        borderRadius: 5,
         pointerEvents: 'none' as const,
         zIndex: 30,
       }}
     >
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--sol-base02)' }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--sol-text-dark)', lineHeight: 1.3 }}>
         {title}
       </div>
       {description && (
         <div style={{
-          fontSize: 12,
-          color: 'var(--sol-base00)',
-          marginTop: 4,
+          fontSize: 11,
+          color: 'var(--sol-text)',
+          marginTop: 3,
           overflow: 'hidden',
           display: '-webkit-box',
           WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical',
+          lineHeight: 1.4,
         }}>
           {description}
         </div>
       )}
       {progress && (
-        <div style={{ fontSize: 11, color: 'var(--sol-base1)', marginTop: 4 }}>
+        <div style={{ fontSize: 10, color: 'var(--sol-muted)', marginTop: 3, fontWeight: 500 }}>
           {progress}
         </div>
       )}

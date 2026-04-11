@@ -203,26 +203,26 @@ function GroupHeader({ title, doneCount, totalCount, isFirst }: { title: string;
     <div
       className="flex items-center gap-2 px-3 border-b"
       style={{
-        height: 32,
-        marginTop: isFirst ? 0 : 8,
-        backgroundColor: 'var(--sol-subtle-bg-active)',
+        height: 28,
+        marginTop: isFirst ? 0 : 6,
+        backgroundColor: 'var(--sol-subtle-bg)',
         borderColor: 'var(--sol-border)',
       }}
     >
-      <span className="text-[12px] font-semibold truncate" style={{ color: 'var(--sol-text-dark)' }}>
+      <span className="text-[11px] font-bold truncate" style={{ color: 'var(--sol-text-dark)' }}>
         {title}
       </span>
       <div className="flex items-center gap-1.5 shrink-0 ml-auto">
         <div
-          className="h-1.5 rounded-full overflow-hidden"
-          style={{ width: 48, backgroundColor: 'var(--sol-border)' }}
+          className="h-1 rounded-full overflow-hidden"
+          style={{ width: 40, backgroundColor: 'var(--sol-subtle-bg-active)' }}
         >
           <div
             className="h-full rounded-full"
-            style={{ width: `${pct}%`, backgroundColor: 'var(--sol-green)' }}
+            style={{ width: `${pct}%`, backgroundColor: 'var(--sol-green)', transition: 'width 300ms ease-out' }}
           />
         </div>
-        <span className="text-[10px] tabular-nums" style={{ color: 'var(--sol-text-dim)' }}>
+        <span className="text-[10px] tabular-nums font-medium" style={{ color: 'var(--sol-muted)' }}>
           {doneCount}/{totalCount}
         </span>
       </div>

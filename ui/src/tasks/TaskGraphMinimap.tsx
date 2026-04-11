@@ -36,13 +36,14 @@ export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, cont
 
   return (
     <div
-      className="absolute bottom-4 right-4 rounded overflow-hidden"
+      className="absolute bottom-3 right-3 rounded-md overflow-hidden"
       style={{
         width: MINIMAP_W,
         height: MINIMAP_H,
-        backgroundColor: 'var(--sol-header-bg)',
+        backgroundColor: 'var(--sol-editor-bg)',
         border: '1px solid var(--sol-border)',
-        opacity: 0.85,
+        opacity: 0.9,
+        boxShadow: 'var(--elevation-1)',
       }}
     >
       <svg width={MINIMAP_W} height={MINIMAP_H} onClick={handleClick} style={{ cursor: 'crosshair' }}>
@@ -85,10 +86,11 @@ export function TaskGraphMinimap({ layout, graph, viewport, containerWidth, cont
           y={vpY}
           width={Math.max(vpW, 8)}
           height={Math.max(vpH, 6)}
-          fill={'var(--sol-blue)'}
-          fillOpacity={0.15}
-          stroke={'var(--sol-blue)'}
+          fill={'var(--sol-accent)'}
+          fillOpacity={0.1}
+          stroke={'var(--sol-accent)'}
           strokeWidth={1}
+          rx={1}
         />
       </svg>
     </div>

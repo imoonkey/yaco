@@ -76,7 +76,7 @@ export function BoardColumn({
       style={{
         flex: collapsed ? '0 0 auto' : '1 1 0%',
         backgroundColor: 'var(--sol-subtle-bg)',
-        border: isDragOver ? '2px dashed var(--sol-accent)' : '2px solid transparent',
+        border: isDragOver ? '2px dashed var(--sol-accent)' : '1px solid transparent',
       }}
       onDragOver={handleDragOver}
       onDragEnter={(e) => { e.preventDefault(); onDragEnter() }}
@@ -93,32 +93,28 @@ export function BoardColumn({
         onClick={onToggleCollapse}
       >
         {collapsed
-          ? <ChevronRight size={12} style={{ color: 'var(--sol-muted)' }} />
-          : <ChevronDown size={12} style={{ color: 'var(--sol-muted)' }} />
+          ? <ChevronRight size={11} style={{ color: 'var(--sol-muted)' }} />
+          : <ChevronDown size={11} style={{ color: 'var(--sol-muted)' }} />
         }
         <span
-          className="text-[11px] font-bold uppercase tracking-[0.06em]"
+          className="text-[10px] font-bold uppercase tracking-[0.06em]"
           style={{ color: 'var(--sol-muted)' }}
         >
           {STATE_LABELS[state] ?? state}
         </span>
         <span
-          className="text-[10px] font-bold rounded-full min-w-[18px] text-center"
-          style={{
-            color: 'var(--sol-muted)',
-            backgroundColor: 'var(--sol-subtle-bg)',
-            padding: '1px 6px',
-          }}
+          className="text-[10px] font-semibold tabular-nums"
+          style={{ color: 'var(--sol-muted)' }}
         >
           {tasks.length}
         </span>
       </button>
       {/* Accent bar */}
-      <div className="mx-3" style={{ height: 2, backgroundColor: color }} />
+      <div className="mx-3" style={{ height: 2, backgroundColor: color, borderRadius: 1 }} />
 
       {/* Card list */}
       {!collapsed && (
-        <div className="flex-1 overflow-y-auto p-1" role="list" aria-label={`${STATE_LABELS[state] ?? state} tasks`} style={{ gap: 6, display: 'flex', flexDirection: 'column' }}>
+        <div className="flex-1 overflow-y-auto p-1.5" role="list" aria-label={`${STATE_LABELS[state] ?? state} tasks`} style={{ gap: 4, display: 'flex', flexDirection: 'column' }}>
           {visibleTasks.map(task => (
             <BoardCard
               key={task.id}
@@ -134,7 +130,7 @@ export function BoardColumn({
           ))}
           {hiddenCount > 0 && (
             <button
-              className="text-[11px] font-medium px-2 py-1 rounded cursor-pointer hover:bg-sol-hover-bg"
+              className="text-[10px] font-medium px-2 py-1 rounded cursor-pointer hover:bg-sol-hover-bg transition-colors"
               style={{ color: 'var(--sol-accent)' }}
               onClick={(e) => { e.stopPropagation(); setShowAllDone(true) }}
             >
@@ -143,10 +139,10 @@ export function BoardColumn({
           )}
           {tasks.length === 0 && (
             <div
-              className="text-[11px] text-center py-6 italic"
+              className="text-[11px] text-center py-8 italic"
               style={{ color: 'var(--sol-muted)' }}
             >
-              No tasks in this state
+              No tasks
             </div>
           )}
         </div>

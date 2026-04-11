@@ -4,10 +4,10 @@ function StateButton({ label, onClick, disabled }: { label: string; onClick: () 
     <button
       onClick={onClick}
       disabled={disabled}
-      className="px-3 py-1.5 rounded text-[12px] font-medium cursor-pointer transition-colors disabled:cursor-default disabled:opacity-60"
+      className="px-3 py-1.5 rounded text-[11px] font-semibold cursor-pointer transition-colors disabled:cursor-default disabled:opacity-60"
       style={{
-        backgroundColor: 'var(--sol-header-bg)',
-        color: 'var(--sol-base01)',
+        backgroundColor: 'var(--sol-subtle-bg)',
+        color: 'var(--sol-text)',
         border: `1px solid var(--sol-border)`,
       }}
     >
@@ -31,11 +31,11 @@ function StatePane({
 }) {
   return (
     <div className="flex h-full items-center justify-center px-6">
-      <div className="max-w-[440px] rounded-md border px-5 py-4 text-center" style={{ borderColor: 'var(--sol-border)', backgroundColor: 'var(--sol-bg)' }}>
-        <div className="text-[15px] font-semibold" style={{ color: tone }}>{title}</div>
-        <div className="mt-2 text-[12px]" style={{ color: 'var(--sol-base01)' }}>{message}</div>
-        {actions && <div className="mt-4 flex flex-wrap justify-center gap-2">{actions}</div>}
-        {detail && <div className="mt-3 text-[11px]" style={{ color: 'var(--sol-base1)' }}>{detail}</div>}
+      <div className="max-w-[400px] rounded-lg px-5 py-4 text-center" style={{ border: '1px solid var(--sol-border)', backgroundColor: 'var(--sol-editor-bg)' }}>
+        <div className="text-[14px] font-bold" style={{ color: tone }}>{title}</div>
+        <div className="mt-1.5 text-[12px]" style={{ color: 'var(--sol-text)' }}>{message}</div>
+        {actions && <div className="mt-3 flex flex-wrap justify-center gap-2">{actions}</div>}
+        {detail && <div className="mt-2 text-[11px]" style={{ color: 'var(--sol-muted)' }}>{detail}</div>}
       </div>
     </div>
   )
@@ -60,8 +60,9 @@ export function TaskGraphStatusPane({
 }) {
   if (status === 'loading') {
     return (
-      <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-base1)' }}>
-        Loading task graph...
+      <div className="flex items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+        <div className="loading-spinner" />
+        <span className="text-[12px]">Loading task graph...</span>
       </div>
     )
   }
@@ -103,8 +104,8 @@ export function TaskGraphStatusPane({
 
   // empty
   return (
-    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-base1)' }}>
-      No tasks defined
+    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
+      <span className="text-[12px]">No tasks defined</span>
     </div>
   )
 }

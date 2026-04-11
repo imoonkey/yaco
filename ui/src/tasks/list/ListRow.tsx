@@ -59,10 +59,10 @@ export const ListRow = memo(function ListRow({
   const parentTitle = task.parent ? allTasks.get(task.parent)?.title ?? task.parent : null
 
   const bgStyle = selected
-    ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 8%, transparent)', borderLeft: '2px solid var(--sol-accent)' }
+    ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 8%, transparent)', borderLeft: '2.5px solid var(--sol-accent)' }
     : multiSelected
-      ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 5%, transparent)', borderLeft: '2px solid color-mix(in srgb, var(--sol-accent) 50%, transparent)' }
-      : { borderLeft: '2px solid transparent' }
+      ? { backgroundColor: 'color-mix(in srgb, var(--sol-accent) 4%, transparent)', borderLeft: '2.5px solid color-mix(in srgb, var(--sol-accent) 50%, transparent)' }
+      : { borderLeft: '2.5px solid transparent' }
 
   return (
     <div
@@ -88,7 +88,7 @@ export const ListRow = memo(function ListRow({
         switch (col.key) {
           case 'id':
             return (
-              <div key={col.key} className="text-[12px] truncate" style={{ ...cellStyle, fontFamily: 'var(--font-mono)', color: 'var(--sol-accent)' }}>
+              <div key={col.key} className="text-[11px] truncate" style={{ ...cellStyle, fontFamily: 'var(--font-mono)', color: 'var(--sol-text-dim)' }}>
                 {task.id}
               </div>
             )
@@ -102,16 +102,16 @@ export const ListRow = memo(function ListRow({
                     onChange={e => setDraft(e.target.value)}
                     onBlur={() => onSaveTitle(draft)}
                     onKeyDown={handleKeyDown}
-                    className="w-full rounded px-1 py-0.5 outline-none text-[14px] font-medium"
+                    className="w-full rounded px-1 py-0.5 outline-none text-[13px] font-semibold"
                     style={{
-                      border: '2px solid var(--sol-focus-border)',
-                      backgroundColor: 'var(--sol-bg)',
+                      border: '1.5px solid var(--sol-accent)',
+                      backgroundColor: 'var(--sol-editor-bg)',
                       color: 'var(--sol-text-dark)',
                       fontFamily: 'inherit',
                     }}
                   />
                 ) : (
-                  <span className="text-[14px] font-medium" style={{ color: 'var(--sol-text-dark)' }}>
+                  <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)', letterSpacing: '-0.01em' }}>
                     {task.title}
                   </span>
                 )}
@@ -132,19 +132,19 @@ export const ListRow = memo(function ListRow({
             )
           case 'agent':
             return (
-              <div key={col.key} className="text-[11px] truncate" style={{ ...cellStyle, fontFamily: 'var(--font-mono)', color: task.agent ? 'var(--sol-text)' : 'var(--sol-base1)' }}>
+              <div key={col.key} className="text-[10px] truncate" style={{ ...cellStyle, fontFamily: 'var(--font-mono)', color: task.agent ? 'var(--sol-text)' : 'var(--sol-muted)' }}>
                 {task.agent ?? '\u2014'}
               </div>
             )
           case 'scope':
             return (
-              <div key={col.key} className="text-[11px] text-center" style={{ ...cellStyle, color: 'var(--sol-text-dim)' }}>
+              <div key={col.key} className="text-[10px] text-center tabular-nums" style={{ ...cellStyle, color: 'var(--sol-muted)' }}>
                 {task.scope.length || '\u2014'}
               </div>
             )
           case 'parent':
             return (
-              <div key={col.key} className="text-[11px] truncate" style={{ ...cellStyle, color: parentTitle ? 'var(--sol-text)' : 'var(--sol-base1)' }}>
+              <div key={col.key} className="text-[11px] truncate" style={{ ...cellStyle, color: parentTitle ? 'var(--sol-text)' : 'var(--sol-muted)' }}>
                 {parentTitle ?? '\u2014'}
               </div>
             )

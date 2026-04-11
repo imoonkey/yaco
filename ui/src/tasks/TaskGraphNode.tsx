@@ -6,7 +6,7 @@ import { STATE_COLORS } from './taskGraphConstants'
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
   const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
-  const r = 3
+  const r = 3.5
 
   if (state === 'done') {
     return <circle cx={cx} cy={cy} r={r} fill={color} />
@@ -20,13 +20,18 @@ function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) 
     )
   }
   if (state === 'blocked') {
-    return <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="2 2" />
+    return (
+      <>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={1.5} />
+        <line x1={cx - r * 0.6} y1={cy - r * 0.6} x2={cx + r * 0.6} y2={cy + r * 0.6} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
+      </>
+    )
   }
   if (state === 'cancelled') {
     return (
       <>
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={1.5} />
-        <line x1={cx - r + 1} y1={cy} x2={cx + r - 1} y2={cy} stroke={color} strokeWidth={1.5} />
+        <line x1={cx - r * 0.6} y1={cy} x2={cx + r * 0.6} y2={cy} stroke={color} strokeWidth={1.5} strokeLinecap="round" />
       </>
     )
   }
@@ -44,11 +49,11 @@ function getNodeOpacity(node: LayoutNode, highlight: HighlightModel): number {
 function getNodeFill(node: LayoutNode, highlight: HighlightModel): string {
   if (highlight.upstreamTaskIds.has(node.id)) return 'var(--sol-orange)'
   if (highlight.downstreamTaskIds.has(node.id)) return 'var(--sol-cyan)'
-  return 'var(--sol-bg)'
+  return 'var(--sol-editor-bg)'
 }
 
 function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel): number {
-  if (highlight.upstreamTaskIds.has(node.id) || highlight.downstreamTaskIds.has(node.id)) return 0.15
+  if (highlight.upstreamTaskIds.has(node.id) || highlight.downstreamTaskIds.has(node.id)) return 0.12
   return 1
 }
 
@@ -68,15 +73,20 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   onPointerLeave: () => void
 }) {
   const opacity = getNodeOpacity(node, highlight)
-  const showLabels = scale >= 0.5
+  const showLabels = scale >= 0.45
 
-  const strokeColor = isSearchMatch ? 'var(--sol-violet)' : isSelected ? 'var(--sol-focus-border)' : 'var(--sol-border)'
-  const strokeW = isSearchMatch || isSelected ? 2 : 1
+  const strokeColor = isSearchMatch ? 'var(--sol-violet)' : isSelected ? 'var(--sol-accent)' : 'var(--sol-border)'
+  const strokeW = isSearchMatch || isSelected ? 1.5 : 1
 
   // Group affordances: chevron and progress
   const hasGroupAffordances = task.hasChildren
-  const chevronWidth = hasGroupAffordances ? 16 : 0
+  const chevronWidth = hasGroupAffordances ? 18 : 0
   const progressText = group ? `${group.progress.done}/${group.progress.total}` : ''
+  const hasMeta = (hasGroupAffordances && !!progressText) || (!hasGroupAffordances && depCount > 0)
+
+  // Vertical centering: single-line vs two-line layout
+  const titleY = hasMeta && showLabels ? node.y + 20 : node.y + NODE_HEIGHT / 2 + 4.5
+  const metaY = node.y + 36
 
   return (
     <g
@@ -113,10 +123,21 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         fillOpacity={getNodeFillOpacity(node, highlight)}
         stroke={strokeColor}
         strokeWidth={strokeW}
-        filter={isSelected ? 'drop-shadow(0 1px 3px rgba(0,0,0,0.2))' : undefined}
       />
 
-      {/* Search match glow ring */}
+      {/* Selected indicator — subtle left accent */}
+      {isSelected && (
+        <rect
+          x={node.x}
+          y={node.y + 6}
+          width={2.5}
+          height={NODE_HEIGHT - 12}
+          rx={1.25}
+          fill={'var(--sol-accent)'}
+        />
+      )}
+
+      {/* Search match ring */}
       {isSearchMatch && (
         <rect
           x={node.x - 3}
@@ -126,9 +147,9 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           rx={9}
           fill="none"
           stroke={'var(--sol-violet)'}
-          strokeWidth={1.5}
-          strokeDasharray="4 2"
-          opacity={0.6}
+          strokeWidth={1}
+          strokeDasharray="4 3"
+          opacity={0.5}
         />
       )}
 
@@ -138,70 +159,73 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           onClick={(e) => { e.stopPropagation(); onToggleCollapse(node.id) }}
           style={{ cursor: 'pointer' }}
         >
-          <rect x={node.x} y={node.y} width={16} height={NODE_HEIGHT} fill="transparent" />
-          <text
-            x={node.x + 8}
-            y={node.y + 22}
-            fontSize={9}
-            textAnchor="middle"
-            fill={'var(--sol-base1)'}
-          >
-            {isCollapsed ? '\u25B8' : '\u25BE'}
-          </text>
+          <rect x={node.x} y={node.y} width={18} height={NODE_HEIGHT} fill="transparent" rx={6} />
+          <path
+            d={isCollapsed
+              ? `M ${node.x + 7} ${node.y + NODE_HEIGHT / 2 - 3.5} l 4.5 3.5 -4.5 3.5`
+              : `M ${node.x + 5.5} ${node.y + NODE_HEIGHT / 2 - 2.5} l 3.5 4.5 3.5 -4.5`
+            }
+            fill="none"
+            stroke={'var(--sol-base1)'}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </g>
       )}
+
+      {/* State dot — left edge accent */}
+      <StateDot state={task.state} cx={node.x + chevronWidth + 12} cy={node.y + NODE_HEIGHT / 2} />
 
       {/* Clip path for text overflow */}
       <clipPath id={`clip-${node.id}`}>
         <rect
           x={node.x + chevronWidth + 22}
           y={node.y}
-          width={NODE_WIDTH - chevronWidth - 22 - 6}
+          width={NODE_WIDTH - chevronWidth - 28}
           height={NODE_HEIGHT}
         />
       </clipPath>
 
-      {/* State dot */}
-      <StateDot state={task.state} cx={node.x + chevronWidth + 12} cy={node.y + 18} />
-
       {/* Title */}
       <text
         x={node.x + chevronWidth + 24}
-        y={node.y + 22}
+        y={titleY}
         fontSize={13}
         fontWeight={hasGroupAffordances ? 600 : 500}
         fill={'var(--sol-text-dark)'}
         opacity={showLabels ? 1 : 0}
+        letterSpacing="-0.01em"
         style={{ transition: 'opacity 150ms ease-out' }}
         clipPath={`url(#clip-${node.id})`}
       >
         {task.title}
       </text>
 
-      {/* Meta line: agent handle + progress for groups, dep count for leaves */}
+      {/* Meta line: progress for groups, dep count for leaves */}
       {hasGroupAffordances && progressText && (
         <text
           x={node.x + chevronWidth + 24}
-          y={node.y + 38}
+          y={metaY}
           fontSize={10}
           fontWeight={500}
           fill={'var(--sol-muted)'}
-          opacity={showLabels ? 1 : 0}
+          opacity={showLabels ? 0.85 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
+          clipPath={`url(#clip-${node.id})`}
         >
           {progressText} done
         </text>
       )}
 
-      {/* Dependency count badge (leaf tasks only) */}
       {!hasGroupAffordances && depCount > 0 && (
         <text
           x={node.x + chevronWidth + 24}
-          y={node.y + 38}
+          y={metaY}
           fontSize={10}
           fontWeight={500}
           fill={'var(--sol-muted)'}
-          opacity={showLabels ? 1 : 0}
+          opacity={showLabels ? 0.75 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >
           {depCount} {depCount === 1 ? 'dep' : 'deps'}

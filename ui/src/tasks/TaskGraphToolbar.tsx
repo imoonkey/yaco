@@ -52,17 +52,18 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
     <div className="flex items-center gap-1">
       {ALL_STATES.map(state => {
         const active = filters.has(state)
+        const color = STATE_COLORS[state]
         return (
           <button
             key={state}
             onClick={() => onToggleFilter(state)}
-            className="px-2 py-0.5 rounded-full text-[11px] font-medium cursor-pointer transition-colors"
+            className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
             aria-label={`Filter: ${STATE_LABELS[state]}`}
             aria-pressed={active}
             style={{
-              backgroundColor: active ? STATE_COLORS[state] + '22' : 'transparent',
-              color: active ? STATE_COLORS[state] : 'var(--sol-base1)',
-              border: `1px solid ${active ? STATE_COLORS[state] : 'var(--sol-border)'}`,
+              backgroundColor: active ? `color-mix(in srgb, ${color} 15%, transparent)` : 'transparent',
+              color: active ? color : 'var(--sol-muted)',
+              border: `1px solid ${active ? `color-mix(in srgb, ${color} 40%, transparent)` : 'var(--sol-border)'}`,
             }}
           >
             {STATE_LABELS[state]}
@@ -75,66 +76,66 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
   return (
     <div
       className="shrink-0 flex items-center gap-3 px-3"
-      style={{ height: 40, backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)' }}
+      style={{ height: 36, backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)' }}
     >
       {/* Zoom controls */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5">
         <button
           onClick={onZoomOut}
-          className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+          className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
           style={{ color: 'var(--sol-text)' }}
           title="Zoom out"
         >
-          <Minus size={14} />
+          <Minus size={13} />
         </button>
-        <span className="text-[11px] font-medium w-10 text-center" style={{ color: 'var(--sol-muted)' }}>
+        <span className="text-[11px] font-medium w-10 text-center tabular-nums" style={{ color: 'var(--sol-muted)' }}>
           {pct}%
         </span>
         <button
           onClick={onZoomIn}
-          className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+          className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
           style={{ color: 'var(--sol-text)' }}
           title="Zoom in"
         >
-          <Plus size={14} />
+          <Plus size={13} />
         </button>
         <button
           onClick={onFitToView}
-          className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+          className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
           style={{ color: 'var(--sol-text)' }}
           title="Fit to view"
         >
-          <Maximize2 size={14} />
+          <Maximize2 size={13} />
         </button>
       </div>
 
-      <div style={{ width: 1, height: 20, backgroundColor: 'var(--sol-border)' }} />
+      <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />
 
       {/* Collapse/expand controls */}
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5">
         {!allCollapsed && (
           <button
             onClick={onCollapseAll}
-            className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+            className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
             style={{ color: 'var(--sol-text)' }}
             title="Collapse all groups"
           >
-            <ChevronsRight size={14} />
+            <ChevronsRight size={13} />
           </button>
         )}
         {!allExpanded && (
           <button
             onClick={onExpandAll}
-            className="w-7 h-7 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
+            className="w-6 h-6 rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg"
             style={{ color: 'var(--sol-text)' }}
             title="Expand all groups"
           >
-            <ChevronsDown size={14} />
+            <ChevronsDown size={13} />
           </button>
         )}
       </div>
 
-      <div style={{ width: 1, height: 20, backgroundColor: 'var(--sol-border)' }} />
+      <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />
 
       {/* State filters */}
       {isMobile ? (
@@ -168,16 +169,16 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
           value={searchQuery}
           onChange={e => onSearchChange(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') onSearchSubmit(); if (e.key === 'Escape') searchRef.current?.blur() }}
-          className="h-7 px-2 rounded text-[12px] outline-none"
+          className="h-6 px-2 rounded text-[11px] outline-none focus:border-[var(--sol-focus-border)]"
           style={{
-            width: isMobile ? 100 : 180,
+            width: isMobile ? 100 : 160,
             backgroundColor: 'var(--sol-input-bg)',
             color: 'var(--sol-input-fg)',
             border: '1px solid var(--sol-border)',
           }}
         />
         {searchQuery.trim() && (
-          <span className="text-[11px] whitespace-nowrap" style={{ color: searchMatchCount > 0 ? 'var(--sol-blue)' : 'var(--sol-base1)' }}>
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: searchMatchCount > 0 ? 'var(--sol-accent)' : 'var(--sol-muted)' }}>
             {searchMatchCount} match{searchMatchCount !== 1 ? 'es' : ''}
           </span>
         )}

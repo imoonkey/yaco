@@ -131,14 +131,13 @@ export function TaskArchiveView({ projectName }: TaskArchiveViewProps) {
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3" style={{ color: 'var(--sol-text-dim)' }}>
-      <Archive size={32} strokeWidth={1.5} />
-      <div className="text-[13px] font-medium" style={{ color: 'var(--sol-text)' }}>
+    <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+      <Archive size={28} strokeWidth={1.5} />
+      <div className="text-[12px] font-semibold" style={{ color: 'var(--sol-text)' }}>
         No archived tasks
       </div>
-      <div className="text-[12px] max-w-[280px] text-center">
-        Completed or cancelled tasks can be archived from the board or detail panel.
-        Archives are stored in <code className="text-[11px] px-1 py-0.5 rounded" style={{ backgroundColor: 'var(--sol-subtle-bg)' }}>doc/archive/</code>.
+      <div className="text-[11px] max-w-[260px] text-center leading-relaxed">
+        Completed or cancelled tasks can be archived. Archives are stored in <code className="text-[10px] px-1 py-0.5 rounded" style={{ backgroundColor: 'var(--sol-subtle-bg)' }}>doc/archive/</code>.
       </div>
     </div>
   )
@@ -148,18 +147,17 @@ function DateGroup({ date, entries }: { date: string; entries: FlatArchiveEntry[
   return (
     <div>
       <div
-        className="sticky top-0 flex items-center gap-2 px-3 py-1.5 text-[12px] font-bold uppercase tracking-[0.06em]"
+        className="sticky top-0 flex items-center gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em]"
         style={{
-          color: 'var(--sol-text)',
+          color: 'var(--sol-muted)',
           backgroundColor: 'var(--sol-header-bg)',
           borderBottom: '1px solid var(--sol-border)',
-          borderLeft: '3px solid var(--sol-accent)',
         }}
       >
         <span>{formatDate(date)}</span>
         <span
-          className="text-[10px] font-medium normal-case tracking-normal"
-          style={{ color: 'var(--sol-text-dim)' }}
+          className="text-[10px] font-medium normal-case tracking-normal tabular-nums"
+          style={{ color: 'var(--sol-muted)' }}
         >
           ({entries.length})
         </span>
@@ -175,28 +173,26 @@ function ArchiveRow({ entry }: { entry: FlatArchiveEntry }) {
   const stateColor = STATE_COLORS[entry.task.state] ?? 'var(--sol-base1)'
   return (
     <div
-      className="flex items-center gap-2 px-3 py-2 hover:bg-sol-hover-bg transition-colors"
+      className="flex items-center gap-2 px-3 py-1.5 hover:bg-sol-hover-bg transition-colors"
       style={{
         borderBottom: '1px solid var(--sol-border)',
-        borderLeft: `3px solid ${stateColor}`,
+        borderLeft: `2.5px solid ${stateColor}`,
       }}
     >
       <StateDot state={entry.task.state} />
       <span className="flex-1 text-[12px] truncate" style={{ color: 'var(--sol-text)' }}>
         {entry.task.title}
       </span>
-      <span className="shrink-0 text-[10px]" style={{ color: 'var(--sol-text-dim)' }}>
+      <span className="shrink-0 text-[10px] font-mono" style={{ color: 'var(--sol-muted)' }}>
         {entry.task.id}
       </span>
       <button
         className="shrink-0 p-1 rounded cursor-pointer hover:bg-sol-hover-bg transition-colors"
-        style={{ color: 'var(--sol-text-dim)' }}
+        style={{ color: 'var(--sol-muted)' }}
         title="Unarchive (coming soon)"
-        onClick={() => {
-          // Placeholder — unarchive not yet implemented on server
-        }}
+        onClick={() => {}}
       >
-        <RotateCcw size={12} />
+        <RotateCcw size={11} />
       </button>
     </div>
   )

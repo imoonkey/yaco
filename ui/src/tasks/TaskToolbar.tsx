@@ -94,9 +94,9 @@ function FilterDropdown({ label, open, onToggle, children }: {
     <div ref={ref} className="relative">
       <button
         onClick={onToggle}
-        className="h-6 px-2 rounded text-[11px] font-medium cursor-pointer transition-colors"
+        className="h-[22px] px-2 rounded text-[10px] font-semibold uppercase tracking-[0.04em] cursor-pointer transition-colors"
         style={{
-          color: 'var(--sol-text)',
+          color: open ? 'var(--sol-text)' : 'var(--sol-muted)',
           backgroundColor: open ? 'var(--sol-subtle-bg-active)' : 'transparent',
           border: '1px solid var(--sol-border)',
         }}
@@ -105,7 +105,7 @@ function FilterDropdown({ label, open, onToggle, children }: {
       </button>
       {open && (
         <div
-          className="absolute top-full left-0 mt-1 py-1 rounded-md shadow-md z-20 min-w-[140px]"
+          className="absolute top-full left-0 mt-1 py-1 rounded-md z-20 min-w-[140px]"
           style={{ backgroundColor: 'var(--sol-editor-bg)', border: '1px solid var(--sol-border)', boxShadow: 'var(--elevation-2)' }}
         >
           {children}
@@ -147,16 +147,15 @@ function FilterPill({ label, color, onRemove }: { label: string; color?: string;
   const c = color ?? 'var(--sol-accent)'
   return (
     <span
-      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium"
+      className="inline-flex items-center gap-1 px-1.5 py-px rounded text-[10px] font-semibold"
       style={{
         backgroundColor: `color-mix(in srgb, ${c} 10%, transparent)`,
         color: c,
-        border: `1px solid color-mix(in srgb, ${c} 25%, transparent)`,
       }}
     >
       {label}
-      <button onClick={onRemove} className="cursor-pointer hover:opacity-70" aria-label={`Remove filter: ${label}`}>
-        <X size={10} />
+      <button onClick={onRemove} className="cursor-pointer hover:opacity-70 leading-none" aria-label={`Remove filter: ${label}`}>
+        <X size={9} />
       </button>
     </span>
   )
@@ -220,7 +219,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
     <div className="shrink-0" style={{ borderBottom: '1px solid var(--sol-border)' }}>
       {/* View tabs row */}
       <div className="flex items-center px-3" style={{ height: 36, backgroundColor: 'var(--sol-header-bg)' }}>
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-0">
           {VIEW_TABS.map(tab => {
             const Icon = tab.icon
             const isActive = activeView === tab.key
@@ -230,20 +229,20 @@ export function TaskToolbar(props: TaskToolbarProps) {
                 onClick={() => onSetView(tab.key)}
                 className="flex items-center gap-1.5 px-2.5 h-[36px] cursor-pointer transition-colors relative"
                 style={{
-                  color: isActive ? 'var(--sol-text)' : 'var(--sol-text-dim)',
+                  color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-muted)',
                   fontWeight: isActive ? 600 : 400,
-                  fontSize: 13,
+                  fontSize: 12,
                   background: 'none',
                   border: 'none',
                 }}
                 title={`${tab.label} (${tab.shortcut})`}
               >
-                <Icon size={14} />
+                <Icon size={13} />
                 {tab.label}
                 {isActive && (
                   <span
-                    className="absolute bottom-0 left-2.5 right-2.5 rounded-t-full"
-                    style={{ backgroundColor: 'var(--sol-accent)', height: '2.5px' }}
+                    className="absolute bottom-0 left-2 right-2 rounded-t-full"
+                    style={{ backgroundColor: 'var(--sol-accent)', height: '2px' }}
                   />
                 )}
               </button>
@@ -277,7 +276,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
       </div>
 
       {/* Filter bar row */}
-      <div className="flex items-center gap-2 px-3" style={{ height: 32, backgroundColor: 'var(--sol-header-bg)', borderTop: '1px solid var(--sol-border)' }}>
+      <div className="flex items-center gap-1.5 px-3" style={{ height: 30, backgroundColor: 'var(--sol-bg)', borderTop: '1px solid var(--sol-border)' }}>
         <FilterDropdown label="State" open={openDropdown === 'state'} onToggle={() => toggleDropdown('state')}>
           {ALL_STATES.map(s => (
             <CheckboxItem

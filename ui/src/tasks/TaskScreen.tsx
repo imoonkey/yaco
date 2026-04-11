@@ -150,16 +150,16 @@ function LoadingState() {
   return (
     <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
       <div className="loading-spinner" />
-      <div className="text-[12px]">Loading tasks...</div>
+      <div className="text-[11px]">Loading tasks...</div>
     </div>
   )
 }
 
 function ErrorState({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-red)' }}>
-      <div className="text-[13px] font-semibold">Failed to load tasks</div>
-      <div className="text-[12px]" style={{ color: 'var(--sol-muted)' }}>{message}</div>
+    <div className="flex flex-col items-center justify-center h-full gap-1.5">
+      <div className="text-[12px] font-semibold" style={{ color: 'var(--sol-red)' }}>Failed to load tasks</div>
+      <div className="text-[11px]" style={{ color: 'var(--sol-muted)' }}>{message}</div>
     </div>
   )
 }
