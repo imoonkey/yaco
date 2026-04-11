@@ -42,8 +42,8 @@ function CollapsibleSection({ title, count, defaultExpanded, children }: {
     <div>
       <button
         onClick={() => setExpanded(e => !e)}
-        className="flex items-center gap-1 w-full text-left font-medium mb-1 cursor-pointer"
-        style={{ color: 'var(--sol-base1)' }}
+        className="flex items-center gap-1 w-full text-left mb-1 cursor-pointer"
+        style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}
       >
         <span className="text-[10px]">{expanded ? '\u25BC' : '\u25B6'}</span>
         <span>{title} ({count})</span>
@@ -89,7 +89,7 @@ function SegmentedProgressBar({ tasks }: { tasks: TaskGraphTask[] }) {
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
         {segments.map(seg => (
-          <span key={seg.state} className="inline-flex items-center gap-1 text-[11px]" style={{ color: 'var(--sol-base01)' }}>
+          <span key={seg.state} className="inline-flex items-center gap-1 text-[11px]" style={{ color: 'var(--sol-muted)', fontWeight: 500 }}>
             <span style={{ color: STATE_COLORS[seg.state] }}>{'\u25CF'}</span>
             {counts[seg.state]} {STATE_LABELS[seg.state]?.toLowerCase()}
           </span>
@@ -112,7 +112,7 @@ function DepRow({ task, onNavigate, showState }: {
       onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
     >
       <span style={{ color: STATE_COLORS[task.state] }}>{'\u25CF'}</span>
-      <span className="flex-1 truncate">{task.title}</span>
+      <span className="flex-1 truncate" style={{ color: 'var(--sol-text)' }}>{task.title}</span>
       {showState && (
         <span className="text-[11px] shrink-0" style={{ color: STATE_COLORS[task.state] }}>
           {STATE_LABELS[task.state]?.toLowerCase()}
@@ -142,16 +142,16 @@ function Breadcrumb({ taskId, graph, onNavigate }: {
   if (ancestors.length === 0) return null
 
   return (
-    <div className="flex items-center gap-1 flex-wrap text-[11px]" style={{ color: 'var(--sol-base1)' }}>
+    <div className="flex items-center gap-1 flex-wrap text-[11px]" style={{ color: 'var(--sol-muted)' }}>
       {ancestors.map((a, i) => (
         <span key={a.id} className="flex items-center gap-1">
           {i > 0 && <span>{'\u203A'}</span>}
           <button
             onClick={() => onNavigate(a.id)}
             className="cursor-pointer transition-colors"
-            style={{ color: 'var(--sol-base1)' }}
-            onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-base01)')}
-            onMouseLeave={e => (e.currentTarget.style.color = 'var(--sol-base1)')}
+            style={{ color: 'var(--sol-muted)' }}
+            onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-text)')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--sol-muted)')}
           >
             {a.title}
           </button>
@@ -220,13 +220,13 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
   }
 
   return (
-    <div className="flex flex-col gap-3 p-3 text-[12px]" style={{ color: 'var(--sol-base01)' }}>
+    <div className="flex flex-col gap-3 p-3 text-[13px]" style={{ color: 'var(--sol-text)' }}>
       {/* Breadcrumb */}
       <Breadcrumb taskId={taskId} graph={graph} onNavigate={onNavigate} />
 
       {/* Title + state */}
       <div className="flex items-center gap-2">
-        <span className="font-semibold text-[14px]" style={{ color: 'var(--sol-base02)' }}>
+        <span className="font-bold text-[18px]" style={{ color: 'var(--sol-text-dark)' }}>
           {task.title}
         </span>
         <StateBadge state={task.state} />
@@ -235,13 +235,13 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
       {/* Group: progress + collapse toggle */}
       {task.hasChildren && (
         <div className="flex items-center gap-2">
-          <span className="text-[11px]" style={{ color: 'var(--sol-base1)' }}>
+          <span className="text-[11px]" style={{ color: 'var(--sol-muted)', fontWeight: 500 }}>
             {leafTasks.filter(t => t.state === 'done').length}/{leafTasks.length} done
           </span>
           <button
             onClick={() => onToggleCollapse(taskId)}
             className="px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors"
-            style={{ color: 'var(--sol-base1)', border: '1px solid var(--sol-border)' }}
+            style={{ color: 'var(--sol-muted)', border: '1px solid var(--sol-border)' }}
           >
             {isCollapsed ? 'Expand' : 'Collapse'}
           </button>
@@ -256,19 +256,19 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
       {/* Description */}
       {task.description && (
         <div>
-          <div className="font-medium mb-1" style={{ color: 'var(--sol-base1)' }}>Description</div>
-          <div style={{ color: 'var(--sol-base00)' }}>{task.description}</div>
+          <div className="mb-1" style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>Description</div>
+          <div style={{ color: 'var(--sol-text)' }}>{task.description}</div>
         </div>
       )}
 
       {/* Accept criteria */}
       {task.acceptCriteria.length > 0 && (
         <div>
-          <div className="font-medium mb-1" style={{ color: 'var(--sol-base1)' }}>Accept Criteria</div>
+          <div className="mb-1" style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>Accept Criteria</div>
           <ul className="list-none pl-0">
             {task.acceptCriteria.map((ac, i) => (
               <li key={i} className="flex items-start gap-1.5 mb-0.5">
-                <span style={{ color: 'var(--sol-base1)' }}>{'\u2610'}</span>
+                <span style={{ color: 'var(--sol-muted)' }}>{'\u2610'}</span>
                 <span>{ac}</span>
               </li>
             ))}
@@ -314,9 +314,9 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
               onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'var(--sol-list-hover-bg)')}
               onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
             >
-              <span style={{ color: 'var(--sol-base1)' }}>{'\u2192'}</span>
+              <span style={{ color: 'var(--sol-muted)' }}>{'\u2192'}</span>
               <span>{title}</span>
-              <span className="text-[10px]" style={{ color: 'var(--sol-base1)' }}>
+              <span className="text-[10px]" style={{ color: 'var(--sol-muted)' }}>
                 ({count} dep{count !== 1 ? 's' : ''})
               </span>
             </button>
@@ -331,7 +331,7 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
             <div
               key={i}
               className="px-2 py-0.5 rounded text-[11px] font-mono mb-0.5"
-              style={{ backgroundColor: 'var(--sol-header-bg)', color: 'var(--sol-base01)' }}
+              style={{ backgroundColor: 'var(--sol-header-bg)', color: 'var(--sol-text)' }}
             >
               {s}
             </div>
@@ -342,8 +342,8 @@ function TaskDetailView({ taskId, graph, onNavigate, collapsedTaskIds, onToggleC
       {/* Note */}
       {task.note && (
         <div>
-          <div className="font-medium mb-1" style={{ color: 'var(--sol-base1)' }}>Note</div>
-          <div style={{ color: 'var(--sol-base00)' }}>{task.note}</div>
+          <div className="mb-1" style={{ color: 'var(--sol-muted)', fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' as const }}>Note</div>
+          <div style={{ color: 'var(--sol-text)' }}>{task.note}</div>
         </div>
       )}
     </div>
@@ -382,7 +382,7 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
         }}
       >
         <div className="flex justify-center py-2" onClick={onClose} style={{ cursor: 'pointer' }}>
-          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: 'var(--sol-base1)' }} />
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: 'var(--sol-muted)' }} />
         </div>
         {content}
       </div>
@@ -404,7 +404,7 @@ export function TaskGraphDetailPanel({ selection, graph, isMobile, onClose, onNa
         <button
           onClick={onClose}
           className="w-6 h-6 rounded text-[14px] cursor-pointer transition-colors"
-          style={{ color: 'var(--sol-base1)' }}
+          style={{ color: 'var(--sol-muted)' }}
           title="Close"
         >
           {'\u2715'}

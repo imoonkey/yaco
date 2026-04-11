@@ -81,18 +81,18 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
         <button
           onClick={onZoomOut}
           className="w-7 h-7 rounded text-[14px] font-bold cursor-pointer transition-colors"
-          style={{ color: 'var(--sol-base01)' }}
+          style={{ color: 'var(--sol-text)' }}
           title="Zoom out"
         >
           -
         </button>
-        <span className="text-[11px] font-medium w-10 text-center" style={{ color: 'var(--sol-base01)' }}>
+        <span className="text-[11px] font-medium w-10 text-center" style={{ color: 'var(--sol-muted)' }}>
           {pct}%
         </span>
         <button
           onClick={onZoomIn}
           className="w-7 h-7 rounded text-[14px] font-bold cursor-pointer transition-colors"
-          style={{ color: 'var(--sol-base01)' }}
+          style={{ color: 'var(--sol-text)' }}
           title="Zoom in"
         >
           +
@@ -100,7 +100,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
         <button
           onClick={onFitToView}
           className="w-7 h-7 rounded text-[13px] cursor-pointer transition-colors"
-          style={{ color: 'var(--sol-base01)' }}
+          style={{ color: 'var(--sol-text)' }}
           title="Fit to view"
         >
           &#x2B1C;
@@ -115,7 +115,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
           <button
             onClick={onCollapseAll}
             className="w-7 h-7 rounded text-[12px] cursor-pointer transition-colors"
-            style={{ color: 'var(--sol-base01)' }}
+            style={{ color: 'var(--sol-text)' }}
             title="Collapse all groups"
           >
             {'\u25B6\u25B6'}
@@ -125,7 +125,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
           <button
             onClick={onExpandAll}
             className="w-7 h-7 rounded text-[12px] cursor-pointer transition-colors"
-            style={{ color: 'var(--sol-base01)' }}
+            style={{ color: 'var(--sol-text)' }}
             title="Expand all groups"
           >
             {'\u25BC\u25BC'}
@@ -141,7 +141,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
           <button
             onClick={() => setFiltersOpen(!filtersOpen)}
             className="px-2 py-1 rounded text-[11px] cursor-pointer"
-            style={{ color: 'var(--sol-base01)', border: '1px solid var(--sol-border)' }}
+            style={{ color: 'var(--sol-text)', border: '1px solid var(--sol-border)' }}
           >
             Filter
           </button>

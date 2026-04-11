@@ -6,7 +6,7 @@ import { STATE_COLORS } from './taskGraphConstants'
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
   const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
-  const r = 5
+  const r = 3
 
   if (state === 'done') {
     return <circle cx={cx} cy={cy} r={r} fill={color} />
@@ -169,9 +169,9 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       <text
         x={node.x + chevronWidth + 24}
         y={node.y + NODE_HEIGHT / 2 + 4}
-        fontSize={12}
-        fontWeight={hasGroupAffordances ? 600 : 400}
-        fill={'var(--sol-base01)'}
+        fontSize={13}
+        fontWeight={600}
+        fill={'var(--sol-text-dark)'}
         opacity={showLabels ? 1 : 0}
         style={{ transition: 'opacity 150ms ease-out' }}
         clipPath={`url(#clip-${node.id})`}
@@ -185,9 +185,10 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           x={node.x + NODE_WIDTH - (depCount > 0 ? 24 : 8)}
           y={node.y + NODE_HEIGHT / 2 + 4}
           fontSize={10}
+          fontWeight={500}
           textAnchor="end"
-          fill={'var(--sol-base1)'}
-          opacity={showLabels ? 0.7 : 0}
+          fill={'var(--sol-muted)'}
+          opacity={showLabels ? 1 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >
           {progressText}
@@ -200,9 +201,10 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           x={node.x + NODE_WIDTH - 12}
           y={node.y + NODE_HEIGHT / 2 + 4}
           fontSize={10}
+          fontWeight={500}
           textAnchor="end"
-          fill={'var(--sol-base1)'}
-          opacity={showLabels ? 0.7 : 0}
+          fill={'var(--sol-muted)'}
+          opacity={showLabels ? 1 : 0}
           style={{ transition: 'opacity 150ms ease-out' }}
         >
           {depCount}
