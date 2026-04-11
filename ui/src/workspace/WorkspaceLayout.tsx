@@ -34,6 +34,7 @@ export type WorkspaceLayoutProps = {
   changesStats?: ReactNode
   changesBody: ReactNode
   tasksBody: ReactNode
+  onToggleTasks?: () => void
   sessionsActions: ReactNode
   sessionsBody: ReactNode
 
@@ -71,7 +72,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
     projectName, projectListBody, projectActions, explorerActions, explorerBody,
     searchBody,
-    gitStale, changesBadge, changesTitle, changesActions, changesStats, changesBody, tasksBody,
+    gitStale, changesBadge, changesTitle, changesActions, changesStats, changesBody, tasksBody, onToggleTasks,
     sessionsActions, sessionsBody,
     editorPane, terminalContent,
     rootRef, sidebarRef, left, right, searchSplit, searchHeight, changesSplit, changesHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
@@ -131,8 +132,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                 <SectionHeader title="Search" collapsed={!showTextSearch} onToggle={() => onLayoutUpdate({ showTextSearch: !showTextSearch })} />
                 {showTextSearch && <div className="flex-1 min-h-0 flex flex-col">{searchBody}</div>}
 
-                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={() => onLayoutUpdate({ showTasks: !showTasks })} />
-                {showTasks && <div className="shrink-0 px-2 py-2">{tasksBody}</div>}
+                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
+                {showTasks && tasksBody && <div className="shrink-0 px-2 py-2">{tasksBody}</div>}
 
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
                 {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>}
@@ -193,8 +194,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
                   </div>
                 )}
 
-                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={() => onLayoutUpdate({ showTasks: !showTasks })} />
-                {showTasks && (
+                <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
+                {showTasks && tasksBody && (
                   <div
                     className={flexFallback === 'tasks' ? 'px-2 py-2 min-h-0' : 'px-2 py-2'}
                     style={flexFallback === 'tasks' ? { flex: 1 } : undefined}

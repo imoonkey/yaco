@@ -459,20 +459,18 @@ export function Workspace({
     </>
   )
 
-  const tasksBody = (
-    <button
-      onClick={nav.handleOpenTasks}
-      className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded cursor-pointer transition-colors text-left hover:bg-sol-hover-bg"
-      style={{
-        backgroundColor: activeTasksTab ? 'color-mix(in srgb, var(--sol-accent) 8%, transparent)' : undefined,
-        color: activeTasksTab ? 'var(--sol-text-dark)' : 'var(--sol-text)',
-      }}
-    >
-      <span className="text-[11px] font-medium">
-        {activeTasksTab ? 'Tasks open' : 'Open tasks'}
-      </span>
-    </button>
-  )
+  const tasksBody = null
+
+  // Toggle tasks: sync sidebar section state ↔ tasks tab
+  const handleToggleTasks = useCallback(() => {
+    if (activeTasksTab) {
+      actions.updateLayout({ showTasks: false })
+      closeTab(activeTab!)
+    } else {
+      actions.updateLayout({ showTasks: true })
+      nav.handleOpenTasks()
+    }
+  }, [activeTasksTab, actions, closeTab, activeTab, nav])
 
   // Compare file navigation
   const navigateCompareFile = useCallback((path: string) => {
@@ -589,6 +587,7 @@ export function Workspace({
       changesStats={changesStatsEl}
       changesBody={changesBody}
       tasksBody={tasksBody}
+      onToggleTasks={handleToggleTasks}
       sessionsActions={sessionSection.sessionsActions}
       sessionsBody={sessionSection.sessionsBody}
       editorPane={editorPane}
