@@ -114,12 +114,12 @@ export function defaultFileState(): FileState {
   return { serverContent: null, draft: null, baseRevision: null, viewportLine: 1, status: 'clean', editedAt: 0 }
 }
 
-export function layoutKey(project: string): string {
-  return `workflow-workspace:${project}`
+export function layoutKey(project: string, worktree?: string | null): string {
+  return worktree ? `workflow-workspace:${project}:wt:${worktree}` : `workflow-workspace:${project}`
 }
 
-export function draftsKey(project: string): string {
-  return `workflow-drafts:${project}`
+export function draftsKey(project: string, worktree?: string | null): string {
+  return worktree ? `workflow-drafts:${project}:wt:${worktree}` : `workflow-drafts:${project}`
 }
 
 export function loadStoredSize(value: unknown, fallback: number): number {

@@ -6,6 +6,13 @@ import { ApiError } from '../lib/apiError'
 export const API = '/api'
 const FILE_TREE_FALLBACK_MS = 60_000
 
+/** Append ?worktree=slug (or &worktree=slug) to a URL when worktree is active */
+export function appendWorktree(url: string, worktree?: string | null): string {
+  if (!worktree) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}worktree=${encodeURIComponent(worktree)}`
+}
+
 async function fetchJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API}${path}`, signal ? { signal } : undefined)
   if (!res.ok) {
@@ -96,7 +103,7 @@ export function useSessions(projectName?: string | null) {
   return usePolling(fetcher, 30_000, 'sessions')
 }
 
-export function useFileTree(projectName: string | null) {
+export function useFileTree(projectName: string | null, worktree?: string | null) {
   const [data, setData] = useState<FileNode[] | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const loadedDirsRef = useRef(new Set<string>())
@@ -106,14 +113,14 @@ export function useFileTree(projectName: string | null) {
   const loadRoot = useCallback(async () => {
     if (!projectName) { setData([]); return }
     try {
-      const root = await fetchJson<FileNode[]>(`/files/${encodeURIComponent(projectName)}`)
+      const root = await fetchJson<FileNode[]>(appendWorktree(`/files/${encodeURIComponent(projectName)}`, worktree))
       setData(root)
       setError(null)
       loadedDirsRef.current.clear()
     } catch (e) {
       setError(e instanceof Error ? e : new Error(String(e)))
     }
-  }, [projectName])
+  }, [projectName, worktree])
 
   // Initial load + project change
   useEffect(() => { void loadRoot() }, [loadRoot])
@@ -132,14 +139,14 @@ export function useFileTree(projectName: string | null) {
     loadedDirsRef.current.add(dirPath)
     try {
       const children = await fetchJson<FileNode[]>(
-        `/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`
+        appendWorktree(`/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`, worktree)
       )
       mergeChildren(dirPath, children)
     } catch (e) {
       console.warn(`useFileTree: failed to expand dir "${dirPath}"`, e)
       loadedDirsRef.current.delete(dirPath)
     }
-  }, [projectName, mergeChildren])
+  }, [projectName, worktree, mergeChildren])
 
   // SSE refresh: reload root + all expanded dirs
   const refreshExpanded = useCallback(async () => {
@@ -152,14 +159,14 @@ export function useFileTree(projectName: string | null) {
 
     try {
       const root = await fetchJson<FileNode[]>(
-        `/files/${encodeURIComponent(projectName)}`, ac.signal
+        appendWorktree(`/files/${encodeURIComponent(projectName)}`, worktree), ac.signal
       )
       // Re-fetch expanded dirs in batches of 6
       const dirs = [...loadedDirsRef.current]
       const results = await batchMap(dirs, async (dirPath) => {
         try {
           return { dirPath, children: await fetchJson<FileNode[]>(
-            `/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`,
+            appendWorktree(`/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(dirPath)}`, worktree),
             ac.signal
           )}
         } catch (e) {
@@ -179,7 +186,7 @@ export function useFileTree(projectName: string | null) {
       if (e instanceof DOMException && e.name === 'AbortError') return
       setError(e instanceof Error ? e : new Error(String(e)))
     }
-  }, [projectName])
+  }, [projectName, worktree])
 
   useSSERefresh('filetree', refreshExpanded)
 
@@ -266,8 +273,8 @@ export async function renameSession(name: string, newName: string, cwd: string):
   await postJson(`/sessions/${encodeURIComponent(name)}/rename`, { name: newName, cwd })
 }
 
-export async function saveFileContent(projectName: string, filePath: string, content: string, baseRevision?: number): Promise<{ revision: number }> {
-  const res = await fetch(`${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
+export async function saveFileContent(projectName: string, filePath: string, content: string, baseRevision?: number, worktree?: string | null): Promise<{ revision: number }> {
+  const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, worktree)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content, baseRevision }),
@@ -279,29 +286,29 @@ export async function saveFileContent(projectName: string, filePath: string, con
   return res.json()
 }
 
-export async function createFile(projectName: string, path: string): Promise<void> {
-  await postJson(`/files/${encodeURIComponent(projectName)}/create-file`, { path })
+export async function createFile(projectName: string, path: string, worktree?: string | null): Promise<void> {
+  await postJson(appendWorktree(`/files/${encodeURIComponent(projectName)}/create-file`, worktree), { path })
 }
 
-export async function createDir(projectName: string, path: string): Promise<void> {
-  await postJson(`/files/${encodeURIComponent(projectName)}/create-dir`, { path })
+export async function createDir(projectName: string, path: string, worktree?: string | null): Promise<void> {
+  await postJson(appendWorktree(`/files/${encodeURIComponent(projectName)}/create-dir`, worktree), { path })
 }
 
-export async function moveFile(projectName: string, sourcePath: string, destDir: string): Promise<string> {
-  const r = await postJson<{ newPath: string }>(`/files/${encodeURIComponent(projectName)}/move`, { sourcePath, destDir })
+export async function moveFile(projectName: string, sourcePath: string, destDir: string, worktree?: string | null): Promise<string> {
+  const r = await postJson<{ newPath: string }>(appendWorktree(`/files/${encodeURIComponent(projectName)}/move`, worktree), { sourcePath, destDir })
   return r.newPath
 }
 
-export async function renameFile(projectName: string, oldPath: string, newPath: string): Promise<void> {
-  await postJson(`/files/${encodeURIComponent(projectName)}/rename`, { oldPath, newPath })
+export async function renameFile(projectName: string, oldPath: string, newPath: string, worktree?: string | null): Promise<void> {
+  await postJson(appendWorktree(`/files/${encodeURIComponent(projectName)}/rename`, worktree), { oldPath, newPath })
 }
 
-export async function deleteFile(projectName: string, path: string): Promise<void> {
-  await postJson(`/files/${encodeURIComponent(projectName)}/delete`, { path })
+export async function deleteFile(projectName: string, path: string, worktree?: string | null): Promise<void> {
+  await postJson(appendWorktree(`/files/${encodeURIComponent(projectName)}/delete`, worktree), { path })
 }
 
-export async function revealInFinder(projectName: string, path: string): Promise<void> {
-  await postJson(`/files/${encodeURIComponent(projectName)}/reveal`, { path })
+export async function revealInFinder(projectName: string, path: string, worktree?: string | null): Promise<void> {
+  await postJson(appendWorktree(`/files/${encodeURIComponent(projectName)}/reveal`, worktree), { path })
 }
 
 // --- Browse ---
@@ -325,10 +332,10 @@ export interface GitStatusResponse {
   stats?: { added: number; deleted: number }
 }
 
-export function useGitStatus(projectName: string | null) {
+export function useGitStatus(projectName: string | null, worktree?: string | null) {
   const fetcher = useCallback(
-    () => projectName ? fetchJson<GitStatusResponse>(`/git/${encodeURIComponent(projectName)}/status`) : Promise.resolve({ changes: [], stale: false }),
-    [projectName]
+    () => projectName ? fetchJson<GitStatusResponse>(appendWorktree(`/git/${encodeURIComponent(projectName)}/status`, worktree)) : Promise.resolve({ changes: [], stale: false }),
+    [projectName, worktree]
   )
   return usePolling(fetcher, 30_000, 'git')
 }
@@ -355,11 +362,11 @@ export function useHistory(projectName: string | null): AsyncData<HistorySession
   return { data, error, loading, refresh }
 }
 
-export async function fetchGitDiff(projectName: string, filePath: string, base?: string, compare?: string): Promise<string> {
+export async function fetchGitDiff(projectName: string, filePath: string, base?: string, compare?: string, worktree?: string | null): Promise<string> {
   let url = `/git/${encodeURIComponent(projectName)}/diff?path=${encodeURIComponent(filePath)}`
   if (base) url += `&base=${encodeURIComponent(base)}`
   if (compare) url += `&compare=${encodeURIComponent(compare)}`
-  const r = await fetchJson<{ diff: string }>(url)
+  const r = await fetchJson<{ diff: string }>(appendWorktree(url, worktree))
   return r.diff
 }
 
@@ -373,6 +380,6 @@ export async function fetchGitRefs(projectName: string): Promise<GitRefsResult> 
   return fetchJson<GitRefsResult>(`/git/${encodeURIComponent(projectName)}/refs`)
 }
 
-export async function fetchGitCompare(projectName: string, base: string, compare: string): Promise<{ files: GitChange[]; stats: { added: number; deleted: number } }> {
-  return fetchJson(`/git/${encodeURIComponent(projectName)}/compare?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`)
+export async function fetchGitCompare(projectName: string, base: string, compare: string, worktree?: string | null): Promise<{ files: GitChange[]; stats: { added: number; deleted: number } }> {
+  return fetchJson(appendWorktree(`/git/${encodeURIComponent(projectName)}/compare?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`, worktree))
 }

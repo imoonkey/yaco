@@ -39,9 +39,11 @@ const MIN_QUERY_LEN = 3
 
 export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
   projectName,
+  worktree,
   onOpenFileAtLine,
 }: {
   projectName: string
+  worktree?: string | null
   onOpenFileAtLine: (path: string, line: number, column: number) => void
 }) {
   const [query, setQuery] = useState('')
@@ -80,7 +82,8 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
     if (opts.glob) params.set('glob', opts.glob)
     params.set('context', '0')
 
-    const url = `/api/search/${encodeURIComponent(projectName)}/text?${params}`
+    let url = `/api/search/${encodeURIComponent(projectName)}/text?${params}`
+    if (worktree) url += `&worktree=${encodeURIComponent(worktree)}`
 
     fetch(url, { signal: controller.signal })
       .then(async (res) => {
@@ -175,7 +178,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
         if (err instanceof DOMException && err.name === 'AbortError') return
         setStatus({ state: 'error', message: String(err) })
       })
-  }, [projectName])
+  }, [projectName, worktree])
 
   // Debounced search on query/options change
   const scheduleSearch = useCallback((q: string, opts: SearchOptions) => {

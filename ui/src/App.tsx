@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Workspace } from './components/Workspace'
 import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
+import { useProjectWorktrees } from './hooks/useProjectWorktrees'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NotificationBell } from './components/NotificationBell'
@@ -30,6 +31,15 @@ function loadProject(): string {
 
 function saveProject(project: string) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ project }))
+}
+
+function loadWorktree(project: string): string | null {
+  return localStorage.getItem(`workflow-worktree:${project}`)
+}
+
+function saveWorktree(project: string, wt: string | null) {
+  if (wt) localStorage.setItem(`workflow-worktree:${project}`, wt)
+  else localStorage.removeItem(`workflow-worktree:${project}`)
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
@@ -150,6 +160,30 @@ function App() {
     return orderedProjects[0]?.name ?? ''
   }, [projectName, orderedProjects])
 
+  // Worktree state for the active project
+  const [activeWorktree, setActiveWorktree] = useState<string | null>(null)
+  const worktrees = useProjectWorktrees(activeProject || null)
+
+  // Reset worktree when project changes; restore from localStorage
+  useEffect(() => {
+    if (!activeProject) { setActiveWorktree(null); return }
+    setActiveWorktree(loadWorktree(activeProject))
+  }, [activeProject])
+
+  // Validate activeWorktree is still in the worktree list
+  useEffect(() => {
+    if (!activeWorktree || worktrees.length === 0) return
+    if (!worktrees.some(w => w.slug === activeWorktree)) {
+      setActiveWorktree(null)
+    }
+  }, [activeWorktree, worktrees])
+
+  // Persist worktree selection
+  useEffect(() => {
+    if (!activeProject) return
+    saveWorktree(activeProject, activeWorktree)
+  }, [activeProject, activeWorktree])
+
   // Per-project session counts: { active, total }
   const projectSessionCounts = useMemo(() => {
     const counts: Record<string, { active: number; total: number }> = {}
@@ -191,6 +225,10 @@ function App() {
 
   const handleProjectChange = useCallback((name: string) => {
     setProjectName(name)
+  }, [])
+
+  const handleWorktreeSelect = useCallback((slug: string | null) => {
+    setActiveWorktree(slug)
   }, [])
 
   const handleAddProject = useCallback(() => {
@@ -278,9 +316,13 @@ function App() {
       <main className="flex-1 overflow-hidden">
         {activeProject && (
           <Workspace
-            key={activeProject}
+            key={`${activeProject}:${activeWorktree ?? ''}`}
             projectName={activeProject}
             projectPath={currentProjectPath}
+            worktree={activeWorktree}
+            worktrees={worktrees}
+            activeWorktree={activeWorktree}
+            onWorktreeSelect={handleWorktreeSelect}
             projects={orderedProjects}
             activeProject={activeProject}
             projectUnreadCounts={projectUnreadCounts}

@@ -1,24 +1,32 @@
 import { useState, useCallback } from 'react'
+import { GitBranch } from 'lucide-react'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
 import { BadgeCount } from './BadgeCount'
 import type { Project } from '../types'
+import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 
 export function ProjectList({
   projects,
   activeProject,
+  activeWorktree,
+  worktrees,
   projectUnreadCounts,
   projectSessionCounts,
   onSelect,
+  onWorktreeSelect,
   onReorder,
   onRemove,
   onMarkAllRead,
 }: {
   projects: Project[]
   activeProject: string
+  activeWorktree: string | null
+  worktrees: WorktreeInfo[]
   projectUnreadCounts: Record<string, number>
   projectSessionCounts: Record<string, { active: number; total: number }>
   onSelect: (name: string) => void
+  onWorktreeSelect: (slug: string | null) => void
   onReorder: (fromName: string, toName: string) => void
   onRemove: (project: Project) => void
   onMarkAllRead: (projectName: string) => void
@@ -40,46 +48,90 @@ export function ProjectList({
     setDraggedProject(null)
   }, [draggedProject, onReorder])
 
+  const handleProjectClick = useCallback((name: string) => {
+    if (name === activeProject) {
+      // Already on this project — reset worktree to main checkout
+      onWorktreeSelect(null)
+    } else {
+      onSelect(name)
+    }
+  }, [activeProject, onSelect, onWorktreeSelect])
+
   return (
     <div className="flex flex-col gap-0.5 px-1 py-1">
       {projects.map(project => {
         const isActive = activeProject === project.name
         const unreadCount = projectUnreadCounts[project.name] ?? 0
         const sc = projectSessionCounts[project.name]
+        const isMainActive = isActive && !activeWorktree
         return (
-          <button
-            key={project.name}
-            draggable
-            onDragStart={e => handleDragStart(e, project.name)}
-            onDragEnd={() => setDraggedProject(null)}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => handleDrop(e, project.name)}
-            onClick={() => onSelect(project.name)}
-            {...menu.bind(() => setMenuProject(project))}
-            className={`relative w-full text-left px-2 py-0.5 rounded text-[12px] font-medium cursor-pointer flex items-center gap-1 ${
-              isActive
-                ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
-                : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
-            }`}
-            style={{
-              transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
-              opacity: draggedProject === project.name ? 0.55 : 1,
-              ...(isActive ? { borderLeft: '3px solid var(--sol-accent)', paddingLeft: 5 } : {}),
-            }}
-          >
-            <span className="truncate flex-1">{project.name}</span>
-            <span className="flex items-center gap-1 shrink-0">
-              <BadgeCount count={unreadCount} />
-              {sc && sc.total > 0 && (
-                <span
-                  className="text-[12px] tabular-nums opacity-50"
-                  title={`${sc.active} active / ${sc.total} total sessions`}
-                >
-                  {sc.active}/{sc.total}
-                </span>
-              )}
-            </span>
-          </button>
+          <div key={project.name}>
+            <button
+              draggable
+              onDragStart={e => handleDragStart(e, project.name)}
+              onDragEnd={() => setDraggedProject(null)}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => handleDrop(e, project.name)}
+              onClick={() => handleProjectClick(project.name)}
+              {...menu.bind(() => setMenuProject(project))}
+              className={`relative w-full text-left px-2 py-0.5 rounded text-[12px] font-medium cursor-pointer flex items-center gap-1 ${
+                isMainActive
+                  ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
+                  : isActive
+                    ? 'text-[var(--sol-blue)]'
+                    : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
+              }`}
+              style={{
+                transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
+                opacity: draggedProject === project.name ? 0.55 : 1,
+                ...(isMainActive ? { borderLeft: '3px solid var(--sol-accent)', paddingLeft: 5 } : {}),
+              }}
+            >
+              <span className="truncate flex-1">{project.name}</span>
+              <span className="flex items-center gap-1 shrink-0">
+                <BadgeCount count={unreadCount} />
+                {sc && sc.total > 0 && (
+                  <span
+                    className="text-[12px] tabular-nums opacity-50"
+                    title={`${sc.active} active / ${sc.total} total sessions`}
+                  >
+                    {sc.active}/{sc.total}
+                  </span>
+                )}
+              </span>
+            </button>
+
+            {/* Worktree sub-items under active project */}
+            {isActive && worktrees.length > 0 && (
+              <div className="flex flex-col gap-0.5 mt-0.5">
+                {worktrees.map(wt => {
+                  const isWtActive = activeWorktree === wt.slug
+                  return (
+                    <button
+                      key={wt.slug}
+                      onClick={() => onWorktreeSelect(wt.slug)}
+                      className={`w-full text-left pl-5 pr-2 py-0.5 rounded text-[11px] cursor-pointer flex items-center gap-1.5 ${
+                        isWtActive
+                          ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)] font-medium'
+                          : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
+                      }`}
+                      style={{
+                        transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
+                        ...(isWtActive ? { borderLeft: '3px solid var(--sol-accent)', paddingLeft: 17 } : {}),
+                      }}
+                      title={`${wt.branch}${wt.dirty ? ' (modified)' : ''}${wt.ahead > 0 ? ` +${wt.ahead}` : ''}${wt.behind > 0 ? ` -${wt.behind}` : ''}`}
+                    >
+                      <GitBranch size={11} className="shrink-0 opacity-60" />
+                      <span className="truncate flex-1">{wt.slug}</span>
+                      {wt.dirty && (
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-warning)' }} />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )
       })}
       {projects.length === 0 && (

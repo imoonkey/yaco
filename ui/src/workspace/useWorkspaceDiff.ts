@@ -14,6 +14,7 @@ interface UseWorkspaceDiffOpts {
   activeDiffPath: string | null
   activeFilePath: string | null
   projectName: string
+  worktree?: string | null
   changes: GitChange[]
   gitData: unknown // used as dependency trigger for re-fetch
   compareBase?: string | null
@@ -21,7 +22,7 @@ interface UseWorkspaceDiffOpts {
 }
 
 export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
-  const { activeDiffPath, activeFilePath, projectName, changes, gitData, compareBase, compareHead } = opts
+  const { activeDiffPath, activeFilePath, projectName, worktree, changes, gitData, compareBase, compareHead } = opts
 
   const [cache, setCache] = useState<Record<string, DiffState>>({})
 
@@ -82,7 +83,7 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
         }
       })
 
-      fetchGitDiff(projectName, entry.path, entry.base, entry.compare)
+      fetchGitDiff(projectName, entry.path, entry.base, entry.compare, worktree)
         .then(raw => {
           if (controller.signal.aborted) return
           setCache(prev => {
@@ -108,7 +109,7 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
 
     return () => { controllers.forEach(c => c.abort()) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDiffCacheKey, editorDiffPath, projectName, gitData, compareBase, compareHead])
+  }, [activeDiffCacheKey, editorDiffPath, projectName, worktree, gitData, compareBase, compareHead])
 
   // Clean up cache entries when keys are no longer needed
   const prevKeysRef = useRef(keysToFetch)

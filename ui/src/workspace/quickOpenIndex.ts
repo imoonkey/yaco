@@ -9,23 +9,24 @@ type CacheEntry = {
 
 const cache = new Map<CacheKey, CacheEntry>()
 
-function key(project: string, includeIgnored: boolean): CacheKey {
-  return `${project}:${includeIgnored}`
+function key(project: string, includeIgnored: boolean, worktree?: string | null): CacheKey {
+  return worktree ? `${project}:wt:${worktree}:${includeIgnored}` : `${project}:${includeIgnored}`
 }
 
-export function getCached(project: string, includeIgnored: boolean): SearchEntry[] | null {
-  return cache.get(key(project, includeIgnored))?.entries ?? null
+export function getCached(project: string, includeIgnored: boolean, worktree?: string | null): SearchEntry[] | null {
+  return cache.get(key(project, includeIgnored, worktree))?.entries ?? null
 }
 
-export function isCacheStale(project: string, includeIgnored: boolean): boolean {
-  const entry = cache.get(key(project, includeIgnored))
+export function isCacheStale(project: string, includeIgnored: boolean, worktree?: string | null): boolean {
+  const entry = cache.get(key(project, includeIgnored, worktree))
   return !entry || entry.stale
 }
 
-/** Mark all cache entries for a project as stale (both tracked and ignored) */
-export function markStale(project: string): void {
+/** Mark all cache entries for a project (+ worktree) as stale */
+export function markStale(project: string, worktree?: string | null): void {
+  const prefix = worktree ? `${project}:wt:${worktree}:` : `${project}:`
   for (const [k, v] of cache) {
-    if (k.startsWith(project + ':')) {
+    if (k.startsWith(prefix)) {
       v.stale = true
     }
   }
@@ -36,15 +37,19 @@ export async function fetchIndex(
   project: string,
   includeIgnored: boolean,
   signal?: AbortSignal,
+  worktree?: string | null,
 ): Promise<SearchEntry[]> {
-  const k = key(project, includeIgnored)
+  const k = key(project, includeIgnored, worktree)
   const existing = cache.get(k)
   if (existing?.fetching) return existing.entries
 
   if (existing) existing.fetching = true
 
   try {
-    const qs = includeIgnored ? '?ignored=true' : ''
+    let qs = includeIgnored ? '?ignored=true' : ''
+    if (worktree) {
+      qs += (qs ? '&' : '?') + `worktree=${encodeURIComponent(worktree)}`
+    }
     const res = await fetch(
       `/api/files/${encodeURIComponent(project)}/search-index${qs}`,
       { signal },

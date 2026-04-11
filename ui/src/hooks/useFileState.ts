@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useSSERefresh } from './useSSE'
-import { API } from './useApi'
+import { API, appendWorktree } from './useApi'
 import { ApiError } from '../lib/apiError'
 import {
   type FileState,
@@ -25,10 +25,11 @@ export interface PreviewLifecycle {
 async function fetchContent(
   project: string,
   path: string,
+  worktree?: string | null,
   signal?: AbortSignal,
 ): Promise<{ content: string; revision: number } | null> {
   const res = await fetch(
-    `${API}/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`,
+    `${API}${appendWorktree(`/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, worktree)}`,
     signal ? { signal } : undefined,
   )
   if (!res.ok) {
@@ -43,6 +44,7 @@ async function fetchContent(
 
 export function useFileState(
   projectName: string,
+  worktree: string | null | undefined,
   initialDrafts: PersistedDrafts,
   initialOpenTabs: string[],
   openTabsRef: { readonly current: string[] },
@@ -65,6 +67,9 @@ export function useFileState(
   const projectRef = useRef(projectName)
   projectRef.current = projectName
 
+  const worktreeRef = useRef(worktree)
+  worktreeRef.current = worktree
+
   const filesRef = useRef(files)
   filesRef.current = files
 
@@ -80,7 +85,7 @@ export function useFileState(
     if (fileTabs.length === 0) return
 
     for (const path of fileTabs) {
-      fetchContent(projectName, path).then(result => {
+      fetchContent(projectName, path, worktree).then(result => {
         if (projectRef.current !== projectName) return
         setFiles(prev => {
           const next = reconcileFile(prev[path], result)
@@ -105,7 +110,7 @@ export function useFileState(
     refetchAbortRef.current = ac
 
     for (const path of tabs) {
-      fetchContent(project, path, ac.signal).then(result => {
+      fetchContent(project, path, worktreeRef.current, ac.signal).then(result => {
         if (ac.signal.aborted || projectRef.current !== project) return
         setFiles(prev => {
           const next = reconcileFile(prev[path], result)
@@ -162,7 +167,7 @@ export function useFileState(
   /** Fetch content for a newly opened tab (gentle — won't clobber drafts) */
   const fetchForTab = useCallback((path: string) => {
     const project = projectRef.current
-    fetchContent(project, path).then(result => {
+    fetchContent(project, path, worktreeRef.current).then(result => {
       if (projectRef.current !== project) return
       setFiles(prev => {
         const existing = prev[path]
@@ -253,7 +258,7 @@ export function useFileState(
     })
 
     try {
-      const res = await fetch(`${API}/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, {
+      const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, worktreeRef.current)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, baseRevision }),
@@ -292,7 +297,7 @@ export function useFileState(
     })
 
     try {
-      const res = await fetch(`${API}/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, {
+      const res = await fetch(`${API}${appendWorktree(`/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`, worktreeRef.current)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
@@ -314,7 +319,7 @@ export function useFileState(
 
   const acceptDisk = useCallback((path: string) => {
     const project = projectRef.current
-    fetchContent(project, path).then(result => {
+    fetchContent(project, path, worktreeRef.current).then(result => {
       if (!result) return
       setFiles(prev => {
         const existing = prev[path] ?? defaultFileState()

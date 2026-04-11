@@ -13,7 +13,7 @@ import {
 
 // --- Load helpers ---
 
-function loadPersistedState(project: string): PersistedState {
+function loadPersistedState(project: string, worktree?: string | null): PersistedState {
   const defaults: PersistedState = {
     openTabs: [],
     activeTab: null,
@@ -26,7 +26,7 @@ function loadPersistedState(project: string): PersistedState {
   }
 
   try {
-    const raw = localStorage.getItem(layoutKey(project))
+    const raw = localStorage.getItem(layoutKey(project, worktree))
     if (!raw) return defaults
     const parsed = JSON.parse(raw) as Record<string, unknown>
 
@@ -83,9 +83,9 @@ function loadPersistedState(project: string): PersistedState {
   }
 }
 
-function loadPersistedDrafts(project: string): PersistedDrafts {
+function loadPersistedDrafts(project: string, worktree?: string | null): PersistedDrafts {
   try {
-    const raw = localStorage.getItem(draftsKey(project))
+    const raw = localStorage.getItem(draftsKey(project, worktree))
     if (!raw) return { files: {} }
     const parsed = JSON.parse(raw) as PersistedDrafts
     if (!parsed.files || typeof parsed.files !== 'object') return { files: {} }
@@ -100,27 +100,27 @@ function loadPersistedDrafts(project: string): PersistedDrafts {
 
 // --- Save helpers ---
 
-function saveLayout(project: string, state: PersistedState): void {
+function saveLayout(project: string, worktree: string | null | undefined, state: PersistedState): void {
   try {
-    localStorage.setItem(layoutKey(project), JSON.stringify(state))
+    localStorage.setItem(layoutKey(project, worktree), JSON.stringify(state))
   } catch { /* layout is tiny — quota should never be an issue */ }
 }
 
-function saveDrafts(project: string, drafts: PersistedDrafts): void {
+function saveDrafts(project: string, worktree: string | null | undefined, drafts: PersistedDrafts): void {
   try {
-    localStorage.setItem(draftsKey(project), JSON.stringify(drafts))
+    localStorage.setItem(draftsKey(project, worktree), JSON.stringify(drafts))
   } catch (err) {
     if (err instanceof DOMException && err.name === 'QuotaExceededError') {
       const entries = Object.entries(drafts.files).sort((a, b) => a[1].updatedAt - b[1].updatedAt)
       while (entries.length > 0) {
         entries.shift()
         try {
-          localStorage.setItem(draftsKey(project), JSON.stringify({ files: Object.fromEntries(entries) }))
+          localStorage.setItem(draftsKey(project, worktree), JSON.stringify({ files: Object.fromEntries(entries) }))
           return
         } catch { continue }
       }
       // All evicted — persist empty so next load doesn't restore stale data
-      try { localStorage.setItem(draftsKey(project), JSON.stringify({ files: {} })) } catch { /* noop */ }
+      try { localStorage.setItem(draftsKey(project, worktree), JSON.stringify({ files: {} })) } catch { /* noop */ }
     }
   }
 }
@@ -133,25 +133,28 @@ function saveDrafts(project: string, drafts: PersistedDrafts): void {
  * Phase 2: call bindSnapshots() after state hooks are created to enable
  *          debounced saves and synchronous beforeunload/unmount flush.
  */
-export function usePersistence(projectName: string) {
-  const [initialLayout] = useState(() => loadPersistedState(projectName))
-  const [initialDrafts] = useState(() => loadPersistedDrafts(projectName))
+export function usePersistence(projectName: string, worktree?: string | null) {
+  const [initialLayout] = useState(() => loadPersistedState(projectName, worktree))
+  const [initialDrafts] = useState(() => loadPersistedDrafts(projectName, worktree))
 
   const projectRef = useRef(projectName)
   projectRef.current = projectName
+
+  const worktreeRef = useRef(worktree)
+  worktreeRef.current = worktree
 
   const layoutSnapshotRef = useRef<(() => PersistedState) | null>(null)
   const draftsSnapshotRef = useRef<(() => PersistedDrafts) | null>(null)
 
   const flushLayout = useCallback(() => {
     if (layoutSnapshotRef.current) {
-      saveLayout(projectRef.current, layoutSnapshotRef.current())
+      saveLayout(projectRef.current, worktreeRef.current, layoutSnapshotRef.current())
     }
   }, [])
 
   const flushDrafts = useCallback(() => {
     if (draftsSnapshotRef.current) {
-      saveDrafts(projectRef.current, draftsSnapshotRef.current())
+      saveDrafts(projectRef.current, worktreeRef.current, draftsSnapshotRef.current())
     }
   }, [])
 

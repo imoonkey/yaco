@@ -7,9 +7,9 @@ import { useLayoutState } from './useLayoutState'
 // Re-export shared types and guards so existing consumers don't break
 export { type FileStatus, type FileState, type MdMode, type SplitDirection, type WorkspaceLayout, TASKS_TAB_ID, DEFAULT_LAYOUT, isDiffTab, isTasksTab, isFileTab, parseDiffTab } from './workspaceTypes'
 
-export function useWorkspaceState(projectName: string) {
+export function useWorkspaceState(projectName: string, worktree?: string | null) {
   // Phase 1: load persisted state
-  const { initialLayout, initialDrafts, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave } = usePersistence(projectName)
+  const { initialLayout, initialDrafts, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave } = usePersistence(projectName, worktree)
 
   // Shared ref: tracks current open tabs for SSE refetch in useFileState
   const openTabsRef = useRef(initialLayout.openTabs)
@@ -21,7 +21,7 @@ export function useWorkspaceState(projectName: string) {
     fetchForTab, removeFile, retargetFile, removeFilesUnder,
     updateDraft, updateViewport,
     save, forceSave, acceptDisk,
-  } = useFileState(projectName, initialDrafts, initialLayout.openTabs, openTabsRef)
+  } = useFileState(projectName, worktree, initialDrafts, initialLayout.openTabs, openTabsRef)
 
   const ls = useLayoutState(initialLayout, previewLifecycle)
 

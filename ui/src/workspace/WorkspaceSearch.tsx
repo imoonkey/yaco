@@ -7,8 +7,9 @@ import { getCached, isCacheStale, fetchIndex } from './quickOpenIndex'
 
 export type { SearchEntry } from '../lib/fuzzySearch'
 
-export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
+export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClose }: {
   projectName: string
+  worktree?: string | null
   recentFiles: string[]
   onSelect: (entry: { name: string; path: string; type: 'file' | 'dir' }) => void
   onClose: () => void
@@ -16,32 +17,32 @@ export function FileSearch({ projectName, recentFiles, onSelect, onClose }: {
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const [selectedIdx, setSelectedIdx] = useState(0)
-  const [files, setFiles] = useState(() => getCached(projectName, false) ?? [])
-  const [loading, setLoading] = useState(() => !getCached(projectName, false))
+  const [files, setFiles] = useState(() => getCached(projectName, false, worktree) ?? [])
+  const [loading, setLoading] = useState(() => !getCached(projectName, false, worktree))
   const [includeIgnored, setIncludeIgnored] = useState(false)
 
   // Fetch or background-refresh index
   useEffect(() => {
     const controller = new AbortController()
-    const cached = getCached(projectName, includeIgnored)
+    const cached = getCached(projectName, includeIgnored, worktree)
 
     if (cached) {
       setFiles(cached)
       setLoading(false)
-      if (isCacheStale(projectName, includeIgnored)) {
-        fetchIndex(projectName, includeIgnored, controller.signal)
+      if (isCacheStale(projectName, includeIgnored, worktree)) {
+        fetchIndex(projectName, includeIgnored, controller.signal, worktree)
           .then(data => setFiles(data))
           .catch(() => {})
       }
     } else {
       setLoading(true)
-      fetchIndex(projectName, includeIgnored, controller.signal)
+      fetchIndex(projectName, includeIgnored, controller.signal, worktree)
         .then(data => { setFiles(data); setLoading(false) })
         .catch(() => { if (!controller.signal.aborted) setLoading(false) })
     }
 
     return () => controller.abort()
-  }, [projectName, includeIgnored])
+  }, [projectName, worktree, includeIgnored])
 
   const toggleIgnored = useCallback(() => {
     setIncludeIgnored(prev => !prev)

@@ -102,6 +102,7 @@ export interface FileExplorerHandle {
 
 interface FileExplorerProps {
   projectName: string
+  worktree?: string | null
   tree: FileNode[] | null
   gitMap: Map<string, string>
   gitFolders: Set<string>
@@ -119,7 +120,7 @@ interface FileExplorerProps {
 }
 
 const FileExplorerInner = forwardRef<FileExplorerHandle, FileExplorerProps>(
-function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder, onNodeFocused, onFileRenamed, onFileDeleted, patchTree, refreshTree }, ref) {
+function FileExplorer({ projectName, worktree, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder, onNodeFocused, onFileRenamed, onFileDeleted, patchTree, refreshTree }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -228,14 +229,14 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     if (!path) return
     patchTree?.(prev => prev ? removeNodeFromTree(prev, path) : prev)
     try {
-      await deleteFile(projectName, path)
+      await deleteFile(projectName, path, worktree)
       onFileDeleted?.(path)
     }
     catch (err) {
       toast.error(`Failed to delete: ${err}`)
       refreshTree?.()
     }
-  }, [confirmDelete, projectName, patchTree, refreshTree, onFileDeleted])
+  }, [confirmDelete, projectName, worktree, patchTree, refreshTree, onFileDeleted])
 
   const handleCopyPath = useCallback((path: string) => {
     menu.close()
@@ -244,8 +245,8 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
 
   const handleReveal = useCallback((path: string) => {
     menu.close()
-    void revealInFinder(projectName, path)
-  }, [projectName, menu])
+    void revealInFinder(projectName, path, worktree)
+  }, [projectName, worktree, menu])
 
   // react-arborist callbacks
   const onMove = useCallback(async ({ dragIds, parentId }: { dragIds: string[]; parentId: string | null; index: number }) => {
@@ -261,14 +262,14 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     })
     const expectedNewPath = `${destDir}/${sourcePath.split('/').pop()}`
     onFileRenamed?.(sourcePath, expectedNewPath)
-    try { await moveFile(projectName, sourcePath, destDir) }
+    try { await moveFile(projectName, sourcePath, destDir, worktree) }
     catch (err) {
       console.error('Failed to move:', err)
       // Rollback: undo tab/state retargeting
       onFileRenamed?.(expectedNewPath, sourcePath)
       refreshTree?.()
     }
-  }, [projectName, patchTree, refreshTree, onFileRenamed])
+  }, [projectName, worktree, patchTree, refreshTree, onFileRenamed])
 
   const onCreate = useCallback(({ parentId, type }: { parentId: string | null; type: 'internal' | 'leaf' }) => {
     // Open parent chain so the pending node will be visible
@@ -301,9 +302,9 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
       const fullPath = parentPath ? `${parentPath}/${name}` : name
       try {
         if (pending.type === 'dir') {
-          await createDir(projectName, fullPath)
+          await createDir(projectName, fullPath, worktree)
         } else {
-          await createFile(projectName, fullPath)
+          await createFile(projectName, fullPath, worktree)
           onSelectFile(fullPath)
         }
       } catch (err) { console.error('Failed to create:', err) }
@@ -318,14 +319,14 @@ function FileExplorer({ projectName, tree, gitMap, gitFolders, selectedFile, onS
     // Optimistic: rename in tree
     patchTree?.(prev => prev ? renameNodeInTree(prev, oldPath, newPath) : prev)
     onFileRenamed?.(oldPath, newPath)
-    try { await renameFile(projectName, oldPath, newPath) }
+    try { await renameFile(projectName, oldPath, newPath, worktree) }
     catch (err) {
       console.error('Failed to rename:', err)
       // Rollback: undo tab/state retargeting
       onFileRenamed?.(newPath, oldPath)
       refreshTree?.()
     }
-  }, [projectName, onSelectFile, patchTree, refreshTree, onFileRenamed])
+  }, [projectName, worktree, onSelectFile, patchTree, refreshTree, onFileRenamed])
 
   const treeData = useMemo(() => {
     if (!tree) return null

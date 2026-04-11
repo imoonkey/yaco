@@ -29,6 +29,7 @@ import { useWorkspaceDiff } from './useWorkspaceDiff'
 import { useWorkspaceVoice } from './useWorkspaceVoice'
 import { CompareRefPicker } from './CompareRefPicker'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
+import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
@@ -37,6 +38,10 @@ type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
 export function Workspace({
   projectName,
   projectPath,
+  worktree,
+  worktrees,
+  activeWorktree,
+  onWorktreeSelect,
   projects,
   activeProject,
   projectUnreadCounts,
@@ -55,6 +60,10 @@ export function Workspace({
 }: {
   projectName: string
   projectPath: string
+  worktree?: string | null
+  worktrees: WorktreeInfo[]
+  activeWorktree: string | null
+  onWorktreeSelect: (slug: string | null) => void
   projects: Project[]
   activeProject: string
   projectUnreadCounts: Record<string, number>
@@ -77,8 +86,10 @@ export function Workspace({
   const isMobile = useIsMobile()
   const isTouch = useIsTouch()
   const voice = useVoice()
+  // Effective path for new sessions and cwd-sensitive operations
+  const effectivePath = worktree ? `${projectPath}/.worktrees/${worktree}` : projectPath
   // Centralized workspace state
-  const ws = useWorkspaceState(projectName)
+  const ws = useWorkspaceState(projectName, worktree)
   const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, recentFiles, actions } = ws
 
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
@@ -100,13 +111,13 @@ export function Workspace({
   const [compareResult, setCompareResult] = useState<{ files: GitChange[]; stats: { added: number; deleted: number }; key: string } | null>(null)
 
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
-  const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName)
+  const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName, worktree)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
-  const { data: gitData } = useGitStatus(projectName)
+  const { data: gitData } = useGitStatus(projectName, worktree)
   const history = useHistory(projectName)
 
   // Mark quick-open search index stale on filetree changes
-  const markStaleForProject = useCallback(() => markSearchIndexStale(projectName), [projectName])
+  const markStaleForProject = useCallback(() => markSearchIndexStale(projectName, worktree), [projectName, worktree])
   useSSERefresh('filetree', markStaleForProject)
 
   // Fetch compare data when refs change
@@ -117,11 +128,11 @@ export function Workspace({
     if (!compareMode || !projectName) return
     const key = `${compareBase}:${compareHead}`
     const controller = new AbortController()
-    fetchGitCompare(projectName, compareBase, compareHead)
+    fetchGitCompare(projectName, compareBase, compareHead, worktree)
       .then(data => { if (!controller.signal.aborted) setCompareResult({ files: data.files, stats: data.stats, key }) })
       .catch(() => { if (!controller.signal.aborted) setCompareResult({ files: [], stats: { added: 0, deleted: 0 }, key }) })
     return () => controller.abort()
-  }, [compareMode, compareBase, compareHead, projectName])
+  }, [compareMode, compareBase, compareHead, projectName, worktree])
 
   useEffect(() => {
     if (!onVisibilityReport) return
@@ -161,13 +172,13 @@ export function Workspace({
 
   // --- Extracted hooks ---
   const sessionsMgr = useWorkspaceSessions({
-    actions, projectPath, activeSession, sessions, pinnedSessions,
+    actions, projectPath: effectivePath, activeSession, sessions, pinnedSessions,
     refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
     onSessionChange: history.refresh,
   })
 
   const { activeDiff, editorDiffHunks, clearDiff } = useWorkspaceDiff({
-    activeDiffPath, activeFilePath, projectName, changes, gitData,
+    activeDiffPath, activeFilePath, projectName, worktree, changes, gitData,
     compareBase: parsedDiff?.base, compareHead: parsedDiff?.compare,
   })
 
@@ -185,7 +196,7 @@ export function Workspace({
 
   const sessionSection = useWorkspaceSessionSection({
     sessionsMgr, attachedSession, isMobile, history,
-    projectPath, projectName, actions, refreshSessions, setFocusTarget,
+    projectPath: effectivePath, projectName, actions, refreshSessions, setFocusTarget,
   })
 
   const resize = useWorkspaceSidebarResize({
@@ -357,9 +368,12 @@ export function Workspace({
     <ProjectList
       projects={projects}
       activeProject={activeProject}
+      activeWorktree={activeWorktree}
+      worktrees={worktrees}
       projectUnreadCounts={projectUnreadCounts}
       projectSessionCounts={projectSessionCounts}
       onSelect={onProjectSelect}
+      onWorktreeSelect={onWorktreeSelect}
       onReorder={onProjectReorder}
       onRemove={onProjectRemove}
       onMarkAllRead={onMarkAllRead}
@@ -381,6 +395,7 @@ export function Workspace({
     <FileExplorer
       ref={explorerRef}
       projectName={projectName}
+      worktree={worktree}
       tree={fileTree}
       gitMap={gitMap}
       gitFolders={gitFolders}
@@ -401,6 +416,7 @@ export function Workspace({
   const searchBody = (
     <WorkspaceTextSearch
       projectName={projectName}
+      worktree={worktree}
       onOpenFileAtLine={handleOpenFileAtLine}
     />
   )
@@ -473,8 +489,9 @@ export function Workspace({
     } else {
       actions.updateLayout({ showTasks: true })
       nav.handleOpenTasks()
+      if (isMobile) actions.setMobilePane('editor')
     }
-  }, [activeTasksTab, actions, closeTab, activeTab, nav])
+  }, [activeTasksTab, actions, closeTab, activeTab, nav, isMobile])
 
   // Compare file navigation
   const navigateCompareFile = useCallback((path: string) => {
@@ -611,7 +628,7 @@ export function Workspace({
       hasOpenTabs={hasOpenTabs}
       onInteractionCapture={() => { void lockCloseShortcut() }}
       onFilesPaneFocus={() => setFocusTarget('explorer')}
-      searchOverlay={showSearch ? <FileSearch projectName={projectName!} recentFiles={recentFiles} onSelect={nav.handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}
+      searchOverlay={showSearch ? <FileSearch projectName={projectName!} worktree={worktree} recentFiles={recentFiles} onSelect={nav.handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}
       notificationBell={notificationBell}
     />
     <ComposeTray
