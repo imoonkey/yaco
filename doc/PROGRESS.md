@@ -1,5 +1,27 @@
 # Progress
 
+## 2026-04-11: Compare mode UI + diff/changes UX polish
+
+**What changed:**
+- Compare mode in Changes section — toggle via GitCompareArrows icon, select base/head refs via CompareRefPicker, browse changed files, open compare diff tabs (`diff:path?base=X&compare=Y`)
+- `openPreviewDiffTabById` action in useLayoutState for pre-built tab IDs
+- GitChangeItem: status pill badges with tinted bg, active left accent border colored by status
+- CompareRefPicker: swap rotation animation, accent-tinted bg, monospace ref names, chevron rotation on open
+- RefSearchDropdown: filter tabs (All/Branches/Tags/Commits) with counts, author + relative time on commits, Tab key cycles tabs
+- DiffTab: stronger diff colors (10%/30%), toolbar separators, fold icon on collapsed context, refined file dropdown with status badges, better empty/binary states
+- Server refs endpoint: 50 commits (was 20), author name in response, tab-delimited log format
+- Loading states: skeleton shimmer animation; empty states: two-line contextual messages
+
+**Why:**
+- T6 from git-compare design: compare mode in Changes section
+- UX polish pass for world-class dev tool feel across diff/changes experience
+
+**Key files:** server/src/routes/git.ts, ui/src/hooks/useApi.ts, ui/src/hooks/useLayoutState.ts, ui/src/hooks/useWorkspaceState.ts, ui/src/workspace/WorkspaceScreen.tsx, ui/src/workspace/WorkspaceLayout.tsx, ui/src/workspace/CompareRefPicker.tsx, ui/src/workspace/RefSearchDropdown.tsx, ui/src/workspace/WorkspaceSidebar.tsx, ui/src/workspace/diff/DiffTab.tsx, ui/src/index.css
+**Verification:** TypeScript clean (no errors in changed files), ESLint passes (no new issues)
+**Commit:** b615bb1
+**Next:** T7 (diff hook + tab encoding + tab labels), T8 (diff toolbar context + file navigation dropdown)
+**Blockers:** None
+
 ## 2026-04-10: Git compare endpoint + diff ref extension
 
 **What changed:**

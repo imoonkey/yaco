@@ -24,7 +24,7 @@ Per-project workspace state management. Thin wiring layer that composes three fo
 
 ### Decomposed into:
 
-- **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic. Includes `retargetPaths(oldPath, newPath)` to remap tab IDs on rename/move, and `closeTabsUnder(path)` to close tabs under a deleted path.
+- **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic. Includes `retargetPaths(oldPath, newPath)` to remap tab IDs on rename/move, `closeTabsUnder(path)` to close tabs under a deleted path, and `openPreviewDiffTabById(tabId)` to open compare diff tabs using a pre-built tab ID (e.g. `diff:path?base=X&compare=Y`).
 - **`useFileState.ts`** (342 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling. Uses `fileStateMachine.ts` for explicit state transitions.
 - **`fileStateMachine.ts`** (100 lines) — pure state machine for file status transitions. `FileEvent` discriminated union (9 events: SERVER_SYNC, SERVER_MISSING, FILL_REVISION, EDIT, SAVE_START, SAVE_SUCCESS, SAVE_CONFLICT, SAVE_ERROR, ACCEPT_DISK). `fileTransition(state, event)` returns new state or same reference if unchanged. `reconcileFile()` wraps server fetch results.
 - **`usePersistence.ts`** (190 lines) — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush
@@ -121,7 +121,9 @@ Standalone async functions (not hooks):
 - `renameFile(project, oldPath, newPath)`
 - `deleteFile(project, path)`
 - `revealInFinder(project, path)`
-- `fetchGitDiff(project, path)`
+- `fetchGitDiff(project, path, base?, compare?)` — optional ref params for compare diffs
+- `fetchGitRefs(project)` — branches, tags, recent commits (with author)
+- `fetchGitCompare(project, base, compare)` — file list between two refs
 
 ## useSSE.ts (99 lines)
 

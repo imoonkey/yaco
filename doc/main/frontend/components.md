@@ -110,6 +110,8 @@ Single-workspace shell. Manages project selection, unread state, and browser not
 
 Multi-pane workspace editor with file explorer, code editor, terminal, and git integration. State and persistence are managed by `useWorkspaceState` hook. Layout composition is delegated to `WorkspaceLayout`. Session management extracted to `useWorkspaceSessionSection`, sidebar resize to `useWorkspaceSidebarResize`, editor column to `WorkspaceEditorColumn`.
 
+**Compare mode**: Toggle via `GitCompareArrows` icon in Changes section header. State: `compareMode`, `compareBase`, `compareHead`, `compareResult`. When active, the Changes section shows `CompareRefPicker` + file list from `/git/:project/compare`. Clicking a file opens a compare diff tab (`diff:path?base=X&compare=Y`) via `openPreviewDiffTabById`. Loading uses skeleton shimmer.
+
 **Props**: `{ projectName: string; projectPath: string; projects; activeProject; projectUnreadCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent; notificationBell? }`
 
 **Responsibilities**:
@@ -147,7 +149,9 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `useWorkspaceSessionSection.tsx` | 177 | Session tab, drag, resume, history JSX |
 | `useResize.ts` | 37 | Drag-to-resize hook |
 | `ResizeHandle.tsx` | 18 | VResizeHandle + HResizeHandle (solid 3px sash) |
-| `WorkspaceSidebar.tsx` | 26 | GitChangeItem component |
+| `WorkspaceSidebar.tsx` | 26 | GitChangeItem component — status pill badges, active left accent border |
+| `CompareRefPicker.tsx` | ~120 | Vertical two-row ref selector (base/compare) with swap animation, opens RefSearchDropdown |
+| `RefSearchDropdown.tsx` | ~250 | Search-first ref picker dropdown — filter tabs (All/Branches/Tags/Commits), fuzzy search, grouped sections, keyboard nav, relative dates + author on commits |
 | `SectionHeader.tsx` | 17 | Shared collapsible section header (uppercase, ARIA expand) |
 
 ## FileExplorer
