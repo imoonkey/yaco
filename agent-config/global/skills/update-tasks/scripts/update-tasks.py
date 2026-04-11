@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 """Write-only operations on doc/todo/tasks.json with cross-record validation."""
-import json, sys
+import fcntl, json, sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 FILE = Path("doc/todo/tasks.json")
 STATES = {"ready", "running", "done", "blocked", "cancelled"}
 TERMINAL = {"done", "cancelled"}
+PRIORITIES = {"critical", "high", "normal", "low"}
+ESTIMATES = {"xs", "s", "m", "l", "xl"}
+BLOCK_REASONS = {"verification-failed", "human-review", "external", "dependency"}
+
+LOCK_FILE = str(FILE) + ".lock"
 
 def load():
     return json.loads(FILE.read_text()) if FILE.exists() else {}
@@ -13,6 +19,16 @@ def load():
 def save(tasks):
     FILE.parent.mkdir(parents=True, exist_ok=True)
     FILE.write_text(json.dumps(tasks, indent=2, ensure_ascii=False) + "\n")
+
+def with_lock(fn):
+    """Serialize concurrent writes via fcntl file lock."""
+    FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOCK_FILE, "w") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        try:
+            return fn()
+        finally:
+            fcntl.flock(lf, fcntl.LOCK_UN)
 
 def die(msg):
     print(f"error: {msg}", file=sys.stderr); sys.exit(1)
@@ -48,6 +64,18 @@ def validate_types(data):
                 die("resources list items must be strings")
         else:
             die("resources must be str or list[str]")
+    # V2 fields
+    if "priority" in data and data["priority"] not in PRIORITIES:
+        die(f"priority must be one of: {', '.join(sorted(PRIORITIES))}")
+    if "agent" in data and not isinstance(data.get("agent"), (str, type(None))):
+        die("agent must be string or null")
+    if "tags" in data:
+        if not isinstance(data["tags"], list) or not all(isinstance(x, str) for x in data["tags"]):
+            die("tags must be list of strings")
+    if "estimate" in data and data["estimate"] not in ESTIMATES:
+        die(f"estimate must be one of: {', '.join(sorted(ESTIMATES))}")
+    if "blockReason" in data and data["blockReason"] not in BLOCK_REASONS:
+        die(f"blockReason must be one of: {', '.join(sorted(BLOCK_REASONS))}")
 
 def validate_refs(tasks, tid, task):
     if task.get("parent") == tid or tid in task.get("depends", []):
@@ -85,8 +113,10 @@ def has_children(tasks, tid):
 
 def validate_state(tasks, tid, old_state, new_state):
     if new_state not in STATES: die(f"invalid state '{new_state}'")
+    # Constraint 1: milestone state derived by rollup
     if has_children(tasks, tid) and new_state != old_state:
         die(f"cannot set state on milestone task (state derived from children)")
+    # Constraint 2: -> running requires all depends terminal
     if new_state == "running" and old_state != "running":
         for d in tasks[tid].get("depends", []):
             if tasks[d]["state"] not in TERMINAL:
@@ -115,39 +145,46 @@ def _ac_is_blank(ac):
 
 def cmd_set(tid, data):
     validate_types(data)
-    tasks = load()
-    old_state = tasks.get(tid, {}).get("state")
-    if tid in tasks:
-        tasks[tid].update(data)
-    else:
-        missing = {"title", "description"} - data.keys()
-        if missing: die(f"new task requires: {', '.join(sorted(missing))}")
-        tasks[tid] = {"parent": None, "depends": [], "state": "ready", **data}
-    # Enforce non-empty acceptCriteria on leaf tasks
-    if not has_children(tasks, tid) and _ac_is_blank(tasks[tid].get("acceptCriteria")):
-        die("leaf task requires non-empty acceptCriteria")
-    validate_refs(tasks, tid, tasks[tid])
-    validate_state(tasks, tid, old_state, tasks[tid]["state"])
-    check_cycles(tasks)
-    rollup(tasks, tid)
-    save(tasks)
+    def _do():
+        tasks = load()
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        old_state = tasks.get(tid, {}).get("state")
+        if tid in tasks:
+            tasks[tid].update(data)
+        else:
+            missing = {"title", "description"} - data.keys()
+            if missing: die(f"new task requires: {', '.join(sorted(missing))}")
+            tasks[tid] = {"parent": None, "depends": [], "state": "ready", **data}
+            tasks[tid].setdefault("created", now)
+        tasks[tid]["updated"] = now
+        # Enforce non-empty acceptCriteria on leaf tasks
+        if not has_children(tasks, tid) and _ac_is_blank(tasks[tid].get("acceptCriteria")):
+            die("leaf task requires non-empty acceptCriteria")
+        validate_refs(tasks, tid, tasks[tid])
+        validate_state(tasks, tid, old_state, tasks[tid]["state"])
+        check_cycles(tasks)
+        rollup(tasks, tid)
+        save(tasks)
+    with_lock(_do)
 
 def cmd_rm(tid):
-    tasks = load()
-    if tid not in tasks: die(f"task '{tid}' not found")
-    if tasks[tid]["state"] == "running": die("cannot remove running task (cancel first)")
-    for oid, o in tasks.items():
-        if oid == tid: continue
-        if o.get("parent") == tid: die(f"task '{oid}' has parent '{tid}'")
-        if tid in o.get("depends", []): die(f"task '{oid}' depends on '{tid}'")
-    pid = tasks[tid].get("parent")
-    del tasks[tid]
-    if pid and pid in tasks:
-        # Remaining siblings may now all be terminal → rollup parent
-        children = [t for t in tasks if tasks[t].get("parent") == pid]
-        if children:
-            rollup(tasks, children[0])
-    save(tasks)
+    def _do():
+        tasks = load()
+        if tid not in tasks: die(f"task '{tid}' not found")
+        if tasks[tid]["state"] == "running": die("cannot remove running task (cancel first)")
+        for oid, o in tasks.items():
+            if oid == tid: continue
+            if o.get("parent") == tid: die(f"task '{oid}' has parent '{tid}'")
+            if tid in o.get("depends", []): die(f"task '{oid}' depends on '{tid}'")
+        pid = tasks[tid].get("parent")
+        del tasks[tid]
+        if pid and pid in tasks:
+            # Remaining siblings may now all be terminal → rollup parent
+            children = [t for t in tasks if tasks[t].get("parent") == pid]
+            if children:
+                rollup(tasks, children[0])
+        save(tasks)
+    with_lock(_do)
 
 ARCHIVE_DIR = Path("doc/archive")
 
@@ -165,37 +202,39 @@ def archive_path(slug):
         i += 1
 
 def cmd_archive(tid):
-    tasks = load()
-    if tid not in tasks:
-        die(f"task '{tid}' not found")
-    if tasks[tid]["state"] not in TERMINAL:
-        die(f"task '{tid}' is not terminal (state={tasks[tid]['state']})")
-    # Collect terminal descendants
-    def collect(pid):
-        result = []
-        for c, v in tasks.items():
-            if v.get("parent") == pid:
-                result.append(c)
-                result.extend(collect(c))
-        return result
-    children = collect(tid)
-    non_terminal = [c for c in children if tasks[c]["state"] not in TERMINAL]
-    if non_terminal:
-        die(f"has non-terminal children: {', '.join(non_terminal)}")
-    to_archive = [tid] + children
-    archived = {t: tasks[t] for t in to_archive}
-    slug = tid
-    out = archive_path(slug)
-    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(archived, indent=2, ensure_ascii=False) + "\n")
-    for t in to_archive:
-        del tasks[t]
-    # Clean up dangling depends references
-    archived_set = set(to_archive)
-    for t in tasks.values():
-        t["depends"] = [d for d in t.get("depends", []) if d not in archived_set]
-    save(tasks)
-    print(f"archived {len(to_archive)} tasks → {out}")
+    def _do():
+        tasks = load()
+        if tid not in tasks:
+            die(f"task '{tid}' not found")
+        if tasks[tid]["state"] not in TERMINAL:
+            die(f"task '{tid}' is not terminal (state={tasks[tid]['state']})")
+        # Collect terminal descendants
+        def collect(pid):
+            result = []
+            for c, v in tasks.items():
+                if v.get("parent") == pid:
+                    result.append(c)
+                    result.extend(collect(c))
+            return result
+        children = collect(tid)
+        non_terminal = [c for c in children if tasks[c]["state"] not in TERMINAL]
+        if non_terminal:
+            die(f"has non-terminal children: {', '.join(non_terminal)}")
+        to_archive = [tid] + children
+        archived = {t: tasks[t] for t in to_archive}
+        slug = tid
+        out = archive_path(slug)
+        ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(archived, indent=2, ensure_ascii=False) + "\n")
+        for t in to_archive:
+            del tasks[t]
+        # Clean up dangling depends references
+        archived_set = set(to_archive)
+        for t in tasks.values():
+            t["depends"] = [d for d in t.get("depends", []) if d not in archived_set]
+        save(tasks)
+        print(f"archived {len(to_archive)} tasks → {out}")
+    with_lock(_do)
 
 if __name__ == "__main__":
     args = sys.argv[1:]
