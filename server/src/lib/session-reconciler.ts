@@ -17,7 +17,7 @@ const MIN_PROCESSING_MS = 15_000
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 let reconcileInFlight = false
 
-const lastStatusBySession = new Map<string, 'processing' | 'idle'>()
+const lastStatusBySession = new Map<string, 'starting' | 'processing' | 'idle'>()
 const processingStartBySession = new Map<string, number>()
 const idleStreakBySession = new Map<string, number>()
 

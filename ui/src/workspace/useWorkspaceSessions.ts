@@ -41,7 +41,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     const byName = new Map(projectSessions.map(s => [s.name, s]))
     const pinned = pinnedSessions.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
     const unpinned = projectSessions.filter(s => !pinnedSet.has(s.name))
-    const processing = unpinned.filter(s => s.status === 'processing')
+    const processing = unpinned.filter(s => s.status === 'processing' || s.status === 'starting')
     const idle = unpinned.filter(s => s.status === 'idle')
     const byUnread = (a: { name: string }, b: { name: string }) => {
       const ua = getSessionUnread(a.name) > 0 ? 0 : 1
