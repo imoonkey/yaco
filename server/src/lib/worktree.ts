@@ -36,6 +36,14 @@ export async function getWorktreeStatus(projectPath: string, slug: string): Prom
     return { active: false, dirty: false, branch, ahead: 0, behind: 0 }
   }
 
+  // Verify this is actually a registered git worktree, not a leftover directory
+  const isGitWorktree = await git(worktreePath, ['rev-parse', '--is-inside-work-tree'])
+    .then(out => out.trim() === 'true')
+    .catch(() => false)
+  if (!isGitWorktree) {
+    return { active: false, dirty: false, branch, ahead: 0, behind: 0 }
+  }
+
   const [dirty, aheadBehind] = await Promise.all([
     git(worktreePath, ['status', '--porcelain'])
       .then(out => out.trim().length > 0)

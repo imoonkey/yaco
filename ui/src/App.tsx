@@ -172,7 +172,7 @@ function App() {
 
   // Validate activeWorktree is still in the worktree list
   useEffect(() => {
-    if (!activeWorktree || worktrees.length === 0) return
+    if (!activeWorktree) return
     if (!worktrees.some(w => w.slug === activeWorktree)) {
       setActiveWorktree(null)
     }

@@ -61,10 +61,28 @@ describe('getWorktreeStatus', () => {
     expect(execFileMock).not.toHaveBeenCalled()
   })
 
+  it('returns inactive when directory exists but is not a git worktree', async () => {
+    existsSyncMock.mockReturnValue(true)
+    execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+      if (args[0] === 'rev-parse') cb(new Error('not a git repo'))
+    })
+
+    const result = await getWorktreeStatus('/project', 'leftover')
+
+    expect(result).toEqual({
+      active: false,
+      dirty: false,
+      branch: 'task/leftover',
+      ahead: 0,
+      behind: 0,
+    })
+  })
+
   it('returns active clean status with ahead/behind counts', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'status') cb(null, '', '')
+      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
+      else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(null, '2\t5\n', '')
     })
 
@@ -82,7 +100,8 @@ describe('getWorktreeStatus', () => {
   it('returns dirty=true when git status has output', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'status') cb(null, ' M src/index.ts\n', '')
+      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
+      else if (args[0] === 'status') cb(null, ' M src/index.ts\n', '')
       else if (args[0] === 'rev-list') cb(null, '0\t0\n', '')
     })
 
@@ -95,7 +114,8 @@ describe('getWorktreeStatus', () => {
   it('handles git status failure gracefully (dirty defaults to false)', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'status') cb(new Error('git failed'))
+      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
+      else if (args[0] === 'status') cb(new Error('git failed'))
       else if (args[0] === 'rev-list') cb(null, '0\t1\n', '')
     })
 
@@ -113,7 +133,8 @@ describe('getWorktreeStatus', () => {
   it('handles git rev-list failure gracefully (ahead/behind default to 0)', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'status') cb(null, '', '')
+      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
+      else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(new Error('no main branch'))
     })
 
@@ -131,7 +152,8 @@ describe('getWorktreeStatus', () => {
   it('parses ahead/behind when values are non-zero', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'status') cb(null, '', '')
+      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
+      else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(null, '10\t3\n', '')
     })
 
