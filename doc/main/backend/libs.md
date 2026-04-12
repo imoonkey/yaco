@@ -62,19 +62,21 @@ Core scanning engine for workstream metadata and progress entries across project
 - `withFileLock()` provides in-process locking for read-modify-write operations on JSON files
 - Handles both workstream-level and project-level (`doc/todo/progress.json`) progress entries
 
-### multmux.ts (~300 lines)
+### multmux.ts (~250 lines)
 
 Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files and wraps the `multmux` CLI for session commands.
 
-**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
+**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `fetchAllSessionsFromCli()`, `queryMultmuxStatus()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`, `renameMultmuxSession()`
 
 - `readSessionsFromStateFiles(project)` reads the global sessions dir and filters by `sessionPath` descendant-matching the registered project path
 - `readAllSessionsFromStateFiles(projects)` reads the global sessions dir once and assigns each session to the most specific matching registered project
+- `fetchAllSessionsFromCli(projects)` calls `multmux status --json --all`, parses the authoritative reconciled snapshot, and maps sessions to projects. Used by the reconciler for correctness-sensitive operations.
+- `queryMultmuxStatus(cwd)` calls `multmux status --json --path <cwd>` for resume preflight checks
 - Primary session source: reads `~/.multmux/sessions/*.json` state files (written by multmux hooks)
-- Normalizes status: `starting → idle`, `processing → processing`, unknown → excluded
-- State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — status is `starting | idle | processing` (no `stopped`; file deletion = session ended)
-- `startMultmuxSession(provider, name, cwd, prompt?, resumeId?)` spawns the multmux CLI detached and returns early — as soon as the state file has a non-zero PID (tmux session attachable, ~1-2s). When `resumeId` is present, passes `--resume` to multmux and discovers the handle by scanning all state files for `sessionId = resumeId` (collision-safe). Normal starts poll the expected filename.
-- `closeMultmuxSession()` delegates to `multmux kill` (ensures state file cleanup)
+- Status passthrough: `starting | idle | processing` — no normalization (multmux states used as-is)
+- State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — file deletion = session ended
+- `startMultmuxSession(provider, name, cwd, prompt?, resumeId?)` spawns the multmux CLI detached and returns early — as soon as the state file has `pid > 0` (tmux session attachable, ~1-2s). When `resumeId` is present, queries `multmux status --json --path <cwd>` for collision-safe resume preflight.
+- `closeMultmuxSession(handle)` and `renameMultmuxSession(old, new)` are handle-global — no cwd/project parameter needed
 - Exports `MultmuxSession` and `MultmuxStateFile` interfaces
 
 ### history.ts (~300 lines)
@@ -108,17 +110,15 @@ Notification dispatch to two sinks: macOS desktop and SSE broadcast.
 - `emitRefresh(channel)` — lightweight SSE-only signal for UI refresh (no osascript)
 - Manages SSE client registry for connected browsers
 
-### session-reconciler.ts (~230 lines)
+### session-reconciler.ts (~100 lines)
 
 Low-frequency background reconciler for session health and idle detection.
 
 **Exports**: `startSessionReconciler()`, `stopSessionReconciler()`
 
 - Runs every 60 seconds as a safety net (not primary session source)
-- Reads the global sessions dir once per pass via `readAllSessionsFromStateFiles()`
-- Health-checks all active sessions via `isTmuxAlive`: pre-checks tmux server availability (`list-sessions`), then per-session `has-session` with 5s timeout. Three-state result: `true` (alive), `false` (confirmed dead — deletes state file), `null` (uncertain — keeps session). Defense-in-depth for when wrapper EXIT trap doesn't fire (e.g. SIGKILL).
+- Calls `fetchAllSessionsFromCli(projects)` which runs `multmux status --json --all` — the authoritative reconciled snapshot. Multmux owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, and sessionId backfill.
 - Emits `refresh:sessions` if drift detected (missed watcher events)
-- Backfills missing session IDs via `multmux status --json --path <project-path>` (never ambient cwd)
 - Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
 
 ### project-watcher.ts (162 lines)
@@ -184,17 +184,16 @@ Best-effort SSH environment repair for spawned child processes.
 - On macOS, if the socket is stale, discovers a live `ssh-agent` socket via `pgrep` + `lsof`
 - If the agent is reachable but empty, runs `ssh-add --apple-load-keychain` so new shell/tmux sessions can use SSH-backed Git remotes without a manual warm-up terminal
 
-### session-summary.ts (216 lines)
+### session-summary.ts (~120 lines)
 
 Resolves conversation summaries for session list display.
 
 **Exports**: `resolveSessionSummaries()`
 
 - Batch resolution: one call per `GET /api/sessions` poll, reads each data source at most once
-- Skips sentinel sessionId (`pending:awaiting-first-prompt`) from multmux
+- Skips sentinel sessionId (`pending:awaiting-first-prompt`) — shows no summary until next reconcile populates it
 - Claude: groups by `sessionPath` and reads first user message from `~/.claude/projects/{encoded(sessionPath)}/<sessionId>.jsonl`
 - Codex: queries `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
-- PID fallback: when `sessionId` is missing, resolves via direct PID match — Claude scans `~/.claude/sessions/*.json`; Codex uses `lsof` to find open rollout files
 - Cached Codex DB handle (opened once per server lifecycle, reopened on error)
 
 ### session-names.ts (27 lines)

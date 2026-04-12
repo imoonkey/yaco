@@ -1,5 +1,28 @@
 # Progress
 
+## 2026-04-12: Align workflow with multmux v2 contracts
+
+**What changed:**
+- W1: replaced `unlinkSync` state file deletion with `multmux kill` CLI call (idempotent)
+- W2: replaced `checkStaleStates()` + `isTmuxAlive()` + `backfillSessionIds()` with single `fetchAllSessionsFromCli()` → `multmux status --json --all`. Reconciler now consumes authoritative CLI snapshot directly.
+- W3: removed `normalizeStateFileStatus()`, status passthrough: `starting | idle | processing`
+- W4: simplified `startMultmuxSession()` — poll for `pid > 0` (not just file existence), `queryMultmuxStatus()` for resume preflight
+- W5: deleted `resolveSessionTmuxName()` — dead code since multmux v2 (handle == tmux session name)
+- W6: `closeMultmuxSession()` and `renameMultmuxSession()` are now handle-global (no cwd parameter)
+- W7: removed `loadClaudePidMap()`, `loadCodexPidMap()`, lsof calls, and state-file summary fallback
+- W8: aligned `MultmuxStateFile`/`MultmuxSession` types — removed `summary`/`stateFileSummary` fields, removed `error`/`completed` status values
+- Fix: `starting` sessions now appear in session list (regression from W3 removing status normalization)
+- Fix: `lastStatusBySession` type updated to include `starting`
+
+**Why:**
+- Eliminate parallel session-lifecycle infrastructure. One reconciliation owner (multmux), one mutation interface (multmux CLI). Workflow reads state files for cheap discovery, uses CLI JSON for correctness. Design: `~/workspace/multmux/doc/todo/workflow-multmux/final/design.md`
+
+**Key files:** `server/src/lib/multmux.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/session-summary.ts`, `server/src/lib/terminal.ts`, `server/src/routes/sessions.ts`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/types.ts`
+**Verification:** 164 server tests pass, UI type-checks clean
+**Commit:** `dd202cf`, `14aa5b7`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-12: Worktree hardening — 3 rounds of Codex review + tests + QA
 
 **What changed:**
