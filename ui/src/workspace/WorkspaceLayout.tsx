@@ -5,6 +5,7 @@ import { Sun, Moon } from 'lucide-react'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import { SectionHeader } from './SectionHeader'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
+import type { MobilePane } from '../hooks/workspaceTypes'
 
 type ResizeState = {
   size: number
@@ -16,9 +17,9 @@ export type WorkspaceLayoutProps = {
   isMobile: boolean
   isTouch: boolean
   layout: LayoutState
-  mobilePane: 'files' | 'editor' | 'terminal'
+  mobilePane: MobilePane
   onLayoutUpdate: (partial: Partial<LayoutState>) => void
-  onMobilePaneChange: (pane: 'files' | 'editor' | 'terminal') => void
+  onMobilePaneChange: (pane: MobilePane) => void
 
   // Section content
   projectName: string
@@ -33,13 +34,13 @@ export type WorkspaceLayoutProps = {
   changesActions?: ReactNode
   changesStats?: ReactNode
   changesBody: ReactNode
-  tasksBody: ReactNode
   onToggleTasks?: () => void
   sessionsActions: ReactNode
   sessionsBody: ReactNode
 
   // Main panes
   editorPane: ReactNode
+  tasksPane: ReactNode
   terminalContent: ReactNode
 
   // Resize
@@ -72,9 +73,9 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
     projectName, projectListBody, projectActions, explorerActions, explorerBody,
     searchBody,
-    gitStale, changesBadge, changesTitle, changesActions, changesStats, changesBody, tasksBody, onToggleTasks,
+    gitStale, changesBadge, changesTitle, changesActions, changesStats, changesBody, onToggleTasks,
     sessionsActions, sessionsBody,
-    editorPane, terminalContent,
+    editorPane, tasksPane, terminalContent,
     rootRef, sidebarRef, left, right, searchSplit, searchHeight, changesSplit, changesHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
     hasOpenTabs,
     onInteractionCapture, onFilesPaneFocus, searchOverlay, notificationBell,
@@ -100,15 +101,16 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       {isMobile ? (
         <div className="flex-1 min-w-0 flex flex-col">
           <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-0.5 flex items-center gap-2" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
-            <div className="flex-1 min-w-0 max-w-[65%]">
+            <div className="flex-1 min-w-0 max-w-[80%]">
               <PaneSwitch
                 options={[
                   { id: 'files', label: 'Browse' },
                   { id: 'editor', label: 'Editor' },
+                  { id: 'tasks', label: 'Tasks' },
                   { id: 'terminal', label: 'Terminal' },
                 ]}
                 value={mobilePane}
-                onChange={(v) => onMobilePaneChange(v as 'files' | 'editor' | 'terminal')}
+                onChange={(v) => onMobilePaneChange(v as MobilePane)}
               />
             </div>
             {notificationBell}
@@ -134,14 +136,14 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
 
                 <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
                 {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>}
-
-                {/* Tasks toggle — pinned at bottom with safe-area padding */}
-                <div className="mt-auto shrink-0" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
-                  <SectionHeader title="Tasks" collapsed={!showTasks} onToggle={onToggleTasks ?? (() => onLayoutUpdate({ showTasks: !showTasks }))} />
-                </div>
               </div>
             )}
             {mobilePane === 'editor' && editorPane}
+            {mobilePane === 'tasks' && (
+              <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+                {tasksPane}
+              </div>
+            )}
             {mobilePane === 'terminal' && (
               <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-bg)' }}>
                 {terminalContent}

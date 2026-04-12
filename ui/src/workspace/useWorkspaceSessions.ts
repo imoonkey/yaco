@@ -1,13 +1,14 @@
 import { useCallback, useMemo, useRef, useEffect, useState } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import type { AgentSession, SessionProvider } from '../types'
+import type { MobilePane } from '../hooks/workspaceTypes'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
 interface UseWorkspaceSessionsOpts {
   actions: {
     setActiveSession: (name: string) => void
-    setMobilePane: (pane: 'files' | 'editor' | 'terminal') => void
+    setMobilePane: (pane: MobilePane) => void
     setPinnedSessions: (fn: (prev: string[]) => string[]) => void
   }
   projectPath: string

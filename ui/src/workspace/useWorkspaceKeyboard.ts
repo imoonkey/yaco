@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react'
-import type { MdMode } from '../hooks/workspaceTypes'
+import type { MdMode, MobilePane } from '../hooks/workspaceTypes'
 import type { UseVoiceReturn } from '../hooks/useVoice'
 import type { AgentSession } from '../types'
 import { writeTextToClipboard } from '../lib/clipboard'
@@ -13,7 +13,7 @@ type KeyboardLockHandle = {
 interface UseWorkspaceKeyboardOpts {
   actions: {
     setActiveSession: (name: string) => void
-    setMobilePane: (pane: 'files' | 'editor' | 'terminal') => void
+    setMobilePane: (pane: MobilePane) => void
     updateLayout: (patch: Record<string, unknown>) => void
     toggleTasksTab: () => void
   }

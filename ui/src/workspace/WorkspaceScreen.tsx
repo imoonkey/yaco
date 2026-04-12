@@ -16,6 +16,7 @@ import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceLayout } from './WorkspaceLayout'
 import { WorkspaceTextSearch } from './WorkspaceTextSearch'
 import { WorkspaceEditorColumn } from './WorkspaceEditorColumn'
+import { TaskScreen } from '../tasks/TaskScreen'
 import { useWorkspaceSidebarResize } from './useWorkspaceSidebarResize'
 import { useWorkspaceSessionSection } from './useWorkspaceSessionSection'
 import { ShortcutSheet } from './ShortcutSheet'
@@ -479,19 +480,23 @@ export function Workspace({
     </>
   )
 
-  const tasksBody = null
-
-  // Toggle tasks: sync sidebar section state ↔ tasks tab
+  // Toggle tasks: sidebar toggle (desktop) or pane switch (mobile)
   const handleToggleTasks = useCallback(() => {
-    if (activeTasksTab) {
+    if (isMobile) {
+      // Mobile: tasks is its own pane — just switch to it (or back to editor)
+      actions.setMobilePane(mobilePane === 'tasks' ? 'editor' : 'tasks')
+    } else if (activeTasksTab) {
       actions.updateLayout({ showTasks: false })
       closeTab(activeTab!)
     } else {
       actions.updateLayout({ showTasks: true })
       nav.handleOpenTasks()
-      if (isMobile) actions.setMobilePane('editor')
     }
-  }, [activeTasksTab, actions, closeTab, activeTab, nav, isMobile])
+  }, [isMobile, mobilePane, activeTasksTab, actions, closeTab, activeTab, nav])
+
+  const tasksPane = (
+    <TaskScreen projectName={projectName} onClose={handleToggleTasks} onOpenTasksFile={nav.handleOpenTasksFile} onOpenFile={nav.openFile} />
+  )
 
   // Compare file navigation
   const navigateCompareFile = useCallback((path: string) => {
@@ -607,11 +612,11 @@ export function Workspace({
       changesActions={changesActions}
       changesStats={changesStatsEl}
       changesBody={changesBody}
-      tasksBody={tasksBody}
       onToggleTasks={handleToggleTasks}
       sessionsActions={sessionSection.sessionsActions}
       sessionsBody={sessionSection.sessionsBody}
       editorPane={editorPane}
+      tasksPane={tasksPane}
       terminalContent={terminalContent}
       rootRef={rootRef}
       sidebarRef={sidebarRef}

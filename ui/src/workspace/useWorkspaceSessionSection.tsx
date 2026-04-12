@@ -4,6 +4,7 @@ import { ProviderIcon } from '../components/SessionIcons'
 import { SessionItem } from './WorkspaceSessionList'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import type { AgentSession, HistorySession, SessionProvider } from '../types'
+import type { MobilePane } from '../hooks/workspaceTypes'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
@@ -30,7 +31,7 @@ interface UseWorkspaceSessionSectionOpts {
   projectName: string
   actions: {
     setActiveSession: (name: string) => void
-    setMobilePane: (pane: 'files' | 'editor' | 'terminal') => void
+    setMobilePane: (pane: MobilePane) => void
   }
   refreshSessions: () => void
   setFocusTarget: (t: FocusTarget) => void

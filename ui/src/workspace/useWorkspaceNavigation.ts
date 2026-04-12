@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
 import { isDiffTab, isFileTab } from '../hooks/workspaceTypes'
+import type { MobilePane } from '../hooks/workspaceTypes'
 import type { SearchEntry } from './WorkspaceSearch'
 import type { FileExplorerHandle } from '../components/FileExplorer'
 
@@ -13,7 +14,7 @@ interface UseWorkspaceNavigationOpts {
     openDiffTab: (path: string) => void
     openTasksTab: () => void
     setActiveTab: (tab: string) => void
-    setMobilePane: (pane: 'files' | 'editor' | 'terminal') => void
+    setMobilePane: (pane: MobilePane) => void
     updateLayout: (patch: Record<string, unknown>) => void
   }
   activeTab: string | null

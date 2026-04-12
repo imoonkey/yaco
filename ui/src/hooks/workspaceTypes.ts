@@ -13,6 +13,7 @@ export type FileState = {
 
 export type MdMode = 'edit' | 'preview' | 'split'
 export type SplitDirection = 'horizontal' | 'vertical'
+export type MobilePane = 'files' | 'editor' | 'tasks' | 'terminal'
 
 export type WorkspaceLayout = {
   showSidebar: boolean
@@ -52,7 +53,7 @@ export type PersistedState = {
   activeTab: string | null
   previewTab: string | null
   activeSession: string
-  mobilePane: 'files' | 'editor' | 'terminal'
+  mobilePane: MobilePane
   layout: WorkspaceLayout
   pinnedSessions: string[]
   recentFiles: string[]

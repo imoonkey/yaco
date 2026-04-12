@@ -46,7 +46,7 @@ function loadPersistedState(project: string, worktree?: string | null): Persiste
         ? parsed.previewTab
         : null,
       activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
-      mobilePane: parsed.mobilePane === 'files' || parsed.mobilePane === 'editor' || parsed.mobilePane === 'terminal'
+      mobilePane: parsed.mobilePane === 'files' || parsed.mobilePane === 'editor' || parsed.mobilePane === 'tasks' || parsed.mobilePane === 'terminal'
         ? parsed.mobilePane as PersistedState['mobilePane'] : 'files',
       layout: {
         showSidebar: typeof pl.showSidebar === 'boolean' ? pl.showSidebar : DEFAULT_LAYOUT.showSidebar,
