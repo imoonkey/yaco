@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-12: Mobile 4-pane navigation — Tasks gets its own tab
+
+**What changed:**
+- Mobile navigation expanded from 3 panes (Browse/Editor/Terminal) to 4 (Browse/Editor/Tasks/Terminal)
+- Tasks renders `TaskScreen` directly in its own pane — no longer routed through editor tab system on mobile
+- Removed Tasks toggle from Browse pane bottom (no longer needed)
+- `MobilePane` type exported from `workspaceTypes.ts`, used across 6 workspace modules
+- Cleaned up unused `tasksBody` prop from `WorkspaceLayout`
+
+**Why:**
+- Tasks toggle buried at bottom of Browse was hard to discover and reach; nav bar had unused space for a 4th tab
+
+**Key files:** `ui/src/hooks/workspaceTypes.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/hooks/usePersistence.ts`, 4 workspace hooks
+**Verification:** `tsc --noEmit` clean, ESLint clean (no new errors)
+**Commit:** `529f0c3`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-12: Fix blank screen after computer sleep/wake
 
 **What changed:**

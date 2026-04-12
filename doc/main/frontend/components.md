@@ -150,7 +150,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
 **Desktop**: `Sidebar(Projects + Explorer + Changes + Search + [Tasks toggle]) | Center(File / Diff / TaskPanel) | ActivityColumn(Terminal + Sessions)`
-**Mobile**: `PaneSwitch → Files(Projects + Explorer + Changes + Search + Sessions + [Tasks toggle]) | Editor | Terminal`
+**Mobile**: `PaneSwitch(Browse | Editor | Tasks | Terminal)` — 4-pane navigation, Tasks renders `TaskScreen` directly in its own pane
 
 ### Extracted modules in `ui/src/workspace/`
 
