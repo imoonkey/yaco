@@ -1,4 +1,4 @@
-import { existsSync } from 'fs'
+import { existsSync, realpathSync } from 'fs'
 import { execFile } from 'child_process'
 import { join } from 'path'
 
@@ -37,8 +37,12 @@ export async function getWorktreeStatus(projectPath: string, slug: string): Prom
   }
 
   // Verify this is actually a registered git worktree, not a leftover directory
-  const isGitWorktree = await git(worktreePath, ['rev-parse', '--is-inside-work-tree'])
-    .then(out => out.trim() === 'true')
+  const isGitWorktree = await git(projectPath, ['worktree', 'list', '--porcelain'])
+    .then(out => {
+      let needle: string
+      try { needle = realpathSync(worktreePath) } catch { return false }
+      return out.split('\n').some(line => line === `worktree ${needle}`)
+    })
     .catch(() => false)
   if (!isGitWorktree) {
     return { active: false, dirty: false, branch, ahead: 0, behind: 0 }

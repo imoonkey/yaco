@@ -40,7 +40,7 @@ setup
 echo ""
 echo "=== Valid worktree slugs ==="
 
-for slug in "auth-v2" "a" "my-feature-123" "A" "mixedCase1" "x1"; do
+for slug in "auth-v2" "a" "my-feature-123" "x1"; do
   reset_tasks
   if python3 "$SCRIPT" set "t1" "${BASE},\"worktree\":\"$slug\"}" 2>/dev/null; then
     pass "accepts: $slug"
@@ -63,6 +63,8 @@ declare -a invalid_cases=(
   "just hyphens:---"
   "slash:a/b"
   "dot only:."
+  "uppercase:A"
+  "mixed case:mixedCase1"
 )
 
 for entry in "${invalid_cases[@]}"; do

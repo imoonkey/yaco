@@ -2,14 +2,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const execFileMock = vi.hoisted(() => vi.fn())
 const existsSyncMock = vi.hoisted(() => vi.fn())
+const realpathSyncMock = vi.hoisted(() => vi.fn())
 
 vi.mock('child_process', () => ({ execFile: execFileMock }))
-vi.mock('fs', () => ({ existsSync: existsSyncMock }))
+vi.mock('fs', () => ({ existsSync: existsSyncMock, realpathSync: realpathSyncMock }))
 
 import { extractWorktreeSlug, getWorktreeStatus, getWorktreeStatuses } from '../worktree'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Default: realpathSync returns its input (no symlink resolution needed)
+  realpathSyncMock.mockImplementation((p: string) => p)
 })
 
 // --- extractWorktreeSlug ---
@@ -40,9 +43,6 @@ describe('extractWorktreeSlug', () => {
   })
 })
 
-// --- parseAheadBehind (tested indirectly via getWorktreeStatus) ---
-// parseAheadBehind is not exported, so we test it through getWorktreeStatus's behavior
-
 // --- getWorktreeStatus ---
 
 describe('getWorktreeStatus', () => {
@@ -61,10 +61,13 @@ describe('getWorktreeStatus', () => {
     expect(execFileMock).not.toHaveBeenCalled()
   })
 
-  it('returns inactive when directory exists but is not a git worktree', async () => {
+  it('returns inactive when directory exists but is not a registered worktree', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'rev-parse') cb(new Error('not a git repo'))
+      if (args[0] === 'worktree') {
+        // git worktree list output does NOT include the leftover path
+        cb(null, 'worktree /project\nHEAD abc\nbranch refs/heads/main\n\n', '')
+      }
     })
 
     const result = await getWorktreeStatus('/project', 'leftover')
@@ -81,8 +84,9 @@ describe('getWorktreeStatus', () => {
   it('returns active clean status with ahead/behind counts', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
-      else if (args[0] === 'status') cb(null, '', '')
+      if (args[0] === 'worktree') {
+        cb(null, 'worktree /project\nHEAD abc\n\nworktree /project/.worktrees/feat\nHEAD def\n\n', '')
+      } else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(null, '2\t5\n', '')
     })
 
@@ -100,8 +104,9 @@ describe('getWorktreeStatus', () => {
   it('returns dirty=true when git status has output', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
-      else if (args[0] === 'status') cb(null, ' M src/index.ts\n', '')
+      if (args[0] === 'worktree') {
+        cb(null, 'worktree /project\n\nworktree /project/.worktrees/dirty-task\n\n', '')
+      } else if (args[0] === 'status') cb(null, ' M src/index.ts\n', '')
       else if (args[0] === 'rev-list') cb(null, '0\t0\n', '')
     })
 
@@ -114,8 +119,9 @@ describe('getWorktreeStatus', () => {
   it('handles git status failure gracefully (dirty defaults to false)', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
-      else if (args[0] === 'status') cb(new Error('git failed'))
+      if (args[0] === 'worktree') {
+        cb(null, 'worktree /project\n\nworktree /project/.worktrees/fail-status\n\n', '')
+      } else if (args[0] === 'status') cb(new Error('git failed'))
       else if (args[0] === 'rev-list') cb(null, '0\t1\n', '')
     })
 
@@ -133,8 +139,9 @@ describe('getWorktreeStatus', () => {
   it('handles git rev-list failure gracefully (ahead/behind default to 0)', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
-      else if (args[0] === 'status') cb(null, '', '')
+      if (args[0] === 'worktree') {
+        cb(null, 'worktree /project\n\nworktree /project/.worktrees/no-main\n\n', '')
+      } else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(new Error('no main branch'))
     })
 
@@ -152,8 +159,9 @@ describe('getWorktreeStatus', () => {
   it('parses ahead/behind when values are non-zero', async () => {
     existsSyncMock.mockReturnValue(true)
     execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
-      if (args[0] === 'rev-parse') cb(null, 'true\n', '')
-      else if (args[0] === 'status') cb(null, '', '')
+      if (args[0] === 'worktree') {
+        cb(null, 'worktree /project\n\nworktree /project/.worktrees/parse-test\n\n', '')
+      } else if (args[0] === 'status') cb(null, '', '')
       else if (args[0] === 'rev-list') cb(null, '10\t3\n', '')
     })
 
@@ -165,16 +173,40 @@ describe('getWorktreeStatus', () => {
 
   it('passes correct cwd to git commands', async () => {
     existsSyncMock.mockReturnValue(true)
-    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
-      cb(null, '', '')
+    execFileMock.mockImplementation((_cmd: string, args: string[], _opts: unknown, cb: Function) => {
+      if (args[0] === 'worktree') {
+        cb(null, 'worktree /my/project\n\nworktree /my/project/.worktrees/slug\n\n', '')
+      } else {
+        cb(null, '', '')
+      }
     })
 
     await getWorktreeStatus('/my/project', 'slug')
 
-    // Both calls should use the worktree path as cwd
-    for (const call of execFileMock.mock.calls) {
+    // First call (worktree list) uses project root as cwd
+    expect(execFileMock.mock.calls[0][2].cwd).toBe('/my/project')
+    // Subsequent calls (status, rev-list) use the worktree path as cwd
+    for (const call of execFileMock.mock.calls.slice(1)) {
       expect(call[2].cwd).toBe('/my/project/.worktrees/slug')
     }
+  })
+
+  it('handles realpathSync failure gracefully', async () => {
+    existsSyncMock.mockReturnValue(true)
+    realpathSyncMock.mockImplementation(() => { throw new Error('ENOENT') })
+    execFileMock.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: Function) => {
+      cb(null, 'worktree /project\n\n', '')
+    })
+
+    const result = await getWorktreeStatus('/project', 'broken')
+
+    expect(result).toEqual({
+      active: false,
+      dirty: false,
+      branch: 'task/broken',
+      ahead: 0,
+      behind: 0,
+    })
   })
 })
 

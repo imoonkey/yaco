@@ -26,6 +26,10 @@ setup() {
   cp "$SCRIPTS_SRC/worktree-cleanup.sh" scripts/
   cp "$SCRIPTS_SRC/worktree-merge.sh" scripts/
   chmod +x scripts/*.sh
+  # Commit scripts and gitignore so primary checkout is clean (merge requires clean state)
+  echo ".worktrees/" > .gitignore
+  git add scripts/ .gitignore
+  git commit -m "add worktree scripts and gitignore" >/dev/null 2>&1
 }
 
 teardown() {

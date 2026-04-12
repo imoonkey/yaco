@@ -16,6 +16,9 @@ export interface WorktreeInfo {
 export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] {
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
 
+  // Reset immediately on project switch to avoid showing stale worktrees
+  useEffect(() => { setWorktrees([]) }, [projectName])
+
   const fetch_ = useCallback(async () => {
     if (!projectName) { setWorktrees([]); return }
     try {

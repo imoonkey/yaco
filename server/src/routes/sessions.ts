@@ -50,7 +50,13 @@ app.post('/start', async (c) => {
   }
   try {
     const projects = await loadProjects()
-    const project = projects.find(item => isPathDescendantOrEqual(cwd, item.path))?.name ?? cwd.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
+    // Use longest-prefix match for nested projects (e.g., /foo/bar over /foo)
+    let bestProject: typeof projects[number] | undefined
+    for (const item of projects) {
+      if (!isPathDescendantOrEqual(cwd, item.path)) continue
+      if (!bestProject || item.path.length > bestProject.path.length) bestProject = item
+    }
+    const project = bestProject?.name ?? cwd.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
 
     if (provider === 'shell') {
       const shellName = startShellSession(cwd, project, name)

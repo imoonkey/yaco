@@ -45,9 +45,15 @@ branch="task/$slug"
 
 # --- Idempotent: reuse existing worktree ---
 if [[ -d "$worktree_dir" ]]; then
-  echo "Worktree exists, reusing: $worktree_dir" >&2
-  echo "$worktree_dir"
-  exit 0
+  resolved_dir="$(cd "$worktree_dir" && pwd -P)"
+  if git worktree list --porcelain | grep -q "^worktree ${resolved_dir}$"; then
+    echo "Worktree exists, reusing: $worktree_dir" >&2
+    echo "$worktree_dir"
+    exit 0
+  else
+    echo "Warning: $worktree_dir exists but is not a registered worktree, removing stale directory" >&2
+    rm -rf "$worktree_dir"
+  fi
 fi
 
 # --- Create worktree ---
