@@ -1,5 +1,30 @@
 # Progress
 
+## 2026-04-12: Worktree hardening — 3 rounds of Codex review + tests + QA
+
+**What changed:**
+- Security: path traversal prevention in withProject middleware (slug regex + resolve + prefix check)
+- Correctness: worktree registration detection via `git worktree list --porcelain` (not just existsSync)
+- Correctness: deep `.worktrees/` file changes now route to `filetree` SSE (live refresh when viewing worktree)
+- Correctness: session matching uses longest-prefix/descendant check (worktree sessions appear in project)
+- Correctness: slug validation tightened to lowercase-only across Python + bash + docs
+- Correctness: `blockReason: "merge-conflict"` added to update-tasks.py enum
+- Correctness: `gh pr create` extracts OWNER/REPO from remote URL; local merge verifies clean state + --ff-only
+- Race fix: stale-fetch guard in useProjectWorktrees (ref-based project identity check covers poll + SSE paths)
+- Race fix: activeWorktree clears on empty worktree list
+- Race fix: session resume uses bestProject descendant match
+- Tests: 19 vitest server tests, 32 bash integration tests, 8 Playwright e2e tests
+- QA: full lifecycle validated in /tmp sandbox (create → commit → merge → cleanup)
+
+**Why:**
+- 3 rounds of Codex code review uncovered 1 critical + 5 high + 5 medium + 1 low issues. All resolved.
+
+**Key files:** `server/src/middleware/project.ts`, `server/src/lib/worktree.ts`, `server/src/lib/project-watcher.ts`, `server/src/routes/sessions.ts`, `scripts/worktree-*.sh`, `ui/src/hooks/useProjectWorktrees.ts`, `ui/src/App.tsx`, `ui/tests/e2e/worktree.spec.ts`
+**Verification:** 162 server tests pass, 32 script tests pass, 8 Playwright e2e pass
+**Commit:** `80c92ea..86cf22c` (5 fix commits + 3 test commits)
+**Next:** None — ready for first real worktree orchestration use
+**Blockers:** None
+
 ## 2026-04-12: Mobile 4-pane navigation — Tasks gets its own tab
 
 **What changed:**
@@ -41,7 +66,7 @@
 - `withProject` middleware now accepts `?worktree=slug` query param — rewrites `project.path` to `.worktrees/<slug>/` for transparent worktree targeting
 - Task API (`GET /api/tasks/:project`) enriches each task with `worktreeStatus` via batch resolution
 - Sessions API enriches responses with `worktree` field (slug extracted from `sessionPath`)
-- `project-watcher.ts` routes `.worktrees/<slug>` top-level changes to `worktrees` SSE channel; suppresses deeper `.worktrees/` subpaths
+- `project-watcher.ts` routes `.worktrees/<slug>` top-level changes to `worktrees` SSE channel; deeper `.worktrees/<slug>/**` changes route to `filetree` channel for live refresh
 - New `useProjectWorktrees` hook: discovers active worktrees from task API, SSE `filetree` refresh + 60s poll
 - `ProjectList` renders worktree sub-items (GitBranch icon, dirty indicator, ahead/behind tooltip) under the active project
 - `useApi.ts`: `appendWorktree()` helper appends `?worktree=slug` to API URLs; all file/git hooks and mutations accept `worktree` param

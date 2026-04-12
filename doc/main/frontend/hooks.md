@@ -103,8 +103,10 @@ Discovers active worktrees for a project by reading worktree status from the tas
 Behavior:
 - Fetches `GET /api/tasks/:project` and collects tasks where `worktreeStatus.active === true`
 - Deduplicates by slug, sorts alphabetically
-- SSE `filetree` channel triggers refresh (worktree creation/removal triggers fs events)
+- SSE `filetree` + `worktrees` channels trigger refresh
 - 60s polling fallback
+- Stale-fetch guard via `currentProject` ref — prevents project-switch race conditions where old project's response overwrites new project's worktree list
+- Resets to `[]` immediately on project change (before async fetch)
 - Task API errors are non-fatal (returns empty array)
 
 `useFileTree` uses lazy loading (VS Code pattern):

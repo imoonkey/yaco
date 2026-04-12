@@ -47,7 +47,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 |--------|------|-------------|
 | GET | `/api/sessions` | All sessions (multmux + shell). Optional `?project=<name>` filter. Response includes `worktree` field (slug extracted from `sessionPath`) |
 | GET | `/api/sessions/history` | Session history (Claude JSONL + Codex SQLite). Required `?project=<name>`. Returns `HistorySession[]` sorted by modified DESC, capped at 200, with live session tagging |
-| POST | `/api/sessions/start` | Start session (`{ provider, name?, cwd, prompt?, resumeId? }`). When `resumeId` present: idempotency preflight checks live sessions, passes `--resume` to multmux. Returns resolved handle (not echoed name) |
+| POST | `/api/sessions/start` | Start session (`{ provider, name?, cwd, prompt?, resumeId? }`). Project resolved by longest-prefix match (supports worktree cwds). When `resumeId` present: idempotency preflight uses same descendant match, passes `--resume` to multmux. Returns resolved handle (not echoed name) |
 | POST | `/api/sessions/:handle/pause` | Send `/stop` to session |
 | POST | `/api/sessions/:handle/resume` | Resume with optional prompt |
 | POST | `/api/sessions/:handle/close` | Close session (shell or multmux) |
