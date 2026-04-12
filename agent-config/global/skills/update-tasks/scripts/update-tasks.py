@@ -83,10 +83,11 @@ def validate_types(data):
         die(f"blockReason must be one of: {', '.join(sorted(BLOCK_REASONS))}")
     if "worktree" in data:
         wt = data["worktree"]
-        if not isinstance(wt, str):
-            die("worktree must be a string")
-        if not SLUG_RE.match(wt):
-            die("worktree must be a valid slug (alphanumeric and hyphens, no leading/trailing hyphens)")
+        if wt is not None:
+            if not isinstance(wt, str):
+                die("worktree must be a string")
+            if not SLUG_RE.match(wt):
+                die("worktree must be a valid slug (alphanumeric and hyphens, no leading/trailing hyphens)")
 
 def validate_refs(tasks, tid, task):
     if task.get("parent") == tid or tid in task.get("depends", []):
@@ -193,6 +194,9 @@ def cmd_set(tid, data):
             if missing: die(f"new task requires: {', '.join(sorted(missing))}")
             tasks[tid] = {"parent": None, "depends": [], "state": "ready", **data}
             tasks[tid]["created"] = now
+        # Null worktree means remove the field
+        if "worktree" in data and data["worktree"] is None:
+            tasks[tid].pop("worktree", None)
         tasks[tid]["updated"] = now
         # Enforce non-empty acceptCriteria on leaf tasks
         if not has_children(tasks, tid) and _ac_is_blank(tasks[tid].get("acceptCriteria")):
