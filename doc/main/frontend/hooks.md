@@ -74,7 +74,7 @@ type FileState = {
 
 ## useApi.ts (~386 lines)
 
-Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval. Exports `appendWorktree(url, worktree?)` helper that appends `?worktree=slug` to any API URL when a worktree is active — used by all file/git hooks.
+Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval. Exports `appendWorktree(url, worktree?)` helper that appends `?worktree=slug` to any API URL when a worktree is active — used by all file/git hooks. `usePolling` catch block sets `loading=false` on error (retains previous `data`) — prevents stuck loading state after transient network failures (e.g., sleep/wake).
 
 ### Data Hooks
 
@@ -140,7 +140,7 @@ Standalone async functions (not hooks):
 - `fetchGitRefs(project)` — branches, tags, recent commits (with author)
 - `fetchGitCompare(project, base, compare, worktree?)` — file list between two refs
 
-## useSSE.ts (99 lines)
+## useSSE.ts (~110 lines)
 
 Shared EventSource singleton managing SSE connections and event dispatch.
 
@@ -155,6 +155,7 @@ Behavior:
 - Per-channel trailing-edge debounce (500ms) on `refresh` and `notification` events — prevents fetch cascades during rapid file changes
 - Routes `notification` events to listeners and triggers `progress` refresh (debounced)
 - Routes `refresh` events to channel-specific callbacks (debounced)
+- **Sleep/wake recovery**: module-level `visibilitychange` listener forces `closeSource()` + `getSource()` when page becomes visible — kills zombie EventSource connections that survive sleep without firing `onerror`, then cascades refresh to all polling hooks via the `open` handler
 
 ## useNotifications.ts
 

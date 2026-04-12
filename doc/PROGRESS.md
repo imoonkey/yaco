@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-12: Fix blank screen after computer sleep/wake
+
+**What changed:**
+- `useSSE.ts`: added module-level `visibilitychange` listener that force-closes and reopens SSE EventSource when page becomes visible — kills zombie connections that survive sleep without firing `onerror`
+- `useApi.ts`: added `setLoading(false)` in `usePolling` catch block so failed fetches retain previous data instead of leaving state stuck in `loading=true, data=null`
+
+**Why:**
+- After computer sleep/wake, EventSource connections could become zombies (readyState not CLOSED but no data flowing, no error fired). Polling hooks that caught network errors left `loading=true` permanently, causing `projects` to stay null → `activeProject` empty → `Workspace` not rendered → blank screen requiring manual refresh.
+
+**Key files:** `ui/src/hooks/useSSE.ts`, `ui/src/hooks/useApi.ts`
+**Verification:** ESLint clean on changed files
+**Commit:** `a255cd4`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-11: Worktree isolation for parallel orchestration
 
 **What changed:**
