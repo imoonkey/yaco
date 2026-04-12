@@ -11,10 +11,6 @@ vi.mock('better-sqlite3', () => ({
   })),
 }))
 
-vi.mock('child_process', () => ({
-  execSync: vi.fn(() => ''),
-}))
-
 import { resolveSessionSummaries, encodeProjectPath } from '../session-summary'
 import type { MultmuxSession } from '../multmux'
 
@@ -58,7 +54,7 @@ describe('resolveSessionSummaries', () => {
   })
 
   it('skips empty sessionId without crashing', () => {
-    const session = makeSession({ sessionId: '', pid: 0 })
+    const session = makeSession({ sessionId: '' })
     const result = resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
   })
@@ -67,7 +63,6 @@ describe('resolveSessionSummaries', () => {
     const session = makeSession({
       provider: 'codex',
       sessionId: 'pending:awaiting-first-prompt',
-      pid: 0,
     })
     const result = resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
@@ -104,19 +99,6 @@ describe('resolveSessionSummaries', () => {
     ]
     const result = resolveSessionSummaries(sessions)
     expect(result).toBeInstanceOf(Map)
-  })
-
-  it('falls back to PID resolution for Claude sessions missing sessionId', () => {
-    const session = makeSession({ sessionId: '', pid: 99999 })
-    // Will try PID fallback, find nothing, and return empty
-    const result = resolveSessionSummaries([session])
-    expect(result).toBeInstanceOf(Map)
-  })
-
-  it('skips PID fallback for pid=0', () => {
-    const session = makeSession({ sessionId: '', pid: 0 })
-    const result = resolveSessionSummaries([session])
-    expect(result.get('test-session')).toBeUndefined()
   })
 })
 

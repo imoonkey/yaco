@@ -83,11 +83,11 @@ describe('readSessionsFromStateFiles', () => {
     })
   })
 
-  it('normalizes starting → idle', () => {
+  it('passes through starting status without normalization', () => {
     writeStateFile(mockedSessionsDir, 'new-session', { status: 'starting', sessionPath: tmpDir })
     const sessions = readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
-    expect(sessions[0]!.status).toBe('idle')
+    expect(sessions[0]!.status).toBe('starting')
   })
 
   it('excludes sessions with unknown status', () => {

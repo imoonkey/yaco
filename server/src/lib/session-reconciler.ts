@@ -1,18 +1,11 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync, unlinkSync } from 'fs'
-import { execFileSync } from 'child_process'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import { loadProjects, type Project } from './projects'
 import type { MultmuxSession } from './multmux'
-import { readAllSessionsFromStateFiles } from './multmux'
+import { fetchAllSessionsFromCli } from './multmux'
 import { withFileLock, type ProgressEntry } from './scanner'
 import { emitRefresh } from './notify'
-import {
-  MULTMUX_PATH,
-  MULTMUX_SESSIONS_DIR,
-  MULTMUX_STATUS_TIMEOUT_MS,
-  PENDING_SESSION_ID,
-} from './constants'
 
 const RECONCILE_INTERVAL = 60_000
 /** Require N consecutive idle reconcile passes before firing notification. */
@@ -52,9 +45,9 @@ async function reconcile(): Promise<void> {
 
   try {
     const projects = await loadProjects()
-    const sessionsByProject = new Map<string, MultmuxSession[]>()
-    const allSessions = checkStaleStates(readAllSessionsFromStateFiles(projects))
+    const allSessions = await fetchAllSessionsFromCli(projects)
 
+    const sessionsByProject = new Map<string, MultmuxSession[]>()
     for (const session of allSessions) {
       const list = sessionsByProject.get(session.project) ?? []
       list.push(session)
@@ -63,7 +56,6 @@ async function reconcile(): Promise<void> {
 
     for (const project of projects) {
       const projectSessions = sessionsByProject.get(project.name) ?? []
-      backfillSessionIds(projectSessions, project)
       await detectIdleTransitions(projectSessions, project)
     }
 
@@ -80,73 +72,6 @@ async function reconcile(): Promise<void> {
   } finally {
     reconcileInFlight = false
     scheduleReconcile()
-  }
-}
-
-/** Health-check: verify tmux liveness for all active sessions.
- *  Deletes state files for sessions confirmed dead by tmux (defense-in-depth
- *  for when wrapper EXIT trap doesn't fire, e.g. SIGKILL).
- *  isTmuxAlive pre-checks server availability to avoid false "dead". */
-function checkStaleStates(sessions: MultmuxSession[]): MultmuxSession[] {
-  const live: MultmuxSession[] = []
-
-  for (const session of sessions) {
-    const alive = isTmuxAlive(session.name)
-    if (alive === false) {
-      const stateFile = join(MULTMUX_SESSIONS_DIR, `${session.name}.json`)
-      if (existsSync(stateFile)) {
-        try { unlinkSync(stateFile) } catch { /* best effort */ }
-      }
-      continue
-    }
-    live.push(session)
-  }
-
-  return live
-}
-
-/** Direct tmux liveness check for a specific session.
- *  Returns true (alive), false (confirmed dead), null (uncertain — tmux error/timeout).
- *  Pre-checks tmux server availability to avoid false "dead" when server is down
- *  (tmux has-session returns exit 1 for both "not found" AND "server unavailable"). */
-function isTmuxAlive(tmuxSession: string): boolean | null {
-  // Pre-check: is the tmux server reachable?
-  // Without this, a downed tmux server makes all sessions look dead (exit 1).
-  try {
-    execFileSync('tmux', ['list-sessions', '-F', '#{session_name}'], { stdio: 'ignore', timeout: 5000 })
-  } catch {
-    // tmux server unreachable — return uncertain for ALL sessions
-    return null
-  }
-
-  try {
-    execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'ignore', timeout: 5000 })
-    return true
-  } catch (e: unknown) {
-    // exit code 1 = tmux confirmed session doesn't exist
-    if (typeof e === 'object' && e !== null && 'status' in e && (e as { status: number }).status === 1) {
-      return false
-    }
-    // timeout, signal, tmux unavailable — uncertain
-    return null
-  }
-}
-
-/** Trigger multmux status --json to backfill sessionIds for sessions missing them.
- *  multmux's backfillSessionId does PID correlation + rollout file scanning. */
-function backfillSessionIds(sessions: MultmuxSession[], project: Pick<Project, 'path'>): void {
-  const needsBackfill = sessions.some(s =>
-    !s.sessionId || s.sessionId === PENDING_SESSION_ID,
-  )
-  if (!needsBackfill) return
-
-  try {
-    execFileSync(MULTMUX_PATH, ['status', '--json', '--path', project.path], {
-      stdio: 'ignore',
-      timeout: MULTMUX_STATUS_TIMEOUT_MS,
-    })
-  } catch (e) {
-    console.warn('[session-reconciler] multmux status --json backfill failed:', e)
   }
 }
 

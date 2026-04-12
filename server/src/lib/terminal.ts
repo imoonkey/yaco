@@ -1,7 +1,6 @@
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
 import { validateSessionName } from './session-names'
-import { resolveSessionTmuxName } from './multmux'
 import { buildChildProcessEnv } from './ssh-auth'
 import { PTY_MAX_BUFFER_SIZE } from './constants'
 
@@ -115,8 +114,7 @@ export function attachSession(sessionName: string, cols: number, rows: number, p
     }
   }
 
-  const tmuxName = resolveSessionTmuxName(sessionName) ?? sessionName
-  const proc = pty.spawn('tmux', ['attach-session', '-t', tmuxName], {
+  const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
     name: 'xterm-256color',
     cols,
     rows,

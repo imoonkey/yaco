@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { PENDING_SESSION_ID } from '../lib/constants'
 import { getHistory } from '../lib/history'
-import { closeMultmuxSession, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/multmux'
+import { closeMultmuxSession, queryMultmuxStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/multmux'
 import { loadProjects } from '../lib/projects'
 import { resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
@@ -67,13 +67,13 @@ app.post('/start', async (c) => {
       return c.json({ error: 'name required for agent sessions' }, 400)
     }
 
-    // Idempotency preflight: if resuming, check if a live session already has this sessionId
-    if (resumeId && bestProject) {
-      const liveSessions = readSessionsFromStateFiles(bestProject)
+    // Idempotency preflight: if resuming, query CLI for live session with this sessionId
+    if (resumeId) {
+      const liveSessions = await queryMultmuxStatus(cwd)
       const existing = liveSessions.find(
         s => s.provider === provider && s.sessionId === resumeId && s.sessionId !== PENDING_SESSION_ID
       )
-      if (existing) return c.json({ name: existing.name })
+      if (existing) return c.json({ name: existing.handle })
     }
 
     const { handle } = await startMultmuxSession(provider, name, cwd, prompt, resumeId)
@@ -118,10 +118,10 @@ app.post('/:handle/resume', async (c) => {
 
 app.post('/:handle/rename', async (c) => {
   const handle = c.req.param('handle')
-  const { name, cwd } = await c.req.json<{ name: string; cwd: string }>()
-  if (!name || !cwd) return c.json({ error: 'name and cwd required' }, 400)
+  const { name } = await c.req.json<{ name: string }>()
+  if (!name) return c.json({ error: 'name required' }, 400)
   try {
-    await renameMultmuxSession(handle, name, cwd)
+    await renameMultmuxSession(handle, name)
     return c.json({ name })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -135,17 +135,7 @@ app.post('/:handle/close', async (c) => {
       return c.json({})
     }
 
-    // Resolve project path for multmux kill (needs cwd)
-    const projects = await loadProjects()
-    const ownerProject = projects.find(p => {
-      const sessions = readSessionsFromStateFiles(p)
-      return sessions.some(s => s.name === handle)
-    })
-    if (!ownerProject) {
-      return c.json({ error: `session "${handle}" not found` }, 404)
-    }
-
-    await closeMultmuxSession(handle, ownerProject.path)
+    await closeMultmuxSession(handle)
     return c.json({})
   } catch {
     return c.json({ error: 'failed to close session' }, 500)

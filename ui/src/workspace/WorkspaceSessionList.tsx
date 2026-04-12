@@ -14,8 +14,7 @@ const RENAME_INPUT_STYLE: React.CSSProperties = { borderColor: 'var(--sol-accent
 const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   processing: 'bg-[var(--sol-cyan)] status-pulse',
   idle: 'bg-[var(--sol-base1)]',
-  error: 'border border-[var(--sol-red)] bg-transparent',
-  completed: 'bg-[var(--sol-green)]',
+  starting: 'bg-[var(--sol-yellow)] status-pulse',
 }
 
 export function SessionItem({

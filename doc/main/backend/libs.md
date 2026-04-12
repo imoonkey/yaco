@@ -66,11 +66,10 @@ Core scanning engine for workstream metadata and progress entries across project
 
 Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files and wraps the `multmux` CLI for session commands.
 
-**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `resolveSessionTmuxName()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
+**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `inferMultmuxProvider()`, `sendToSession()`, `startMultmuxSession()`, `closeMultmuxSession()`
 
 - `readSessionsFromStateFiles(project)` reads the global sessions dir and filters by `sessionPath` descendant-matching the registered project path
 - `readAllSessionsFromStateFiles(projects)` reads the global sessions dir once and assigns each session to the most specific matching registered project
-- `resolveSessionTmuxName(handle)` reads the global state file and returns `handle` as the tmux session name
 - Primary session source: reads `~/.multmux/sessions/*.json` state files (written by multmux hooks)
 - Normalizes status: `starting → idle`, `processing → processing`, unknown → excluded
 - State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — status is `starting | idle | processing` (no `stopped`; file deletion = session ended)

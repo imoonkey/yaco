@@ -1,5 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'fs'
-import { execSync } from 'child_process'
+import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import Database from 'better-sqlite3'
@@ -101,47 +100,6 @@ function resolveCodexSummary(sessionId: string): SummaryResult | null {
   }
 }
 
-/** Batch PID fallback for Claude: scan ~/.claude/sessions/*.json once, return pid → sessionId map */
-function loadClaudePidMap(): Map<number, string> {
-  const map = new Map<number, string>()
-  const sessionsDir = join(homedir(), '.claude', 'sessions')
-  if (!existsSync(sessionsDir)) return map
-
-  try {
-    for (const file of readdirSync(sessionsDir).filter(f => f.endsWith('.json'))) {
-      try {
-        const data = JSON.parse(readFileSync(join(sessionsDir, file), 'utf-8'))
-        if (typeof data.pid === 'number' && typeof data.sessionId === 'string' && data.sessionId) {
-          map.set(data.pid, data.sessionId)
-        }
-      } catch (e) { console.warn(`[session-summary] failed to parse Claude session file ${file}:`, e); continue }
-    }
-  } catch (e) { console.warn('[session-summary] failed to read Claude sessions directory:', e) }
-  return map
-}
-
-/** Resolve Codex session ID from PID via lsof (find open rollout file).
- *  Returns pid → sessionId map for all codex PIDs in one lsof call. */
-function loadCodexPidMap(pids: number[]): Map<number, string> {
-  const map = new Map<number, string>()
-  if (pids.length === 0) return map
-
-  try {
-    const output = execSync(`lsof -p ${pids.join(',')} 2>/dev/null`, { encoding: 'utf-8' })
-    // Match rollout files: rollout-<date>-<sessionId>.jsonl
-    const re = /rollout-\d{4}-\d{2}-\d{2}T[\w-]+-([0-9a-f-]{36})\.jsonl/
-    for (const line of output.split('\n')) {
-      if (!line.includes('rollout-')) continue
-      const pidMatch = line.match(/^\S+\s+(\d+)/)
-      const idMatch = line.match(re)
-      if (pidMatch && idMatch) {
-        map.set(Number(pidMatch[1]), idMatch[1])
-      }
-    }
-  } catch (e) { console.warn('[session-summary] lsof for Codex PID resolution failed:', e) }
-  return map
-}
-
 /** Resolve summaries for all sessions in a single batch.
  *  Reads each data source at most once. */
 export function resolveSessionSummaries(
@@ -153,33 +111,15 @@ export function resolveSessionSummaries(
   // Group Claude sessions by launch path for JSONL resolution.
   const claudeByPath = new Map<string, MultmuxSession[]>()
   const codexSessions: MultmuxSession[] = []
-  const needsPidFallback: MultmuxSession[] = []
 
   for (const s of sessions) {
+    if (!isResolvableSessionId(s.sessionId)) continue
     if (s.provider === 'codex') {
       codexSessions.push(s)
     } else {
-      if (isResolvableSessionId(s.sessionId)) {
-        const list = claudeByPath.get(s.sessionPath) ?? []
-        list.push(s)
-        claudeByPath.set(s.sessionPath, list)
-      } else if (typeof s.pid === 'number' && s.pid > 0) {
-        needsPidFallback.push(s)
-      }
-    }
-  }
-
-  // PID fallback: scan once for all Claude sessions missing sessionId.
-  // With multmux now storing agent CLI PIDs, direct match is the primary path.
-  if (needsPidFallback.length > 0) {
-    const pidMap = loadClaudePidMap()
-    for (const s of needsPidFallback) {
-      const resolved = pidMap.get(s.pid)
-      if (resolved) {
-        const list = claudeByPath.get(s.sessionPath) ?? []
-        list.push({ ...s, sessionId: resolved })
-        claudeByPath.set(s.sessionPath, list)
-      }
+      const list = claudeByPath.get(s.sessionPath) ?? []
+      list.push(s)
+      claudeByPath.set(s.sessionPath, list)
     }
   }
 
@@ -192,24 +132,10 @@ export function resolveSessionSummaries(
     }
   }
 
-  // Resolve Codex summaries (with PID fallback for missing sessionId)
-  const codexNeedsPid = codexSessions.filter(s => !isResolvableSessionId(s.sessionId) && typeof s.pid === 'number' && s.pid > 0)
-  if (codexNeedsPid.length > 0) {
-    const pidMap = loadCodexPidMap(codexNeedsPid.map(s => s.pid))
-    for (const s of codexNeedsPid) {
-      const resolved = pidMap.get(s.pid)
-      if (resolved) s.sessionId = resolved
-    }
-  }
+  // Resolve Codex summaries
   for (const s of codexSessions) {
-    if (!isResolvableSessionId(s.sessionId)) {
-      // Fallback: use summary from state file (populated by multmux from rollout files)
-      if (s.stateFileSummary) result.set(s.name, s.stateFileSummary)
-      continue
-    }
     const r = resolveCodexSummary(s.sessionId)
     if (r) result.set(s.name, r.summary)
-    else if (s.stateFileSummary) result.set(s.name, s.stateFileSummary)
   }
 
   return result

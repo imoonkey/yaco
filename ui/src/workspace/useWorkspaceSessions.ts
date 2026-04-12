@@ -107,7 +107,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
 
   const executeRename = useCallback(async (oldName: string, newName: string) => {
     try {
-      await renameSession(oldName, newName, projectPath)
+      await renameSession(oldName, newName)
       actions.setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
       if (activeSession === oldName) actions.setActiveSession(newName)
       refreshSessions()
@@ -115,7 +115,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     } catch (err) {
       console.error('Failed to rename session:', err)
     }
-  }, [activeSession, actions, projectPath, refreshSessions])
+  }, [activeSession, actions, refreshSessions])
 
   const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
     const session = projectSessions.find(s => s.name === oldName)

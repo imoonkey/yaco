@@ -3,7 +3,7 @@
 export type WorkstreamStatus = 'active' | 'human_review' | 'blocked' | 'parked' | 'done'
 export type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
 export type ProgressStatus = 'active' | 'dismissed'
-export type SessionStatus = 'processing' | 'idle' | 'error' | 'completed'
+export type SessionStatus = 'starting' | 'processing' | 'idle'
 export type SessionProvider = 'claude' | 'codex' | 'shell'
 
 export interface Project {

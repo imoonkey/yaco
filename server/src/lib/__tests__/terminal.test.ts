@@ -4,11 +4,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const {
   spawnMock,
-  resolveSessionTmuxNameMock,
   validateSessionNameMock,
 } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
-  resolveSessionTmuxNameMock: vi.fn(),
   validateSessionNameMock: vi.fn(),
 }))
 
@@ -18,10 +16,6 @@ vi.mock('node-pty', () => ({
 
 vi.mock('../session-names', () => ({
   validateSessionName: validateSessionNameMock,
-}))
-
-vi.mock('../multmux', () => ({
-  resolveSessionTmuxName: resolveSessionTmuxNameMock,
 }))
 
 import { attachSession, closeShellSession, releaseSession, startShellSession } from '../terminal'
@@ -43,15 +37,13 @@ describe('attachSession', () => {
     vi.clearAllMocks()
   })
 
-  it('attaches to the tmux handle from the global state file', () => {
+  it('attaches to the tmux session using the handle directly', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
-    resolveSessionTmuxNameMock.mockReturnValue('worker')
 
     const attached = attachSession('worker', 120, 40, '/tmp/project')
 
     expect(validateSessionNameMock).toHaveBeenCalledWith('worker')
-    expect(resolveSessionTmuxNameMock).toHaveBeenCalledWith('worker')
     expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'worker'], expect.objectContaining({
       cols: 120,
       rows: 40,
@@ -62,17 +54,6 @@ describe('attachSession', () => {
       persistent: false,
       proc,
     })
-  })
-
-  it('falls back to the requested session name when the state file is missing', () => {
-    const proc = createPty()
-    spawnMock.mockReturnValue(proc)
-    resolveSessionTmuxNameMock.mockReturnValue(null)
-
-    attachSession('worker', 80, 24, '/tmp/project')
-
-    expect(resolveSessionTmuxNameMock).toHaveBeenCalledWith('worker')
-    expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'worker'], expect.any(Object))
   })
 
   it('uses a namespace import for node-pty so tsx/ESM gets a real spawn function', () => {
@@ -105,8 +86,6 @@ describe('attachSession', () => {
   it('destroys non-persistent tmux attach processes on release', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
-    resolveSessionTmuxNameMock.mockReturnValue('worker')
-
     const attached = attachSession('worker', 80, 24, '/tmp/project')
     releaseSession('worker', attached)
 

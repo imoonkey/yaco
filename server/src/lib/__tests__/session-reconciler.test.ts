@@ -1,64 +1,63 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { join } from 'path'
-import { mkdirSync, writeFileSync, readFileSync, rmSync, mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
+import { readFileSync } from 'fs'
 
 /**
- * Tests for the session reconciler's behavior with .multmux/*.json state files.
+ * Tests for the session reconciler's delegation to multmux CLI.
  *
- * The reconciler detects dead tmux sessions and deletes their stale state files
- * (defense-in-depth for when multmux wrapper.sh EXIT trap fails).
+ * After W2, the reconciler delegates all liveness checks, GC, and metadata
+ * backfill to `multmux status --json --all`. It no longer reimplements
+ * tmux liveness checks or sessionId backfill.
  */
 
 describe('session-reconciler behavior', () => {
-  let tmpDir: string
-  let multmuxDir: string
+  const source = readFileSync(
+    join(__dirname, '..', 'session-reconciler.ts'),
+    'utf-8',
+  )
 
-  beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'workflow-reconciler-test-'))
-    multmuxDir = join(tmpDir, '.multmux')
-    mkdirSync(multmuxDir)
+  it('does not contain checkStaleStates (delegated to multmux CLI)', () => {
+    expect(source).not.toMatch(/checkStaleStates/)
   })
 
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true })
+  it('does not contain isTmuxAlive (delegated to multmux CLI)', () => {
+    expect(source).not.toMatch(/isTmuxAlive/)
   })
 
-  it('session-reconciler.ts imports unlinkSync for stale file cleanup', async () => {
-    const source = readFileSync(
-      join(__dirname, '..', 'session-reconciler.ts'),
-      'utf-8',
-    )
-    expect(source).toMatch(/unlinkSync/)
+  it('does not contain backfillSessionIds (delegated to multmux CLI)', () => {
+    expect(source).not.toMatch(/backfillSessionIds/)
   })
 
-  it('session-reconciler.ts does not write stopped status', async () => {
-    const source = readFileSync(
-      join(__dirname, '..', 'session-reconciler.ts'),
-      'utf-8',
-    )
-    // Should not contain any reference to writing 'stopped' status
+  it('does not directly delete state files', () => {
+    expect(source).not.toMatch(/unlinkSync/)
+  })
+
+  it('does not write stopped status', () => {
     expect(source).not.toMatch(/status.*['"]stopped['"]/)
     expect(source).not.toMatch(/['"]stopped['"].*status/)
   })
 
-  it('multmux.ts MultmuxStateFile type does not include stopped', async () => {
+  it('delegates reconciliation to fetchAllSessionsFromCli', () => {
+    expect(source).toMatch(/fetchAllSessionsFromCli/)
+  })
+
+  it('preserves detectIdleTransitions as workflow domain logic', () => {
+    expect(source).toMatch(/detectIdleTransitions/)
+  })
+
+  it('does not skip Claude sessions in idle detection', () => {
+    expect(source).not.toMatch(/provider.*===.*['"]claude['"].*continue/)
+  })
+})
+
+describe('multmux.ts MultmuxStateFile type', () => {
+  it('does not include stopped', () => {
     const source = readFileSync(
       join(__dirname, '..', 'multmux.ts'),
       'utf-8',
     )
-    // Find the MultmuxStateFile interface and check its status field
     const interfaceMatch = source.match(/interface MultmuxStateFile\s*\{[\s\S]*?\}/)
     expect(interfaceMatch).not.toBeNull()
     expect(interfaceMatch![0]).not.toContain("'stopped'")
-  })
-
-  it('session-reconciler.ts does not skip Claude sessions in idle detection', async () => {
-    const source = readFileSync(
-      join(__dirname, '..', 'session-reconciler.ts'),
-      'utf-8',
-    )
-    // Idle detection should be uniform across all providers
-    expect(source).not.toMatch(/provider.*===.*['"]claude['"].*continue/)
   })
 })

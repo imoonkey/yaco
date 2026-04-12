@@ -6,6 +6,7 @@ import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import {
   MULTMUX_COMMAND_TIMEOUT_MS,
+  MULTMUX_STATUS_TIMEOUT_MS,
   MULTMUX_SESSIONS_DIR,
   MULTMUX_PATH,
 } from './constants'
@@ -13,12 +14,11 @@ import {
 export interface MultmuxSession {
   name: string
   provider: 'claude' | 'codex'
-  status: 'processing' | 'idle' | 'error' | 'completed'
+  status: 'starting' | 'idle' | 'processing'
   project: string
   sessionPath: string
   sessionId: string
   pid: number
-  stateFileSummary?: string
 }
 
 export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
@@ -34,19 +34,9 @@ export interface MultmuxStateFile {
   sessionId: string
   status: 'starting' | 'idle' | 'processing'
   createdAt: string
-  summary?: string
 }
 
-/** Normalize state file status to workflow UI semantics.
- *  starting → idle (pre-work bootstrap, not real processing)
- *  unknown  → null (file should have been deleted by multmux) */
-function normalizeStateFileStatus(status: string): 'processing' | 'idle' | 'error' | 'completed' | null {
-  if (status === 'processing') return 'processing'
-  if (status === 'idle' || status === 'starting') return 'idle'
-  if (status === 'error') return 'error'
-  if (status === 'completed') return 'completed'
-  return null
-}
+const VALID_STATUSES = new Set(['starting', 'idle', 'processing'])
 
 function normalizePath(path: string): string {
   const normalized = normalize(path)
@@ -103,8 +93,7 @@ function toMultmuxSession(
   const sessionPath = getStateSessionPath(state)
   if (!sessionPath) return null
 
-  const status = normalizeStateFileStatus(state.status)
-  if (!status) return null
+  if (!VALID_STATUSES.has(state.status)) return null
 
   const provider = state.provider === 'codex' || state.provider === 'claude'
     ? state.provider
@@ -113,12 +102,11 @@ function toMultmuxSession(
   return {
     name: state.handle,
     provider,
-    status,
+    status: state.status,
     project: project.name,
     sessionPath,
     sessionId: state.sessionId ?? '',
     pid: state.pid,
-    stateFileSummary: state.summary,
   }
 }
 
@@ -171,19 +159,40 @@ export function readAllSessionsFromStateFiles(projects: Pick<Project, 'name' | '
   return all
 }
 
-/** Resolve the tmux session name for a handle from the global state file. */
-export function resolveSessionTmuxName(handle: string): string | null {
-  const stateFile = join(MULTMUX_SESSIONS_DIR, `${handle}.json`)
+/** Fetch authoritative session snapshot from `multmux status --json --all`.
+ *  Runs reconcile() internally (liveness checks, GC, metadata backfill).
+ *  Maps returned sessions to projects by sessionPath. */
+export async function fetchAllSessionsFromCli(
+  projects: Pick<Project, 'name' | 'path'>[],
+): Promise<MultmuxSession[]> {
+  const raw = await spawnOutput(
+    MULTMUX_PATH,
+    ['status', '--json', '--all'],
+    MULTMUX_STATUS_TIMEOUT_MS,
+  )
+
+  let states: MultmuxStateFile[]
   try {
-    const raw = readFileSync(stateFile, 'utf-8')
-    const state = JSON.parse(raw) as MultmuxStateFile
-    return typeof state.handle === 'string' && state.handle ? state.handle : null
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
-      console.warn(`[multmux] failed to read state file for ${handle}:`, e)
-    }
-    return null
+    states = JSON.parse(raw)
+  } catch {
+    throw new Error(`failed to parse multmux status output: ${raw.slice(0, 200)}`)
   }
+
+  if (!Array.isArray(states)) return []
+
+  const sessions: MultmuxSession[] = []
+  for (const state of states) {
+    const sessionPath = getStateSessionPath(state)
+    if (!sessionPath) continue
+
+    const project = resolveProjectForSessionPath(sessionPath, projects)
+    if (!project) continue
+
+    const session = toMultmuxSession(state, project)
+    if (session) sessions.push(session)
+  }
+
+  return sessions
 }
 
 /** Send a message to a multmux session */
@@ -234,22 +243,13 @@ export async function startMultmuxSession(
       throw new Error(`multmux exit ${exitCode}: ${stderr}`)
     }
 
-    if (resumeId) {
-      // Resume: scan all state files for sessionId match (handle may have collision suffix)
-      const match = findStateFileBySessionId(resumeId)
-      if (match && match.pid > 0) {
-        return { handle: match.handle, sessionId: match.sessionId ?? resumeId }
+    try {
+      const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, `${name}.json`), 'utf-8')
+      const state = JSON.parse(raw) as MultmuxStateFile
+      if (state.pid > 0) {
+        return { handle: state.handle ?? name, sessionId: state.sessionId ?? '' }
       }
-    } else {
-      // Normal start: poll expected filename (collisions rare with UI-generated names)
-      try {
-        const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, `${name}.json`), 'utf-8')
-        const state = JSON.parse(raw) as MultmuxStateFile
-        if (state.pid > 0) {
-          return { handle: state.handle ?? name, sessionId: state.sessionId ?? '' }
-        }
-      } catch { /* state file not yet written */ }
-    }
+    } catch { /* state file not yet written */ }
 
     await new Promise(r => setTimeout(r, STATE_POLL_MS))
   }
@@ -257,24 +257,33 @@ export async function startMultmuxSession(
   throw new Error('timeout waiting for session tmux process')
 }
 
-/** Scan all state files for one matching sessionId (used for resume where handle may differ from requested name) */
-function findStateFileBySessionId(sessionId: string): MultmuxStateFile | null {
-  for (const state of readStateFiles()) {
-    if (state.sessionId === sessionId) return state
+/** Query multmux CLI for live sessions at a given path */
+export async function queryMultmuxStatus(cwd: string): Promise<MultmuxStateFile[]> {
+  try {
+    const out = await spawnOutput(
+      MULTMUX_PATH,
+      ['status', '--json', '--path', cwd],
+      MULTMUX_STATUS_TIMEOUT_MS,
+    )
+    return JSON.parse(out) as MultmuxStateFile[]
+  } catch {
+    return []
   }
-  return null
 }
 
-/** Close a multmux session via the CLI (handles state file cleanup). */
-export async function closeMultmuxSession(handle: string, cwd: string): Promise<void> {
+/** Close a multmux session via the CLI (handles state file cleanup).
+ *  kill is handle-global — no project/cwd resolution needed. */
+export async function closeMultmuxSession(handle: string): Promise<void> {
   validateSessionName(handle)
-  await spawnOutput(MULTMUX_PATH, ['kill', handle], MULTMUX_COMMAND_TIMEOUT_MS, cwd)
+  await spawnOutput(MULTMUX_PATH, ['kill', handle], MULTMUX_COMMAND_TIMEOUT_MS)
 }
 
-export async function renameMultmuxSession(oldHandle: string, newHandle: string, cwd: string): Promise<void> {
+/** Rename a multmux session via the CLI.
+ *  rename is handle-global — no project/cwd resolution needed. */
+export async function renameMultmuxSession(oldHandle: string, newHandle: string): Promise<void> {
   validateSessionName(oldHandle)
   validateSessionName(newHandle)
-  await spawnOutput(MULTMUX_PATH, ['rename', oldHandle, newHandle], MULTMUX_COMMAND_TIMEOUT_MS, cwd)
+  await spawnOutput(MULTMUX_PATH, ['rename', oldHandle, newHandle], MULTMUX_COMMAND_TIMEOUT_MS)
 }
 
 /** Collect stdout from a spawned process */
