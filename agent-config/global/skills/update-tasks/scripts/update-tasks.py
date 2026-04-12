@@ -9,8 +9,8 @@ STATES = {"ready", "running", "done", "blocked", "cancelled"}
 TERMINAL = {"done", "cancelled"}
 PRIORITIES = {"critical", "high", "normal", "low"}
 ESTIMATES = {"xs", "s", "m", "l", "xl"}
-BLOCK_REASONS = {"verification-failed", "human-review", "external", "dependency"}
-SLUG_RE = re.compile(r'^[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?$')
+BLOCK_REASONS = {"verification-failed", "human-review", "external", "dependency", "merge-conflict"}
+SLUG_RE = re.compile(r'^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$')
 
 LOCK_FILE = str(FILE.parent / ("."+FILE.name+".lock"))
 
@@ -87,7 +87,7 @@ def validate_types(data):
             if not isinstance(wt, str):
                 die("worktree must be a string")
             if not SLUG_RE.match(wt):
-                die("worktree must be a valid slug (alphanumeric and hyphens, no leading/trailing hyphens)")
+                die("worktree must be a valid slug (lowercase alphanumeric and hyphens, no leading/trailing hyphens)")
 
 def validate_refs(tasks, tid, task):
     if task.get("parent") == tid or tid in task.get("depends", []):
