@@ -178,6 +178,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     handleRenameSession,
     pendingRenames,
     detachActiveSession,
+    refreshSessions,
     togglePin,
     handlePinnedReorder,
   }

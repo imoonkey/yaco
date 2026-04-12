@@ -582,6 +582,10 @@ export function Workspace({
           onCloseRequest={() => {
             sessionsMgr.detachActiveSession()
           }}
+          onDisconnect={() => {
+            sessionsMgr.detachActiveSession()
+            sessionsMgr.refreshSessions()
+          }}
           sendText={terminalSend?.text}
           sendTextKey={terminalSend?.key}
         />

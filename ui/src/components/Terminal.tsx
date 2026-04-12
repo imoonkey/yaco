@@ -88,6 +88,7 @@ interface TerminalProps {
   projectName?: string
   onInteract?: () => void
   onCloseRequest?: () => void
+  onDisconnect?: () => void
   sendText?: string | null
   sendTextKey?: number
 }
@@ -114,12 +115,13 @@ function applyModifiers(data: string, mods: Modifiers): string {
   return data
 }
 
-export function Terminal({ sessionName, projectName, onInteract, onCloseRequest, sendText, sendTextKey }: TerminalProps) {
+export function Terminal({ sessionName, projectName, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const onInteractRef = useRef(onInteract)
   const onCloseRequestRef = useRef(onCloseRequest)
+  const onDisconnectRef = useRef(onDisconnect)
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
   const sendTextKeyRef = useRef<number | undefined>(undefined)
@@ -163,6 +165,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
   useEffect(() => {
     onCloseRequestRef.current = onCloseRequest
   }, [onCloseRequest])
+
+  useEffect(() => {
+    onDisconnectRef.current = onDisconnect
+  }, [onDisconnect])
 
   // Wait for container to have real dimensions before initializing xterm.
   // On PWA cold start, flex layout may not have settled yet — opening
@@ -331,7 +337,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       if (!disposed) term.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
     }
     ws.onclose = () => {
-      if (!disposed) term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
+      if (!disposed) {
+        term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
+        onDisconnectRef.current?.()
+      }
     }
 
     // Raw input — send directly, applying any active modifiers

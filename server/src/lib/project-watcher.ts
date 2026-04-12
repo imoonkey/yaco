@@ -142,7 +142,11 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
     primeSessionPathCache()
     try {
       const watcher = watch(MULTMUX_SESSIONS_DIR, (_event, filename) => {
-        if (!filename) return
+        if (!filename) {
+          // macOS FSEvents may deliver null filename on deletion — emit blanket refresh
+          debouncedEmit('sessions')
+          return
+        }
         void handleGlobalSessionChange(String(filename)).catch(err => {
           console.warn(`[project-watcher] failed to handle multmux session change ${String(filename)}:`, err)
         })
