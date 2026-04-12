@@ -68,15 +68,12 @@ app.post('/start', async (c) => {
     }
 
     // Idempotency preflight: if resuming, check if a live session already has this sessionId
-    if (resumeId) {
-      const matchingProject = projects.find(item => item.path === cwd)
-      if (matchingProject) {
-        const liveSessions = readSessionsFromStateFiles(matchingProject)
-        const existing = liveSessions.find(
-          s => s.provider === provider && s.sessionId === resumeId && s.sessionId !== PENDING_SESSION_ID
-        )
-        if (existing) return c.json({ name: existing.name })
-      }
+    if (resumeId && bestProject) {
+      const liveSessions = readSessionsFromStateFiles(bestProject)
+      const existing = liveSessions.find(
+        s => s.provider === provider && s.sessionId === resumeId && s.sessionId !== PENDING_SESSION_ID
+      )
+      if (existing) return c.json({ name: existing.name })
     }
 
     const { handle } = await startMultmuxSession(provider, name, cwd, prompt, resumeId)

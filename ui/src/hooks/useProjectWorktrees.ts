@@ -16,13 +16,10 @@ export interface WorktreeInfo {
 export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] {
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
 
-  // Reset immediately on project switch to avoid showing stale worktrees
-  useEffect(() => { setWorktrees([]) }, [projectName])
-
-  const fetch_ = useCallback(async () => {
-    if (!projectName) { setWorktrees([]); return }
+  const fetch_ = useCallback(async (signal?: AbortSignal) => {
+    if (!projectName) return
     try {
-      const res = await fetch(`/api/tasks/${encodeURIComponent(projectName)}`)
+      const res = await fetch(`/api/tasks/${encodeURIComponent(projectName)}`, { signal })
       if (!res.ok) return
       const data = await res.json() as {
         tasks: Record<string, {
@@ -47,15 +44,17 @@ export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] 
       }
       result.sort((a, b) => a.slug.localeCompare(b.slug))
       setWorktrees(result)
-    } catch {
-      // Task API errors are non-fatal for worktree discovery
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
     }
   }, [projectName])
 
   useEffect(() => {
-    void fetch_()
-    const id = setInterval(fetch_, 60_000)
-    return () => clearInterval(id)
+    setWorktrees([])
+    const ac = new AbortController()
+    void fetch_(ac.signal)
+    const id = setInterval(() => void fetch_(), 60_000)
+    return () => { ac.abort(); clearInterval(id) }
   }, [fetch_])
 
   useSSERefresh('filetree', fetch_)
