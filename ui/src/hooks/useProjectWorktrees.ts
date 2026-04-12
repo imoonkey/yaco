@@ -56,6 +56,7 @@ export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] 
   }, [fetch_])
 
   useSSERefresh('filetree', fetch_)
+  useSSERefresh('worktrees', fetch_)
 
   return worktrees
 }

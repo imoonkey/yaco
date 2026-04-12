@@ -6,6 +6,7 @@ import { loadProjects } from '../lib/projects'
 import { resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
 import { extractWorktreeSlug } from '../lib/worktree'
+import { isPathDescendantOrEqual } from '../lib/multmux'
 
 const app = new Hono()
 
@@ -49,7 +50,7 @@ app.post('/start', async (c) => {
   }
   try {
     const projects = await loadProjects()
-    const project = projects.find(item => item.path === cwd)?.name ?? cwd.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
+    const project = projects.find(item => isPathDescendantOrEqual(cwd, item.path))?.name ?? cwd.replace(/\/+$/, '').split('/').pop() ?? 'unknown'
 
     if (provider === 'shell') {
       const shellName = startShellSession(cwd, project, name)

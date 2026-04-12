@@ -29,7 +29,7 @@ function routeChange(filename: string): string | null {
 
   if (/^doc\/todo\/[^/]+\/workstream\.json$/.test(filename)) return 'workstreams'
   if (/^\.worktrees\/[^/]+$/.test(filename)) return 'worktrees'
-  if (/^\.worktrees\//.test(filename)) return null
+  if (/^\.worktrees\//.test(filename)) return 'filetree'
   if (/^\.git\//.test(filename)) return 'git'
 
   return 'filetree'
