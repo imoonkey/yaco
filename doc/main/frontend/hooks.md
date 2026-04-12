@@ -18,29 +18,29 @@ Custom React hooks for data fetching, real-time updates, and device detection.
 
 ## useWorkspaceState.ts (161 lines — composition root)
 
-Per-project workspace state management. Thin wiring layer that composes three focused hooks and returns the same public shape.
+Per-project workspace state management. Thin wiring layer that composes three focused hooks and returns the same public shape. Accepts optional `worktree` param to isolate state per worktree checkout.
 
-**Export**: `useWorkspaceState(projectName)` → `{ openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, actions }`
+**Export**: `useWorkspaceState(projectName, worktree?)` → `{ openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, actions }`
 
 ### Decomposed into:
 
 - **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic. Includes `retargetPaths(oldPath, newPath)` to remap tab IDs on rename/move, `closeTabsUnder(path)` to close tabs under a deleted path, and `openPreviewDiffTabById(tabId)` to open compare diff tabs using a pre-built tab ID (e.g. `diff:path?base=X&compare=Y`).
 - **`useFileState.ts`** (342 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling. Uses `fileStateMachine.ts` for explicit state transitions.
 - **`fileStateMachine.ts`** (100 lines) — pure state machine for file status transitions. `FileEvent` discriminated union (9 events: SERVER_SYNC, SERVER_MISSING, FILL_REVISION, EDIT, SAVE_START, SAVE_SUCCESS, SAVE_CONFLICT, SAVE_ERROR, ACCEPT_DISK). `fileTransition(state, event)` returns new state or same reference if unchanged. `reconcileFile()` wraps server fetch results.
-- **`usePersistence.ts`** (190 lines) — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush
-- **`workspaceTypes.ts`** (125 lines) — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`), constants (`TASKS_TAB_ID`), tab guards (`isFileTab`, `isDiffTab`, `isTasksTab`), localStorage key builders
+- **`usePersistence.ts`** (190 lines) — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush. localStorage keys include worktree slug when active: `workflow-workspace:<project>:wt:<slug>`, `workflow-drafts:<project>:wt:<slug>`
+- **`workspaceTypes.ts`** (139 lines) — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`), constants (`TASKS_TAB_ID`), tab guards (`isFileTab`, `isDiffTab`, `isTasksTab`), localStorage key builders (`layoutKey(project, worktree?)`, `draftsKey(project, worktree?)`)
 
 ### State
 
 | Field | Type | Persisted |
 |-------|------|-----------|
-| `openTabs` | `string[]` | localStorage (`workflow-workspace:<project>`) |
+| `openTabs` | `string[]` | localStorage (`workflow-workspace:<project>` or `workflow-workspace:<project>:wt:<slug>`) |
 | `activeTab` | `string \| null` | localStorage |
 | `previewTab` | `string \| null` | localStorage |
 | `activeSession` | `string` | localStorage |
 | `mobilePane` | `'files' \| 'editor' \| 'terminal'` | localStorage |
 | `layout` | `WorkspaceLayout` | localStorage |
-| `files` | `Record<string, FileState>` | localStorage (`workflow-drafts:<project>`) — dirty drafts only |
+| `files` | `Record<string, FileState>` | localStorage (`workflow-drafts:<project>` or `workflow-drafts:<project>:wt:<slug>`) — dirty drafts only |
 
 ### File State Model
 
@@ -72,9 +72,9 @@ type FileState = {
 
 - `FileStatus`, `FileState`, `WorkspaceLayout`, `DEFAULT_LAYOUT`
 
-## useApi.ts (~360 lines)
+## useApi.ts (~386 lines)
 
-Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval.
+Generic data fetching layer. All hooks follow the same pattern: immediate fetch, SSE-triggered refresh, fallback polling interval. Exports `appendWorktree(url, worktree?)` helper that appends `?worktree=slug` to any API URL when a worktree is active — used by all file/git hooks.
 
 ### Data Hooks
 
@@ -83,14 +83,29 @@ Generic data fetching layer. All hooks follow the same pattern: immediate fetch,
 | `useProjects()` | `Project[]` | `projects` | 60s |
 | `useProgress()` | `ProgressEntry[]` | `progress` | 30s |
 | `useSessions(project?)` | `AgentSession[]` | `sessions` | 30s |
-| `useFileTree(project)` | `FileNode[]` | `filetree` | 60s |
+| `useFileTree(project, worktree?)` | `FileNode[]` | `filetree` | 60s |
 | `useFileContent(project, path)` | `string` | — | — |
-| `useGitStatus(project)` | `{ changes: GitChange[], stale: boolean }` | `git` | 30s |
+| `useGitStatus(project, worktree?)` | `{ changes: GitChange[], stale: boolean }` | `git` | 30s |
 | `useHistory(project)` | `HistorySession[]` | — | — |
 
 All data hooks return `{ data, error, refresh }`.
 
 `useHistory` is on-demand only — not polled, not SSE-driven. Fetches when `refresh()` is called (first History tab open, after resume/close/rename). Returns `{ data, error, loading, refresh }`.
+
+## useProjectWorktrees.ts (61 lines)
+
+Discovers active worktrees for a project by reading worktree status from the task API response.
+
+**Export**: `useProjectWorktrees(projectName)` → `WorktreeInfo[]`
+
+**WorktreeInfo**: `{ slug: string, dirty: boolean, branch: string, ahead: number, behind: number }`
+
+Behavior:
+- Fetches `GET /api/tasks/:project` and collects tasks where `worktreeStatus.active === true`
+- Deduplicates by slug, sorts alphabetically
+- SSE `filetree` channel triggers refresh (worktree creation/removal triggers fs events)
+- 60s polling fallback
+- Task API errors are non-fatal (returns empty array)
 
 `useFileTree` uses lazy loading (VS Code pattern):
 - Returns `{ data, error, refresh, expandDir, patchTree }`
@@ -114,16 +129,16 @@ Standalone async functions (not hooks):
 - `startSession(provider, projectPath, resumeId?, name?)` — when `resumeId` present, sends to server for resume. Returns resolved handle.
 - `closeSession(name)`
 - `renameSession(name, newName, cwd)`
-- `saveFileContent(project, path, content)`
-- `createFile(project, path)`
-- `createDir(project, path)`
-- `moveFile(project, sourcePath, destDir)`
-- `renameFile(project, oldPath, newPath)`
-- `deleteFile(project, path)`
-- `revealInFinder(project, path)`
-- `fetchGitDiff(project, path, base?, compare?)` — optional ref params for compare diffs
+- `saveFileContent(project, path, content, baseRevision?, worktree?)`
+- `createFile(project, path, worktree?)`
+- `createDir(project, path, worktree?)`
+- `moveFile(project, sourcePath, destDir, worktree?)`
+- `renameFile(project, oldPath, newPath, worktree?)`
+- `deleteFile(project, path, worktree?)`
+- `revealInFinder(project, path, worktree?)`
+- `fetchGitDiff(project, path, base?, compare?, worktree?)` — optional ref params for compare diffs
 - `fetchGitRefs(project)` — branches, tags, recent commits (with author)
-- `fetchGitCompare(project, base, compare)` — file list between two refs
+- `fetchGitCompare(project, base, compare, worktree?)` — file list between two refs
 
 ## useSSE.ts (99 lines)
 

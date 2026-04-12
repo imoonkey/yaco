@@ -40,7 +40,7 @@ event: refresh
 data: <channel>
 ```
 
-Channels: `projects`, `workstreams`, `progress`, `sessions`, `filetree`, `git`
+Channels: `projects`, `workstreams`, `worktrees`, `progress`, `sessions`, `filetree`, `git`
 
 ### `heartbeat` event
 
@@ -61,6 +61,7 @@ On EventSource reconnect (`open` event), all registered refresh callbacks fire t
 |---------|------------|--------|
 | File create/delete/rename in project | `filetree` | project-watcher.ts |
 | `workstream.json` change | `workstreams` | project-watcher.ts |
+| `.worktrees/<slug>` top-level change | `worktrees` | project-watcher.ts |
 | `.git/` change | `git` | project-watcher.ts |
 | `progress.json` change | `notification` event (client derives `progress` refresh) | watcher.ts → useSSE.ts |
 | Session status change | `sessions` | project-watcher.ts (`~/.multmux/sessions/*.json`, filtered by `sessionPath`), terminal.ts (shell lifecycle), session-reconciler.ts (drift) |

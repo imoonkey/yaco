@@ -36,14 +36,15 @@ Standardized error response helper for Hono routes.
 - Returns `c.json({ error, ...extra }, status)`
 - Used across all route files for consistent error shape
 
-### middleware/project.ts (13 lines)
+### middleware/project.ts (25 lines)
 
-Hono middleware for project-scoped routes. Resolves `:project` param via `loadProjects()`, returns 404 if not found, sets `c.var.project`.
+Hono middleware for project-scoped routes. Resolves `:project` param via `loadProjects()`, returns 404 if not found, sets `c.var.project`. Supports worktree targeting via `?worktree=slug` query param.
 
 **Exports**: `withProject`, `ProjectEnv`
 
-- Applied per-handler (not sub-app) to 15 project-scoped routes across files.ts, git.ts, workstreams.ts, progress.ts
+- Applied per-handler (not sub-app) to 15+ project-scoped routes across files.ts, git.ts, tasks.ts, workstreams.ts, progress.ts
 - Routes that scan ALL projects (GET /) keep their own `loadProjects()` call
+- When `?worktree=slug` is present, rewrites `project.path` to `<project.path>/.worktrees/<slug>` — all downstream file/git operations transparently target the worktree checkout. Returns 404 if the worktree directory doesn't exist.
 
 ### projects.ts (34 lines)
 
@@ -128,13 +129,25 @@ Recursive filesystem watcher per project directory.
 **Exports**: `startProjectWatchers()`, `stopProjectWatchers()`
 
 - Uses `fs.watch` with `recursive: true` (macOS FSEvents, one fd per project) plus one global watcher on `~/.multmux/sessions`
-- Routes project-local filename changes to SSE refresh channels: `workstreams`, `git`, `filetree`
+- Routes project-local filename changes to SSE refresh channels: `workstreams`, `worktrees`, `git`, `filetree`
+- `.worktrees/<slug>` top-level changes → `worktrees` channel; deeper `.worktrees/` subpaths are suppressed (no filetree noise from worktree internals)
 - Global multmux session watcher reads `sessionPath` from changed state files and only emits `sessions` refreshes for registered projects whose paths descendant-match
 - Also watches `~/.workflow/projects.json` for project list changes
 - 200ms debounce on all events to batch rapid changes
 - Per-project `.gitignore` filtering: loads patterns via `gitignore.ts`, skips SSE events for ignored paths (prevents watcher churn in large projects)
 - `.gitignore` changes trigger pattern reload + filetree refresh
 - `startProjectWatchers()` is async (loads gitignore patterns at startup)
+
+### worktree.ts (76 lines)
+
+Git worktree status resolution. Reads worktree state from the filesystem and git CLI for task enrichment.
+
+**Exports**: `WorktreeStatus`, `getWorktreeStatus()`, `getWorktreeStatuses()`, `extractWorktreeSlug()`
+
+- `WorktreeStatus` type: `{ active: boolean, dirty: boolean, branch: string, ahead: number, behind: number }`
+- `getWorktreeStatus(projectPath, slug)` — checks if `.worktrees/<slug>/` exists, runs `git status --porcelain` (dirty check) and `git rev-list --count --left-right main...HEAD` (ahead/behind) in parallel. Returns inactive status if directory doesn't exist.
+- `getWorktreeStatuses(projectPath, tasks)` — batch-resolves all unique worktree slugs found in a task map. Used by the tasks route to enrich responses.
+- `extractWorktreeSlug(sessionPath)` — regex extraction of slug from a path containing `/.worktrees/<slug>/`. Used by the sessions route to tag agent sessions with their worktree.
 
 ### gitignore.ts (41 lines)
 

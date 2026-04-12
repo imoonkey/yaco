@@ -30,7 +30,7 @@ Hono Server (Node.js :3001)
   Filesystem + tmux/multmux + node-pty
 ```
 
-- **Server** — Hono routes (`/api/*`, SSE, WebSocket), library modules (terminal, multmux, project-watcher, voice, autocomplete), `withProject` middleware
+- **Server** — Hono routes (`/api/*`, SSE, WebSocket), library modules (terminal, multmux, project-watcher, worktree, voice, autocomplete), `withProject` middleware
 - **UI** — `App.tsx` (shell + project selection + session counts), `workspace/` (screen, layout, editor column, sidebar resize, session section, tab bar, sessions, search, diff), `components/` (Editor, Terminal, FileExplorer, ProjectList, Menu, Voice, DialogShell, BadgeCount), `hooks/` (state, persistence, API, SSE, voice, fileStateMachine), `tasks/` (task views: board, list, graph, archive + detail panel + shared components), `lib/` (solarized theme, diff, fuzzy search, autocomplete)
 
 -> See: [doc/main/](doc/main/README.md) for per-file specs organized by subsystem (backend, frontend, data-model, ui)
@@ -45,12 +45,13 @@ Hono Server (Node.js :3001)
 6. **Task views** → sidebar TASKS toggle opens task panel (full editor column height, replaces tab bar). Four views: Board (kanban), List (virtual scroll table), Graph (SVG pan/zoom), Archive. Shared `TaskDetailPanel` with inline editing. SSE triggers refresh + 60s polling fallback.
 7. **Voice** → MediaRecorder → Groq Whisper STT → multi-model LLM formatter → compose tray
 8. **Autocomplete** → CM6 debounced typing → Groq multi-model → ghost text decoration
+9. **Worktree isolation** → `scripts/worktree-*.sh` manage git worktrees at `.worktrees/<slug>/` on branch `task/<slug>`. `withProject` middleware accepts `?worktree=slug` to redirect file/git ops. Task API enriches with `worktreeStatus`. `useProjectWorktrees` discovers active worktrees. `ProjectList` shows worktree sub-items. Persistence keyed by `(project, worktree)`.
 
 -> See: [doc/main/](doc/main/README.md#key-data-flows) for detailed flow descriptions
 
 ## State Persistence
 
-Layout/tabs/pins, task graph collapse, and drafts in `localStorage["workflow-*:<project>"]`. Projects in `~/.workflow/projects.json`. Flushed on `beforeunload`.
+Layout/tabs/pins, task graph collapse, and drafts in `localStorage["workflow-*:<project>"]` (or `"workflow-*:<project>:wt:<slug>"` when in a worktree). Projects in `~/.workflow/projects.json`. Flushed on `beforeunload`.
 
 -> See: [doc/main/data-model/persistence.md](doc/main/data-model/persistence.md)
 
@@ -80,6 +81,7 @@ doc/
 - Hook decomposition: `useWorkspaceState` is a composition root wiring `useLayoutState` + `useFileState` + `usePersistence`. `useVoice` uses a reducer-based state machine (`voiceStateMachine.ts`). Follow this pattern for new complex hooks.
 - Mobile-first: touch detection via `useIsTouch()` / `useIsMobile()`, virtual keyboard handling via `useKeyboardViewport`. Task views have dedicated mobile layouts: `TaskToolbar` collapses to single-row icon-only tabs + collapsed filter dropdown + toggle search; `TaskBoardView` uses `scroll-snap-type: x mandatory` with `scrollPaddingInlineStart` for swipeable columns; `TaskListView` renders `MobileListRow` (44px touch targets, no column headers); `TaskDetailPanel` uses bottom sheet with backdrop overlay. Touch targets ≥44px on mobile (Apple HIG). Use `.no-scrollbar` utility for hidden-scrollbar horizontal overflow.
 - SSE-driven updates with polling fallback (30-60s). Never poll faster than 30s.
+- **Worktree isolation**: git worktrees live at `<repo>/.worktrees/<slug>/` on branch `task/<slug>`. Lifecycle scripts in `scripts/worktree-*.sh` (create, merge, cleanup). Server `withProject` middleware resolves `?worktree=slug` to the worktree path — all downstream file/git ops are transparently redirected. UI threads `worktree` param through all hooks (`useWorkspaceState`, `useFileTree`, `useGitStatus`, mutations). `WorkspaceScreen` computes `effectivePath` for session cwd. Persistence keys include worktree slug (`workflow-workspace:<project>:wt:<slug>`). Task views show worktree badges (GitBranch icon) and support worktree filtering. `useProjectWorktrees` discovers active worktrees from task API responses.
 - File revision tracking via mtime for optimistic locking
 - Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`. Sidebar uses Explorer-flex model: Explorer body is always `flex:1`, bottom sections (Changes, Search) have fixed resizable heights with `useResize` hooks. `useResize` accepts dynamic max via `number | (() => number)`, with re-clamp effect when available space shrinks. Bottom section max heights computed from sidebar height minus fixed overhead. Tasks toggle is pinned to sidebar bottom via `mt-auto` — not a resizable section, just a `SectionHeader` that toggles the full-height task panel in the editor column.
 - Performance: `React.memo` on expensive leaf components (FileExplorer) to prevent re-render cascade from per-keystroke state updates. Stabilize derived Set references (dirtyTabs, conflictTabs) via structural comparison.

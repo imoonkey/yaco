@@ -45,7 +45,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/sessions` | All sessions (multmux + shell). Optional `?project=<name>` filter |
+| GET | `/api/sessions` | All sessions (multmux + shell). Optional `?project=<name>` filter. Response includes `worktree` field (slug extracted from `sessionPath`) |
 | GET | `/api/sessions/history` | Session history (Claude JSONL + Codex SQLite). Required `?project=<name>`. Returns `HistorySession[]` sorted by modified DESC, capped at 200, with live session tagging |
 | POST | `/api/sessions/start` | Start session (`{ provider, name?, cwd, prompt?, resumeId? }`). When `resumeId` present: idempotency preflight checks live sessions, passes `--resume` to multmux. Returns resolved handle (not echoed name) |
 | POST | `/api/sessions/:handle/pause` | Send `/stop` to session |
@@ -53,6 +53,8 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | POST | `/api/sessions/:handle/close` | Close session (shell or multmux) |
 
 ### Files
+
+All file routes support `?worktree=<slug>` query param — when present, `withProject` middleware redirects operations to `.worktrees/<slug>/` checkout.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -69,6 +71,8 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | POST | `/api/files/:project/reveal` | Reveal file in OS file manager (`{ path }`) — `open -R` on macOS, `xdg-open` on Linux |
 
 ### Git
+
+All git routes support `?worktree=<slug>` query param via `withProject` middleware.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -148,6 +152,18 @@ Empty transcript (`formattingStatus: "empty"`, 200):
 Audio is never persisted to disk. API key is never exposed to the browser.
 
 -> Design doc: `doc/todo/voice-formatting/final/design.md`
+
+### Tasks
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tasks/:project` | Read tasks.json. Response enriched with `worktreeStatus` for each task that has a `worktree` field (resolved via `getWorktreeStatuses`) |
+| PATCH | `/api/tasks/:project/:taskId` | Partial task update (runs `update-tasks.py set`) |
+| PUT | `/api/tasks/:project/:taskId` | Create task (requires `title`, `description`, `acceptCriteria`) |
+| DELETE | `/api/tasks/:project/:taskId` | Delete task |
+| GET | `/api/tasks/:project/archive` | List archived tasks (reads `doc/archive/*.json`) |
+| POST | `/api/tasks/:project/:taskId/archive` | Archive a task |
+| POST | `/api/tasks/:project/bulk` | Bulk update (`{ ids, patch }`) |
 
 ### Search
 

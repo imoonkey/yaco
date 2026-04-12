@@ -90,9 +90,9 @@ App-level state persisted by `App.tsx`:
 }
 ```
 
-### localStorage: `workflow-workspace:<projectName>`
+### localStorage: `workflow-workspace:<projectName>` (or `workflow-workspace:<projectName>:wt:<slug>`)
 
-Per-project workspace layout state persisted by `useWorkspaceState`:
+Per-project (or per-worktree) workspace layout state persisted by `useWorkspaceState`. When a worktree is active, state is keyed separately so tabs/sessions/layout are independent per worktree.
 
 - `openTabs` — array of open file paths
 - `activeTab` — currently active file path
@@ -108,9 +108,9 @@ Per-project workspace layout state persisted by `useWorkspaceState`:
 - `layout.leftSize` / `layout.rightSize` — panel widths in pixels
 - `layout.explorerSize` / `layout.changesSize` — sidebar section heights
 
-### localStorage: `workflow-drafts:<projectName>`
+### localStorage: `workflow-drafts:<projectName>` (or `workflow-drafts:<projectName>:wt:<slug>`)
 
-Per-project dirty file drafts persisted by `useWorkspaceState`:
+Per-project (or per-worktree) dirty file drafts persisted by `useWorkspaceState`:
 
 ```json
 {

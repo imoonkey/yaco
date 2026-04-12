@@ -1,5 +1,33 @@
 # Progress
 
+## 2026-04-11: Worktree isolation for parallel orchestration
+
+**What changed:**
+- Worktree lifecycle scripts: `scripts/worktree-create.sh` (idempotent create at `.worktrees/<slug>/` on branch `task/<slug>`, optional provision hook), `worktree-merge.sh` (PR or local rebase+merge modes, dirty check), `worktree-cleanup.sh` (conservative removal with `--force` override), `worktree-lib.sh` (shared `resolve_repo_root` + `validate_slug`)
+- Server `worktree.ts`: `WorktreeStatus` type (`active`, `dirty`, `branch`, `ahead`, `behind`), `getWorktreeStatus()` (parallel git status + rev-list), `getWorktreeStatuses()` (batch resolve from task map), `extractWorktreeSlug()` (regex path extraction)
+- `withProject` middleware now accepts `?worktree=slug` query param — rewrites `project.path` to `.worktrees/<slug>/` for transparent worktree targeting
+- Task API (`GET /api/tasks/:project`) enriches each task with `worktreeStatus` via batch resolution
+- Sessions API enriches responses with `worktree` field (slug extracted from `sessionPath`)
+- `project-watcher.ts` routes `.worktrees/<slug>` top-level changes to `worktrees` SSE channel; suppresses deeper `.worktrees/` subpaths
+- New `useProjectWorktrees` hook: discovers active worktrees from task API, SSE `filetree` refresh + 60s poll
+- `ProjectList` renders worktree sub-items (GitBranch icon, dirty indicator, ahead/behind tooltip) under the active project
+- `useApi.ts`: `appendWorktree()` helper appends `?worktree=slug` to API URLs; all file/git hooks and mutations accept `worktree` param
+- `usePersistence.ts` / `workspaceTypes.ts`: `layoutKey()` and `draftsKey()` include worktree slug — tabs/drafts/layout are independent per worktree
+- `WorkspaceScreen` computes `effectivePath` from `projectPath + worktree` for session cwd; threads `worktree` through all hooks
+- Worktree badges across all 4 task views (Board/List/Graph/Archive) + TaskDetailPanel worktree section (branch, dirty/clean, ahead/behind)
+- `TaskToolbar`: worktree filter dropdown
+- `WorkspaceSessionList`: worktree badge on session rows
+- `App.tsx` manages `activeWorktree` state and passes `worktrees` + `onWorktreeSelect` to Workspace
+
+**Why:**
+- Parallel orchestration requires isolated working directories — multiple agents editing the same repo on the same branch causes merge conflicts. Git worktrees provide filesystem-level isolation with full git support (separate index, HEAD, working tree) while sharing the object store. The UI needed to surface worktree context throughout (which branch am I looking at?) and keep editor state independent per worktree.
+
+**Key files:** `scripts/worktree-*.sh`, `server/src/lib/worktree.ts`, `server/src/middleware/project.ts`, `server/src/routes/tasks.ts`, `server/src/routes/sessions.ts`, `server/src/lib/project-watcher.ts`, `ui/src/hooks/useProjectWorktrees.ts`, `ui/src/hooks/useApi.ts`, `ui/src/hooks/usePersistence.ts`, `ui/src/hooks/workspaceTypes.ts`, `ui/src/components/ProjectList.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/App.tsx`, `ui/src/tasks/` (TaskToolbar, BoardCard, ListRow, TaskGraphNode, TaskArchiveView, TaskDetailPanel)
+**Verification:** `tsc --noEmit` clean, ESLint clean on all changed files
+**Commit:** `750a521..266f395` (4 feature commits across parallel worker dispatch)
+**Next:** Worktree provision hook (`scripts/worktree-provision.sh`), automated worktree lifecycle from task state transitions
+**Blockers:** None
+
 ## 2026-04-11: Tasks v2 mobile polish
 
 **What changed:**

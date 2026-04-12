@@ -22,7 +22,7 @@ React component tree, props interfaces, and responsibilities.
 ```
 App (384 lines)
 └── Workspace (re-export → workspace/WorkspaceScreen)
-    └── WorkspaceScreen (~499 lines) — controller
+    └── WorkspaceScreen (~651 lines) — controller
         ├── useWorkspaceKeyboard (199 lines)
         ├── useWorkspaceNavigation (143 lines)
         ├── useWorkspaceSessions (183 lines)
@@ -43,11 +43,13 @@ App (384 lines)
         ├── FileExplorer (435 lines)
         │   ├── fileExplorerIcons — GIT_COLORS, GIT_STATUS_LABELS, FileTypeIcon
         │   └── fileExplorerNode — git letter indicators (M/A/D/U)
+        ├── ProjectList (153 lines) — project rows + worktree sub-items
         ├── Menu (154 lines) — keyboard nav (Arrow/Enter/Home/End), long-press (350ms)
         ├── Terminal (447 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
         ├── SessionItem — status dots (processing/idle/error/completed)
         ├── WorkspaceHistoryList (114 lines)
+        ├── WorkspaceSessionList (139 lines) — SessionItem with worktree badge
         ├── GitChangeItem
         ├── FileSearch — recent files section, search cap banner
         ├── ShortcutSheet — ? key opens shortcut cheatsheet
@@ -59,35 +61,36 @@ App (384 lines)
 **Task system (`ui/src/tasks/`) — multi-view task management:**
 ```
 TaskScreen — master controller (view switcher, filtering, detail panel, onClose)
-├── TaskToolbar — view tabs, filter dropdowns, search, close button
+├── TaskToolbar — view tabs, filter dropdowns (incl. worktree filter), search, close button
 │   ├── Desktop: two rows (view tabs + search | filter dropdowns + pills)
 │   └── Mobile: single row (icon-only tabs | filter icon | search toggle | X)
 ├── TaskBoardView — kanban columns (Blocked → Ready → Running → Done)
 │   ├── Desktop: flex columns
 │   ├── Mobile: scroll-snap horizontal swipe (one column at a time, 12px inset)
 │   ├── BoardColumn — collapsible column with drag-drop
-│   └── BoardCard — task card (compact mode for done)
+│   └── BoardCard — task card (compact mode for done), worktree badge (GitBranch icon)
 ├── TaskListView — virtual-scroll table with sortable columns
-│   ├── Desktop: ListHeader (resizable) + ListRow (7 columns)
+│   ├── Desktop: ListHeader (resizable) + ListRow (7 columns + worktree badge)
 │   └── Mobile: MobileListRow (44px, StateDot + title + parent + priority)
 ├── TaskGraphScreen — SVG dependency graph with pan/zoom
-│   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line) + TaskGraphEdges
+│   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line, worktree icon) + TaskGraphEdges
 │   ├── TaskGraphToolbar (mobile: larger touch targets, hides collapse controls)
 │   ├── TaskGraphMinimap — overview with viewport rect (desktop only)
 │   └── TaskGraphTooltip — hover overlay
-├── TaskArchiveView — date-grouped archive with search, click-to-detail
+├── TaskArchiveView — date-grouped archive with search, click-to-detail, worktree badge
 │   └── Mobile: hides task ID + unarchive button, taller touch targets
 ├── TaskDetailPanel — shared right sidebar (editable, readOnly mode for archives)
 │   ├── Desktop: 340px right sidebar with slide-right animation
 │   ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
 │   ├── InlineEdit — click-to-edit with custom dropdown popover
+│   ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
 │   ├── Children progress bar (for parent tasks)
 │   └── Design doc link → opens in editor (file paths) or new tab (URLs)
 └── shared/ — StateDot, StateBadge, PriorityTag, InlineEdit
 ```
 
 **Task data model (non-component):**
-- `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate)
+- `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
 - `taskGraphModel.ts` — flat indented tree layout: 24px indent/level, guide lines, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics. NODE_WIDTH=280, NODE_HEIGHT=36.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 - `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
@@ -129,11 +132,13 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 **Compare mode**: Toggle via `GitCompareArrows` icon in Changes section header. State: `compareMode`, `compareBase`, `compareHead`, `compareResult`. When active, the Changes section shows `CompareRefPicker` + file list from `/git/:project/compare`. Clicking a file opens a compare diff tab (`diff:path?base=X&compare=Y`) via `openPreviewDiffTabById`. Loading uses skeleton shimmer.
 
-**Props**: `{ projectName: string; projectPath: string; projects; activeProject; projectUnreadCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent; notificationBell? }`
+**Props**: `{ projectName: string; projectPath: string; worktree?: string | null; worktrees: WorktreeInfo[]; activeWorktree: string | null; onWorktreeSelect: (slug: string | null) => void; projects; activeProject; projectUnreadCounts; projectSessionCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent; notificationBell? }`
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
-- Builds section content (project list, explorer, changes, tasks doorway, sessions, editor, terminal) as React nodes
+- Computes `effectivePath` from `projectPath + worktree` for session cwd and file ops
+- Threads `worktree` param through `useWorkspaceState`, `useFileTree`, `useGitStatus`, and all mutation functions
+- Builds section content (project list with worktree sub-items, explorer, changes, tasks doorway, sessions, editor, terminal) as React nodes
 - Passes content slots to `WorkspaceLayout` for placement
 - Delegates domain state to `useWorkspaceState` hook
 - Session unread pills and project unread badges

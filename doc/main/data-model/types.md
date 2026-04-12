@@ -71,7 +71,7 @@ interface ProgressEntry {
 ### Session
 
 ```typescript
-type SessionStatus = 'processing' | 'idle'
+type SessionStatus = 'processing' | 'idle' | 'error' | 'completed'
 type SessionProvider = 'claude' | 'codex' | 'shell'
 
 interface AgentSession {
@@ -79,6 +79,8 @@ interface AgentSession {
   provider: SessionProvider
   status: SessionStatus
   project: string
+  summary: string
+  worktree?: string      // slug extracted from sessionPath (e.g. "my-feature")
 }
 ```
 
