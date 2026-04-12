@@ -45,6 +45,7 @@ interface TaskToolbarProps {
   onSetParentFilter: (parentId: string | null) => void
   onSetSearch: (query: string) => void
   onResetFilters: () => void
+  onClose?: () => void
 }
 
 function collectAgents(tasks: Map<string, TaskV2>): string[] {
@@ -175,7 +176,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
   const {
     activeView, filters, searchQuery, tasks,
     onSetView, onToggleFilterState, onToggleFilterPriority,
-    onToggleFilterAgent, onToggleFilterWorktree, onSetParentFilter, onSetSearch, onResetFilters,
+    onToggleFilterAgent, onToggleFilterWorktree, onSetParentFilter, onSetSearch, onResetFilters, onClose,
   } = props
 
   const isMobile = useIsMobile()
@@ -395,6 +396,22 @@ export function TaskToolbar(props: TaskToolbarProps) {
               >
                 <Search size={14} />
               </button>
+
+              {/* Close tasks panel */}
+              {onClose && (
+                <>
+                  <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />
+                  <button
+                    onClick={onClose}
+                    className="w-8 h-8 flex items-center justify-center rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
+                    style={{ color: 'var(--sol-muted)' }}
+                    title="Close Tasks"
+                    aria-label="Close Tasks"
+                  >
+                    <X size={14} />
+                  </button>
+                </>
+              )}
             </>
           )}
         </div>
@@ -461,6 +478,17 @@ export function TaskToolbar(props: TaskToolbarProps) {
               }}
             />
           </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
+              style={{ color: 'var(--sol-muted)' }}
+              title="Close Tasks"
+              aria-label="Close Tasks"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
       </div>
 
