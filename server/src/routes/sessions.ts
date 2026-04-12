@@ -63,10 +63,6 @@ app.post('/start', async (c) => {
       return c.json({ name: shellName })
     }
 
-    if (!name) {
-      return c.json({ error: 'name required for agent sessions' }, 400)
-    }
-
     // Idempotency preflight: if resuming, query CLI for live session with this sessionId
     if (resumeId) {
       const liveSessions = await queryMultmuxStatus(cwd)

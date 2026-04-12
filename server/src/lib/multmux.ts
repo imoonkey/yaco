@@ -207,22 +207,29 @@ const STATE_POLL_TIMEOUT_MS = 10_000
 /** Start a new multmux session. Returns as soon as the tmux session is
  *  attachable (state file has PID), without waiting for the agent to become
  *  idle. The multmux process continues in the background (waitForReady,
- *  /rename, sessionId resolution, etc.). */
+ *  /rename, sessionId resolution, etc.).
+ *  When name is omitted, multmux generates a word-based default name. */
 export async function startMultmuxSession(
   provider: 'claude' | 'codex',
-  name: string,
+  name: string | undefined,
   cwd: string,
   prompt?: string,
   resumeId?: string,
 ): Promise<{ handle: string; sessionId: string }> {
-  validateSessionName(name)
+  if (name) validateSessionName(name)
   const args: string[] = [provider]
   if (resumeId) {
     args.push('--resume', resumeId)
   } else if (prompt) {
     args.push(prompt)
   }
-  args.push('-n', name, '--json')
+  if (name) args.push('-n', name)
+  args.push('--json')
+
+  // Snapshot existing state files before spawn (for unnamed sessions)
+  const beforeFiles = name ? null : new Set(
+    readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
+  )
 
   // Spawn multmux — it will handle waitForReady / /rename / sessionId in background
   const proc = spawn(MULTMUX_PATH, args, {
@@ -244,10 +251,24 @@ export async function startMultmuxSession(
     }
 
     try {
-      const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, `${name}.json`), 'utf-8')
-      const state = JSON.parse(raw) as MultmuxStateFile
-      if (state.pid > 0) {
-        return { handle: state.handle ?? name, sessionId: state.sessionId ?? '' }
+      if (name) {
+        // Named session: poll known filename
+        const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, `${name}.json`), 'utf-8')
+        const state = JSON.parse(raw) as MultmuxStateFile
+        if (state.pid > 0) {
+          return { handle: state.handle ?? name, sessionId: state.sessionId ?? '' }
+        }
+      } else {
+        // Unnamed session: find new state file with matching cwd
+        const nowFiles = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
+        for (const f of nowFiles) {
+          if (beforeFiles!.has(f)) continue
+          const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, f), 'utf-8')
+          const state = JSON.parse(raw) as MultmuxStateFile
+          if (state.sessionPath === cwd && state.provider === provider && state.pid > 0) {
+            return { handle: state.handle, sessionId: state.sessionId ?? '' }
+          }
+        }
       }
     } catch { /* state file not yet written */ }
 

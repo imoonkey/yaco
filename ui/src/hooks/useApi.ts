@@ -255,10 +255,9 @@ export async function reorderProjects(order: string[]): Promise<Project[]> {
 }
 
 export async function startSession(provider: SessionProvider, projectPath: string, resumeId?: string, name?: string): Promise<string> {
-  const resolvedName = name ?? (provider === 'shell' ? undefined : `${provider}-${Date.now().toString(36)}`)
   const result = await postJson<{ name: string }>('/sessions/start', {
     provider,
-    name: resolvedName,
+    name,
     cwd: projectPath,
     ...(resumeId ? { resumeId } : {}),
   })
