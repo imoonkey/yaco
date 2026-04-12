@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSSERefresh } from './useSSE'
 
 export interface WorktreeInfo {
@@ -15,18 +15,21 @@ export interface WorktreeInfo {
  */
 export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] {
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
+  const currentProject = useRef(projectName)
 
   const fetch_ = useCallback(async (signal?: AbortSignal) => {
     if (!projectName) return
+    const project = projectName
     try {
-      const res = await fetch(`/api/tasks/${encodeURIComponent(projectName)}`, { signal })
-      if (!res.ok) return
+      const res = await fetch(`/api/tasks/${encodeURIComponent(project)}`, { signal })
+      if (!res.ok || currentProject.current !== project) return
       const data = await res.json() as {
         tasks: Record<string, {
           worktree?: string | null
           worktreeStatus?: { active: boolean; dirty: boolean; branch: string; ahead: number; behind: number }
         }>
       }
+      if (currentProject.current !== project) return
 
       const seen = new Set<string>()
       const result: WorktreeInfo[] = []
@@ -50,6 +53,7 @@ export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] 
   }, [projectName])
 
   useEffect(() => {
+    currentProject.current = projectName
     setWorktrees([])
     const ac = new AbortController()
     void fetch_(ac.signal)
