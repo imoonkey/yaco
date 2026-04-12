@@ -251,7 +251,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
   // --- Mobile layout: single compact row ---
   if (isMobile) {
     return (
-      <div className="shrink-0" style={{ borderBottom: '1px solid var(--sol-border)' }}>
+      <div className="shrink-0 relative z-10" style={{ borderBottom: '1px solid var(--sol-border)' }}>
         <div className="flex items-center gap-1 px-2" style={{ height: 36, backgroundColor: 'var(--sol-bg)' }}>
           {/* Search expanded: takes full width */}
           {mobileSearchOpen ? (
@@ -422,7 +422,7 @@ export function TaskToolbar(props: TaskToolbarProps) {
   // --- Desktop layout: two rows ---
 
   return (
-    <div className="shrink-0" style={{ borderBottom: '1px solid var(--sol-border)' }}>
+    <div className="shrink-0 relative z-10" style={{ borderBottom: '1px solid var(--sol-border)' }}>
       {/* View tabs row */}
       <div className="flex items-center px-3" style={{ height: 28, backgroundColor: 'var(--sol-bg)' }}>
         <div className="flex items-center gap-0">
