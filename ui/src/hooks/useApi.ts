@@ -74,7 +74,7 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
         const result = await fetcher()
         if (!cancelled) { setData(result); setError(null); setLoading(false) }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e : new Error(String(e)))
+        if (!cancelled) { setError(e instanceof Error ? e : new Error(String(e))); setLoading(false) }
       }
     }
     load()

@@ -86,6 +86,16 @@ function getSource(): EventSource {
   return es
 }
 
+// Force SSE reconnect on wake from sleep/screen lock.
+// Zombie EventSource (readyState not CLOSED but no data) is killed and replaced.
+// The 'open' handler on the new source fires all refresh callbacks automatically.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && source) {
+    closeSource()
+    getSource()
+  }
+})
+
 /** Listen for a specific SSE event type */
 export function addSSEListener(event: string, fn: SSEListener): () => void {
   getSource()
