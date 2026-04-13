@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-12: Terminal WebSocket reconnection + auto-detach debounce
+
+**What changed:**
+- Terminal component split into two effects: xterm lifecycle (lives for mount lifetime) and WebSocket lifecycle (reconnects on disconnect). On WS drop, auto-reconnects with exponential backoff (1s→15s, 5 retries, jitter). Wake-from-sleep triggers immediate reconnect via `visibilitychange`.
+- Auto-detach now requires 2 consecutive API poll misses before clearing `activeSession` (was zero-tolerance — 1 miss = instant detach). Explicit kills bypass this entirely.
+- Removed redundant `refreshSessions()` from `onDisconnect` callback.
+
+**Why:**
+- Terminal sessions disappeared when the WebSocket dropped (sleep/wake, network blip, server ping timeout). `onDisconnect` unconditionally detached the session with no reconnection attempt. Users had to re-click the session to reopen.
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** `tsc --noEmit` clean on changed files, 164 server tests pass
+**Commit:** `59a0151`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-12: Codex summary rollout JSONL fallback
 
 **What changed:**

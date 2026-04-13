@@ -99,17 +99,23 @@ xterm v6 can silently drop characters from Chinese/CJK IME input — its `Compos
 
 Terminal mounts immediately when `activeSession` is set — no longer gated by the sessions API poll. This eliminates the blank-screen delay on mobile when creating a new session (previously the Terminal wouldn't mount until `refreshSessions()` resolved).
 
-Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. If a session was previously known but disappears from the list, `activeSession` is cleared automatically. Newly-created sessions (not yet in the API response) are not affected.
+Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. If a session was previously known but disappears from **2 consecutive** poll responses, `activeSession` is cleared automatically. A single transient miss (e.g., race between state-file write and API read) is tolerated. Explicitly killed sessions bypass this — `killSession()` clears `activeSession` directly.
 
 ### Connection Lifecycle
 
+The terminal component splits into two effects:
+
+**Effect 1 — xterm lifecycle** (deps: `[containerReady]`): creates xterm instance, addons, input handlers, resize/theme observers. Lives for the component's mount lifetime.
+
+**Effect 2 — WebSocket lifecycle** (deps: `[sessionName, containerReady, projectName]`): manages the WebSocket connection with automatic reconnection.
+
 1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N&project=<projectName>`
-2. Terminal created and fitted to container dimensions
-3. PTY output streamed to terminal via WebSocket
-4. User input sent to PTY via WebSocket (with modifier key application if active)
-5. Resize events sent as `{ type: 'resize', cols, rows }`
-6. Server sends ping every 30s; dead connections (no pong) are terminated to release PTY FDs
-7. On disconnect: terminal shows disconnected state
+2. PTY output streamed to terminal via WebSocket
+3. User input sent to PTY via WebSocket (with modifier key application if active)
+4. Resize events sent as `{ type: 'resize', cols, rows }`
+5. Server sends ping every 30s; dead connections (no pong) are terminated to release PTY FDs
+6. On disconnect: auto-reconnect with exponential backoff (1s → 15s, up to 5 attempts, with jitter). Shows `[Reconnecting...]` in terminal. On `visibilitychange` (wake from sleep), triggers immediate reconnect attempt.
+7. After all retries exhausted: shows `[Disconnected]`, calls `onDisconnect` → parent detaches session
 
 ### Two Backend Types
 
