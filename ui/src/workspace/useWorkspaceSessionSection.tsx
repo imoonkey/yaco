@@ -118,7 +118,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
 
   // --- Body ---
   const pinned = sessionsMgr.orderedSessions.filter(s => sessionsMgr.pinnedSet.has(s.name))
-  const unpinnedProcessing = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && s.status === 'processing')
+  const unpinnedProcessing = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && (s.status === 'processing' || s.status === 'starting'))
   const unpinnedIdle = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && s.status === 'idle')
 
   const renderSessionItem = (s: AgentSession, isPinned?: boolean) => (

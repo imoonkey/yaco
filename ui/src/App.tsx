@@ -191,7 +191,7 @@ function App() {
     for (const s of allSessions) {
       const c = counts[s.project] ??= { active: 0, total: 0 }
       c.total++
-      if (s.status === 'processing') c.active++
+      if (s.status === 'processing' || s.status === 'starting') c.active++
     }
     return counts
   }, [allSessions])

@@ -227,9 +227,16 @@ export async function startMultmuxSession(
   args.push('--json')
 
   // Snapshot existing state files before spawn (for unnamed sessions)
-  const beforeFiles = name ? null : new Set(
-    readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
-  )
+  let beforeFiles: Set<string> | null = null
+  if (!name) {
+    try {
+      beforeFiles = existsSync(MULTMUX_SESSIONS_DIR)
+        ? new Set(readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json')))
+        : new Set()
+    } catch {
+      beforeFiles = new Set()
+    }
+  }
 
   // Spawn multmux — it will handle waitForReady / /rename / sessionId in background
   const proc = spawn(MULTMUX_PATH, args, {
@@ -244,6 +251,12 @@ export async function startMultmuxSession(
   proc.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
   proc.on('close', (code) => { exitCode = code })
 
+  // For named sessions: after this many ms without finding the exact file,
+  // start scanning all state files for a collision-suffixed match.
+  const NAMED_FALLBACK_MS = 3_000
+  const spawnTime = Date.now()
+  const SPAWN_WINDOW_MS = 30_000
+
   const deadline = Date.now() + STATE_POLL_TIMEOUT_MS
   while (Date.now() < deadline) {
     if (exitCode !== null && exitCode !== 0) {
@@ -252,20 +265,47 @@ export async function startMultmuxSession(
 
     try {
       if (name) {
-        // Named session: poll known filename
-        const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, `${name}.json`), 'utf-8')
-        const state = JSON.parse(raw) as MultmuxStateFile
-        if (state.pid > 0) {
-          return { handle: state.handle ?? name, sessionId: state.sessionId ?? '' }
+        // Named session: poll known filename first
+        try {
+          const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, `${name}.json`), 'utf-8')
+          const state = JSON.parse(raw) as MultmuxStateFile
+          if (state.pid > 0) {
+            return { handle: state.handle ?? name, sessionId: state.sessionId ?? '' }
+          }
+        } catch { /* exact file not yet written — try fallback below */ }
+
+        // Fallback: scan for collision-suffixed handle (e.g., name-2, name-3)
+        // after a grace period, to handle multmux renaming on collision
+        if (Date.now() - spawnTime > NAMED_FALLBACK_MS && existsSync(MULTMUX_SESSIONS_DIR)) {
+          const allFiles = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
+          for (const f of allFiles) {
+            try {
+              const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, f), 'utf-8')
+              const state = JSON.parse(raw) as MultmuxStateFile
+              if (state.pid <= 0) continue
+              if (state.sessionPath !== cwd || state.provider !== provider) continue
+              // Match by resumeId if resuming, or by handle prefix if starting fresh
+              if (resumeId && state.sessionId === resumeId) {
+                return { handle: state.handle, sessionId: state.sessionId ?? '' }
+              }
+              if (!resumeId && state.handle.startsWith(name)) {
+                return { handle: state.handle, sessionId: state.sessionId ?? '' }
+              }
+            } catch { /* skip unreadable file */ }
+          }
         }
       } else {
         // Unnamed session: find new state file with matching cwd
-        const nowFiles = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
-        for (const f of nowFiles) {
-          if (beforeFiles!.has(f)) continue
-          const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, f), 'utf-8')
-          const state = JSON.parse(raw) as MultmuxStateFile
-          if (state.sessionPath === cwd && state.provider === provider && state.pid > 0) {
+        if (existsSync(MULTMUX_SESSIONS_DIR)) {
+          const nowFiles = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
+          for (const f of nowFiles) {
+            if (beforeFiles!.has(f)) continue
+            const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, f), 'utf-8')
+            const state = JSON.parse(raw) as MultmuxStateFile
+            if (state.sessionPath !== cwd || state.provider !== provider || state.pid <= 0) continue
+            // Require createdAt within spawn window to avoid matching stale sessions
+            const createdAt = Date.parse(state.createdAt)
+            if (isNaN(createdAt) || Math.abs(createdAt - spawnTime) > SPAWN_WINDOW_MS) continue
             return { handle: state.handle, sessionId: state.sessionId ?? '' }
           }
         }
