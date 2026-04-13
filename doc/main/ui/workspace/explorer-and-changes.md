@@ -62,7 +62,8 @@ Right-click on any tree node shows:
 | New Folder | Creates directory in the node's directory |
 | Rename | Enters inline rename mode on the node |
 | Delete | Deletes the file or folder recursively |
-| Copy Path | Copies project-relative path to clipboard |
+| Copy Relative Path | Copies project-relative path to clipboard |
+| Copy Absolute Path | Copies full filesystem path to clipboard (worktree-aware) |
 | Reveal in Finder | Opens the containing folder in OS file manager (macOS: Finder, Linux: xdg-open) |
 
 ## Header Actions

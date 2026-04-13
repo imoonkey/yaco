@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-12: File explorer copy path split + compact context menus
+
+**What changed:**
+- File explorer context menu: "Copy Path" split into "Copy Relative Path" (project-relative) and "Copy Absolute Path" (full filesystem path, worktree-aware). FileExplorer now receives `projectPath` prop.
+- Menu component: reduced padding (`py-1.5` → `py-1` on items and container, `my-1.5` → `my-1` on dividers) for more compact context menus globally.
+
+**Why:**
+- Users need both relative and absolute paths depending on context (e.g., relative for imports, absolute for terminal commands). Menu items were too spread out for a utility context menu.
+
+**Key files:** `ui/src/components/FileExplorer.tsx`, `ui/src/components/Menu.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** `tsc --noEmit` clean
+**Commit:** `59a0151`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-12: Terminal WebSocket reconnection + auto-detach debounce
 
 **What changed:**

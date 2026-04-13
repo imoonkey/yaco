@@ -114,5 +114,5 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 3. Tree refreshes, related open tabs remain (content becomes stale on next fetch)
 
 ### Copy Path
-1. Select file in Explorer, ensure Explorer has focus
-2. `Cmd+C` → selected file's project-relative path copied to clipboard
+1. Right-click file → "Copy Relative Path" → project-relative path copied to clipboard
+2. Right-click file → "Copy Absolute Path" → full filesystem path copied (worktree-aware)
