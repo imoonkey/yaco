@@ -184,7 +184,7 @@ Best-effort SSH environment repair for spawned child processes.
 - On macOS, if the socket is stale, discovers a live `ssh-agent` socket via `pgrep` + `lsof`
 - If the agent is reachable but empty, runs `ssh-add --apple-load-keychain` so new shell/tmux sessions can use SSH-backed Git remotes without a manual warm-up terminal
 
-### session-summary.ts (~120 lines)
+### session-summary.ts (~170 lines)
 
 Resolves conversation summaries for session list display.
 
@@ -193,7 +193,8 @@ Resolves conversation summaries for session list display.
 - Batch resolution: one call per `GET /api/sessions` poll, reads each data source at most once
 - Skips sentinel sessionId (`pending:awaiting-first-prompt`) — shows no summary until next reconcile populates it
 - Claude: groups by `sessionPath` and reads first user message from `~/.claude/projects/{encoded(sessionPath)}/<sessionId>.jsonl`
-- Codex: queries `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
+- Codex (primary): queries `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
+- Codex (fallback): if SQLite has no entry, scans `~/.codex/sessions/YYYY/MM/DD/rollout-*-<sessionId>.jsonl` for the last real user message (skips system context lines starting with `#` or `<`). Searches up to 7 days back.
 - Cached Codex DB handle (opened once per server lifecycle, reopened on error)
 
 ### session-names.ts (27 lines)

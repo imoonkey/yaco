@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-04-12: Codex summary rollout JSONL fallback
+
+**What changed:**
+- `session-summary.ts`: when Codex `state_5.sqlite` threads table has no entry for a session, fall back to scanning rollout JSONL files at `~/.codex/sessions/YYYY/MM/DD/rollout-*-<sessionId>.jsonl`. Extracts last real user message (skips `#`/`<`-prefixed system context). Searches up to 7 days back.
+
+**Why:**
+- Codex stopped writing to `state_5.sqlite` after Apr 10 (all sessions since then have rollout files but no threads row). Rollout fallback ensures summaries display for all live sessions.
+
+**Key files:** `server/src/lib/session-summary.ts`
+**Verification:** 164 tests pass, smoke-tested both SQLite and rollout paths
+**Commit:** `03703fe`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-12: Session lifecycle fixes — Codex review R1+R2 + terminal + naming
 
 **What changed:**
