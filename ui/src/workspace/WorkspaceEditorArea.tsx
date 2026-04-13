@@ -76,6 +76,8 @@ export function MarkdownPreview({
   const containerRef = useRef<HTMLDivElement>(null)
   const applyingViewportRef = useRef(false)
   const syncActiveRef = useRef(false)
+  const anchorScrollRef = useRef(false)
+  const cancelLerpRef = useRef<(() => void) | null>(null)
   const lastReportedLineRef = useRef(-1)
   const appliedHtmlRef = useRef('')
   const anchorsRef = useRef<CachedAnchor[]>([])
@@ -172,8 +174,10 @@ export function MarkdownPreview({
       if (raf) { cancelAnimationFrame(raf); raf = 0 }
       syncActiveRef.current = false
     }
+    cancelLerpRef.current = cancelLerp
 
     onRegisterSyncRef.current?.((line: number) => {
+      if (anchorScrollRef.current) return
       const t = scrollTopForLine(anchorsRef.current, line)
       if (t === null) return
       lerpTarget = t
@@ -216,6 +220,7 @@ export function MarkdownPreview({
     }
     const onScroll = () => {
       if (syncActiveRef.current) return
+      if (anchorScrollRef.current) return
       if (applyingViewportRef.current) {
         applyingViewportRef.current = false
         return
@@ -247,8 +252,22 @@ export function MarkdownPreview({
           event.preventDefault()
           if (href.startsWith('#')) {
             const id = href.slice(1)
-            const target = containerRef.current?.querySelector(`[id="${CSS.escape(id)}"]`)
-            target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            const el = containerRef.current
+            const target = el?.querySelector(`[id="${CSS.escape(id)}"]`)
+            if (target && el) {
+              cancelLerpRef.current?.()
+              anchorScrollRef.current = true
+              target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              const done = () => {
+                anchorScrollRef.current = false
+                const line = lineFromAnchors(anchorsRef.current, el.scrollTop)
+                lastReportedLineRef.current = line
+                onViewportLineRef.current?.(line)
+              }
+              el.addEventListener('scrollend', done, { once: true })
+              // Fallback if scrollend doesn't fire (e.g. already at target)
+              setTimeout(() => { if (anchorScrollRef.current) done() }, 800)
+            }
             return
           }
           if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
