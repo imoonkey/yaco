@@ -310,11 +310,12 @@ export async function startMultmuxSession(
             try {
               const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, f), 'utf-8')
               const state = JSON.parse(raw) as MultmuxStateFile
-            if (state.sessionPath !== cwd || state.provider !== provider || state.pid <= 0) continue
-            // Require createdAt within spawn window to avoid matching stale sessions
-            const createdAt = Date.parse(state.createdAt)
-            if (isNaN(createdAt) || Math.abs(createdAt - spawnTime) > SPAWN_WINDOW_MS) continue
-            return { handle: state.handle, sessionId: state.sessionId ?? '' }
+              if (state.sessionPath !== cwd || state.provider !== provider || state.pid <= 0) continue
+              // Require createdAt within spawn window to avoid matching stale sessions
+              const createdAt = Date.parse(state.createdAt)
+              if (isNaN(createdAt) || Math.abs(createdAt - spawnTime) > SPAWN_WINDOW_MS) continue
+              return { handle: state.handle, sessionId: state.sessionId ?? '' }
+            } catch { /* skip unreadable file */ }
           }
         }
       }
