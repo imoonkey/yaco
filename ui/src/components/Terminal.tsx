@@ -406,9 +406,15 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
 
     let disposed = false
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-    let reconnecting = false
+    let stableTimer: ReturnType<typeof setTimeout> | null = null
+    let failCount = 0
 
-    function connectWs() {
+    // Minimum time a connection must stay open before we consider it "stable"
+    // and reset failCount.  If the session is dead, tmux outputs an error and
+    // exits within milliseconds — the connection never reaches this threshold.
+    const STABLE_MS = 5000
+
+    function createWs() {
       const url = buildWsUrl(sessionName, term!.cols, term!.rows, projectName)
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
@@ -417,9 +423,8 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       ws.onopen = () => {
         if (disposed) { ws.close(); return }
         ws.send(JSON.stringify({ type: 'resize', cols: term!.cols, rows: term!.rows }))
-        if (reconnecting) {
-          reconnecting = false
-        }
+        // Reset fail counter once connection is stable
+        stableTimer = setTimeout(() => { failCount = 0 }, STABLE_MS)
       }
 
       ws.onmessage = (event) => {
@@ -428,82 +433,32 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       }
 
       ws.onerror = () => {
-        if (!disposed && !reconnecting) term!.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
+        // onclose handles everything
       }
 
       ws.onclose = () => {
+        if (stableTimer) { clearTimeout(stableTimer); stableTimer = null }
         if (disposed) return
-        startReconnect()
+        scheduleReconnect()
       }
-
-      return ws
     }
 
-    function startReconnect() {
-      if (disposed || reconnecting) return
-      reconnecting = true
-      term!.writeln('\r\n\x1b[33m[Reconnecting...]\x1b[0m')
-      attemptReconnect(0, WS_RECONNECT_INITIAL_MS)
-    }
-
-    function attemptReconnect(attempt: number, delay: number) {
-      if (disposed) return
-      if (attempt >= WS_RECONNECT_MAX_RETRIES) {
+    function scheduleReconnect() {
+      failCount++
+      if (failCount > WS_RECONNECT_MAX_RETRIES) {
         term!.writeln('\r\n\x1b[31m[Disconnected]\x1b[0m')
-        reconnecting = false
         onDisconnectRef.current?.()
         return
       }
-
+      if (failCount === 1) {
+        term!.writeln('\r\n\x1b[33m[Reconnecting...]\x1b[0m')
+      }
+      const delay = Math.min(WS_RECONNECT_INITIAL_MS * Math.pow(2, failCount - 1), WS_RECONNECT_MAX_MS)
       const jitter = delay * (0.5 + Math.random())
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null
         if (disposed) return
-
-        const url = buildWsUrl(sessionName, term!.cols, term!.rows, projectName)
-        const ws = new WebSocket(url)
-        ws.binaryType = 'arraybuffer'
-
-        const connectTimeout = setTimeout(() => {
-          ws.onopen = null
-          ws.onclose = null
-          ws.onerror = null
-          ws.close()
-          attemptReconnect(attempt + 1, Math.min(delay * 2, WS_RECONNECT_MAX_MS))
-        }, 5000)
-
-        ws.onopen = () => {
-          clearTimeout(connectTimeout)
-          if (disposed) { ws.close(); return }
-          wsRef.current = ws
-
-          ws.onmessage = (event) => {
-            if (disposed) return
-            term!.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data))
-          }
-
-          ws.onerror = () => {
-            if (!disposed && !reconnecting) term!.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
-          }
-
-          ws.onclose = () => {
-            if (disposed) return
-            startReconnect()
-          }
-
-          ws.send(JSON.stringify({ type: 'resize', cols: term!.cols, rows: term!.rows }))
-          reconnecting = false
-        }
-
-        ws.onerror = () => {
-          // onclose will fire after onerror
-        }
-
-        ws.onclose = () => {
-          clearTimeout(connectTimeout)
-          if (disposed) return
-          attemptReconnect(attempt + 1, Math.min(delay * 2, WS_RECONNECT_MAX_MS))
-        }
+        createWs()
       }, jitter)
     }
 
@@ -511,36 +466,22 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     const handleVisibility = () => {
       if (document.hidden || disposed) return
       const ws = wsRef.current
-      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
-        // Cancel any pending backoff and reconnect immediately
-        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-        if (reconnecting) {
-          reconnecting = false
-          startReconnect()
-        } else if (!ws || ws.readyState === WebSocket.CLOSED) {
-          startReconnect()
-        }
-      }
+      if (ws && ws.readyState <= WebSocket.OPEN) return // still connected
+      // Cancel pending backoff and reconnect immediately
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+      scheduleReconnect()
     }
     document.addEventListener('visibilitychange', handleVisibility)
 
-    const ws = connectWs()
+    createWs()
 
     return () => {
       disposed = true
       document.removeEventListener('visibilitychange', handleVisibility)
       if (reconnectTimer) clearTimeout(reconnectTimer)
-      const currentWs = wsRef.current
-      if (currentWs) {
-        currentWs.onopen = null
-        currentWs.onmessage = null
-        currentWs.onerror = null
-        currentWs.onclose = null
-        currentWs.close()
-      }
-      // Also close the initial ws if it differs from the current ref
-      // (e.g., reconnect replaced it before cleanup ran)
-      if (ws !== wsRef.current) {
+      if (stableTimer) clearTimeout(stableTimer)
+      const ws = wsRef.current
+      if (ws) {
         ws.onopen = null
         ws.onmessage = null
         ws.onerror = null
