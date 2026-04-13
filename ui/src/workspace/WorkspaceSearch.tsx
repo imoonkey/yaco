@@ -79,7 +79,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
     >
       <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
         <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-          placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none" style={{ color: 'var(--sol-text-dark)' }} />
+          placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none focus-visible:outline-none" style={{ color: 'var(--sol-text-dark)' }} />
         <button
           onClick={toggleIgnored}
           title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
