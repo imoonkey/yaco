@@ -436,9 +436,14 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
         // onclose handles everything
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (stableTimer) { clearTimeout(stableTimer); stableTimer = null }
         if (disposed) return
+        // 4001 = PTY exited (session ended) — detach immediately, no reconnect
+        if (event.code === 4001) {
+          onDisconnectRef.current?.()
+          return
+        }
         scheduleReconnect()
       }
     }

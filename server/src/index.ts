@@ -255,7 +255,7 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
     })
 
     const exitSubscription = proc.onExit(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.close()
+      if (ws.readyState === WebSocket.OPEN) ws.close(4001, 'session_ended')
     })
 
     ptyMap.set(ws, { sessionName, attached })
