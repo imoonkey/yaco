@@ -66,6 +66,9 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
         if (missCountRef.current >= 2) {
           actions.setActiveSession('')
           missCountRef.current = 0
+        } else {
+          // Keep active session in known set so next poll can detect a second miss
+          current.add(activeSession)
         }
       } else {
         missCountRef.current = 0
