@@ -6,7 +6,7 @@ set -euo pipefail
 PASS=0
 FAIL=0
 ERRORS=()
-SCRIPTS_SRC="$(readlink -f ~/.claude/skills/orchestrate/scripts 2>/dev/null || echo "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")"
+SCRIPTS_SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SANDBOX="$(mktemp -d /tmp/test-worktree-$$-XXXX)"
 SANDBOX="$(cd "$SANDBOX" && pwd -P)"
 
