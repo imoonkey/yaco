@@ -53,13 +53,23 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     return [...pinned, ...processing, ...idle]
   }, [projectSessions, pinnedSessions, pinnedSet, getSessionUnread])
 
-  // Auto-detach when a previously-known session disappears
+  // Auto-detach when a previously-known session disappears from 2 consecutive polls.
+  // A single transient miss (race between state-file write and API read) is tolerated.
   const knownSessionsRef = useRef(new Set<string>())
+  const missCountRef = useRef(0)
   useEffect(() => {
     if (!sessions) return
     const current = new Set(projectSessions.map(s => s.name))
-    if (activeSession && knownSessionsRef.current.has(activeSession) && !current.has(activeSession)) {
-      actions.setActiveSession('')
+    if (activeSession && knownSessionsRef.current.has(activeSession)) {
+      if (!current.has(activeSession)) {
+        missCountRef.current += 1
+        if (missCountRef.current >= 2) {
+          actions.setActiveSession('')
+          missCountRef.current = 0
+        }
+      } else {
+        missCountRef.current = 0
+      }
     }
     knownSessionsRef.current = current
   }, [activeSession, projectSessions, sessions, actions])

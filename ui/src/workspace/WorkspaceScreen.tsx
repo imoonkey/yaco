@@ -396,6 +396,7 @@ export function Workspace({
     <FileExplorer
       ref={explorerRef}
       projectName={projectName}
+      projectPath={projectPath}
       worktree={worktree}
       tree={fileTree}
       gitMap={gitMap}
@@ -584,7 +585,6 @@ export function Workspace({
           }}
           onDisconnect={() => {
             sessionsMgr.detachActiveSession()
-            sessionsMgr.refreshSessions()
           }}
           sendText={terminalSend?.text}
           sendTextKey={terminalSend?.key}

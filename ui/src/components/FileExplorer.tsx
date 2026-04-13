@@ -102,6 +102,7 @@ export interface FileExplorerHandle {
 
 interface FileExplorerProps {
   projectName: string
+  projectPath: string
   worktree?: string | null
   tree: FileNode[] | null
   gitMap: Map<string, string>
@@ -120,7 +121,7 @@ interface FileExplorerProps {
 }
 
 const FileExplorerInner = forwardRef<FileExplorerHandle, FileExplorerProps>(
-function FileExplorer({ projectName, worktree, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder, onNodeFocused, onFileRenamed, onFileDeleted, patchTree, refreshTree }, ref) {
+function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFolders, selectedFile, onSelectFile, onPreviewFile, onExpandDir, onFocusExplorer, onContextFolder, onNodeFocused, onFileRenamed, onFileDeleted, patchTree, refreshTree }, ref) {
   const containerRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const rafIdRef = useRef<number | null>(null)
@@ -238,10 +239,16 @@ function FileExplorer({ projectName, worktree, tree, gitMap, gitFolders, selecte
     }
   }, [confirmDelete, projectName, worktree, patchTree, refreshTree, onFileDeleted])
 
-  const handleCopyPath = useCallback((path: string) => {
+  const handleCopyRelativePath = useCallback((path: string) => {
     menu.close()
     void writeTextToClipboard(path)
   }, [menu])
+
+  const handleCopyAbsolutePath = useCallback((path: string) => {
+    menu.close()
+    const root = worktree ? `${projectPath}/.worktrees/${worktree}` : projectPath
+    void writeTextToClipboard(`${root}/${path}`)
+  }, [menu, projectPath, worktree])
 
   const handleReveal = useCallback((path: string) => {
     menu.close()
@@ -422,7 +429,8 @@ function FileExplorer({ projectName, worktree, tree, gitMap, gitFolders, selecte
           <MenuItem label="Rename" onClick={() => handleRename(menuTarget.path)} />
           <MenuItem label="Delete" onClick={() => handleDelete(menuTarget.path)} />
           <MenuDivider />
-          <MenuItem label="Copy Path" onClick={() => handleCopyPath(menuTarget.path)} />
+          <MenuItem label="Copy Relative Path" onClick={() => handleCopyRelativePath(menuTarget.path)} />
+          <MenuItem label="Copy Absolute Path" onClick={() => handleCopyAbsolutePath(menuTarget.path)} />
           <MenuItem label="Reveal in Finder" onClick={() => handleReveal(menuTarget.path)} />
         </Menu>
       )}

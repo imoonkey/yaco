@@ -172,7 +172,7 @@ export function Menu({ position, exiting, onExitDone, children }: {
     <div
       ref={menuRef}
       role="menu"
-      className="fixed z-50 min-w-[160px] py-1.5 rounded-lg"
+      className="fixed z-50 min-w-[160px] py-1 rounded-lg"
       style={{
         left: position.x,
         top: position.y,
@@ -203,7 +203,7 @@ export function MenuItem({ label, danger, onClick }: {
     <div
       role="menuitem"
       tabIndex={-1}
-      className="px-3 py-1.5 text-[12px] cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg"
+      className="px-3 py-1 text-[12px] cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg"
       style={{
         color: danger ? 'var(--sol-red)' : 'var(--sol-text)',
         borderRadius: 4,
@@ -219,5 +219,5 @@ export function MenuItem({ label, danger, onClick }: {
 }
 
 export function MenuDivider() {
-  return <div className="my-1.5" style={{ borderTop: '1px solid var(--sol-border)' }} />
+  return <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
 }

@@ -47,6 +47,10 @@ const ARROW_KEY_SUFFIX: Partial<Record<TerminalKeyBarKey, 'A' | 'B' | 'C' | 'D'>
   'arrow-right': 'C',
 }
 
+const WS_RECONNECT_MAX_RETRIES = 5
+const WS_RECONNECT_INITIAL_MS = 1000
+const WS_RECONNECT_MAX_MS = 15000
+
 type TerminalWithCore = XTerm & {
   _core?: {
     _renderService?: {
@@ -113,6 +117,12 @@ function applyModifiers(data: string, mods: Modifiers): string {
     if (data === '\t') return '\x1b[Z' // Shift+Tab
   }
   return data
+}
+
+function buildWsUrl(sessionName: string, cols: number, rows: number, projectName?: string): string {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const host = window.location.host
+  return `${proto}//${host}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${cols}&rows=${rows}${projectName ? `&project=${encodeURIComponent(projectName)}` : ''}`
 }
 
 export function Terminal({ sessionName, projectName, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey }: TerminalProps) {
@@ -190,7 +200,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     return () => observer.disconnect()
   }, [])
 
-  // Main terminal initialization — only runs when container is ready.
+  // --- Effect 1: xterm lifecycle (lives for the component's mount lifetime) ---
   useEffect(() => {
     if (!containerReady || !containerRef.current) return
 
@@ -222,18 +232,12 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     fitTerminal(term)
     term.focus()
 
-    // Schedule a refit after the browser paints (container dimensions
-    // may refine slightly after the initial layout pass).
     const fitAnimationFrame = requestAnimationFrame(() => {
       fitTerminal(term)
       term.refresh(0, term.rows - 1)
     })
 
-    // Touch scroll bridge: xterm v6 registers document-level touch handlers
-    // (from VS Code's scrollable element) that call preventDefault(), stealing
-    // all touch events. We intercept touch, convert to WheelEvent, and dispatch
-    // on xterm's screen element. This goes through xterm's normal wheel pipeline:
-    // scrollback buffer for shell sessions, mouse escape sequences for tmux.
+    // Touch scroll bridge
     let touchY: number | null = null
     const screenEl = term.element?.querySelector('.xterm-screen') ?? term.element
 
@@ -312,58 +316,21 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       return false
     })
 
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsHost = window.location.host
-    const ws = new WebSocket(`${wsProtocol}//${wsHost}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${term.cols}&rows=${term.rows}${projectName ? `&project=${encodeURIComponent(projectName)}` : ''}`)
-    ws.binaryType = 'arraybuffer'
-    wsRef.current = ws
-    let disposed = false
-
-    const sendResize = () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
-      }
-    }
-
-    ws.onopen = () => sendResize()
-
-    // Raw PTY output — write directly to xterm
-    ws.onmessage = (event) => {
-      if (disposed) return
-      term.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data))
-    }
-
-    ws.onerror = () => {
-      if (!disposed) term.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
-    }
-    ws.onclose = () => {
-      if (!disposed) {
-        term.writeln('\r\n\x1b[33m[Disconnected]\x1b[0m')
-        onDisconnectRef.current?.()
-      }
-    }
-
-    // Raw input — send directly, applying any active modifiers
+    // Raw input — send to current WebSocket via ref
     let imeInputHandled = false
     term.onData((data) => {
       imeInputHandled = true
       const mods = modifiersRef.current
       const out = (mods.ctrl || mods.shift) ? applyModifiers(data, mods) : data
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'input', data: out }))
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'input', data: out }))
       }
       if (mods.ctrl || mods.shift) {
         setModifiers({ ctrl: false, shift: false })
       }
     })
 
-    // IME fix: xterm v6 silently drops characters from Chinese/CJK IME
-    // input. Its CompositionHelper may fail to extract the committed text
-    // from the hidden textarea, losing the character entirely. We catch
-    // dropped input by checking if onData fired for each input event.
-    // Track whether the preceding keydown had a real keyCode (not IME 229).
-    // When keyCode !== 229, xterm handles the char via its keydown path and
-    // fires onData BEFORE the input event — our fallback must not re-send.
+    // IME fix: xterm v6 silently drops characters from Chinese/CJK IME input.
     let keyDownHandledByXterm = false
     const handleKeyDown = (e: KeyboardEvent) => {
       keyDownHandledByXterm = e.keyCode !== 229
@@ -373,41 +340,39 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       if (ie.inputType !== 'insertText' || !ie.data) return
       if (keyDownHandledByXterm) {
         keyDownHandledByXterm = false
-        return // xterm already sent this char via the keydown path
+        return
       }
       imeInputHandled = false
-      // Use setTimeout(0) so this runs AFTER xterm's CompositionHelper
-      // timeout (registered on compositionend, which fires before input).
-      // If xterm handled it, onData already set imeInputHandled = true.
       setTimeout(() => {
-        if (!imeInputHandled && ie.data && ws.readyState === WebSocket.OPEN) {
+        if (!imeInputHandled && ie.data && wsRef.current?.readyState === WebSocket.OPEN) {
           const mods = modifiersRef.current
           const out = (mods.ctrl || mods.shift) ? applyModifiers(ie.data, mods) : ie.data
-          ws.send(JSON.stringify({ type: 'input', data: out }))
+          wsRef.current!.send(JSON.stringify({ type: 'input', data: out }))
           if (mods.ctrl || mods.shift) {
             setModifiers({ ctrl: false, shift: false })
           }
         }
       }, 0)
     }
-    // Attach to container (parent) with capture so this runs BEFORE xterm's
-    // own handler on the textarea. On the target element itself, listeners
-    // fire in registration order regardless of capture — xterm registers first,
-    // so attaching there would run our reset AFTER onData already set the flag.
     container.addEventListener('keydown', handleKeyDown, { capture: true })
     container.addEventListener('input', handleUnprocessedInput, { capture: true })
 
-    term.onResize(() => sendResize())
+    // Resize: send dimensions to current WebSocket via ref
+    term.onResize(() => {
+      const ws = wsRef.current
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+      }
+    })
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null
     const observer = new ResizeObserver(() => {
-      // Debounce to avoid thrashing during CSS transitions (e.g. compose tray slide)
       if (resizeTimer) clearTimeout(resizeTimer)
       resizeTimer = setTimeout(() => fitTerminal(term), 150)
     })
     observer.observe(container)
 
-    // Live theme switching — xterm needs resolved hex values, not CSS vars
+    // Live theme switching
     const themeObserver = new MutationObserver(() => {
       term.options.theme = buildXtermTheme()
     })
@@ -417,7 +382,6 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     })
 
     return () => {
-      disposed = true
       themeObserver.disconnect()
       if (resizeTimer) clearTimeout(resizeTimer)
       cancelAnimationFrame(fitAnimationFrame)
@@ -430,16 +394,162 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       container.removeEventListener('keydown', handleKeyDown, { capture: true })
       container.removeEventListener('input', handleUnprocessedInput, { capture: true })
       observer.disconnect()
-      ws.onopen = null
-      ws.onmessage = null
-      ws.onerror = null
-      ws.onclose = null
-      ws.close()
       term.dispose()
       termRef.current = null
+    }
+  }, [containerReady])
+
+  // --- Effect 2: WebSocket lifecycle with reconnection ---
+  useEffect(() => {
+    const term = termRef.current
+    if (!containerReady || !term) return
+
+    let disposed = false
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+    let reconnecting = false
+
+    function connectWs() {
+      const url = buildWsUrl(sessionName, term!.cols, term!.rows, projectName)
+      const ws = new WebSocket(url)
+      ws.binaryType = 'arraybuffer'
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        if (disposed) { ws.close(); return }
+        ws.send(JSON.stringify({ type: 'resize', cols: term!.cols, rows: term!.rows }))
+        if (reconnecting) {
+          reconnecting = false
+        }
+      }
+
+      ws.onmessage = (event) => {
+        if (disposed) return
+        term!.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data))
+      }
+
+      ws.onerror = () => {
+        if (!disposed && !reconnecting) term!.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
+      }
+
+      ws.onclose = () => {
+        if (disposed) return
+        startReconnect()
+      }
+
+      return ws
+    }
+
+    function startReconnect() {
+      if (disposed || reconnecting) return
+      reconnecting = true
+      term!.writeln('\r\n\x1b[33m[Reconnecting...]\x1b[0m')
+      attemptReconnect(0, WS_RECONNECT_INITIAL_MS)
+    }
+
+    function attemptReconnect(attempt: number, delay: number) {
+      if (disposed) return
+      if (attempt >= WS_RECONNECT_MAX_RETRIES) {
+        term!.writeln('\r\n\x1b[31m[Disconnected]\x1b[0m')
+        reconnecting = false
+        onDisconnectRef.current?.()
+        return
+      }
+
+      const jitter = delay * (0.5 + Math.random())
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null
+        if (disposed) return
+
+        const url = buildWsUrl(sessionName, term!.cols, term!.rows, projectName)
+        const ws = new WebSocket(url)
+        ws.binaryType = 'arraybuffer'
+
+        const connectTimeout = setTimeout(() => {
+          ws.onopen = null
+          ws.onclose = null
+          ws.onerror = null
+          ws.close()
+          attemptReconnect(attempt + 1, Math.min(delay * 2, WS_RECONNECT_MAX_MS))
+        }, 5000)
+
+        ws.onopen = () => {
+          clearTimeout(connectTimeout)
+          if (disposed) { ws.close(); return }
+          wsRef.current = ws
+
+          ws.onmessage = (event) => {
+            if (disposed) return
+            term!.write(typeof event.data === 'string' ? event.data : new Uint8Array(event.data))
+          }
+
+          ws.onerror = () => {
+            if (!disposed && !reconnecting) term!.writeln('\r\n\x1b[31m[Connection error]\x1b[0m')
+          }
+
+          ws.onclose = () => {
+            if (disposed) return
+            startReconnect()
+          }
+
+          ws.send(JSON.stringify({ type: 'resize', cols: term!.cols, rows: term!.rows }))
+          reconnecting = false
+        }
+
+        ws.onerror = () => {
+          // onclose will fire after onerror
+        }
+
+        ws.onclose = () => {
+          clearTimeout(connectTimeout)
+          if (disposed) return
+          attemptReconnect(attempt + 1, Math.min(delay * 2, WS_RECONNECT_MAX_MS))
+        }
+      }, jitter)
+    }
+
+    // Force reconnect on wake from sleep — tab becomes visible, WS may be dead
+    const handleVisibility = () => {
+      if (document.hidden || disposed) return
+      const ws = wsRef.current
+      if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+        // Cancel any pending backoff and reconnect immediately
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+        if (reconnecting) {
+          reconnecting = false
+          startReconnect()
+        } else if (!ws || ws.readyState === WebSocket.CLOSED) {
+          startReconnect()
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    const ws = connectWs()
+
+    return () => {
+      disposed = true
+      document.removeEventListener('visibilitychange', handleVisibility)
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      const currentWs = wsRef.current
+      if (currentWs) {
+        currentWs.onopen = null
+        currentWs.onmessage = null
+        currentWs.onerror = null
+        currentWs.onclose = null
+        currentWs.close()
+      }
+      // Also close the initial ws if it differs from the current ref
+      // (e.g., reconnect replaced it before cleanup ran)
+      if (ws !== wsRef.current) {
+        ws.onopen = null
+        ws.onmessage = null
+        ws.onerror = null
+        ws.onclose = null
+        ws.close()
+      }
       wsRef.current = null
     }
-  }, [sessionName, containerReady])
+  }, [sessionName, containerReady, projectName])
 
   return (
     <div className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
