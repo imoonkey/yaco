@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-12: Session lifecycle fixes — Codex review R1+R2 + terminal + naming
+
+**What changed:**
+- Terminal disconnect: `onDisconnect` callback fires from `ws.onclose`, parent detaches immediately instead of hanging on "[Disconnected]"
+- Default naming: workflow no longer generates `provider-timestamp` names. Omits `--name`, lets multmux generate word-based handles. Unnamed session poll scans for new state files by cwd+provider+spawnTime window.
+- fs.watch null filename: macOS can deliver `null` on state file deletion — now emits blanket `sessions` refresh instead of silently dropping
+- R1: ENOENT guard for `~/.multmux/sessions/` on clean machines, collision suffix fallback scan by resumeId/prefix after 3s, `starting` in session pane + activity badges, spawnTime correlation window
+- R2: named start only trusts NEW files (beforeFiles snapshot), verifies resumeId for resumes, unnamed correlation wrapped in per-file try-catch
+
+**Why:**
+- Codex code review (2 rounds) found: ENOENT on clean machine, resume collision suffix timeout, `starting` filtered in pane renderer, unnamed session race. All closed.
+
+**Key files:** `server/src/lib/multmux.ts`, `server/src/lib/project-watcher.ts`, `ui/src/components/Terminal.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/App.tsx`, `ui/src/hooks/useApi.ts`
+**Verification:** 164 server tests pass
+**Commit:** `cd4c53b..8de5d7d`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-12: Fix markdown anchor links in split mode
 
 **What changed:**
