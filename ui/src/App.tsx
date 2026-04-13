@@ -390,6 +390,7 @@ function App() {
             background: 'var(--sol-editor-bg)',
             color: 'var(--sol-text)',
             border: '1px solid var(--sol-border)',
+            borderRadius: 8,
             fontSize: '12px',
             cursor: 'pointer',
           },

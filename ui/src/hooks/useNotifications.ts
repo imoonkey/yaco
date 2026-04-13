@@ -100,13 +100,8 @@ export function useNotifications(
           toast.custom((id) =>
             createElement('div', {
               style: {
-                background: 'var(--sol-editor-bg)',
-                color: 'var(--sol-text)',
-                border: '1px solid var(--sol-border)',
-                fontSize: '12px',
-                cursor: hasTarget ? 'pointer' : undefined,
-                borderRadius: 8,
                 padding: '12px 16px',
+                cursor: hasTarget ? 'pointer' : undefined,
               },
               onClick: handleClick?.(id),
             },
