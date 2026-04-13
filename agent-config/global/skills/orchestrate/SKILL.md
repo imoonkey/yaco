@@ -24,11 +24,12 @@ Each task executes in a **resolved cwd** based on the optional `worktree` field:
 To resolve a worktree cwd:
 
 ```bash
-# Create or reuse worktree — idempotent, prints path on last line of stdout
-worktree_path="$(~/workspace/workflow/scripts/worktree-create.sh <slug>)"
+# Scripts live in this skill's scripts/ directory
+SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/orchestrate/SKILL.md)")"
+worktree_path="$("$SKILL_DIR/scripts/worktree-create.sh" <slug>)"
 ```
 
-The script creates `<repo>/.worktrees/<slug>/` on branch `task/<slug>`, runs `scripts/worktree-provision.sh` if present, and reuses existing worktrees.
+The scripts live in `~/.claude/skills/orchestrate/scripts/`. `worktree-create.sh` creates `<repo>/.worktrees/<slug>/` on branch `task/<slug>`, runs the repo's own `scripts/worktree-provision.sh` if present, and reuses existing worktrees.
 
 **Cross-repo worktrees:** If task `scope` includes paths in multiple repos, create a worktree in each repo using the same slug. Each repo manages its own `.worktrees/` directory independently.
 
@@ -91,10 +92,10 @@ After marking a worktree task as `done`, check whether the worktree can be merge
 
    ```bash
    # PR mode (default) — push branch + create PR
-   ~/workspace/workflow/scripts/worktree-merge.sh <slug> --mode pr
+   "$SKILL_DIR/scripts/worktree-merge.sh" <slug> --mode pr
 
    # Local merge mode — rebase + fast-forward merge
-   ~/workspace/workflow/scripts/worktree-merge.sh <slug> --mode local
+   "$SKILL_DIR/scripts/worktree-merge.sh" <slug> --mode local
    ```
 
    Default to `pr` mode. Use `local` only when instructed by user or task metadata.
@@ -102,7 +103,7 @@ After marking a worktree task as `done`, check whether the worktree can be merge
 4. **Cleanup**: after successful merge/PR creation
 
    ```bash
-   ~/workspace/workflow/scripts/worktree-cleanup.sh <slug>
+   "$SKILL_DIR/scripts/worktree-cleanup.sh" <slug>
    ```
 
 5. **Cross-repo**: if the worktree spanned multiple repos, merge and cleanup each repo independently using the same slug.
