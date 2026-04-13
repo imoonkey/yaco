@@ -1,9 +1,11 @@
-import { existsSync, readFileSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import Database from 'better-sqlite3'
 import type { MultmuxSession } from './multmux'
 import { PENDING_SESSION_ID } from './constants'
+
+const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
 
 export interface SummaryResult {
   summary: string
@@ -81,23 +83,67 @@ export function getCodexDb(): InstanceType<typeof Database> | null {
 }
 
 function resolveCodexSummary(sessionId: string): SummaryResult | null {
+  // Primary: SQLite threads table
   const db = getCodexDb()
-  if (!db) return null
-
-  try {
-    const row = db.prepare('SELECT title, first_user_message FROM threads WHERE id = ?').get(sessionId) as
-      { title: string | null; first_user_message: string | null } | undefined
-    if (!row) return null
-    const summary = row.title || row.first_user_message || ''
-    if (!summary) return null
-    return { summary }
-  } catch (e) {
-    // DB may be stale or locked — drop cached handle and retry next time
-    console.warn('[session-summary] Codex DB query failed:', e)
-    try { codexDb?.close() } catch (closeErr) { console.warn('[session-summary] failed to close Codex DB after error:', closeErr) }
-    codexDb = null
-    return null
+  if (db) {
+    try {
+      const row = db.prepare('SELECT title, first_user_message FROM threads WHERE id = ?').get(sessionId) as
+        { title: string | null; first_user_message: string | null } | undefined
+      if (row) {
+        const summary = row.title || row.first_user_message || ''
+        if (summary) return { summary }
+      }
+    } catch (e) {
+      console.warn('[session-summary] Codex DB query failed:', e)
+      try { codexDb?.close() } catch (closeErr) { console.warn('[session-summary] failed to close Codex DB after error:', closeErr) }
+      codexDb = null
+    }
   }
+
+  // Fallback: read first user message from rollout JSONL file
+  return resolveCodexRolloutSummary(sessionId)
+}
+
+/** Find the rollout JSONL file for a Codex session and extract the first real user message. */
+function resolveCodexRolloutSummary(sessionId: string): SummaryResult | null {
+  if (!existsSync(CODEX_SESSIONS_DIR)) return null
+
+  // Rollout files: ~/.codex/sessions/YYYY/MM/DD/rollout-...-<sessionId>.jsonl
+  // Scan recent date directories (today and yesterday) to find the file
+  const now = new Date()
+  for (let daysBack = 0; daysBack <= 7; daysBack++) {
+    const d = new Date(now.getTime() - daysBack * 86400000)
+    const dayDir = join(CODEX_SESSIONS_DIR, String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'))
+    if (!existsSync(dayDir)) continue
+
+    try {
+      const files = readdirSync(dayDir)
+      const match = files.find(f => f.includes(sessionId) && f.endsWith('.jsonl'))
+      if (!match) continue
+
+      const content = readFileSync(join(dayDir, match), 'utf-8')
+      // Find the last response_item with role=user — skip system/AGENTS.md context
+      // The actual user prompt is typically the last user message before assistant responses
+      let lastUserText = ''
+      for (const line of content.split('\n')) {
+        if (!line) continue
+        try {
+          const entry = JSON.parse(line)
+          if (entry.type !== 'response_item' || entry.payload?.role !== 'user') continue
+          for (const block of entry.payload.content ?? []) {
+            if (block.type === 'input_text' && block.text && !block.text.startsWith('#') && !block.text.startsWith('<')) {
+              lastUserText = block.text
+            }
+          }
+        } catch { continue }
+      }
+      if (lastUserText) {
+        return { summary: lastUserText.replace(/\s+/g, ' ').trim() }
+      }
+    } catch { continue }
+  }
+
+  return null
 }
 
 /** Resolve summaries for all sessions in a single batch.
