@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-12: Fix markdown anchor links in split mode
+
+**What changed:**
+- Anchor links (`#heading`) in markdown preview now work in split mode. Previously, clicking them did nothing because the Editor↔Preview LERP scroll sync cancelled the `scrollIntoView` animation.
+- Added `anchorScrollRef` flag to suppress scroll event reporting during anchor navigation
+- Added `cancelLerpRef` to cancel any active LERP before starting anchor scroll
+- LERP sync callback also checks the flag to prevent editor-triggered LERP during anchor nav
+- Uses `scrollend` event (with 800ms timeout fallback) to re-sync state after scroll completes
+
+**Why:**
+- In split mode, `scrollIntoView` fired a scroll event → synced Editor → Editor synced back via LERP → LERP overrode `scrollTop` each frame → cancelled the native smooth scroll, pulling position back to start
+
+**Key files:** `ui/src/workspace/WorkspaceEditorArea.tsx`
+**Verification:** `tsc --noEmit` clean, `vite build` clean
+**Commit:** `ae2ce6c`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-12: Align workflow with multmux v2 contracts
 
 **What changed:**

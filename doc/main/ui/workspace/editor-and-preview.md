@@ -141,6 +141,7 @@ This is more stable than scroll-percentage sync because editor and preview have 
 - `applyingViewportRef` — suppresses `onScroll` report after programmatic scroll from initial positioning
 - `lastReportedLineRef` — suppresses programmatic scroll when `viewportLine` prop echoes back our own report
 - `syncActiveRef` — suppresses scroll reporting while LERP is running on the passive side
+- `anchorScrollRef` — suppresses scroll reporting + incoming LERP during anchor link navigation (prevents the sync loop from cancelling `scrollIntoView`)
 
 ### Preview Click-to-Edit
 
@@ -162,7 +163,7 @@ Clicking links in the preview intercepts navigation to keep the SPA intact:
 
 **Folder links** — hrefs ending with `/` are detected as directory references. Instead of opening a non-existent file, the click handler delegates to `onNavigateDir`, which expands the folder in the sidebar explorer.
 
-**Anchor links** — headings in the rendered markdown receive slugified `id` attributes (e.g., `## Key Data Flow` → `id="key-data-flow"`). The `slugify()` function in `markdown.ts` lowercases, strips non-alphanumeric characters, and joins words with hyphens. A custom `renderer.heading` override in `marked` applies the `id` to each heading element. When an anchor link is clicked, the preview container finds the element by `id` and calls `scrollIntoView`.
+**Anchor links** — headings in the rendered markdown receive slugified `id` attributes (e.g., `## Key Data Flow` → `id="key-data-flow"`). The `slugify()` function in `markdown.ts` lowercases, strips non-alphanumeric characters, and joins words with hyphens. A custom `renderer.heading` override in `marked` applies the `id` to each heading element. When an anchor link is clicked, the preview container finds the element by `id` and calls `scrollIntoView({ behavior: 'smooth', block: 'start' })`. To prevent the Editor↔Preview scroll sync from cancelling the smooth scroll, the click handler sets `anchorScrollRef`, cancels any active LERP, and re-syncs state after `scrollend`.
 
 `resolveRelativePath(currentFilePath, href)` handles `./`, `../`, and bare relative segments. The `MarkdownPreview` component receives `filePath`, `onNavigateToFile`, and `onNavigateDir` props; click interception is handled via a delegated `onClick` on the preview container that walks up to the nearest `<a>` element.
 
