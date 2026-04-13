@@ -18,16 +18,17 @@
 ## 2026-04-12: Terminal WebSocket reconnection + auto-detach debounce
 
 **What changed:**
-- Terminal component split into two effects: xterm lifecycle (lives for mount lifetime) and WebSocket lifecycle (reconnects on disconnect). On WS drop, auto-reconnects with exponential backoff (1s→15s, 5 retries, jitter). Wake-from-sleep triggers immediate reconnect via `visibilitychange`.
+- Terminal component split into two effects: xterm lifecycle (lives for mount lifetime) and WebSocket lifecycle (reconnects on disconnect). On connection loss, auto-reconnects with exponential backoff (1s→15s, 5 retries, jitter). Wake-from-sleep triggers immediate reconnect via `visibilitychange`.
+- Server sends custom close code **4001** when PTY exits (session ended). Client detaches immediately on 4001 — no reconnect loop. Only connection-loss closes (code 1006) trigger reconnection.
+- Shared `failCount` with 5s stability threshold prevents infinite reconnect on dead sessions (tmux "can't find session" opens+closes within ms).
 - Auto-detach now requires 2 consecutive API poll misses before clearing `activeSession` (was zero-tolerance — 1 miss = instant detach). Explicit kills bypass this entirely.
-- Removed redundant `refreshSessions()` from `onDisconnect` callback.
 
 **Why:**
 - Terminal sessions disappeared when the WebSocket dropped (sleep/wake, network blip, server ping timeout). `onDisconnect` unconditionally detached the session with no reconnection attempt. Users had to re-click the session to reopen.
 
-**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/WorkspaceScreen.tsx`, `server/src/index.ts`
 **Verification:** `tsc --noEmit` clean on changed files, 164 server tests pass
-**Commit:** `59a0151`
+**Commit:** `59a0151..9246465`
 **Next:** None
 **Blockers:** None
 
