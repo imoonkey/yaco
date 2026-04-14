@@ -50,7 +50,7 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `tags` | no | Free-form string[] for semantic grouping (e.g. `["backend", "refactor"]`) |
 | `estimate` | no | `xs \| s \| m \| l \| xl` — helps scheduling and workload assessment |
 | `blockReason` | no | `verification-failed \| human-review \| external \| dependency` — distinguishes why a task is blocked |
-| `worktree` | no | Worktree slug for isolated execution (alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.worktrees/<slug>/`, branch: `task/<slug>` |
+| `worktree` | no | Worktree slug for isolated execution (lowercase alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.worktrees/<slug>/`, branch: `task/<slug>` |
 | `created` | auto | ISO timestamp, set automatically by update-tasks.py on creation |
 | `updated` | auto | ISO timestamp, set automatically by update-tasks.py on every write |
 
