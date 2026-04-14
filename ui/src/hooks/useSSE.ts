@@ -22,7 +22,7 @@ function debouncedFireChannel(channel: string): void {
   refreshTimers.set(channel, setTimeout(() => {
     refreshTimers.delete(channel)
     fireChannel(channel)
-  }, 500))
+  }, 150))
 }
 
 function closeSource() {

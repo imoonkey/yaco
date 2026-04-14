@@ -55,32 +55,40 @@ export function useSSETick(sseChannel: string): { tick: number; refresh: () => v
   return { tick, refresh }
 }
 
-/** Generic polling hook with optional SSE-triggered refresh */
+/** Generic polling hook with optional SSE-triggered refresh.
+ *
+ *  SSE signals call load() directly instead of restarting the effect.
+ *  A monotonic sequence counter ensures only the most recent fetch wins,
+ *  preventing starvation when rapid SSE signals arrive faster than git
+ *  commands complete. */
 function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel?: string): AsyncData<T> & { refresh: () => void } {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [loading, setLoading] = useState(true)
-  const [tick, setTick] = useState(0)
+  const seqRef = useRef(0)
 
-  const refresh = useCallback(() => setTick(t => t + 1), [])
+  const load = useCallback(async () => {
+    const seq = ++seqRef.current
+    try {
+      const result = await fetcher()
+      // Only accept the response if no newer fetch has started
+      if (seq === seqRef.current) { setData(result); setError(null); setLoading(false) }
+    } catch (e) {
+      if (seq === seqRef.current) { setError(e instanceof Error ? e : new Error(String(e))); setLoading(false) }
+    }
+  }, [fetcher])
 
-  // Wire SSE refresh signal to immediate re-fetch
+  const refresh = useCallback(() => { void load() }, [load])
+
+  // Wire SSE refresh signal to immediate re-fetch (no effect restart)
   useSSERefresh(sseChannel ?? '', refresh)
 
+  // Initial fetch + polling interval — restarts when fetcher changes (e.g. project switch)
   useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      try {
-        const result = await fetcher()
-        if (!cancelled) { setData(result); setError(null); setLoading(false) }
-      } catch (e) {
-        if (!cancelled) { setError(e instanceof Error ? e : new Error(String(e))); setLoading(false) }
-      }
-    }
-    load()
+    void load()
     const id = setInterval(load, intervalMs)
-    return () => { cancelled = true; clearInterval(id) }
-  }, [fetcher, intervalMs, tick])
+    return () => clearInterval(id)
+  }, [load, intervalMs])
 
   return { data, error, loading, refresh }
 }

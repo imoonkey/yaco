@@ -136,13 +136,23 @@ app.get('/:project/diff', withProject, async (c) => {
     return c.json({ diff: result.stdout || '' })
   }
 
-  // No refs — existing behavior: diff vs HEAD with untracked fallback
+  // No refs — diff working tree vs HEAD, then check staged, then untracked fallback
   let result = spawnSync('git', ['diff', 'HEAD', '--', filePath], {
     cwd: proj.path,
     encoding: 'utf-8',
     timeout: GIT_COMMAND_TIMEOUT_MS,
   })
   let diff = result.stdout || ''
+
+  // Working tree matches HEAD — check staged (index) changes
+  if (!diff) {
+    result = spawnSync('git', ['diff', '--cached', 'HEAD', '--', filePath], {
+      cwd: proj.path,
+      encoding: 'utf-8',
+      timeout: GIT_COMMAND_TIMEOUT_MS,
+    })
+    diff = result.stdout || ''
+  }
 
   // For untracked files, show full content as additions
   if (!diff) {
