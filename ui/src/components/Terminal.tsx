@@ -405,6 +405,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     if (!containerReady || !term) return
 
     let disposed = false
+    let firstConnect = true
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let stableTimer: ReturnType<typeof setTimeout> | null = null
     let failCount = 0
@@ -422,6 +423,13 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
 
       ws.onopen = () => {
         if (disposed) { ws.close(); return }
+        if (firstConnect) {
+          firstConnect = false
+          // Reset terminal state to clear stale content and escape sequences
+          // (e.g. mouse tracking left enabled by a prior Claude Code session).
+          // \ec = RIS (Reset to Initial State) — clears screen, resets modes.
+          term!.write('\x1bc')
+        }
         ws.send(JSON.stringify({ type: 'resize', cols: term!.cols, rows: term!.rows }))
         // Reset fail counter once connection is stable
         stableTimer = setTimeout(() => { failCount = 0 }, STABLE_MS)
