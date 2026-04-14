@@ -47,7 +47,7 @@ Component mounts → usePolling(fetcher, interval, sseChannel)
   → setInterval(fetch, interval) — fallback if SSE drops
 ```
 
-The `tick` state variable forces re-fetch: SSE callbacks increment it, which triggers the effect to re-run.
+A monotonic sequence counter (`seqRef`) ensures only the most recent fetch updates state. SSE callbacks call `load()` directly (no effect restart), preventing fetch starvation during rapid file changes.
 
 ## Workspace State (useWorkspaceState)
 

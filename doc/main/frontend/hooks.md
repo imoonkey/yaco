@@ -154,7 +154,7 @@ Behavior:
 - Single EventSource to `/api/notifications/stream`
 - Manual reconnect with exponential backoff (1s → 30s) on error — disables browser's built-in auto-reconnect to prevent listener accumulation and refresh storms
 - On reconnect: fires all registered refresh callbacks immediately (catch-up)
-- Per-channel trailing-edge debounce (500ms) on `refresh` and `notification` events — prevents fetch cascades during rapid file changes
+- Per-channel trailing-edge debounce (150ms) on `refresh` and `notification` events — prevents fetch cascades during rapid file changes (server already debounces at 200ms)
 - Routes `notification` events to listeners and triggers `progress` refresh (debounced)
 - Routes `refresh` events to channel-specific callbacks (debounced)
 - **Sleep/wake recovery**: module-level `visibilitychange` listener forces `closeSource()` + `getSource()` when page becomes visible — kills zombie EventSource connections that survive sleep without firing `onerror`, then cascades refresh to all polling hooks via the `open` handler

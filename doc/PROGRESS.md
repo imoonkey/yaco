@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-14: Fix Changes section lag and diff viewer all-green bug
+
+**What changed:**
+- Fixed fetch starvation in `usePolling`: replaced `tick` state + effect restart with monotonic sequence counter. SSE now calls `load()` directly without cancelling in-flight fetches — prevents data starvation during rapid agent edits.
+- Reduced SSE client debounce from 500ms to 150ms (server already debounces at 200ms).
+- Fixed diff endpoint 3-step fallback: `git diff HEAD` → `git diff --cached HEAD` (staged) → `--no-index /dev/null` (untracked). Previously skipped the staged check, causing files with staged-only changes to show all lines as additions.
+
+**Why:**
+- Changes section could lag many seconds when an agent was actively editing files — each SSE signal cancelled the previous in-flight `git status` fetch before it could complete.
+- Diff viewer showed all lines green for files where working tree matched HEAD but index had staged changes.
+
+**Key files:** `server/src/routes/git.ts`, `ui/src/hooks/useApi.ts`, `ui/src/hooks/useSSE.ts`
+**Verification:** Server tests pass (164/164), lint clean on changed files (pre-existing warnings only), build compiles
+**Commit:** 1ed112b
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-14: Document iOS mobile terminal keyboard viewport bug
 
 **What changed:**
