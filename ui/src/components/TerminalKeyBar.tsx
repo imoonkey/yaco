@@ -182,7 +182,7 @@ export function TerminalKeyBar({
   }, [clearRepeat, clearSuppressedClickTimer])
 
   return (
-    <div className="bg-[--sol-editor-bg] border-t border-[--sol-border] pb-[env(safe-area-inset-bottom)]" role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
+    <div className="bg-[--sol-editor-bg] border-t border-[--sol-border]" style={{ paddingBottom: 'var(--kb-safe-bottom, env(safe-area-inset-bottom))' }} role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
       <div className="flex gap-1 px-2 py-1">
         <button
           type="button"
@@ -230,7 +230,7 @@ export function TerminalKeyBar({
           onContextMenu={preventContext}
         >
           <span
-            className="inline-flex items-center justify-center transition-transform duration-150"
+            className="inline-flex items-center justify-center"
             style={{ transform: expanded ? 'rotate(90deg)' : undefined }}
           >
             <Ellipsis size={14} />

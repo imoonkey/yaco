@@ -106,25 +106,27 @@ When the virtual keyboard opens on mobile, the layout must shrink so content (te
 Two complementary mechanisms:
 
 1. **`interactive-widget=resizes-content`** (viewport meta): Makes `dvh` shrink to exclude the keyboard. Chrome 108+, not iOS Safari.
-2. **`useKeyboardViewport` hook** (Visual Viewport API fallback): Detects keyboard via `innerHeight - visualViewport.height > 50px`, sets `--kb-viewport` CSS variable on `<html>`. `#root` uses `var(--kb-viewport, 100dvh)`. Safari 13+.
+2. **`useKeyboardViewport` hook** (Visual Viewport API + tap estimation): Detects keyboard via `fullHeight - visualViewport.height > 50px`, sets `--kb-viewport` CSS variable on `<html>`. `#root` uses `var(--kb-viewport, 100dvh)`. App root uses `h-full` (not `h-dvh`) so it inherits the constrained height. Safari 13+.
 
 When mechanism 1 is active, mechanism 2 is a no-op (both heights match → diff ≈ 0).
 
-The resize propagates through the existing pipeline: `#root` shrinks → flex layout reflows → terminal container shrinks → `ResizeObserver` fires → `fitTerminal()` → `sendResize()` → PTY gets new dimensions.
+The resize propagates through the existing pipeline: `#root` shrinks → App `h-full` follows → flex layout reflows → terminal container shrinks → `ResizeObserver` fires → `fitTerminal()` → `sendResize()` → PTY gets new dimensions.
 
 -> See: `ui/src/hooks/useKeyboardViewport.ts`
 
-**Known limitation — iOS keyboard viewport delay**: iOS standalone PWA does not update `visualViewport.height` until the user's first keystroke after the keyboard appears. This is a WebKit limitation with no JS workaround. On Chrome Android, `interactive-widget=resizes-content` provides instant adjustment.
+**iOS keyboard viewport workaround**: iOS standalone PWA may delay `visualViewport.height` updates when the keyboard opens (WebKit limitation). The hook works around this with a deferred estimation fallback:
 
-Symptoms on iOS:
-1. Tap terminal → keyboard opens, but the app layout does NOT shrink immediately
-2. Terminal content and TerminalKeyBar are hidden behind the keyboard
-3. User must type a character (e.g., space) before the viewport resizes and the layout shifts up
-4. After the first keystroke, `useKeyboardViewport` detects the change and sets `--kb-viewport`, causing the correct reflow
+1. **Tap detection** (touchstart/touchmove/touchend): Distinguishes taps from scrolls. Only taps inside terminal (`.xterm`) or keyboard inputs trigger the estimate. Scrolling is excluded — `touchmove` cancels the pending estimate.
+2. **Deferred estimate** (300ms after tap): If `visualViewport` hasn't updated within 300ms, apply cached keyboard height (or 40% of viewport as first-open estimate). The delay avoids jitter when `visualViewport` updates quickly (estimate→real double-shift).
+3. **Real value correction**: When `visualViewport` reports real height, `apply()` replaces the estimate and caches the keyboard height for future instant estimates.
+4. **`--kb-safe-bottom`**: Set to `0px` when keyboard is open. TerminalKeyBar uses `var(--kb-safe-bottom, env(safe-area-inset-bottom))` to eliminate the gap between content and keyboard (home indicator padding is unnecessary when keyboard covers it).
 
-The delay chain: tap → iOS shows keyboard → `visualViewport.height` unchanged → `apply()` sees diff < 50px → no CSS var set → layout stays at `100dvh`. First keystroke → iOS finalizes viewport → `keydown` capture or 200ms poll fires `apply()` → diff > 50px → `--kb-viewport` set → `#root` shrinks → flex reflow → `ResizeObserver` → `fitTerminal()`.
-
-This affects all content behind the keyboard (terminal buffer, TerminalKeyBar, editor cursor) but is most noticeable in terminal because the key bar disappears entirely.
+Edge cases:
+- Programmatic focus (`term.focus()` on mount): `focusin` handler only fires after a recent touch on a terminal area (`touchedTerminal` flag), skipping programmatic focus
+- Orientation change: cache invalidated, `fullHeight` reset after 300ms
+- `<select>` elements: excluded (iOS opens picker wheel, not keyboard)
+- Focus switching between inputs: `focusout` deferred with `setTimeout(0)` to avoid flicker
+- iOS detection: `pointer:coarse` + no `navigator.virtualKeyboard` API (no user agent sniffing)
 
 ## Safe-Area
 

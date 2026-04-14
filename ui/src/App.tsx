@@ -301,7 +301,7 @@ function App() {
   }, [handleProjectChange, orderedProjects])
 
   return (
-    <div className="flex flex-col h-dvh bg-[var(--sol-bg)]">
+    <div className="flex flex-col h-full bg-[var(--sol-bg)]">
       <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
         <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
         <span className="flex items-center gap-2">

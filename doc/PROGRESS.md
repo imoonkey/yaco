@@ -1,5 +1,38 @@
 # Progress
 
+## 2026-04-14: Fix iOS PWA keyboard viewport — layout shift on tap
+
+**What changed:**
+- `useKeyboardViewport`: added tap-based estimation fallback for iOS PWA where `visualViewport.height` may delay updating. On user tap (not scroll) inside terminal/input areas, defers a cached (or 40% estimate) keyboard height by 300ms — skipped if `visualViewport` updates first (avoids jitter). Distinguishes taps from scrolls via touchmove detection. Programmatic `term.focus()` on mount excluded via `touchedTerminal` flag. Sets `--kb-safe-bottom: 0px` when keyboard is open.
+- `App.tsx`: changed root div from `h-dvh` to `h-full` so it inherits `#root`'s `var(--kb-viewport)` height (was the primary blocker — `h-dvh = 100dvh` never changes on iOS).
+- `TerminalKeyBar`: bottom padding uses `var(--kb-safe-bottom, env(safe-area-inset-bottom))` to eliminate gap between content and keyboard when keyboard is open.
+- Expand button animation removed (was jittering on keyboard open).
+
+**Why:**
+- On iOS standalone PWA, tapping the terminal opened the keyboard but the layout didn't shift — TerminalKeyBar and terminal cursor were hidden behind the keyboard.
+
+**Key files:** `ui/src/hooks/useKeyboardViewport.ts`, `ui/src/App.tsx`, `ui/src/components/TerminalKeyBar.tsx`, `doc/main/ui/mobile.md`
+**Verification:** `tsc --noEmit` clean, 168 server tests pass, lint clean on changed files
+**Commit:** (pending)
+**Next:** Manual verification on iOS PWA
+**Blockers:** None
+
+## 2026-04-14: Git status -z parsing + tab-hidden polling suppression
+
+**What changed:**
+- Switched `git status --porcelain` to `--porcelain -z` (null-terminated) for correct filename parsing with spaces/special chars. Added rename/copy old-name skip logic.
+- `usePolling` now skips fetches when `document.hidden` — background tabs don't spawn git processes. SSE visibility reconnect already handles catch-up on tab focus.
+
+**Why:**
+- VS Code research showed `-z` is standard for correctness. Our newline split could break on filenames with spaces (quoted by git) or embedded newlines.
+- Background tab polling wastes server resources for invisible UI.
+
+**Key files:** `server/src/routes/git.ts`, `ui/src/hooks/useApi.ts`
+**Verification:** 171 server tests pass, 4 UI polling tests pass (including new tab-hidden test)
+**Commit:** 18e0e75
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-14: Fix Changes section lag and diff viewer all-green bug
 
 **What changed:**
@@ -16,20 +49,6 @@
 **Commit:** 1ed112b
 **Next:** None
 **Blockers:** None
-
-## 2026-04-14: Document iOS mobile terminal keyboard viewport bug
-
-**What changed:**
-- Expanded known limitation in `doc/main/ui/mobile.md` with detailed symptoms and delay chain for iOS PWA keyboard viewport issue
-
-**Why:**
-- On iOS standalone PWA, tapping the terminal opens the keyboard but the layout doesn't shift up until the user types a character. The TerminalKeyBar and terminal cursor are hidden behind the keyboard until then. Root cause: WebKit does not update `visualViewport.height` until the first keystroke, so `useKeyboardViewport` can't detect the keyboard is present.
-
-**Key files:** `doc/main/ui/mobile.md`
-**Verification:** Documentation only
-**Commit:** (pending)
-**Next:** Investigate workarounds — possible approaches: hidden input focus trick to force first "keystroke", `window.innerHeight` delta detection, or `requestAnimationFrame` polling on focus events
-**Blockers:** WebKit limitation — no known JS-only workaround confirmed
 
 ## 2026-04-12: File explorer copy path split + compact context menus
 
