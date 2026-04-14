@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-04-14: Document iOS mobile terminal keyboard viewport bug
+
+**What changed:**
+- Expanded known limitation in `doc/main/ui/mobile.md` with detailed symptoms and delay chain for iOS PWA keyboard viewport issue
+
+**Why:**
+- On iOS standalone PWA, tapping the terminal opens the keyboard but the layout doesn't shift up until the user types a character. The TerminalKeyBar and terminal cursor are hidden behind the keyboard until then. Root cause: WebKit does not update `visualViewport.height` until the first keystroke, so `useKeyboardViewport` can't detect the keyboard is present.
+
+**Key files:** `doc/main/ui/mobile.md`
+**Verification:** Documentation only
+**Commit:** (pending)
+**Next:** Investigate workarounds — possible approaches: hidden input focus trick to force first "keystroke", `window.innerHeight` delta detection, or `requestAnimationFrame` polling on focus events
+**Blockers:** WebKit limitation — no known JS-only workaround confirmed
+
 ## 2026-04-12: File explorer copy path split + compact context menus
 
 **What changed:**

@@ -114,7 +114,17 @@ The resize propagates through the existing pipeline: `#root` shrinks → flex la
 
 -> See: `ui/src/hooks/useKeyboardViewport.ts`
 
-**Known limitation**: iOS standalone PWA does not update `visualViewport.height` until the user's first keystroke after the keyboard appears. This is a WebKit limitation with no JS workaround. On Chrome Android, `interactive-widget=resizes-content` provides instant adjustment.
+**Known limitation — iOS keyboard viewport delay**: iOS standalone PWA does not update `visualViewport.height` until the user's first keystroke after the keyboard appears. This is a WebKit limitation with no JS workaround. On Chrome Android, `interactive-widget=resizes-content` provides instant adjustment.
+
+Symptoms on iOS:
+1. Tap terminal → keyboard opens, but the app layout does NOT shrink immediately
+2. Terminal content and TerminalKeyBar are hidden behind the keyboard
+3. User must type a character (e.g., space) before the viewport resizes and the layout shifts up
+4. After the first keystroke, `useKeyboardViewport` detects the change and sets `--kb-viewport`, causing the correct reflow
+
+The delay chain: tap → iOS shows keyboard → `visualViewport.height` unchanged → `apply()` sees diff < 50px → no CSS var set → layout stays at `100dvh`. First keystroke → iOS finalizes viewport → `keydown` capture or 200ms poll fires `apply()` → diff > 50px → `--kb-viewport` set → `#root` shrinks → flex reflow → `ResizeObserver` → `fitTerminal()`.
+
+This affects all content behind the keyboard (terminal buffer, TerminalKeyBar, editor cursor) but is most noticeable in terminal because the key bar disappears entirely.
 
 ## Safe-Area
 
