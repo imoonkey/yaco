@@ -112,4 +112,33 @@ describe('usePolling sequence counter (fetch starvation fix)', () => {
     await waitFor(() => expect(result.current.data).toEqual([{ name: 'result-2' }]))
     expect(callCount).toBe(2)
   })
+
+  it('skips fetch when document is hidden (tab-hidden suppression)', async () => {
+    let callCount = 0
+    vi.stubGlobal('fetch', vi.fn(() => {
+      callCount++
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([{ name: `result-${callCount}` }]),
+      })
+    }))
+
+    const { result } = renderHook(() => useProjects())
+
+    // Initial fetch fires (document.hidden is false by default in jsdom)
+    await waitFor(() => expect(result.current.data).toEqual([{ name: 'result-1' }]))
+    const countAfterInit = callCount
+
+    // Simulate tab going hidden
+    Object.defineProperty(document, 'hidden', { value: true, writable: true, configurable: true })
+
+    // SSE refresh while hidden — should skip
+    await act(async () => { sseCallback?.() })
+
+    // No new fetch should have fired
+    expect(callCount).toBe(countAfterInit)
+
+    // Restore
+    Object.defineProperty(document, 'hidden', { value: false, writable: true, configurable: true })
+  })
 })

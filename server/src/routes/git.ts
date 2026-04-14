@@ -76,7 +76,7 @@ app.get('/:project/refs', withProject, async (c) => {
 app.get('/:project/status', withProject, async (c) => {
   const proj = c.var.project
 
-  const result = spawnSync('git', ['status', '--porcelain'], {
+  const result = spawnSync('git', ['status', '--porcelain', '-z'], {
     cwd: proj.path,
     encoding: 'utf-8',
     timeout: GIT_COMMAND_TIMEOUT_MS,
@@ -88,14 +88,16 @@ app.get('/:project/status', withProject, async (c) => {
     return c.json({ changes: snapshot ?? [], stale: true })
   }
 
-  const changes: GitChange[] = result.stdout
-    .split('\n')
-    .map(line => line.replace(/\r$/, ''))
-    .filter(Boolean)
-    .map(line => ({
-      path: line.substring(3),
-      status: parseStatus(line.substring(0, 2)),
-    }))
+  const entries = result.stdout.split('\0').filter(Boolean)
+  const changes: GitChange[] = []
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i]
+    const xy = entry.substring(0, 2)
+    const path = entry.substring(3)
+    changes.push({ path, status: parseStatus(xy) })
+    // Renames/copies have an extra entry for the old path — skip it
+    if (xy[0] === 'R' || xy[0] === 'C') i++
+  }
 
   // Line-level stats via shortstat
   const statResult = spawnSync('git', ['diff', '--shortstat'], {

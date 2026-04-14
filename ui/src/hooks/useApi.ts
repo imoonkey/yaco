@@ -68,6 +68,7 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
   const seqRef = useRef(0)
 
   const load = useCallback(async () => {
+    if (typeof document !== 'undefined' && document.hidden) return
     const seq = ++seqRef.current
     try {
       const result = await fetcher()
