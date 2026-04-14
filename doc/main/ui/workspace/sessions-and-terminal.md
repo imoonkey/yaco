@@ -110,8 +110,10 @@ The terminal component splits into two effects:
 **Effect 2 — WebSocket lifecycle** (deps: `[sessionName, containerReady, projectName]`): manages the WebSocket connection with automatic reconnection.
 
 1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N&project=<projectName>`
-2. PTY output streamed to terminal via WebSocket
-3. User input sent to PTY via WebSocket (with modifier key application if active)
+2. On first connect for a session, client sends RIS (`\ec`) to clear stale screen content and reset terminal modes (prevents ghost mouse tracking or hidden cursor from a prior TUI session)
+3. Server sends scrollback buffer (`initialData`), followed by a terminal mode reset sequence (disables mouse tracking modes `?1000l/?1002l/?1003l/?1006l`, shows cursor `?25h`) to neutralize stale escape sequences in the buffer
+4. PTY output streamed to terminal via WebSocket
+5. User input sent to PTY via WebSocket (with modifier key application if active)
 4. Resize events sent as `{ type: 'resize', cols, rows }`
 5. Server sends ping every 30s; dead connections (no pong) are terminated to release PTY FDs
 6. On PTY exit (session ended, `/exit`): server sends close code **4001** → client detaches immediately, no reconnect
@@ -125,7 +127,7 @@ The terminal component splits into two effects:
 | Claude/Codex | `tmux attach-session` via node-pty | Yes (tmux survives detach) | tmux-managed |
 | Shell | Direct node-pty spawn | Yes | Server-side bounded buffer |
 
-Shell sessions keep a scrollback buffer on the server, so re-attaching restores recent output. Detaching the browser terminal does not kill the shell; only an explicit Kill action or server exit ends it.
+Shell sessions keep a scrollback buffer on the server, so re-attaching restores recent output. The buffer may contain stale escape sequences from prior TUI apps (e.g. Claude Code enabling mouse tracking or hiding the cursor); the server sends a mode reset after the buffer to neutralize these. Detaching the browser terminal does not kill the shell; only an explicit Kill action or server exit ends it.
 
 Before the server spawns a shell PTY or starts a new multmux child process, it repairs the child SSH environment (`SSH_AUTH_SOCK`) and, on macOS, can preload identities from the Apple keychain. This avoids per-project "open a terminal and run one manual git command first" warm-up when repos use SSH remotes.
 

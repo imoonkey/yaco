@@ -52,9 +52,10 @@ Flow:
 3. Parse `cols`, `rows`, and optional `project` from query params
 4. If `project` provided, resolve to project path for scoped tmux session lookup
 5. Call `attachSession(name, cols, rows, projectPath?)` to get a PTY handle
-5. Pipe PTY output to WebSocket, WebSocket input to PTY
-6. Handle resize messages (`{ type: 'resize', cols, rows }`)
-7. On WebSocket close: dispose subscriptions, then call `releaseSession()` so tmux attach PTYs are destroyed and shell sessions are merely detached
+6. Send scrollback buffer (`initialData`) if present, followed by a terminal mode reset sequence (disables mouse tracking, shows cursor) to neutralize stale escape sequences from prior TUI sessions
+7. Pipe PTY output to WebSocket, WebSocket input to PTY
+8. Handle resize messages (`{ type: 'resize', cols, rows }`)
+9. On WebSocket close: dispose subscriptions, then call `releaseSession()` so tmux attach PTYs are destroyed and shell sessions are merely detached
 
 ### Dead Connection Detection
 
