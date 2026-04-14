@@ -47,7 +47,7 @@ Component mounts → usePolling(fetcher, interval, sseChannel)
   → setInterval(fetch, interval) — fallback if SSE drops
 ```
 
-A monotonic sequence counter (`seqRef`) ensures only the most recent fetch updates state. SSE callbacks call `load()` directly (no effect restart), preventing fetch starvation during rapid file changes.
+A monotonic sequence counter (`seqRef`) ensures only the most recent fetch updates state. SSE callbacks call `load()` directly (no effect restart), preventing fetch starvation during rapid file changes. Polling is suppressed when `document.hidden` to avoid wasted fetches in background tabs — the SSE `visibilitychange` reconnect triggers a full refresh when the tab becomes visible.
 
 ## Workspace State (useWorkspaceState)
 
