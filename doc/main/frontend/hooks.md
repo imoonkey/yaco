@@ -180,6 +180,14 @@ Device and viewport detection hooks.
 - `useIsMobile(maxWidth?)` — returns `true` when viewport is at or below `maxWidth` (default 768px). Uses `matchMedia` with change listener.
 - `useIsTouch()` — returns `true` on touch-capable devices via `(pointer: coarse)` media query. Used to conditionally remove `user-select: none` on touch devices.
 
+## useKeyboardViewport.ts
+
+Sets `--kb-viewport` CSS variable on `<html>` when virtual keyboard is detected. `#root` uses `var(--kb-viewport, 100dvh)`. Also sets `--kb-safe-bottom` to `0px` when keyboard is open (TerminalKeyBar uses this to drop home indicator padding). Includes iOS PWA workaround with tap-based estimation fallback. Module-level cache for keyboard height per orientation.
+
+**Export**: `useKeyboardViewport()` — called once in `App.tsx`.
+
+-> See: [mobile.md](../ui/mobile.md#virtual-keyboard) for full behavior spec
+
 ## useTaskGraph.ts
 
 Fetches `doc/todo/tasks.json` via the file content API, parses it, and builds the graph model.

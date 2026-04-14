@@ -12,9 +12,9 @@
 - On iOS standalone PWA, tapping the terminal opened the keyboard but the layout didn't shift — TerminalKeyBar and terminal cursor were hidden behind the keyboard.
 
 **Key files:** `ui/src/hooks/useKeyboardViewport.ts`, `ui/src/App.tsx`, `ui/src/components/TerminalKeyBar.tsx`, `doc/main/ui/mobile.md`
-**Verification:** `tsc --noEmit` clean, 168 server tests pass, lint clean on changed files
-**Commit:** (pending)
-**Next:** Manual verification on iOS PWA
+**Verification:** `tsc --noEmit` clean, 171 server tests pass, lint clean on changed files
+**Commit:** 92ddf2a
+**Next:** None
 **Blockers:** None
 
 ## 2026-04-14: Git status -z parsing + tab-hidden polling suppression
