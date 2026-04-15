@@ -264,9 +264,12 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
 
     if (attached.initialData && ws.readyState === WebSocket.OPEN) {
       ws.send(attached.initialData)
-      // Buffer may contain stale escape sequences from a prior TUI app
-      // (e.g. Claude Code enabling mouse tracking or hiding cursor).
-      // Reset those modes after replay so the shell session is usable.
+    }
+    // Reset terminal modes that buffer replay may have restored from a prior
+    // TUI session (e.g. mouse tracking, hidden cursor from Claude Code).
+    // Sent unconditionally — even empty buffers may follow a session where
+    // the PTY state still has cursor hidden.
+    if (attached.persistent && ws.readyState === WebSocket.OPEN) {
       ws.send('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?25h')
     }
   } catch (err) {

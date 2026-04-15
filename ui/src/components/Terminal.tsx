@@ -428,7 +428,8 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
           // Reset terminal state to clear stale content and escape sequences
           // (e.g. mouse tracking left enabled by a prior Claude Code session).
           // \ec = RIS (Reset to Initial State) — clears screen, resets modes.
-          term!.write('\x1bc')
+          // Follow with \e[?25h because xterm.js RIS doesn't reset isCursorHidden.
+          term!.write('\x1bc\x1b[?25h')
         }
         ws.send(JSON.stringify({ type: 'resize', cols: term!.cols, rows: term!.rows }))
         // Reset fail counter once connection is stable
