@@ -62,6 +62,7 @@ All file routes support `?worktree=<slug>` query param — when present, `withPr
 | GET | `/api/files/:project/search-index` | Flat list of all file paths — recursive walk for Cmd+P search (respects .gitignore, 10k budget). Includes files inside symlinked directories. |
 | GET | `/api/files/:project/children?dir=...` | One directory's immediate children (lazy expand on demand) |
 | GET | `/api/files/:project/content?path=...` | Read file — returns `{ content, path, revision }` (max 1MB, path-validated) |
+| GET | `/api/files/:project/raw?path=...` | Serve raw binary file — returns file with proper `Content-Type` (images, PDFs). Max 20MB. MIME map: `.png/.jpg/.jpeg/.gif/.svg/.webp/.ico/.bmp` (image types) + `.pdf`. Falls back to `application/octet-stream`. |
 | PUT | `/api/files/:project/content?path=...` | Write file (`{ content, baseRevision? }`) — returns `{ ok, revision }` or 409 on conflict |
 | POST | `/api/files/:project/create-file` | Create empty file (`{ path }`) — mkdir -p parents |
 | POST | `/api/files/:project/create-dir` | Create directory (`{ path }`) |

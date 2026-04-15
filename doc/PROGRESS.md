@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-15: Add PDF and image preview in editor
+
+**What changed:**
+- Server: new `GET /files/:project/raw` endpoint serves binary files with proper MIME types (images + PDF), 20MB limit, path-validated
+- UI: extension-based file type detection (`ui/src/lib/binaryFiles.ts`) skips the text FileState pipeline for binary files (no garbled UTF-8)
+- `ImagePreview` renders inline `<img>` with `object-fit: contain`
+- `PdfPreview` lazy-loads `react-pdf` via `PdfRenderer` (CDN worker, code-split) with page navigation, zoom +/-, and fit-to-screen button
+- `PreviewErrorBoundary` class component isolates react-pdf/image failures from crashing the app
+- E2E test covers Tax2025 project with persisted PDF tab, raw endpoint, and image serving
+
+**Why:**
+- Clicking image/PDF files in file explorer showed garbled text — all files were fetched as UTF-8 via the text content API. Binary files need raw binary serving and specialized renderers.
+
+**Key files:** `server/src/routes/files.ts`, `ui/src/lib/binaryFiles.ts`, `ui/src/workspace/ImagePreview.tsx`, `ui/src/workspace/PdfPreview.tsx`, `ui/src/workspace/PdfRenderer.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`
+**Verification:** tsc clean, 171 server tests pass, 3 Playwright E2E tests pass, lint no new errors
+**Commit:** 0e4404e
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-14: Fix terminal mouse garble and hidden cursor after TUI session
 
 **What changed:**

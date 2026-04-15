@@ -46,6 +46,7 @@ Hono Server (Node.js :3001)
 7. **Voice** → MediaRecorder → Groq Whisper STT → multi-model LLM formatter → compose tray
 8. **Autocomplete** → CM6 debounced typing → Groq multi-model → ghost text decoration
 9. **Worktree isolation** → `scripts/worktree-*.sh` manage git worktrees at `.worktrees/<slug>/` on branch `task/<slug>`. `withProject` middleware accepts `?worktree=slug` to redirect file/git ops. Task API enriches with `worktreeStatus`. `useProjectWorktrees` discovers active worktrees. `ProjectList` shows worktree sub-items. Persistence keyed by `(project, worktree)`.
+10. **Binary file preview** → extension-based detection (`ui/src/lib/binaryFiles.ts`) skips text FileState pipeline for images/PDFs. Server `GET /files/:project/raw` serves binary with proper MIME type (20MB limit). `ImagePreview` renders `<img>`, `PdfPreview` lazy-loads `react-pdf` (CDN worker) with page nav, zoom, fit-to-screen. `PreviewErrorBoundary` isolates failures.
 
 -> See: [doc/main/](doc/main/README.md#key-data-flows) for detailed flow descriptions
 
