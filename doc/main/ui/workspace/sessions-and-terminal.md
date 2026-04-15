@@ -110,8 +110,8 @@ The terminal component splits into two effects:
 **Effect 2 — WebSocket lifecycle** (deps: `[sessionName, containerReady, projectName]`): manages the WebSocket connection with automatic reconnection.
 
 1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N&project=<projectName>`
-2. On first connect for a session, client sends RIS (`\ec`) to clear stale screen content and reset terminal modes (prevents ghost mouse tracking or hidden cursor from a prior TUI session)
-3. Server sends scrollback buffer (`initialData`), followed by a terminal mode reset sequence (disables mouse tracking modes `?1000l/?1002l/?1003l/?1006l`, shows cursor `?25h`) to neutralize stale escape sequences in the buffer
+2. On first connect for a session, client sends RIS (`\ec`) + DECTCEM show (`\e[?25h`) to clear stale screen content and reset terminal modes. The explicit cursor-show is needed because xterm.js RIS doesn't reset `isCursorHidden`.
+3. Server sends scrollback buffer (`initialData`) if present, then unconditionally sends a terminal mode reset for all persistent (shell) sessions (disables mouse tracking modes `?1000l/?1002l/?1003l/?1006l`, shows cursor `?25h`). This neutralizes stale escape sequences from prior TUI apps even when the buffer is empty.
 4. PTY output streamed to terminal via WebSocket
 5. User input sent to PTY via WebSocket (with modifier key application if active)
 4. Resize events sent as `{ type: 'resize', cols, rows }`

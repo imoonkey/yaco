@@ -3,15 +3,15 @@
 ## 2026-04-14: Fix terminal mouse garble and hidden cursor after TUI session
 
 **What changed:**
-- Client sends RIS (`\ec`) on first WebSocket connect to clear stale screen content when switching sessions
-- Server sends terminal mode reset (disable mouse tracking + show cursor) after buffer replay to neutralize stale escape sequences from prior Claude Code / TUI sessions
+- Client sends RIS (`\ec`) + explicit DECTCEM show (`\e[?25h`) on first WebSocket connect to clear stale screen content. Explicit cursor-show needed because xterm.js RIS doesn't reset `isCursorHidden`.
+- Server sends terminal mode reset (disable mouse tracking + show cursor) unconditionally for all persistent shell sessions, not just those with non-empty buffers — PTY state can carry over even with empty buffer.
 
 **Why:**
 - Shell session buffers accumulate raw escape sequences from whatever ran in them. When Claude Code enables SGR mouse tracking (`?1003h`, `?1006h`) or hides the cursor (`?25l`), those sequences persist in the buffer. Replaying the buffer on reconnect restored those modes, causing mouse clicks to produce garbled text (`0;68;27M...`) and hiding the cursor.
 
 **Key files:** `ui/src/components/Terminal.tsx`, `server/src/index.ts`
 **Verification:** tsc clean, 171 server tests pass, eslint no new errors
-**Commit:** a59ba18
+**Commit:** a59ba18, 594f95f
 **Next:** None
 **Blockers:** None
 
