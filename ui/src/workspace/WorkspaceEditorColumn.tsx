@@ -8,6 +8,7 @@ import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { VoiceControl } from '../components/VoiceControl'
 import { TaskScreen } from '../tasks/TaskScreen'
 import { clampLine } from './markdown'
+import { isBinaryPreviewFile } from '../lib/binaryFiles'
 import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
@@ -38,6 +39,7 @@ export interface WorkspaceEditorColumnProps {
   jumpRequest: JumpRequest | null
   editorInsert: { text: string; key: number } | null
   projectName: string
+  worktree?: string | null
   voice: EditorColumnVoice
   compareContext?: CompareContext
   onSelectTab: (tab: string) => void
@@ -61,7 +63,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     openTabs, activeTab, previewTab, dirtyTabs, conflictTabs,
     files, layout, isTouch, isMobile,
     activeDiff, editorDiffHunks, jumpRequest, editorInsert,
-    projectName, voice, compareContext,
+    projectName, worktree, voice, compareContext,
     onSelectTab, onDoubleClickTab, onCloseTab, onLayoutUpdate,
     onSaveFile, onForceSave, onAcceptDisk, onUpdateDraft, onUpdateViewport,
     onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onOpenTasksFile,
@@ -118,7 +120,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         previewTab={previewTab}
         dirtyTabs={dirtyTabs}
         conflictTabs={conflictTabs}
-        canToggleMdMode={!!isMd}
+        canToggleMdMode={!!isMd && !isBinaryPreviewFile(activeFilePath ?? '')}
         mdMode={mdMode}
         splitDirection={splitDirection}
         isTouch={isTouch}
@@ -192,6 +194,8 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         autocompleteEnabled={autocompleteEnabled}
         isMobile={isMobile}
         compareContext={compareContext}
+        projectName={projectName}
+        worktree={worktree}
       />
     </div>
   )

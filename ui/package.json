@@ -36,6 +36,7 @@
     "react": "^19.2.4",
     "react-arborist": "^3.4.3",
     "react-dom": "^19.2.4",
+    "react-pdf": "^10.4.1",
     "sonner": "^2.0.7",
     "tailwindcss": "^4.2.2"
   },

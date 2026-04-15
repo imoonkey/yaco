@@ -1,5 +1,6 @@
 import { useCallback, useRef, useEffect, useMemo } from 'react'
 import { type PersistedDrafts, isFileTab } from './workspaceTypes'
+import { isBinaryPreviewFile } from '../lib/binaryFiles'
 import { usePersistence } from './usePersistence'
 import { useFileState } from './useFileState'
 import { useLayoutState } from './useLayoutState'
@@ -69,14 +70,14 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     if (!isFileTab(path)) return
     ls.openFileTab(path)
     ls.addRecentFile(path)
-    fetchForTab(path)
+    if (!isBinaryPreviewFile(path)) fetchForTab(path)
   }, [ls.openFileTab, ls.addRecentFile, fetchForTab])
 
   const openPreviewTab = useCallback((path: string) => {
     if (!isFileTab(path)) return
     const shouldFetch = ls.openPreviewTab(path)
     ls.addRecentFile(path)
-    if (shouldFetch) fetchForTab(path)
+    if (shouldFetch && !isBinaryPreviewFile(path)) fetchForTab(path)
   }, [ls.openPreviewTab, ls.addRecentFile, fetchForTab])
 
   const closeTab = useCallback((tab: string) => {

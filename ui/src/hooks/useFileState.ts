@@ -8,6 +8,7 @@ import {
   isFileTab,
   defaultFileState,
 } from './workspaceTypes'
+import { isBinaryPreviewFile } from '../lib/binaryFiles'
 import { fileTransition, reconcileFile } from './fileStateMachine'
 
 // --- PreviewLifecycle interface ---
@@ -81,7 +82,7 @@ export function useFileState(
     if (hydrated.current) return
     hydrated.current = true
 
-    const fileTabs = initialOpenTabs.filter(isFileTab)
+    const fileTabs = initialOpenTabs.filter(t => isFileTab(t) && !isBinaryPreviewFile(t))
     if (fileTabs.length === 0) return
 
     for (const path of fileTabs) {
@@ -102,7 +103,7 @@ export function useFileState(
   // --- SSE: refetch open file tabs on filetree or git changes ---
   const refetchOpenFiles = useCallback(() => {
     const project = projectRef.current
-    const tabs = openTabsRef.current.filter(isFileTab)
+    const tabs = openTabsRef.current.filter(t => isFileTab(t) && !isBinaryPreviewFile(t))
     if (tabs.length === 0) return
 
     refetchAbortRef.current?.abort()

@@ -533,6 +533,7 @@ export function Workspace({
       jumpRequest={jumpRequest}
       editorInsert={editorInsert}
       projectName={projectName}
+      worktree={worktree}
       voice={{
         eligible: voiceBridge.editorVoiceEligible,
         capability: voice.capability, state: voice.state,

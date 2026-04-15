@@ -1,10 +1,10 @@
 import { existsSync } from 'fs'
 import { readdir, stat, readFile, writeFile, mkdir, realpath, rename as fsRename, rm } from 'fs/promises'
 import { execFile } from 'child_process'
-import { join, relative, dirname, normalize, basename } from 'path'
+import { join, relative, dirname, normalize, basename, extname } from 'path'
 import { Hono } from 'hono'
 import { getProjectGitignore } from '../lib/gitignore'
-import { GIT_MAX_BUFFER, FILE_SIZE_LIMIT, SEARCH_INDEX_BUDGET } from '../lib/constants'
+import { GIT_MAX_BUFFER, FILE_SIZE_LIMIT, RAW_FILE_SIZE_LIMIT, SEARCH_INDEX_BUDGET } from '../lib/constants'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
 
@@ -232,6 +232,42 @@ app.get('/:project/content', withProject, async (c) => {
 
   const content = await readFile(result.path, 'utf-8')
   return c.json({ content, path: filePath, revision: info.mtimeMs })
+})
+
+const RAW_MIME: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.bmp': 'image/bmp',
+  '.pdf': 'application/pdf',
+}
+
+app.get('/:project/raw', withProject, async (c) => {
+  const proj = c.var.project
+  const filePath = c.req.query('path')
+  if (!filePath) return fail(c, 400, 'path required')
+
+  const result = await resolveAndValidate(proj.path, filePath)
+  if ('error' in result) return fail(c, result.error === 'not_found' ? 404 : 403, result.error === 'not_found' ? 'File not found' : 'Path traversal denied')
+
+  const info = await stat(result.path)
+  if (info.isDirectory()) return fail(c, 400, 'is a directory')
+  if (info.size > RAW_FILE_SIZE_LIMIT) return fail(c, 413, 'file too large')
+
+  const ext = extname(result.path).toLowerCase()
+  const mime = RAW_MIME[ext] ?? 'application/octet-stream'
+  const buffer = await readFile(result.path)
+  return new Response(buffer, {
+    headers: {
+      'Content-Type': mime,
+      'Content-Disposition': 'inline',
+      'Cache-Control': 'no-cache',
+    },
+  })
 })
 
 app.put('/:project/content', withProject, async (c) => {

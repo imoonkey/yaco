@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, Component, type ReactNode } from 'react'
 import { Editor } from '../components/Editor'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
@@ -8,6 +8,26 @@ import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import type { MdMode, SplitDirection } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
 import { DiffTab } from './diff/DiffTab'
+import { isImageFile, isPdfFile, rawFileUrl } from '../lib/binaryFiles'
+import { ImagePreview } from './ImagePreview'
+import { PdfPreview } from './PdfPreview'
+
+// --- Error boundary for binary previews (isolates react-pdf/image errors from the app) ---
+class PreviewErrorBoundary extends Component<{ children: ReactNode; fileName: string }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+          <span className="text-[12px]">Unable to preview {this.props.fileName}</span>
+          <span className="text-[11px]" style={{ opacity: 0.7 }}>{this.state.error.message}</span>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // --- Markdown Preview scroll helpers (cached positions — zero DOM reads during scroll) ---
 type CachedAnchor = {
@@ -345,6 +365,8 @@ export function WorkspaceEditorArea({
   autocompleteEnabled,
   isMobile,
   compareContext,
+  projectName,
+  worktree,
 }: {
   activeTab: string | null
   activeFilePath: string | null
@@ -379,6 +401,8 @@ export function WorkspaceEditorArea({
   autocompleteEnabled?: boolean
   isMobile?: boolean
   compareContext?: CompareContext
+  projectName: string
+  worktree?: string | null
 }) {
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
@@ -534,7 +558,15 @@ export function WorkspaceEditorArea({
         : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} compareContext={compareContext} />
         : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load diff</div>
       ) : activeTab ? (
-        activeFileLoading ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
+        activeFilePath && isImageFile(activeFilePath) ? (
+          <PreviewErrorBoundary key={activeFilePath} fileName={activeFilePath.split('/').pop() ?? ''}>
+            <ImagePreview src={rawFileUrl(projectName, activeFilePath, worktree)} />
+          </PreviewErrorBoundary>
+        ) : activeFilePath && isPdfFile(activeFilePath) ? (
+          <PreviewErrorBoundary key={activeFilePath} fileName={activeFilePath.split('/').pop() ?? ''}>
+            <PdfPreview src={rawFileUrl(projectName, activeFilePath, worktree)} />
+          </PreviewErrorBoundary>
+        ) : activeFileLoading ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
         : activeFileContent !== null ? (
           showSplit ? (
             <div ref={splitContainerRef} className={splitDirection === 'vertical' ? 'flex flex-col h-full' : 'flex h-full'} style={{ userSelect: isDragging ? 'none' : undefined }}>

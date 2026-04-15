@@ -20,6 +20,9 @@ export const GIT_MAX_BUFFER = 50 * 1024 * 1024
 /** Maximum file size for content endpoint (1 MB) */
 export const FILE_SIZE_LIMIT = 1_000_000
 
+/** Maximum file size for raw binary endpoint (20 MB) */
+export const RAW_FILE_SIZE_LIMIT = 20_000_000
+
 /** Timeout for multmux send/kill/rename commands (ms) */
 export const MULTMUX_COMMAND_TIMEOUT_MS = 5_000
 
