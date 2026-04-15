@@ -83,7 +83,7 @@ export function PdfPreview({ src }: { src: string }) {
       </div>
 
       {/* Page — scrollable in both directions */}
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto p-4">
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto p-4 select-text">
         <div className="min-w-min flex justify-center">
           <Suspense fallback={<div className="loading-spinner" />}>
             <PdfRenderer
