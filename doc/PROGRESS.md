@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-16: ProjectList — Cmd-held index hints
+
+**What changed:**
+- Holding `Cmd` reveals small numeric index badges (1–9) next to the first 9 project names in the sidebar list, matching the existing `Cmd+1-9` switch shortcut
+- Hints hide on keyup/blur/visibilitychange; badge sits immediately after the project name, with unread/session counts still right-aligned via `ml-auto`
+
+**Why:**
+- With many projects it is hard to know which index a project is at; surfacing the number only while `Cmd` is pressed keeps chrome clean but discoverable
+
+**Key files:** `ui/src/components/ProjectList.tsx`, `doc/main/ui/keyboard.md`, `doc/main/ui/app-shell.md`, `doc/main/frontend/components.md`
+**Verification:** Manual — Cmd press reveals/hides hints; `Cmd+1-9` still switches projects
+**Commit:** 7b22a4f
+**Next:** —
+**Blockers:** None
+
 ## 2026-04-16: Graph view — fix parent click + show estimate badge
 
 **What changed:**

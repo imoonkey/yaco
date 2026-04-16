@@ -123,7 +123,7 @@ Single-workspace shell. Manages project selection, unread state, and browser not
 **Responsibilities**:
 - Project selection and ordering (project list lives in workspace sidebar)
 - Header bar with notification bell and add-project button
-- Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project switching
+- Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project switching (holding `Cmd` reveals index hints in `ProjectList`)
 - Session/project unread state via `useSessionUnreadState`
 - Browser notification routing (click → project + session)
 - Persist project to localStorage

@@ -46,6 +46,7 @@ CSS animation (`rhythm-pulse` keyframe in `index.css`) animates opacity for smoo
 ### Project Selection
 
 - `Cmd+1` through `Cmd+9` switch projects by sidebar order
+- Holding `Cmd` displays index hints (1–9) after the project name in `ProjectList`, so the correct shortcut is visible before pressing
 - Selected project persisted in localStorage key `workflow-ui-state`
 - Project order persisted server-side via `POST /api/projects/reorder`
 

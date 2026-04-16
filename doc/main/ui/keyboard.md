@@ -19,7 +19,7 @@ Complete keyboard shortcut reference.
 
 | Shortcut | Context | Action |
 |----------|---------|--------|
-| `Cmd+1` … `Cmd+9` | Any view | Switch to visible project tab N |
+| `Cmd+1` … `Cmd+9` | Any view | Switch to visible project tab N. Holding `Cmd` reveals numeric index hints next to the first 9 project names in the sidebar. |
 
 ## Workspace Shortcuts
 
