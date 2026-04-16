@@ -110,15 +110,14 @@ Notification dispatch to two sinks: macOS desktop and SSE broadcast.
 - `emitRefresh(channel)` — lightweight SSE-only signal for UI refresh (no osascript)
 - Manages SSE client registry for connected browsers
 
-### session-reconciler.ts (~140 lines)
+### session-reconciler.ts (~100 lines)
 
 Low-frequency background reconciler for session health and idle detection.
 
 **Exports**: `startSessionReconciler()`, `stopSessionReconciler()`
 
 - Runs every 60 seconds as a safety net (not primary session source). First reconcile runs immediately on startup.
-- Calls `fetchAllSessionsFromCli(projects)` which runs `multmux status --json --all` — the authoritative reconciled snapshot. Multmux owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, and sessionId backfill.
-- **Fixes stale state files**: compares CLI-reconciled status with on-disk state files. When a state file's mtime is > 5 minutes old and its status disagrees with the CLI, writes the CLI status directly (atomic tmp+rename). This corrects state files stuck at "processing" when hooks fail to fire.
+- Calls `fetchAllSessionsFromCli(projects)` which runs `multmux status --json --all` — the authoritative reconciled snapshot. Multmux owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, sessionId backfill, and **stale state file correction** (writes capture-derived status to disk when mtime > 3min).
 - Emits `refresh:sessions` if drift detected (missed watcher events)
 - Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
 

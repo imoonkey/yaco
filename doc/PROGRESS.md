@@ -3,18 +3,18 @@
 ## 2026-04-16: Fix session status inconsistency
 
 **What changed:**
-- Session reconciler now writes corrected status directly to stale state files (mtime > 5min, CLI disagrees). API reads state files only — kept accurate by hooks (real-time) + reconciler (background correction).
-- First reconcile runs immediately on startup.
+- (multmux) `reconcile()` now persists capture-derived status to stale state files (mtime > 3min). All readers (workflow server, tmusk) see accurate status without workarounds.
 - (multmux) Added busy patterns for `Running…` and `✳ Running` to prevent false idle detection during active Claude Code tool execution.
+- (multmux) Reduced stale threshold from 30min to 3min.
+- (workflow) Session reconciler runs first reconcile immediately on startup. API reads state files only — kept accurate by hooks (real-time) + multmux reconcile (background correction).
 
 **Why:**
 - State files could get stuck at "processing" when Claude Code hooks fail to fire, causing the web UI to show idle sessions as processing.
-- Initial fix (CLI cache override in API) caused the opposite bug: fresh hook-updated state files were overwritten by stale 60s-old cache, making processing sessions appear idle.
 - `isIdle()` matched `❯` in Claude Code's TUI statusbar even during active tool execution, causing `mt status` to report processing sessions as idle.
 
-**Key files:** `server/src/lib/session-reconciler.ts`, `server/src/routes/sessions.ts`, `multmux/src/providers.ts`
+**Key files:** `multmux/src/commands/status.ts`, `multmux/src/providers.ts`, `multmux/src/state.ts`, `server/src/lib/session-reconciler.ts`
 **Verification:** 171/171 server tests pass, 220/220 multmux tests pass. API confirmed correct for both stale and fresh sessions.
-**Commit:** 36a01bc, ad481c8 (workflow), c0185fe (multmux)
+**Commit:** 4ed3b3c (workflow), 072483f, a2167d1, c0185fe (multmux)
 **Next:** Investigate why Claude Code `Stop` hooks occasionally fail to fire for long-running sessions
 **Blockers:** None
 
