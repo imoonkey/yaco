@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-16: Fix session status inconsistency
+
+**What changed:**
+- `GET /sessions` now overrides state file statuses with CLI-reconciled cache from session reconciler (staleness-aware, liveness-checked)
+- Session reconciler runs first reconcile immediately on startup to populate cache
+- (multmux) Added busy patterns for `Running…` and `✳ Running` to prevent false idle detection during active Claude Code tool execution
+
+**Why:**
+- State files could get stuck at "processing" when Claude Code hooks fail to fire, causing the web UI to show idle sessions as processing
+- `isIdle()` matched `❯` in Claude Code's TUI statusbar even during active tool execution, causing `mt status` to report processing sessions as idle
+
+**Key files:** `server/src/lib/session-reconciler.ts`, `server/src/routes/sessions.ts`, `multmux/src/providers.ts`
+**Verification:** 171/171 server tests pass, 220/220 multmux tests pass, verified `isIdle()` against real captured pane output
+**Commit:** ad481c8 (workflow), c0185fe (multmux)
+**Next:** Investigate why Claude Code `Stop` hooks occasionally fail to fire for long-running sessions
+**Blockers:** None
+
 ## 2026-04-15: Add PDF and image preview in editor
 
 **What changed:**
