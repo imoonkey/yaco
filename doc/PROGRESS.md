@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-16: Graph view — fix parent click + show estimate badge
+
+**What changed:**
+- Fixed parent task click in graph view not opening detail panel (chevron stopPropagation was eating the selection event)
+- Added t-shirt size (estimate) badge to graph view task nodes — 9px bold uppercase between state dot and title
+- Added `estimate` field to `RawTaskEntry` and `TaskGraphTask` in graph data model
+
+**Why:**
+- Parent tasks were unclickable for detail view — only collapse toggled
+- Estimate visibility in graph view matches board view, giving quick size context
+
+**Key files:** `ui/src/tasks/TaskGraphNode.tsx`, `ui/src/tasks/taskGraphModel.ts`
+**Verification:** `tsc --noEmit` clean
+**Commit:** cc89156
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-16: Fix session status inconsistency
 
 **What changed:**

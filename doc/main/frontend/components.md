@@ -77,7 +77,7 @@ TaskScreen — master controller (view switcher, filtering, detail panel, onClos
 │   ├── Desktop: ListHeader (resizable) + ListRow (7 columns + worktree badge)
 │   └── Mobile: MobileListRow (44px, StateDot + title + parent + priority)
 ├── TaskGraphScreen — SVG dependency graph with pan/zoom
-│   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line, worktree icon) + TaskGraphEdges
+│   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line, estimate badge, worktree icon) + TaskGraphEdges
 │   ├── TaskGraphToolbar (mobile: larger touch targets, hides collapse controls)
 │   ├── TaskGraphMinimap — overview with viewport rect (desktop only)
 │   └── TaskGraphTooltip — hover overlay
