@@ -3,19 +3,20 @@
 ## 2026-04-16: Fix session status inconsistency
 
 **What changed:**
-- (multmux) `reconcile()` now persists capture-derived status to stale state files (mtime > 3min). All readers (workflow server, tmusk) see accurate status without workarounds.
-- (multmux) Added busy patterns for `Running…` and `✳ Running` to prevent false idle detection during active Claude Code tool execution.
-- (multmux) Reduced stale threshold from 30min to 3min.
+- (multmux) `PostToolUse`/`PostToolUseFailure` hooks set status to `processing` — keeps mtime fresh during long turns and corrects premature Stop events. `PermissionRequest` sets `idle`. Codex now also registers `PostToolUse`.
+- (multmux) `reconcile()` persists capture-derived status to stale state files (mtime > 3min). `isIdle()` uses active timer pattern `(Xs ·` for robust busy detection.
+- (multmux) Stale threshold reduced from 30min to 3min.
 - (workflow) Session reconciler runs first reconcile immediately on startup. API reads state files only — kept accurate by hooks (real-time) + multmux reconcile (background correction).
 
 **Why:**
-- State files could get stuck at "processing" when Claude Code hooks fail to fire, causing the web UI to show idle sessions as processing.
-- `isIdle()` matched `❯` in Claude Code's TUI statusbar even during active tool execution, causing `mt status` to report processing sessions as idle.
+- State files got stuck at "processing" when hooks failed to fire. Long turns triggered stale fallback because only UserPromptSubmit/Stop touched the state file. PostToolUse solves this by refreshing mtime on every tool completion.
+- `isIdle()` matched `❯` in Claude Code's TUI even during active tool execution.
 
-**Key files:** `multmux/src/commands/status.ts`, `multmux/src/providers.ts`, `multmux/src/state.ts`, `server/src/lib/session-reconciler.ts`
-**Verification:** 171/171 server tests pass, 220/220 multmux tests pass. API confirmed correct for both stale and fresh sessions.
-**Commit:** 4ed3b3c (workflow), 072483f, a2167d1, c0185fe (multmux)
-**Next:** Investigate why Claude Code `Stop` hooks occasionally fail to fire for long-running sessions
+**Key files:** `server/src/lib/session-reconciler.ts`, `multmux/src/hooks.ts`, `multmux/src/commands/hook-update.ts`, `multmux/src/providers.ts`
+**Verification:** 171/171 server tests pass, 232/232 multmux tests pass (12 new hook event tests).
+**Commit:** 4ed3b3c (workflow), 4f8ebf3..c0185fe (multmux)
+**Next:** Existing sessions need restart to pick up new hooks
+**Blockers:** None
 **Blockers:** None
 
 ## 2026-04-15: Add PDF and image preview in editor
