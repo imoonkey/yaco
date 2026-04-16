@@ -23,12 +23,23 @@ const idleStreakBySession = new Map<string, number>()
 
 let lastSessionSnapshot = ''
 
+/** Cached CLI-reconciled sessions — authoritative (staleness-aware, liveness-checked).
+ *  Updated every reconcile cycle (60s). API endpoint reads this instead of raw state files. */
+let cachedCliSessions: MultmuxSession[] | null = null
+
+/** Return the last CLI-reconciled session snapshot, or null before first reconcile. */
+export function getCachedSessions(): MultmuxSession[] | null {
+  return cachedCliSessions
+}
+
 function sessionKey(project: string, name: string): string {
   return `${project}:${name}`
 }
 
 export function startSessionReconciler(): void {
-  scheduleReconcile()
+  // Run first reconcile immediately to populate cache, then schedule recurring.
+  // Intentionally not awaited — runs in background.
+  void reconcile()
 }
 
 export function stopSessionReconciler(): void {
@@ -46,6 +57,7 @@ async function reconcile(): Promise<void> {
   try {
     const projects = await loadProjects()
     const allSessions = await fetchAllSessionsFromCli(projects)
+    cachedCliSessions = allSessions
 
     const sessionsByProject = new Map<string, MultmuxSession[]>()
     for (const session of allSessions) {

@@ -3,6 +3,7 @@ import { PENDING_SESSION_ID } from '../lib/constants'
 import { getHistory } from '../lib/history'
 import { closeMultmuxSession, queryMultmuxStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/multmux'
 import { loadProjects } from '../lib/projects'
+import { getCachedSessions } from '../lib/session-reconciler'
 import { resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
 import { extractWorktreeSlug } from '../lib/worktree'
@@ -15,12 +16,26 @@ app.get('/', async (c) => {
   const shellSessions = listShellSessions()
 
   const projects = await loadProjects()
+
+  // Read state files (always fresh — picks up new sessions immediately)
   let multmuxSessions
   if (projectName) {
     const project = projects.find(item => item.name === projectName)
     multmuxSessions = project ? readSessionsFromStateFiles(project) : []
   } else {
     multmuxSessions = readAllSessionsFromStateFiles(projects)
+  }
+
+  // Override statuses with CLI-reconciled cache (staleness-aware, liveness-checked).
+  // This fixes stale state files (e.g., stuck at "processing" when hooks fail).
+  // Sessions not yet in cache (new, between reconcile cycles) keep state file status.
+  const cached = getCachedSessions()
+  if (cached) {
+    const cliByName = new Map(cached.map(s => [s.name, s]))
+    multmuxSessions = multmuxSessions.map(s => {
+      const cli = cliByName.get(s.name)
+      return cli ? { ...s, status: cli.status } : s
+    })
   }
 
   const summaries = resolveSessionSummaries(multmuxSessions)
