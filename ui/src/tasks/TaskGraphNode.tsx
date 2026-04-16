@@ -83,6 +83,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   // Group affordances: chevron and progress
   const hasGroupAffordances = task.hasChildren
   const chevronWidth = hasGroupAffordances ? 18 : 0
+  const estimateWidth = task.estimate ? 11 : 0
   const progressText = group ? `${group.progress.done}/${group.progress.total}` : ''
   const hasRightLabel = (hasGroupAffordances && !!progressText) || (!hasGroupAffordances && depCount > 0)
   const rightLabelWidth = hasRightLabel ? 32 : 6
@@ -172,7 +173,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Collapse chevron for group tasks */}
       {hasGroupAffordances && (
         <g
-          onClick={(e) => { e.stopPropagation(); onToggleCollapse(node.id) }}
+          onClick={(e) => { e.stopPropagation(); onToggleCollapse(node.id); onClick(node.id) }}
           style={{ cursor: 'pointer' }}
         >
           <rect x={node.x} y={node.y} width={18} height={NODE_HEIGHT} fill="transparent" rx={6} />
@@ -193,19 +194,36 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* State dot — left edge accent */}
       <StateDot state={task.state} cx={node.x + chevronWidth + 12} cy={node.y + NODE_HEIGHT / 2} />
 
+      {/* Estimate badge — after state dot */}
+      {task.estimate && (
+        <text
+          x={node.x + chevronWidth + 22}
+          y={titleY}
+          fontSize={9}
+          fontWeight={700}
+          fill={'var(--sol-muted)'}
+          opacity={showLabels ? 0.7 : 0}
+          textTransform="uppercase"
+          letterSpacing="0.03em"
+          style={{ transition: 'opacity 150ms ease-out', textTransform: 'uppercase' }}
+        >
+          {task.estimate}
+        </text>
+      )}
+
       {/* Clip path for text overflow */}
       <clipPath id={`clip-${node.id}`}>
         <rect
-          x={node.x + chevronWidth + 22}
+          x={node.x + chevronWidth + 22 + estimateWidth}
           y={node.y}
-          width={NODE_WIDTH - chevronWidth - 22 - rightLabelWidth}
+          width={NODE_WIDTH - chevronWidth - 22 - estimateWidth - rightLabelWidth}
           height={NODE_HEIGHT}
         />
       </clipPath>
 
       {/* Title — single line */}
       <text
-        x={node.x + chevronWidth + 24}
+        x={node.x + chevronWidth + 24 + estimateWidth}
         y={titleY}
         fontSize={13}
         fontWeight={500}
