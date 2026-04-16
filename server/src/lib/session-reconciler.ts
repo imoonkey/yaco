@@ -1,12 +1,11 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync, readFileSync, statSync, writeFileSync, renameSync } from 'fs'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import { loadProjects, type Project } from './projects'
 import type { MultmuxSession } from './multmux'
 import { fetchAllSessionsFromCli } from './multmux'
 import { withFileLock, type ProgressEntry } from './scanner'
 import { emitRefresh } from './notify'
-import { MULTMUX_SESSIONS_DIR } from './constants'
 
 const RECONCILE_INTERVAL = 60_000
 /** Require N consecutive idle reconcile passes before firing notification. */
@@ -23,10 +22,6 @@ const processingStartBySession = new Map<string, number>()
 const idleStreakBySession = new Map<string, number>()
 
 let lastSessionSnapshot = ''
-
-/** Staleness threshold — if a state file hasn't been updated in this long and
- *  the CLI reports a different status, the CLI is more likely correct. */
-const STALE_THRESHOLD_MS = 5 * 60 * 1000 // 5 minutes
 
 function sessionKey(project: string, name: string): string {
   return `${project}:${name}`
@@ -54,10 +49,6 @@ async function reconcile(): Promise<void> {
     const projects = await loadProjects()
     const allSessions = await fetchAllSessionsFromCli(projects)
 
-    // Fix stale state files: if CLI (authoritative) disagrees with state file
-    // and the state file hasn't been updated recently, write the CLI status.
-    fixStaleStateFiles(allSessions)
-
     const sessionsByProject = new Map<string, MultmuxSession[]>()
     for (const session of allSessions) {
       const list = sessionsByProject.get(session.project) ?? []
@@ -83,32 +74,6 @@ async function reconcile(): Promise<void> {
   } finally {
     reconcileInFlight = false
     scheduleReconcile()
-  }
-}
-
-/** Fix stale state files where CLI (authoritative) disagrees with on-disk status.
- *  Only writes when the state file is stale (mtime > threshold) to avoid racing
- *  with real-time hook updates. Uses atomic write (tmp + rename). */
-function fixStaleStateFiles(cliSessions: MultmuxSession[]): void {
-  const now = Date.now()
-  for (const cli of cliSessions) {
-    const stateFile = join(MULTMUX_SESSIONS_DIR, `${cli.name}.json`)
-    try {
-      if (!existsSync(stateFile)) continue
-      const mtime = statSync(stateFile).mtimeMs
-      if (now - mtime < STALE_THRESHOLD_MS) continue // recently updated by hooks — trust it
-
-      const raw = readFileSync(stateFile, 'utf-8')
-      const state = JSON.parse(raw)
-      if (state.status === cli.status) continue // already in sync
-
-      state.status = cli.status
-      const tmp = `${stateFile}.${process.pid}.tmp`
-      writeFileSync(tmp, JSON.stringify(state))
-      renameSync(tmp, stateFile)
-    } catch {
-      // best effort — don't crash reconciler for a single file
-    }
   }
 }
 
