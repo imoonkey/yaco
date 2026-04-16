@@ -49,6 +49,22 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const [sessionTab, setSessionTab] = useState<'live' | 'history'>('live')
   const [resumingId, setResumingId] = useState<string | null>(null)
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
+  const [cmdCtrlHeld, setCmdCtrlHeld] = useState(false)
+
+  useEffect(() => {
+    const update = (e: KeyboardEvent) => setCmdCtrlHeld(e.metaKey && e.ctrlKey)
+    const clear = () => setCmdCtrlHeld(false)
+    window.addEventListener('keydown', update)
+    window.addEventListener('keyup', update)
+    window.addEventListener('blur', clear)
+    document.addEventListener('visibilitychange', clear)
+    return () => {
+      window.removeEventListener('keydown', update)
+      window.removeEventListener('keyup', update)
+      window.removeEventListener('blur', clear)
+      document.removeEventListener('visibilitychange', clear)
+    }
+  }, [])
 
   // Auto-fetch history when History tab first opens
   const historyFetchedRef = useRef(false)
@@ -121,10 +137,14 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const unpinnedProcessing = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && (s.status === 'processing' || s.status === 'starting'))
   const unpinnedIdle = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && s.status === 'idle')
 
-  const renderSessionItem = (s: AgentSession, isPinned?: boolean) => (
+  const renderSessionItem = (s: AgentSession, isPinned?: boolean) => {
+    const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
+    const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
+    return (
     <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned}
       unreadCount={sessionsMgr.getSessionUnread(s.name)}
       pendingName={sessionsMgr.pendingRenames[s.name]}
+      shortcutIndex={shortcutIndex}
       onKill={() => { void sessionsMgr.killSession(s.name) }}
       onClick={() => handleSessionClick(s.name)}
       onPin={() => sessionsMgr.togglePin(s.name)}
@@ -137,7 +157,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         dragging: draggedSession === s.name,
       } : {})}
     />
-  )
+    )
+  }
 
   const divider = <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
   const liveSessionsBody = (

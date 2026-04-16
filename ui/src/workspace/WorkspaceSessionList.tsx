@@ -24,6 +24,7 @@ export function SessionItem({
   dragging,
   unreadCount,
   pendingName,
+  shortcutIndex,
   onClick,
   onKill,
   onPin,
@@ -39,6 +40,7 @@ export function SessionItem({
   dragging?: boolean
   unreadCount?: number
   pendingName?: string
+  shortcutIndex?: number | null
   onClick: () => void
   onKill: () => void
   onPin?: () => void
@@ -115,6 +117,19 @@ export function SessionItem({
       ) : (
         <div className="min-w-0 flex-1 line-clamp-2">
           <span>{session.name}</span>
+          {shortcutIndex != null && (
+            <span
+              className="text-[10px] tabular-nums px-1 rounded ml-1.5 align-middle"
+              style={{
+                color: 'var(--sol-muted)',
+                border: '1px solid var(--sol-border)',
+                background: 'var(--sol-subtle-bg)',
+              }}
+              title={`Cmd+Ctrl+${shortcutIndex}`}
+            >
+              {shortcutIndex}
+            </span>
+          )}
           {pendingName && <span style={{ color: 'var(--sol-muted)' }}>{` → ${pendingName}`}</span>}
           {session.worktree && (
             <span

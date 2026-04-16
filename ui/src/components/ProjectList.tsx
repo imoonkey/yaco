@@ -37,8 +37,8 @@ export function ProjectList({
   const [metaHeld, setMetaHeld] = useState(false)
 
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.metaKey) setMetaHeld(true) }
-    const onKeyUp = (e: KeyboardEvent) => { if (!e.metaKey) setMetaHeld(false) }
+    const onKeyDown = (e: KeyboardEvent) => { setMetaHeld(e.metaKey && !e.ctrlKey) }
+    const onKeyUp = (e: KeyboardEvent) => { setMetaHeld(e.metaKey && !e.ctrlKey) }
     const clear = () => setMetaHeld(false)
     window.addEventListener('keydown', onKeyDown)
     window.addEventListener('keyup', onKeyUp)

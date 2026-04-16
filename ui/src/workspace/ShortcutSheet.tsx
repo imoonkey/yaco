@@ -11,6 +11,9 @@ const GROUPS: Group[] = [
     title: 'Global',
     shortcuts: [
       { keys: `${CMD} 1–9`, label: 'Switch project' },
+      { keys: `${CMD} ⌃ 1–9`, label: 'Switch session' },
+      { keys: `${CMD} ⌃ ↑ / ↓`, label: 'Prev / next session' },
+      { keys: `${CMD} ⌃ ← / →`, label: 'Prev / next tab' },
       { keys: `${CMD} K`, label: 'Notifications' },
       { keys: '?', label: 'Shortcut cheatsheet' },
     ],

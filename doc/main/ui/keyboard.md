@@ -27,8 +27,9 @@ Complete keyboard shortcut reference.
 |----------|---------|--------|
 | `Cmd+B` | Workspace | Toggle left sidebar (Explorer + Changes + Tasks) |
 | `Cmd+Shift+B` | Workspace | Toggle right session/terminal pane |
-| `Cmd+Shift+1` … `Cmd+Shift+9` | Workspace | Switch to session N (in display order) |
-| `Cmd+↑` / `Cmd+↓` | Workspace | Cycle to previous/next session (wraps around) |
+| `Cmd+Ctrl+1` … `Cmd+Ctrl+9` | Workspace | Switch to session N (in display order). Holding `Cmd+Ctrl` reveals numeric index hints next to the first 9 session names in the sidebar. |
+| `Cmd+Ctrl+↑` / `Cmd+Ctrl+↓` | Workspace | Cycle to previous/next session (wraps around) |
+| `Cmd+Ctrl+←` / `Cmd+Ctrl+→` | Workspace | Cycle to previous/next editor tab (wraps around) |
 | `Cmd+Shift+T` | Workspace | Open Tasks tab, focus it if already open, or close it if active |
 | `Cmd+P` | Workspace | Open file search modal |
 | `Cmd+W` | Workspace (editor focused) | Close active editor tab |

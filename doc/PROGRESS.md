@@ -1,5 +1,34 @@
 # Progress
 
+## 2026-04-16: Keyboard shortcuts — Cmd+Ctrl namespace for sessions and editor tabs
+
+**What changed:**
+- Session switch moved from `Cmd+Shift+1-9` → `Cmd+Ctrl+1-9` (macOS reserves `Cmd+Shift+3/4/5/6` for screenshots, so 3-6 were unreachable)
+- Session cycle moved from `Cmd+↑/↓` → `Cmd+Ctrl+↑/↓` (avoids conflict with macOS document-start/end text navigation)
+- New shortcut `Cmd+Ctrl+←/→` cycles through editor tabs (mirrors `Cmd+Ctrl+↑/↓` for sessions — vertical list vs horizontal tab bar)
+- Session rows now show a numeric index badge next to the name when `Cmd+Ctrl` is held, matching the existing `Cmd`-held pattern on ProjectList
+- ProjectList's `Cmd`-held hint now hides when `Ctrl` is also down, so only one hint layer lights up at a time
+- `ShortcutSheet` updated with the new bindings
+
+**Why:**
+- `Cmd+Shift+N` conflicted with macOS system screenshot shortcuts on 3-6; swapping to `Cmd+Ctrl+N` frees all nine slots and avoids browser tab cycling (`Ctrl+Tab`)
+- `Cmd+↑/↓` is the macOS text-editor convention for jump-to-start/end — high collision inside Monaco/terminals
+- Unifying sessions and editor tabs under the `Cmd+Ctrl` namespace gives a coherent mental model: `↑/↓` = vertical list (sessions), `←/→` = horizontal list (tabs), `1-9` = direct jump (sessions)
+
+**Key files:**
+- `ui/src/workspace/useWorkspaceKeyboard.ts` — new Cmd+Ctrl handlers (session 1-9, session ↑/↓, tab ←/→), threads `openTabs`/`activeTab`
+- `ui/src/workspace/WorkspaceSessionList.tsx` — `SessionItem` accepts `shortcutIndex` and renders a chip next to the name
+- `ui/src/workspace/useWorkspaceSessionSection.tsx` — tracks `cmdCtrlHeld` modifier state, maps `orderedSessions` index → shortcut number
+- `ui/src/workspace/WorkspaceScreen.tsx` — passes `openTabs`/`activeTab` into keyboard hook
+- `ui/src/components/ProjectList.tsx` — Cmd-held detection excludes Ctrl so hint layers don't overlap
+- `ui/src/workspace/ShortcutSheet.tsx` — cheatsheet updated
+- `doc/main/ui/keyboard.md` — table updated
+
+**Verification:** `npx tsc --noEmit` clean
+**Commit:** (pending)
+**Next:** —
+**Blockers:** None
+
 ## 2026-04-16: DiffTab — fix split view column overflow
 
 **What changed:**

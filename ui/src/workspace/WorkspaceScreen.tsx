@@ -250,6 +250,7 @@ export function Workspace({
 
   const { lockCloseShortcut } = useWorkspaceKeyboard({
     actions, activeSession, orderedSessions: sessionsMgr.orderedSessions,
+    openTabs, activeTab,
     isMobile, showSidebar, showRightPanel, showSearch,
     showTextSearch,
     setShowSearch: (fn) => setShowSearch(fn),
