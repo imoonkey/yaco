@@ -3,17 +3,18 @@
 ## 2026-04-16: Fix session status inconsistency
 
 **What changed:**
-- `GET /sessions` now overrides state file statuses with CLI-reconciled cache from session reconciler (staleness-aware, liveness-checked)
-- Session reconciler runs first reconcile immediately on startup to populate cache
-- (multmux) Added busy patterns for `Running…` and `✳ Running` to prevent false idle detection during active Claude Code tool execution
+- Session reconciler now writes corrected status directly to stale state files (mtime > 5min, CLI disagrees). API reads state files only — kept accurate by hooks (real-time) + reconciler (background correction).
+- First reconcile runs immediately on startup.
+- (multmux) Added busy patterns for `Running…` and `✳ Running` to prevent false idle detection during active Claude Code tool execution.
 
 **Why:**
-- State files could get stuck at "processing" when Claude Code hooks fail to fire, causing the web UI to show idle sessions as processing
-- `isIdle()` matched `❯` in Claude Code's TUI statusbar even during active tool execution, causing `mt status` to report processing sessions as idle
+- State files could get stuck at "processing" when Claude Code hooks fail to fire, causing the web UI to show idle sessions as processing.
+- Initial fix (CLI cache override in API) caused the opposite bug: fresh hook-updated state files were overwritten by stale 60s-old cache, making processing sessions appear idle.
+- `isIdle()` matched `❯` in Claude Code's TUI statusbar even during active tool execution, causing `mt status` to report processing sessions as idle.
 
 **Key files:** `server/src/lib/session-reconciler.ts`, `server/src/routes/sessions.ts`, `multmux/src/providers.ts`
-**Verification:** 171/171 server tests pass, 220/220 multmux tests pass, verified `isIdle()` against real captured pane output
-**Commit:** ad481c8 (workflow), c0185fe (multmux)
+**Verification:** 171/171 server tests pass, 220/220 multmux tests pass. API confirmed correct for both stale and fresh sessions.
+**Commit:** 36a01bc, ad481c8 (workflow), c0185fe (multmux)
 **Next:** Investigate why Claude Code `Stop` hooks occasionally fail to fire for long-running sessions
 **Blockers:** None
 
