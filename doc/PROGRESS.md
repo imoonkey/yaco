@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-16: DiffTab — fix split view column overflow
+
+**What changed:**
+- `SplitRow` grid changed from `1fr 1fr` to `minmax(0, 1fr)` so text columns can shrink below min-content
+- Text spans in `SplitRow` and `UnifiedRow` now set `minWidth: 0`, `overflowWrap: anywhere`, `whiteSpace: pre-wrap`
+- Extracted shared `SPLIT_GRID` / `SPLIT_TEXT` / `UNIFIED_TEXT` style constants
+
+**Why:**
+- On newly-added files with long unbreakable tokens (file paths, identifiers), split view had right-column content visually overflowing into the left column area because grid items default to `min-width: auto` (= min-content). `pre-wrap` also restores code indentation that was previously collapsed.
+
+**Key files:** `ui/src/workspace/diff/DiffTab.tsx`
+**Verification:** `npx tsc --noEmit` clean; split view renders a +16/-0 markdown diff without cross-column leakage
+**Commit:** (pending)
+**Next:** —
+**Blockers:** None
+
 ## 2026-04-16: ProjectList — Cmd-held index hints
 
 **What changed:**

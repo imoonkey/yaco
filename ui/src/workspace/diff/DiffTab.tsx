@@ -111,6 +111,14 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
 
 // --- Unified row ---
 
+const UNIFIED_TEXT: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  paddingRight: 12,
+  overflowWrap: 'anywhere',
+  whiteSpace: 'pre-wrap',
+}
+
 function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new' }) {
   let bg = ''
   let color = 'var(--sol-text-dim)'
@@ -129,13 +137,13 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
         <>
           <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: 'var(--sol-red)', minHeight: 20 }}>
             <LineNum num={row.oldLine} />
-            <span style={{ flex: 1, paddingRight: 12 }}>
+            <span style={UNIFIED_TEXT}>
               <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
             </span>
           </div>
           <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: 'var(--sol-green)', minHeight: 20 }}>
             <LineNum num={row.newLine} />
-            <span style={{ flex: 1, paddingRight: 12 }}>
+            <span style={UNIFIED_TEXT}>
               <Segments segments={row.newSegments} highlight={COLORS.addWord} />
             </span>
           </div>
@@ -146,7 +154,7 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
     return (
       <div style={{ display: 'flex', backgroundColor: bg, color, minHeight: 20 }}>
         <LineNum num={num} />
-        <span style={{ flex: 1, paddingRight: 12 }}>{row.text}</span>
+        <span style={UNIFIED_TEXT}>{row.text}</span>
       </div>
     )
   }
@@ -158,14 +166,14 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
           <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: 'var(--sol-red)', minHeight: 20 }}>
             <LineNum num={row.oldLine} />
             <LineNum num={null} />
-            <span style={{ flex: 1, paddingRight: 12 }}>
+            <span style={UNIFIED_TEXT}>
               <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
             </span>
           </div>
           <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: 'var(--sol-green)', minHeight: 20 }}>
             <LineNum num={null} />
             <LineNum num={row.newLine} />
-            <span style={{ flex: 1, paddingRight: 12 }}>
+            <span style={UNIFIED_TEXT}>
               <Segments segments={row.newSegments} highlight={COLORS.addWord} />
             </span>
           </div>
@@ -174,7 +182,7 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
         <div style={{ display: 'flex', backgroundColor: bg, color, minHeight: 20 }}>
           <LineNum num={row.kind === 'added' ? null : row.oldLine} />
           <LineNum num={row.kind === 'deleted' ? null : row.newLine} />
-          <span style={{ flex: 1, paddingRight: 12 }}>
+          <span style={UNIFIED_TEXT}>
             {row.kind === 'context' || row.kind === 'added' || row.kind === 'deleted'
               ? row.text
               : null}
@@ -187,55 +195,68 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
 
 // --- Split row ---
 
+const SPLIT_GRID: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: '34px minmax(0, 1fr) 1px 34px minmax(0, 1fr)',
+  minHeight: 20,
+}
+
+const SPLIT_TEXT: React.CSSProperties = {
+  paddingRight: 8,
+  minWidth: 0,
+  overflowWrap: 'anywhere',
+  whiteSpace: 'pre-wrap',
+}
+
 function SplitRow({ row }: { row: DiffRow }) {
   const placeholderBg = 'var(--sol-base2)'
 
   if (row.kind === 'context') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
+      <div style={SPLIT_GRID}>
         <LineNum num={row.oldLine} />
-        <span style={{ color: 'var(--sol-text-dim)', paddingRight: 8 }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, color: 'var(--sol-text-dim)' }}>{row.text}</span>
         <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={row.newLine} />
-        <span style={{ color: 'var(--sol-text-dim)', paddingRight: 8 }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, color: 'var(--sol-text-dim)' }}>{row.text}</span>
       </div>
     )
   }
 
   if (row.kind === 'deleted') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
+      <div style={SPLIT_GRID}>
         <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
-        <span style={{ backgroundColor: COLORS.delBg, color: 'var(--sol-red)', paddingRight: 8 }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.delBg, color: 'var(--sol-red)' }}>{row.text}</span>
         <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={null} style={{ backgroundColor: placeholderBg }} />
-        <span style={{ backgroundColor: placeholderBg }} />
+        <span style={{ backgroundColor: placeholderBg, minWidth: 0 }} />
       </div>
     )
   }
 
   if (row.kind === 'added') {
     return (
-      <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
+      <div style={SPLIT_GRID}>
         <LineNum num={null} style={{ backgroundColor: placeholderBg }} />
-        <span style={{ backgroundColor: placeholderBg }} />
+        <span style={{ backgroundColor: placeholderBg, minWidth: 0 }} />
         <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={row.newLine} style={{ backgroundColor: COLORS.addBg }} />
-        <span style={{ backgroundColor: COLORS.addBg, color: 'var(--sol-green)', paddingRight: 8 }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.addBg, color: 'var(--sol-green)' }}>{row.text}</span>
       </div>
     )
   }
 
   // modified
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '34px 1fr 1px 34px 1fr', minHeight: 20 }}>
+    <div style={SPLIT_GRID}>
       <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
-      <span style={{ backgroundColor: COLORS.delBg, color: 'var(--sol-red)', paddingRight: 8 }}>
+      <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.delBg, color: 'var(--sol-red)' }}>
         <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
       </span>
       <div style={{ backgroundColor: 'var(--sol-border)' }} />
       <LineNum num={row.newLine} style={{ backgroundColor: COLORS.addBg }} />
-      <span style={{ backgroundColor: COLORS.addBg, color: 'var(--sol-green)', paddingRight: 8 }}>
+      <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.addBg, color: 'var(--sol-green)' }}>
         <Segments segments={row.newSegments} highlight={COLORS.addWord} />
       </span>
     </div>
