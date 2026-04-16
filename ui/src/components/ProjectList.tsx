@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { GitBranch } from 'lucide-react'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
@@ -34,6 +34,23 @@ export function ProjectList({
   const [draggedProject, setDraggedProject] = useState<string | null>(null)
   const menu = useContextMenu()
   const [menuProject, setMenuProject] = useState<Project | null>(null)
+  const [metaHeld, setMetaHeld] = useState(false)
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => { if (e.metaKey) setMetaHeld(true) }
+    const onKeyUp = (e: KeyboardEvent) => { if (!e.metaKey) setMetaHeld(false) }
+    const clear = () => setMetaHeld(false)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', clear)
+    document.addEventListener('visibilitychange', clear)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', clear)
+      document.removeEventListener('visibilitychange', clear)
+    }
+  }, [])
 
   const handleDragStart = useCallback((e: React.DragEvent, name: string) => {
     e.dataTransfer.setData('text/plain', name)
@@ -59,11 +76,12 @@ export function ProjectList({
 
   return (
     <div className="flex flex-col gap-0.5 px-1 py-1">
-      {projects.map(project => {
+      {projects.map((project, idx) => {
         const isActive = activeProject === project.name
         const unreadCount = projectUnreadCounts[project.name] ?? 0
         const sc = projectSessionCounts[project.name]
         const isMainActive = isActive && !activeWorktree
+        const shortcutIndex = idx < 9 ? idx + 1 : null
         return (
           <div key={project.name}>
             <button
@@ -87,8 +105,21 @@ export function ProjectList({
                 ...(isMainActive ? { borderLeft: '3px solid var(--sol-accent)', paddingLeft: 5 } : {}),
               }}
             >
-              <span className="truncate flex-1">{project.name}</span>
-              <span className="flex items-center gap-1 shrink-0">
+              <span className="truncate flex-shrink min-w-0">{project.name}</span>
+              {metaHeld && shortcutIndex !== null && (
+                <span
+                  className="text-[10px] tabular-nums px-1 rounded shrink-0"
+                  style={{
+                    color: 'var(--sol-muted)',
+                    border: '1px solid var(--sol-border)',
+                    background: 'var(--sol-subtle-bg)',
+                  }}
+                  title={`Cmd+${shortcutIndex}`}
+                >
+                  {shortcutIndex}
+                </span>
+              )}
+              <span className="flex items-center gap-1 shrink-0 ml-auto">
                 <BadgeCount count={unreadCount} />
                 {sc && sc.total > 0 && (
                   <span
