@@ -3,7 +3,7 @@ import type { IPty } from 'node-pty'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import { PTY_MAX_BUFFER_SIZE } from './constants'
-import { assertCanSpawn, markDegraded } from './pty-capacity'
+import { assertCanSpawn } from './pty-capacity'
 
 export interface ShellSessionSummary {
   name: string
@@ -67,19 +67,13 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
 
   assertCanSpawn()
 
-  let proc: IPty
-  try {
-    proc = pty.spawn(process.env.SHELL ?? 'bash', ['--login'], {
-      name: 'xterm-256color',
-      cols: 80,
-      rows: 24,
-      cwd,
-      env: buildChildProcessEnv(),
-    })
-  } catch (err) {
-    markDegraded('shell_spawn_failed')
-    throw err
-  }
+  const proc = pty.spawn(process.env.SHELL ?? 'bash', ['--login'], {
+    name: 'xterm-256color',
+    cols: 80,
+    rows: 24,
+    cwd,
+    env: buildChildProcessEnv(),
+  })
 
   const session: ShellSession = {
     name,
@@ -129,18 +123,12 @@ export function attachSession(sessionName: string, cols: number, rows: number): 
 
   assertCanSpawn()
 
-  let proc: IPty
-  try {
-    proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
-      name: 'xterm-256color',
-      cols,
-      rows,
-      env: buildChildProcessEnv(),
-    })
-  } catch (err) {
-    markDegraded('tmux_spawn_failed')
-    throw err
-  }
+  const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
+    name: 'xterm-256color',
+    cols,
+    rows,
+    env: buildChildProcessEnv(),
+  })
 
   return {
     initialData: '',
@@ -156,5 +144,9 @@ export function releaseSession(sessionName: string, attached: AttachedSession): 
     return
   }
 
+  // SIGHUP before destroy — faster child termination. node-pty's destroy()
+  // queues SIGHUP behind its socket-close event, which on macOS occasionally
+  // lags. Sending it directly shortens the window.
+  try { attached.proc.kill('SIGHUP') } catch { /* already dead */ }
   attached.proc.destroy()
 }

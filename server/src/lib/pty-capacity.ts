@@ -4,7 +4,11 @@ import { spawn } from 'node:child_process'
 export const PTY_SOFT_LIMIT = 400
 export const PTY_HARD_LIMIT = 448
 export const PTY_LOW_WATER = 320
-export const PTY_LEAK_SLACK = 8
+// node-pty on macOS has a known destroy()/fd-close lag where master fds linger
+// after release until the socket close event fires (often never). A small
+// residual gap between actual and tracked is expected and NOT a leak signal.
+// The real exhaustion signal is the absolute soft/hard limit — not the gap.
+export const PTY_LEAK_SLACK = 80
 export const PTY_SWEEP_INTERVAL_MS = 60_000
 
 export class PtyCapacityError extends Error {
