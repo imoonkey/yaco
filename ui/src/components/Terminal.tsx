@@ -506,6 +506,13 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     }
   }, [sessionName, containerReady, projectName])
 
+  // Re-focus xterm whenever the attached session changes, so keyboard shortcut
+  // / sidebar click handoff puts the user directly into the terminal.
+  useEffect(() => {
+    if (!sessionName) return
+    termRef.current?.focus()
+  }, [sessionName])
+
   return (
     <div className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
       <div

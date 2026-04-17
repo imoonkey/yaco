@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-04-16: Terminal — auto-focus on session switch
+
+**What changed:**
+- `Terminal` now runs a `useEffect` keyed on `sessionName` that calls `termRef.current?.focus()`, so switching sessions (sidebar click, `Cmd+Ctrl+1-9`, `Cmd+Ctrl+↑/↓`) lands the caret directly in the xterm viewport.
+- Added `ui/src/components/__tests__/Terminal.focus.test.tsx` — vitest + jsdom, mocks `@xterm/xterm` / addons / WebSocket / ResizeObserver / matchMedia. Covers positive case (sessionName change → focus fires) and negative case (unrelated prop change → focus does not fire).
+
+**Why:**
+- `setFocusTarget('terminal')` only feeds `closeFocusedSurface`; it never pulled DOM focus. xterm's mount-time `term.focus()` fired only once and was never re-triggered when the active session changed, so users had to click into the terminal before typing worked.
+- Test locks in both the trigger (sessionName) and the narrowness of the dep list, so future refactors can't silently broaden or drop the effect.
+
+**Key files:**
+- `ui/src/components/Terminal.tsx` — new session-change focus effect
+- `ui/src/components/__tests__/Terminal.focus.test.tsx` — regression test
+- `doc/main/frontend/components.md` — Terminal spec updated
+
+**Verification:** `npx vitest run src/components/__tests__/Terminal.focus.test.tsx` (2 passed); confirmed test fails when the new effect is reverted
+**Commit:** (pending)
+**Next:** —
+**Blockers:** None
+
 ## 2026-04-16: Trailing-slash project paths broke file create — defense in depth
 
 **What changed:**

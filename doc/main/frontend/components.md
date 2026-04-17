@@ -49,7 +49,7 @@ App (384 lines)
         │   └── fileExplorerNode — git letter indicators (M/A/D/U)
         ├── ProjectList (153 lines) — project rows + worktree sub-items
         ├── Menu (154 lines) — keyboard nav (Arrow/Enter/Home/End), long-press (350ms)
-        ├── Terminal (447 lines)
+        ├── Terminal (528 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
         ├── SessionItem — status dots (processing/idle/error/completed)
         ├── WorkspaceHistoryList (114 lines)
@@ -232,6 +232,7 @@ xterm.js wrapper with WebSocket PTY connection.
 - Copy shortcut (`Cmd+C` / `Ctrl+Shift+C`)
 - Close shortcut (`Cmd+W` for detach)
 - Renders `TerminalKeyBar` on touch devices for special key input
+- Auto-focuses xterm on `sessionName` prop change so session switches (click, `Cmd+Ctrl+N`, cycle) land the caret directly in the terminal. xterm instance is reused across session changes — lifecycle is keyed on `containerReady`, not `sessionName`.
 
 ### TerminalKeyBar
 
