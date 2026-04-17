@@ -3,9 +3,9 @@
 ## 2026-04-17: Archive 6 completed projects from doc/todo/
 
 **What changed:**
-- Moved to `doc/archive/20260417_*/`: `git-compare`, `pty`, `worktree`, `frontend-redesign`, `theme`, `sessionhist`. All verified as fully implemented in the codebase via subagent review (design docs vs. current source).
-- Archived `worktree` top-level task (8 subtasks) → `doc/archive/20260417_worktree.json`.
-- Remaining in `doc/todo/`: `tasks-better` (Phase 3-4 polish pending), `workflow-multmux` (2 High-priority race conditions unfixed), `potential-publish` (design-review gate unimplemented), `superset-ref` (not started), `agent-theme-toggle` (not started).
+- Moved to `doc/archive/20260417_*/`: `git-compare`, `pty`, `worktree`, `frontend-redesign`, `theme`, `sessionhist`, `tasks-better`. All verified as implemented (subagent review of design docs vs. current source; task graph states `done`).
+- Archived tasks: `worktree` (8 subtasks) → `doc/archive/20260417_worktree.json`; `tasks-better` (11 subtasks) → `doc/archive/20260417_tasks-better.json`.
+- Remaining in `doc/todo/`: `workflow-multmux` (2 High-priority race conditions unfixed), `potential-publish` (design-review gate unimplemented), `superset-ref` (not started), `agent-theme-toggle` (not started).
 
 **Why:**
 - Periodic sweep to keep `doc/todo/` focused on active work. Archived folders remain reachable under `doc/archive/` with date prefix.
