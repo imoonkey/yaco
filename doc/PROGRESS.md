@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-04-17: Archive 6 completed projects from doc/todo/
+
+**What changed:**
+- Moved to `doc/archive/20260417_*/`: `git-compare`, `pty`, `worktree`, `frontend-redesign`, `theme`, `sessionhist`. All verified as fully implemented in the codebase via subagent review (design docs vs. current source).
+- Archived `worktree` top-level task (8 subtasks) → `doc/archive/20260417_worktree.json`.
+- Remaining in `doc/todo/`: `tasks-better` (Phase 3-4 polish pending), `workflow-multmux` (2 High-priority race conditions unfixed), `potential-publish` (design-review gate unimplemented), `superset-ref` (not started), `agent-theme-toggle` (not started).
+
+**Why:**
+- Periodic sweep to keep `doc/todo/` focused on active work. Archived folders remain reachable under `doc/archive/` with date prefix.
+
+**Key files:** `doc/todo/`, `doc/archive/20260417_*`, `doc/archive/20260417_worktree.json`, `doc/todo/tasks.json`
+**Verification:** Subagent review of each folder against the code; `ls doc/todo` confirms only active projects remain.
+**Commit:** pending
+**Next:** Implement `agent-theme-toggle` or address `workflow-multmux` race conditions.
+**Blockers:** None.
+
 ## 2026-04-17: Fix false "Server overloaded" on PTY reconnect
 
 **What changed:**
