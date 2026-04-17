@@ -4,7 +4,7 @@
 
 **What changed:**
 - Moved to `doc/archive/20260417_*/`: `git-compare`, `pty`, `worktree`, `frontend-redesign`, `theme`, `sessionhist`, `tasks-better`. All verified as implemented (subagent review of design docs vs. current source; task graph states `done`).
-- Archived tasks: `worktree` (8 subtasks) → `doc/archive/20260417_worktree.json`; `tasks-better` (11 subtasks) → `doc/archive/20260417_tasks-better.json`.
+- Archived tasks: `worktree` (8 subtasks) → `doc/archive/20260417_worktree.json`; `tasks-better` (11 subtasks) → `doc/archive/20260417_tasks-better.json`; `frontend-polish` (16 subtasks, dropped unused `fp-codex-review`) → `doc/archive/20260417_frontend-polish.json`.
 - Remaining in `doc/todo/`: `workflow-multmux` (2 High-priority race conditions unfixed), `potential-publish` (design-review gate unimplemented), `superset-ref` (not started), `agent-theme-toggle` (not started).
 
 **Why:**
