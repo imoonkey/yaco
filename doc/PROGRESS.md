@@ -1,5 +1,29 @@
 # Progress
 
+## 2026-04-17: Fix PTY leak in terminal WebSocket lifecycle
+
+**What changed:**
+- `server/src/index.ts` — rewrote terminal WS handler around a single `connections: Map<WebSocket, TerminalConnection>` record and one idempotent `cleanupConnection()` helper that owns all detach cleanup (subscriptions, release, tracking). Attach path is now synchronous — removed the `await loadProjects()` gap that could orphan a PTY if the socket closed mid-handshake. `proc.onExit`, `ws.on('close')`, `ws.on('error')`, and shutdown all route through `cleanupConnection`. Added a 60s unref'd sweep that calls `pty-capacity.sweep()` and drains non-persistent tmux attaches on `draining`.
+- `server/src/lib/pty-capacity.ts` (new) — `healthy` / `degraded` / `draining` state machine gated by `PTY_SOFT_LIMIT=400`, `PTY_HARD_LIMIT=448`, `PTY_LOW_WATER=320`, `PTY_LEAK_SLACK=8` on darwin's 511-slot PTY table. `assertCanSpawn()` throws `PtyCapacityError` when pressure is unsafe; `sweep()` samples via `lsof -p <pid> -F tn`, holds state when the sampler fails, and steps `draining → degraded` / `degraded → healthy` with 2-sweep hysteresis. `markDegraded()` flips state immediately on unexpected `pty.spawn` failures so the next attach fails fast.
+- `server/src/lib/terminal.ts` — both spawn paths (`startShellSession`, `attachSession` tmux branch) call `assertCanSpawn()` before `pty.spawn()` and `markDegraded()` on failure. Dropped the unused `projectPath` param from `attachSession()`. Exposed `getShellSessionCount()` for the sweep's tracked-count math.
+- `ui/src/components/Terminal.tsx` — close code `4002/pty_capacity` now takes a slower reconnect path (5s → 60s with jitter) and renders `[Server overloaded — retrying…]` instead of fast-reconnecting. `4001/session_ended` keeps current detach-immediately behavior.
+- Tests: new `server/src/lib/__tests__/pty-capacity.test.ts` (9 tests covering state transitions, hysteresis, draining step-down, sampler failure); `terminal.test.ts` updated for new signature and now covers capacity gating + shell bypass.
+
+**Why:**
+- `pty.spawn('tmux attach-session')` can leak a master fd when node-pty throws after `openpty()`; repeated browser reconnects amplify a transient kernel hiccup into full PTY table exhaustion. The seed race (early socket close during the `await loadProjects()` window) and split cleanup between `proc.onExit` and `ws.on('close')` could also orphan PTYs. Once the 511-slot table filled, every new attach failed and the server became unusable until restart.
+- Fix addresses all three windows: sync attach closes the seed race; pre-spawn capacity gate stops the amplifier before calling the leaky native path; periodic sweep compares actual vs tracked and drains non-persistent attaches at the hard limit — tmux sessions and shell sessions are never killed, so long-running agent state survives.
+
+**Key files:**
+- `server/src/index.ts`, `server/src/lib/terminal.ts`, `server/src/lib/pty-capacity.ts` (new)
+- `ui/src/components/Terminal.tsx`
+- `server/src/lib/__tests__/pty-capacity.test.ts` (new), `server/src/lib/__tests__/terminal.test.ts`
+- `doc/main/backend/libs.md`
+
+**Verification:** `cd server && npm test` — 185 passed (17 files); design doc at `doc/todo/pty/final/design.md`.
+**Commit:** (pending)
+**Next:** Restart the workflow server after deploy to clear any already-leaked PTYs the current process is carrying. Watch logs for `[pty] pressure` transitions.
+**Blockers:** None.
+
 ## 2026-04-16: Terminal — auto-focus on session switch
 
 **What changed:**

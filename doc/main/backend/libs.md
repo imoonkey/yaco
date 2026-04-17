@@ -159,11 +159,11 @@ Per-project `.gitignore` parser and cache.
 - Used by both `project-watcher.ts` (SSE filtering) and `files.ts` (tree building)
 - `clearGitignoreCache()` called when `.gitignore` changes on disk
 
-### terminal.ts (145 lines)
+### terminal.ts (165 lines)
 
 PTY management for terminal sessions.
 
-**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `attachSession()`, `releaseSession()`, `setShellSessionChangeCallback()`
+**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `attachSession()`, `releaseSession()`, `setShellSessionChangeCallback()`, `getShellSessionCount()`
 
 - Direct shell sessions: long-lived in-process PTYs named `shell-1`, `shell-2`, etc.
 - Shell sessions keep a bounded scrollback buffer so re-attaching restores recent output
@@ -171,8 +171,20 @@ PTY management for terminal sessions.
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
 - Shell PTYs and tmux attach PTYs both use `buildChildProcessEnv()` so spawned processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`
-- `attachSession(name, cols, rows, projectPath?)` resolves the handle from `~/.multmux/sessions/<handle>.json` and attaches directly to that tmux session name; if the state file is missing, it falls back to `name`
+- `attachSession(name, cols, rows)` returns the existing shell-session PTY when `name` matches, otherwise spawns a new tmux attach client
+- Both spawn paths call `assertCanSpawn()` from `pty-capacity.ts` before `pty.spawn()`; a spawn that still throws calls `markDegraded()` so the next attach fails fast
 - `releaseSession(name, attached)` centralizes detach cleanup: shell sessions remain alive, tmux attach PTYs are destroyed immediately
+
+### pty-capacity.ts (~120 lines)
+
+Process-level PTY pressure guard for darwin.
+
+**Exports**: `PtyCapacityError`, `assertCanSpawn()`, `sweep()`, `countOwnedPtyFds()`, `markDegraded()`, `getPressureState()`, `getActualPtyCount()`, constants `PTY_SOFT_LIMIT`/`PTY_HARD_LIMIT`/`PTY_LOW_WATER`/`PTY_LEAK_SLACK`/`PTY_SWEEP_INTERVAL_MS`
+
+- Pressure states: `healthy` → `degraded` → `draining`, with 2-clean-sweep hysteresis before returning to `healthy`
+- `assertCanSpawn()` throws `PtyCapacityError` unless `healthy` — the WS handler in `index.ts` maps that to close code `4002/pty_capacity`
+- `countOwnedPtyFds()` runs `lsof -p <pid> -F tn` once per sweep and counts entries pointing at `/dev/ttys*` or `/dev/ptmx`; returns `null` on sampler failure so state is held rather than reset
+- `sweep()` transitions pressure based on actual PTY count vs tracked attaches (plus `PTY_LEAK_SLACK` for in-flight noise); fires `onDrain` callback at the hard limit so the caller can close non-persistent attaches
 
 ### ssh-auth.ts (89 lines)
 

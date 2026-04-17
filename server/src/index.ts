@@ -25,7 +25,8 @@ import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
-import { attachSession, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
+import { attachSession, releaseSession, setShellSessionChangeCallback, getShellSessionCount } from './lib/terminal.js'
+import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS, WS_PING_INTERVAL_MS } from './lib/constants.js'
 import type { IPty } from 'node-pty'
@@ -189,23 +190,69 @@ const server = serve({ fetch: app.fetch, port }, () => {
 const wss = new WebSocketServer({ noServer: true })
 type PtySubscription = ReturnType<IPty['onData']>
 
-const ptyMap = new Map<WebSocket, { sessionName: string; attached: ReturnType<typeof attachSession> }>()
-const subscriptionMap = new Map<WebSocket, { data: PtySubscription; exit: PtySubscription }>()
-const aliveMap = new Map<WebSocket, boolean>()
+type TerminalConnection = {
+  sessionName: string
+  attached: ReturnType<typeof attachSession>
+  dataSub: PtySubscription
+  exitSub: PtySubscription
+  alive: boolean
+  cleaned: boolean
+}
+
+const connections = new Map<WebSocket, TerminalConnection>()
+
+function cleanupConnection(ws: WebSocket): void {
+  const conn = connections.get(ws)
+  if (!conn || conn.cleaned) return
+  conn.cleaned = true
+  conn.dataSub.dispose()
+  conn.exitSub.dispose()
+  releaseSession(conn.sessionName, conn.attached)
+  connections.delete(ws)
+  console.log(`[ws] terminal detached: ${conn.sessionName}`)
+}
 
 // Ping all connected WebSocket clients periodically to detect dead connections.
 // Without this, dead connections linger for ~2h (TCP keepalive) leaking PTY FDs.
 const pingInterval = setInterval(() => {
-  for (const ws of aliveMap.keys()) {
-    if (!aliveMap.get(ws)) {
+  for (const [ws, conn] of connections) {
+    if (!conn.alive) {
       ws.terminate()
       continue
     }
-    aliveMap.set(ws, false)
+    conn.alive = false
     ws.ping()
   }
 }, WS_PING_INTERVAL_MS)
 pingInterval.unref()
+
+/** Close + clean up every non-persistent tmux attach. Never touches shell sessions. */
+function drainNonPersistentAttaches(): void {
+  let drained = 0
+  for (const [ws, conn] of connections) {
+    if (conn.attached.persistent) continue
+    try { ws.close(4002, 'pty_capacity') } catch { /* noop */ }
+    cleanupConnection(ws)
+    drained += 1
+  }
+  if (drained > 0) console.warn(`[pty] drained ${drained} non-persistent attach(es)`)
+}
+
+function countTrackedPtys(): number {
+  let tmuxAttaches = 0
+  for (const conn of connections.values()) {
+    if (!conn.attached.persistent) tmuxAttaches += 1
+  }
+  return tmuxAttaches + getShellSessionCount()
+}
+
+const sweepInterval = setInterval(() => {
+  void sweep({
+    trackedCount: countTrackedPtys(),
+    onDrain: drainNonPersistentAttaches,
+  })
+}, PTY_SWEEP_INTERVAL_MS)
+sweepInterval.unref()
 
 server.on('upgrade', (req: IncomingMessage, socket, head) => {
   const url = new URL(req.url ?? '', `http://localhost:${port}`)
@@ -230,56 +277,63 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
 
   const cols = Math.max(1, Math.min(MAX_TERMINAL_COLS, Number(url.searchParams.get('cols')) || DEFAULT_TERMINAL_COLS))
   const rows = Math.max(1, Math.min(MAX_TERMINAL_ROWS, Number(url.searchParams.get('rows')) || DEFAULT_TERMINAL_ROWS))
-  const projectParam = url.searchParams.get('project') || ''
 
   wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req, sessionName, cols, rows, projectParam)
+    wss.emit('connection', ws, req, sessionName, cols, rows)
   })
 })
 
-wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, projectParam: string) => {
-  aliveMap.set(ws, true)
-  ws.on('pong', () => aliveMap.set(ws, true))
-
+wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number) => {
+  let attached: ReturnType<typeof attachSession>
   try {
-    let projectPath: string | undefined
-    if (projectParam) {
-      const projects = await loadProjects()
-      projectPath = projects.find(p => p.name === projectParam)?.path
-    }
-    const attached = attachSession(sessionName, cols, rows, projectPath)
-    const { proc } = attached
-
-    const dataSubscription = proc.onData((data: string) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(data)
-    })
-
-    const exitSubscription = proc.onExit(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.close(4001, 'session_ended')
-    })
-
-    ptyMap.set(ws, { sessionName, attached })
-    subscriptionMap.set(ws, { data: dataSubscription, exit: exitSubscription })
-    console.log(`[ws] terminal attached: ${sessionName} (pid=${proc.pid})`)
-
-    if (attached.initialData && ws.readyState === WebSocket.OPEN) {
-      ws.send(attached.initialData)
-    }
-    // Reset terminal modes that buffer replay may have restored from a prior
-    // TUI session (e.g. mouse tracking, hidden cursor from Claude Code).
-    // Sent unconditionally — even empty buffers may follow a session where
-    // the PTY state still has cursor hidden.
-    if (attached.persistent && ws.readyState === WebSocket.OPEN) {
-      ws.send('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?25h')
-    }
+    attached = attachSession(sessionName, cols, rows)
   } catch (err) {
+    if (err instanceof PtyCapacityError) {
+      console.warn(`[ws] pty capacity reject: ${sessionName}`)
+      try { ws.close(4002, 'pty_capacity') } catch { /* noop */ }
+      return
+    }
     console.error(`[ws] failed to attach: ${sessionName}`, err)
-    ws.close()
+    try { ws.close(4003, 'attach_failed') } catch { /* noop */ }
     return
   }
 
+  const { proc } = attached
+
+  const dataSub = proc.onData((data: string) => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(data)
+  })
+
+  const exitSub = proc.onExit(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.close(4001, 'session_ended')
+    cleanupConnection(ws)
+  })
+
+  const conn: TerminalConnection = {
+    sessionName,
+    attached,
+    dataSub,
+    exitSub,
+    alive: true,
+    cleaned: false,
+  }
+  connections.set(ws, conn)
+  ws.on('pong', () => { conn.alive = true })
+  console.log(`[ws] terminal attached: ${sessionName} (pid=${proc.pid})`)
+
+  if (attached.initialData && ws.readyState === WebSocket.OPEN) {
+    ws.send(attached.initialData)
+  }
+  // Reset terminal modes that buffer replay may have restored from a prior
+  // TUI session (e.g. mouse tracking, hidden cursor from Claude Code).
+  // Sent unconditionally — even empty buffers may follow a session where
+  // the PTY state still has cursor hidden.
+  if (attached.persistent && ws.readyState === WebSocket.OPEN) {
+    ws.send('\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?25h')
+  }
+
   ws.on('message', (raw) => {
-    const entry = ptyMap.get(ws)
+    const entry = connections.get(ws)
     if (!entry) return
     const { proc } = entry.attached
 
@@ -300,25 +354,12 @@ wss.on('connection', async (ws: WebSocket, _req: IncomingMessage, sessionName: s
     proc.write(str)
   })
 
-  ws.on('close', () => {
-    const entry = ptyMap.get(ws)
-    const subscription = subscriptionMap.get(ws)
-
-    subscription?.data.dispose()
-    subscription?.exit.dispose()
-
-    if (entry) {
-      releaseSession(entry.sessionName, entry.attached)
-      ptyMap.delete(ws)
-    }
-    subscriptionMap.delete(ws)
-    aliveMap.delete(ws)
-    console.log(`[ws] terminal detached: ${sessionName}`)
-  })
+  ws.on('close', () => cleanupConnection(ws))
 
   ws.on('error', (err) => {
     console.error(`[ws] terminal error: ${sessionName}`, err)
-    ws.close()
+    cleanupConnection(ws)
+    try { ws.close() } catch { /* noop */ }
   })
 })
 
@@ -330,13 +371,11 @@ function cleanupTerminalResources(): void {
   if (cleanedUp) return
   cleanedUp = true
   clearInterval(pingInterval)
-  for (const [ws, entry] of ptyMap) {
-    releaseSession(entry.sessionName, entry.attached)
+  clearInterval(sweepInterval)
+  for (const ws of [...connections.keys()]) {
+    cleanupConnection(ws)
     ws.terminate()
   }
-  ptyMap.clear()
-  subscriptionMap.clear()
-  aliveMap.clear()
 }
 
 for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {

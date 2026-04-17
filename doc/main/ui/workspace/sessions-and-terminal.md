@@ -117,8 +117,9 @@ The terminal component splits into two effects:
 4. Resize events sent as `{ type: 'resize', cols, rows }`
 5. Server sends ping every 30s; dead connections (no pong) are terminated to release PTY FDs
 6. On PTY exit (session ended, `/exit`): server sends close code **4001** → client detaches immediately, no reconnect
-7. On connection loss (sleep/wake, network blip): close code 1006 → auto-reconnect with exponential backoff (1s → 15s, up to 5 attempts, with jitter). Shows `[Reconnecting...]` in terminal. Fail counter resets after 5s of stable connection. On `visibilitychange` (wake from sleep), triggers immediate reconnect.
-8. After all retries exhausted: shows `[Disconnected]`, calls `onDisconnect` → parent detaches session
+7. On server PTY pressure: close code **4002** → client uses a slower 5s→60s backoff and shows `[Server overloaded — retrying...]`
+8. On connection loss (sleep/wake, network blip): close code 1006 → auto-reconnect with exponential backoff (1s → 15s, up to 5 attempts, with jitter). Shows `[Reconnecting...]` in terminal. Fail counter resets after 5s of stable connection. On `visibilitychange` (wake from sleep), triggers immediate reconnect.
+9. After all retries exhausted: shows `[Disconnected]`, calls `onDisconnect` → parent detaches session
 
 ### Two Backend Types
 

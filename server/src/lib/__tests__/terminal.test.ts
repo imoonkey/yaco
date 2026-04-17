@@ -19,6 +19,7 @@ vi.mock('../session-names', () => ({
 }))
 
 import { attachSession, closeShellSession, releaseSession, startShellSession } from '../terminal'
+import { PtyCapacityError, markDegraded, __resetForTests as resetPtyCapacity } from '../pty-capacity'
 
 function createPty() {
   return {
@@ -35,13 +36,14 @@ function createPty() {
 describe('attachSession', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetPtyCapacity()
   })
 
   it('attaches to the tmux session using the handle directly', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
 
-    const attached = attachSession('worker', 120, 40, '/tmp/project')
+    const attached = attachSession('worker', 120, 40)
 
     expect(validateSessionNameMock).toHaveBeenCalledWith('worker')
     expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'worker'], expect.objectContaining({
@@ -66,7 +68,7 @@ describe('attachSession', () => {
     spawnMock.mockReturnValue(proc)
 
     const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
-    const attached = attachSession(shellName, 80, 24, '/tmp/project')
+    const attached = attachSession(shellName, 80, 24)
 
     expect(attached).toEqual({
       initialData: '',
@@ -86,9 +88,30 @@ describe('attachSession', () => {
   it('destroys non-persistent tmux attach processes on release', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
-    const attached = attachSession('worker', 80, 24, '/tmp/project')
+    const attached = attachSession('worker', 80, 24)
     releaseSession('worker', attached)
 
     expect(proc.destroy).toHaveBeenCalled()
+  })
+
+  it('rejects tmux attaches under pressure without calling pty.spawn', () => {
+    markDegraded('test')
+
+    expect(() => attachSession('worker', 80, 24)).toThrow(PtyCapacityError)
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
+  it('reattaching to an existing shell session bypasses the pressure gate', () => {
+    const proc = createPty()
+    spawnMock.mockReturnValue(proc)
+    const shellName = startShellSession('/tmp/project', 'workflow', 'shell-p')
+
+    markDegraded('test')
+    spawnMock.mockClear()
+    const attached = attachSession(shellName, 80, 24)
+
+    expect(attached.persistent).toBe(true)
+    expect(spawnMock).not.toHaveBeenCalled()
+    closeShellSession(shellName)
   })
 })

@@ -3,6 +3,7 @@ import type { IPty } from 'node-pty'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import { PTY_MAX_BUFFER_SIZE } from './constants'
+import { assertCanSpawn, markDegraded } from './pty-capacity'
 
 export interface ShellSessionSummary {
   name: string
@@ -52,6 +53,10 @@ export function listShellSessions(): ShellSessionSummary[] {
   }))
 }
 
+export function getShellSessionCount(): number {
+  return shellSessions.size
+}
+
 export function startShellSession(cwd: string, project: string, requestedName?: string): string {
   const name = requestedName?.trim() || nextShellSessionName()
   validateSessionName(name)
@@ -60,13 +65,21 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
     throw new Error(`Session already exists: ${name}`)
   }
 
-  const proc = pty.spawn(process.env.SHELL ?? 'bash', ['--login'], {
-    name: 'xterm-256color',
-    cols: 80,
-    rows: 24,
-    cwd,
-    env: buildChildProcessEnv(),
-  })
+  assertCanSpawn()
+
+  let proc: IPty
+  try {
+    proc = pty.spawn(process.env.SHELL ?? 'bash', ['--login'], {
+      name: 'xterm-256color',
+      cols: 80,
+      rows: 24,
+      cwd,
+      env: buildChildProcessEnv(),
+    })
+  } catch (err) {
+    markDegraded('shell_spawn_failed')
+    throw err
+  }
 
   const session: ShellSession = {
     name,
@@ -101,7 +114,7 @@ export function closeShellSession(name: string): boolean {
 }
 
 /** Spawn a PTY attached to a tmux session or a managed shell session. */
-export function attachSession(sessionName: string, cols: number, rows: number, projectPath?: string): AttachedSession {
+export function attachSession(sessionName: string, cols: number, rows: number): AttachedSession {
   validateSessionName(sessionName)
   const shellSession = shellSessions.get(sessionName)
 
@@ -114,12 +127,20 @@ export function attachSession(sessionName: string, cols: number, rows: number, p
     }
   }
 
-  const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
-    name: 'xterm-256color',
-    cols,
-    rows,
-    env: buildChildProcessEnv(),
-  })
+  assertCanSpawn()
+
+  let proc: IPty
+  try {
+    proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      env: buildChildProcessEnv(),
+    })
+  } catch (err) {
+    markDegraded('tmux_spawn_failed')
+    throw err
+  }
 
   return {
     initialData: '',

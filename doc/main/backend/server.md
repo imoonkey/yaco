@@ -49,13 +49,21 @@ The WebSocket server handles upgrade requests at `/ws/terminal/:name`.
 Flow:
 1. Validate origin against allowlist
 2. Validate session name against `[a-zA-Z0-9_.-]+`
-3. Parse `cols`, `rows`, and optional `project` from query params
-4. If `project` provided, resolve to project path for scoped tmux session lookup
-5. Call `attachSession(name, cols, rows, projectPath?)` to get a PTY handle
+3. Parse `cols` and `rows` from query params
+4. Call `attachSession(name, cols, rows)` to get a PTY handle. `attachSession` reuses the in-process shell PTY when `name` is a shell session; otherwise it calls `assertCanSpawn()` from `pty-capacity.ts` and spawns a new `tmux attach-session` client
+5. Each socket owns one `TerminalConnection` record; `cleanupConnection()` is the single path that disposes subs, calls `releaseSession()`, and removes the record — `proc.onExit`, `ws.on('close')`, `ws.on('error')`, and shutdown all route through it
 6. Send scrollback buffer (`initialData`) if present. For persistent (shell) sessions, unconditionally send a terminal mode reset (disables mouse tracking, shows cursor) to neutralize stale escape sequences from prior TUI sessions — even when the buffer is empty, since PTY state may carry over
 7. Pipe PTY output to WebSocket, WebSocket input to PTY
 8. Handle resize messages (`{ type: 'resize', cols, rows }`)
-9. On WebSocket close: dispose subscriptions, then call `releaseSession()` so tmux attach PTYs are destroyed and shell sessions are merely detached
+
+Close codes:
+- `4001 session_ended` — PTY exited (tmux `/exit`, shell logout). Client detaches immediately, no reconnect.
+- `4002 pty_capacity` — server is under PTY pressure (soft/hard limit or drain). Client uses a slower 5s→60s backoff with a `[Server overloaded — retrying…]` banner.
+- `4003 attach_failed` — unexpected error from `pty.spawn`. Default client backoff.
+
+### PTY Capacity Guard
+
+`pty-capacity.ts` tracks a `healthy` / `degraded` / `draining` state machine against darwin's 511-slot PTY table (soft 400, hard 448, low-water 320, leak-slack 8). `attachSession` and `startShellSession` call `assertCanSpawn()` before `pty.spawn()` — when state is not `healthy`, they throw `PtyCapacityError` which the WS handler maps to close code `4002`. A 60s unref'd `sweep()` samples actual PTY ownership via `lsof -p <pid> -F tn` and transitions state with 2-sweep hysteresis; on `draining` it closes non-persistent tmux attaches (tmux sessions and shell sessions stay alive, so long-running agent state survives).
 
 ### Dead Connection Detection
 

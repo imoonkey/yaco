@@ -50,6 +50,9 @@ const ARROW_KEY_SUFFIX: Partial<Record<TerminalKeyBarKey, 'A' | 'B' | 'C' | 'D'>
 const WS_RECONNECT_MAX_RETRIES = 5
 const WS_RECONNECT_INITIAL_MS = 1000
 const WS_RECONNECT_MAX_MS = 15000
+const WS_PRESSURE_INITIAL_MS = 5000
+const WS_PRESSURE_MAX_MS = 60000
+const WS_PRESSURE_CLOSE_CODE = 4002
 
 type TerminalWithCore = XTerm & {
   _core?: {
@@ -409,6 +412,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null
     let stableTimer: ReturnType<typeof setTimeout> | null = null
     let failCount = 0
+    let pressureMode = false
 
     // Minimum time a connection must stay open before we consider it "stable"
     // and reset failCount.  If the session is dead, tmux outputs an error and
@@ -453,6 +457,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
           onDisconnectRef.current?.()
           return
         }
+        pressureMode = event.code === WS_PRESSURE_CLOSE_CODE
         scheduleReconnect()
       }
     }
@@ -465,9 +470,14 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
         return
       }
       if (failCount === 1) {
-        term!.writeln('\r\n\x1b[33m[Reconnecting...]\x1b[0m')
+        const msg = pressureMode
+          ? '\r\n\x1b[33m[Server overloaded — retrying...]\x1b[0m'
+          : '\r\n\x1b[33m[Reconnecting...]\x1b[0m'
+        term!.writeln(msg)
       }
-      const delay = Math.min(WS_RECONNECT_INITIAL_MS * Math.pow(2, failCount - 1), WS_RECONNECT_MAX_MS)
+      const base = pressureMode ? WS_PRESSURE_INITIAL_MS : WS_RECONNECT_INITIAL_MS
+      const cap = pressureMode ? WS_PRESSURE_MAX_MS : WS_RECONNECT_MAX_MS
+      const delay = Math.min(base * Math.pow(2, failCount - 1), cap)
       const jitter = delay * (0.5 + Math.random())
       reconnectTimer = setTimeout(() => {
         reconnectTimer = null
