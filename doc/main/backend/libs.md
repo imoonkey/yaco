@@ -46,9 +46,9 @@ Hono middleware for project-scoped routes. Resolves `:project` param via `loadPr
 - Routes that scan ALL projects (GET /) keep their own `loadProjects()` call
 - When `?worktree=slug` is present: validates slug format (lowercase alphanumeric + hyphens via regex), resolves path with `path.resolve()` and verifies it stays under `.worktrees/` (path traversal prevention), then rewrites `project.path` to the worktree checkout. Returns 400 for invalid slugs, 404 if directory doesn't exist.
 
-### projects.ts (34 lines)
+### projects.ts (42 lines)
 
-Project registry management. Reads/writes `~/.workflow/projects.json`.
+Project registry management. Reads/writes `~/.workflow/projects.json`. Normalizes trailing `/` on paths in both load and save — downstream `validateNewPath` relies on this to avoid double-slash `startsWith` mismatches.
 
 **Exports**: `ensureWorkflowDir()`, `loadProjects()`, `saveProjects()`
 

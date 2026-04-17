@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-16: Trailing-slash project paths broke file create — defense in depth
+
+**What changed:**
+- `server/src/lib/projects.ts` — `loadProjects`/`saveProjects` strip trailing `/` from `path`; stale entries self-heal in memory and get rewritten on next save
+- `server/src/routes/files.ts:validateNewPath` — strip trailing `/` before the `startsWith` check, mirroring the existing defense in `resolveAndValidate`
+- `ui/src/components/FileExplorer.tsx` — create errors now surface via `toast.error` + `refreshTree` instead of silent `console.error`
+- Server unit tests for load/save normalization and a regression test for create-file with a trailing-slash project path; e2e test for header "New File" while a subdirectory is selected
+
+**Why:**
+- When `~/.workflow/projects.json` stored a project path with a trailing `/` (e.g. `androidagent`), `validateNewPath` did `absPath.startsWith(projectPath + '/')` — that became `...androidagent//`, but `join()` produces single-slash paths, so every create/rename/move got 400 "invalid path". The UI only logged it, so the inline edit input disappeared with no file created and no visible error. Belt-and-suspenders: normalize at ingestion (projects.ts) and at use (validateNewPath), plus make the next regression visible.
+
+**Key files:** `server/src/lib/projects.ts`, `server/src/routes/files.ts`, `ui/src/components/FileExplorer.tsx`, `server/src/lib/__tests__/projects.test.ts`, `server/src/routes/__tests__/files.test.ts`, `ui/tests/e2e/file-create.spec.ts`
+**Verification:** 174 server vitest tests pass; file-create e2e tests pass; confirmed regression test fails on pre-fix code and passes on fix
+**Commit:** 7b16de3
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-16: Keyboard shortcuts — Cmd+Ctrl namespace for sessions and editor tabs
 
 **What changed:**
