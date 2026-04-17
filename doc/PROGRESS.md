@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-17: Fix false "Server overloaded" on PTY reconnect
+
+**What changed:**
+- `server/src/lib/terminal.ts` — removed `markDegraded()` from both `pty.spawn` catch blocks. A single spawn failure (e.g. reconnect to a stale tmux session name, transient node-pty hiccup on macOS) no longer flips the whole server into degraded mode.
+- `server/src/lib/pty-capacity.ts` — `PTY_LEAK_SLACK` raised from 8 to 80 with a comment explaining the choice: node-pty's `destroy()` / fd-close on macOS lags after release, so a residual actual/tracked gap is expected and is not a leak signal. The authoritative exhaustion signals are the absolute soft/hard limits. `markDegraded()` is now operator-only, still exported and covered by tests.
+
+**Why:**
+- Right after a clean server restart, browser tabs reconnecting to old sessions would quickly cause one `pty.spawn` to throw for an unrelated reason. `markDegraded` flipped state to `degraded`, and every subsequent attach was rejected with close code `4002` → the UI showed `[Server overloaded — retrying…]` on all terminals despite the server having plenty of PTY headroom.
+- The sweep-based lsof measurement is the correct pressure signal; treating spawn errors as capacity signals conflated unrelated failure modes.
+
+**Key files:**
+- `server/src/lib/terminal.ts`, `server/src/lib/pty-capacity.ts`
+- `doc/main/backend/libs.md`, `doc/todo/pty/implementation_summary.md`
+
+**Verification:** `cd server && npm test` — 185 passed.
+**Commit:** `6e460a1`
+**Next:** —
+**Blockers:** None.
+
 ## 2026-04-17: Fix PTY leak in terminal WebSocket lifecycle
 
 **What changed:**

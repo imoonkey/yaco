@@ -172,7 +172,7 @@ PTY management for terminal sessions.
 - Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
 - Shell PTYs and tmux attach PTYs both use `buildChildProcessEnv()` so spawned processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`
 - `attachSession(name, cols, rows)` returns the existing shell-session PTY when `name` matches, otherwise spawns a new tmux attach client
-- Both spawn paths call `assertCanSpawn()` from `pty-capacity.ts` before `pty.spawn()`; a spawn that still throws calls `markDegraded()` so the next attach fails fast
+- Both spawn paths call `assertCanSpawn()` from `pty-capacity.ts` before `pty.spawn()` so no new PTY is allocated while the process is under pressure
 - `releaseSession(name, attached)` centralizes detach cleanup: shell sessions remain alive, tmux attach PTYs are destroyed immediately
 
 ### pty-capacity.ts (~120 lines)
@@ -185,6 +185,8 @@ Process-level PTY pressure guard for darwin.
 - `assertCanSpawn()` throws `PtyCapacityError` unless `healthy` — the WS handler in `index.ts` maps that to close code `4002/pty_capacity`
 - `countOwnedPtyFds()` runs `lsof -p <pid> -F tn` once per sweep and counts entries pointing at `/dev/ttys*` or `/dev/ptmx`; returns `null` on sampler failure so state is held rather than reset
 - `sweep()` transitions pressure based on actual PTY count vs tracked attaches (plus `PTY_LEAK_SLACK` for in-flight noise); fires `onDrain` callback at the hard limit so the caller can close non-persistent attaches
+- `PTY_LEAK_SLACK` is 80 (not tight), because node-pty's `destroy()` / fd-close on macOS lags after the caller releases the PTY. A small residual gap between actual and tracked is expected and is not a leak signal — the real exhaustion signals are the absolute soft/hard limits
+- `markDegraded()` is operator-only — the sweep's lsof-based measurement is the authoritative pressure signal. A single `pty.spawn` failure (e.g. reconnecting to a stale tmux session) does NOT flip pressure, since that would false-reject every subsequent attach with close code `4002`
 
 ### ssh-auth.ts (89 lines)
 
