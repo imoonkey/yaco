@@ -62,6 +62,7 @@ test.describe('File Explorer: create file and folder', () => {
       'doc/__e2e_create_subdir.txt',
       '__e2e_create_rootdir',
       'doc/__e2e_create_subdir_folder',
+      'doc/__e2e_create_with_selection.txt',
     ]) {
       await deleteFileIfExists(page, projectName, path)
     }
@@ -137,6 +138,30 @@ test.describe('File Explorer: create file and folder', () => {
 
     await page.waitForTimeout(2000)
     expect(await dirExistsOnServer(page, project.name, '__e2e_create_rootdir')).toBe(true)
+  })
+
+  test('create file via header button while a subdirectory is selected', async ({ page }) => {
+    const project = await openWorkspace(page)
+    projectName = project.name
+
+    await page.waitForTimeout(3000)
+
+    // Select the "doc" folder first so contextFolder becomes "doc"
+    const docFolder = page.locator('[role="treeitem"]', { hasText: 'doc' }).first()
+    await expect(docFolder).toBeVisible({ timeout: 5000 })
+    await docFolder.click()
+
+    // Now click the header "New File" button — should create inside "doc"
+    await page.locator('button[title="New File"]').click()
+
+    const input = page.locator('input.bg-transparent')
+    await expect(input).toBeVisible({ timeout: 3000 })
+    await input.type('__e2e_create_with_selection.txt')
+    await input.press('Enter')
+
+    await page.waitForTimeout(2000)
+    expect(await fileExistsOnServer(page, project.name, 'doc/__e2e_create_with_selection.txt')).toBe(true)
+    expect(await waitForTreeItem(page, '__e2e_create_with_selection')).toBe(true)
   })
 
   test('create folder inside directory via context menu', async ({ page }) => {

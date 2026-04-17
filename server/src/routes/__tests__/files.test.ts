@@ -89,6 +89,21 @@ describe('POST /:project/create-file', () => {
     })
     expect(res.status).toBe(404)
   })
+
+  it('creates a file when project path has a trailing slash (regression)', async () => {
+    // Regression: projects.json sometimes stores paths with trailing /;
+    // validateNewPath's startsWith(projectPath + '/') check double-slashed
+    // and rejected all writes.
+    const baseDir = testProjectPath
+    testProjectPath = baseDir + '/'
+    const res = await fileRoutes.request('/test-project/create-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: 'doc/trailing.txt' }),
+    })
+    expect(res.status).toBe(200)
+    expect(existsSync(join(baseDir, 'doc/trailing.txt'))).toBe(true)
+  })
 })
 
 describe('POST /:project/create-dir', () => {

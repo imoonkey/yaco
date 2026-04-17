@@ -314,7 +314,10 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
           await createFile(projectName, fullPath, worktree)
           onSelectFile(fullPath)
         }
-      } catch (err) { console.error('Failed to create:', err) }
+      } catch (err) {
+        toast.error(`Failed to create: ${err instanceof Error ? err.message : String(err)}`)
+        refreshTree?.()
+      }
       return
     }
     // Validate rename

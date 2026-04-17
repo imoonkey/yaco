@@ -82,8 +82,9 @@ async function resolveAndValidate(projectPath: string, filePath: string): Promis
 /** Validate a relative path for creation (path may not exist yet) */
 function validateNewPath(projectPath: string, filePath: string): string | null {
   if (!filePath || filePath.includes('..') || normalize(filePath) !== filePath.replace(/\\/g, '/')) return null
-  const absPath = join(projectPath, filePath)
-  if (!absPath.startsWith(projectPath + '/')) return null
+  const normalizedProject = normalize(projectPath).replace(/\/+$/, '')
+  const absPath = join(normalizedProject, filePath)
+  if (!absPath.startsWith(normalizedProject + '/')) return null
   return absPath
 }
 
