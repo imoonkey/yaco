@@ -10,7 +10,6 @@ import {
   PTY_SOFT_LIMIT,
   PTY_HARD_LIMIT,
   PTY_LOW_WATER,
-  PTY_LEAK_SLACK,
 } from '../pty-capacity'
 
 describe('pty-capacity', () => {
@@ -30,27 +29,20 @@ describe('pty-capacity', () => {
   })
 
   it('sweep transitions healthy -> degraded at soft limit', async () => {
-    const state = await sweep({
-      trackedCount: PTY_SOFT_LIMIT,
-      sampler: async () => PTY_SOFT_LIMIT,
-    })
+    const state = await sweep({ sampler: async () => PTY_SOFT_LIMIT })
     expect(state).toBe('degraded')
     expect(getActualPtyCount()).toBe(PTY_SOFT_LIMIT)
   })
 
-  it('sweep transitions to degraded when actual exceeds tracked + slack', async () => {
-    const tracked = 50
-    const state = await sweep({
-      trackedCount: tracked,
-      sampler: async () => tracked + PTY_LEAK_SLACK + 1,
-    })
-    expect(state).toBe('degraded')
+  it('sweep stays healthy when actual is far from soft limit even with no tracked count', async () => {
+    // Regression: leakGap check used to false-trip at low absolute load
+    const state = await sweep({ sampler: async () => 100 })
+    expect(state).toBe('healthy')
   })
 
   it('sweep transitions to draining at hard limit and fires onDrain', async () => {
     let drained = false
     const state = await sweep({
-      trackedCount: PTY_HARD_LIMIT,
       sampler: async () => PTY_HARD_LIMIT,
       onDrain: () => { drained = true },
     })
@@ -59,37 +51,37 @@ describe('pty-capacity', () => {
   })
 
   it('sweep returns to healthy only after two consecutive sub-low-water sweeps', async () => {
-    await sweep({ trackedCount: PTY_SOFT_LIMIT, sampler: async () => PTY_SOFT_LIMIT })
+    await sweep({ sampler: async () => PTY_SOFT_LIMIT })
     expect(getPressureState()).toBe('degraded')
 
-    await sweep({ trackedCount: PTY_LOW_WATER - 1, sampler: async () => PTY_LOW_WATER - 1 })
+    await sweep({ sampler: async () => PTY_LOW_WATER - 1 })
     expect(getPressureState()).toBe('degraded') // one clean sweep
 
-    await sweep({ trackedCount: PTY_LOW_WATER - 1, sampler: async () => PTY_LOW_WATER - 1 })
+    await sweep({ sampler: async () => PTY_LOW_WATER - 1 })
     expect(getPressureState()).toBe('healthy')
   })
 
   it('sweep resets clean-sweep counter if pressure climbs again', async () => {
-    await sweep({ trackedCount: PTY_SOFT_LIMIT, sampler: async () => PTY_SOFT_LIMIT })
-    await sweep({ trackedCount: PTY_LOW_WATER - 1, sampler: async () => PTY_LOW_WATER - 1 })
-    await sweep({ trackedCount: PTY_LOW_WATER + 10, sampler: async () => PTY_LOW_WATER + 10 })
-    await sweep({ trackedCount: PTY_LOW_WATER - 1, sampler: async () => PTY_LOW_WATER - 1 })
+    await sweep({ sampler: async () => PTY_SOFT_LIMIT })
+    await sweep({ sampler: async () => PTY_LOW_WATER - 1 })
+    await sweep({ sampler: async () => PTY_LOW_WATER + 10 })
+    await sweep({ sampler: async () => PTY_LOW_WATER - 1 })
     expect(getPressureState()).toBe('degraded') // counter was reset, only one clean
   })
 
   it('sweep steps down from draining to degraded once pressure eases', async () => {
-    await sweep({ trackedCount: PTY_HARD_LIMIT, sampler: async () => PTY_HARD_LIMIT })
+    await sweep({ sampler: async () => PTY_HARD_LIMIT })
     expect(getPressureState()).toBe('draining')
 
-    await sweep({ trackedCount: PTY_LOW_WATER - 1, sampler: async () => PTY_LOW_WATER - 1 })
+    await sweep({ sampler: async () => PTY_LOW_WATER - 1 })
     expect(getPressureState()).toBe('degraded')
   })
 
   it('sweep keeps previous state when sampler returns null', async () => {
-    await sweep({ trackedCount: PTY_SOFT_LIMIT, sampler: async () => PTY_SOFT_LIMIT })
+    await sweep({ sampler: async () => PTY_SOFT_LIMIT })
     expect(getPressureState()).toBe('degraded')
 
-    const state = await sweep({ trackedCount: 0, sampler: async () => null })
+    const state = await sweep({ sampler: async () => null })
     expect(state).toBe('degraded')
   })
 })

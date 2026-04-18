@@ -4,11 +4,6 @@ import { spawn } from 'node:child_process'
 export const PTY_SOFT_LIMIT = 400
 export const PTY_HARD_LIMIT = 448
 export const PTY_LOW_WATER = 320
-// node-pty on macOS has a known destroy()/fd-close lag where master fds linger
-// after release until the socket close event fires (often never). A small
-// residual gap between actual and tracked is expected and NOT a leak signal.
-// The real exhaustion signal is the absolute soft/hard limit — not the gap.
-export const PTY_LEAK_SLACK = 80
 export const PTY_SWEEP_INTERVAL_MS = 60_000
 
 export class PtyCapacityError extends Error {
@@ -60,12 +55,16 @@ export function countOwnedPtyFds(): Promise<number | null> {
 }
 
 export interface SweepInput {
-  trackedCount: number
+  trackedCount?: number
   sampler?: () => Promise<number | null>
   onDrain?: () => void
 }
 
-/** Sample real PTY ownership, transition pressure state, fire drain callback on hard limit.
+/** Sample real PTY ownership and transition pressure state.
+ *  Pressure is decided by ABSOLUTE actual count vs the soft/hard thresholds —
+ *  the prior leakGap check (actual - tracked) was removed because node-pty's
+ *  fd-release lag on macOS makes the gap a noisy signal that false-tripped
+ *  degraded mode at low load. The 511-slot ceiling is still the real backstop.
  *  Sampler may return null on failure — in that case the state is left unchanged. */
 export async function sweep(input: SweepInput): Promise<PressureState> {
   const sampler = input.sampler ?? countOwnedPtyFds
@@ -75,14 +74,13 @@ export async function sweep(input: SweepInput): Promise<PressureState> {
     return state
   }
   actualCount = actual
-  const leakGap = actual - input.trackedCount
   const prev = state
 
   if (actual >= PTY_HARD_LIMIT) {
     state = 'draining'
     cleanSweeps = 0
     input.onDrain?.()
-  } else if (actual >= PTY_SOFT_LIMIT || leakGap > PTY_LEAK_SLACK) {
+  } else if (actual >= PTY_SOFT_LIMIT) {
     state = 'degraded'
     cleanSweeps = 0
   } else if (state !== 'healthy') {
@@ -103,7 +101,7 @@ export async function sweep(input: SweepInput): Promise<PressureState> {
   }
 
   if (state !== prev) {
-    console.log(`[pty] pressure ${prev} -> ${state} (actual=${actual} tracked=${input.trackedCount})`)
+    console.log(`[pty] pressure ${prev} -> ${state} (actual=${actual})`)
   }
   return state
 }

@@ -25,7 +25,7 @@ import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
-import { attachSession, releaseSession, setShellSessionChangeCallback, getShellSessionCount } from './lib/terminal.js'
+import { attachSession, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS, WS_PING_INTERVAL_MS } from './lib/constants.js'
@@ -238,19 +238,8 @@ function drainNonPersistentAttaches(): void {
   if (drained > 0) console.warn(`[pty] drained ${drained} non-persistent attach(es)`)
 }
 
-function countTrackedPtys(): number {
-  let tmuxAttaches = 0
-  for (const conn of connections.values()) {
-    if (!conn.attached.persistent) tmuxAttaches += 1
-  }
-  return tmuxAttaches + getShellSessionCount()
-}
-
 const sweepInterval = setInterval(() => {
-  void sweep({
-    trackedCount: countTrackedPtys(),
-    onDrain: drainNonPersistentAttaches,
-  })
+  void sweep({ onDrain: drainNonPersistentAttaches })
 }, PTY_SWEEP_INTERVAL_MS)
 sweepInterval.unref()
 
