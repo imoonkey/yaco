@@ -102,6 +102,10 @@ export async function sweep(input: SweepInput): Promise<PressureState> {
 
   if (state !== prev) {
     console.log(`[pty] pressure ${prev} -> ${state} (actual=${actual})`)
+  } else if (actual >= PTY_LOW_WATER) {
+    // Heads-up logging once we cross half the soft limit, so leaks are visible
+    // before they trigger rejection.
+    console.log(`[pty] sample actual=${actual} state=${state}`)
   }
   return state
 }
