@@ -1,6 +1,5 @@
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
-import { closeSync } from 'node:fs'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import { PTY_MAX_BUFFER_SIZE } from './constants'
@@ -150,18 +149,4 @@ export function releaseSession(sessionName: string, attached: AttachedSession): 
   // lags. Sending it directly shortens the window.
   try { attached.proc.kill('SIGHUP') } catch { /* already dead */ }
   attached.proc.destroy()
-
-  // Backstop for node-pty's known macOS leak: its destroy() relies on a
-  // socket-close event that "sometimes never gets closed" (see node-pty
-  // unixTerminal.js around line 86). Without an explicit close(2) on the
-  // master fd, /dev/ptmx fds accumulate — empirically ~10/h on this box,
-  // hitting the 511-slot ceiling within days. Wait past node-pty's own
-  // 200ms exit-path timeout, then force-close. EBADF (already closed) is
-  // the expected happy path on most calls and is silently ignored.
-  const fd = (attached.proc as unknown as { fd?: number }).fd
-  if (typeof fd === 'number' && fd >= 0) {
-    setTimeout(() => {
-      try { closeSync(fd) } catch { /* already closed */ }
-    }, 500).unref()
-  }
 }
