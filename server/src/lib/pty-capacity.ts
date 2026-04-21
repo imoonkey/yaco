@@ -1,9 +1,18 @@
 import { spawn } from 'node:child_process'
 
-/** macOS PTY table is 511 slots. Thresholds leave headroom for transient spikes. */
-export const PTY_SOFT_LIMIT = 400
-export const PTY_HARD_LIMIT = 448
-export const PTY_LOW_WATER = 320
+/** macOS PTY table is 511 slots. Thresholds sit close to the ceiling because
+ *  the cost of false-rejecting is high (every browser tab shows "Server
+ *  overloaded") while the cost of letting actual climb is low: a single
+ *  pty.spawn at 511 fails in isolation and the client retries.
+ *  Soft  470 — start rejecting new attaches (40-slot headroom to ceiling).
+ *  Hard  495 — drain non-persistent attaches (16-slot headroom to ceiling).
+ *  Low   450 — recover threshold; paired with 2-sweep hysteresis. Old 320
+ *              never let recovery fire because the natural leak floor was
+ *              ~399, so a single transient spike trapped the server in
+ *              degraded mode permanently. */
+export const PTY_SOFT_LIMIT = 470
+export const PTY_HARD_LIMIT = 495
+export const PTY_LOW_WATER = 450
 export const PTY_SWEEP_INTERVAL_MS = 60_000
 
 export class PtyCapacityError extends Error {
