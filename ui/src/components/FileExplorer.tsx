@@ -290,7 +290,9 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
       }
     }
     const parentPath = parentId || ''
-    const tempId = `\0new:${crypto.randomUUID()}`
+    // crypto.randomUUID requires a secure context — falls back for plain-HTTP LAN access
+    const rand = globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    const tempId = `\0new:${rand}`
     const tempPath = parentPath ? `${parentPath}/${tempId}` : tempId
     const nodeType = type === 'internal' ? 'dir' as const : 'file' as const
     const pending = { path: tempPath, type: nodeType }
