@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-04-22: Doc / project separation — Phases 2–4 complete (freeze lifted)
+
+**What changed:**
+- Phase 2 swept 7 workspace repos in parallel: `multmux 0b58e39`, `cproxy 76d869d`, `lawyer_search 58c3522`, `symphony 72bf5ff`, `autoresearch-optimizer 3d2013c`, `vvg 96d9338`, `androidagent b22be2b9` — all single-commit `git mv doc/{todo,archive} → projects/{active,archive}` with sweep + targeted archive-JSON rewrite.
+- Phase 2b openweb sibling-repo split: renamed `openweb-docs/ → openweb-projects/` (commit `f0fbdba` for `todo → active`), replaced `openweb/doc/{todo,archive}` symlinks with a single `openweb/projects → ../openweb-projects` symlink, swept the runtime `mdPath` constant in `scripts/adapter-inventory.ts` plus 5 comment refs (`5a037792`), then a follow-up `7d211bd0` repointed two skill knowledge links (`adapter-recipes.md`, `add-site/verify.md`) to their archived destinations (the original `doc/todo/...` targets had been archived before the migration even started).
+- Phase 3 socialsim: not a git repo — backup tarball `~/workspace/socialsim-doc-backup-20260422-154105.tgz`, plain `mv doc/todo → projects/active`, sweep.
+- Phase 4 cross-repo verification: source-grep clean across all 11 repos (only legitimate exclusions remain — `doc/PROGRESS.md` historical entries, archived `projects/archive` narrative prose, untracked `workflow/note.md` user-private content). `git log --follow projects/tasks.json` continuity confirmed in workflow + agent-config. Tasks API verified serving from `projects/tasks.json` (workflow 13, androidagent 11, multmux 11). Removed dead `openweb-docs` entry from `~/.workflow/projects.json` (path renamed; `openweb` exposes the bundles via the new `projects` symlink instead).
+- **Phase 0 skill-invocation freeze lifted.** All `~/.claude/skills/{update-tasks,orchestrate,design,double-design,update-doc,office-hours}` and the global `update-tasks.py` resolve `projects/tasks.json` and `projects/archive/` correctly across every migrated repo.
+
+**Why:**
+- Tier 2 had to wait for Tier 1 (workflow + agent-config back-to-back) so the global skill symlink was already pointing at the new layout before any other repo moved. Once `agent-config 75a9f15` landed, the 7 generic Tier-2 cutovers were fully parallel-safe (different repos, different filesystems, no shared state).
+- openweb's two-repo split needed special handling because `openweb-docs/` was a sibling repo symlinked into `openweb/doc/{todo,archive}` — a straight rename plus symlink replacement was cleaner than collapsing it into the main repo.
+- socialsim's lack of git made the tar backup mandatory — there is no `git reset` rollback path.
+
+**Key files:** workflow `doc/PROGRESS.md`, workflow `projects/active/doc-separation/implementation_summary.md`, plus the per-repo commits listed above.
+**Verification:** Cross-repo `grep -rE 'doc/(todo|archive)'` empty across 11 migrated repos (modulo expected exclusions). `git log --follow projects/tasks.json` works in workflow + agent-config. `curl http://localhost:3001/api/tasks/<project>` returns task graphs from `projects/tasks.json` for workflow / androidagent / multmux. Skill knowledge links repoint to existing archive targets (verified with `test -f` before commit). socialsim backup tarball present at expected path.
+**Commit:** workflow this entry only · per-repo: `0b58e39`, `76d869d`, `58c3522`, `72bf5ff`, `3d2013c`, `96d9338`, `b22be2b9`, `f0fbdba`, `5a037792`, `7d211bd0`
+**Next:** Archive `projects/active/doc-separation/` → `projects/archive/20260422_doc-separation/` and call `update-tasks.py archive doc-separation` to snapshot the now-terminal task tree.
+**Blockers:** None. UI manual click-through on archived task `design` fields was not performed by the orchestrator — all design refs were rewritten programmatically with target-file existence verified, so spot-check at leisure.
+
+
 ## 2026-04-22: Doc / project separation — agent-config cutover (Phase 1b)
 
 **What changed:**
