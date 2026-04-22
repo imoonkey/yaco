@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-22: Doc / project separation — agent-config cutover (Phase 1b)
+
+**What changed:**
+- agent-config repo mirrored Phase 1a: `doc/todo/` → `projects/active/`, `doc/archive/` → `projects/archive/`, `tasks.json`/`progress.json` promoted to `projects/` root.
+- Global skill prompts (`update-tasks`, `orchestrate`, `design`, `double-design`, `update-doc`, `office-hours`) and `update-tasks.py` constants updated to the new paths. Historical project notes swept.
+
+**Why:**
+- Global skills delivered via `~/.claude/skills → agent-config/global/skills` were still writing to `doc/todo/...` after Phase 1a, which would break every other repo until landed. Phase 1a + 1b had to complete inside the same freeze window.
+
+**Key files (in agent-config):** `global/skills/{update-tasks,orchestrate,design,double-design,update-doc,office-hours}/SKILL.md`, `global/skills/update-tasks/scripts/update-tasks.py`, `global/skills/orchestrate/scripts/test-update-tasks-worktree.sh`, `doc/dev/workflow.md`, `.gitignore`, `projects/tasks.json`.
+**Verification:** `update-tasks.py` runtime check confirmed `FILE`/`ARCHIVE_DIR`/`LOCK_FILE` resolve to `projects/...` and exist. `grep -rE 'doc/(todo|archive)' global/skills` empty. All design.md acceptance criteria pass.
+**Commit:** agent-config `75a9f15` (workflow repo: this `docs:` commit only)
+**Next:** Phase 2 — sweep remaining workspace repos (multmux, cproxy, lawyer_search, symphony, autoresearch-optimizer, vvg, androidagent) for stale `doc/todo|doc/archive` refs. Then Phase 4 lift the skill freeze.
+**Blockers:** None.
+
 ## 2026-04-22: Doc / project separation — workflow repo cutover (Phase 1a)
 
 **What changed:**
