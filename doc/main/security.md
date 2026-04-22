@@ -47,7 +47,7 @@ When `WORKFLOW_CORS_ORIGINS` is set, only those explicit origins are allowed. Wh
 - `::1` (IPv6 loopback)
 - `.local` mDNS hostnames
 - Private LAN ranges: `10.*`, `172.16-31.*`, `192.168.*`, `169.254.*`
-- Configured hostnames: `laptop`, `laptop.tailnet-example.ts.net`
+- Configured hostnames: `laptop`, `laptop.tailnet-example.ts.net`, `desktop`, `desktop.tailnet-example.ts.net`
 
 **Code path**: `server/src/index.ts` (`isAllowedOrigin`, `isPrivateHostname`)
 

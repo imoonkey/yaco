@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-04-22: Remote desktop access — CORS allowlist + secure-context fallback
+
+**What changed:**
+- `server/src/index.ts`: added `desktop` and `desktop.tailnet-example.ts.net` to `DEFAULT_ALLOWED_HOSTNAMES`. Without these, `isAllowedOrigin` rejected the bare hostname (not in the set, not an IP, not `.local`, not in any private range), so WS upgrades for terminals were `socket.destroy()`'d at `server/src/index.ts:255-259` — terminal stuck in "Reconnecting".
+- `ui/src/components/FileExplorer.tsx:293`: replaced `crypto.randomUUID()` with `globalThis.crypto?.randomUUID?.() ?? \`${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}\``. The unguarded call threw synchronously inside react-arborist's `onCreate` over plain-HTTP non-localhost (`http://desktop:3001/` via LAN/Tailscale), which silently aborted the create flow — no pending state, no editing row, no toast, no network request. Click looked like a no-op.
+- `doc/main/security.md`: extended the configured-hostname list.
+- `CLAUDE.md` Conventions: added a one-liner about secure-context-only browser APIs (`crypto.randomUUID`, `navigator.clipboard`, `Notification.requestPermission`) silently failing over plain HTTP from non-`localhost` hosts; always feature-detect with `globalThis.crypto?.randomUUID?.() ?? <fallback>`.
+
+**Why:**
+- Started workflow on a Linux desktop accessed from a phone via `http://desktop:3001/`. Both bugs only manifest in this serving mode (plain HTTP + non-localhost hostname) — local dev on `localhost` always hits the secure-context path and the laptop's hostname was already in the allowlist. Workflow is explicitly designed for this remote-access pattern (`start:app` is the production/mobile entrypoint), so both classes of bug deserve to be guarded against in the SOTA conventions.
+
+**Key files:** `server/src/index.ts`, `ui/src/components/FileExplorer.tsx`, `doc/main/security.md`, `CLAUDE.md`, `doc/PROGRESS.md`
+**Verification:** Playwright run against `http://desktop:3001/`: terminal pane attaches end-to-end (no "Reconnecting" loop); both file-create paths (toolbar `+` and right-click → New File) produce the inline-edit row, accept input, and `POST /api/files/quant/create-file` returns 200 with the file appearing in the tree. No `crypto.randomUUID` errors in the page console after the fix.
+**Commit:** `b1b91d4`, `4aa8356`
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-17: Archive 6 completed projects from doc/todo/
 
 **What changed:**

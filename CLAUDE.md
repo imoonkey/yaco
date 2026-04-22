@@ -89,6 +89,7 @@ doc/
 - Icons: use `lucide-react` for all UI icons. Never use Unicode symbols (☼▸×●) as icons.
 - User feedback: destructive actions use `ConfirmDialog` (`ui/src/components/ConfirmDialog.tsx`). Error/success notifications use `toast`/`toast.error` from `sonner`. Never use native `alert()` or `confirm()`.
 - Notifications: SSE → `useNotifications` hook. Foreground shows sonner toast, background shows Web Notification API. No server-side osascript.
+- Secure-context-only browser APIs (`crypto.randomUUID`, `navigator.clipboard`, `Notification.requestPermission`) silently fail when the app is loaded over plain HTTP from a non-`localhost` hostname (e.g. `http://desktop:3001/` over LAN/Tailscale). Always feature-detect with `globalThis.crypto?.randomUUID?.() ?? <fallback>` rather than calling them directly — an unguarded throw inside a callback (e.g. react-arborist's `onCreate`) looks identical to "the click did nothing".
 
 ## Ecosystem
 
