@@ -3,6 +3,7 @@ import { isDiffTab, isFileTab } from '../hooks/workspaceTypes'
 import type { MobilePane } from '../hooks/workspaceTypes'
 import type { SearchEntry } from './WorkspaceSearch'
 import type { FileExplorerHandle } from '../components/FileExplorer'
+import { TASKS_FILE_PATH } from '../hooks/useTaskGraph'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
@@ -110,7 +111,7 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
   }, [actions, setFocusTarget])
 
   const handleOpenTasksFile = useCallback(() => {
-    openFile('doc/todo/tasks.json')
+    openFile(TASKS_FILE_PATH)
   }, [openFile])
 
   const handleSelectTab = useCallback((tab: string) => {

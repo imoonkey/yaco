@@ -8,6 +8,8 @@ import { withProject, type ProjectEnv } from '../middleware/project'
 import { emitRefresh } from '../lib/notify'
 import { getWorktreeStatuses } from '../lib/worktree'
 
+const TASKS_FILE = 'projects/tasks.json'
+const ARCHIVE_DIR = 'projects/archive'
 const SCRIPT_NAME = 'scripts/update-tasks.py'
 const GLOBAL_SCRIPT = join(
   process.env.HOME ?? '~',
@@ -60,7 +62,7 @@ const app = new Hono<ProjectEnv>()
 // GET /:project — Read tasks
 app.get('/:project', withProject, async (c) => {
   const proj = c.var.project
-  const tasksPath = join(proj.path, 'doc/todo/tasks.json')
+  const tasksPath = join(proj.path, TASKS_FILE)
   if (!existsSync(tasksPath)) return fail(c, 404, 'tasks.json not found')
   const raw = await readFile(tasksPath, 'utf-8')
   const tasks = JSON.parse(raw) as Record<string, Record<string, unknown>>
@@ -96,7 +98,7 @@ app.patch('/:project/:taskId', withProject, async (c) => {
   }
 
   // Read back updated task
-  const file = await readFile(join(proj.path, 'doc/todo/tasks.json'), 'utf-8')
+  const file = await readFile(join(proj.path, TASKS_FILE), 'utf-8')
   const tasks = JSON.parse(file)
   emitRefresh('filetree')
   return c.json(tasks[taskId] ?? {})
@@ -125,7 +127,7 @@ app.put('/:project/:taskId', withProject, async (c) => {
     return handleScriptError(c, e)
   }
 
-  const file = await readFile(join(proj.path, 'doc/todo/tasks.json'), 'utf-8')
+  const file = await readFile(join(proj.path, TASKS_FILE), 'utf-8')
   const tasks = JSON.parse(file)
   emitRefresh('filetree')
   return c.json(tasks[taskId] ?? {})
@@ -152,7 +154,7 @@ app.delete('/:project/:taskId', withProject, async (c) => {
 // GET /:project/archive — List archived tasks
 app.get('/:project/archive', withProject, async (c) => {
   const proj = c.var.project
-  const archiveDir = join(proj.path, 'doc/archive')
+  const archiveDir = join(proj.path, ARCHIVE_DIR)
 
   if (!existsSync(archiveDir)) return c.json({ archives: [] })
 

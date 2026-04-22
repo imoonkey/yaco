@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Write-only operations on doc/todo/tasks.json with cross-record validation."""
+"""Write-only operations on projects/tasks.json with cross-record validation."""
 import json, sys
 from pathlib import Path
 
-FILE = Path("doc/todo/tasks.json")
+FILE = Path("projects/tasks.json")
 STATES = {"ready", "running", "done", "blocked", "cancelled"}
 TERMINAL = {"done", "cancelled"}
 
@@ -133,7 +133,7 @@ def cmd_set(tid, data):
     save(tasks)
 
 def cmd_archive(tid):
-    """Move a terminal task and all descendants to doc/archive/YYYYMMDD_<slug>.json."""
+    """Move a terminal task and all descendants to projects/archive/YYYYMMDD_<slug>.json."""
     from datetime import date
     tasks = load()
     if tid not in tasks: die(f"task '{tid}' not found")
@@ -159,7 +159,7 @@ def cmd_archive(tid):
     # Build archive payload
     archive = {t: tasks[t] for t in tree_ids}
     # Write archive file
-    archive_dir = Path("doc/archive")
+    archive_dir = Path("projects/archive")
     archive_dir.mkdir(parents=True, exist_ok=True)
     today = date.today().strftime("%Y%m%d")
     dest = archive_dir / f"{today}_{tid}.json"

@@ -12,7 +12,7 @@ export interface Project {
 }
 
 export interface Workstream {
-  id: string        // folder name under doc/todo/
+  id: string        // folder name under projects/active/
   name: string
   status: WorkstreamStatus
   project: string
@@ -194,29 +194,33 @@ export const progressEntries: ProgressEntry[] = [
 export const projectTree: DocFile[] = [
   {
     name: 'doc', path: 'doc', type: 'dir', children: [
-      {
-        name: 'todo', path: 'doc/todo', type: 'dir', children: [
-          {
-            name: 'smart-capsule-v2', path: 'doc/todo/smart-capsule-v2', type: 'dir', children: [
-              { name: 'workstream.json', path: 'doc/todo/smart-capsule-v2/workstream.json', type: 'file' },
-              { name: 'progress.json', path: 'doc/todo/smart-capsule-v2/progress.json', type: 'file' },
-              { name: 'design.md', path: 'doc/todo/smart-capsule-v2/design.md', type: 'file' },
-              { name: 'note.md', path: 'doc/todo/smart-capsule-v2/note.md', type: 'file' },
-            ],
-          },
-          {
-            name: 'auth-rewrite', path: 'doc/todo/auth-rewrite', type: 'dir', children: [
-              { name: 'workstream.json', path: 'doc/todo/auth-rewrite/workstream.json', type: 'file' },
-              { name: 'progress.json', path: 'doc/todo/auth-rewrite/progress.json', type: 'file' },
-              { name: 'design.md', path: 'doc/todo/auth-rewrite/design.md', type: 'file' },
-            ],
-          },
-        ],
-      },
       { name: 'main.md', path: 'doc/main.md', type: 'file' },
       { name: 'dev.md', path: 'doc/dev.md', type: 'file' },
       { name: 'progress.md', path: 'doc/progress.md', type: 'file' },
       { name: 'roadmap.md', path: 'doc/roadmap.md', type: 'file' },
+    ],
+  },
+  {
+    name: 'projects', path: 'projects', type: 'dir', children: [
+      {
+        name: 'active', path: 'projects/active', type: 'dir', children: [
+          {
+            name: 'smart-capsule-v2', path: 'projects/active/smart-capsule-v2', type: 'dir', children: [
+              { name: 'workstream.json', path: 'projects/active/smart-capsule-v2/workstream.json', type: 'file' },
+              { name: 'progress.json', path: 'projects/active/smart-capsule-v2/progress.json', type: 'file' },
+              { name: 'design.md', path: 'projects/active/smart-capsule-v2/design.md', type: 'file' },
+              { name: 'note.md', path: 'projects/active/smart-capsule-v2/note.md', type: 'file' },
+            ],
+          },
+          {
+            name: 'auth-rewrite', path: 'projects/active/auth-rewrite', type: 'dir', children: [
+              { name: 'workstream.json', path: 'projects/active/auth-rewrite/workstream.json', type: 'file' },
+              { name: 'progress.json', path: 'projects/active/auth-rewrite/progress.json', type: 'file' },
+              { name: 'design.md', path: 'projects/active/auth-rewrite/design.md', type: 'file' },
+            ],
+          },
+        ],
+      },
     ],
   },
   {

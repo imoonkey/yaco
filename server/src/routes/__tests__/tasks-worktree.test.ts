@@ -25,7 +25,7 @@ describe('GET /:project — worktree enrichment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     testProjectPath = mkdtempSync(join(tmpdir(), 'workflow-task-wt-test-'))
-    mkdirSync(join(testProjectPath, 'doc/todo'), { recursive: true })
+    mkdirSync(join(testProjectPath, 'projects'), { recursive: true })
   })
 
   afterEach(() => {
@@ -37,7 +37,7 @@ describe('GET /:project — worktree enrichment', () => {
       'T1': { title: 'Task 1', worktree: 'feat-login' },
       'T2': { title: 'Task 2' },
     }
-    writeFileSync(join(testProjectPath, 'doc/todo/tasks.json'), JSON.stringify(tasks))
+    writeFileSync(join(testProjectPath, 'projects/tasks.json'), JSON.stringify(tasks))
 
     const mockStatus = { active: true, dirty: false, branch: 'task/feat-login', ahead: 2, behind: 0 }
     getWorktreeStatusesMock.mockResolvedValue(new Map([['feat-login', mockStatus]]))
@@ -55,7 +55,7 @@ describe('GET /:project — worktree enrichment', () => {
       'T1': { title: 'Plain task' },
       'T2': { title: 'Another task', status: 'done' },
     }
-    writeFileSync(join(testProjectPath, 'doc/todo/tasks.json'), JSON.stringify(tasks))
+    writeFileSync(join(testProjectPath, 'projects/tasks.json'), JSON.stringify(tasks))
 
     getWorktreeStatusesMock.mockResolvedValue(new Map())
 
