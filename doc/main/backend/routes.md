@@ -59,7 +59,7 @@ All file routes support `?worktree=<slug>` query param — when present, `withPr
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/files/:project` | Root-level file listing (lazy — dirs have `children: []`, gitignored entries marked) |
-| GET | `/api/files/:project/search-index` | Flat list of all file paths — recursive walk for Cmd+P search (respects .gitignore, 10k budget). Includes files inside symlinked directories. |
+| GET | `/api/files/:project/search-index` | Flat list of all file paths for Cmd+P search. Uses `git ls-files --cached --others --exclude-standard` (fast, honors `.gitignore`); falls back to recursive walk for non-git projects (10k budget). Also recovers files inside **top-level** symlinked directories — nested symlinked dirs are not indexed (avoids full-tree walk on large monorepos). Symlink walker is loop-safe via per-recursion-path realpath ancestor tracking. |
 | GET | `/api/files/:project/children?dir=...` | One directory's immediate children (lazy expand on demand) |
 | GET | `/api/files/:project/content?path=...` | Read file — returns `{ content, path, revision }` (max 1MB, path-validated) |
 | GET | `/api/files/:project/raw?path=...` | Serve raw binary file — returns file with proper `Content-Type` (images, PDFs). Max 20MB. MIME map: `.png/.jpg/.jpeg/.gif/.svg/.webp/.ico/.bmp` (image types) + `.pdf`. Falls back to `application/octet-stream`. |

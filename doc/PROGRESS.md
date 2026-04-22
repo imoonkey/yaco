@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-22: search-index — top-level symlink walk + loop safety (~150× faster on monorepos)
+
+**What changed:**
+- `server/src/routes/files.ts` `collectSymlinkedFiles` no longer walks the entire project tree. Now scans only top-level entries for symlinked directories and recurses only into those.
+- New `walkSymlinkedDir` helper tracks ancestor `realpath()`s per recursion path so cycles (`loop -> .`, mutual `a -> b / b -> a`) terminate. Two distinct top-level aliases pointing to the same target both still index.
+- Top-level symlinks resolving to the project root or an ancestor are short-circuited before any walk.
+- 5 regression tests in `server/src/routes/__tests__/files.test.ts`: top-level dir symlink indexed, no double-count of file symlinks, self-loop termination, mutual-cycle termination, shared-target sibling aliases.
+
+**Why:**
+- On large monorepos (androidagent: 780k files, 47k dirs, 24GB of gitignored data under `eval/`, `debug-output/`), the old recursive walk took ~5.4s on every Cmd+P open — even though `git ls-files` itself returned in ~83ms. The walker bypassed `.gitignore` (only honored a hardcoded 10-entry ignore set).
+- Trade-off: files inside *nested* symlinked directories (e.g. `reference/paperclip/.claude/skills/paperclip/*`) are no longer indexed by Cmd+P. Top-level symlinks (`.agents`, `.codex`, …) still work. Acceptable for an interactive latency-sensitive endpoint; can revisit with a hybrid (e.g. recover `mode 120000` entries from `git ls-files --stage`) if needed.
+
+**Key files:** `server/src/routes/files.ts`, `server/src/routes/__tests__/files.test.ts`, `doc/main/backend/routes.md`
+**Verification:** `npm test --run` 190/190 pass (was 185 + 5 new). Manual benchmark on androidagent: 5400ms → 37ms (≈150×). Loop hazard found by codex review of `558c4a0` and reproduced locally before fix.
+**Commit:** `558c4a0` (perf), `16edf16` (loop fix + tests)
+**Next:** None.
+**Blockers:** None.
+
+
 ## 2026-04-22: Doc / project separation — Phases 2–4 complete (freeze lifted)
 
 **What changed:**
