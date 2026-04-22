@@ -30,7 +30,7 @@ Project registry. Array of `{ name, path }` objects.
 
 Managed by: `server/src/lib/projects.ts`
 
-### `doc/todo/<name>/workstream.json`
+### `projects/active/<name>/workstream.json`
 
 Per-workstream metadata inside each project repo.
 
@@ -48,7 +48,7 @@ Per-workstream metadata inside each project repo.
 
 Managed by: agents (write), server scanner (read), API (status updates)
 
-### `doc/todo/<name>/progress.json`
+### `projects/active/<name>/progress.json`
 
 Append-only notification log per workstream.
 
@@ -68,7 +68,7 @@ Append-only notification log per workstream.
 Types: `info`, `human_review`, `blocked`, `session_idle`
 Status: `active` or `dismissed`
 
-### `doc/todo/progress.json`
+### `projects/progress.json`
 
 Project-level progress log for entries not tied to a specific workstream (e.g., `session_idle` from Claude Stop hook).
 

@@ -30,7 +30,7 @@ Event source (file change / session idle)
 
 ### Progress File Changes
 
-`watcher.ts` watches `doc/todo/*/progress.json` and `doc/todo/progress.json` across all projects. When new entries are detected (entry count increases), `emitNotification()` is called.
+`watcher.ts` watches `projects/active/*/progress.json` and `projects/progress.json` across all projects. When new entries are detected (entry count increases), `emitNotification()` is called.
 
 ### Session Idle Detection
 
@@ -38,7 +38,7 @@ Session reconciler (`session-reconciler.ts`) detects `processing → idle` trans
 
 - Reads `~/.multmux/sessions/*.json` state files every 60 seconds
 - Filters: minimum 15 seconds processing duration + 2× debounce (two consecutive idle readings)
-- Writes `session_idle` entry with `sessionName` to project-level `doc/todo/progress.json`
+- Writes `session_idle` entry with `sessionName` to project-level `projects/progress.json`
 
 Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) while Codex used the reconciler. This was unified — the reconciler now handles all providers. The deprecated `on-stop.sh` hook is cleaned up by `multmux install-hooks`.
 

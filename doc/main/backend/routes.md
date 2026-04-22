@@ -152,7 +152,7 @@ Empty transcript (`formattingStatus: "empty"`, 200):
 
 Audio is never persisted to disk. API key is never exposed to the browser.
 
--> Design doc: `doc/todo/voice-formatting/final/design.md`
+-> Design doc: `projects/active/voice-formatting/final/design.md`
 
 ### Tasks
 
@@ -162,7 +162,7 @@ Audio is never persisted to disk. API key is never exposed to the browser.
 | PATCH | `/api/tasks/:project/:taskId` | Partial task update (runs `update-tasks.py set`) |
 | PUT | `/api/tasks/:project/:taskId` | Create task (requires `title`, `description`, `acceptCriteria`) |
 | DELETE | `/api/tasks/:project/:taskId` | Delete task |
-| GET | `/api/tasks/:project/archive` | List archived tasks (reads `doc/archive/*.json`) |
+| GET | `/api/tasks/:project/archive` | List archived tasks (reads `projects/archive/*.json`) |
 | POST | `/api/tasks/:project/:taskId/archive` | Archive a task |
 | POST | `/api/tasks/:project/bulk` | Bulk update (`{ ids, patch }`) |
 

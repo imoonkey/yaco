@@ -22,8 +22,8 @@ Source-of-truth boundaries for the workflow system's data.
 | Data | Owner | Storage | Consumers |
 |------|-------|---------|-----------|
 | Project list | Server | `~/.workflow/projects.json` | Frontend (via API) |
-| Workstream metadata | Filesystem | `doc/todo/*/workstream.json` | Server scanner → Frontend |
-| Progress entries | Filesystem | `doc/todo/*/progress.json` + `doc/todo/progress.json` | Server scanner → Frontend |
+| Workstream metadata | Filesystem | `projects/active/*/workstream.json` | Server scanner → Frontend |
+| Progress entries | Filesystem | `projects/active/*/progress.json` + `projects/progress.json` | Server scanner → Frontend |
 | Session list | Server (poller cache) | In-memory | Frontend (via API) |
 | Session status | multmux / in-process PTY | Live query / in-memory | Server poller → Frontend |
 | File tree | Server (cached) | In-memory (server + client) | Frontend |

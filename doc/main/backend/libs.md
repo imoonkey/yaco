@@ -58,9 +58,9 @@ Core scanning engine for workstream metadata and progress entries across project
 
 **Exports**: `scanWorkstreams()`, `scanProgress()`, `updateWorkstreamStatus()`, `dismissProgress()`, `withFileLock()`
 
-- Reads `doc/todo/*/workstream.json` and `doc/todo/*/progress.json` per project
+- Reads `projects/active/*/workstream.json` and `projects/active/*/progress.json` per project
 - `withFileLock()` provides in-process locking for read-modify-write operations on JSON files
-- Handles both workstream-level and project-level (`doc/todo/progress.json`) progress entries
+- Handles both workstream-level and project-level (`projects/progress.json`) progress entries
 
 ### multmux.ts (~250 lines)
 
@@ -96,7 +96,7 @@ Watches `progress.json` files for new entries and triggers notifications.
 
 **Exports**: `startWatching()`, `stopWatching()`
 
-- Uses `fs.watch` on each project's `doc/todo/` directory tree
+- Uses `fs.watch` on each project's `projects/active/` directory tree
 - Detects new progress entries by comparing entry counts
 - Emits `notification` events and `progress` refresh signals via notify.ts
 

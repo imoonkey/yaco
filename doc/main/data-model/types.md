@@ -40,7 +40,7 @@ interface Checkpoint {
 }
 
 interface Workstream {
-  id: string            // folder name under doc/todo/
+  id: string            // folder name under projects/active/
   name: string
   status: WorkstreamStatus
   project: string       // project name

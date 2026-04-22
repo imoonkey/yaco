@@ -63,8 +63,11 @@ doc/
   main/           # SOTA: architecture, API, component specs — see doc/main/README.md for map
   dev/workflow.md # Dev setup, build, test commands — READ THIS FIRST
   PROGRESS.md     # Changelog (prepend new entries, canonical format)
-  todo/           # Active project design docs
-  archive/        # Completed projects (YYMMDD_<project>/)
+projects/
+  tasks.json      # live task graph
+  progress.json   # live progress state
+  active/         # in-flight project bundles
+  archive/        # completed projects (YYYYMMDD_<slug>/)
 ```
 
 - **Start with `doc/dev/workflow.md`** for dev setup, build, and test commands.
