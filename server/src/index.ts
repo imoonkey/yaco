@@ -41,6 +41,8 @@ const DEFAULT_ALLOWED_HOSTNAMES = new Set([
   '::1',
   'laptop',
   'laptop.tailnet-example.ts.net',
+  'desktop',
+  'desktop.tailnet-example.ts.net',
 ])
 const SERVER_SRC_DIR = dirname(fileURLToPath(import.meta.url))
 const UI_DIST_DIR = resolve(SERVER_SRC_DIR, '../../ui/dist')
