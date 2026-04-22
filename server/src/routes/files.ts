@@ -88,27 +88,46 @@ function validateNewPath(projectPath: string, filePath: string): string | null {
   return absPath
 }
 
-/** Walk the project tree, collecting files inside symlinked directories that git ls-files skips. */
-async function collectSymlinkedFiles(
+/** Recursively list every file under an already-known symlinked directory. */
+async function walkSymlinkedDir(
   dir: string, relPrefix: string, seen: Set<string>,
-  files: { name: string; path: string; type: string }[], inSymlink: boolean
+  files: { name: string; path: string; type: string }[]
 ) {
   let entries
   try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
   for (const entry of entries) {
     if (shouldIgnoreEntry(entry.name)) continue
-    const relPath = relPrefix ? join(relPrefix, entry.name) : entry.name
-    const isLink = entry.isSymbolicLink()
+    const relPath = join(relPrefix, entry.name)
     let isDir = entry.isDirectory()
-    if (isLink) {
+    if (entry.isSymbolicLink()) {
       try { isDir = (await stat(join(dir, entry.name))).isDirectory() } catch { continue }
     }
     if (isDir) {
-      await collectSymlinkedFiles(join(dir, entry.name), relPath, seen, files, inSymlink || isLink)
-    } else if (inSymlink && !seen.has(relPath)) {
+      await walkSymlinkedDir(join(dir, entry.name), relPath, seen, files)
+    } else if (!seen.has(relPath)) {
       seen.add(relPath)
       files.push({ name: entry.name, path: relPath, type: 'file' })
     }
+  }
+}
+
+/** Find top-level symlinked directories and collect the files inside them.
+ *  git ls-files doesn't follow symlinks, so we recover those here.
+ *  Top-level only: avoids walking the entire project tree (which can be 100k+ dirs
+ *  on monorepos with large gitignored data dirs). Nested symlinked dirs are not indexed. */
+async function collectSymlinkedFiles(
+  projectPath: string, seen: Set<string>,
+  files: { name: string; path: string; type: string }[]
+) {
+  let entries
+  try { entries = await readdir(projectPath, { withFileTypes: true }) } catch { return }
+  for (const entry of entries) {
+    if (!entry.isSymbolicLink() || shouldIgnoreEntry(entry.name)) continue
+    const abs = join(projectPath, entry.name)
+    let isDir
+    try { isDir = (await stat(abs)).isDirectory() } catch { continue }
+    if (!isDir) continue
+    await walkSymlinkedDir(abs, entry.name, seen, files)
   }
 }
 
@@ -167,9 +186,9 @@ app.get('/:project/search-index', withProject, async (c) => {
       } catch (e) { console.warn('[files] git ls-files --ignored failed (may be shallow clone):', e) }
     }
 
-    // git ls-files doesn't follow symlinked directories — walk them separately
+    // git ls-files doesn't follow symlinked directories — walk top-level symlinks separately
     const seen = new Set(files.map(f => f.path))
-    await collectSymlinkedFiles(proj.path, '', seen, files, false)
+    await collectSymlinkedFiles(proj.path, seen, files)
 
     addDirs(files)
     return c.json(files)
