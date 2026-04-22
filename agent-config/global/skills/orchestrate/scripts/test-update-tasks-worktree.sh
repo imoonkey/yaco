@@ -14,7 +14,7 @@ fail() { echo "  FAIL: $1"; ((FAIL++)) || true; ERRORS+=("$1"); }
 
 setup() {
   rm -rf "$SANDBOX"
-  mkdir -p "$SANDBOX/doc/todo"
+  mkdir -p "$SANDBOX/projects/active"
   cd "$SANDBOX"
 }
 
@@ -26,7 +26,7 @@ trap teardown EXIT
 
 # Helper: create or reset a fresh task file
 reset_tasks() {
-  rm -f doc/todo/tasks.json doc/todo/.tasks.json.lock
+  rm -f projects/tasks.json projects/.tasks.json.lock
 }
 
 # Base JSON for a valid leaf task (title + description + acceptCriteria required)
@@ -85,7 +85,7 @@ echo "=== Round-trip ==="
 
 reset_tasks
 python3 "$SCRIPT" set "t1" "${BASE},\"worktree\":\"my-wt\"}" 2>/dev/null
-got=$(python3 -c "import json; t=json.load(open('doc/todo/tasks.json')); print(t['t1'].get('worktree','__MISSING__'))")
+got=$(python3 -c "import json; t=json.load(open('projects/tasks.json')); print(t['t1'].get('worktree','__MISSING__'))")
 if [[ "$got" == "my-wt" ]]; then
   pass "round-trip: set worktree, read back matches"
 else
@@ -99,7 +99,7 @@ echo "=== Null/remove worktree ==="
 
 # Update existing task to remove worktree by setting null
 if python3 "$SCRIPT" set "t1" '{"worktree":null}' 2>/dev/null; then
-  got=$(python3 -c "import json; t=json.load(open('doc/todo/tasks.json')); print(t['t1'].get('worktree','__REMOVED__'))")
+  got=$(python3 -c "import json; t=json.load(open('projects/tasks.json')); print(t['t1'].get('worktree','__REMOVED__'))")
   if [[ "$got" == "__REMOVED__" ]]; then
     pass "null removes worktree field"
   else

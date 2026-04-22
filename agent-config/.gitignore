@@ -2,5 +2,5 @@ global/skills/skill-creator/
 .multmux/
 .reference/
 .vscode/
-doc/todo/progress.json
-doc/todo/progress.json.lock
+projects/progress.json
+projects/progress.json.lock

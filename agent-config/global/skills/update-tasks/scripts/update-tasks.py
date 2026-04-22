@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Write-only operations on doc/todo/tasks.json with cross-record validation."""
+"""Write-only operations on projects/tasks.json with cross-record validation."""
 import fcntl, json, re, sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-FILE = Path("doc/todo/tasks.json")
+FILE = Path("projects/tasks.json")
 STATES = {"ready", "running", "done", "blocked", "cancelled"}
 TERMINAL = {"done", "cancelled"}
 PRIORITIES = {"critical", "high", "normal", "low"}
@@ -230,7 +230,7 @@ def cmd_rm(tid):
         save(tasks)
     with_lock(_do)
 
-ARCHIVE_DIR = Path("doc/archive")
+ARCHIVE_DIR = Path("projects/archive")
 
 def archive_path(slug):
     from datetime import date

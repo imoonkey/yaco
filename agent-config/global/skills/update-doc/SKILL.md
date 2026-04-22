@@ -50,7 +50,7 @@ doc/
 
 - **Keep it lean.** dev/ is for practical how-to: setup, build, test, lint, run commands, and development workflow. Architecture belongs in main/, not here.
 - **Typical files:** `workflow.md` or `guide.md` (dev setup + commands), plus specialized guides as needed (e.g., `adding-sites.md`, `visual_debug_guide.md`).
-- **No plans or design docs.** Implementation plans go in `doc/todo/<project>/`, not dev/.
+- **No plans or design docs.** Implementation plans go in `projects/active/<project>/`, not dev/.
 
 
 ## Process
@@ -109,11 +109,11 @@ Keep entries concise. One entry per logical change, not per commit.
 
 ### 5. Update Project Implementation Summary
 
-If changes correspond to a `doc/todo/<project>/` folder, write or update `doc/todo/<project>/implementation_summary.md` — a concise summary of what was implemented, key decisions made, and current state.
+If changes correspond to a `projects/active/<project>/` folder, write or update `projects/active/<project>/implementation_summary.md` — a concise summary of what was implemented, key decisions made, and current state.
 
 ### 6. Archive (if applicable)
 
-When archiving a project folder (`doc/todo/<project>/` → `doc/archive/YYYYMMDD_<project>/`), check if `doc/todo/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `doc/archive/YYYYMMDD_<slug>.json`.
+When archiving a project folder (`projects/active/<project>/` → `projects/archive/YYYYMMDD_<project>/`), check if `projects/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `projects/archive/YYYYMMDD_<slug>.json`.
 
 ### 7. Commit Docs
 

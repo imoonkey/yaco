@@ -1,6 +1,6 @@
 ---
 name: update-tasks
-description: Create and manage the project task graph in doc/todo/tasks.json. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
+description: Create and manage the project task graph in projects/tasks.json. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
 ---
 
 ## Scope
@@ -12,7 +12,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
 - **Reorganization**: reparent tasks, adjust dependencies, split or merge tasks as the plan evolves
 - **Progress tracking**: update state as work proceeds, read the graph to report status
 
-## Core Schema — `doc/todo/tasks.json`
+## Core Schema — `projects/tasks.json`
 
 ```json
 {
@@ -22,7 +22,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
     "parent": null,
     "depends": [],
     "state": "ready",
-    "design": "doc/todo/workspace-state/final/design_aligned.md",
+    "design": "projects/active/workspace-state/final/design_aligned.md",
     "scope": ["src/store/**", "src/hooks/useEditor*"],
     "acceptCriteria": "- editor state persists across refresh\n- npm test passes\n- no console errors on reload",
     "note": null
@@ -95,7 +95,7 @@ Before writing any task, analyze and decide:
 
 ## Tools
 
-Reads are straightforward — use jq or file read directly on `doc/todo/tasks.json`.
+Reads are straightforward — use jq or file read directly on `projects/tasks.json`.
 
 Writes must follow graph constraints (ref validation, cycle detection, state guards, parent rollup), so always use `scripts/update-tasks.py` which has these built in:
 
@@ -105,6 +105,6 @@ scripts/update-tasks.py rm <id>
 scripts/update-tasks.py archive <id>
 ```
 
-`archive` moves a terminal task and all its descendants to `doc/archive/YYYYMMDD_<slug>.json` (or `..._<n>.json` if that day's archive file already exists). All descendants must also be terminal. When this is a completed project task, then run `/update-doc` to move the matching project docs from `doc/todo/<project>/` to `doc/archive/YYYYMMDD_<project>/`.
+`archive` moves a terminal task and all its descendants to `projects/archive/YYYYMMDD_<slug>.json` (or `..._<n>.json` if that day's archive file already exists). All descendants must also be terminal. When this is a completed project task, then run `/update-doc` to move the matching project docs from `projects/active/<project>/` to `projects/archive/YYYYMMDD_<project>/`.
 
 Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.

@@ -14,7 +14,7 @@ Two agents independently design, cross-review, then align via multi-round discus
 ## Doc Structure
 
 ```
-doc/todo/<project>/
+projects/active/<project>/
   initial/
     design_claude.md          # Step 1: independent designs (can be multiple docs for large design rather than one only)
     design_codex.md
@@ -41,8 +41,8 @@ When this doc references `./scripts/...`, that path is relative to the installed
 Start both agents in parallel. Each runs `/design` independently — no reading the other's output.
 
 ```bash
-multmux start claude "Run /design for: <goal>. Write your design to doc/todo/<project>/initial/design_claude.md. Do NOT read any other design files in that folder." --name claude-design
-multmux start codex "Run /design for: <goal>. Write your design to doc/todo/<project>/initial/design_codex.md. Do NOT read any other design files in that folder." --name codex-design
+multmux start claude "Run /design for: <goal>. Write your design to projects/active/<project>/initial/design_claude.md. Do NOT read any other design files in that folder." --name claude-design
+multmux start codex "Run /design for: <goal>. Write your design to projects/active/<project>/initial/design_codex.md. Do NOT read any other design files in that folder." --name codex-design
 ```
 
 Wait for both in parallel (run captures in background, then read results):
@@ -57,8 +57,8 @@ wait
 Send each agent the other's design for review. Reuse sessions for context continuity.
 
 ```bash
-multmux send claude-design "Now read doc/todo/<project>/initial/design_codex.md and write your review to doc/todo/<project>/initial/design_review_claude.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX."
-multmux send codex-design "Now read doc/todo/<project>/initial/design_claude.md and write your review to doc/todo/<project>/initial/design_review_codex.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX."
+multmux send claude-design "Now read projects/active/<project>/initial/design_codex.md and write your review to projects/active/<project>/initial/design_review_claude.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX."
+multmux send codex-design "Now read projects/active/<project>/initial/design_claude.md and write your review to projects/active/<project>/initial/design_review_codex.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX."
 ```
 
 Wait for both in parallel:
@@ -84,8 +84,8 @@ The first draft must be conservative:
 Send both agents into `/align` mode with the first mover explicitly assigned. Example below assumes the cross-reviews selected Claude.
 
 ```bash
-multmux send claude-design "Run /align. Read all files in doc/todo/<project>/initial/. You are CLAUDE. Alignment folder: doc/todo/<project>/. Claude is the explicit first mover. If it is your turn, initialize alignment artifacts and write the first draft. That first draft must be conservative: capture consensus, avoid opinionated picks on unresolved questions, and end with an Open Questions section listing every unresolved issue. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question. If it is not your turn, wait."
-multmux send codex-design "Run /align. Read all files in doc/todo/<project>/initial/. You are CODEX. Alignment folder: doc/todo/<project>/. Claude is the explicit first mover. Do not start drafting unless status.txt says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question."
+multmux send claude-design "Run /align. Read all files in projects/active/<project>/initial/. You are CLAUDE. Alignment folder: projects/active/<project>/. Claude is the explicit first mover. If it is your turn, initialize alignment artifacts and write the first draft. That first draft must be conservative: capture consensus, avoid opinionated picks on unresolved questions, and end with an Open Questions section listing every unresolved issue. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question. If it is not your turn, wait."
+multmux send codex-design "Run /align. Read all files in projects/active/<project>/initial/. You are CODEX. Alignment folder: projects/active/<project>/. Claude is the explicit first mover. Do not start drafting unless status.txt says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question."
 ```
 
 If the cross-reviews pick Codex, swap the role assignment in both prompts. The key invariant is that exactly one side is named the first mover in both messages.
@@ -95,7 +95,7 @@ If the cross-reviews pick Codex, swap the role assignment in both prompts. The k
 Minimal manual monitoring loop:
 
 ```bash
-cat doc/todo/<project>/discussion/status.txt
+cat projects/active/<project>/discussion/status.txt
 multmux status claude-design
 multmux status codex-design
 ```
@@ -116,7 +116,7 @@ Repeat until `status.txt` reaches `NEXT=DONE`.
 
 ## Output
 
-Final aligned design lands in `doc/todo/<project>/final/*.md`.
+Final aligned design lands in `projects/active/<project>/final/*.md`.
 Hand off to `/implement` when ready.
 
 ## Notes

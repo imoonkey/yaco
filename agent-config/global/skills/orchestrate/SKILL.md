@@ -1,11 +1,11 @@
 ---
 name: orchestrate
-description: Execute tasks from doc/todo/tasks.json using multmux workers. Use when the user wants to run, advance, or check on task execution.
+description: Execute tasks from projects/tasks.json using multmux workers. Use when the user wants to run, advance, or check on task execution.
 ---
 
 ## Dispatch
 
-Read `doc/todo/tasks.json` via `/update-tasks`. Select tasks where ALL of:
+Read `projects/tasks.json` via `/update-tasks`. Select tasks where ALL of:
 - state is `ready`
 - task is a **leaf** (no other task has this task as `parent`)
 - all `depends` are terminal (done/cancelled)

@@ -56,7 +56,7 @@ Cover:
 - **Tasks** — break the design into implementable tasks. Each task: slug, scope (file globs), acceptance criteria, dependencies. This section feeds `/update-tasks` to populate the task graph.
 - **Trade-offs** — what alternatives were considered, why this approach wins
 
-Keep it concise. The doc should be readable in 5 minutes. Write to doc/todo/<project>/*_[codex|claude].md or doc/todo/<project>/individual/*_[claude|codex].md if there is a `/double-design` going on.
+Keep it concise. The doc should be readable in 5 minutes. Write to projects/active/<project>/*_[codex|claude].md or projects/active/<project>/individual/*_[claude|codex].md if there is a `/double-design` going on.
 
 ### 5. Self-Review
 

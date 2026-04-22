@@ -296,7 +296,7 @@ Present via AskUserQuestion. Do NOT proceed without user approval of the approac
 
 ## Phase 5: Design Doc
 
-Write the design document to `doc/todo/` (or the project's design doc convention).
+Write the design document to `projects/active/` (or the project's design doc convention).
 
 ### Startup mode design doc template:
 
