@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-22: Doc / project separation — workflow repo cutover (Phase 1a)
+
+**What changed:**
+- New top-level `projects/` folder. `doc/todo/` → `projects/active/`, `doc/archive/` → `projects/archive/`. State files (`tasks.json`, `progress.json`, `.tasks.json.lock`) moved to `projects/` root, above the active/archive split. `doc/PROGRESS.md` intentionally stays in `doc/`.
+- Inline path constants in 7 source files (no adapter modules): `server/src/routes/tasks.ts` (`TASKS_FILE`/`ARCHIVE_DIR`), task worktree test fixture, `ui/src/hooks/useTaskGraph.ts` (`TASKS_FILE_PATH` export reused by `useWorkspaceNavigation.ts`), `TaskArchiveView.tsx` empty-state label, `ui/src/data.ts` example tree, `scripts/update-tasks.py`.
+- Three commits: `37d8b34` constants → `2ecb70f` pure git-mv (so rename detection records straight renames, no content edits in that commit) → `14035a9` sweep + archive JSON rewrite.
+- Sweep across `CLAUDE.md`, `doc/main/**`, `projects/active/**` (excluded `doc-separation/` so the migration narrative keeps its historical paths).
+- Targeted rewrite of all 14 `projects/archive/*.json` `design` fields. Resolution order: dated archive folder → active slug. 0 flagged.
+- `CLAUDE.md` "Documentation Structure" block updated to show `doc/` (reference) + `projects/` (workstream) split.
+
+**Why:**
+- `doc/` was mixing two artifacts with opposite lifecycles — stable reference docs and live workstream state. Splitting on **audience and purpose** (read to *learn* the codebase vs. read to *execute* in-flight work) makes the file explorer surface coherent and unblocks publishing `doc/` as a public artifact later. See `projects/active/doc-separation/design.md` for full rationale and `eng-plan-review_codex.md` for the engineering review that shaped Phase 0 freeze + Tier 1 ordering.
+
+**Key files:** `server/src/routes/tasks.ts`, `server/src/routes/__tests__/tasks-worktree.test.ts`, `ui/src/hooks/useTaskGraph.ts`, `ui/src/workspace/useWorkspaceNavigation.ts`, `ui/src/tasks/archive/TaskArchiveView.tsx`, `ui/src/data.ts`, `scripts/update-tasks.py`, `CLAUDE.md`, `doc/main/**`, `projects/active/**`, `projects/archive/*.json`
+**Verification:** `cd server && npm test` → 17 files / 185 tests passed. Source-code grep `doc/(todo|archive)` across `server/src`, `ui/src`, `scripts` → empty. `git log --follow projects/tasks.json` crosses the rename and reaches pre-migration history. Playwright `tasks*.spec.ts` fails on a missing `<header>` selector — confirmed pre-existing on the same checkout with source files reverted, not caused by this migration.
+**Commit:** `37d8b34`, `2ecb70f`, `14035a9`
+**Next:** Phase 1b (agent-config skill prompts + self-bootstrap) so the global skills stop writing to stale `doc/todo` paths. Phase 0 skill freeze (`/update-tasks`, `/orchestrate`, `/design`, `/double-design`, `/implement`, `/update-doc`, `/office-hours`) remains in effect across `~/workspace/*` until Phase 4 verification.
+**Blockers:** None.
+
 ## 2026-04-22: Remote desktop access — CORS allowlist + secure-context fallback
 
 **What changed:**
