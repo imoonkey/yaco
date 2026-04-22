@@ -88,22 +88,32 @@ function validateNewPath(projectPath: string, filePath: string): string | null {
   return absPath
 }
 
-/** Recursively list every file under an already-known symlinked directory. */
+/** Recursively list every file under an already-known symlinked directory.
+ *  ancestors holds realpath()s of dirs we're currently inside (per recursion path),
+ *  so cycles like loop -> . terminate while two distinct top-level aliases pointing
+ *  to the same target can both still be indexed. */
 async function walkSymlinkedDir(
   dir: string, relPrefix: string, seen: Set<string>,
-  files: { name: string; path: string; type: string }[]
+  files: { name: string; path: string; type: string }[],
+  ancestors: Set<string>
 ) {
   let entries
   try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
   for (const entry of entries) {
     if (shouldIgnoreEntry(entry.name)) continue
     const relPath = join(relPrefix, entry.name)
+    const abs = join(dir, entry.name)
     let isDir = entry.isDirectory()
     if (entry.isSymbolicLink()) {
-      try { isDir = (await stat(join(dir, entry.name))).isDirectory() } catch { continue }
+      try { isDir = (await stat(abs)).isDirectory() } catch { continue }
     }
     if (isDir) {
-      await walkSymlinkedDir(join(dir, entry.name), relPath, seen, files)
+      let real
+      try { real = await realpath(abs) } catch { continue }
+      if (ancestors.has(real)) continue
+      ancestors.add(real)
+      await walkSymlinkedDir(abs, relPath, seen, files, ancestors)
+      ancestors.delete(real)
     } else if (!seen.has(relPath)) {
       seen.add(relPath)
       files.push({ name: entry.name, path: relPath, type: 'file' })
@@ -121,13 +131,20 @@ async function collectSymlinkedFiles(
 ) {
   let entries
   try { entries = await readdir(projectPath, { withFileTypes: true }) } catch { return }
+  let projectReal: string
+  try { projectReal = await realpath(projectPath) } catch { return }
   for (const entry of entries) {
     if (!entry.isSymbolicLink() || shouldIgnoreEntry(entry.name)) continue
     const abs = join(projectPath, entry.name)
-    let isDir
-    try { isDir = (await stat(abs)).isDirectory() } catch { continue }
+    let isDir, real
+    try {
+      isDir = (await stat(abs)).isDirectory()
+      real = await realpath(abs)
+    } catch { continue }
     if (!isDir) continue
-    await walkSymlinkedDir(abs, entry.name, seen, files)
+    // Skip self/ancestor links (loop -> ., link -> ..) that would re-enter the project tree
+    if (real === projectReal || projectReal.startsWith(real + '/')) continue
+    await walkSymlinkedDir(abs, entry.name, seen, files, new Set([real]))
   }
 }
 

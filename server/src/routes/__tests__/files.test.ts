@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, readFile, stat } from 'fs/promises'
+import { mkdtemp, rm, readFile, stat, mkdir, writeFile, symlink } from 'fs/promises'
 import { existsSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -160,5 +161,108 @@ describe('POST /:project/create-dir', () => {
       body: JSON.stringify({ path: 'exists-dir' }),
     })
     expect(res.status).toBe(409)
+  })
+})
+
+describe('GET /:project/search-index — symlinked directories', () => {
+  beforeEach(async () => {
+    testProjectPath = await mkdtemp(join(tmpdir(), 'workflow-test-'))
+    execFileSync('git', ['init', '-q'], { cwd: testProjectPath })
+    execFileSync('git', ['config', 'user.email', 'test@test'], { cwd: testProjectPath })
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: testProjectPath })
+  })
+  afterEach(async () => {
+    await rm(testProjectPath, { recursive: true, force: true })
+  })
+
+  async function fetchIndex(): Promise<{ name: string; path: string; type: string }[]> {
+    const res = await fileRoutes.request('/test-project/search-index')
+    expect(res.status).toBe(200)
+    return res.json()
+  }
+
+  it('indexes files inside a top-level directory symlink', async () => {
+    // External target dir with a file; symlinked from project root
+    const target = await mkdtemp(join(tmpdir(), 'workflow-target-'))
+    try {
+      await writeFile(join(target, 'inside.txt'), 'hi')
+      await symlink(target, join(testProjectPath, 'linked'))
+
+      const entries = await fetchIndex()
+      const paths = entries.map(e => e.path)
+      expect(paths).toContain('linked/inside.txt')
+    } finally {
+      await rm(target, { recursive: true, force: true })
+    }
+  })
+
+  it('does not double-count top-level file symlinks (git already lists them)', async () => {
+    // Real file outside the project, symlinked in. git ls-files lists the symlink
+    // entry itself; the walker must not add it as a separate file.
+    const targetDir = await mkdtemp(join(tmpdir(), 'workflow-target-'))
+    try {
+      const targetFile = join(targetDir, 'data.txt')
+      await writeFile(targetFile, 'hi')
+      await symlink(targetFile, join(testProjectPath, 'shortcut.txt'))
+      execFileSync('git', ['add', '-A'], { cwd: testProjectPath })
+
+      const entries = await fetchIndex()
+      const matches = entries.filter(e => e.path === 'shortcut.txt')
+      expect(matches).toHaveLength(1)
+    } finally {
+      await rm(targetDir, { recursive: true, force: true })
+    }
+  })
+
+  it('terminates on a self-referential symlink (loop -> .)', async () => {
+    await symlink('.', join(testProjectPath, 'loop'))
+    const entries = await Promise.race([
+      fetchIndex(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+    ])
+    // Walker should not recurse into the loop; loop/loop/loop... must not appear
+    const looped = entries.filter(e => e.path.startsWith('loop/loop'))
+    expect(looped).toHaveLength(0)
+  })
+
+  it('terminates on a mutual symlink cycle (a -> b, b -> a)', async () => {
+    const targetA = await mkdtemp(join(tmpdir(), 'workflow-cycle-a-'))
+    const targetB = await mkdtemp(join(tmpdir(), 'workflow-cycle-b-'))
+    try {
+      // a contains a symlink "to-b" -> targetB; b contains "to-a" -> targetA
+      await symlink(targetB, join(targetA, 'to-b'))
+      await symlink(targetA, join(targetB, 'to-a'))
+      await writeFile(join(targetA, 'a.txt'), '')
+      await writeFile(join(targetB, 'b.txt'), '')
+      await symlink(targetA, join(testProjectPath, 'aliased'))
+
+      const entries = await Promise.race([
+        fetchIndex(),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+      ])
+      const paths = entries.map(e => e.path)
+      // Cycle must terminate; we should see one full traversal but not infinite nesting
+      expect(paths).toContain('aliased/a.txt')
+      expect(paths.some(p => p.includes('to-b/to-a/to-b'))).toBe(false)
+    } finally {
+      await rm(targetA, { recursive: true, force: true })
+      await rm(targetB, { recursive: true, force: true })
+    }
+  })
+
+  it('indexes both of two top-level symlinks pointing to the same target', async () => {
+    // Per-recursion-path ancestor tracking: distinct top-level aliases should both work
+    const target = await mkdtemp(join(tmpdir(), 'workflow-shared-'))
+    try {
+      await writeFile(join(target, 'x.txt'), '')
+      await symlink(target, join(testProjectPath, 'one'))
+      await symlink(target, join(testProjectPath, 'two'))
+      const entries = await fetchIndex()
+      const paths = entries.map(e => e.path)
+      expect(paths).toContain('one/x.txt')
+      expect(paths).toContain('two/x.txt')
+    } finally {
+      await rm(target, { recursive: true, force: true })
+    }
   })
 })
