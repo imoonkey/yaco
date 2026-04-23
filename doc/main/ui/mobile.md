@@ -132,6 +132,10 @@ Edge cases:
 
 The bottom project tab bar applies `padding-bottom: var(--safe-area-bottom)` (defined in `index.css`) to lift content above the iPhone home indicator / system gesture zone. See [app-shell.md](app-shell.md) for details.
 
+## Input Focus Zoom Prevention
+
+iOS Safari auto-zooms the viewport when an input/textarea/select receives focus if its computed `font-size < 16px`. A global CSS rule in `index.css` forces `font-size: 16px` on all form inputs, scoped to iOS touch devices only via `@media (pointer: coarse)` + `@supports (-webkit-touch-callout: none)`. This avoids the zoom without affecting desktop or Android.
+
 ## Overscroll
 
 `overscroll-behavior: none` on html/body prevents browser swipe-back gesture and bounce effects.

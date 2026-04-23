@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-04-23: fix iOS Safari auto-zoom on input focus
+
+**What changed:**
+- Added CSS rule in `index.css` forcing `font-size: 16px` on all `input`, `textarea`, `select` elements, scoped to iOS touch devices via `@media (pointer: coarse)` + `@supports (-webkit-touch-callout: none)`.
+
+**Why:**
+- Every input in the app had font-size 10–13px. iOS Safari auto-zooms the viewport when an input with `font-size < 16px` receives focus, pushing surrounding elements off screen. The CSS-only fix avoids touching individual components and doesn't affect desktop or Android.
+
+**Key files:** `ui/src/index.css`, `doc/main/ui/mobile.md`
+**Verification:** Build passed, CSS rule confirmed loaded via Playwright computed style check
+**Commit:** 404de2a
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-22: search-index — top-level symlink walk + loop safety (~150× faster on monorepos)
 
 **What changed:**
