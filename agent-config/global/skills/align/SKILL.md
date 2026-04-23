@@ -32,12 +32,6 @@ Write and discuss the design like Linus Torvalds would.
 
 ## Process
 
-### Helper Path Rule
-
-- Paths like `./scripts/...` are relative to this skill directory, never the repo cwd.
-- Before running a helper, resolve the installed `align` skill directory, then interpret `./scripts/...` relative to that directory.
-- Fallback absolute path: `$HOME/.claude/skills/align/scripts/align_poll.sh`
-
 ### Directory Convention
 
 ```
@@ -137,3 +131,14 @@ Both agents have approved. End polling.
 
 * **Only write files when `NEXT` is you** (including `final/*` and `discussion/*`).
 * Discussion is append-only: always create new `####_AGENT.md` files, never edit old ones.
+
+## Script paths
+
+Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
+
+```bash
+SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/align/SKILL.md)")"
+"$SKILL_DIR/scripts/<script>"
+```
+
+Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/align/scripts/<script>`.

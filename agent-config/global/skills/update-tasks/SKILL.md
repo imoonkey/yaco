@@ -97,14 +97,25 @@ Before writing any task, analyze and decide:
 
 Reads are straightforward — use jq or file read directly on `projects/tasks.json`.
 
-Writes must follow graph constraints (ref validation, cycle detection, state guards, parent rollup), so always use `scripts/update-tasks.py` which has these built in:
+Writes must follow graph constraints (ref validation, cycle detection, state guards, parent rollup), so always use `$SKILL_DIR/scripts/update-tasks.py` which has these built in (see "Script paths" below for `$SKILL_DIR`):
 
 ```
-scripts/update-tasks.py set <id> <json>
-scripts/update-tasks.py rm <id>
-scripts/update-tasks.py archive <id>
+"$SKILL_DIR/scripts/update-tasks.py" set <id> <json>
+"$SKILL_DIR/scripts/update-tasks.py" rm <id>
+"$SKILL_DIR/scripts/update-tasks.py" archive <id>
 ```
 
 `archive` moves a terminal task and all its descendants to `projects/archive/YYYYMMDD_<slug>.json` (or `..._<n>.json` if that day's archive file already exists). All descendants must also be terminal. When this is a completed project task, then run `/update-doc` to move the matching project docs from `projects/active/<project>/` to `projects/archive/YYYYMMDD_<project>/`.
 
 Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.
+
+## Script paths
+
+Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
+
+```bash
+SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/update-tasks/SKILL.md)")"
+"$SKILL_DIR/scripts/<script>"
+```
+
+Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/update-tasks/scripts/<script>`.

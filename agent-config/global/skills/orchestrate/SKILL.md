@@ -21,15 +21,13 @@ Each task executes in a **resolved cwd** based on the optional `worktree` field:
 | Present (e.g. `"auth-v2"`) | `<repo>/.worktrees/<slug>/` | `task/<slug>` |
 | Absent | Main checkout | Current branch |
 
-To resolve a worktree cwd:
+To resolve a worktree cwd (see "Script paths" below for `$SKILL_DIR`):
 
 ```bash
-# Scripts live in this skill's scripts/ directory
-SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/orchestrate/SKILL.md)")"
 worktree_path="$("$SKILL_DIR/scripts/worktree-create.sh" <slug>)"
 ```
 
-The scripts live in `~/.claude/skills/orchestrate/scripts/`. `worktree-create.sh` creates `<repo>/.worktrees/<slug>/` on branch `task/<slug>`, runs the repo's own `scripts/worktree-provision.sh` if present, and reuses existing worktrees.
+`worktree-create.sh` creates `<repo>/.worktrees/<slug>/` on branch `task/<slug>`, runs the repo's own `scripts/worktree-provision.sh` if present, and reuses existing worktrees.
 
 **Cross-repo worktrees:** If task `scope` includes paths in multiple repos, create a worktree in each repo using the same slug. Each repo manages its own `.worktrees/` directory independently.
 
@@ -144,3 +142,14 @@ If stopped for human review, wait for human to send instructions. Human can:
 ## Blocked Tasks
 
 If a task is `blocked`, report it (read `note` field for context) and skip. Do not attempt to unblock automatically — blocked tasks require human intervention or dependency resolution.
+
+## Script paths
+
+Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
+
+```bash
+SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/orchestrate/SKILL.md)")"
+"$SKILL_DIR/scripts/<script>"
+```
+
+Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/orchestrate/scripts/<script>`.

@@ -21,12 +21,10 @@ After `/init` completes, review the generated CLAUDE.md and trim it to follow th
 
 ### 2. Multi-Tool Symlinks
 
-Helper scripts are in `./scripts/` relative to this SKILL.md.
-
-Run from the project root:
+Run from the project root (see "Script paths" below for `$SKILL_DIR`):
 
 ```bash
-bash <init-all-skill-path>/scripts/init-symlinks.sh
+bash "$SKILL_DIR/scripts/init-symlinks.sh"
 ```
 
 This creates:
@@ -77,3 +75,14 @@ Report what was done:
 - Symlinks: created / existed
 - Doc structure: created / existed
 - Global config: OK / warnings
+
+## Script paths
+
+Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
+
+```bash
+SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/init-all/SKILL.md)")"
+"$SKILL_DIR/scripts/<script>"
+```
+
+Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/init-all/scripts/<script>`.
