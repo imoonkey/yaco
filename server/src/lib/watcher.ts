@@ -26,18 +26,19 @@ export async function startWatching(projects: Project[], onChange: ChangeCallbac
   stopWatching()
 
   for (const project of projects) {
-    const todoDir = join(project.path, 'doc', 'todo')
-    if (!existsSync(todoDir)) continue
+    const projectsDir = join(project.path, 'projects')
+    const activeDir = join(projectsDir, 'active')
 
-    // Watch project-level progress.json
-    const projectProgress = join(todoDir, 'progress.json')
+    // Watch project-level progress.json (at projects/ root)
+    const projectProgress = join(projectsDir, 'progress.json')
     watchProgressFile(projectProgress, project.name, '', onChange)
 
-    // Watch workstream-level progress.json files
-    const entries = await readdir(todoDir, { withFileTypes: true })
+    // Watch workstream-level progress.json files under projects/active/
+    if (!existsSync(activeDir)) continue
+    const entries = await readdir(activeDir, { withFileTypes: true })
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
-      const progressFile = join(todoDir, entry.name, 'progress.json')
+      const progressFile = join(activeDir, entry.name, 'progress.json')
       watchProgressFile(progressFile, project.name, entry.name, onChange)
     }
   }
@@ -53,9 +54,9 @@ function watchProgressFile(
     // For project-level files that don't exist yet, watch the parent dir
     // so we detect when the poller creates it
     if (!workstream) {
-      const todoDir = progressFile.replace(/\/progress\.json$/, '')
-      if (existsSync(todoDir)) {
-        const dirWatcher = watch(todoDir, (_, filename) => {
+      const parentDir = progressFile.replace(/\/progress\.json$/, '')
+      if (existsSync(parentDir)) {
+        const dirWatcher = watch(parentDir, (_, filename) => {
           if (filename === 'progress.json' && existsSync(progressFile)) {
             dirWatcher.close()
             const idx = watchers.indexOf(dirWatcher)

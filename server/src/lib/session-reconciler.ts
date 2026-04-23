@@ -133,11 +133,11 @@ function pruneStaleKeys(projects: Project[]): void {
 }
 
 async function writeSessionIdleEntry(project: Project, session: MultmuxSession): Promise<void> {
-  const todoDir = join(project.path, 'doc', 'todo')
-  const progressFile = join(todoDir, 'progress.json')
+  const projectsDir = join(project.path, 'projects')
+  const progressFile = join(projectsDir, 'progress.json')
 
   try {
-    if (!existsSync(todoDir)) await mkdir(todoDir, { recursive: true })
+    if (!existsSync(projectsDir)) await mkdir(projectsDir, { recursive: true })
 
     await withFileLock(progressFile, async () => {
       let entries: ProgressEntry[] = []

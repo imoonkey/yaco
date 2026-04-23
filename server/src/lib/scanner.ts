@@ -62,15 +62,15 @@ export async function withFileLock<T>(path: string, fn: () => Promise<T>): Promi
 
 /** Scan a single project for workstreams */
 async function scanProject(project: Project): Promise<WorkstreamInfo[]> {
-  const todoDir = join(project.path, 'doc', 'todo')
-  if (!existsSync(todoDir)) return []
+  const activeDir = join(project.path, 'projects', 'active')
+  if (!existsSync(activeDir)) return []
 
-  const entries = await readdir(todoDir, { withFileTypes: true })
+  const entries = await readdir(activeDir, { withFileTypes: true })
   const results: WorkstreamInfo[] = []
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue
-    const wsFile = join(todoDir, entry.name, 'workstream.json')
+    const wsFile = join(activeDir, entry.name, 'workstream.json')
     if (!existsSync(wsFile)) continue
 
     try {
@@ -119,21 +119,22 @@ export async function scanProgress(projects: Project[]): Promise<ProgressEntryWi
   const all: ProgressEntryWithContext[] = []
 
   for (const project of projects) {
-    const todoDir = join(project.path, 'doc', 'todo')
-    if (!existsSync(todoDir)) continue
+    const projectsDir = join(project.path, 'projects')
+    const activeDir = join(projectsDir, 'active')
 
-    // Project-level progress.json
-    const projectProgress = join(todoDir, 'progress.json')
+    // Project-level progress.json (at projects/ root)
+    const projectProgress = join(projectsDir, 'progress.json')
     if (existsSync(projectProgress)) {
       const items = await readProgressFile(projectProgress, project.name, '')
       all.push(...items)
     }
 
-    // Workstream-level progress.json files
-    const entries = await readdir(todoDir, { withFileTypes: true })
+    // Workstream-level progress.json files under projects/active/
+    if (!existsSync(activeDir)) continue
+    const entries = await readdir(activeDir, { withFileTypes: true })
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
-      const progressFile = join(todoDir, entry.name, 'progress.json')
+      const progressFile = join(activeDir, entry.name, 'progress.json')
       if (!existsSync(progressFile)) continue
       const items = await readProgressFile(progressFile, project.name, entry.name)
       all.push(...items)
@@ -150,7 +151,7 @@ export async function updateWorkstreamStatus(
   workstreamId: string,
   status: WorkstreamStatus
 ): Promise<void> {
-  const wsFile = join(projectPath, 'doc', 'todo', workstreamId, 'workstream.json')
+  const wsFile = join(projectPath, 'projects', 'active', workstreamId, 'workstream.json')
   await withFileLock(wsFile, async () => {
     const raw = await readFile(wsFile, 'utf-8')
     const data: WorkstreamData = JSON.parse(raw)
@@ -166,8 +167,8 @@ export async function dismissProgress(
   entryId: string
 ): Promise<void> {
   const file = workstreamId
-    ? join(projectPath, 'doc', 'todo', workstreamId, 'progress.json')
-    : join(projectPath, 'doc', 'todo', 'progress.json')
+    ? join(projectPath, 'projects', 'active', workstreamId, 'progress.json')
+    : join(projectPath, 'projects', 'progress.json')
   await withFileLock(file, async () => {
     const raw = await readFile(file, 'utf-8')
     const entries: ProgressEntry[] = JSON.parse(raw)
