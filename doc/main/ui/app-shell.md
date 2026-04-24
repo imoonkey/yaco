@@ -25,7 +25,7 @@ The app is a single-workspace shell — no view switcher, no Monitor tab, no sep
 
 ### Margin Bars
 
-Top and bottom margin bars (hidden on mobile via `hidden md:flex`, 40px height each):
+Top and bottom margin bars (hidden on mobile via `useIsMobile()` conditional rendering, 40px height each):
 - Left: active project name or "Workflow"
 - Right: Clock component (dark pill style)
 

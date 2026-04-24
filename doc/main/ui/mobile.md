@@ -16,7 +16,7 @@ Responsive layouts, pane switching, touch handling, and mobile-specific behavior
 
 ## Related Code
 
-`ui/src/hooks/useIsMobile.ts`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
+`ui/src/hooks/useIsMobile.ts`, `ui/src/components/LandscapeNav.tsx`, `ui/src/components/PaneSwitch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
 
 ## Breakpoint
 
@@ -35,15 +35,17 @@ On mobile, the Workspace collapses from multi-column to a single full-width pane
 
 ### Portrait
 
-Top PaneSwitch bar (28px) with text labels: Browse | Editor | Tasks | Terminal + notification bell + theme toggle.
+Top PaneSwitch bar (`py-2`, ~36px) with lucide icons + text labels: Browse | Editor | Tasks | Terminal + notification bell + theme toggle. Increased padding (from `py-0.5`) for better tap targets.
 
 ### Landscape
 
 Collapsible floating nav (`LandscapeNav` component) to maximize vertical space:
 
-- **Toggle button**: 32×32px glass pill, top-left corner, positioned after `env(safe-area-inset-left)` to avoid Dynamic Island. Always visible.
-- **Nav panel**: appears on toggle tap. Glass background with backdrop-blur, vertical icon buttons for 4 panes + notification bell + theme toggle. Active pane highlighted in blue. Dismissed on Escape, click outside, or pane selection.
-- **Content area**: full height, `paddingLeft: 44px` clears the toggle button, `paddingLeft`/`paddingRight` use `max(env(safe-area-inset-*), 8px)` for Dynamic Island and rounded corner clearance.
+- **Toggle button**: 32×32px glass pill, positioned at the inner edge of the left margin (`calc(margin - 34px)`), below iPhone rounded corners (`top: max(env(safe-area-inset-top), 24px)`). Always visible.
+- **Nav panel**: appears on toggle tap. Glass background with backdrop-blur, horizontal row of 4 pane icons + theme toggle expanding to the RIGHT from the toggle. Active pane highlighted in blue. Dismissed on Escape, click outside, or pane selection. Uses `menu-enter` animation.
+- **Notification bell + theme toggle**: standalone in the right margin at the inner edge, mirroring the toggle's vertical position. Bell panel opens naturally toward screen center.
+- **Equal margins**: both sides use `max(env(safe-area-inset-left), env(safe-area-inset-right), 36px)` — symmetric regardless of Dynamic Island orientation. Icons positioned at inner margin edge to maximize distance from iPhone rounded corners.
+- **Content area**: full height, no extra padding (margins on outer container handle clearance).
 
 -> See: `ui/src/components/LandscapeNav.tsx`
 
@@ -144,7 +146,7 @@ The resize propagates through the existing pipeline: `#root` shrinks → App `h-
 1. **Tap detection** (touchstart/touchmove/touchend): Distinguishes taps from scrolls. Only taps inside terminal (`.xterm`) or keyboard inputs trigger the estimate. Scrolling is excluded — `touchmove` cancels the pending estimate.
 2. **Deferred estimate** (300ms after tap): If `visualViewport` hasn't updated within 300ms, apply cached keyboard height (or 40% of viewport as first-open estimate). The delay avoids jitter when `visualViewport` updates quickly (estimate→real double-shift).
 3. **Real value correction**: When `visualViewport` reports real height, `apply()` replaces the estimate and caches the keyboard height for future instant estimates.
-4. **`--kb-safe-bottom`**: Set to `0px` when keyboard is open. TerminalKeyBar uses `var(--kb-safe-bottom, env(safe-area-inset-bottom))` to eliminate the gap between content and keyboard (home indicator padding is unnecessary when keyboard covers it).
+4. **`--kb-safe-bottom`**: Set to `0px` when keyboard is open. TerminalKeyBar uses `calc(var(--kb-safe-bottom, env(safe-area-inset-bottom)) / 2)` — halved to redistribute vertical space to the portrait top bar.
 
 Edge cases:
 - Programmatic focus (`term.focus()` on mount): `focusin` handler only fires after a recent touch on a terminal area (`touchedTerminal` flag), skipping programmatic focus

@@ -1,35 +1,27 @@
 # Progress
 
-## 2026-04-24: Mobile landscape collapsible nav + Dynamic Island avoidance
+## 2026-04-24: Mobile landscape layout with collapsible nav
 
 **What changed:**
-- Added `useIsLandscape()` hook for orientation detection
-- Created `LandscapeNav` component: floating 32×32 glass toggle button (top-left, after safe area insets) that opens a vertical icon panel (Browse/Editor/Tasks/Terminal + bell + theme toggle)
-- `WorkspaceLayout` branches mobile into portrait (top PaneSwitch bar) and landscape (LandscapeNav + full-height content with 44px left padding to clear toggle)
-- Content container uses `max(env(safe-area-inset-left/right), 8px)` padding to avoid Dynamic Island and iPhone rounded corners
+- `useIsMobile()` detects landscape phones via `(max-height: 500px) and (pointer: coarse)` — prevents phones (width 780–932px) from getting desktop layout
+- `useIsLandscape()` hook selects between portrait and landscape mobile layouts
+- `LandscapeNav` component: floating toggle button in left margin, horizontal nav panel expanding right with 4 pane icons. Bell + theme toggle positioned in the right margin (symmetric layout)
+- Equal left/right margins via `max(env(safe-area-inset-left), env(safe-area-inset-right), 36px)`. Icons at inner margin edge to clear iPhone rounded corners (`top: max(safe-area-inset-top, 24px)`)
+- App.tsx banners use `useIsMobile()` hook instead of CSS `hidden md:flex`
+- Portrait PaneSwitch gets matching lucide icons (FolderOpen, FileCode, ListTodo, SquareTerminal)
+- Portrait top bar padding increased (`py-0.5` → `py-2`) for better tap targets
+- TerminalKeyBar bottom safe area padding halved (`/ 2`) to redistribute space to top bar
+- Extracted `useMediaQuery` helper in `useIsMobile.ts`
 
 **Why:**
-- Landscape vertical space is precious (375–430px) — the 28px PaneSwitch bar wastes height; a collapsible left-side nav reclaims it
-- iPhone Dynamic Island creates a safe area inset on the left/right edge in landscape; toggle button positioned after it
+- Modern phones in landscape got desktop multi-panel layout squeezed into 375–430px height
+- Landscape vertical space is precious — collapsible nav reclaims the 28px top bar
+- iPhone Dynamic Island and rounded corners require safe area–aware positioning
 
-**Key files:** `ui/src/components/LandscapeNav.tsx` (new), `ui/src/hooks/useIsMobile.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Key files:** `ui/src/components/LandscapeNav.tsx` (new), `ui/src/components/PaneSwitch.tsx`, `ui/src/components/TerminalKeyBar.tsx`, `ui/src/hooks/useIsMobile.ts`, `ui/src/App.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
 **Verification:** All three modes verified in Playwright — desktop (1200×800), portrait mobile (393×852), landscape mobile (667×375). TypeScript clean, lint clean (no new errors)
-**Next:** Test on real iPhone to verify Dynamic Island safe area positioning
-**Blockers:** None
-
-## 2026-04-24: Mobile landscape uses pane layout instead of desktop layout
-
-**What changed:**
-- `useIsMobile()` now also returns true when `(max-height: 500px) and (pointer: coarse)`, catching landscape phones (height 375–430px) that previously crossed the 768px width threshold
-- Extracted shared `useMediaQuery` helper in `useIsMobile.ts` (used by `useIsMobile`, `useIsTouch`, and the new landscape query)
-- App.tsx top/bottom banners switched from CSS `hidden md:flex` to conditional rendering via `useIsMobile()` hook
-
-**Why:**
-- Modern phones in landscape (width 780–932px) got the desktop multi-panel layout squeezed into 375–430px height — three columns plus two 40px banners was unusable
-
-**Key files:** `ui/src/hooks/useIsMobile.ts`, `ui/src/App.tsx`, `doc/main/ui/mobile.md`
-**Verification:** Lint clean (no new errors), portrait mobile + desktop layout verified in Playwright
-**Next:** Test on real phone to confirm `pointer: coarse` fires correctly in landscape
+**Commit:** dc687d1
+**Next:** Test on real iPhone to verify Dynamic Island safe area positioning and `pointer: coarse` landscape detection
 **Blockers:** None
 
 ## 2026-04-24: Add Meta/⌘ modifier and workspace shortcut interception
