@@ -9,3 +9,4 @@ reference/
 test-results/
 .env
 .worktrees/
+.tasks.json.lock
