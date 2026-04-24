@@ -6,8 +6,8 @@ import icons from './seti-icons.json'
 
 type IconDef = [string, string]
 
-const files = definitions.files as Record<string, IconDef>
-const extensions = definitions.extensions as Record<string, IconDef>
+const files = definitions.files as unknown as Record<string, IconDef>
+const extensions = definitions.extensions as unknown as Record<string, IconDef>
 const partials = definitions.partials as [string, IconDef][]
 const defaultIcon = definitions.default as IconDef
 

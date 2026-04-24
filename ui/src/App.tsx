@@ -110,7 +110,7 @@ function App() {
   const [projectName, setProjectName] = useState<string>(loadProject)
   const [projectOrder, setProjectOrder] = useState<string[]>([])
   const [pulseType, setPulseType] = useState<'none' | 'light' | 'strong'>('none')
-  const pulseTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const pulseTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const handlePulse = useCallback((type: 'light' | 'strong') => {
     clearTimeout(pulseTimerRef.current)

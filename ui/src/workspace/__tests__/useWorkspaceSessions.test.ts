@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act, cleanup } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { renderHook, cleanup } from '@testing-library/react'
 import { useWorkspaceSessions } from '../useWorkspaceSessions'
 import type { AgentSession } from '../../types'
 
@@ -11,7 +11,7 @@ vi.mock('../../hooks/useApi', () => ({
 }))
 
 function makeSession(name: string, status: 'idle' | 'processing' = 'idle'): AgentSession {
-  return { name, provider: 'claude', status, project: 'test', sessionPath: '/test', sessionId: 'id', pid: 1, summary: '' }
+  return { name, provider: 'claude', status, project: 'test', summary: '' }
 }
 
 function makeOpts(overrides: Partial<Parameters<typeof useWorkspaceSessions>[0]> = {}) {

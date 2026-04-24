@@ -4,7 +4,7 @@ import { useIsMobile } from '../../hooks/useIsMobile'
 import { useTaskBoard } from '../hooks/useTaskBoard'
 import { BoardColumn } from './BoardColumn'
 
-const COLUMN_ORDER: TaskState[] = ['blocked', 'ready', 'running', 'done']
+const COLUMN_ORDER = ['blocked', 'ready', 'running', 'done'] as const
 
 interface TaskBoardViewProps {
   tasks: Map<string, TaskV2>

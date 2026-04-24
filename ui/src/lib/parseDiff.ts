@@ -44,8 +44,8 @@ export function parseDiff(diffText: string, filePath = ''): ParsedFileDiff {
   const file = files[0]
 
   // Detect binary
-  if (file.chunks.length === 0 && (file.deleted || file.added || diffText.includes('Binary files'))) {
-    const status: ChangeType = file.deleted ? 'deleted' : file.added ? 'added' : 'modified'
+  if (file.chunks.length === 0 && (file.deleted || file.new || diffText.includes('Binary files'))) {
+    const status: ChangeType = file.deleted ? 'deleted' : file.new ? 'added' : 'modified'
     return {
       path: filePath,
       status,

@@ -203,7 +203,6 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           fontWeight={700}
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 0.7 : 0}
-          textTransform="uppercase"
           letterSpacing="0.03em"
           style={{ transition: 'opacity 150ms ease-out', textTransform: 'uppercase' }}
         >
