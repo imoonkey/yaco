@@ -109,7 +109,15 @@ function decodeOsc52Payload(payload: string): string | null {
   }
 }
 
-function applyModifiers(data: string, mods: Modifiers): string {
+function applyModifiers(data: string, mods: Modifiers): string | null {
+  if (mods.meta && data.length === 1) {
+    const key = data.toLowerCase()
+    if (key === 'p' || key === 'b') {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, metaKey: true, bubbles: true }))
+      return null
+    }
+    return `\x1b${data}` // Meta sends ESC prefix
+  }
   if (mods.ctrl && data.length === 1) {
     const code = data.toUpperCase().charCodeAt(0)
     if (code >= 65 && code <= 90) return String.fromCharCode(code - 64) // Ctrl+A-Z
@@ -118,9 +126,6 @@ function applyModifiers(data: string, mods: Modifiers): string {
     const m = data.match(/^\x1b\[([ABCD])$/)
     if (m) return `\x1b[1;2${m[1]}` // Shift+arrow
     if (data === '\t') return '\x1b[Z' // Shift+Tab
-  }
-  if (mods.meta && data.length === 1) {
-    return `\x1b${data}` // Meta sends ESC prefix
   }
   return data
 }
@@ -160,9 +165,13 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       const prefix = termRef.current?.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b['
       seq = `${prefix}${suffix}`
     }
-    const out = (mods.ctrl || mods.shift || mods.meta) ? applyModifiers(seq, mods) : seq
-    if (mods.ctrl || mods.shift || mods.meta) setModifiers({ ctrl: false, shift: false, meta: false })
-    return out
+    if (mods.ctrl || mods.shift || mods.meta) {
+      const out = applyModifiers(seq, mods)
+      setModifiers({ ctrl: false, shift: false, meta: false })
+      if (out === null) return ''
+      return out
+    }
+    return seq
   }, [])
 
   // External text injection (voice compose send) — no trailing newline
@@ -327,12 +336,15 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     term.onData((data) => {
       imeInputHandled = true
       const mods = modifiersRef.current
-      const out = (mods.ctrl || mods.shift || mods.meta) ? applyModifiers(data, mods) : data
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'input', data: out }))
-      }
       if (mods.ctrl || mods.shift || mods.meta) {
+        const out = applyModifiers(data, mods)
         setModifiers({ ctrl: false, shift: false, meta: false })
+        if (out === null) return
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'input', data: out }))
+        }
+      } else if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'input', data }))
       }
     })
 
@@ -352,10 +364,13 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       setTimeout(() => {
         if (!imeInputHandled && ie.data && wsRef.current?.readyState === WebSocket.OPEN) {
           const mods = modifiersRef.current
-          const out = (mods.ctrl || mods.shift || mods.meta) ? applyModifiers(ie.data, mods) : ie.data
-          wsRef.current!.send(JSON.stringify({ type: 'input', data: out }))
           if (mods.ctrl || mods.shift || mods.meta) {
+            const out = applyModifiers(ie.data, mods)
             setModifiers({ ctrl: false, shift: false, meta: false })
+            if (out === null) return
+            wsRef.current!.send(JSON.stringify({ type: 'input', data: out }))
+          } else {
+            wsRef.current!.send(JSON.stringify({ type: 'input', data: ie.data }))
           }
         }
       }, 0)
