@@ -30,7 +30,7 @@ export type TerminalKeyBarKey =
   | 'ctrl-w'
   | 'ctrl-u'
 
-export type Modifiers = { ctrl: boolean; shift: boolean }
+export type Modifiers = { ctrl: boolean; shift: boolean; meta: boolean }
 
 const PRIMARY_KEYS: KeyDef[] = [
   { id: 'escape', label: 'Esc', ariaLabel: 'Escape', seq: '\x1b' },
@@ -179,6 +179,12 @@ export function TerminalKeyBar({
     onModifierChange({ ...modifiers, shift: !modifiers.shift })
   }, [modifiers, onModifierChange])
 
+  const handleMetaPointer = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onModifierChange({ ...modifiers, meta: !modifiers.meta })
+  }, [modifiers, onModifierChange])
+
   useEffect(() => {
     return () => {
       clearRepeat()
@@ -249,6 +255,16 @@ export function TerminalKeyBar({
             onContextMenu={preventContext}
           >
             ⇧
+          </button>
+          <button
+            type="button"
+            className={modifiers.meta ? BTN_MOD_ON : BTN}
+            aria-label="Meta modifier"
+            aria-pressed={modifiers.meta}
+            onPointerDown={handleMetaPointer}
+            onContextMenu={preventContext}
+          >
+            ⌘
           </button>
           <span className="text-[10px] font-mono text-[--sol-base1] shrink-0 pl-0.5 pr-0.5">^</span>
           {SECONDARY_KEYS.map(key => (

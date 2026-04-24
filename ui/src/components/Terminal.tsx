@@ -119,6 +119,9 @@ function applyModifiers(data: string, mods: Modifiers): string {
     if (m) return `\x1b[1;2${m[1]}` // Shift+arrow
     if (data === '\t') return '\x1b[Z' // Shift+Tab
   }
+  if (mods.meta && data.length === 1) {
+    return `\x1b${data}` // Meta sends ESC prefix
+  }
   return data
 }
 
@@ -138,7 +141,7 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
   const sendTextKeyRef = useRef<number | undefined>(undefined)
-  const [modifiers, setModifiers] = useState<Modifiers>({ ctrl: false, shift: false })
+  const [modifiers, setModifiers] = useState<Modifiers>({ ctrl: false, shift: false, meta: false })
   const modifiersRef = useRef(modifiers)
   useEffect(() => { modifiersRef.current = modifiers }, [modifiers])
 
@@ -157,8 +160,8 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       const prefix = termRef.current?.modes.applicationCursorKeysMode ? '\x1bO' : '\x1b['
       seq = `${prefix}${suffix}`
     }
-    const out = (mods.ctrl || mods.shift) ? applyModifiers(seq, mods) : seq
-    if (mods.ctrl || mods.shift) setModifiers({ ctrl: false, shift: false })
+    const out = (mods.ctrl || mods.shift || mods.meta) ? applyModifiers(seq, mods) : seq
+    if (mods.ctrl || mods.shift || mods.meta) setModifiers({ ctrl: false, shift: false, meta: false })
     return out
   }, [])
 
@@ -324,12 +327,12 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     term.onData((data) => {
       imeInputHandled = true
       const mods = modifiersRef.current
-      const out = (mods.ctrl || mods.shift) ? applyModifiers(data, mods) : data
+      const out = (mods.ctrl || mods.shift || mods.meta) ? applyModifiers(data, mods) : data
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'input', data: out }))
       }
-      if (mods.ctrl || mods.shift) {
-        setModifiers({ ctrl: false, shift: false })
+      if (mods.ctrl || mods.shift || mods.meta) {
+        setModifiers({ ctrl: false, shift: false, meta: false })
       }
     })
 
@@ -349,10 +352,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       setTimeout(() => {
         if (!imeInputHandled && ie.data && wsRef.current?.readyState === WebSocket.OPEN) {
           const mods = modifiersRef.current
-          const out = (mods.ctrl || mods.shift) ? applyModifiers(ie.data, mods) : ie.data
+          const out = (mods.ctrl || mods.shift || mods.meta) ? applyModifiers(ie.data, mods) : ie.data
           wsRef.current!.send(JSON.stringify({ type: 'input', data: out }))
-          if (mods.ctrl || mods.shift) {
-            setModifiers({ ctrl: false, shift: false })
+          if (mods.ctrl || mods.shift || mods.meta) {
+            setModifiers({ ctrl: false, shift: false, meta: false })
           }
         }
       }, 0)

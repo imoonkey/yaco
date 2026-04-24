@@ -6,7 +6,7 @@ import type { Modifiers } from '../TerminalKeyBar'
 
 let sendInput: (data: string) => void
 let onModifierChange: (m: Modifiers) => void
-const defaultMods: Modifiers = { ctrl: false, shift: false }
+const defaultMods: Modifiers = { ctrl: false, shift: false, meta: false }
 
 beforeEach(() => {
   sendInput = vi.fn<(data: string) => void>()
@@ -108,26 +108,40 @@ describe('TerminalKeyBar', () => {
     it('Ctrl pointerDown toggles ctrl modifier (row 1)', () => {
       renderBar()
       pointerDownByAriaLabel('Control modifier')
-      expect(onModifierChange).toHaveBeenCalledWith({ ctrl: true, shift: false })
+      expect(onModifierChange).toHaveBeenCalledWith({ ctrl: true, shift: false, meta: false })
     })
 
     it('Shift pointerDown toggles shift modifier (row 2)', () => {
       renderBar()
       expandSecondaryRow()
       pointerDownByAriaLabel('Shift modifier')
-      expect(onModifierChange).toHaveBeenCalledWith({ ctrl: false, shift: true })
+      expect(onModifierChange).toHaveBeenCalledWith({ ctrl: false, shift: true, meta: false })
+    })
+
+    it('Meta pointerDown toggles meta modifier (row 2)', () => {
+      renderBar()
+      expandSecondaryRow()
+      pointerDownByAriaLabel('Meta modifier')
+      expect(onModifierChange).toHaveBeenCalledWith({ ctrl: false, shift: false, meta: true })
     })
 
     it('Ctrl button shows active style when modifier is on', () => {
-      renderBar({ ctrl: true, shift: false })
+      renderBar({ ctrl: true, shift: false, meta: false })
       const btn = screen.getByRole('button', { name: 'Control modifier' })
       expect(btn.className).toContain('bg-[#268bd2]')
     })
 
     it('Shift button shows active style when modifier is on', () => {
-      renderBar({ ctrl: false, shift: true })
+      renderBar({ ctrl: false, shift: true, meta: false })
       expandSecondaryRow()
       const btn = screen.getByRole('button', { name: 'Shift modifier' })
+      expect(btn.className).toContain('bg-[#268bd2]')
+    })
+
+    it('Meta button shows active style when modifier is on', () => {
+      renderBar({ ctrl: false, shift: false, meta: true })
+      expandSecondaryRow()
+      const btn = screen.getByRole('button', { name: 'Meta modifier' })
       expect(btn.className).toContain('bg-[#268bd2]')
     })
   })
