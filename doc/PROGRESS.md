@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-04-24: Redesign terminal key bar + fix iOS touch handling
+
+**What changed:**
+- Redesigned key bar layout: Row 1 = Ctrl, Esc, Tab, PgUp, PgDn, Enter, arrows. Row 2 = Shift, ^C/D/B/O/A/E/U/K/W
+- Added PgUp/PgDn for scrolling Claude Code fullscreen TUI history on mobile
+- Added Ctrl+K (kill to EOL), removed Ctrl+R/L/Z
+- Fixed Ctrl, Shift, and expand buttons not responding on iOS Safari — switched from `onClick` to `onPointerDown` (parent `onMouseDown={preventDefault}` was suppressing the touch→click chain)
+- Fixed modifier active state not showing on iOS — switched from CSS variable class to hardcoded solarized blue (`#268bd2`)
+- Resolved pre-existing TypeScript build errors across 7 files
+
+**Why:**
+- Key layout optimized for Claude Code + Codex + tmux workflow (most frequent keys in row 1)
+- PgUp/PgDn needed because `CLAUDE_CODE_SCROLL_SPEED` env var only affects mouse wheel, not touch scroll — PgUp/PgDn is the only way to fast-scroll through fullscreen TUI history on mobile
+- iOS Safari's simulated mousedown/click chain after touch is suppressed by `preventDefault()` on the parent's mousedown handler (originally added to prevent xterm focus loss). `onPointerDown` fires before this chain and works reliably
+
+**Key files:** `ui/src/components/TerminalKeyBar.tsx`, `ui/src/components/__tests__/TerminalKeyBar.test.tsx`
+**Verification:** 28 tests pass (`npx vitest run src/components/__tests__/TerminalKeyBar.test.tsx`), manual verification on iOS Chrome via Tailscale
+**Commit:** ebd7921, 44e375e
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-23: fix iOS Safari auto-zoom on input focus
 
 **What changed:**

@@ -83,11 +83,11 @@ xterm.js 6 terminal emulator with Solarized Light theme. On touch devices, rende
 
 On touch devices (`useIsTouch()`), Terminal wraps its output in a flex column and renders `TerminalKeyBar` as a sibling below xterm. The key bar provides:
 
-- **Modifier keys** (sticky toggles): Ctrl, ⇧ (Shift) — tap to activate (blue highlight), next keypress applies the modifier and auto-clears. Ctrl+letter sends control character (e.g., Ctrl+C = `\x03`). Shift+arrow sends shifted escape sequence (e.g., `\x1b[1;2A`). Shift+Tab sends `\x1b[Z`. Modifier state is managed by Terminal and shared with `onData` interception so modifiers apply to both key bar buttons and virtual keyboard input.
-- **Primary row** (always visible): Ctrl, ⇧, Esc, Tab, ↵, ←, ↓, ↑, →, ··· (expand toggle)
-- **Secondary row** (expandable): ^C, ^D, ^Z, ^L, ^R, ^O, ^B, ^A, ^E, ^W, ^U
+- **Modifier keys** (sticky toggles): Ctrl (row 1), ⇧/Shift (row 2) — tap to activate (blue highlight), next keypress applies the modifier and auto-clears. Ctrl+letter sends control character (e.g., Ctrl+C = `\x03`). Shift+arrow sends shifted escape sequence (e.g., `\x1b[1;2A`). Shift+Tab sends `\x1b[Z`. Modifier state is managed by Terminal and shared with `onData` interception so modifiers apply to both key bar buttons and virtual keyboard input. Modifiers use `onPointerDown` (not `onClick`) to work around iOS Safari's touch-to-click suppression caused by the parent's `onMouseDown={preventDefault}`.
+- **Primary row** (always visible): Ctrl, Esc, Tab, PgU, PgD, ↵, ←, ↓, ↑, →, ··· (expand toggle)
+- **Secondary row** (expandable): ⇧, ^C, ^D, ^B, ^O, ^A, ^E, ^U, ^K, ^W
 
-All buttons send escape sequences via the same WebSocket `{ type: 'input', data }` channel. Arrow keys support hold-to-repeat (400ms initial delay, 80ms interval) and resolve dynamically via `xterm.modes.applicationCursorKeysMode` (CSI `\x1b[` for normal mode, SS3 `\x1bO` for application mode, e.g. vim). The ··· button toggles the secondary row with a max-height CSS transition. Buttons include ARIA labels, `role="toolbar"`, and a click fallback for assistive technology.
+All buttons send escape sequences via the same WebSocket `{ type: 'input', data }` channel. Arrow keys and PgUp/PgDn support hold-to-repeat (400ms initial delay, 80ms interval). Arrows resolve dynamically via `xterm.modes.applicationCursorKeysMode` (CSI `\x1b[` for normal mode, SS3 `\x1bO` for application mode, e.g. vim). The ··· button toggles the secondary row with a max-height CSS transition. Buttons include ARIA labels, `role="toolbar"`, and a click fallback for assistive technology.
 
 -> See: `ui/src/components/TerminalKeyBar.tsx`
 

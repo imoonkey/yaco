@@ -71,7 +71,9 @@ On desktop, right-click opens context menus (file explorer, project list, sessio
 
 ### Terminal
 
-**Key Bar**: On touch devices (`useIsTouch()`), a `TerminalKeyBar` renders below the xterm container with special keys missing from virtual keyboards. The primary row has sticky modifier keys (Ctrl, ⇧/Shift — tap to activate, next keypress auto-clears), plus Esc, Tab, Enter (rendered as `↵`), and arrows. The expandable secondary row holds control shortcuts: ^C, ^D, ^Z, ^L, ^R, ^O, ^B, ^A, ^E, ^W, ^U. Arrow keys support hold-to-repeat (400ms delay, 80ms interval). Modifier state is managed by Terminal and shared with `onData` — pressing Ctrl then typing a letter on the virtual keyboard sends the control character (e.g., Ctrl+A = `\x01`). All key presses send escape sequences directly via the existing WebSocket input channel.
+**Key Bar**: On touch devices (`useIsTouch()`), a `TerminalKeyBar` renders below the xterm container with special keys missing from virtual keyboards. Primary row: sticky Ctrl modifier (tap to activate, next keypress auto-clears), Esc, Tab, PgUp, PgDn, Enter (`↵`), arrows, and expand (`···`). Expandable secondary row: Shift modifier, then ^C, ^D, ^B, ^O, ^A, ^E, ^U, ^K, ^W. Arrow keys and PgUp/PgDn support hold-to-repeat (400ms delay, 80ms interval). Modifier state is managed by Terminal and shared with `onData` — pressing Ctrl then typing a letter on the virtual keyboard sends the control character (e.g., Ctrl+A = `\x01`). Shift+Tab sends `\x1b[Z`, Shift+arrows send shifted sequences. All key presses send escape sequences directly via the existing WebSocket input channel.
+
+**iOS touch fix**: Ctrl, Shift, and expand (`···`) buttons use `onPointerDown` instead of `onClick` because the parent toolbar's `onMouseDown={preventDefault}` (needed to prevent xterm focus loss) swallows the touch-to-click chain on iOS Safari. Regular key buttons are unaffected since they fire on `onTouchStart`. Modifier active state uses hardcoded solarized blue (`#268bd2`) via Tailwind class rather than CSS variables — CSS var-based `className` switching didn't reliably apply on iOS.
 
 -> See: `ui/src/components/TerminalKeyBar.tsx`
 
