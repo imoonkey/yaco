@@ -60,8 +60,9 @@ CSS animation (`rhythm-pulse` keyframe in `index.css`) animates opacity for smoo
 The app is installable as an iPhone home-screen web app:
 
 - `ui/public/manifest.webmanifest` — app name, icons, display mode
-- `apple-touch-icon.png` — 180px iOS home screen icon
-- `icon-192.png`, `icon-512.png` — standard PWA icons
+- `apple-touch-icon.png` — 180×180 iOS home screen icon (centered bolt on `#eee8d5` background)
+- `icon-192.png`, `icon-512.png` — standard PWA icons (same style)
+- Icons generated from `favicon.svg` via `rsvg-convert` with `--page-width/height` + `--background-color` to center and scale the bolt (~65% of canvas). iOS renders transparent areas as white, so a solid background is required.
 - `apple-mobile-web-app-capable` and `apple-mobile-web-app-status-bar-style` meta tags
 - `viewport-fit=cover` in viewport meta tag — enables `env(safe-area-inset-*)` for notch/gesture-zone padding
 - Theme color matches Solarized Light base3 (`#FDF6E3`)

@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-24: Fix PWA app icons for iOS home screen
+
+**What changed:**
+- Regenerated `apple-touch-icon.png` (180×180), `icon-192.png`, `icon-512.png` — bolt centered at ~65% canvas on solid `#eee8d5` background
+- Added `sizes="180x180"` to `<link rel="apple-touch-icon">` in `index.html`
+
+**Why:**
+- Icons were rendered at native 48×46px in the top-left corner of the canvas, leaving the rest transparent. iOS fills transparent areas with white, so the home screen icon appeared as a tiny purple speck on a white square.
+
+**Key files:** `ui/public/apple-touch-icon.png`, `ui/public/icon-192.png`, `ui/public/icon-512.png`, `ui/index.html`
+**Verification:** Visual inspection of generated PNGs
+**Commit:** ecfbb39
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-24: Redesign terminal key bar + fix iOS touch handling
 
 **What changed:**
