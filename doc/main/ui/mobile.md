@@ -20,11 +20,32 @@ Responsive layouts, pane switching, touch handling, and mobile-specific behavior
 
 ## Breakpoint
 
-Mobile layout activates at viewport width ≤ 768px (configurable via `useIsMobile(maxWidth)`).
+Mobile layout activates when either condition is true:
+
+1. Viewport width ≤ 768px (portrait phones, small tablets) — configurable via `useIsMobile(maxWidth)`
+2. Viewport height ≤ 500px **and** touch device (`pointer: coarse`) — catches landscape phones
+
+This prevents modern phones in landscape (width 780–932px, height 375–430px) from crossing the 768px width threshold and getting the desktop multi-panel layout. The 500px height threshold cleanly separates phones (max landscape height ~480px) from tablets (min landscape height ~744px). App.tsx top/bottom banners use the same `useIsMobile()` hook for conditional rendering.
+
+`useIsLandscape()` detects `(orientation: landscape)` to select between portrait and landscape mobile layouts.
 
 ## Pane Switching Model
 
 On mobile, the Workspace collapses from multi-column to a single full-width pane.
+
+### Portrait
+
+Top PaneSwitch bar (28px) with text labels: Browse | Editor | Tasks | Terminal + notification bell + theme toggle.
+
+### Landscape
+
+Collapsible floating nav (`LandscapeNav` component) to maximize vertical space:
+
+- **Toggle button**: 32×32px glass pill, top-left corner, positioned after `env(safe-area-inset-left)` to avoid Dynamic Island. Always visible.
+- **Nav panel**: appears on toggle tap. Glass background with backdrop-blur, vertical icon buttons for 4 panes + notification bell + theme toggle. Active pane highlighted in blue. Dismissed on Escape, click outside, or pane selection.
+- **Content area**: full height, `paddingLeft: 44px` clears the toggle button, `paddingLeft`/`paddingRight` use `max(env(safe-area-inset-*), 8px)` for Dynamic Island and rounded corner clearance.
+
+-> See: `ui/src/components/LandscapeNav.tsx`
 
 ### Workspace Panes
 

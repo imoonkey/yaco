@@ -1,7 +1,8 @@
 import type { ReactNode, RefObject } from 'react'
 import { PaneSwitch } from '../components/PaneSwitch'
+import { LandscapeNav } from '../components/LandscapeNav'
 import { toggleTheme } from '../lib/theme'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal } from 'lucide-react'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import { SectionHeader } from './SectionHeader'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
@@ -15,6 +16,7 @@ type ResizeState = {
 
 export type WorkspaceLayoutProps = {
   isMobile: boolean
+  isLandscape: boolean
   isTouch: boolean
   layout: LayoutState
   mobilePane: MobilePane
@@ -69,7 +71,7 @@ export type WorkspaceLayoutProps = {
 
 export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const {
-    isMobile, isTouch,
+    isMobile, isLandscape, isTouch,
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
     projectName, projectListBody, projectActions, explorerActions, explorerBody,
     searchBody,
@@ -99,26 +101,61 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
       {searchOverlay}
 
       {isMobile ? (
-        <div className="flex-1 min-w-0 flex flex-col">
-          <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-0.5 flex items-center gap-2" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
-            <div className="flex-1 min-w-0 max-w-[80%]">
-              <PaneSwitch
-                options={[
-                  { id: 'files', label: 'Browse' },
-                  { id: 'editor', label: 'Editor' },
-                  { id: 'tasks', label: 'Tasks' },
-                  { id: 'terminal', label: 'Terminal' },
-                ]}
-                value={mobilePane}
-                onChange={(v) => onMobilePaneChange(v as MobilePane)}
-              />
+        <div className="flex-1 min-w-0 flex flex-col relative"
+          style={isLandscape ? {
+            paddingLeft: 'max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), 36px)',
+            paddingRight: 'max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), 36px)',
+          } : undefined}
+        >
+          {isLandscape ? (
+            <>
+              <LandscapeNav activePane={mobilePane} onPaneChange={(v) => onMobilePaneChange(v)} />
+              {/* Notification bell — right margin, mirroring toggle position */}
+              <div className="absolute z-50 flex items-center justify-center"
+                style={{ top: 'max(env(safe-area-inset-top, 0px), 24px)', right: 'calc(max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), 36px) - 34px)', width: 32, height: 32 }}
+              >
+                {notificationBell}
+              </div>
+              {/* Theme toggle — right margin, below bell */}
+              <button
+                className="absolute z-50 flex items-center justify-center rounded-lg cursor-pointer theme-toggle-single"
+                style={{
+                  top: 'calc(max(env(safe-area-inset-top, 0px), 24px) + 36px)',
+                  right: 'calc(max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), 36px) - 34px)',
+                  width: 32,
+                  height: 32,
+                  color: 'var(--sol-text-dim)',
+                  transition: 'color 120ms',
+                }}
+                onClick={toggleTheme}
+                title="Toggle theme"
+                aria-label="Toggle theme"
+              >
+                <Sun size={14} strokeWidth={2.5} className="icon-sun" />
+                <Moon size={14} strokeWidth={2.5} className="icon-moon" />
+              </button>
+            </>
+          ) : (
+            <div className="shrink-0 border-b border-[var(--sol-border)] px-2 py-2 flex items-center gap-2" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+              <div className="flex-1 min-w-0 max-w-[80%]">
+                <PaneSwitch
+                  options={[
+                    { id: 'files', label: 'Browse', icon: <FolderOpen size={13} /> },
+                    { id: 'editor', label: 'Editor', icon: <FileCode size={13} /> },
+                    { id: 'tasks', label: 'Tasks', icon: <ListTodo size={13} /> },
+                    { id: 'terminal', label: 'Terminal', icon: <SquareTerminal size={13} /> },
+                  ]}
+                  value={mobilePane}
+                  onChange={(v) => onMobilePaneChange(v as MobilePane)}
+                />
+              </div>
+              {notificationBell}
+              <button className="theme-toggle-single shrink-0 rounded p-1 cursor-pointer text-[var(--sol-text-dim)] hover:text-[var(--sol-text)]" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme" style={{ transition: 'color 120ms' }}>
+                <Sun size={14} strokeWidth={2.5} className="icon-sun" />
+                <Moon size={14} strokeWidth={2.5} className="icon-moon" />
+              </button>
             </div>
-            {notificationBell}
-            <button className="theme-toggle-single shrink-0 rounded p-1 cursor-pointer text-[var(--sol-text-dim)] hover:text-[var(--sol-text)]" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme" style={{ transition: 'color 120ms' }}>
-              <Sun size={14} strokeWidth={2.5} className="icon-sun" />
-              <Moon size={14} strokeWidth={2.5} className="icon-moon" />
-            </button>
-          </div>
+          )}
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (
               <div className="h-full flex flex-col overflow-y-auto" style={{ backgroundColor: 'var(--sol-bg)' }} onMouseDown={onFilesPaneFocus}>

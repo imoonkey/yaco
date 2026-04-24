@@ -8,6 +8,7 @@ import { NotificationBell } from './components/NotificationBell'
 import { useNotifications } from './hooks/useNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
+import { useIsMobile } from './hooks/useIsMobile'
 import { toggleTheme } from './lib/theme'
 import { Sun, Moon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
@@ -107,6 +108,7 @@ function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
 
 function App() {
   useKeyboardViewport()
+  const isMobile = useIsMobile()
   const [projectName, setProjectName] = useState<string>(loadProject)
   const [projectOrder, setProjectOrder] = useState<string[]>([])
   const [pulseType, setPulseType] = useState<'none' | 'light' | 'strong'>('none')
@@ -302,17 +304,19 @@ function App() {
 
   return (
     <div className="flex flex-col h-full bg-[var(--sol-bg)]">
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
-        <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
-        <span className="flex items-center gap-2">
-          <NotificationBell {...notificationBellProps} />
-          <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
-            <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
-            <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
+      {!isMobile && (
+        <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
+          <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
+          <span className="flex items-center gap-2">
+            <NotificationBell {...notificationBellProps} />
+            <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
+              <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
+              <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
+            </span>
+            <Clock onPulse={handlePulse} />
           </span>
-          <Clock onPulse={handlePulse} />
-        </span>
-      </div>
+        </div>
+      )}
       <main className="flex-1 overflow-hidden">
         {activeProject && (
           <Workspace
@@ -348,10 +352,12 @@ function App() {
           </div>
         )}
       </main>
-      <div className="hidden md:flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
-        <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
-        <Clock />
-      </div>
+      {!isMobile && (
+        <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
+          <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
+          <Clock />
+        </div>
+      )}
 
       {showAddDialog && (
         <AddProjectDialog

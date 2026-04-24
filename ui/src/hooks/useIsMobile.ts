@@ -1,38 +1,33 @@
 import { useEffect, useState } from 'react'
 
-export function useIsMobile(maxWidth = 768): boolean {
-  const query = `(max-width: ${maxWidth}px)`
-  const [isMobile, setIsMobile] = useState(() => {
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState(() => {
     if (typeof window === 'undefined') return false
     return window.matchMedia(query).matches
   })
 
   useEffect(() => {
     const media = window.matchMedia(query)
-    const update = () => setIsMobile(media.matches)
+    const update = () => setMatches(media.matches)
 
     update()
     media.addEventListener('change', update)
     return () => media.removeEventListener('change', update)
   }, [query])
 
-  return isMobile
+  return matches
+}
+
+export function useIsMobile(maxWidth = 768): boolean {
+  const narrowWidth = useMediaQuery(`(max-width: ${maxWidth}px)`)
+  const landscapePhone = useMediaQuery('(max-height: 500px) and (pointer: coarse)')
+  return narrowWidth || landscapePhone
 }
 
 export function useIsTouch(): boolean {
-  const [isTouch, setIsTouch] = useState(() => {
-    if (typeof window === 'undefined') return false
-    return window.matchMedia('(pointer: coarse)').matches
-  })
+  return useMediaQuery('(pointer: coarse)')
+}
 
-  useEffect(() => {
-    const media = window.matchMedia('(pointer: coarse)')
-    const update = () => setIsTouch(media.matches)
-
-    update()
-    media.addEventListener('change', update)
-    return () => media.removeEventListener('change', update)
-  }, [])
-
-  return isTouch
+export function useIsLandscape(): boolean {
+  return useMediaQuery('(orientation: landscape)')
 }

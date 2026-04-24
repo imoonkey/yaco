@@ -3,7 +3,7 @@ import { Plus, GitCompareArrows, X } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory, fetchGitCompare } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, useWorkspaceState } from '../hooks/useWorkspaceState'
-import { useIsMobile, useIsTouch } from '../hooks/useIsMobile'
+import { useIsMobile, useIsTouch, useIsLandscape } from '../hooks/useIsMobile'
 import { useVoice } from '../hooks/useVoice'
 import { Terminal } from '../components/Terminal'
 import { VoiceControl } from '../components/VoiceControl'
@@ -85,6 +85,7 @@ export function Workspace({
   const sidebarRef = useRef<HTMLDivElement>(null)
   const explorerRef = useRef<FileExplorerHandle>(null)
   const isMobile = useIsMobile()
+  const isLandscape = useIsLandscape()
   const isTouch = useIsTouch()
   const voice = useVoice()
   // Effective path for new sessions and cwd-sensitive operations
@@ -601,6 +602,7 @@ export function Workspace({
   <>
     <WorkspaceLayout
       isMobile={isMobile}
+      isLandscape={isLandscape}
       isTouch={isTouch}
       layout={layout}
       mobilePane={mobilePane}

@@ -1,5 +1,37 @@
 # Progress
 
+## 2026-04-24: Mobile landscape collapsible nav + Dynamic Island avoidance
+
+**What changed:**
+- Added `useIsLandscape()` hook for orientation detection
+- Created `LandscapeNav` component: floating 32×32 glass toggle button (top-left, after safe area insets) that opens a vertical icon panel (Browse/Editor/Tasks/Terminal + bell + theme toggle)
+- `WorkspaceLayout` branches mobile into portrait (top PaneSwitch bar) and landscape (LandscapeNav + full-height content with 44px left padding to clear toggle)
+- Content container uses `max(env(safe-area-inset-left/right), 8px)` padding to avoid Dynamic Island and iPhone rounded corners
+
+**Why:**
+- Landscape vertical space is precious (375–430px) — the 28px PaneSwitch bar wastes height; a collapsible left-side nav reclaims it
+- iPhone Dynamic Island creates a safe area inset on the left/right edge in landscape; toggle button positioned after it
+
+**Key files:** `ui/src/components/LandscapeNav.tsx` (new), `ui/src/hooks/useIsMobile.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
+**Verification:** All three modes verified in Playwright — desktop (1200×800), portrait mobile (393×852), landscape mobile (667×375). TypeScript clean, lint clean (no new errors)
+**Next:** Test on real iPhone to verify Dynamic Island safe area positioning
+**Blockers:** None
+
+## 2026-04-24: Mobile landscape uses pane layout instead of desktop layout
+
+**What changed:**
+- `useIsMobile()` now also returns true when `(max-height: 500px) and (pointer: coarse)`, catching landscape phones (height 375–430px) that previously crossed the 768px width threshold
+- Extracted shared `useMediaQuery` helper in `useIsMobile.ts` (used by `useIsMobile`, `useIsTouch`, and the new landscape query)
+- App.tsx top/bottom banners switched from CSS `hidden md:flex` to conditional rendering via `useIsMobile()` hook
+
+**Why:**
+- Modern phones in landscape (width 780–932px) got the desktop multi-panel layout squeezed into 375–430px height — three columns plus two 40px banners was unusable
+
+**Key files:** `ui/src/hooks/useIsMobile.ts`, `ui/src/App.tsx`, `doc/main/ui/mobile.md`
+**Verification:** Lint clean (no new errors), portrait mobile + desktop layout verified in Playwright
+**Next:** Test on real phone to confirm `pointer: coarse` fires correctly in landscape
+**Blockers:** None
+
 ## 2026-04-24: Add Meta/⌘ modifier and workspace shortcut interception
 
 **What changed:**
