@@ -105,6 +105,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           style={isLandscape ? {
             paddingLeft: 'max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), 36px)',
             paddingRight: 'max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), 36px)',
+            paddingTop: 8,
+            paddingBottom: 8,
           } : undefined}
         >
           {isLandscape ? (
