@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-04-24: Add Meta/⌘ modifier and workspace shortcut interception
+
+**What changed:**
+- Added ⌘ (Meta) sticky modifier toggle to key bar row 2 alongside Shift
+- Meta+key sends ESC prefix (`\x1b` + char) to terminal, enabling shortcuts like Meta+T (toggle Claude Code thinking)
+- Meta+P and Meta+B are intercepted before reaching terminal — they dispatch synthetic `KeyboardEvent` with `metaKey: true` to trigger workspace quick-open search and sidebar toggle respectively
+- `applyModifiers` returns `null` for intercepted combos; all three call sites (`resolveKeyBarInput`, `onData`, IME handler) skip WebSocket send on null
+
+**Why:**
+- Mobile has no physical Meta/Cmd key, so Claude Code's Meta+T shortcut was inaccessible
+- Virtual Meta modifier can't set `KeyboardEvent.metaKey` on iOS keyboard input, so workspace shortcuts (Cmd+P, Cmd+B) need explicit interception with synthetic event dispatch
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/TerminalKeyBar.tsx`, `ui/src/components/__tests__/TerminalKeyBar.test.tsx`
+**Verification:** 30 tests pass, manual test on iOS Chrome via Tailscale
+**Commit:** 6810015, 58457c5
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-24: Fix PWA app icons for iOS home screen
 
 **What changed:**
