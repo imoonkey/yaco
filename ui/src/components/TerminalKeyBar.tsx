@@ -14,15 +14,15 @@ export type TerminalKeyBarKey =
   | 'escape'
   | 'tab'
   | 'enter'
+  | 'page-up'
+  | 'page-down'
   | 'arrow-left'
   | 'arrow-down'
   | 'arrow-up'
   | 'arrow-right'
   | 'ctrl-c'
   | 'ctrl-d'
-  | 'ctrl-z'
-  | 'ctrl-l'
-  | 'ctrl-r'
+  | 'ctrl-k'
   | 'ctrl-o'
   | 'ctrl-b'
   | 'ctrl-a'
@@ -35,6 +35,8 @@ export type Modifiers = { ctrl: boolean; shift: boolean }
 const PRIMARY_KEYS: KeyDef[] = [
   { id: 'escape', label: 'Esc', ariaLabel: 'Escape', seq: '\x1b' },
   { id: 'tab', label: 'Tab', ariaLabel: 'Tab', seq: '\t' },
+  { id: 'page-up', label: 'PgU', ariaLabel: 'Page Up', seq: '\x1b[5~', repeatable: true },
+  { id: 'page-down', label: 'PgD', ariaLabel: 'Page Down', seq: '\x1b[6~', repeatable: true },
   { id: 'enter', label: '↵', ariaLabel: 'Enter', seq: '\r' },
   { id: 'arrow-left', label: '←', ariaLabel: 'Left arrow', seq: '\x1b[D', repeatable: true },
   { id: 'arrow-down', label: '↓', ariaLabel: 'Down arrow', seq: '\x1b[B', repeatable: true },
@@ -45,23 +47,21 @@ const PRIMARY_KEYS: KeyDef[] = [
 const SECONDARY_KEYS: KeyDef[] = [
   { id: 'ctrl-c', label: 'C', ariaLabel: 'Control C', seq: '\x03' },
   { id: 'ctrl-d', label: 'D', ariaLabel: 'Control D', seq: '\x04' },
-  { id: 'ctrl-z', label: 'Z', ariaLabel: 'Control Z', seq: '\x1a' },
-  { id: 'ctrl-l', label: 'L', ariaLabel: 'Control L', seq: '\x0c' },
-  { id: 'ctrl-r', label: 'R', ariaLabel: 'Control R', seq: '\x12' },
-  { id: 'ctrl-o', label: 'O', ariaLabel: 'Control O', seq: '\x0f' },
   { id: 'ctrl-b', label: 'B', ariaLabel: 'Control B', seq: '\x02' },
+  { id: 'ctrl-o', label: 'O', ariaLabel: 'Control O', seq: '\x0f' },
   { id: 'ctrl-a', label: 'A', ariaLabel: 'Control A', seq: '\x01' },
   { id: 'ctrl-e', label: 'E', ariaLabel: 'Control E', seq: '\x05' },
-  { id: 'ctrl-w', label: 'W', ariaLabel: 'Control W', seq: '\x17' },
   { id: 'ctrl-u', label: 'U', ariaLabel: 'Control U', seq: '\x15' },
+  { id: 'ctrl-k', label: 'K', ariaLabel: 'Control K', seq: '\x0b' },
+  { id: 'ctrl-w', label: 'W', ariaLabel: 'Control W', seq: '\x17' },
 ]
 
 const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 
 const BTN =
   'min-w-[32px] h-7 px-1.5 rounded bg-[--sol-subtle-bg] active:bg-[--sol-subtle-bg-active] text-[--sol-base01] font-mono text-xs select-none touch-manipulation'
-const BTN_ACTIVE =
-  'min-w-[32px] h-7 px-1.5 rounded bg-[--sol-blue] text-[--sol-base3] font-mono text-xs select-none touch-manipulation'
+const BTN_MOD_ON =
+  'min-w-[32px] h-7 px-1.5 rounded bg-[#268bd2] text-[#fdf6e3] font-mono text-xs select-none touch-manipulation'
 
 export function TerminalKeyBar({
   sendInput,
@@ -161,15 +161,21 @@ export function TerminalKeyBar({
     e.preventDefault()
   }, [])
 
-  const toggleExpanded = useCallback(() => {
+  const handleExpandPointer = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     setExpanded(value => !value)
   }, [])
 
-  const toggleCtrl = useCallback(() => {
+  const handleCtrlPointer = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     onModifierChange({ ...modifiers, ctrl: !modifiers.ctrl })
   }, [modifiers, onModifierChange])
 
-  const toggleShift = useCallback(() => {
+  const handleShiftPointer = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
     onModifierChange({ ...modifiers, shift: !modifiers.shift })
   }, [modifiers, onModifierChange])
 
@@ -186,23 +192,13 @@ export function TerminalKeyBar({
       <div className="flex gap-1 px-2 py-1">
         <button
           type="button"
-          className={modifiers.ctrl ? BTN_ACTIVE : BTN}
+          className={modifiers.ctrl ? BTN_MOD_ON : BTN}
           aria-label="Control modifier"
           aria-pressed={modifiers.ctrl}
-          onClick={toggleCtrl}
+          onPointerDown={handleCtrlPointer}
           onContextMenu={preventContext}
         >
           Ctrl
-        </button>
-        <button
-          type="button"
-          className={modifiers.shift ? BTN_ACTIVE : BTN}
-          aria-label="Shift modifier"
-          aria-pressed={modifiers.shift}
-          onClick={toggleShift}
-          onContextMenu={preventContext}
-        >
-          ⇧
         </button>
         {PRIMARY_KEYS.map(key => (
           <button
@@ -226,7 +222,7 @@ export function TerminalKeyBar({
           aria-controls="terminal-keybar-secondary"
           aria-expanded={expanded}
           aria-label={expanded ? 'Hide more terminal keys' : 'Show more terminal keys'}
-          onClick={toggleExpanded}
+          onPointerDown={handleExpandPointer}
           onContextMenu={preventContext}
         >
           <span
@@ -244,6 +240,16 @@ export function TerminalKeyBar({
         style={{ maxHeight: expanded ? 36 : 0 }}
       >
         <div className="flex gap-1 px-2 py-1 items-center" hidden={!expanded}>
+          <button
+            type="button"
+            className={modifiers.shift ? BTN_MOD_ON : BTN}
+            aria-label="Shift modifier"
+            aria-pressed={modifiers.shift}
+            onPointerDown={handleShiftPointer}
+            onContextMenu={preventContext}
+          >
+            ⇧
+          </button>
           <span className="text-[10px] font-mono text-[--sol-base1] shrink-0 pl-0.5 pr-0.5">^</span>
           {SECONDARY_KEYS.map(key => (
             <button

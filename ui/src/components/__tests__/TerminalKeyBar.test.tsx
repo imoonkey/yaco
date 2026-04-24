@@ -2,11 +2,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
 import { TerminalKeyBar } from '../TerminalKeyBar'
+import type { Modifiers } from '../TerminalKeyBar'
 
-let sendInput: ReturnType<typeof vi.fn>
+let sendInput: (data: string) => void
+let onModifierChange: (m: Modifiers) => void
+const defaultMods: Modifiers = { ctrl: false, shift: false }
 
 beforeEach(() => {
-  sendInput = vi.fn()
+  sendInput = vi.fn<(data: string) => void>()
+  onModifierChange = vi.fn<(m: Modifiers) => void>()
   vi.useFakeTimers()
 })
 
@@ -15,16 +19,30 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+function renderBar(modifiers = defaultMods) {
+  return render(
+    <TerminalKeyBar
+      sendInput={sendInput}
+      modifiers={modifiers}
+      onModifierChange={onModifierChange}
+    />,
+  )
+}
+
 function touchButton(label: string) {
   const btn = screen.getByText(label)
   fireEvent.touchStart(btn)
   return btn
 }
 
-function touchButtonByAriaLabel(label: string) {
+function pointerDownByAriaLabel(label: string) {
   const btn = screen.getByRole('button', { name: label })
-  fireEvent.touchStart(btn)
+  fireEvent.pointerDown(btn)
   return btn
+}
+
+function expandSecondaryRow() {
+  pointerDownByAriaLabel(/more terminal keys/)
 }
 
 describe('TerminalKeyBar', () => {
@@ -32,89 +50,119 @@ describe('TerminalKeyBar', () => {
     it.each([
       ['Esc', '\x1b'],
       ['Tab', '\t'],
+      ['PgU', '\x1b[5~'],
+      ['PgD', '\x1b[6~'],
       ['←', '\x1b[D'],
       ['↓', '\x1b[B'],
       ['↑', '\x1b[A'],
       ['→', '\x1b[C'],
     ] as const)('%s sends correct sequence', (label, seq) => {
-      render(<TerminalKeyBar sendInput={sendInput} />)
+      renderBar()
       touchButton(label)
       expect(sendInput).toHaveBeenCalledWith(seq)
     })
 
     it('Enter sends correct sequence', () => {
-      render(<TerminalKeyBar sendInput={sendInput} />)
-      touchButtonByAriaLabel('Enter')
+      renderBar()
+      const btn = screen.getByRole('button', { name: 'Enter' })
+      fireEvent.touchStart(btn)
       expect(sendInput).toHaveBeenCalledWith('\r')
     })
   })
 
   describe('SECONDARY_KEYS produce correct escape sequences', () => {
     it.each([
-      ['^C', '\x03'],
-      ['^D', '\x04'],
-      ['^Z', '\x1a'],
-      ['^L', '\x0c'],
-      ['^R', '\x12'],
-      ['^O', '\x0f'],
-      ['^B', '\x02'],
-      ['^A', '\x01'],
-      ['^E', '\x05'],
-      ['^W', '\x17'],
-      ['^U', '\x15'],
+      ['C', '\x03'],
+      ['D', '\x04'],
+      ['B', '\x02'],
+      ['O', '\x0f'],
+      ['A', '\x01'],
+      ['E', '\x05'],
+      ['U', '\x15'],
+      ['K', '\x0b'],
+      ['W', '\x17'],
     ] as const)('%s sends correct sequence', (label, seq) => {
-      render(<TerminalKeyBar sendInput={sendInput} />)
-      // expand secondary row
-      fireEvent.click(screen.getByText('···'))
+      renderBar()
+      expandSecondaryRow()
       touchButton(label)
       expect(sendInput).toHaveBeenCalledWith(seq)
     })
   })
 
   describe('expand/collapse', () => {
-    it('toggles secondary row visibility on ··· click', () => {
-      const { container } = render(<TerminalKeyBar sendInput={sendInput} />)
-      const toggle = screen.getByText('···')
-      const panel = container.querySelector(
-        '.overflow-hidden',
-      ) as HTMLElement
+    it('toggles secondary row visibility via pointerDown', () => {
+      const { container } = renderBar()
+      const panel = container.querySelector('#terminal-keybar-secondary') as HTMLElement
 
       expect(panel.style.maxHeight).toBe('0px')
 
-      fireEvent.click(toggle)
-      expect(panel.style.maxHeight).toBe('40px')
+      expandSecondaryRow()
+      expect(panel.style.maxHeight).toBe('36px')
 
-      fireEvent.click(toggle)
+      pointerDownByAriaLabel(/Hide more terminal keys/)
       expect(panel.style.maxHeight).toBe('0px')
+    })
+  })
+
+  describe('modifier toggles', () => {
+    it('Ctrl pointerDown toggles ctrl modifier (row 1)', () => {
+      renderBar()
+      pointerDownByAriaLabel('Control modifier')
+      expect(onModifierChange).toHaveBeenCalledWith({ ctrl: true, shift: false })
+    })
+
+    it('Shift pointerDown toggles shift modifier (row 2)', () => {
+      renderBar()
+      expandSecondaryRow()
+      pointerDownByAriaLabel('Shift modifier')
+      expect(onModifierChange).toHaveBeenCalledWith({ ctrl: false, shift: true })
+    })
+
+    it('Ctrl button shows active style when modifier is on', () => {
+      renderBar({ ctrl: true, shift: false })
+      const btn = screen.getByRole('button', { name: 'Control modifier' })
+      expect(btn.className).toContain('bg-[#268bd2]')
+    })
+
+    it('Shift button shows active style when modifier is on', () => {
+      renderBar({ ctrl: false, shift: true })
+      expandSecondaryRow()
+      const btn = screen.getByRole('button', { name: 'Shift modifier' })
+      expect(btn.className).toContain('bg-[#268bd2]')
     })
   })
 
   describe('repeat timer', () => {
     it('sends immediately, then repeats after 400ms delay at 80ms intervals', () => {
-      render(<TerminalKeyBar sendInput={sendInput} />)
+      renderBar()
       touchButton('→')
       expect(sendInput).toHaveBeenCalledTimes(1)
       expect(sendInput).toHaveBeenCalledWith('\x1b[C')
 
-      // 399ms — no repeat yet
       vi.advanceTimersByTime(399)
       expect(sendInput).toHaveBeenCalledTimes(1)
 
-      // at 400ms the interval starts but hasn't fired
       vi.advanceTimersByTime(1)
       expect(sendInput).toHaveBeenCalledTimes(1)
 
-      // first interval tick at 480ms
       vi.advanceTimersByTime(80)
       expect(sendInput).toHaveBeenCalledTimes(2)
 
-      // second tick at 560ms
       vi.advanceTimersByTime(80)
       expect(sendInput).toHaveBeenCalledTimes(3)
     })
 
+    it('PgUp/PgDn are repeatable', () => {
+      renderBar()
+      touchButton('PgU')
+      expect(sendInput).toHaveBeenCalledTimes(1)
+
+      vi.advanceTimersByTime(480)
+      expect(sendInput).toHaveBeenCalledTimes(2)
+    })
+
     it('does not repeat for non-repeatable keys', () => {
-      render(<TerminalKeyBar sendInput={sendInput} />)
+      renderBar()
       touchButton('Esc')
       expect(sendInput).toHaveBeenCalledTimes(1)
 
@@ -125,27 +173,24 @@ describe('TerminalKeyBar', () => {
 
   describe('repeat cleanup', () => {
     it('touchEnd clears all timers', () => {
-      render(<TerminalKeyBar sendInput={sendInput} />)
+      renderBar()
       const btn = touchButton('↑')
       expect(sendInput).toHaveBeenCalledTimes(1)
 
-      // let the repeat interval start
       vi.advanceTimersByTime(500)
-      const countAfterRepeat = sendInput.mock.calls.length
+      const countAfterRepeat = (sendInput as unknown as { mock: { calls: unknown[] } }).mock.calls.length
 
       fireEvent.touchEnd(btn)
 
-      // no more calls after touchEnd
       vi.advanceTimersByTime(1000)
       expect(sendInput).toHaveBeenCalledTimes(countAfterRepeat)
     })
 
     it('touchEnd before repeat delay prevents any repeats', () => {
-      render(<TerminalKeyBar sendInput={sendInput} />)
+      renderBar()
       const btn = touchButton('←')
       expect(sendInput).toHaveBeenCalledTimes(1)
 
-      // release before the 400ms delay
       vi.advanceTimersByTime(200)
       fireEvent.touchEnd(btn)
 
