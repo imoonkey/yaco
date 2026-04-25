@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-04-24: Fix mobile viewport jump on session rename
+
+**What changed:**
+- Session rename input uses `focus({ preventScroll: true })` to prevent aggressive browser scroll
+- Delayed `scrollIntoView({ block: 'nearest' })` (400ms) runs after keyboard animation so input scrolls into the correct post-keyboard visible area
+
+**Why:**
+- On mobile, focusing the rename input triggered the browser's default scroll-to-focused-element, pushing the layout up with a big blank space. Same root cause as the terminal paste input viewport jump.
+
+**Key files:** `ui/src/workspace/WorkspaceSessionList.tsx`
+**Verification:** `tsc --noEmit` clean
+**Commit:** dd052c0
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-24: Mobile terminal paste/type input
 
 **What changed:**
