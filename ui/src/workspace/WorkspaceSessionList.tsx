@@ -57,7 +57,11 @@ export function SessionItem({
   const itemRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (renaming) inputRef.current?.focus()
+    if (renaming && inputRef.current) {
+      inputRef.current.focus({ preventScroll: true })
+      // Delay scroll until after mobile keyboard animation (~400ms)
+      setTimeout(() => inputRef.current?.scrollIntoView({ block: 'nearest' }), 400)
+    }
   }, [renaming])
 
   useEffect(() => {
