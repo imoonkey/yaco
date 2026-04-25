@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Ellipsis } from 'lucide-react'
+import { Ellipsis, ClipboardPaste } from 'lucide-react'
 import type { MouseEvent, SyntheticEvent, TouchEvent } from 'react'
 
 type KeyDef = {
@@ -59,9 +59,9 @@ const SECONDARY_KEYS: KeyDef[] = [
 const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 
 const BTN =
-  'min-w-[32px] h-7 px-1.5 rounded bg-[--sol-subtle-bg] active:bg-[--sol-subtle-bg-active] text-[--sol-base01] font-mono text-xs select-none touch-manipulation'
+  'flex-1 h-7 px-1.5 rounded bg-[--sol-subtle-bg] active:bg-[--sol-subtle-bg-active] text-[--sol-base01] font-mono text-xs select-none touch-manipulation'
 const BTN_MOD_ON =
-  'min-w-[32px] h-7 px-1.5 rounded bg-[#268bd2] text-[#fdf6e3] font-mono text-xs select-none touch-manipulation'
+  'flex-1 h-7 px-1.5 rounded bg-[#268bd2] text-[#fdf6e3] font-mono text-xs select-none touch-manipulation'
 
 export function TerminalKeyBar({
   sendInput,
@@ -75,6 +75,9 @@ export function TerminalKeyBar({
   onModifierChange: (m: Modifiers) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const pasteRef = useRef<HTMLTextAreaElement>(null)
   const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const repeatInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const suppressClick = useRef(false)
@@ -167,6 +170,22 @@ export function TerminalKeyBar({
     setExpanded(value => !value)
   }, [])
 
+  const handlePasteToggle = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setPasteOpen(v => {
+      if (!v) pasteRef.current?.focus({ preventScroll: true })
+      return !v
+    })
+  }, [])
+
+  const handlePasteSend = useCallback(() => {
+    if (!pasteText) return
+    sendInput(pasteText)
+    setPasteText('')
+    setPasteOpen(false)
+  }, [pasteText, sendInput])
+
   const handleCtrlPointer = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -195,17 +214,29 @@ export function TerminalKeyBar({
 
   return (
     <div className="bg-[--sol-editor-bg] border-t border-[--sol-border]" style={{ paddingBottom: 'calc(var(--kb-safe-bottom, env(safe-area-inset-bottom)) / 2)' }} role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
+      <div className={pasteOpen ? 'px-2 py-1' : 'h-0 overflow-hidden'}>
+        <textarea
+          ref={pasteRef}
+          value={pasteText}
+          onChange={(e) => setPasteText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handlePasteSend()
+            }
+            if (e.key === 'Escape') {
+              setPasteText('')
+              setPasteOpen(false)
+            }
+          }}
+          rows={1}
+          tabIndex={pasteOpen ? 0 : -1}
+          placeholder="Paste or type… Enter to send"
+          className="w-full max-h-[30vh] rounded bg-[--sol-subtle-bg] text-[--sol-editor-fg] font-mono text-xs px-2 py-1.5 resize-none outline-none"
+          style={{ fieldSizing: 'content' } as React.CSSProperties}
+        />
+      </div>
       <div className="flex gap-1 px-2 py-1">
-        <button
-          type="button"
-          className={modifiers.ctrl ? BTN_MOD_ON : BTN}
-          aria-label="Control modifier"
-          aria-pressed={modifiers.ctrl}
-          onPointerDown={handleCtrlPointer}
-          onContextMenu={preventContext}
-        >
-          Ctrl
-        </button>
         {PRIMARY_KEYS.map(key => (
           <button
             key={key.label}
@@ -222,6 +253,30 @@ export function TerminalKeyBar({
             {key.label}
           </button>
         ))}
+        {pasteOpen ? (
+          <button
+            type="button"
+            className={pasteText
+              ? 'flex-1 h-7 px-1.5 rounded bg-[--sol-accent] text-white font-mono text-xs select-none touch-manipulation'
+              : BTN_MOD_ON}
+            onClick={pasteText ? handlePasteSend : () => setPasteOpen(false)}
+            aria-label={pasteText ? 'Send text to terminal' : 'Close text input'}
+          >
+            {pasteText ? 'Send' : 'Close'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={BTN}
+            aria-label="Open text input for paste"
+            onPointerDown={handlePasteToggle}
+            onContextMenu={preventContext}
+          >
+            <span className="inline-flex items-center justify-center">
+              <ClipboardPaste size={14} />
+            </span>
+          </button>
+        )}
         <button
           type="button"
           className={BTN}
@@ -248,6 +303,16 @@ export function TerminalKeyBar({
         <div className="flex gap-1 px-2 py-1 items-center" hidden={!expanded}>
           <button
             type="button"
+            className={modifiers.ctrl ? BTN_MOD_ON : BTN}
+            aria-label="Control modifier"
+            aria-pressed={modifiers.ctrl}
+            onPointerDown={handleCtrlPointer}
+            onContextMenu={preventContext}
+          >
+            Ctrl
+          </button>
+          <button
+            type="button"
             className={modifiers.shift ? BTN_MOD_ON : BTN}
             aria-label="Shift modifier"
             aria-pressed={modifiers.shift}
@@ -266,7 +331,6 @@ export function TerminalKeyBar({
           >
             ⌘
           </button>
-          <span className="text-[10px] font-mono text-[--sol-base1] shrink-0 pl-0.5 pr-0.5">^</span>
           {SECONDARY_KEYS.map(key => (
             <button
               key={key.label}
