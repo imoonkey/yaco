@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-04-24: Mobile terminal paste/type input
+
+**What changed:**
+- Added paste/type textarea to `TerminalKeyBar` — bypasses xterm.js's broken mobile paste (hidden textarea at z-index:-5 that mobile browsers can't interact with)
+- Textarea always mounted in DOM (h-0 when closed) for synchronous `focus({ preventScroll: true })` — required for mobile keyboard activation without viewport jump
+- Paste toggle button in primary row becomes "Send" (accent color) or "Close" contextually
+- Moved Ctrl modifier from primary to secondary row (groups all modifiers: Ctrl, Shift, Meta)
+- Removed `^` label from secondary row (redundant with Ctrl button)
+- Buttons changed from `min-w-[32px]` to `flex-1` for adaptive full-width layout
+
+**Why:**
+- Mobile users had no way to paste text into terminal — xterm's hidden textarea doesn't receive paste events on mobile. Previous workaround (voice input's ComposeTray textarea) broke when voice was disabled.
+
+**Key files:** `ui/src/components/TerminalKeyBar.tsx`
+**Verification:** `tsc --noEmit` clean, `eslint` clean, manual mobile testing
+**Commit:** 730dfd1
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-24: Mobile landscape layout with collapsible nav
 
 **What changed:**

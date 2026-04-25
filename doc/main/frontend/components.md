@@ -243,12 +243,13 @@ Touch-only key bar for terminal special keys missing from virtual keyboards.
 **Props**: `{ sendInput, resolveInput?, modifiers: Modifiers, onModifierChange: (m: Modifiers) => void }`
 
 **Responsibilities**:
-- Modifier keys: Ctrl and Shift sticky toggles (blue highlight when active, one-shot auto-clear)
-- Primary row: Ctrl, ⇧, Esc, Tab, Enter (`↵`), arrows, expand toggle
-- Secondary row (expandable): ^C, ^D, ^Z, ^L, ^R, ^O, ^B, ^A, ^E, ^W, ^U
+- Primary row: Esc, Tab, PgU, PgD, ↵, arrows, paste toggle (ClipboardPaste icon), expand toggle (···)
+- Secondary row (expandable): Ctrl, ⇧, ⌘ sticky modifier toggles (blue highlight, one-shot auto-clear), ^C, ^D, ^B, ^O, ^A, ^E, ^U, ^K, ^W
 - Hold-to-repeat on arrow keys (400ms delay, 80ms interval)
 - Dynamic arrow key resolution (CSI vs SS3 via resolveInput)
 - Modifier state managed by parent Terminal component (shared with `onData` interception)
+- Paste/type input: always-mounted textarea (h-0 when closed) for pasting text into terminal, bypassing xterm's broken mobile paste. Sync `focus({ preventScroll: true })` for mobile keyboard activation. Paste button becomes Send/Close contextually.
+- All buttons use `flex-1` for adaptive full-width layout
 
 ## Supporting Components
 
