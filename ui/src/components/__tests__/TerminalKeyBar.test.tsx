@@ -35,7 +35,7 @@ function touchButton(label: string) {
   return btn
 }
 
-function pointerDownByAriaLabel(label: string) {
+function pointerDownByAriaLabel(label: string | RegExp) {
   const btn = screen.getByRole('button', { name: label })
   fireEvent.pointerDown(btn)
   return btn
