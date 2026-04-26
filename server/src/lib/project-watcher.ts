@@ -123,6 +123,9 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
         debouncedEmit(channel)
         if (channel === 'filetree') debouncedEmit('git')
       })
+      watcher.on('error', (err) => {
+        console.warn(`[project-watcher] watcher error for ${project.path}:`, err)
+      })
       watchers.push(watcher)
     } catch (err) {
       console.error(`[project-watcher] failed to watch ${project.path}:`, err)
@@ -134,6 +137,9 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
   if (existsSync(projectsFile)) {
     try {
       const watcher = watch(projectsFile, () => debouncedEmit('projects'))
+      watcher.on('error', (err) => {
+        console.warn(`[project-watcher] projects.json watcher error:`, err)
+      })
       watchers.push(watcher)
     } catch (e) { console.warn(`[project-watcher] failed to watch projects.json:`, e) }
   }
@@ -150,6 +156,9 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
         void handleGlobalSessionChange(String(filename)).catch(err => {
           console.warn(`[project-watcher] failed to handle multmux session change ${String(filename)}:`, err)
         })
+      })
+      watcher.on('error', (err) => {
+        console.warn(`[project-watcher] sessions watcher error:`, err)
       })
       watchers.push(watcher)
     } catch (e) {
