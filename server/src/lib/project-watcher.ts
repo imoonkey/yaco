@@ -1,4 +1,5 @@
-import { watch, existsSync, readFileSync, readdirSync, type FSWatcher } from 'fs'
+import { watch, existsSync, type FSWatcher } from 'fs'
+import { readFile, readdir } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { Ignore } from 'ignore'
@@ -44,9 +45,9 @@ function debouncedEmit(channel: string): void {
   }, DEBOUNCE_MS))
 }
 
-function readSessionPath(stateFile: string): string | null {
+async function readSessionPath(stateFile: string): Promise<string | null> {
   try {
-    const raw = readFileSync(stateFile, 'utf-8')
+    const raw = await readFile(stateFile, 'utf-8')
     const state = JSON.parse(raw) as { sessionPath?: unknown }
     return typeof state.sessionPath === 'string' && state.sessionPath
       ? state.sessionPath
@@ -56,25 +57,30 @@ function readSessionPath(stateFile: string): string | null {
   }
 }
 
-function primeSessionPathCache(): void {
+async function primeSessionPathCache(): Promise<void> {
   sessionPathCache.clear()
-  if (!existsSync(MULTMUX_SESSIONS_DIR)) return
 
+  let files: string[]
   try {
-    for (const file of readdirSync(MULTMUX_SESSIONS_DIR).filter(name => name.endsWith('.json'))) {
-      const sessionPath = readSessionPath(join(MULTMUX_SESSIONS_DIR, file))
-      if (sessionPath) sessionPathCache.set(file, sessionPath)
+    files = (await readdir(MULTMUX_SESSIONS_DIR)).filter(name => name.endsWith('.json'))
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      console.warn('[project-watcher] failed to prime multmux session cache:', e)
     }
-  } catch (e) {
-    console.warn('[project-watcher] failed to prime multmux session cache:', e)
+    return
   }
+
+  await Promise.all(files.map(async (file) => {
+    const sessionPath = await readSessionPath(join(MULTMUX_SESSIONS_DIR, file))
+    if (sessionPath) sessionPathCache.set(file, sessionPath)
+  }))
 }
 
 async function handleGlobalSessionChange(filename: string): Promise<void> {
   if (!filename.endsWith('.json')) return
 
   const stateFile = join(MULTMUX_SESSIONS_DIR, filename)
-  const currentSessionPath = existsSync(stateFile) ? readSessionPath(stateFile) : null
+  const currentSessionPath = await readSessionPath(stateFile)
   const previousSessionPath = sessionPathCache.get(filename) ?? null
 
   if (currentSessionPath) {
@@ -145,7 +151,7 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
   }
 
   if (existsSync(MULTMUX_SESSIONS_DIR)) {
-    primeSessionPathCache()
+    await primeSessionPathCache()
     try {
       const watcher = watch(MULTMUX_SESSIONS_DIR, (_event, filename) => {
         if (!filename) {

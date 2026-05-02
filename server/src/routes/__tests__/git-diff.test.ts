@@ -1,29 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { SpawnSyncReturns } from 'child_process'
 
-// Track spawnSync calls and return configurable output per git command
+// Track calls and return configurable output per git command
 let spawnResults: Map<string, string>
-const mockSpawnSync = vi.fn((_cmd: string, args: string[]): SpawnSyncReturns<string> => {
-  // Identify which command variant based on args
-  let key = 'unknown'
-  if (args[0] === 'status') key = 'status'
-  else if (args.includes('--no-index')) key = 'no-index'
-  else if (args.includes('--cached')) key = 'cached'
-  else if (args[0] === 'diff' && args.includes('--shortstat')) key = 'shortstat'
-  else if (args[0] === 'diff' && args[1] === 'HEAD') key = 'head'
+const mockExecFile = vi.fn(
+  (_cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
+    let key = 'unknown'
+    if (args[0] === 'status') key = 'status'
+    else if (args.includes('--no-index')) key = 'no-index'
+    else if (args.includes('--cached')) key = 'cached'
+    else if (args[0] === 'diff' && args.includes('--shortstat')) key = 'shortstat'
+    else if (args[0] === 'diff' && args[1] === 'HEAD') key = 'head'
 
-  return {
-    stdout: spawnResults.get(key) ?? '',
-    stderr: '',
-    status: 0,
-    signal: null,
-    pid: 1,
-    output: [],
-    error: undefined as unknown as Error,
-  }
-})
+    cb(null, spawnResults.get(key) ?? '', '')
+  },
+)
 
-vi.mock('child_process', () => ({ spawnSync: mockSpawnSync }))
+vi.mock('child_process', () => ({ execFile: mockExecFile }))
 
 let testProjectPath: string
 vi.mock('../../lib/projects', () => ({
@@ -44,7 +36,7 @@ describe('GET /:project/diff — 3-step fallback', () => {
   beforeEach(() => {
     testProjectPath = '/tmp/fake-repo'
     spawnResults = new Map()
-    mockSpawnSync.mockClear()
+    mockExecFile.mockClear()
   })
 
   it('returns working-tree diff when HEAD diff has output', async () => {
@@ -56,7 +48,7 @@ describe('GET /:project/diff — 3-step fallback', () => {
     expect(json.diff).toContain('-old')
 
     // Should not call cached or no-index
-    const calls = mockSpawnSync.mock.calls.map(c => c[1])
+    const calls = mockExecFile.mock.calls.map(c => c[1])
     expect(calls.some(a => a.includes('--cached'))).toBe(false)
     expect(calls.some(a => a.includes('--no-index'))).toBe(false)
   })
@@ -70,8 +62,7 @@ describe('GET /:project/diff — 3-step fallback', () => {
     const json = await res.json() as { diff: string }
     expect(json.diff).toContain('-staged')
 
-    // Should have called HEAD then cached, but not no-index
-    const calls = mockSpawnSync.mock.calls.map(c => c[1])
+    const calls = mockExecFile.mock.calls.map(c => c[1])
     expect(calls.some(a => a.includes('--cached'))).toBe(true)
     expect(calls.some(a => a.includes('--no-index'))).toBe(false)
   })
@@ -86,7 +77,7 @@ describe('GET /:project/diff — 3-step fallback', () => {
     const json = await res.json() as { diff: string }
     expect(json.diff).toContain('+new file')
 
-    const calls = mockSpawnSync.mock.calls.map(c => c[1])
+    const calls = mockExecFile.mock.calls.map(c => c[1])
     expect(calls.some(a => a.includes('--cached'))).toBe(true)
     expect(calls.some(a => a.includes('--no-index'))).toBe(true)
   })
@@ -107,7 +98,7 @@ describe('GET /:project/status — null-terminated parsing', () => {
   beforeEach(() => {
     testProjectPath = '/tmp/fake-repo'
     spawnResults = new Map()
-    mockSpawnSync.mockClear()
+    mockExecFile.mockClear()
   })
 
   it('parses standard modified/added/deleted/untracked entries', async () => {

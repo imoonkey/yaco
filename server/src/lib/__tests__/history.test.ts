@@ -82,18 +82,18 @@ afterEach(() => {
 describe('getClaudeHistory', () => {
   const projectPath = '/Users/test/project'
 
-  it('returns empty when project dir does not exist', () => {
-    expect(getClaudeHistory(projectPath)).toEqual([])
+  it('returns empty when project dir does not exist', async () => {
+    expect(await getClaudeHistory(projectPath)).toEqual([])
   })
 
-  it('returns empty when project dir has no jsonl files', () => {
+  it('returns empty when project dir has no jsonl files', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeFileSync(join(dir, 'notes.txt'), 'not a session')
-    expect(getClaudeHistory(projectPath)).toEqual([])
+    expect(await getClaudeHistory(projectPath)).toEqual([])
   })
 
-  it('reads a basic session with first user message', () => {
+  it('reads a basic session with first user message', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'session-1', [
@@ -102,7 +102,7 @@ describe('getClaudeHistory', () => {
       { type: 'assistant', message: { content: 'On it' } },
     ])
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({
       id: 'session-1',
@@ -112,7 +112,7 @@ describe('getClaudeHistory', () => {
     })
   })
 
-  it('extracts custom-title (last entry wins)', () => {
+  it('extracts custom-title (last entry wins)', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'session-2', [
@@ -121,11 +121,11 @@ describe('getClaudeHistory', () => {
       { type: 'custom-title', customTitle: 'new-name' },
     ])
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]!.title).toBe('new-name')
   })
 
-  it('normalizes slash-command: extracts <command-args>', () => {
+  it('normalizes slash-command: extracts <command-args>', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'session-3', [
@@ -137,11 +137,11 @@ describe('getClaudeHistory', () => {
       },
     ])
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]!.summary).toBe('Add auth middleware')
   })
 
-  it('normalizes slash-command: falls back to next plain-text message when args empty', () => {
+  it('normalizes slash-command: falls back to next plain-text message when args empty', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'session-4', [
@@ -155,11 +155,11 @@ describe('getClaudeHistory', () => {
       { type: 'user', message: { content: 'Build the new API' } },
     ])
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]!.summary).toBe('Build the new API')
   })
 
-  it('normalizes slash-command: uses command name when no plain-text fallback', () => {
+  it('normalizes slash-command: uses command name when no plain-text fallback', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'session-5', [
@@ -171,11 +171,11 @@ describe('getClaudeHistory', () => {
       },
     ])
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]!.summary).toBe('/verify')
   })
 
-  it('skips sidechain sessions from index', () => {
+  it('skips sidechain sessions from index', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'main-session', [
@@ -192,12 +192,12 @@ describe('getClaudeHistory', () => {
       ],
     }))
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result).toHaveLength(1)
     expect(result[0]!.id).toBe('main-session')
   })
 
-  it('enriches from sessions-index.json when available', () => {
+  it('enriches from sessions-index.json when available', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'enriched', [
@@ -217,7 +217,7 @@ describe('getClaudeHistory', () => {
       ],
     }))
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]).toMatchObject({
       summary: 'AI-generated summary',
       messageCount: 42,
@@ -227,7 +227,7 @@ describe('getClaudeHistory', () => {
     })
   })
 
-  it('handles array content blocks in user messages', () => {
+  it('handles array content blocks in user messages', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'array-content', [
@@ -239,22 +239,22 @@ describe('getClaudeHistory', () => {
       },
     ])
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]!.summary).toBe('Hello world')
   })
 
-  it('shows (no prompt) when no user message found', () => {
+  it('shows (no prompt) when no user message found', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'empty', [
       { type: 'system', message: { content: 'system prompt' } },
     ])
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]!.summary).toBe('(no prompt)')
   })
 
-  it('handles malformed JSONL lines gracefully', () => {
+  it('handles malformed JSONL lines gracefully', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     const filePath = join(dir, 'malformed.jsonl')
@@ -263,11 +263,11 @@ describe('getClaudeHistory', () => {
       JSON.stringify({ type: 'user', message: { content: 'valid line' } }),
     ].join('\n'))
 
-    const result = getClaudeHistory(projectPath)
+    const result = await getClaudeHistory(projectPath)
     expect(result[0]!.summary).toBe('valid line')
   })
 
-  it('finds sessions when project path has a trailing slash', () => {
+  it('finds sessions when project path has a trailing slash', async () => {
     const pathWithSlash = '/Users/test/project/'
     // Write session files under the canonical (no trailing slash) directory
     const dir = claudeDir(pathWithSlash)
@@ -276,7 +276,7 @@ describe('getClaudeHistory', () => {
       { type: 'user', message: { content: 'trailing slash test' } },
     ])
 
-    const result = getClaudeHistory(pathWithSlash)
+    const result = await getClaudeHistory(pathWithSlash)
     expect(result).toHaveLength(1)
     expect(result[0]!.summary).toBe('trailing slash test')
   })
@@ -289,12 +289,12 @@ describe('getClaudeHistory', () => {
 describe('getCodexHistory', () => {
   const projectPath = '/Users/test/project'
 
-  it('returns empty when DB is not available', () => {
+  it('returns empty when DB is not available', async () => {
     // DB doesn't exist under mockHome — getCodexDb returns null
-    expect(getCodexHistory(projectPath)).toEqual([])
+    expect(await getCodexHistory(projectPath)).toEqual([])
   })
 
-  it('reads threads and maps thread_name from session_index.jsonl', () => {
+  it('reads threads and maps thread_name from session_index.jsonl', async () => {
     // Create the DB file so getCodexDb attempts to open it
     const codexDir = join(mockHome, '.codex')
     mkdirSync(codexDir, { recursive: true })
@@ -316,7 +316,7 @@ describe('getCodexHistory', () => {
       JSON.stringify({ id: 'thread-1', thread_name: 'codex-login-fix', updated_at: '2024-04-09T00:00:00Z' }),
     ].join('\n'))
 
-    const result = getCodexHistory(projectPath)
+    const result = await getCodexHistory(projectPath)
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({
       id: 'thread-1',
@@ -327,7 +327,7 @@ describe('getCodexHistory', () => {
     })
   })
 
-  it('thread_name last entry wins in session_index.jsonl', () => {
+  it('thread_name last entry wins in session_index.jsonl', async () => {
     const codexDir = join(mockHome, '.codex')
     mkdirSync(codexDir, { recursive: true })
     writeFileSync(join(codexDir, 'state_5.sqlite'), '')
@@ -348,11 +348,11 @@ describe('getCodexHistory', () => {
       JSON.stringify({ id: 'thread-2', thread_name: 'renamed-name' }),
     ].join('\n'))
 
-    const result = getCodexHistory(projectPath)
+    const result = await getCodexHistory(projectPath)
     expect(result[0]!.title).toBe('renamed-name')
   })
 
-  it('handles epoch in seconds correctly', () => {
+  it('handles epoch in seconds correctly', async () => {
     const codexDir = join(mockHome, '.codex')
     mkdirSync(codexDir, { recursive: true })
     writeFileSync(join(codexDir, 'state_5.sqlite'), '')
@@ -368,11 +368,11 @@ describe('getCodexHistory', () => {
       },
     ]
 
-    const result = getCodexHistory(projectPath)
+    const result = await getCodexHistory(projectPath)
     expect(result[0]!.created).toBe('2024-04-09T00:00:00.000Z')
   })
 
-  it('returns (no prompt) when first_user_message is null', () => {
+  it('returns (no prompt) when first_user_message is null', async () => {
     const codexDir = join(mockHome, '.codex')
     mkdirSync(codexDir, { recursive: true })
     writeFileSync(join(codexDir, 'state_5.sqlite'), '')
@@ -388,7 +388,7 @@ describe('getCodexHistory', () => {
       },
     ]
 
-    const result = getCodexHistory(projectPath)
+    const result = await getCodexHistory(projectPath)
     expect(result[0]!.summary).toBe('(no prompt)')
   })
 })
@@ -400,12 +400,12 @@ describe('getCodexHistory', () => {
 describe('getHistory', () => {
   const projectPath = '/Users/test/project'
 
-  it('returns empty when no sessions exist', () => {
-    const result = getHistory(projectPath, [])
+  it('returns empty when no sessions exist', async () => {
+    const result = await getHistory(projectPath, [])
     expect(result).toEqual([])
   })
 
-  it('merges Claude and Codex sessions sorted by modified DESC', () => {
+  it('merges Claude and Codex sessions sorted by modified DESC', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
 
@@ -430,7 +430,7 @@ describe('getHistory', () => {
       },
     ]
 
-    const result = getHistory(projectPath, [])
+    const result = await getHistory(projectPath, [])
     expect(result.length).toBeGreaterThanOrEqual(1)
     // Codex session (newer modified) should come first
     if (result.length >= 2) {
@@ -440,7 +440,7 @@ describe('getHistory', () => {
     }
   })
 
-  it('tags live sessions by sessionId', () => {
+  it('tags live sessions by sessionId', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'live-uuid-1', [
@@ -451,12 +451,12 @@ describe('getHistory', () => {
       makeLiveSession({ sessionId: 'live-uuid-1', name: 'my-live-session' }),
     ]
 
-    const result = getHistory(projectPath, liveSessions)
+    const result = await getHistory(projectPath, liveSessions)
     const liveEntry = result.find(s => s.id === 'live-uuid-1')
     expect(liveEntry?.liveSessionName).toBe('my-live-session')
   })
 
-  it('does not tag sessions with PENDING_SESSION_ID', () => {
+  it('does not tag sessions with PENDING_SESSION_ID', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
     writeJsonl(dir, 'some-session', [
@@ -467,11 +467,11 @@ describe('getHistory', () => {
       makeLiveSession({ sessionId: 'pending:awaiting-first-prompt', name: 'pending-session' }),
     ]
 
-    const result = getHistory(projectPath, liveSessions)
+    const result = await getHistory(projectPath, liveSessions)
     expect(result[0]!.liveSessionName).toBeNull()
   })
 
-  it('caps at 200 entries', () => {
+  it('caps at 200 entries', async () => {
     const dir = claudeDir(projectPath)
     mkdirSync(dir, { recursive: true })
 
@@ -482,7 +482,7 @@ describe('getHistory', () => {
       ])
     }
 
-    const result = getHistory(projectPath, [])
+    const result = await getHistory(projectPath, [])
     expect(result.length).toBe(200)
   })
 })

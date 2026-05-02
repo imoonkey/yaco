@@ -1,4 +1,5 @@
-import { existsSync, readFileSync, readdirSync } from 'fs'
+import { existsSync } from 'fs'
+import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import Database from 'better-sqlite3'
@@ -21,38 +22,43 @@ export function encodeProjectPath(projectPath: string): string {
   return projectPath.replace(/\/+$/, '').replace(/\//g, '-')
 }
 
+type ClaudeResolver = (sessionId: string) => Promise<SummaryResult | null>
+
 /** Read first user message from Claude session JSONL files.
  *  Returns a resolver function that reads a specific sessionId on demand. */
-function makeClaudeResolver(projectPath: string): (sessionId: string) => SummaryResult | null {
-  if (!projectPath) return () => null
+function makeClaudeResolver(projectPath: string): ClaudeResolver {
+  if (!projectPath) return async () => null
   const encoded = encodeProjectPath(projectPath)
   const projectDir = join(homedir(), '.claude', 'projects', encoded)
-  if (!existsSync(projectDir)) return () => null
 
-  return (sessionId: string) => {
+  return async (sessionId: string) => {
     const jsonlPath = join(projectDir, `${sessionId}.jsonl`)
-    if (!existsSync(jsonlPath)) return null
 
+    let content: string
     try {
-      // Read file line by line, find first user message
-      const content = readFileSync(jsonlPath, 'utf-8')
-      for (const line of content.split('\n')) {
-        if (!line) continue
-        try {
-          const entry = JSON.parse(line)
-          if (entry.type === 'user' && entry.message?.content) {
-            // Extract text from content (can be string or array of blocks)
-            const raw = typeof entry.message.content === 'string'
-              ? entry.message.content
-              : Array.isArray(entry.message.content)
-                ? entry.message.content.map((b: { text?: string }) => b.text ?? '').join(' ')
-                : ''
-            const summary = raw.replace(/\s+/g, ' ').trim()
-            if (summary) return { summary }
-          }
-        } catch (e) { console.warn(`[session-summary] failed to parse JSONL line in ${jsonlPath}:`, e); continue }
+      content = await readFile(jsonlPath, 'utf-8')
+    } catch (e: unknown) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(`[session-summary] failed to read Claude JSONL ${jsonlPath}:`, e)
       }
-    } catch (e) { console.warn(`[session-summary] failed to read Claude JSONL ${jsonlPath}:`, e) }
+      return null
+    }
+
+    for (const line of content.split('\n')) {
+      if (!line) continue
+      try {
+        const entry = JSON.parse(line)
+        if (entry.type === 'user' && entry.message?.content) {
+          const raw = typeof entry.message.content === 'string'
+            ? entry.message.content
+            : Array.isArray(entry.message.content)
+              ? entry.message.content.map((b: { text?: string }) => b.text ?? '').join(' ')
+              : ''
+          const summary = raw.replace(/\s+/g, ' ').trim()
+          if (summary) return { summary }
+        }
+      } catch (e) { console.warn(`[session-summary] failed to parse JSONL line in ${jsonlPath}:`, e); continue }
+    }
     return null
   }
 }
@@ -82,7 +88,7 @@ export function getCodexDb(): InstanceType<typeof Database> | null {
   }
 }
 
-function resolveCodexSummary(sessionId: string): SummaryResult | null {
+async function resolveCodexSummary(sessionId: string): Promise<SummaryResult | null> {
   // Primary: SQLite threads table
   const db = getCodexDb()
   if (db) {
@@ -105,42 +111,44 @@ function resolveCodexSummary(sessionId: string): SummaryResult | null {
 }
 
 /** Find the rollout JSONL file for a Codex session and extract the first real user message. */
-function resolveCodexRolloutSummary(sessionId: string): SummaryResult | null {
-  if (!existsSync(CODEX_SESSIONS_DIR)) return null
-
+async function resolveCodexRolloutSummary(sessionId: string): Promise<SummaryResult | null> {
   // Rollout files: ~/.codex/sessions/YYYY/MM/DD/rollout-...-<sessionId>.jsonl
-  // Scan recent date directories (today and yesterday) to find the file
+  // Scan recent date directories (today and 7 days back) to find the file
   const now = new Date()
   for (let daysBack = 0; daysBack <= 7; daysBack++) {
     const d = new Date(now.getTime() - daysBack * 86400000)
     const dayDir = join(CODEX_SESSIONS_DIR, String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'))
-    if (!existsSync(dayDir)) continue
 
+    let files: string[]
     try {
-      const files = readdirSync(dayDir)
-      const match = files.find(f => f.includes(sessionId) && f.endsWith('.jsonl'))
-      if (!match) continue
-
-      const content = readFileSync(join(dayDir, match), 'utf-8')
-      // Find the last response_item with role=user — skip system/AGENTS.md context
-      // The actual user prompt is typically the last user message before assistant responses
-      let lastUserText = ''
-      for (const line of content.split('\n')) {
-        if (!line) continue
-        try {
-          const entry = JSON.parse(line)
-          if (entry.type !== 'response_item' || entry.payload?.role !== 'user') continue
-          for (const block of entry.payload.content ?? []) {
-            if (block.type === 'input_text' && block.text && !block.text.startsWith('#') && !block.text.startsWith('<')) {
-              lastUserText = block.text
-            }
-          }
-        } catch { continue }
-      }
-      if (lastUserText) {
-        return { summary: lastUserText.replace(/\s+/g, ' ').trim() }
-      }
+      files = await readdir(dayDir)
     } catch { continue }
+
+    const match = files.find(f => f.includes(sessionId) && f.endsWith('.jsonl'))
+    if (!match) continue
+
+    let content: string
+    try {
+      content = await readFile(join(dayDir, match), 'utf-8')
+    } catch { continue }
+
+    // Find the last response_item with role=user — skip system/AGENTS.md context
+    let lastUserText = ''
+    for (const line of content.split('\n')) {
+      if (!line) continue
+      try {
+        const entry = JSON.parse(line)
+        if (entry.type !== 'response_item' || entry.payload?.role !== 'user') continue
+        for (const block of entry.payload.content ?? []) {
+          if (block.type === 'input_text' && block.text && !block.text.startsWith('#') && !block.text.startsWith('<')) {
+            lastUserText = block.text
+          }
+        }
+      } catch { continue }
+    }
+    if (lastUserText) {
+      return { summary: lastUserText.replace(/\s+/g, ' ').trim() }
+    }
   }
 
   return null
@@ -148,9 +156,9 @@ function resolveCodexRolloutSummary(sessionId: string): SummaryResult | null {
 
 /** Resolve summaries for all sessions in a single batch.
  *  Reads each data source at most once. */
-export function resolveSessionSummaries(
+export async function resolveSessionSummaries(
   sessions: MultmuxSession[],
-): Map<string, string> {
+): Promise<Map<string, string>> {
   const result = new Map<string, string>()
   if (sessions.length === 0) return result
 
@@ -169,20 +177,20 @@ export function resolveSessionSummaries(
     }
   }
 
-  // Resolve Claude summaries: one resolver per launch path
-  for (const [sessionPath, pathSessions] of claudeByPath) {
+  // Resolve Claude + Codex summaries in parallel
+  const claudeTasks = [...claudeByPath].flatMap(([sessionPath, pathSessions]) => {
     const resolve = makeClaudeResolver(sessionPath)
-    for (const s of pathSessions) {
-      const r = resolve(s.sessionId)
+    return pathSessions.map(async (s) => {
+      const r = await resolve(s.sessionId)
       if (r) result.set(s.name, r.summary)
-    }
-  }
+    })
+  })
 
-  // Resolve Codex summaries
-  for (const s of codexSessions) {
-    const r = resolveCodexSummary(s.sessionId)
+  const codexTasks = codexSessions.map(async (s) => {
+    const r = await resolveCodexSummary(s.sessionId)
     if (r) result.set(s.name, r.summary)
-  }
+  })
 
+  await Promise.all([...claudeTasks, ...codexTasks])
   return result
 }

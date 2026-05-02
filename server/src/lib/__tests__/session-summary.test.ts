@@ -38,37 +38,37 @@ describe('resolveSessionSummaries', () => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('returns empty map for empty sessions', () => {
-    const result = resolveSessionSummaries([])
+  it('returns empty map for empty sessions', async () => {
+    const result = await resolveSessionSummaries([])
     expect(result.size).toBe(0)
   })
 
-  it('skips sentinel sessionId (pending:awaiting-first-prompt)', () => {
+  it('skips sentinel sessionId (pending:awaiting-first-prompt)', async () => {
     const session = makeSession({
       sessionId: 'pending:awaiting-first-prompt',
       provider: 'claude',
     })
-    const result = resolveSessionSummaries([session])
+    const result = await resolveSessionSummaries([session])
     // Should not crash and should not resolve a summary for sentinel ID
     expect(result.get('test-session')).toBeUndefined()
   })
 
-  it('skips empty sessionId without crashing', () => {
+  it('skips empty sessionId without crashing', async () => {
     const session = makeSession({ sessionId: '' })
-    const result = resolveSessionSummaries([session])
+    const result = await resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
   })
 
-  it('skips codex sessions with sentinel sessionId', () => {
+  it('skips codex sessions with sentinel sessionId', async () => {
     const session = makeSession({
       provider: 'codex',
       sessionId: 'pending:awaiting-first-prompt',
     })
-    const result = resolveSessionSummaries([session])
+    const result = await resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
   })
 
-  it('resolves Claude summary from JSONL file', () => {
+  it('resolves Claude summary from JSONL file', async () => {
     // Set up the Claude project directory structure
     const encoded = tmpDir.replace(/\//g, '-')
     const projectDir = join(tmpDir, '.claude-projects', encoded)
@@ -85,37 +85,37 @@ describe('resolveSessionSummaries', () => {
     const session = makeSession({ sessionId })
     // makeClaudeResolver uses homedir(), so this only verifies the batch path
     // still tolerates a launch path without crashing.
-    const result = resolveSessionSummaries([session])
+    const result = await resolveSessionSummaries([session])
     // The JSONL file won't be found because homedir() points elsewhere,
     // but the function should not crash
     expect(result).toBeInstanceOf(Map)
   })
 
-  it('groups Claude sessions by launch path for batch resolution', () => {
+  it('groups Claude sessions by launch path for batch resolution', async () => {
     const sessions = [
       makeSession({ name: 's1', sessionId: 'id1', project: 'p1', sessionPath: '/tmp/p1' }),
       makeSession({ name: 's2', sessionId: 'id2', project: 'p1', sessionPath: '/tmp/p1' }),
       makeSession({ name: 's3', sessionId: 'id3', project: 'p2', sessionPath: '/tmp/p2' }),
     ]
-    const result = resolveSessionSummaries(sessions)
+    const result = await resolveSessionSummaries(sessions)
     expect(result).toBeInstanceOf(Map)
   })
 })
 
 describe('encodeProjectPath', () => {
-  it('replaces slashes with dashes', () => {
+  it('replaces slashes with dashes', async () => {
     expect(encodeProjectPath('/Users/test/project')).toBe('-Users-test-project')
   })
 
-  it('strips trailing slash before encoding', () => {
+  it('strips trailing slash before encoding', async () => {
     expect(encodeProjectPath('/Users/test/project/')).toBe('-Users-test-project')
   })
 
-  it('strips multiple trailing slashes', () => {
+  it('strips multiple trailing slashes', async () => {
     expect(encodeProjectPath('/Users/test/project///')).toBe('-Users-test-project')
   })
 
-  it('handles path without trailing slash unchanged', () => {
+  it('handles path without trailing slash unchanged', async () => {
     expect(encodeProjectPath('/Users/test/project')).toBe(
       encodeProjectPath('/Users/test/project/'),
     )

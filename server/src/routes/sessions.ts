@@ -22,12 +22,12 @@ app.get('/', async (c) => {
   let multmuxSessions
   if (projectName) {
     const project = projects.find(item => item.name === projectName)
-    multmuxSessions = project ? readSessionsFromStateFiles(project) : []
+    multmuxSessions = project ? await readSessionsFromStateFiles(project) : []
   } else {
-    multmuxSessions = readAllSessionsFromStateFiles(projects)
+    multmuxSessions = await readAllSessionsFromStateFiles(projects)
   }
 
-  const summaries = resolveSessionSummaries(multmuxSessions)
+  const summaries = await resolveSessionSummaries(multmuxSessions)
   const enriched = multmuxSessions.map(s => ({
     ...s,
     summary: summaries.get(s.name) ?? '',
@@ -91,8 +91,8 @@ app.get('/history', async (c) => {
   const project = projects.find(item => item.name === projectName)
   if (!project) return c.json({ error: `project "${projectName}" not found` }, 404)
 
-  const liveSessions = readSessionsFromStateFiles(project)
-  return c.json(getHistory(project.path, liveSessions))
+  const liveSessions = await readSessionsFromStateFiles(project)
+  return c.json(await getHistory(project.path, liveSessions))
 })
 
 app.post('/:handle/pause', async (c) => {

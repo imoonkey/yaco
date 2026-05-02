@@ -1,5 +1,6 @@
 import { spawn } from 'child_process'
 import { existsSync, readFileSync, readdirSync } from 'fs'
+import { readdir, readFile } from 'fs/promises'
 import { isAbsolute, join, normalize, relative, sep } from 'path'
 import type { Project } from './projects'
 import { validateSessionName } from './session-names'
@@ -59,30 +60,27 @@ export function isPathDescendantOrEqual(candidatePath: string, rootPath: string)
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
 }
 
-function readStateFiles(): MultmuxStateFile[] {
-  if (!existsSync(MULTMUX_SESSIONS_DIR)) return []
-
+async function readStateFiles(): Promise<MultmuxStateFile[]> {
   let files: string[]
   try {
-    files = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
-  } catch (e) {
-    console.warn('[multmux] failed to read global sessions directory:', e)
+    files = (await readdir(MULTMUX_SESSIONS_DIR)).filter(f => f.endsWith('.json'))
+  } catch (e: unknown) {
+    if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+      console.warn('[multmux] failed to read global sessions directory:', e)
+    }
     return []
   }
 
-  const states: MultmuxStateFile[] = []
-  for (const file of files) {
+  const reads = await Promise.all(files.map(async (file) => {
     try {
-      const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, file), 'utf-8')
-      const state = JSON.parse(raw) as MultmuxStateFile
-      states.push(state)
+      const raw = await readFile(join(MULTMUX_SESSIONS_DIR, file), 'utf-8')
+      return JSON.parse(raw) as MultmuxStateFile
     } catch (e) {
       console.warn(`[multmux] failed to parse state file ${file}:`, e)
-      continue
+      return null
     }
-  }
-
-  return states
+  }))
+  return reads.filter((s): s is MultmuxStateFile => s !== null)
 }
 
 function toMultmuxSession(
@@ -127,10 +125,10 @@ function resolveProjectForSessionPath(
 }
 
 /** Read sessions from ~/.multmux/sessions/*.json state files (primary source of truth) */
-export function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): MultmuxSession[] {
+export async function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): Promise<MultmuxSession[]> {
   const sessions: MultmuxSession[] = []
 
-  for (const state of readStateFiles()) {
+  for (const state of await readStateFiles()) {
     const sessionPath = getStateSessionPath(state)
     if (!sessionPath || !isPathDescendantOrEqual(sessionPath, project.path)) continue
 
@@ -142,10 +140,10 @@ export function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path
 }
 
 /** Read sessions from state files across all projects */
-export function readAllSessionsFromStateFiles(projects: Pick<Project, 'name' | 'path'>[]): MultmuxSession[] {
+export async function readAllSessionsFromStateFiles(projects: Pick<Project, 'name' | 'path'>[]): Promise<MultmuxSession[]> {
   const all: MultmuxSession[] = []
 
-  for (const state of readStateFiles()) {
+  for (const state of await readStateFiles()) {
     const sessionPath = getStateSessionPath(state)
     if (!sessionPath) continue
 

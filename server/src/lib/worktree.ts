@@ -27,27 +27,36 @@ function parseAheadBehind(output: string): { ahead: number; behind: number } {
   }
 }
 
-/** Resolve worktree status for a single slug within a project */
-export async function getWorktreeStatus(projectPath: string, slug: string): Promise<WorktreeStatus> {
-  const worktreePath = join(projectPath, '.worktrees', slug)
-  const branch = `task/${slug}`
-
-  if (!existsSync(worktreePath)) {
-    return { active: false, dirty: false, branch, ahead: 0, behind: 0 }
+/** Parse `git worktree list --porcelain` into a Set of canonical worktree paths */
+function parseWorktreeList(output: string): Set<string> {
+  const set = new Set<string>()
+  for (const line of output.split('\n')) {
+    if (line.startsWith('worktree ')) set.add(line.slice('worktree '.length))
   }
+  return set
+}
 
-  // Verify this is actually a registered git worktree, not a leftover directory
-  const isGitWorktree = await git(projectPath, ['worktree', 'list', '--porcelain'])
-    .then(out => {
-      let needle: string
-      try { needle = realpathSync(worktreePath) } catch { return false }
-      return out.split('\n').some(line => line === `worktree ${needle}`)
-    })
-    .catch(() => false)
-  if (!isGitWorktree) {
-    return { active: false, dirty: false, branch, ahead: 0, behind: 0 }
+async function listRegistered(projectPath: string): Promise<Set<string>> {
+  try {
+    return parseWorktreeList(await git(projectPath, ['worktree', 'list', '--porcelain']))
+  } catch {
+    return new Set()
   }
+}
 
+function isRegistered(worktreePath: string, registered: Set<string>): boolean {
+  try {
+    return registered.has(realpathSync(worktreePath))
+  } catch {
+    return false
+  }
+}
+
+function inactive(branch: string): WorktreeStatus {
+  return { active: false, dirty: false, branch, ahead: 0, behind: 0 }
+}
+
+async function resolveActive(worktreePath: string, branch: string): Promise<WorktreeStatus> {
   const [dirty, aheadBehind] = await Promise.all([
     git(worktreePath, ['status', '--porcelain'])
       .then(out => out.trim().length > 0)
@@ -56,8 +65,18 @@ export async function getWorktreeStatus(projectPath: string, slug: string): Prom
       .then(parseAheadBehind)
       .catch(() => ({ ahead: 0, behind: 0 })),
   ])
-
   return { active: true, dirty, branch, ...aheadBehind }
+}
+
+/** Resolve worktree status for a single slug within a project */
+export async function getWorktreeStatus(projectPath: string, slug: string): Promise<WorktreeStatus> {
+  const worktreePath = join(projectPath, '.worktrees', slug)
+  const branch = `task/${slug}`
+  if (!existsSync(worktreePath)) return inactive(branch)
+
+  const registered = await listRegistered(projectPath)
+  if (!isRegistered(worktreePath, registered)) return inactive(branch)
+  return resolveActive(worktreePath, branch)
 }
 
 /** Extract worktree slug from a session path, if it's inside a .worktrees directory */
@@ -66,7 +85,8 @@ export function extractWorktreeSlug(sessionPath: string): string | undefined {
   return match?.[1]
 }
 
-/** Batch-resolve worktree statuses for all unique slugs found in tasks */
+/** Batch-resolve worktree statuses for all unique slugs found in tasks.
+ *  Calls `git worktree list` once and shares the result across all slugs. */
 export async function getWorktreeStatuses(
   projectPath: string,
   tasks: Record<string, { worktree?: string }>,
@@ -79,9 +99,17 @@ export async function getWorktreeStatuses(
   const results = new Map<string, WorktreeStatus>()
   if (slugs.size === 0) return results
 
+  const registered = await listRegistered(projectPath)
+
   await Promise.all(
     [...slugs].map(async (slug) => {
-      results.set(slug, await getWorktreeStatus(projectPath, slug))
+      const worktreePath = join(projectPath, '.worktrees', slug)
+      const branch = `task/${slug}`
+      if (!existsSync(worktreePath) || !isRegistered(worktreePath, registered)) {
+        results.set(slug, inactive(branch))
+        return
+      }
+      results.set(slug, await resolveActive(worktreePath, branch))
     }),
   )
   return results

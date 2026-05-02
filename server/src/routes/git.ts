@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { spawnSync } from 'child_process'
+import { execFile } from 'child_process'
 import { GIT_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
@@ -7,6 +7,22 @@ import { withProject, type ProjectEnv } from '../middleware/project'
 export interface GitChange {
   path: string
   status: 'M' | 'A' | 'D' | 'U'
+}
+
+interface GitOutput { stdout: string; ok: boolean }
+
+function git(cwd: string, args: string[]): Promise<GitOutput> {
+  return new Promise((resolve) => {
+    execFile('git', args, {
+      cwd,
+      encoding: 'utf-8',
+      timeout: GIT_COMMAND_TIMEOUT_MS,
+      maxBuffer: 32 * 1024 * 1024,
+    }, (err, stdout) => {
+      if (err) resolve({ stdout: '', ok: false })
+      else resolve({ stdout: stdout as unknown as string, ok: true })
+    })
+  })
 }
 
 function parseStatus(xy: string): GitChange['status'] {
@@ -36,6 +52,9 @@ interface RefsResult {
   recentCommits: { hash: string; subject: string; date: string; author: string }[]
 }
 
+/** Coalesce concurrent identical /:project/status requests */
+const statusInflight = new Map<string, Promise<{ changes: GitChange[]; stale: boolean; stats?: { added: number; deleted: number } }>>()
+
 const app = new Hono<ProjectEnv>()
 
 // GET /:project/refs — branches, tags, recent commits
@@ -46,46 +65,36 @@ app.get('/:project/refs', withProject, async (c) => {
     return c.json(cached.data)
   }
 
-  const empty: RefsResult = { branches: [], tags: [], recentCommits: [] }
-  const gitOpts = { cwd: proj.path, encoding: 'utf-8' as const, timeout: GIT_COMMAND_TIMEOUT_MS }
+  const [branchOut, tagOut, logOut] = await Promise.all([
+    git(proj.path, ['branch', '-a', '--format=%(refname:short)']),
+    git(proj.path, ['tag', '--sort=-creatordate']),
+    git(proj.path, ['log', '-50', '--format=%h\t%ci\t%an\t%s']),
+  ])
 
-  const branchResult = spawnSync('git', ['branch', '-a', '--format=%(refname:short)'], gitOpts)
-  const branches = branchResult.status === 0
-    ? branchResult.stdout.split('\n').filter(Boolean)
-    : empty.branches
-
-  const tagResult = spawnSync('git', ['tag', '--sort=-creatordate'], gitOpts)
-  const tags = tagResult.status === 0
-    ? tagResult.stdout.split('\n').filter(Boolean).slice(0, 50)
-    : empty.tags
-
-  const logResult = spawnSync('git', ['log', '-50', '--format=%h\t%ci\t%an\t%s'], gitOpts)
-  const recentCommits = logResult.status === 0
-    ? logResult.stdout.split('\n').filter(Boolean).map(line => {
+  const branches = branchOut.ok ? branchOut.stdout.split('\n').filter(Boolean) : []
+  const tags = tagOut.ok ? tagOut.stdout.split('\n').filter(Boolean).slice(0, 50) : []
+  const recentCommits = logOut.ok
+    ? logOut.stdout.split('\n').filter(Boolean).map(line => {
         const parts = line.split('\t')
         return { hash: parts[0], date: parts[1], author: parts[2], subject: parts[3] ?? '' }
       })
-    : empty.recentCommits
+    : []
 
   const data: RefsResult = { branches, tags, recentCommits }
   refsCache.set(proj.name, { data, ts: Date.now() })
   return c.json(data)
 })
 
-// GET /:project/status — git status for a project
-app.get('/:project/status', withProject, async (c) => {
-  const proj = c.var.project
+async function resolveStatus(projectName: string, projectPath: string) {
+  const [result, statResult] = await Promise.all([
+    git(projectPath, ['status', '--porcelain', '-z']),
+    git(projectPath, ['diff', '--shortstat']),
+  ])
 
-  const result = spawnSync('git', ['status', '--porcelain', '-z'], {
-    cwd: proj.path,
-    encoding: 'utf-8',
-    timeout: GIT_COMMAND_TIMEOUT_MS,
-  })
-
-  if (result.error || result.status !== 0) {
+  if (!result.ok) {
     // Transient failure — return last-known-good snapshot with stale marker
-    const snapshot = gitSnapshots.get(proj.name)
-    return c.json({ changes: snapshot ?? [], stale: true })
+    const snapshot = gitSnapshots.get(projectName)
+    return { changes: snapshot ?? [], stale: true }
   }
 
   const entries = result.stdout.split('\0').filter(Boolean)
@@ -99,16 +108,21 @@ app.get('/:project/status', withProject, async (c) => {
     if (xy[0] === 'R' || xy[0] === 'C') i++
   }
 
-  // Line-level stats via shortstat
-  const statResult = spawnSync('git', ['diff', '--shortstat'], {
-    cwd: proj.path,
-    encoding: 'utf-8',
-    timeout: GIT_COMMAND_TIMEOUT_MS,
-  })
-  const stats = parseShortstat(statResult.stdout || '')
+  const stats = parseShortstat(statResult.stdout)
+  gitSnapshots.set(projectName, changes)
+  return { changes, stale: false, stats }
+}
 
-  gitSnapshots.set(proj.name, changes)
-  return c.json({ changes, stale: false, stats })
+// GET /:project/status — git status for a project
+app.get('/:project/status', withProject, async (c) => {
+  const proj = c.var.project
+  let pending = statusInflight.get(proj.name)
+  if (!pending) {
+    pending = resolveStatus(proj.name, proj.path)
+      .finally(() => statusInflight.delete(proj.name))
+    statusInflight.set(proj.name, pending)
+  }
+  return c.json(await pending)
 })
 
 // GET /:project/diff?path=...&base=REF&compare=REF — git diff for a specific file
@@ -130,40 +144,21 @@ app.get('/:project/diff', withProject, async (c) => {
 
   if (base && compare) {
     // Diff between two refs
-    const result = spawnSync('git', ['diff', base, compare, '--', filePath], {
-      cwd: proj.path,
-      encoding: 'utf-8',
-      timeout: GIT_COMMAND_TIMEOUT_MS,
-    })
-    return c.json({ diff: result.stdout || '' })
+    const result = await git(proj.path, ['diff', base, compare, '--', filePath])
+    return c.json({ diff: result.stdout })
   }
 
   // No refs — diff working tree vs HEAD, then check staged, then untracked fallback
-  let result = spawnSync('git', ['diff', 'HEAD', '--', filePath], {
-    cwd: proj.path,
-    encoding: 'utf-8',
-    timeout: GIT_COMMAND_TIMEOUT_MS,
-  })
-  let diff = result.stdout || ''
+  let diff = (await git(proj.path, ['diff', 'HEAD', '--', filePath])).stdout
 
   // Working tree matches HEAD — check staged (index) changes
   if (!diff) {
-    result = spawnSync('git', ['diff', '--cached', 'HEAD', '--', filePath], {
-      cwd: proj.path,
-      encoding: 'utf-8',
-      timeout: GIT_COMMAND_TIMEOUT_MS,
-    })
-    diff = result.stdout || ''
+    diff = (await git(proj.path, ['diff', '--cached', 'HEAD', '--', filePath])).stdout
   }
 
   // For untracked files, show full content as additions
   if (!diff) {
-    result = spawnSync('git', ['diff', '--no-index', '--', '/dev/null', filePath], {
-      cwd: proj.path,
-      encoding: 'utf-8',
-      timeout: GIT_COMMAND_TIMEOUT_MS,
-    })
-    diff = result.stdout || ''
+    diff = (await git(proj.path, ['diff', '--no-index', '--', '/dev/null', filePath])).stdout
   }
 
   return c.json({ diff })
@@ -179,15 +174,8 @@ app.get('/:project/compare', withProject, async (c) => {
     return fail(c, 400, 'base and compare query params are required')
   }
 
-  const result = spawnSync('git', ['diff', '--name-status', base, compare], {
-    cwd: proj.path,
-    encoding: 'utf-8',
-    timeout: GIT_COMMAND_TIMEOUT_MS,
-  })
-
-  if (result.error || result.status !== 0) {
-    return fail(c, 500, 'git diff failed')
-  }
+  const result = await git(proj.path, ['diff', '--name-status', base, compare])
+  if (!result.ok) return fail(c, 500, 'git diff failed')
 
   const statusMap: Record<string, GitChange['status']> = { M: 'M', A: 'A', D: 'D', R: 'M' }
 
@@ -203,13 +191,8 @@ app.get('/:project/compare', withProject, async (c) => {
       }
     })
 
-  // Line-level stats
-  const statResult = spawnSync('git', ['diff', '--shortstat', base, compare], {
-    cwd: proj.path,
-    encoding: 'utf-8',
-    timeout: GIT_COMMAND_TIMEOUT_MS,
-  })
-  const stats = parseShortstat(statResult.stdout || '')
+  const statResult = await git(proj.path, ['diff', '--shortstat', base, compare])
+  const stats = parseShortstat(statResult.stdout)
 
   return c.json({ files, stats })
 })

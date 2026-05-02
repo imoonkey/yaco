@@ -53,14 +53,14 @@ describe('readSessionsFromStateFiles', () => {
 
   const project = () => ({ name: 'test-project', path: tmpDir })
 
-  it('returns empty array when the global sessions dir does not exist', () => {
+  it('returns empty array when the global sessions dir does not exist', async () => {
     rmSync(mockedSessionsDir, { recursive: true })
-    expect(readSessionsFromStateFiles(project())).toEqual([])
+    expect(await readSessionsFromStateFiles(project())).toEqual([])
   })
 
-  it('reads idle session correctly', () => {
+  it('reads idle session correctly', async () => {
     writeStateFile(mockedSessionsDir, '1-claude', { status: 'idle', sessionPath: tmpDir })
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]).toMatchObject({
       name: '1-claude',
@@ -72,9 +72,9 @@ describe('readSessionsFromStateFiles', () => {
     })
   })
 
-  it('reads processing session correctly', () => {
+  it('reads processing session correctly', async () => {
     writeStateFile(mockedSessionsDir, 'worker-1', { status: 'processing', provider: 'codex', sessionPath: tmpDir })
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]).toMatchObject({
       name: 'worker-1',
@@ -83,14 +83,14 @@ describe('readSessionsFromStateFiles', () => {
     })
   })
 
-  it('passes through starting status without normalization', () => {
+  it('passes through starting status without normalization', async () => {
     writeStateFile(mockedSessionsDir, 'new-session', { status: 'starting', sessionPath: tmpDir })
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.status).toBe('starting')
   })
 
-  it('excludes sessions with unknown status', () => {
+  it('excludes sessions with unknown status', async () => {
     // Simulate a state file with an unrecognized status value
     const state = {
       handle: 'ghost',
@@ -102,34 +102,34 @@ describe('readSessionsFromStateFiles', () => {
       createdAt: '2026-03-24T00:00:00.000Z',
     }
     writeFileSync(join(mockedSessionsDir, 'ghost.json'), JSON.stringify(state))
-    expect(readSessionsFromStateFiles(project())).toEqual([])
+    expect(await readSessionsFromStateFiles(project())).toEqual([])
   })
 
-  it('handles multiple sessions', () => {
+  it('handles multiple sessions', async () => {
     writeStateFile(mockedSessionsDir, '1-claude', { status: 'idle', sessionPath: tmpDir })
     writeStateFile(mockedSessionsDir, '2-codex', { status: 'processing', provider: 'codex', sessionPath: tmpDir })
     writeStateFile(mockedSessionsDir, '3-claude', { status: 'starting', sessionPath: tmpDir })
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(3)
     expect(sessions.map(s => s.name).sort()).toEqual(['1-claude', '2-codex', '3-claude'])
   })
 
-  it('skips malformed JSON files', () => {
+  it('skips malformed JSON files', async () => {
     writeStateFile(mockedSessionsDir, 'good', { status: 'idle', sessionPath: tmpDir })
     writeFileSync(join(mockedSessionsDir, 'bad.json'), 'not json{{{')
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.name).toBe('good')
   })
 
-  it('skips non-json files', () => {
+  it('skips non-json files', async () => {
     writeStateFile(mockedSessionsDir, 'real', { status: 'idle', sessionPath: tmpDir })
     writeFileSync(join(mockedSessionsDir, 'readme.txt'), 'not a state file')
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
   })
 
-  it('infers provider from handle when provider field is invalid', () => {
+  it('infers provider from handle when provider field is invalid', async () => {
     const state = {
       handle: 'my-codex-worker',
       provider: 'unknown-provider', // invalid
@@ -140,33 +140,33 @@ describe('readSessionsFromStateFiles', () => {
       createdAt: '2026-03-24T00:00:00.000Z',
     }
     writeFileSync(join(mockedSessionsDir, 'my-codex-worker.json'), JSON.stringify(state))
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.provider).toBe('codex')
   })
 
-  it('defaults empty sessionId to empty string', () => {
+  it('defaults empty sessionId to empty string', async () => {
     writeStateFile(mockedSessionsDir, 'no-sid', { sessionId: undefined as unknown as string, sessionPath: tmpDir })
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
     expect(sessions[0]!.sessionId).toBe('')
   })
 
-  it('filters to sessions whose sessionPath is under the project path', () => {
+  it('filters to sessions whose sessionPath is under the project path', async () => {
     writeStateFile(mockedSessionsDir, 'nested', { sessionPath: join(tmpDir, 'server') })
     writeStateFile(mockedSessionsDir, 'outside', { sessionPath: `${tmpDir}-other` })
 
-    const sessions = readSessionsFromStateFiles(project())
+    const sessions = await readSessionsFromStateFiles(project())
 
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.name).toBe('nested')
   })
 
-  it('uses the most specific matching project when reading all sessions', () => {
+  it('uses the most specific matching project when reading all sessions', async () => {
     const parent = tmpDir
     const child = join(tmpDir, 'server')
     writeStateFile(mockedSessionsDir, 'child-session', { sessionPath: child })
 
-    const sessions = readAllSessionsFromStateFiles([
+    const sessions = await readAllSessionsFromStateFiles([
       { name: 'parent', path: parent },
       { name: 'child', path: child },
     ])

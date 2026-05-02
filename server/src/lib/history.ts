@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'fs'
+import { readdir, readFile, stat, open } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import { encodeProjectPath, getCodexDb } from './session-summary'
@@ -72,61 +72,58 @@ const TAIL_BYTES = 8192
 
 /** Read Claude session history from JSONL files + optional sessions-index.json.
  *  Optimized: reads only head (summary) + tail (title) of each file. */
-export function getClaudeHistory(projectPath: string): HistorySession[] {
+export async function getClaudeHistory(projectPath: string): Promise<HistorySession[]> {
   const encoded = encodeProjectPath(projectPath)
   const projectDir = join(homedir(), '.claude', 'projects', encoded)
-  if (!existsSync(projectDir)) return []
 
   let jsonlFiles: string[]
   try {
-    jsonlFiles = readdirSync(projectDir).filter(f => f.endsWith('.jsonl'))
+    jsonlFiles = (await readdir(projectDir)).filter(f => f.endsWith('.jsonl'))
   } catch { return [] }
   if (jsonlFiles.length === 0) return []
 
-  const indexMap = loadClaudeIndex(projectDir)
-  const sessions: HistorySession[] = []
+  const indexMap = await loadClaudeIndex(projectDir)
 
-  const headBuf = Buffer.alloc(HEAD_BYTES)
-  const tailBuf = Buffer.alloc(TAIL_BYTES)
-
-  for (const file of jsonlFiles) {
+  const sessions = await Promise.all(jsonlFiles.map(async (file): Promise<HistorySession | null> => {
     const sessionId = file.replace(/\.jsonl$/, '')
     const indexEntry = indexMap.get(sessionId)
-    if (indexEntry?.isSidechain) continue
+    if (indexEntry?.isSidechain) return null
 
     const filePath = join(projectDir, file)
     let created: string
     let modified: string
     let size: number
     try {
-      const stat = statSync(filePath)
-      created = (stat.birthtime ?? stat.ctime).toISOString()
-      modified = stat.mtime.toISOString()
-      size = stat.size
-    } catch { continue }
+      const st = await stat(filePath)
+      created = (st.birthtime ?? st.ctime).toISOString()
+      modified = st.mtime.toISOString()
+      size = st.size
+    } catch { return null }
 
-    // Read head (first user message) and tail (last custom-title) in two reads
     let title: string | null = null
     let summary: string | null = null
     try {
-      const fd = openSync(filePath, 'r')
-      const headRead = readSync(fd, headBuf, 0, Math.min(HEAD_BYTES, size), 0)
-      const head = headBuf.toString('utf-8', 0, headRead)
-      summary = parseFirstUserMessage(head)
+      const fh = await open(filePath, 'r')
+      try {
+        const headBuf = Buffer.alloc(HEAD_BYTES)
+        const headRes = await fh.read(headBuf, 0, Math.min(HEAD_BYTES, size), 0)
+        const head = headBuf.toString('utf-8', 0, headRes.bytesRead)
+        summary = parseFirstUserMessage(head)
 
-      // Read tail for custom-title (last-wins)
-      if (size > TAIL_BYTES) {
-        const tailRead = readSync(fd, tailBuf, 0, TAIL_BYTES, size - TAIL_BYTES)
-        title = parseLastTitle(tailBuf.toString('utf-8', 0, tailRead))
+        if (size > TAIL_BYTES) {
+          const tailBuf = Buffer.alloc(TAIL_BYTES)
+          const tailRes = await fh.read(tailBuf, 0, TAIL_BYTES, size - TAIL_BYTES)
+          title = parseLastTitle(tailBuf.toString('utf-8', 0, tailRes.bytesRead))
+        }
+        if (!title) title = parseLastTitle(head)
+      } finally {
+        await fh.close()
       }
-      // For small files, head already has everything
-      if (!title) title = parseLastTitle(head)
-      closeSync(fd)
     } catch { /* skip unreadable files */ }
 
-    sessions.push({
+    return {
       id: sessionId,
-      provider: 'claude',
+      provider: 'claude' as const,
       title,
       summary: indexEntry?.summary || summary || '(no prompt)',
       created: indexEntry?.created || created,
@@ -134,10 +131,10 @@ export function getClaudeHistory(projectPath: string): HistorySession[] {
       messageCount: indexEntry?.messageCount ?? null,
       gitBranch: indexEntry?.gitBranch ?? null,
       liveSessionName: null,
-    })
-  }
+    }
+  }))
 
-  return sessions
+  return sessions.filter((s): s is HistorySession => s !== null)
 }
 
 /** Parse the last custom-title from a chunk of JSONL text. */
@@ -177,13 +174,16 @@ function parseFirstUserMessage(head: string): string | null {
 }
 
 /** Load sessions-index.json as optional enrichment. */
-function loadClaudeIndex(projectDir: string): Map<string, ClaudeIndexEntry> {
+async function loadClaudeIndex(projectDir: string): Promise<Map<string, ClaudeIndexEntry>> {
   const map = new Map<string, ClaudeIndexEntry>()
   const indexPath = join(projectDir, 'sessions-index.json')
-  if (!existsSync(indexPath)) return map
+
+  let raw: string
+  try {
+    raw = await readFile(indexPath, 'utf-8')
+  } catch { return map }
 
   try {
-    const raw = readFileSync(indexPath, 'utf-8')
     const data = JSON.parse(raw)
     // Real format: { version, entries: [...] } — but also accept raw array
     const entries = Array.isArray(data) ? data : Array.isArray(data?.entries) ? data.entries : []
@@ -198,7 +198,7 @@ function loadClaudeIndex(projectDir: string): Map<string, ClaudeIndexEntry> {
 // -- Codex history --
 
 /** Read Codex session history from SQLite + session_index.jsonl. */
-export function getCodexHistory(projectPath: string): HistorySession[] {
+export async function getCodexHistory(projectPath: string): Promise<HistorySession[]> {
   projectPath = projectPath.replace(/\/+$/, '')
   const db = getCodexDb()
   if (!db) return []
@@ -226,7 +226,7 @@ export function getCodexHistory(projectPath: string): HistorySession[] {
   if (rows.length === 0) return []
 
   // Load thread_name map from session_index.jsonl (last entry per id wins)
-  const threadNameMap = loadCodexThreadNames()
+  const threadNameMap = await loadCodexThreadNames()
 
   return rows.map(row => ({
     id: row.id,
@@ -242,23 +242,24 @@ export function getCodexHistory(projectPath: string): HistorySession[] {
 }
 
 /** Load ~/.codex/session_index.jsonl — last entry per id wins (append-only with renames). */
-function loadCodexThreadNames(): Map<string, string> {
+async function loadCodexThreadNames(): Promise<Map<string, string>> {
   const map = new Map<string, string>()
   const indexPath = join(homedir(), '.codex', 'session_index.jsonl')
-  if (!existsSync(indexPath)) return map
 
+  let content: string
   try {
-    const content = readFileSync(indexPath, 'utf-8')
-    for (const line of content.split('\n')) {
-      if (!line) continue
-      try {
-        const entry = JSON.parse(line)
-        if (entry.id && entry.thread_name) {
-          map.set(entry.id, entry.thread_name)
-        }
-      } catch { continue }
-    }
-  } catch { /* file may not exist or be corrupt */ }
+    content = await readFile(indexPath, 'utf-8')
+  } catch { return map }
+
+  for (const line of content.split('\n')) {
+    if (!line) continue
+    try {
+      const entry = JSON.parse(line)
+      if (entry.id && entry.thread_name) {
+        map.set(entry.id, entry.thread_name)
+      }
+    } catch { continue }
+  }
 
   return map
 }
@@ -274,12 +275,14 @@ function epochToISO(epoch: number): string {
 
 /** Get merged history from Claude + Codex, sorted by modified DESC, capped at 200.
  *  Tags live sessions via sessionId comparison against liveSessions. */
-export function getHistory(
+export async function getHistory(
   projectPath: string,
   liveSessions: MultmuxSession[],
-): HistorySession[] {
-  const claude = getClaudeHistory(projectPath)
-  const codex = getCodexHistory(projectPath)
+): Promise<HistorySession[]> {
+  const [claude, codex] = await Promise.all([
+    getClaudeHistory(projectPath),
+    getCodexHistory(projectPath),
+  ])
   const all = [...claude, ...codex]
 
   // Sort by modified DESC
