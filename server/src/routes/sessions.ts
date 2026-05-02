@@ -10,10 +10,11 @@ import { isPathDescendantOrEqual } from '../lib/multmux'
 
 const app = new Hono()
 
-app.get('/', async (c) => {
-  const projectName = c.req.query('project')
-  const shellSessions = listShellSessions()
+/** Coalesce concurrent identical /api/sessions requests, keyed by project (or '' for all). */
+const sessionsInflight = new Map<string, Promise<unknown[]>>()
 
+async function buildSessionsResponse(projectName: string | null): Promise<unknown[]> {
+  const shellSessions = listShellSessions()
   const projects = await loadProjects()
 
   // Read state files (always fresh — picks up new sessions immediately).
@@ -38,7 +39,19 @@ app.get('/', async (c) => {
     ? shellSessions.filter(s => s.project === projectName)
     : shellSessions
 
-  return c.json([...enriched, ...filteredShell.map(s => ({ ...s, summary: '' }))])
+  return [...enriched, ...filteredShell.map(s => ({ ...s, summary: '' }))]
+}
+
+app.get('/', async (c) => {
+  const projectName = c.req.query('project') ?? null
+  const key = projectName ?? ''
+  let pending = sessionsInflight.get(key)
+  if (!pending) {
+    pending = buildSessionsResponse(projectName)
+      .finally(() => sessionsInflight.delete(key))
+    sessionsInflight.set(key, pending)
+  }
+  return c.json(await pending)
 })
 
 app.post('/start', async (c) => {

@@ -59,23 +59,39 @@ function parseJsonBody(raw: unknown): Record<string, unknown> | null {
 
 const app = new Hono<ProjectEnv>()
 
-// GET /:project — Read tasks
-app.get('/:project', withProject, async (c) => {
-  const proj = c.var.project
-  const tasksPath = join(proj.path, TASKS_FILE)
-  if (!existsSync(tasksPath)) return fail(c, 404, 'tasks.json not found')
+interface TasksResponse { tasks: Record<string, Record<string, unknown>> }
+
+/** Coalesce concurrent identical GET /:project requests by project name. */
+const tasksInflight = new Map<string, Promise<TasksResponse | { __notfound: true }>>()
+
+async function buildTasksResponse(projectPath: string): Promise<TasksResponse | { __notfound: true }> {
+  const tasksPath = join(projectPath, TASKS_FILE)
+  if (!existsSync(tasksPath)) return { __notfound: true }
   const raw = await readFile(tasksPath, 'utf-8')
   const tasks = JSON.parse(raw) as Record<string, Record<string, unknown>>
 
-  const statuses = await getWorktreeStatuses(proj.path, tasks as Record<string, { worktree?: string }>)
+  const statuses = await getWorktreeStatuses(projectPath, tasks as Record<string, { worktree?: string }>)
   for (const task of Object.values(tasks)) {
     const slug = task.worktree as string | undefined
     if (slug && statuses.has(slug)) {
       task.worktreeStatus = statuses.get(slug)
     }
   }
+  return { tasks }
+}
 
-  return c.json({ tasks })
+// GET /:project — Read tasks
+app.get('/:project', withProject, async (c) => {
+  const proj = c.var.project
+  let pending = tasksInflight.get(proj.name)
+  if (!pending) {
+    pending = buildTasksResponse(proj.path)
+      .finally(() => tasksInflight.delete(proj.name))
+    tasksInflight.set(proj.name, pending)
+  }
+  const result = await pending
+  if ('__notfound' in result) return fail(c, 404, 'tasks.json not found')
+  return c.json(result)
 })
 
 // PATCH /:project/:taskId — Update task (partial)
