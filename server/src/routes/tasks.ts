@@ -61,8 +61,13 @@ const app = new Hono<ProjectEnv>()
 
 interface TasksResponse { tasks: Record<string, Record<string, unknown>> }
 
-/** Coalesce concurrent identical GET /:project requests by project name. */
+/** Coalesce concurrent identical GET /:project requests by effective project path
+ *  (so worktree variants don't share the main repo's promise). */
 const tasksInflight = new Map<string, Promise<TasksResponse | { __notfound: true }>>()
+
+function invalidateTasksCache(projectPath: string): void {
+  tasksInflight.delete(projectPath)
+}
 
 async function buildTasksResponse(projectPath: string): Promise<TasksResponse | { __notfound: true }> {
   const tasksPath = join(projectPath, TASKS_FILE)
@@ -83,11 +88,12 @@ async function buildTasksResponse(projectPath: string): Promise<TasksResponse | 
 // GET /:project — Read tasks
 app.get('/:project', withProject, async (c) => {
   const proj = c.var.project
-  let pending = tasksInflight.get(proj.name)
+  const key = proj.path
+  let pending = tasksInflight.get(key)
   if (!pending) {
     pending = buildTasksResponse(proj.path)
-      .finally(() => tasksInflight.delete(proj.name))
-    tasksInflight.set(proj.name, pending)
+      .finally(() => tasksInflight.delete(key))
+    tasksInflight.set(key, pending)
   }
   const result = await pending
   if ('__notfound' in result) return fail(c, 404, 'tasks.json not found')
@@ -116,6 +122,7 @@ app.patch('/:project/:taskId', withProject, async (c) => {
   // Read back updated task
   const file = await readFile(join(proj.path, TASKS_FILE), 'utf-8')
   const tasks = JSON.parse(file)
+  invalidateTasksCache(proj.path)
   emitRefresh('filetree')
   return c.json(tasks[taskId] ?? {})
 })
@@ -145,6 +152,7 @@ app.put('/:project/:taskId', withProject, async (c) => {
 
   const file = await readFile(join(proj.path, TASKS_FILE), 'utf-8')
   const tasks = JSON.parse(file)
+  invalidateTasksCache(proj.path)
   emitRefresh('filetree')
   return c.json(tasks[taskId] ?? {})
 })
@@ -163,6 +171,7 @@ app.delete('/:project/:taskId', withProject, async (c) => {
     return handleScriptError(c, e)
   }
 
+  invalidateTasksCache(proj.path)
   emitRefresh('filetree')
   return c.json({ deleted: true })
 })
@@ -209,6 +218,7 @@ app.post('/:project/:taskId/archive', withProject, async (c) => {
     return handleScriptError(c, e)
   }
 
+  invalidateTasksCache(proj.path)
   emitRefresh('filetree')
   return c.json({ archived: true })
 })
@@ -243,6 +253,7 @@ app.post('/:project/bulk', withProject, async (c) => {
     }
   }
 
+  invalidateTasksCache(proj.path)
   emitRefresh('filetree')
   return c.json({ updated })
 })

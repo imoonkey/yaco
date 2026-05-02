@@ -19,8 +19,10 @@ function git(cwd: string, args: string[]): Promise<GitOutput> {
       timeout: GIT_COMMAND_TIMEOUT_MS,
       maxBuffer: 32 * 1024 * 1024,
     }, (err, stdout) => {
-      if (err) resolve({ stdout: '', ok: false })
-      else resolve({ stdout: stdout as unknown as string, ok: true })
+      // Always return whatever stdout was captured. Some commands (e.g.
+      // `git diff --no-index`) exit with code 1 to signal "differences
+      // found" — that is success, not failure, and stdout is the diff.
+      resolve({ stdout: (stdout as unknown as string) ?? '', ok: !err })
     })
   })
 }
@@ -52,7 +54,7 @@ interface RefsResult {
   recentCommits: { hash: string; subject: string; date: string; author: string }[]
 }
 
-/** Coalesce concurrent identical /:project/status requests */
+/** Coalesce concurrent identical /:project/status requests, keyed by effective project path. */
 const statusInflight = new Map<string, Promise<{ changes: GitChange[]; stale: boolean; stats?: { added: number; deleted: number } }>>()
 
 const app = new Hono<ProjectEnv>()
@@ -116,11 +118,13 @@ async function resolveStatus(projectName: string, projectPath: string) {
 // GET /:project/status — git status for a project
 app.get('/:project/status', withProject, async (c) => {
   const proj = c.var.project
-  let pending = statusInflight.get(proj.name)
+  // Key by effective path so worktree variants don't share the main repo's promise
+  const key = proj.path
+  let pending = statusInflight.get(key)
   if (!pending) {
     pending = resolveStatus(proj.name, proj.path)
-      .finally(() => statusInflight.delete(proj.name))
-    statusInflight.set(proj.name, pending)
+      .finally(() => statusInflight.delete(key))
+    statusInflight.set(key, pending)
   }
   return c.json(await pending)
 })

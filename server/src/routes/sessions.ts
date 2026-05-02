@@ -13,6 +13,12 @@ const app = new Hono()
 /** Coalesce concurrent identical /api/sessions requests, keyed by project (or '' for all). */
 const sessionsInflight = new Map<string, Promise<unknown[]>>()
 
+/** Drop any in-flight cached responses so the next GET reads fresh state.
+ *  Sessions GET aggregates across all projects, so any mutation invalidates everything. */
+function invalidateSessionsCache(): void {
+  sessionsInflight.clear()
+}
+
 async function buildSessionsResponse(projectName: string | null): Promise<unknown[]> {
   const shellSessions = listShellSessions()
   const projects = await loadProjects()
@@ -77,6 +83,7 @@ app.post('/start', async (c) => {
 
     if (provider === 'shell') {
       const shellName = startShellSession(cwd, project, name)
+      invalidateSessionsCache()
       return c.json({ name: shellName })
     }
 
@@ -90,6 +97,7 @@ app.post('/start', async (c) => {
     }
 
     const { handle } = await startMultmuxSession(provider, name, cwd, prompt, resumeId)
+    invalidateSessionsCache()
     return c.json({ name: handle })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -135,6 +143,7 @@ app.post('/:handle/rename', async (c) => {
   if (!name) return c.json({ error: 'name required' }, 400)
   try {
     await renameMultmuxSession(handle, name)
+    invalidateSessionsCache()
     return c.json({ name })
   } catch (e) {
     return c.json({ error: String(e) }, 500)
@@ -145,10 +154,12 @@ app.post('/:handle/close', async (c) => {
   const handle = c.req.param('handle')
   try {
     if (closeShellSession(handle)) {
+      invalidateSessionsCache()
       return c.json({})
     }
 
     await closeMultmuxSession(handle)
+    invalidateSessionsCache()
     return c.json({})
   } catch {
     return c.json({ error: 'failed to close session' }, 500)

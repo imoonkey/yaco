@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Track calls and return configurable output per git command
 let spawnResults: Map<string, string>
+/** Per-command exit codes — non-zero means err is set, but stdout is still returned. */
+let spawnExitCodes: Map<string, number>
 const mockExecFile = vi.fn(
   (_cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
     let key = 'unknown'
@@ -11,7 +13,9 @@ const mockExecFile = vi.fn(
     else if (args[0] === 'diff' && args.includes('--shortstat')) key = 'shortstat'
     else if (args[0] === 'diff' && args[1] === 'HEAD') key = 'head'
 
-    cb(null, spawnResults.get(key) ?? '', '')
+    const code = spawnExitCodes.get(key) ?? 0
+    const err = code === 0 ? null : Object.assign(new Error(`exit ${code}`), { code })
+    cb(err, spawnResults.get(key) ?? '', '')
   },
 )
 
@@ -36,6 +40,7 @@ describe('GET /:project/diff — 3-step fallback', () => {
   beforeEach(() => {
     testProjectPath = '/tmp/fake-repo'
     spawnResults = new Map()
+    spawnExitCodes = new Map()
     mockExecFile.mockClear()
   })
 
@@ -92,12 +97,27 @@ describe('GET /:project/diff — 3-step fallback', () => {
     const json = await res.json() as { diff: string }
     expect(json.diff).toBe('')
   })
+
+  // Regression: `git diff --no-index` exits 1 when it produced a diff —
+  // the wrapper must still return stdout, not treat exit≠0 as failure.
+  it('returns untracked diff even though git --no-index exits 1', async () => {
+    spawnResults.set('head', '')
+    spawnResults.set('cached', '')
+    spawnResults.set('no-index', 'diff --git /dev/null b/new.ts\n+content\n')
+    spawnExitCodes.set('no-index', 1)
+
+    const res = await diffRequest('new.ts')
+    expect(res.status).toBe(200)
+    const json = await res.json() as { diff: string }
+    expect(json.diff).toContain('+content')
+  })
 })
 
 describe('GET /:project/status — null-terminated parsing', () => {
   beforeEach(() => {
     testProjectPath = '/tmp/fake-repo'
     spawnResults = new Map()
+    spawnExitCodes = new Map()
     mockExecFile.mockClear()
   })
 
