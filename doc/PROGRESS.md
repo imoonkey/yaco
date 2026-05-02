@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-05-01: Unblock event loop in server hot paths
+
+**What changed:**
+- `routes/git.ts`: replaced `spawnSync` with async `execFile` across all 8 git endpoints. `/status` now runs `git status` + `diff --shortstat` in parallel; `/refs` runs `branch` + `tag` + `log` in parallel. Concurrent `/status` requests share one in-flight subprocess via per-project Map.
+- `lib/worktree.ts`: `getWorktreeStatuses` calls `git worktree list` once per project instead of once per slug, sharing the registered set.
+- `lib/multmux.ts`, `session-summary.ts`, `history.ts`, `project-watcher.ts`: hot-path sync FS calls (`readFileSync`/`readdirSync`/`statSync`/`openSync`) → `fs/promises`. `resolveSessionSummaries` resolves Claude+Codex summaries in parallel.
+- `lib/session-names.ts`: deleted dead `resolveTmuxSession` (unused `execSync('tmux …')`).
+
+**Why:**
+- Task tab loaded slowly on the desktop because every git endpoint blocked Node's event loop with `spawnSync`. Under desktop load (15+ agents, 2 emulators, gradle daemons), each subprocess fork took 30–100ms and serialized all concurrent requests. The laptop felt fast because lower system contention masks the same blocking; the underlying code was buggy on both.
+
+**Key files:** `server/src/routes/git.ts`, `server/src/lib/worktree.ts`, `server/src/lib/multmux.ts`, `server/src/lib/session-summary.ts`, `server/src/lib/history.ts`, `server/src/lib/project-watcher.ts`, `server/src/lib/session-names.ts`, `server/src/routes/sessions.ts`
+**Verification:** `npm test` 190/190 pass; `tsc --noEmit` clean for changed files. Live perf: 5 concurrent `/api/git/.../status` go from serialized 5×100ms to shared 1×154ms; `/api/projects` no longer blocks behind a running git status.
+**Commit:** fb6e5ee
+**Next:** None
+**Blockers:** None
+
 ## 2026-04-24: Fix mobile viewport jump on session rename
 
 **What changed:**
