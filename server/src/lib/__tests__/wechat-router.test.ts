@@ -161,8 +161,8 @@ describe('dispatch', () => {
         })),
       }
     })
-    vi.doMock('../wechat/pty-tap', async (orig) => {
-      const actual = await orig<typeof import('../wechat/pty-tap')>()
+    vi.doMock('../channels/pty-tap', async (orig) => {
+      const actual = await orig<typeof import('../channels/pty-tap')>()
       return {
         ...actual,
         acquireTap: vi.fn(async () => undefined),
@@ -173,7 +173,7 @@ describe('dispatch', () => {
 
     const { dispatch: scopedDispatch, _resetRouterState: scopedReset } = await import('../wechat/router')
     const { startMultmuxSession } = await import('../multmux')
-    const { acquireTap } = await import('../wechat/pty-tap')
+    const { acquireTap } = await import('../channels/pty-tap')
     const { getBinding } = await import('../wechat/state')
 
     scopedReset()
@@ -187,7 +187,7 @@ describe('dispatch', () => {
     expect(binding).toEqual(expect.objectContaining({ project: 'alpha', session: 'mysess' }))
 
     vi.doUnmock('../multmux')
-    vi.doUnmock('../wechat/pty-tap')
+    vi.doUnmock('../channels/pty-tap')
   })
 
   it('unknown command returns hint', async () => {

@@ -1,7 +1,7 @@
 import { isLoggedIn, start, type Bot } from 'weixin-agent-sdk'
 import { wechatAgent } from './agent'
 import { getAuthSnapshot } from './auth'
-import { sweepStaleTaps, shutdownAllTaps } from './pty-tap'
+import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 
 let bot: Bot | null = null
 let abortController: AbortController | null = null

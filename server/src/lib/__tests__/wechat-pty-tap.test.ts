@@ -15,7 +15,7 @@ import {
   hasTap,
   shutdownAllTaps,
   sweepStaleTaps,
-} from '../wechat/pty-tap'
+} from '../channels/pty-tap'
 
 describe('stripAnsi', () => {
   it('removes CSI sequences', () => {

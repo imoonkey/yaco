@@ -1,9 +1,9 @@
 import type { Agent, ChatRequest, ChatResponse } from 'weixin-agent-sdk'
 import { authorize } from './auth'
-import { dispatch, parseCommand, passthroughText } from './router'
+import { wechatRouter } from './router'
 
-/** Per-conversation FIFO queue — SDK fires chat() concurrently but our session
- *  is single-threaded. Serialize per conversationId. */
+// Per-conversation FIFO queue — SDK fires chat() concurrently but our session
+// is single-threaded. Serialize per conversationId.
 const queues = new Map<string, Promise<unknown>>()
 
 function serialize<T>(conversationId: string, fn: () => Promise<T>): Promise<T> {
@@ -11,8 +11,6 @@ function serialize<T>(conversationId: string, fn: () => Promise<T>): Promise<T> 
   const next = prev.then(fn, fn)
   const tail = next.catch(() => undefined)
   queues.set(conversationId, tail)
-  // Drop the queue entry once this task settles, but only if it's still ours
-  // (newer enqueues replace tail and must not be deleted).
   void tail.then(() => {
     if (queues.get(conversationId) === tail) queues.delete(conversationId)
   })
@@ -26,13 +24,7 @@ async function handle(request: ChatRequest): Promise<ChatResponse> {
 
   if (media) return { text: '暂不支持 media 消息' }
 
-  const command = parseCommand(text ?? '')
-  if (command) {
-    const reply = await dispatch({ conversationId }, command)
-    return { text: reply }
-  }
-
-  const reply = await passthroughText({ conversationId }, text ?? '')
+  const reply = await wechatRouter.handleMessage({ conversationId }, text ?? '')
   return { text: reply }
 }
 
