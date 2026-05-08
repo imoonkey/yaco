@@ -21,12 +21,14 @@ import { searchRoutes } from './routes/search.js'
 import { autocompleteRoutes } from './routes/autocomplete.js'
 import { taskRoutes } from './routes/tasks.js'
 import { wechatRoutes } from './routes/wechat.js'
+import { whatsappRoutes } from './routes/whatsapp.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
 import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
+import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
 import { attachSession, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
@@ -170,6 +172,7 @@ app.route('/api/search', searchRoutes)
 app.route('/api/autocomplete', autocompleteRoutes)
 app.route('/api/tasks', taskRoutes)
 app.route('/api/wechat', wechatRoutes)
+app.route('/api/whatsapp', whatsappRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('*', async (c) => serveUiApp(c.req.path))
@@ -186,6 +189,13 @@ setShellSessionChangeCallback(() => emitRefresh('sessions'))
 
 if (process.env.WECHAT_ENABLED === '1') {
   await initWeChat()
+}
+
+if (process.env.WHATSAPP_ENABLED === '1') {
+  // Don't await — WhatsApp init can take 10-30s while puppeteer launches Chrome
+  // and the LocalAuth session reconnects. Fire-and-forget so the HTTP server
+  // becomes available immediately; status route reports progress.
+  void initWhatsApp()
 }
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
@@ -371,6 +381,7 @@ function cleanupTerminalResources(): void {
   clearInterval(pingInterval)
   clearInterval(sweepInterval)
   shutdownWeChat()
+  void shutdownWhatsApp()
   for (const ws of [...connections.keys()]) {
     cleanupConnection(ws)
     ws.terminate()
