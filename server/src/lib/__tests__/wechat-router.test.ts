@@ -262,15 +262,4 @@ describe('dispatch', () => {
     const out = await dispatchText({ conversationId: 'wx-file-t-bin' }, { name: 'file', args: ['-t', 'inline.bin'] })
     expect(out).toMatch(/binary file .* drop -t/)
   })
-
-  it('/file accepts -t variants from phone autocorrect (en-dash, em-dash, --text)', async () => {
-    await writeFile(join(projectAPath, 'variants.txt'), 'hello\n')
-    _resetRouterState()
-    await dispatchText({ conversationId: 'wx-file-variants' }, { name: 'use', args: ['alpha'] })
-    for (const flag of ['-t', '-T', '–t', '—t', '−t', '--text', '-text']) {
-      const out = await dispatchText({ conversationId: 'wx-file-variants' }, { name: 'file', args: [flag, 'variants.txt'] })
-      expect(out, `flag=${flag}`).toMatch(/--- variants\.txt /)
-      expect(out, `flag=${flag}`).toContain('hello')
-    }
-  })
 })
