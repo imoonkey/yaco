@@ -206,3 +206,15 @@ Env-gated by `WECHAT_ENABLED=1` and `WECHAT_CONVERSATION_WHITELIST` (optional, c
 | POST | `/api/wechat/login` | Starts SDK QR-code login in the background (idempotent — concurrent calls reuse the in-flight flow). Returns the current `LoginState`. 400 when `WECHAT_ENABLED!=1`. |
 | POST | `/api/wechat/login/reset` | Resets the login state to `idle` (no-op if a login is in flight). |
 | POST | `/api/wechat/logout` | Shuts the bot down + calls SDK logout(). 409 if a login flow is active. |
+
+### WhatsApp
+
+Env-gated by `WHATSAPP_ENABLED=1`. Optional: `WHATSAPP_CHAT_JID` (lock to a single chat, overrides TOFU) and `WHATSAPP_CONVERSATION_WHITELIST` (comma-separated alternative).
+
+The bot uses the user's own WhatsApp account via puppeteer-driven WhatsApp Web (no separate bot identity exists in WhatsApp). To prevent auto-replying to all the user's contacts, the listener filters `message_create` events down to **self-chat only** — TOFU binds the first chat the user types in (typically "Message yourself"); other chats are silently dropped.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/whatsapp/status` | Returns `{ enabled, initialized, loggedIn, auth, login: { phase, qrAscii?, error?, boundChat?, ready, … } }`. Phase ∈ `idle`, `awaiting-qr`, `authenticating`, `ready`, `failed`, `disconnected`. |
+| POST | `/api/whatsapp/login` | Idempotent init; first call spawns the puppeteer client (`LocalAuth` persists session to `~/.workflow/whatsapp-session/`, so subsequent boots skip QR). 400 when `WHATSAPP_ENABLED!=1`. |
+| POST | `/api/whatsapp/logout` | Destroys the client + wipes the saved session dir + resets state. |

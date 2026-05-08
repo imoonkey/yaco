@@ -242,14 +242,30 @@ Multi-model LLM formatter with fallback chain via `openai` SDK.
 - Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
 - 5s timeout per model attempt
 
+### channels/ (shared messaging-channel infrastructure)
+
+Channel-agnostic core that powers both `wechat/` and `whatsapp/`. Each per-channel module instantiates these factories with its own scope name; storage paths and env keys are namespaced so channels don't collide.
+
+- **`channels/state.ts`** — `createBindingStore(scope)` → per-channel binding store backed by `~/.workflow/<scope>-state.json`. Module-private cache, serialized writes (avoids `writeFile` races).
+- **`channels/auth.ts`** — `createAuthStore(scope, envKey)` → fused whitelist + TOFU resolution backed by `~/.workflow/<scope>-auth.json`. `authorize()` is atomic (concurrent first-message callers can't both bind). `ensureLoaded()` eager-loads the persisted TOFU binding for boot-time status reporting.
+- **`channels/router.ts`** — `createRouter(store)` → command parser (`/help` `/who` `/projects` `/sessions` `/use <project>` `/use s <n>` `/new <claude|codex> [name]` `/exit` `/last`) + plain-text passthrough. Each channel gets its own router instance with its own per-conversation `currentProject` map. `handleMessage(ctx, text)` is the single entry point channels call.
+- **`channels/pty-tap.ts`** — per-handle tap on `tmux pipe-pane -O -t <handle> 'cat > FIFO'`. A spawned `cat` reader process streams the FIFO contents into a 1MB ring buffer (oldest-byte-evict). `acquireTap`/`releaseTap` ref-count. `recordOffset` + `sliceFromOffset` + `tailSlice` + `waitForQuiet` for the legacy tap-based capture path. Used as a fallback by the router when the agent JSONL log isn't available; primary use today is the `/last` command.
+- **`channels/agent-output.ts`** — primary reply-extraction path. `resolveSessionLog(session)` maps a multmux session to its structured JSONL log: claude → `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`; codex → `~/.codex/sessions/YYYY/MM/DD/rollout-...-<sessionId>.jsonl`. `startTurn(session)` records the file's current size before send. `awaitFinalReply(turn, timeoutMs)` polls the file from that offset, parses new JSONL lines, and extracts the agent's final answer text — claude via `assistant` entries with `message.stop_reason='end_turn'`, codex via `event_msg/agent_message` with `phase='final_answer'`. Returns ZERO TUI noise (no input echo, no TUI chrome, no tool-call rendering) because we read structured data, not the PTY byte stream.
+
 ### wechat/ (env-gated by `WECHAT_ENABLED=1`)
 
-Bridges WeChat to multmux agent sessions via `weixin-agent-sdk`. When `WECHAT_ENABLED` is unset, no SDK boot, no behavior change.
+Bridges WeChat to multmux agent sessions via `weixin-agent-sdk`. When `WECHAT_ENABLED` is unset, no SDK boot, no behavior change. Most logic lives in `channels/`; this directory is the SDK adapter + login flow.
 
 - **`wechat/index.ts`** — `initWeChat()` boots the bot if a WeChat account is logged in. `sweepStaleTaps()` reaps orphan FIFOs from prior crashes. `shutdownWeChat()` aborts the bot + drops all taps.
-- **`wechat/agent.ts`** — implements the SDK `Agent` interface. Per-conversation FIFO queue serializes inbound messages (SDK can fire `chat()` concurrently; the bound multmux session is single-threaded). Routes commands to `router.ts`; routes plain text to `passthroughText`.
-- **`wechat/router.ts`** — command parser + handlers: `/help` `/who` `/projects` `/sessions` `/use <project>` `/use s <n>` `/new <claude\|codex> [name]` `/exit` `/last`. Plain text goes through `passthroughText` (acquireTap → recordOffset → `multmux send` → waitForQuiet → sliceFromOffset → ANSI strip).
-- **`wechat/state.ts`** — read/write per-conversation bindings to `~/.workflow/wechat-state.json`. Module-level cache; writes serialized through a chain to avoid concurrent `writeFile` races.
-- **`wechat/auth.ts`** — fused whitelist + TOFU resolution. `WECHAT_CONVERSATION_WHITELIST` env (comma-separated) takes precedence; otherwise the first conversation seen TOFU-binds to `~/.workflow/wechat-auth.json`. `authorize()` is atomic — concurrent first-message callers can't both bind.
-- **`wechat/pty-tap.ts`** — per-handle tap on `tmux pipe-pane -O -t <handle> 'cat > FIFO'`. A spawned `cat` reader process streams the FIFO contents into a 1MB ring buffer (oldest-byte-evict). `acquireTap`/`releaseTap` ref-count. `recordOffset` + `sliceFromOffset` give the precise reply bytes for a given turn. `waitForQuiet` polls for "no new bytes for 1.5s" with a 60s ceiling.
+- **`wechat/agent.ts`** — implements the SDK `Agent` interface. Per-conversation FIFO queue serializes inbound messages (SDK can fire `chat()` concurrently; the bound multmux session is single-threaded). Calls `wechatRouter.handleMessage` for every authorized inbound text.
+- **`wechat/state.ts`** / **`wechat/auth.ts`** / **`wechat/router.ts`** — thin adapters over the `channels/` factories with scope='wechat' (env keys: `WECHAT_CONVERSATION_WHITELIST`).
 - **`wechat/login-flow.ts`** — manages the SDK's `login()` flow. Monkey-patches `console.log` for the duration of the SDK call to capture the QR ASCII (qrcode-terminal output is sent via `console.log` directly, not the user-supplied log callback). Exposes `LoginState { phase, qrAscii?, accountId?, error? }` to the route. Login flow is single-flight via a synchronously-claimed `inflight` slot.
+
+### whatsapp/ (env-gated by `WHATSAPP_ENABLED=1`)
+
+Bridges WhatsApp to multmux agent sessions via `whatsapp-web.js` (puppeteer-driven WhatsApp Web client with `LocalAuth` session persistence). When `WHATSAPP_ENABLED` is unset, no client boot, no behavior change.
+
+Architectural difference from WeChat: the bot has no separate identity — it IS the user's WhatsApp account. To prevent the bot from auto-replying to all the user's contacts, the listener filters the `message_create` event stream down to **self-chat only** (the user's "Message yourself" chat). The first chat the user types in is TOFU-bound and persisted; subsequent messages from any other chat are silently dropped. `WHATSAPP_CHAT_JID` env is an explicit override.
+
+- **`whatsapp/index.ts`** — `initWhatsApp()` spawns a puppeteer-driven WhatsApp Web Client with `LocalAuth({ dataPath: ~/.workflow/whatsapp-session })` so subsequent boots auto-reconnect without rescanning. `client.on('qr')` captures the raw QR string and renders to ASCII via `qrcode-terminal`. `client.on('message_create')` filters to `msg.fromMe`, dedups bot replies via body-content match (mark-BEFORE-await: marker is set before `msg.reply()` to avoid the message_create-fires-before-reply-resolves race), then forwards through the shared router. Per-conversation FIFO queue serializes inbound.
+- **`whatsapp/state.ts`** / **`whatsapp/auth.ts`** — thin adapters over the `channels/` factories with scope='whatsapp' (env keys: `WHATSAPP_CONVERSATION_WHITELIST`). `auth.ts` re-exports `ensureAuthLoaded` so init can eager-load the TOFU binding for status display.

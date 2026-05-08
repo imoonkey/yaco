@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-05-08: WhatsApp channel + JSONL-based agent reply extraction
+
+**What changed:**
+- Refactored `server/src/lib/wechat/` so all channel-agnostic pieces live in `server/src/lib/channels/`: `createBindingStore(scope)`, `createAuthStore(scope, envKey)`, `createRouter(store)`, plus the existing `pty-tap.ts`. WeChat's modules became thin adapters over the factories. No behavior change for the WeChat path.
+- Added a parallel WhatsApp channel under `server/src/lib/whatsapp/` using `whatsapp-web.js` (puppeteer-driven WhatsApp Web client with `LocalAuth` session persistence). Env-gated by `WHATSAPP_ENABLED=1`.
+- New routes `GET /api/whatsapp/status`, `POST /api/whatsapp/login`, `POST /api/whatsapp/logout`. The same `WeChatLoginDialog` UI was generalized into an internal `ChannelLoginDialog` and re-exported as `WeChatHeaderButton` + `WhatsAppHeaderButton` — header shows whichever channels have `*_ENABLED=1`.
+- Replaced the tap-based passthrough with **JSONL-based agent-output extraction** (`channels/agent-output.ts`). On send, record the agent's session JSONL file size; after send, poll the file from that offset and extract the agent's final answer text — claude via `assistant` entries with `message.stop_reason='end_turn'`, codex via `event_msg/agent_message` with `phase='final_answer'`. Tap is kept as a fallback when the JSONL log can't be located, and as the source for the `/last` command.
+- WhatsApp self-chat enforcement: bot listens on `message_create` (not `message`) and only acts on `msg.fromMe`. Body-content dedup with mark-BEFORE-await prevents the message_create-fires-before-reply-resolves loop. TOFU-binds the first chat the user types in, persisted to `~/.workflow/whatsapp-auth.json`. Env override `WHATSAPP_CHAT_JID` available.
+- `.gitignore`: added `.wwebjs_cache/`, `.wwebjs_auth/`, `.playwright-mcp/`.
+
+**Why:**
+- WhatsApp is the practical channel for in-flight messaging on US carriers' free WiFi (WhatsApp is whitelisted; Telegram is not). Author's WeChat account is international (non-+86) and is rejected by Tencent's iLink Bot API. WhatsApp lets the same workflow get used from a phone with no separate bot account or paid relay.
+- Tap-based capture pulled the entire pane byte stream between send and idle; on Claude Code / Codex TUIs that means input-box borders, status bars, separator lines, the user's input echo, and tool-call rendering. Even after ANSI strip the result was unreadable. LLM post-processing was a band-aid on the wrong source. The agents already produce a structured JSONL turn log — read THAT and the result is exactly what the agent said, in the same language, with zero noise.
+- WhatsApp has no separate bot identity (bot = user's account). Self-chat enforcement is the only way to keep the bot from auto-replying to every contact who messages the user.
+
+**Key files:** `server/src/lib/channels/{state,auth,router,pty-tap,agent-output}.ts`, `server/src/lib/whatsapp/{index,state,auth}.ts`, `server/src/routes/whatsapp.ts`, `server/src/index.ts`, `ui/src/components/WeChatLoginDialog.tsx` (generalized), `ui/src/App.tsx`, `doc/main/backend/{routes,libs}.md`, `.gitignore`. Design ref `projects/active/wechat/design.md` (still the canonical channel architecture; the WhatsApp adapter follows the same shape).
+**Verification:** `npm test` 230/230. Manual: `WHATSAPP_ENABLED=1` server boots, dialog shows QR ASCII, scan via WhatsApp → Settings → Linked Devices succeeds, TOFU auto-restores binding from `~/.workflow/whatsapp-auth.json` on subsequent boots. Live test: WhatsApp self-chat → "Hi" forwards to bound `codex-backtest` → reply is exactly `Hi. What do you want to work on next?` (no TUI noise).
+**Commit:** c2c7386, 7bbae32, a7d23ab, 750fa7f, 0532973
+**Next:** Phase 5 (progressive push during long turns — flusher every 15s); revisit memory pointer for WhatsApp now that real-world usage is live.
+**Blockers:** None for V1. Note `whatsapp-web.js` uses puppeteer + Chromium — first install pulls ~200MB.
+
 ## 2026-05-08: WeChat integration (V1)
 
 **What changed:**
