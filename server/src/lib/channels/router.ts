@@ -254,9 +254,14 @@ export function createRouter(store: BindingStore) {
     return `started + bound to ${project.name}/${handle} [${provider}]`
   }
 
+  // Tolerate phone-keyboard autocorrect: -, –, —, − (any of these as the
+  // leading dash); -t, -T, --text. The smart-dash substitution on iOS/Android
+  // turns "-t" into "–t" silently and the user sees "not found: -t <path>".
+  const TEXT_FLAG_RE = /^(?:[-–—−]){1,2}t(?:ext)?$/i
+
   async function handleFile(ctx: CommandContext, args: string[]): Promise<ChannelReply> {
-    const asText = args.includes('-t')
-    const pathArgs = args.filter(a => a !== '-t')
+    const asText = args.some(a => TEXT_FLAG_RE.test(a))
+    const pathArgs = args.filter(a => !TEXT_FLAG_RE.test(a))
     if (pathArgs.length === 0) return textReply('用法: /file [-t] <relative-path>')
 
     const project = await resolveCurrentProject(ctx.conversationId)
