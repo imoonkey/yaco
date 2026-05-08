@@ -24,8 +24,9 @@ async function handle(request: ChatRequest): Promise<ChatResponse> {
 
   if (media) return { text: '暂不支持 media 消息' }
 
-  const reply = await wechatRouter.handleMessage({ conversationId }, text ?? '')
-  return { text: reply }
+  const chunks: string[] = []
+  await wechatRouter.handleMessage({ conversationId }, text ?? '', async (reply) => { chunks.push(reply) })
+  return { text: chunks.join('\n\n') }
 }
 
 export const wechatAgent: Agent = {

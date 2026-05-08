@@ -7,8 +7,11 @@ export const wechatRouter = createRouter(wechatStore)
 
 export const parseCommand = wechatRouter.parseCommand
 export const dispatch = wechatRouter.dispatch
-export const passthroughText = (ctx: { conversationId: string }, text: string) =>
-  wechatRouter.handleMessage(ctx, text)
+export const passthroughText = async (ctx: { conversationId: string }, text: string): Promise<string> => {
+  const chunks: string[] = []
+  await wechatRouter.handleMessage(ctx, text, async (reply) => { chunks.push(reply) })
+  return chunks.join('\n\n')
+}
 export const getCurrentProject = wechatRouter.getCurrentProject
 
 /** Test hook: clear in-memory router state */
