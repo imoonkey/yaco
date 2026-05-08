@@ -2,6 +2,7 @@ import { loadProjects, type Project } from '../projects'
 import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, type MultmuxSession } from '../multmux'
 import type { BindingStore } from './state'
 import { acquireTap, releaseTap, recordOffset, sliceFromOffset, tailSlice, waitForQuiet, hasTap } from './pty-tap'
+import { startTurn, awaitFinalReply } from './agent-output'
 
 export interface CommandContext {
   conversationId: string
@@ -210,35 +211,69 @@ export function createRouter(store: BindingStore) {
     return `started + bound to ${project.name}/${handle} [${provider}]`
   }
 
-  /** Forward plain text to the bound session, capture the response via tap. */
+  /** Forward plain text to the bound session and return the agent's final
+   *  answer. Reads the agent's structured JSONL session log to extract just
+   *  the answer text — no TUI chrome, no tool noise, no input echo.
+   *
+   *  Falls back to the tap-buffer slice if the JSONL log can't be located
+   *  (e.g. session just started, sessionId not yet written). */
   async function passthroughText(ctx: CommandContext, text: string): Promise<string> {
     const binding = await store.getBinding(ctx.conversationId)
     if (!binding) return 'unbound — run /help to see commands'
 
-    if (!hasTap(binding.session)) {
-      try { await acquireTap(binding.session) }
-      catch {
-        await store.clearBinding(ctx.conversationId)
-        return `previous session '${binding.session}' is no longer running — run /sessions to choose another`
-      }
-    }
-
-    const offset = recordOffset(binding.session)
-
-    try {
-      await sendToSession(binding.session, text)
-    } catch {
-      await releaseTap(binding.session).catch(() => {})
+    // Find the session metadata so we know which JSONL to tail.
+    const project = await projectByName(binding.project)
+    const sessions = project ? await listSessions(project) : []
+    const session = sessions.find(s => s.name === binding.session)
+    if (!session) {
       await store.clearBinding(ctx.conversationId)
       return `previous session '${binding.session}' is no longer running — run /sessions to choose another`
     }
 
-    const { quiet } = await waitForQuiet(binding.session, {
+    // Open a JSONL turn marker BEFORE sending — captures the file's current
+    // size so awaitFinalReply only considers entries appended after our send.
+    const turn = await startTurn(session)
+
+    try {
+      await sendToSession(binding.session, text)
+    } catch {
+      await store.clearBinding(ctx.conversationId)
+      return `previous session '${binding.session}' is no longer running — run /sessions to choose another`
+    }
+
+    if (!turn) {
+      // No JSONL available (e.g. session not yet emitted any events). Fall
+      // back to tap-based capture so the user still gets *something*.
+      return passthroughViaTap(ctx, binding.session)
+    }
+
+    const { text: reply, timedOut } = await awaitFinalReply(turn, PASSTHROUGH_TIMEOUT_MS)
+    if (!reply) {
+      return timedOut
+        ? '(no answer within 2 min — try /last for the raw pane buffer)'
+        : '(no answer captured)'
+    }
+    return timedOut ? `${reply}\n[turn may still be in progress — /last for raw buffer]` : reply
+  }
+
+  /** Legacy tap-based passthrough — only used when the JSONL log can't be
+   *  found. Kept as a safety net so a freshly-started session that hasn't
+   *  written a sessionId yet still produces some output. */
+  async function passthroughViaTap(ctx: CommandContext, handle: string): Promise<string> {
+    if (!hasTap(handle)) {
+      try { await acquireTap(handle) }
+      catch {
+        await store.clearBinding(ctx.conversationId)
+        return `previous session '${handle}' is no longer running — run /sessions to choose another`
+      }
+    }
+    const offset = recordOffset(handle)
+    // (send already happened in passthroughText)
+    const { quiet } = await waitForQuiet(handle, {
       quietMs: PASSTHROUGH_QUIET_MS,
       timeoutMs: PASSTHROUGH_TIMEOUT_MS,
     })
-
-    const slice = sliceFromOffset(binding.session, offset)
+    const slice = sliceFromOffset(handle, offset)
     let reply = slice.text.trim() || '(no output captured — try /last)'
     if (slice.truncated) reply = `[…older output truncated…]\n${reply}`
     if (!quiet) reply = `${reply}\n[turn may still be in progress — /last to retry]`
