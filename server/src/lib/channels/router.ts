@@ -2,7 +2,10 @@ import { loadProjects, type Project } from '../projects'
 import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, type MultmuxSession } from '../multmux'
 import type { BindingStore } from './state'
 import { acquireTap, releaseTap, recordOffset, sliceFromOffset, tailSlice, waitForQuiet, hasTap } from './pty-tap'
-import { startTurn, awaitFinalReply } from './agent-output'
+import { startTurn, streamAgentReply } from './agent-output'
+import { sendEscape } from './keys'
+
+export type ReplyCallback = (text: string) => Promise<void>
 
 export interface CommandContext {
   conversationId: string
@@ -211,15 +214,20 @@ export function createRouter(store: BindingStore) {
     return `started + bound to ${project.name}/${handle} [${provider}]`
   }
 
-  /** Forward plain text to the bound session and return the agent's final
-   *  answer. Reads the agent's structured JSONL session log to extract just
-   *  the answer text — no TUI chrome, no tool noise, no input echo.
+  /** Forward plain text to the bound session and stream the agent's reply
+   *  events (interim text, AskUserQuestion prompt, final answer) to the
+   *  channel via the onReply callback. Reads the agent's structured JSONL
+   *  session log — no TUI chrome, no tool noise, no input echo.
    *
-   *  Falls back to the tap-buffer slice if the JSONL log can't be located
-   *  (e.g. session just started, sessionId not yet written). */
-  async function passthroughText(ctx: CommandContext, text: string): Promise<string> {
+   *  Falls back to the tap-buffer slice (single reply) if the JSONL log
+   *  can't be located (e.g. session just started, sessionId not yet written). */
+  async function passthroughText(
+    ctx: CommandContext,
+    text: string,
+    onReply: ReplyCallback,
+  ): Promise<void> {
     const binding = await store.getBinding(ctx.conversationId)
-    if (!binding) return 'unbound — run /help to see commands'
+    if (!binding) { await onReply('unbound — run /help to see commands'); return }
 
     // Find the session metadata so we know which JSONL to tail.
     const project = await projectByName(binding.project)
@@ -227,44 +235,62 @@ export function createRouter(store: BindingStore) {
     const session = sessions.find(s => s.name === binding.session)
     if (!session) {
       await store.clearBinding(ctx.conversationId)
-      return `previous session '${binding.session}' is no longer running — run /sessions to choose another`
+      await onReply(`previous session '${binding.session}' is no longer running — run /sessions to choose another`)
+      return
     }
 
     // Open a JSONL turn marker BEFORE sending — captures the file's current
-    // size so awaitFinalReply only considers entries appended after our send.
+    // size so streamAgentReply only considers entries appended after our send.
     const turn = await startTurn(session)
 
     try {
       await sendToSession(binding.session, text)
     } catch {
       await store.clearBinding(ctx.conversationId)
-      return `previous session '${binding.session}' is no longer running — run /sessions to choose another`
+      await onReply(`previous session '${binding.session}' is no longer running — run /sessions to choose another`)
+      return
     }
 
     if (!turn) {
       // No JSONL available (e.g. session not yet emitted any events). Fall
       // back to tap-based capture so the user still gets *something*.
-      return passthroughViaTap(ctx, binding.session)
+      await passthroughViaTap(ctx, binding.session, onReply)
+      return
     }
 
-    const { text: reply, timedOut } = await awaitFinalReply(turn, PASSTHROUGH_TIMEOUT_MS)
-    if (!reply) {
-      return timedOut
-        ? '(no answer within 2 min — try /last for the raw pane buffer)'
-        : '(no answer captured)'
+    let sentAny = false
+    for await (const ev of streamAgentReply(turn, {
+      timeoutMs: PASSTHROUGH_TIMEOUT_MS,
+      onAskUserQuestion: async () => sendEscape(binding.session),
+    })) {
+      if (ev.kind === 'timeout') {
+        await onReply(sentAny
+          ? '[turn may still be in progress — /last for raw buffer]'
+          : '(no answer within 2 min — try /last for the raw pane buffer)')
+        return
+      }
+      if (!ev.text) continue
+      await onReply(ev.text)
+      sentAny = true
     }
-    return timedOut ? `${reply}\n[turn may still be in progress — /last for raw buffer]` : reply
+
+    if (!sentAny) await onReply('(no answer captured)')
   }
 
   /** Legacy tap-based passthrough — only used when the JSONL log can't be
    *  found. Kept as a safety net so a freshly-started session that hasn't
    *  written a sessionId yet still produces some output. */
-  async function passthroughViaTap(ctx: CommandContext, handle: string): Promise<string> {
+  async function passthroughViaTap(
+    ctx: CommandContext,
+    handle: string,
+    onReply: ReplyCallback,
+  ): Promise<void> {
     if (!hasTap(handle)) {
       try { await acquireTap(handle) }
       catch {
         await store.clearBinding(ctx.conversationId)
-        return `previous session '${handle}' is no longer running — run /sessions to choose another`
+        await onReply(`previous session '${handle}' is no longer running — run /sessions to choose another`)
+        return
       }
     }
     const offset = recordOffset(handle)
@@ -277,7 +303,7 @@ export function createRouter(store: BindingStore) {
     let reply = slice.text.trim() || '(no output captured — try /last)'
     if (slice.truncated) reply = `[…older output truncated…]\n${reply}`
     if (!quiet) reply = `${reply}\n[turn may still be in progress — /last to retry]`
-    return reply
+    await onReply(reply)
   }
 
   async function dispatch(ctx: CommandContext, command: ParsedCommand): Promise<string> {
@@ -307,11 +333,21 @@ export function createRouter(store: BindingStore) {
   }
 
   /** Top-level message handler: parses + routes commands, otherwise
-   *  forwards as plain text via passthroughText. Returns the reply text. */
-  async function handleMessage(ctx: CommandContext, text: string): Promise<string> {
+   *  forwards as plain text via passthroughText. Each reply chunk is
+   *  delivered through onReply (channels can stream multiple replies
+   *  per turn — interim text, AskUserQuestion prompt, final answer). */
+  async function handleMessage(
+    ctx: CommandContext,
+    text: string,
+    onReply: ReplyCallback,
+  ): Promise<void> {
     const command = parseCommand(text)
-    if (command) return dispatch(ctx, command)
-    return passthroughText(ctx, text)
+    if (command) {
+      const reply = await dispatch(ctx, command)
+      if (reply) await onReply(reply)
+      return
+    }
+    await passthroughText(ctx, text, onReply)
   }
 
   function getCurrentProject(conversationId: string): string | undefined {
