@@ -1,11 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
-import { X, MessageCircle, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useRef, type ComponentType } from 'react'
+import { X, MessageCircle, MessageSquare, RefreshCw } from 'lucide-react'
 import { DialogShell } from './DialogShell'
 
-type LoginPhase = 'idle' | 'awaiting-qr' | 'awaiting-scan' | 'logged-in' | 'failed'
-
 interface LoginState {
-  phase: LoginPhase
+  phase: string
   qrAscii?: string
   accountId?: string
   error?: string
@@ -21,20 +19,54 @@ interface StatusResponse {
 
 const POLL_MS = 1500
 
-async function fetchStatus(): Promise<StatusResponse> {
-  const r = await fetch('/api/wechat/status')
+interface ChannelConfig {
+  /** Internal channel id used for the API base path (`/api/<id>`). */
+  id: string
+  /** Title shown in the dialog header and tooltip. */
+  label: string
+  /** Env var that must be set on the server for the dialog to be useful. */
+  envVar: string
+  /** Lucide icon component for the header trigger. */
+  Icon: ComponentType<{ size?: number; strokeWidth?: number }>
+  /** Phases to keep polling fast for (1.5s). Other phases poll every 5s. */
+  livePhases: string[]
+  /** Optional helper text shown under the QR (e.g. scan instructions). */
+  qrHint: string
+}
+
+const CHANNELS: Record<string, ChannelConfig> = {
+  wechat: {
+    id: 'wechat',
+    label: 'WeChat',
+    envVar: 'WECHAT_ENABLED',
+    Icon: MessageCircle,
+    livePhases: ['awaiting-qr', 'awaiting-scan', 'authenticating'],
+    qrHint: '使用微信扫描二维码完成登录（建议放大窗口以提高扫码成功率）',
+  },
+  whatsapp: {
+    id: 'whatsapp',
+    label: 'WhatsApp',
+    envVar: 'WHATSAPP_ENABLED',
+    Icon: MessageSquare,
+    livePhases: ['awaiting-qr', 'authenticating'],
+    qrHint: 'Scan with WhatsApp → Settings → Linked devices → Link a device',
+  },
+}
+
+async function fetchStatus(channel: string): Promise<StatusResponse> {
+  const r = await fetch(`/api/${channel}/status`)
   return r.json()
 }
 
-async function postLogin(): Promise<void> {
-  await fetch('/api/wechat/login', { method: 'POST' })
+async function postLogin(channel: string): Promise<void> {
+  await fetch(`/api/${channel}/login`, { method: 'POST' })
 }
 
-async function postLogout(): Promise<void> {
-  await fetch('/api/wechat/logout', { method: 'POST' })
+async function postLogout(channel: string): Promise<void> {
+  await fetch(`/api/${channel}/logout`, { method: 'POST' })
 }
 
-export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
+function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onClose: () => void }) {
   const [status, setStatus] = useState<StatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -46,15 +78,12 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
     const tick = async () => {
       if (cancelled.current) return
       try {
-        const data = await fetchStatus()
+        const data = await fetchStatus(channel.id)
         setStatus(data)
         setError(null)
-        const phase = data.login.phase
-        if (phase === 'logged-in' || phase === 'failed' || phase === 'idle') {
-          // Slow down once terminal — still poll for late state changes
-          timer.current = window.setTimeout(tick, 5000)
-          return
-        }
+        const fast = channel.livePhases.includes(data.login.phase)
+        timer.current = window.setTimeout(tick, fast ? POLL_MS : 5000)
+        return
       } catch (e) {
         setError((e as Error).message)
       }
@@ -65,13 +94,13 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
       cancelled.current = true
       if (timer.current) window.clearTimeout(timer.current)
     }
-  }, [])
+  }, [channel])
 
   const handleStart = async () => {
     setBusy(true)
     try {
-      await postLogin()
-      setStatus(await fetchStatus())
+      await postLogin(channel.id)
+      setStatus(await fetchStatus(channel.id))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -82,14 +111,17 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
   const handleLogout = async () => {
     setBusy(true)
     try {
-      await postLogout()
-      setStatus(await fetchStatus())
+      await postLogout(channel.id)
+      setStatus(await fetchStatus(channel.id))
     } catch (e) {
       setError((e as Error).message)
     } finally {
       setBusy(false)
     }
   }
+
+  const phase = status?.login.phase
+  const isQrLive = channel.livePhases.includes(phase ?? '')
 
   return (
     <DialogShell onClose={onClose} className="rounded-xl w-full mx-4" style={{ maxWidth: 420 }}>
@@ -98,7 +130,7 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
         style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
       >
         <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
-          WeChat 登录
+          {channel.label} 登录 / Login
         </span>
         <button
           onClick={onClose}
@@ -115,7 +147,7 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
 
         {status && !status.enabled && (
           <div className="text-[12px]" style={{ color: 'var(--sol-warning)' }}>
-            WECHAT_ENABLED=1 not set on the server. Restart with that env to use this dialog.
+            {channel.envVar}=1 not set on the server. Restart with that env to use this dialog.
           </div>
         )}
 
@@ -123,6 +155,7 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
           <>
             <StatusRow label="Logged in" value={status.loggedIn ? 'yes' : 'no'} />
             <StatusRow label="Bot running" value={status.initialized ? 'yes' : 'no'} />
+            <StatusRow label="Phase" value={phase ?? 'unknown'} />
             <StatusRow
               label="Auth mode"
               value={status.auth.mode === 'whitelist'
@@ -130,10 +163,10 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
                 : `TOFU${status.auth.tofuBound ? ` (${status.auth.tofuBound})` : ' (unbound)'}`}
             />
 
-            {status.login.phase === 'awaiting-qr' && status.login.qrAscii && (
+            {status.login.qrAscii && (
               <div className="flex flex-col items-center gap-2">
                 <pre
-                  aria-label="WeChat login QR"
+                  aria-label={`${channel.label} login QR`}
                   className="rounded border p-2"
                   style={{
                     borderColor: 'var(--sol-border)',
@@ -145,33 +178,27 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
                     margin: 0,
                   }}
                 >{status.login.qrAscii}</pre>
-                <div className="text-[11px]" style={{ color: 'var(--sol-muted)' }}>
-                  使用微信扫描二维码完成登录（建议放大窗口以提高扫码成功率）
+                <div className="text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>
+                  {channel.qrHint}
                 </div>
               </div>
             )}
 
-            {status.login.phase === 'awaiting-qr' && !status.login.qrAscii && (
+            {isQrLive && !status.login.qrAscii && (
               <div className="text-[12px]" style={{ color: 'var(--sol-muted)' }}>
                 Waiting for QR…
               </div>
             )}
 
-            {status.login.phase === 'awaiting-scan' && (
-              <div className="text-[12px]" style={{ color: 'var(--sol-text)' }}>
-                已扫描，等待手机端确认…
-              </div>
-            )}
-
-            {status.login.phase === 'logged-in' && (
+            {status.loggedIn && (
               <div className="text-[12px]" style={{ color: 'var(--sol-green, #859900)' }}>
-                ✓ 已登录: {status.login.accountId}
+                ✓ Logged in{status.login.accountId ? `: ${status.login.accountId}` : ''}
               </div>
             )}
 
-            {status.login.phase === 'failed' && (
+            {status.login.error && (
               <div className="text-[12px]" style={{ color: 'var(--sol-red)' }}>
-                登录失败: {status.login.error}
+                {status.login.error}
               </div>
             )}
 
@@ -201,7 +228,7 @@ export function WeChatLoginDialog({ onClose }: { onClose: () => void }) {
           )}
           <button
             onClick={handleStart}
-            disabled={busy || status.login.phase === 'awaiting-qr' || status.login.phase === 'awaiting-scan'}
+            disabled={busy || isQrLive}
             className="text-[12px] px-3 h-8 rounded border cursor-pointer flex items-center gap-1 disabled:opacity-50"
             style={{ borderColor: 'var(--sol-border)', color: 'var(--sol-text)' }}
           >
@@ -223,17 +250,16 @@ function StatusRow({ label, value }: { label: string, value: string }) {
   )
 }
 
-/** Header trigger button — only renders when `WECHAT_ENABLED` is set on the server.
- *  Single-flight status fetch on mount; re-fetch on dialog close to refresh badge. */
-export function WeChatHeaderButton() {
+/** Header button + dialog for a single messaging channel. Renders nothing
+ *  when the channel's env gate is unset on the server. */
+function ChannelHeaderButton({ channel }: { channel: ChannelConfig }) {
   const [open, setOpen] = useState(false)
   const [enabled, setEnabled] = useState<boolean | null>(null)
   const [loggedIn, setLoggedIn] = useState(false)
 
   const refresh = async () => {
     try {
-      const r = await fetch('/api/wechat/status')
-      const data: StatusResponse = await r.json()
+      const data = await fetchStatus(channel.id)
       setEnabled(data.enabled)
       setLoggedIn(data.loggedIn)
     } catch {
@@ -241,25 +267,36 @@ export function WeChatHeaderButton() {
     }
   }
 
-  useEffect(() => { refresh() }, [])
+  useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (enabled !== true) return null
+
+  const Icon = channel.Icon
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title={loggedIn ? 'WeChat (logged in)' : 'WeChat (not logged in)'}
-        aria-label="WeChat"
+        title={`${channel.label} (${loggedIn ? 'logged in' : 'not logged in'})`}
+        aria-label={channel.label}
         className="inline-flex items-center justify-center rounded border p-1 cursor-pointer"
         style={{
           borderColor: 'var(--sol-border)',
           color: loggedIn ? 'var(--sol-green, #859900)' : 'var(--sol-muted)',
         }}
       >
-        <MessageCircle size={14} strokeWidth={2.5} />
+        <Icon size={14} strokeWidth={2.5} />
       </button>
-      {open && <WeChatLoginDialog onClose={() => { setOpen(false); refresh() }} />}
+      {open && <ChannelLoginDialog channel={channel} onClose={() => { setOpen(false); refresh() }} />}
     </>
   )
 }
+
+// Public exports — kept stable so App.tsx doesn't need to know channel internals.
+export const WeChatHeaderButton = () => <ChannelHeaderButton channel={CHANNELS.wechat} />
+export const WhatsAppHeaderButton = () => <ChannelHeaderButton channel={CHANNELS.whatsapp} />
+
+/** Backwards-compatible export so nothing else has to be renamed. */
+export const WeChatLoginDialog = ({ onClose }: { onClose: () => void }) => (
+  <ChannelLoginDialog channel={CHANNELS.wechat} onClose={onClose} />
+)
