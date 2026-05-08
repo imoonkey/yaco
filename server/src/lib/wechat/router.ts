@@ -1,5 +1,5 @@
 import { loadProjects, type Project } from '../projects'
-import { readSessionsFromStateFiles, sendToSession, type MultmuxSession } from '../multmux'
+import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, type MultmuxSession } from '../multmux'
 import { getBinding, setBinding, clearBinding } from './state'
 import { acquireTap, releaseTap, recordOffset, sliceFromOffset, tailSlice, waitForQuiet, hasTap } from './pty-tap'
 
@@ -30,7 +30,7 @@ const HELP_TEXT = [
   '/use <n|name>         选择当前 project',
   '/sessions (/s)        列出当前 project 的 sessions',
   '/use s <n|name>       绑定到该 session',
-  '/new <claude|codex>   新建 session（phase 3 启用）',
+  '/new <claude|codex>   新建 session 并自动 bind',
   '/exit                 解绑（不杀 session）',
   '/who                  查看当前 binding',
   '/last                 拉取最近输出',
@@ -214,6 +214,44 @@ export async function passthroughText(ctx: CommandContext, text: string): Promis
   return reply
 }
 
+async function handleNew(ctx: CommandContext, args: string[]): Promise<string> {
+  if (args.length === 0) return '用法: /new <claude|codex> [name]'
+  const providerArg = args[0].toLowerCase()
+  if (providerArg !== 'claude' && providerArg !== 'codex') {
+    return `provider must be claude or codex, got: ${args[0]}`
+  }
+  const provider: 'claude' | 'codex' = providerArg
+  const project = await resolveCurrentProject(ctx.conversationId)
+  if (!project) return 'no current project — run /use <name> first'
+
+  const name = args[1]
+  let handle: string
+  try {
+    const result = await startMultmuxSession(provider, name, project.path)
+    handle = result.handle
+  } catch (e) {
+    return `failed to start ${provider} session: ${(e as Error).message}`
+  }
+
+  try {
+    await acquireTap(handle)
+  } catch (e) {
+    return `started session ${handle} but failed to tap it: ${(e as Error).message}`
+  }
+
+  const prior = await getBinding(ctx.conversationId)
+  if (prior && prior.session !== handle) {
+    await releaseTap(prior.session).catch(() => {})
+  }
+
+  await setBinding(ctx.conversationId, {
+    project: project.name,
+    session: handle,
+    boundAt: new Date().toISOString(),
+  })
+  return `started + bound to ${project.name}/${handle} [${provider}]`
+}
+
 export async function dispatch(ctx: CommandContext, command: ParsedCommand): Promise<string> {
   switch (command.name) {
     case 'help':
@@ -234,7 +272,7 @@ export async function dispatch(ctx: CommandContext, command: ParsedCommand): Pro
     case 'last':
       return handleLast(ctx)
     case 'new':
-      return 'new 在 phase 3 启用'
+      return handleNew(ctx, command.args)
     default:
       return `unknown command: /${command.name} — run /help`
   }

@@ -137,10 +137,57 @@ describe('dispatch', () => {
     expect(out).toMatch(/session not found/)
   })
 
-  it('/exit and /last and /new defer or work as expected', async () => {
+  it('/exit and /last respond when not bound; /new validates input', async () => {
     expect(await dispatch({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/not bound/)
     expect(await dispatch({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/not bound/)
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/phase 3/)
+    expect(await dispatch({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/用法/)
+    expect(await dispatch({ conversationId: 'wx' }, { name: 'new', args: ['ruby'] })).toMatch(/provider must be claude or codex/)
+  })
+
+  it('/new without current project errors before spawning', async () => {
+    const out = await dispatch({ conversationId: 'wx-no-project' }, { name: 'new', args: ['claude'] })
+    expect(out).toMatch(/no current project/)
+  })
+
+  it('/new happy path: spawns provider, acquires tap, and binds (mocked)', async () => {
+    vi.resetModules()
+    vi.doMock('../multmux', async (orig) => {
+      const actual = await orig<typeof import('../multmux')>()
+      return {
+        ...actual,
+        startMultmuxSession: vi.fn(async (provider: string, name: string | undefined) => ({
+          handle: name ?? `${provider}-fake-handle`,
+          sessionId: 'fake-session-id',
+        })),
+      }
+    })
+    vi.doMock('../wechat/pty-tap', async (orig) => {
+      const actual = await orig<typeof import('../wechat/pty-tap')>()
+      return {
+        ...actual,
+        acquireTap: vi.fn(async () => undefined),
+        releaseTap: vi.fn(async () => undefined),
+        hasTap: vi.fn(() => true),
+      }
+    })
+
+    const { dispatch: scopedDispatch, _resetRouterState: scopedReset } = await import('../wechat/router')
+    const { startMultmuxSession } = await import('../multmux')
+    const { acquireTap } = await import('../wechat/pty-tap')
+    const { getBinding } = await import('../wechat/state')
+
+    scopedReset()
+    await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'use', args: ['alpha'] })
+    const out = await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'new', args: ['codex', 'mysess'] })
+
+    expect(out).toMatch(/started \+ bound to alpha\/mysess/)
+    expect(startMultmuxSession).toHaveBeenCalledWith('codex', 'mysess', expect.any(String))
+    expect(acquireTap).toHaveBeenCalledWith('mysess')
+    const binding = await getBinding('wx-newhappy')
+    expect(binding).toEqual(expect.objectContaining({ project: 'alpha', session: 'mysess' }))
+
+    vi.doUnmock('../multmux')
+    vi.doUnmock('../wechat/pty-tap')
   })
 
   it('unknown command returns hint', async () => {
