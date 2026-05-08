@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-05-08: /file -t flag for inline text replies
+
+**What changed:**
+- `/file <path>` (and alias `/f`) now accepts a `-t` flag: with `-t` the file is decoded as UTF-8 and returned inline as text with a `--- <path> (N lines, M bytes) ---` header, capped at 32 KB. Binary files in `-t` mode are rejected with a hint to drop `-t`. Without `-t` the existing attachment behavior is unchanged (≤5 MB).
+
+**Why:**
+- Short text files are nicer to read inline in the chat than to round-trip through WhatsApp's document viewer (tap → open → scroll → close). Attachments stay the default for binaries, large files, and "save it locally" cases; `-t` is the explicit ask for "just paste it here".
+
+**Key files:** `server/src/lib/channels/router.ts` (handleFile arg-parses `-t`, FILE_TEXT_MAX_BYTES, looksBinary helper re-added), `server/src/lib/__tests__/wechat-router.test.ts` (2 new tests), `doc/main/backend/libs.md`.
+**Verification:** `cd server && npm test` — 244 tests passing (+2).
+**Commit:** a8e33b8 — pushed.
+**Next:** Live-test `/f -t doc/PROGRESS.md`, `/f -t package.json`. Decide whether `-t` should grow `:line-line` range support for big files.
+**Blockers:** None.
+
 ## 2026-05-08: /file command — read a file as a WhatsApp attachment, list a directory as text
 
 **What changed:**
