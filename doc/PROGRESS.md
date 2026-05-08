@@ -1,5 +1,25 @@
 # Progress
 
+## 2026-05-08: WeChat integration (V1)
+
+**What changed:**
+- New `server/src/lib/wechat/` subsystem (state, auth, router, agent, pty-tap, login-flow, index) bridges WeChat ↔ multmux agent sessions via `weixin-agent-sdk`. Env-gated by `WECHAT_ENABLED=1` — when unset, server behavior is bit-identical to prior main.
+- Slash commands: `/help`, `/who`, `/projects` (`/p`), `/use <project>`, `/sessions` (`/s`), `/use s <n>`, `/new <claude\|codex> [name]`, `/exit`, `/last`. Plain text forwards to the bound multmux session and replies with the captured response.
+- Auth: env whitelist (`WECHAT_CONVERSATION_WHITELIST`) OR TOFU first-contact bind to `~/.workflow/wechat-auth.json`. Atomic check-and-bind (race-safe).
+- Tap mechanism: `tmux pipe-pane -O -t <handle> 'cat > FIFO'` + spawned cat reader → 1MB ring buffer per handle. Offset-based slicing captures the precise reply for a turn (vs `multmux capture` which only returns a snapshot). Sweeps orphan FIFOs on boot.
+- New routes: `GET /api/wechat/status`, `POST /api/wechat/login`, `POST /api/wechat/login/reset`, `POST /api/wechat/logout`. Login is single-flight (synchronous slot claim). `/logout` returns 409 if a login is mid-flight.
+- New UI: `WeChatLoginDialog` + `WeChatHeaderButton` only render when server reports `WECHAT_ENABLED=1`. The QR is captured by monkey-patching `console.log` for the duration of the SDK call (the SDK's `login()` doesn't expose the QR URL via its log callback) and rendered as ASCII in a monospace `<pre>`.
+
+**Why:**
+- Reach a running Claude/Codex session from the phone over WeChat without opening the web UI. Single-user, single-device. Outbound notifications + media are deferred to V2.
+- The SDK's `login()` only exposes the QR ASCII via its internal `console.log(qr)`; the URL goes to its private logger. Capturing console.log is the lowest-risk way to surface a scannable artifact in the UI without reimplementing the SDK's auth flow.
+
+**Key files:** `server/src/lib/wechat/{index,agent,router,state,auth,pty-tap,login-flow}.ts`, `server/src/routes/wechat.ts`, `server/src/index.ts`, `server/package.json`, `ui/src/components/WeChatLoginDialog.tsx`, `ui/src/App.tsx`, `doc/main/backend/{routes,libs}.md`, design at `projects/active/wechat/{design.md,cn/design.md}`
+**Verification:** `npm test` 230/230 pass (38 new wechat tests covering state, auth, router, pty-tap with real tmux, /new happy path with mocked spawn). Server boots clean with and without `WECHAT_ENABLED=1`. `POST /api/wechat/login` confirmed to capture QR ASCII end-to-end via curl. Concurrent `POST /login` calls correctly reuse the in-flight flow (same `startedAt` returned). `POST /logout` returns 409 while a login is in progress.
+**Commit:** 7e09e2d (phase 1: SDK boot + read-only commands), e74ee83 (phase 2: pty tap + chat passthrough), d85a6a7 (phase 3: /new), 4c92cf5 (phase 4: QR login UI)
+**Next:** Phase 5 (progressive push during long turns — same tap infra + bot.sendMessage flusher), Phase 6 (outbound notifications via `notify.ts` sink, separate project). Tool-noise cleanup TBD after observing real-world usage.
+**Blockers:** None for V1. Note that `weixin-agent-sdk` declares `engines.node>=22` but works on Node 20.20.1 with `--engine-strict=false`; revisit if SDK adds Node 22-only APIs.
+
 ## 2026-05-01: Unblock event loop in server hot paths
 
 **What changed:**

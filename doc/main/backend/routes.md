@@ -195,3 +195,14 @@ Hard-cap: 5000 matches (kills `rg` when reached, `capped: true` in done message)
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/health` | Returns `{ ok: true }` |
+
+### WeChat
+
+Env-gated by `WECHAT_ENABLED=1` and `WECHAT_CONVERSATION_WHITELIST` (optional, comma-separated). When unset, behavior is unchanged.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/wechat/status` | Returns `{ enabled, initialized, loggedIn, auth: { mode, whitelist, tofuBound }, login: { phase, qrAscii?, accountId?, error? } }`. Phase ∈ `idle`, `awaiting-qr`, `awaiting-scan`, `logged-in`, `failed`. |
+| POST | `/api/wechat/login` | Starts SDK QR-code login in the background (idempotent — concurrent calls reuse the in-flight flow). Returns the current `LoginState`. 400 when `WECHAT_ENABLED!=1`. |
+| POST | `/api/wechat/login/reset` | Resets the login state to `idle` (no-op if a login is in flight). |
+| POST | `/api/wechat/logout` | Shuts the bot down + calls SDK logout(). 409 if a login flow is active. |

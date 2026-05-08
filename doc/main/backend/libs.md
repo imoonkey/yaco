@@ -241,3 +241,15 @@ Multi-model LLM formatter with fallback chain via `openai` SDK.
 - Strips `<think>...</think>` blocks from models with thinking mode (Qwen3)
 - Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
 - 5s timeout per model attempt
+
+### wechat/ (env-gated by `WECHAT_ENABLED=1`)
+
+Bridges WeChat to multmux agent sessions via `weixin-agent-sdk`. When `WECHAT_ENABLED` is unset, no SDK boot, no behavior change.
+
+- **`wechat/index.ts`** — `initWeChat()` boots the bot if a WeChat account is logged in. `sweepStaleTaps()` reaps orphan FIFOs from prior crashes. `shutdownWeChat()` aborts the bot + drops all taps.
+- **`wechat/agent.ts`** — implements the SDK `Agent` interface. Per-conversation FIFO queue serializes inbound messages (SDK can fire `chat()` concurrently; the bound multmux session is single-threaded). Routes commands to `router.ts`; routes plain text to `passthroughText`.
+- **`wechat/router.ts`** — command parser + handlers: `/help` `/who` `/projects` `/sessions` `/use <project>` `/use s <n>` `/new <claude\|codex> [name]` `/exit` `/last`. Plain text goes through `passthroughText` (acquireTap → recordOffset → `multmux send` → waitForQuiet → sliceFromOffset → ANSI strip).
+- **`wechat/state.ts`** — read/write per-conversation bindings to `~/.workflow/wechat-state.json`. Module-level cache; writes serialized through a chain to avoid concurrent `writeFile` races.
+- **`wechat/auth.ts`** — fused whitelist + TOFU resolution. `WECHAT_CONVERSATION_WHITELIST` env (comma-separated) takes precedence; otherwise the first conversation seen TOFU-binds to `~/.workflow/wechat-auth.json`. `authorize()` is atomic — concurrent first-message callers can't both bind.
+- **`wechat/pty-tap.ts`** — per-handle tap on `tmux pipe-pane -O -t <handle> 'cat > FIFO'`. A spawned `cat` reader process streams the FIFO contents into a 1MB ring buffer (oldest-byte-evict). `acquireTap`/`releaseTap` ref-count. `recordOffset` + `sliceFromOffset` give the precise reply bytes for a given turn. `waitForQuiet` polls for "no new bytes for 1.5s" with a 60s ceiling.
+- **`wechat/login-flow.ts`** — manages the SDK's `login()` flow. Monkey-patches `console.log` for the duration of the SDK call to capture the QR ASCII (qrcode-terminal output is sent via `console.log` directly, not the user-supplied log callback). Exposes `LoginState { phase, qrAscii?, accountId?, error? }` to the route. Login flow is single-flight via a synchronously-claimed `inflight` slot.
