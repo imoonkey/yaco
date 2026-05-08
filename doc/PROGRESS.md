@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-05-08: /file command — read a file as a WhatsApp attachment, list a directory as text
+
+**What changed:**
+- New `/file <path>` channel command (alias `/f`). Resolves the path against the bound multmux session's `sessionPath` (worktree-aware; falls back to project root) and rejects anything that escapes that root. Files come back as **real attachments** (≤5 MB cap); directories come back as a text listing (`d <name>` / `f <name>`, dirs first, capped at 200 entries with `[…N more]`).
+- `ReplyCallback` contract widened from `(text: string) => Promise<void>` to `(reply: ChannelReply) => Promise<void>` where `ChannelReply` is a discriminated union: `{kind:'text', text}` or `{kind:'file', path, filename, caption?}`. `dispatch()` now returns `ChannelReply` so command handlers pick the right shape; a `textReply()` helper keeps prose call sites tidy.
+- WhatsApp adapter switches on `reply.kind` — text → `msg.reply(text)`; file → `MessageMedia.fromFilePath(path)` + caption. Files arrive natively (paperclip / inline image preview / PDF tap-to-open), no inline-text fallback.
+- WeChat adapter (no media in the SDK contract) degrades file replies to `[附件: filename]` placeholders inside the joined text response.
+- Removed the binary-file rejection and the 32 KB inline cap — both were artifacts of the inline-text first-pass `/file` and stop making sense once attachments exist.
+
+**Why:**
+- Pasting source files inline is unreadable on a phone (no syntax highlighting, no tap-to-open) and bypasses WhatsApp's native viewers for images / PDFs / archives. Native attachments are the right surface; the inline path was a stepping-stone we no longer need.
+- Discriminated-union replies are the smallest contract change that lets the router emit non-text payloads without leaking channel-specific types into the shared core; channels that can't speak the kind degrade locally (wechat → placeholder) without forking the router.
+
+**Key files:** `server/src/lib/channels/router.ts` (ChannelReply union, /file handler, dispatch return type), `server/src/lib/whatsapp/index.ts` (MessageMedia branch + caption dedup), `server/src/lib/wechat/{router,agent}.ts` (file → `[附件:…]` placeholder), `server/src/lib/__tests__/wechat-router.test.ts` (`dispatchText()` unwrap helper, attachment-shape assertions for /file), `doc/main/backend/libs.md`.
+**Verification:** `cd server && npm test` — 21 files / 242 tests passing. Two new /file tests (text-file + binary-file both produce `kind:'file'`); existing dispatch-text assertions ported through the `dispatchText()` helper.
+**Commit:** baf68df, 6f3d624 — pushed.
+**Next:** Live-test on WhatsApp: send `/file ui/src/App.tsx`, `/file <some-image.png>`, `/file <some-dir>`. Decide whether `/file` should grow `:line-line` range support for huge files (currently rejected at 5 MB).
+**Blockers:** None.
+
 ## 2026-05-08: Channel polish — slash-command passthrough, streaming replies, AskUserQuestion handling, /last via multmux capture
 
 **What changed:**
