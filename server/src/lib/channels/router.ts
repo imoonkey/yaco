@@ -1,3 +1,5 @@
+import { promises as fs } from 'node:fs'
+import { resolve as resolvePath, sep as pathSep } from 'node:path'
 import { loadProjects, type Project } from '../projects'
 import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, captureSession, type MultmuxSession } from '../multmux'
 import type { BindingStore } from './state'
@@ -24,7 +26,7 @@ export function parseCommand(text: string): ParsedCommand | null {
   return { name: parts[0].toLowerCase(), args: parts.slice(1) }
 }
 
-const KNOWN_COMMANDS = new Set(['help', 'h', 'projects', 'p', 'use', 'sessions', 's', 'who', 'exit', 'last', 'new'])
+const KNOWN_COMMANDS = new Set(['help', 'h', 'projects', 'p', 'use', 'sessions', 's', 'who', 'exit', 'last', 'new', 'file', 'f'])
 
 const HELP_TEXT = [
   '可用命令:',
@@ -36,6 +38,7 @@ const HELP_TEXT = [
   '/exit                 解绑（不杀 session）',
   '/who                  查看当前 binding',
   '/last [n]             抓最近 n 行 pane（默认 100，上限 2000）',
+  '/file <path> (/f)     读文件全文 或 列目录（基于当前 session 的 cwd）',
   '/help                 显示本帮助',
 ].join('\n')
 
@@ -44,6 +47,30 @@ const PASSTHROUGH_TIMEOUT_MS = 60_000
 
 const LAST_DEFAULT_LINES = 100
 const LAST_MAX_LINES = 2000
+
+const FILE_MAX_BYTES = 32 * 1024
+const DIR_MAX_ENTRIES = 200
+
+async function formatDirListing(absPath: string, rel: string): Promise<string> {
+  const entries = await fs.readdir(absPath, { withFileTypes: true })
+  const sorted = entries.sort((a, b) =>
+    (Number(b.isDirectory()) - Number(a.isDirectory())) || a.name.localeCompare(b.name)
+  )
+  const shown = sorted.slice(0, DIR_MAX_ENTRIES)
+  const lines = shown.map(e => `${e.isDirectory() ? 'd' : 'f'} ${e.name}`)
+  const more = sorted.length > DIR_MAX_ENTRIES
+    ? [`[…${sorted.length - DIR_MAX_ENTRIES} more]`]
+    : []
+  return [`${rel || '.'}/  (${entries.length} entries)`, ...lines, ...more].join('\n')
+}
+
+function looksBinary(buf: Buffer): boolean {
+  // Null byte in the first 8KB is a strong binary signal (works for images,
+  // archives, executables; produces no false positives on UTF-8 text).
+  const sample = buf.subarray(0, Math.min(buf.length, 8192))
+  for (let i = 0; i < sample.length; i++) if (sample[i] === 0) return true
+  return false
+}
 
 async function projectByName(name: string): Promise<Project | undefined> {
   return (await loadProjects()).find(p => p.name === name)
@@ -221,6 +248,43 @@ export function createRouter(store: BindingStore) {
     return `started + bound to ${project.name}/${handle} [${provider}]`
   }
 
+  async function handleFile(ctx: CommandContext, args: string[]): Promise<string> {
+    if (args.length === 0) return '用法: /file <relative-path>'
+
+    const project = await resolveCurrentProject(ctx.conversationId)
+    if (!project) return 'no current project — run /use <name> first or bind a session'
+
+    // Prefer the bound session's cwd (worktree-aware); fall back to project root.
+    let root = project.path
+    const binding = await store.getBinding(ctx.conversationId)
+    if (binding) {
+      const session = (await listSessions(project)).find(s => s.name === binding.session)
+      if (session) root = session.sessionPath
+    }
+
+    const rel = args.join(' ')
+    const resolved = resolvePath(root, rel)
+    if (resolved !== root && !resolved.startsWith(root + pathSep)) {
+      return `path escapes session root: ${rel}`
+    }
+
+    let st
+    try { st = await fs.stat(resolved) } catch { return `not found: ${rel}` }
+
+    if (st.isDirectory()) return formatDirListing(resolved, rel)
+    if (!st.isFile()) return `not a file or directory: ${rel}`
+    if (st.size > FILE_MAX_BYTES) {
+      return `file too large: ${st.size} bytes (limit ${FILE_MAX_BYTES})`
+    }
+
+    const buf = await fs.readFile(resolved)
+    if (looksBinary(buf)) return `binary file (${st.size} bytes) — not supported`
+
+    const text = buf.toString('utf-8')
+    const lines = text.length === 0 ? 0 : text.split('\n').length
+    return `--- ${rel} (${lines} lines, ${st.size} bytes) ---\n${text}`
+  }
+
   /** Forward plain text to the bound session and stream the agent's reply
    *  events (interim text, AskUserQuestion prompt, final answer) to the
    *  channel via the onReply callback. Reads the agent's structured JSONL
@@ -334,6 +398,9 @@ export function createRouter(store: BindingStore) {
         return handleLast(ctx, command.args)
       case 'new':
         return handleNew(ctx, command.args)
+      case 'file':
+      case 'f':
+        return handleFile(ctx, command.args)
       default:
         return `unknown command: /${command.name} — run /help`
     }

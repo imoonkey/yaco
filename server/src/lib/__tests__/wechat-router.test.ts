@@ -195,4 +195,43 @@ describe('dispatch', () => {
     expect(out).not.toContain('unknown command')
     expect(out).toMatch(/unbound — run \/help/)
   })
+
+  it('/file reads a text file inside the session root', async () => {
+    await writeFile(join(projectAPath, 'hello.txt'), 'hi there\nsecond line\n')
+    _resetRouterState()
+    await dispatch({ conversationId: 'wx-file-read' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatch({ conversationId: 'wx-file-read' }, { name: 'file', args: ['hello.txt'] })
+    expect(out).toContain('hi there')
+    expect(out).toContain('second line')
+    expect(out).toMatch(/--- hello\.txt \(\d+ lines, \d+ bytes\) ---/)
+  })
+
+  it('/file lists a directory with d/f prefixes, dirs first', async () => {
+    await mkdir(join(projectAPath, 'mixed'), { recursive: true })
+    await mkdir(join(projectAPath, 'mixed', 'subdir'), { recursive: true })
+    await writeFile(join(projectAPath, 'mixed', 'a-file.txt'), 'x')
+    await writeFile(join(projectAPath, 'mixed', 'z-file.txt'), 'y')
+    _resetRouterState()
+    await dispatch({ conversationId: 'wx-file-dir' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatch({ conversationId: 'wx-file-dir' }, { name: 'file', args: ['mixed'] })
+    const lines = out.split('\n')
+    expect(lines[0]).toMatch(/^mixed\/  \(3 entries\)/)
+    expect(lines[1]).toBe('d subdir')
+    expect(lines.slice(2)).toEqual(expect.arrayContaining(['f a-file.txt', 'f z-file.txt']))
+  })
+
+  it('/file rejects paths that escape the session root', async () => {
+    _resetRouterState()
+    await dispatch({ conversationId: 'wx-file-escape' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatch({ conversationId: 'wx-file-escape' }, { name: 'file', args: ['../beta'] })
+    expect(out).toMatch(/escapes session root/)
+  })
+
+  it('/file rejects binary files', async () => {
+    await writeFile(join(projectAPath, 'binfile.bin'), Buffer.from([0x00, 0x01, 0x02, 0x03]))
+    _resetRouterState()
+    await dispatch({ conversationId: 'wx-file-bin' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatch({ conversationId: 'wx-file-bin' }, { name: 'file', args: ['binfile.bin'] })
+    expect(out).toMatch(/binary file .* not supported/)
+  })
 })
