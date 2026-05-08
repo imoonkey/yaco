@@ -254,14 +254,25 @@ export function createRouter(store: BindingStore) {
     return `started + bound to ${project.name}/${handle} [${provider}]`
   }
 
-  // Tolerate phone-keyboard autocorrect: -, –, —, − (any of these as the
-  // leading dash); -t, -T, --text. The smart-dash substitution on iOS/Android
-  // turns "-t" into "–t" silently and the user sees "not found: -t <path>".
-  const TEXT_FLAG_RE = /^(?:[-–—−]){1,2}t(?:ext)?$/i
+  // Phone keyboards mangle "-t" via autocorrect — en-dash, em-dash, smart
+  // quotes, even prefixed bullets/spaces are common. Be maximally lenient:
+  // any short arg whose alpha tail is "t" or "text" (after stripping all
+  // non-alphanumeric leading chars) is treated as the text flag.
+  function isTextFlag(arg: string): boolean {
+    if (arg.length > 8) return false
+    const tail = arg.replace(/^[^A-Za-z0-9]+/, '').toLowerCase()
+    return tail === 't' || tail === 'text'
+  }
+
+  function diagnoseArgs(args: string[]): string {
+    return args.map(a =>
+      `"${a}" = [${[...a].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ')}]`
+    ).join('\n')
+  }
 
   async function handleFile(ctx: CommandContext, args: string[]): Promise<ChannelReply> {
-    const asText = args.some(a => TEXT_FLAG_RE.test(a))
-    const pathArgs = args.filter(a => !TEXT_FLAG_RE.test(a))
+    const asText = args.some(isTextFlag)
+    const pathArgs = args.filter(a => !isTextFlag(a))
     if (pathArgs.length === 0) return textReply('用法: /file [-t] <relative-path>')
 
     const project = await resolveCurrentProject(ctx.conversationId)
@@ -282,7 +293,14 @@ export function createRouter(store: BindingStore) {
     }
 
     let st
-    try { st = await fs.stat(resolved) } catch { return textReply(`not found: ${rel}`) }
+    try { st = await fs.stat(resolved) }
+    catch {
+      // Common cause: phone keyboard mangled "-t" into something exotic and
+      // it survived as part of the path. Show codepoints so the user (and we)
+      // can see exactly what arrived.
+      const diag = pathArgs.length > 1 ? `\n\n[diag: received args]\n${diagnoseArgs(args)}` : ''
+      return textReply(`not found: ${rel}${diag}`)
+    }
 
     if (st.isDirectory()) return textReply(await formatDirListing(resolved, rel))
     if (!st.isFile()) return textReply(`not a file or directory: ${rel}`)
