@@ -21,6 +21,8 @@ export function parseCommand(text: string): ParsedCommand | null {
   return { name: parts[0].toLowerCase(), args: parts.slice(1) }
 }
 
+const KNOWN_COMMANDS = new Set(['help', 'h', 'projects', 'p', 'use', 'sessions', 's', 'who', 'exit', 'last', 'new'])
+
 const HELP_TEXT = [
   '可用命令:',
   '/projects (/p)        列出所有 projects',
@@ -307,10 +309,11 @@ export function createRouter(store: BindingStore) {
   }
 
   /** Top-level message handler: parses + routes commands, otherwise
-   *  forwards as plain text via passthroughText. Returns the reply text. */
+   *  forwards as plain text via passthroughText. Unknown slash commands
+   *  (e.g. /scope-review) fall through to the agent verbatim. */
   async function handleMessage(ctx: CommandContext, text: string): Promise<string> {
     const command = parseCommand(text)
-    if (command) return dispatch(ctx, command)
+    if (command && KNOWN_COMMANDS.has(command.name)) return dispatch(ctx, command)
     return passthroughText(ctx, text)
   }
 

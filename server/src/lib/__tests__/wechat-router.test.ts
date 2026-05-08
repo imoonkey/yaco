@@ -47,7 +47,7 @@ await writeFile(
   }),
 )
 
-const { parseCommand, dispatch, _resetRouterState } = await import('../wechat/router')
+const { parseCommand, dispatch, _resetRouterState, passthroughText } = await import('../wechat/router')
 
 describe('parseCommand', () => {
   it('returns null for non-command text', () => {
@@ -190,8 +190,9 @@ describe('dispatch', () => {
     vi.doUnmock('../channels/pty-tap')
   })
 
-  it('unknown command returns hint', async () => {
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'foobar', args: [] })
-    expect(out).toContain('unknown command')
+  it('unknown slash command falls through to passthrough (not "unknown command")', async () => {
+    const out = await passthroughText({ conversationId: 'wx-unknown-slash' }, '/foo bar baz')
+    expect(out).not.toContain('unknown command')
+    expect(out).toMatch(/unbound — run \/help/)
   })
 })
