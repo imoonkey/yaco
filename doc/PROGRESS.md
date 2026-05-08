@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-05-08: Channel polish — slash-command passthrough, streaming replies, AskUserQuestion handling, /last via multmux capture
+
+**What changed:**
+- `channels/router.ts`: `KNOWN_COMMANDS` whitelist gates dispatch — unknown `/xxx` (e.g. `/scope-review`, `/design`, `/investigate`) falls through to the bound agent verbatim instead of returning `unknown command`.
+- `channels/agent-output.ts`: replaced single-shot `awaitFinalReply` with `streamAgentReply(turn, opts)` async generator yielding `{kind: 'interim'|'question'|'final'|'timeout', text}` events. Claude: `assistant` content `text` blocks with `stop_reason='tool_use'` → `interim`; `AskUserQuestion` tool_use → `question`; `stop_reason='end_turn'` → `final`. Codex: `event_msg/agent_message` `phase='commentary'` → `interim`; `phase='final_answer'` → `final`. `thinking`, other `tool_use`/`tool_result`, `response_item`, `function_call`, `token_count` all skipped. `awaitFinalReply` kept as a thin back-compat shim.
+- New `channels/keys.ts` exports `sendEscape(handle)` (`tmux send-keys -t <handle> Escape` — single Esc only; double-Esc opens Claude's backtrack dialog). Wired so when `streamAgentReply` detects `AskUserQuestion`, it cancels the TUI dialog before yielding the formatted prompt to the channel — the user can answer through WhatsApp/WeChat as a normal next-turn message instead of needing the TUI.
+- `router.handleMessage(ctx, text, onReply)` and `passthroughText` now take a `ReplyCallback`; one user turn produces multiple `onReply` calls (interim text, question prompt, final answer). WhatsApp handler calls `msg.reply()` per chunk inside the existing `serialize()` queue. WeChat adapter aggregates chunks into one `\n\n`-joined string because the SDK is request/response.
+- `multmux.captureSession(handle, lines)` shells out to `multmux capture --lines n --strip-ansi true`. `/last` now takes an optional line count (default 100, max 2000) and reads tmux scrollback directly — works regardless of whether a channel tap was previously acquired. Dropped the now-dead `pty-tap.tailSlice` + `TAIL_BYTES`. Tap module stays for the JSONL fallback (`passthroughViaTap`) which needs offset semantics `multmux capture` doesn't provide.
+
+**Why:**
+- Long agent turns made the channel feel dead — user sat through 60-90s of nothing then got one wall of text. Claude/Codex already emit interim text blocks while doing tool use; surfacing them as separate replies turns dead time into incremental progress.
+- `AskUserQuestion` deadlocked the channel: the TUI dialog blocks `end_turn` indefinitely, the channel timed out at 2 min, and the user couldn't reach the TUI from a phone. Auto-canceling the dialog + surfacing the question text lets the user answer through the same channel.
+- Unknown `/xxx` returning `unknown command` blocked Claude/Codex's own slash-command surface (e.g. `/scope-review`). The fix is a whitelist of channel commands; everything else passes through.
+- The in-memory tap-tail powering `/last` was awkward: `/last` only worked AFTER a tap was acquired (so brand-new bindings got nothing), and 8KB of bytes is less intuitive than N lines. `multmux capture` is the natural API and removes one piece of process state.
+
+**Key files:** `server/src/lib/channels/{router,agent-output,pty-tap,keys}.ts`, `server/src/lib/multmux.ts`, `server/src/lib/whatsapp/index.ts`, `server/src/lib/wechat/{router,agent}.ts`, `server/src/lib/__tests__/{agent-output,wechat-router,wechat-pty-tap}.test.ts`, `doc/main/backend/libs.md`.
+**Verification:** `cd server && npm test` — 21 files / 238 tests passing (was 20/230 before the batch; +1 file +9 streaming/AskUserQuestion tests, -1 dead `tailSlice` test). Two parallel worktrees used for orthogonal slices, merged with one trivial `handleMessage` conflict resolved by combining the whitelist + callback signature.
+**Commit:** b0fc384, bc3cef1, 0dc81fc (merge), ba8ba70 (merge), 3eb9a73 — pushed.
+**Next:** Live-test streaming replies + AskUserQuestion auto-cancel end-to-end on a real WhatsApp conversation. Decide whether to expose `thinking` blocks behind a `/verbose` toggle (currently hard-skipped).
+**Blockers:** None.
+
 ## 2026-05-08: WhatsApp channel + JSONL-based agent reply extraction
 
 **What changed:**
