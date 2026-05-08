@@ -53,6 +53,11 @@ export function createAuthStore(scope: string, whitelistEnvKey: string) {
   }
 
   return {
+    /** Eager-load the persisted TOFU binding (for boot-time status display). */
+    async ensureLoaded(): Promise<void> {
+      await loadTofuOnce()
+    },
+
     /** 'allow' to proceed, 'deny' to silent-drop. In TOFU mode, atomically
      *  binds the first conversationId seen. */
     async authorize(conversationId: string): Promise<'allow' | 'deny'> {

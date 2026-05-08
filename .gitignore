@@ -10,3 +10,6 @@ test-results/
 .env
 .worktrees/
 .tasks.json.lock
+.wwebjs_cache/
+.wwebjs_auth/
+.playwright-mcp/

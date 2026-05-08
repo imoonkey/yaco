@@ -4,3 +4,4 @@ const whatsappAuth = createAuthStore('whatsapp', 'WHATSAPP_CONVERSATION_WHITELIS
 
 export const authorize = whatsappAuth.authorize
 export const getAuthSnapshot = whatsappAuth.getAuthSnapshot
+export const ensureAuthLoaded = whatsappAuth.ensureLoaded
