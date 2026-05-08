@@ -44,6 +44,8 @@ npm run dev:server    # Backend on :3001 (tsx watch)
 npm run dev:ui        # Frontend on :5173 (proxies /api + /ws to :3001)
 ```
 
+> ⚠️ `tsx watch` only reliably reloads on changes to the entry file (`server/src/index.ts`). On older Linux kernels it sometimes misses changes to imported modules — symptom is "I edited a server file, redeployed, behavior unchanged". When in doubt, `touch server/src/index.ts` to force a respawn, or check `ps -o pid,etime,cmd -p $(pgrep -f 'tsx.*src/index.ts' | tail -1)` to see how old the running child is.
+
 `npm run start:app` is the intended local shape for installed/mobile use: it builds `ui/dist` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
 
 `npm run dev:tmux` creates or reuses a `tmux` session named `workflow-dev` with two panes:
