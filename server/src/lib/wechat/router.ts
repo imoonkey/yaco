@@ -9,7 +9,9 @@ export const parseCommand = wechatRouter.parseCommand
 export const dispatch = wechatRouter.dispatch
 export const passthroughText = async (ctx: { conversationId: string }, text: string): Promise<string> => {
   const chunks: string[] = []
-  await wechatRouter.handleMessage(ctx, text, async (reply) => { chunks.push(reply) })
+  await wechatRouter.handleMessage(ctx, text, async (reply) => {
+    chunks.push(reply.kind === 'text' ? reply.text : `[附件: ${reply.filename}]`)
+  })
   return chunks.join('\n\n')
 }
 export const getCurrentProject = wechatRouter.getCurrentProject

@@ -49,6 +49,12 @@ await writeFile(
 
 const { parseCommand, dispatch, _resetRouterState, passthroughText } = await import('../wechat/router')
 
+const dispatchText = async (...args: Parameters<typeof dispatch>): Promise<string> => {
+  const r = await dispatch(...args)
+  if (r.kind !== 'text') throw new Error(`expected text reply, got kind=${r.kind}`)
+  return r.text
+}
+
 describe('parseCommand', () => {
   it('returns null for non-command text', () => {
     expect(parseCommand('hello world')).toBeNull()
@@ -81,71 +87,71 @@ describe('dispatch', () => {
   })
 
   it('/help returns help text', async () => {
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'help', args: [] })
+    const out = await dispatchText({ conversationId: 'wx' }, { name: 'help', args: [] })
     expect(out).toMatch(/可用命令/)
     expect(out).toMatch(/\/projects/)
   })
 
   it('/projects lists numbered projects', async () => {
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'projects', args: [] })
+    const out = await dispatchText({ conversationId: 'wx' }, { name: 'projects', args: [] })
     expect(out).toContain('1. alpha')
     expect(out).toContain('2. beta')
   })
 
   it('/use <name> sets current project and lists sessions', async () => {
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatchText({ conversationId: 'wx' }, { name: 'use', args: ['alpha'] })
     expect(out).toContain('current project: alpha')
     expect(out).toContain('claude-1')
     expect(out).toContain('idle')
   })
 
   it('/use <n> by index also works', async () => {
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'use', args: ['2'] })
+    const out = await dispatchText({ conversationId: 'wx' }, { name: 'use', args: ['2'] })
     expect(out).toContain('current project: beta')
   })
 
   it('/use bogus replies project not found', async () => {
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'use', args: ['nonexistent'] })
+    const out = await dispatchText({ conversationId: 'wx' }, { name: 'use', args: ['nonexistent'] })
     expect(out).toContain('project not found')
   })
 
   it('/sessions before /use says no current project', async () => {
-    const out = await dispatch({ conversationId: 'wx-fresh' }, { name: 'sessions', args: [] })
+    const out = await dispatchText({ conversationId: 'wx-fresh' }, { name: 'sessions', args: [] })
     expect(out).toContain('no current project')
   })
 
   it('/sessions after /use lists project sessions', async () => {
-    await dispatch({ conversationId: 'wx' }, { name: 'use', args: ['alpha'] })
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'sessions', args: [] })
+    await dispatchText({ conversationId: 'wx' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatchText({ conversationId: 'wx' }, { name: 'sessions', args: [] })
     expect(out).toContain('project: alpha')
     expect(out).toContain('claude-1')
   })
 
   it('/who unbound responds with hint', async () => {
-    const out = await dispatch({ conversationId: 'wx-unbound' }, { name: 'who', args: [] })
+    const out = await dispatchText({ conversationId: 'wx-unbound' }, { name: 'who', args: [] })
     expect(out).toMatch(/unbound/)
   })
 
   it('/use s defers when no current project', async () => {
-    const out = await dispatch({ conversationId: 'wx-fresh-2' }, { name: 'use', args: ['s', '1'] })
+    const out = await dispatchText({ conversationId: 'wx-fresh-2' }, { name: 'use', args: ['s', '1'] })
     expect(out).toMatch(/no current project/)
   })
 
   it('/use s with bogus index returns session not found', async () => {
-    await dispatch({ conversationId: 'wx-bogus' }, { name: 'use', args: ['alpha'] })
-    const out = await dispatch({ conversationId: 'wx-bogus' }, { name: 'use', args: ['s', '99'] })
+    await dispatchText({ conversationId: 'wx-bogus' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatchText({ conversationId: 'wx-bogus' }, { name: 'use', args: ['s', '99'] })
     expect(out).toMatch(/session not found/)
   })
 
   it('/exit and /last respond when not bound; /new validates input', async () => {
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/not bound/)
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/not bound/)
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/用法/)
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'new', args: ['ruby'] })).toMatch(/provider must be claude or codex/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/not bound/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/not bound/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/用法/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: ['ruby'] })).toMatch(/provider must be claude or codex/)
   })
 
   it('/new without current project errors before spawning', async () => {
-    const out = await dispatch({ conversationId: 'wx-no-project' }, { name: 'new', args: ['claude'] })
+    const out = await dispatchText({ conversationId: 'wx-no-project' }, { name: 'new', args: ['claude'] })
     expect(out).toMatch(/no current project/)
   })
 
@@ -180,7 +186,7 @@ describe('dispatch', () => {
     await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'use', args: ['alpha'] })
     const out = await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'new', args: ['codex', 'mysess'] })
 
-    expect(out).toMatch(/started \+ bound to alpha\/mysess/)
+    expect(out.kind === 'text' && out.text).toMatch(/started \+ bound to alpha\/mysess/)
     expect(startMultmuxSession).toHaveBeenCalledWith('codex', 'mysess', expect.any(String))
     expect(acquireTap).toHaveBeenCalledWith('mysess')
     const binding = await getBinding('wx-newhappy')
@@ -196,14 +202,16 @@ describe('dispatch', () => {
     expect(out).toMatch(/unbound — run \/help/)
   })
 
-  it('/file reads a text file inside the session root', async () => {
+  it('/file emits a file attachment for a text file', async () => {
     await writeFile(join(projectAPath, 'hello.txt'), 'hi there\nsecond line\n')
     _resetRouterState()
-    await dispatch({ conversationId: 'wx-file-read' }, { name: 'use', args: ['alpha'] })
+    await dispatchText({ conversationId: 'wx-file-read' }, { name: 'use', args: ['alpha'] })
     const out = await dispatch({ conversationId: 'wx-file-read' }, { name: 'file', args: ['hello.txt'] })
-    expect(out).toContain('hi there')
-    expect(out).toContain('second line')
-    expect(out).toMatch(/--- hello\.txt \(\d+ lines, \d+ bytes\) ---/)
+    expect(out.kind).toBe('file')
+    if (out.kind !== 'file') return  // narrow for TS
+    expect(out.filename).toBe('hello.txt')
+    expect(out.path).toBe(join(projectAPath, 'hello.txt'))
+    expect(out.caption).toMatch(/hello\.txt \(\d+ bytes\)/)
   })
 
   it('/file lists a directory with d/f prefixes, dirs first', async () => {
@@ -212,8 +220,8 @@ describe('dispatch', () => {
     await writeFile(join(projectAPath, 'mixed', 'a-file.txt'), 'x')
     await writeFile(join(projectAPath, 'mixed', 'z-file.txt'), 'y')
     _resetRouterState()
-    await dispatch({ conversationId: 'wx-file-dir' }, { name: 'use', args: ['alpha'] })
-    const out = await dispatch({ conversationId: 'wx-file-dir' }, { name: 'file', args: ['mixed'] })
+    await dispatchText({ conversationId: 'wx-file-dir' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatchText({ conversationId: 'wx-file-dir' }, { name: 'file', args: ['mixed'] })
     const lines = out.split('\n')
     expect(lines[0]).toMatch(/^mixed\/  \(3 entries\)/)
     expect(lines[1]).toBe('d subdir')
@@ -222,16 +230,18 @@ describe('dispatch', () => {
 
   it('/file rejects paths that escape the session root', async () => {
     _resetRouterState()
-    await dispatch({ conversationId: 'wx-file-escape' }, { name: 'use', args: ['alpha'] })
-    const out = await dispatch({ conversationId: 'wx-file-escape' }, { name: 'file', args: ['../beta'] })
+    await dispatchText({ conversationId: 'wx-file-escape' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatchText({ conversationId: 'wx-file-escape' }, { name: 'file', args: ['../beta'] })
     expect(out).toMatch(/escapes session root/)
   })
 
-  it('/file rejects binary files', async () => {
+  it('/file emits a file attachment for binary files (no rejection)', async () => {
     await writeFile(join(projectAPath, 'binfile.bin'), Buffer.from([0x00, 0x01, 0x02, 0x03]))
     _resetRouterState()
-    await dispatch({ conversationId: 'wx-file-bin' }, { name: 'use', args: ['alpha'] })
+    await dispatchText({ conversationId: 'wx-file-bin' }, { name: 'use', args: ['alpha'] })
     const out = await dispatch({ conversationId: 'wx-file-bin' }, { name: 'file', args: ['binfile.bin'] })
-    expect(out).toMatch(/binary file .* not supported/)
+    expect(out.kind).toBe('file')
+    if (out.kind !== 'file') return
+    expect(out.filename).toBe('binfile.bin')
   })
 })

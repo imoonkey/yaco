@@ -8,7 +8,7 @@ import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 import { whatsappStore } from './state'
 import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
 
-const { Client, LocalAuth } = wweb
+const { Client, LocalAuth, MessageMedia } = wweb
 
 const SESSION_DIR = join(homedir(), '.workflow', 'whatsapp-session')
 
@@ -148,14 +148,30 @@ async function handleMessage(msg: Message): Promise<void> {
   }
 
   await serialize(conversationId, async () => {
-    await router.handleMessage({ conversationId }, text, async (reply: string) => {
-      if (!reply) return
-      // Mark BEFORE awaiting reply — message_create can fire before reply resolves.
-      markOurReply(conversationId, reply)
+    await router.handleMessage({ conversationId }, text, async (reply) => {
+      if (reply.kind === 'text') {
+        if (!reply.text) return
+        // Mark BEFORE awaiting reply — message_create can fire before reply resolves.
+        markOurReply(conversationId, reply.text)
+        try {
+          await msg.reply(reply.text)
+        } catch (e) {
+          console.error('[whatsapp] reply failed:', e)
+        }
+        return
+      }
+      // file attachment
       try {
-        await msg.reply(reply)
+        const media = MessageMedia.fromFilePath(reply.path)
+        media.filename = reply.filename
+        // Caption (if any) becomes a separate message.body — also dedup it.
+        if (reply.caption) markOurReply(conversationId, reply.caption)
+        await msg.reply(media, undefined, reply.caption ? { caption: reply.caption } : undefined)
       } catch (e) {
-        console.error('[whatsapp] reply failed:', e)
+        console.error('[whatsapp] file reply failed:', e)
+        const errText = `failed to send ${reply.filename}: ${(e as Error).message}`
+        markOurReply(conversationId, errText)
+        try { await msg.reply(errText) } catch { /* swallow */ }
       }
     })
   })

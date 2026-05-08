@@ -7,8 +7,13 @@ import { acquireTap, releaseTap, recordOffset, sliceFromOffset, waitForQuiet, ha
 import { startTurn, streamAgentReply } from './agent-output'
 import { sendEscape } from './keys'
 
-export type ReplyCallback = (text: string) => Promise<void>
+export type ChannelReply =
+  | { kind: 'text'; text: string }
+  | { kind: 'file'; path: string; filename: string; caption?: string }
 
+export type ReplyCallback = (reply: ChannelReply) => Promise<void>
+
+export const textReply = (text: string): ChannelReply => ({ kind: 'text', text })
 export interface CommandContext {
   conversationId: string
 }
@@ -38,7 +43,7 @@ const HELP_TEXT = [
   '/exit                 解绑（不杀 session）',
   '/who                  查看当前 binding',
   '/last [n]             抓最近 n 行 pane（默认 100，上限 2000）',
-  '/file <path> (/f)     读文件全文 或 列目录（基于当前 session 的 cwd）',
+  '/file <path> (/f)     发送文件作为附件（≤5MB）或列目录',
   '/help                 显示本帮助',
 ].join('\n')
 
@@ -48,7 +53,7 @@ const PASSTHROUGH_TIMEOUT_MS = 60_000
 const LAST_DEFAULT_LINES = 100
 const LAST_MAX_LINES = 2000
 
-const FILE_MAX_BYTES = 32 * 1024
+const FILE_MAX_BYTES = 5 * 1024 * 1024
 const DIR_MAX_ENTRIES = 200
 
 async function formatDirListing(absPath: string, rel: string): Promise<string> {
@@ -62,14 +67,6 @@ async function formatDirListing(absPath: string, rel: string): Promise<string> {
     ? [`[…${sorted.length - DIR_MAX_ENTRIES} more]`]
     : []
   return [`${rel || '.'}/  (${entries.length} entries)`, ...lines, ...more].join('\n')
-}
-
-function looksBinary(buf: Buffer): boolean {
-  // Null byte in the first 8KB is a strong binary signal (works for images,
-  // archives, executables; produces no false positives on UTF-8 text).
-  const sample = buf.subarray(0, Math.min(buf.length, 8192))
-  for (let i = 0; i < sample.length; i++) if (sample[i] === 0) return true
-  return false
 }
 
 async function projectByName(name: string): Promise<Project | undefined> {
@@ -248,11 +245,11 @@ export function createRouter(store: BindingStore) {
     return `started + bound to ${project.name}/${handle} [${provider}]`
   }
 
-  async function handleFile(ctx: CommandContext, args: string[]): Promise<string> {
-    if (args.length === 0) return '用法: /file <relative-path>'
+  async function handleFile(ctx: CommandContext, args: string[]): Promise<ChannelReply> {
+    if (args.length === 0) return textReply('用法: /file <relative-path>')
 
     const project = await resolveCurrentProject(ctx.conversationId)
-    if (!project) return 'no current project — run /use <name> first or bind a session'
+    if (!project) return textReply('no current project — run /use <name> first or bind a session')
 
     // Prefer the bound session's cwd (worktree-aware); fall back to project root.
     let root = project.path
@@ -265,24 +262,20 @@ export function createRouter(store: BindingStore) {
     const rel = args.join(' ')
     const resolved = resolvePath(root, rel)
     if (resolved !== root && !resolved.startsWith(root + pathSep)) {
-      return `path escapes session root: ${rel}`
+      return textReply(`path escapes session root: ${rel}`)
     }
 
     let st
-    try { st = await fs.stat(resolved) } catch { return `not found: ${rel}` }
+    try { st = await fs.stat(resolved) } catch { return textReply(`not found: ${rel}`) }
 
-    if (st.isDirectory()) return formatDirListing(resolved, rel)
-    if (!st.isFile()) return `not a file or directory: ${rel}`
+    if (st.isDirectory()) return textReply(await formatDirListing(resolved, rel))
+    if (!st.isFile()) return textReply(`not a file or directory: ${rel}`)
     if (st.size > FILE_MAX_BYTES) {
-      return `file too large: ${st.size} bytes (limit ${FILE_MAX_BYTES})`
+      return textReply(`file too large: ${st.size} bytes (limit ${FILE_MAX_BYTES})`)
     }
 
-    const buf = await fs.readFile(resolved)
-    if (looksBinary(buf)) return `binary file (${st.size} bytes) — not supported`
-
-    const text = buf.toString('utf-8')
-    const lines = text.length === 0 ? 0 : text.split('\n').length
-    return `--- ${rel} (${lines} lines, ${st.size} bytes) ---\n${text}`
+    const filename = rel.split('/').pop() || rel
+    return { kind: 'file', path: resolved, filename, caption: `${rel} (${st.size} bytes)` }
   }
 
   /** Forward plain text to the bound session and stream the agent's reply
@@ -298,7 +291,7 @@ export function createRouter(store: BindingStore) {
     onReply: ReplyCallback,
   ): Promise<void> {
     const binding = await store.getBinding(ctx.conversationId)
-    if (!binding) { await onReply('unbound — run /help to see commands'); return }
+    if (!binding) { await onReply(textReply('unbound — run /help to see commands')); return }
 
     // Find the session metadata so we know which JSONL to tail.
     const project = await projectByName(binding.project)
@@ -306,7 +299,7 @@ export function createRouter(store: BindingStore) {
     const session = sessions.find(s => s.name === binding.session)
     if (!session) {
       await store.clearBinding(ctx.conversationId)
-      await onReply(`previous session '${binding.session}' is no longer running — run /sessions to choose another`)
+      await onReply(textReply(`previous session '${binding.session}' is no longer running — run /sessions to choose another`))
       return
     }
 
@@ -318,7 +311,7 @@ export function createRouter(store: BindingStore) {
       await sendToSession(binding.session, text)
     } catch {
       await store.clearBinding(ctx.conversationId)
-      await onReply(`previous session '${binding.session}' is no longer running — run /sessions to choose another`)
+      await onReply(textReply(`previous session '${binding.session}' is no longer running — run /sessions to choose another`))
       return
     }
 
@@ -335,17 +328,17 @@ export function createRouter(store: BindingStore) {
       onAskUserQuestion: async () => sendEscape(binding.session),
     })) {
       if (ev.kind === 'timeout') {
-        await onReply(sentAny
+        await onReply(textReply(sentAny
           ? '[turn may still be in progress — /last for raw buffer]'
-          : '(no answer within 2 min — try /last for the raw pane buffer)')
+          : '(no answer within 2 min — try /last for the raw pane buffer)'))
         return
       }
       if (!ev.text) continue
-      await onReply(ev.text)
+      await onReply(textReply(ev.text))
       sentAny = true
     }
 
-    if (!sentAny) await onReply('(no answer captured)')
+    if (!sentAny) await onReply(textReply('(no answer captured)'))
   }
 
   /** Legacy tap-based passthrough — only used when the JSONL log can't be
@@ -360,7 +353,7 @@ export function createRouter(store: BindingStore) {
       try { await acquireTap(handle) }
       catch {
         await store.clearBinding(ctx.conversationId)
-        await onReply(`previous session '${handle}' is no longer running — run /sessions to choose another`)
+        await onReply(textReply(`previous session '${handle}' is no longer running — run /sessions to choose another`))
         return
       }
     }
@@ -374,35 +367,35 @@ export function createRouter(store: BindingStore) {
     let reply = slice.text.trim() || '(no output captured — try /last)'
     if (slice.truncated) reply = `[…older output truncated…]\n${reply}`
     if (!quiet) reply = `${reply}\n[turn may still be in progress — /last to retry]`
-    await onReply(reply)
+    await onReply(textReply(reply))
   }
 
-  async function dispatch(ctx: CommandContext, command: ParsedCommand): Promise<string> {
+  async function dispatch(ctx: CommandContext, command: ParsedCommand): Promise<ChannelReply> {
     switch (command.name) {
       case 'help':
       case 'h':
-        return HELP_TEXT
+        return textReply(HELP_TEXT)
       case 'projects':
       case 'p':
-        return handleProjects()
+        return textReply(await handleProjects())
       case 'use':
-        return handleUse(ctx, command.args)
+        return textReply(await handleUse(ctx, command.args))
       case 'sessions':
       case 's':
-        return handleSessions(ctx)
+        return textReply(await handleSessions(ctx))
       case 'who':
-        return handleWho(ctx)
+        return textReply(await handleWho(ctx))
       case 'exit':
-        return handleExit(ctx)
+        return textReply(await handleExit(ctx))
       case 'last':
-        return handleLast(ctx, command.args)
+        return textReply(await handleLast(ctx, command.args))
       case 'new':
-        return handleNew(ctx, command.args)
+        return textReply(await handleNew(ctx, command.args))
       case 'file':
       case 'f':
         return handleFile(ctx, command.args)
       default:
-        return `unknown command: /${command.name} — run /help`
+        return textReply(`unknown command: /${command.name} — run /help`)
     }
   }
 
@@ -419,7 +412,7 @@ export function createRouter(store: BindingStore) {
     const command = parseCommand(text)
     if (command && KNOWN_COMMANDS.has(command.name)) {
       const reply = await dispatch(ctx, command)
-      if (reply) await onReply(reply)
+      if (reply.kind !== 'text' || reply.text) await onReply(reply)
       return
     }
     await passthroughText(ctx, text, onReply)

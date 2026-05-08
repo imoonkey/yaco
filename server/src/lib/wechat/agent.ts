@@ -25,7 +25,9 @@ async function handle(request: ChatRequest): Promise<ChatResponse> {
   if (media) return { text: '暂不支持 media 消息' }
 
   const chunks: string[] = []
-  await wechatRouter.handleMessage({ conversationId }, text ?? '', async (reply) => { chunks.push(reply) })
+  await wechatRouter.handleMessage({ conversationId }, text ?? '', async (reply) => {
+    chunks.push(reply.kind === 'text' ? reply.text : `[附件: ${reply.filename}]`)
+  })
   return { text: chunks.join('\n\n') }
 }
 
