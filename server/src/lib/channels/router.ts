@@ -43,7 +43,7 @@ const HELP_TEXT = [
   '/exit                 解绑（不杀 session）',
   '/who                  查看当前 binding',
   '/last [n]             抓最近 n 行 pane（默认 100，上限 2000）',
-  '/file <path> (/f)     发送文件作为附件（≤5MB）或列目录',
+  '/file [-t] <path>     文件→附件（≤5MB）；-t 改成内联文本（≤32KB）；目录→列表',
   '/help                 显示本帮助',
 ].join('\n')
 
@@ -54,6 +54,7 @@ const LAST_DEFAULT_LINES = 100
 const LAST_MAX_LINES = 2000
 
 const FILE_MAX_BYTES = 5 * 1024 * 1024
+const FILE_TEXT_MAX_BYTES = 32 * 1024
 const DIR_MAX_ENTRIES = 200
 
 async function formatDirListing(absPath: string, rel: string): Promise<string> {
@@ -67,6 +68,14 @@ async function formatDirListing(absPath: string, rel: string): Promise<string> {
     ? [`[…${sorted.length - DIR_MAX_ENTRIES} more]`]
     : []
   return [`${rel || '.'}/  (${entries.length} entries)`, ...lines, ...more].join('\n')
+}
+
+function looksBinary(buf: Buffer): boolean {
+  // Null byte in the first 8KB is a strong binary signal — works for images,
+  // archives, executables; produces no false positives on UTF-8 text.
+  const sample = buf.subarray(0, Math.min(buf.length, 8192))
+  for (let i = 0; i < sample.length; i++) if (sample[i] === 0) return true
+  return false
 }
 
 async function projectByName(name: string): Promise<Project | undefined> {
@@ -246,7 +255,9 @@ export function createRouter(store: BindingStore) {
   }
 
   async function handleFile(ctx: CommandContext, args: string[]): Promise<ChannelReply> {
-    if (args.length === 0) return textReply('用法: /file <relative-path>')
+    const asText = args.includes('-t')
+    const pathArgs = args.filter(a => a !== '-t')
+    if (pathArgs.length === 0) return textReply('用法: /file [-t] <relative-path>')
 
     const project = await resolveCurrentProject(ctx.conversationId)
     if (!project) return textReply('no current project — run /use <name> first or bind a session')
@@ -259,7 +270,7 @@ export function createRouter(store: BindingStore) {
       if (session) root = session.sessionPath
     }
 
-    const rel = args.join(' ')
+    const rel = pathArgs.join(' ')
     const resolved = resolvePath(root, rel)
     if (resolved !== root && !resolved.startsWith(root + pathSep)) {
       return textReply(`path escapes session root: ${rel}`)
@@ -270,6 +281,18 @@ export function createRouter(store: BindingStore) {
 
     if (st.isDirectory()) return textReply(await formatDirListing(resolved, rel))
     if (!st.isFile()) return textReply(`not a file or directory: ${rel}`)
+
+    if (asText) {
+      if (st.size > FILE_TEXT_MAX_BYTES) {
+        return textReply(`file too large for -t: ${st.size} bytes (limit ${FILE_TEXT_MAX_BYTES}; drop -t to send as attachment)`)
+      }
+      const buf = await fs.readFile(resolved)
+      if (looksBinary(buf)) return textReply(`binary file (${st.size} bytes) — drop -t to send as attachment`)
+      const text = buf.toString('utf-8')
+      const lines = text.length === 0 ? 0 : text.split('\n').length
+      return textReply(`--- ${rel} (${lines} lines, ${st.size} bytes) ---\n${text}`)
+    }
+
     if (st.size > FILE_MAX_BYTES) {
       return textReply(`file too large: ${st.size} bytes (limit ${FILE_MAX_BYTES})`)
     }

@@ -244,4 +244,22 @@ describe('dispatch', () => {
     if (out.kind !== 'file') return
     expect(out.filename).toBe('binfile.bin')
   })
+
+  it('/file -t inlines a text file with a header', async () => {
+    await writeFile(join(projectAPath, 'inline.txt'), 'line one\nline two\n')
+    _resetRouterState()
+    await dispatchText({ conversationId: 'wx-file-t' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatchText({ conversationId: 'wx-file-t' }, { name: 'file', args: ['-t', 'inline.txt'] })
+    expect(out).toMatch(/--- inline\.txt \(\d+ lines, \d+ bytes\) ---/)
+    expect(out).toContain('line one')
+    expect(out).toContain('line two')
+  })
+
+  it('/file -t rejects binary files', async () => {
+    await writeFile(join(projectAPath, 'inline.bin'), Buffer.from([0x00, 0x01, 0x02]))
+    _resetRouterState()
+    await dispatchText({ conversationId: 'wx-file-t-bin' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatchText({ conversationId: 'wx-file-t-bin' }, { name: 'file', args: ['-t', 'inline.bin'] })
+    expect(out).toMatch(/binary file .* drop -t/)
+  })
 })
