@@ -148,15 +148,16 @@ async function handleMessage(msg: Message): Promise<void> {
   }
 
   await serialize(conversationId, async () => {
-    const reply = await router.handleMessage({ conversationId }, text)
-    if (!reply) return
-    // Mark BEFORE awaiting reply — message_create can fire before reply resolves.
-    markOurReply(conversationId, reply)
-    try {
-      await msg.reply(reply)
-    } catch (e) {
-      console.error('[whatsapp] reply failed:', e)
-    }
+    await router.handleMessage({ conversationId }, text, async (reply: string) => {
+      if (!reply) return
+      // Mark BEFORE awaiting reply — message_create can fire before reply resolves.
+      markOurReply(conversationId, reply)
+      try {
+        await msg.reply(reply)
+      } catch (e) {
+        console.error('[whatsapp] reply failed:', e)
+      }
+    })
   })
 }
 

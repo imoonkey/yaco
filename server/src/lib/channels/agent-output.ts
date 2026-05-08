@@ -13,10 +13,18 @@ export interface PendingTurn {
   provider: 'claude' | 'codex'
 }
 
-export interface AgentReply {
-  text: string
-  /** True if we hit the timeout before the final answer arrived. */
-  timedOut: boolean
+export type AgentEvent =
+  | { kind: 'interim', text: string }
+  | { kind: 'question', text: string }
+  | { kind: 'final', text: string }
+  | { kind: 'timeout' }
+
+export interface StreamOptions {
+  timeoutMs?: number
+  /** Called once when an AskUserQuestion is detected, BEFORE the 'question'
+   *  event is yielded. Should send Escape to the multmux session to cancel
+   *  the TUI dialog so the agent unblocks. Errors are swallowed + logged. */
+  onAskUserQuestion?: () => Promise<void>
 }
 
 const POLL_MS = 250
@@ -66,18 +74,22 @@ export async function startTurn(session: MultmuxSession): Promise<PendingTurn | 
   return { jsonlPath, startSize: stats.size, provider: session.provider }
 }
 
-/** Wait for the session's final assistant answer to be appended to the JSONL,
- *  bounded by timeoutMs. Returns the answer text + whether we timed out. */
-export async function awaitFinalReply(
+/** Stream agent reply events as they're appended to the JSONL log. Yields
+ *  interim text blocks during a tool-use turn, surfaces AskUserQuestion as
+ *  a 'question' event (after invoking onAskUserQuestion to cancel the TUI
+ *  dialog), and ends with 'final' when the agent's turn closes — or
+ *  'timeout' if nothing finalizes within timeoutMs. */
+export async function* streamAgentReply(
   turn: PendingTurn,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-): Promise<AgentReply> {
+  opts: StreamOptions = {},
+): AsyncGenerator<AgentEvent> {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const start = Date.now()
   let lastSize = turn.startSize
   let buffer = ''
 
   while (Date.now() - start < timeoutMs) {
-    await new Promise((r) => setTimeout(r, POLL_MS))
+    await new Promise(r => setTimeout(r, POLL_MS))
 
     let stats
     try { stats = await stat(turn.jsonlPath) } catch { continue }
@@ -98,39 +110,122 @@ export async function awaitFinalReply(
     buffer = lines.pop() ?? ''
     for (const raw of lines) {
       if (!raw.trim()) continue
-      const text = extractFinalAnswer(raw, turn.provider)
-      if (text) return { text, timedOut: false }
+      const events = classifyLine(raw, turn.provider)
+      for (const ev of events) {
+        if (ev.kind === 'question' && opts.onAskUserQuestion) {
+          try { await opts.onAskUserQuestion() }
+          catch (e) { console.error('[agent-output] onAskUserQuestion failed:', e) }
+        }
+        yield ev
+        if (ev.kind === 'final') return
+      }
     }
   }
 
-  return { text: '', timedOut: true }
+  yield { kind: 'timeout' }
 }
 
-function extractFinalAnswer(line: string, provider: 'claude' | 'codex'): string | null {
-  let entry: unknown
-  try { entry = JSON.parse(line) } catch { return null }
-  if (!entry || typeof entry !== 'object') return null
+/** Back-compat shim: collapse the stream into a single final reply.
+ *  Returns the last text seen (interim, question, or final) plus a
+ *  timedOut flag. Prefer streamAgentReply for new callers. */
+export async function awaitFinalReply(
+  turn: PendingTurn,
+  timeoutMs?: number,
+): Promise<{ text: string, timedOut: boolean }> {
+  let last = ''
+  let timedOut = false
+  for await (const ev of streamAgentReply(turn, { timeoutMs })) {
+    if (ev.kind === 'timeout') { timedOut = true; break }
+    last = ev.text
+    if (ev.kind === 'final') break
+  }
+  return { text: last, timedOut }
+}
 
-  if (provider === 'codex') {
-    const e = entry as { type?: string, payload?: { type?: string, phase?: string, message?: unknown } }
-    const p = e.payload
-    if (e.type === 'event_msg' && p?.type === 'agent_message' && p.phase === 'final_answer') {
-      return typeof p.message === 'string' ? p.message.trim() || null : null
+interface ClaudeMessage {
+  stop_reason?: string
+  content?: unknown
+}
+
+interface ClaudeBlock {
+  type?: string
+  text?: string
+  name?: string
+  input?: { questions?: ClaudeQuestion[] }
+}
+
+interface ClaudeQuestion {
+  question?: string
+  header?: string
+  options?: { label?: string, description?: string }[]
+}
+
+function classifyLine(line: string, provider: 'claude' | 'codex'): AgentEvent[] {
+  let entry: unknown
+  try { entry = JSON.parse(line) } catch { return [] }
+  if (!entry || typeof entry !== 'object') return []
+
+  return provider === 'codex' ? classifyCodex(entry) : classifyClaude(entry)
+}
+
+function classifyCodex(entry: unknown): AgentEvent[] {
+  const e = entry as { type?: string, payload?: { type?: string, phase?: string, message?: unknown } }
+  if (e.type !== 'event_msg') return []
+  const p = e.payload
+  if (p?.type !== 'agent_message') return []
+  if (typeof p.message !== 'string') return []
+  const text = p.message.trim()
+  if (!text) return []
+  if (p.phase === 'final_answer') return [{ kind: 'final', text }]
+  if (p.phase === 'commentary') return [{ kind: 'interim', text }]
+  return []
+}
+
+function classifyClaude(entry: unknown): AgentEvent[] {
+  const e = entry as { type?: string, message?: ClaudeMessage }
+  if (e.type !== 'assistant') return []
+  const msg = e.message
+  if (!msg || !Array.isArray(msg.content)) return []
+  const blocks = msg.content as ClaudeBlock[]
+
+  const textParts: string[] = []
+  const questions: ClaudeQuestion[] = []
+  for (const b of blocks) {
+    if (!b || typeof b !== 'object') continue
+    if (b.type === 'text' && typeof b.text === 'string') {
+      textParts.push(b.text)
+    } else if (b.type === 'tool_use' && b.name === 'AskUserQuestion') {
+      const qs = b.input?.questions
+      if (Array.isArray(qs)) questions.push(...qs)
     }
-    return null
+    // skip thinking, tool_use (other tools), tool_result
   }
 
-  // claude: top-level type='assistant', message.stop_reason='end_turn',
-  // message.content is array of {type:'text'|'tool_use', text?, ...}.
-  const e = entry as { type?: string, message?: { stop_reason?: string, content?: unknown } }
-  if (e.type !== 'assistant') return null
-  const msg = e.message
-  if (msg?.stop_reason !== 'end_turn') return null
-  if (!Array.isArray(msg.content)) return null
-  const text = msg.content
-    .filter((b): b is { type: string, text: string } => typeof b === 'object' && b !== null && (b as { type?: string }).type === 'text')
-    .map(b => b.text)
-    .join('\n')
-    .trim()
-  return text || null
+  const events: AgentEvent[] = []
+  const text = textParts.join('\n').trim()
+
+  if (questions.length > 0) {
+    if (text) events.push({ kind: 'interim', text })
+    events.push({ kind: 'question', text: formatQuestion(questions) })
+    return events
+  }
+
+  if (!text) return []
+  if (msg.stop_reason === 'end_turn') return [{ kind: 'final', text }]
+  return [{ kind: 'interim', text }]
+}
+
+function formatQuestion(questions: ClaudeQuestion[]): string {
+  const blocks = questions.map(q => {
+    const head = q.question?.trim() || q.header?.trim() || '(no question text)'
+    const opts = (q.options ?? [])
+      .map((o, i) => {
+        const label = o.label?.trim() || `option ${i + 1}`
+        const desc = o.description?.trim()
+        return desc ? `${i + 1}) ${label} — ${desc}` : `${i + 1}) ${label}`
+      })
+      .join('\n')
+    return opts ? `🤔 Agent 在问：${head}\n\n${opts}` : `🤔 Agent 在问：${head}`
+  })
+  return `${blocks.join('\n\n')}\n\n已自动取消 dialog，直接回复你的答案即可。`
 }
