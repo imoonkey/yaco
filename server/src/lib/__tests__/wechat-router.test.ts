@@ -126,15 +126,21 @@ describe('dispatch', () => {
     expect(out).toMatch(/unbound/)
   })
 
-  it('/use s defers to phase 2', async () => {
-    const out = await dispatch({ conversationId: 'wx' }, { name: 'use', args: ['s', '1'] })
-    expect(out).toMatch(/phase 2/)
+  it('/use s defers when no current project', async () => {
+    const out = await dispatch({ conversationId: 'wx-fresh-2' }, { name: 'use', args: ['s', '1'] })
+    expect(out).toMatch(/no current project/)
   })
 
-  it('/exit and /last and /new defer to later phases', async () => {
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/phase/)
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/phase/)
-    expect(await dispatch({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/phase/)
+  it('/use s with bogus index returns session not found', async () => {
+    await dispatch({ conversationId: 'wx-bogus' }, { name: 'use', args: ['alpha'] })
+    const out = await dispatch({ conversationId: 'wx-bogus' }, { name: 'use', args: ['s', '99'] })
+    expect(out).toMatch(/session not found/)
+  })
+
+  it('/exit and /last and /new defer or work as expected', async () => {
+    expect(await dispatch({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/not bound/)
+    expect(await dispatch({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/not bound/)
+    expect(await dispatch({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/phase 3/)
   })
 
   it('unknown command returns hint', async () => {

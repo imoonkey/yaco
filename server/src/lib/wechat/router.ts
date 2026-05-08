@@ -1,6 +1,7 @@
 import { loadProjects, type Project } from '../projects'
-import { readSessionsFromStateFiles, type MultmuxSession } from '../multmux'
-import { getBinding } from './state'
+import { readSessionsFromStateFiles, sendToSession, type MultmuxSession } from '../multmux'
+import { getBinding, setBinding, clearBinding } from './state'
+import { acquireTap, releaseTap, recordOffset, sliceFromOffset, tailSlice, waitForQuiet, hasTap } from './pty-tap'
 
 /** Mutable per-conversation context for the command flow.
  *  Persists only in memory — currentProject is a stepping-stone before binding. */
@@ -28,13 +29,17 @@ const HELP_TEXT = [
   '/projects (/p)        列出所有 projects',
   '/use <n|name>         选择当前 project',
   '/sessions (/s)        列出当前 project 的 sessions',
-  '/use s <n>            绑定到该 session（passthrough phase 2 启用）',
+  '/use s <n|name>       绑定到该 session',
   '/new <claude|codex>   新建 session（phase 3 启用）',
-  '/exit                 解绑（phase 2 启用）',
+  '/exit                 解绑（不杀 session）',
   '/who                  查看当前 binding',
-  '/last                 拉取最近输出（phase 2 启用）',
+  '/last                 拉取最近输出',
   '/help                 显示本帮助',
 ].join('\n')
+
+const TAIL_BYTES = 8 * 1024
+const PASSTHROUGH_QUIET_MS = 1500
+const PASSTHROUGH_TIMEOUT_MS = 60_000
 
 async function projectByName(name: string): Promise<Project | undefined> {
   return (await loadProjects()).find(p => p.name === name)
@@ -74,12 +79,46 @@ async function handleProjects(): Promise<string> {
   return projects.map((p, i) => `${i + 1}. ${p.name}`).join('\n')
 }
 
+async function pickSessionByArg(project: Project, arg: string): Promise<MultmuxSession | undefined> {
+  const sessions = await listSessions(project)
+  if (/^\d+$/.test(arg)) return sessions[Number(arg) - 1]
+  return sessions.find(s => s.name === arg)
+}
+
+async function handleUseSession(ctx: CommandContext, args: string[]): Promise<string> {
+  if (args.length === 0) return '用法: /use s <n|name>'
+  const project = await resolveCurrentProject(ctx.conversationId)
+  if (!project) return 'no current project — run /use <name> first'
+
+  const session = await pickSessionByArg(project, args[0])
+  if (!session) return `session not found: ${args[0]}`
+
+  // Acquire the new tap BEFORE releasing the old one, so a failed acquire
+  // doesn't strand the binding without a tap.
+  try {
+    await acquireTap(session.name)
+  } catch (e) {
+    return `failed to tap session ${session.name}: ${(e as Error).message}`
+  }
+
+  const prior = await getBinding(ctx.conversationId)
+  if (prior && prior.session !== session.name) {
+    await releaseTap(prior.session).catch(() => {})
+  }
+
+  await setBinding(ctx.conversationId, {
+    project: project.name,
+    session: session.name,
+    boundAt: new Date().toISOString(),
+  })
+  return `bound to ${project.name}/${session.name} [${session.status}]`
+}
+
 async function handleUse(ctx: CommandContext, args: string[]): Promise<string> {
   if (args.length === 0) return '用法: /use <n|name> 或 /use s <n>'
 
-  // /use s <n> — session bind (deferred to phase 2)
   if (args[0] === 's' || args[0] === 'session') {
-    return 'session binding 在 phase 2 启用'
+    return handleUseSession(ctx, args.slice(1))
   }
 
   const project = await pickProjectByArg(args[0])
@@ -116,6 +155,65 @@ async function handleWho(ctx: CommandContext): Promise<string> {
   return `bound to ${binding.project}/${binding.session} [${session.status}]`
 }
 
+async function handleExit(ctx: CommandContext): Promise<string> {
+  const binding = await getBinding(ctx.conversationId)
+  if (!binding) return 'not bound'
+  await releaseTap(binding.session).catch(() => {})
+  await clearBinding(ctx.conversationId)
+  currentProjectByConversation.delete(ctx.conversationId)
+  return `unbound from ${binding.project}/${binding.session} (session not killed)`
+}
+
+async function handleLast(ctx: CommandContext): Promise<string> {
+  const binding = await getBinding(ctx.conversationId)
+  if (!binding) return 'not bound — run /sessions and /use s <n>'
+
+  if (!hasTap(binding.session)) {
+    try { await acquireTap(binding.session) }
+    catch (e) { return `cannot tap ${binding.session}: ${(e as Error).message}` }
+  }
+
+  const { text, truncated } = tailSlice(binding.session, TAIL_BYTES)
+  const out = text.trim() || '(no output captured yet)'
+  return truncated ? `${out}\n[…buffer may be truncated…]` : out
+}
+
+/** Forward plain text to the bound session, capture the response via tap. */
+export async function passthroughText(ctx: CommandContext, text: string): Promise<string> {
+  const binding = await getBinding(ctx.conversationId)
+  if (!binding) return 'unbound — run /help to see commands'
+
+  // Verify session by acquiring tap (fails if tmux session is gone)
+  if (!hasTap(binding.session)) {
+    try { await acquireTap(binding.session) }
+    catch {
+      await clearBinding(ctx.conversationId)
+      return `previous session '${binding.session}' is no longer running — run /sessions to choose another`
+    }
+  }
+
+  const offset = recordOffset(binding.session)
+
+  try {
+    await sendToSession(binding.session, text)
+  } catch {
+    await releaseTap(binding.session).catch(() => {})
+    await clearBinding(ctx.conversationId)
+    return `previous session '${binding.session}' is no longer running — run /sessions to choose another`
+  }
+
+  const { quiet } = await waitForQuiet(binding.session, {
+    quietMs: PASSTHROUGH_QUIET_MS,
+    timeoutMs: PASSTHROUGH_TIMEOUT_MS,
+  })
+
+  const slice = sliceFromOffset(binding.session, offset)
+  let reply = slice.text.trim() || '(no output captured — try /last)'
+  if (slice.truncated) reply = `[…older output truncated…]\n${reply}`
+  if (!quiet) reply = `${reply}\n[turn may still be in progress — /last to retry]`
+  return reply
+}
+
 export async function dispatch(ctx: CommandContext, command: ParsedCommand): Promise<string> {
   switch (command.name) {
     case 'help':
@@ -132,9 +230,11 @@ export async function dispatch(ctx: CommandContext, command: ParsedCommand): Pro
     case 'who':
       return handleWho(ctx)
     case 'exit':
+      return handleExit(ctx)
     case 'last':
+      return handleLast(ctx)
     case 'new':
-      return `${command.name} 在后续 phase 启用`
+      return 'new 在 phase 3 启用'
     default:
       return `unknown command: /${command.name} — run /help`
   }

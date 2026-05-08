@@ -1,6 +1,7 @@
 import { isLoggedIn, start, type Bot } from 'weixin-agent-sdk'
 import { wechatAgent } from './agent'
 import { getAuthSnapshot } from './auth'
+import { sweepStaleTaps, shutdownAllTaps } from './pty-tap'
 
 let bot: Bot | null = null
 let abortController: AbortController | null = null
@@ -18,6 +19,9 @@ export async function initWeChat(): Promise<void> {
     console.log('[wechat] already initialized')
     return
   }
+
+  // Reap orphaned tap fifos from a prior crashed run before any tap acquire.
+  sweepStaleTaps()
 
   if (!isLoggedIn()) {
     console.warn('[wechat] no account configured — POST /api/wechat/login to scan QR (route lands in phase 4)')
@@ -48,4 +52,5 @@ export function shutdownWeChat(): void {
     abortController = null
   }
   bot = null
+  void shutdownAllTaps()
 }

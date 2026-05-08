@@ -1,6 +1,6 @@
 import type { Agent, ChatRequest, ChatResponse } from 'weixin-agent-sdk'
 import { authorize } from './auth'
-import { dispatch, parseCommand } from './router'
+import { dispatch, parseCommand, passthroughText } from './router'
 
 /** Per-conversation FIFO queue — SDK fires chat() concurrently but our session
  *  is single-threaded. Serialize per conversationId. */
@@ -32,7 +32,8 @@ async function handle(request: ChatRequest): Promise<ChatResponse> {
     return { text: reply }
   }
 
-  return { text: 'passthrough not enabled in this slice (phase 2)' }
+  const reply = await passthroughText({ conversationId }, text ?? '')
+  return { text: reply }
 }
 
 export const wechatAgent: Agent = {
