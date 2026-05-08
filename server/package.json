@@ -17,6 +17,7 @@
     "ignore": "^7.0.5",
     "node-pty": "^1.0.0",
     "openai": "^6.33.0",
+    "weixin-agent-sdk": "^0.5.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

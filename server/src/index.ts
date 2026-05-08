@@ -25,6 +25,7 @@ import { startWatching } from './lib/watcher.js'
 import { startSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
+import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { attachSession, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
@@ -180,6 +181,10 @@ await startWatching(projects, (project, workstream) => {
 startSessionReconciler()
 await startProjectWatchers(projects)
 setShellSessionChangeCallback(() => emitRefresh('sessions'))
+
+if (process.env.WECHAT_ENABLED === '1') {
+  await initWeChat()
+}
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
 
@@ -363,6 +368,7 @@ function cleanupTerminalResources(): void {
   cleanedUp = true
   clearInterval(pingInterval)
   clearInterval(sweepInterval)
+  shutdownWeChat()
   for (const ws of [...connections.keys()]) {
     cleanupConnection(ws)
     ws.terminate()
@@ -378,4 +384,12 @@ for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
 
 process.on('exit', () => {
   cleanupTerminalResources()
+})
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[unhandledRejection]', reason instanceof Error ? reason.stack : reason, promise)
+})
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.stack || err)
 })
