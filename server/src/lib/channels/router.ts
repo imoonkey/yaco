@@ -1,7 +1,7 @@
 import { loadProjects, type Project } from '../projects'
-import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, type MultmuxSession } from '../multmux'
+import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, captureSession, type MultmuxSession } from '../multmux'
 import type { BindingStore } from './state'
-import { acquireTap, releaseTap, recordOffset, sliceFromOffset, tailSlice, waitForQuiet, hasTap } from './pty-tap'
+import { acquireTap, releaseTap, recordOffset, sliceFromOffset, waitForQuiet, hasTap } from './pty-tap'
 import { startTurn, streamAgentReply } from './agent-output'
 import { sendEscape } from './keys'
 
@@ -35,13 +35,15 @@ const HELP_TEXT = [
   '/new <claude|codex>   新建 session 并自动 bind',
   '/exit                 解绑（不杀 session）',
   '/who                  查看当前 binding',
-  '/last                 拉取最近输出',
+  '/last [n]             抓最近 n 行 pane（默认 100，上限 2000）',
   '/help                 显示本帮助',
 ].join('\n')
 
-const TAIL_BYTES = 8 * 1024
 const PASSTHROUGH_QUIET_MS = 1500
 const PASSTHROUGH_TIMEOUT_MS = 60_000
+
+const LAST_DEFAULT_LINES = 100
+const LAST_MAX_LINES = 2000
 
 async function projectByName(name: string): Promise<Project | undefined> {
   return (await loadProjects()).find(p => p.name === name)
@@ -164,18 +166,21 @@ export function createRouter(store: BindingStore) {
     return `unbound from ${binding.project}/${binding.session} (session not killed)`
   }
 
-  async function handleLast(ctx: CommandContext): Promise<string> {
+  async function handleLast(ctx: CommandContext, args: string[]): Promise<string> {
     const binding = await store.getBinding(ctx.conversationId)
     if (!binding) return 'not bound — run /sessions and /use s <n>'
 
-    if (!hasTap(binding.session)) {
-      try { await acquireTap(binding.session) }
-      catch (e) { return `cannot tap ${binding.session}: ${(e as Error).message}` }
-    }
+    const requested = Number(args[0])
+    const lines = Number.isFinite(requested) && requested > 0
+      ? Math.min(LAST_MAX_LINES, Math.floor(requested))
+      : LAST_DEFAULT_LINES
 
-    const { text, truncated } = tailSlice(binding.session, TAIL_BYTES)
-    const out = text.trim() || '(no output captured yet)'
-    return truncated ? `${out}\n[…buffer may be truncated…]` : out
+    try {
+      const text = (await captureSession(binding.session, lines)).trim()
+      return text || '(empty)'
+    } catch (e) {
+      return `capture failed: ${(e as Error).message}`
+    }
   }
 
   async function handleNew(ctx: CommandContext, args: string[]): Promise<string> {
@@ -326,7 +331,7 @@ export function createRouter(store: BindingStore) {
       case 'exit':
         return handleExit(ctx)
       case 'last':
-        return handleLast(ctx)
+        return handleLast(ctx, command.args)
       case 'new':
         return handleNew(ctx, command.args)
       default:

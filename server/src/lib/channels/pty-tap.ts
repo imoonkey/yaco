@@ -172,16 +172,6 @@ export function sliceFromOffset(handle: string, offset: number): SliceResult {
   return { text: stripAnsi(slice.toString('utf-8')), truncated }
 }
 
-/** Return the last `tailBytes` of the tap, ANSI-stripped. */
-export function tailSlice(handle: string, tailBytes: number): SliceResult {
-  const state = taps.get(handle)
-  if (!state) throw new Error(`no tap for ${handle}`)
-  const start = Math.max(0, state.buffer.length - tailBytes)
-  const slice = state.buffer.subarray(start)
-  const truncated = state.buffer.length > tailBytes || (state.totalWritten > state.buffer.length)
-  return { text: stripAnsi(slice.toString('utf-8')), truncated }
-}
-
 /** Wait until the tap buffer has been quiet for `quietMs` (no new bytes),
  *  bounded by `timeoutMs`. Returns whether quiet was reached or timed out. */
 export async function waitForQuiet(

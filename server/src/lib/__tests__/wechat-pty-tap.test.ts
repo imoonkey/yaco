@@ -10,7 +10,6 @@ import {
   releaseTap,
   recordOffset,
   sliceFromOffset,
-  tailSlice,
   waitForQuiet,
   hasTap,
   shutdownAllTaps,
@@ -113,21 +112,6 @@ describe('pty-tap (real tmux)', () => {
     await acquireTap(sessionName)
     const result = await waitForQuiet(sessionName, { quietMs: 500, timeoutMs: 3000, pollMs: 100 })
     expect(result.quiet).toBe(true)
-
-    await releaseTap(sessionName)
-    spawnSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' })
-  }, 8_000)
-
-  testIfTmux('tailSlice returns last N bytes', async () => {
-    spawnSync('tmux', ['new-session', '-d', '-s', sessionName, '-x', '80', '-y', '24',
-      'sleep 0.3; for i in $(seq 1 20); do echo entry-$i; done; sleep 30'])
-
-    await acquireTap(sessionName)
-    await new Promise(r => setTimeout(r, 1500))
-
-    const tail = tailSlice(sessionName, 50)
-    // Should at least contain the latest entries
-    expect(tail.text).toMatch(/entry-2\d/)
 
     await releaseTap(sessionName)
     spawnSync('tmux', ['kill-session', '-t', sessionName], { stdio: 'ignore' })

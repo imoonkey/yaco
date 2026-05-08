@@ -199,6 +199,18 @@ export async function sendToSession(handle: string, message: string): Promise<vo
   await spawnOutput(MULTMUX_PATH, ['send', handle, message], MULTMUX_COMMAND_TIMEOUT_MS)
 }
 
+/** Capture the last `lines` lines of a multmux session's tmux pane,
+ *  ANSI-stripped. Reads tmux scrollback directly — works regardless of
+ *  whether a channel tap was previously acquired. */
+export async function captureSession(handle: string, lines: number): Promise<string> {
+  validateSessionName(handle)
+  return spawnOutput(
+    MULTMUX_PATH,
+    ['capture', handle, '--lines', String(lines), '--strip-ansi', 'true'],
+    MULTMUX_COMMAND_TIMEOUT_MS,
+  )
+}
+
 const STATE_POLL_MS = 200
 const STATE_POLL_TIMEOUT_MS = 10_000
 
