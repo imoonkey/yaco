@@ -1,3 +1,21 @@
+## 2026-05-09: Workflow as systemd services + Tailscale serve
+
+**What changed:**
+- Workflow dev servers now run as two systemd user services on the desktop machine: `workflow-server.service` (`tsx watch`) and `workflow-ui.service` (`vite`). Both auto-start at boot via `loginctl enable-linger qiguo`.
+- Removed `scripts/dev-tmux.sh` and the `npm run dev:tmux` script. Tmux added a process layer between systemd and the dev servers (crashes invisible to systemd, logs trapped in the pane).
+- New `scripts/services.sh` wraps `systemctl --user` for both services (`status`/`start`/`stop`/`restart`/`logs`/`enable`/`disable`).
+- UI exposed at `https://desktop.tailnet-example.ts.net/` via `tailscale serve --bg --https=443 http://127.0.0.1:5173`. `tailscale set --operator=$USER` lets the user manage serve without sudo.
+
+**Why:**
+- After reinstalling the desktop on Ubuntu 26.04 we wanted workflow accessible from the laptop's browser without manually starting it. Tmux-in-systemd hid crashes and serialized two real workloads behind a single Active: active line; two real units give native restart, journal logs, and per-unit status.
+- Removing the tmux script also fixed a regression where the panes hung at a keychain passphrase prompt because systemd-spawned bash had no TTY (root cause patched separately by adding `--noask --quiet` to the keychain call in `~/.bashrc` on the desktop).
+
+**Key files:** `package.json` (dropped `dev:tmux`), `scripts/services.sh` (new), `scripts/dev-tmux.sh` (removed), `CLAUDE.md`, `doc/dev/workflow.md`. Service unit files live in `~/.config/systemd/user/` on the desktop, not in the repo.
+**Verification:** `curl -s -o /dev/null -w '%{http_code}\n' https://desktop.tailnet-example.ts.net/` returns 200 after a reboot, with both services active and ports :3001 / :5173 listening. `scripts/services.sh status` reports both green.
+**Commit:** pending.
+**Next:** Decide whether to ship `start:app` (production build, single-origin :3001) as the long-running mode for the laptop too — current dev mode keeps `tsx watch` + Vite hot-reload running idle.
+**Blockers:** None.
+
 # Progress
 
 ## 2026-05-08: /file -t flag for inline text replies

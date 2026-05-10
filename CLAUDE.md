@@ -10,7 +10,6 @@ Local-first web app for coordinating Claude Code and Codex across multiple repos
 
 ```bash
 npm run dev              # Server (:3001) + UI (:5173) concurrently
-npm run dev:tmux         # Same but in a 2-pane tmux session (recommended)
 npm run build            # Build UI to ui/dist/
 npm run start:app        # Build + serve everything from :3001 (production/mobile)
 
