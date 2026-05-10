@@ -136,6 +136,10 @@ install_macos() {
     <dict>
         <key>PATH</key>
         <string>$HOME/.local/bin:$node_bin_dir:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>LC_CTYPE</key>
+        <string>en_US.UTF-8</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
