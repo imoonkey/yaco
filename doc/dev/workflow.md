@@ -45,38 +45,38 @@ npm run start:app
 
 `npm run start:app` is the intended local shape for installed/mobile use: it builds `ui/dist` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
 
-## Long-running on desktop (systemd + Tailscale)
+## Long-running services (systemd / launchd + Tailscale)
 
-On the desktop machine the dev servers run as two systemd **user services**, kept alive across reboots, and the UI is exposed over the Tailnet at `https://desktop.tailnet-example.ts.net/`.
+Both desktop (Linux) and laptop (macOS) run the dev servers as long-running OS-managed services, kept alive across reboots, and expose the UI over the Tailnet at `https://<host>.tailnet-example.ts.net/` (`desktop` and `laptop` hostnames).
 
-```
-~/.config/systemd/user/
-  workflow-server.service    # cd workflow/server && npm run dev (tsx watch)
-  workflow-ui.service        # cd workflow/ui     && npm run dev (vite)
-```
+| Platform | Manager | Unit/Plist location |
+|---|---|---|
+| Linux (desktop) | systemd user units | `~/.config/systemd/user/workflow-{server,ui}.service` |
+| macOS (laptop) | launchd LaunchAgents | `~/Library/LaunchAgents/com.workflow.{server,ui}.plist` |
 
-Both services use Node from `~/.nvm/versions/node/v*/bin` (resolved at install time) and `Restart=on-failure`. They are wrapped by `scripts/services.sh`:
+Both are wrapped by `scripts/services.sh` (auto-detects OS):
 
 ```bash
+scripts/services.sh install   # one-time: generate units/plists for current OS, enable, and start
 scripts/services.sh           # status (default)
 scripts/services.sh start     # start both
 scripts/services.sh stop      # stop both (free :3001 / :5173 for foreground npm run dev)
 scripts/services.sh restart
-scripts/services.sh logs      # journalctl -u workflow-server -u workflow-ui -f
-scripts/services.sh enable    # autostart at boot
+scripts/services.sh logs      # journalctl (Linux) or tail Library/Logs/*.log (macOS)
+scripts/services.sh enable    # autostart at boot/login
 scripts/services.sh disable
 ```
 
-Boot-time autostart needs `loginctl enable-linger qiguo` so user services run before login.
+Boot-time autostart on Linux additionally needs `loginctl enable-linger <user>` so user services run before login. macOS LaunchAgents launch automatically at login (no equivalent flag needed).
 
-Tailscale forwards HTTPS → Vite:
+Tailscale forwards HTTPS → Vite (run once per machine, persists across reboots):
 
 ```bash
-sudo tailscale set --operator=$USER                           # one-time, lets qiguo manage serve without sudo
-tailscale serve --bg --https=443 http://127.0.0.1:5173        # persists across reboots
+sudo tailscale set --operator=$USER                           # Linux only — lets the user manage serve without sudo
+tailscale serve --bg --https=443 http://127.0.0.1:5173
 ```
 
-When iterating in the foreground (`npm run dev`), stop the systemd services first to free the ports:
+When iterating in the foreground (`npm run dev`), stop the services first to free the ports:
 
 ```bash
 scripts/services.sh stop

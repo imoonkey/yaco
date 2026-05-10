@@ -1,3 +1,21 @@
+## 2026-05-09: scripts/services.sh goes cross-platform (Linux + macOS)
+
+**What changed:**
+- `scripts/services.sh` now detects the OS and dispatches to systemd (Linux) or launchd (macOS). Same UX (`status`/`start`/`stop`/`restart`/`logs`/`enable`/`disable`) on both.
+- New `services.sh install` subcommand generates the unit files (Linux: `~/.config/systemd/user/workflow-{server,ui}.service`) or LaunchAgent plists (macOS: `~/Library/LaunchAgents/com.workflow.{server,ui}.plist`) using paths/Node binary detected at install time, then loads and starts them.
+- macOS LaunchAgent plists set `KeepAlive { SuccessfulExit: false }` (restart on crash, not on clean exit) and log to `~/Library/Logs/workflow-{server,ui}.log`. `services.sh logs` `tail -F`s those files.
+- Updated `doc/dev/workflow.md` to document both platforms in one section.
+
+**Why:**
+- Laptop (macOS) was running workflow as a stack of orphaned `tmux` + `npm run start:app` + bare `npm run dev` invocations, none auto-restarting, racing for ports 3001/5173. Wanted the same auto-restart + log-to-disk behavior as the desktop without forking the script.
+- One file, OS detection inside, beats two scripts that drift.
+
+**Key files:** `scripts/services.sh` (new install + macOS branches), `doc/dev/workflow.md` (cross-platform section). Plist/unit files generated per machine; not committed.
+**Verification:** On laptop after `scripts/services.sh install`: both services `state = running`, ports 3001 + 5173 listening, `https://laptop.tailnet-example.ts.net/` returns HTTP 200. Tailscale serve was already configured pre-change.
+**Commit:** pending.
+**Next:** None — both machines now uniform.
+**Blockers:** None.
+
 ## 2026-05-09: Workflow as systemd services + Tailscale serve
 
 **What changed:**
