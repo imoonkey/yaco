@@ -1,3 +1,35 @@
+## 2026-05-10: BASH_ENV wiring — services pick up shell env without sourcing bashrc
+
+**What changed:**
+- Added `Environment="BASH_ENV=%h/.bash_env"` to both systemd unit templates and a `BASH_ENV=$HOME/.bash_env` key to the macOS launchd plist template in `scripts/services.sh`.
+- Convention: env-only exports (cproxy / API keys / future workflow-specific vars) live in `~/.bash_env`; `~/.bashrc` sources it from the very top so interactive shells see the same vars.
+
+**Why:**
+- After switching the dev runner from `dev-tmux.sh` to systemd / launchd (commit `58e1f1e`), `workflow-server` no longer inherited the cproxy / `OPENAI_API_KEY` / `ANTHROPIC_BASE_URL` exports the user kept in `~/.bashrc`. The unit was started by `systemd --user` before any login shell, so PAM-level env was the only inheritance path.
+- Sourcing `~/.bashrc` directly didn't help — it has the standard `case $- in *i*) ;; *) return;; esac` guard near the top, which exits before reaching the exports for non-interactive shells.
+- `BASH_ENV` is exactly designed for this: bash auto-sources it in non-interactive non-login mode. Setting it in the unit/plist makes both the workflow-server itself AND every non-interactive bash it later spawns (multmux's `wrapper-v2.sh`, the agent process tree) pick up the env without any further wrapping.
+
+**Key files:** `scripts/services.sh` (template additions only). Per-machine: `~/.bash_env` (env exports), `~/.bashrc` (one-line source at top), and the running unit/plist (manually patched for already-installed services).
+**Verification:** Desktop — restarted `workflow-server.service`, spawned a fresh `claude` session via multmux, confirmed the wrapper PID's `/proc/<pid>/environ` has `ANTHROPIC_BASE_URL` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` (came from auto-sourcing `~/.bash_env`). Pre-existing tmux sessions survived the restart (cgroup escape from the multmux side still works).
+**Commit:** 3cd4589.
+**Next:** None — future fresh installs (`scripts/services.sh install`) will set `BASH_ENV` automatically on either OS.
+**Blockers:** None.
+
+## 2026-05-09: services.sh adds UTF-8 locale on macOS launchd plist
+
+**What changed:**
+- macOS launchd plist template now also writes `LANG=en_US.UTF-8` and `LC_CTYPE=en_US.UTF-8` into `EnvironmentVariables`.
+
+**Why:**
+- launchd doesn't inherit a login shell's locale, so the workflow server (and every claude/codex it spawned via multmux+tmux) ran with no `LANG`. Multi-byte UTF-8 output from the agents was then mangled into placeholder bytes that rendered as underscores in the xterm view — visible as "中文显示成 `___`" on the laptop.
+- Linux/systemd inherits `LANG` from the user manager's environment, so the systemd template was already fine.
+
+**Key files:** `scripts/services.sh` (macOS branch only).
+**Verification:** Patched the running laptop plist with PlistBuddy + reload; user confirmed CJK and special characters now render correctly in fresh sessions.
+**Commit:** ddba50f.
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-05-09: services.sh PATH fix — include ~/.local/bin, prefer Homebrew on Apple Silicon
 
 **What changed:**
