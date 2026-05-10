@@ -67,7 +67,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$SERVER_DIR
-Environment="PATH=$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=$node_bin_dir/npm run dev
 Restart=on-failure
 RestartSec=5
@@ -88,7 +88,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=$UI_DIR
-Environment="PATH=$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 ExecStart=$node_bin_dir/npm run dev
 Restart=on-failure
 RestartSec=5
@@ -135,7 +135,7 @@ install_macos() {
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>$node_bin_dir:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+        <string>$HOME/.local/bin:$node_bin_dir:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
