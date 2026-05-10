@@ -3,7 +3,6 @@ import { isCloseShortcut, isCopyShortcut } from '../lib/shortcuts'
 import { Terminal as XTerm } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
-import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { useIsTouch } from '../hooks/useIsMobile'
@@ -225,24 +224,16 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     const initialTheme = buildXtermTheme()
     const term = new XTerm({
       theme: initialTheme,
-      // Latin monospace first; CJK fallbacks by OS so wide chars render with a real glyph
-      // (otherwise the browser falls back to a proportional sans, breaking the grid).
-      fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, 'PingFang SC', 'Microsoft YaHei', 'Noto Sans Mono CJK SC', monospace",
+      fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
       fontSize: 12,
       lineHeight: 1.4,
       cursorBlink: true,
-      allowProposedApi: true,
     })
     termRef.current = term
 
     const fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.loadAddon(new WebLinksAddon())
-    // Unicode v11 width table — required for correct cell widths on CJK,
-    // recent emoji, and many agent-UI glyphs. Without this xterm uses a v6
-    // table from 2008 and miscounts cells, clobbering the redraw.
-    term.loadAddon(new Unicode11Addon())
-    term.unicode.activeVersion = '11'
     term.open(container)
     if (term.element) {
       term.element.style.boxSizing = 'border-box'
