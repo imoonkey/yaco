@@ -1,3 +1,19 @@
+## 2026-05-09: services.sh PATH fix — include ~/.local/bin, prefer Homebrew on Apple Silicon
+
+**What changed:**
+- `scripts/services.sh` now writes `~/.local/bin` into the `PATH` of every generated systemd unit and launchd plist. Previously the templates only had `$node_bin_dir:/usr/local/sbin:...:/usr/bin:/sbin:/bin` (Linux) or `$node_bin_dir:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin` (macOS) — so `multmux`, `claude`, and `codex` (all installed under `~/.local/bin`) were invisible to the workflow server.
+- macOS template additionally swaps the order to `/opt/homebrew/bin` *before* `/usr/local/bin`, so Apple Silicon Macs don't accidentally pick up stale Intel Homebrew binaries.
+
+**Why:**
+- After reinstalling the desktop and on the laptop both, `POST /api/sessions/start` returned `"timeout waiting for session tmux process"`. Root cause: `spawn multmux ENOENT` — the workflow server inherits the service's `PATH`, which didn't include `~/.local/bin`. The error was swallowed because the `spawn` had no `error` listener; it only surfaced as a multmux start timeout downstream.
+- On the laptop the same template made the service pick `/usr/local/bin/tmux` (a 2015 Intel Cellar build referencing `libevent-2.0.5.dylib` that no longer exists) over the working `/opt/homebrew/bin/tmux 3.6a`. Reordering fixes this independent of the `~/.local/bin` issue.
+
+**Key files:** `scripts/services.sh` (template literals only).
+**Verification:** Patched both running units in place (Linux: edited `~/.config/systemd/user/workflow-server.service`; macOS: PlistBuddy patch on both LaunchAgents) and confirmed `POST /api/sessions/start` returns `{"name":"smoke"}` with a valid state file under `~/.multmux/sessions/`.
+**Commit:** f190662.
+**Next:** None for the script itself. Future fresh installs (`scripts/services.sh install`) on either OS will pick up the correct PATH automatically.
+**Blockers:** None.
+
 ## 2026-05-09: scripts/services.sh goes cross-platform (Linux + macOS)
 
 **What changed:**
