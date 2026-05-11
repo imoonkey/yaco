@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react'
-import type { MdMode, MobilePane } from '../hooks/workspaceTypes'
+import type { PreviewMode, MobilePane } from '../hooks/workspaceTypes'
 import type { UseVoiceReturn } from '../hooks/useVoice'
 import type { AgentSession } from '../types'
 import { writeTextToClipboard } from '../lib/clipboard'
@@ -32,8 +32,8 @@ interface UseWorkspaceKeyboardOpts {
   setFocusTarget: (t: FocusTarget) => void
   selectedFilePath: string | null
   explorerFocusedPath: string | null
-  canToggleMdMode: boolean
-  mdMode: MdMode
+  canTogglePreview: boolean
+  previewMode: PreviewMode
   closeFocusedSurface: () => boolean
   editorVoiceEligible: boolean
   terminalVoiceEligible: boolean
@@ -60,8 +60,8 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     setFocusTarget,
     selectedFilePath,
     explorerFocusedPath,
-    canToggleMdMode,
-    mdMode,
+    canTogglePreview,
+    previewMode,
     closeFocusedSurface,
     editorVoiceEligible,
     terminalVoiceEligible,
@@ -177,11 +177,11 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         void writeTextToClipboard(explorerFocusedPath)
         return
       }
-      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canToggleMdMode) {
+      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'v' && canTogglePreview) {
         e.preventDefault()
         e.stopPropagation()
         const cycle = { edit: 'split', split: 'preview', preview: 'edit' } as const
-        actions.updateLayout({ mdMode: cycle[mdMode] })
+        actions.updateLayout({ previewMode: cycle[previewMode] })
         return
       }
       if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'w' && closeFocusedSurface()) {
@@ -214,7 +214,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     document.addEventListener('keydown', handler, true)
     return () => document.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeTab, canToggleMdMode, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, mdMode, onToggleShortcutSheet, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

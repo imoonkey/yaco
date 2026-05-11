@@ -5,12 +5,13 @@ import type { ParsedFileDiff } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
 import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath } from './markdown'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
-import type { MdMode, SplitDirection } from '../hooks/useWorkspaceState'
+import type { PreviewMode, SplitDirection } from '../hooks/useWorkspaceState'
 import mermaid from 'mermaid'
 import { DiffTab } from './diff/DiffTab'
 import { isImageFile, isPdfFile, rawFileUrl } from '../lib/binaryFiles'
 import { ImagePreview } from './ImagePreview'
 import { PdfPreview } from './PdfPreview'
+import { HtmlPreview } from './HtmlPreview'
 
 // --- Error boundary for binary previews (isolates react-pdf/image errors from the app) ---
 class PreviewErrorBoundary extends Component<{ children: ReactNode; fileName: string }, { error: Error | null }> {
@@ -341,7 +342,8 @@ export function WorkspaceEditorArea({
   isTasksTab,
   activeDiff,
   isMd,
-  mdMode,
+  isHtml,
+  previewMode,
   splitDirection,
   splitSize,
   onSplitResize,
@@ -377,7 +379,8 @@ export function WorkspaceEditorArea({
   isTasksTab: boolean
   activeDiff: { raw: string | null; parsed: ParsedFileDiff | null; loading: boolean } | null
   isMd: boolean | undefined
-  mdMode: MdMode
+  isHtml: boolean | undefined
+  previewMode: PreviewMode
   splitDirection: SplitDirection
   splitSize: number
   onSplitResize: (size: number) => void
@@ -433,14 +436,14 @@ export function WorkspaceEditorArea({
   // Flush latest viewport line on tab or mode change so newly mounted
   // components get the current position, not a debounce-stale value.
   const prevTabRef = useRef(activeTab)
-  const prevMdModeRef = useRef(mdMode)
+  const prevPreviewModeRef = useRef(previewMode)
   if (activeTab !== prevTabRef.current) {
     prevTabRef.current = activeTab
-    prevMdModeRef.current = mdMode
+    prevPreviewModeRef.current = previewMode
     latestLineRef.current = activeViewportLine
     setLocalViewportLine(activeViewportLine)
-  } else if (mdMode !== prevMdModeRef.current) {
-    prevMdModeRef.current = mdMode
+  } else if (previewMode !== prevPreviewModeRef.current) {
+    prevPreviewModeRef.current = previewMode
     clearTimeout(persistTimerRef.current)
     setLocalViewportLine(latestLineRef.current)
   }
@@ -493,8 +496,9 @@ export function WorkspaceEditorArea({
     document.addEventListener('mouseup', onUp)
   }, [splitSize, splitDirection, onSplitResize])
 
-  const showSplit = isMd && mdMode === 'split'
-  const showPreviewOnly = isMd && mdMode === 'preview'
+  const isPreviewable = isMd || isHtml
+  const showSplit = isPreviewable && previewMode === 'split'
+  const showPreviewOnly = isPreviewable && previewMode === 'preview'
 
   const editorElement = (
     <Editor content={activeFileContent!} filePath={activeTab!}
@@ -515,9 +519,11 @@ export function WorkspaceEditorArea({
     />
   )
 
-  const previewElement = (
+  const previewElement = isHtml ? (
+    <HtmlPreview content={activeFileContent ?? ''} />
+  ) : (
     <MarkdownPreview
-      content={activeFileContent!}
+      content={activeFileContent ?? ''}
       filePath={activeTab ?? undefined}
       viewportLine={localViewportLine}
       onViewportLine={handlePreviewViewportLine}

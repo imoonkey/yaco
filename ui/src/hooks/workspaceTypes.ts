@@ -11,7 +11,7 @@ export type FileState = {
   editedAt: number
 }
 
-export type MdMode = 'edit' | 'preview' | 'split'
+export type PreviewMode = 'edit' | 'preview' | 'split'
 export type SplitDirection = 'horizontal' | 'vertical'
 export type MobilePane = 'files' | 'editor' | 'tasks' | 'terminal'
 
@@ -25,7 +25,7 @@ export type WorkspaceLayout = {
   showTasks: boolean
   showTextSearch: boolean
   autocompleteEnabled: boolean
-  mdMode: MdMode
+  previewMode: PreviewMode
   splitDirection: SplitDirection
   splitSize: number
   leftSize: number
@@ -73,7 +73,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showTasks: true,
   showTextSearch: false,
   autocompleteEnabled: true,
-  mdMode: 'edit',
+  previewMode: 'edit',
   splitDirection: 'horizontal',
   splitSize: 50,
   leftSize: 220,

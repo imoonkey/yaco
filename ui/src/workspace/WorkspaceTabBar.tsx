@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
 
-import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, type MdMode, type SplitDirection } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, type PreviewMode, type SplitDirection } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { useContextMenu, Menu, MenuItem } from '../components/Menu'
 
@@ -78,8 +78,8 @@ const TAB_STYLE_BASE: React.CSSProperties = {
   transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
 }
 
-function MdModeToggle({ mode, splitDirection, onChange, onDirectionChange, isTouch }: { mode: MdMode; splitDirection: SplitDirection; onChange: (m: MdMode) => void; onDirectionChange: (d: SplitDirection) => void; isTouch: boolean }) {
-  const modes: { value: MdMode; label: string }[] = isTouch
+function PreviewModeToggle({ mode, splitDirection, onChange, onDirectionChange, isTouch }: { mode: PreviewMode; splitDirection: SplitDirection; onChange: (m: PreviewMode) => void; onDirectionChange: (d: SplitDirection) => void; isTouch: boolean }) {
+  const modes: { value: PreviewMode; label: string }[] = isTouch
     ? [{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]
     : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
 
@@ -121,14 +121,14 @@ export function WorkspaceTabBar({
   previewTab,
   dirtyTabs,
   conflictTabs,
-  canToggleMdMode,
-  mdMode,
+  canTogglePreview,
+  previewMode,
   splitDirection,
   isTouch,
   onSelectTab,
   onDoubleClickTab,
   onCloseTab,
-  onMdModeChange,
+  onPreviewModeChange,
   onSplitDirectionChange,
   onSaveTab,
   rightActions,
@@ -138,14 +138,14 @@ export function WorkspaceTabBar({
   previewTab: string | null
   dirtyTabs: Set<string>
   conflictTabs: Set<string>
-  canToggleMdMode: boolean
-  mdMode: MdMode
+  canTogglePreview: boolean
+  previewMode: PreviewMode
   splitDirection: SplitDirection
   isTouch: boolean
   onSelectTab: (tab: string) => void
   onDoubleClickTab: (tab: string) => void
   onCloseTab: (tab: string, e?: React.MouseEvent) => void
-  onMdModeChange: (mode: MdMode) => void
+  onPreviewModeChange: (mode: PreviewMode) => void
   onSplitDirectionChange: (direction: SplitDirection) => void
   onSaveTab?: (tab: string) => void
   rightActions?: React.ReactNode
@@ -235,8 +235,8 @@ export function WorkspaceTabBar({
       </div>
       <div className="flex items-center gap-1 shrink-0 px-2" style={{ borderLeft: '1px solid var(--sol-border)' }}>
         {rightActions}
-        {canToggleMdMode && (
-          <MdModeToggle mode={mdMode} splitDirection={splitDirection} onChange={onMdModeChange} onDirectionChange={onSplitDirectionChange} isTouch={isTouch} />
+        {canTogglePreview && (
+          <PreviewModeToggle mode={previewMode} splitDirection={splitDirection} onChange={onPreviewModeChange} onDirectionChange={onSplitDirectionChange} isTouch={isTouch} />
         )}
       </div>
     </div>

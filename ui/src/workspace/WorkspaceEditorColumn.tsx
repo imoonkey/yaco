@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import { isDiffTab, isFileTab, isTasksTab, type FileState, type MdMode, type SplitDirection } from '../hooks/workspaceTypes'
+import { isDiffTab, isFileTab, isTasksTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
@@ -8,7 +8,7 @@ import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { VoiceControl } from '../components/VoiceControl'
 import { TaskScreen } from '../tasks/TaskScreen'
 import { clampLine } from './markdown'
-import { isBinaryPreviewFile } from '../lib/binaryFiles'
+import { isBinaryPreviewFile, isHtmlFile, isMarkdownFile, isPreviewableFile } from '../lib/binaryFiles'
 import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
@@ -31,7 +31,7 @@ export interface WorkspaceEditorColumnProps {
   dirtyTabs: Set<string>
   conflictTabs: Set<string>
   files: Record<string, FileState>
-  layout: { mdMode: MdMode; splitDirection: SplitDirection; splitSize: number; autocompleteEnabled: boolean }
+  layout: { previewMode: PreviewMode; splitDirection: SplitDirection; splitSize: number; autocompleteEnabled: boolean }
   isTouch: boolean
   isMobile: boolean
   activeDiff: DiffState | null
@@ -69,13 +69,15 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onOpenTasksFile,
   } = props
 
-  const { mdMode, splitDirection, splitSize, autocompleteEnabled } = layout
+  const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
 
   // Derive from activeTab
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
   const activeDiffTab = isDiffTab(activeTab)
   const activeTasksTab = isTasksTab(activeTab)
-  const isMd = activeFilePath?.endsWith('.md')
+  const isMd = !!activeFilePath && isMarkdownFile(activeFilePath)
+  const isHtml = !!activeFilePath && isHtmlFile(activeFilePath)
+  const canTogglePreview = !!activeFilePath && isPreviewableFile(activeFilePath) && !isBinaryPreviewFile(activeFilePath)
   const activeFileState = activeFilePath ? files[activeFilePath] : null
   const activeFileContent = activeFileState?.draft ?? activeFileState?.serverContent ?? null
   const activeFileLoading = activeFilePath != null && activeFileContent === null && activeFileState?.status !== 'missing'
@@ -95,9 +97,9 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const handleActivateLine = useCallback((line: number) => {
     if (!activeFilePath) return
     onSetJumpRequest({ key: Date.now(), path: activeFilePath, line: clampLine(line), scroll: false })
-    if (mdMode !== 'split') onLayoutUpdate({ mdMode: 'edit' })
+    if (previewMode !== 'split') onLayoutUpdate({ previewMode: 'edit' })
     onFocusEditor()
-  }, [activeFilePath, mdMode, onSetJumpRequest, onLayoutUpdate, onFocusEditor])
+  }, [activeFilePath, previewMode, onSetJumpRequest, onLayoutUpdate, onFocusEditor])
 
   // Tasks panel takes the full column — no tab bar, no breadcrumbs
   if (activeTasksTab) {
@@ -120,14 +122,14 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         previewTab={previewTab}
         dirtyTabs={dirtyTabs}
         conflictTabs={conflictTabs}
-        canToggleMdMode={!!isMd && !isBinaryPreviewFile(activeFilePath ?? '')}
-        mdMode={mdMode}
+        canTogglePreview={canTogglePreview}
+        previewMode={previewMode}
         splitDirection={splitDirection}
         isTouch={isTouch}
         onSelectTab={onSelectTab}
         onDoubleClickTab={onDoubleClickTab}
         onCloseTab={onCloseTab}
-        onMdModeChange={(mode) => onLayoutUpdate({ mdMode: mode })}
+        onPreviewModeChange={(mode) => onLayoutUpdate({ previewMode: mode })}
         onSplitDirectionChange={(dir) => onLayoutUpdate({ splitDirection: dir })}
         onSaveTab={handleSaveTab}
         rightActions={<>
@@ -171,7 +173,8 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         isTasksTab={false}
         activeDiff={activeDiff}
         isMd={isMd}
-        mdMode={mdMode}
+        isHtml={isHtml}
+        previewMode={previewMode}
         splitDirection={splitDirection}
         splitSize={splitSize}
         onSplitResize={(size) => onLayoutUpdate({ splitSize: size })}

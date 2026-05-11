@@ -5,6 +5,7 @@ import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, useWorkspaceState } from '../hooks/useWorkspaceState'
 import { useIsMobile, useIsTouch, useIsLandscape } from '../hooks/useIsMobile'
 import { useVoice } from '../hooks/useVoice'
+import { isPreviewableFile } from '../lib/binaryFiles'
 import { Terminal } from '../components/Terminal'
 import { VoiceControl } from '../components/VoiceControl'
 import { ComposeTray } from '../components/ComposeTray'
@@ -112,7 +113,7 @@ export function Workspace({
   const [compareHead, setCompareHead] = useState('HEAD')
   const [compareResult, setCompareResult] = useState<{ files: GitChange[]; stats: { added: number; deleted: number }; key: string } | null>(null)
 
-  const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, mdMode } = layout
+  const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, previewMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName, worktree)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
   const { data: gitData } = useGitStatus(projectName, worktree)
@@ -192,7 +193,7 @@ export function Workspace({
 
   const voiceBridge = useWorkspaceVoice({
     voice, activeFilePath, attachedSession,
-    activeDiffTab, isMd: activeFilePath?.endsWith('.md'), mdMode,
+    activeDiffTab, isPreviewable: !!activeFilePath && isPreviewableFile(activeFilePath), previewMode,
     setEditorInsert, setTerminalSend, setFocusTarget,
   })
 
@@ -256,8 +257,8 @@ export function Workspace({
     showTextSearch,
     setShowSearch: (fn) => setShowSearch(fn),
     focusTarget, setFocusTarget,
-    selectedFilePath, explorerFocusedPath, canToggleMdMode: !!(activeFilePath?.endsWith('.md')),
-    mdMode, closeFocusedSurface,
+    selectedFilePath, explorerFocusedPath, canTogglePreview: !!activeFilePath && isPreviewableFile(activeFilePath),
+    previewMode, closeFocusedSurface,
     editorVoiceEligible: voiceBridge.editorVoiceEligible,
     terminalVoiceEligible: voiceBridge.terminalVoiceEligible,
     handleEditorVoiceStart: voiceBridge.handleEditorVoiceStart,
@@ -527,7 +528,7 @@ export function Workspace({
       dirtyTabs={dirtyTabs}
       conflictTabs={conflictTabs}
       files={files}
-      layout={{ mdMode, splitDirection: layout.splitDirection, splitSize: layout.splitSize, autocompleteEnabled: layout.autocompleteEnabled }}
+      layout={{ previewMode, splitDirection: layout.splitDirection, splitSize: layout.splitSize, autocompleteEnabled: layout.autocompleteEnabled }}
       isTouch={isTouch}
       isMobile={isMobile}
       activeDiff={activeDiff}

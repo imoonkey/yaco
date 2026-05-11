@@ -8,8 +8,8 @@ interface UseWorkspaceVoiceOpts {
   activeFilePath: string | null
   attachedSession: string | null
   activeDiffTab: boolean
-  isMd: boolean | undefined
-  mdMode: string
+  isPreviewable: boolean
+  previewMode: string
   setEditorInsert: (v: { text: string; key: number } | null) => void
   setTerminalSend: (v: { text: string; key: number } | null) => void
   setFocusTarget: (t: FocusTarget) => void
@@ -18,11 +18,11 @@ interface UseWorkspaceVoiceOpts {
 export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
   const {
     voice, activeFilePath, attachedSession,
-    activeDiffTab, isMd, mdMode,
+    activeDiffTab, isPreviewable, previewMode,
     setEditorInsert, setTerminalSend, setFocusTarget,
   } = opts
 
-  const editorVoiceEligible = !!activeFilePath && !activeDiffTab && !(isMd && mdMode === 'preview')
+  const editorVoiceEligible = !!activeFilePath && !activeDiffTab && !(isPreviewable && previewMode === 'preview')
   const terminalVoiceEligible = !!attachedSession
 
   const [voiceSurface, setVoiceSurface] = useState<'editor' | 'terminal'>('terminal')
