@@ -1,24 +1,58 @@
-import { readFileSync } from 'fs'
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const {
   spawnMock,
+  spawnSyncMock,
   validateSessionNameMock,
 } = vi.hoisted(() => ({
   spawnMock: vi.fn(),
+  spawnSyncMock: vi.fn(),
   validateSessionNameMock: vi.fn(),
 }))
 
+const aliveTmuxSessions = new Set<string>()
+const TEST_STATE_DIR = join(process.cwd(), '.tmp', 'terminal-test', 'shell-sessions')
+
+function writeShellState(name: string, project = 'workflow'): void {
+  mkdirSync(TEST_STATE_DIR, { recursive: true })
+  writeFileSync(join(TEST_STATE_DIR, `${name}.json`), JSON.stringify({
+    name,
+    project,
+    cwd: '/tmp/project',
+    createdAt: '2026-05-10T00:00:00.000Z',
+  }), 'utf-8')
+}
+
 vi.mock('node-pty', () => ({
   spawn: spawnMock,
+}))
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>()
+  return {
+    ...actual,
+    execSync: vi.fn(() => 'multmux\n'),
+    spawnSync: spawnSyncMock,
+  }
+})
+
+vi.mock('../ssh-auth', () => ({
+  buildChildProcessEnv: vi.fn(() => ({ PATH: process.env.PATH ?? '' })),
 }))
 
 vi.mock('../session-names', () => ({
   validateSessionName: validateSessionNameMock,
 }))
 
-import { attachSession, closeShellSession, releaseSession, startShellSession } from '../terminal'
+const {
+  attachSession,
+  closeShellSession,
+  listShellSessions,
+  releaseSession,
+  startShellSession,
+} = await import('../terminal')
 import { PtyCapacityError, markDegraded, __resetForTests as resetPtyCapacity } from '../pty-capacity'
 
 function createPty() {
@@ -35,8 +69,33 @@ function createPty() {
 
 describe('attachSession', () => {
   beforeEach(() => {
+    process.env.WORKFLOW_SHELL_SESSIONS_DIR = TEST_STATE_DIR
+    rmSync(TEST_STATE_DIR, { recursive: true, force: true })
+    aliveTmuxSessions.clear()
     vi.clearAllMocks()
     resetPtyCapacity()
+    spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      expect(cmd).toBe('tmux')
+      const [action] = args
+      if (action === 'has-session') {
+        const name = args[args.indexOf('-t') + 1]
+        return { status: aliveTmuxSessions.has(name) ? 0 : 1, stdout: '', stderr: '' }
+      }
+      if (action === 'new-session') {
+        const name = args[args.indexOf('-s') + 1]
+        if (aliveTmuxSessions.has(name)) {
+          return { status: 1, stdout: '', stderr: 'duplicate session' }
+        }
+        aliveTmuxSessions.add(name)
+        return { status: 0, stdout: '', stderr: '' }
+      }
+      if (action === 'kill-session') {
+        const name = args[args.indexOf('-t') + 1]
+        const existed = aliveTmuxSessions.delete(name)
+        return { status: existed ? 0 : 1, stdout: '', stderr: existed ? '' : 'no such session' }
+      }
+      throw new Error(`unexpected tmux action: ${action}`)
+    })
   })
 
   it('attaches to the tmux session using the handle directly', () => {
@@ -63,26 +122,145 @@ describe('attachSession', () => {
     expect(source).toMatch(/import \* as pty from 'node-pty'/)
   })
 
-  it('tracks shell sessions as persistent attachments and releases them without killing the shell', () => {
+  it('starts shell sessions as workflow-managed tmux sessions', () => {
+    const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
+
+    expect(shellName).toBe('shell-1')
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(spawnSyncMock).toHaveBeenCalledWith('tmux', [
+      'new-session',
+      '-d',
+      '-s',
+      'shell-1',
+      '-c',
+      '/tmp/project',
+      expect.stringContaining('--login'),
+    ], expect.objectContaining({ encoding: 'utf-8' }))
+    expect(listShellSessions()).toEqual([
+      {
+        name: 'shell-1',
+        provider: 'shell',
+        status: 'idle',
+        project: 'workflow',
+      },
+    ])
+  })
+
+  it('reattaches shell sessions through tmux attach clients', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
 
     const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
     const attached = attachSession(shellName, 80, 24)
 
+    expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'shell-1'], expect.objectContaining({
+      cols: 80,
+      rows: 24,
+      name: 'xterm-256color',
+    }))
     expect(attached).toEqual({
       initialData: '',
-      persistent: true,
+      persistent: false,
       proc,
     })
 
     releaseSession(shellName, attached)
 
-    expect(proc.resize).toHaveBeenCalledWith(80, 24)
-    expect(proc.destroy).not.toHaveBeenCalled()
+    expect(proc.destroy).toHaveBeenCalled()
+    expect(aliveTmuxSessions.has(shellName)).toBe(true)
+  })
 
+  it('closes managed shell sessions by killing tmux and removing state', () => {
+    const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
     closeShellSession(shellName)
-    expect(proc.kill).toHaveBeenCalled()
+
+    expect(aliveTmuxSessions.has(shellName)).toBe(false)
+    expect(listShellSessions()).toEqual([])
+  })
+
+  it('does not close arbitrary tmux sessions without workflow shell state', () => {
+    aliveTmuxSessions.add('shell-1')
+
+    expect(closeShellSession('shell-1')).toBe(false)
+    expect(aliveTmuxSessions.has('shell-1')).toBe(true)
+  })
+
+  it('prunes stale shell state when tmux session is gone', () => {
+    startShellSession('/tmp/project', 'workflow', 'shell-1')
+    aliveTmuxSessions.delete('shell-1')
+
+    expect(listShellSessions()).toEqual([])
+    expect(closeShellSession('shell-1')).toBe(false)
+  })
+
+  it('keeps shell state when tmux existence check fails', () => {
+    writeShellState('shell-1')
+    spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      expect(cmd).toBe('tmux')
+      if (args[0] === 'has-session') {
+        return { status: null, stdout: '', stderr: '', error: new Error('tmux unavailable') }
+      }
+      throw new Error(`unexpected tmux action: ${args[0]}`)
+    })
+
+    expect(listShellSessions()).toEqual([
+      {
+        name: 'shell-1',
+        provider: 'shell',
+        status: 'idle',
+        project: 'workflow',
+      },
+    ])
+    expect(readFileSync(join(TEST_STATE_DIR, 'shell-1.json'), 'utf-8')).toContain('shell-1')
+  })
+
+  it('throws instead of removing state when closing with unknown tmux state', () => {
+    writeShellState('shell-1')
+    spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      expect(cmd).toBe('tmux')
+      if (args[0] === 'has-session') {
+        return { status: 2, stdout: '', stderr: 'socket unavailable' }
+      }
+      throw new Error(`unexpected tmux action: ${args[0]}`)
+    })
+
+    expect(() => closeShellSession('shell-1')).toThrow(/Cannot determine/)
+    expect(readFileSync(join(TEST_STATE_DIR, 'shell-1.json'), 'utf-8')).toContain('shell-1')
+  })
+
+  it('cleans state when tmux creation fails after prewriting ownership', () => {
+    spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
+      expect(cmd).toBe('tmux')
+      if (args[0] === 'has-session') {
+        return { status: 1, stdout: '', stderr: '' }
+      }
+      if (args[0] === 'new-session') {
+        return { status: 1, stdout: '', stderr: 'new failed' }
+      }
+      throw new Error(`unexpected tmux action: ${args[0]}`)
+    })
+
+    expect(() => startShellSession('/tmp/project', 'workflow', 'shell-1')).toThrow(/new failed/)
+    expect(listShellSessions()).toEqual([])
+  })
+
+  it('removes state files whose basename does not match the embedded name', () => {
+    mkdirSync(TEST_STATE_DIR, { recursive: true })
+    writeFileSync(join(TEST_STATE_DIR, 'shell-1.json'), JSON.stringify({
+      name: 'shell-2',
+      project: 'workflow',
+      cwd: '/tmp/project',
+      createdAt: '2026-05-10T00:00:00.000Z',
+    }), 'utf-8')
+    aliveTmuxSessions.add('shell-2')
+
+    expect(listShellSessions()).toEqual([])
+  })
+
+  it('skips live tmux names when allocating shell handles', () => {
+    aliveTmuxSessions.add('shell-1')
+
+    expect(startShellSession('/tmp/project', 'workflow')).toBe('shell-2')
   })
 
   it('destroys non-persistent tmux attach processes on release', () => {
@@ -101,16 +279,13 @@ describe('attachSession', () => {
     expect(spawnMock).not.toHaveBeenCalled()
   })
 
-  it('reattaching to an existing shell session bypasses the pressure gate', () => {
-    const proc = createPty()
-    spawnMock.mockReturnValue(proc)
+  it('reattaching to shell sessions uses the same pressure gate as other tmux attaches', () => {
     const shellName = startShellSession('/tmp/project', 'workflow', 'shell-p')
 
     markDegraded('test')
     spawnMock.mockClear()
-    const attached = attachSession(shellName, 80, 24)
 
-    expect(attached.persistent).toBe(true)
+    expect(() => attachSession(shellName, 80, 24)).toThrow(PtyCapacityError)
     expect(spawnMock).not.toHaveBeenCalled()
     closeShellSession(shellName)
   })

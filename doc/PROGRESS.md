@@ -1,3 +1,19 @@
+## 2026-05-11: Shell sessions move to tmux-backed persistence
+
+**What changed:**
+- Replaced in-process shell PTYs with Workflow-managed tmux sessions. Shell ownership state now lives in `~/.workflow/shell-sessions/<name>.json`, while browser attach/detach uses temporary `tmux attach-session` PTYs just like agent sessions.
+- Added robust shell state handling: atomic state writes, filename/name validation, stale-state pruning only for confirmed-missing tmux sessions, and preservation of state when tmux liveness is unknown.
+- Expanded terminal unit tests for shell lifecycle, tmux failure handling, arbitrary tmux protection, and invalid state files. Updated backend/UI/data-model docs and the active design summary.
+
+**Why:**
+- Direct shell PTYs were owned by the Workflow server process, so server restart lost the shell. Tmux-backed shells match the Claude/Codex persistence model and survive server restarts without adding shell sessions to multmux.
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/lib/__tests__/terminal.test.ts`, `projects/active/tmux-shell-sessions/*`, `doc/main/backend/{libs,server,routes}.md`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/main/data-model/{overview,api-contracts}.md`, `CLAUDE.md`.
+**Verification:** `TMPDIR=server/.tmp npm test -- terminal.test.ts` passed (15 tests). Real tmux QA smoke passed for start/list/close and fresh-process restart persistence. `npm run build` passed. Full `server/npm test` with `GROQ_API_KEY=` still has one unrelated pre-existing flaky real-tmux tap test (`wechat-pty-tap.test.ts` missing `line 5`).
+**Commit:** pending.
+**Next:** None for this scope.
+**Blockers:** None.
+
 ## 2026-05-10: BASH_ENV wiring — services pick up shell env without sourcing bashrc
 
 **What changed:**

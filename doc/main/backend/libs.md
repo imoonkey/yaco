@@ -160,21 +160,22 @@ Per-project `.gitignore` parser and cache.
 - Used by both `project-watcher.ts` (SSE filtering) and `files.ts` (tree building)
 - `clearGitignoreCache()` called when `.gitignore` changes on disk
 
-### terminal.ts (165 lines)
+### terminal.ts (~280 lines)
 
 PTY management for terminal sessions.
 
 **Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `attachSession()`, `releaseSession()`, `setShellSessionChangeCallback()`, `getShellSessionCount()`
 
-- Direct shell sessions: long-lived in-process PTYs named `shell-1`, `shell-2`, etc.
-- Shell sessions keep a bounded scrollback buffer so re-attaching restores recent output
-- Shell session detach only drops the browser attach; the shell process itself stays alive until the user explicitly kills it or the server exits
+- Shell sessions: Workflow-managed tmux sessions named `shell-1`, `shell-2`, etc., with ownership state in `~/.workflow/shell-sessions/<name>.json`
+- Shell state schema: `{ name, project, cwd, createdAt }`; the state file is the ownership marker that lets Workflow list and close only shells it created
+- `startShellSession(cwd, project, name?)` atomically writes shell ownership state, then runs `tmux new-session -d -s <name> -c <cwd> '<shell> --login'`; if tmux creation fails, state is removed
+- `listShellSessions()` reads shell state files and checks each with `tmux has-session`. Confirmed-missing tmux sessions are pruned; tmux command failures preserve state so transient socket/PATH issues do not orphan live shells from Workflow.
+- `closeShellSession(name)` only closes sessions with Workflow shell state. It kills the tmux session when live, removes state when confirmed missing, and throws rather than deleting state when tmux state is unknown.
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
-- Multmux sessions: attaches to tmux via `tmux attach-session` through node-pty
-- Shell PTYs and tmux attach PTYs both use `buildChildProcessEnv()` so spawned processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`
-- `attachSession(name, cols, rows)` returns the existing shell-session PTY when `name` matches, otherwise spawns a new tmux attach client
-- Both spawn paths call `assertCanSpawn()` from `pty-capacity.ts` before `pty.spawn()` so no new PTY is allocated while the process is under pressure
-- `releaseSession(name, attached)` centralizes detach cleanup: shell sessions remain alive, tmux attach PTYs are destroyed immediately
+- Shell and multmux terminal views both attach to tmux via `tmux attach-session` through node-pty
+- New tmux sessions and attach clients use `buildChildProcessEnv()` so child processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`
+- `attachSession(name, cols, rows)` always spawns a temporary tmux attach client after `assertCanSpawn()`; browser detach destroys only that attach client, not the underlying tmux session
+- `releaseSession(name, attached)` centralizes detach cleanup by destroying non-persistent tmux attach PTYs immediately
 
 ### pty-capacity.ts (~120 lines)
 

@@ -25,7 +25,7 @@ Source-of-truth boundaries for the workflow system's data.
 | Workstream metadata | Filesystem | `projects/active/*/workstream.json` | Server scanner → Frontend |
 | Progress entries | Filesystem | `projects/active/*/progress.json` + `projects/progress.json` | Server scanner → Frontend |
 | Session list | Server (poller cache) | In-memory | Frontend (via API) |
-| Session status | multmux / in-process PTY | Live query / in-memory | Server poller → Frontend |
+| Session status | multmux / Workflow shell state + tmux | State files + live tmux checks | Server poller → Frontend |
 | File tree | Server (cached) | In-memory (server + client) | Frontend |
 | Git status | git CLI | Live query | Frontend (via API) |
 | Workspace UI state | Frontend | localStorage | Frontend only |
@@ -42,8 +42,8 @@ Filesystem (projects.json, workstream.json, progress.json)
 ```
 
 ```
-multmux CLI / in-process PTY
-  → Session poller (3s interval)
+multmux state files / Workflow shell state files + tmux
+  → Session poller (30s interval + SSE refresh)
   → Cached session list
   → SSE refresh signal on changes
   → Frontend re-fetches → UI render

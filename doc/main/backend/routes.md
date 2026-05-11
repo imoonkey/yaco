@@ -45,7 +45,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/sessions` | All sessions (multmux + shell). Optional `?project=<name>` filter. Reads state files (kept accurate by hooks + reconciler stale-file correction). Response includes `worktree` field (slug extracted from `sessionPath`) |
+| GET | `/api/sessions` | All sessions (multmux + Workflow-managed shell). Optional `?project=<name>` filter. Agent sessions read `~/.multmux/sessions/*.json`; shell sessions read `~/.workflow/shell-sessions/*.json` and verify tmux liveness. Response includes `worktree` field for agent sessions (slug extracted from `sessionPath`) |
 | GET | `/api/sessions/history` | Session history (Claude JSONL + Codex SQLite). Required `?project=<name>`. Returns `HistorySession[]` sorted by modified DESC, capped at 200, with live session tagging |
 | POST | `/api/sessions/start` | Start session (`{ provider, name?, cwd, prompt?, resumeId? }`). Project resolved by longest-prefix match (supports worktree cwds). When `resumeId` present: idempotency preflight uses same descendant match, passes `--resume` to multmux. Returns resolved handle (not echoed name) |
 | POST | `/api/sessions/:handle/pause` | Send `/stop` to session |
@@ -92,7 +92,7 @@ All git routes support `?worktree=<slug>` query param via `withProject` middlewa
 
 | Protocol | Path | Description |
 |----------|------|-------------|
-| WS | `/ws/terminal/:name?cols=N&rows=N&project=P` | Terminal PTY (tmux or direct shell); `project` scopes tmux lookup |
+| WS | `/ws/terminal/:name?cols=N&rows=N&project=P` | Terminal PTY attached to tmux; `project` scopes session selection in the UI |
 
 ### Voice
 

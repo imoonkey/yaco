@@ -1,8 +1,11 @@
 import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
+import { spawnSync } from 'child_process'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
-import { PTY_MAX_BUFFER_SIZE } from './constants'
 import { assertCanSpawn } from './pty-capacity'
 
 export interface ShellSessionSummary {
@@ -15,9 +18,11 @@ export interface ShellSessionSummary {
 interface ShellSession {
   name: string
   project: string
-  proc: IPty
-  buffer: string
+  cwd: string
+  createdAt: string
 }
+
+type TmuxSessionState = 'live' | 'missing' | 'unknown'
 
 export interface AttachedSession {
   initialData: string
@@ -25,7 +30,7 @@ export interface AttachedSession {
   proc: IPty
 }
 
-const shellSessions = new Map<string, ShellSession>()
+const DEFAULT_SHELL_SESSIONS_DIR = join(homedir(), '.workflow', 'shell-sessions')
 
 let onSessionChange: (() => void) | null = null
 
@@ -34,18 +39,158 @@ export function setShellSessionChangeCallback(cb: () => void): void {
   onSessionChange = cb
 }
 
-function trimBuffer(buffer: string): string {
-  return buffer.length > PTY_MAX_BUFFER_SIZE ? buffer.slice(-PTY_MAX_BUFFER_SIZE) : buffer
+function getShellSessionsDir(): string {
+  return process.env.WORKFLOW_SHELL_SESSIONS_DIR || DEFAULT_SHELL_SESSIONS_DIR
+}
+
+function shellStatePath(name: string): string {
+  validateSessionName(name)
+  return join(getShellSessionsDir(), `${name}.json`)
+}
+
+function ensureShellSessionsDir(): void {
+  mkdirSync(getShellSessionsDir(), { recursive: true })
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
+}
+
+function parseShellState(raw: string): ShellSession | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<ShellSession>
+    if (
+      typeof parsed.name !== 'string' ||
+      typeof parsed.project !== 'string' ||
+      typeof parsed.cwd !== 'string' ||
+      typeof parsed.createdAt !== 'string'
+    ) {
+      return null
+    }
+    validateSessionName(parsed.name)
+    return {
+      name: parsed.name,
+      project: parsed.project,
+      cwd: parsed.cwd,
+      createdAt: parsed.createdAt,
+    }
+  } catch {
+    return null
+  }
+}
+
+function removeShellState(name: string): void {
+  try {
+    unlinkSync(shellStatePath(name))
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') throw e
+  }
+}
+
+function readShellState(name: string): ShellSession | null {
+  try {
+    return parseShellState(readFileSync(shellStatePath(name), 'utf-8'))
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') throw e
+    return null
+  }
+}
+
+function readShellStates(): ShellSession[] {
+  const dir = getShellSessionsDir()
+  if (!existsSync(dir)) return []
+
+  const states: ShellSession[] = []
+  const seen = new Set<string>()
+  for (const file of readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue
+    const path = join(dir, file)
+    let raw: string
+    try {
+      raw = readFileSync(path, 'utf-8')
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        console.warn(`[terminal] failed to read shell state ${file}:`, e)
+      }
+      continue
+    }
+    const state = parseShellState(raw)
+    if (!state || file !== `${state.name}.json` || seen.has(state.name)) {
+      try {
+        unlinkSync(path)
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+          console.warn(`[terminal] failed to remove invalid shell state ${file}:`, e)
+        }
+      }
+      continue
+    }
+    seen.add(state.name)
+    states.push(state)
+  }
+  return states
+}
+
+function writeShellState(state: ShellSession): void {
+  ensureShellSessionsDir()
+  const path = shellStatePath(state.name)
+  const tmpPath = `${path}.${process.pid}.tmp`
+  writeFileSync(tmpPath, JSON.stringify(state, null, 2), 'utf-8')
+  renameSync(tmpPath, path)
+}
+
+function tmux(args: string[], env: NodeJS.ProcessEnv = process.env): { status: number | null; stderr: string; error?: Error } {
+  const result = spawnSync('tmux', args, {
+    encoding: 'utf-8',
+    env,
+  })
+  return {
+    status: result.status,
+    stderr: String(result.stderr ?? ''),
+    error: result.error,
+  }
+}
+
+function checkTmuxSession(name: string): TmuxSessionState {
+  validateSessionName(name)
+  const result = tmux(['has-session', '-t', name])
+  if (result.error) {
+    console.warn(`[terminal] tmux has-session failed for ${name}: ${result.error.message}`)
+    return 'unknown'
+  }
+  if (result.status === 0) return 'live'
+  if (result.status === 1) return 'missing'
+
+  console.warn(`[terminal] tmux has-session returned ${result.status} for ${name}: ${result.stderr.trim()}`)
+  return 'unknown'
+}
+
+function runTmux(args: string[], env: NodeJS.ProcessEnv = process.env): void {
+  const result = tmux(args, env)
+  if (result.error) throw result.error
+  if (result.status !== 0) {
+    throw new Error(`tmux ${args[0]} failed: ${result.stderr.trim() || `exit ${result.status}`}`)
+  }
 }
 
 function nextShellSessionName(): string {
   let index = 1
-  while (shellSessions.has(`shell-${index}`)) index += 1
+  while (checkTmuxSession(`shell-${index}`) === 'live') index += 1
   return `shell-${index}`
 }
 
 export function listShellSessions(): ShellSessionSummary[] {
-  return [...shellSessions.values()].map(session => ({
+  const liveSessions: ShellSession[] = []
+  for (const state of readShellStates()) {
+    const tmuxState = checkTmuxSession(state.name)
+    if (tmuxState === 'live' || tmuxState === 'unknown') {
+      liveSessions.push(state)
+    } else if (tmuxState === 'missing') {
+      removeShellState(state.name)
+    }
+  }
+
+  return liveSessions.map(session => ({
     name: session.name,
     provider: 'shell',
     status: 'idle',
@@ -54,73 +199,70 @@ export function listShellSessions(): ShellSessionSummary[] {
 }
 
 export function getShellSessionCount(): number {
-  return shellSessions.size
+  return listShellSessions().length
 }
 
 export function startShellSession(cwd: string, project: string, requestedName?: string): string {
   const name = requestedName?.trim() || nextShellSessionName()
   validateSessionName(name)
 
-  if (shellSessions.has(name)) {
+  const existingState = readShellState(name)
+  const tmuxState = checkTmuxSession(name)
+
+  if (existingState && tmuxState === 'missing') {
+    removeShellState(name)
+  }
+
+  if (tmuxState === 'live' || tmuxState === 'unknown') {
     throw new Error(`Session already exists: ${name}`)
   }
 
-  assertCanSpawn()
-
-  const proc = pty.spawn(process.env.SHELL ?? 'bash', ['--login'], {
-    name: 'xterm-256color',
-    cols: 80,
-    rows: 24,
-    cwd,
-    env: buildChildProcessEnv(),
-  })
-
-  const session: ShellSession = {
+  writeShellState({
     name,
     project,
-    proc,
-    buffer: '',
+    cwd,
+    createdAt: new Date().toISOString(),
+  })
+
+  const shell = process.env.SHELL ?? 'bash'
+  try {
+    runTmux([
+      'new-session',
+      '-d',
+      '-s',
+      name,
+      '-c',
+      cwd,
+      `${shellQuote(shell)} --login`,
+    ], buildChildProcessEnv())
+  } catch (e) {
+    removeShellState(name)
+    throw e
   }
 
-  proc.onData((data) => {
-    session.buffer = trimBuffer(session.buffer + data)
-  })
-
-  proc.onExit(() => {
-    shellSessions.delete(name)
-    onSessionChange?.()
-  })
-
-  shellSessions.set(name, session)
   onSessionChange?.()
   return name
 }
 
 export function closeShellSession(name: string): boolean {
   validateSessionName(name)
-  const session = shellSessions.get(name)
-  if (!session) return false
+  const state = readShellState(name)
+  if (!state) return false
 
-  session.proc.kill()
-  shellSessions.delete(name)
+  const tmuxState = checkTmuxSession(name)
+  if (tmuxState === 'live') {
+    runTmux(['kill-session', '-t', name])
+  } else if (tmuxState === 'unknown') {
+    throw new Error(`Cannot determine tmux session state: ${name}`)
+  }
+  removeShellState(name)
   onSessionChange?.()
   return true
 }
 
-/** Spawn a PTY attached to a tmux session or a managed shell session. */
+/** Spawn a PTY attached to a tmux session. */
 export function attachSession(sessionName: string, cols: number, rows: number): AttachedSession {
   validateSessionName(sessionName)
-  const shellSession = shellSessions.get(sessionName)
-
-  if (shellSession) {
-    shellSession.proc.resize(cols, rows)
-    return {
-      initialData: shellSession.buffer,
-      persistent: true,
-      proc: shellSession.proc,
-    }
-  }
-
   assertCanSpawn()
 
   const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {

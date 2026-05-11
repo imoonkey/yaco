@@ -73,7 +73,7 @@ Full summary strings are returned (no server-side truncation). The UI truncates 
 
 - Workspace shows only sessions for the current project (`?project=<name>` filter)
 - Claude/Codex sessions are resolved from multmux
-- Shell sessions are in-process PTYs named `shell-1`, `shell-2`, etc.
+- Shell sessions are Workflow-managed tmux sessions named `shell-1`, `shell-2`, etc. Ownership state lives in `~/.workflow/shell-sessions/`, so server restart does not drop the shell.
 
 ## Terminal
 
@@ -112,7 +112,7 @@ The terminal component splits into two effects:
 
 1. Session selected → WebSocket opened to `/ws/terminal/:name?cols=N&rows=N&project=<projectName>`
 2. On first connect for a session, client sends RIS (`\ec`) + DECTCEM show (`\e[?25h`) to clear stale screen content and reset terminal modes. The explicit cursor-show is needed because xterm.js RIS doesn't reset `isCursorHidden`.
-3. Server sends scrollback buffer (`initialData`) if present, then unconditionally sends a terminal mode reset for all persistent (shell) sessions (disables mouse tracking modes `?1000l/?1002l/?1003l/?1006l`, shows cursor `?25h`). This neutralizes stale escape sequences from prior TUI apps even when the buffer is empty.
+3. Server attaches a temporary node-pty client to the tmux session. Shell and agent scrollback is tmux-managed; the server no longer keeps a separate shell buffer.
 4. PTY output streamed to terminal via WebSocket
 5. User input sent to PTY via WebSocket (with modifier key application if active)
 4. Resize events sent as `{ type: 'resize', cols, rows }`
@@ -127,11 +127,11 @@ The terminal component splits into two effects:
 | Type | PTY Source | Persistent? | Scrollback |
 |------|-----------|-------------|------------|
 | Claude/Codex | `tmux attach-session` via node-pty | Yes (tmux survives detach) | tmux-managed |
-| Shell | Direct node-pty spawn | Yes | Server-side bounded buffer |
+| Shell | `tmux attach-session` via node-pty | Yes (tmux survives detach and server restart) | tmux-managed |
 
-Shell sessions keep a scrollback buffer on the server, so re-attaching restores recent output. The buffer may contain stale escape sequences from prior TUI apps (e.g. Claude Code enabling mouse tracking or hiding the cursor); the server sends a mode reset after the buffer to neutralize these. Detaching the browser terminal does not kill the shell; only an explicit Kill action or server exit ends it.
+Shell sessions are regular tmux sessions owned by Workflow state files. Detaching the browser terminal destroys only the attach client; the shell keeps running in tmux until the user explicitly kills it from the UI or exits the shell. A server restart drops WebSocket attach clients but does not kill the shell.
 
-Before the server spawns a shell PTY or starts a new multmux child process, it repairs the child SSH environment (`SSH_AUTH_SOCK`) and, on macOS, can preload identities from the Apple keychain. This avoids per-project "open a terminal and run one manual git command first" warm-up when repos use SSH remotes.
+Before the server creates a tmux shell or starts a new multmux child process, it repairs the child SSH environment (`SSH_AUTH_SOCK`) and, on macOS, can preload identities from the Apple keychain. This avoids per-project "open a terminal and run one manual git command first" warm-up when repos use SSH remotes.
 
 ### Session Name Resolution
 
