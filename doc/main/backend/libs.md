@@ -160,17 +160,19 @@ Per-project `.gitignore` parser and cache.
 - Used by both `project-watcher.ts` (SSE filtering) and `files.ts` (tree building)
 - `clearGitignoreCache()` called when `.gitignore` changes on disk
 
-### terminal.ts (~280 lines)
+### terminal.ts (~290 lines)
 
 PTY management for terminal sessions.
 
-**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `attachSession()`, `releaseSession()`, `setShellSessionChangeCallback()`, `getShellSessionCount()`
+**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `reconcileShellSessionExit()`, `attachSession()`, `releaseSession()`, `setShellSessionChangeCallback()`, `getShellSessionCount()`
 
 - Shell sessions: Workflow-managed tmux sessions named `shell-1`, `shell-2`, etc., with ownership state in `~/.workflow/shell-sessions/<name>.json`
 - Shell state schema: `{ name, project, cwd, createdAt }`; the state file is the ownership marker that lets Workflow list and close only shells it created
 - `startShellSession(cwd, project, name?)` atomically writes shell ownership state, then runs `tmux new-session -d -s <name> -c <cwd> '<shell> --login'`; if tmux creation fails, state is removed
+- Workflow-managed shell tmux sessions enable `mouse on` at start and again before attach, so mouse wheel events go to tmux copy-mode/history instead of being translated into shell readline Up/Down history.
 - `listShellSessions()` reads shell state files and checks each with `tmux has-session`. Confirmed-missing tmux sessions are pruned; tmux command failures preserve state so transient socket/PATH issues do not orphan live shells from Workflow.
 - `closeShellSession(name)` only closes sessions with Workflow shell state. It kills the tmux session when live, removes state when confirmed missing, and throws rather than deleting state when tmux state is unknown.
+- `reconcileShellSessionExit(name)` runs when a terminal attach PTY exits. If the name belongs to a Workflow-owned shell and `tmux has-session` confirms the tmux session is gone, it removes the shell state and emits a session refresh. If the tmux session still exists (normal detach) or tmux state is unknown, it preserves state.
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Shell and multmux terminal views both attach to tmux via `tmux attach-session` through node-pty
 - New tmux sessions and attach clients use `buildChildProcessEnv()` so child processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`

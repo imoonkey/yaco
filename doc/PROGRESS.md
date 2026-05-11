@@ -1,3 +1,35 @@
+## 2026-05-11: Shell tmux sessions enable mouse scrolling
+
+**What changed:**
+- Workflow-managed shell tmux sessions now run `tmux set-option -t =<name>: mouse on` after creation and before attach.
+- Existing shell sessions are upgraded on reconnect, so previously-created shells get the same behavior without being recreated.
+- Added terminal unit coverage for mouse option setup and reattach-time setup. Updated backend and workspace terminal docs.
+
+**Why:**
+- Agent sessions already got `mouse on` from multmux, so wheel scrolling went through tmux copy-mode/history. Shell sessions created directly by Workflow did not, so wheel events in tmux's alternate screen were translated into shell readline Up/Down and cycled prompt history instead of scrolling pane history.
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/lib/__tests__/terminal.test.ts`, `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`.
+**Verification:** `TMPDIR=server/.tmp npm test -- terminal.test.ts` passed (18 tests). Live API probe created `shell-mouse-live-*` and confirmed `tmux show-options -t =<name>: -v mouse` returned `on`. Existing live `shell-2` was also updated to `mouse=on`.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+## 2026-05-11: Shell exit now removes tmux-backed shell sessions immediately
+
+**What changed:**
+- Added `reconcileShellSessionExit()` for Workflow-managed shell sessions and call it from the terminal WebSocket PTY `onExit` path.
+- When a shell exits from inside tmux, Workflow now checks `tmux has-session`; confirmed-missing shell sessions have their ownership state removed and emit `refresh:sessions`. Plain attach detach keeps state because the tmux session is still live.
+- Added terminal unit coverage for both shell-exit cleanup and detach-with-live-session preservation. Updated backend and workspace terminal docs.
+
+**Why:**
+- After shell sessions moved to tmux-backed persistence, typing `exit` ended the tmux session but left `~/.workflow/shell-sessions/<name>.json` until the next `/api/sessions` poll. The UI kept showing the dead shell row until that refresh happened.
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/index.ts`, `server/src/lib/__tests__/terminal.test.ts`, `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`.
+**Verification:** `TMPDIR=server/.tmp npm test -- terminal.test.ts` passed (17 tests). Real WebSocket repro on a temporary updated server and the live `:3001` server: before the fix, `exit` produced `ws_close 4001`, `tmux_after_exit 1`, and `state_after_ws_close_without_sessions_get true`; after the fix the same flow ends with `state_after_ws_close_without_sessions_get false`.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-05-11: Shell sessions move to tmux-backed persistence
 
 **What changed:**

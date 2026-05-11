@@ -50,7 +50,9 @@ const {
   attachSession,
   closeShellSession,
   listShellSessions,
+  reconcileShellSessionExit,
   releaseSession,
+  setShellSessionChangeCallback,
   startShellSession,
 } = await import('../terminal')
 import { PtyCapacityError, markDegraded, __resetForTests as resetPtyCapacity } from '../pty-capacity'
@@ -74,6 +76,7 @@ describe('attachSession', () => {
     aliveTmuxSessions.clear()
     vi.clearAllMocks()
     resetPtyCapacity()
+    setShellSessionChangeCallback(() => {})
     spawnSyncMock.mockImplementation((cmd: string, args: string[]) => {
       expect(cmd).toBe('tmux')
       const [action] = args
@@ -93,6 +96,11 @@ describe('attachSession', () => {
         const name = args[args.indexOf('-t') + 1]
         const existed = aliveTmuxSessions.delete(name)
         return { status: existed ? 0 : 1, stdout: '', stderr: existed ? '' : 'no such session' }
+      }
+      if (action === 'set-option') {
+        const target = args[args.indexOf('-t') + 1]
+        const name = target.replace(/^=/, '').replace(/:$/, '')
+        return { status: aliveTmuxSessions.has(name) ? 0 : 1, stdout: '', stderr: aliveTmuxSessions.has(name) ? '' : 'no such session' }
       }
       throw new Error(`unexpected tmux action: ${action}`)
     })
@@ -146,13 +154,33 @@ describe('attachSession', () => {
     ])
   })
 
+  it('enables tmux mouse for workflow-managed shell sessions', () => {
+    const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
+
+    expect(spawnSyncMock).toHaveBeenCalledWith('tmux', [
+      'set-option',
+      '-t',
+      `=${shellName}:`,
+      'mouse',
+      'on',
+    ], expect.objectContaining({ encoding: 'utf-8' }))
+  })
+
   it('reattaches shell sessions through tmux attach clients', () => {
     const proc = createPty()
     spawnMock.mockReturnValue(proc)
 
     const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
+    spawnSyncMock.mockClear()
     const attached = attachSession(shellName, 80, 24)
 
+    expect(spawnSyncMock).toHaveBeenCalledWith('tmux', [
+      'set-option',
+      '-t',
+      `=${shellName}:`,
+      'mouse',
+      'on',
+    ], expect.objectContaining({ encoding: 'utf-8' }))
     expect(spawnMock).toHaveBeenCalledWith('tmux', ['attach-session', '-t', 'shell-1'], expect.objectContaining({
       cols: 80,
       rows: 24,
@@ -191,6 +219,34 @@ describe('attachSession', () => {
 
     expect(listShellSessions()).toEqual([])
     expect(closeShellSession('shell-1')).toBe(false)
+  })
+
+  it('reconciles a managed shell when its tmux attach exits after shell exit', () => {
+    const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
+    const onChange = vi.fn()
+    setShellSessionChangeCallback(onChange)
+    aliveTmuxSessions.delete(shellName)
+
+    expect(reconcileShellSessionExit(shellName)).toBe(true)
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(listShellSessions()).toEqual([])
+  })
+
+  it('keeps managed shell state when a tmux attach exits but the session still lives', () => {
+    const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
+    const onChange = vi.fn()
+    setShellSessionChangeCallback(onChange)
+
+    expect(reconcileShellSessionExit(shellName)).toBe(false)
+    expect(onChange).not.toHaveBeenCalled()
+    expect(listShellSessions()).toEqual([
+      {
+        name: shellName,
+        provider: 'shell',
+        status: 'idle',
+        project: 'workflow',
+      },
+    ])
   })
 
   it('keeps shell state when tmux existence check fails', () => {

@@ -48,6 +48,11 @@ function shellStatePath(name: string): string {
   return join(getShellSessionsDir(), `${name}.json`)
 }
 
+function tmuxPaneTarget(name: string): string {
+  validateSessionName(name)
+  return `=${name}:`
+}
+
 function ensureShellSessionsDir(): void {
   mkdirSync(getShellSessionsDir(), { recursive: true })
 }
@@ -173,6 +178,14 @@ function runTmux(args: string[], env: NodeJS.ProcessEnv = process.env): void {
   }
 }
 
+function configureShellTmuxSession(name: string): void {
+  try {
+    runTmux(['set-option', '-t', tmuxPaneTarget(name), 'mouse', 'on'])
+  } catch (e) {
+    console.warn(`[terminal] failed to enable tmux mouse for ${name}:`, e)
+  }
+}
+
 function nextShellSessionName(): string {
   let index = 1
   while (checkTmuxSession(`shell-${index}`) === 'live') index += 1
@@ -240,6 +253,7 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
     throw e
   }
 
+  configureShellTmuxSession(name)
   onSessionChange?.()
   return name
 }
@@ -260,10 +274,23 @@ export function closeShellSession(name: string): boolean {
   return true
 }
 
+export function reconcileShellSessionExit(name: string): boolean {
+  validateSessionName(name)
+  const state = readShellState(name)
+  if (!state) return false
+
+  if (checkTmuxSession(name) !== 'missing') return false
+
+  removeShellState(name)
+  onSessionChange?.()
+  return true
+}
+
 /** Spawn a PTY attached to a tmux session. */
 export function attachSession(sessionName: string, cols: number, rows: number): AttachedSession {
   validateSessionName(sessionName)
   assertCanSpawn()
+  if (readShellState(sessionName)) configureShellTmuxSession(sessionName)
 
   const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {
     name: 'xterm-256color',

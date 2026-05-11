@@ -29,7 +29,7 @@ import { startProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
-import { attachSession, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
+import { attachSession, reconcileShellSessionExit, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS, WS_PING_INTERVAL_MS } from './lib/constants.js'
@@ -313,6 +313,7 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
   })
 
   const exitSub = proc.onExit(() => {
+    reconcileShellSessionExit(sessionName)
     if (ws.readyState === WebSocket.OPEN) ws.close(4001, 'session_ended')
     cleanupConnection(ws)
   })
