@@ -91,20 +91,20 @@ Both the editor and markdown preview read from the same `draft` value:
 
 This ensures preview, editor, and save are never out of sync.
 
-## Markdown Preview
+## Preview Mode
 
-Available for `.md` files only. Three modes controlled by a 3-segment toggle in the tab bar or `Cmd+Shift+V` (cycles edit → split → preview → edit):
+The 3-segment Edit / Split / Preview toggle (or `Cmd+Shift+V` to cycle) appears in the tab bar for **previewable** files — currently `.md`, `.markdown`, `.html`, `.htm` (see `isPreviewableFile` in `ui/src/lib/binaryFiles.ts`). Mode is shared across files via `previewMode` in the workspace layout.
 
 - **Edit**: CodeMirror editor only
-- **Split**: Editor + live preview side-by-side, with a draggable divider (20%–80%) and bidirectional scroll sync. Supports two orientations:
+- **Split**: Editor + live preview side-by-side, with a draggable divider (20%–80%). Two orientations:
   - **Horizontal** (default): editor left, preview right, vertical resize handle
   - **Vertical**: editor top, preview bottom, horizontal resize handle
   - A direction toggle icon appears next to the mode buttons when split is active
-- **Preview**: Rendered markdown only
+- **Preview**: Rendered preview only
 
 On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
 
-### Rendering
+### Markdown rendering
 
 - Uses `marked` library for markdown → HTML
 - Renders inside a `.markdown-preview` styled container
@@ -114,7 +114,11 @@ On touch/mobile devices, Split mode is hidden (only Edit/Preview available).
 - **innerHTML management**: does NOT use `dangerouslySetInnerHTML` (React 19 re-applies it on every render). Instead, manages innerHTML manually via `useLayoutEffect` + `appliedHtmlRef`. Only sets innerHTML when the HTML string actually changes. Saves and restores `<pre>` horizontal scroll positions across DOM recreation.
 - **Mermaid diagrams**: ` ```mermaid ` code fences render as SVG diagrams inline via the `mermaid` library (initialized with `startOnLoad: false`, theme `neutral`). Rendering uses `mermaid.render(id, source)` per diagram in a `useEffect`, reading `textContent` (not `innerHTML`) to avoid HTML entity issues. Parse errors display inline as red text. When mermaid diagrams are present, `setHtml` is deferred until all diagrams are rendered in a detached DOM — prevents flash of raw mermaid source on each keystroke.
 
-### Source-Line Anchored Sync
+### HTML rendering
+
+`HtmlPreview` (`ui/src/workspace/HtmlPreview.tsx`) renders `.html`/`.htm` files inside an `<iframe>` with `sandbox="allow-scripts"` (no `allow-same-origin`) and `referrerpolicy="no-referrer"`. The frame gets an opaque origin so its scripts cannot reach the parent app, localStorage, cookies, or our APIs. Self-contained HTML (inline CSS/JS, data URIs, CDN-hosted assets) renders normally; relative asset URLs (`<img src="./logo.png">`) won't resolve because srcdoc has no base URL — to support those, a future change would need a path-segment file-serving endpoint plus a `<base href>` injection. There is no scroll sync for HTML (the cross-origin sandbox boundary blocks the source-line anchor trick used for markdown), so split mode shows two independently scrolling panes.
+
+### Source-Line Anchored Sync (markdown only)
 
 Preview and editor share a viewport position via source-line anchors (not scroll percentage).
 

@@ -1,4 +1,22 @@
-## 2026-05-11: Shell tmux sessions enable mouse scrolling
+## 2026-05-11: HTML preview for `.html`/`.htm` files
+
+**What changed:**
+- Added `HtmlPreview` (`ui/src/workspace/HtmlPreview.tsx`) — sandboxed iframe with `sandbox="allow-scripts"` and `referrerpolicy="no-referrer"`. Self-contained HTML (inline CSS/JS, data URIs, CDN assets) renders normally; relative asset URLs do not resolve (srcdoc has no base URL — deliberate scope cut).
+- Generalized the markdown preview toggle so the same Edit/Split/Preview controls apply to `.html`/`.htm`. `Cmd+Shift+V` cycles modes for both.
+- Renamed `mdMode` → `previewMode`, `MdMode` → `PreviewMode`, `MdModeToggle` → `PreviewModeToggle`, `canToggleMdMode` → `canTogglePreview`, `onMdModeChange` → `onPreviewModeChange`. Added `isHtmlFile`/`isMarkdownFile`/`isPreviewableFile` helpers in `ui/src/lib/binaryFiles.ts`. Dropped the legacy `previewMode: boolean` migration line in `usePersistence.ts`.
+- `useWorkspaceVoice` now disables editor voice in preview-only mode for HTML too (not just markdown), via a generalized `isPreviewable` prop.
+
+**Why:**
+- HTML files only had source-code view. Previewing them rendered required exporting + opening in a browser. The same toggle UX as markdown is the obvious fit.
+- Sandboxed iframe with `allow-scripts` only (no `allow-same-origin`) is the standard secure preview pattern: the document gets an opaque origin and cannot reach the parent app, localStorage, cookies, or our APIs.
+
+**Key files:** `ui/src/workspace/HtmlPreview.tsx` (new), `ui/src/lib/binaryFiles.ts`, `ui/src/hooks/{workspaceTypes,useWorkspaceState,usePersistence}.ts`, `ui/src/workspace/{WorkspaceEditorArea,WorkspaceEditorColumn,WorkspaceTabBar,WorkspaceScreen,useWorkspaceKeyboard,useWorkspaceVoice}.tsx?`, `CLAUDE.md`, `doc/main/ui/workspace/editor-and-preview.md`.
+**Verification:** `cd ui && npx tsc --noEmit` clean. `npm run lint` problem count unchanged from HEAD baseline (96/83/13). `npm run build` succeeded. Browser smoke: opened a test HTML file with inline CSS + a click-counter script — preview renders styled output, sandbox attrs verified (`allow-scripts`, `no-referrer`), in-iframe button click increments counter. Markdown regression check: `.md` still uses DOM `MarkdownPreview` (not iframe). Non-previewable file (`.json`) shows zero toggle buttons.
+**Commit:** `9c7eadf`.
+**Next:** Optional — relative-asset support via path-segment file endpoint + `<base href>` injection, if requested.
+**Blockers:** None.
+
+
 
 **What changed:**
 - Workflow-managed shell tmux sessions now run `tmux set-option -t =<name>: mouse on` after creation and before attach.
