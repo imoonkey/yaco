@@ -9,8 +9,8 @@
 - Direct shell PTYs were owned by the Workflow server process, so server restart lost the shell. Tmux-backed shells match the Claude/Codex persistence model and survive server restarts without adding shell sessions to multmux.
 
 **Key files:** `server/src/lib/terminal.ts`, `server/src/lib/__tests__/terminal.test.ts`, `projects/active/tmux-shell-sessions/*`, `doc/main/backend/{libs,server,routes}.md`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/main/data-model/{overview,api-contracts}.md`, `CLAUDE.md`.
-**Verification:** `TMPDIR=server/.tmp npm test -- terminal.test.ts` passed (15 tests). Real tmux QA smoke passed for start/list/close and fresh-process restart persistence. `npm run build` passed. Full `server/npm test` with `GROQ_API_KEY=` still has one unrelated pre-existing flaky real-tmux tap test (`wechat-pty-tap.test.ts` missing `line 5`).
-**Commit:** pending.
+**Verification:** `TMPDIR=server/.tmp npm test -- terminal.test.ts` passed (15 tests). Real tmux QA smoke passed for start/list/close and fresh-process restart persistence. `npm run build` passed. Full `cd server && npm test` with `GROQ_API_KEY=` still has one unrelated pre-existing flaky real-tmux tap test (`wechat-pty-tap.test.ts` missing `line 5`).
+**Commit:** 2f1bad3.
 **Next:** None for this scope.
 **Blockers:** None.
 
