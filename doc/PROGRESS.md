@@ -11,7 +11,7 @@
 
 **Key files:** `server/src/lib/terminal.ts`, `server/src/lib/ssh-auth.ts`, `server/src/lib/__tests__/ssh-auth.test.ts`, `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`.
 **Verification:** `npx vitest run src/lib/__tests__/{terminal,ssh-auth}.test.ts` → 22 passed. Live API probe: `POST /api/sessions/start {provider:"shell"}` → spawned tmux session has 0 `npm_config_*` vars, `bash -ic` loads nvm without warning, `tmux show-options -t <name> status` returns `status off`.
-**Commit:** pending.
+**Commit:** `751458b`.
 **Next:** None.
 **Blockers:** None.
 
