@@ -67,6 +67,14 @@ function tryLoadAppleKeychain(env: NodeJS.ProcessEnv): void {
 
 export function buildChildProcessEnv(): Record<string, string> {
   const env = { ...process.env } as Record<string, string>
+  // npm leaks `npm_config_*` into child env when launched via `npm run`.
+  // nvm refuses to initialize when `npm_config_prefix` is set, so strip them
+  // so user shells see a clean environment.
+  for (const key of Object.keys(env)) {
+    if (key.startsWith('npm_config_') || key === 'npm_package_name' || key.startsWith('npm_lifecycle_')) {
+      delete env[key]
+    }
+  }
   let agentStatus = inspectAgent(env)
 
   if (agentStatus === 'invalid' && platform() === 'darwin') {

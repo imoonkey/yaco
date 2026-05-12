@@ -168,14 +168,14 @@ PTY management for terminal sessions.
 
 - Shell sessions: Workflow-managed tmux sessions named `shell-1`, `shell-2`, etc., with ownership state in `~/.workflow/shell-sessions/<name>.json`
 - Shell state schema: `{ name, project, cwd, createdAt }`; the state file is the ownership marker that lets Workflow list and close only shells it created
-- `startShellSession(cwd, project, name?)` atomically writes shell ownership state, then runs `tmux new-session -d -s <name> -c <cwd> '<shell> --login'`; if tmux creation fails, state is removed
-- Workflow-managed shell tmux sessions enable `mouse on` at start and again before attach, so mouse wheel events go to tmux copy-mode/history instead of being translated into shell readline Up/Down history.
+- `startShellSession(cwd, project, name?)` atomically writes shell ownership state, then runs `tmux new-session -d -s <name> -c <cwd> '<shell-cmd>'`; if tmux creation fails, state is removed. The shell command is wrapped to `unset` any `npm_(config|lifecycle|package)_*` vars before `exec`'ing the user's login shell, because tmux server caches its initial env — passing a clean env to `tmux new-session` is not enough when `npm run` leaked vars (e.g. `npm_config_prefix`, which makes nvm refuse to initialize) into the tmux server's cached env.
+- Workflow-managed shell tmux sessions enable `mouse on` and `status off` at start and again before attach: mouse wheel goes to tmux copy-mode/history (instead of being translated into shell readline Up/Down), and the bottom status bar is hidden so the in-app terminal looks like a plain shell.
 - `listShellSessions()` reads shell state files and checks each with `tmux has-session`. Confirmed-missing tmux sessions are pruned; tmux command failures preserve state so transient socket/PATH issues do not orphan live shells from Workflow.
 - `closeShellSession(name)` only closes sessions with Workflow shell state. It kills the tmux session when live, removes state when confirmed missing, and throws rather than deleting state when tmux state is unknown.
 - `reconcileShellSessionExit(name)` runs when a terminal attach PTY exits. If the name belongs to a Workflow-owned shell and `tmux has-session` confirms the tmux session is gone, it removes the shell state and emits a session refresh. If the tmux session still exists (normal detach) or tmux state is unknown, it preserves state.
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Shell and multmux terminal views both attach to tmux via `tmux attach-session` through node-pty
-- New tmux sessions and attach clients use `buildChildProcessEnv()` so child processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`
+- New tmux sessions and attach clients use `buildChildProcessEnv()` so child processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`. `buildChildProcessEnv` also strips `npm_(config|lifecycle|package)_*` vars that npm leaks into `process.env` when the server is launched via `npm run` (defense-in-depth alongside the shell-command `unset`).
 - `attachSession(name, cols, rows)` always spawns a temporary tmux attach client after `assertCanSpawn()`; browser detach destroys only that attach client, not the underlying tmux session
 - `releaseSession(name, attached)` centralizes detach cleanup by destroying non-persistent tmux attach PTYs immediately
 

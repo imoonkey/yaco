@@ -184,6 +184,11 @@ function configureShellTmuxSession(name: string): void {
   } catch (e) {
     console.warn(`[terminal] failed to enable tmux mouse for ${name}:`, e)
   }
+  try {
+    runTmux(['set-option', '-t', tmuxPaneTarget(name), 'status', 'off'])
+  } catch (e) {
+    console.warn(`[terminal] failed to hide tmux status for ${name}:`, e)
+  }
 }
 
 function nextShellSessionName(): string {
@@ -238,6 +243,14 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
   })
 
   const shell = process.env.SHELL ?? 'bash'
+  // Strip npm_config_*, npm_lifecycle_*, npm_package_* from the session env.
+  // tmux server caches its initial env, so vars leaked by `npm run` persist
+  // there even after `buildChildProcessEnv` strips them from the child env we
+  // hand to `tmux new-session`. Unsetting inside the shell command itself is
+  // the only reliable hook — tmux just runs this string via /bin/sh -c.
+  const shellCmd =
+    `unset $(env | awk -F= '/^npm_(config|lifecycle|package)_/{print $1}'); ` +
+    `exec ${shellQuote(shell)} --login`
   try {
     runTmux([
       'new-session',
@@ -246,7 +259,7 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
       name,
       '-c',
       cwd,
-      `${shellQuote(shell)} --login`,
+      shellCmd,
     ], buildChildProcessEnv())
   } catch (e) {
     removeShellState(name)

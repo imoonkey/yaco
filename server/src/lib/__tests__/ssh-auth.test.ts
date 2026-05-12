@@ -28,6 +28,23 @@ describe('buildChildProcessEnv', () => {
     process.env.SSH_AUTH_SOCK = '/stale/socket'
   })
 
+  it('strips npm_config_* vars leaked by `npm run`', () => {
+    spawnSyncMock.mockReturnValue({ status: 0 })
+    process.env.npm_config_prefix = '/some/prefix'
+    process.env.npm_config_cache = '/some/cache'
+    process.env.npm_lifecycle_event = 'dev'
+
+    const env = buildChildProcessEnv()
+
+    expect(env.npm_config_prefix).toBeUndefined()
+    expect(env.npm_config_cache).toBeUndefined()
+    expect(env.npm_lifecycle_event).toBeUndefined()
+
+    delete process.env.npm_config_prefix
+    delete process.env.npm_config_cache
+    delete process.env.npm_lifecycle_event
+  })
+
   it('keeps the current socket when ssh-agent is already reachable', () => {
     spawnSyncMock.mockReturnValue({ status: 0 })
 

@@ -1,3 +1,22 @@
+## 2026-05-12: Clean shell tmux env (nvm warning) + hide status bar
+
+**What changed:**
+- Shell session command wrapped to `unset $(env | awk -F= '/^npm_(config|lifecycle|package)_/{print $1}'); exec <shell> --login` so the new tmux pane no longer inherits the `npm_config_*` vars npm leaks when the server is launched via `npm run`.
+- `buildChildProcessEnv()` (`server/src/lib/ssh-auth.ts`) now also strips those vars from the env passed to spawned children — defense-in-depth, though insufficient on its own because the long-running tmux server caches its initial env.
+- `configureShellTmuxSession()` now also runs `tmux set-option -t =<name>: status off`, hiding the bottom status bar so the in-app terminal looks like a plain shell.
+
+**Why:**
+- nvm refuses to initialize when `npm_config_prefix` is set and prints a warning on every shell start. Stripping the env at the Node spawn level wasn't enough — `tmux new-session` inherits from the tmux server's cached env, not from the env we hand to spawn. Unsetting inside the shell command is the only reliable hook (tmux runs the string via `/bin/sh -c`).
+- The status bar is noise in an in-app terminal where tab/title is already shown by the workspace UI.
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/lib/ssh-auth.ts`, `server/src/lib/__tests__/ssh-auth.test.ts`, `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`.
+**Verification:** `npx vitest run src/lib/__tests__/{terminal,ssh-auth}.test.ts` → 22 passed. Live API probe: `POST /api/sessions/start {provider:"shell"}` → spawned tmux session has 0 `npm_config_*` vars, `bash -ic` loads nvm without warning, `tmux show-options -t <name> status` returns `status off`.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-11: HTML preview for `.html`/`.htm` files
 
 **What changed:**
