@@ -1,3 +1,21 @@
+## 2026-05-13: Local browser automation env for agent sessions
+
+**What changed:**
+- Moved browser automation defaults into the local `~/.bash_env` used by Workflow-launched non-interactive shells: Puppeteer points at `/usr/bin/google-chrome`, and Playwright uses `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` on this Ubuntu 26.04 machine.
+- Documented the local env convention in the dev workflow guide.
+
+**Why:**
+- Playwright 1.59.1 does not recognize `ubuntu26.04-x64` for managed Chromium install/download, and Puppeteer-managed Chrome hits the local Chrome sandbox restriction. System Chrome works for Puppeteer, while the Playwright host-platform override keeps managed Chromium usable.
+- Putting the values in `~/.bash_env` keeps this as local machine config while ensuring Workflow-spawned Claude/Codex multmux sessions inherit it.
+
+**Key files:** `doc/dev/workflow.md`; local machine file `~/.bash_env`.
+**Verification:** New multmux Codex session reported `BASH_ENV=/home/qiguo/.bash_env`, `PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`, and passed a Playwright Chromium smoke test. New multmux Claude session reported the same env values and passed a Playwright Chromium smoke test.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-12: HTML preview fragment links stay inside iframe
 
 **What changed:**

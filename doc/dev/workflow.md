@@ -109,6 +109,17 @@ cd ui && npx playwright test tests/e2e/foo.spec.ts   # Single test file
 cd ui && npm run lint                                # ESLint
 ```
 
+### Local Browser Automation Env
+
+This Ubuntu 26.04 desktop uses `~/.bash_env` for browser automation variables that
+must be inherited by Workflow-launched Claude/Codex sessions:
+
+- `PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome` makes Puppeteer use system Chrome instead of the Puppeteer-managed Chrome that fails local sandbox startup.
+- `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` lets this Playwright version install/use managed Chromium on Ubuntu 26.04, whose platform key is not recognized yet.
+
+The Workflow service sets `BASH_ENV=~/.bash_env`, so non-interactive bash shells
+inside multmux sessions inherit these values without manually sourcing the file.
+
 ## System Specs
 
 For API endpoints, UI shortcuts, workspace behavior, terminal integration, persistence, and file system invalidation details, see:
