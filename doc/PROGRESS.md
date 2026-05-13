@@ -10,7 +10,7 @@
 
 **Key files:** `scripts/services.sh`, `doc/dev/workflow.md`.
 **Verification:** Re-ran `scripts/services.sh install` on desktop → new unit has no `BASH_ENV=` line. `systemctl --user daemon-reload && systemctl --user restart workflow-server`. Spawned a new shell session via API → `ANTHROPIC_BASE_URL`, `PUPPETEER_EXECUTABLE_PATH`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE` all present (came via `.bashrc` → `.bash_env`). On laptop (macOS), re-ran `scripts/services.sh install` and reloaded the launchd plist — verified the same.
-**Commit:** pending.
+**Commit:** `7e67a39`.
 **Next:** None.
 **Blockers:** None.
 
