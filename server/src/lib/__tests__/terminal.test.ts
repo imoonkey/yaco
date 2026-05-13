@@ -142,7 +142,7 @@ describe('attachSession', () => {
       'shell-1',
       '-c',
       '/tmp/project',
-      expect.stringContaining('--login'),
+      expect.stringContaining('-li'),
     ], expect.objectContaining({ encoding: 'utf-8' }))
     expect(listShellSessions()).toEqual([
       {

@@ -1,3 +1,21 @@
+## 2026-05-13: Shell + agent sessions launch via login + interactive bash (`-lic`)
+
+**What changed:**
+- Workflow SHELL session shell command switched from `exec <shell> --login` to `exec <shell> -li` (login + interactive). Updated terminal test assertion.
+- Multmux wrapper v2 script (`~/workspace/multmux/src/hooks.ts`) now strips `npm_(config|lifecycle|package)_*` and runs the agent through `bash -lic 'exec "$@"' _ "$@"` so claude/codex see the same env as if launched from a terminal — sources `/etc/profile`, `~/.profile`, `~/.bashrc`, gets `SSH_AUTH_SOCK` (via keychain), full PATH (cargo, nvm, cuda), etc.
+
+**Why:**
+- Workflow-spawned claude/codex were missing user shell env (no SSH_AUTH_SOCK → `git push` failed; no PATH extensions → tools not found). The chain `workflow → multmux → tmux → /bin/sh -c → claude` skipped every shell init step. Wrapping the agent invocation in `bash -lic` is the simplest way to inherit the user's interactive-shell env without forcing them to maintain a parallel `~/.bash_env` for every tool.
+- Picked `-lic` (over `-ic` / `-lc`) for unification: it covers macOS Terminal.app default + ssh login interactive default; honours `.bashrc` interactive guards (which `-lc` skips); and prefers "more env over less" so PATH-dependent tools just work. Same shape used for SHELL session (`-li`, no `-c` since bash drops into REPL).
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/lib/__tests__/terminal.test.ts`, `~/workspace/multmux/src/hooks.ts` (separate repo), `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`.
+**Verification:** `npx vitest run src/lib/__tests__/terminal.test.ts` → 18 passed. `bun test` in multmux → 251 passed. Live: spawned SHELL via API → `flags=himBHs`, `login_shell=YES`, `SSH_AUTH_SOCK` set, `npm_config` count = 0, `ssh-add -l` returns key. Wrapper probe in real tmux pane → `SSH_AUTH_SOCK`, `NVM_DIR`, full PATH (cargo/cuda/nvm/.local/bin) all present, no nvm warning.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-13: Local browser automation env for agent sessions
 
 **What changed:**

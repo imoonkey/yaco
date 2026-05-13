@@ -248,9 +248,14 @@ export function startShellSession(cwd: string, project: string, requestedName?: 
   // there even after `buildChildProcessEnv` strips them from the child env we
   // hand to `tmux new-session`. Unsetting inside the shell command itself is
   // the only reliable hook — tmux just runs this string via /bin/sh -c.
+  //
+  // `-li` = login + interactive: matches macOS Terminal.app default and gives
+  // us /etc/profile + ~/.profile + ~/.bashrc, so SSH_AUTH_SOCK (via keychain)
+  // and other env from the user's interactive shell are present. No `-c` here
+  // — bash drops into the user's REPL.
   const shellCmd =
     `unset $(env | awk -F= '/^npm_(config|lifecycle|package)_/{print $1}'); ` +
-    `exec ${shellQuote(shell)} --login`
+    `exec ${shellQuote(shell)} -li`
   try {
     runTmux([
       'new-session',
