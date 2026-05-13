@@ -10,7 +10,7 @@
 
 **Key files:** `doc/dev/workflow.md`; local machine file `~/.bash_env`.
 **Verification:** New multmux Codex session reported `BASH_ENV=/home/qiguo/.bash_env`, `PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`, and passed a Playwright Chromium smoke test. New multmux Claude session reported the same env values and passed a Playwright Chromium smoke test.
-**Commit:** pending.
+**Commit:** `12ffebd`.
 **Next:** None.
 **Blockers:** None.
 
