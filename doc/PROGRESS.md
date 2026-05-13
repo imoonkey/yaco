@@ -10,7 +10,7 @@
 
 **Key files:** `server/src/lib/terminal.ts`, `server/src/lib/__tests__/terminal.test.ts`, `~/workspace/multmux/src/hooks.ts` (separate repo), `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`.
 **Verification:** `npx vitest run src/lib/__tests__/terminal.test.ts` → 18 passed. `bun test` in multmux → 251 passed. Live: spawned SHELL via API → `flags=himBHs`, `login_shell=YES`, `SSH_AUTH_SOCK` set, `npm_config` count = 0, `ssh-add -l` returns key. Wrapper probe in real tmux pane → `SSH_AUTH_SOCK`, `NVM_DIR`, full PATH (cargo/cuda/nvm/.local/bin) all present, no nvm warning.
-**Commit:** pending.
+**Commit:** `060c926` (workflow), `90a2796` (multmux).
 **Next:** None.
 **Blockers:** None.
 
