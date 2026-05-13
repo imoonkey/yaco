@@ -1,3 +1,22 @@
+## 2026-05-12: HTML preview fragment links stay inside iframe
+
+**What changed:**
+- HTML preview now injects `<base href="about:srcdoc">` into documents that do not already define a `<base>` tag, so in-page links like `#s1` resolve to `about:srcdoc#s1` instead of the Workflow app URL.
+- Moved srcdoc preparation into `ui/src/workspace/htmlPreviewSrcDoc.ts` and added unit coverage for head injection, existing base preservation, and fragment HTML.
+- Added a Playwright regression spec for HTML preview fragment-link navigation.
+- Updated the workspace editor/preview docs to describe the `about:srcdoc` base behavior and the remaining relative-asset limitation.
+
+**Why:**
+- In `srcdoc` iframes without a base tag, Chromium reports `document.baseURI` as the embedding page (`http://127.0.0.1:5173/`). A TOC link such as `href="#s1"` therefore navigated the iframe to `http://127.0.0.1:5173/#s1`, loading the Workflow app shell inside the sandbox. Because the sandbox has an opaque origin, Vite/app scripts were blocked by CORS and the iframe appeared white.
+
+**Key files:** `ui/src/workspace/HtmlPreview.tsx`, `ui/src/workspace/htmlPreviewSrcDoc.ts`, `ui/src/workspace/__tests__/HtmlPreview.test.ts`, `ui/tests/e2e/html-preview.spec.ts`, `doc/main/ui/workspace/editor-and-preview.md`.
+**Verification:** `cd ui && npx vitest run src/workspace/__tests__/HtmlPreview.test.ts` passed (3 tests). `cd ui && npx eslint src/workspace/HtmlPreview.tsx src/workspace/htmlPreviewSrcDoc.ts src/workspace/__tests__/HtmlPreview.test.ts tests/e2e/html-preview.spec.ts` passed. `cd ui && npx tsc --noEmit` passed. `npm run build` passed. Browser repro with system Chrome on `learn/flow_matching.html`: before fix `#s1` resolved to `http://127.0.0.1:5173/#s1`; after fix click leaves iframe at `about:srcdoc#s1`, title remains `Flow Matching · 一份可视化解读`, and `scrollY` becomes 817. Playwright runner could not execute the new e2e spec on this machine because its managed Chromium cache is missing and `npx playwright install chromium` reports this Playwright version does not support `ubuntu26.04-x64`.
+**Commit:** pending.
+**Next:** Optional — project-aware relative asset support via a file-serving base URL.
+**Blockers:** None.
+
+---
+
 ## 2026-05-12: Clean shell tmux env (nvm warning) + hide status bar
 
 **What changed:**
