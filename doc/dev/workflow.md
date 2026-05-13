@@ -117,8 +117,11 @@ must be inherited by Workflow-launched Claude/Codex sessions:
 - `PUPPETEER_EXECUTABLE_PATH=/usr/bin/google-chrome` makes Puppeteer use system Chrome instead of the Puppeteer-managed Chrome that fails local sandbox startup.
 - `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` lets this Playwright version install/use managed Chromium on Ubuntu 26.04, whose platform key is not recognized yet.
 
-The Workflow service sets `BASH_ENV=~/.bash_env`, so non-interactive bash shells
-inside multmux sessions inherit these values without manually sourcing the file.
+`~/.bash_env` is sourced from the very top of `~/.bashrc` (`. ~/.bash_env`).
+Workflow launches both shell sessions (`bash -li`) and agent sessions (`bash -lic`
+via the multmux wrapper) as login + interactive bash, which sources
+`~/.bashrc` → `~/.bash_env` and inherits these vars all the way through to
+claude/codex.
 
 ## System Specs
 

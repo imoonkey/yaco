@@ -1,3 +1,39 @@
+## 2026-05-13: Revert BASH_ENV — `bash -lic` wrapper covers the path
+
+**What changed:**
+- Removed `Environment="BASH_ENV=%h/.bash_env"` from both systemd unit templates and the `<key>BASH_ENV</key>` block from the macOS launchd plist template in `scripts/services.sh`.
+- Updated `doc/dev/workflow.md` "Local Browser Automation Env" section to describe the new path (`bash -li` / `bash -lic` → `.bashrc` → `.bash_env`) instead of the old `BASH_ENV` mechanism.
+
+**Why:**
+- `BASH_ENV` was load-bearing back when the wrapper exec'd the agent directly (`/bin/sh -c '<agent>'`) — `.bashrc` was never sourced, so the only way to inject `~/.bash_env` was the bash-specific `BASH_ENV` env var that auto-sources for non-interactive bash. After the recent commits switched the wrapper to `bash -lic 'exec ...'` and SHELL sessions to `bash -li`, the inner bash is interactive and sources `.bashrc`, which (per `~/.bashrc` line 1) sources `~/.bash_env`. So both paths now reach the same env, and `BASH_ENV` is redundant.
+- Keeping the redundancy was fine, but it's two mechanisms doing one job. Removing it makes `~/.bash_env` semantically just a `.bashrc` partial (env-only chunk), and the systemd unit / macOS plist no longer needs to know about a user dotfile convention.
+
+**Key files:** `scripts/services.sh`, `doc/dev/workflow.md`.
+**Verification:** Re-ran `scripts/services.sh install` on desktop → new unit has no `BASH_ENV=` line. `systemctl --user daemon-reload && systemctl --user restart workflow-server`. Spawned a new shell session via API → `ANTHROPIC_BASE_URL`, `PUPPETEER_EXECUTABLE_PATH`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE` all present (came via `.bashrc` → `.bash_env`). On laptop (macOS), re-ran `scripts/services.sh install` and reloaded the launchd plist — verified the same.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+---
+
+## 2026-05-13: Image preview uses fit-width zoom controls
+
+**What changed:**
+- Replaced the image preview's single fit-to-viewport `<img>` with a small toolbar for zoom out, zoom in, and fit-width reset.
+- Image previews now default to fit-width inside a scrollable canvas, so tall images remain readable and can be scrolled vertically instead of being shrunk to fit the pane height.
+- Added component coverage for default fit-width rendering, zoom steps, and reset behavior.
+
+**Why:**
+- The previous `maxWidth: 100%` + `maxHeight: 100%` behavior forced very tall images to fit the editor pane height. That preserved the full image on screen but made long screenshots too narrow to read.
+
+**Key files:** `ui/src/workspace/ImagePreview.tsx`, `ui/src/workspace/__tests__/ImagePreview.test.tsx`, `doc/main/frontend/components.md`.
+**Verification:** `cd ui && npx vitest run src/workspace/__tests__/ImagePreview.test.tsx` passed (2 tests). `cd ui && npx eslint src/workspace/ImagePreview.tsx src/workspace/__tests__/ImagePreview.test.tsx` passed. `cd ui && npx tsc --noEmit` passed. `npm run build` passed with the existing Vite large-chunk warning.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-13: Shell + agent sessions launch via login + interactive bash (`-lic`)
 
 **What changed:**

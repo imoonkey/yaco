@@ -68,7 +68,6 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$SERVER_DIR
 Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="BASH_ENV=%h/.bash_env"
 ExecStart=$node_bin_dir/npm run dev
 Restart=on-failure
 RestartSec=5
@@ -90,7 +89,6 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=$UI_DIR
 Environment="PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-Environment="BASH_ENV=%h/.bash_env"
 ExecStart=$node_bin_dir/npm run dev
 Restart=on-failure
 RestartSec=5
@@ -142,8 +140,6 @@ install_macos() {
         <string>en_US.UTF-8</string>
         <key>LC_CTYPE</key>
         <string>en_US.UTF-8</string>
-        <key>BASH_ENV</key>
-        <string>$HOME/.bash_env</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>
