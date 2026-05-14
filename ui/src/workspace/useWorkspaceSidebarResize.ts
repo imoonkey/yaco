@@ -24,7 +24,17 @@ export function useWorkspaceSidebarResize(opts: UseWorkspaceSidebarResizeOpts) {
   const projectSplit = useResize(layout.projectSize, 40, 300, 'down')
   const projectHeight = projectSplit.size
   const left = useResize(layout.leftSize, 140, 600)
-  const right = useResize(layout.rightSize, 250, 900, 'right')
+
+  // Right panel max: viewport width minus sidebar minus an editor-min reserve,
+  // so the editor never disappears but users on wide monitors can pull the
+  // shell as wide as they like.
+  const rightMax = useCallback(() => {
+    const vw = typeof window === 'undefined' ? 1600 : window.innerWidth
+    const sidebarW = layout.showSidebar ? left.size : 0
+    const editorMin = 200
+    return Math.max(250, vw - sidebarW - editorMin)
+  }, [layout.showSidebar, left.size])
+  const right = useResize(layout.rightSize, 250, rightMax, 'right')
 
   // Available space for bottom sections = sidebar - headers - projects - explorer min
   const bottomAvailable = useCallback(() => {
@@ -62,9 +72,21 @@ export function useWorkspaceSidebarResize(opts: UseWorkspaceSidebarResizeOpts) {
   useEffect(() => {
     const maxC = changesMax()
     const maxS = searchMax()
+    const maxR = rightMax()
     if (changesSplit.size > maxC) changesSplit.setSize(maxC)
     if (searchSplit.size > maxS) searchSplit.setSize(maxS)
-  }, [changesMax, searchMax, changesSplit, searchSplit])
+    if (right.size > maxR) right.setSize(maxR)
+  }, [changesMax, searchMax, rightMax, changesSplit, searchSplit, right])
+
+  // React to viewport resize so rightMax stays correct
+  useEffect(() => {
+    const onResize = () => {
+      const maxR = rightMax()
+      if (right.size > maxR) right.setSize(maxR)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [rightMax, right])
 
   // Sync resize handle sizes back to layout state for persistence
   useEffect(() => {
