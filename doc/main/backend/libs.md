@@ -175,8 +175,8 @@ PTY management for terminal sessions.
 - `reconcileShellSessionExit(name)` runs when a terminal attach PTY exits. If the name belongs to a Workflow-owned shell and `tmux has-session` confirms the tmux session is gone, it removes the shell state and emits a session refresh. If the tmux session still exists (normal detach) or tmux state is unknown, it preserves state.
 - Lifecycle callback: fires on start, close, and process exit for `refresh:sessions` integration
 - Shell and multmux terminal views both attach to tmux via `tmux attach-session` through node-pty
-- New tmux sessions and attach clients use `buildChildProcessEnv()` so child processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`. `buildChildProcessEnv` also strips `npm_(config|lifecycle|package)_*` vars that npm leaks into `process.env` when the server is launched via `npm run` (defense-in-depth alongside the shell-command `unset`).
-- `attachSession(name, cols, rows)` always spawns a temporary tmux attach client after `assertCanSpawn()`; browser detach destroys only that attach client, not the underlying tmux session
+- New tmux sessions and attach clients use `buildChildProcessEnv()` so child processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`. `buildChildProcessEnv` also strips `npm_(config|lifecycle|package)_*` vars that npm leaks into `process.env` when the server is launched via `npm run` (defense-in-depth alongside the shell-command `unset`). On Linux it additionally injects DISPLAY / XAUTHORITY / WAYLAND_DISPLAY discovered by `clipboard-env.ts`, so children can reach the user's graphical session for clipboard ops.
+- `attachSession(name, cols, rows)` always spawns a temporary tmux attach client after `assertCanSpawn()`; browser detach destroys only that attach client, not the underlying tmux session. On Linux it lazily calls `tmux set-environment -g` once per server lifetime to push DISPLAY/XAUTHORITY/WAYLAND_DISPLAY into the running tmux server's globals, so future shell/agent windows inherit them even if the tmux server pre-dates the workflow server (existing children keep their old env until restart).
 - `releaseSession(name, attached)` centralizes detach cleanup by destroying non-persistent tmux attach PTYs immediately
 
 ### pty-capacity.ts (~120 lines)
@@ -201,6 +201,27 @@ Best-effort SSH environment repair for spawned child processes.
 - Validates the current `SSH_AUTH_SOCK` by probing `ssh-add -l`
 - On macOS, if the socket is stale, discovers a live `ssh-agent` socket via `pgrep` + `lsof`
 - If the agent is reachable but empty, runs `ssh-add --apple-load-keychain` so new shell/tmux sessions can use SSH-backed Git remotes without a manual warm-up terminal
+- Folds in the result of `discoverClipboardEnv()` (DISPLAY/XAUTHORITY/WAYLAND_DISPLAY on Linux) without overriding existing values, so children spawned by `attachSession`/`startShellSession` can reach the X server for clipboard ops
+
+### clipboard-env.ts (~40 lines)
+
+Discover the X11 / Wayland env vars (`DISPLAY`, `XAUTHORITY`, `WAYLAND_DISPLAY`) needed for clipboard tools to reach the active graphical session. Linux-only.
+
+**Exports**: `discoverClipboardEnv()`
+
+- The workflow server, when launched as a systemd-user service, lacks DISPLAY/XAUTHORITY because they live in the graphical session env, not the service env. `xclip` and arboard-based tools (codex) refuse to talk to the X server without them.
+- On GNOME/Wayland, mutter writes a per-session Xauthority cookie at `/run/user/$UID/.mutter-Xwaylandauth.<random>`. We pick the most recently modified one. DISPLAY defaults to `:0`, WAYLAND_DISPLAY to `wayland-0`.
+- Returns `{}` on macOS or when no graphical session is detectable — clipboard ops then fail with a clear `no-display` error rather than hanging.
+
+### clipboard-write.ts (~60 lines)
+
+Pipe image bytes into the X11 CLIPBOARD selection via `xclip` so a TUI agent (Claude Code, Codex) running in a tmux session on the same desktop can read them through its own paste path.
+
+**Exports**: `writeImageToClipboard(mime, bytes)`, `ClipboardWriteError`
+
+- 10MB byte cap, MIME whitelist (`image/png|jpeg|gif|webp|bmp`)
+- Spawns `xclip -selection clipboard -t <mime> -i` with the env from `discoverClipboardEnv()`. xclip reads stdin to EOF then forks itself into a daemon that serves subsequent paste requests; the parent process exits with code 0 once stdin closes.
+- Pivoted to xclip + Xwayland because GNOME mutter's Wayland clipboard portal hangs `wl-copy` / `wl-paste` indefinitely on this setup; xclip via Xwayland round-trips reliably and both Claude Code (`xclip -t image/png -o`) and Codex (arboard Rust crate) read from the same X11 CLIPBOARD selection.
 
 ### session-summary.ts (~170 lines)
 

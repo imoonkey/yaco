@@ -46,6 +46,7 @@ const ARROW_KEY_SUFFIX: Partial<Record<TerminalKeyBarKey, 'A' | 'B' | 'C' | 'D'>
   'arrow-up': 'A',
   'arrow-right': 'C',
 }
+const ARROW_KEY_SUFFIXES = new Set(['A', 'B', 'C', 'D'])
 
 const WS_RECONNECT_MAX_RETRIES = 5
 const WS_RECONNECT_INITIAL_MS = 1000
@@ -109,6 +110,11 @@ function decodeOsc52Payload(payload: string): string | null {
   }
 }
 
+function suppressOscColorReportQuery(data: string): boolean {
+  const parts = data.split(';').map(part => part.trim())
+  return parts.length > 0 && parts.every(part => part === '?')
+}
+
 function applyModifiers(data: string, mods: Modifiers): string | null {
   if (mods.meta && data.length === 1) {
     const key = data.toLowerCase()
@@ -123,8 +129,8 @@ function applyModifiers(data: string, mods: Modifiers): string | null {
     if (code >= 65 && code <= 90) return String.fromCharCode(code - 64) // Ctrl+A-Z
   }
   if (mods.shift) {
-    const m = data.match(/^\x1b\[([ABCD])$/)
-    if (m) return `\x1b[1;2${m[1]}` // Shift+arrow
+    const arrowSuffix = data.length === 3 && data.startsWith('\x1b[') ? data[2] : ''
+    if (ARROW_KEY_SUFFIXES.has(arrowSuffix)) return `\x1b[1;2${arrowSuffix}` // Shift+arrow
     if (data === '\t') return '\x1b[Z' // Shift+Tab
   }
   return data
@@ -307,6 +313,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       return true
     })
 
+    const oscColorDisposables = [10, 11, 12].map(id =>
+      term.parser.registerOscHandler(id, suppressOscColorReportQuery)
+    )
+
     term.attachCustomKeyEventHandler((event) => {
       if (event.type === 'keydown') {
         onInteractRef.current?.()
@@ -378,6 +388,38 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     container.addEventListener('keydown', handleKeyDown, { capture: true })
     container.addEventListener('input', handleUnprocessedInput, { capture: true })
 
+    // Image paste: when the clipboard contains an image (e.g. a screenshot
+    // pasted into a TUI agent like Claude Code or Codex), forward the bytes
+    // to the server so it can mirror them into the desktop's X11 clipboard
+    // and trigger the agent's native paste handler. Text paste is left to
+    // xterm's default path (which already streams via WS input).
+    const handlePaste = (event: ClipboardEvent) => {
+      const items = event.clipboardData?.items
+      if (!items) return
+      for (const item of items) {
+        if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
+        const file = item.getAsFile()
+        if (!file) continue
+        event.preventDefault()
+        event.stopPropagation()
+        file.arrayBuffer().then((buf) => {
+          const ws = wsRef.current
+          if (ws?.readyState !== WebSocket.OPEN) return
+          const u8 = new Uint8Array(buf)
+          let binary = ''
+          const chunkSize = 0x8000
+          for (let i = 0; i < u8.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, u8.subarray(i, i + chunkSize) as unknown as number[])
+          }
+          ws.send(JSON.stringify({ type: 'image-paste', mime: file.type || 'image/png', base64: btoa(binary) }))
+        }).catch((err) => {
+          console.warn('[terminal] image paste failed', err)
+        })
+        return
+      }
+    }
+    container.addEventListener('paste', handlePaste, { capture: true })
+
     // Resize: send dimensions to current WebSocket via ref
     term.onResize(() => {
       const ws = wsRef.current
@@ -412,8 +454,10 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       container.removeEventListener('touchend', onTouchEnd)
       container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
+      for (const disposable of oscColorDisposables) disposable.dispose()
       container.removeEventListener('keydown', handleKeyDown, { capture: true })
       container.removeEventListener('input', handleUnprocessedInput, { capture: true })
+      container.removeEventListener('paste', handlePaste, { capture: true })
       observer.disconnect()
       term.dispose()
       termRef.current = null

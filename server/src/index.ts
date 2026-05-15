@@ -30,6 +30,7 @@ import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
 import { attachSession, reconcileShellSessionExit, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
+import { writeImageToClipboard, ClipboardWriteError } from './lib/clipboard-write.js'
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS, WS_PING_INTERVAL_MS } from './lib/constants.js'
@@ -356,6 +357,20 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
         }
         if (msg.type === 'input') {
           proc.write(msg.data)
+          return
+        }
+        if (msg.type === 'image-paste' && typeof msg.mime === 'string' && typeof msg.base64 === 'string') {
+          // Mirror the laptop's clipboard image into the desktop's X11 CLIPBOARD,
+          // then send Ctrl+V so the focused TUI agent (Claude Code, Codex)
+          // triggers its own paste path and reads the bytes back via xclip /
+          // arboard. Fire-and-forget — we don't block PTY input on it.
+          const bytes = Buffer.from(msg.base64, 'base64')
+          writeImageToClipboard(msg.mime, bytes).then(() => {
+            proc.write('\x16')
+          }).catch((err: unknown) => {
+            const message = err instanceof ClipboardWriteError ? `${err.code}: ${err.message}` : String(err)
+            console.warn(`[ws] image-paste failed for ${sessionName}: ${message}`)
+          })
           return
         }
       } catch { /* not JSON */ }

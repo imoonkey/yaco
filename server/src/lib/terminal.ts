@@ -6,6 +6,7 @@ import { join } from 'path'
 import { spawnSync } from 'child_process'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
+import { discoverClipboardEnv } from './clipboard-env'
 import { assertCanSpawn } from './pty-capacity'
 
 export interface ShellSessionSummary {
@@ -154,6 +155,31 @@ function tmux(args: string[], env: NodeJS.ProcessEnv = process.env): { status: n
     stderr: String(result.stderr ?? ''),
     error: result.error,
   }
+}
+
+// Push the discovered Linux graphical-session env (DISPLAY, XAUTHORITY,
+// WAYLAND_DISPLAY) into the running tmux server's global environment so any
+// shell or agent window that opens afterwards inherits it. Without this, the
+// tmux server keeps the env it had when it first started — usually empty for
+// graphical vars when launched from a systemd-user service — and downstream
+// tools like xclip refuse to talk to the X server. Already-running agent
+// processes still use their original env until they restart; this only fixes
+// future spawns.
+let pushedClipboardEnvToTmux = false
+function pushClipboardEnvToTmux(): void {
+  if (pushedClipboardEnvToTmux) return
+  const clip = discoverClipboardEnv()
+  if (!clip.DISPLAY || !clip.XAUTHORITY) return
+  const env = buildChildProcessEnv()
+  for (const [k, v] of Object.entries(clip)) {
+    if (!v) continue
+    const result = tmux(['set-environment', '-g', k, v], env)
+    if (result.status !== 0) {
+      console.warn(`[terminal] tmux set-environment -g ${k} failed: ${result.stderr.trim() || `exit ${result.status}`}`)
+      return
+    }
+  }
+  pushedClipboardEnvToTmux = true
 }
 
 function checkTmuxSession(name: string): TmuxSessionState {
@@ -308,6 +334,7 @@ export function reconcileShellSessionExit(name: string): boolean {
 export function attachSession(sessionName: string, cols: number, rows: number): AttachedSession {
   validateSessionName(sessionName)
   assertCanSpawn()
+  pushClipboardEnvToTmux()
   if (readShellState(sessionName)) configureShellTmuxSession(sessionName)
 
   const proc = pty.spawn('tmux', ['attach-session', '-t', sessionName], {

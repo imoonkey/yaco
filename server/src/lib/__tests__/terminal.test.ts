@@ -42,6 +42,10 @@ vi.mock('../ssh-auth', () => ({
   buildChildProcessEnv: vi.fn(() => ({ PATH: process.env.PATH ?? '' })),
 }))
 
+vi.mock('../clipboard-env', () => ({
+  discoverClipboardEnv: vi.fn(() => ({})),
+}))
+
 vi.mock('../session-names', () => ({
   validateSessionName: validateSessionNameMock,
 }))

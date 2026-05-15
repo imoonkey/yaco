@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from 'child_process'
 import { platform } from 'os'
+import { discoverClipboardEnv } from './clipboard-env'
 
 type AgentStatus = 'ready' | 'empty' | 'invalid'
 
@@ -93,6 +94,10 @@ export function buildChildProcessEnv(): Record<string, string> {
 
   if ((agentStatus === 'ready' || agentStatus === 'empty') && env.SSH_AUTH_SOCK) {
     process.env.SSH_AUTH_SOCK = env.SSH_AUTH_SOCK
+  }
+
+  for (const [k, v] of Object.entries(discoverClipboardEnv())) {
+    if (v && !env[k]) env[k] = v
   }
 
   return env

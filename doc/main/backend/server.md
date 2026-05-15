@@ -55,6 +55,7 @@ Flow:
 6. Send scrollback buffer (`initialData`) if present. Shell and agent scrollback is tmux-managed; the server does not keep an in-process shell buffer
 7. Pipe PTY output to WebSocket, WebSocket input to PTY
 8. Handle resize messages (`{ type: 'resize', cols, rows }`)
+9. Handle image-paste messages (`{ type: 'image-paste', mime, base64 }`) by writing the bytes into the X11 CLIPBOARD via `clipboard-write.ts` and forwarding `\x16` (Ctrl+V) to the PTY so the focused TUI agent (Claude Code, Codex) triggers its native paste handler. Used to forward laptop-clipboard images into a remote desktop's TUI agent — see `lib/clipboard-write.ts` and `lib/clipboard-env.ts` in [libs.md](./libs.md).
 
 Close codes:
 - `4001 session_ended` — PTY exited (tmux `/exit`, shell logout). Client detaches immediately, no reconnect.

@@ -1,3 +1,24 @@
+## 2026-05-14: Image paste from remote browser into desktop TUI agents
+
+**What changed:**
+- New `server/src/lib/clipboard-env.ts` and `server/src/lib/clipboard-write.ts`. The first discovers DISPLAY/XAUTHORITY/WAYLAND_DISPLAY (mutter's per-session Xauthority cookie) on Linux. The second pipes image bytes into the X11 CLIPBOARD via `xclip` (10MB cap, MIME whitelist).
+- `ssh-auth.ts` `buildChildProcessEnv()` folds the discovered clipboard env into every child process spawn.
+- `terminal.ts` `attachSession()` lazily calls `tmux set-environment -g` once per server lifetime so the running tmux server's globals get DISPLAY/XAUTHORITY/WAYLAND_DISPLAY — future shell/agent windows inherit them even when the tmux server pre-dates the workflow server.
+- `index.ts` WS handler accepts `{type:'image-paste', mime, base64}`, writes the bytes to clipboard, and sends `\x16` (Ctrl+V) to the PTY so the focused TUI agent triggers its native paste path.
+- `Terminal.tsx` adds a capture-phase `paste` listener that intercepts image MIME items, base64-encodes them, and ships them over the WS. Text paste continues through xterm's default path.
+
+**Why:**
+- When the workflow server runs on the desktop and the browser is on the laptop, `Cmd+V` of an image into a Claude Code or Codex pane did nothing — the agent was reading the desktop's clipboard (empty) instead of the laptop's. Mirroring the bytes through the WS into the desktop's X11 CLIPBOARD makes the agent's native paste path work transparently.
+- Pivoted to xclip + Xwayland because GNOME mutter's Wayland clipboard portal hangs `wl-copy`/`wl-paste` indefinitely on this setup. xclip via Xwayland round-trips reliably, and both Claude Code (`xclip -t image/png -o`) and Codex (arboard Rust crate) read from the same X11 CLIPBOARD selection.
+
+**Key files:** `server/src/lib/clipboard-env.ts`, `server/src/lib/clipboard-write.ts`, `server/src/lib/ssh-auth.ts`, `server/src/lib/terminal.ts`, `server/src/index.ts`, `ui/src/components/Terminal.tsx`, `server/src/lib/__tests__/terminal.test.ts`.
+**Verification:** Lib smoke test wrote a 69-byte PNG via `writeImageToClipboard('image/png', …)` and read back byte-identical via `xclip -t image/png -o`. Server vitest 256/257 (1 pre-existing GROQ_API_KEY failure unrelated). UI `tsc -b` clean. End-to-end: user confirmed pasting screenshots into both new Claude Code and new Codex sessions works from a laptop browser against the desktop server.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** GNOME mutter's Wayland clipboard portal still broken; if it ever recovers, `wl-copy` would be a cleaner write path. Existing pre-fix agent processes need restart to pick up the new env.
+
+---
+
 ## 2026-05-13: Revert BASH_ENV — `bash -lic` wrapper covers the path
 
 **What changed:**
