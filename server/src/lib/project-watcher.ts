@@ -98,9 +98,51 @@ async function handleGlobalSessionChange(filename: string): Promise<void> {
   }
 }
 
+function watchProjectsFile(): void {
+  const projectsFile = join(homedir(), '.workflow', 'projects.json')
+  if (existsSync(projectsFile)) {
+    try {
+      const watcher = watch(projectsFile, () => debouncedEmit('projects'))
+      watcher.on('error', (err) => {
+        console.warn(`[project-watcher] projects.json watcher error:`, err)
+      })
+      watchers.push(watcher)
+    } catch (e) { console.warn(`[project-watcher] failed to watch projects.json:`, e) }
+  }
+}
+
+async function watchMultmuxSessionsDir(): Promise<void> {
+  if (existsSync(MULTMUX_SESSIONS_DIR)) {
+    await primeSessionPathCache()
+    try {
+      const watcher = watch(MULTMUX_SESSIONS_DIR, (_event, filename) => {
+        if (!filename) {
+          // macOS FSEvents may deliver null filename on deletion — emit blanket refresh
+          debouncedEmit('sessions')
+          return
+        }
+        void handleGlobalSessionChange(String(filename)).catch(err => {
+          console.warn(`[project-watcher] failed to handle multmux session change ${String(filename)}:`, err)
+        })
+      })
+      watcher.on('error', (err) => {
+        console.warn(`[project-watcher] sessions watcher error:`, err)
+      })
+      watchers.push(watcher)
+    } catch (e) {
+      console.warn(`[project-watcher] failed to watch ${MULTMUX_SESSIONS_DIR}:`, e)
+    }
+  }
+}
+
 /** Start recursive fs.watch for each project */
 export async function startProjectWatchers(projects: Project[]): Promise<void> {
   stopProjectWatchers()
+
+  // Register small, high-value global watchers before recursive project
+  // watchers, which can consume many inotify slots in large workspaces.
+  watchProjectsFile()
+  await watchMultmuxSessionsDir()
 
   for (const project of projects) {
     if (!existsSync(project.path)) continue
@@ -135,40 +177,6 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
       watchers.push(watcher)
     } catch (err) {
       console.error(`[project-watcher] failed to watch ${project.path}:`, err)
-    }
-  }
-
-  // Watch ~/.workflow/projects.json for project list changes
-  const projectsFile = join(homedir(), '.workflow', 'projects.json')
-  if (existsSync(projectsFile)) {
-    try {
-      const watcher = watch(projectsFile, () => debouncedEmit('projects'))
-      watcher.on('error', (err) => {
-        console.warn(`[project-watcher] projects.json watcher error:`, err)
-      })
-      watchers.push(watcher)
-    } catch (e) { console.warn(`[project-watcher] failed to watch projects.json:`, e) }
-  }
-
-  if (existsSync(MULTMUX_SESSIONS_DIR)) {
-    await primeSessionPathCache()
-    try {
-      const watcher = watch(MULTMUX_SESSIONS_DIR, (_event, filename) => {
-        if (!filename) {
-          // macOS FSEvents may deliver null filename on deletion — emit blanket refresh
-          debouncedEmit('sessions')
-          return
-        }
-        void handleGlobalSessionChange(String(filename)).catch(err => {
-          console.warn(`[project-watcher] failed to handle multmux session change ${String(filename)}:`, err)
-        })
-      })
-      watcher.on('error', (err) => {
-        console.warn(`[project-watcher] sessions watcher error:`, err)
-      })
-      watchers.push(watcher)
-    } catch (e) {
-      console.warn(`[project-watcher] failed to watch ${MULTMUX_SESSIONS_DIR}:`, e)
     }
   }
 }

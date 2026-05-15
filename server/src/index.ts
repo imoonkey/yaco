@@ -23,9 +23,9 @@ import { taskRoutes } from './routes/tasks.js'
 import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
-import { startWatching } from './lib/watcher.js'
-import { startSessionReconciler } from './lib/session-reconciler.js'
-import { startProjectWatchers } from './lib/project-watcher.js'
+import { startWatching, stopWatching } from './lib/watcher.js'
+import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
+import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
@@ -178,32 +178,48 @@ app.route('/api/whatsapp', whatsappRoutes)
 app.get('/api/health', (c) => c.json({ ok: true }))
 app.get('*', async (c) => serveUiApp(c.req.path))
 
-// Init
-await ensureWorkflowDir()
-const projects = await loadProjects()
-await startWatching(projects, (project, workstream) => {
-  console.log(`[watch] progress.json changed: ${project}/${workstream}`)
-})
-startSessionReconciler()
-await startProjectWatchers(projects)
-setShellSessionChangeCallback(() => emitRefresh('sessions'))
-
-if (process.env.WECHAT_ENABLED === '1') {
-  await initWeChat()
-}
-
-if (process.env.WHATSAPP_ENABLED === '1') {
-  // Don't await — WhatsApp init can take 10-30s while puppeteer launches Chrome
-  // and the LocalAuth session reconnects. Fire-and-forget so the HTTP server
-  // becomes available immediately; status route reports progress.
-  void initWhatsApp()
-}
-
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
+let runtimeStarted = false
+
+async function startRuntime(): Promise<void> {
+  if (runtimeStarted) return
+  runtimeStarted = true
+
+  await ensureWorkflowDir()
+  const projects = await loadProjects()
+  await startWatching(projects, (project, workstream) => {
+    console.log(`[watch] progress.json changed: ${project}/${workstream}`)
+  })
+  startSessionReconciler()
+  await startProjectWatchers(projects)
+  setShellSessionChangeCallback(() => emitRefresh('sessions'))
+
+  if (process.env.WECHAT_ENABLED === '1') {
+    await initWeChat()
+  }
+
+  if (process.env.WHATSAPP_ENABLED === '1') {
+    // Don't await — WhatsApp init can take 10-30s while puppeteer launches Chrome
+    // and the LocalAuth session reconnects. Fire-and-forget so the HTTP server
+    // becomes available immediately; status route reports progress.
+    void initWhatsApp()
+  }
+}
 
 // Start HTTP server
 const server = serve({ fetch: app.fetch, port }, () => {
   console.log(`Workflow server running on http://localhost:${port}`)
+  void startRuntime().catch((err) => {
+    console.error('[startup] runtime init failed:', err)
+    cleanupTerminalResources()
+    server.close(() => process.exit(1))
+    setTimeout(() => process.exit(1), 1000).unref()
+  })
+})
+
+server.on('error', (err: NodeJS.ErrnoException) => {
+  console.error(`[startup] failed to listen on port ${port}:`, err)
+  process.exit(1)
 })
 
 // WebSocket server on the same HTTP server
@@ -220,6 +236,8 @@ type TerminalConnection = {
 }
 
 const connections = new Map<WebSocket, TerminalConnection>()
+let pingInterval: ReturnType<typeof setInterval> | null = null
+let sweepInterval: ReturnType<typeof setInterval> | null = null
 
 function cleanupConnection(ws: WebSocket): void {
   const conn = connections.get(ws)
@@ -234,7 +252,7 @@ function cleanupConnection(ws: WebSocket): void {
 
 // Ping all connected WebSocket clients periodically to detect dead connections.
 // Without this, dead connections linger for ~2h (TCP keepalive) leaking PTY FDs.
-const pingInterval = setInterval(() => {
+pingInterval = setInterval(() => {
   for (const [ws, conn] of connections) {
     if (!conn.alive) {
       ws.terminate()
@@ -258,7 +276,7 @@ function drainNonPersistentAttaches(): void {
   if (drained > 0) console.warn(`[pty] drained ${drained} non-persistent attach(es)`)
 }
 
-const sweepInterval = setInterval(() => {
+sweepInterval = setInterval(() => {
   void sweep({ onDrain: drainNonPersistentAttaches })
 }, PTY_SWEEP_INTERVAL_MS)
 sweepInterval.unref()
@@ -394,8 +412,11 @@ let cleanedUp = false
 function cleanupTerminalResources(): void {
   if (cleanedUp) return
   cleanedUp = true
-  clearInterval(pingInterval)
-  clearInterval(sweepInterval)
+  if (pingInterval) clearInterval(pingInterval)
+  if (sweepInterval) clearInterval(sweepInterval)
+  stopSessionReconciler()
+  stopProjectWatchers()
+  stopWatching()
   shutdownWeChat()
   void shutdownWhatsApp()
   for (const ws of [...connections.keys()]) {
