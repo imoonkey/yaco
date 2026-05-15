@@ -13,7 +13,7 @@
 
 **Key files:** `server/src/lib/clipboard-env.ts`, `server/src/lib/clipboard-write.ts`, `server/src/lib/ssh-auth.ts`, `server/src/lib/terminal.ts`, `server/src/index.ts`, `ui/src/components/Terminal.tsx`, `server/src/lib/__tests__/terminal.test.ts`.
 **Verification:** Lib smoke test wrote a 69-byte PNG via `writeImageToClipboard('image/png', …)` and read back byte-identical via `xclip -t image/png -o`. Server vitest 256/257 (1 pre-existing GROQ_API_KEY failure unrelated). UI `tsc -b` clean. End-to-end: user confirmed pasting screenshots into both new Claude Code and new Codex sessions works from a laptop browser against the desktop server.
-**Commit:** pending.
+**Commit:** `37d7088`.
 **Next:** None.
 **Blockers:** GNOME mutter's Wayland clipboard portal still broken; if it ever recovers, `wl-copy` would be a cleaner write path. Existing pre-fix agent processes need restart to pick up the new env.
 
