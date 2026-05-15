@@ -88,7 +88,7 @@
 
 **Key files:** `ui/src/workspace/ImagePreview.tsx`, `ui/src/workspace/__tests__/ImagePreview.test.tsx`, `doc/main/frontend/components.md`.
 **Verification:** `cd ui && npx vitest run src/workspace/__tests__/ImagePreview.test.tsx` passed (2 tests). `cd ui && npx eslint src/workspace/ImagePreview.tsx src/workspace/__tests__/ImagePreview.test.tsx` passed. `cd ui && npx tsc --noEmit` passed. `npm run build` passed with the existing Vite large-chunk warning.
-**Commit:** pending.
+**Commit:** `7a39a4a`.
 **Next:** None.
 **Blockers:** None.
 
