@@ -32,7 +32,7 @@
 
 **Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/main/frontend/components.md`.
 **Verification:** `cd ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (3 tests). `cd ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx` passed. `npm run build` passed and rebuilt `ui/dist`; `:3001` now serves `assets/index-ClHjkC4t.js` with the OSC 10/11/12 query handler, while the old `assets/index-DFoq8lo1.js` returns 404.
-**Commit:** pending.
+**Commit:** 6eff93c
 **Next:** None.
 **Blockers:** None.
 
