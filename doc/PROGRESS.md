@@ -1,3 +1,23 @@
+## 2026-05-14: Session list refreshes immediately after agent `/exit`
+
+**What changed:**
+- Workflow server now starts runtime watchers only after successfully binding `WORKFLOW_PORT`, so duplicate `tsx watch` children that lose `:3001` exit before installing recursive project watchers.
+- Shutdown cleanup now stops the session reconciler, progress watcher, and project watcher in addition to terminal attach resources.
+- `project-watcher.ts` installs lightweight global watchers (`~/.workflow/projects.json`, `~/.multmux/sessions`) before recursive project watchers, protecting the multmux session refresh path when large workspaces consume many inotify slots.
+- Added focused coverage for create/delete events in `~/.multmux/sessions` emitting `refresh:sessions`.
+
+**Why:**
+- `/exit` in Codex/Claude deleted the multmux state file promptly, and `GET /api/sessions?project=workflow` stopped returning the session within the next 0.5s poll. The UI still waited because the active server had no `~/.multmux/sessions` watcher installed.
+- Root cause was duplicate Workflow server children: one served `:3001`, another was not listening but still held ~248k recursive inotify watches because watchers started before the port bind. Combined usage was near `max_user_watches`, starving later global watchers.
+
+**Key files:** `server/src/index.ts`, `server/src/lib/project-watcher.ts`, `server/src/lib/__tests__/project-watcher.test.ts`, `doc/main/backend/server.md`, `doc/main/backend/libs.md`, `doc/dev/workflow.md`.
+**Verification:** `cd server && npm test -- src/lib/__tests__/project-watcher.test.ts src/lib/__tests__/multmux.test.ts src/lib/__tests__/session-reconciler.test.ts` passed (23 tests). `cd server && env -u GROQ_API_KEY npm test` passed (259 tests). Live repro: started a disposable Codex session, sent `/exit`; tmux/state/API were gone by the next 0.5s sample and SSE emitted `refresh:sessions`. Confirmed active server has an inotify watch on `~/.multmux/sessions`.
+**Commit:** `ac577af`.
+**Next:** None.
+**Blockers:** `cd server && npm test` with the current shell env fails one pre-existing autocomplete test because `GROQ_API_KEY` is exported; unsetting it makes the suite pass.
+
+---
+
 ## 2026-05-14: Image paste from remote browser into desktop TUI agents
 
 **What changed:**

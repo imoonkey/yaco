@@ -43,6 +43,8 @@ npm run start:app
 
 > ⚠️ `tsx watch` only reliably reloads on changes to the entry file (`server/src/index.ts`). On older Linux kernels it sometimes misses changes to imported modules — symptom is "I edited a server file, redeployed, behavior unchanged". When in doubt, `touch server/src/index.ts` to force a respawn, or check `ps -o pid,etime,cmd -p $(pgrep -f 'tsx.*src/index.ts' | tail -1)` to see how old the running child is.
 
+The backend starts runtime watchers only after `:3001` is successfully bound. If two `tsx watch src/index.ts` parents are accidentally running, the child that loses the port race exits before installing recursive project watchers; the active server keeps the `~/.multmux/sessions` watcher responsible for immediate session-list refreshes after agent `/exit`.
+
 `npm run start:app` is the intended local shape for installed/mobile use: it builds `ui/dist` and has the Hono server serve the app shell, API, WebSocket terminal, and SSE notifications from one origin.
 
 ## Long-running services (systemd / launchd + Tailscale)
