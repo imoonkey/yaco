@@ -146,6 +146,10 @@ Before the server creates a tmux shell or starts a new multmux child process, it
 
 ## Clipboard
 
+### OSC Color Reports
+
+Terminal registers OSC 10/11/12 handlers that consume pure color report queries (`?` / `?;?`) before xterm.js emits automatic foreground/background/cursor color responses through `onData`. This prevents tmux scrollback replay of old color queries from injecting `ESC]10;rgb...ST` / `ESC]11;rgb...ST` text back into Claude/Codex panes while preserving normal color setter sequences.
+
 ### OSC 52 Bridge
 
 Terminal applications (e.g. tmux copy-mode) that write to the clipboard via OSC 52 escape sequences are bridged to the browser clipboard API.

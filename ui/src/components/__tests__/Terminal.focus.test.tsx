@@ -6,6 +6,8 @@ import { render, cleanup } from '@testing-library/react'
 // vi.mock factory uses it (vi.mock is hoisted, so reference inside factory
 // is fine as long as the binding exists at call time — vitest allows this).
 const focusSpy = vi.fn()
+type OscHandler = (data: string) => boolean | Promise<boolean>
+const oscHandlers = new Map<number, OscHandler[]>()
 
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
@@ -14,7 +16,21 @@ vi.mock('@xterm/xterm', () => {
     element: HTMLDivElement
     cols = 80
     rows = 24
-    parser = { registerOscHandler: () => ({ dispose: () => undefined }) }
+    parser = {
+      registerOscHandler: (id: number, handler: OscHandler) => {
+        const handlers = oscHandlers.get(id) ?? []
+        handlers.push(handler)
+        oscHandlers.set(id, handlers)
+        return {
+          dispose: () => {
+            const current = oscHandlers.get(id)
+            if (!current) return
+            const index = current.indexOf(handler)
+            if (index !== -1) current.splice(index, 1)
+          },
+        }
+      },
+    }
     options: Record<string, unknown> = {}
     focus = focusSpy
     constructor() {
@@ -98,6 +114,7 @@ beforeEach(() => {
   }))
 
   focusSpy.mockClear()
+  oscHandlers.clear()
 })
 
 afterEach(() => {
@@ -136,5 +153,20 @@ describe('Terminal focus handoff', () => {
     // Change an unrelated prop; focus should not fire.
     rerender(<Terminal sessionName="session-a" projectName="proj-1" />)
     expect(focusSpy).not.toHaveBeenCalled()
+  })
+
+  it('suppresses OSC color report queries without swallowing color setters', async () => {
+    const Terminal = await loadTerminal()
+    render(<Terminal sessionName="session-a" />)
+
+    for (const id of [10, 11, 12]) {
+      const handler = oscHandlers.get(id)?.at(-1)
+      expect(handler).toBeDefined()
+      expect(handler?.('?')).toBe(true)
+      expect(handler?.('?;?')).toBe(true)
+      expect(handler?.('rgb:ffff/ffff/ffff')).toBe(false)
+      expect(handler?.('#ffffff')).toBe(false)
+      expect(handler?.('rgb:ffff/ffff/ffff;?')).toBe(false)
+    }
   })
 })

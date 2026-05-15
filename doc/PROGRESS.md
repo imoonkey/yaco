@@ -19,6 +19,25 @@
 
 ---
 
+## 2026-05-14: Suppress xterm OSC color report leakage
+
+**What changed:**
+- Workflow terminal now consumes OSC 10/11/12 color report queries before xterm.js emits automatic color responses through `onData`.
+- Added focused Terminal coverage for suppressing query responses while preserving color setter fallthrough.
+- Updated terminal SOTA docs for the color-report behavior.
+
+**Why:**
+- Codex sometimes prints repeated `^[]10;rgb...^[\` / `^[]11;rgb...^[\` lines on startup. This frontend handler prevents browser-side xterm color-report replies from being written back during tmux scrollback replay.
+- Follow-up investigation found the primary startup pollution source in multmux's Codex OSC color-response injection. The Workflow guard remains as a secondary replay-protection layer; the root startup fix lives in multmux.
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/main/frontend/components.md`.
+**Verification:** `cd ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (3 tests). `cd ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx` passed. `npm run build` passed and rebuilt `ui/dist`; `:3001` now serves `assets/index-ClHjkC4t.js` with the OSC 10/11/12 query handler, while the old `assets/index-DFoq8lo1.js` returns 404.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-13: Revert BASH_ENV — `bash -lic` wrapper covers the path
 
 **What changed:**
