@@ -34,13 +34,16 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE notificatio
 1. Create Hono app with CORS middleware
 2. Register API route groups (`/api/projects`, `/api/files`, etc.)
 3. Register health check (`/api/health`) and UI catch-all (`GET *`)
-4. `ensureWorkflowDir()` — create `~/.workflow/` if missing
-5. `loadProjects()` — read project registry
-6. `startWatching()` — file watchers on `progress.json` files
-7. `startSessionReconciler()` — low-frequency session health/drift reconciliation
-8. `startProjectWatchers()` — recursive `fs.watch` per project directory
-9. Start HTTP server on `WORKFLOW_PORT` (default 3001)
-10. Attach WebSocket server for terminal connections
+4. Start HTTP server on `WORKFLOW_PORT` (default 3001)
+5. After the HTTP server is listening, start runtime services:
+   - `ensureWorkflowDir()` — create `~/.workflow/` if missing
+   - `loadProjects()` — read project registry
+   - `startWatching()` — file watchers on `progress.json` files
+   - `startSessionReconciler()` — low-frequency session health/drift reconciliation
+   - `startProjectWatchers()` — global session/project watchers, then recursive project watchers
+6. Attach WebSocket server for terminal connections
+
+Runtime watchers intentionally start only after the port bind succeeds. A duplicate `tsx watch` child that loses the `:3001` race exits without installing recursive project watchers, so it cannot consume inotify slots or starve the critical `~/.multmux/sessions` watcher.
 
 ## WebSocket Terminal
 
@@ -72,7 +75,7 @@ A ping/pong heartbeat runs every `WS_PING_INTERVAL_MS` (30s). Each cycle marks a
 
 ### Graceful Shutdown
 
-On `SIGTERM`, `SIGINT`, `SIGHUP`, and normal `exit`, the server destroys all active tmux attach PTYs and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
+On `SIGTERM`, `SIGINT`, `SIGHUP`, and normal `exit`, the server stops background reconcilers/watchers, destroys all active tmux attach PTYs, and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
 
 ## UI Serving
 

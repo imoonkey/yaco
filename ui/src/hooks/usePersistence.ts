@@ -21,7 +21,6 @@ function loadPersistedState(project: string, worktree?: string | null): Persiste
     activeSession: '',
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
-    pinnedSessions: [],
     recentFiles: [],
   }
 
@@ -70,9 +69,6 @@ function loadPersistedState(project: string, worktree?: string | null): Persiste
         sessionSize: loadStoredSize(pl.sessionSize, DEFAULT_LAYOUT.sessionSize),
         projectSize: loadStoredSize(pl.projectSize, DEFAULT_LAYOUT.projectSize),
       },
-      pinnedSessions: Array.isArray(parsed.pinnedSessions)
-        ? (parsed.pinnedSessions as unknown[]).filter((s): s is string => typeof s === 'string')
-        : [],
       recentFiles: Array.isArray(parsed.recentFiles)
         ? (parsed.recentFiles as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 50)
         : [],

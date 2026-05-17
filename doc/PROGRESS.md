@@ -1,3 +1,45 @@
+## 2026-05-17: Cross-device shared notifications + pinned sessions; `~/.workflow/channels/<scope>/` reorg
+
+**What changed:**
+- New server-side stores: `server/src/lib/notifications-store.ts` (inbox + read flags) and `server/src/lib/ui-state.ts` (per-project pinned sessions + order), both mutex-protected against `~/.workflow/ui-state/notifications.json` and `~/.workflow/ui-state/pinned-sessions.json`.
+- REST surface: `GET /api/notifications`, `POST /api/notifications/:id/read`, `POST /api/notifications/read-all`, `DELETE /api/notifications`, `GET/PUT /api/ui-state/pinned-sessions?project=<p>`.
+- SSE event surface widened: `notification` (full payload), `notifications:changed`, `ui-state:changed`. `useSSE.ts` forwards them to consumers; `useNotifications.ts` switched to server-sourced inbox + `notifications:changed` + visibilitychange resync; new `usePinnedSessions.ts` hook does optimistic writes with version-tracked refetch so SSE-driven refetches don't clobber in-flight edits.
+- `~/.workflow/` reorganized: messaging channels now live under `~/.workflow/channels/<scope>/{auth.json, state.json, qr.txt, session/}`. One-shot boot migration (`server/src/lib/migrate-channels.ts`) moves legacy flat `wechat-*` / `whatsapp-*` files into the new layout, idempotently, awaited before `serve()` in `server/src/index.ts`; rethrows on non-benign errors.
+- `NotificationItem` on the server is a superset of the in-memory `NotificationEvent` (preserves `kind`, `workstream`, `progressType`; adds `read: boolean` and numeric `timestamp`).
+- `PersistedState.pinnedSessions` removed from `localStorage` — layout/tabs/drafts/mobilePane/theme remain per-device.
+
+**Why:**
+- Opening the app on a second device used to lose notification inbox + read state and reset pinned-session order, because both lived in per-device `localStorage`. Promoting them to the server makes the laptop and the desktop browser converge on the same UI state without manual reconciliation.
+- The root of `~/.workflow/` was accumulating flat `wechat-*` / `whatsapp-*` siblings of `projects.json`; grouping them under `channels/<scope>/` keeps the directory readable and matches the per-scope model used by the messaging integration.
+
+**Key files:** `server/src/lib/notifications-store.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `server/src/routes/notifications.ts`, `server/src/routes/ui-state.ts`, `server/src/index.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/hooks/useSSE.ts`, `doc/main/data-model/persistence.md`, `CLAUDE.md`.
+**Verification:** `cd server && npm test` — 40+ new tests pass across `notifications-store`, `ui-state`, `migrate-channels`, and the `/api/notifications` + `/api/ui-state/pinned-sessions` route suites. `cd ui && npx tsc -b` clean. E2E coverage for cross-device sync lives in the `ss-e2e` task slug (Playwright, may not be merged at the time of this entry — check that branch).
+**Commit:** _(merge commit; backfilled by the merge step)_.
+**Next:** None.
+**Blockers:** None.
+
+---
+
+## 2026-05-14: Session list refreshes immediately after agent `/exit`
+
+**What changed:**
+- Workflow server now starts runtime watchers only after successfully binding `WORKFLOW_PORT`, so duplicate `tsx watch` children that lose `:3001` exit before installing recursive project watchers.
+- Shutdown cleanup now stops the session reconciler, progress watcher, and project watcher in addition to terminal attach resources.
+- `project-watcher.ts` installs lightweight global watchers (`~/.workflow/projects.json`, `~/.multmux/sessions`) before recursive project watchers, protecting the multmux session refresh path when large workspaces consume many inotify slots.
+- Added focused coverage for create/delete events in `~/.multmux/sessions` emitting `refresh:sessions`.
+
+**Why:**
+- `/exit` in Codex/Claude deleted the multmux state file promptly, and `GET /api/sessions?project=workflow` stopped returning the session within the next 0.5s poll. The UI still waited because the active server had no `~/.multmux/sessions` watcher installed.
+- Root cause was duplicate Workflow server children: one served `:3001`, another was not listening but still held ~248k recursive inotify watches because watchers started before the port bind. Combined usage was near `max_user_watches`, starving later global watchers.
+
+**Key files:** `server/src/index.ts`, `server/src/lib/project-watcher.ts`, `server/src/lib/__tests__/project-watcher.test.ts`, `doc/main/backend/server.md`, `doc/main/backend/libs.md`, `doc/dev/workflow.md`.
+**Verification:** `cd server && npm test -- src/lib/__tests__/project-watcher.test.ts src/lib/__tests__/multmux.test.ts src/lib/__tests__/session-reconciler.test.ts` passed (23 tests). `cd server && env -u GROQ_API_KEY npm test` passed (259 tests). Live repro: started a disposable Codex session, sent `/exit`; tmux/state/API were gone by the next 0.5s sample and SSE emitted `refresh:sessions`. Confirmed active server has an inotify watch on `~/.multmux/sessions`.
+**Commit:** `ac577af`.
+**Next:** None.
+**Blockers:** `cd server && npm test` with the current shell env fails one pre-existing autocomplete test because `GROQ_API_KEY` is exported; unsetting it makes the suite pass.
+
+---
+
 ## 2026-05-14: Image paste from remote browser into desktop TUI agents
 
 **What changed:**
@@ -16,6 +58,25 @@
 **Commit:** `37d7088`.
 **Next:** None.
 **Blockers:** GNOME mutter's Wayland clipboard portal still broken; if it ever recovers, `wl-copy` would be a cleaner write path. Existing pre-fix agent processes need restart to pick up the new env.
+
+---
+
+## 2026-05-14: Suppress xterm OSC color report leakage
+
+**What changed:**
+- Workflow terminal now consumes OSC 10/11/12 color report queries before xterm.js emits automatic color responses through `onData`.
+- Added focused Terminal coverage for suppressing query responses while preserving color setter fallthrough.
+- Updated terminal SOTA docs for the color-report behavior.
+
+**Why:**
+- Codex sometimes prints repeated `^[]10;rgb...^[\` / `^[]11;rgb...^[\` lines on startup. This frontend handler prevents browser-side xterm color-report replies from being written back during tmux scrollback replay.
+- Follow-up investigation found the primary startup pollution source in multmux's Codex OSC color-response injection. The Workflow guard remains as a secondary replay-protection layer; the root startup fix lives in multmux.
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/main/frontend/components.md`.
+**Verification:** `cd ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (3 tests). `cd ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx` passed. `npm run build` passed and rebuilt `ui/dist`; `:3001` now serves `assets/index-ClHjkC4t.js` with the OSC 10/11/12 query handler, while the old `assets/index-DFoq8lo1.js` returns 404.
+**Commit:** 6eff93c
+**Next:** None.
+**Blockers:** None.
 
 ---
 
@@ -49,7 +110,7 @@
 
 **Key files:** `ui/src/workspace/ImagePreview.tsx`, `ui/src/workspace/__tests__/ImagePreview.test.tsx`, `doc/main/frontend/components.md`.
 **Verification:** `cd ui && npx vitest run src/workspace/__tests__/ImagePreview.test.tsx` passed (2 tests). `cd ui && npx eslint src/workspace/ImagePreview.tsx src/workspace/__tests__/ImagePreview.test.tsx` passed. `cd ui && npx tsc --noEmit` passed. `npm run build` passed with the existing Vite large-chunk warning.
-**Commit:** pending.
+**Commit:** `7a39a4a`.
 **Next:** None.
 **Blockers:** None.
 

@@ -14,9 +14,28 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/App.tsx`
+`server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
+
+### `~/.workflow/` layout
+
+```
+~/.workflow/
+  projects.json              # project registry
+  shell-sessions/            # workflow-managed tmux shell sessions: <id>.json
+  ui-state/                  # cross-device shared UI state
+    notifications.json       # inbox + read flags (NotificationItem[])
+    pinned-sessions.json     # per-project ordered session pins
+  channels/                  # messaging channel scopes (WhatsApp, WeChat, …)
+    <scope>/                 # one directory per channel scope
+      auth.json              # credentials / login state
+      state.json             # runtime state (last sync, etc.)
+      qr.txt                 # current pairing QR (if applicable)
+      session/               # provider session files (e.g. wweb.js cache)
+```
+
+On server boot, `server/src/lib/migrate-channels.ts` runs a one-shot, idempotent migration that moves legacy flat `~/.workflow/wechat-*` / `whatsapp-*` files into the `channels/<scope>/` layout. The migration is awaited before `serve()` in `server/src/index.ts` and rethrows on non-benign errors.
 
 ### `~/.workflow/projects.json`
 
@@ -29,6 +48,14 @@ Project registry. Array of `{ name, path }` objects.
 ```
 
 Managed by: `server/src/lib/projects.ts`
+
+### `~/.workflow/ui-state/notifications.json`
+
+Cross-device notifications inbox. Array of `NotificationItem` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream`, `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`.
+
+### `~/.workflow/ui-state/pinned-sessions.json`
+
+Per-project ordered list of pinned session names. Shape: `{ [projectName]: string[] }`. Mutex-protected writes via `server/src/lib/ui-state.ts`. Order is preserved across devices.
 
 ### `projects/active/<name>/workstream.json`
 
@@ -132,3 +159,39 @@ Only dirty drafts are persisted. On localStorage quota exceeded, oldest drafts a
 - Diff cache: per-path cached diff content
 - File tree client cache: per-project `FileNode[]`
 - Clean file states: files with `status: 'clean'` are re-fetched from server on mount
+
+## Cross-Device Shared State vs Per-Device
+
+State is split between server files (shared across devices via REST + SSE) and `localStorage` (per-device).
+
+**Shared (server, `~/.workflow/ui-state/`):**
+- Notifications inbox and per-item `read` flag
+- Pinned sessions and their order, keyed by project
+
+**Per-device (`localStorage`):**
+- Workspace layout (sidebar visibility, section sizes, split direction/size, panel widths)
+- Open tabs and active tab
+- Editor drafts (`workflow-drafts:<project>`)
+- `mobilePane` selection
+- Theme
+
+### REST endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET`    | `/api/notifications` | List all notifications (newest first) |
+| `POST`   | `/api/notifications/:id/read` | Mark one notification as read |
+| `POST`   | `/api/notifications/read-all` | Mark all as read |
+| `DELETE` | `/api/notifications` | Clear the inbox |
+| `GET`    | `/api/ui-state/pinned-sessions?project=<p>` | Read pinned sessions for a project |
+| `PUT`    | `/api/ui-state/pinned-sessions?project=<p>` | Replace pinned sessions for a project |
+
+### SSE events
+
+| Event | Payload | Trigger |
+|-------|---------|---------|
+| `notification`           | full `NotificationItem` | new notification appended (UI prepends optimistically + toasts) |
+| `notifications:changed`  | none / change marker    | read/clear/any mutation that doesn't carry a new item (consumers re-fetch) |
+| `ui-state:changed`       | `{ key: 'pinned-sessions', project }` | server-side mutation of ui-state (other devices re-fetch the affected slice) |
+
+Hooks: `useNotifications` (server-sourced inbox + `notifications:changed` listener + visibilitychange resync), `usePinnedSessions` (per-project optimistic writes, version-tracked refetch protects in-flight edits from stale GET clobber).

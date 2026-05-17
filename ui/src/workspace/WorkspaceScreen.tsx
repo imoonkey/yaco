@@ -93,7 +93,7 @@ export function Workspace({
   const effectivePath = worktree ? `${projectPath}/.worktrees/${worktree}` : projectPath
   // Centralized workspace state
   const ws = useWorkspaceState(projectName, worktree)
-  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, recentFiles, actions } = ws
+  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, recentFiles, actions } = ws
 
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
     isFileTab(activeTab) ? activeTab : null
@@ -175,7 +175,7 @@ export function Workspace({
 
   // --- Extracted hooks ---
   const sessionsMgr = useWorkspaceSessions({
-    actions, projectPath: effectivePath, activeSession, sessions, pinnedSessions,
+    actions, projectPath: effectivePath, activeSession, sessions,
     refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
     onSessionChange: history.refresh,
   })

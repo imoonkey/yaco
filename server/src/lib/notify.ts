@@ -1,4 +1,5 @@
 import type { ProgressType } from './scanner'
+import * as notificationsStore from './notifications-store'
 
 export interface NotificationEvent {
   id: string
@@ -12,22 +13,43 @@ export interface NotificationEvent {
   sessionName?: string
 }
 
+export type ChangeChannel = 'notifications:changed' | 'ui-state:changed'
+
 export type SSEWriter = (event: string, data: string) => void
 
 const sseClients = new Set<SSEWriter>()
 
-/** Dispatch a notification to all sinks (SSE clients) */
-export function emitNotification(event: NotificationEvent): void {
+function send(event: string, data: string): void {
   for (const writer of sseClients) {
-    try { writer('notification', JSON.stringify(event)) } catch (e) { console.warn('[notify] SSE client write failed, removing:', e); sseClients.delete(writer) }
+    try { writer(event, data) } catch (e) { console.warn(`[notify] SSE client ${event} failed, removing:`, e); sseClients.delete(writer) }
   }
+}
+
+/** Persist a notification then broadcast it to all SSE clients. */
+export async function dispatch(event: NotificationEvent): Promise<void> {
+  const parsedTs = Date.parse(event.timestamp)
+  const persisted = await notificationsStore.append({
+    id: event.id,
+    kind: event.kind,
+    title: event.title,
+    message: event.message,
+    project: event.project,
+    workstream: event.workstream,
+    progressType: event.progressType,
+    sessionName: event.sessionName ?? '',
+    timestamp: Number.isFinite(parsedTs) ? parsedTs : undefined,
+  })
+  send('notification', JSON.stringify(persisted))
+}
+
+/** Broadcast a typed re-fetch signal (no payload) to all SSE clients. */
+export function broadcastChange(channel: ChangeChannel): void {
+  send(channel, '')
 }
 
 /** Push a lightweight refresh signal to all SSE clients (no osascript) */
 export function emitRefresh(channel: string): void {
-  for (const writer of sseClients) {
-    try { writer('refresh', channel) } catch (e) { console.warn('[notify] SSE client refresh failed, removing:', e); sseClients.delete(writer) }
-  }
+  send('refresh', channel)
 }
 
 export function addSSEClient(writer: SSEWriter): void {

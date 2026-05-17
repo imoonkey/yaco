@@ -12,10 +12,10 @@ vi.mock('os', async (orig) => {
 })
 
 homeDir.value = await mkdtemp(join(tmpdir(), 'wechat-state-test-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.workflow', 'channels', 'wechat'), { recursive: true })
 
 const stateModule = await import('../wechat/state')
-const stateFile = join(homeDir.value, '.workflow', 'wechat-state.json')
+const stateFile = join(homeDir.value, '.workflow', 'channels', 'wechat', 'state.json')
 
 describe('wechat state', () => {
   beforeEach(async () => {
@@ -69,7 +69,7 @@ describe('wechat state', () => {
 
 describe('wechat auth', () => {
   beforeEach(async () => {
-    await rm(join(homeDir.value, '.workflow', 'wechat-auth.json'), { force: true })
+    await rm(join(homeDir.value, '.workflow', 'channels', 'wechat', 'auth.json'), { force: true })
     vi.resetModules()
     delete process.env.WECHAT_CONVERSATION_WHITELIST
   })

@@ -1,27 +1,53 @@
 import { useState, useEffect, useRef, useCallback, createElement } from 'react'
 import { toast } from 'sonner'
 import { addSSEListener } from './useSSE'
-
-interface NotificationEvent {
-  id: string
-  title: string
-  message: string
-  project?: string
-  sessionName?: string
-  progressType?: string
-}
+import { ApiError } from '../lib/apiError'
 
 export interface NotificationItem {
   id: string
+  kind: 'progress'
   title: string
   message: string
   project: string
+  workstream: string
+  progressType: string
   sessionName: string
   timestamp: number
   read: boolean
 }
 
-const MAX_NOTIFICATIONS = 50
+async function fetchNotifications(signal?: AbortSignal): Promise<NotificationItem[]> {
+  const res = await fetch('/api/notifications', signal ? { signal } : undefined)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
+  }
+  return res.json()
+}
+
+async function postRead(id: string): Promise<void> {
+  const res = await fetch(`/api/notifications/${encodeURIComponent(id)}/read`, { method: 'POST' })
+  if (!res.ok && res.status !== 404) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
+  }
+}
+
+async function postReadAll(): Promise<void> {
+  const res = await fetch('/api/notifications/read-all', { method: 'POST' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
+  }
+}
+
+async function deleteAll(): Promise<void> {
+  const res = await fetch('/api/notifications', { method: 'DELETE' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
+  }
+}
 
 export function useNotifications(
   onNotificationClick?: (project: string, sessionName: string) => void,
@@ -33,22 +59,45 @@ export function useNotifications(
   clearAll: () => void
 } {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
-  const seenIds = useRef(new Set<string>())
   const onClickRef = useRef(onNotificationClick)
-  onClickRef.current = onNotificationClick
+  useEffect(() => { onClickRef.current = onNotificationClick }, [onNotificationClick])
+
+  // Tracks ids that arrived via SSE prepend during the currently in-flight refetch.
+  // When the GET response resolves, any tracked id missing from the server snapshot is
+  // re-prepended so a slow GET can't clobber a fresh SSE event. Replaced (not mutated)
+  // on each refetch so a newer fetch supersedes the older one's merge.
+  const inFlightFetchIds = useRef<Set<string> | null>(null)
 
   const unreadCount = notifications.filter(n => !n.read).length
 
-  const markAllRead = useCallback(() => {
-    setNotifications(prev => prev.map(n => n.read ? n : { ...n, read: true }))
-  }, [])
-
-  const clearAll = useCallback(() => {
-    setNotifications([])
+  const refetch = useCallback(() => {
+    const myFetch = new Set<string>()
+    inFlightFetchIds.current = myFetch
+    fetchNotifications()
+      .then(items => {
+        if (inFlightFetchIds.current !== myFetch) return // superseded by a newer refetch
+        inFlightFetchIds.current = null
+        const serverIds = new Set(items.map(n => n.id))
+        setNotifications(prev => {
+          const survivors = prev.filter(n => myFetch.has(n.id) && !serverIds.has(n.id))
+          return survivors.length === 0 ? items : [...survivors, ...items]
+        })
+      })
+      .catch(() => {
+        if (inFlightFetchIds.current === myFetch) inFlightFetchIds.current = null
+      })
   }, [])
 
   const markRead = useCallback((id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n))
+    postRead(id).catch(() => { /* server will resync via SSE */ })
+  }, [])
+
+  const markAllRead = useCallback(() => {
+    postReadAll().catch(() => { /* server will resync via SSE */ })
+  }, [])
+
+  const clearAll = useCallback(() => {
+    deleteAll().catch(() => { /* server will resync via SSE */ })
   }, [])
 
   // Request browser notification permission once on mount
@@ -58,43 +107,46 @@ export function useNotifications(
     }
   }, [])
 
+  // Initial fetch
+  useEffect(() => {
+    refetch()
+  }, [refetch])
+
+  // Refetch when the server signals the inbox changed (any device's mutation)
+  useEffect(() => {
+    return addSSEListener('notifications:changed', refetch)
+  }, [refetch])
+
+  // Refetch when the tab becomes visible (covers wake-from-sleep / cross-device edits)
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') refetch()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [refetch])
+
+  // New-notification stream: prepend locally for snappy UX + surface toast / OS notification
   useEffect(() => {
     return addSSEListener('notification', (e) => {
       try {
-        const event: NotificationEvent = JSON.parse(e.data)
+        const item: NotificationItem = JSON.parse(e.data)
 
-        if (seenIds.current.has(event.id)) return
-        seenIds.current.add(event.id)
-        if (seenIds.current.size > 500) {
-          const first = seenIds.current.values().next().value
-          if (first) seenIds.current.delete(first)
-        }
+        if (inFlightFetchIds.current) inFlightFetchIds.current.add(item.id)
+        setNotifications(prev => prev.some(n => n.id === item.id) ? prev : [item, ...prev])
 
-        const project = event.project ?? ''
-        const sessionName = event.sessionName ?? ''
+        const project = item.project ?? ''
+        const sessionName = item.sessionName ?? ''
         const parts: string[] = []
         if (project) parts.push(project)
         if (sessionName) parts.push(sessionName)
-        const title = parts.length > 0 ? `${parts.join(' / ')}: ${event.title}` : event.title
-
-        // Accumulate in notification list
-        const item: NotificationItem = {
-          id: event.id,
-          title,
-          message: event.message,
-          project,
-          sessionName,
-          timestamp: Date.now(),
-          read: false,
-        }
-        setNotifications(prev => [item, ...prev].slice(0, MAX_NOTIFICATIONS))
+        const displayTitle = parts.length > 0 ? `${parts.join(' / ')}: ${item.title}` : item.title
 
         if (document.visibilityState === 'visible') {
-          // In-app toast — use toast.custom so the entire area is clickable
           const hasTarget = !!(project || sessionName)
           const handleClick = hasTarget ? (toastId: string | number) => () => {
             toast.dismiss(toastId)
-            markRead(event.id)
+            markRead(item.id)
             onClickRef.current?.(project, sessionName)
           } : undefined
           toast.custom((id) =>
@@ -105,22 +157,21 @@ export function useNotifications(
               },
               onClick: handleClick?.(id),
             },
-              createElement('div', { style: { fontWeight: 500 } }, title),
-              event.message
-                ? createElement('div', { style: { opacity: 0.7, fontSize: '0.875em', marginTop: 2 } }, event.message)
+              createElement('div', { style: { fontWeight: 500 } }, displayTitle),
+              item.message
+                ? createElement('div', { style: { opacity: 0.7, fontSize: '0.875em', marginTop: 2 } }, item.message)
                 : null,
             ),
           )
         } else {
-          // Browser notification when backgrounded
           if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            const notification = new Notification(title, {
-              body: event.message,
-              tag: event.id,
+            const notification = new Notification(displayTitle, {
+              body: item.message,
+              tag: item.id,
             })
             notification.onclick = () => {
               window.focus()
-              markRead(event.id)
+              markRead(item.id)
               onClickRef.current?.(project, sessionName)
               notification.close()
             }

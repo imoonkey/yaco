@@ -10,6 +10,10 @@ vi.mock('../../hooks/useApi', () => ({
   renameSession: vi.fn(),
 }))
 
+vi.mock('../../hooks/usePinnedSessions', () => ({
+  usePinnedSessions: () => ({ pinnedSessions: [], setPinnedSessions: vi.fn() }),
+}))
+
 function makeSession(name: string, status: 'idle' | 'processing' = 'idle'): AgentSession {
   return { name, provider: 'claude', status, project: 'test', summary: '' }
 }
@@ -19,12 +23,10 @@ function makeOpts(overrides: Partial<Parameters<typeof useWorkspaceSessions>[0]>
     actions: {
       setActiveSession: vi.fn(),
       setMobilePane: vi.fn(),
-      setPinnedSessions: vi.fn(),
     },
     projectPath: '/test',
     activeSession: '',
     sessions: [] as AgentSession[],
-    pinnedSessions: [] as string[],
     refreshSessions: vi.fn(),
     setFocusTarget: vi.fn(),
     projectName: 'test',

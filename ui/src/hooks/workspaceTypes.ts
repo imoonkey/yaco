@@ -55,7 +55,6 @@ export type PersistedState = {
   activeSession: string
   mobilePane: MobilePane
   layout: WorkspaceLayout
-  pinnedSessions: string[]
   recentFiles: string[]
 }
 

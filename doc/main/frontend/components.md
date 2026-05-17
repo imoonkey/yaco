@@ -38,7 +38,7 @@ App (384 lines)
         ├── WorkspaceTabBar (191 lines) — scroll fade, preview label, dirty close
         ├── WorkspaceEditorArea (534 lines)
         │   ├── PreviewErrorBoundary — isolates binary preview crashes from app
-        │   ├── ImagePreview — inline `<img>` with `object-fit: contain`
+        │   ├── ImagePreview — image toolbar with zoom controls, fit-width reset, and scrollable canvas
         │   ├── PdfPreview — toolbar (page nav, zoom, fit-to-screen) + lazy-loaded PdfRenderer
         │   │   └── PdfRenderer (lazy) — react-pdf Document/Page, CDN worker setup
         │   ├── DiffTab (diff/ module — unified/split views, navigation)
@@ -224,6 +224,7 @@ xterm.js wrapper with WebSocket PTY connection.
 **Responsibilities**:
 - WebSocket connection management
 - Solarized Light terminal theme
+- OSC 10/11/12 color report query suppression
 - OSC 52 clipboard bridge
 - Touch-to-WheelEvent bridge for mobile scroll
 - Ctrl/Shift modifier state management (shared with TerminalKeyBar)

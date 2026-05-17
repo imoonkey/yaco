@@ -122,13 +122,14 @@ Low-frequency background reconciler for session health and idle detection.
 - Emits `refresh:sessions` if drift detected (missed watcher events)
 - Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
 
-### project-watcher.ts (162 lines)
+### project-watcher.ts (~180 lines)
 
 Recursive filesystem watcher per project directory.
 
 **Exports**: `startProjectWatchers()`, `stopProjectWatchers()`
 
-- Uses `fs.watch` with `recursive: true` (macOS FSEvents, one fd per project) plus one global watcher on `~/.multmux/sessions`
+- Registers lightweight global watchers first (`~/.workflow/projects.json`, `~/.multmux/sessions`), then installs recursive project watchers. This keeps session refreshes reliable when large workspaces consume many inotify slots.
+- Uses `fs.watch` with `recursive: true` for each project directory plus one global watcher on `~/.multmux/sessions`
 - Routes project-local filename changes to SSE refresh channels: `workstreams`, `worktrees`, `git`, `filetree`
 - `.worktrees/<slug>` top-level changes → `worktrees` channel; deeper `.worktrees/<slug>/**` changes → `filetree` channel (enables live refresh when viewing a worktree)
 - Global multmux session watcher reads `sessionPath` from changed state files and only emits `sessions` refreshes for registered projects whose paths descendant-match
@@ -136,7 +137,7 @@ Recursive filesystem watcher per project directory.
 - 200ms debounce on all events to batch rapid changes
 - Per-project `.gitignore` filtering: loads patterns via `gitignore.ts`, skips SSE events for ignored paths (prevents watcher churn in large projects)
 - `.gitignore` changes trigger pattern reload + filetree refresh
-- `startProjectWatchers()` is async (loads gitignore patterns at startup)
+- `startProjectWatchers()` is async (primes the multmux session path cache and loads gitignore patterns at startup)
 
 ### worktree.ts (76 lines)
 

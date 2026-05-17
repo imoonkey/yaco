@@ -1,0 +1,251 @@
+import { test, expect, type Page, type BrowserContext, type Browser } from '@playwright/test'
+import { promises as fs } from 'fs'
+import { existsSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
+
+// --- Paths & constants ---
+
+const UI_STATE_DIR = join(homedir(), '.workflow', 'ui-state')
+const NOTIFICATIONS_FILE = join(UI_STATE_DIR, 'notifications.json')
+const PINNED_FILE = join(UI_STATE_DIR, 'pinned-sessions.json')
+const MULTMUX_DIR = join(homedir(), '.multmux', 'sessions')
+
+// Use a clearly-test-prefixed handle so cleanup never trashes real sessions.
+const TEST_SESSION_PREFIX = 'e2etest-ss-'
+const SESSION_A = `${TEST_SESSION_PREFIX}a`
+const SESSION_B = `${TEST_SESSION_PREFIX}b`
+
+// --- Backup / restore for user data files ---
+
+let notificationsBackup: string | null = null
+let pinnedBackup: string | null = null
+
+function readIfExists(path: string): string | null {
+  try { return readFileSync(path, 'utf-8') } catch { return null }
+}
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, JSON.stringify(value, null, 2))
+}
+function removeIfExists(path: string): void {
+  try { unlinkSync(path) } catch { /* ignore */ }
+}
+
+function removeTestStateFiles(): void {
+  if (!existsSync(MULTMUX_DIR)) return
+  for (const file of readdirSync(MULTMUX_DIR)) {
+    if (file.startsWith(TEST_SESSION_PREFIX)) removeIfExists(join(MULTMUX_DIR, file))
+  }
+}
+
+function writeFakeMultmuxSession(handle: string, projectPath: string): void {
+  if (!existsSync(MULTMUX_DIR)) return
+  const state = {
+    handle,
+    provider: 'claude',
+    sessionPath: projectPath,
+    pid: process.pid, // use the test runner's pid so any liveness check passes
+    sessionId: '',
+    status: 'idle',
+    createdAt: new Date().toISOString(),
+  }
+  writeFileSync(join(MULTMUX_DIR, `${handle}.json`), JSON.stringify(state, null, 2))
+}
+
+test.beforeAll(async () => {
+  await fs.mkdir(UI_STATE_DIR, { recursive: true })
+  notificationsBackup = readIfExists(NOTIFICATIONS_FILE)
+  pinnedBackup = readIfExists(PINNED_FILE)
+})
+
+test.afterAll(async () => {
+  if (notificationsBackup != null) writeFileSync(NOTIFICATIONS_FILE, notificationsBackup)
+  else removeIfExists(NOTIFICATIONS_FILE)
+  if (pinnedBackup != null) writeFileSync(PINNED_FILE, pinnedBackup)
+  else removeIfExists(PINNED_FILE)
+  removeTestStateFiles()
+})
+
+test.beforeEach(async () => {
+  writeJson(NOTIFICATIONS_FILE, [])
+  writeJson(PINNED_FILE, {})
+  removeTestStateFiles()
+})
+
+// --- Helpers ---
+
+async function newPage(browser: Browser): Promise<{ ctx: BrowserContext; page: Page }> {
+  const ctx = await browser.newContext()
+  const page = await ctx.newPage()
+  return { ctx, page }
+}
+
+async function gotoApp(page: Page): Promise<void> {
+  await page.goto('/')
+  await expect(page.locator('button[aria-label="Notifications"]')).toBeVisible({ timeout: 10_000 })
+}
+
+async function pickProject(page: Page): Promise<{ name: string; path: string }> {
+  const projects = await page.evaluate(async () => {
+    const res = await fetch('/api/projects')
+    return res.json() as Promise<{ name: string; path: string }[]>
+  })
+  expect(projects.length).toBeGreaterThan(0)
+  return projects[0]
+}
+
+async function openWorkspace(page: Page, projectName: string): Promise<void> {
+  await page.locator('button', { hasText: projectName }).first().click()
+  // Workspace shell shows the "Sessions" section header on the right
+  await expect(page.locator('text=Sessions').first()).toBeVisible({ timeout: 10_000 })
+}
+
+/**
+ * Returns the names visible in the sessions sidebar, in DOM order.
+ * Pinned sessions appear before unpinned, separated by a 1px-bordered divider.
+ */
+async function readSessionListNames(page: Page, names: string[]): Promise<string[]> {
+  return page.evaluate((names) => {
+    const found: { name: string; top: number; left: number }[] = []
+    for (const name of names) {
+      // Each SessionItem renders <span>{name}</span> exactly once; match exactly to skip toasts/etc.
+      const spans = Array.from(document.querySelectorAll('span'))
+        .filter(s => s.textContent?.trim() === name)
+      for (const span of spans) {
+        const rect = span.getBoundingClientRect()
+        if (rect.width === 0 && rect.height === 0) continue
+        found.push({ name, top: rect.top, left: rect.left })
+      }
+    }
+    // Sort by visual position (top-to-bottom, then left-to-right)
+    found.sort((a, b) => a.top - b.top || a.left - b.left)
+    // De-dup consecutive: one row per name even if multiple matching spans coexist
+    const out: string[] = []
+    for (const { name } of found) if (out[out.length - 1] !== name) out.push(name)
+    return out
+  }, names)
+}
+
+// --- Test 1: notification cross-tab read sync ---
+
+test.describe('Shared state: notifications', () => {
+  test('mark-all-read in one tab clears unread badge in another tab', async ({ browser }) => {
+    // Seed an unread notification before either tab loads.
+    writeJson(NOTIFICATIONS_FILE, [
+      {
+        id: 'e2e-test-notif-1',
+        kind: 'progress',
+        title: 'Test notification',
+        message: 'cross-tab sync',
+        project: '',
+        workstream: '',
+        progressType: 'session_idle',
+        sessionName: '',
+        timestamp: Date.now(),
+        read: false,
+      },
+    ])
+
+    const a = await newPage(browser)
+    const b = await newPage(browser)
+    try {
+      await gotoApp(a.page)
+      await gotoApp(b.page)
+
+      // Bell badge shows "1" on both tabs after initial fetch.
+      // Selector: the BadgeCount span is a child of the NotificationBell wrapper,
+      // adjacent to the bell button. Match by content + position rather than CSS sibling.
+      const badge = (page: Page) => page
+        .locator('button[aria-label="Notifications"]')
+        .locator('xpath=following-sibling::span[1]')
+      await expect(badge(a.page)).toHaveText('1', { timeout: 5_000 })
+      await expect(badge(b.page)).toHaveText('1', { timeout: 5_000 })
+
+      // Page A: mark all read via REST (server broadcasts notifications:changed)
+      const status = await a.page.evaluate(async () => {
+        const res = await fetch('/api/notifications/read-all', { method: 'POST' })
+        return res.status
+      })
+      expect(status).toBe(200)
+
+      // Page B: unread badge disappears via SSE-triggered refetch
+      await expect(badge(b.page)).toHaveCount(0, { timeout: 2_000 })
+      // Page A too (its own SSE listener / refetch also runs)
+      await expect(badge(a.page)).toHaveCount(0, { timeout: 2_000 })
+    } finally {
+      await a.ctx.close()
+      await b.ctx.close()
+    }
+  })
+})
+
+// --- Test 2: pinned sessions cross-tab sync ---
+
+test.describe('Shared state: pinned sessions', () => {
+  test('PUT /api/ui-state/pinned-sessions propagates to other tab via SSE', async ({ browser }) => {
+    if (!existsSync(MULTMUX_DIR)) {
+      test.skip(true, 'multmux sessions dir not present — test environment cannot fake sessions')
+      return
+    }
+
+    const probe = await newPage(browser)
+    let project: { name: string; path: string }
+    try {
+      await gotoApp(probe.page)
+      project = await pickProject(probe.page)
+    } finally {
+      await probe.ctx.close()
+    }
+
+    // Seed two fake idle multmux sessions for the chosen project.
+    writeFakeMultmuxSession(SESSION_A, project.path)
+    writeFakeMultmuxSession(SESSION_B, project.path)
+
+    const a = await newPage(browser)
+    const b = await newPage(browser)
+    try {
+      await gotoApp(a.page)
+      await openWorkspace(a.page, project.name)
+      await gotoApp(b.page)
+      await openWorkspace(b.page, project.name)
+
+      // Both fake sessions should appear in the sidebar of both tabs.
+      await expect(a.page.locator(`text=${SESSION_A}`).first()).toBeVisible({ timeout: 10_000 })
+      await expect(a.page.locator(`text=${SESSION_B}`).first()).toBeVisible({ timeout: 10_000 })
+      await expect(b.page.locator(`text=${SESSION_A}`).first()).toBeVisible({ timeout: 10_000 })
+      await expect(b.page.locator(`text=${SESSION_B}`).first()).toBeVisible({ timeout: 10_000 })
+
+      // Page A: pin both via REST in order [A, B]
+      const putOrder = async (page: Page, sessions: string[]) => {
+        const status = await page.evaluate(async ({ project, sessions }) => {
+          const res = await fetch(
+            `/api/ui-state/pinned-sessions?project=${encodeURIComponent(project)}`,
+            { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessions }) },
+          )
+          return res.status
+        }, { project: project.name, sessions })
+        expect(status).toBe(204)
+      }
+
+      await putOrder(a.page, [SESSION_A, SESSION_B])
+
+      // Page B: sidebar shows pinned A then B within 2s (SSE-driven)
+      await expect.poll(
+        () => readSessionListNames(b.page, [SESSION_A, SESSION_B]),
+        { timeout: 2_000 },
+      ).toEqual([SESSION_A, SESSION_B])
+
+      // Reorder via PUT
+      await putOrder(a.page, [SESSION_B, SESSION_A])
+
+      // Page B: order flips to B then A within 2s
+      await expect.poll(
+        () => readSessionListNames(b.page, [SESSION_A, SESSION_B]),
+        { timeout: 2_000 },
+      ).toEqual([SESSION_B, SESSION_A])
+    } finally {
+      await a.ctx.close()
+      await b.ctx.close()
+    }
+  })
+})
