@@ -15,6 +15,7 @@ import { sessionRoutes } from './routes/sessions.js'
 import { fileRoutes } from './routes/files.js'
 import { gitRoutes } from './routes/git.js'
 import { notificationRoutes } from './routes/notifications.js'
+import { uiStateRoutes } from './routes/ui-state.js'
 import { browseRoutes } from './routes/browse.js'
 import { voiceRoutes } from './routes/voice.js'
 import { searchRoutes } from './routes/search.js'
@@ -168,6 +169,7 @@ app.route('/api/sessions', sessionRoutes)
 app.route('/api/files', fileRoutes)
 app.route('/api/git', gitRoutes)
 app.route('/api/notifications', notificationRoutes)
+app.route('/api/ui-state', uiStateRoutes)
 app.route('/api/browse', browseRoutes)
 app.route('/api/voice', voiceRoutes)
 app.route('/api/search', searchRoutes)

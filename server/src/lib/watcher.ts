@@ -4,7 +4,7 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { readdir } from 'fs/promises'
 import type { Project } from './projects'
-import { emitNotification } from './notify'
+import { dispatch as dispatchNotification } from './notify'
 import type { ProgressEntry, ProgressType } from './scanner'
 
 type ChangeCallback = (project: string, workstream: string, entries: ProgressEntry[]) => void
@@ -104,7 +104,7 @@ async function initAndWatch(
         for (const e of newEntries) {
           if (e.status === 'active') {
             const typeLabel = TYPE_LABELS[e.type] ?? e.type.toUpperCase()
-            emitNotification({
+            await dispatchNotification({
               id: `progress:${projectName}:${workstream}:${e.id}`,
               kind: 'progress',
               title: `[${typeLabel}] ${label}`,
