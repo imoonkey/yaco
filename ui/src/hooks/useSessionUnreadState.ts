@@ -1,5 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ProgressEntry, AgentSession } from '../types'
+import { addSSEListener } from './useSSE'
+import { ApiError } from '../lib/apiError'
 
 // --- Types ---
 
@@ -22,28 +24,45 @@ export type AttachSessionIntent = {
   sessionName: string
 }
 
-// --- Storage ---
+// --- Server-backed storage ---
 
-const STORAGE_KEY = 'workflow-unread'
+const SAVE_DEBOUNCE_MS = 400
+const EMPTY: UnreadReadState = { projectReadAt: {}, sessionReadAt: {} }
 
-function loadReadState(): UnreadReadState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return { projectReadAt: {}, sessionReadAt: {} }
-    const parsed = JSON.parse(raw)
-    return {
-      projectReadAt: parsed.projectReadAt && typeof parsed.projectReadAt === 'object' ? parsed.projectReadAt : {},
-      sessionReadAt: parsed.sessionReadAt && typeof parsed.sessionReadAt === 'object' ? parsed.sessionReadAt : {},
-    }
-  } catch {
-    return { projectReadAt: {}, sessionReadAt: {} }
+function validNumberMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
+  }
+  return out
+}
+
+async function fetchWatermarks(signal: AbortSignal): Promise<UnreadReadState> {
+  const res = await fetch('/api/ui-state/unread-watermarks', { signal })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
+  }
+  const data = (await res.json()) as unknown
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return { ...EMPTY }
+  const obj = data as Record<string, unknown>
+  return {
+    projectReadAt: validNumberMap(obj.projectReadAt),
+    sessionReadAt: validNumberMap(obj.sessionReadAt),
   }
 }
 
-function saveReadState(state: UnreadReadState): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  } catch { /* ignore */ }
+async function putWatermarks(state: UnreadReadState): Promise<void> {
+  const res = await fetch('/api/ui-state/unread-watermarks', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(state),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(res.status, body)
+  }
 }
 
 // --- Eligibility ---
@@ -73,22 +92,115 @@ export function useSessionUnreadState(
   activeProject: string,
   visibilityReport: WorkspaceVisibilityReport | null,
 ) {
-  const [readState, setReadState] = useState(loadReadState)
+  const [readState, setReadState] = useState<UnreadReadState>(EMPTY)
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible')
 
-  // Track document visibility so effects rerun when user returns to tab
-  useEffect(() => {
-    const handler = () => setPageVisible(document.visibilityState === 'visible')
-    document.addEventListener('visibilitychange', handler)
-    return () => document.removeEventListener('visibilitychange', handler)
-  }, [])
-
-  // Persist on change
   const readStateRef = useRef(readState)
   readStateRef.current = readState
+
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const pendingSave = useRef<UnreadReadState | null>(null)
+  // Bumped on every local mutation; refetch responses with a stale version
+  // (or while a PUT is queued / in flight) are dropped so we don't clobber
+  // optimistic edits that haven't reached the server yet.
+  const mutationVersion = useRef(0)
+  const inFlightPuts = useRef(0)
+
+  const hasPendingWrite = useCallback(() => (
+    pendingSave.current != null || inFlightPuts.current > 0
+  ), [])
+
+  const refetch = useCallback((signal: AbortSignal) => {
+    const versionAtStart = mutationVersion.current
+    fetchWatermarks(signal)
+      .then(snapshot => {
+        if (signal.aborted) return
+        if (mutationVersion.current !== versionAtStart) return
+        if (hasPendingWrite()) return
+        setReadState(snapshot)
+      })
+      .catch(err => {
+        if (signal.aborted) return
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        console.warn('[useSessionUnreadState] fetch failed:', err)
+      })
+  }, [hasPendingWrite])
+
+  // Initial load
   useEffect(() => {
-    saveReadState(readState)
-  }, [readState])
+    const ctrl = new AbortController()
+    refetch(ctrl.signal)
+    return () => ctrl.abort()
+  }, [refetch])
+
+  // SSE: refetch on 'ui-state:changed'
+  useEffect(() => {
+    const ctrlBox: { ctrl: AbortController | null } = { ctrl: null }
+    const unlisten = addSSEListener('ui-state:changed', () => {
+      ctrlBox.ctrl?.abort()
+      ctrlBox.ctrl = new AbortController()
+      refetch(ctrlBox.ctrl.signal)
+    })
+    return () => {
+      unlisten()
+      ctrlBox.ctrl?.abort()
+    }
+  }, [refetch])
+
+  // Track document visibility + refetch on visible (recover from sleep/wake)
+  useEffect(() => {
+    let ctrl: AbortController | null = null
+    const handler = () => {
+      const visible = document.visibilityState === 'visible'
+      setPageVisible(visible)
+      if (visible) {
+        ctrl?.abort()
+        ctrl = new AbortController()
+        refetch(ctrl.signal)
+      }
+    }
+    document.addEventListener('visibilitychange', handler)
+    return () => {
+      document.removeEventListener('visibilitychange', handler)
+      ctrl?.abort()
+    }
+  }, [refetch])
+
+  const flushSave = useCallback(() => {
+    const next = pendingSave.current
+    pendingSave.current = null
+    if (next == null) return
+    inFlightPuts.current += 1
+    putWatermarks(next)
+      .catch(err => {
+        console.warn('[useSessionUnreadState] save failed:', err)
+      })
+      .finally(() => {
+        inFlightPuts.current = Math.max(0, inFlightPuts.current - 1)
+      })
+  }, [])
+
+  const scheduleSave = useCallback((next: UnreadReadState) => {
+    pendingSave.current = next
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(flushSave, SAVE_DEBOUNCE_MS)
+  }, [flushSave])
+
+  const updateReadState = useCallback((updater: (prev: UnreadReadState) => UnreadReadState) => {
+    setReadState(prev => {
+      const next = updater(prev)
+      if (next === prev) return prev
+      mutationVersion.current += 1
+      scheduleSave(next)
+      return next
+    })
+  }, [scheduleSave])
+
+  // Flush pending save on unmount
+  useEffect(() => () => {
+    clearTimeout(saveTimer.current)
+    flushSave()
+  }, [flushSave])
 
   // Build live session set: `project::sessionName`
   const liveSessions = useMemo(() => {
@@ -108,7 +220,6 @@ export function useSessionUnreadState(
     if (!visibilityReport.attachedSession || !visibilityReport.terminalVisible) return
     if (visibilityReport.projectName !== activeProject) return
 
-    // Find the latest eligible timestamp for this session
     const key = sessionKey(visibilityReport.projectName, visibilityReport.attachedSession)
     if (!progress) return
 
@@ -123,7 +234,7 @@ export function useSessionUnreadState(
 
     if (maxTs === 0) return
 
-    setReadState(prev => {
+    updateReadState(prev => {
       const currentCutoff = prev.sessionReadAt[key] ?? 0
       if (maxTs <= currentCutoff) return prev
       return {
@@ -131,7 +242,7 @@ export function useSessionUnreadState(
         sessionReadAt: { ...prev.sessionReadAt, [key]: maxTs },
       }
     })
-  }, [progress, visibilityReport, activeProject, liveSessions, pageVisible])
+  }, [progress, visibilityReport, activeProject, liveSessions, pageVisible, updateReadState])
 
   // Derive per-session unread counts
   const sessionUnreadCounts = useMemo((): SessionUnreadCounts => {
@@ -171,7 +282,6 @@ export function useSessionUnreadState(
 
   const markSessionRead = useCallback((project: string, session: string) => {
     const key = sessionKey(project, session)
-    // Use the latest entry timestamp for this session, falling back to Date.now()
     let maxTs = 0
     if (progressRef.current) {
       for (const entry of progressRef.current) {
@@ -181,14 +291,13 @@ export function useSessionUnreadState(
       }
     }
     if (maxTs === 0) maxTs = Date.now()
-    setReadState(prev => ({
+    updateReadState(prev => ({
       ...prev,
       sessionReadAt: { ...prev.sessionReadAt, [key]: maxTs },
     }))
-  }, [])
+  }, [updateReadState])
 
   const markAllRead = useCallback((project: string) => {
-    // Use the latest entry timestamp for this project, falling back to Date.now()
     let maxTs = 0
     if (progressRef.current) {
       for (const entry of progressRef.current) {
@@ -198,11 +307,11 @@ export function useSessionUnreadState(
       }
     }
     if (maxTs === 0) maxTs = Date.now()
-    setReadState(prev => ({
+    updateReadState(prev => ({
       ...prev,
       projectReadAt: { ...prev.projectReadAt, [project]: maxTs },
     }))
-  }, [])
+  }, [updateReadState])
 
   return {
     sessionUnreadCounts,

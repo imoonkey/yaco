@@ -1,5 +1,9 @@
 import { Hono } from 'hono'
-import { getPinnedSessions, setPinnedSessions } from '../lib/ui-state'
+import {
+  getPinnedSessions, setPinnedSessions,
+  getUnreadWatermarks, setUnreadWatermarks,
+  type UnreadWatermarks,
+} from '../lib/ui-state'
 import { broadcastChange } from '../lib/notify'
 import { fail } from '../lib/response'
 
@@ -29,6 +33,37 @@ app.put('/pinned-sessions', async (c) => {
   }
 
   await setPinnedSessions(project, sessions)
+  broadcastChange('ui-state:changed')
+  return c.body(null, 204)
+})
+
+app.get('/unread-watermarks', async (c) => {
+  return c.json(await getUnreadWatermarks())
+})
+
+app.put('/unread-watermarks', async (c) => {
+  let body: unknown
+  try {
+    body = await c.req.json()
+  } catch {
+    return fail(c, 400, 'invalid JSON body')
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return fail(c, 400, 'body must be an object')
+  }
+  const obj = body as { projectReadAt?: unknown; sessionReadAt?: unknown }
+  const validate = (v: unknown): v is Record<string, number> => {
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return false
+    return Object.values(v as Record<string, unknown>).every((n) => typeof n === 'number' && Number.isFinite(n))
+  }
+  if (!validate(obj.projectReadAt) || !validate(obj.sessionReadAt)) {
+    return fail(c, 400, 'projectReadAt and sessionReadAt must be Record<string, number>')
+  }
+
+  await setUnreadWatermarks({
+    projectReadAt: obj.projectReadAt,
+    sessionReadAt: obj.sessionReadAt,
+  } satisfies UnreadWatermarks)
   broadcastChange('ui-state:changed')
   return c.body(null, 204)
 })

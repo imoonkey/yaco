@@ -85,3 +85,37 @@ export async function setPinnedSessions(project: string, sessions: string[]): Pr
     await writeFile(file, JSON.stringify(map, null, 2), 'utf-8')
   })
 }
+
+const WATERMARKS_FILE = 'unread-watermarks.json'
+export type UnreadWatermarks = {
+  projectReadAt: Record<string, number>
+  sessionReadAt: Record<string, number>
+}
+
+function validNumberMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const out: Record<string, number> = {}
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v
+  }
+  return out
+}
+
+export async function getUnreadWatermarks(): Promise<UnreadWatermarks> {
+  const raw = await readJson<unknown>(WATERMARKS_FILE, {})
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { projectReadAt: {}, sessionReadAt: {} }
+  }
+  const obj = raw as Record<string, unknown>
+  return {
+    projectReadAt: validNumberMap(obj.projectReadAt),
+    sessionReadAt: validNumberMap(obj.sessionReadAt),
+  }
+}
+
+export async function setUnreadWatermarks(data: UnreadWatermarks): Promise<void> {
+  await writeJson(WATERMARKS_FILE, {
+    projectReadAt: validNumberMap(data.projectReadAt),
+    sessionReadAt: validNumberMap(data.sessionReadAt),
+  })
+}
