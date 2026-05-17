@@ -89,3 +89,69 @@ describe('ui-state: pinned sessions', () => {
     expect(await getPinnedSessions('proj-b')).toEqual(['b1'])
   })
 })
+
+describe('ui-state: path validation', () => {
+  beforeEach(async () => {
+    await rm(uiStateDir, { recursive: true, force: true })
+  })
+  afterAll(async () => {
+    await rm(homeDir.value, { recursive: true, force: true })
+  })
+
+  it('readJson rejects names containing path separators or traversal', async () => {
+    await expect(readJson('../foo', null)).rejects.toThrow(/invalid file name/)
+    await expect(readJson('a/b.json', null)).rejects.toThrow(/invalid file name/)
+    await expect(readJson('a\\b.json', null)).rejects.toThrow(/invalid file name/)
+    await expect(readJson('.hidden', null)).rejects.toThrow(/invalid file name/)
+    await expect(readJson('', null)).rejects.toThrow(/invalid file name/)
+  })
+
+  it('writeJson rejects names containing path separators or traversal', async () => {
+    await expect(writeJson('../foo', { x: 1 })).rejects.toThrow(/invalid file name/)
+    await expect(writeJson('a/b.json', { x: 1 })).rejects.toThrow(/invalid file name/)
+    await expect(writeJson('a\\b.json', { x: 1 })).rejects.toThrow(/invalid file name/)
+    await expect(writeJson('.hidden', { x: 1 })).rejects.toThrow(/invalid file name/)
+  })
+})
+
+describe('ui-state: corruption recovery', () => {
+  beforeEach(async () => {
+    await rm(uiStateDir, { recursive: true, force: true })
+  })
+  afterAll(async () => {
+    await rm(homeDir.value, { recursive: true, force: true })
+  })
+
+  it('getPinnedSessions returns [] when project entry is not a string array', async () => {
+    const { writeFile } = await import('fs/promises')
+    await mkdir(uiStateDir, { recursive: true })
+    await writeFile(
+      join(uiStateDir, 'pinned-sessions.json'),
+      JSON.stringify({ proj: 'abc' }),
+      'utf-8',
+    )
+    expect(await getPinnedSessions('proj')).toEqual([])
+  })
+
+  it('getPinnedSessions returns [] when root is not an object', async () => {
+    const { writeFile } = await import('fs/promises')
+    await mkdir(uiStateDir, { recursive: true })
+    await writeFile(
+      join(uiStateDir, 'pinned-sessions.json'),
+      JSON.stringify(['a', 'b']),
+      'utf-8',
+    )
+    expect(await getPinnedSessions('proj')).toEqual([])
+  })
+
+  it('getPinnedSessions returns [] when entry array contains non-strings', async () => {
+    const { writeFile } = await import('fs/promises')
+    await mkdir(uiStateDir, { recursive: true })
+    await writeFile(
+      join(uiStateDir, 'pinned-sessions.json'),
+      JSON.stringify({ proj: ['a', 1, 'c'] }),
+      'utf-8',
+    )
+    expect(await getPinnedSessions('proj')).toEqual([])
+  })
+})
