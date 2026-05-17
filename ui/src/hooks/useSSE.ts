@@ -73,6 +73,11 @@ function getSource(): EventSource {
     debouncedFireChannel(channel)
   })
 
+  es.addEventListener('ui-state:changed', (e) => {
+    const set = listeners.get('ui-state:changed')
+    if (set) for (const fn of set) fn(e as MessageEvent)
+  })
+
   // Disable EventSource auto-reconnect: close on error, reconnect manually with backoff.
   // This prevents the built-in reconnect from re-firing 'open' handlers on an
   // existing EventSource, which would cause duplicate refresh storms.

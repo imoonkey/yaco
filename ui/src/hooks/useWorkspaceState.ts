@@ -30,8 +30,8 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   openTabsRef.current = ls.openTabs
 
   // Phase 3: bind persistence snapshots (once)
-  const layoutRef = useRef({ openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, pinnedSessions: ls.pinnedSessions, recentFiles: ls.recentFiles })
-  layoutRef.current = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, pinnedSessions: ls.pinnedSessions, recentFiles: ls.recentFiles }
+  const layoutRef = useRef({ openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, recentFiles: ls.recentFiles })
+  layoutRef.current = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, recentFiles: ls.recentFiles }
 
   const bound = useRef(false)
   if (!bound.current) {
@@ -59,7 +59,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   // Schedule persistence on state changes
   useEffect(() => {
     scheduleLayoutSave()
-  }, [ls.openTabs, ls.activeTab, ls.previewTab, ls.activeSession, ls.mobilePane, ls.layout, ls.pinnedSessions, ls.recentFiles, scheduleLayoutSave])
+  }, [ls.openTabs, ls.activeTab, ls.previewTab, ls.activeSession, ls.mobilePane, ls.layout, ls.recentFiles, scheduleLayoutSave])
 
   useEffect(() => {
     scheduleDraftsSave()
@@ -141,10 +141,9 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     saveFile,
     forceSave: wrappedForceSave,
     acceptDisk: wrappedAcceptDisk,
-    setPinnedSessions: ls.setPinnedSessions,
     retargetPaths,
     onDeletePath,
-  }), [openFileTab, openPreviewTab, ls.openDiffTab, ls.openPreviewDiffTab, ls.openPreviewDiffTabById, ls.openTasksTab, ls.toggleTasksTab, closeTab, ls.setActiveTab, ls.setActiveSession, ls.setMobilePane, ls.updateLayout, updateFileDraft, updateFileViewport, saveFile, wrappedForceSave, wrappedAcceptDisk, ls.setPinnedSessions, retargetPaths, onDeletePath])
+  }), [openFileTab, openPreviewTab, ls.openDiffTab, ls.openPreviewDiffTab, ls.openPreviewDiffTabById, ls.openTasksTab, ls.toggleTasksTab, closeTab, ls.setActiveTab, ls.setActiveSession, ls.setMobilePane, ls.updateLayout, updateFileDraft, updateFileViewport, saveFile, wrappedForceSave, wrappedAcceptDisk, retargetPaths, onDeletePath])
 
   return {
     openTabs: ls.openTabs,
@@ -156,7 +155,6 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     files,
     dirtyTabs,
     conflictTabs,
-    pinnedSessions: ls.pinnedSessions,
     recentFiles: ls.recentFiles,
     actions,
   }

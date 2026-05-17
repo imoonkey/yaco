@@ -18,7 +18,6 @@ export function useLayoutState(
   const [activeSession, setActiveSession] = useState(initialLayout.activeSession)
   const [mobilePane, setMobilePane] = useState(initialLayout.mobilePane)
   const [layout, setLayout] = useState<WorkspaceLayout>(initialLayout.layout)
-  const [pinnedSessions, setPinnedSessions] = useState<string[]>(initialLayout.pinnedSessions)
   const [recentFiles, setRecentFiles] = useState<string[]>(initialLayout.recentFiles)
 
   const openTabsRef = useRef(openTabs)
@@ -200,7 +199,6 @@ export function useLayoutState(
     activeSession,
     mobilePane,
     layout,
-    pinnedSessions,
     recentFiles,
     openFileTab,
     openPreviewTab,
@@ -215,7 +213,6 @@ export function useLayoutState(
     setActiveSession,
     setMobilePane,
     updateLayout,
-    setPinnedSessions,
     addRecentFile,
     retargetPaths,
     closeTabsUnder,

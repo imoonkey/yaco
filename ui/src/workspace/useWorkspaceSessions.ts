@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useEffect, useState } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
+import { usePinnedSessions } from '../hooks/usePinnedSessions'
 import type { AgentSession, SessionProvider } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
 
@@ -9,12 +10,10 @@ interface UseWorkspaceSessionsOpts {
   actions: {
     setActiveSession: (name: string) => void
     setMobilePane: (pane: MobilePane) => void
-    setPinnedSessions: (fn: (prev: string[]) => string[]) => void
   }
   projectPath: string
   activeSession: string
   sessions: AgentSession[] | null
-  pinnedSessions: string[]
   refreshSessions: () => void
   setFocusTarget: (t: FocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
@@ -24,9 +23,11 @@ interface UseWorkspaceSessionsOpts {
 
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
-    actions, projectPath, activeSession, sessions, pinnedSessions,
+    actions, projectPath, activeSession, sessions,
     refreshSessions, setFocusTarget, sessionUnreadCounts, projectName, onSessionChange,
   } = opts
+
+  const { pinnedSessions, setPinnedSessions } = usePinnedSessions(projectName)
 
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
   const pinnedSet = useMemo(() => new Set(pinnedSessions), [pinnedSessions])
@@ -121,14 +122,14 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const executeRename = useCallback(async (oldName: string, newName: string) => {
     try {
       await renameSession(oldName, newName)
-      actions.setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
+      setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
       if (activeSession === oldName) actions.setActiveSession(newName)
       refreshSessions()
       onSessionChange?.()
     } catch (err) {
       console.error('Failed to rename session:', err)
     }
-  }, [activeSession, actions, refreshSessions])
+  }, [activeSession, actions, refreshSessions, setPinnedSessions, onSessionChange])
 
   const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
     const session = projectSessions.find(s => s.name === oldName)
@@ -163,14 +164,14 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   }, [activeSession, actions])
 
   const togglePin = useCallback((name: string) => {
-    actions.setPinnedSessions(prev =>
+    setPinnedSessions(prev =>
       prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
     )
-  }, [actions])
+  }, [setPinnedSessions])
 
   const handlePinnedReorder = useCallback((fromName: string, toName: string) => {
     if (fromName === toName) return
-    actions.setPinnedSessions(prev => {
+    setPinnedSessions(prev => {
       const fromIdx = prev.indexOf(fromName)
       const toIdx = prev.indexOf(toName)
       if (fromIdx === -1 || toIdx === -1) return prev
@@ -179,7 +180,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       next.splice(toIdx, 0, moved)
       return next
     })
-  }, [actions])
+  }, [setPinnedSessions])
 
   return {
     projectSessions,
