@@ -36,17 +36,33 @@ export function usePinnedSessions(project: string): {
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pendingSave = useRef<string[] | null>(null)
+  // Bumped on every local mutation; refetch responses with a stale version
+  // (or while a PUT is queued / in flight) are dropped to avoid clobbering
+  // optimistic edits that haven't reached the server yet.
+  const mutationVersion = useRef(0)
+  const inFlightPuts = useRef(0)
+
+  const hasPendingWrite = useCallback(() => (
+    pendingSave.current != null || inFlightPuts.current > 0
+  ), [])
 
   const refetch = useCallback((signal: AbortSignal) => {
     if (!project) { setLocal([]); return }
+    const versionAtStart = mutationVersion.current
     fetchPinned(project, signal)
-      .then(list => { if (!signal.aborted) setLocal(list) })
+      .then(list => {
+        if (signal.aborted) return
+        // Drop stale snapshots that would clobber an unflushed optimistic edit.
+        if (mutationVersion.current !== versionAtStart) return
+        if (hasPendingWrite()) return
+        setLocal(list)
+      })
       .catch(err => {
         if (signal.aborted) return
         if (err instanceof DOMException && err.name === 'AbortError') return
         console.warn('[usePinnedSessions] fetch failed:', err)
       })
-  }, [project])
+  }, [project, hasPendingWrite])
 
   // Initial load + refetch when project changes
   useEffect(() => {
@@ -91,14 +107,20 @@ export function usePinnedSessions(project: string): {
     const next = pendingSave.current
     pendingSave.current = null
     if (next == null || !project) return
-    putPinned(project, next).catch(err => {
-      console.warn('[usePinnedSessions] save failed:', err)
-    })
+    inFlightPuts.current += 1
+    putPinned(project, next)
+      .catch(err => {
+        console.warn('[usePinnedSessions] save failed:', err)
+      })
+      .finally(() => {
+        inFlightPuts.current = Math.max(0, inFlightPuts.current - 1)
+      })
   }, [project])
 
   const setPinnedSessions = useCallback((next: string[] | ((prev: string[]) => string[])) => {
     const resolved = typeof next === 'function' ? (next as (prev: string[]) => string[])(stateRef.current) : next
     if (resolved === stateRef.current) return
+    mutationVersion.current += 1
     setLocal(resolved)
     if (!project) return
     pendingSave.current = resolved
