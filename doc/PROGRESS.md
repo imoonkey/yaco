@@ -2,15 +2,16 @@
 
 **What changed:**
 - `server/src/lib/terminal.ts` `configureShellTmuxSession()` now also sets `window-size latest` on managed shell tmux sessions.
-- `server/src/lib/terminal.ts` `attachSession()` runs `tmux resize-window -x <cols> -y <rows>` immediately after `pty.spawn('tmux','attach-session',…)` so the window snaps to the attaching client's size, regardless of `window-size` policy or whether the new attach has been marked "latest active" yet.
+- `server/src/lib/terminal.ts` `attachSession()` runs `tmux resize-window -x <cols> -y <rows>` immediately after `pty.spawn('tmux','attach-session',…)` so the window snaps to the attaching client's size, regardless of `window-size` policy or whether the new attach has been marked "latest active" yet. Crucially, follows with `tmux set-option window-size latest` to undo `resize-window`'s documented side effect of switching `window-size` to `manual` (which would otherwise freeze the window at the first-attach size forever).
 - Companion change in `multmux` (`src/tmux.ts` `createSession`): bumped detached `-x 200 -y 50` → `-x 333 -y 100` and added `tmux set-option window-size latest`. Rebuilt via `bash install.sh`.
 
 **Why:**
 - Sessions were rendering inside a tiny top-left rectangle on the laptop browser even though xterm.js was at full pane size — tmux's window was clamped to a previously-attached small client (phone, or a zombie from a leaked node-pty `tmux attach-session`). A fresh attach is not always counted as "latest active" until the user types, so the window stayed clamped and clicking did nothing. The user's manual workaround — open the session on a phone, then click on the laptop — worked because a fresh attach forced tmux to re-evaluate sizes. The fix reproduces that re-evaluation server-side on every attach.
 - `latest` is the correct policy for the user's workflow ("on phone I want it to fit phone, on laptop I want it to fit laptop") — not `largest`, which would force phone to see a clipped laptop-width view.
+- Pitfall (fixed): `tmux resize-window -x -y` silently sets `window-size` to `manual` (per `man tmux`). Without restoring `latest` afterward, the first attach would lock the window size permanently and no later device switch could refit it.
 
 **Key files:** `server/src/lib/terminal.ts`, `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`; companion `multmux/src/tmux.ts`.
-**Verification:** `cd server && npm test src/lib/__tests__/terminal.test.ts` — 18/18 pass; multmux `bun test test/lifecycle-guards.test.ts` — 15/15 pass; `bash install.sh` rebuilt and deployed the multmux binary.
+**Verification:** `cd server && npm test src/lib/__tests__/terminal.test.ts` — 18/18 pass; multmux `bun test test/lifecycle-guards.test.ts` — 15/15 pass; `bash install.sh` rebuilt and deployed the multmux binary. Live test: ran `tmux set-option -t <session> window-size latest` on an in-flight session that had been corrupted into `manual` mode, confirmed it returned to `latest`.
 **Commit:** _(this commit)_.
 **Next:** Existing tmux sessions still have old options — kill + recreate them, or patch live with `tmux set-option -t <handle> window-size latest`, to pick up the new behavior. Server must be restarted to use the new `attachSession`.
 **Blockers:** None.

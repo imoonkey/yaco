@@ -356,8 +356,14 @@ export function attachSession(sessionName: string, cols: number, rows: number): 
   // active" until the user types — so a previously-attached small client
   // (or a zombie from a leaked node-pty) can clamp the window. Explicit
   // resize-window bypasses the policy.
+  //
+  // Side effect: tmux's `resize-window -x -y` automatically flips
+  // `window-size` to `manual` (documented). Restore `latest` immediately
+  // so future client size changes (laptop pane resize, device switch)
+  // still auto-resize the window.
   try {
     runTmux(['resize-window', '-t', tmuxPaneTarget(sessionName), '-x', String(cols), '-y', String(rows)])
+    runTmux(['set-option', '-t', tmuxPaneTarget(sessionName), 'window-size', 'latest'])
   } catch (e) {
     console.warn(`[terminal] failed to resize-window for ${sessionName}:`, e)
   }
