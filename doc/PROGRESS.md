@@ -1,3 +1,25 @@
+## 2026-05-17: Cross-device shared notifications + pinned sessions; `~/.workflow/channels/<scope>/` reorg
+
+**What changed:**
+- New server-side stores: `server/src/lib/notifications-store.ts` (inbox + read flags) and `server/src/lib/ui-state.ts` (per-project pinned sessions + order), both mutex-protected against `~/.workflow/ui-state/notifications.json` and `~/.workflow/ui-state/pinned-sessions.json`.
+- REST surface: `GET /api/notifications`, `POST /api/notifications/:id/read`, `POST /api/notifications/read-all`, `DELETE /api/notifications`, `GET/PUT /api/ui-state/pinned-sessions?project=<p>`.
+- SSE event surface widened: `notification` (full payload), `notifications:changed`, `ui-state:changed`. `useSSE.ts` forwards them to consumers; `useNotifications.ts` switched to server-sourced inbox + `notifications:changed` + visibilitychange resync; new `usePinnedSessions.ts` hook does optimistic writes with version-tracked refetch so SSE-driven refetches don't clobber in-flight edits.
+- `~/.workflow/` reorganized: messaging channels now live under `~/.workflow/channels/<scope>/{auth.json, state.json, qr.txt, session/}`. One-shot boot migration (`server/src/lib/migrate-channels.ts`) moves legacy flat `wechat-*` / `whatsapp-*` files into the new layout, idempotently, awaited before `serve()` in `server/src/index.ts`; rethrows on non-benign errors.
+- `NotificationItem` on the server is a superset of the in-memory `NotificationEvent` (preserves `kind`, `workstream`, `progressType`; adds `read: boolean` and numeric `timestamp`).
+- `PersistedState.pinnedSessions` removed from `localStorage` — layout/tabs/drafts/mobilePane/theme remain per-device.
+
+**Why:**
+- Opening the app on a second device used to lose notification inbox + read state and reset pinned-session order, because both lived in per-device `localStorage`. Promoting them to the server makes the laptop and the desktop browser converge on the same UI state without manual reconciliation.
+- The root of `~/.workflow/` was accumulating flat `wechat-*` / `whatsapp-*` siblings of `projects.json`; grouping them under `channels/<scope>/` keeps the directory readable and matches the per-scope model used by the messaging integration.
+
+**Key files:** `server/src/lib/notifications-store.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `server/src/routes/notifications.ts`, `server/src/routes/ui-state.ts`, `server/src/index.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/hooks/useSSE.ts`, `doc/main/data-model/persistence.md`, `CLAUDE.md`.
+**Verification:** `cd server && npm test` — 40+ new tests pass across `notifications-store`, `ui-state`, `migrate-channels`, and the `/api/notifications` + `/api/ui-state/pinned-sessions` route suites. `cd ui && npx tsc -b` clean. E2E coverage for cross-device sync lives in the `ss-e2e` task slug (Playwright, may not be merged at the time of this entry — check that branch).
+**Commit:** _(merge commit; backfilled by the merge step)_.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-14: Session list refreshes immediately after agent `/exit`
 
 **What changed:**

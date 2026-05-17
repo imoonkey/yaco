@@ -52,7 +52,9 @@ Hono Server (Node.js :3001)
 
 ## State Persistence
 
-Layout/tabs/pins, task graph collapse, and drafts in `localStorage["workflow-*:<project>"]` (or `"workflow-*:<project>:wt:<slug>"` when in a worktree). Projects in `~/.workflow/projects.json`. Flushed on `beforeunload`.
+Layout/tabs/drafts/mobilePane/theme in `localStorage["workflow-*:<project>"]` (or `"workflow-*:<project>:wt:<slug>"` when in a worktree), flushed on `beforeunload`. Projects in `~/.workflow/projects.json`.
+Cross-device shared state lives in `~/.workflow/ui-state/` (notifications inbox + read flags, pinned sessions + order per project) and is delivered via REST + SSE (`notification`, `notifications:changed`, `ui-state:changed`).
+Messaging channels live under `~/.workflow/channels/<scope>/` (auth/state/qr/session); legacy `wechat-*` / `whatsapp-*` files are migrated on boot.
 
 -> See: [doc/main/data-model/persistence.md](doc/main/data-model/persistence.md)
 
