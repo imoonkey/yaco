@@ -10,7 +10,7 @@ import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
 
 const { Client, LocalAuth, MessageMedia } = wweb
 
-const SESSION_DIR = join(homedir(), '.workflow', 'whatsapp-session')
+const SESSION_DIR = join(homedir(), '.workflow', 'channels', 'whatsapp', 'session')
 
 export type WhatsAppPhase = 'idle' | 'awaiting-qr' | 'authenticating' | 'ready' | 'failed' | 'disconnected'
 
@@ -125,15 +125,15 @@ async function handleMessage(msg: Message): Promise<void> {
   if (BOUND_CHAT_JID && conversationId !== BOUND_CHAT_JID) return
 
   // Otherwise: TOFU. authorize() atomically binds the first chat seen
-  // and persists to ~/.workflow/whatsapp-auth.json. Subsequent boots
-  // restore the binding. Other chats return 'deny' and are silently
+  // and persists to ~/.workflow/channels/whatsapp/auth.json. Subsequent
+  // boots restore the binding. Other chats return 'deny' and are silently
   // dropped — your normal contact conversations are protected.
   if (!BOUND_CHAT_JID) {
     const before = getAuthSnapshot().tofuBound
     const decision = await authorize(conversationId)
     if (decision === 'deny') return
     if (!before) {
-      console.log(`[whatsapp] TOFU-bound to chat ${conversationId} (persisted to ~/.workflow/whatsapp-auth.json)`)
+      console.log(`[whatsapp] TOFU-bound to chat ${conversationId} (persisted to ~/.workflow/channels/whatsapp/auth.json)`)
     }
   }
 

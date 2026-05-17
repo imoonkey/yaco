@@ -19,7 +19,8 @@ export interface LoginState {
 }
 
 const WORKFLOW_DIR = join(homedir(), '.workflow')
-const QR_FILE = join(WORKFLOW_DIR, 'wechat-qr.txt')
+const QR_DIR = join(WORKFLOW_DIR, 'channels', 'wechat')
+const QR_FILE = join(QR_DIR, 'qr.txt')
 
 let state: LoginState = { phase: 'idle' }
 let inflight: Promise<void> | null = null
@@ -39,7 +40,7 @@ function isQrLine(s: string): boolean {
 }
 
 async function persistQrText(text: string): Promise<void> {
-  if (!existsSync(WORKFLOW_DIR)) await mkdir(WORKFLOW_DIR, { recursive: true })
+  if (!existsSync(QR_DIR)) await mkdir(QR_DIR, { recursive: true })
   await writeFile(QR_FILE, text, 'utf-8')
 }
 

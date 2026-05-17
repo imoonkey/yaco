@@ -23,6 +23,7 @@ import { taskRoutes } from './routes/tasks.js'
 import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
+import { migrateLegacyChannelPaths } from './lib/migrate-channels.js'
 import { startWatching, stopWatching } from './lib/watcher.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
@@ -186,6 +187,7 @@ async function startRuntime(): Promise<void> {
   runtimeStarted = true
 
   await ensureWorkflowDir()
+  await migrateLegacyChannelPaths()
   const projects = await loadProjects()
   await startWatching(projects, (project, workstream) => {
     console.log(`[watch] progress.json changed: ${project}/${workstream}`)

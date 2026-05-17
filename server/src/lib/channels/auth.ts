@@ -8,16 +8,15 @@ interface AuthFile {
   boundAt: string
 }
 
-const WORKFLOW_DIR = join(homedir(), '.workflow')
-
-async function ensureDir(): Promise<void> {
-  if (!existsSync(WORKFLOW_DIR)) await mkdir(WORKFLOW_DIR, { recursive: true })
-}
-
 /** Per-channel auth store: env whitelist OR TOFU first-contact bind, persisted
- *  to ~/.workflow/<scope>-auth.json. Atomic check-and-bind. */
+ *  to ~/.workflow/channels/<scope>/auth.json. Atomic check-and-bind. */
 export function createAuthStore(scope: string, whitelistEnvKey: string) {
-  const authFile = join(WORKFLOW_DIR, `${scope}-auth.json`)
+  const scopeDir = join(homedir(), '.workflow', 'channels', scope)
+  const authFile = join(scopeDir, 'auth.json')
+
+  async function ensureDir(): Promise<void> {
+    if (!existsSync(scopeDir)) await mkdir(scopeDir, { recursive: true })
+  }
   const whitelist = (process.env[whitelistEnvKey] ?? '')
     .split(',')
     .map(s => s.trim())

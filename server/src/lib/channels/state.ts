@@ -11,18 +11,17 @@ export interface Binding {
 
 export type BindingFile = Record<string, Binding>
 
-const WORKFLOW_DIR = join(homedir(), '.workflow')
-
-async function ensureDir(): Promise<void> {
-  if (!existsSync(WORKFLOW_DIR)) await mkdir(WORKFLOW_DIR, { recursive: true })
-}
-
-/** Per-channel binding store backed by ~/.workflow/<scope>-state.json.
+/** Per-channel binding store backed by ~/.workflow/channels/<scope>/state.json.
  *  Module-private cache + serialized writes to avoid concurrent fs races. */
 export function createBindingStore(scope: string) {
-  const stateFile = join(WORKFLOW_DIR, `${scope}-state.json`)
+  const scopeDir = join(homedir(), '.workflow', 'channels', scope)
+  const stateFile = join(scopeDir, 'state.json')
   let cache: BindingFile | null = null
   let writeChain: Promise<void> = Promise.resolve()
+
+  async function ensureDir(): Promise<void> {
+    if (!existsSync(scopeDir)) await mkdir(scopeDir, { recursive: true })
+  }
 
   async function load(): Promise<BindingFile> {
     if (cache) return cache
