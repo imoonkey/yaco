@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
-import { mkdtemp, rm, mkdir } from 'fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -125,5 +125,43 @@ describe('notifications-store', () => {
     for (let i = 1; i < timestamps.length; i++) {
       expect(timestamps[i - 1]).toBeGreaterThanOrEqual(timestamps[i])
     }
+  })
+
+  it('append throws on malformed JSON and does not overwrite the file', async () => {
+    await mkdir(join(homeDir.value, '.workflow', 'ui-state'), { recursive: true })
+    const garbage = '{not valid json'
+    await writeFile(notifFile, garbage, 'utf-8')
+    await expect(store.append(makeItem('a'))).rejects.toThrow()
+    expect(await readFile(notifFile, 'utf-8')).toBe(garbage)
+  })
+
+  it('list throws on malformed JSON', async () => {
+    await mkdir(join(homeDir.value, '.workflow', 'ui-state'), { recursive: true })
+    await writeFile(notifFile, 'not json', 'utf-8')
+    await expect(store.list()).rejects.toThrow()
+  })
+
+  it('throws when file contains non-array JSON', async () => {
+    await mkdir(join(homeDir.value, '.workflow', 'ui-state'), { recursive: true })
+    await writeFile(notifFile, '{"foo":1}', 'utf-8')
+    await expect(store.list()).rejects.toThrow(/expected array/)
+  })
+
+  it('concurrent reads racing with appends always return a valid array', async () => {
+    const appends = Array.from({ length: 20 }, (_, i) =>
+      store.append(makeItem(`r${i}`, { timestamp: i })),
+    )
+    const reads = Array.from({ length: 20 }, () => store.list())
+    const [, readResults] = await Promise.all([Promise.all(appends), Promise.all(reads)])
+    for (const items of readResults) {
+      expect(Array.isArray(items)).toBe(true)
+      for (const item of items) {
+        expect(typeof item.id).toBe('string')
+        expect(typeof item.timestamp).toBe('number')
+        expect(typeof item.read).toBe('boolean')
+      }
+    }
+    const finalItems = await store.list()
+    expect(finalItems).toHaveLength(20)
   })
 })

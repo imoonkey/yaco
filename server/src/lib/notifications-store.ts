@@ -1,5 +1,4 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
 import { join, dirname } from 'path'
 import { homedir } from 'os'
 
@@ -24,14 +23,18 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function readAll(): Promise<NotificationItem[]> {
-  if (!existsSync(NOTIFICATIONS_FILE)) return []
+  let raw: string
   try {
-    const raw = await readFile(NOTIFICATIONS_FILE, 'utf-8')
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? (parsed as NotificationItem[]) : []
-  } catch {
-    return []
+    raw = await readFile(NOTIFICATIONS_FILE, 'utf-8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
   }
+  const parsed = JSON.parse(raw)
+  if (!Array.isArray(parsed)) {
+    throw new Error(`notifications-store: expected array at ${NOTIFICATIONS_FILE}, got ${typeof parsed}`)
+  }
+  return parsed as NotificationItem[]
 }
 
 async function writeAll(items: NotificationItem[]): Promise<void> {
@@ -40,7 +43,7 @@ async function writeAll(items: NotificationItem[]): Promise<void> {
 }
 
 export async function list(): Promise<NotificationItem[]> {
-  return readAll()
+  return withLock(() => readAll())
 }
 
 export async function append(
