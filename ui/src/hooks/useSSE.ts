@@ -78,6 +78,11 @@ function getSource(): EventSource {
     if (set) for (const fn of set) fn(e as MessageEvent)
   })
 
+  es.addEventListener('notifications:changed', (e) => {
+    const set = listeners.get('notifications:changed')
+    if (set) for (const fn of set) fn(e as MessageEvent)
+  })
+
   // Disable EventSource auto-reconnect: close on error, reconnect manually with backoff.
   // This prevents the built-in reconnect from re-firing 'open' handlers on an
   // existing EventSource, which would cause duplicate refresh storms.
