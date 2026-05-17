@@ -16,12 +16,15 @@ await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
 const store = await import('../notifications-store')
 const notifFile = join(homeDir.value, '.workflow', 'ui-state', 'notifications.json')
 
-function makeItem(id: string, overrides: Partial<{ title: string; message: string; project: string; sessionName: string; timestamp: number }> = {}) {
+function makeItem(id: string, overrides: Partial<{ title: string; message: string; project: string; workstream: string; sessionName: string; timestamp: number }> = {}) {
   return {
     id,
+    kind: 'progress' as const,
     title: overrides.title ?? `title-${id}`,
     message: overrides.message ?? `msg-${id}`,
     project: overrides.project ?? 'proj',
+    workstream: overrides.workstream ?? 'ws',
+    progressType: 'info' as const,
     sessionName: overrides.sessionName ?? 'sess',
     ...(overrides.timestamp !== undefined ? { timestamp: overrides.timestamp } : {}),
   }

@@ -1,12 +1,16 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join, dirname } from 'path'
 import { homedir } from 'os'
+import type { ProgressType } from './scanner'
 
 export interface NotificationItem {
   id: string
+  kind: 'progress'
   title: string
   message: string
   project: string
+  workstream: string
+  progressType: ProgressType
   sessionName: string
   timestamp: number
   read: boolean
@@ -56,9 +60,12 @@ export async function append(
 
     const persisted: NotificationItem = {
       id: item.id,
+      kind: item.kind,
       title: item.title,
       message: item.message,
       project: item.project,
+      workstream: item.workstream,
+      progressType: item.progressType,
       sessionName: item.sessionName,
       timestamp: item.timestamp ?? Date.now(),
       read: false,

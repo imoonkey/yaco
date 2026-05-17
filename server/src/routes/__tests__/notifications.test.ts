@@ -17,6 +17,19 @@ const { notificationRoutes } = await import('../notifications')
 const store = await import('../../lib/notifications-store')
 const notify = await import('../../lib/notify')
 
+function item(id: string) {
+  return {
+    id,
+    kind: 'progress' as const,
+    title: 't',
+    message: 'm',
+    project: 'p',
+    workstream: 'ws',
+    progressType: 'info' as const,
+    sessionName: 's',
+  }
+}
+
 describe('notification routes', () => {
   beforeEach(async () => {
     await rm(join(homeDir.value, '.workflow', 'ui-state', 'notifications.json'), { force: true })
@@ -26,8 +39,8 @@ describe('notification routes', () => {
   })
 
   it('GET / returns persisted inbox as array', async () => {
-    await store.append({ id: 'n1', title: 't', message: 'm', project: 'p', sessionName: 's' })
-    await store.append({ id: 'n2', title: 't', message: 'm', project: 'p', sessionName: 's' })
+    await store.append(item('n1'))
+    await store.append(item('n2'))
 
     const res = await notificationRoutes.request('/')
     expect(res.status).toBe(200)
@@ -43,7 +56,7 @@ describe('notification routes', () => {
   })
 
   it('POST /:id/read flips read flag and broadcasts', async () => {
-    await store.append({ id: 'n1', title: 't', message: 'm', project: 'p', sessionName: 's' })
+    await store.append(item('n1'))
     const spy = vi.spyOn(notify, 'broadcastChange')
 
     const res = await notificationRoutes.request('/n1/read', { method: 'POST' })
@@ -64,8 +77,8 @@ describe('notification routes', () => {
   })
 
   it('POST /read-all returns count flipped and broadcasts', async () => {
-    await store.append({ id: 'n1', title: 't', message: 'm', project: 'p', sessionName: 's' })
-    await store.append({ id: 'n2', title: 't', message: 'm', project: 'p', sessionName: 's' })
+    await store.append(item('n1'))
+    await store.append(item('n2'))
     const spy = vi.spyOn(notify, 'broadcastChange')
 
     const res = await notificationRoutes.request('/read-all', { method: 'POST' })
@@ -85,7 +98,7 @@ describe('notification routes', () => {
   })
 
   it('DELETE / clears all and broadcasts', async () => {
-    await store.append({ id: 'n1', title: 't', message: 'm', project: 'p', sessionName: 's' })
+    await store.append(item('n1'))
     const spy = vi.spyOn(notify, 'broadcastChange')
 
     const res = await notificationRoutes.request('/', { method: 'DELETE' })

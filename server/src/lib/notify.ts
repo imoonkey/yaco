@@ -30,9 +30,12 @@ export async function dispatch(event: NotificationEvent): Promise<void> {
   const parsedTs = Date.parse(event.timestamp)
   const persisted = await notificationsStore.append({
     id: event.id,
+    kind: event.kind,
     title: event.title,
     message: event.message,
     project: event.project,
+    workstream: event.workstream,
+    progressType: event.progressType,
     sessionName: event.sessionName ?? '',
     timestamp: Number.isFinite(parsedTs) ? parsedTs : undefined,
   })
