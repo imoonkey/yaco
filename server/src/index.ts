@@ -186,8 +186,6 @@ async function startRuntime(): Promise<void> {
   if (runtimeStarted) return
   runtimeStarted = true
 
-  await ensureWorkflowDir()
-  await migrateLegacyChannelPaths()
   const projects = await loadProjects()
   await startWatching(projects, (project, workstream) => {
     console.log(`[watch] progress.json changed: ${project}/${workstream}`)
@@ -206,6 +204,18 @@ async function startRuntime(): Promise<void> {
     // becomes available immediately; status route reports progress.
     void initWhatsApp()
   }
+}
+
+// Bootstrap workflow dir + channels migration BEFORE binding the HTTP port.
+// A /api/whatsapp/login request arriving mid-rename would let LocalAuth create
+// the new session dir before the legacy one is moved in, corrupting auth state.
+// Top-level await is supported (ES2022 + ESNext modules).
+try {
+  await ensureWorkflowDir()
+  await migrateLegacyChannelPaths()
+} catch (err) {
+  console.error('[startup] bootstrap failed:', err)
+  process.exit(1)
 }
 
 // Start HTTP server
