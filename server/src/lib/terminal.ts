@@ -215,6 +215,13 @@ function configureShellTmuxSession(name: string): void {
   } catch (e) {
     console.warn(`[terminal] failed to hide tmux status for ${name}:`, e)
   }
+  try {
+    // `latest` = window follows whichever client most recently became active,
+    // so each device sees content fit to its own screen.
+    runTmux(['set-option', '-t', tmuxPaneTarget(name), 'window-size', 'latest'])
+  } catch (e) {
+    console.warn(`[terminal] failed to set tmux window-size for ${name}:`, e)
+  }
 }
 
 function nextShellSessionName(): string {
@@ -343,6 +350,17 @@ export function attachSession(sessionName: string, cols: number, rows: number): 
     rows,
     env: buildChildProcessEnv(),
   })
+
+  // Force window to this client's size. `window-size latest` is supposed to
+  // do this on attach, but a fresh attach isn't always counted as "latest
+  // active" until the user types — so a previously-attached small client
+  // (or a zombie from a leaked node-pty) can clamp the window. Explicit
+  // resize-window bypasses the policy.
+  try {
+    runTmux(['resize-window', '-t', tmuxPaneTarget(sessionName), '-x', String(cols), '-y', String(rows)])
+  } catch (e) {
+    console.warn(`[terminal] failed to resize-window for ${sessionName}:`, e)
+  }
 
   return {
     initialData: '',
