@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, createElement } from 'react'
 import { toast } from 'sonner'
-import { addSSEListener, useSSERefresh } from './useSSE'
+import { addSSEListener } from './useSSE'
 import { ApiError } from '../lib/apiError'
 
 export interface NotificationItem {
@@ -60,14 +60,32 @@ export function useNotifications(
 } {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const onClickRef = useRef(onNotificationClick)
-  onClickRef.current = onNotificationClick
+  useEffect(() => { onClickRef.current = onNotificationClick }, [onNotificationClick])
+
+  // Tracks ids that arrived via SSE prepend during the currently in-flight refetch.
+  // When the GET response resolves, any tracked id missing from the server snapshot is
+  // re-prepended so a slow GET can't clobber a fresh SSE event. Replaced (not mutated)
+  // on each refetch so a newer fetch supersedes the older one's merge.
+  const inFlightFetchIds = useRef<Set<string> | null>(null)
 
   const unreadCount = notifications.filter(n => !n.read).length
 
   const refetch = useCallback(() => {
+    const myFetch = new Set<string>()
+    inFlightFetchIds.current = myFetch
     fetchNotifications()
-      .then(items => setNotifications(items))
-      .catch(() => { /* ignore — next SSE/visibility tick will retry */ })
+      .then(items => {
+        if (inFlightFetchIds.current !== myFetch) return // superseded by a newer refetch
+        inFlightFetchIds.current = null
+        const serverIds = new Set(items.map(n => n.id))
+        setNotifications(prev => {
+          const survivors = prev.filter(n => myFetch.has(n.id) && !serverIds.has(n.id))
+          return survivors.length === 0 ? items : [...survivors, ...items]
+        })
+      })
+      .catch(() => {
+        if (inFlightFetchIds.current === myFetch) inFlightFetchIds.current = null
+      })
   }, [])
 
   const markRead = useCallback((id: string) => {
@@ -94,8 +112,10 @@ export function useNotifications(
     refetch()
   }, [refetch])
 
-  // Refetch when the server signals the inbox changed
-  useSSERefresh('notifications:changed', refetch)
+  // Refetch when the server signals the inbox changed (any device's mutation)
+  useEffect(() => {
+    return addSSEListener('notifications:changed', refetch)
+  }, [refetch])
 
   // Refetch when the tab becomes visible (covers wake-from-sleep / cross-device edits)
   useEffect(() => {
@@ -112,6 +132,7 @@ export function useNotifications(
       try {
         const item: NotificationItem = JSON.parse(e.data)
 
+        if (inFlightFetchIds.current) inFlightFetchIds.current.add(item.id)
         setNotifications(prev => prev.some(n => n.id === item.id) ? prev : [item, ...prev])
 
         const project = item.project ?? ''
