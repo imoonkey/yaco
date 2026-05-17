@@ -88,7 +88,7 @@ describe('dispatch', () => {
 
   it('/help returns help text', async () => {
     const out = await dispatchText({ conversationId: 'wx' }, { name: 'help', args: [] })
-    expect(out).toMatch(/可用命令/)
+    expect(out).toMatch(/Available commands/)
     expect(out).toMatch(/\/projects/)
   })
 
@@ -146,7 +146,7 @@ describe('dispatch', () => {
   it('/exit and /last respond when not bound; /new validates input', async () => {
     expect(await dispatchText({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/not bound/)
     expect(await dispatchText({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/not bound/)
-    expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/用法/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/usage/)
     expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: ['ruby'] })).toMatch(/provider must be claude or codex/)
   })
 

@@ -34,17 +34,17 @@ export function parseCommand(text: string): ParsedCommand | null {
 const KNOWN_COMMANDS = new Set(['help', 'h', 'projects', 'p', 'use', 'sessions', 's', 'who', 'exit', 'last', 'new', 'file', 'f'])
 
 const HELP_TEXT = [
-  '可用命令:',
-  '/projects (/p)        列出所有 projects',
-  '/use <n|name>         选择当前 project',
-  '/sessions (/s)        列出当前 project 的 sessions',
-  '/use s <n|name>       绑定到该 session',
-  '/new <claude|codex>   新建 session 并自动 bind',
-  '/exit                 解绑（不杀 session）',
-  '/who                  查看当前 binding',
-  '/last [n]             抓最近 n 行 pane（默认 100，上限 2000）',
-  '/file [-t] <path>     文件→附件（≤5MB）；-t 改成内联文本（≤32KB）；目录→列表',
-  '/help                 显示本帮助',
+  'Available commands:',
+  '/projects (/p)        list all projects',
+  '/use <n|name>         select current project',
+  '/sessions (/s)        list sessions of current project',
+  '/use s <n|name>       bind to a session',
+  '/new <claude|codex>   start a new session and auto-bind',
+  '/exit                 unbind (does not kill the session)',
+  '/who                  show current binding',
+  '/last [n]             capture last n pane lines (default 100, max 2000)',
+  '/file [-t] <path>     file → attachment (≤5MB); -t inlines as text (≤32KB); directory → listing',
+  '/help                 show this help',
 ].join('\n')
 
 const PASSTHROUGH_QUIET_MS = 1500
@@ -128,7 +128,7 @@ export function createRouter(store: BindingStore) {
   }
 
   async function handleUseSession(ctx: CommandContext, args: string[]): Promise<string> {
-    if (args.length === 0) return '用法: /use s <n|name>'
+    if (args.length === 0) return 'usage: /use s <n|name>'
     const project = await resolveCurrentProject(ctx.conversationId)
     if (!project) return 'no current project — run /use <name> first'
 
@@ -156,7 +156,7 @@ export function createRouter(store: BindingStore) {
   }
 
   async function handleUse(ctx: CommandContext, args: string[]): Promise<string> {
-    if (args.length === 0) return '用法: /use <n|name> 或 /use s <n>'
+    if (args.length === 0) return 'usage: /use <n|name> or /use s <n>'
     if (args[0] === 's' || args[0] === 'session') return handleUseSession(ctx, args.slice(1))
 
     const project = await pickProjectByArg(args[0])
@@ -217,7 +217,7 @@ export function createRouter(store: BindingStore) {
   }
 
   async function handleNew(ctx: CommandContext, args: string[]): Promise<string> {
-    if (args.length === 0) return '用法: /new <claude|codex> [name]'
+    if (args.length === 0) return 'usage: /new <claude|codex> [name]'
     const providerArg = args[0].toLowerCase()
     if (providerArg !== 'claude' && providerArg !== 'codex') {
       return `provider must be claude or codex, got: ${args[0]}`
@@ -257,7 +257,7 @@ export function createRouter(store: BindingStore) {
   async function handleFile(ctx: CommandContext, args: string[]): Promise<ChannelReply> {
     const asText = args.includes('-t')
     const pathArgs = args.filter(a => a !== '-t')
-    if (pathArgs.length === 0) return textReply('用法: /file [-t] <relative-path>')
+    if (pathArgs.length === 0) return textReply('usage: /file [-t] <relative-path>')
 
     const project = await resolveCurrentProject(ctx.conversationId)
     if (!project) return textReply('no current project — run /use <name> first or bind a session')

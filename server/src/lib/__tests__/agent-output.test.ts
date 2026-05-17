@@ -126,10 +126,10 @@ describe('streamAgentReply (claude)', () => {
         name: 'AskUserQuestion',
         input: {
           questions: [{
-            question: '要继续吗？',
+            question: 'Continue?',
             options: [
-              { label: 'yes', description: '继续做下去' },
-              { label: 'no', description: '停下来' },
+              { label: 'yes', description: 'keep going' },
+              { label: 'no', description: 'stop' },
             ],
           }],
         },
@@ -142,10 +142,10 @@ describe('streamAgentReply (claude)', () => {
     expect(onAsk).toHaveBeenCalledOnce()
     expect(events).toHaveLength(2)
     expect(events[0].kind).toBe('question')
-    expect((events[0] as { text: string }).text).toContain('🤔 Agent 在问：要继续吗？')
-    expect((events[0] as { text: string }).text).toContain('1) yes — 继续做下去')
-    expect((events[0] as { text: string }).text).toContain('2) no — 停下来')
-    expect((events[0] as { text: string }).text).toContain('已自动取消 dialog，直接回复你的答案即可。')
+    expect((events[0] as { text: string }).text).toContain('🤔 Agent asks: Continue?')
+    expect((events[0] as { text: string }).text).toContain('1) yes — keep going')
+    expect((events[0] as { text: string }).text).toContain('2) no — stop')
+    expect((events[0] as { text: string }).text).toContain('Dialog auto-cancelled — just reply with your answer.')
     expect(events[1]).toEqual({ kind: 'final', text: 'cancelled' })
   })
 

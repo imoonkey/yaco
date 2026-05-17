@@ -22,11 +22,11 @@ async function handle(request: ChatRequest): Promise<ChatResponse> {
 
   if (await authorize(conversationId) === 'deny') return {}
 
-  if (media) return { text: '暂不支持 media 消息' }
+  if (media) return { text: 'media messages not supported' }
 
   const chunks: string[] = []
   await wechatRouter.handleMessage({ conversationId }, text ?? '', async (reply) => {
-    chunks.push(reply.kind === 'text' ? reply.text : `[附件: ${reply.filename}]`)
+    chunks.push(reply.kind === 'text' ? reply.text : `[attachment: ${reply.filename}]`)
   })
   return { text: chunks.join('\n\n') }
 }

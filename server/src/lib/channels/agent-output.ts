@@ -225,7 +225,7 @@ function formatQuestion(questions: ClaudeQuestion[]): string {
         return desc ? `${i + 1}) ${label} — ${desc}` : `${i + 1}) ${label}`
       })
       .join('\n')
-    return opts ? `🤔 Agent 在问：${head}\n\n${opts}` : `🤔 Agent 在问：${head}`
+    return opts ? `🤔 Agent asks: ${head}\n\n${opts}` : `🤔 Agent asks: ${head}`
   })
-  return `${blocks.join('\n\n')}\n\n已自动取消 dialog，直接回复你的答案即可。`
+  return `${blocks.join('\n\n')}\n\nDialog auto-cancelled — just reply with your answer.`
 }

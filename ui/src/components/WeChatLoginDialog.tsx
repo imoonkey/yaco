@@ -41,7 +41,7 @@ const CHANNELS: Record<string, ChannelConfig> = {
     envVar: 'WECHAT_ENABLED',
     Icon: MessageCircle,
     livePhases: ['awaiting-qr', 'awaiting-scan', 'authenticating'],
-    qrHint: '使用微信扫描二维码完成登录（建议放大窗口以提高扫码成功率）',
+    qrHint: 'Scan with WeChat to complete login (enlarge the window for better scan reliability)',
   },
   whatsapp: {
     id: 'whatsapp',
@@ -130,7 +130,7 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
         style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
       >
         <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
-          {channel.label} 登录 / Login
+          {channel.label} Login
         </span>
         <button
           onClick={onClose}
