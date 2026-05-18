@@ -126,10 +126,15 @@ async function readSessionListNames(page: Page, names: string[]): Promise<string
   }, names)
 }
 
-// --- Test 1: notification cross-tab read sync ---
+// --- Test 1: notification inbox cross-tab read sync ---
+//
+// The bell badge count is derived from progress.json + watermarks (not from
+// inbox `read` flags), so seeding a synthetic inbox row won't drive it.
+// This test exercises the inbox SSE refetch path: a row's `read` flag flips
+// in tab A → propagates to tab B and shows as no-longer-highlighted there.
 
 test.describe('Shared state: notifications', () => {
-  test('mark-all-read in one tab clears unread badge in another tab', async ({ browser }) => {
+  test('mark-all-read in one tab updates inbox styling in another tab', async ({ browser }) => {
     // Seed an unread notification before either tab loads.
     writeJson(NOTIFICATIONS_FILE, [
       {
@@ -152,14 +157,24 @@ test.describe('Shared state: notifications', () => {
       await gotoApp(a.page)
       await gotoApp(b.page)
 
-      // Bell badge shows "1" on both tabs after initial fetch.
-      // Selector: the BadgeCount span is a child of the NotificationBell wrapper,
-      // adjacent to the bell button. Match by content + position rather than CSS sibling.
-      const badge = (page: Page) => page
-        .locator('button[aria-label="Notifications"]')
-        .locator('xpath=following-sibling::span[1]')
-      await expect(badge(a.page)).toHaveText('1', { timeout: 5_000 })
-      await expect(badge(b.page)).toHaveText('1', { timeout: 5_000 })
+      // Open the bell panel on both tabs and locate the seeded row.
+      const openPanel = async (page: Page) => {
+        await page.locator('button[aria-label="Notifications"]').click()
+        await expect(page.getByText('Test notification')).toBeVisible({ timeout: 5_000 })
+      }
+      await openPanel(a.page)
+      await openPanel(b.page)
+
+      // Unread rows render with an accent left border; read rows don't.
+      const rowStyle = (page: Page) => page
+        .getByText('Test notification')
+        .locator('xpath=ancestor::div[contains(@style, "borderBottom") or contains(@style, "border-bottom")][1]')
+        .getAttribute('style')
+
+      const aStyleBefore = await rowStyle(a.page)
+      const bStyleBefore = await rowStyle(b.page)
+      expect(aStyleBefore).toMatch(/border-left/i)
+      expect(bStyleBefore).toMatch(/border-left/i)
 
       // Page A: mark all read via REST (server broadcasts notifications:changed)
       const status = await a.page.evaluate(async () => {
@@ -168,10 +183,9 @@ test.describe('Shared state: notifications', () => {
       })
       expect(status).toBe(200)
 
-      // Page B: unread badge disappears via SSE-triggered refetch
-      await expect(badge(b.page)).toHaveCount(0, { timeout: 2_000 })
-      // Page A too (its own SSE listener / refetch also runs)
-      await expect(badge(a.page)).toHaveCount(0, { timeout: 2_000 })
+      // Page B sees the row flip to read styling via SSE-driven refetch
+      await expect.poll(() => rowStyle(b.page), { timeout: 3_000 }).not.toMatch(/border-left/i)
+      await expect.poll(() => rowStyle(a.page), { timeout: 3_000 }).not.toMatch(/border-left/i)
     } finally {
       await a.ctx.close()
       await b.ctx.close()

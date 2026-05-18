@@ -202,7 +202,7 @@ function App() {
   const currentProjectPath = orderedProjects.find(p => p.name === activeProject)?.path ?? ''
 
   // Unread state — purely derived from progress, sessions, and localStorage read timestamps
-  const { sessionUnreadCounts, projectUnreadCounts, markSessionRead, markAllRead } = useSessionUnreadState(
+  const { sessionUnreadCounts, projectUnreadCounts, readState, markSessionRead, markAllRead } = useSessionUnreadState(
     progress,
     allSessions,
     activeProject,
@@ -217,9 +217,49 @@ function App() {
     }
   }, [])
 
-  const { notifications, unreadCount, markAllRead: markNotificationsRead, markRead, clearAll: clearNotifications } = useNotifications(handleNotificationClick)
+  const { notifications, markAllRead: markNotificationsRead, markRead, clearAll: clearNotifications } = useNotifications(handleNotificationClick)
 
-  const notificationBellProps = { notifications, unreadCount, markRead, markAllRead: markNotificationsRead, clearAll: clearNotifications, onItemClick: handleNotificationClick }
+  // Bell mark-read actions must advance watermarks too (otherwise the bell
+  // badge — derived from watermarks — wouldn't reset when the user uses the
+  // bell UI). Single click → advance that notif's session. Mark all read →
+  // advance every project's watermark to now.
+  const notificationsRef = useRef(notifications)
+  const orderedProjectsRef = useRef(orderedProjects)
+  useEffect(() => { notificationsRef.current = notifications }, [notifications])
+  useEffect(() => { orderedProjectsRef.current = orderedProjects }, [orderedProjects])
+
+  const handleBellMarkRead = useCallback((id: string) => {
+    const item = notificationsRef.current.find(n => n.id === id)
+    if (item?.project && item.sessionName) {
+      markSessionRead(item.project, item.sessionName)
+    } else if (item?.project) {
+      markAllRead(item.project)
+    }
+    markRead(id)
+  }, [markRead, markSessionRead, markAllRead])
+
+  const handleBellMarkAllRead = useCallback(() => {
+    for (const p of orderedProjectsRef.current) markAllRead(p.name)
+    markNotificationsRead()
+  }, [markAllRead, markNotificationsRead])
+
+  // Bell badge derived from watermarks so it matches sidebar totals.
+  // Inbox items have their `read` flag overridden by the same derivation
+  // so the panel's per-item styling stays in sync.
+  const bellUnreadCount = useMemo(
+    () => Object.values(projectUnreadCounts).reduce((a, b) => a + b, 0),
+    [projectUnreadCounts],
+  )
+  const derivedNotifications = useMemo(() => notifications.map(n => {
+    if (!n.project) return n
+    const sessionCutoff = n.sessionName
+      ? (readState.sessionReadAt[`${n.project}::${n.sessionName}`] ?? 0)
+      : 0
+    const cutoff = Math.max(readState.projectReadAt[n.project] ?? 0, sessionCutoff)
+    return { ...n, read: n.timestamp <= cutoff }
+  }), [notifications, readState])
+
+  const notificationBellProps = { notifications: derivedNotifications, unreadCount: bellUnreadCount, markRead: handleBellMarkRead, markAllRead: handleBellMarkAllRead, clearAll: clearNotifications, onItemClick: handleNotificationClick }
 
   // Persist project selection
   useEffect(() => {

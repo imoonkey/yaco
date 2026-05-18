@@ -70,7 +70,6 @@ async function putWatermarks(state: UnreadReadState): Promise<void> {
 function isEligible(entry: ProgressEntry, liveSessions: Set<string>): boolean {
   return (
     entry.status === 'active' &&
-    entry.type === 'session_idle' &&
     !!entry.sessionName &&
     liveSessions.has(`${entry.project}::${entry.sessionName}`)
   )
@@ -277,45 +276,27 @@ export function useSessionUnreadState(
 
   // --- Clear actions ---
 
-  const progressRef = useRef(progress)
-  progressRef.current = progress
-
   const markSessionRead = useCallback((project: string, session: string) => {
     const key = sessionKey(project, session)
-    let maxTs = 0
-    if (progressRef.current) {
-      for (const entry of progressRef.current) {
-        if (entry.project !== project || entry.sessionName !== session) continue
-        const ts = entryTimestamp(entry)
-        if (ts > maxTs) maxTs = ts
-      }
-    }
-    if (maxTs === 0) maxTs = Date.now()
+    const ts = Date.now()
     updateReadState(prev => ({
       ...prev,
-      sessionReadAt: { ...prev.sessionReadAt, [key]: maxTs },
+      sessionReadAt: { ...prev.sessionReadAt, [key]: ts },
     }))
   }, [updateReadState])
 
   const markAllRead = useCallback((project: string) => {
-    let maxTs = 0
-    if (progressRef.current) {
-      for (const entry of progressRef.current) {
-        if (entry.project !== project) continue
-        const ts = entryTimestamp(entry)
-        if (ts > maxTs) maxTs = ts
-      }
-    }
-    if (maxTs === 0) maxTs = Date.now()
+    const ts = Date.now()
     updateReadState(prev => ({
       ...prev,
-      projectReadAt: { ...prev.projectReadAt, [project]: maxTs },
+      projectReadAt: { ...prev.projectReadAt, [project]: ts },
     }))
   }, [updateReadState])
 
   return {
     sessionUnreadCounts,
     projectUnreadCounts,
+    readState,
     markSessionRead,
     markAllRead,
   }
