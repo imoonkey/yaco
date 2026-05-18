@@ -1,4 +1,24 @@
-## 2026-05-17: tmux window sized per-attaching-client (laptop ↔ phone)
+## 2026-05-18: Unified bell badge with sidebar via watermark-derived counts
+
+**What changed:**
+- `ui/src/hooks/useSessionUnreadState.ts`: `isEligible` no longer restricts to `type === 'session_idle'` — all `status === 'active'` progress entries with a `sessionName` for a live session now contribute to per-session/project unread counts. `markSessionRead` / `markAllRead` always advance the watermark to `Date.now()` (the old "max of matching progress timestamps" logic was overkill); `progressRef` removed. The hook now also returns `readState` so App.tsx can derive per-notification read state.
+- `ui/src/App.tsx`: bell badge is `sum(projectUnreadCounts)` (from `useSessionUnreadState`), not `useNotifications.unreadCount`. Inbox items rendered in the panel have their `read` flag overridden by the same watermark check so the per-item accent border matches the badge. New `handleBellMarkRead` / `handleBellMarkAllRead` wrappers advance the relevant watermark(s) on top of the existing inbox PUTs — single click bumps the item's session watermark, "Mark all read" bumps every project's watermark.
+- `ui/tests/e2e/shared-state.spec.ts`: badge assertion replaced with an inbox-row-styling assertion (the seeded notification has empty project, so it can no longer drive the watermark-sourced badge; the SSE-sync intent is still covered).
+- Docs: `CLAUDE.md`, `doc/main/data-model/persistence.md` (new `unread-watermarks.json` section + `GET/PUT /api/ui-state/unread-watermarks` rows + `useSessionUnreadState` mention), `doc/main/frontend/hooks.md` (new `useSessionUnreadState.ts` section + note on `useNotifications.unreadCount` being ignored by App), `doc/main/ui/notifications.md` (bell-badge and panel-styling source notes).
+
+**Why:**
+- The bell badge (inbox `read` flags, capped at 50 items, all 4 progress types) and the sidebar badges (progress.json + watermarks, unbounded, `session_idle` only) were two structurally different counters. After "Mark all read" in the bell, the badge dropped to 0 while the sidebar still showed hundreds — investigation showed this would recur every time, not just once after the watermark migration in [ed2500f]. Routing both through the same `progress + watermarks` pipeline makes them equal by construction.
+- Advancing watermarks to `Date.now()` matches the user's mental model ("I clicked into this session, so the whole session is read up to now") and is simpler than scanning progress for a max timestamp.
+
+**Key files:** `ui/src/App.tsx`, `ui/src/hooks/useSessionUnreadState.ts`, `ui/tests/e2e/shared-state.spec.ts`, `CLAUDE.md`, `doc/main/data-model/persistence.md`, `doc/main/frontend/hooks.md`, `doc/main/ui/notifications.md`.
+**Verification:** `cd ui && npx tsc --noEmit` clean; `npm run build` clean; `cd server && npm test` passes (one unrelated pre-existing `autocomplete` test fails on missing `GROQ_API_KEY`). Playwright session: confirmed bell `70` = sum(`workflow 20 + androidagent 42 + cproxy 3 + jobspace 4 + learn 1`); after PUTing watermarks for `workflow::claude-shell-env` + `workflow::claude-terminal-size`, bell dropped to `51` and `workflow`'s sidebar badge cleared, with the equality preserved.
+**Commit:** `8ae1262`.
+**Next:** None. Bootstrap floor (server watermark map starts at `{}`) self-clears as users mark-read or attach sessions.
+**Blockers:** None.
+
+---
+
+
 
 **What changed:**
 - `server/src/lib/terminal.ts` `configureShellTmuxSession()` now also sets `window-size latest` on managed shell tmux sessions.

@@ -171,6 +171,23 @@ Behavior:
 - Page hidden: shows browser Notification (click → window.focus + route)
 - Auto-requests notification permission on mount
 - Per-tab deduplication via seen-ID set (max 500 entries, FIFO eviction)
+- **Note**: the `unreadCount` returned here is inbox-derived (inbox `read` flags). App.tsx ignores it and computes the bell badge from `useSessionUnreadState`'s `projectUnreadCounts` instead so bell and sidebar stay aligned.
+
+## useSessionUnreadState.ts
+
+Per-session and per-project unread counts derived from `progress.json` entries + server-backed watermarks (`~/.workflow/ui-state/unread-watermarks.json`).
+
+**Export**: `useSessionUnreadState(progress, allSessions, activeProject, visibilityReport)` → `{ sessionUnreadCounts, projectUnreadCounts, readState, markSessionRead, markAllRead }`
+
+Behavior:
+- An entry contributes to the unread count iff it is `status === 'active'`, has a `sessionName`, and that session is currently live. Type is not restricted (all `info` / `human_review` / `blocked` / `session_idle` entries count).
+- `sessionUnreadCounts[project::session]` = entries with `timestamp > max(projectReadAt[project], sessionReadAt[key])`.
+- `projectUnreadCounts[project]` = sum of session counts for that project.
+- `markSessionRead(p, s)` / `markAllRead(p)` advance the corresponding watermark to `Date.now()`.
+- Visibility guard: while a session terminal is attached + visible, its watermark is auto-advanced to the highest matching progress timestamp.
+- Server sync: seeds from `GET /api/ui-state/unread-watermarks`, refetches on `ui-state:changed` SSE + visibilitychange; mutations debounce-PUT with a mutation-version clobber-guard (same shape as `usePinnedSessions`).
+
+App.tsx wires `projectUnreadCounts` into both the sidebar (per-project badges) and the bell badge (sum), and overrides each inbox item's `read` flag using the same watermark check so the notification panel styling matches.
 
 ## useIsMobile.ts (39 lines)
 

@@ -27,6 +27,7 @@ On-disk and in-browser storage formats for the workflow system.
   ui-state/                  # cross-device shared UI state
     notifications.json       # inbox + read flags (NotificationItem[])
     pinned-sessions.json     # per-project ordered session pins
+    unread-watermarks.json   # per-project / per-session unread cutoffs
   channels/                  # messaging channel scopes (WhatsApp, WeChat, …)
     <scope>/                 # one directory per channel scope
       auth.json              # credentials / login state
@@ -56,6 +57,10 @@ Cross-device notifications inbox. Array of `NotificationItem` (superset of the i
 ### `~/.workflow/ui-state/pinned-sessions.json`
 
 Per-project ordered list of pinned session names. Shape: `{ [projectName]: string[] }`. Mutex-protected writes via `server/src/lib/ui-state.ts`. Order is preserved across devices.
+
+### `~/.workflow/ui-state/unread-watermarks.json`
+
+Per-project and per-session read cutoffs (`{ projectReadAt, sessionReadAt }`, both `Record<string, number>` of millisecond timestamps). A progress entry is "unread" iff its timestamp exceeds `max(projectReadAt[project], sessionReadAt["${project}::${session}"])`. The bell badge and sidebar unread counts both derive from this file (via `useSessionUnreadState`); marking-read actions advance the relevant watermark(s) to `Date.now()`. Mutex-protected writes via `server/src/lib/ui-state.ts`.
 
 ### `projects/active/<name>/workstream.json`
 
@@ -185,6 +190,8 @@ State is split between server files (shared across devices via REST + SSE) and `
 | `DELETE` | `/api/notifications` | Clear the inbox |
 | `GET`    | `/api/ui-state/pinned-sessions?project=<p>` | Read pinned sessions for a project |
 | `PUT`    | `/api/ui-state/pinned-sessions?project=<p>` | Replace pinned sessions for a project |
+| `GET`    | `/api/ui-state/unread-watermarks` | Read all per-project / per-session unread cutoffs |
+| `PUT`    | `/api/ui-state/unread-watermarks` | Replace the watermarks map (`{ projectReadAt, sessionReadAt }`) |
 
 ### SSE events
 
@@ -194,4 +201,4 @@ State is split between server files (shared across devices via REST + SSE) and `
 | `notifications:changed`  | none / change marker    | read/clear/any mutation that doesn't carry a new item (consumers re-fetch) |
 | `ui-state:changed`       | `{ key: 'pinned-sessions', project }` | server-side mutation of ui-state (other devices re-fetch the affected slice) |
 
-Hooks: `useNotifications` (server-sourced inbox + `notifications:changed` listener + visibilitychange resync), `usePinnedSessions` (per-project optimistic writes, version-tracked refetch protects in-flight edits from stale GET clobber).
+Hooks: `useNotifications` (server-sourced inbox + `notifications:changed` listener + visibilitychange resync), `usePinnedSessions` (per-project optimistic writes, version-tracked refetch protects in-flight edits from stale GET clobber), `useSessionUnreadState` (watermarks + derived per-session/per-project counts; debounced PUTs with the same clobber-guard).

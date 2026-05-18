@@ -71,12 +71,15 @@ Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) whil
 - Used in desktop header (App.tsx) and mobile header (WorkspaceLayout.tsx via `notificationBell` ReactNode slot)
 - Each instance has independent open/close state (only one is ever visible — desktop/mobile are mutually exclusive)
 - Props: `{ notifications, unreadCount, markRead, markAllRead, clearAll, onItemClick, size? }`
+- **Badge source**: App.tsx passes `sum(projectUnreadCounts)` (from `useSessionUnreadState`), NOT the inbox-derived `unreadCount` from `useNotifications`. This keeps the bell badge equal to the sum of sidebar per-project badges. The inbox cap (50 items) does not bound the bell badge anymore.
+- **Mark-read behaviour**: App.tsx wraps the props so single-click also advances that session's watermark (or project watermark if the item has no `sessionName`), and "Mark all read" advances every project's watermark to `Date.now()` in addition to flipping inbox `read` flags.
 
 ## Notification Panel
 
 `NotificationPanel` (`ui/src/components/NotificationPanel.tsx`) — dropdown panel rendered by `NotificationBell`.
 
 - Shows accumulated notifications with title, message, relative timestamp
+- Per-item `read` state is overridden by App.tsx using the watermark check (`item.timestamp <= max(projectReadAt, sessionReadAt)`), so the unread accent border matches the bell badge derivation rather than the stored inbox flag.
 - Unread items highlighted with hover background + left accent border
 - Click item → mark read + navigate to project/session
 - "Mark all read" / "Clear" actions in header

@@ -53,7 +53,7 @@ Hono Server (Node.js :3001)
 ## State Persistence
 
 Layout/tabs/drafts/mobilePane/theme in `localStorage["workflow-*:<project>"]` (or `"workflow-*:<project>:wt:<slug>"` when in a worktree), flushed on `beforeunload`. Projects in `~/.workflow/projects.json`.
-Cross-device shared state lives in `~/.workflow/ui-state/` (notifications inbox + read flags, pinned sessions + order per project) and is delivered via REST + SSE (`notification`, `notifications:changed`, `ui-state:changed`).
+Cross-device shared state lives in `~/.workflow/ui-state/` (notifications inbox + read flags, pinned sessions + order per project, per-session/project unread watermarks) and is delivered via REST + SSE (`notification`, `notifications:changed`, `ui-state:changed`). The bell badge and sidebar unread counts both derive from the same `progress + watermarks` pipeline so they stay aligned; the inbox `read` flag is overridden on the client by the watermark check (panel styling matches the badge).
 Messaging channels live under `~/.workflow/channels/<scope>/` (auth/state/qr/session); legacy `wechat-*` / `whatsapp-*` files are migrated on boot.
 
 -> See: [doc/main/data-model/persistence.md](doc/main/data-model/persistence.md)
