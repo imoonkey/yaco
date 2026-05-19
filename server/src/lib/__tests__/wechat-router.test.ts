@@ -94,8 +94,8 @@ describe('dispatch', () => {
 
   it('/projects lists numbered projects', async () => {
     const out = await dispatchText({ conversationId: 'wx' }, { name: 'projects', args: [] })
-    expect(out).toContain('1. alpha')
-    expect(out).toContain('2. beta')
+    expect(out).toMatch(/1\.\s+alpha/)
+    expect(out).toMatch(/2\.\s+beta/)
   })
 
   it('/use <name> sets current project and lists sessions', async () => {

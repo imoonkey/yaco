@@ -432,17 +432,25 @@ function cleanupTerminalResources(): void {
   stopProjectWatchers()
   stopWatching()
   shutdownWeChat()
-  void shutdownWhatsApp()
   for (const ws of [...connections.keys()]) {
     cleanupConnection(ws)
     ws.terminate()
   }
 }
 
+// Async shutdown sequence: must await Puppeteer's client.destroy() so the
+// headless Chrome holding the WhatsApp LocalAuth userDataDir releases its
+// SingletonLock before the node process exits. Without this, tsx watch
+// reloads leak orphan Chromes that block the next initWhatsApp.
+async function shutdownGracefully(): Promise<void> {
+  cleanupTerminalResources()
+  try { await shutdownWhatsApp() }
+  catch (e) { console.error('[shutdown] whatsapp:', e) }
+}
+
 for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP'] as const) {
   process.on(signal, () => {
-    cleanupTerminalResources()
-    process.exit(0)
+    void shutdownGracefully().finally(() => process.exit(0))
   })
 }
 

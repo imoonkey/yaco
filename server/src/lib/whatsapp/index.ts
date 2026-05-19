@@ -1,9 +1,10 @@
 import wweb from 'whatsapp-web.js'
 import type { Message } from 'whatsapp-web.js'
 import { spawnSync } from 'node:child_process'
+import { readlinkSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
-import { createRouter } from '../channels/router'
+import { createRouter, type ChannelReply } from '../channels/router'
 import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 import { whatsappStore } from './state'
 import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
@@ -11,6 +12,53 @@ import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
 const { Client, LocalAuth, MessageMedia } = wweb
 
 const SESSION_DIR = join(homedir(), '.workflow', 'channels', 'whatsapp', 'session')
+// LocalAuth nests another "session" directory inside SESSION_DIR for the
+// browser profile (userDataDir).
+const PROFILE_DIR = join(SESSION_DIR, 'session')
+
+/** If a previous Puppeteer Chrome was orphaned (e.g. unclean exit), its
+ *  SingletonLock symlink still references the dead/alive PID. Chrome refuses
+ *  to start with a live foreign PID. This sweep:
+ *    - parses the lock target `<hostname>-<pid>`
+ *    - if the PID is alive AND its cmdline points at our profile dir, kills it
+ *    - removes Singleton{Lock,Socket,Cookie} symlinks regardless (Chrome will
+ *      recreate them, and stale symlinks confuse some versions)
+ *  Runs synchronously at boot; the I/O is a few stat/unlink syscalls. */
+function cleanupStaleChromeSingleton(): void {
+  if (!existsSync(PROFILE_DIR)) return
+  const lockPath = join(PROFILE_DIR, 'SingletonLock')
+  let target: string | null = null
+  try { target = readlinkSync(lockPath) } catch { /* no symlink → nothing to do */ }
+
+  if (target) {
+    const m = /-(\d+)$/.exec(target)
+    const pid = m ? Number(m[1]) : null
+    if (pid && pid > 0) {
+      let cmdline = ''
+      try { cmdline = readFileSync(`/proc/${pid}/cmdline`, 'utf8') } catch { /* dead pid or non-linux */ }
+      if (cmdline.includes(PROFILE_DIR)) {
+        try {
+          process.kill(pid, 'SIGTERM')
+          // Give Chrome up to 1s to exit; busy-poll /proc since we're at boot
+          // and no event loop work is pending yet.
+          const deadline = Date.now() + 1000
+          while (Date.now() < deadline) {
+            try { readFileSync(`/proc/${pid}/cmdline`) } catch { break }
+          }
+          // If still alive, escalate.
+          try { readFileSync(`/proc/${pid}/cmdline`); process.kill(pid, 'SIGKILL') } catch { /* gone */ }
+          console.warn(`[whatsapp] killed orphan Chrome pid=${pid} holding SingletonLock`)
+        } catch (e) {
+          console.warn(`[whatsapp] failed to kill orphan Chrome pid=${pid}:`, e)
+        }
+      }
+    }
+  }
+
+  for (const f of ['SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+    try { unlinkSync(join(PROFILE_DIR, f)) } catch { /* ignore */ }
+  }
+}
 
 export type WhatsAppPhase = 'idle' | 'awaiting-qr' | 'authenticating' | 'ready' | 'failed' | 'disconnected'
 
@@ -147,39 +195,64 @@ async function handleMessage(msg: Message): Promise<void> {
     return
   }
 
-  await serialize(conversationId, async () => {
-    await router.handleMessage({ conversationId }, text, async (reply) => {
-      if (reply.kind === 'text') {
-        if (!reply.text) return
-        // Mark BEFORE awaiting reply — message_create can fire before reply resolves.
-        markOurReply(conversationId, reply.text)
-        try {
-          await msg.reply(reply.text)
-        } catch (e) {
-          console.error('[whatsapp] reply failed:', e)
-        }
-        return
-      }
-      // file attachment
+  const sendReply = async (reply: ChannelReply): Promise<void> => {
+    if (reply.kind === 'text') {
+      if (!reply.text) return
+      // Mark BEFORE awaiting reply — message_create can fire before reply resolves.
+      markOurReply(conversationId, reply.text)
       try {
-        const media = MessageMedia.fromFilePath(reply.path)
-        media.filename = reply.filename
-        // Caption (if any) becomes a separate message.body — also dedup it.
-        if (reply.caption) markOurReply(conversationId, reply.caption)
-        await msg.reply(media, undefined, reply.caption ? { caption: reply.caption } : undefined)
+        await msg.reply(reply.text)
       } catch (e) {
-        console.error('[whatsapp] file reply failed:', e)
-        const errText = `failed to send ${reply.filename}: ${(e as Error).message}`
-        markOurReply(conversationId, errText)
-        try { await msg.reply(errText) } catch { /* swallow */ }
+        console.error('[whatsapp] reply failed:', e)
       }
-    })
+      return
+    }
+    // file attachment
+    try {
+      const media = MessageMedia.fromFilePath(reply.path)
+      media.filename = reply.filename
+      // Caption (if any) becomes a separate message.body — also dedup it.
+      if (reply.caption) markOurReply(conversationId, reply.caption)
+      await msg.reply(media, undefined, reply.caption ? { caption: reply.caption } : undefined)
+    } catch (e) {
+      console.error('[whatsapp] file reply failed:', e)
+      const errText = `failed to send ${reply.filename}: ${(e as Error).message}`
+      markOurReply(conversationId, errText)
+      try { await msg.reply(errText) } catch { /* swallow */ }
+    }
+  }
+
+  // Read-only commands (/help, /p, /s, /who, /last, /file) bypass the
+  // per-conversation queue so they respond instantly even if a passthrough
+  // is in flight. State-changing commands (/use, /new, /exit) and
+  // passthroughs stay queued to preserve ordering of binding mutations.
+  const command = router.parseCommand(text)
+  if (command && router.isReadOnlyCommand(command.name)) {
+    const reply = await router.dispatch({ conversationId }, command)
+    await sendReply(reply)
+    return
+  }
+
+  await serialize(conversationId, async () => {
+    await router.handleMessage({ conversationId }, text, sendReply)
   })
 }
 
 export function initWhatsApp(): Promise<void> {
   if (initInflight) return initInflight
+  // If a prior init failed or the client got disconnected, the `client` ref
+  // may still be set but is unusable. Destroy it and re-init from scratch.
+  if (client && (state.phase === 'failed' || state.phase === 'disconnected')) {
+    const stale = client
+    client = null
+    void stale.destroy().catch(() => { /* best-effort */ })
+  }
   if (client) return Promise.resolve()
+
+  // Belt-and-suspenders: if any Chrome from a prior unclean exit still
+  // holds our profile's SingletonLock, kill it now so puppeteer can take
+  // the lock cleanly.
+  cleanupStaleChromeSingleton()
 
   sweepStaleTaps()
 

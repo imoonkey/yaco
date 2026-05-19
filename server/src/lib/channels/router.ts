@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { resolve as resolvePath, sep as pathSep } from 'node:path'
+import { stat } from 'node:fs/promises'
 import { loadProjects, type Project } from '../projects'
 import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, captureSession, type MultmuxSession } from '../multmux'
 import type { BindingStore } from './state'
@@ -33,18 +34,24 @@ export function parseCommand(text: string): ParsedCommand | null {
 
 const KNOWN_COMMANDS = new Set(['help', 'h', 'projects', 'p', 'use', 'sessions', 's', 'who', 'exit', 'last', 'new', 'file', 'f'])
 
+// State-changing commands mutate the per-conversation binding (currentProject
+// map or BindingStore). They must stay ordered relative to passthroughs so
+// that "/use s X" followed by a message reliably targets X. Read-only
+// commands may bypass the conversation queue for instant response.
+const STATE_CHANGING_COMMANDS = new Set(['use', 'new', 'exit'])
+
 const HELP_TEXT = [
   'Available commands:',
   '/projects (/p)        list all projects',
   '/use <n|name>         select current project',
   '/sessions (/s)        list sessions of current project',
   '/use s <n|name>       bind to a session',
-  '/new <claude|codex>   start a new session and auto-bind',
+  '/new <claude|codex> [name]  start a new session and auto-bind',
   '/exit                 unbind (does not kill the session)',
   '/who                  show current binding',
   '/last [n]             capture last n pane lines (default 100, max 2000)',
-  '/file [-t] <path>     file → attachment (≤5MB); -t inlines as text (≤32KB); directory → listing',
-  '/help                 show this help',
+  '/file (/f) [-t] <relative-path>  file → attachment (≤5MB); -t inlines as text (≤32KB); directory → listing',
+  '/help (/h)            show this help',
 ].join('\n')
 
 const PASSTHROUGH_QUIET_MS = 1500
@@ -95,10 +102,10 @@ async function listSessions(project: Project): Promise<MultmuxSession[]> {
   return readSessionsFromStateFiles(project)
 }
 
-function formatSessions(sessions: MultmuxSession[]): string {
+function formatSessions(sessions: MultmuxSession[], boundName?: string): string {
   if (sessions.length === 0) return '(no sessions)'
   return sessions
-    .map((s, i) => `${i + 1}. ${s.name} [${s.provider}, ${s.status}]`)
+    .map((s, i) => `${i + 1}. ${s.name === boundName ? '* ' : '  '}${s.name} [${s.provider}, ${s.status}]`)
     .join('\n')
 }
 
@@ -113,6 +120,25 @@ async function pickSessionByArg(project: Project, arg: string): Promise<MultmuxS
 export function createRouter(store: BindingStore) {
   const currentProjectByConversation = new Map<string, string>()
 
+  // Per-session lock for the reply-streaming phase. Sends to *different*
+  // sessions stream replies in parallel (so a slow agent on session A
+  // can't block a quick reply on session B), but two rapid sends to the
+  // *same* session queue their reply streams so the older turn's
+  // streamAgentReply doesn't see the newer turn's content.
+  const sessionStreamLock = new Map<string, Promise<void>>()
+
+  function queueSessionStream(handle: string, fn: () => Promise<void>): void {
+    const prev = sessionStreamLock.get(handle) ?? Promise.resolve()
+    const next = prev.then(fn, fn)
+    const tail = next.catch(err => {
+      console.error('[channel-router] reply stream error:', err)
+    })
+    sessionStreamLock.set(handle, tail)
+    void tail.then(() => {
+      if (sessionStreamLock.get(handle) === tail) sessionStreamLock.delete(handle)
+    })
+  }
+
   async function resolveCurrentProject(conversationId: string): Promise<Project | undefined> {
     const explicit = currentProjectByConversation.get(conversationId)
     if (explicit) return projectByName(explicit)
@@ -121,10 +147,13 @@ export function createRouter(store: BindingStore) {
     return undefined
   }
 
-  async function handleProjects(): Promise<string> {
+  async function handleProjects(ctx: CommandContext): Promise<string> {
     const projects = await loadProjects()
     if (projects.length === 0) return '(no projects configured)'
-    return projects.map((p, i) => `${i + 1}. ${p.name}`).join('\n')
+    const current = (await resolveCurrentProject(ctx.conversationId))?.name
+    return projects
+      .map((p, i) => `${i + 1}. ${p.name === current ? '* ' : '  '}${p.name}`)
+      .join('\n')
   }
 
   async function handleUseSession(ctx: CommandContext, args: string[]): Promise<string> {
@@ -164,14 +193,18 @@ export function createRouter(store: BindingStore) {
     currentProjectByConversation.set(ctx.conversationId, project.name)
 
     const sessions = await listSessions(project)
-    return [`current project: ${project.name}`, '', formatSessions(sessions)].join('\n')
+    const binding = await store.getBinding(ctx.conversationId)
+    const boundName = binding?.project === project.name ? binding.session : undefined
+    return [`current project: ${project.name}`, '', formatSessions(sessions, boundName)].join('\n')
   }
 
   async function handleSessions(ctx: CommandContext): Promise<string> {
     const project = await resolveCurrentProject(ctx.conversationId)
     if (!project) return 'no current project — run /projects then /use <n|name>'
     const sessions = await listSessions(project)
-    return [`project: ${project.name}`, '', formatSessions(sessions)].join('\n')
+    const binding = await store.getBinding(ctx.conversationId)
+    const boundName = binding?.project === project.name ? binding.session : undefined
+    return [`project: ${project.name}`, '', formatSessions(sessions, boundName)].join('\n')
   }
 
   async function handleWho(ctx: CommandContext): Promise<string> {
@@ -301,13 +334,15 @@ export function createRouter(store: BindingStore) {
     return { kind: 'file', path: resolved, filename, caption: `${rel} (${st.size} bytes)` }
   }
 
-  /** Forward plain text to the bound session and stream the agent's reply
-   *  events (interim text, AskUserQuestion prompt, final answer) to the
-   *  channel via the onReply callback. Reads the agent's structured JSONL
-   *  session log — no TUI chrome, no tool noise, no input echo.
+  /** Forward plain text to the bound session. Awaits only the SEND phase so
+   *  the conversation queue drains immediately — agent reply streaming runs
+   *  in the background under a per-session lock, calling onReply as events
+   *  arrive. WhatsApp's msg.reply() natively quotes the user's original
+   *  message, so interleaved replies (after /use s X then send to Y) stay
+   *  unambiguous in the chat UI.
    *
-   *  Falls back to the tap-buffer slice (single reply) if the JSONL log
-   *  can't be located (e.g. session just started, sessionId not yet written). */
+   *  Falls back to the tap-buffer slice if the JSONL log can't be located
+   *  (e.g. session just started, sessionId not yet written). */
   async function passthroughText(
     ctx: CommandContext,
     text: string,
@@ -316,7 +351,6 @@ export function createRouter(store: BindingStore) {
     const binding = await store.getBinding(ctx.conversationId)
     if (!binding) { await onReply(textReply('unbound — run /help to see commands')); return }
 
-    // Find the session metadata so we know which JSONL to tail.
     const project = await projectByName(binding.project)
     const sessions = project ? await listSessions(project) : []
     const session = sessions.find(s => s.name === binding.session)
@@ -338,30 +372,50 @@ export function createRouter(store: BindingStore) {
       return
     }
 
-    if (!turn) {
-      // No JSONL available (e.g. session not yet emitted any events). Fall
-      // back to tap-based capture so the user still gets *something*.
-      await passthroughViaTap(ctx, binding.session, onReply)
-      return
-    }
-
-    let sentAny = false
-    for await (const ev of streamAgentReply(turn, {
-      timeoutMs: PASSTHROUGH_TIMEOUT_MS,
-      onAskUserQuestion: async () => sendEscape(binding.session),
-    })) {
-      if (ev.kind === 'timeout') {
-        await onReply(textReply(sentAny
-          ? '[turn may still be in progress — /last for raw buffer]'
-          : '(no answer within 2 min — try /last for the raw pane buffer)'))
+    // Fire-and-forget reply streaming under a per-session lock.
+    const sessionHandle = binding.session
+    queueSessionStream(sessionHandle, async () => {
+      if (!turn) {
+        await passthroughViaTap(ctx, sessionHandle, onReply)
         return
       }
-      if (!ev.text) continue
-      await onReply(textReply(ev.text))
-      sentAny = true
-    }
 
-    if (!sentAny) await onReply(textReply('(no answer captured)'))
+      // Re-stat the JSONL at lock-acquire time. If a prior queued stream
+      // already consumed earlier content, the file is now larger than
+      // turn.startSize — start watching from `now` so we don't replay it.
+      // (When this is the only/first stream, currentSize === turn.startSize
+      //  and the agent's response will arrive in subsequent polls.)
+      let startSize = turn.startSize
+      try {
+        const stats = await stat(turn.jsonlPath)
+        if (stats.size > startSize) startSize = stats.size
+      } catch { /* keep original */ }
+      const adjustedTurn = startSize === turn.startSize ? turn : { ...turn, startSize }
+
+      let sentAny = false
+      for await (const ev of streamAgentReply(adjustedTurn, {
+        timeoutMs: PASSTHROUGH_TIMEOUT_MS,
+        onAskUserQuestion: async () => sendEscape(sessionHandle),
+      })) {
+        if (ev.kind === 'timeout') {
+          await onReply(textReply(sentAny
+            ? '⌛ [turn may still be in progress — /last for raw buffer]'
+            : '⌛ (no answer within 60s — try /last for the raw pane buffer)'))
+          return
+        }
+        if (!ev.text) continue
+        // Visual prefix so the user can tell progress from completion at a
+        // glance. AskUserQuestion already prefixes itself with 🤔 in
+        // formatQuestion (agent-output.ts), so we don't double-mark it.
+        const prefix = ev.kind === 'final' ? '✅ '
+          : ev.kind === 'interim' ? '⏳ '
+          : ''
+        await onReply(textReply(`${prefix}${ev.text}`))
+        sentAny = true
+      }
+
+      if (!sentAny) await onReply(textReply('(no answer captured)'))
+    })
   }
 
   /** Legacy tap-based passthrough — only used when the JSONL log can't be
@@ -393,14 +447,24 @@ export function createRouter(store: BindingStore) {
     await onReply(textReply(reply))
   }
 
+  async function handleHelp(ctx: CommandContext): Promise<string> {
+    const binding = await store.getBinding(ctx.conversationId)
+    const current = currentProjectByConversation.get(ctx.conversationId)
+    let status: string
+    if (binding) status = `bound: ${binding.project} / ${binding.session}`
+    else if (current) status = `current project: ${current} (no session bound — /s then /use s <n>)`
+    else status = '(no project selected — start with /p)'
+    return [status, '', HELP_TEXT].join('\n')
+  }
+
   async function dispatch(ctx: CommandContext, command: ParsedCommand): Promise<ChannelReply> {
     switch (command.name) {
       case 'help':
       case 'h':
-        return textReply(HELP_TEXT)
+        return textReply(await handleHelp(ctx))
       case 'projects':
       case 'p':
-        return textReply(await handleProjects())
+        return textReply(await handleProjects(ctx))
       case 'use':
         return textReply(await handleUse(ctx, command.args))
       case 'sessions':
@@ -454,6 +518,8 @@ export function createRouter(store: BindingStore) {
     handleMessage,
     dispatch,
     parseCommand,
+    isReadOnlyCommand: (name: string) =>
+      KNOWN_COMMANDS.has(name) && !STATE_CHANGING_COMMANDS.has(name),
     getCurrentProject,
     _resetState,
   }
