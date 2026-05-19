@@ -77,6 +77,8 @@ A ping/pong heartbeat runs every `WS_PING_INTERVAL_MS` (30s). Each cycle marks a
 
 On `SIGTERM`, `SIGINT`, `SIGHUP`, and normal `exit`, the server stops background reconcilers/watchers, destroys all active tmux attach PTYs, and terminates WebSocket connections before exiting. This prevents orphaned `tmux attach-session` client processes from accumulating `/dev/ttys*` devices toward the macOS 511 PTY limit across restarts. Tmux sessions themselves are unaffected — only the attach clients are closed.
 
+Signal handlers route through `shutdownGracefully()` which **awaits** `shutdownWhatsApp()` before `process.exit(0)`. Without this await, tsx-watch reloads would orphan the Puppeteer Chrome holding the WhatsApp LocalAuth `userDataDir`, leaving a stale `SingletonLock` that blocks the next `initWhatsApp()`. Boot-time recovery for this case is also implemented (see `whatsapp/index.ts`'s `cleanupStaleChromeSingleton()`).
+
 ## UI Serving
 
 When the built UI exists at `ui/dist/`, the server serves it with:

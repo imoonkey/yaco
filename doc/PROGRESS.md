@@ -1,3 +1,24 @@
+## 2026-05-18: Channel passthrough — non-blocking streaming, active-context markers, WhatsApp lifecycle fixes
+
+**What changed:**
+- `server/src/lib/channels/router.ts`: split passthrough into await'd SEND + fire-and-forget reply streaming behind a per-session lock (`sessionStreamLock: Map<handle, Promise>`). Stream callback **re-stat's** the JSONL on lock acquire and bumps `startSize` to current file size — back-to-back same-session sends no longer replay the prior turn's content. Event prefixes added (`interim` → `⏳ `, `final` → `✅ `, `timeout` → `⌛ `; `question` keeps its own `🤔`). `/help` prepends `bound: <project> / <session>` status line; `/projects` and `/sessions` mark current/bound entries with `*`. New `STATE_CHANGING_COMMANDS` set + `isReadOnlyCommand(name)` API so channels can route read-only commands around their queue. Help text aligned: `/h`/`/f` aliases documented, `/new <claude|codex> [name]` documents optional name, `<path>` → `<relative-path>`, stale "2 min" timeout text → "60s" (matches `PASSTHROUGH_TIMEOUT_MS = 60_000`).
+- `server/src/lib/whatsapp/index.ts`: read-only commands bypass `serialize(conversationId)` for instant response while a passthrough is in flight. Shared `sendReply` closure extracted (captures `msg` so WhatsApp's native quoted-reply still works on fire-and-forget streamed replies). `initWhatsApp()` retries when `state.phase ∈ {failed, disconnected}` instead of short-circuiting on the stale `client` ref. New `cleanupStaleChromeSingleton()` runs before every Client construction: walks the LocalAuth profile's `SingletonLock`, parses `<host>-<pid>`, kills the PID if alive AND `/proc/<pid>/cmdline` references our profile dir, then unlinks all `Singleton{Lock,Socket,Cookie}` symlinks. Recovers from prior unclean exits.
+- `server/src/index.ts`: signal handlers (`SIGTERM`/`SIGINT`/`SIGHUP`) now route through `shutdownGracefully()` which **awaits** `shutdownWhatsApp()` before `process.exit(0)`. Without this, tsx-watch reloads orphaned the Puppeteer Chrome holding the WhatsApp LocalAuth `userDataDir`, leaving a stale `SingletonLock` that blocked subsequent `initWhatsApp()`.
+- New `server/src/lib/__tests__/channel-streaming.test.ts`: integration test drives `passthroughText` end-to-end against a synthetic JSONL fixture (mocks `os.homedir` + `sendToSession`). Verifies (1) multi-event `⏳`/`✅` streaming with SEND returning in <2s, (2) two back-to-back same-session sends serialized by per-session lock with NO replay of the prior turn's content. The second test caught the missing re-stat behavior on the first run.
+- `server/src/lib/__tests__/wechat-router.test.ts`: `/projects` assertion switched from `toContain('1. alpha')` to `toMatch(/1\.\s+alpha/)` to accept the new aligned-with-marker output.
+- Docs: `doc/main/backend/libs.md` (router + whatsapp adapter sections), `doc/main/backend/server.md` (Graceful Shutdown § now mentions the WhatsApp await).
+
+**Why:**
+- User sent `/project` (typo of `/projects`) which fell through to passthrough → blocked 60s waiting for the agent. Subsequent `/projects`/`/p` were stuck behind it in the `serialize(conversationId)` FIFO. Bypassing for read-only commands + moving the wait out of the queue fixes both symptoms.
+- During the fix, tsx-watch reloads started failing with `The browser is already running for /home/qiguo/.workflow/channels/whatsapp/session/session` — Puppeteer's Chrome was being orphaned because the SIGTERM handler was `void shutdownWhatsApp()` then immediately `process.exit(0)`. Awaiting fixes the common case; boot-time `SingletonLock` sweep + `initWhatsApp` retry handle the recovery path for prior unclean exits.
+- Without the re-stat inside the per-session lock callback, the lock prevented concurrent reads but two queued streams both held `startSize = 0` from `startTurn()` — stream B started reading from byte 0 and re-emitted stream A's already-consumed content as its own. Re-statting at lock acquire is the correct fix; the QA test made the bug visible.
+
+**Key files:** `server/src/lib/channels/router.ts`, `server/src/lib/whatsapp/index.ts`, `server/src/index.ts`, `server/src/lib/__tests__/channel-streaming.test.ts`, `server/src/lib/__tests__/wechat-router.test.ts`, `doc/main/backend/libs.md`, `doc/main/backend/server.md`.
+**Verification:** `cd server && npm test` → 309/310 pass (1 pre-existing unrelated `autocomplete.test.ts` env-leak flake on missing `GROQ_API_KEY`). New `channel-streaming.test.ts` passes both cases. Manual: killed orphan Chrome + cleaned singletons, POST `/api/whatsapp/login` re-init succeeded in ~4s and bound chat preserved.
+**Commit:** `f3b4aec`.
+
+---
+
 ## 2026-05-18: Unified bell badge with sidebar via watermark-derived counts
 
 **What changed:**
