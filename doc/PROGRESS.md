@@ -1,3 +1,22 @@
+## 2026-05-19: Image preview adds fit-height + keyboard shortcuts
+
+**What changed:**
+- `ui/src/workspace/ImagePreview.tsx`: added a "Fit height" button (`MoveVertical` icon) alongside the existing fit-width (icon switched to `MoveHorizontal` for visual symmetry). New `fitMode: 'width' | 'height'` state — in height mode the image renders with `height:100%, width:auto` inside a flex-centered scroll container, so wide images scroll horizontally instead of being squashed vertically. Zooming exits fit-height back into scale mode. Toolbar shows `Fit` instead of a percentage while in fit-height mode.
+- Keyboard shortcuts (when preview has focus): `W` fit width, `H` fit height, `+`/`=` zoom in, `-`/`_` zoom out. Modifier-key combos are ignored so editor shortcuts aren't shadowed. Preview container is `tabIndex={0}` and auto-focuses on mount so shortcuts work immediately.
+- Tooltips updated to include the shortcut hint (e.g. `Fit width (W)`); `aria-pressed` reflects the active fit mode.
+- `ui/src/workspace/__tests__/ImagePreview.test.tsx`: extended from 2 → 6 cases covering fit-height entry/exit, the `Fit` indicator, and `W`/`H`/`+`/`-` shortcut handling (including the modifier-key guard).
+
+**Why:**
+- Tall portrait screenshots opened in fit-width forced vertical scrolling to see the whole image. A fit-height mode lets the whole image fit on screen at once, with horizontal scroll only when needed.
+
+**Key files:** `ui/src/workspace/ImagePreview.tsx`, `ui/src/workspace/__tests__/ImagePreview.test.tsx`, `doc/main/frontend/components.md`.
+**Verification:** `cd ui && npx vitest run src/workspace/__tests__/ImagePreview.test.tsx` → 6/6 pass. `cd ui && npx eslint src/workspace/ImagePreview.tsx src/workspace/__tests__/ImagePreview.test.tsx` → clean.
+**Commit:** pending.
+**Next:** —
+**Blockers:** None.
+
+---
+
 ## 2026-05-18: Channel passthrough — non-blocking streaming, active-context markers, WhatsApp lifecycle fixes
 
 **What changed:**
