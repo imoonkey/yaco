@@ -11,7 +11,7 @@
 
 **Key files:** `ui/src/workspace/ImagePreview.tsx`, `ui/src/workspace/__tests__/ImagePreview.test.tsx`, `doc/main/frontend/components.md`.
 **Verification:** `cd ui && npx vitest run src/workspace/__tests__/ImagePreview.test.tsx` → 6/6 pass. `cd ui && npx eslint src/workspace/ImagePreview.tsx src/workspace/__tests__/ImagePreview.test.tsx` → clean.
-**Commit:** pending.
+**Commit:** `8e0d9bb`.
 **Next:** —
 **Blockers:** None.
 
