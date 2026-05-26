@@ -9,7 +9,7 @@
 
 **Key files:** `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/index.css`, `doc/main/ui/workspace/editor-and-preview.md`, `doc/main/ui/design-system.md`.
 **Verification:** `cd ui && npx tsc --noEmit` clean. Playwright headless QA against `androidagent/README.md` — all 10 images load (`naturalWidth > 0`, `complete: true`), 4 shield badges render on one row, 4 phone screenshots render side-by-side in `<p align="center">`. External `img.shields.io` URLs unaffected.
-**Commit:** _pending_.
+**Commit:** `8611e39`.
 **Next:** —
 **Blockers:** None.
 
