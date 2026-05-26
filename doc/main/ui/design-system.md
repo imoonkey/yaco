@@ -116,6 +116,7 @@ Folders containing changed files show a yellow dot indicator.
 - Syntax tokens colored to match Solarized scheme
 - Tables wrapped in `.table-scroll` div (`overflow-x: auto`) for horizontal scrolling when content exceeds container width
 - Blockquotes, images styled for readability
+- Images and videos forced to `display: inline-block; vertical-align: middle;` to override Tailwind preflight's `display: block` — without this, READMEs that pack multiple `<img>` tags inside a single `<p align="center">` (badge rows, screenshot grids) wrap each image onto its own line. `max-width: 100%; max-height: 100%;` keeps oversized assets contained.
 
 ## Git Diff Gutter
 

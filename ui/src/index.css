@@ -575,6 +575,8 @@ body {
 
 .markdown-preview img,
 .markdown-preview video {
+  display: inline-block;
+  vertical-align: middle;
   max-width: 100%;
   max-height: 100%;
 }

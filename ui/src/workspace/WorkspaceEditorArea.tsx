@@ -78,6 +78,8 @@ function scrollToLine(container: HTMLDivElement, anchors: CachedAnchor[], viewpo
 export function MarkdownPreview({
   content,
   filePath,
+  projectName,
+  worktree,
   viewportLine,
   onViewportLine,
   onActivateLine,
@@ -87,6 +89,8 @@ export function MarkdownPreview({
 }: {
   content: string
   filePath?: string
+  projectName?: string
+  worktree?: string | null
   viewportLine: number
   onViewportLine?: (line: number) => void
   onActivateLine?: (line: number) => void
@@ -159,6 +163,20 @@ export function MarkdownPreview({
 
     el.innerHTML = html
     appliedHtmlRef.current = html
+
+    // Rewrite relative <img src> to the server's raw-file route so images
+    // embedded in markdown resolve relative to the markdown file, not the
+    // dev server origin. Absolute URLs (http:, https:, data:, blob:, //…)
+    // pass through unchanged.
+    if (filePath && projectName) {
+      el.querySelectorAll<HTMLImageElement>('img[src]').forEach((img) => {
+        const src = img.getAttribute('src')
+        if (!src) return
+        if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('//')) return
+        img.setAttribute('src', rawFileUrl(projectName, resolveRelativePath(filePath, src), worktree))
+      })
+    }
+
     anchorsRef.current = buildAnchorCache(el)
 
     // Restore scroll positions on the new <pre> nodes
@@ -525,6 +543,8 @@ export function WorkspaceEditorArea({
     <MarkdownPreview
       content={activeFileContent ?? ''}
       filePath={activeTab ?? undefined}
+      projectName={projectName}
+      worktree={worktree}
       viewportLine={localViewportLine}
       onViewportLine={handlePreviewViewportLine}
       onActivateLine={onActivateLine}

@@ -1,3 +1,20 @@
+## 2026-05-25: Markdown preview — resolve relative image paths, fix layout
+
+**What changed:**
+- `ui/src/workspace/WorkspaceEditorArea.tsx`: `MarkdownPreview` now accepts `projectName` and `worktree` props. In the `useLayoutEffect` that sets `innerHTML`, after mount and before `buildAnchorCache`, walks every `<img[src]>` and rewrites non-scheme srcs (anything not matching `^[a-z][a-z0-9+.-]*:` and not starting with `//`) via `rawFileUrl(projectName, resolveRelativePath(filePath, src), worktree)`. Mirrors the existing `<a href>` rewriting so READMEs with `<img src="doc/screenshots/foo.png" />` (or markdown `![]()` syntax) actually load instead of 404'ing against the dev-server origin. Call site in the same file threads the new props through.
+- `ui/src/index.css`: `.markdown-preview img, .markdown-preview video` now sets `display: inline-block; vertical-align: middle;` to override Tailwind preflight's `display: block`. Without this, READMEs that pack multiple `<img>` into a `<p align="center">` (shield badge rows, side-by-side phone-screenshot grids) wrap each image onto its own line.
+
+**Why:**
+- Found while previewing `androidagent/README.md` — every relative-path image (logo, hero banner, four phone screenshots) showed as a broken icon because the browser was resolving them against `localhost:5173/`. After the src fix, layout was still wrong: 4 shield badges stacked vertically instead of inline-centering. Tailwind's preflight `img { display: block }` was the culprit.
+
+**Key files:** `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/index.css`, `doc/main/ui/workspace/editor-and-preview.md`, `doc/main/ui/design-system.md`.
+**Verification:** `cd ui && npx tsc --noEmit` clean. Playwright headless QA against `androidagent/README.md` — all 10 images load (`naturalWidth > 0`, `complete: true`), 4 shield badges render on one row, 4 phone screenshots render side-by-side in `<p align="center">`. External `img.shields.io` URLs unaffected.
+**Commit:** _pending_.
+**Next:** —
+**Blockers:** None.
+
+---
+
 ## 2026-05-19: Image preview adds fit-height + keyboard shortcuts
 
 **What changed:**

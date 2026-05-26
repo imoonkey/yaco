@@ -171,6 +171,8 @@ Clicking links in the preview intercepts navigation to keep the SPA intact:
 
 `resolveRelativePath(currentFilePath, href)` handles `./`, `../`, and bare relative segments. The `MarkdownPreview` component receives `filePath`, `onNavigateToFile`, and `onNavigateDir` props; click interception is handled via a delegated `onClick` on the preview container that walks up to the nearest `<a>` element.
 
+**Image src rewriting** — relative `<img src>` URLs are rewritten in the same `useLayoutEffect` that sets `innerHTML` (right after the HTML mounts, before `buildAnchorCache`). Each `<img[src]>` whose value lacks a scheme (`http:`, `https:`, `data:`, `blob:`, `//…`) is resolved against `filePath` via `resolveRelativePath` and pointed at the server's `rawFileUrl(projectName, resolvedPath, worktree)` endpoint (`/api/files/<project>/raw?path=…&worktree=…`). This mirrors the `<a>` handling so READMEs with `<img src="doc/screenshots/foo.png" />` render correctly in preview. `MarkdownPreview` therefore takes `projectName` and `worktree` props in addition to `filePath`. Markdown image syntax (`![alt](path)`) is rewritten by the same pass since `marked` emits a plain `<img src>`.
+
 -> See: `ui/src/workspace/markdown.ts` (`resolveRelativePath`, `slugify`, `renderer.heading`), `ui/src/workspace/WorkspaceEditorArea.tsx` (click handler + props), `ui/src/workspace/WorkspaceScreen.tsx` (wiring)
 
 ## Editor Features
