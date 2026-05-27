@@ -13,7 +13,7 @@
 
 **Key files:** `server/src/lib/yacoHome.ts` (new), `server/test/yacoHome.test.ts` (new), `multmux/src/yacoHome.ts` (new), `multmux/test/yacoHome.test.ts` (new), `agent-config/global/lib/yaco_home.py` (new), `agent-config/global/lib/test_yaco_home.py` (new). Server lib sweep across `lib/{projects,ui-state,notifications-store,terminal,migrate-channels,project-watcher,channels/{auth,state},wechat/login-flow,whatsapp/index,multmux,constants}.ts`. Test updates across `server/src/{lib,routes}/__tests__/`. Multmux: `src/{hooks,state}.ts`, `package.json` test list. Docs: workflow `doc/main/**` + `CLAUDE.md`, multmux `doc/main/**`.
 **Verification:** `cd server && npm test` → 326 pass / 1 fail (pre-existing `autocomplete.test.ts` env-leak — unaffected by this work). `cd ../multmux && npm test` → 214 pass / 0 fail (was 208 + 6 new). `cd ../agent-config/global/lib && python3 -m unittest test_yaco_home -v` → 10 pass / 0 fail. Acceptance `rg "\.workflow|\.multmux/sessions"` across `server/src`, `../multmux/src`, `../agent-config/global` (excluding tests + node_modules) returns only documented legacy/forward references.
-**Commit:** _(this commit)_.
+**Commit:** `c94b893` (workflow), `4dacd8f` (multmux), `72bdeb7` (agent-config).
 **Next:** `yc-multmux-state-root` — flip `MULTMUX_SESSIONS_DIR` (workflow) and `SESSIONS_DIR` (multmux) to consume `sessionsDir()` and migrate live data.
 **Blockers:** None.
 
