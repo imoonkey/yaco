@@ -20,6 +20,15 @@ export function projectsFile(): string {
   return join(getYacoHome(), 'projects.json')
 }
 
+/** ${YACO_HOME}/sessions — multmux agent session-state directory.
+ *
+ *  Workflow reads this dir to project multmux state files into the session
+ *  list and to drive SSE invalidation. Multmux owns writes. The resolver
+ *  mirrors `multmux/src/yacoHome.ts#sessionsDir()` — keep them aligned. */
+export function sessionsDir(): string {
+  return join(getYacoHome(), 'sessions')
+}
+
 /** ${YACO_HOME}/ui-state — notification inbox, pinned sessions, watermarks */
 export function uiStateDir(): string {
   return join(getYacoHome(), 'ui-state')

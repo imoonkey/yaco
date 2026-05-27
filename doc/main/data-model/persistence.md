@@ -20,11 +20,12 @@ On-disk and in-browser storage formats for the workflow system.
 
 ### `${YACO_HOME:-~/.yaco}/` layout
 
-All workflow-owned runtime state lives under the YACO runtime root. The root is resolved by `server/src/lib/yacoHome.ts` (`getYacoHome()`): honors `process.env.YACO_HOME` verbatim, otherwise defaults to `~/.yaco`. (Multmux's agent session-state directory is currently still rooted at `~/.multmux/sessions/`; that relocation is yc-multmux-state-root's scope, with a resolver already exposed in `multmux/src/yacoHome.ts`.)
+All workflow-owned runtime state lives under the YACO runtime root. The root is resolved by `server/src/lib/yacoHome.ts` (`getYacoHome()`): honors `process.env.YACO_HOME` verbatim, otherwise defaults to `~/.yaco`. The multmux agent session-state directory is rooted here too at `${YACO_HOME:-~/.yaco}/sessions/`, resolved via `sessionsDir()` in both `server/src/lib/yacoHome.ts` and `multmux/src/yacoHome.ts`. Multmux additionally honors `MULTMUX_STATE_DIR` as an explicit override on its CLI side (test/escape hatch); workflow tracks the YACO default only.
 
 ```
 ${YACO_HOME:-~/.yaco}/
   projects.json              # project registry
+  sessions/                  # multmux agent session state: <handle>.json
   shell-sessions/            # workflow-managed tmux shell sessions: <id>.json
   ui-state/                  # cross-device shared UI state
     notifications.json       # inbox + read flags (NotificationItem[])

@@ -56,10 +56,10 @@ Project registry management. Reads/writes `${YACO_HOME:-~/.yaco}/projects.json` 
 
 Resolves the YACO runtime root and the canonical sub-paths under it. `getYacoHome()` returns `process.env.YACO_HOME` verbatim if set, otherwise `~/.yaco`. All workflow-owned runtime state (project registry, ui-state, shell-sessions, channels, projects/<id>/events.jsonl) routes through one of the named helpers so call sites stay consistent.
 
-**Exports**: `getYacoHome()`, `projectsFile()`, `uiStateDir()`, `shellSessionsDir()`, `channelsDir()`, `channelScopeDir(scope)`, `projectEventsFile(projectId)`
+**Exports**: `getYacoHome()`, `projectsFile()`, `sessionsDir()`, `uiStateDir()`, `shellSessionsDir()`, `channelsDir()`, `channelScopeDir(scope)`, `projectEventsFile(projectId)`
 
-- Sibling Python resolver at `agent-config/global/lib/yaco_home.py` for skill scripts; sibling TypeScript resolver at `multmux/src/yacoHome.ts` for multmux's hook/wrapper script paths (and a `sessionsDir()` helper queued for yc-multmux-state-root to consume).
-- The multmux agent session-state directory is **not** yet routed through this helper — `constants.MULTMUX_SESSIONS_DIR` still defaults to `~/.multmux/sessions/`. That switch lands in yc-multmux-state-root.
+- Sibling Python resolver at `agent-config/global/lib/yaco_home.py` for skill scripts; sibling TypeScript resolver at `multmux/src/yacoHome.ts` for multmux's hook/wrapper script paths and its own `sessionsDir()`. The workflow and multmux resolvers must stay aligned because both read the same `${YACO_HOME:-~/.yaco}/sessions/` directory — multmux owns writes, workflow watches.
+- `constants.MULTMUX_SESSIONS_DIR` is computed via `sessionsDir()` at module load. The `MULTMUX_STATE_DIR` env var is intentionally **not** honored on the workflow side — that override exists on the multmux CLI side as a test/escape hatch only; workflow tracks the default root multmux publishes to under normal operation.
 
 ### yacoPaths.ts (~50 lines)
 
@@ -83,7 +83,7 @@ Reads append-only `progress.json` entries across project bundle directories.
 
 ### multmux.ts (~250 lines)
 
-Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files and wraps the `multmux` CLI for session commands.
+Reads multmux session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` state files and wraps the `multmux` CLI for session commands.
 
 **Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `fetchAllSessionsFromCli()`, `queryMultmuxStatus()`, `inferMultmuxProvider()`, `sendToSession()`, `captureSession()`, `startMultmuxSession()`, `closeMultmuxSession()`, `renameMultmuxSession()`
 
@@ -91,7 +91,7 @@ Reads multmux session state from `~/.multmux/sessions/<handle>.json` state files
 - `readAllSessionsFromStateFiles(projects)` reads the global sessions dir once and assigns each session to the most specific matching registered project
 - `fetchAllSessionsFromCli(projects)` calls `multmux status --json --all`, parses the authoritative reconciled snapshot, and maps sessions to projects. Used by the reconciler for correctness-sensitive operations.
 - `queryMultmuxStatus(cwd)` calls `multmux status --json --path <cwd>` for resume preflight checks
-- Primary session source: reads `~/.multmux/sessions/*.json` state files (written by multmux hooks)
+- Primary session source: reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (written by multmux hooks)
 - Status passthrough: `starting | idle | processing` — no normalization (multmux states used as-is)
 - State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — file deletion = session ended
 - `startMultmuxSession(provider, name, cwd, prompt?, resumeId?)` spawns the multmux CLI detached and returns early — as soon as the state file has `pid > 0` (tmux session attachable, ~1-2s). When `resumeId` is present, queries `multmux status --json --path <cwd>` for collision-safe resume preflight.
@@ -147,8 +147,8 @@ Recursive filesystem watcher per project directory.
 
 **Exports**: `startProjectWatchers()`, `stopProjectWatchers()`
 
-- Registers lightweight global watchers first (`${YACO_HOME:-~/.yaco}/projects.json`, `~/.multmux/sessions`), then installs recursive project watchers. This keeps session refreshes reliable when large workspaces consume many inotify slots.
-- Uses `fs.watch` with `recursive: true` for each project directory plus one global watcher on `~/.multmux/sessions` (multmux state root; will move to `${YACO_HOME}/sessions/` in yc-multmux-state-root)
+- Registers lightweight global watchers first (`${YACO_HOME:-~/.yaco}/projects.json`, `${YACO_HOME:-~/.yaco}/sessions`), then installs recursive project watchers. This keeps session refreshes reliable when large workspaces consume many inotify slots.
+- Uses `fs.watch` with `recursive: true` for each project directory plus one global watcher on `${YACO_HOME:-~/.yaco}/sessions` (multmux state root, resolved via `constants.MULTMUX_SESSIONS_DIR` → `yacoHome.sessionsDir()`)
 - Routes project-local filename changes to SSE refresh channels: `worktrees`, `git`, `filetree`
 - `.worktrees/<slug>` top-level changes → `worktrees` channel; deeper `.worktrees/<slug>/**` changes → `filetree` channel (enables live refresh when viewing a worktree)
 - Global multmux session watcher reads `sessionPath` from changed state files and only emits `sessions` refreshes for registered projects whose paths descendant-match

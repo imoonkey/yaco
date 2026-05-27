@@ -1,6 +1,5 @@
 import { execSync } from 'child_process'
-import { homedir } from 'os'
-import { join } from 'path'
+import { sessionsDir } from './yacoHome'
 
 /** Resolved path to the multmux binary (startup-time resolution) */
 export const MULTMUX_PATH = (() => {
@@ -12,10 +11,12 @@ export const MULTMUX_PATH = (() => {
 })()
 
 /** Global multmux session state directory.
- *  NOTE: Defaults to `~/.multmux/sessions` today. The yc-multmux-state-root
- *  follow-up task will relocate this under `${YACO_HOME:-~/.yaco}/sessions/`.
- *  Out of scope for yc-path-shims — leave as the legacy default for now. */
-export const MULTMUX_SESSIONS_DIR = join(homedir(), '.multmux', 'sessions')
+ *  Resolves to `${YACO_HOME:-~/.yaco}/sessions` via the shared YACO resolver
+ *  (see `./yacoHome.ts#sessionsDir`). Multmux owns writes; the workflow server
+ *  reads + watches this directory. The MULTMUX_STATE_DIR override on the
+ *  multmux CLI side is intentionally NOT honored here — workflow should
+ *  observe the same root multmux is publishing to under default operation. */
+export const MULTMUX_SESSIONS_DIR = sessionsDir()
 
 /** Git max buffer for ls-files commands (50 MB) */
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024

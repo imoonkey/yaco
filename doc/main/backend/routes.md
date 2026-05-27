@@ -38,7 +38,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/sessions` | All sessions (multmux + Workflow-managed shell). Optional `?project=<name>` filter. Agent sessions read `~/.multmux/sessions/*.json` (multmux state root; moves to `${YACO_HOME}/sessions/` in yc-multmux-state-root); shell sessions read `${YACO_HOME:-~/.yaco}/shell-sessions/*.json` and verify tmux liveness. Response includes `worktree` field for agent sessions (slug extracted from `sessionPath`) |
+| GET | `/api/sessions` | All sessions (multmux + Workflow-managed shell). Optional `?project=<name>` filter. Agent sessions read `${YACO_HOME:-~/.yaco}/sessions/*.json` (multmux state root); shell sessions read `${YACO_HOME:-~/.yaco}/shell-sessions/*.json` and verify tmux liveness. Response includes `worktree` field for agent sessions (slug extracted from `sessionPath`) |
 | GET | `/api/sessions/history` | Session history (Claude JSONL + Codex SQLite). Required `?project=<name>`. Returns `HistorySession[]` sorted by modified DESC, capped at 200, with live session tagging |
 | POST | `/api/sessions/start` | Start session (`{ provider, name?, cwd, prompt?, resumeId? }`). Project resolved by longest-prefix match (supports worktree cwds). When `resumeId` present: idempotency preflight uses same descendant match, passes `--resume` to multmux. Returns resolved handle (not echoed name) |
 | POST | `/api/sessions/:handle/pause` | Send `/stop` to session |

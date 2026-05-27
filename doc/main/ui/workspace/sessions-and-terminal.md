@@ -43,7 +43,7 @@ Pin state and order are client-side only (not persisted across page reloads).
 ### Summary Resolution
 
 Server resolves summaries on each `GET /api/sessions` poll:
-1. Read `sessionId` and `sessionPath` from `~/.multmux/sessions/*.json` state files
+1. Read `sessionId` and `sessionPath` from `${YACO_HOME:-~/.yaco}/sessions/*.json` state files
 2. If empty, PID fallback:
    - **Claude**: build process tree via `ps`, find descendant of pane PID in `~/.claude/sessions/*.json`
    - **Codex**: run `lsof` on pane PIDs to find open rollout JSONL files, extract session ID from filename
@@ -139,7 +139,7 @@ Before the server creates a tmux shell or starts a new multmux child process, it
 
 ### Session Name Resolution
 
-`attachSession()` reads the global `~/.multmux/sessions/<handle>.json` state file and attaches directly to that tmux session name, because `handle` now is the tmux session name. If the state file is missing, it falls back to the requested `handle`.
+`attachSession()` reads the global `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` state file and attaches directly to that tmux session name, because `handle` now is the tmux session name. If the state file is missing, it falls back to the requested `handle`.
 
 ## Detach vs Kill
 

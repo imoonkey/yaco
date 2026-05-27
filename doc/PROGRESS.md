@@ -1,3 +1,27 @@
+## 2026-05-27: Multmux session-state root moved under YACO (yc-multmux-state-root)
+
+**What changed:**
+- `multmux/src/state.ts`: replaced the module-load constant `SESSIONS_DIR = ~/.multmux/sessions` with a call-time `sessionsRoot()` resolver — `process.env.MULTMUX_STATE_DIR` wins, otherwise `yacoHome.sessionsDir()` (= `${YACO_HOME:-~/.yaco}/sessions`). All call sites (`stateDir`, `statePath`, `ensureStateDir`, `cleanupBreadcrumbs`, `cleanupOrphanBreadcrumbs`, `renameState`, `listStateHandles`) rewired to call the resolver each invocation, so per-test env swaps take effect without a module reload.
+- `multmux/src/hooks.ts`: HOOK_V2_SCRIPT and WRAPPER_V2_SCRIPT shell bodies now compute `sd="${MULTMUX_STATE_DIR:-${YACO_HOME:-$HOME/.yaco}/sessions}"`. Old hardcoded `$HOME/.multmux/sessions/` removed from both scripts.
+- `multmux/src/yacoHome.ts`: dropped the "still defaults to ~/.multmux" forward-reference notes from `getYacoHome()` and `sessionsDir()` JSDoc.
+- `multmux/test/{state,hooks,wrapper,lifecycle-guards}.test.ts`: replaced fakehome `.multmux/sessions` paths with `.yaco/sessions`; `state.test.ts` and `lifecycle-guards.test.ts` now set `MULTMUX_STATE_DIR` to a tmp dir in `beforeAll` (and restore in `afterAll`) so CI runs never touch the real `~/.yaco/sessions`. Added 7 new override/precedence cases across the three suites; `lifecycle-guards.test.ts` replaced its hardcoded `SESSIONS_DIR` constant with a call to `state.ts#stateDir()` so the mocked `sendKeys` / `startOscColorQueryResponder` read from wherever real `writeState` wrote.
+- `workflow/server/src/lib/yacoHome.ts`: added `sessionsDir()` helper (mirrors multmux's).
+- `workflow/server/src/lib/constants.ts`: `MULTMUX_SESSIONS_DIR = sessionsDir()` (resolved at module load). `MULTMUX_STATE_DIR` env override intentionally **not** honored on the workflow side — that's a multmux-CLI-side knob only.
+- `workflow/server/src/lib/multmux.ts`: JSDoc updated to reference the new path.
+- `workflow/server/src/lib/__tests__/{wechat-router,channel-streaming}.test.ts`: state-file fixtures moved from `.multmux/sessions` to `.yaco/sessions` under the mocked `$HOME`.
+- SOTA docs synced: workflow `CLAUDE.md`, `doc/main/README.md`, `doc/main/backend/{libs,server,routes}.md`, `doc/main/data-model/{persistence,api-contracts}.md`, `doc/main/ui/notifications.md`, `doc/main/ui/workspace/sessions-and-terminal.md`, `doc/dev/workflow.md`; multmux `CLAUDE.md`, `doc/main/{architecture,state-contract,lifecycle}.md`. `projects/active/yaco-core/implementation_summary.md` extended.
+
+**Why:**
+- `final/design.md` §Canonical Path Layout + §Multmux State Contract place agent sessions at `~/.yaco/sessions/`. yc-path-shims pre-built the resolver and annotated the two leaf constants (`SESSIONS_DIR`, `MULTMUX_SESSIONS_DIR`) as this task's scope; the flip is mechanical because both repos already had `sessionsDir()` exposed. The state-file vs CLI contract is unchanged — only the storage root moves. `MULTMUX_STATE_DIR` survives as an explicit override knob because multmux tests and edge-case operators still need a way to redirect state without rebinding `HOME`. The call-time resolver (vs module-load constant) is what makes the multmux test suites safely isolate to a tmp dir via `beforeAll`.
+
+**Key files:** `multmux/src/{state,hooks,yacoHome}.ts`, `multmux/test/{state,hooks,wrapper,lifecycle-guards}.test.ts`, `workflow/server/src/lib/{yacoHome,constants,multmux}.ts`, `workflow/server/src/lib/__tests__/{wechat-router,channel-streaming}.test.ts`, workflow `CLAUDE.md` + `doc/{main,dev}/**`, multmux `CLAUDE.md` + `doc/main/**`, `projects/active/yaco-core/implementation_summary.md`.
+**Verification:** `cd multmux && npm test` → 223 pass / 0 fail (was 214; +9 new cases — 3 resolver-precedence, 4 env-override, 2 covering tmp-dir isolation + lifecycle-guards path resolution). `cd workflow/server && npx vitest run` → 326 pass / 1 fail (pre-existing `autocomplete.test.ts` GROQ env-leak, unaffected). Acceptance: `rg "\.multmux/sessions"` across both repos' SOTA docs returns nothing; only legacy/archived references remain in `doc/PROGRESS.md` history entries and `projects/archive/20260321_hooks/**`. No `multmux install-hooks` run, no global binary rebuild, no on-disk migration.
+**Commit:** _pending docs commit_.
+**Next:** `yc-migration-script` — one-shot script that copies any existing `~/.multmux/sessions/*.json` into `~/.yaco/sessions/`, rewrites installed hook/wrapper scripts via `multmux install-hooks`, then deletes the legacy directory. Until that runs, users with running agent sessions on the old multmux binary keep those state files at `~/.multmux/sessions/` and are visible only after they restart their multmux CLI.
+**Blockers:** None.
+
+---
+
 ## 2026-05-27: YACO_HOME path shims across workflow/multmux/agent-config (yc-path-shims)
 
 **What changed:**

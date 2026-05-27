@@ -43,7 +43,7 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE notificatio
    - `startProjectWatchers()` — global session/project watchers, then recursive project watchers
 6. Attach WebSocket server for terminal connections
 
-Runtime watchers intentionally start only after the port bind succeeds. A duplicate `tsx watch` child that loses the `:3001` race exits without installing recursive project watchers, so it cannot consume inotify slots or starve the critical `~/.multmux/sessions` watcher.
+Runtime watchers intentionally start only after the port bind succeeds. A duplicate `tsx watch` child that loses the `:3001` race exits without installing recursive project watchers, so it cannot consume inotify slots or starve the critical `${YACO_HOME:-~/.yaco}/sessions` watcher.
 
 ## WebSocket Terminal
 

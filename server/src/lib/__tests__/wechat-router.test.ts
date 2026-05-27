@@ -18,7 +18,7 @@ homeDir.value = await mkdtemp(join(tmpdir(), 'wechat-router-test-'))
 projectsRoot.value = await mkdtemp(join(tmpdir(), 'wechat-router-projects-'))
 await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
-multmuxDir.value = join(homeDir.value, '.multmux', 'sessions')
+multmuxDir.value = join(homeDir.value, '.yaco', 'sessions')
 await mkdir(multmuxDir.value, { recursive: true })
 
 const projectAPath = join(projectsRoot.value, 'alpha')

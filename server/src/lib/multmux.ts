@@ -27,7 +27,7 @@ export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
 }
 
 /** Raw shape of `<MULTMUX_SESSIONS_DIR>/<handle>.json` state files
- *  (currently `~/.multmux/sessions/`, see constants.ts MULTMUX_SESSIONS_DIR). */
+ *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts MULTMUX_SESSIONS_DIR). */
 export interface MultmuxStateFile {
   handle: string
   provider: 'claude' | 'codex'

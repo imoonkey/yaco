@@ -47,7 +47,7 @@ await writeFile(
 )
 
 // multmux state file describing one claude session
-const multmuxDir = join(homeDir.value, '.multmux', 'sessions')
+const multmuxDir = join(homeDir.value, '.yaco', 'sessions')
 await mkdir(multmuxDir, { recursive: true })
 const SESSION_HANDLE = 'claude-1'
 const SESSION_ID = 'sess-1'
