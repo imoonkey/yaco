@@ -14,7 +14,7 @@
 
 **Key files:** `server/src/routes/workstreams.ts` (deleted), `server/src/lib/scanner.ts`, `server/src/lib/project-watcher.ts`, `server/src/index.ts`, `ui/src/types.ts`, `ui/src/data.ts` (deleted), `projects/active/yaco-core/final/fixtures/workstream-status-mapping.json` (new), `doc/main/**`, `projects/active/yaco-core/implementation_summary.md`.
 **Verification:** `cd server && npm test` → 316/318 pass; the 2 failures (`autocomplete.test.ts` GROQ_API_KEY env-leak, `wechat-pty-tap.test.ts` flaky real-tmux capture) pre-existed and are in files not touched by this change. `rg 'workstream\.json' server/src ui/src` returns no matches; `rg 'workstream\.json' doc/main` only matches lines explicitly framed as legacy/historical/removed.
-**Commit:** _(this commit)_.
+**Commit:** `e0af47d`.
 **Next:** `yc-events-jsonl` — replace per-bundle `progress.json` with `~/.yaco/projects/<id>/events.jsonl`, then `yc-migration-script` will use the fixture above to convert real repos.
 **Blockers:** None.
 
