@@ -1,3 +1,21 @@
+## 2026-05-27: Session history sorting uses embedded Claude timestamps
+
+**What changed:**
+- `server/src/lib/history.ts`: Claude history now reads first/last top-level JSONL `timestamp` values from the existing head/tail partial reads and prefers them for `created` / `modified`; filesystem birth/mtime are fallback only. Tail reads increased to 64KB so the final timestamp is available even when the last entries include large snapshots.
+- `server/src/lib/__tests__/history.test.ts`: added coverage for timestamp-derived Claude created/modified values and for merged Claude/Codex sorting when a Claude file mtime is newer than its embedded session timestamp.
+- Docs updated for the backend history reader and UI History tab ordering behavior.
+
+**Why:**
+- The closepaw path migration mechanically rewrote Claude JSONL files, which changed their mtimes. Workflow previously sorted Claude history by those file mtimes while Codex used SQLite `updated_at`, so the History tab showed a block of artificially-new Claude sessions above Codex history. Embedded JSONL timestamps are the durable source of truth for session chronology.
+
+**Key files:** `server/src/lib/history.ts`, `server/src/lib/__tests__/history.test.ts`, `doc/main/backend/libs.md`, `doc/main/ui/workspace/sessions-and-terminal.md`.
+**Verification:** `cd server && npm test -- history.test.ts` passed (25/25). Restarted Workflow services and verified `GET /api/sessions/history?project=closepaw` returns Codex first with provider counts `{ codex: 80, claude: 120 }`.
+**Commit:** _(this commit)_.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-25: Markdown preview — resolve relative image paths, fix layout
 
 **What changed:**

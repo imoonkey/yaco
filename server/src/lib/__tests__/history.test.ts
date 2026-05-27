@@ -267,6 +267,30 @@ describe('getClaudeHistory', () => {
     expect(result[0]!.summary).toBe('valid line')
   })
 
+  it('uses JSONL timestamps instead of file mtime for created and modified', async () => {
+    const dir = claudeDir(projectPath)
+    mkdirSync(dir, { recursive: true })
+    const filePath = writeJsonl(dir, 'timestamped', [
+      {
+        type: 'user',
+        timestamp: '2026-01-01T10:00:00.000Z',
+        message: { content: 'timestamped work' },
+      },
+      {
+        type: 'assistant',
+        timestamp: '2026-01-01T10:05:00.000Z',
+        message: { content: 'done' },
+      },
+    ])
+    utimesSync(filePath, new Date('2026-05-01T00:00:00.000Z'), new Date('2026-05-01T00:00:00.000Z'))
+
+    const result = await getClaudeHistory(projectPath)
+    expect(result[0]).toMatchObject({
+      created: '2026-01-01T10:00:00.000Z',
+      modified: '2026-01-01T10:05:00.000Z',
+    })
+  })
+
   it('finds sessions when project path has a trailing slash', async () => {
     const pathWithSlash = '/Users/test/project/'
     // Write session files under the canonical (no trailing slash) directory
@@ -438,6 +462,38 @@ describe('getHistory', () => {
         new Date(result[1]!.modified).getTime(),
       )
     }
+  })
+
+  it('sorts by embedded Claude timestamp even when file mtime is newer', async () => {
+    const dir = claudeDir(projectPath)
+    mkdirSync(dir, { recursive: true })
+
+    const claudeFile = writeJsonl(dir, 'claude-older', [
+      {
+        type: 'user',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        message: { content: 'older claude session' },
+      },
+    ])
+    utimesSync(claudeFile, new Date('2026-05-01T00:00:00.000Z'), new Date('2026-05-01T00:00:00.000Z'))
+
+    const codexDir = join(mockHome, '.codex')
+    mkdirSync(codexDir, { recursive: true })
+    writeFileSync(join(codexDir, 'state_5.sqlite'), '')
+    mockDbRows = [
+      {
+        id: 'codex-newer',
+        title: null,
+        first_user_message: 'newer codex session',
+        created_at: 1767312000, // 2026-01-02
+        updated_at: 1767312000,
+        git_branch: null,
+      },
+    ]
+
+    const result = await getHistory(projectPath, [])
+    expect(result[0]!.id).toBe('codex-newer')
+    expect(result[1]!.id).toBe('claude-older')
   })
 
   it('tags live sessions by sessionId', async () => {

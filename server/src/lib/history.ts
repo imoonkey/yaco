@@ -67,8 +67,8 @@ interface ClaudeIndexEntry {
 
 /** Max bytes to read from head of each JSONL for first user message. */
 const HEAD_BYTES = 16384
-/** Max bytes to read from tail of each JSONL for last custom-title. */
-const TAIL_BYTES = 8192
+/** Max bytes to read from tail of each JSONL for last custom-title / timestamp. */
+const TAIL_BYTES = 65536
 
 /** Read Claude session history from JSONL files + optional sessions-index.json.
  *  Optimized: reads only head (summary) + tail (title) of each file. */
@@ -102,6 +102,8 @@ export async function getClaudeHistory(projectPath: string): Promise<HistorySess
 
     let title: string | null = null
     let summary: string | null = null
+    let createdFromLog: string | null = null
+    let modifiedFromLog: string | null = null
     try {
       const fh = await open(filePath, 'r')
       try {
@@ -109,11 +111,15 @@ export async function getClaudeHistory(projectPath: string): Promise<HistorySess
         const headRes = await fh.read(headBuf, 0, Math.min(HEAD_BYTES, size), 0)
         const head = headBuf.toString('utf-8', 0, headRes.bytesRead)
         summary = parseFirstUserMessage(head)
+        createdFromLog = parseFirstTimestamp(head)
+        modifiedFromLog = parseLastTimestamp(head)
 
         if (size > TAIL_BYTES) {
           const tailBuf = Buffer.alloc(TAIL_BYTES)
           const tailRes = await fh.read(tailBuf, 0, TAIL_BYTES, size - TAIL_BYTES)
-          title = parseLastTitle(tailBuf.toString('utf-8', 0, tailRes.bytesRead))
+          const tail = tailBuf.toString('utf-8', 0, tailRes.bytesRead)
+          title = parseLastTitle(tail)
+          modifiedFromLog = parseLastTimestamp(tail) ?? modifiedFromLog
         }
         if (!title) title = parseLastTitle(head)
       } finally {
@@ -126,8 +132,8 @@ export async function getClaudeHistory(projectPath: string): Promise<HistorySess
       provider: 'claude' as const,
       title,
       summary: indexEntry?.summary || summary || '(no prompt)',
-      created: indexEntry?.created || created,
-      modified: indexEntry?.modified || modified,
+      created: indexEntry?.created || createdFromLog || created,
+      modified: indexEntry?.modified || modifiedFromLog || modified,
       messageCount: indexEntry?.messageCount ?? null,
       gitBranch: indexEntry?.gitBranch ?? null,
       liveSessionName: null,
@@ -148,6 +154,36 @@ function parseLastTitle(text: string): string | null {
     } catch { /* partial line at boundary — skip */ }
   }
   return title
+}
+
+function parseEntryTimestamp(line: string): string | null {
+  if (!line.includes('"timestamp"')) return null
+  try {
+    const entry = JSON.parse(line)
+    return typeof entry.timestamp === 'string' && !Number.isNaN(Date.parse(entry.timestamp))
+      ? entry.timestamp
+      : null
+  } catch { return null }
+}
+
+/** Parse the first top-level timestamp from a chunk of JSONL text. */
+function parseFirstTimestamp(text: string): string | null {
+  for (const line of text.split('\n')) {
+    if (!line) continue
+    const timestamp = parseEntryTimestamp(line)
+    if (timestamp) return timestamp
+  }
+  return null
+}
+
+/** Parse the last top-level timestamp from a chunk of JSONL text. */
+function parseLastTimestamp(text: string): string | null {
+  let timestamp: string | null = null
+  for (const line of text.split('\n')) {
+    if (!line) continue
+    timestamp = parseEntryTimestamp(line) ?? timestamp
+  }
+  return timestamp
 }
 
 /** Parse the first user message from head of a JSONL file. */

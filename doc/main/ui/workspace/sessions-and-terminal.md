@@ -56,6 +56,10 @@ Full summary strings are returned (no server-side truncation). The UI truncates 
 
 → See: `server/src/lib/session-summary.ts`
 
+### History Tab
+
+The History tab calls `GET /api/sessions/history?project=<name>` and renders the merged Claude/Codex list returned by the server. The server sorts by `modified` descending and caps the response at 200 entries. Claude entries use embedded top-level JSONL `timestamp` values for created/modified times when present, falling back to file times only for legacy logs; Codex entries use `~/.codex/state_5.sqlite` thread timestamps. This keeps provider ordering stable even after path migrations or bulk JSONL rewrites touch Claude file mtimes.
+
 ### Actions
 
 | Action | Trigger | Behavior |
