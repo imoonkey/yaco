@@ -38,7 +38,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/sessions` | All sessions (multmux + Workflow-managed shell). Optional `?project=<name>` filter. Agent sessions read `~/.multmux/sessions/*.json`; shell sessions read `~/.workflow/shell-sessions/*.json` and verify tmux liveness. Response includes `worktree` field for agent sessions (slug extracted from `sessionPath`) |
+| GET | `/api/sessions` | All sessions (multmux + Workflow-managed shell). Optional `?project=<name>` filter. Agent sessions read `~/.multmux/sessions/*.json` (multmux state root; moves to `${YACO_HOME}/sessions/` in yc-multmux-state-root); shell sessions read `${YACO_HOME:-~/.yaco}/shell-sessions/*.json` and verify tmux liveness. Response includes `worktree` field for agent sessions (slug extracted from `sessionPath`) |
 | GET | `/api/sessions/history` | Session history (Claude JSONL + Codex SQLite). Required `?project=<name>`. Returns `HistorySession[]` sorted by modified DESC, capped at 200, with live session tagging |
 | POST | `/api/sessions/start` | Start session (`{ provider, name?, cwd, prompt?, resumeId? }`). Project resolved by longest-prefix match (supports worktree cwds). When `resumeId` present: idempotency preflight uses same descendant match, passes `--resume` to multmux. Returns resolved handle (not echoed name) |
 | POST | `/api/sessions/:handle/pause` | Send `/stop` to session |
@@ -209,5 +209,5 @@ The bot uses the user's own WhatsApp account via puppeteer-driven WhatsApp Web (
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/whatsapp/status` | Returns `{ enabled, initialized, loggedIn, auth, login: { phase, qrAscii?, error?, boundChat?, ready, … } }`. Phase ∈ `idle`, `awaiting-qr`, `authenticating`, `ready`, `failed`, `disconnected`. |
-| POST | `/api/whatsapp/login` | Idempotent init; first call spawns the puppeteer client (`LocalAuth` persists session to `~/.workflow/whatsapp-session/`, so subsequent boots skip QR). 400 when `WHATSAPP_ENABLED!=1`. |
+| POST | `/api/whatsapp/login` | Idempotent init; first call spawns the puppeteer client (`LocalAuth` persists session to `${YACO_HOME:-~/.yaco}/channels/whatsapp/session/`, so subsequent boots skip QR). 400 when `WHATSAPP_ENABLED!=1`. |
 | POST | `/api/whatsapp/logout` | Destroys the client + wipes the saved session dir + resets state. |

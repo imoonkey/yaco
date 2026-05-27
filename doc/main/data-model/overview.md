@@ -21,7 +21,7 @@ Source-of-truth boundaries for the workflow system's data.
 
 | Data | Owner | Storage | Consumers |
 |------|-------|---------|-----------|
-| Project list | Server | `~/.workflow/projects.json` | Frontend (via API) |
+| Project list | Server | `${YACO_HOME:-~/.yaco}/projects.json` | Frontend (via API) |
 | Task graph | Source artifact | `projects/tasks.json` | Tasks API → Frontend |
 | Task artifact bundles | Source artifact | `projects/active/<bundle>/`, `projects/archive/YYYYMMDD_<bundle>/` | Editor, design skills (opaque doc folders — not parsed by the server) |
 | Progress entries | Filesystem | `projects/active/<bundle>/progress.json` + `projects/progress.json` | Server scanner → Frontend (slated for replacement by `~/.yaco/projects/<id>/events.jsonl` under task `yc-events-jsonl`) |

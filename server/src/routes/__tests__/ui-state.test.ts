@@ -11,7 +11,7 @@ vi.mock('os', async (orig) => {
 })
 
 homeDir.value = await mkdtemp(join(tmpdir(), 'workflow-ui-state-routes-test-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
 const { uiStateRoutes } = await import('../ui-state')
 const notify = await import('../../lib/notify')
@@ -19,7 +19,7 @@ const uiState = await import('../../lib/ui-state')
 
 describe('ui-state routes', () => {
   beforeEach(async () => {
-    await rm(join(homeDir.value, '.workflow', 'ui-state', 'pinned-sessions.json'), { force: true })
+    await rm(join(homeDir.value, '.yaco', 'ui-state', 'pinned-sessions.json'), { force: true })
   })
   afterAll(async () => {
     await rm(homeDir.value, { recursive: true, force: true })

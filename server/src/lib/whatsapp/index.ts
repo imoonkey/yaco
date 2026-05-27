@@ -3,15 +3,15 @@ import type { Message } from 'whatsapp-web.js'
 import { spawnSync } from 'node:child_process'
 import { readlinkSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { createRouter, type ChannelReply } from '../channels/router'
 import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 import { whatsappStore } from './state'
 import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
+import { channelScopeDir } from '../yacoHome'
 
 const { Client, LocalAuth, MessageMedia } = wweb
 
-const SESSION_DIR = join(homedir(), '.workflow', 'channels', 'whatsapp', 'session')
+const SESSION_DIR = join(channelScopeDir('whatsapp'), 'session')
 // LocalAuth nests another "session" directory inside SESSION_DIR for the
 // browser profile (userDataDir).
 const PROFILE_DIR = join(SESSION_DIR, 'session')
@@ -173,7 +173,7 @@ async function handleMessage(msg: Message): Promise<void> {
   if (BOUND_CHAT_JID && conversationId !== BOUND_CHAT_JID) return
 
   // Otherwise: TOFU. authorize() atomically binds the first chat seen
-  // and persists to ~/.workflow/channels/whatsapp/auth.json. Subsequent
+  // and persists to ${YACO_HOME}/channels/whatsapp/auth.json. Subsequent
   // boots restore the binding. Other chats return 'deny' and are silently
   // dropped — your normal contact conversations are protected.
   if (!BOUND_CHAT_JID) {
@@ -181,7 +181,7 @@ async function handleMessage(msg: Message): Promise<void> {
     const decision = await authorize(conversationId)
     if (decision === 'deny') return
     if (!before) {
-      console.log(`[whatsapp] TOFU-bound to chat ${conversationId} (persisted to ~/.workflow/channels/whatsapp/auth.json)`)
+      console.log(`[whatsapp] TOFU-bound to chat ${conversationId} (persisted to \${YACO_HOME}/channels/whatsapp/auth.json)`)
     }
   }
 

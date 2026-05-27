@@ -26,7 +26,8 @@ export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
   return name.toLowerCase().includes('codex') ? 'codex' : 'claude'
 }
 
-/** Raw shape of ~/.multmux/sessions/<handle>.json state files */
+/** Raw shape of `<MULTMUX_SESSIONS_DIR>/<handle>.json` state files
+ *  (currently `~/.multmux/sessions/`, see constants.ts MULTMUX_SESSIONS_DIR). */
 export interface MultmuxStateFile {
   handle: string
   provider: 'claude' | 'codex'
@@ -124,7 +125,8 @@ function resolveProjectForSessionPath(
   return match
 }
 
-/** Read sessions from ~/.multmux/sessions/*.json state files (primary source of truth) */
+/** Read sessions from `<MULTMUX_SESSIONS_DIR>/*.json` state files
+ *  (primary source of truth; see constants.ts MULTMUX_SESSIONS_DIR). */
 export async function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): Promise<MultmuxSession[]> {
   const sessions: MultmuxSession[] = []
 

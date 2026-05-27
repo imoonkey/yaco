@@ -1,13 +1,13 @@
 import { watch, existsSync, type FSWatcher } from 'fs'
 import { readFile, readdir } from 'fs/promises'
 import { join } from 'path'
-import { homedir } from 'os'
 import type { Ignore } from 'ignore'
 import { loadProjects, type Project } from './projects'
 import { emitRefresh } from './notify'
 import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 import { MULTMUX_SESSIONS_DIR } from './constants'
 import { isPathDescendantOrEqual } from './multmux'
+import { projectsFile as yacoProjectsFile } from './yacoHome'
 
 const DEBOUNCE_MS = 200
 
@@ -98,7 +98,7 @@ async function handleGlobalSessionChange(filename: string): Promise<void> {
 }
 
 function watchProjectsFile(): void {
-  const projectsFile = join(homedir(), '.workflow', 'projects.json')
+  const projectsFile = yacoProjectsFile()
   if (existsSync(projectsFile)) {
     try {
       const watcher = watch(projectsFile, () => debouncedEmit('projects'))

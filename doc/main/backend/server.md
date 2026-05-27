@@ -36,7 +36,7 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE notificatio
 3. Register health check (`/api/health`) and UI catch-all (`GET *`)
 4. Start HTTP server on `WORKFLOW_PORT` (default 3001)
 5. After the HTTP server is listening, start runtime services:
-   - `ensureWorkflowDir()` — create `~/.workflow/` if missing
+   - `ensureYacoHome()` — create `${YACO_HOME:-~/.yaco}/` if missing
    - `loadProjects()` — read project registry
    - `startWatching()` — file watchers on `progress.json` files
    - `startSessionReconciler()` — low-frequency session health/drift reconciliation

@@ -2,16 +2,21 @@ import { mkdir, rename } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { channelsDir } from './yacoHome'
 
-/** Legacy → new path pairs for the ~/.workflow/channels/<scope>/ reorg.
- *  Run once at boot, before any channel module reads files. Idempotent. */
-const LEGACY_MOVES: ReadonlyArray<{ from: string[]; to: string[] }> = [
-  { from: ['wechat-qr.txt'],       to: ['channels', 'wechat',   'qr.txt']    },
-  { from: ['wechat-auth.json'],    to: ['channels', 'wechat',   'auth.json']  },
-  { from: ['wechat-state.json'],   to: ['channels', 'wechat',   'state.json'] },
-  { from: ['whatsapp-auth.json'],  to: ['channels', 'whatsapp', 'auth.json']  },
-  { from: ['whatsapp-state.json'], to: ['channels', 'whatsapp', 'state.json'] },
-  { from: ['whatsapp-session'],    to: ['channels', 'whatsapp', 'session']    },
+/** Legacy → new path moves for the channels/<scope>/ reorg.
+ *  Run once at boot, before any channel module reads files. Idempotent.
+ *
+ *  The legacy source is the historical `~/.workflow/` flat layout (pre-channels
+ *  reorg). The destination is the canonical YACO channels root
+ *  (`${YACO_HOME}/channels/<scope>/`). */
+const LEGACY_FILES: ReadonlyArray<{ legacy: string; scope: string; name: string[] }> = [
+  { legacy: 'wechat-qr.txt',       scope: 'wechat',   name: ['qr.txt']     },
+  { legacy: 'wechat-auth.json',    scope: 'wechat',   name: ['auth.json']  },
+  { legacy: 'wechat-state.json',   scope: 'wechat',   name: ['state.json'] },
+  { legacy: 'whatsapp-auth.json',  scope: 'whatsapp', name: ['auth.json']  },
+  { legacy: 'whatsapp-state.json', scope: 'whatsapp', name: ['state.json'] },
+  { legacy: 'whatsapp-session',    scope: 'whatsapp', name: ['session']    },
 ]
 
 /** rename() races we tolerate silently:
@@ -28,16 +33,16 @@ function isBenignRenameRace(err: unknown): boolean {
 }
 
 export async function migrateLegacyChannelPaths(): Promise<void> {
-  const workflowDir = join(homedir(), '.workflow')
-  if (!existsSync(workflowDir)) return
+  const legacyDir = join(homedir(), '.workflow')
+  if (!existsSync(legacyDir)) return
 
-  const channelsDir = join(workflowDir, 'channels')
-  await mkdir(join(channelsDir, 'wechat'),   { recursive: true })
-  await mkdir(join(channelsDir, 'whatsapp'), { recursive: true })
+  const channels = channelsDir()
+  await mkdir(join(channels, 'wechat'),   { recursive: true })
+  await mkdir(join(channels, 'whatsapp'), { recursive: true })
 
-  for (const move of LEGACY_MOVES) {
-    const src = join(workflowDir, ...move.from)
-    const dst = join(workflowDir, ...move.to)
+  for (const move of LEGACY_FILES) {
+    const src = join(legacyDir, move.legacy)
+    const dst = join(channels, move.scope, ...move.name)
     if (!existsSync(src)) continue
     if (existsSync(dst)) continue
     try {

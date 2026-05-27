@@ -11,10 +11,10 @@ vi.mock('os', async (orig) => {
 })
 
 homeDir.value = await mkdtemp(join(tmpdir(), 'workflow-notif-test-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
 const store = await import('../notifications-store')
-const notifFile = join(homeDir.value, '.workflow', 'ui-state', 'notifications.json')
+const notifFile = join(homeDir.value, '.yaco', 'ui-state', 'notifications.json')
 
 function makeItem(id: string, overrides: Partial<{ title: string; message: string; project: string; workstream: string; sessionName: string; timestamp: number }> = {}) {
   return {
@@ -131,7 +131,7 @@ describe('notifications-store', () => {
   })
 
   it('append throws on malformed JSON and does not overwrite the file', async () => {
-    await mkdir(join(homeDir.value, '.workflow', 'ui-state'), { recursive: true })
+    await mkdir(join(homeDir.value, '.yaco', 'ui-state'), { recursive: true })
     const garbage = '{not valid json'
     await writeFile(notifFile, garbage, 'utf-8')
     await expect(store.append(makeItem('a'))).rejects.toThrow()
@@ -139,13 +139,13 @@ describe('notifications-store', () => {
   })
 
   it('list throws on malformed JSON', async () => {
-    await mkdir(join(homeDir.value, '.workflow', 'ui-state'), { recursive: true })
+    await mkdir(join(homeDir.value, '.yaco', 'ui-state'), { recursive: true })
     await writeFile(notifFile, 'not json', 'utf-8')
     await expect(store.list()).rejects.toThrow()
   })
 
   it('throws when file contains non-array JSON', async () => {
-    await mkdir(join(homeDir.value, '.workflow', 'ui-state'), { recursive: true })
+    await mkdir(join(homeDir.value, '.yaco', 'ui-state'), { recursive: true })
     await writeFile(notifFile, '{"foo":1}', 'utf-8')
     await expect(store.list()).rejects.toThrow(/expected array/)
   })

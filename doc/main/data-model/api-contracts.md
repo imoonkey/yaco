@@ -63,7 +63,7 @@ On EventSource reconnect (`open` event), all registered refresh callbacks fire t
 | `.worktrees/<slug>` top-level change | `worktrees` | project-watcher.ts |
 | `.git/` change | `git` | project-watcher.ts |
 | `progress.json` change | `notification` event (client derives `progress` refresh) | watcher.ts → useSSE.ts |
-| Session status change | `sessions` | project-watcher.ts (`~/.multmux/sessions/*.json`, filtered by `sessionPath`), terminal.ts (Workflow shell lifecycle in `~/.workflow/shell-sessions` + tmux), session-reconciler.ts (drift) |
+| Session status change | `sessions` | project-watcher.ts (`~/.multmux/sessions/*.json`, filtered by `sessionPath`), terminal.ts (Workflow shell lifecycle in `${YACO_HOME:-~/.yaco}/shell-sessions` + tmux), session-reconciler.ts (drift) |
 | `projects.json` change | `projects` | project-watcher.ts |
 
 Project-watcher filesystem events (`filetree`, `git`, `projects`) are debounced at 200ms. The `progress.json` watcher fires immediately on change (no debounce).

@@ -36,13 +36,13 @@ vi.mock('../multmux', async (orig) => {
 
 homeDir.value = await mkdtemp(join(tmpdir(), 'channel-stream-home-'))
 projectsRoot.value = await mkdtemp(join(tmpdir(), 'channel-stream-projects-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
 const projectPath = join(projectsRoot.value, 'alpha')
 await mkdir(projectPath, { recursive: true })
 
 await writeFile(
-  join(homeDir.value, '.workflow', 'projects.json'),
+  join(homeDir.value, '.yaco', 'projects.json'),
   JSON.stringify([{ name: 'alpha', path: projectPath }]),
 )
 

@@ -11,7 +11,7 @@ vi.mock('os', async (orig) => {
 })
 
 homeDir.value = await mkdtemp(join(tmpdir(), 'workflow-ui-state-test-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
 const {
   readJson,
@@ -20,7 +20,7 @@ const {
   setPinnedSessions,
 } = await import('../ui-state')
 
-const uiStateDir = join(homeDir.value, '.workflow', 'ui-state')
+const uiStateDir = join(homeDir.value, '.yaco', 'ui-state')
 
 describe('ui-state: generic JSON helpers', () => {
   beforeEach(async () => {

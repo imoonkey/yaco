@@ -1,3 +1,24 @@
+## 2026-05-27: YACO_HOME path shims across workflow/multmux/agent-config (yc-path-shims)
+
+**What changed:**
+- `server/src/lib/yacoHome.ts` (new): `getYacoHome()` returns `process.env.YACO_HOME || ~/.yaco`; named helpers `projectsFile`, `uiStateDir`, `shellSessionsDir`, `channelsDir`, `channelScopeDir(scope)`, `projectEventsFile(id)`. `server/test/yacoHome.test.ts` (new, 10 cases, vitest) covers env override + each helper.
+- Workflow call-site sweep onto helpers: `lib/projects.ts` (renamed `ensureWorkflowDir` → `ensureYacoHome`; `index.ts` caller updated), `lib/ui-state.ts`, `lib/notifications-store.ts`, `lib/terminal.ts`, `lib/channels/{auth,state}.ts`, `lib/wechat/login-flow.ts`, `lib/whatsapp/index.ts`, `lib/project-watcher.ts`. `lib/migrate-channels.ts` rewrote to keep the legacy `~/.workflow/` source but route the destination through `channelsDir()`. Existing tests under `server/src/{lib,routes}/__tests__/` updated to use `.yaco` fixtures.
+- `lib/constants.ts` + `lib/multmux.ts`: `MULTMUX_SESSIONS_DIR` annotated as out of scope (yc-multmux-state-root will flip it via the new `sessionsDir()` resolver multmux now exposes).
+- `multmux/src/yacoHome.ts` (new) + `multmux/src/hooks.ts`: `HOOK_V2_SCRIPT_PATH` and `WRAPPER_V2_SCRIPT_PATH` now derive from the resolver (managed scripts move from `~/.multmux/` to `${YACO_HOME:-~/.yaco}/`). Hook script body still references `$HOME/.multmux/sessions/` because that's the sessions root — out of scope here; `multmux/src/state.ts` SESSIONS_DIR annotated likewise. `multmux/test/yacoHome.test.ts` (new, 6 cases) registered in `package.json` `test:unit`. The resolver also exports `sessionsDir()` so yc-multmux-state-root's flip is one import change away.
+- `../agent-config/global/lib/yaco_home.py` (new) + `test_yaco_home.py` (new, 10 cases, stdlib unittest): symmetric Python resolver for skill scripts, including `sessions_dir()`.
+- Workflow docs synced: `CLAUDE.md`, `doc/main/README.md`, `doc/main/data-model/{persistence,overview,api-contracts}.md`, `doc/main/backend/{libs,server,routes}.md`, `doc/main/frontend/hooks.md`, `doc/main/ui/workspace/sessions-and-terminal.md` now show `${YACO_HOME:-~/.yaco}/…` for all workflow-owned runtime paths and flag `~/.multmux/sessions/` as the yc-multmux-state-root next step. Multmux docs synced: `doc/main/architecture.md`, `doc/main/state-contract.md`, `doc/main/providers.md`. Implementation status updated in `projects/active/yaco-core/implementation_summary.md`.
+
+**Why:**
+- `final/design.md` §Canonical Path Layout puts everything workflow-owned under `~/.yaco/`. Wiring the resolver before any data migration means a future YACO root move (or per-machine override via `YACO_HOME`) is one env var, not a code sweep. Shipping the multmux `sessionsDir()` resolver in the same change keeps yc-multmux-state-root mechanical: flip imports, not derive a new helper. Workflow's `migrate-channels` stays the only place that knows about the historical `~/.workflow/` layout, scoped to a one-shot legacy migration with documented intent.
+
+**Key files:** `server/src/lib/yacoHome.ts` (new), `server/test/yacoHome.test.ts` (new), `multmux/src/yacoHome.ts` (new), `multmux/test/yacoHome.test.ts` (new), `agent-config/global/lib/yaco_home.py` (new), `agent-config/global/lib/test_yaco_home.py` (new). Server lib sweep across `lib/{projects,ui-state,notifications-store,terminal,migrate-channels,project-watcher,channels/{auth,state},wechat/login-flow,whatsapp/index,multmux,constants}.ts`. Test updates across `server/src/{lib,routes}/__tests__/`. Multmux: `src/{hooks,state}.ts`, `package.json` test list. Docs: workflow `doc/main/**` + `CLAUDE.md`, multmux `doc/main/**`.
+**Verification:** `cd server && npm test` → 326 pass / 1 fail (pre-existing `autocomplete.test.ts` env-leak — unaffected by this work). `cd ../multmux && npm test` → 214 pass / 0 fail (was 208 + 6 new). `cd ../agent-config/global/lib && python3 -m unittest test_yaco_home -v` → 10 pass / 0 fail. Acceptance `rg "\.workflow|\.multmux/sessions"` across `server/src`, `../multmux/src`, `../agent-config/global` (excluding tests + node_modules) returns only documented legacy/forward references.
+**Commit:** _(this commit)_.
+**Next:** `yc-multmux-state-root` — flip `MULTMUX_SESSIONS_DIR` (workflow) and `SESSIONS_DIR` (multmux) to consume `sessionsDir()` and migrate live data.
+**Blockers:** None.
+
+---
+
 ## 2026-05-27: Workstream live model removed (yc-workstream-collapse)
 
 **What changed:**

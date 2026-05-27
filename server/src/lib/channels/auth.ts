@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { channelScopeDir } from '../yacoHome'
 
 interface AuthFile {
   boundConversationId: string
@@ -9,9 +9,9 @@ interface AuthFile {
 }
 
 /** Per-channel auth store: env whitelist OR TOFU first-contact bind, persisted
- *  to ~/.workflow/channels/<scope>/auth.json. Atomic check-and-bind. */
+ *  to ${YACO_HOME}/channels/<scope>/auth.json. Atomic check-and-bind. */
 export function createAuthStore(scope: string, whitelistEnvKey: string) {
-  const scopeDir = join(homedir(), '.workflow', 'channels', scope)
+  const scopeDir = channelScopeDir(scope)
   const authFile = join(scopeDir, 'auth.json')
 
   async function ensureDir(): Promise<void> {

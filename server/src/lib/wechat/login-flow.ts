@@ -1,9 +1,9 @@
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
 import { existsSync } from 'node:fs'
 import { login as sdkLogin } from 'weixin-agent-sdk'
 import { initWeChat, isInitialized } from './index'
+import { channelScopeDir } from '../yacoHome'
 
 export type LoginPhase = 'idle' | 'awaiting-qr' | 'awaiting-scan' | 'logged-in' | 'failed'
 
@@ -18,8 +18,7 @@ export interface LoginState {
   updatedAt?: string
 }
 
-const WORKFLOW_DIR = join(homedir(), '.workflow')
-const QR_DIR = join(WORKFLOW_DIR, 'channels', 'wechat')
+const QR_DIR = channelScopeDir('wechat')
 const QR_FILE = join(QR_DIR, 'qr.txt')
 
 let state: LoginState = { phase: 'idle' }

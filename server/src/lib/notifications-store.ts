@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join, dirname } from 'path'
-import { homedir } from 'os'
+import { uiStateDir } from './yacoHome'
 import type { ProgressType } from './scanner'
 
 export interface NotificationItem {
@@ -17,7 +17,7 @@ export interface NotificationItem {
 }
 
 const MAX_NOTIFICATIONS = 50
-const NOTIFICATIONS_FILE = join(homedir(), '.workflow', 'ui-state', 'notifications.json')
+const NOTIFICATIONS_FILE = join(uiStateDir(), 'notifications.json')
 
 let mutex: Promise<unknown> = Promise.resolve()
 function withLock<T>(fn: () => Promise<T>): Promise<T> {

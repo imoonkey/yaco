@@ -1,28 +1,27 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join } from 'path'
-import { homedir } from 'os'
+import { getYacoHome, projectsFile } from './yacoHome'
 
 export interface Project {
   name: string
   path: string
 }
 
-const WORKFLOW_DIR = join(homedir(), '.workflow')
-const PROJECTS_FILE = join(WORKFLOW_DIR, 'projects.json')
+const PROJECTS_FILE = projectsFile()
 
 function normalizeProject(p: Project): Project {
   return { ...p, path: p.path.replace(/\/+$/, '') || '/' }
 }
 
-export async function ensureWorkflowDir(): Promise<void> {
-  if (!existsSync(WORKFLOW_DIR)) {
-    await mkdir(WORKFLOW_DIR, { recursive: true })
+export async function ensureYacoHome(): Promise<void> {
+  const yacoHome = getYacoHome()
+  if (!existsSync(yacoHome)) {
+    await mkdir(yacoHome, { recursive: true })
   }
 }
 
 export async function loadProjects(): Promise<Project[]> {
-  await ensureWorkflowDir()
+  await ensureYacoHome()
   if (!existsSync(PROJECTS_FILE)) {
     await writeFile(PROJECTS_FILE, '[]', 'utf-8')
     return []
@@ -33,7 +32,7 @@ export async function loadProjects(): Promise<Project[]> {
 }
 
 export async function saveProjects(projects: Project[]): Promise<void> {
-  await ensureWorkflowDir()
+  await ensureYacoHome()
   const normalized = projects.map(normalizeProject)
   await writeFile(PROJECTS_FILE, JSON.stringify(normalized, null, 2), 'utf-8')
 }

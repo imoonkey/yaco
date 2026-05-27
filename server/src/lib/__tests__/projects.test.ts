@@ -10,12 +10,12 @@ vi.mock('os', async (orig) => {
   return { ...actual, homedir: () => homeDir.value, tmpdir: actual.tmpdir }
 })
 
-// Fix homeDir before module import (WORKFLOW_DIR is resolved at load time)
+// Fix homeDir before module import (PROJECTS_FILE is resolved at load time)
 homeDir.value = await mkdtemp(join(tmpdir(), 'workflow-projects-test-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
 const { loadProjects, saveProjects } = await import('../projects')
-const projectsFile = join(homeDir.value, '.workflow', 'projects.json')
+const projectsFile = join(homeDir.value, '.yaco', 'projects.json')
 
 describe('projects: trailing-slash normalization', () => {
   beforeEach(async () => {

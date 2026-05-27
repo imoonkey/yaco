@@ -1,7 +1,7 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { homedir } from 'node:os'
+import { channelScopeDir } from '../yacoHome'
 
 export interface Binding {
   project: string
@@ -11,10 +11,10 @@ export interface Binding {
 
 export type BindingFile = Record<string, Binding>
 
-/** Per-channel binding store backed by ~/.workflow/channels/<scope>/state.json.
+/** Per-channel binding store backed by ${YACO_HOME}/channels/<scope>/state.json.
  *  Module-private cache + serialized writes to avoid concurrent fs races. */
 export function createBindingStore(scope: string) {
-  const scopeDir = join(homedir(), '.workflow', 'channels', scope)
+  const scopeDir = channelScopeDir(scope)
   const stateFile = join(scopeDir, 'state.json')
   let cache: BindingFile | null = null
   let writeChain: Promise<void> = Promise.resolve()

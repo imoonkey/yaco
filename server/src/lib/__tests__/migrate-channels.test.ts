@@ -31,12 +31,14 @@ homeDir.value = await mkdtemp(join(tmpdir(), 'migrate-channels-test-'))
 
 const { migrateLegacyChannelPaths } = await import('../migrate-channels')
 
-const workflowDir = () => join(homeDir.value, '.workflow')
-const legacy = (name: string) => join(workflowDir(), name)
-const newPath = (...parts: string[]) => join(workflowDir(), 'channels', ...parts)
+const legacyDir = () => join(homeDir.value, '.workflow')
+const yacoDir = () => join(homeDir.value, '.yaco')
+const legacy = (name: string) => join(legacyDir(), name)
+const newPath = (...parts: string[]) => join(yacoDir(), 'channels', ...parts)
 
-async function resetWorkflowDir(): Promise<void> {
-  await rm(workflowDir(), { recursive: true, force: true })
+async function resetDirs(): Promise<void> {
+  await rm(legacyDir(), { recursive: true, force: true })
+  await rm(yacoDir(), { recursive: true, force: true })
 }
 
 function makeErr(code: string): NodeJS.ErrnoException {
@@ -48,7 +50,7 @@ function makeErr(code: string): NodeJS.ErrnoException {
 describe('migrateLegacyChannelPaths', () => {
   beforeEach(async () => {
     renameOverride.error = null
-    await resetWorkflowDir()
+    await resetDirs()
   })
 
   afterAll(async () => {
@@ -58,18 +60,18 @@ describe('migrateLegacyChannelPaths', () => {
 
   it('no-op when ~/.workflow does not exist', async () => {
     await migrateLegacyChannelPaths()
-    expect(existsSync(workflowDir())).toBe(false)
+    expect(existsSync(legacyDir())).toBe(false)
   })
 
   it('creates scope dirs even when no legacy files exist', async () => {
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await migrateLegacyChannelPaths()
     expect(existsSync(newPath('wechat'))).toBe(true)
     expect(existsSync(newPath('whatsapp'))).toBe(true)
   })
 
   it('migrates all six legacy paths when present', async () => {
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await writeFile(legacy('wechat-qr.txt'),       'QR-ASCII')
     await writeFile(legacy('wechat-auth.json'),    '{"wa":1}')
     await writeFile(legacy('wechat-state.json'),   '{"ws":2}')
@@ -98,7 +100,7 @@ describe('migrateLegacyChannelPaths', () => {
   it('skips when new path already exists (no-op)', async () => {
     await mkdir(newPath('whatsapp'), { recursive: true })
     await writeFile(newPath('whatsapp', 'auth.json'), '{"new":true}')
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await writeFile(legacy('whatsapp-auth.json'), '{"legacy":true}')
 
     await migrateLegacyChannelPaths()
@@ -111,7 +113,7 @@ describe('migrateLegacyChannelPaths', () => {
     await mkdir(newPath('whatsapp'), { recursive: true })
     await writeFile(newPath('whatsapp', 'state.json'), '{"preexisting":true}')
 
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await writeFile(legacy('wechat-qr.txt'),       'QR')
     await writeFile(legacy('whatsapp-auth.json'),  'AUTH')
     await writeFile(legacy('whatsapp-state.json'), 'OLD-STATE')
@@ -130,7 +132,7 @@ describe('migrateLegacyChannelPaths', () => {
   })
 
   it('idempotent: second call is a no-op', async () => {
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await writeFile(legacy('wechat-qr.txt'), 'QR')
 
     await migrateLegacyChannelPaths()
@@ -140,11 +142,11 @@ describe('migrateLegacyChannelPaths', () => {
     const after2 = await readFile(newPath('wechat', 'qr.txt'), 'utf-8')
 
     expect(after1).toBe(after2)
-    expect(await readdir(workflowDir())).not.toContain('wechat-qr.txt')
+    expect(await readdir(legacyDir())).not.toContain('wechat-qr.txt')
   })
 
   it('propagates non-race rename failures (EACCES)', async () => {
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await writeFile(legacy('wechat-qr.txt'), 'QR')
 
     renameOverride.error = makeErr('EACCES')
@@ -158,7 +160,7 @@ describe('migrateLegacyChannelPaths', () => {
   })
 
   it('swallows ENOENT (source vanished mid-flight) and continues', async () => {
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await writeFile(legacy('wechat-qr.txt'), 'QR')
 
     renameOverride.error = makeErr('ENOENT')
@@ -167,7 +169,7 @@ describe('migrateLegacyChannelPaths', () => {
   })
 
   it('swallows EEXIST (concurrent boot won the race) and continues', async () => {
-    await mkdir(workflowDir(), { recursive: true })
+    await mkdir(legacyDir(), { recursive: true })
     await writeFile(legacy('wechat-qr.txt'), 'QR')
 
     renameOverride.error = makeErr('EEXIST')

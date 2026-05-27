@@ -14,14 +14,16 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
+`server/src/lib/yacoHome.ts`, `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
 
-### `~/.workflow/` layout
+### `${YACO_HOME:-~/.yaco}/` layout
+
+All workflow-owned runtime state lives under the YACO runtime root. The root is resolved by `server/src/lib/yacoHome.ts` (`getYacoHome()`): honors `process.env.YACO_HOME` verbatim, otherwise defaults to `~/.yaco`. (Multmux's agent session-state directory is currently still rooted at `~/.multmux/sessions/`; that relocation is yc-multmux-state-root's scope, with a resolver already exposed in `multmux/src/yacoHome.ts`.)
 
 ```
-~/.workflow/
+${YACO_HOME:-~/.yaco}/
   projects.json              # project registry
   shell-sessions/            # workflow-managed tmux shell sessions: <id>.json
   ui-state/                  # cross-device shared UI state
@@ -36,9 +38,9 @@ On-disk and in-browser storage formats for the workflow system.
       session/               # provider session files (e.g. wweb.js cache)
 ```
 
-On server boot, `server/src/lib/migrate-channels.ts` runs a one-shot, idempotent migration that moves legacy flat `~/.workflow/wechat-*` / `whatsapp-*` files into the `channels/<scope>/` layout. The migration is awaited before `serve()` in `server/src/index.ts` and rethrows on non-benign errors.
+On server boot, `server/src/lib/migrate-channels.ts` runs a one-shot, idempotent migration that moves any legacy flat `~/.workflow/wechat-*` / `~/.workflow/whatsapp-*` files into `${YACO_HOME}/channels/<scope>/`. (Legacy source is the pre-channels-reorg `~/.workflow/` layout; destination is the canonical YACO channels root.) The migration is awaited before `serve()` in `server/src/index.ts` and rethrows on non-benign errors.
 
-### `~/.workflow/projects.json`
+### `${YACO_HOME}/projects.json`
 
 Project registry. Array of `{ name, path }` objects.
 
@@ -48,17 +50,17 @@ Project registry. Array of `{ name, path }` objects.
 ]
 ```
 
-Managed by: `server/src/lib/projects.ts`
+Managed by: `server/src/lib/projects.ts` (path from `yacoHome.projectsFile()`).
 
-### `~/.workflow/ui-state/notifications.json`
+### `${YACO_HOME}/ui-state/notifications.json`
 
 Cross-device notifications inbox. Array of `NotificationItem` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream` (opaque bundle id, see [`projects/active/<bundle>/progress.json`](#projectsactivebundleprogressjson)), `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`.
 
-### `~/.workflow/ui-state/pinned-sessions.json`
+### `${YACO_HOME}/ui-state/pinned-sessions.json`
 
 Per-project ordered list of pinned session names. Shape: `{ [projectName]: string[] }`. Mutex-protected writes via `server/src/lib/ui-state.ts`. Order is preserved across devices.
 
-### `~/.workflow/ui-state/unread-watermarks.json`
+### `${YACO_HOME}/ui-state/unread-watermarks.json`
 
 Per-project and per-session read cutoffs (`{ projectReadAt, sessionReadAt }`, both `Record<string, number>` of millisecond timestamps). A progress entry is "unread" iff its timestamp exceeds `max(projectReadAt[project], sessionReadAt["${project}::${session}"])`. The bell badge and sidebar unread counts both derive from this file (via `useSessionUnreadState`); marking-read actions advance the relevant watermark(s) to `Date.now()`. Mutex-protected writes via `server/src/lib/ui-state.ts`.
 
@@ -153,7 +155,7 @@ Only dirty drafts are persisted. On localStorage quota exceeded, oldest drafts a
 
 State is split between server files (shared across devices via REST + SSE) and `localStorage` (per-device).
 
-**Shared (server, `~/.workflow/ui-state/`):**
+**Shared (server, `${YACO_HOME}/ui-state/`):**
 - Notifications inbox and per-item `read` flag
 - Pinned sessions and their order, keyed by project
 

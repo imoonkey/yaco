@@ -16,7 +16,7 @@ vi.mock('os', async (orig) => {
 
 homeDir.value = await mkdtemp(join(tmpdir(), 'wechat-router-test-'))
 projectsRoot.value = await mkdtemp(join(tmpdir(), 'wechat-router-projects-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
 multmuxDir.value = join(homeDir.value, '.multmux', 'sessions')
 await mkdir(multmuxDir.value, { recursive: true })
@@ -27,7 +27,7 @@ await mkdir(projectAPath, { recursive: true })
 await mkdir(projectBPath, { recursive: true })
 
 await writeFile(
-  join(homeDir.value, '.workflow', 'projects.json'),
+  join(homeDir.value, '.yaco', 'projects.json'),
   JSON.stringify([
     { name: 'alpha', path: projectAPath },
     { name: 'beta', path: projectBPath },

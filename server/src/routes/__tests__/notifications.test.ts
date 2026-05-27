@@ -11,7 +11,7 @@ vi.mock('os', async (orig) => {
 })
 
 homeDir.value = await mkdtemp(join(tmpdir(), 'workflow-notif-routes-test-'))
-await mkdir(join(homeDir.value, '.workflow'), { recursive: true })
+await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
 const { notificationRoutes } = await import('../notifications')
 const store = await import('../../lib/notifications-store')
@@ -32,7 +32,7 @@ function item(id: string) {
 
 describe('notification routes', () => {
   beforeEach(async () => {
-    await rm(join(homeDir.value, '.workflow', 'ui-state', 'notifications.json'), { force: true })
+    await rm(join(homeDir.value, '.yaco', 'ui-state', 'notifications.json'), { force: true })
   })
   afterAll(async () => {
     await rm(homeDir.value, { recursive: true, force: true })

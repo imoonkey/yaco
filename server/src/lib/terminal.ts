@@ -8,6 +8,7 @@ import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import { discoverClipboardEnv } from './clipboard-env'
 import { assertCanSpawn } from './pty-capacity'
+import { shellSessionsDir } from './yacoHome'
 
 export interface ShellSessionSummary {
   name: string
@@ -31,8 +32,6 @@ export interface AttachedSession {
   proc: IPty
 }
 
-const DEFAULT_SHELL_SESSIONS_DIR = join(homedir(), '.workflow', 'shell-sessions')
-
 let onSessionChange: (() => void) | null = null
 
 /** Register a callback invoked on shell session start, close, or process exit */
@@ -41,7 +40,7 @@ export function setShellSessionChangeCallback(cb: () => void): void {
 }
 
 function getShellSessionsDir(): string {
-  return process.env.WORKFLOW_SHELL_SESSIONS_DIR || DEFAULT_SHELL_SESSIONS_DIR
+  return process.env.WORKFLOW_SHELL_SESSIONS_DIR || shellSessionsDir()
 }
 
 function shellStatePath(name: string): string {

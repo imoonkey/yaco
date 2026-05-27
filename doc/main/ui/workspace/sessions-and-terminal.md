@@ -77,7 +77,7 @@ The History tab calls `GET /api/sessions/history?project=<name>` and renders the
 
 - Workspace shows only sessions for the current project (`?project=<name>` filter)
 - Claude/Codex sessions are resolved from multmux
-- Shell sessions are Workflow-managed tmux sessions named `shell-1`, `shell-2`, etc. Ownership state lives in `~/.workflow/shell-sessions/`, so server restart does not drop the shell.
+- Shell sessions are Workflow-managed tmux sessions named `shell-1`, `shell-2`, etc. Ownership state lives in `${YACO_HOME:-~/.yaco}/shell-sessions/`, so server restart does not drop the shell.
 
 ## Terminal
 

@@ -1,8 +1,8 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { homedir } from 'os'
+import { uiStateDir } from './yacoHome'
 
-const UI_STATE_DIR = join(homedir(), '.workflow', 'ui-state')
+const UI_STATE_DIR = uiStateDir()
 
 let writeLock: Promise<void> = Promise.resolve()
 

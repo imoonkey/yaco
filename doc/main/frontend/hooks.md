@@ -173,7 +173,7 @@ Behavior:
 
 ## useSessionUnreadState.ts
 
-Per-session and per-project unread counts derived from `progress.json` entries + server-backed watermarks (`~/.workflow/ui-state/unread-watermarks.json`).
+Per-session and per-project unread counts derived from `progress.json` entries + server-backed watermarks (`${YACO_HOME:-~/.yaco}/ui-state/unread-watermarks.json`).
 
 **Export**: `useSessionUnreadState(progress, allSessions, activeProject, visibilityReport)` → `{ sessionUnreadCounts, projectUnreadCounts, readState, markSessionRead, markAllRead }`
 

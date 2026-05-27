@@ -22,7 +22,7 @@ import { autocompleteRoutes } from './routes/autocomplete.js'
 import { taskRoutes } from './routes/tasks.js'
 import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
-import { ensureWorkflowDir, loadProjects } from './lib/projects.js'
+import { ensureYacoHome, loadProjects } from './lib/projects.js'
 import { migrateLegacyChannelPaths } from './lib/migrate-channels.js'
 import { startWatching, stopWatching } from './lib/watcher.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
@@ -211,7 +211,7 @@ async function startRuntime(): Promise<void> {
 // the new session dir before the legacy one is moved in, corrupting auth state.
 // Top-level await is supported (ES2022 + ESNext modules).
 try {
-  await ensureWorkflowDir()
+  await ensureYacoHome()
   await migrateLegacyChannelPaths()
 } catch (err) {
   console.error('[startup] bootstrap failed:', err)
