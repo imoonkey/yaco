@@ -31,7 +31,7 @@ All file operations validate that the requested path (before symlink resolution)
 
 ## File Write Safety
 
-Write operations use in-process file locks (`withFileLock` in scanner.ts) to prevent race conditions on concurrent read-modify-write cycles against `progress.json` and `workstream.json`.
+Write operations use in-process file locks (`withFileLock` in scanner.ts) to prevent race conditions on concurrent read-modify-write cycles against `progress.json`.
 
 The file content endpoint (`PUT /api/files/:project/content`) validates the target path but does not restrict by file extension.
 

@@ -28,7 +28,6 @@ const IGNORE = [
 function routeChange(filename: string): string | null {
   if (IGNORE.some(re => re.test(filename))) return null
 
-  if (/^doc\/todo\/[^/]+\/workstream\.json$/.test(filename)) return 'workstreams'
   if (/^\.worktrees\/[^/]+$/.test(filename)) return 'worktrees'
   if (/^\.worktrees\//.test(filename)) return 'filetree'
   if (/^\.git\//.test(filename)) return 'git'

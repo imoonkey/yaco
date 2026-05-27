@@ -42,7 +42,7 @@ Hono middleware for project-scoped routes. Resolves `:project` param via `loadPr
 
 **Exports**: `withProject`, `ProjectEnv`
 
-- Applied per-handler (not sub-app) to 15+ project-scoped routes across files.ts, git.ts, tasks.ts, workstreams.ts, progress.ts
+- Applied per-handler (not sub-app) to 15+ project-scoped routes across files.ts, git.ts, tasks.ts, progress.ts
 - Routes that scan ALL projects (GET /) keep their own `loadProjects()` call
 - When `?worktree=slug` is present: validates slug format (lowercase alphanumeric + hyphens via regex), resolves path with `path.resolve()` and verifies it stays under `.worktrees/` (path traversal prevention), then rewrites `project.path` to the worktree checkout. Returns 400 for invalid slugs, 404 if directory doesn't exist.
 
@@ -52,15 +52,25 @@ Project registry management. Reads/writes `~/.workflow/projects.json`. Normalize
 
 **Exports**: `ensureWorkflowDir()`, `loadProjects()`, `saveProjects()`
 
-### scanner.ts (179 lines)
+### yacoPaths.ts (~50 lines)
 
-Core scanning engine for workstream metadata and progress entries across project directories.
+Reads optional repo-local `yaco.toml` `[paths]` overrides and returns the canonical four YACO paths (`tasks`, `active`, `archive`, `worktrees`) with defaults applied. Missing `yaco.toml` means "use defaults" — not "not a YACO project"; project identity lives only in `~/.yaco/projects.json`, so this parser never reads `[project]`. Uses `smol-toml`. Rejects absolute paths and any segment equal to `..` (defense-in-depth path-traversal guard).
 
-**Exports**: `scanWorkstreams()`, `scanProgress()`, `updateWorkstreamStatus()`, `dismissProgress()`, `withFileLock()`
+**Exports**: `readYacoPaths(repoRoot: string): YacoPaths`, `YacoPaths` interface
 
-- Reads `projects/active/*/workstream.json` and `projects/active/*/progress.json` per project
-- `withFileLock()` provides in-process locking for read-modify-write operations on JSON files
-- Handles both workstream-level and project-level (`projects/progress.json`) progress entries
+- Defaults: `tasks = "projects/tasks.json"`, `active = "projects/active"`, `archive = "projects/archive"`, `worktrees = ".worktrees"`
+- Sibling Python parser at `agent-config/global/lib/yaco_paths.py` (stdlib `tomllib`) implements identical semantics for skill scripts
+- Schema: [`projects/active/yaco-core/final/schemas/yaco-toml.schema.json`](../../../projects/active/yaco-core/final/schemas/yaco-toml.schema.json)
+
+### scanner.ts (~110 lines)
+
+Reads append-only `progress.json` entries across project bundle directories.
+
+**Exports**: `scanProgress()`, `dismissProgress()`, `withFileLock()`
+
+- Reads `projects/progress.json` (project-level) and `projects/active/<bundle>/progress.json` per project
+- `withFileLock()` provides in-process locking for read-modify-write operations on progress files
+- Per-bundle progress is keyed on the bundle directory name. The legacy workstream live model (`workstream.json` + its status API) has been removed — `projects/active/<bundle>/` is now an opaque artifact directory (design docs, notes), and task state lives in `projects/tasks.json` only. Per-bundle `progress.json` itself is scheduled to be replaced by `~/.yaco/projects/<id>/events.jsonl` under task `yc-events-jsonl`.
 
 ### multmux.ts (~250 lines)
 
@@ -130,7 +140,7 @@ Recursive filesystem watcher per project directory.
 
 - Registers lightweight global watchers first (`~/.workflow/projects.json`, `~/.multmux/sessions`), then installs recursive project watchers. This keeps session refreshes reliable when large workspaces consume many inotify slots.
 - Uses `fs.watch` with `recursive: true` for each project directory plus one global watcher on `~/.multmux/sessions`
-- Routes project-local filename changes to SSE refresh channels: `workstreams`, `worktrees`, `git`, `filetree`
+- Routes project-local filename changes to SSE refresh channels: `worktrees`, `git`, `filetree`
 - `.worktrees/<slug>` top-level changes → `worktrees` channel; deeper `.worktrees/<slug>/**` changes → `filetree` channel (enables live refresh when viewing a worktree)
 - Global multmux session watcher reads `sessionPath` from changed state files and only emits `sessions` refreshes for registered projects whose paths descendant-match
 - Also watches `~/.workflow/projects.json` for project list changes

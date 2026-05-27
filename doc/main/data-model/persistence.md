@@ -52,7 +52,7 @@ Managed by: `server/src/lib/projects.ts`
 
 ### `~/.workflow/ui-state/notifications.json`
 
-Cross-device notifications inbox. Array of `NotificationItem` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream`, `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`.
+Cross-device notifications inbox. Array of `NotificationItem` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream` (opaque bundle id, see [`projects/active/<bundle>/progress.json`](#projectsactivebundleprogressjson)), `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`.
 
 ### `~/.workflow/ui-state/pinned-sessions.json`
 
@@ -62,27 +62,9 @@ Per-project ordered list of pinned session names. Shape: `{ [projectName]: strin
 
 Per-project and per-session read cutoffs (`{ projectReadAt, sessionReadAt }`, both `Record<string, number>` of millisecond timestamps). A progress entry is "unread" iff its timestamp exceeds `max(projectReadAt[project], sessionReadAt["${project}::${session}"])`. The bell badge and sidebar unread counts both derive from this file (via `useSessionUnreadState`); marking-read actions advance the relevant watermark(s) to `Date.now()`. Mutex-protected writes via `server/src/lib/ui-state.ts`.
 
-### `projects/active/<name>/workstream.json`
+### `projects/active/<bundle>/progress.json`
 
-Per-workstream metadata inside each project repo.
-
-```json
-{
-  "name": "Codebase Health",
-  "status": "active",
-  "doc": "final/design_aligned.md",
-  "checkpoints": [
-    { "label": "Design aligned", "done": true },
-    { "label": "Phase 1-2 implemented", "done": false, "need_human_review": true }
-  ]
-}
-```
-
-Managed by: agents (write), server scanner (read), API (status updates)
-
-### `projects/active/<name>/progress.json`
-
-Append-only notification log per workstream.
+Append-only notification log per bundle directory. The bundle directory is an opaque artifact folder (design docs, notes, scratch files) — Workflow treats it as a doc folder, not a state source. The `<bundle>` segment is used as the `workstream` field on emitted `ProgressEntry` records purely for routing/identifier purposes.
 
 ```json
 [
@@ -100,11 +82,13 @@ Append-only notification log per workstream.
 Types: `info`, `human_review`, `blocked`, `session_idle`
 Status: `active` or `dismissed`
 
+> Historical: an earlier model also stored `projects/active/<bundle>/workstream.json` with a live status/checkpoints schema and exposed it via `/api/workstreams`. That live model has been removed; see [yaco-core design](../../../projects/active/yaco-core/final/design.md) §First-Class Entities and the migration fixture at [`projects/active/yaco-core/final/fixtures/workstream-status-mapping.json`](../../../projects/active/yaco-core/final/fixtures/workstream-status-mapping.json). Per-bundle `progress.json` itself is scheduled to be replaced by `~/.yaco/projects/<id>/events.jsonl` under task `yc-events-jsonl`.
+
 ### `projects/progress.json`
 
-Project-level progress log for entries not tied to a specific workstream (e.g., `session_idle` from Claude Stop hook).
+Project-level progress log for entries not tied to a specific bundle (e.g., `session_idle` from Claude Stop hook).
 
-Same format as workstream-level progress.json.
+Same format as bundle-level progress.json.
 
 Managed by: Claude Stop hook script (`~/.claude/hooks/on-stop.sh`), server scanner (read)
 

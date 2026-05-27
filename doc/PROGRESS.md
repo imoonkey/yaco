@@ -1,3 +1,45 @@
+## 2026-05-27: Workstream live model removed (yc-workstream-collapse)
+
+**What changed:**
+- Deleted `server/src/routes/workstreams.ts` (the `/api/workstreams` GET + status PATCH endpoints) and removed its mount from `server/src/index.ts`. Deleted `ui/src/data.ts` (unused mock dataset).
+- `server/src/lib/scanner.ts`: dropped `WorkstreamStatus`, `Checkpoint`, `WorkstreamData`, `WorkstreamInfo`, `scanWorkstreams`, `updateWorkstreamStatus`, and the per-bundle `workstream.json` reader. Kept `scanProgress`, `dismissProgress`, `withFileLock`, and the `ProgressEntry` types — the `workstream` field there is now an opaque bundle directory id pending replacement by `events.jsonl`.
+- `server/src/lib/project-watcher.ts`: removed the `doc/todo/*/workstream.json` → `workstreams` SSE channel route.
+- `ui/src/types.ts`: removed `WorkstreamStatus`, `Workstream`, `Checkpoint`.
+- Added `projects/active/yaco-core/final/fixtures/workstream-status-mapping.json` — one example per legacy status (`active→ready`, `human_review→blocked/human-review`, `blocked→blocked/external`, `parked→cancelled/[parked]`, `done→done`) plus `doc→task.design` and incomplete-checkpoint→child-task examples. Documents the migration contract; the actual migration script lands later under `yc-migration-script`.
+- Updated `doc/main/{backend/libs.md, backend/routes.md, security.md, data-model/types.md, data-model/overview.md, data-model/persistence.md, data-model/api-contracts.md, frontend/hooks.md}` to frame remaining workstream mentions as historical/migration-only context.
+- Appended a section to `projects/active/yaco-core/implementation_summary.md` covering this work.
+
+**Why:**
+- `final/design.md` §First-Class Entities explicitly removes Workstream from the model ("workstream is removed... [its] previous artifact directory remains only as a task/design bundle") and §Migration step 8 spells out the status mapping into `tasks.json`. Carrying a parallel `workstream.json` model while planning to migrate it was the worst of both worlds — confusing in code review, duplicated state, drift risk. Per design's "What Not To Build" item #8 ("No second workstream model or compatibility shim after migration") the cleanup is a straight delete with no shim. `projects/active/<bundle>/` survives as a plain doc folder for `/design` / `/double-design` artifacts.
+
+**Key files:** `server/src/routes/workstreams.ts` (deleted), `server/src/lib/scanner.ts`, `server/src/lib/project-watcher.ts`, `server/src/index.ts`, `ui/src/types.ts`, `ui/src/data.ts` (deleted), `projects/active/yaco-core/final/fixtures/workstream-status-mapping.json` (new), `doc/main/**`, `projects/active/yaco-core/implementation_summary.md`.
+**Verification:** `cd server && npm test` → 316/318 pass; the 2 failures (`autocomplete.test.ts` GROQ_API_KEY env-leak, `wechat-pty-tap.test.ts` flaky real-tmux capture) pre-existed and are in files not touched by this change. `rg 'workstream\.json' server/src ui/src` returns no matches; `rg 'workstream\.json' doc/main` only matches lines explicitly framed as legacy/historical/removed.
+**Commit:** _(this commit)_.
+**Next:** `yc-events-jsonl` — replace per-bundle `progress.json` with `~/.yaco/projects/<id>/events.jsonl`, then `yc-migration-script` will use the fixture above to convert real repos.
+**Blockers:** None.
+
+---
+
+## 2026-05-27: YACO path-config parser (TS + Python)
+
+**What changed:**
+- `server/src/lib/yacoPaths.ts` (new) + `server/test/yacoPaths.test.ts` (new, 6 cases): `readYacoPaths(repoRoot)` parses optional `yaco.toml [paths]` using `smol-toml` and returns the four canonical YACO paths (`tasks`, `active`, `archive`, `worktrees`) with defaults applied. Missing file returns defaults; `[project]` section is ignored; absolute paths and `..` segments are rejected.
+- `agent-config/global/lib/yaco_paths.py` (new) + `agent-config/global/lib/test_yaco_paths.py` (new, 6 cases, stdlib unittest): symmetric Python parser using stdlib `tomllib` (Python 3.11+) for skill scripts.
+- `server/package.json`: added `smol-toml` dependency (zero-dep, ESM, lightweight).
+- `doc/main/backend/libs.md`: documented `yacoPaths.ts`.
+- `projects/active/yaco-core/implementation_summary.md` (new): tracks what's built vs. the broader `final/design.md`.
+
+**Why:**
+- First leaf piece of the yaco-core plan (see `projects/active/yaco-core/final/{design,SPEC}.md`). The shared helper for `yaco.toml` is needed before the registry move and event stream can be wired up. KISS: one file per language, no abstractions for hypothetical future config. Both parsers were built together so Workflow (TS) and skill scripts (Python) cannot drift.
+
+**Key files:** `server/src/lib/yacoPaths.ts`, `server/test/yacoPaths.test.ts`, `agent-config/global/lib/yaco_paths.py`, `agent-config/global/lib/test_yaco_paths.py`, `doc/main/backend/libs.md`, `projects/active/yaco-core/implementation_summary.md`.
+**Verification:** `cd server && npx vitest run test/yacoPaths.test.ts` → 6/6 pass. `cd ../agent-config/global/lib && python3 -m unittest test_yaco_paths -v` → 6/6 pass.
+**Commit:** _(this commit)_.
+**Next:** Wire the parser into the Workflow server (replace hardcoded `projects/tasks.json` / `projects/active` / `.worktrees` lookups). No caller imports it yet.
+**Blockers:** None.
+
+---
+
 ## 2026-05-27: Session history sorting uses embedded Claude timestamps
 
 **What changed:**

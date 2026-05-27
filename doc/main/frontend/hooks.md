@@ -124,8 +124,6 @@ Behavior:
 
 Standalone async functions (not hooks):
 
-- `dismissProgress(project, workstream, id)`
-- `updateWorkstreamStatus(project, workstreamId, status)`
 - `addProject(name, path)`
 - `reorderProjects(order)`
 - `startSession(provider, projectPath, resumeId?, name?)` — when `resumeId` present, sends to server for resume. Returns resolved handle.

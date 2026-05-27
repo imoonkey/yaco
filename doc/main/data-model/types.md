@@ -28,28 +28,6 @@ interface Project {
 }
 ```
 
-### Workstream
-
-```typescript
-type WorkstreamStatus = 'active' | 'human_review' | 'blocked' | 'parked' | 'done'
-
-interface Checkpoint {
-  label: string
-  done: boolean
-  need_human_review?: boolean
-}
-
-interface Workstream {
-  id: string            // folder name under projects/active/
-  name: string
-  status: WorkstreamStatus
-  project: string       // project name
-  projectPath: string   // project absolute path
-  doc?: string          // optional primary doc filename
-  checkpoints: Checkpoint[]
-}
-```
-
 ### Progress Entry
 
 ```typescript
@@ -64,9 +42,11 @@ interface ProgressEntry {
   timestamp: string       // ISO 8601
   status: ProgressStatus
   project: string
-  workstream: string      // empty string for project-level entries
+  workstream: string      // bundle directory name under projects/active/; empty for project-level entries
 }
 ```
+
+> Note: the legacy `Workstream` / `WorkstreamStatus` / `Checkpoint` types and the `workstream.json` live model have been removed. The `workstream` field on `ProgressEntry` is now an opaque bundle identifier (the directory name under `projects/active/<bundle>/` whose `progress.json` the entry came from). Planning/progress state lives in `projects/tasks.json` (see [yaco-core design](../../../projects/active/yaco-core/final/design.md)).
 
 ### Session
 
@@ -101,11 +81,6 @@ interface GitChange {
 ```
 
 ## Status Transitions
-
-### Workstream Status
-
-- Agents set: `human_review`, `blocked`
-- Human sets: `active`, `parked`, `done`
 
 ### Session Status
 

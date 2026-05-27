@@ -9,7 +9,6 @@ import { dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile } from 'node:fs/promises'
 import { projectRoutes } from './routes/projects.js'
-import { workstreamRoutes } from './routes/workstreams.js'
 import { progressRoutes } from './routes/progress.js'
 import { sessionRoutes } from './routes/sessions.js'
 import { fileRoutes } from './routes/files.js'
@@ -163,7 +162,6 @@ app.use('*', cors({
 }))
 
 app.route('/api/projects', projectRoutes)
-app.route('/api/workstreams', workstreamRoutes)
 app.route('/api/progress', progressRoutes)
 app.route('/api/sessions', sessionRoutes)
 app.route('/api/files', fileRoutes)

@@ -3,31 +3,8 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import type { Project } from './projects'
 
-export type WorkstreamStatus = 'active' | 'human_review' | 'blocked' | 'parked' | 'done'
 export type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
 export type ProgressStatus = 'active' | 'dismissed'
-
-export interface Checkpoint {
-  label: string
-  done: boolean
-  need_human_review?: boolean
-}
-
-export interface WorkstreamData {
-  status: WorkstreamStatus
-  doc?: string
-  checkpoints?: Checkpoint[]
-}
-
-export interface WorkstreamInfo {
-  id: string
-  name: string
-  project: string
-  projectPath: string
-  status: WorkstreamStatus
-  doc?: string
-  checkpoints: Checkpoint[]
-}
 
 export interface ProgressEntry {
   id: string
@@ -58,44 +35,6 @@ export async function withFileLock<T>(path: string, fn: () => Promise<T>): Promi
   } finally {
     resolve!()
   }
-}
-
-/** Scan a single project for workstreams */
-async function scanProject(project: Project): Promise<WorkstreamInfo[]> {
-  const activeDir = join(project.path, 'projects', 'active')
-  if (!existsSync(activeDir)) return []
-
-  const entries = await readdir(activeDir, { withFileTypes: true })
-  const results: WorkstreamInfo[] = []
-
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue
-    const wsFile = join(activeDir, entry.name, 'workstream.json')
-    if (!existsSync(wsFile)) continue
-
-    try {
-      const raw = await readFile(wsFile, 'utf-8')
-      const data: WorkstreamData = JSON.parse(raw)
-      results.push({
-        id: entry.name,
-        name: entry.name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-        project: project.name,
-        projectPath: project.path,
-        status: data.status,
-        doc: data.doc,
-        checkpoints: data.checkpoints ?? [],
-      })
-    } catch (e) {
-      console.warn(`[scanner] failed to parse workstream.json for ${entry.name}:`, e)
-    }
-  }
-  return results
-}
-
-/** Scan all projects for workstreams */
-export async function scanWorkstreams(projects: Project[]): Promise<WorkstreamInfo[]> {
-  const all = await Promise.all(projects.map(scanProject))
-  return all.flat()
 }
 
 /** Read a progress.json file and attach context */
@@ -129,7 +68,7 @@ export async function scanProgress(projects: Project[]): Promise<ProgressEntryWi
       all.push(...items)
     }
 
-    // Workstream-level progress.json files under projects/active/
+    // Bundle-level progress.json files under projects/active/<bundle>/
     if (!existsSync(activeDir)) continue
     const entries = await readdir(activeDir, { withFileTypes: true })
     for (const entry of entries) {
@@ -143,21 +82,6 @@ export async function scanProgress(projects: Project[]): Promise<ProgressEntryWi
 
   all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
   return all
-}
-
-/** Update workstream status (with file lock) */
-export async function updateWorkstreamStatus(
-  projectPath: string,
-  workstreamId: string,
-  status: WorkstreamStatus
-): Promise<void> {
-  const wsFile = join(projectPath, 'projects', 'active', workstreamId, 'workstream.json')
-  await withFileLock(wsFile, async () => {
-    const raw = await readFile(wsFile, 'utf-8')
-    const data: WorkstreamData = JSON.parse(raw)
-    data.status = status
-    await writeFile(wsFile, JSON.stringify(data, null, 2), 'utf-8')
-  })
 }
 
 /** Dismiss a progress entry (with file lock). Empty workstreamId = project-level. */

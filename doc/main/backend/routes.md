@@ -27,19 +27,12 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | POST | `/api/projects/reorder` | Persist ordered project list (`{ order: string[] }`) |
 | DELETE | `/api/projects/:name` | Unregister a project |
 
-### Workstreams
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/workstreams` | All workstreams across all projects |
-| POST | `/api/workstreams/:project/:name/status` | Update workstream status (`{ status }`) |
-
 ### Progress
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/progress` | All progress entries across projects, sorted newest-first |
-| POST | `/api/progress/:project/:ws/:id/dismiss` | Dismiss a notification (`_` for project-level entries) |
+| POST | `/api/progress/:project/:ws/:id/dismiss` | Dismiss a progress entry. `:ws` is the bundle directory name under `projects/active/<bundle>/`, or `_` for project-level entries at `projects/progress.json`. |
 
 ### Sessions
 
