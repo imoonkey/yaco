@@ -16,7 +16,7 @@
 
 **Key files:** `multmux/src/{state,hooks,yacoHome}.ts`, `multmux/test/{state,hooks,wrapper,lifecycle-guards}.test.ts`, `workflow/server/src/lib/{yacoHome,constants,multmux}.ts`, `workflow/server/src/lib/__tests__/{wechat-router,channel-streaming}.test.ts`, workflow `CLAUDE.md` + `doc/{main,dev}/**`, multmux `CLAUDE.md` + `doc/main/**`, `projects/active/yaco-core/implementation_summary.md`.
 **Verification:** `cd multmux && npm test` → 223 pass / 0 fail (was 214; +9 new cases — 3 resolver-precedence, 4 env-override, 2 covering tmp-dir isolation + lifecycle-guards path resolution). `cd workflow/server && npx vitest run` → 326 pass / 1 fail (pre-existing `autocomplete.test.ts` GROQ env-leak, unaffected). Acceptance: `rg "\.multmux/sessions"` across both repos' SOTA docs returns nothing; only legacy/archived references remain in `doc/PROGRESS.md` history entries and `projects/archive/20260321_hooks/**`. No `multmux install-hooks` run, no global binary rebuild, no on-disk migration.
-**Commit:** _pending docs commit_.
+**Commit:** `5d602b3` (workflow), `8a35593` (multmux).
 **Next:** `yc-migration-script` — one-shot script that copies any existing `~/.multmux/sessions/*.json` into `~/.yaco/sessions/`, rewrites installed hook/wrapper scripts via `multmux install-hooks`, then deletes the legacy directory. Until that runs, users with running agent sessions on the old multmux binary keep those state files at `~/.multmux/sessions/` and are visible only after they restart their multmux CLI.
 **Blockers:** None.
 
