@@ -5,6 +5,8 @@ description: Two agents (Claude + Codex) independently design, cross-review, the
 
 # Double Design
 
+This skill is YACO-native: it writes the `projects/active/<project>/{initial,discussion,final}/` bundle layout and coordinates `multmux` workers around it.
+
 Two agents independently design, cross-review, then align via multi-round discussion.
 
 ## Usage

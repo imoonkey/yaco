@@ -56,7 +56,7 @@ Cover:
 - **Tasks** — break the design into implementable tasks. Each task: slug, scope (file globs), acceptance criteria, dependencies. This section feeds `/update-tasks` to populate the task graph.
 - **Trade-offs** — what alternatives were considered, why this approach wins
 
-Keep it concise. The doc should be readable in 5 minutes. Write to projects/active/<project>/*_[codex|claude].md or projects/active/<project>/individual/*_[claude|codex].md if there is a `/double-design` going on.
+Keep it concise. The doc should be readable in 5 minutes.
 
 ### 5. Self-Review
 
@@ -71,3 +71,14 @@ If gaps exist, iterate steps 3-5.
 
 Present the design doc for review (human or `/eng-plan-review`).
 After approval, use `/update-tasks` to create the task graph from the Tasks section, then proceed to `/implement` or `/orchestrate`.
+
+## YACO compatibility
+
+Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
+`yaco.toml` path overrides), write the design doc under
+`projects/active/<project>/*_[codex|claude].md` (or
+`projects/active/<project>/individual/*_[claude|codex].md` when running under
+`/double-design`); surface its Tasks section through `/update-tasks` (which
+writes `projects/tasks.json`); hand execution off to `/orchestrate`, which
+dispatches `multmux` workers with session state under `~/.yaco/sessions/`.
+Outside YACO, follow the project's own design-doc convention.

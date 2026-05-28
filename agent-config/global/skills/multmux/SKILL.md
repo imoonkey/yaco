@@ -71,8 +71,15 @@ multmux kill "$NAME"
 - Codex empty-start sessions return `"pending:awaiting-first-prompt"` for `sessionId` until a message is sent
 - Status is tracked via agent hooks (primary) with capture-pane regex fallback
 - Handle = tmux session name directly (no suffix). Default: `<index>-<provider>`, explicit: `--name` value as-is
-- State files live in `~/.multmux/sessions/<handle>.json` (global registry). Commands filter by `sessionPath` to scope to the current working directory
+- State files live in `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` (global registry). `MULTMUX_STATE_DIR` can override this for tests/explicit redirection. Commands filter by `sessionPath` to scope to the current working directory
 - `kill --all` is a **nuclear option** — multiple workstreams may share the same project's multmux sessions; only a human should invoke it
 - Run follow-up `multmux` commands from the same project root, or store the returned handle from `start` and reuse it there
 - For tests, prefer `bun run test` for pure unit coverage and `bun run test:integration` when tmux-backed checks are needed
 - `capture` returns clean text (ANSI codes stripped by default)
+
+## YACO compatibility
+
+`multmux` is a standalone CLI. Inside a YACO project, only the storage root
+moves: session state files live under `~/.yaco/sessions/<handle>.json`
+instead of the legacy `~/.multmux/sessions/<handle>.json`. Commands, JSON
+schema, and runtime behavior are otherwise unchanged.

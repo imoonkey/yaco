@@ -50,7 +50,7 @@ doc/
 
 - **Keep it lean.** dev/ is for practical how-to: setup, build, test, lint, run commands, and development workflow. Architecture belongs in main/, not here.
 - **Typical files:** `workflow.md` or `guide.md` (dev setup + commands), plus specialized guides as needed (e.g., `adding-sites.md`, `visual_debug_guide.md`).
-- **No plans or design docs.** Implementation plans go in `projects/active/<project>/`, not dev/.
+- **No plans or design docs.** Implementation plans go in the project's design-doc folder, not dev/.
 
 
 ## Process
@@ -107,19 +107,31 @@ Prepend to `doc/PROGRESS.md` (create if missing). This is the **canonical format
 
 Keep entries concise. One entry per logical change, not per commit.
 
-### 5. Update Project Implementation Summary
-
-If changes correspond to a `projects/active/<project>/` folder, write or update `projects/active/<project>/implementation_summary.md` — a concise summary of what was implemented, key decisions made, and current state.
-
-### 6. Archive (if applicable)
-
-When archiving a project folder (`projects/active/<project>/` → `projects/archive/YYYYMMDD_<project>/`), check if `projects/tasks.json` has the matching terminal project task and archive it via `/update-tasks` (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That task snapshot is written separately to `projects/archive/YYYYMMDD_<slug>.json`.
-
-### 7. Commit Docs
+### 5. Commit Docs
 
 Stage only the files touched by this `/update-doc` run — don't sweep in unrelated uncommitted docs.
 
 ```bash
-git add <files you created or updated in steps 2–6>
+git add <files you created or updated in steps 2–4>
 git commit -m "docs: <short description of what changed>"
 ```
+
+## YACO compatibility
+
+Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
+`yaco.toml` path overrides), `/update-doc` does two extra things between steps
+4 and 5:
+
+- **Update project implementation summary.** If changes correspond to a
+  `projects/active/<project>/` bundle, write or update
+  `projects/active/<project>/implementation_summary.md` — a concise summary of
+  what was implemented, key decisions made, and current state.
+- **Archive completed bundles.** When archiving
+  `projects/active/<project>/` → `projects/archive/YYYYMMDD_<project>/`, check
+  whether `projects/tasks.json` has the matching terminal project task and
+  archive it via `/update-tasks`
+  (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That
+  task snapshot is written separately to
+  `projects/archive/YYYYMMDD_<slug>.json`.
+
+Outside YACO, follow the project's own design-doc and archive conventions.

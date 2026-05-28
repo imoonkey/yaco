@@ -3,6 +3,8 @@ name: orchestrate
 description: Execute tasks from projects/tasks.json using multmux workers. Use when the user wants to run, advance, or check on task execution.
 ---
 
+This skill is YACO-native: it reads `projects/tasks.json`, dispatches `multmux` workers against YACO session state (`~/.yaco/sessions/`), and drives the worktree lifecycle for YACO projects.
+
 ## Dispatch
 
 Read `projects/tasks.json` via `/update-tasks`. Select tasks where ALL of:

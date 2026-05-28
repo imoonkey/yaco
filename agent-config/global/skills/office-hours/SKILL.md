@@ -296,7 +296,7 @@ Present via AskUserQuestion. Do NOT proceed without user approval of the approac
 
 ## Phase 5: Design Doc
 
-Write the design document to `projects/active/` (or the project's design doc convention).
+Write the design document to the project's design doc convention.
 
 ### Startup mode design doc template:
 
@@ -438,3 +438,12 @@ Present the design doc path to the user. Summarize what was decided.
 **Builder mode:** End with "Here's what to build first" — concrete next step.
 
 Offer handoff: "Ready to implement? Use `/design` to refine the architecture, then `/implement` to build it."
+
+---
+
+## YACO compatibility
+
+Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
+`yaco.toml` path overrides), write the design doc under
+`projects/active/<bundle>/` so it threads into the rest of the YACO workflow.
+Outside YACO, follow the project's own design-doc convention.

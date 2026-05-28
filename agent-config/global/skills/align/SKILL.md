@@ -7,6 +7,8 @@ description: Align the design of the system or anything else between Codex and C
 
 Align the design of the system or anything else between Codex and Claude.
 
+This skill is YACO-native: it owns the `discussion/status.txt` handoff protocol, numbered discussion turns (`NNNN_{CLAUDE,CODEX}.md`), and the self-contained `final/*` output inside a YACO project bundle.
+
 ## Principles
 
 ### Alignment Principles
