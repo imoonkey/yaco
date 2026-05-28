@@ -37,7 +37,7 @@ SCAN_ROOTS="${YACO_DOCTOR_SCAN_ROOTS:-$DEFAULT_SCAN_ROOTS}"
 # Allowlist for check 6: files (path suffix match) that are intentionally
 # allowed to mention ~/.workflow or ~/.multmux in comments/docs/migration code.
 # Override with YACO_DOCTOR_ALLOWLIST (colon-separated suffixes) in tests.
-DEFAULT_ALLOWLIST="server/src/lib/yacoHome.ts:server/src/lib/migrate-channels.ts:server/src/lib/__tests__/migrate-channels.test.ts:multmux/src/yacoHome.ts:agent-config/global/lib/yaco_home.py:agent-config/global/skills/multmux/SKILL.md"
+DEFAULT_ALLOWLIST="server/src/lib/yacoHome.ts:multmux/src/yacoHome.ts:agent-config/global/lib/yaco_home.py:agent-config/global/skills/multmux/SKILL.md"
 ALLOWLIST="${YACO_DOCTOR_ALLOWLIST:-$DEFAULT_ALLOWLIST}"
 
 FAILS=0

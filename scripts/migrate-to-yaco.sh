@@ -98,9 +98,9 @@ preflight_tmux_sessions() {
     log_ok "preflight: no live tmux sessions"
     return 0
   fi
-  log_warn "live tmux sessions detected — they will continue running with old hook paths until they end:"
+  log_warn "live tmux sessions detected — migration does not preserve old hook paths:"
   printf '%s\n' "$sessions" | sed 's/^/        /' >&2
-  log_warn "old hook updates are best-effort; multmux status reconcile/GC will converge state."
+  log_warn "restart affected sessions if their old hook paths stop updating state."
   if [ "$ASSUME_YES" = 1 ]; then
     log_info "--yes set; continuing without prompt."
     return 0
@@ -236,11 +236,6 @@ migrate_channels() {
 
 # ---- step 6: multmux hook + wrapper scripts -------------------------------
 #
-# COPY (not mv) so live tmux sessions started before migration can keep
-# resolving the legacy paths in their hook configs until they end. Operator
-# cleans up the originals after running `multmux install-hooks` and confirming
-# no sessions still reference ~/.multmux/.
-
 migrate_multmux_scripts() {
   for f in hook-v2.sh wrapper-v2.sh; do
     local src="$MULTMUX_HOME/$f"
@@ -254,11 +249,11 @@ migrate_multmux_scripts() {
       continue
     fi
     if [ "$DRY_RUN" = 1 ]; then
-      log_would "cp $src -> $dst (source left in place for live old sessions)"
+      log_would "mv $src -> $dst"
     else
       mkdir -p "$YACO_HOME"
-      cp -p "$src" "$dst"
-      log_ok "multmux script: copied $f -> $YACO_HOME/ (source left in place for live old sessions)"
+      mv -n "$src" "$dst"
+      log_ok "multmux script: moved $f -> $YACO_HOME/"
     fi
   done
 }
@@ -557,13 +552,9 @@ main() {
   printf 'Migration data steps complete.\n'
   printf '\n'
   printf 'Operator follow-ups (NOT performed automatically):\n'
-  printf '  1. Once live tmux sessions have drained, run:\n'
+  printf '  1. Run:\n'
   printf '       multmux install-hooks\n'
   printf '     This rewrites Claude/Codex hook configs to the new ~/.yaco paths.\n'
-  printf '     The migration COPIED hook-v2.sh / wrapper-v2.sh to ~/.yaco/ and\n'
-  printf '     intentionally LEFT the originals under ~/.multmux/ so any tmux\n'
-  printf '     sessions that started before migration can still resolve their\n'
-  printf '     baked-in legacy paths. Skip this step until those sessions end.\n'
   printf '\n'
   printf '  2. For each project listed in $YACO_HOME/projects.json with a\n'
   printf '     /tmp/yaco-workstream-todos-<id>.txt file, run /update-tasks and\n'
@@ -573,11 +564,9 @@ main() {
   printf '  3. Run doctor checks (yc-doctor-checks task / script) and confirm\n'
   printf '     that no references to ~/.workflow or ~/.multmux remain.\n'
   printf '\n'
-  printf '  4. After doctor checks pass and old sessions have ended, you can:\n'
+  printf '  4. After doctor checks pass, you can:\n'
   printf '       rm -rf %s\n' "$WORKFLOW_HOME"
   printf '       rm -rf %s\n' "$MULTMUX_HOME"
-  printf '     (Until then, leave them in place so old sessions can still write\n'
-  printf '     to their old hook/wrapper paths.)\n'
   printf '\n'
   printf 'Next: bash scripts/yaco-doctor.sh   # validate the migrated state\n'
 }

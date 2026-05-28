@@ -39,14 +39,6 @@ describe('projects: on-disk format + trailing-slash normalization', () => {
     ])
   })
 
-  it('still reads the legacy {name, path} on-disk format', async () => {
-    await writeFile(projectsFile, JSON.stringify([
-      { name: 'legacy', path: '/tmp/legacy/' },
-    ]), 'utf-8')
-
-    expect(await loadProjects()).toEqual([{ name: 'legacy', path: '/tmp/legacy' }])
-  })
-
   it('writes {id, path} to disk (API keeps Project.name)', async () => {
     await saveProjects([{ name: 'x', path: '/tmp/x/' }])
     expect(JSON.parse(await readFile(projectsFile, 'utf-8'))).toEqual([{ id: 'x', path: '/tmp/x' }])

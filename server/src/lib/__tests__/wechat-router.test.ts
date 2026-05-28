@@ -29,8 +29,8 @@ await mkdir(projectBPath, { recursive: true })
 await writeFile(
   join(homeDir.value, '.yaco', 'projects.json'),
   JSON.stringify([
-    { name: 'alpha', path: projectAPath },
-    { name: 'beta', path: projectBPath },
+    { id: 'alpha', path: projectAPath },
+    { id: 'beta', path: projectBPath },
   ]),
 )
 

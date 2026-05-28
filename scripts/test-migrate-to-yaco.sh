@@ -217,28 +217,27 @@ assert_eq "wechat state.json preserved (mv -n)" "pre-existing" "$PRE"
 assert_file "$YACO_HOME/hook-v2.sh"
 assert_file "$YACO_HOME/wrapper-v2.sh"
 
-# Source files removed (they were mv'd, not copied) — except hook/wrapper scripts
-# which are intentionally COPIED so live old tmux sessions can still resolve them.
+# Source files removed (they were mv'd, not copied)
 if [ ! -f "$WORKFLOW_HOME/shell-sessions/sh-1.json" ]; then
   pass "source shell-sessions/sh-1.json removed (mv)"
 else
   fail "source shell-sessions/sh-1.json still present"
 fi
-if [ -f "$MULTMUX_HOME/hook-v2.sh" ]; then
-  pass "source hook-v2.sh preserved (cp, not mv — live old sessions need it)"
+if [ ! -f "$MULTMUX_HOME/hook-v2.sh" ]; then
+  pass "source hook-v2.sh removed (mv)"
 else
-  fail "source hook-v2.sh was removed; should be copied (cp) so live old sessions still resolve it"
+  fail "source hook-v2.sh still present"
 fi
-if [ -f "$MULTMUX_HOME/wrapper-v2.sh" ]; then
-  pass "source wrapper-v2.sh preserved (cp, not mv — live old sessions need it)"
+if [ ! -f "$MULTMUX_HOME/wrapper-v2.sh" ]; then
+  pass "source wrapper-v2.sh removed (mv)"
 else
-  fail "source wrapper-v2.sh was removed; should be copied (cp) so live old sessions still resolve it"
+  fail "source wrapper-v2.sh still present"
 fi
-# Permission bit preserved on the copy
+# Permission bit preserved on the moved script
 if [ -x "$YACO_HOME/hook-v2.sh" ]; then
-  pass "copied hook-v2.sh kept executable bit"
+  pass "moved hook-v2.sh kept executable bit"
 else
-  fail "copied hook-v2.sh lost executable bit"
+  fail "moved hook-v2.sh lost executable bit"
 fi
 # But the pre-existing wechat/state.json source must remain (mv -n skipped it)
 if [ -f "$WORKFLOW_HOME/channels/wechat/state.json" ]; then

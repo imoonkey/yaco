@@ -9,9 +9,13 @@ export interface Project {
 
 const PROJECTS_FILE = projectsFile()
 
-function normalizeProject(p: Project & { id?: string }): Project {
-  const name = p.name ?? p.id ?? ''
-  return { name, path: p.path.replace(/\/+$/, '') || '/' }
+interface ProjectRecord {
+  id: string
+  path: string
+}
+
+function normalizeProject(p: ProjectRecord): Project {
+  return { name: p.id, path: p.path.replace(/\/+$/, '') || '/' }
 }
 
 export async function ensureYacoHome(): Promise<void> {
@@ -28,12 +32,15 @@ export async function loadProjects(): Promise<Project[]> {
     return []
   }
   const raw = await readFile(PROJECTS_FILE, 'utf-8')
-  const parsed = JSON.parse(raw) as Project[]
+  const parsed = JSON.parse(raw) as ProjectRecord[]
   return parsed.map(normalizeProject)
 }
 
 export async function saveProjects(projects: Project[]): Promise<void> {
   await ensureYacoHome()
-  const onDisk = projects.map(normalizeProject).map(p => ({ id: p.name, path: p.path }))
+  const onDisk = projects.map(p => ({
+    id: p.name,
+    path: p.path.replace(/\/+$/, '') || '/',
+  }))
   await writeFile(PROJECTS_FILE, JSON.stringify(onDisk, null, 2), 'utf-8')
 }

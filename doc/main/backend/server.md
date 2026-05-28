@@ -38,7 +38,6 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE notificatio
 5. After the HTTP server is listening, start runtime services:
    - `ensureYacoHome()` — create `${YACO_HOME:-~/.yaco}/` if missing
    - `loadProjects()` — read project registry
-   - `startWatching()` — file watchers on `progress.json` files
    - `startSessionReconciler()` — low-frequency session health/drift reconciliation
    - `startProjectWatchers()` — global session/project watchers, then recursive project watchers
 6. Attach WebSocket server for terminal connections

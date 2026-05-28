@@ -14,7 +14,7 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`server/src/lib/yacoHome.ts`, `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
+`server/src/lib/yacoHome.ts`, `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
 
@@ -42,7 +42,7 @@ ${YACO_HOME:-~/.yaco}/
       session/               # provider session files (e.g. wweb.js cache)
 ```
 
-On server boot, `server/src/lib/migrate-channels.ts` runs a one-shot, idempotent migration that moves any legacy flat `~/.workflow/wechat-*` / `~/.workflow/whatsapp-*` files into `${YACO_HOME}/channels/<scope>/`. (Legacy source is the pre-channels-reorg `~/.workflow/` layout; destination is the canonical YACO channels root.) The migration is awaited before `serve()` in `server/src/index.ts` and rethrows on non-benign errors.
+There is no boot-time legacy migration. The server expects this layout to already exist; one-time operator migration lives in `scripts/migrate-to-yaco.sh`.
 
 ### `${YACO_HOME}/projects.json`
 
@@ -90,7 +90,7 @@ Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path re
 
 ### `${YACO_HOME}/ui-state/notifications.json`
 
-Cross-device notifications inbox **cache**, projected from `events.jsonl` plus per-item read flags. `NotificationItem[]` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream` (opaque bundle id, see [`projects/active/<bundle>/progress.json`](#projectsactivebundleprogressjson)), `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`. The cache is populated when emit sites call `notify.dispatch()` alongside `eventsLog.appendEvent()`; the durable record is `events.jsonl`.
+Cross-device notifications inbox **cache**, projected from `events.jsonl` plus per-item read flags. `NotificationItem[]` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream`/task id, `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`. The cache is populated when emit sites call `notify.dispatch()` alongside `eventsLog.appendEvent()`; the durable record is `events.jsonl`.
 
 ### `${YACO_HOME}/ui-state/pinned-sessions.json`
 
@@ -100,31 +100,7 @@ Per-project ordered list of pinned session names. Shape: `{ [projectName]: strin
 
 Per-project and per-session read cutoffs (`{ projectReadAt, sessionReadAt }`, both `Record<string, number>` of millisecond timestamps). A progress entry is "unread" iff its timestamp exceeds `max(projectReadAt[project], sessionReadAt["${project}::${session}"])`. The bell badge and sidebar unread counts both derive from this file (via `useSessionUnreadState`); marking-read actions advance the relevant watermark(s) to `Date.now()`. Mutex-protected writes via `server/src/lib/ui-state.ts`.
 
-### `projects/active/<bundle>/progress.json`
-
-**Legacy.** Read-only fallback that `scanProgress` always merges in alongside `events.jsonl` (deduped by `id`, events win on collision). Live server code no longer writes here — `session_idle` is appended to `${YACO_HOME}/projects/<id>/events.jsonl` instead, and `scanProgress` projects events back into the `ProgressEntry` shape that existing UI consumers (`useProgress`, `useSessionUnreadState`) already understand. The merge — rather than an either/or — keeps unmigrated entries visible after the server starts emitting new events; once `yc-migration-script` runs and the operator deletes the legacy files, the fallback becomes inert. `dismissProgress` is a no-op under the events model (events are immutable; "read state" lives in `ui-state/unread-watermarks.json`).
-
-```json
-[
-  {
-    "id": "p-1",
-    "agent": "claude",
-    "type": "info",
-    "message": "Phase 1 complete.",
-    "timestamp": "2026-03-20T10:00:00Z",
-    "status": "active"
-  }
-]
-```
-
-Types: `info`, `human_review`, `blocked`, `session_idle`
-Status: `active` or `dismissed`
-
-> Historical: an earlier model also stored `projects/active/<bundle>/workstream.json` with a live status/checkpoints schema and exposed it via `/api/workstreams`. That live model has been removed; see [yaco-core design](../../../projects/active/yaco-core/final/design.md) §First-Class Entities and the migration fixture at [`projects/active/yaco-core/final/fixtures/workstream-status-mapping.json`](../../../projects/active/yaco-core/final/fixtures/workstream-status-mapping.json). Per-bundle `progress.json` has been superseded by `~/.yaco/projects/<id>/events.jsonl` (yc-events-jsonl); on-disk files survive until the migration script removes them.
-
-### `projects/progress.json`
-
-**Legacy.** Same shape as bundle-level `progress.json`, merged read-only by the same `scanProgress` pipeline. No live writer — the Claude Stop hook is the last remaining historical writer and is also being migrated to `events.jsonl` under a separate yc-* task.
+`projects/progress.json`, `projects/active/<bundle>/progress.json`, and `projects/active/<bundle>/workstream.json` are no longer runtime inputs. The one-time migration script converts/removes them; server runtime reads `events.jsonl` only.
 
 ## In-Browser State
 

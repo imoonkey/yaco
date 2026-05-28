@@ -24,7 +24,7 @@ Source-of-truth boundaries for the workflow system's data.
 | Project list | Server | `${YACO_HOME:-~/.yaco}/projects.json` | Frontend (via API) |
 | Task graph | Source artifact | `projects/tasks.json` | Tasks API → Frontend |
 | Task artifact bundles | Source artifact | `projects/active/<bundle>/`, `projects/archive/YYYYMMDD_<bundle>/` | Editor, design skills (opaque doc folders — not parsed by the server) |
-| Progress entries | Filesystem | `projects/active/<bundle>/progress.json` + `projects/progress.json` | Server scanner → Frontend (slated for replacement by `~/.yaco/projects/<id>/events.jsonl` under task `yc-events-jsonl`) |
+| Progress entries | YACO runtime | `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl` | Server scanner → Frontend |
 | Session list | Server (poller cache) | In-memory | Frontend (via API) |
 | Session status | multmux / Workflow shell state + tmux | State files + live tmux checks | Server poller → Frontend |
 | File tree | Server (cached) | In-memory (server + client) | Frontend |
@@ -35,7 +35,7 @@ Source-of-truth boundaries for the workflow system's data.
 ## Data Flow
 
 ```
-Filesystem (projects.json, tasks.json, progress.json)
+Filesystem (`projects.json`, `tasks.json`, `events.jsonl`)
   → fs.watch / recursive watchers
   → Server scanner reads on demand
   → SSE refresh signal → Frontend re-fetches

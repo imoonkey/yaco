@@ -14,7 +14,7 @@ Dual-mode notification pipeline: in-app toast (foreground) and browser Notificat
 
 ## Related Code
 
-`server/src/lib/notify.ts`, `server/src/lib/watcher.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/components/NotificationBell.tsx`, `ui/src/components/NotificationPanel.tsx`
+`server/src/lib/notify.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/session-reconciler.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/components/NotificationBell.tsx`, `ui/src/components/NotificationPanel.tsx`
 
 ## Pipeline
 
@@ -28,9 +28,9 @@ Event source (file change / session idle)
 
 ## Event Sources
 
-### Progress File Changes
+### YACO Event Stream
 
-`watcher.ts` watches `projects/active/*/progress.json` and `projects/progress.json` across all projects. When new entries are detected (entry count increases), `emitNotification()` is called.
+Workflow notification data is projected from `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl`. The notification inbox in `${YACO_HOME}/ui-state/notifications.json` is a cache/read-state projection, not the durable source.
 
 ### Session Idle Detection
 
@@ -38,7 +38,8 @@ Session reconciler (`session-reconciler.ts`) detects `processing → idle` trans
 
 - Reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files every 60 seconds
 - Filters: minimum 15 seconds processing duration + 2× debounce (two consecutive idle readings)
-- Writes `session_idle` entry with `sessionName` to project-level `projects/progress.json`
+- Appends a `session_idle` event to `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl`
+- Dispatches the corresponding notification projection so the inbox cache stays warm
 
 Previously, Claude used a separate Stop hook (`~/.claude/hooks/on-stop.sh`) while Codex used the reconciler. This was unified — the reconciler now handles all providers. The deprecated `on-stop.sh` hook is cleaned up by `multmux install-hooks`.
 

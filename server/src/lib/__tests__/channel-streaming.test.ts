@@ -43,7 +43,7 @@ await mkdir(projectPath, { recursive: true })
 
 await writeFile(
   join(homeDir.value, '.yaco', 'projects.json'),
-  JSON.stringify([{ name: 'alpha', path: projectPath }]),
+  JSON.stringify([{ id: 'alpha', path: projectPath }]),
 )
 
 // multmux state file describing one claude session

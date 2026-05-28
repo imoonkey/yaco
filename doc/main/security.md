@@ -31,11 +31,11 @@ All file operations validate that the requested path (before symlink resolution)
 
 ## File Write Safety
 
-Write operations use in-process file locks (`withFileLock` in scanner.ts) to prevent race conditions on concurrent read-modify-write cycles against `progress.json`.
+Task writes are serialized by the canonical `update-tasks` helper. Runtime event writes use append-only NDJSON (`eventsLog.appendEvent`) with per-file in-process serialization; there is no read-modify-write cycle against repo-local progress files.
 
 The file content endpoint (`PUT /api/files/:project/content`) validates the target path but does not restrict by file extension.
 
-**Code path**: `server/src/lib/scanner.ts`, `server/src/routes/files.ts`
+**Code path**: `server/src/lib/eventsLog.ts`, `server/src/routes/files.ts`
 
 ## CORS and Origin Validation
 

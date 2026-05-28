@@ -23,8 +23,6 @@ import { taskRoutes } from './routes/tasks.js'
 import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { ensureYacoHome, loadProjects } from './lib/projects.js'
-import { migrateLegacyChannelPaths } from './lib/migrate-channels.js'
-import { startWatching, stopWatching } from './lib/watcher.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
@@ -187,9 +185,6 @@ async function startRuntime(): Promise<void> {
   runtimeStarted = true
 
   const projects = await loadProjects()
-  await startWatching(projects, (project, workstream) => {
-    console.log(`[watch] progress.json changed: ${project}/${workstream}`)
-  })
   startSessionReconciler()
   await startProjectWatchers(projects)
   setShellSessionChangeCallback(() => emitRefresh('sessions'))
@@ -206,13 +201,10 @@ async function startRuntime(): Promise<void> {
   }
 }
 
-// Bootstrap workflow dir + channels migration BEFORE binding the HTTP port.
-// A /api/whatsapp/login request arriving mid-rename would let LocalAuth create
-// the new session dir before the legacy one is moved in, corrupting auth state.
+// Bootstrap the YACO runtime dir before binding the HTTP port.
 // Top-level await is supported (ES2022 + ESNext modules).
 try {
   await ensureYacoHome()
-  await migrateLegacyChannelPaths()
 } catch (err) {
   console.error('[startup] bootstrap failed:', err)
   process.exit(1)
@@ -428,7 +420,6 @@ function cleanupTerminalResources(): void {
   if (sweepInterval) clearInterval(sweepInterval)
   stopSessionReconciler()
   stopProjectWatchers()
-  stopWatching()
   shutdownWeChat()
   for (const ws of [...connections.keys()]) {
     cleanupConnection(ws)

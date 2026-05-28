@@ -32,7 +32,6 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/progress` | All progress entries across projects, sorted newest-first |
-| POST | `/api/progress/:project/:ws/:id/dismiss` | Dismiss a progress entry. `:ws` is the bundle directory name under `projects/active/<bundle>/`, or `_` for project-level entries at `projects/progress.json`. |
 
 ### Sessions
 

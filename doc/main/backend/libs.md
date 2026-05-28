@@ -71,15 +71,15 @@ Reads optional repo-local `yaco.toml` `[paths]` overrides and returns the canoni
 - Sibling Python parser at `agent-config/global/lib/yaco_paths.py` (stdlib `tomllib`) implements identical semantics for skill scripts
 - Schema: [`projects/active/yaco-core/final/schemas/yaco-toml.schema.json`](../../../projects/active/yaco-core/final/schemas/yaco-toml.schema.json)
 
-### scanner.ts (~110 lines)
+### scanner.ts (~80 lines)
 
-Reads append-only `progress.json` entries across project bundle directories.
+Projects YACO events into the progress-entry shape consumed by the current UI.
 
-**Exports**: `scanProgress()`, `dismissProgress()`, `withFileLock()`
+**Exports**: `scanProgress()`
 
-- Reads `projects/progress.json` (project-level) and `projects/active/<bundle>/progress.json` per project
-- `withFileLock()` provides in-process locking for read-modify-write operations on progress files
-- Per-bundle progress is keyed on the bundle directory name. The legacy workstream live model (`workstream.json` + its status API) has been removed — `projects/active/<bundle>/` is now an opaque artifact directory (design docs, notes), and task state lives in `projects/tasks.json` only. Per-bundle `progress.json` itself is scheduled to be replaced by `~/.yaco/projects/<id>/events.jsonl` under task `yc-events-jsonl`.
+- Reads `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl` via `eventsLog.readEvents()`
+- Maps `session_idle`, `human_review_requested`, `verification_failed`, `dispatched`, and `verified` into the existing `ProgressEntry` UI shape
+- Does not read repo-local `progress.json` or `workstream.json`
 
 ### multmux.ts (~250 lines)
 
@@ -109,16 +109,6 @@ Reads session history from Claude Code and Codex local storage for the History t
 - `getCodexHistory(projectPath)` — queries `~/.codex/state_5.sqlite` threads table + reads `~/.codex/session_index.jsonl` for `thread_name` (last entry per id wins — append-only file has duplicates from renames). Does NOT use `threads.title` as handle.
 - `getHistory(projectPath, liveSessions)` — merges both providers, sorts by modified DESC, caps at 200, tags `liveSessionName` via sessionId comparison against live `MultmuxSession[]`.
 - `HistorySession` type: `{ id, provider, title, summary, created, modified, messageCount, gitBranch, liveSessionName }`
-
-### watcher.ts (136 lines)
-
-Watches `progress.json` files for new entries and triggers notifications.
-
-**Exports**: `startWatching()`, `stopWatching()`
-
-- Uses `fs.watch` on each project's `projects/active/` directory tree
-- Detects new progress entries by comparing entry counts
-- Emits `notification` events and `progress` refresh signals via notify.ts
 
 ### notify.ts (56 lines)
 

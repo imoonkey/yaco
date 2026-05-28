@@ -46,7 +46,7 @@ interface ProgressEntry {
 }
 ```
 
-> Note: the legacy `Workstream` / `WorkstreamStatus` / `Checkpoint` types and the `workstream.json` live model have been removed. The `workstream` field on `ProgressEntry` is now an opaque bundle identifier (the directory name under `projects/active/<bundle>/` whose `progress.json` the entry came from). Planning/progress state lives in `projects/tasks.json` (see [yaco-core design](../../../projects/active/yaco-core/final/design.md)).
+> Note: the `Workstream` / `WorkstreamStatus` / `Checkpoint` types and the `workstream.json` live model have been removed. The `workstream` field on `ProgressEntry` is now the projected task/bundle id from `events.jsonl`. Planning state lives in `projects/tasks.json`; progress/activity state lives in `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl`.
 
 ### Session
 

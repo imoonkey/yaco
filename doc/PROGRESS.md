@@ -1,3 +1,24 @@
+## 2026-05-27: Removed YACO legacy runtime compatibility paths
+
+**What changed:**
+- Removed runtime reads of repo-local `projects/progress.json` / `projects/active/*/progress.json`; `scanProgress()` now reads only `~/.yaco/projects/<id>/events.jsonl`.
+- Removed the progress dismiss route and the old `progress.json` watcher service.
+- Removed boot-time channel migration from `~/.workflow`; one-time migration remains in `scripts/migrate-to-yaco.sh`.
+- Tightened project registry handling to the latest `{id,path}` on-disk format only.
+- Changed the migration script back to moving multmux hook/wrapper scripts instead of preserving old hook paths for live pre-migration sessions.
+- Updated docs and tests to reflect latest-codepath-only behavior.
+
+**Why:**
+- v0 should not carry backward-compatible runtime branches. Legacy files are migration input only; after migration, runtime uses `~/.yaco` and `events.jsonl`.
+
+**Key files:** `server/src/lib/scanner.ts`, `server/src/index.ts`, `server/src/lib/projects.ts`, `server/src/routes/progress.ts`, `scripts/migrate-to-yaco.sh`, `scripts/yaco-doctor.sh`, `doc/main/**`, `projects/active/yaco-core/**`.
+**Verification:** `cd server && env -u GROQ_API_KEY npm test` → 335 pass / 0 fail. `bash scripts/test-migrate-to-yaco.sh` → all assertions pass. `bash scripts/test-yaco-doctor.sh` → all assertions pass. `bash scripts/yaco-doctor.sh` on live state → 7/7 PASS.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-27: YACO runtime root migration completed
 
 **What changed:**
