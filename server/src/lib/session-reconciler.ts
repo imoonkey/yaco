@@ -1,11 +1,8 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
-import { join } from 'path'
 import { loadProjects, type Project } from './projects'
 import type { MultmuxSession } from './multmux'
 import { fetchAllSessionsFromCli } from './multmux'
-import { withFileLock, type ProgressEntry } from './scanner'
-import { emitRefresh } from './notify'
+import { dispatch as dispatchNotification, emitRefresh } from './notify'
+import { appendEvent } from './eventsLog'
 
 const RECONCILE_INTERVAL = 60_000
 /** Require N consecutive idle reconcile passes before firing notification. */
@@ -104,7 +101,7 @@ async function detectIdleTransitions(sessions: MultmuxSession[], project: Projec
       idleStreakBySession.set(key, streak)
 
       if (streak === IDLE_DEBOUNCE_COUNT) {
-        await writeSessionIdleEntry(project, session)
+        await emitSessionIdle(project, session)
       }
     }
   }
@@ -132,31 +129,41 @@ function pruneStaleKeys(projects: Project[]): void {
   }
 }
 
-async function writeSessionIdleEntry(project: Project, session: MultmuxSession): Promise<void> {
-  const projectsDir = join(project.path, 'projects')
-  const progressFile = join(projectsDir, 'progress.json')
+/** Emit a `session_idle` event to YACO events.jsonl and dispatch the corresponding
+ *  notification. Replaces the legacy repo-local progress.json write — events.jsonl
+ *  is the durable source, notifications-store is the projected inbox cache. */
+async function emitSessionIdle(project: Project, session: MultmuxSession): Promise<void> {
+  const ts = new Date().toISOString()
+  const eventId = `session-idle-${session.name}-${Date.now()}`
 
   try {
-    if (!existsSync(projectsDir)) await mkdir(projectsDir, { recursive: true })
-
-    await withFileLock(progressFile, async () => {
-      let entries: ProgressEntry[] = []
-      if (existsSync(progressFile)) {
-        const raw = await readFile(progressFile, 'utf-8')
-        entries = JSON.parse(raw)
-      }
-      entries.push({
-        id: `session-idle-${session.name}-${Date.now()}`,
-        agent: session.provider as 'claude' | 'codex',
-        type: 'session_idle',
+    await appendEvent(project.name, {
+      id: eventId,
+      ts,
+      kind: 'session_idle',
+      sessionId: session.name,
+      payload: {
+        agent: session.provider,
         message: `${session.name} finished processing`,
-        timestamp: new Date().toISOString(),
-        status: 'active',
-        sessionName: session.name,
-      })
-      await writeFile(progressFile, JSON.stringify(entries, null, 2), 'utf-8')
+      },
     })
   } catch (err) {
-    console.error(`[session-reconciler] failed to write session_idle entry for ${session.name}:`, err)
+    console.error(`[session-reconciler] failed to append session_idle event for ${session.name}:`, err)
+  }
+
+  try {
+    await dispatchNotification({
+      id: `progress:${project.name}::${eventId}`,
+      kind: 'progress',
+      title: `[IDLE] ${project.name}`,
+      message: `${session.name} finished processing`,
+      timestamp: ts,
+      project: project.name,
+      workstream: '',
+      progressType: 'session_idle',
+      sessionName: session.name,
+    })
+  } catch (err) {
+    console.error(`[session-reconciler] failed to dispatch session_idle notification for ${session.name}:`, err)
   }
 }

@@ -17,7 +17,7 @@ await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 const { loadProjects, saveProjects } = await import('../projects')
 const projectsFile = join(homeDir.value, '.yaco', 'projects.json')
 
-describe('projects: trailing-slash normalization', () => {
+describe('projects: on-disk format + trailing-slash normalization', () => {
   beforeEach(async () => {
     await rm(projectsFile, { force: true })
   })
@@ -25,11 +25,11 @@ describe('projects: trailing-slash normalization', () => {
     await rm(homeDir.value, { recursive: true, force: true })
   })
 
-  it('strips trailing slashes when loading', async () => {
+  it('reads the new {id, path} on-disk format and surfaces it as Project.name', async () => {
     await writeFile(projectsFile, JSON.stringify([
-      { name: 'a', path: '/tmp/a/' },
-      { name: 'b', path: '/tmp/b///' },
-      { name: 'c', path: '/tmp/c' },
+      { id: 'a', path: '/tmp/a/' },
+      { id: 'b', path: '/tmp/b///' },
+      { id: 'c', path: '/tmp/c' },
     ]), 'utf-8')
 
     expect(await loadProjects()).toEqual([
@@ -39,8 +39,27 @@ describe('projects: trailing-slash normalization', () => {
     ])
   })
 
-  it('strips trailing slashes when saving', async () => {
+  it('still reads the legacy {name, path} on-disk format', async () => {
+    await writeFile(projectsFile, JSON.stringify([
+      { name: 'legacy', path: '/tmp/legacy/' },
+    ]), 'utf-8')
+
+    expect(await loadProjects()).toEqual([{ name: 'legacy', path: '/tmp/legacy' }])
+  })
+
+  it('writes {id, path} to disk (API keeps Project.name)', async () => {
     await saveProjects([{ name: 'x', path: '/tmp/x/' }])
-    expect(JSON.parse(await readFile(projectsFile, 'utf-8'))).toEqual([{ name: 'x', path: '/tmp/x' }])
+    expect(JSON.parse(await readFile(projectsFile, 'utf-8'))).toEqual([{ id: 'x', path: '/tmp/x' }])
+  })
+
+  it('round-trips through save → load with the new on-disk format', async () => {
+    await saveProjects([
+      { name: 'a', path: '/tmp/a/' },
+      { name: 'b', path: '/tmp/b' },
+    ])
+    expect(await loadProjects()).toEqual([
+      { name: 'a', path: '/tmp/a' },
+      { name: 'b', path: '/tmp/b' },
+    ])
   })
 })

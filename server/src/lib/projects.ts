@@ -9,8 +9,9 @@ export interface Project {
 
 const PROJECTS_FILE = projectsFile()
 
-function normalizeProject(p: Project): Project {
-  return { ...p, path: p.path.replace(/\/+$/, '') || '/' }
+function normalizeProject(p: Project & { id?: string }): Project {
+  const name = p.name ?? p.id ?? ''
+  return { name, path: p.path.replace(/\/+$/, '') || '/' }
 }
 
 export async function ensureYacoHome(): Promise<void> {
@@ -33,6 +34,6 @@ export async function loadProjects(): Promise<Project[]> {
 
 export async function saveProjects(projects: Project[]): Promise<void> {
   await ensureYacoHome()
-  const normalized = projects.map(normalizeProject)
-  await writeFile(PROJECTS_FILE, JSON.stringify(normalized, null, 2), 'utf-8')
+  const onDisk = projects.map(normalizeProject).map(p => ({ id: p.name, path: p.path }))
+  await writeFile(PROJECTS_FILE, JSON.stringify(onDisk, null, 2), 'utf-8')
 }

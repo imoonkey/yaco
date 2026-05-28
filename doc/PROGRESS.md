@@ -1,3 +1,25 @@
+## 2026-05-27: YACO runtime root migration completed
+
+**What changed:**
+- Synced `projects/active/yaco-core/final/design.md` with the reviewed Chinese design: project identity now lives in `~/.yaco/projects.json`, optional `yaco.toml` is path-only, no full YACO CLI product, migration is a one-time script, and the original discussion comments are preserved in an appendix.
+- Added `SPEC.md`, JSON schemas, and migration fixtures for the YACO v0 substrate.
+- Added `server/src/lib/yacoPaths.ts`, `eventsLog.ts`, and tests. Runtime progress now appends/project events via `~/.yaco/projects/<id>/events.jsonl`; `scanProgress` merges events with legacy `progress.json` until migration removes the old files.
+- Added `scripts/migrate-to-yaco.sh`, `scripts/yaco-doctor.sh`, and smoke tests. Migration copies old multmux hook/wrapper scripts instead of moving them, preserving live pre-migration sessions.
+- Updated `projects/tasks.json`: the `yaco-core` milestone and all nine child tasks are `done`.
+- Rebuilt and installed `multmux`; hot-restarted the Workflow dev server.
+
+**Why:**
+- The stack needed one coherent agent-human collaboration substrate instead of scattered `~/.workflow`, `~/.multmux`, repo-local progress files, and YACO-specific skill assumptions.
+- The reviewed design intentionally keeps v0 simple: no full YACO CLI, no daemon, no DB, no first-class Run entity, and no workstream compatibility model.
+
+**Key files:** `projects/active/yaco-core/final/{design.md,SPEC.md,schemas/**}`, `server/src/lib/{yacoPaths,eventsLog,scanner,session-reconciler,projects}.ts`, `scripts/{migrate-to-yaco.sh,yaco-doctor.sh,test-migrate-to-yaco.sh,test-yaco-doctor.sh}`, `doc/main/data-model/persistence.md`, `projects/tasks.json`.
+**Verification:** `cd server && env -u GROQ_API_KEY npm test` → 345 pass / 0 fail. `bash scripts/test-migrate-to-yaco.sh` → all assertions pass. `bash scripts/test-yaco-doctor.sh` → all assertions pass. `bash scripts/yaco-doctor.sh` on live state → 7/7 PASS. `cd ../multmux && bun run test` → 223 pass / 0 fail. `cd ../agent-config && python3 -m unittest discover -s global/lib -p 'test_*.py'` → 16 pass / 0 fail. `multmux status --json --all` after install sees the YACO sessions registry.
+**Commit:** this commit
+**Next:** Review whether to keep session state flat (`~/.yaco/sessions` + `shell-sessions`) or split under `sessions/{agents,shells}` in a later cleanup.
+**Blockers:** None.
+
+---
+
 ## 2026-05-27: Multmux session-state root moved under YACO (yc-multmux-state-root)
 
 **What changed:**

@@ -14,7 +14,7 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`server/src/lib/yacoHome.ts`, `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
+`server/src/lib/yacoHome.ts`, `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `server/src/lib/migrate-channels.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
 
@@ -25,10 +25,13 @@ All workflow-owned runtime state lives under the YACO runtime root. The root is 
 ```
 ${YACO_HOME:-~/.yaco}/
   projects.json              # project registry
+  projects/                  # per-project YACO state
+    <id>/
+      events.jsonl           # append-only event stream (yc-events-jsonl)
   sessions/                  # multmux agent session state: <handle>.json
   shell-sessions/            # workflow-managed tmux shell sessions: <id>.json
   ui-state/                  # cross-device shared UI state
-    notifications.json       # inbox + read flags (NotificationItem[])
+    notifications.json       # projected inbox cache + read flags (NotificationItem[])
     pinned-sessions.json     # per-project ordered session pins
     unread-watermarks.json   # per-project / per-session unread cutoffs
   channels/                  # messaging channel scopes (WhatsApp, WeChat, …)
@@ -53,9 +56,41 @@ Project registry. Array of `{ name, path }` objects.
 
 Managed by: `server/src/lib/projects.ts` (path from `yacoHome.projectsFile()`).
 
+### `${YACO_HOME}/projects/<id>/events.jsonl`
+
+Append-only NDJSON event stream per registered project. **Durable source of truth** for the notification inbox, sidebar badges, and downstream channel deliveries — `${YACO_HOME}/ui-state/notifications.json` is a derived cache. One event per line; lines are immutable. Schema: [`projects/active/yaco-core/final/schemas/event.schema.json`](../../../projects/active/yaco-core/final/schemas/event.schema.json).
+
+Line shape:
+
+```json
+{ "id": "evt_...", "ts": "2026-05-27T11:42:08.123Z", "kind": "session_idle", "projectId": "workflow", "sessionId": "w-foo", "payload": { "agent": "claude", "message": "..." } }
+```
+
+Known v0 event kinds (consumers MUST tolerate unknown kinds):
+
+| Kind | When |
+|---|---|
+| `dispatched` | a task transitions `ready → running` and an agent session is started |
+| `session_idle` | a multmux session transitions `processing → idle` (NOT task completion) |
+| `verified` | `acceptCriteria` pass; task transitions to `done` |
+| `verification_failed` | `acceptCriteria` fail; task transitions to `blocked/verification-failed` |
+| `human_review_requested` | task requires human review; transitions to `blocked/human-review` |
+
+Wired emit sites (server-owned):
+
+| Kind | Wired by | Notes |
+|---|---|---|
+| `session_idle` | `server/src/lib/session-reconciler.ts` (`emitSessionIdle`) | Fires after the existing idle debounce; also dispatches a `NotificationItem` to `notifications-store` so the inbox cache stays warm. |
+
+Future emit sites (owned by `orchestrate`, which runs outside the server process):
+
+- `dispatched`, `verified`, `verification_failed`, `human_review_requested` — to be appended by the `orchestrate` flow when it transitions task state, per design.md §Dispatch And Completion. Schema is in place; the writer module (`server/src/lib/eventsLog.ts#appendEvent`) is available for the orchestrate runner to call directly. Tracked separately from `yc-events-jsonl`.
+
+Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path resolution via `yacoHome.projectEventsFile(projectId)`; the `projects/<id>/` parent dir is created lazily on first append. Concurrent writers within the same Node process are serialized per file by an in-memory lock; cross-process concurrency is not expected in v0 (single Hono server).
+
 ### `${YACO_HOME}/ui-state/notifications.json`
 
-Cross-device notifications inbox. Array of `NotificationItem` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream` (opaque bundle id, see [`projects/active/<bundle>/progress.json`](#projectsactivebundleprogressjson)), `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`.
+Cross-device notifications inbox **cache**, projected from `events.jsonl` plus per-item read flags. `NotificationItem[]` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream` (opaque bundle id, see [`projects/active/<bundle>/progress.json`](#projectsactivebundleprogressjson)), `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`. The cache is populated when emit sites call `notify.dispatch()` alongside `eventsLog.appendEvent()`; the durable record is `events.jsonl`.
 
 ### `${YACO_HOME}/ui-state/pinned-sessions.json`
 
@@ -67,7 +102,7 @@ Per-project and per-session read cutoffs (`{ projectReadAt, sessionReadAt }`, bo
 
 ### `projects/active/<bundle>/progress.json`
 
-Append-only notification log per bundle directory. The bundle directory is an opaque artifact folder (design docs, notes, scratch files) — Workflow treats it as a doc folder, not a state source. The `<bundle>` segment is used as the `workstream` field on emitted `ProgressEntry` records purely for routing/identifier purposes.
+**Legacy.** Read-only fallback that `scanProgress` always merges in alongside `events.jsonl` (deduped by `id`, events win on collision). Live server code no longer writes here — `session_idle` is appended to `${YACO_HOME}/projects/<id>/events.jsonl` instead, and `scanProgress` projects events back into the `ProgressEntry` shape that existing UI consumers (`useProgress`, `useSessionUnreadState`) already understand. The merge — rather than an either/or — keeps unmigrated entries visible after the server starts emitting new events; once `yc-migration-script` runs and the operator deletes the legacy files, the fallback becomes inert. `dismissProgress` is a no-op under the events model (events are immutable; "read state" lives in `ui-state/unread-watermarks.json`).
 
 ```json
 [
@@ -85,15 +120,11 @@ Append-only notification log per bundle directory. The bundle directory is an op
 Types: `info`, `human_review`, `blocked`, `session_idle`
 Status: `active` or `dismissed`
 
-> Historical: an earlier model also stored `projects/active/<bundle>/workstream.json` with a live status/checkpoints schema and exposed it via `/api/workstreams`. That live model has been removed; see [yaco-core design](../../../projects/active/yaco-core/final/design.md) §First-Class Entities and the migration fixture at [`projects/active/yaco-core/final/fixtures/workstream-status-mapping.json`](../../../projects/active/yaco-core/final/fixtures/workstream-status-mapping.json). Per-bundle `progress.json` itself is scheduled to be replaced by `~/.yaco/projects/<id>/events.jsonl` under task `yc-events-jsonl`.
+> Historical: an earlier model also stored `projects/active/<bundle>/workstream.json` with a live status/checkpoints schema and exposed it via `/api/workstreams`. That live model has been removed; see [yaco-core design](../../../projects/active/yaco-core/final/design.md) §First-Class Entities and the migration fixture at [`projects/active/yaco-core/final/fixtures/workstream-status-mapping.json`](../../../projects/active/yaco-core/final/fixtures/workstream-status-mapping.json). Per-bundle `progress.json` has been superseded by `~/.yaco/projects/<id>/events.jsonl` (yc-events-jsonl); on-disk files survive until the migration script removes them.
 
 ### `projects/progress.json`
 
-Project-level progress log for entries not tied to a specific bundle (e.g., `session_idle` from Claude Stop hook).
-
-Same format as bundle-level progress.json.
-
-Managed by: Claude Stop hook script (`~/.claude/hooks/on-stop.sh`), server scanner (read)
+**Legacy.** Same shape as bundle-level `progress.json`, merged read-only by the same `scanProgress` pipeline. No live writer — the Claude Stop hook is the last remaining historical writer and is also being migrated to `events.jsonl` under a separate yc-* task.
 
 ## In-Browser State
 
