@@ -13,6 +13,13 @@ function getCssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+// Codex renders its prose in a light gray that washes out against the editor
+// background; Claude/shell already use darker foregrounds. Lift only Codex up to
+// a high contrast floor (colour-only — no effect on size/layout). 1 = disabled.
+function contrastForProvider(provider?: string): number {
+  return provider === 'codex' ? 5 : 1
+}
+
 function buildXtermTheme() {
   return {
     background: getCssVar('--sol-editor-bg'),
@@ -94,6 +101,7 @@ function fitTerminal(term: XTerm): void {
 interface TerminalProps {
   sessionName: string
   projectName?: string
+  provider?: string
   onInteract?: () => void
   onCloseRequest?: () => void
   onDisconnect?: () => void
@@ -142,7 +150,7 @@ function buildWsUrl(sessionName: string, cols: number, rows: number, projectName
   return `${proto}//${host}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${cols}&rows=${rows}${projectName ? `&project=${encodeURIComponent(projectName)}` : ''}`
 }
 
-export function Terminal({ sessionName, projectName, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey }: TerminalProps) {
+export function Terminal({ sessionName, projectName, provider, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -233,6 +241,9 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
       fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
       fontSize: 12,
       lineHeight: 1.4,
+      // Real value is applied by the provider effect below (keeps the xterm
+      // instance from being recreated on session switch). 1 = no adjustment.
+      minimumContrastRatio: 1,
       cursorBlink: true,
     })
     termRef.current = term
@@ -584,6 +595,15 @@ export function Terminal({ sessionName, projectName, onInteract, onCloseRequest,
     if (!sessionName) return
     termRef.current?.focus()
   }, [sessionName])
+
+  // The XTerm instance is shared across attached sessions, so re-apply the
+  // provider-specific contrast floor whenever the attached session changes.
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.minimumContrastRatio = contrastForProvider(provider)
+    term.refresh(0, term.rows - 1)
+  }, [provider, containerReady])
 
   return (
     <div className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>

@@ -583,6 +583,7 @@ export function Workspace({
         <Terminal
           sessionName={attachedSession}
           projectName={projectName}
+          provider={activeSessionInfo?.provider}
           onInteract={() => setFocusTarget('terminal')}
           onCloseRequest={() => {
             sessionsMgr.detachActiveSession()
