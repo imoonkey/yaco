@@ -1,3 +1,21 @@
+## 2026-05-31: Native browser PDF viewer
+
+**What changed:**
+- Replaced the react-pdf single-page `PdfPreview` (manual page nav, zoom, fit-to-screen toolbar) with an `<iframe>` embedding the raw-file URL, delegating to the browser's native PDF viewer.
+- Deleted `PdfRenderer.tsx` and removed the `react-pdf` dependency + its CDN worker fetch.
+
+**Why:**
+- The single-page renderer couldn't scroll to the next page or navigate by keyboard. The raw endpoint already serves `application/pdf`, so the native viewer gives continuous scroll, keyboard nav, zoom, search, and thumbnails for free — far less code, more capability (KISS).
+- Trade-off: viewer chrome follows the browser, not the Solarized theme.
+
+**Key files:** `ui/src/workspace/PdfPreview.tsx`, `ui/src/workspace/PdfRenderer.tsx` (deleted), `ui/package.json`.
+**Verification:** `npx tsc --noEmit` clean; `npm run build` passed.
+**Commit:** 18a77a9
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-27: Removed YACO legacy runtime compatibility paths
 
 **What changed:**
