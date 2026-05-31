@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, waitFor } from '@testing-library/react'
 
 // Shared spy across all fake XTerm instances. Must be declared before the
 // vi.mock factory uses it (vi.mock is hoisted, so reference inside factory
 // is fine as long as the binding exists at call time — vitest allows this).
 const focusSpy = vi.fn()
+const resizeSpy = vi.fn()
+const clearSpy = vi.fn()
 type OscHandler = (data: string) => boolean | Promise<boolean>
 const oscHandlers = new Map<number, OscHandler[]>()
 
@@ -16,6 +18,16 @@ vi.mock('@xterm/xterm', () => {
     element: HTMLDivElement
     cols = 80
     rows = 24
+    _core = {
+      _renderService: {
+        clear: clearSpy,
+        dimensions: {
+          css: {
+            cell: { width: 10, height: 20 },
+          },
+        },
+      },
+    }
     parser = {
       registerOscHandler: (id: number, handler: OscHandler) => {
         const handlers = oscHandlers.get(id) ?? []
@@ -39,12 +51,22 @@ vi.mock('@xterm/xterm', () => {
       screen.className = 'xterm-screen'
       const viewport = document.createElement('div')
       viewport.className = 'xterm-viewport'
-      this.element.appendChild(screen)
+      const scrollable = document.createElement('div')
+      scrollable.className = 'xterm-scrollable-element'
+      const scrollbar = document.createElement('div')
+      scrollbar.className = 'scrollbar vertical'
+      scrollable.appendChild(screen)
+      scrollable.appendChild(scrollbar)
       this.element.appendChild(viewport)
+      this.element.appendChild(scrollable)
     }
     open(container: HTMLElement) { container.appendChild(this.element) }
     loadAddon() { /* no-op */ }
-    resize() { /* no-op */ }
+    resize(cols: number, rows: number) {
+      this.cols = cols
+      this.rows = rows
+      resizeSpy(cols, rows)
+    }
     refresh() { /* no-op */ }
     dispose() { /* no-op */ }
     write() { /* no-op */ }
@@ -80,6 +102,12 @@ beforeEach(() => {
     configurable: true,
     get: () => 800,
   })
+  Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+    configurable: true,
+    get() {
+      return this.classList.contains('vertical') ? 14 : 0
+    },
+  })
 
   class FakeWebSocket {
     static CONNECTING = 0 as const
@@ -114,6 +142,8 @@ beforeEach(() => {
   }))
 
   focusSpy.mockClear()
+  resizeSpy.mockClear()
+  clearSpy.mockClear()
   oscHandlers.clear()
 })
 
@@ -168,5 +198,14 @@ describe('Terminal focus handoff', () => {
       expect(handler?.('#ffffff')).toBe(false)
       expect(handler?.('rgb:ffff/ffff/ffff;?')).toBe(false)
     }
+  })
+
+  it('reserves xterm internal scrollbar width when fitting columns', async () => {
+    const Terminal = await loadTerminal()
+    render(<Terminal sessionName="session-a" />)
+
+    await waitFor(() => {
+      expect(resizeSpy).toHaveBeenCalledWith(78, 20)
+    })
   })
 })

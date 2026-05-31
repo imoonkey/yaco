@@ -1,3 +1,21 @@
+## 2026-05-31: Terminal right-edge gutter fix
+
+**What changed:**
+- Updated `Terminal.tsx` resize fitting to subtract xterm's internal vertical scrollbar width, not just the browser-native scrollbar width.
+- Made terminal padding parsing resilient to empty computed CSS values.
+- Added a component test that locks the column calculation with a simulated 14px xterm scrollbar.
+
+**Why:**
+- xterm v6 DOM renderer adds its own scrollbar element. The custom fit pass was ignoring that width, so the rightmost terminal column could be drawn under the scrollbar area and look clipped.
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/frontend/components.md`.
+**Verification:** `cd ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (4/4). `cd ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx` passed. `cd ui && npx tsc --noEmit` passed. Headless Playwright against `http://localhost:5173/` confirmed xterm screen/right scrollbar overlap is `0px` after the fix.
+**Commit:** this commit.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-31: Native browser PDF viewer
 
 **What changed:**

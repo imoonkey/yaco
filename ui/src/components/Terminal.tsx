@@ -13,6 +13,11 @@ function getCssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 }
 
+function parsePx(value: string): number {
+  const parsed = parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 // Codex renders its prose in a light gray that washes out against the editor
 // background; Claude/shell already use darker foregrounds. Lift only Codex up to
 // a high contrast floor (colour-only — no effect on size/layout). 1 = disabled.
@@ -86,10 +91,12 @@ function fitTerminal(term: XTerm): void {
   if (!element || !parent || !cell?.width || !cell.height) return
 
   const style = window.getComputedStyle(element)
-  const paddingX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
-  const paddingY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+  const paddingX = parsePx(style.paddingLeft) + parsePx(style.paddingRight)
+  const paddingY = parsePx(style.paddingTop) + parsePx(style.paddingBottom)
   const viewport = element.querySelector<HTMLElement>('.xterm-viewport')
-  const scrollbarWidth = viewport ? Math.max(0, viewport.offsetWidth - viewport.clientWidth) : 0
+  const nativeScrollbarWidth = viewport ? Math.max(0, viewport.offsetWidth - viewport.clientWidth) : 0
+  const xtermScrollbar = element.querySelector<HTMLElement>('.xterm-scrollable-element > .scrollbar.vertical')
+  const scrollbarWidth = Math.max(nativeScrollbarWidth, xtermScrollbar?.offsetWidth ?? 0)
   const cols = Math.max(2, Math.floor((parent.clientWidth - paddingX - scrollbarWidth) / cell.width))
   const rows = Math.max(1, Math.floor((parent.clientHeight - paddingY) / cell.height))
   if (term.cols === cols && term.rows === rows) return
