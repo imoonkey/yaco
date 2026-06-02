@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, ChevronRight, ArrowLeftRight } from 'lucide-react'
+import { toast } from 'sonner'
 import { DialogShell } from './DialogShell'
+import { writeTextToClipboard } from '../lib/clipboard'
 import type { VoiceSurface, ComposeData, InteractionState } from '../hooks/useVoice'
 
 export function ComposeTray({
@@ -63,6 +65,26 @@ export function ComposeTray({
 
   useEffect(() => { autoSize() }, [editText, autoSize])
 
+  // Defensive safety net: whenever the tray closes with edited content (Insert,
+  // Discard, X, or Esc), stash the draft on the clipboard first. If the insert
+  // glitches (WS dropped, session detached) the text is never silently lost.
+  const backupDraft = useCallback(() => {
+    if (!editText.trim()) return
+    void writeTextToClipboard(editText).then(ok => {
+      if (ok) toast('Draft copied to clipboard', { duration: 1500 })
+    })
+  }, [editText])
+
+  const handleConfirm = useCallback((text: string) => {
+    backupDraft()
+    onConfirm(text)
+  }, [backupDraft, onConfirm])
+
+  const handleDiscard = useCallback(() => {
+    backupDraft()
+    onDiscard()
+  }, [backupDraft, onDiscard])
+
   const confirmLabel = 'Insert'
   const isRecoverable = state === 'recoverable'
   const isFallback = compose?.formattingStatus === 'fallback_raw'
@@ -74,7 +96,7 @@ export function ComposeTray({
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
   const ss = String(elapsed % 60).padStart(2, '0')
 
-  const handleClose = state === 'recording' ? onStop : onDiscard
+  const handleClose = state === 'recording' ? onStop : handleDiscard
 
   return (
     <DialogShell
@@ -155,7 +177,7 @@ export function ComposeTray({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey && !isRecoverable) {
                   e.preventDefault()
-                  onConfirm(editText)
+                  handleConfirm(editText)
                 }
               }}
               rows={1}
@@ -206,13 +228,13 @@ export function ComposeTray({
                   ...(isRecoverable ? { opacity: 0.5, cursor: 'default' } : {}),
                 }}
                 disabled={isRecoverable}
-                onClick={() => onConfirm(editText)}
+                onClick={() => handleConfirm(editText)}
                 title={isRecoverable ? 'Target no longer available' : undefined}
               >
                 {confirmLabel}
               </button>
               <button style={COPY_BTN_STYLE} onClick={() => onCopy(editText)}>Copy</button>
-              <button style={DISCARD_BTN_STYLE} onClick={onDiscard}>Discard</button>
+              <button style={DISCARD_BTN_STYLE} onClick={handleDiscard}>Discard</button>
             </div>
           </>
         )}
