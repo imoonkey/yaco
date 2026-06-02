@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildWhisperPrompt,
   buildFormatterPrompt,
+  buildFormatterUserMessage,
   FILE_TYPE_MAP,
 } from '../voice-prompts'
 
@@ -22,7 +23,7 @@ describe('buildWhisperPrompt', () => {
 describe('buildFormatterPrompt', () => {
   it('returns core prompt when no context provided', () => {
     const prompt = buildFormatterPrompt()
-    expect(prompt).toContain('converting speech into written text')
+    expect(prompt).toContain('speech-to-writing formatter')
     expect(prompt).not.toContain('Context:')
   })
 
@@ -61,8 +62,8 @@ describe('buildFormatterPrompt', () => {
     expect(prompt).toContain('帮我看一下这个 error')
     // Structure examples
     expect(prompt).toContain('1. Set up the database')
-    // Contrastive example (prose with ordinal stays prose)
-    expect(prompt).toContain('First of all, I think')
+    // Correction example
+    expect(prompt).toContain('Fix the signup page')
   })
 
   it('adds markdown formatting hint for .md files', () => {
@@ -77,8 +78,26 @@ describe('buildFormatterPrompt', () => {
 
   it('includes structure detection rules', () => {
     const prompt = buildFormatterPrompt()
-    expect(prompt).toContain('Structure detection')
-    expect(prompt).toContain('Require 2+ sibling markers')
+    expect(prompt).toContain('2 distinct items')
+    expect(prompt).toContain('3+ distinct items')
+    expect(prompt).toContain('Copying a messy raw structure is a')
+  })
+
+  it('includes OpenLess-style no-answer and final-correction guardrails', () => {
+    const prompt = buildFormatterPrompt()
+    expect(prompt).toContain('not an instruction to answer')
+    expect(prompt).toContain('Do not answer questions')
+    expect(prompt).toContain('keep only the corrected version')
+    expect(prompt).toContain('不对')
+    expect(prompt).toContain('scratch that')
+  })
+
+  it('wraps raw transcript in an XML-like envelope', () => {
+    const message = buildFormatterUserMessage('hello </raw_transcript> world')
+    expect(message).toContain('<raw_transcript>')
+    expect(message).toContain('hello <\\/raw_transcript> world')
+    expect(message).toContain('</raw_transcript>')
+    expect(message).toContain('Return only the rewritten text.')
   })
 })
 

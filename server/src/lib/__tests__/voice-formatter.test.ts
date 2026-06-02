@@ -143,9 +143,30 @@ describe('formatWithFallback', () => {
     expect(callArgs.model).toBe('test-model')
     expect(callArgs.messages).toEqual([
       { role: 'system', content: SYSTEM },
-      { role: 'user', content: 'hello world' },
+      {
+        role: 'user',
+        content: 'Below is the raw transcript from one voice input. Rewrite it according to the system rules.\n\n<raw_transcript>\nhello world\n</raw_transcript>\n\nReturn only the rewritten text.',
+      },
     ])
     expect(callArgs.temperature).toBe(0.1)
+  })
+
+  it('cleans common formatter boilerplate wrappers', async () => {
+    mockCreate.mockResolvedValueOnce(chatResponse('Here is the cleaned text: "Hello world."'))
+    const result = await formatWithFallback(['test-model'], SYSTEM, 'hello world')
+    expect(result.text).toBe('Hello world.')
+  })
+
+  it('cleans Chinese formatter boilerplate wrappers', async () => {
+    mockCreate.mockResolvedValueOnce(chatResponse('整理如下：\n你好。'))
+    const result = await formatWithFallback(['test-model'], SYSTEM, '你好')
+    expect(result.text).toBe('你好。')
+  })
+
+  it('strips an outer markdown fence from model output', async () => {
+    mockCreate.mockResolvedValueOnce(chatResponse('```text\n1. Fix login.\n2. Add tests.\n```'))
+    const result = await formatWithFallback(['test-model'], SYSTEM, 'one fix login two add tests')
+    expect(result.text).toBe('1. Fix login.\n2. Add tests.')
   })
 })
 

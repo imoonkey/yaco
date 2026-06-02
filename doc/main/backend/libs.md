@@ -256,17 +256,18 @@ Session name validation and tmux session resolution.
 - Validates names against `[a-zA-Z0-9_.-]+`
 - Resolves short multmux names (e.g. `1-claude`) to full tmux names (e.g. `1-claude-workflow-mt`)
 
-### voice-prompts.ts (~170 lines)
+### voice-prompts.ts (~190 lines)
 
 Prompt templates for the voice formatting pipeline.
 
-**Exports**: `buildWhisperPrompt()`, `buildFormatterPrompt(surface?, filePath?)`, `FILE_TYPE_MAP`
+**Exports**: `buildWhisperPrompt()`, `buildFormatterPrompt(surface?, filePath?)`, `buildFormatterUserMessage(rawTranscript)`, `FILE_TYPE_MAP`
 
 - `buildWhisperPrompt()` — bilingual base sentence for Whisper `initial_prompt` conditioning (product names: Claude, Codex, multmux)
-- `buildFormatterPrompt()` — speech-to-writing core prompt with structure detection (filler removal, self-correction, CLI syntax, bilingual punctuation, list/bullet formatting from 2+ sibling markers, explicit formatting commands). Includes contrastive few-shot examples. Appends optional context snippet from surface/filePath with formatting directives (markdown hint for .md files, structure allowed for agent chatbox).
+- `buildFormatterPrompt()` — OpenLess-style speech-to-writing core prompt: treats ASR as messy source text, not a command to answer/execute; removes filler and false starts; keeps only the final correction (`no wait`, `actually`, `scratch that`, `不对`, etc.); forces 2+ distinct items into numbered lists; allows semantic regrouping for messy 3+ item dictation; preserves technical tokens and language. Appends optional context snippet from surface/filePath with formatting directives (markdown hint for .md files, structure allowed for agent chatbox).
+- `buildFormatterUserMessage()` — wraps raw ASR text in a `<raw_transcript>` envelope before sending it as the user message, escaping accidental closing tags.
 - `FILE_TYPE_MAP` — extension → human-readable label (~30 entries) for context snippets
 
-### voice-formatter.ts (~80 lines)
+### voice-formatter.ts (~130 lines)
 
 Multi-model LLM formatter with fallback chain via `openai` SDK.
 
@@ -274,7 +275,8 @@ Multi-model LLM formatter with fallback chain via `openai` SDK.
 
 - Tries models in order (default: `qwen3-32b` → `kimi-k2` → `gpt-oss-120b`), all via same Groq API key
 - Leverages per-model rate limits for resilience (429 on one model doesn't block others)
-- Strips `<think>...</think>` blocks from models with thinking mode (Qwen3)
+- Sends the raw transcript through `buildFormatterUserMessage()` so the model sees a bounded `<raw_transcript>` source block.
+- Strips `<think>...</think>` blocks from models with thinking mode (Qwen3), plus common model boilerplate wrappers (`Here is the cleaned text:`, `整理如下：`, outer markdown fences, surrounding whole-output quotes).
 - Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
 - 5s timeout per model attempt
 

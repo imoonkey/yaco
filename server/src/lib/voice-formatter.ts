@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { buildFormatterUserMessage } from './voice-prompts'
 
 const DEFAULT_MODELS = [
   'qwen/qwen3-32b',
@@ -11,6 +12,60 @@ const TIMEOUT_MS = 5000
 /** Strip <think>...</think> blocks that some models (e.g. Qwen3) emit */
 function stripThinking(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>\s*/g, '')
+}
+
+function stripOuterFence(text: string): string {
+  const match = text.match(/^```(?:[a-zA-Z0-9_-]+)?\s*\n([\s\S]*?)\n```$/)
+  return match?.[1]?.trim() ?? text
+}
+
+function stripLeadingBoilerplate(text: string): string {
+  const patterns = [
+    /^here(?:'s| is) (?:the )?(?:cleaned|formatted|rewritten|final) text:\s*/i,
+    /^the (?:cleaned|formatted|rewritten|final) text is:\s*/i,
+    /^整理如下[:：]\s*/,
+    /^优化如下[:：]\s*/,
+    /^以下是(?:整理|优化|格式化)?后的内容[:：]\s*/,
+    /^结构化整理如下[:：]\s*/,
+  ]
+
+  let output = text
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const pattern of patterns) {
+      const next = output.replace(pattern, '')
+      if (next !== output) {
+        output = next.trimStart()
+        changed = true
+      }
+    }
+  }
+  return output
+}
+
+function stripSurroundingQuotes(text: string): string {
+  if (text.includes('\n')) return text
+  const pairs = [
+    ['"', '"'],
+    ["'", "'"],
+    ['“', '”'],
+    ['‘', '’'],
+  ] as const
+
+  for (const [open, close] of pairs) {
+    if (text.startsWith(open) && text.endsWith(close) && text.length > open.length + close.length) {
+      return text.slice(open.length, -close.length).trim()
+    }
+  }
+  return text
+}
+
+function cleanFormatterOutput(text: string): string {
+  const withoutThinking = stripThinking(text).trim()
+  const withoutFence = stripOuterFence(withoutThinking)
+  const withoutBoilerplate = stripLeadingBoilerplate(withoutFence).trim()
+  return stripSurroundingQuotes(withoutBoilerplate).trim()
 }
 
 /**
@@ -57,7 +112,7 @@ export async function formatWithFallback(
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: text },
+          { role: 'user', content: buildFormatterUserMessage(text) },
         ],
         temperature: 0.1,
         max_tokens: 2048,
@@ -74,7 +129,7 @@ export async function formatWithFallback(
       )
 
       const raw = completion.choices[0]?.message?.content
-      const formatted = raw ? stripThinking(raw).trim() : ''
+      const formatted = raw ? cleanFormatterOutput(raw) : ''
       if (formatted) {
         return { text: formatted, model, status: 'formatted' }
       }

@@ -1,3 +1,22 @@
+## 2026-06-02: Voice formatter prompt rebuilt around OpenLess-style cleanup
+
+**What changed:**
+- Replaced the conservative shared voice formatter prompt with an OpenLess-style general formatter: ASR transcript is treated as messy source text, not a request to answer; final self-corrections win; 2+ distinct items become numbered lists; messy 3+ item dictation may be regrouped by meaning.
+- Added `buildFormatterUserMessage()` so raw ASR text is sent inside a `<raw_transcript>` envelope instead of as bare user text.
+- Added conservative formatter output cleanup for common model wrappers (`Here is the cleaned text:`, `整理如下：`, outer code fences, whole-output quotes).
+- Updated prompt/formatter unit tests to pin no-answer framing, final-correction rules, list/regrouping rules, transcript envelope escaping, and wrapper cleanup.
+
+**Why:**
+- Real usage showed the previous formatter often returned "raw transcript plus punctuation": spoken 1/2/3 lists did not reliably become lists, mid-sentence corrections were retained, and messy ordering was preserved. OpenLess's structured prompt has been iterated through Pro/community prompt migrations and later fixes such as "2 items must be numbered", so its core rules are a better baseline than adding new command-specific modes.
+
+**Key files:** `server/src/lib/voice-prompts.ts`, `server/src/lib/voice-formatter.ts`, `server/src/lib/__tests__/voice-prompts.test.ts`, `server/src/lib/__tests__/voice-formatter.test.ts`, `doc/main/backend/libs.md`.
+**Verification:** `cd server && npm test -- voice-prompts voice-formatter voice.test` passed (53/53). `cd server && env -u GROQ_API_KEY npm test` passed (342/342). Plain `cd server && npm test` fails in this shell because `GROQ_API_KEY` is set and the pre-existing autocomplete env test expects it unset.
+**Commit:** this commit.
+**Next:** Test with real voice input for messy lists and corrections; tune prompt examples before adding UI/settings.
+**Blockers:** None.
+
+---
+
 ## 2026-06-02: File Explorer multi-select (batch delete + batch drag)
 
 **What changed:**
