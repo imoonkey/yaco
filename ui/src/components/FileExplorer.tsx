@@ -131,7 +131,7 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
   const menu = useContextMenu()
   const [menuTarget, setMenuTarget] = useState<{ path: string; type: 'file' | 'dir' } | null>(null)
   const [pendingCreate, setPendingCreate] = useState<{ path: string; type: 'file' | 'dir' } | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null)
   const pendingRef = useRef(pendingCreate)
   pendingRef.current = pendingCreate
 
@@ -222,19 +222,33 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
 
   const handleDelete = useCallback((path: string) => {
     menu.close()
-    setConfirmDelete(path)
+    const selectedIds = treeRef.current?.selectedIds as Set<string> | undefined
+    const targets = selectedIds && selectedIds.size > 1 && selectedIds.has(path)
+      ? Array.from(selectedIds)
+      : [path]
+    setConfirmDelete(targets)
   }, [menu])
 
   const doDelete = useCallback(async () => {
-    const path = confirmDelete
-    if (!path) return
-    patchTree?.(prev => prev ? removeNodeFromTree(prev, path) : prev)
-    try {
-      await deleteFile(projectName, path, worktree)
-      onFileDeleted?.(path)
-    }
-    catch (err) {
-      toast.error(`Failed to delete: ${err}`)
+    const paths = confirmDelete
+    if (!paths || paths.length === 0) return
+    patchTree?.(prev => {
+      if (!prev) return prev
+      let next = prev
+      for (const p of paths) next = removeNodeFromTree(next, p)
+      return next
+    })
+    const failures: string[] = []
+    await Promise.all(paths.map(async (path) => {
+      try {
+        await deleteFile(projectName, path, worktree)
+        onFileDeleted?.(path)
+      } catch (err) {
+        failures.push(`${path}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }))
+    if (failures.length) {
+      toast.error(failures.length === 1 ? `Failed to delete: ${failures[0]}` : `Failed to delete ${failures.length} items`)
       refreshTree?.()
     }
   }, [confirmDelete, projectName, worktree, patchTree, refreshTree, onFileDeleted])
@@ -257,23 +271,34 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
 
   // react-arborist callbacks
   const onMove = useCallback(async ({ dragIds, parentId }: { dragIds: string[]; parentId: string | null; index: number }) => {
-    const sourcePath = dragIds[0]
-    if (!sourcePath) return
+    if (!dragIds.length) return
     const destDir = parentId || ''
     if (!destDir) return // Cannot move to root — server rejects empty destDir
-    // Optimistic: move node in tree
+    const moves = dragIds.map(source => ({
+      source,
+      expectedNew: `${destDir}/${source.split('/').pop()}`,
+    }))
+    // Optimistic: move nodes in tree
     patchTree?.(prev => {
       if (!prev) return prev
-      const result = moveNodeInTree(prev, sourcePath, destDir)
-      return result ? result.tree : prev
+      let next = prev
+      for (const m of moves) {
+        const result = moveNodeInTree(next, m.source, destDir)
+        if (result) next = result.tree
+      }
+      return next
     })
-    const expectedNewPath = `${destDir}/${sourcePath.split('/').pop()}`
-    onFileRenamed?.(sourcePath, expectedNewPath)
-    try { await moveFile(projectName, sourcePath, destDir, worktree) }
-    catch (err) {
-      console.error('Failed to move:', err)
-      // Rollback: undo tab/state retargeting
-      onFileRenamed?.(expectedNewPath, sourcePath)
+    for (const m of moves) onFileRenamed?.(m.source, m.expectedNew)
+    const failed: typeof moves = []
+    await Promise.all(moves.map(async (m) => {
+      try { await moveFile(projectName, m.source, destDir, worktree) }
+      catch (err) {
+        console.error('Failed to move:', err)
+        failed.push(m)
+      }
+    }))
+    if (failed.length) {
+      for (const m of failed) onFileRenamed?.(m.expectedNew, m.source)
       refreshTree?.()
     }
   }, [projectName, worktree, patchTree, refreshTree, onFileRenamed])
@@ -410,8 +435,6 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
             rowHeight={22}
             indent={12}
             openByDefault={false}
-            disableMultiSelection
-            selection={selectedFile ?? undefined}
             onCreate={onCreate}
             onMove={onMove}
             onRename={onRename}
@@ -442,7 +465,9 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
 
       {confirmDelete && (
         <ConfirmDialog
-          title={`Delete "${confirmDelete.split('/').pop()}"?`}
+          title={confirmDelete.length === 1
+            ? `Delete "${confirmDelete[0].split('/').pop()}"?`
+            : `Delete ${confirmDelete.length} items?`}
           confirmLabel="Delete"
           danger
           onConfirm={doDelete}

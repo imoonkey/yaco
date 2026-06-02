@@ -40,9 +40,13 @@ Virtualized file tree using react-arborist with react-window.
 - Single-click file → opens in **preview tab** (italic title, replaced by next single-click)
 - Double-click file → opens as **pinned tab** (normal title, persists)
 - Click directory → expands/collapses
+- `Cmd/Ctrl+Click` → toggle node in selection (multi-select; does **not** open preview)
+- `Shift+Click` → range-select between anchor and clicked node
 - Arrow keys → navigate up/down
 - Enter → open selected file (pinned)
 - Tree is keyboard-accessible
+
+Modifier handling lives in `fileExplorerNode.tsx#handleClick`: react-arborist 3.5.0's built-in handler only listens for `metaKey`, so we route `metaKey || ctrlKey` (and `shiftKey`) ourselves before any preview/toggle side-effects. Without this override Cmd/Ctrl+Click silently behaves as single-select on Linux/Windows.
 
 ### Selection Sync (File Reveal)
 
@@ -61,7 +65,7 @@ Right-click on any tree node shows:
 | New File | Creates empty file in the node's directory (or parent if node is a file) |
 | New Folder | Creates directory in the node's directory |
 | Rename | Enters inline rename mode on the node |
-| Delete | Deletes the file or folder recursively |
+| Delete | Deletes the file or folder recursively. If the right-clicked node is part of a multi-selection, deletes **all** selected nodes; confirm dialog reads `Delete N items?` |
 | Copy Relative Path | Copies project-relative path to clipboard |
 | Copy Absolute Path | Copies full filesystem path to clipboard (worktree-aware) |
 | Reveal in Finder | Opens the containing folder in OS file manager (macOS: Finder, Linux: xdg-open) |
@@ -106,8 +110,8 @@ All operations also trigger file tree refresh via SSE `filetree` channel. **Impo
 ## Drag and Drop
 
 - Drag a file or folder onto a directory node to move it
+- Multi-selected nodes drag together — `onMove` iterates `dragIds` and issues one `POST /api/files/:project/move` per source; per-item failures roll back only that item
 - Uses react-arborist's built-in DnD support
-- Calls `POST /api/files/:project/move` with source path and destination directory
 
 ## Explorer Path Copy
 

@@ -94,6 +94,17 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation()
+    // Multi-select via Ctrl/Cmd or Shift — react-arborist's own handler only
+    // checks metaKey, so we route both modifiers here and skip preview/toggle.
+    if (e.metaKey || e.ctrlKey) {
+      if (node.isSelected) node.deselect()
+      else node.selectMulti()
+      return
+    }
+    if (e.shiftKey) {
+      node.selectContiguous()
+      return
+    }
     reportContextFolder(d.path, d.type)
     if (d.type === 'dir') {
       node.select()

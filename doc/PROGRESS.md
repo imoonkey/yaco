@@ -1,3 +1,21 @@
+## 2026-06-02: File Explorer multi-select (batch delete + batch drag)
+
+**What changed:**
+- `FileNodeRenderer.handleClick` now routes `metaKey || ctrlKey` to `selectMulti()`/`deselect()` and `shiftKey` to `selectContiguous()` before any preview/toggle side-effects.
+- `FileExplorer`: removed `disableMultiSelection` and the controlled `selection` prop (incompatible with multi-select). `onMove` iterates `dragIds` and issues per-source `moveFile` calls. `confirmDelete` widened from `string` to `string[]`; right-click Delete on a multi-selected node deletes the whole selection, otherwise just the right-clicked node. ConfirmDialog title reads `Delete N items?` for batches.
+- Added `ui/tests/e2e/file-multiselect.spec.ts` covering Ctrl+Click batch delete and the single-target regression.
+
+**Why:**
+- User reported the file tree could not be multi-selected. react-arborist 3.5.0 only listens for `metaKey` in its built-in handler, and the project's custom node renderer swallowed all modifiers — so Cmd+Click was a no-op on macOS via the renderer and Ctrl+Click was a no-op everywhere.
+
+**Key files:** `ui/src/components/FileExplorer.tsx`, `ui/src/components/fileExplorerNode.tsx`, `ui/tests/e2e/file-multiselect.spec.ts`, `doc/main/ui/workspace/explorer-and-changes.md`.
+**Verification:** `cd ui && npx playwright test tests/e2e/file-multiselect.spec.ts` passed (2/2). Regression: `cd ui && npx playwright test tests/e2e/file-create.spec.ts tests/e2e/copy-path.spec.ts` passed (7/7). `cd ui && npx tsc --noEmit` clean. `cd ui && npx eslint src/components/FileExplorer.tsx src/components/fileExplorerNode.tsx` clean.
+**Commit:** this commit.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-06-02: Terminal voice Insert uses tmux bracketed paste
 
 **What changed:**
