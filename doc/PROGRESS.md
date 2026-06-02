@@ -1,3 +1,21 @@
+## 2026-06-01: Voice compose draft → clipboard backup
+
+**What changed:**
+- `ComposeTray` now stashes the current `editText` on the clipboard whenever the tray closes with content via any path — Insert, Discard, X, or Esc (`backupDraft()` wrapping `handleConfirm`/`handleDiscard`, with `handleClose` routed through `handleDiscard`).
+- Reuses the existing `writeTextToClipboard()` helper (Async Clipboard API + `execCommand` fallback); shows a 1.5s sonner toast on success.
+- Added `ui/tests/e2e/voice-compose-backup.spec.ts` (fake mic + stubbed `/api/voice/{status,compose}`) verifying both Insert and Discard land the edited draft on the clipboard.
+
+**Why:**
+- The IME/voice insert path occasionally glitched (WS dropped or session detached mid-send) so the text never reached the terminal — and because the tray closed, the carefully-edited draft was lost with it. The clipboard backup is a defensive safety net so the text is always recoverable. The `execCommand` fallback keeps it working on mobile and over plain-HTTP LAN/Tailscale where `navigator.clipboard` is unavailable; the ~150ms close animation stays within the browser's transient-activation window so the Esc path still copies.
+
+**Key files:** `ui/src/components/ComposeTray.tsx`, `ui/tests/e2e/voice-compose-backup.spec.ts`, `doc/main/README.md`.
+**Verification:** `npx playwright test tests/e2e/voice-compose-backup.spec.ts` passed (2/2). `npx tsc --noEmit` clean.
+**Commit:** `840bf80` (docs follow-up: this commit).
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-05-31: Terminal right-edge gutter fix
 
 **What changed:**
