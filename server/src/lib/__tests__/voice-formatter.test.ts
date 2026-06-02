@@ -26,6 +26,11 @@ vi.mock('openai', () => {
 import { resolveFormatterModels, formatWithFallback } from '../voice-formatter'
 
 describe('resolveFormatterModels', () => {
+  beforeEach(() => {
+    delete process.env.VOICE_FORMATTER_MODELS
+    delete process.env.GROQ_FORMATTER_MODEL
+  })
+
   afterEach(() => {
     delete process.env.VOICE_FORMATTER_MODELS
     delete process.env.GROQ_FORMATTER_MODEL
@@ -34,9 +39,10 @@ describe('resolveFormatterModels', () => {
   it('returns default model chain when no env vars set', () => {
     const models = resolveFormatterModels()
     expect(models).toEqual([
+      'llama-3.3-70b-versatile',
       'qwen/qwen3-32b',
-      'moonshotai/kimi-k2-instruct-0905',
       'openai/gpt-oss-120b',
+      'llama-3.1-8b-instant',
     ])
   })
 
@@ -59,9 +65,10 @@ describe('resolveFormatterModels', () => {
   it('ignores empty VOICE_FORMATTER_MODELS and falls to defaults', () => {
     process.env.VOICE_FORMATTER_MODELS = '  ,  '
     expect(resolveFormatterModels()).toEqual([
+      'llama-3.3-70b-versatile',
       'qwen/qwen3-32b',
-      'moonshotai/kimi-k2-instruct-0905',
       'openai/gpt-oss-120b',
+      'llama-3.1-8b-instant',
     ])
   })
 })
@@ -149,6 +156,22 @@ describe('formatWithFallback', () => {
       },
     ])
     expect(callArgs.temperature).toBe(0.1)
+  })
+
+  it('uses current Groq reasoning params for Qwen models', async () => {
+    mockCreate.mockResolvedValueOnce(chatResponse('ok'))
+    await formatWithFallback(['qwen/qwen3-32b'], SYSTEM, 'hello')
+    const callArgs = mockCreate.mock.calls[0][0]
+    expect(callArgs.reasoning_effort).toBe('none')
+    expect(callArgs.reasoning_format).toBe('hidden')
+  })
+
+  it('uses hidden low-effort reasoning for gpt-oss models', async () => {
+    mockCreate.mockResolvedValueOnce(chatResponse('ok'))
+    await formatWithFallback(['openai/gpt-oss-120b'], SYSTEM, 'hello')
+    const callArgs = mockCreate.mock.calls[0][0]
+    expect(callArgs.reasoning_effort).toBe('low')
+    expect(callArgs.reasoning_format).toBe('hidden')
   })
 
   it('cleans common formatter boilerplate wrappers', async () => {

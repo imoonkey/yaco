@@ -2,9 +2,10 @@ import OpenAI from 'openai'
 import { buildFormatterUserMessage } from './voice-prompts'
 
 const DEFAULT_MODELS = [
+  'llama-3.3-70b-versatile',
   'qwen/qwen3-32b',
-  'moonshotai/kimi-k2-instruct-0905',
   'openai/gpt-oss-120b',
+  'llama-3.1-8b-instant',
 ]
 
 const TIMEOUT_MS = 5000
@@ -68,6 +69,19 @@ function cleanFormatterOutput(text: string): string {
   return stripSurroundingQuotes(withoutBoilerplate).trim()
 }
 
+function applyModelReasoningParams(model: string, params: Record<string, unknown>): void {
+  if (model.includes('qwen')) {
+    params.reasoning_effort = 'none'
+    params.reasoning_format = 'hidden'
+    return
+  }
+
+  if (model.includes('gpt-oss')) {
+    params.reasoning_effort = 'low'
+    params.reasoning_format = 'hidden'
+  }
+}
+
 /**
  * Parse formatter model list from env vars.
  * Priority: VOICE_FORMATTER_MODELS (comma-separated) > GROQ_FORMATTER_MODEL (single) > defaults.
@@ -118,10 +132,7 @@ export async function formatWithFallback(
         max_tokens: 2048,
       }
 
-      // Disable thinking for models that support it (Qwen3)
-      if (model.includes('qwen')) {
-        params.reasoning_format = 'none'
-      }
+      applyModelReasoningParams(model, params)
 
       const completion = await client.chat.completions.create(
         params as Parameters<typeof client.chat.completions.create>[0],

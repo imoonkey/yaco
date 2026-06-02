@@ -1,3 +1,22 @@
+## 2026-06-02: Voice formatter Groq model chain refresh
+
+**What changed:**
+- Updated the default voice formatter model chain from `qwen/qwen3-32b` → `moonshotai/kimi-k2-instruct-0905` → `openai/gpt-oss-120b` to `llama-3.3-70b-versatile` → `qwen/qwen3-32b` → `openai/gpt-oss-120b` → `llama-3.1-8b-instant`.
+- Removed Kimi from the default formatter chain because the current Groq `/models` response for this account does not list it and direct completions return 404.
+- Replaced the stale Qwen `reasoning_format: "none"` request parameter with current Groq reasoning params: Qwen uses `reasoning_effort: "none"` + hidden reasoning; GPT-OSS uses low-effort hidden reasoning.
+- Updated backend docs and formatter unit tests for the new defaults and reasoning params.
+
+**Why:**
+- The old Kimi fallback wasted a model attempt before reaching GPT-OSS, and Groq now rejects `reasoning_format: "none"` for Qwen. Formatter defaults should prefer currently available, stable models and avoid API-level request errors before fallback.
+
+**Key files:** `server/src/lib/voice-formatter.ts`, `server/src/lib/__tests__/voice-formatter.test.ts`, `doc/main/backend/libs.md`, `doc/main/backend/routes.md`, `doc/main/backend/server.md`.
+**Verification:** `cd server && npm test -- voice-formatter voice.test` passed (40/40) with normal `.env` present. Full `cd server && npm test` is still not a reliable verification target in this shell because existing env-sensitive tests assume selected variables are absent and the real-tmux `wechat-pty-tap` test can miss later pane lines when run inside the full parallel suite; those are unrelated to the voice formatter change.
+**Commit:** this commit.
+**Next:** Watch real formatting quality; if `llama-3.3-70b-versatile` is slower than desired, move Qwen first via `VOICE_FORMATTER_MODELS` or a follow-up default tweak.
+**Blockers:** None.
+
+---
+
 ## 2026-06-02: Voice formatter prompt rebuilt around OpenLess-style cleanup
 
 **What changed:**

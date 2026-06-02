@@ -273,10 +273,10 @@ Multi-model LLM formatter with fallback chain via `openai` SDK.
 
 **Exports**: `resolveFormatterModels()`, `formatWithFallback(models, systemPrompt, text)`, `FormatResult`
 
-- Tries models in order (default: `qwen3-32b` → `kimi-k2` → `gpt-oss-120b`), all via same Groq API key
+- Tries models in order (default: `llama-3.3-70b-versatile` → `qwen3-32b` → `gpt-oss-120b` → `llama-3.1-8b-instant`), all via same Groq API key
 - Leverages per-model rate limits for resilience (429 on one model doesn't block others)
 - Sends the raw transcript through `buildFormatterUserMessage()` so the model sees a bounded `<raw_transcript>` source block.
-- Strips `<think>...</think>` blocks from models with thinking mode (Qwen3), plus common model boilerplate wrappers (`Here is the cleaned text:`, `整理如下：`, outer markdown fences, surrounding whole-output quotes).
+- Sets current Groq reasoning params for reasoning-capable formatter models (Qwen3: `reasoning_effort=none`; GPT-OSS: low-effort hidden reasoning), strips legacy `<think>...</think>` blocks, and removes common model boilerplate wrappers (`Here is the cleaned text:`, `整理如下：`, outer markdown fences, surrounding whole-output quotes).
 - Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
 - 5s timeout per model attempt
 
