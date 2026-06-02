@@ -28,7 +28,14 @@ import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher
 import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
-import { attachSession, reconcileShellSessionExit, releaseSession, setShellSessionChangeCallback } from './lib/terminal.js'
+import {
+  attachSession,
+  pasteTextToSession,
+  reconcileShellSessionExit,
+  releaseSession,
+  setShellSessionChangeCallback,
+  TerminalTextPasteError,
+} from './lib/terminal.js'
 import { writeImageToClipboard, ClipboardWriteError } from './lib/clipboard-write.js'
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
@@ -379,6 +386,18 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
         }
         if (msg.type === 'input') {
           proc.write(msg.data)
+          return
+        }
+        if (msg.type === 'text-paste' && typeof msg.data === 'string') {
+          try {
+            pasteTextToSession(sessionName, msg.data)
+          } catch (err: unknown) {
+            const message = err instanceof TerminalTextPasteError ? `${err.code}: ${err.message}` : String(err)
+            console.warn(`[ws] text-paste failed for ${sessionName}: ${message}`)
+            if (!(err instanceof TerminalTextPasteError && err.code === 'too-large')) {
+              proc.write(msg.data)
+            }
+          }
           return
         }
         if (msg.type === 'image-paste' && typeof msg.mime === 'string' && typeof msg.base64 === 'string') {

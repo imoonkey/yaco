@@ -118,13 +118,13 @@ The terminal component splits into two effects:
 2. On first connect for a session, client sends RIS (`\ec`) + DECTCEM show (`\e[?25h`) to clear stale screen content and reset terminal modes. The explicit cursor-show is needed because xterm.js RIS doesn't reset `isCursorHidden`.
 3. Server attaches a temporary node-pty client to the tmux session. Shell and agent scrollback is tmux-managed; the server no longer keeps a separate shell buffer.
 4. PTY output streamed to terminal via WebSocket
-5. User input sent to PTY via WebSocket (with modifier key application if active)
-4. Resize events sent as `{ type: 'resize', cols, rows }`
-5. Server sends ping every 30s; dead connections (no pong) are terminated to release PTY FDs
-6. On PTY exit (session ended, `/exit`): server sends close code **4001** → client detaches immediately, no reconnect
-7. On server PTY pressure: close code **4002** → client uses a slower 5s→60s backoff and shows `[Server overloaded — retrying...]`
-8. On connection loss (sleep/wake, network blip): close code 1006 → auto-reconnect with exponential backoff (1s → 15s, up to 5 attempts, with jitter). Shows `[Reconnecting...]` in terminal. Fail counter resets after 5s of stable connection. On `visibilitychange` (wake from sleep), triggers immediate reconnect.
-9. After all retries exhausted: shows `[Disconnected]`, calls `onDisconnect` → parent detaches session
+5. User input sent to PTY via WebSocket (with modifier key application if active). External text insertion, including voice Insert into a terminal, sends `{ type: 'text-paste', data }`; the server validates the payload, loads it into a tmux buffer, and runs `paste-buffer -p` against the target pane without sending Enter. If tmux paste fails, Workflow falls back to the older raw input path so drafts are not silently lost.
+6. Resize events sent as `{ type: 'resize', cols, rows }`
+7. Server sends ping every 30s; dead connections (no pong) are terminated to release PTY FDs
+8. On PTY exit (session ended, `/exit`): server sends close code **4001** → client detaches immediately, no reconnect
+9. On server PTY pressure: close code **4002** → client uses a slower 5s→60s backoff and shows `[Server overloaded — retrying...]`
+10. On connection loss (sleep/wake, network blip): close code 1006 → auto-reconnect with exponential backoff (1s → 15s, up to 5 attempts, with jitter). Shows `[Reconnecting...]` in terminal. Fail counter resets after 5s of stable connection. On `visibilitychange` (wake from sleep), triggers immediate reconnect.
+11. After all retries exhausted: shows `[Disconnected]`, calls `onDisconnect` → parent detaches session
 
 ### Two Backend Types
 
@@ -152,7 +152,7 @@ Before the server creates a tmux shell or starts a new multmux child process, it
 
 ### OSC Color Reports
 
-Terminal registers OSC 10/11/12 handlers that consume pure color report queries (`?` / `?;?`) before xterm.js emits automatic foreground/background/cursor color responses through `onData`. This prevents tmux scrollback replay of old color queries from injecting `ESC]10;rgb...ST` / `ESC]11;rgb...ST` text back into Claude/Codex panes while preserving normal color setter sequences.
+Terminal registers OSC 10/11/12 handlers for pure color report queries (`?` / `?;?`). Codex sessions pass these queries through to xterm.js so Codex's terminal probe can receive foreground/background/cursor colors and keep its TUI input background stable after redraws, focus changes, and attach cycles. Claude and shell sessions still consume pure queries before xterm.js emits automatic responses through `onData`; this preserves the replay guard against old color queries injecting `ESC]10;rgb...ST` / `ESC]11;rgb...ST` text into panes that do not need the probe. Normal color setter sequences are always passed through.
 
 ### OSC 52 Bridge
 

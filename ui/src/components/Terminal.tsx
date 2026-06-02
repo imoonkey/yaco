@@ -25,6 +25,15 @@ function contrastForProvider(provider?: string): number {
   return provider === 'codex' ? 5 : 1
 }
 
+function inferProvider(provider: string | undefined, sessionName: string): string | undefined {
+  if (provider) return provider
+  const lower = sessionName.toLowerCase()
+  if (lower.includes('codex')) return 'codex'
+  if (lower.includes('claude')) return 'claude'
+  if (lower.startsWith('shell-')) return 'shell'
+  return undefined
+}
+
 function buildXtermTheme() {
   return {
     background: getCssVar('--sol-editor-bg'),
@@ -125,9 +134,14 @@ function decodeOsc52Payload(payload: string): string | null {
   }
 }
 
-function suppressOscColorReportQuery(data: string): boolean {
+function isOscColorReportQuery(data: string): boolean {
   const parts = data.split(';').map(part => part.trim())
   return parts.length > 0 && parts.every(part => part === '?')
+}
+
+function suppressOscColorReportQuery(data: string, provider?: string): boolean {
+  if (!isOscColorReportQuery(data)) return false
+  return provider === 'claude' || provider === 'shell'
 }
 
 function applyModifiers(data: string, mods: Modifiers): string | null {
@@ -164,6 +178,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   const onInteractRef = useRef(onInteract)
   const onCloseRequestRef = useRef(onCloseRequest)
   const onDisconnectRef = useRef(onDisconnect)
+  const providerRef = useRef(inferProvider(provider, sessionName))
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
   const sendTextKeyRef = useRef<number | undefined>(undefined)
@@ -171,10 +186,21 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   const modifiersRef = useRef(modifiers)
   useEffect(() => { modifiersRef.current = modifiers }, [modifiers])
 
+  useEffect(() => {
+    providerRef.current = inferProvider(provider, sessionName)
+  }, [provider, sessionName])
+
   const sendInput = useCallback((data: string) => {
     onInteractRef.current?.()
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'input', data }))
+    }
+  }, [])
+
+  const pasteText = useCallback((data: string) => {
+    onInteractRef.current?.()
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'text-paste', data }))
     }
   }, [])
 
@@ -199,10 +225,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   useEffect(() => {
     if (sendText == null || sendTextKeyRef.current === sendTextKey) return
     sendTextKeyRef.current = sendTextKey
-    sendInput(sendText)
+    pasteText(sendText)
     // Focus xterm so user can immediately press Enter to execute
     termRef.current?.focus()
-  }, [sendText, sendTextKey, sendInput])
+  }, [sendText, sendTextKey, pasteText])
 
   useEffect(() => {
     onInteractRef.current = onInteract
@@ -332,7 +358,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
     })
 
     const oscColorDisposables = [10, 11, 12].map(id =>
-      term.parser.registerOscHandler(id, suppressOscColorReportQuery)
+      term.parser.registerOscHandler(id, data => suppressOscColorReportQuery(data, providerRef.current))
     )
 
     term.attachCustomKeyEventHandler((event) => {

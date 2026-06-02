@@ -10,6 +10,7 @@ const resizeSpy = vi.fn()
 const clearSpy = vi.fn()
 type OscHandler = (data: string) => boolean | Promise<boolean>
 const oscHandlers = new Map<number, OscHandler[]>()
+const wsSends: string[] = []
 
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
@@ -114,12 +115,15 @@ beforeEach(() => {
     static OPEN = 1 as const
     static CLOSING = 2 as const
     static CLOSED = 3 as const
-    readyState = 0
+    readyState = 1
     onopen: ((e: Event) => void) | null = null
     onmessage: ((e: MessageEvent) => void) | null = null
     onerror: ((e: Event) => void) | null = null
     onclose: ((e: CloseEvent) => void) | null = null
-    send() { /* no-op */ }
+    constructor() {
+      setTimeout(() => this.onopen?.(new Event('open')), 0)
+    }
+    send(data: string) { wsSends.push(data) }
     close() { this.readyState = 3 }
   }
   vi.stubGlobal('WebSocket', FakeWebSocket)
@@ -144,6 +148,7 @@ beforeEach(() => {
   focusSpy.mockClear()
   resizeSpy.mockClear()
   clearSpy.mockClear()
+  wsSends.length = 0
   oscHandlers.clear()
 })
 
@@ -185,9 +190,24 @@ describe('Terminal focus handoff', () => {
     expect(focusSpy).not.toHaveBeenCalled()
   })
 
-  it('suppresses OSC color report queries without swallowing color setters', async () => {
+  it('lets Codex receive OSC color report queries without swallowing color setters', async () => {
     const Terminal = await loadTerminal()
-    render(<Terminal sessionName="session-a" />)
+    render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    for (const id of [10, 11, 12]) {
+      const handler = oscHandlers.get(id)?.at(-1)
+      expect(handler).toBeDefined()
+      expect(handler?.('?')).toBe(false)
+      expect(handler?.('?;?')).toBe(false)
+      expect(handler?.('rgb:ffff/ffff/ffff')).toBe(false)
+      expect(handler?.('#ffffff')).toBe(false)
+      expect(handler?.('rgb:ffff/ffff/ffff;?')).toBe(false)
+    }
+  })
+
+  it('still suppresses OSC color report queries for non-Codex sessions', async () => {
+    const Terminal = await loadTerminal()
+    render(<Terminal sessionName="shell-1" provider="shell" />)
 
     for (const id of [10, 11, 12]) {
       const handler = oscHandlers.get(id)?.at(-1)
@@ -195,9 +215,27 @@ describe('Terminal focus handoff', () => {
       expect(handler?.('?')).toBe(true)
       expect(handler?.('?;?')).toBe(true)
       expect(handler?.('rgb:ffff/ffff/ffff')).toBe(false)
-      expect(handler?.('#ffffff')).toBe(false)
-      expect(handler?.('rgb:ffff/ffff/ffff;?')).toBe(false)
     }
+  })
+
+  it('updates the OSC color query policy when provider changes', async () => {
+    const Terminal = await loadTerminal()
+    const { rerender } = render(<Terminal sessionName="session-a" provider="shell" />)
+    const handler = oscHandlers.get(11)?.at(-1)
+    expect(handler).toBeDefined()
+    expect(handler?.('?')).toBe(true)
+
+    rerender(<Terminal sessionName="session-a" provider="codex" />)
+    expect(handler?.('?')).toBe(false)
+  })
+
+  it('infers Codex OSC color passthrough from the session name before metadata arrives', async () => {
+    const Terminal = await loadTerminal()
+    render(<Terminal sessionName="codex-new-session" />)
+
+    const handler = oscHandlers.get(11)?.at(-1)
+    expect(handler).toBeDefined()
+    expect(handler?.('?')).toBe(false)
   })
 
   it('reserves xterm internal scrollbar width when fitting columns', async () => {
@@ -207,5 +245,21 @@ describe('Terminal focus handoff', () => {
     await waitFor(() => {
       expect(resizeSpy).toHaveBeenCalledWith(78, 20)
     })
+  })
+
+  it('sends external terminal text as text-paste instead of raw input', async () => {
+    const Terminal = await loadTerminal()
+    const { rerender } = render(<Terminal sessionName="session-a" />)
+    await waitFor(() => {
+      expect(wsSends.some(data => data.includes('"resize"'))).toBe(true)
+    })
+    wsSends.length = 0
+
+    rerender(<Terminal sessionName="session-a" sendText="hello codex" sendTextKey={1} />)
+
+    await waitFor(() => {
+      expect(wsSends).toContain(JSON.stringify({ type: 'text-paste', data: 'hello codex' }))
+    })
+    expect(wsSends).not.toContain(JSON.stringify({ type: 'input', data: 'hello codex' }))
   })
 })

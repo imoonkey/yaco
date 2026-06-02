@@ -170,11 +170,11 @@ Per-project `.gitignore` parser and cache.
 - Used by both `project-watcher.ts` (SSE filtering) and `files.ts` (tree building)
 - `clearGitignoreCache()` called when `.gitignore` changes on disk
 
-### terminal.ts (~290 lines)
+### terminal.ts (~430 lines)
 
 PTY management for terminal sessions.
 
-**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `reconcileShellSessionExit()`, `attachSession()`, `releaseSession()`, `setShellSessionChangeCallback()`, `getShellSessionCount()`
+**Exports**: `listShellSessions()`, `startShellSession()`, `closeShellSession()`, `reconcileShellSessionExit()`, `attachSession()`, `releaseSession()`, `setShellSessionChangeCallback()`, `getShellSessionCount()`, `pasteTextToSession()`, `MAX_TERMINAL_TEXT_PASTE_BYTES`, `TerminalTextPasteError`
 
 - Shell sessions: Workflow-managed tmux sessions named `shell-1`, `shell-2`, etc., with ownership state in `${YACO_HOME:-~/.yaco}/shell-sessions/<name>.json` (path from `yacoHome.shellSessionsDir()`; can be overridden via `WORKFLOW_SHELL_SESSIONS_DIR`)
 - Shell state schema: `{ name, project, cwd, createdAt }`; the state file is the ownership marker that lets Workflow list and close only shells it created
@@ -187,6 +187,7 @@ PTY management for terminal sessions.
 - Shell and multmux terminal views both attach to tmux via `tmux attach-session` through node-pty. Immediately after attach, `attachSession()` issues `tmux resize-window -x <cols> -y <rows>` to force the window to this client's size — `window-size latest` alone is not enough because a fresh attach is not always counted as "latest active" until the user types, so a previously-attached small client (e.g. phone) or a zombie from a leaked node-pty can otherwise clamp the window.
 - New tmux sessions and attach clients use `buildChildProcessEnv()` so child processes inherit a repaired SSH environment instead of a stale `SSH_AUTH_SOCK`. `buildChildProcessEnv` also strips `npm_(config|lifecycle|package)_*` vars that npm leaks into `process.env` when the server is launched via `npm run` (defense-in-depth alongside the shell-command `unset`). On Linux it additionally injects DISPLAY / XAUTHORITY / WAYLAND_DISPLAY discovered by `clipboard-env.ts`, so children can reach the user's graphical session for clipboard ops.
 - `attachSession(name, cols, rows)` always spawns a temporary tmux attach client after `assertCanSpawn()`; browser detach destroys only that attach client, not the underlying tmux session. On Linux it lazily calls `tmux set-environment -g` once per server lifetime to push DISPLAY/XAUTHORITY/WAYLAND_DISPLAY into the running tmux server's globals, so future shell/agent windows inherit them even if the tmux server pre-dates the workflow server (existing children keep their old env until restart).
+- `pasteTextToSession(name, text)` is the server-side path for external terminal text insertion. It rejects payloads over `MAX_TERMINAL_TEXT_PASTE_BYTES`, writes the text to a uniquely named tmux buffer via stdin, runs `paste-buffer -p` against `=<name>:` without sending Enter, and best-effort deletes the buffer. WebSocket `text-paste` uses this for voice terminal Insert so Claude/Codex receive one bracketed paste instead of a raw input stream.
 - `releaseSession(name, attached)` centralizes detach cleanup by destroying non-persistent tmux attach PTYs immediately
 
 ### pty-capacity.ts (~120 lines)

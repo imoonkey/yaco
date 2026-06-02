@@ -54,6 +54,8 @@ const {
   attachSession,
   closeShellSession,
   listShellSessions,
+  MAX_TERMINAL_TEXT_PASTE_BYTES,
+  pasteTextToSession,
   reconcileShellSessionExit,
   releaseSession,
   setShellSessionChangeCallback,
@@ -105,6 +107,9 @@ describe('attachSession', () => {
         const target = args[args.indexOf('-t') + 1]
         const name = target.replace(/^=/, '').replace(/:$/, '')
         return { status: aliveTmuxSessions.has(name) ? 0 : 1, stdout: '', stderr: aliveTmuxSessions.has(name) ? '' : 'no such session' }
+      }
+      if (action === 'load-buffer' || action === 'paste-buffer' || action === 'delete-buffer') {
+        return { status: 0, stdout: '', stderr: '' }
       }
       throw new Error(`unexpected tmux action: ${action}`)
     })
@@ -348,5 +353,38 @@ describe('attachSession', () => {
     expect(() => attachSession(shellName, 80, 24)).toThrow(PtyCapacityError)
     expect(spawnMock).not.toHaveBeenCalled()
     closeShellSession(shellName)
+  })
+
+  it('pastes terminal text through a tmux bracketed paste buffer without submitting', () => {
+    pasteTextToSession('worker', 'hello\nworld')
+
+    const loadCall = spawnSyncMock.mock.calls.find(([, args]) => args[0] === 'load-buffer')
+    expect(loadCall).toBeDefined()
+    const bufferName = loadCall![1][loadCall![1].indexOf('-b') + 1]
+    expect(bufferName).toMatch(/^workflow-/)
+    expect(loadCall![2]).toEqual(expect.objectContaining({
+      encoding: 'utf-8',
+      input: 'hello\nworld',
+    }))
+
+    expect(spawnSyncMock).toHaveBeenCalledWith('tmux', [
+      'paste-buffer',
+      '-p',
+      '-t',
+      '=worker:',
+      '-b',
+      bufferName,
+    ], expect.objectContaining({ encoding: 'utf-8' }))
+    expect(spawnSyncMock).toHaveBeenCalledWith('tmux', [
+      'delete-buffer',
+      '-b',
+      bufferName,
+    ], expect.objectContaining({ encoding: 'utf-8' }))
+    expect(spawnSyncMock.mock.calls.some(([, args]) => args[0] === 'send-keys')).toBe(false)
+  })
+
+  it('rejects oversized terminal text paste payloads before invoking tmux', () => {
+    expect(() => pasteTextToSession('worker', 'x'.repeat(MAX_TERMINAL_TEXT_PASTE_BYTES + 1))).toThrow(/exceeds/)
+    expect(spawnSyncMock).not.toHaveBeenCalled()
   })
 })

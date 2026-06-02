@@ -10,6 +10,19 @@ import { discoverClipboardEnv } from './clipboard-env'
 import { assertCanSpawn } from './pty-capacity'
 import { shellSessionsDir } from './yacoHome'
 
+export const MAX_TERMINAL_TEXT_PASTE_BYTES = 1_000_000
+
+export type TerminalTextPasteErrorCode = 'too-large' | 'tmux-failed'
+
+export class TerminalTextPasteError extends Error {
+  code: TerminalTextPasteErrorCode
+
+  constructor(code: TerminalTextPasteErrorCode, message: string) {
+    super(message)
+    this.code = code
+  }
+}
+
 export interface ShellSessionSummary {
   name: string
   provider: 'shell'
@@ -144,10 +157,11 @@ function writeShellState(state: ShellSession): void {
   renameSync(tmpPath, path)
 }
 
-function tmux(args: string[], env: NodeJS.ProcessEnv = process.env): { status: number | null; stderr: string; error?: Error } {
+function tmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): { status: number | null; stderr: string; error?: Error } {
   const result = spawnSync('tmux', args, {
     encoding: 'utf-8',
     env,
+    input,
   })
   return {
     status: result.status,
@@ -195,11 +209,41 @@ function checkTmuxSession(name: string): TmuxSessionState {
   return 'unknown'
 }
 
-function runTmux(args: string[], env: NodeJS.ProcessEnv = process.env): void {
-  const result = tmux(args, env)
+function runTmux(args: string[], env: NodeJS.ProcessEnv = process.env, input?: string): void {
+  const result = tmux(args, env, input)
   if (result.error) throw result.error
   if (result.status !== 0) {
     throw new Error(`tmux ${args[0]} failed: ${result.stderr.trim() || `exit ${result.status}`}`)
+  }
+}
+
+export function pasteTextToSession(sessionName: string, text: string): void {
+  validateSessionName(sessionName)
+  if (!text) return
+
+  const byteLength = Buffer.byteLength(text, 'utf-8')
+  if (byteLength > MAX_TERMINAL_TEXT_PASTE_BYTES) {
+    throw new TerminalTextPasteError(
+      'too-large',
+      `Terminal paste exceeds ${MAX_TERMINAL_TEXT_PASTE_BYTES} bytes (got ${byteLength})`,
+    )
+  }
+
+  const bufferName = `workflow-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  try {
+    runTmux(['load-buffer', '-b', bufferName, '-'], process.env, text)
+    try {
+      runTmux(['paste-buffer', '-p', '-t', tmuxPaneTarget(sessionName), '-b', bufferName])
+    } finally {
+      const cleanup = tmux(['delete-buffer', '-b', bufferName])
+      if (cleanup.status !== 0) {
+        console.warn(`[terminal] failed to delete tmux paste buffer ${bufferName}: ${cleanup.stderr.trim() || `exit ${cleanup.status}`}`)
+      }
+    }
+  } catch (e) {
+    if (e instanceof TerminalTextPasteError) throw e
+    const message = e instanceof Error ? e.message : String(e)
+    throw new TerminalTextPasteError('tmux-failed', message)
   }
 }
 

@@ -1,3 +1,39 @@
+## 2026-06-02: Terminal voice Insert uses tmux bracketed paste
+
+**What changed:**
+- Terminal voice Insert now sends `{ type: 'text-paste', data }` instead of plain `{ type: 'input' }`.
+- The server handles `text-paste` by validating the payload, loading it into a tmux buffer, and running `tmux paste-buffer -p` against the target pane without sending Enter.
+- Added focused server/UI tests for the tmux paste command shape, oversized-payload rejection, and the UI message type.
+
+**Why:**
+- Codex renders plain keyboard input streams noticeably slower than Claude for composed voice text. Bracketed paste gives Claude, Codex, and shell sessions the same bulk-insert path already proven by multmux, while preserving the existing "Insert fills the input box; user presses Enter" behavior.
+
+**Key files:** `server/src/lib/terminal.ts`, `server/src/index.ts`, `ui/src/components/Terminal.tsx`, `server/src/lib/__tests__/terminal.test.ts`, `ui/src/components/__tests__/Terminal.focus.test.tsx`, `CLAUDE.md`, `doc/main/README.md`, `doc/main/backend/server.md`, `doc/main/backend/libs.md`, `doc/main/frontend/components.md`, `doc/main/ui/workspace/sessions-and-terminal.md`, `projects/active/voice-input-improvement/implementation_summary.md`, `projects/active/voice-input-improvement/terminal-paste-plan.md`.
+**Verification:** `cd server && env -u GROQ_API_KEY npm test` passed (337/337). `cd ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (8/8). `cd ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx` passed. `cd ui && npm run build` passed (existing Vite large-chunk warning only). `git diff --check` passed. Repo-wide `cd ui && npm run lint` still fails on pre-existing React hook/refresh lint debt outside this change. Manual tmux probes: Claude Code accepted paste into the prompt without submit; Codex accepted paste into a real TUI prompt after a minimal first turn, without submit; temporary `wf-paste-*` sessions were cleaned up.
+**Commit:** this commit.
+**Next:** Restart the Workflow server if the long-running service is not watching imported server modules.
+**Blockers:** None.
+
+---
+
+## 2026-06-02: Codex terminal color probe passthrough
+
+**What changed:**
+- `Terminal.tsx` now lets Codex sessions pass OSC 10/11/12 color report queries through to xterm.js, while Claude and shell sessions still suppress pure query replays.
+- Added tests for Codex passthrough, non-Codex suppression, and provider changes updating the existing OSC handler policy.
+- Updated the terminal docs to describe the provider-specific OSC color behavior.
+
+**Why:**
+- Codex v0.136 probes terminal colors via OSC. Workflow was permanently consuming those queries, so after Codex redrew the TUI (session switch, reattach, or a completed turn) it could stop emitting the input box background sequence and the prompt blended into the editor background.
+
+**Key files:** `ui/src/components/Terminal.tsx`, `ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/ui/workspace/sessions-and-terminal.md`.
+**Verification:** `cd ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (8/8). `cd ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx` passed. `cd ui && npm run build` passed (existing Vite large-chunk warning only).
+**Commit:** this commit.
+**Next:** None.
+**Blockers:** None.
+
+---
+
 ## 2026-06-01: Voice compose draft → clipboard backup
 
 **What changed:**
