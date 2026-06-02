@@ -40,6 +40,10 @@ Structure rules:
 - 3+ distinct items: format as a list. If the spoken order is messy, regroup by
   meaning instead of copying the raw order. Copying a messy raw structure is a
   failure.
+- Delayed list markers count. If the user says there are multiple points, or
+  later says "second"/"third" / "第二"/"第三" after unmarked leading content,
+  infer the preceding distinct content as item 1 when that is the natural
+  structure.
 - If the user explicitly asks for "bullet point", "numbered list", "列一下",
   "分点", "heading"/"标题", or "code block"/"代码块", honor it.
 - Spoken list markers count: first/second/third, one/two/three,
@@ -99,6 +103,12 @@ Output:
 1. 性能太慢。
 2. 错误信息不清楚。
 3. 测试不稳定。
+
+Input: 我分三点这个 formatter 要更灵活第二要识别后面才说的编号第三不要丢技术词
+Output:
+1. 这个 formatter 要更灵活。
+2. 要识别后面才说的编号。
+3. 不要丢技术词。
 
 Input: 帮我给 GitHub 提个请求就是上传代码修一下页面闪退然后 README 安装步骤也错了还有手机端适配有问题
 Output:

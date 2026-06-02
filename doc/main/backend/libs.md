@@ -263,7 +263,7 @@ Prompt templates for the voice formatting pipeline.
 **Exports**: `buildWhisperPrompt()`, `buildFormatterPrompt(surface?, filePath?)`, `buildFormatterUserMessage(rawTranscript)`, `FILE_TYPE_MAP`
 
 - `buildWhisperPrompt()` — bilingual base sentence for Whisper `initial_prompt` conditioning (product names: Claude, Codex, multmux)
-- `buildFormatterPrompt()` — OpenLess-style speech-to-writing core prompt: treats ASR as messy source text, not a command to answer/execute; removes filler and false starts; keeps only the final correction (`no wait`, `actually`, `scratch that`, `不对`, etc.); forces 2+ distinct items into numbered lists; allows semantic regrouping for messy 3+ item dictation; preserves technical tokens and language. Appends optional context snippet from surface/filePath with formatting directives (markdown hint for .md files, structure allowed for agent chatbox).
+- `buildFormatterPrompt()` — OpenLess-style speech-to-writing core prompt: treats ASR as messy source text, not a command to answer/execute; removes filler and false starts; keeps only the final correction (`no wait`, `actually`, `scratch that`, `不对`, etc.); forces 2+ distinct items into numbered lists; recovers implicit first items when list markers appear late (`第二`/`第三` after unmarked lead-in); allows semantic regrouping for messy 3+ item dictation; preserves technical tokens and language. Appends optional context snippet from surface/filePath with formatting directives (markdown hint for .md files, structure allowed for agent chatbox).
 - `buildFormatterUserMessage()` — wraps raw ASR text in a `<raw_transcript>` envelope before sending it as the user message, escaping accidental closing tags.
 - `FILE_TYPE_MAP` — extension → human-readable label (~30 entries) for context snippets
 
@@ -273,7 +273,7 @@ Multi-model LLM formatter with fallback chain via `openai` SDK.
 
 **Exports**: `resolveFormatterModels()`, `formatWithFallback(models, systemPrompt, text)`, `FormatResult`
 
-- Tries models in order (default: `llama-3.3-70b-versatile` → `qwen3-32b` → `gpt-oss-120b` → `llama-3.1-8b-instant`), all via same Groq API key
+- Tries models in order (default: `openai/gpt-oss-120b` → `llama-3.3-70b-versatile` → `qwen/qwen3-32b` → `llama-3.1-8b-instant`), all via same Groq API key
 - Leverages per-model rate limits for resilience (429 on one model doesn't block others)
 - Sends the raw transcript through `buildFormatterUserMessage()` so the model sees a bounded `<raw_transcript>` source block.
 - Sets current Groq reasoning params for reasoning-capable formatter models (Qwen3: `reasoning_effort=none`; GPT-OSS: low-effort hidden reasoning), strips legacy `<think>...</think>` blocks, and removes common model boilerplate wrappers (`Here is the cleaned text:`, `整理如下：`, outer markdown fences, surrounding whole-output quotes).

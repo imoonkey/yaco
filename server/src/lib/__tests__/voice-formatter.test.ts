@@ -39,9 +39,9 @@ describe('resolveFormatterModels', () => {
   it('returns default model chain when no env vars set', () => {
     const models = resolveFormatterModels()
     expect(models).toEqual([
+      'openai/gpt-oss-120b',
       'llama-3.3-70b-versatile',
       'qwen/qwen3-32b',
-      'openai/gpt-oss-120b',
       'llama-3.1-8b-instant',
     ])
   })
@@ -65,9 +65,9 @@ describe('resolveFormatterModels', () => {
   it('ignores empty VOICE_FORMATTER_MODELS and falls to defaults', () => {
     process.env.VOICE_FORMATTER_MODELS = '  ,  '
     expect(resolveFormatterModels()).toEqual([
+      'openai/gpt-oss-120b',
       'llama-3.3-70b-versatile',
       'qwen/qwen3-32b',
-      'openai/gpt-oss-120b',
       'llama-3.1-8b-instant',
     ])
   })

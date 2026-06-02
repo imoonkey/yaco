@@ -80,7 +80,15 @@ describe('buildFormatterPrompt', () => {
     const prompt = buildFormatterPrompt()
     expect(prompt).toContain('2 distinct items')
     expect(prompt).toContain('3+ distinct items')
+    expect(prompt).toContain('Delayed list markers count')
     expect(prompt).toContain('Copying a messy raw structure is a')
+  })
+
+  it('handles delayed list markers as an implicit first item', () => {
+    const prompt = buildFormatterPrompt()
+    expect(prompt).toContain('after unmarked leading content')
+    expect(prompt).toContain('这个 formatter 要更灵活')
+    expect(prompt).toContain('要识别后面才说的编号')
   })
 
   it('includes OpenLess-style no-answer and final-correction guardrails', () => {

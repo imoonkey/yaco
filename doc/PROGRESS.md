@@ -1,3 +1,22 @@
+## 2026-06-02: Voice formatter prioritizes GPT-OSS and delayed list markers
+
+**What changed:**
+- Moved `openai/gpt-oss-120b` to the front of the built-in voice formatter model chain, ahead of `llama-3.3-70b-versatile`, `qwen/qwen3-32b`, and `llama-3.1-8b-instant`.
+- Synced the local ignored `server/.env` `VOICE_FORMATTER_MODELS` override to the same GPT-OSS-first order.
+- Extended the formatter prompt so delayed list markers count: if the user says there are multiple points, or starts with unmarked content and only later says `第二`/`第三`, the model should infer the earlier distinct content as item 1.
+- Added a prompt example and unit tests for the implicit-first-item list case, and updated backend docs/status examples for the new model order.
+
+**Why:**
+- Formatting quality is more important than picking the fastest first model for this workflow, so the strongest formatter should get the first attempt. Real dictation also often starts with an unmarked first point and only becomes explicitly numbered on the second or third point; the formatter should recover that structure instead of preserving the raw ASR order.
+
+**Key files:** `server/src/lib/voice-formatter.ts`, `server/src/lib/voice-prompts.ts`, `server/src/lib/__tests__/voice-formatter.test.ts`, `server/src/lib/__tests__/voice-prompts.test.ts`, `doc/main/backend/{libs,routes,server}.md`, local ignored `server/.env`.
+**Verification:** `cd server && npm test -- voice-prompts voice-formatter voice.test` passed (56/56).
+**Commit:** this commit.
+**Next:** Try a real voice sample with "我分三点 ... 第二 ... 第三 ..." and tune examples if GPT-OSS still under-structures it.
+**Blockers:** None.
+
+---
+
 ## 2026-06-02: Voice formatter Groq model chain refresh
 
 **What changed:**

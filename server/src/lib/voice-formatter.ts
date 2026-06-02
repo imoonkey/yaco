@@ -2,9 +2,9 @@ import OpenAI from 'openai'
 import { buildFormatterUserMessage } from './voice-prompts'
 
 const DEFAULT_MODELS = [
+  'openai/gpt-oss-120b',
   'llama-3.3-70b-versatile',
   'qwen/qwen3-32b',
-  'openai/gpt-oss-120b',
   'llama-3.1-8b-instant',
 ]
 

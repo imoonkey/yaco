@@ -99,7 +99,7 @@ Returns pipeline readiness so the UI can gate recording controls.
 
 Enabled (GROQ_API_KEY set):
 ```json
-{ "enabled": true, "sttModel": "whisper-large-v3", "formatterModels": ["llama-3.3-70b-versatile", "qwen/qwen3-32b", "openai/gpt-oss-120b", "llama-3.1-8b-instant"], "maxUploadBytes": 20000000 }
+{ "enabled": true, "sttModel": "whisper-large-v3", "formatterModels": ["openai/gpt-oss-120b", "llama-3.3-70b-versatile", "qwen/qwen3-32b", "llama-3.1-8b-instant"], "maxUploadBytes": 20000000 }
 ```
 
 Disabled (key missing):
