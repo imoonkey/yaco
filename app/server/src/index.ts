@@ -143,31 +143,43 @@ async function serveUiFile(
     stat(`${filePath}.gz`).then(() => true, () => false),
   ])
 
-  const picked = pickEncoding(acceptEncoding, { br: brExists, gz: gzExists })
+  let picked = pickEncoding(acceptEncoding, { br: brExists, gz: gzExists })
   const sourcePath =
     picked === 'br' ? `${filePath}.br` : picked === 'gzip' ? `${filePath}.gz` : filePath
 
+  let body: Buffer
   try {
-    const body = await readFile(sourcePath)
-    // Content-Type ALWAYS from the BASE filename — `.br`/`.gz` are
-    // content-encoding markers, not media types.
-    const headers = new Headers({
-      'Content-Type': getContentType(filePath),
-      'Cache-Control': pathname.startsWith('/assets/')
-        ? 'public, max-age=31536000, immutable'
-        : 'no-cache',
-    })
-    if (picked !== 'identity') {
-      headers.set('Content-Encoding', picked === 'br' ? 'br' : 'gzip')
-    }
-    appendVary(headers, 'Accept-Encoding')
-    // Content-Length is derived by @hono/node-server from the Uint8Array
-    // body — do not set it manually.
-    return new Response(body, { headers })
+    body = await readFile(sourcePath)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-    throw error
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    // If a compressed sibling vanished between stat and read (e.g. a live
+    // `npm run build` rebuilt dist mid-request), fall back to the canonical
+    // file. ENOENT on the canonical file is a genuine miss.
+    if (sourcePath === filePath) return null
+    try {
+      body = await readFile(filePath)
+      picked = 'identity'
+    } catch (fallbackError) {
+      if ((fallbackError as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw fallbackError
+    }
   }
+
+  // Content-Type ALWAYS from the BASE filename — `.br`/`.gz` are
+  // content-encoding markers, not media types.
+  const headers = new Headers({
+    'Content-Type': getContentType(filePath),
+    'Cache-Control': pathname.startsWith('/assets/')
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache',
+  })
+  if (picked !== 'identity') {
+    headers.set('Content-Encoding', picked === 'br' ? 'br' : 'gzip')
+  }
+  appendVary(headers, 'Accept-Encoding')
+  // Content-Length is derived by @hono/node-server from the Uint8Array
+  // body — do not set it manually.
+  return new Response(body, { headers })
 }
 
 async function serveUiApp(
