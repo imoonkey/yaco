@@ -1,19 +1,19 @@
 {
-  "name": "multmux",
+  "name": "@yaco/cli",
   "version": "0.1.0",
-  "module": "src/index.ts",
+  "module": "src/main.ts",
   "type": "module",
   "private": true,
   "bin": {
-    "multmux": "./src/index.ts"
+    "yaco": "./src/main.ts"
   },
   "scripts": {
-    "start": "bun run src/index.ts",
+    "start": "bun run src/main.ts",
     "test": "bun run test:unit",
-    "test:unit": "bun test test/index.test.ts test/providers.test.ts test/utils.test.ts test/state.test.ts test/rename.test.ts test/hooks.test.ts test/wrapper.test.ts test/hook-update.test.ts test/tmux.test.ts test/start.test.ts test/session-id.test.ts test/lifecycle-guards.test.ts test/kill.test.ts test/yacoHome.test.ts",
+    "test:unit": "bun test test/unit test/index.test.ts test/providers.test.ts test/utils.test.ts test/state.test.ts test/rename.test.ts test/hooks.test.ts test/wrapper.test.ts test/hook-update.test.ts test/tmux.test.ts test/start.test.ts test/session-id.test.ts test/lifecycle-guards.test.ts test/kill.test.ts test/yacoHome.test.ts",
     "test:integration": "bun test ./test/integration/tmux-path-scope.integration.ts && bun test ./test/integration/agent-lifecycle.integration.ts && bun test ./test/integration/agent-sync.integration.ts && bun test ./test/integration/lifecycle-guards.integration.ts",
     "test:all": "bun run test:unit && bun run test:integration",
-    "build": "bun build src/index.ts --compile --outfile multmux"
+    "build": "bun build src/main.ts --compile --outfile yaco"
   },
   "devDependencies": {
     "@types/bun": "latest"

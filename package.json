@@ -1,6 +1,11 @@
 {
   "name": "yaco",
   "private": true,
+  "workspaces": [
+    "cli",
+    "app/server",
+    "app/ui"
+  ],
   "scripts": {
     "dev": "npm run dev:server & npm run dev:ui",
     "dev:server": "cd app/server && npm run dev",
