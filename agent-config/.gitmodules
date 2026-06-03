@@ -1,3 +1,0 @@
-[submodule "global/skills/last30days"]
-	path = global/skills/last30days
-	url = https://github.com/mvanhorn/last30days-skill.git
