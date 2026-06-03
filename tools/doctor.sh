@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="${YACO_BIN_DIR:-$HOME/.local/bin}"
 YACO_ROOT="${YACO_HOME:-$HOME/.yaco}"
 REGISTRY="$YACO_ROOT/projects.json"
@@ -63,18 +63,18 @@ projects = json.loads(Path(os.environ["REGISTRY"]).read_text())
 root = os.environ["ROOT_DIR"]
 by_id = {p.get("id"): p for p in projects}
 errors = []
-if by_id.get("workflow", {}).get("path") != root:
-    errors.append(f"workflow registry path is {by_id.get('workflow', {}).get('path')!r}, expected {root!r}")
-for pid in ("multmux", "agent-config"):
+if by_id.get("yaco", {}).get("path") != root:
+    errors.append(f"yaco registry path is {by_id.get('yaco', {}).get('path')!r}, expected {root!r}")
+for pid in ("workflow", "multmux", "agent-config"):
     if pid in by_id:
         errors.append(f"legacy project id still registered: {pid}")
 if errors:
     raise SystemExit("\n".join(errors))
 PY
   )"; then
-    pass "registry points workflow at root and omits component project ids"
+    pass "registry points yaco at root and omits legacy component project ids"
   else
-    fail "registry points workflow at root and omits component project ids"
+    fail "registry points yaco at root and omits legacy component project ids"
     if [ -n "$registry_error" ]; then
       printf '%s\n' "$registry_error" >&2
     fi

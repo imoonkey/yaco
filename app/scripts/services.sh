@@ -11,7 +11,7 @@ case "$(uname -s)" in
   *) echo "Unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
 
-WORKFLOW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORKFLOW_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$WORKFLOW_DIR/server"
 UI_DIR="$WORKFLOW_DIR/ui"
 

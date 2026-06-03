@@ -23,8 +23,8 @@ for arg in "$@"; do
   esac
 done
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -P "$SCRIPT_DIR/../.." && pwd)"
 TASK_VALIDATOR="$SCRIPT_DIR/_yaco-doctor-validate-tasks.py"
 
 YACO_HOME="${YACO_HOME:-$HOME/.yaco}"

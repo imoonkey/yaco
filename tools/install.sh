@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="${YACO_BIN_DIR:-$HOME/.local/bin}"
 INSTALL_WORKFLOW_DEPS=1
 RUN_HOOKS=1
@@ -94,22 +94,23 @@ result = []
 seen_workflow = False
 for project in projects:
     pid = project.get("id")
-    if pid == "workflow":
-        result.append({**project, "path": root})
-        seen_workflow = True
+    if pid in {"workflow", "yaco"}:
+        if not seen_workflow:
+            result.append({**project, "id": "yaco", "path": root})
+            seen_workflow = True
+        continue
     elif pid in {"multmux", "agent-config"}:
         continue
     else:
         result.append(project)
 
 if not seen_workflow:
-    result.insert(0, {"id": "workflow", "path": root})
+    result.insert(0, {"id": "yaco", "path": root})
 
 registry.write_text(json.dumps(result, indent=2) + "\n")
 PY
   echo "updated registry: $registry"
 }
-
 echo "YACO install"
 echo "repo root: $ROOT_DIR"
 echo "bin dir:   $BIN_DIR"

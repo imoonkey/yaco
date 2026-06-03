@@ -31,7 +31,7 @@ tools/doctor.sh
 dependencies unless `--cli-only` is passed, builds and installs `multmux` from
 `multmux/`, runs `multmux install-hooks`, links global Claude/Codex config to
 `agent-config/global`, and updates `${YACO_HOME:-~/.yaco}/projects.json` so the
-`workflow` project points at this monorepo root.
+`yaco` project points at this monorepo root.
 
 `tools/doctor.sh` validates the local cutover state.
 
