@@ -4,20 +4,27 @@
  * This module is RFC 9110 §12.4.2-aware: it parses Accept-Encoding
  * case-insensitively, honors explicit q-values (missing q defaults to 1.0;
  * non-numeric q values drop the entry; numeric q values outside [0, 1]
- * are clamped), treats `*` as a fallback for unlisted codings, and gives
- * an implicit identity the default weight of 1.0 (vs. 0 for unlisted
- * br/gzip). Highest non-zero q wins; ties break br > gzip > identity.
+ * are clamped), and treats `*` as a fallback for unlisted codings.
+ * Highest non-zero q wins; ties break br > gzip > identity.
  *
  * DELIBERATE DIVERGENCES FROM STRICT COMPLIANCE:
  *
- *   1. When the client explicitly forbids identity (`identity;q=0`) but
+ *   1. Unlisted identity gets implicit q=0, NOT the RFC's q=1.0. Under a
+ *      strict reading, a client sending `gzip;q=0.5` (with identity
+ *      unmentioned) would have identity dominate at implicit q=1.0 and
+ *      ship raw bytes. Real-world servers (nginx, Apache) — and our
+ *      design contract — treat an unlisted identity as "not advertised,
+ *      not preferred". A client that bothered to advertise a compressed
+ *      coding gets that compressed coding. The lenient fallback below is
+ *      the safety net for the "client truly accepts nothing" case.
+ *
+ *   2. When the client explicitly forbids identity (`identity;q=0`) but
  *      doesn't mention br/gzip, a strict server would still treat br/gzip
  *      as q=0 (unacceptable) and have to 406. We instead let unlisted
- *      compressed codings inherit the implicit-acceptable mantle (q=1.0)
- *      that identity normally carries — the client clearly wants
+ *      compressed codings inherit q=1.0 — the client clearly wants
  *      compression, and we have it on disk.
  *
- *   2. When every candidate is q=0, a strict server returns 406 Not
+ *   3. When every candidate is q=0, a strict server returns 406 Not
  *      Acceptable. Workflow is a local-first single-user app where
  *      serving any bytes always beats a hard failure, so this helper
  *      falls back to `identity` in that case — matching nginx's
@@ -181,12 +188,16 @@ function effectiveQ(coding: Encoding, entries: ParsedEntry[]): number {
   if (explicit) return explicit.q
   const star = entries.find((e) => e.coding === '*')
   if (star) return star.q
-  if (coding === 'identity') return 1
-  // br/gzip default: 0 (unlisted means unacceptable), UNLESS the client
-  // explicitly forbade identity (`identity;q=0`). In that case the
-  // "implicitly acceptable" mantle has to land somewhere — passing it to
-  // the compressed codings keeps the response shippable and respects the
-  // client's clearly-signalled preference for compression.
+  // Implicit default for an unlisted coding is 0. This deliberately
+  // diverges from RFC §12.4.2's identity-default-1.0 (see file header,
+  // divergence #1) so an unlisted identity doesn't dominate explicit
+  // compressed offerings. The lenient fallback in pickEncoding catches
+  // the "nothing acceptable" case.
+  //
+  // Exception: if the client EXPLICITLY forbade identity (`identity;q=0`),
+  // unlisted br/gzip inherit q=1.0 (divergence #2) so we can still ship
+  // compression instead of 406'ing.
+  if (coding === 'identity') return 0
   const identityForbidden = entries.some((e) => e.coding === 'identity' && e.q === 0)
   return identityForbidden ? 1 : 0
 }
