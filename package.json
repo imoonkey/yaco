@@ -3,10 +3,10 @@
   "private": true,
   "scripts": {
     "dev": "npm run dev:server & npm run dev:ui",
-    "dev:server": "cd server && npm run dev",
-    "dev:ui": "cd ui && npm run dev",
-    "build": "cd ui && npm run build",
-    "start:server": "cd server && npm run start",
+    "dev:server": "cd app/server && npm run dev",
+    "dev:ui": "cd app/ui && npm run dev",
+    "build": "cd app/ui && npm run build",
+    "start:server": "cd app/server && npm run start",
     "start:app": "npm run build && npm run start:server"
   }
 }

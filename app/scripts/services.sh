@@ -28,7 +28,7 @@ CMD="${1:-status}"
 
 usage() {
   cat <<EOF
-Usage: scripts/services.sh [command]
+Usage: app/scripts/services.sh [command]
 
 Commands:
   status     Show status of both services (default)

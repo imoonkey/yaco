@@ -1,7 +1,8 @@
 import { readFile, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { execFile } from 'child_process'
-import { join } from 'path'
+import { dirname, join, resolve } from 'path'
+import { fileURLToPath } from 'node:url'
 import { Hono } from 'hono'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
@@ -10,16 +11,16 @@ import { getWorktreeStatuses } from '../lib/worktree'
 
 const TASKS_FILE = 'projects/tasks.json'
 const ARCHIVE_DIR = 'projects/archive'
-const SCRIPT_NAME = 'scripts/update-tasks.py'
-const GLOBAL_SCRIPT = join(
-  process.env.HOME ?? '~',
-  '.claude/skills/update-tasks/scripts/update-tasks.py',
+const ROUTE_DIR = dirname(fileURLToPath(import.meta.url))
+const MONOREPO_ROOT = resolve(ROUTE_DIR, '../../../..')
+const DEFAULT_UPDATE_TASKS_SCRIPT = join(
+  MONOREPO_ROOT,
+  'agent-config/global/skills/update-tasks/scripts/update-tasks.py',
 )
 
-function findScript(projectPath: string): string | null {
-  const local = join(projectPath, SCRIPT_NAME)
-  if (existsSync(local)) return local
-  if (existsSync(GLOBAL_SCRIPT)) return GLOBAL_SCRIPT
+function findScript(): string | null {
+  const script = process.env.YACO_UPDATE_TASKS_SCRIPT || DEFAULT_UPDATE_TASKS_SCRIPT
+  if (existsSync(script)) return script
   return null
 }
 
@@ -110,7 +111,7 @@ app.patch('/:project/:taskId', withProject, async (c) => {
   const body = parseJsonBody(raw)
   if (!body) return fail(c, 400, 'body must be a JSON object')
 
-  const script = findScript(proj.path)
+  const script = findScript()
   if (!script) return fail(c, 500, 'update-tasks.py not found')
 
   try {
@@ -141,7 +142,7 @@ app.put('/:project/:taskId', withProject, async (c) => {
     return fail(c, 400, 'title, description, and acceptCriteria are required')
   }
 
-  const script = findScript(proj.path)
+  const script = findScript()
   if (!script) return fail(c, 500, 'update-tasks.py not found')
 
   try {
@@ -162,7 +163,7 @@ app.delete('/:project/:taskId', withProject, async (c) => {
   const proj = c.var.project
   const taskId = c.req.param('taskId')
 
-  const script = findScript(proj.path)
+  const script = findScript()
   if (!script) return fail(c, 500, 'update-tasks.py not found')
 
   try {
@@ -209,7 +210,7 @@ app.post('/:project/:taskId/archive', withProject, async (c) => {
   const proj = c.var.project
   const taskId = c.req.param('taskId')
 
-  const script = findScript(proj.path)
+  const script = findScript()
   if (!script) return fail(c, 500, 'update-tasks.py not found')
 
   try {
@@ -238,7 +239,7 @@ app.post('/:project/bulk', withProject, async (c) => {
     return fail(c, 400, 'ids and patch are required')
   }
 
-  const script = findScript(proj.path)
+  const script = findScript()
   if (!script) return fail(c, 500, 'update-tasks.py not found')
 
   const updated: string[] = []

@@ -74,6 +74,10 @@ describe('resolveAutocompleteModels', () => {
 // --- isAutocompleteEnabled ---
 
 describe('isAutocompleteEnabled', () => {
+  beforeEach(() => {
+    delete process.env.GROQ_API_KEY
+  })
+
   afterEach(() => {
     delete process.env.GROQ_API_KEY
   })

@@ -10,7 +10,7 @@
 # (capped at 125).
 #
 # Usage:
-#   bash scripts/yaco-doctor.sh [--verbose]
+#   bash app/scripts/yaco-doctor.sh [--verbose]
 
 set -uo pipefail
 
@@ -24,6 +24,7 @@ for arg in "$@"; do
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TASK_VALIDATOR="$SCRIPT_DIR/_yaco-doctor-validate-tasks.py"
 
 YACO_HOME="${YACO_HOME:-$HOME/.yaco}"
@@ -31,13 +32,13 @@ REGISTRY="$YACO_HOME/projects.json"
 
 # Roots scanned by check 6. Override with YACO_DOCTOR_SCAN_ROOTS (colon-separated)
 # in tests to point at fixture directories.
-DEFAULT_SCAN_ROOTS="$HOME/ld-workspace/workflow/server/src:$HOME/ld-workspace/multmux/src:$HOME/ld-workspace/agent-config/global"
+DEFAULT_SCAN_ROOTS="$REPO_ROOT/app/server/src:$REPO_ROOT/multmux/src:$REPO_ROOT/agent-config/global"
 SCAN_ROOTS="${YACO_DOCTOR_SCAN_ROOTS:-$DEFAULT_SCAN_ROOTS}"
 
 # Allowlist for check 6: files (path suffix match) that are intentionally
 # allowed to mention ~/.workflow or ~/.multmux in comments/docs/migration code.
 # Override with YACO_DOCTOR_ALLOWLIST (colon-separated suffixes) in tests.
-DEFAULT_ALLOWLIST="server/src/lib/yacoHome.ts:multmux/src/yacoHome.ts:agent-config/global/lib/yaco_home.py:agent-config/global/skills/multmux/SKILL.md"
+DEFAULT_ALLOWLIST="app/server/src/lib/yacoHome.ts:multmux/src/yacoHome.ts:agent-config/global/lib/yaco_home.py:agent-config/global/skills/multmux/SKILL.md"
 ALLOWLIST="${YACO_DOCTOR_ALLOWLIST:-$DEFAULT_ALLOWLIST}"
 
 FAILS=0
