@@ -84,8 +84,8 @@ preflight_workflow_server() {
     fi
   fi
   if [ "$detected" = 1 ]; then
-    log_err "Workflow dev server appears to be running on :3001."
-    log_err "Stop it (npm run dev / systemctl --user stop workflow-server) and re-run."
+    log_err "YACO dev server appears to be running on :3001."
+    log_err "Stop it (npm run dev / systemctl --user stop yaco-server) and re-run."
     exit 1
   fi
   log_ok "preflight: workflow server not running on :3001"

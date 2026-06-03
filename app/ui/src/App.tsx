@@ -16,7 +16,7 @@ import { Toaster, toast } from 'sonner'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
 import type { Project } from './types'
 
-const STORAGE_KEY = 'workflow-ui-state'
+const STORAGE_KEY = 'yaco-ui-state'
 
 function loadProject(): string {
   try {
@@ -36,12 +36,12 @@ function saveProject(project: string) {
 }
 
 function loadWorktree(project: string): string | null {
-  return localStorage.getItem(`workflow-worktree:${project}`)
+  return localStorage.getItem(`yaco-worktree:${project}`)
 }
 
 function saveWorktree(project: string, wt: string | null) {
-  if (wt) localStorage.setItem(`workflow-worktree:${project}`, wt)
-  else localStorage.removeItem(`workflow-worktree:${project}`)
+  if (wt) localStorage.setItem(`yaco-worktree:${project}`, wt)
+  else localStorage.removeItem(`yaco-worktree:${project}`)
 }
 
 function arraysEqual(a: string[], b: string[]): boolean {
@@ -347,7 +347,7 @@ function App() {
     <div className="flex flex-col h-full bg-[var(--sol-bg)]">
       {!isMobile && (
         <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
-          <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
+          <span className="text-[13px] font-semibold">{activeProject || 'YACO'}</span>
           <span className="flex items-center gap-2">
             <NotificationBell {...notificationBellProps} />
             <WeChatHeaderButton />
@@ -397,7 +397,7 @@ function App() {
       </main>
       {!isMobile && (
         <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
-          <span className="text-[13px] font-semibold">{activeProject || 'Workflow'}</span>
+          <span className="text-[13px] font-semibold">{activeProject || 'YACO'}</span>
           <Clock />
         </div>
       )}

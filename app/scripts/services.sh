@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Manage workflow long-running services (workflow-server, workflow-ui).
+# Manage YACO long-running services (yaco-server, yaco-ui).
 # Linux: systemd user services in ~/.config/systemd/user/
 # macOS: launchd LaunchAgents in ~/Library/LaunchAgents/
 
@@ -11,15 +11,15 @@ case "$(uname -s)" in
   *) echo "Unsupported OS: $(uname -s)" >&2; exit 1 ;;
 esac
 
-WORKFLOW_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVER_DIR="$WORKFLOW_DIR/server"
-UI_DIR="$WORKFLOW_DIR/ui"
+APP_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SERVER_DIR="$APP_DIR/server"
+UI_DIR="$APP_DIR/ui"
 
 if [ "$OS" = linux ]; then
-  UNITS=(workflow-server.service workflow-ui.service)
+  UNITS=(yaco-server.service yaco-ui.service)
   UNIT_DIR="$HOME/.config/systemd/user"
 else
-  LABELS=(com.workflow.server com.workflow.ui)
+  LABELS=(com.yaco.server com.yaco.ui)
   PLIST_DIR="$HOME/Library/LaunchAgents"
   LOG_DIR="$HOME/Library/Logs"
 fi
@@ -58,9 +58,9 @@ resolve_node_bin_dir() {
 install_linux() {
   local node_bin_dir; node_bin_dir="$(resolve_node_bin_dir)"
   mkdir -p "$UNIT_DIR"
-  cat > "$UNIT_DIR/workflow-server.service" <<EOF
+  cat > "$UNIT_DIR/yaco-server.service" <<EOF
 [Unit]
-Description=Workflow backend (Hono + tsx watch)
+Description=YACO backend (Hono + tsx watch)
 After=network-online.target
 Wants=network-online.target
 
@@ -79,9 +79,9 @@ StandardError=journal
 [Install]
 WantedBy=default.target
 EOF
-  cat > "$UNIT_DIR/workflow-ui.service" <<EOF
+  cat > "$UNIT_DIR/yaco-ui.service" <<EOF
 [Unit]
-Description=Workflow frontend (Vite dev)
+Description=YACO frontend (Vite dev)
 After=network-online.target
 Wants=network-online.target
 
@@ -103,8 +103,8 @@ EOF
   systemctl --user daemon-reload
   systemctl --user enable --now "${UNITS[@]}"
   echo "Installed and started:"
-  echo "  $UNIT_DIR/workflow-server.service"
-  echo "  $UNIT_DIR/workflow-ui.service"
+  echo "  $UNIT_DIR/yaco-server.service"
+  echo "  $UNIT_DIR/yaco-ui.service"
 }
 
 install_macos() {
@@ -113,9 +113,9 @@ install_macos() {
   local labels=(server ui)
   local dirs=("$SERVER_DIR" "$UI_DIR")
   for i in 0 1; do
-    local label="com.workflow.${labels[$i]}"
+    local label="com.yaco.${labels[$i]}"
     local wd="${dirs[$i]}"
-    local logfile="$LOG_DIR/workflow-${labels[$i]}.log"
+    local logfile="$LOG_DIR/yaco-${labels[$i]}.log"
     local plist="$PLIST_DIR/$label.plist"
     cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -162,8 +162,8 @@ EOF
     launchctl bootstrap "gui/$UID" "$plist"
   done
   echo "Installed and started:"
-  echo "  $PLIST_DIR/com.workflow.server.plist  (logs: $LOG_DIR/workflow-server.log)"
-  echo "  $PLIST_DIR/com.workflow.ui.plist      (logs: $LOG_DIR/workflow-ui.log)"
+  echo "  $PLIST_DIR/com.yaco.server.plist  (logs: $LOG_DIR/yaco-server.log)"
+  echo "  $PLIST_DIR/com.yaco.ui.plist      (logs: $LOG_DIR/yaco-ui.log)"
 }
 
 linux_cmd() {
@@ -171,7 +171,7 @@ linux_cmd() {
     status)  systemctl --user status "${UNITS[@]}" --no-pager -n 0 ;;
     start|stop|restart|enable|disable)
              systemctl --user "$1" "${UNITS[@]}" ;;
-    logs)    journalctl --user -u workflow-server -u workflow-ui -f ;;
+    logs)    journalctl --user -u yaco-server -u yaco-ui -f ;;
   esac
 }
 
@@ -220,8 +220,8 @@ macos_cmd() {
       done
       ;;
     logs)
-      touch "$LOG_DIR/workflow-server.log" "$LOG_DIR/workflow-ui.log"
-      tail -F "$LOG_DIR/workflow-server.log" "$LOG_DIR/workflow-ui.log"
+      touch "$LOG_DIR/yaco-server.log" "$LOG_DIR/yaco-ui.log"
+      tail -F "$LOG_DIR/yaco-server.log" "$LOG_DIR/yaco-ui.log"
       ;;
   esac
 }

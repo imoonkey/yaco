@@ -8,7 +8,7 @@ export interface ClipboardEnv {
   WAYLAND_DISPLAY?: string
 }
 
-// On GNOME/Wayland the workflow server (started by systemd-user) lacks DISPLAY
+// On GNOME/Wayland the YACO server (started by systemd-user) lacks DISPLAY
 // and XAUTHORITY because they live in the graphical-session env, not the
 // service env. xclip and arboard-based tools (codex) refuse to talk to the
 // X server without them. mutter writes a per-session Xauthority cookie to

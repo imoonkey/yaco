@@ -8,7 +8,7 @@ import { FileTypeIcon, GIT_COLORS } from '../../components/fileExplorerIcons'
 
 // --- View mode persistence ---
 
-const VIEW_MODE_KEY = 'workflow-diff-viewmode'
+const VIEW_MODE_KEY = 'yaco-diff-viewmode'
 type ViewMode = 'unified' | 'split'
 
 function loadViewMode(): ViewMode {

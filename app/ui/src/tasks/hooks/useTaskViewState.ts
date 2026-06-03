@@ -70,7 +70,7 @@ type PersistedState = {
 function loadState(project: string): TaskViewState {
   const base = defaultState()
   try {
-    const stored = localStorage.getItem(`workflow-tasks:${project}`)
+    const stored = localStorage.getItem(`yaco-tasks:${project}`)
     if (!stored) return base
     const p: Partial<PersistedState> = JSON.parse(stored)
     return {
@@ -103,7 +103,7 @@ function persistState(project: string, state: TaskViewState): void {
     boardColumnCollapsed: [...state.boardColumnCollapsed],
     graphCollapsedIds: [...state.graphCollapsedIds],
   }
-  localStorage.setItem(`workflow-tasks:${project}`, JSON.stringify(p))
+  localStorage.setItem(`yaco-tasks:${project}`, JSON.stringify(p))
 }
 
 type Action =

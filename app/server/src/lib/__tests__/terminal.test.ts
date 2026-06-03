@@ -139,7 +139,7 @@ describe('attachSession', () => {
     expect(source).toMatch(/import \* as pty from 'node-pty'/)
   })
 
-  it('starts shell sessions as workflow-managed tmux sessions', () => {
+  it('starts shell sessions as YACO-managed tmux sessions', () => {
     const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
 
     expect(shellName).toBe('shell-1')
@@ -163,7 +163,7 @@ describe('attachSession', () => {
     ])
   })
 
-  it('enables tmux mouse for workflow-managed shell sessions', () => {
+  it('enables tmux mouse for YACO-managed shell sessions', () => {
     const shellName = startShellSession('/tmp/project', 'workflow', 'shell-1')
 
     expect(spawnSyncMock).toHaveBeenCalledWith('tmux', [
@@ -361,7 +361,7 @@ describe('attachSession', () => {
     const loadCall = spawnSyncMock.mock.calls.find(([, args]) => args[0] === 'load-buffer')
     expect(loadCall).toBeDefined()
     const bufferName = loadCall![1][loadCall![1].indexOf('-b') + 1]
-    expect(bufferName).toMatch(/^workflow-/)
+    expect(bufferName).toMatch(/^yaco-/)
     expect(loadCall![2]).toEqual(expect.objectContaining({
       encoding: 'utf-8',
       input: 'hello\nworld',

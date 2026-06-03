@@ -229,7 +229,7 @@ export function pasteTextToSession(sessionName: string, text: string): void {
     )
   }
 
-  const bufferName = `workflow-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+  const bufferName = `yaco-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
   try {
     runTmux(['load-buffer', '-b', bufferName, '-'], process.env, text)
     try {

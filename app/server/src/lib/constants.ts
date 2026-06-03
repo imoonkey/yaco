@@ -12,9 +12,9 @@ export const MULTMUX_PATH = (() => {
 
 /** Global multmux session state directory.
  *  Resolves to `${YACO_HOME:-~/.yaco}/sessions` via the shared YACO resolver
- *  (see `./yacoHome.ts#sessionsDir`). Multmux owns writes; the workflow server
+ *  (see `./yacoHome.ts#sessionsDir`). Multmux owns writes; the YACO server
  *  reads + watches this directory. The MULTMUX_STATE_DIR override on the
- *  multmux CLI side is intentionally NOT honored here — workflow should
+ *  multmux CLI side is intentionally NOT honored here — YACO should
  *  observe the same root multmux is publishing to under default operation. */
 export const MULTMUX_SESSIONS_DIR = sessionsDir()
 

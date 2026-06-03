@@ -1,13 +1,12 @@
 # YACO Monorepo
 
-This checkout is being prepared as the YACO source monorepo. The v1 migration is
-mechanical: Workflow stays behaviorally unchanged for now, `multmux` remains its
-own Bun project after import, and `agent-config` remains the source for global
-skills and agent configuration.
+This checkout is the YACO source monorepo. The app lives under `app/`,
+`multmux` remains its own Bun project, and `agent-config` remains the source
+for global skills and agent configuration.
 
 Current source layout:
 
-- `app/server/` and `app/ui/` are the Workflow app.
+- `app/server/` and `app/ui/` are the YACO app.
 - `projects/` is the live YACO task graph and project design history.
 - `multmux/` is the imported Bun CLI project.
 - `agent-config/` is the imported global skills/config source.
@@ -27,7 +26,7 @@ tools/doctor.sh
 
 ## Install And Update
 
-`tools/install.sh` is the root install/update entry point. It installs Workflow
+`tools/install.sh` is the root install/update entry point. It installs YACO app
 dependencies unless `--cli-only` is passed, builds and installs `multmux` from
 `multmux/`, runs `multmux install-hooks`, links global Claude/Codex config to
 `agent-config/global`, and updates `${YACO_HOME:-~/.yaco}/projects.json` so the

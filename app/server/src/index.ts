@@ -152,7 +152,7 @@ async function serveUiApp(pathname: string): Promise<Response> {
   if (indexFile) return indexFile
 
   return new Response(
-    'Workflow UI build not found. Run `npm run build` from the repo root before using the backend as the app entrypoint.',
+    'YACO UI build not found. Run `npm run build` from the repo root before using the backend as the app entrypoint.',
     {
       status: 503,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
@@ -219,7 +219,7 @@ try {
 
 // Start HTTP server
 const server = serve({ fetch: app.fetch, port }, () => {
-  console.log(`Workflow server running on http://localhost:${port}`)
+  console.log(`YACO server running on http://localhost:${port}`)
   void startRuntime().catch((err) => {
     console.error('[startup] runtime init failed:', err)
     cleanupTerminalResources()

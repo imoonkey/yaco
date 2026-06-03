@@ -4,7 +4,7 @@ import { browseDirs, addProject } from '../hooks/useApi'
 import { DialogShell } from './DialogShell'
 import type { BrowseEntry } from '../hooks/useApi'
 
-const STORAGE_KEY = 'workflow-last-browse-dir'
+const STORAGE_KEY = 'yaco-last-browse-dir'
 const DEFAULT_PREFIX = '~/workspace/'
 
 function getInitialPath(): string {

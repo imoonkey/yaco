@@ -115,11 +115,11 @@ export function defaultFileState(): FileState {
 }
 
 export function layoutKey(project: string, worktree?: string | null): string {
-  return worktree ? `workflow-workspace:${project}:wt:${worktree}` : `workflow-workspace:${project}`
+  return worktree ? `yaco-workspace:${project}:wt:${worktree}` : `yaco-workspace:${project}`
 }
 
 export function draftsKey(project: string, worktree?: string | null): string {
-  return worktree ? `workflow-drafts:${project}:wt:${worktree}` : `workflow-drafts:${project}`
+  return worktree ? `yaco-drafts:${project}:wt:${worktree}` : `yaco-drafts:${project}`
 }
 
 export function loadStoredSize(value: unknown, fallback: number): number {

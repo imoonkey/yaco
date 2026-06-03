@@ -104,7 +104,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     }
   }, [activeSession, refreshSessions, actions])
 
-  const pendingKey = `workflow-pending-renames:${projectName}`
+  const pendingKey = `yaco-pending-renames:${projectName}`
   const [pendingRenames, setPendingRenamesRaw] = useState<Record<string, string>>(() => {
     try {
       const raw = localStorage.getItem(pendingKey)

@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="${YACO_BIN_DIR:-$HOME/.local/bin}"
-INSTALL_WORKFLOW_DEPS=1
+INSTALL_APP_DEPS=1
 RUN_HOOKS=1
 UPDATE_REGISTRY=1
 DRY_RUN=0
@@ -13,7 +13,7 @@ usage() {
 Usage: tools/install.sh [options]
 
 Options:
-  --cli-only       Skip Workflow app/server npm installs.
+  --cli-only       Skip YACO app/server npm installs.
   --bin-dir PATH   Install multmux and mt into PATH (default: ~/.local/bin).
   --skip-hooks     Build/install multmux but do not run multmux install-hooks.
   --no-registry    Do not update ~/.yaco/projects.json.
@@ -24,7 +24,7 @@ EOF
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --cli-only) INSTALL_WORKFLOW_DEPS=0; shift ;;
+    --cli-only) INSTALL_APP_DEPS=0; shift ;;
     --bin-dir)
       if [ "$#" -lt 2 ]; then
         echo "install: --bin-dir requires a path" >&2
@@ -98,9 +98,6 @@ for project in projects:
         if not seen_yaco:
             result.append({**project, "id": "yaco", "path": root})
             seen_yaco = True
-        continue
-    elif pid in {"workflow", "multmux", "agent-config"}:
-        continue
     else:
         result.append(project)
 
@@ -118,7 +115,7 @@ echo "bin dir:   $BIN_DIR"
 if [ "$DRY_RUN" = 1 ]; then
   cat <<EOF
 dry run:
-  workflow deps: $INSTALL_WORKFLOW_DEPS
+  app deps:      $INSTALL_APP_DEPS
   run hooks:     $RUN_HOOKS
   update registry: $UPDATE_REGISTRY
   app server:    $ROOT_DIR/app/server
@@ -136,13 +133,13 @@ require bun
 require npm
 require python3
 
-if [ "$INSTALL_WORKFLOW_DEPS" = 1 ]; then
-  echo "Installing Workflow server deps..."
+if [ "$INSTALL_APP_DEPS" = 1 ]; then
+  echo "Installing YACO server deps..."
   (cd "$ROOT_DIR/app/server" && npm install)
-  echo "Installing Workflow UI deps..."
+  echo "Installing YACO UI deps..."
   (cd "$ROOT_DIR/app/ui" && npm install)
 else
-  echo "Skipping Workflow JS deps (--cli-only)."
+  echo "Skipping YACO JS deps (--cli-only)."
 fi
 
 echo "Installing multmux..."

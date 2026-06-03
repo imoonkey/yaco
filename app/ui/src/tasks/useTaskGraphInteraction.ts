@@ -22,7 +22,7 @@ export function useTaskGraphInteraction(
   // --- Collapse state ---
   const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => {
     try {
-      const stored = localStorage.getItem(`workflow-taskgraph:${projectName}`)
+      const stored = localStorage.getItem(`yaco-taskgraph:${projectName}`)
       if (stored) {
         const parsed = JSON.parse(stored)
         const ids = parsed.collapsedTaskIds ?? parsed.collapsedMilestones
@@ -34,7 +34,7 @@ export function useTaskGraphInteraction(
 
   // Persist collapse state
   useEffect(() => {
-    localStorage.setItem(`workflow-taskgraph:${projectName}`,
+    localStorage.setItem(`yaco-taskgraph:${projectName}`,
       JSON.stringify({ collapsedTaskIds: [...collapsedTaskIds] }))
   }, [projectName, collapsedTaskIds])
 

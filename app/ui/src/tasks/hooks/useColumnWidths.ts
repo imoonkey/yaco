@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { COLUMNS, getDefaultWidths } from '../list/listColumns'
 import type { ColumnWidths } from '../list/listColumns'
 
-const STORAGE_KEY = 'workflow-task-list-col-widths'
+const STORAGE_KEY = 'yaco-task-list-col-widths'
 
 function loadWidths(): ColumnWidths {
   try {
