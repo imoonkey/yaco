@@ -87,7 +87,7 @@ registry = Path(os.environ["REGISTRY"])
 root = os.environ["ROOT_DIR"]
 try:
     projects = json.loads(registry.read_text())
-except FileNotFoundError:
+except (FileNotFoundError, json.JSONDecodeError):
     projects = []
 
 result = []
@@ -147,7 +147,7 @@ fi
 echo "Installing multmux..."
 (cd "$ROOT_DIR/multmux" && bun install && bun build src/index.ts --compile --outfile multmux)
 install_binary "$ROOT_DIR/multmux/multmux" "$BIN_DIR/multmux"
-ln -sfn "$BIN_DIR/multmux" "$BIN_DIR/mt"
+link_path "$BIN_DIR/multmux" "$BIN_DIR/mt"
 
 if command -v codesign >/dev/null 2>&1; then
   codesign -s - "$BIN_DIR/multmux"

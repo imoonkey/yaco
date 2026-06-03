@@ -65,7 +65,7 @@ ls -la ~/.claude/CLAUDE.md ~/.claude/skills ~/.codex/AGENTS.md ~/.agents/skills 
 
 If any are missing, warn:
 
-> Global config not fully linked. Run: `~/workspace/agent-config/setup.sh`
+> Global config not fully linked. Run `tools/install.sh --cli-only` from the YACO monorepo root, or run the monorepo-local `agent-config/setup.sh` shim.
 
 ### 5. Summary
 

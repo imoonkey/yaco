@@ -8,7 +8,7 @@ Shell scripts, Markdown, Python (update-tasks.py)
 
 ## Build & Run
 
-Global setup: `./setup.sh`
+Global setup: `./setup.sh` (delegates to root `tools/install.sh --cli-only`)
 Per-project setup: `/init-all`
 
 ## Architecture
@@ -28,12 +28,16 @@ Per-project setup: `/init-all`
 
 ## Ecosystem
 
-Three repos form the productivity stack. Changes in one may require coordinated changes in the others.
+The YACO productivity stack now lives in this monorepo.
 
-| Repo | What | Path |
-|------|------|------|
-| **multmux** | CLI for orchestrating multiple agents (Claude/Codex) via tmux | `~/workspace/multmux` |
-| **agent-config** | Centralized CLAUDE.md, skills, settings — symlinked into all projects | `~/workspace/agent-config` |
-| **workflow** | Web UI for coordinating agents across repos (monitor, workspace, terminal) | `~/workspace/workflow` |
+| Path | What |
+|------|------|
+| `app/` | Workflow web app and server |
+| `multmux/` | Bun-based CLI for orchestrating agents via tmux |
+| `agent-config/` | Global agent config, skills, and helper scripts |
+| `projects/` | Live root YACO task graph and project history |
 
-**Dependencies:** multmux ← agent-config ← workflow. Workflow depends on both; agent-config skills reference multmux CLI. When changing multmux CLI interface or agent-config skill contracts, check downstream consumers don't break.
+**Dependencies:** agent-config skills reference the installed multmux CLI and
+are consumed by Workflow/Codex/Claude through global symlinks installed by
+`tools/install.sh`. When changing skill contracts or helper scripts, update the
+app and docs in the same monorepo change.

@@ -46,13 +46,15 @@ check_absent "$ROOT_DIR/server"
 check_absent "$ROOT_DIR/ui"
 check_absent "$ROOT_DIR/multmux/projects/tasks.json"
 check_absent "$ROOT_DIR/agent-config/projects/tasks.json"
+check_absent "$ROOT_DIR/multmux/projects/progress.json"
+check_absent "$ROOT_DIR/multmux/projects/progress.json.lock"
 check_absent "$ROOT_DIR/multmux/projects/active"
 check_absent "$ROOT_DIR/multmux/projects/archive"
 check_absent "$ROOT_DIR/agent-config/projects/active"
 check_absent "$ROOT_DIR/agent-config/projects/archive"
 
 if [ -f "$REGISTRY" ]; then
-  if registry_error="$(REGISTRY="$REGISTRY" ROOT_DIR="$ROOT_DIR" python3 - <<'PY'
+  if registry_error="$(REGISTRY="$REGISTRY" ROOT_DIR="$ROOT_DIR" python3 - <<'PY' 2>&1
 import json
 import os
 from pathlib import Path
