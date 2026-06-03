@@ -13,6 +13,8 @@ export const ErrCode = {
   INVALID: "INVALID",
   CONFLICT: "CONFLICT",
   IO: "IO",
+  ENV: "ENV",
+  LOCK: "LOCK",
   INTERNAL: "INTERNAL",
 } as const;
 
@@ -42,8 +44,31 @@ export function toErr(thrown: unknown): Err {
   return err(ErrCode.INTERNAL, String(thrown));
 }
 
-/** Exit code mapping. Keep narrow — 0 ok, 1 user error, 2 internal. */
+/** Canonical exit code table (yaco CLI contract):
+ *    0   success
+ *    1   domain/runtime: NOT_FOUND, INVALID, CONFLICT, IO
+ *    2   usage:          USAGE
+ *    3   environment:    ENV
+ *    4   lock:           LOCK
+ *    5   internal:       INTERNAL (and any unknown code)
+ *    130 interrupted (signal handler; not wired in this task)
+ */
 export function exitCodeFor(code: string): number {
-  if (code === ErrCode.INTERNAL || code === ErrCode.IO) return 2;
-  return 1;
+  switch (code) {
+    case ErrCode.USAGE:
+      return 2;
+    case ErrCode.ENV:
+      return 3;
+    case ErrCode.LOCK:
+      return 4;
+    case ErrCode.INTERNAL:
+      return 5;
+    case ErrCode.NOT_FOUND:
+    case ErrCode.INVALID:
+    case ErrCode.CONFLICT:
+    case ErrCode.IO:
+      return 1;
+    default:
+      return 5;
+  }
 }

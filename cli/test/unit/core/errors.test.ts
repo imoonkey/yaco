@@ -47,15 +47,30 @@ describe("toErr", () => {
 });
 
 describe("exitCodeFor", () => {
-  it("returns 2 for INTERNAL / IO", () => {
-    expect(exitCodeFor(ErrCode.INTERNAL)).toBe(2);
-    expect(exitCodeFor(ErrCode.IO)).toBe(2);
-  });
-
-  it("returns 1 for user-facing codes", () => {
-    expect(exitCodeFor(ErrCode.USAGE)).toBe(1);
+  it("maps domain/runtime codes to 1", () => {
     expect(exitCodeFor(ErrCode.NOT_FOUND)).toBe(1);
     expect(exitCodeFor(ErrCode.INVALID)).toBe(1);
     expect(exitCodeFor(ErrCode.CONFLICT)).toBe(1);
+    expect(exitCodeFor(ErrCode.IO)).toBe(1);
+  });
+
+  it("maps USAGE to 2", () => {
+    expect(exitCodeFor(ErrCode.USAGE)).toBe(2);
+  });
+
+  it("maps ENV to 3", () => {
+    expect(exitCodeFor(ErrCode.ENV)).toBe(3);
+  });
+
+  it("maps LOCK to 4", () => {
+    expect(exitCodeFor(ErrCode.LOCK)).toBe(4);
+  });
+
+  it("maps INTERNAL to 5", () => {
+    expect(exitCodeFor(ErrCode.INTERNAL)).toBe(5);
+  });
+
+  it("falls back to 5 for unknown codes", () => {
+    expect(exitCodeFor("WAT")).toBe(5);
   });
 });

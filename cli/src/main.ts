@@ -125,14 +125,21 @@ async function dispatch(argv: string[]): Promise<{
 function render(result: Result<unknown>, json: boolean): void {
   if (isErr(result)) {
     if (json) {
-      emit(result);
+      // Failure envelope: stderr only, stdout stays empty so machine
+      // consumers can rely on success → stdout, failure → stderr.
+      const error: Record<string, unknown> = {
+        code: result.code,
+        message: result.message,
+      };
+      if (result.details !== undefined) error["details"] = result.details;
+      emit({ ok: false, error }, "stderr");
     } else {
       process.stderr.write(`error [${result.code}]: ${result.message}\n`);
     }
     return;
   }
   if (json) {
-    emit(result.value);
+    emit({ ok: true, data: result.value });
     return;
   }
   // Text mode: print known shapes; otherwise fall back to pretty JSON.

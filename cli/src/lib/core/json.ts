@@ -1,6 +1,7 @@
 /** JSON output and parsing helpers for the CLI.
  *
- *  emit() writes one newline-terminated JSON object to stdout — line-delimited
+ *  emit() writes one newline-terminated JSON object — to stdout by default,
+ *  to stderr when the caller is delivering a failure envelope. Line-delimited
  *  so consumers can stream. parse() is a non-throwing wrapper that returns a
  *  Result so callers don't need try/catch around every blob of input.
  */
@@ -8,8 +9,9 @@
 import { ok, err, type Result } from "./result.ts";
 import { ErrCode } from "./errors.ts";
 
-export function emit(value: unknown): void {
-  process.stdout.write(stringify(value) + "\n");
+export function emit(value: unknown, stream: "stdout" | "stderr" = "stdout"): void {
+  const out = stream === "stderr" ? process.stderr : process.stdout;
+  out.write(stringify(value) + "\n");
 }
 
 /** Compact stringify with deterministic key order (lexicographic). Arrays
