@@ -37,8 +37,9 @@ dependencies unless `--cli-only` is passed, builds and installs `multmux` from
 
 The old split roots were retired on 2026-06-03:
 
-- `/home/qiguo/ld-workspace/multmux` is now a symlink to `multmux/`.
-- `/home/qiguo/ld-workspace/agent-config` is now a symlink to `agent-config/`.
+- `/home/qiguo/ld-workspace/workflow`, `/home/qiguo/ld-workspace/multmux`,
+  and `/home/qiguo/ld-workspace/agent-config` are no longer active development
+  roots.
 - Original split repositories, including their `.git` directories, are retained
   under `/home/qiguo/ld-workspace/split-repo-archive/20260603_*` for rollback
   insurance.

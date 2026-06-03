@@ -91,20 +91,20 @@ except (FileNotFoundError, json.JSONDecodeError):
     projects = []
 
 result = []
-seen_workflow = False
+seen_yaco = False
 for project in projects:
     pid = project.get("id")
-    if pid in {"workflow", "yaco"}:
-        if not seen_workflow:
+    if pid == "yaco":
+        if not seen_yaco:
             result.append({**project, "id": "yaco", "path": root})
-            seen_workflow = True
+            seen_yaco = True
         continue
-    elif pid in {"multmux", "agent-config"}:
+    elif pid in {"workflow", "multmux", "agent-config"}:
         continue
     else:
         result.append(project)
 
-if not seen_workflow:
+if not seen_yaco:
     result.insert(0, {"id": "yaco", "path": root})
 
 registry.write_text(json.dumps(result, indent=2) + "\n")
