@@ -7,7 +7,7 @@ import type { IncomingMessage } from 'http'
 import { isIP } from 'node:net'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { readFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { projectRoutes } from './routes/projects.js'
 import { progressRoutes } from './routes/progress.js'
 import { sessionRoutes } from './routes/sessions.js'
@@ -23,6 +23,7 @@ import { taskRoutes } from './routes/tasks.js'
 import { wechatRoutes } from './routes/wechat.js'
 import { whatsappRoutes } from './routes/whatsapp.js'
 import { ensureYacoHome, loadProjects } from './lib/projects.js'
+import { pickEncoding, appendVary } from './lib/static-encoding.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
 import { emitRefresh } from './lib/notify.js'
@@ -123,16 +124,45 @@ function getContentType(filePath: string): string {
   return MIME_TYPES.get(extname(filePath)) ?? 'application/octet-stream'
 }
 
-async function serveUiFile(pathname: string): Promise<Response | null> {
+async function serveUiFile(
+  pathname: string,
+  acceptEncoding?: string | null,
+): Promise<Response | null> {
   const filePath = resolveUiPath(pathname)
   if (!filePath) return new Response('Not found', { status: 404 })
 
+  // Reject direct requests for precompressed siblings. Check the RESOLVED
+  // path (post-decode), not the raw URL — `/assets/foo.js%2ebr` would
+  // otherwise decode to `foo.js.br` and bypass this guard.
+  if (filePath.endsWith('.br') || filePath.endsWith('.gz')) {
+    return new Response('Not found', { status: 404 })
+  }
+
+  const [brExists, gzExists] = await Promise.all([
+    stat(`${filePath}.br`).then(() => true, () => false),
+    stat(`${filePath}.gz`).then(() => true, () => false),
+  ])
+
+  const picked = pickEncoding(acceptEncoding, { br: brExists, gz: gzExists })
+  const sourcePath =
+    picked === 'br' ? `${filePath}.br` : picked === 'gzip' ? `${filePath}.gz` : filePath
+
   try {
-    const body = await readFile(filePath)
+    const body = await readFile(sourcePath)
+    // Content-Type ALWAYS from the BASE filename — `.br`/`.gz` are
+    // content-encoding markers, not media types.
     const headers = new Headers({
       'Content-Type': getContentType(filePath),
-      'Cache-Control': pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'Cache-Control': pathname.startsWith('/assets/')
+        ? 'public, max-age=31536000, immutable'
+        : 'no-cache',
     })
+    if (picked !== 'identity') {
+      headers.set('Content-Encoding', picked === 'br' ? 'br' : 'gzip')
+    }
+    appendVary(headers, 'Accept-Encoding')
+    // Content-Length is derived by @hono/node-server from the Uint8Array
+    // body — do not set it manually.
     return new Response(body, { headers })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -140,15 +170,18 @@ async function serveUiFile(pathname: string): Promise<Response | null> {
   }
 }
 
-async function serveUiApp(pathname: string): Promise<Response> {
-  const direct = await serveUiFile(pathname)
+async function serveUiApp(
+  pathname: string,
+  acceptEncoding?: string | null,
+): Promise<Response> {
+  const direct = await serveUiFile(pathname, acceptEncoding)
   if (direct) return direct
 
   if (pathname !== '/' && extname(pathname)) {
     return new Response('Not found', { status: 404 })
   }
 
-  const indexFile = await serveUiFile('/')
+  const indexFile = await serveUiFile('/', acceptEncoding)
   if (indexFile) return indexFile
 
   return new Response(
@@ -182,7 +215,7 @@ app.route('/api/wechat', wechatRoutes)
 app.route('/api/whatsapp', whatsappRoutes)
 
 app.get('/api/health', (c) => c.json({ ok: true }))
-app.get('*', async (c) => serveUiApp(c.req.path))
+app.get('*', async (c) => serveUiApp(c.req.path, c.req.header('accept-encoding')))
 
 const port = Number(process.env.WORKFLOW_PORT ?? 3001)
 let runtimeStarted = false
