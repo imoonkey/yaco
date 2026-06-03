@@ -2,20 +2,28 @@
  * Static-asset content-encoding negotiation.
  *
  * This module is RFC 9110 §12.4.2-aware: it parses Accept-Encoding
- * case-insensitively, honors explicit q-values (missing q defaults to 1.0,
- * malformed entries are dropped), treats `*` as a fallback for unlisted
- * codings, and gives an implicit identity the default weight of 1.0 (vs. 0
- * for unlisted br/gzip). Highest non-zero q wins; ties break br > gzip >
- * identity.
+ * case-insensitively, honors explicit q-values (missing q defaults to 1.0;
+ * non-numeric q values drop the entry; numeric q values outside [0, 1]
+ * are clamped), treats `*` as a fallback for unlisted codings, and gives
+ * an implicit identity the default weight of 1.0 (vs. 0 for unlisted
+ * br/gzip). Highest non-zero q wins; ties break br > gzip > identity.
  *
- * DELIBERATE DIVERGENCE FROM STRICT COMPLIANCE: a strict server would
- * return 406 Not Acceptable when every candidate has q=0 (e.g. the client
- * sent `Accept-Encoding: *;q=0` or `identity;q=0` with no compressed
- * sibling on disk). Workflow is a local-first single-user app where
- * serving any bytes always beats a hard failure, so this helper falls
- * back to `identity` in that case — matching nginx's `gzip_static`
- * behavior. Callers are responsible for choosing whether to surface 406
- * elsewhere if true strict compliance is ever needed.
+ * DELIBERATE DIVERGENCES FROM STRICT COMPLIANCE:
+ *
+ *   1. When the client explicitly forbids identity (`identity;q=0`) but
+ *      doesn't mention br/gzip, a strict server would still treat br/gzip
+ *      as q=0 (unacceptable) and have to 406. We instead let unlisted
+ *      compressed codings inherit the implicit-acceptable mantle (q=1.0)
+ *      that identity normally carries — the client clearly wants
+ *      compression, and we have it on disk.
+ *
+ *   2. When every candidate is q=0, a strict server returns 406 Not
+ *      Acceptable. Workflow is a local-first single-user app where
+ *      serving any bytes always beats a hard failure, so this helper
+ *      falls back to `identity` in that case — matching nginx's
+ *      `gzip_static` behavior. Callers are responsible for choosing
+ *      whether to surface 406 elsewhere if true strict compliance is
+ *      ever needed.
  *
  * No I/O, no startup side effects — both exports are pure functions.
  */
@@ -153,12 +161,18 @@ function parseAcceptEncoding(header: string): ParsedEntry[] {
   return entries
 }
 
-const Q_VALUE_RE = /^(?:0(?:\.\d{0,3})?|1(?:\.0{0,3})?)$/
-
+/**
+ * Parse a q-value parameter. Truly unparseable values (empty, non-numeric
+ * like `abc`, `1.0.0`) return null so the caller drops the whole entry.
+ * Numeric values outside [0, 1] (e.g. `2`, `-0.5`, `1.5`) are clamped
+ * rather than dropped — a client over-asking is still asking.
+ */
 function parseQValue(v: string): number | null {
-  if (!Q_VALUE_RE.test(v)) return null
+  if (v.length === 0) return null
   const n = Number(v)
-  if (!Number.isFinite(n) || n < 0 || n > 1) return null
+  if (!Number.isFinite(n)) return null
+  if (n < 0) return 0
+  if (n > 1) return 1
   return n
 }
 
@@ -167,5 +181,12 @@ function effectiveQ(coding: Encoding, entries: ParsedEntry[]): number {
   if (explicit) return explicit.q
   const star = entries.find((e) => e.coding === '*')
   if (star) return star.q
-  return coding === 'identity' ? 1 : 0
+  if (coding === 'identity') return 1
+  // br/gzip default: 0 (unlisted means unacceptable), UNLESS the client
+  // explicitly forbade identity (`identity;q=0`). In that case the
+  // "implicitly acceptable" mantle has to land somewhere — passing it to
+  // the compressed codings keeps the response shippable and respects the
+  // client's clearly-signalled preference for compression.
+  const identityForbidden = entries.some((e) => e.coding === 'identity' && e.q === 0)
+  return identityForbidden ? 1 : 0
 }
