@@ -46,6 +46,10 @@ check_absent "$ROOT_DIR/server"
 check_absent "$ROOT_DIR/ui"
 check_absent "$ROOT_DIR/multmux/projects/tasks.json"
 check_absent "$ROOT_DIR/agent-config/projects/tasks.json"
+check_absent "$ROOT_DIR/multmux/projects/active"
+check_absent "$ROOT_DIR/multmux/projects/archive"
+check_absent "$ROOT_DIR/agent-config/projects/active"
+check_absent "$ROOT_DIR/agent-config/projects/archive"
 
 if [ -f "$REGISTRY" ]; then
   if registry_error="$(REGISTRY="$REGISTRY" ROOT_DIR="$ROOT_DIR" python3 - <<'PY'
@@ -83,7 +87,12 @@ check_symlink_target "$HOME/.codex/AGENTS.md" "$ROOT_DIR/agent-config/global/CLA
 check_symlink_target "$HOME/.agents/skills" "$ROOT_DIR/agent-config/global/skills"
 
 if [ -x "$BIN_DIR/multmux" ]; then pass "multmux binary installed: $BIN_DIR/multmux"; else fail "multmux binary missing: $BIN_DIR/multmux"; fi
-if cmp -s "$ROOT_DIR/multmux/multmux" "$BIN_DIR/multmux"; then pass "installed multmux matches monorepo build"; else fail "installed multmux does not match monorepo build"; fi
+if [ -f "$ROOT_DIR/multmux/multmux" ]; then
+  pass "monorepo multmux build artifact exists"
+  if cmp -s "$ROOT_DIR/multmux/multmux" "$BIN_DIR/multmux"; then pass "installed multmux matches monorepo build"; else fail "installed multmux does not match monorepo build"; fi
+else
+  fail "monorepo multmux build artifact missing: run tools/install.sh"
+fi
 if [ -L "$BIN_DIR/mt" ] || [ -x "$BIN_DIR/mt" ]; then pass "mt command installed: $BIN_DIR/mt"; else fail "mt command missing: $BIN_DIR/mt"; fi
 if "$BIN_DIR/multmux" status --json --all >/dev/null; then pass "multmux status --json --all"; else fail "multmux status failed"; fi
 

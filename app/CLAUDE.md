@@ -34,7 +34,7 @@ Hono Server (Node.js :3001)
 - **Server** — Hono routes (`/api/*`, SSE, WebSocket), library modules (terminal, multmux, project-watcher, worktree, voice, autocomplete), `withProject` middleware
 - **UI** — `App.tsx` (shell + project selection + session counts), `workspace/` (screen, layout, editor column, sidebar resize, session section, tab bar, sessions, search, diff), `components/` (Editor, Terminal, FileExplorer, ProjectList, Menu, Voice, DialogShell, BadgeCount), `hooks/` (state, persistence, API, SSE, voice, fileStateMachine), `tasks/` (task views: board, list, graph, archive + detail panel + shared components), `lib/` (solarized theme, diff, fuzzy search, autocomplete)
 
--> See: [doc/main/](doc/main/README.md) for per-file specs organized by subsystem (backend, frontend, data-model, ui)
+-> See: [app/doc/main/](doc/main/README.md) for per-file specs organized by subsystem (backend, frontend, data-model, ui)
 
 ## Key Data Flow
 
@@ -46,11 +46,11 @@ Hono Server (Node.js :3001)
 6. **Task views** → sidebar TASKS toggle opens task panel (full editor column height, replaces tab bar). Four views: Board (kanban), List (virtual scroll table), Graph (SVG pan/zoom), Archive. Shared `TaskDetailPanel` with inline editing. SSE triggers refresh + 60s polling fallback.
 7. **Voice** → MediaRecorder → Groq Whisper STT → multi-model LLM formatter → compose tray
 8. **Autocomplete** → CM6 debounced typing → Groq multi-model → ghost text decoration
-9. **Worktree isolation** → `scripts/worktree-*.sh` manage git worktrees at `.worktrees/<slug>/` on branch `task/<slug>`. `withProject` middleware accepts `?worktree=slug` to redirect file/git ops. Task API enriches with `worktreeStatus`. `useProjectWorktrees` discovers active worktrees. `ProjectList` shows worktree sub-items. Persistence keyed by `(project, worktree)`.
+9. **Worktree isolation** → git worktrees live at `.worktrees/<slug>/` on branch `task/<slug>`. Orchestration lifecycle helpers live under `agent-config/global/skills/orchestrate/scripts/`; Workflow server code resolves active worktrees directly. `withProject` middleware accepts `?worktree=slug` to redirect file/git ops. Task API enriches with `worktreeStatus`. `useProjectWorktrees` discovers active worktrees. `ProjectList` shows worktree sub-items. Persistence keyed by `(project, worktree)`.
 10. **Binary file preview** → extension-based detection (`ui/src/lib/binaryFiles.ts`) skips text FileState pipeline for images/PDFs. Server `GET /files/:project/raw` serves binary with proper MIME type (20MB limit). `ImagePreview` renders `<img>`, `PdfPreview` embeds the raw URL in an `<iframe>` so the browser's native PDF viewer handles continuous scroll, keyboard nav, zoom, and search. `PreviewErrorBoundary` isolates failures.
 11. **Preview toggle** → markdown (`.md`/`.markdown`) and HTML (`.html`/`.htm`) files share an Edit/Split/Preview toggle in the tab bar (`Cmd+Shift+V` to cycle), driven by `previewMode` in workspace layout. Markdown uses `MarkdownPreview` (DOM-based with source-line scroll sync); HTML uses `HtmlPreview` (sandboxed iframe, `sandbox="allow-scripts"` + `referrerpolicy="no-referrer"`, no scroll sync). `isPreviewableFile()` in `binaryFiles.ts` gates the toggle.
 
--> See: [doc/main/](doc/main/README.md#key-data-flows) for detailed flow descriptions
+-> See: [app/doc/main/](doc/main/README.md#key-data-flows) for detailed flow descriptions
 
 ## State Persistence
 
@@ -58,12 +58,11 @@ Layout/tabs/drafts/mobilePane/theme in `localStorage["workflow-*:<project>"]` (o
 Cross-device shared state lives in `${YACO_HOME:-~/.yaco}/ui-state/` (notifications inbox + read flags, pinned sessions + order per project, per-session/project unread watermarks) and is delivered via REST + SSE (`notification`, `notifications:changed`, `ui-state:changed`). The bell badge and sidebar unread counts both derive from the same `progress + watermarks` pipeline so they stay aligned; the inbox `read` flag is overridden on the client by the watermark check (panel styling matches the badge).
 Messaging channels live under `${YACO_HOME:-~/.yaco}/channels/<scope>/` (auth/state/qr/session); legacy `~/.workflow/wechat-*` / `~/.workflow/whatsapp-*` files are migrated on boot. The YACO root is resolved by `server/src/lib/yacoHome.ts` (`getYacoHome()` → `process.env.YACO_HOME || ~/.yaco`); helpers (`projectsFile()`, `uiStateDir()`, `shellSessionsDir()`, `channelsDir()`, `channelScopeDir(scope)`, `projectEventsFile(id)`) keep call sites consistent.
 
--> See: [doc/main/data-model/persistence.md](doc/main/data-model/persistence.md)
+-> See: [app/doc/main/data-model/persistence.md](doc/main/data-model/persistence.md)
 
 ## Documentation Structure
 
 ```
-doc/
 app/doc/
   main/           # SOTA: architecture, API, component specs — see app/doc/main/README.md for map
   dev/workflow.md # Dev setup, build, test commands — READ THIS FIRST
@@ -90,7 +89,7 @@ projects/
 - Hook decomposition: `useWorkspaceState` is a composition root wiring `useLayoutState` + `useFileState` + `usePersistence`. `useVoice` uses a reducer-based state machine (`voiceStateMachine.ts`). Follow this pattern for new complex hooks.
 - Mobile-first: touch detection via `useIsTouch()` / `useIsMobile()`, orientation via `useIsLandscape()`, virtual keyboard handling via `useKeyboardViewport`. `useIsMobile()` also detects landscape phones via `(max-height: 500px) and (pointer: coarse)`. Portrait uses top `PaneSwitch` bar with icons+labels; landscape uses collapsible `LandscapeNav` (floating toggle in left margin, horizontal icon row expanding right, bell+theme in right margin, symmetric margins via `max(safe-area-inset-left, right, 36px)`). App.tsx banners hidden via `useIsMobile()` hook (not CSS `md:`). Task views have dedicated mobile layouts: `TaskToolbar` collapses to single-row icon-only tabs + collapsed filter dropdown + toggle search; `TaskBoardView` uses `scroll-snap-type: x mandatory` with `scrollPaddingInlineStart` for swipeable columns; `TaskListView` renders `MobileListRow` (44px touch targets, no column headers); `TaskDetailPanel` uses bottom sheet with backdrop overlay. Touch targets ≥44px on mobile (Apple HIG). Use `.no-scrollbar` utility for hidden-scrollbar horizontal overflow.
 - SSE-driven updates with polling fallback (30-60s). Never poll faster than 30s. SSE force-reconnects on `visibilitychange` (hidden→visible) to recover from sleep/wake zombie connections.
-- **Worktree isolation**: git worktrees live at `<repo>/.worktrees/<slug>/` on branch `task/<slug>`. Lifecycle scripts in `scripts/worktree-*.sh` (create, merge, cleanup). Server `withProject` middleware resolves `?worktree=slug` to the worktree path — all downstream file/git ops are transparently redirected. UI threads `worktree` param through all hooks (`useWorkspaceState`, `useFileTree`, `useGitStatus`, mutations). `WorkspaceScreen` computes `effectivePath` for session cwd. Persistence keys include worktree slug (`workflow-workspace:<project>:wt:<slug>`). Task views show worktree badges (GitBranch icon) and support worktree filtering. `useProjectWorktrees` discovers active worktrees from task API responses.
+- **Worktree isolation**: git worktrees live at `<repo>/.worktrees/<slug>/` on branch `task/<slug>`. Orchestration lifecycle helpers live under `agent-config/global/skills/orchestrate/scripts/` (create, merge, cleanup). Server `withProject` middleware resolves `?worktree=slug` to the worktree path — all downstream file/git ops are transparently redirected. UI threads `worktree` param through all hooks (`useWorkspaceState`, `useFileTree`, `useGitStatus`, mutations). `WorkspaceScreen` computes `effectivePath` for session cwd. Persistence keys include worktree slug (`workflow-workspace:<project>:wt:<slug>`). Task views show worktree badges (GitBranch icon) and support worktree filtering. `useProjectWorktrees` discovers active worktrees from task API responses.
 - File revision tracking via mtime for optimistic locking
 - Workspace modules extracted from monolithic Workspace.tsx into `ui/src/workspace/` — follow slot-based layout pattern in `WorkspaceLayout.tsx`. Sidebar uses Explorer-flex model: Explorer body is always `flex:1`, bottom sections (Changes, Search) have fixed resizable heights with `useResize` hooks. `useResize` accepts dynamic max via `number | (() => number)`, with re-clamp effect when available space shrinks. Bottom section max heights computed from sidebar height minus fixed overhead. Tasks toggle is pinned to sidebar bottom via `mt-auto` (desktop only) — not a resizable section, just a `SectionHeader` that toggles the full-height task panel in the editor column. On mobile, Tasks is a dedicated 4th pane in the `PaneSwitch` (Browse | Editor | Tasks | Terminal) — `MobilePane` type exported from `workspaceTypes.ts`.
 - Performance: `React.memo` on expensive leaf components (FileExplorer) to prevent re-render cascade from per-keystroke state updates. Stabilize derived Set references (dirtyTabs, conflictTabs) via structural comparison.
@@ -101,12 +100,13 @@ projects/
 
 ## Ecosystem
 
-Three repos form the productivity stack. Changes in one may require coordinated changes in the others.
+The YACO productivity stack now lives in this monorepo.
 
-| Repo | What | Path |
-|------|------|------|
-| **multmux** | CLI for orchestrating multiple agents (Claude/Codex) via tmux | `~/workspace/multmux` |
-| **agent-config** | Centralized CLAUDE.md, skills, settings — symlinked into all projects | `~/workspace/agent-config` |
-| **workflow** | Web UI for coordinating agents across repos (workspace, terminal, task graph) | `~/workspace/workflow` |
+| Path | What |
+|------|------|
+| `app/` | Workflow web app and server |
+| `multmux/` | Bun-based CLI for orchestrating agents via tmux |
+| `agent-config/` | Global agent config, skills, and helper scripts |
+| `projects/` | Live root YACO task graph and project history |
 
-**Dependencies:** workflow depends on both. Backend reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (resolved via `lib/yacoHome.ts#sessionsDir()`) and calls multmux CLI for session management. Skills and CLAUDE.md come from agent-config via symlinks. When multmux changes its state file format or agent-config changes skill contracts, this repo may need updates.
+**Dependencies:** Workflow reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (resolved via `lib/yacoHome.ts#sessionsDir()`) and calls the installed `multmux` CLI for session management. Global skills and agent instructions come from `agent-config/global` via symlinks installed by `tools/install.sh`. When multmux state contracts or agent-config skill contracts change, update the app and docs in the same monorepo change.

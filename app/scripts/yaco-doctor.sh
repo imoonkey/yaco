@@ -226,8 +226,11 @@ check_multmux_status() {
   local bin=""
   if command -v multmux >/dev/null 2>&1; then
     bin="multmux"
-  elif command -v bun >/dev/null 2>&1 && [ -f "${MULTMUX_SRC:-$HOME/ld-workspace/multmux/src/index.ts}" ]; then
-    bin="bun ${MULTMUX_SRC:-$HOME/ld-workspace/multmux/src/index.ts}"
+  else
+    local multmux_src="${MULTMUX_SRC:-$REPO_ROOT/multmux/src/index.ts}"
+    if command -v bun >/dev/null 2>&1 && [ -f "$multmux_src" ]; then
+      bin="bun $multmux_src"
+    fi
   fi
   if [ -z "$bin" ]; then
     warn "$label — multmux binary not on PATH and bun fallback not available (skipped)"

@@ -58,6 +58,7 @@ link_path() {
     return
   fi
   echo "install: refusing to replace non-symlink path: $link" >&2
+  echo "install: move it aside or replace it with a symlink, then re-run tools/install.sh" >&2
   exit 1
 }
 
