@@ -283,45 +283,46 @@ export function MarkdownPreview({
       ref={containerRef}
       className="markdown-preview h-full"
       onClick={(event) => {
-        // --- Link navigation ---
+        // --- Link navigation (single click) ---
         const anchor = (event.target as HTMLElement).closest<HTMLAnchorElement>('a')
-        if (anchor) {
-          const href = anchor.getAttribute('href')
-          if (!href) return
-          event.preventDefault()
-          if (href.startsWith('#')) {
-            const id = href.slice(1)
-            const el = containerRef.current
-            const target = el?.querySelector(`[id="${CSS.escape(id)}"]`)
-            if (target && el) {
-              cancelLerpRef.current?.()
-              anchorScrollRef.current = true
-              target.scrollIntoView({ behavior: 'smooth', block: 'start' })
-              const done = () => {
-                anchorScrollRef.current = false
-                const line = lineFromAnchors(anchorsRef.current, el.scrollTop)
-                lastReportedLineRef.current = line
-                onViewportLineRef.current?.(line)
-              }
-              el.addEventListener('scrollend', done, { once: true })
-              // Fallback if scrollend doesn't fire (e.g. already at target)
-              setTimeout(() => { if (anchorScrollRef.current) done() }, 800)
+        if (!anchor) return
+        const href = anchor.getAttribute('href')
+        if (!href) return
+        event.preventDefault()
+        if (href.startsWith('#')) {
+          const id = href.slice(1)
+          const el = containerRef.current
+          const target = el?.querySelector(`[id="${CSS.escape(id)}"]`)
+          if (target && el) {
+            cancelLerpRef.current?.()
+            anchorScrollRef.current = true
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            const done = () => {
+              anchorScrollRef.current = false
+              const line = lineFromAnchors(anchorsRef.current, el.scrollTop)
+              lastReportedLineRef.current = line
+              onViewportLineRef.current?.(line)
             }
-            return
-          }
-          if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
-            window.open(href, '_blank', 'noopener')
-          } else if (filePath) {
-            const clean = href.split('#')[0].split('?')[0]
-            if (clean.endsWith('/')) {
-              onNavigateDir?.(resolveRelativePath(filePath, href))
-            } else {
-              onNavigateToFile?.(resolveRelativePath(filePath, href))
-            }
+            el.addEventListener('scrollend', done, { once: true })
+            // Fallback if scrollend doesn't fire (e.g. already at target)
+            setTimeout(() => { if (anchorScrollRef.current) done() }, 800)
           }
           return
         }
-        // --- Click-to-edit line sync ---
+        if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith('//')) {
+          window.open(href, '_blank', 'noopener')
+        } else if (filePath) {
+          const clean = href.split('#')[0].split('?')[0]
+          if (clean.endsWith('/')) {
+            onNavigateDir?.(resolveRelativePath(filePath, href))
+          } else {
+            onNavigateToFile?.(resolveRelativePath(filePath, href))
+          }
+        }
+      }}
+      onDoubleClick={(event) => {
+        // --- Double-click-to-edit line sync (skip when on a link) ---
+        if ((event.target as HTMLElement).closest('a')) return
         if (!onActivateLine) return
         const element = containerRef.current
         if (!element) return
