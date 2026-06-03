@@ -47,6 +47,7 @@ async function main() {
   let brTotal = 0
   let gzTotal = 0
   let count = 0
+  let failed = 0
 
   for await (const file of walk(DIST)) {
     const ext = extname(file).toLowerCase()
@@ -55,18 +56,35 @@ async function main() {
     const { size } = await stat(file)
     if (size < MIN_SIZE) continue
 
-    const brSize = await compressTo(file, `${file}.br`, brotli)
-    const gzSize = await compressTo(file, `${file}.gz`, gzip)
-
-    rawTotal += size
-    brTotal += brSize
-    gzTotal += gzSize
-    count++
+    try {
+      const brSize = await compressTo(file, `${file}.br`, brotli)
+      const gzSize = await compressTo(file, `${file}.gz`, gzip)
+      rawTotal += size
+      brTotal += brSize
+      gzTotal += gzSize
+      count++
+    } catch (err) {
+      failed++
+      console.warn(`[compress-dist] WARN ${file}: ${err?.message ?? err}`)
+      // Sweep any orphan temp files this PID left in the source's directory.
+      const dir = dirname(file)
+      const base = basename(file)
+      const prefix = `.${base}.${process.pid}.`
+      try {
+        for (const entry of await readdir(dir)) {
+          if (entry.startsWith(prefix) && entry.endsWith('.tmp')) {
+            await unlink(join(dir, entry)).catch(() => {})
+          }
+        }
+      } catch {
+        // Directory listing failed — nothing we can clean up here.
+      }
+    }
   }
 
   const kb = (n) => `${(n / 1024).toFixed(1)}KB`
   console.log(
-    `[compress-dist] ${count} files: raw ${kb(rawTotal)} → brotli ${kb(brTotal)} / gzip ${kb(gzTotal)}`,
+    `[compress-dist] ${count} files: raw ${kb(rawTotal)} → brotli ${kb(brTotal)} / gzip ${kb(gzTotal)} (failed: ${failed})`,
   )
 }
 
