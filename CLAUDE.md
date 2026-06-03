@@ -5,7 +5,8 @@ This is the YACO monorepo root.
 ## Layout
 
 - `app/` - Workflow web app and server. See `app/CLAUDE.md`.
-- `multmux/` - Bun-based multi-agent tmux CLI.
+- `cli/` - Bun-based CLI. Hosts the `yaco` unified dispatcher (scaffold) and
+  the live `multmux` tmux/agent runtime. See `cli/CLAUDE.md`.
 - `agent-config/` - global agent config, skills, and helper scripts.
 - `projects/` - live root YACO task graph and project history.
 - `tools/` - monorepo install, doctor, and one-time migration tools.
@@ -18,7 +19,7 @@ npm run build
 npm run start:app
 cd app/server && npm test
 cd app/ui && npm run lint
-cd multmux && bun run test
+cd cli && bun run test
 ```
 
 Keep v1 mechanical: do not move shared code into a core package or rewrite
