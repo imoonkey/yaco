@@ -1,0 +1,7 @@
+global/skills/skill-creator/
+global/skills/humanizer/
+.multmux/
+.reference/
+.vscode/
+projects/progress.json
+projects/progress.json.lock
