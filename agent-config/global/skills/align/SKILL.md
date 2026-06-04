@@ -80,13 +80,16 @@ Fields:
 #### A) If `NEXT` is not you
 
 1. **Do not read, think, or write anything** — only poll and wait.
-2. Block-wait using the poll script (**never hand-write sleep loops — they pollute context**):
+2. Block-wait using the poll command (**never hand-write sleep loops — they pollute context**):
 
    ```bash
-   ./scripts/align_poll.sh <path/to/discussion/status.txt> <CLAUDE|CODEX>
+   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX>
    ```
 
-   The script blocks and outputs one line when it's your turn or done (`YOUR_TURN` / `DONE`). Poll details go to `poll.log`.
+   The command blocks and writes one line to stdout when it's your turn or
+   done (`YOUR_TURN` / `DONE`). Exit code is 0 in both cases; 1 on
+   `TIMEOUT`, 2 on `ERROR`. Best-effort poll details are appended to
+   `poll.log` next to `status.txt`.
 3. `YOUR_TURN` → go to B. `DONE` → go to C.
 
 #### B) If `NEXT` is you
@@ -104,10 +107,10 @@ You are the **only one allowed to write** (both `discussion/` and `final/`).
    * **If you made any substantive changes to `final/`** (approach/interfaces/constraints/assumptions), reset the other agent's vote to `PENDING`
    * If both are now `APPROVE`: set `NEXT=DONE`
    * Otherwise: set `NEXT=<other agent>`
-5. Call the poll script again to wait for the other agent's response or DONE:
+5. Call the poll command again to wait for the other agent's response or DONE:
 
    ```bash
-   ./scripts/align_poll.sh <path/to/discussion/status.txt> <CLAUDE|CODEX>
+   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX>
    ```
 
 #### C) If `NEXT=DONE`
@@ -133,14 +136,3 @@ Both agents have approved. End polling.
 
 * **Only write files when `NEXT` is you** (including `final/*` and `discussion/*`).
 * Discussion is append-only: always create new `####_AGENT.md` files, never edit old ones.
-
-## Script paths
-
-Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
-
-```bash
-SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/align/SKILL.md)")"
-"$SKILL_DIR/scripts/<script>"
-```
-
-Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/align/scripts/<script>`.

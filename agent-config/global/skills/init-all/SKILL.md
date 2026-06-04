@@ -21,10 +21,10 @@ After `/init` completes, review the generated CLAUDE.md and trim it to follow th
 
 ### 2. Multi-Tool Symlinks
 
-Run from the project root (see "Script paths" below for `$SKILL_DIR`):
+Run from the project root:
 
 ```bash
-bash "$SKILL_DIR/scripts/init-symlinks.sh"
+yaco init links
 ```
 
 This creates:
@@ -36,7 +36,15 @@ This creates:
 | `AGENTS.md` | `CLAUDE.md` | Codex config |
 | `GEMINI.md` | `CLAUDE.md` | Gemini config |
 
-Idempotent — existing links are preserved.
+Idempotent across re-runs. Hardens vs the legacy shell helper:
+
+- Missing `CLAUDE.md` → hard precondition failure (exit 3) instead of a
+  silent skip — callers can't end up with `AGENTS.md`/`GEMINI.md` pointing
+  at nothing.
+- A regular file or directory at a target path → refuses to clobber
+  (exit 1).
+- An existing symlink at a target path is removed and re-created so the
+  command stays idempotent even if the target moved.
 
 ### 3. Bootstrap Doc Structure
 
@@ -65,7 +73,7 @@ ls -la ~/.claude/CLAUDE.md ~/.claude/skills ~/.codex/AGENTS.md ~/.agents/skills 
 
 If any are missing, warn:
 
-> Global config not fully linked. Run `tools/install.sh --cli-only` from the YACO monorepo root, or run the monorepo-local `agent-config/setup.sh` shim.
+> Global config not fully linked. Run `tools/install.sh --cli-only` from the YACO monorepo root, or run the monorepo-local `agent-config/setup.sh` shim. After install, the per-skill symlinks under `~/.claude/skills/<skill>/SKILL.md` always reflect the current `agent-config/global/skills/` layout.
 
 ### 5. Summary
 
@@ -75,14 +83,3 @@ Report what was done:
 - Symlinks: created / existed
 - Doc structure: created / existed
 - Global config: OK / warnings
-
-## Script paths
-
-Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
-
-```bash
-SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/init-all/SKILL.md)")"
-"$SKILL_DIR/scripts/<script>"
-```
-
-Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/init-all/scripts/<script>`.

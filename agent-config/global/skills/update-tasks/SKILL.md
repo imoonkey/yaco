@@ -3,7 +3,9 @@ name: update-tasks
 description: Create and manage the project task graph in projects/tasks.json. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
 ---
 
-This skill is YACO-native: it owns and directly mutates `projects/tasks.json` and references design bundles under `projects/active/<bundle>/`.
+This skill is YACO-native: it owns and directly mutates `projects/tasks.json`
+through the `yaco task` CLI and references design bundles under
+`projects/active/<bundle>/`.
 
 ## Scope
 
@@ -53,8 +55,8 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `estimate` | no | `xs \| s \| m \| l \| xl` — helps scheduling and workload assessment |
 | `blockReason` | no | `verification-failed \| human-review \| external \| dependency` — distinguishes why a task is blocked |
 | `worktree` | no | Worktree slug for isolated execution (lowercase alphanumeric and hyphens, e.g. `auth-v2`). Absent = execute in main checkout. Multiple tasks can share the same slug. Physical path: `<repo>/.worktrees/<slug>/`, branch: `task/<slug>` |
-| `created` | auto | ISO timestamp, set automatically by update-tasks.py on creation |
-| `updated` | auto | ISO timestamp, set automatically by update-tasks.py on every write |
+| `created` | auto | ISO timestamp, set automatically on creation |
+| `updated` | auto | ISO timestamp, set automatically on every write |
 
 ## State Transitions
 
@@ -70,7 +72,7 @@ This means `blocked → done` (human approve), `done → ready` (reopen), and `c
 acceptCriteria is the most important field in a task — it defines what "done" looks like. Spend as much time designing acceptCriteria as designing the task itself.
 
 **Rules:**
-- Required and non-empty on every leaf task. update-tasks.py rejects blank values.
+- Required and non-empty on every leaf task. `yaco task set` rejects blank values.
 - Must be **observable and verifiable** — orchestrate will independently check these after the worker claims completion. Do not trust worker self-reports.
 - Include at least one condition checkable via shell command (e.g., `test -f path/to/file`, `pnpm test`, `grep -q "pattern" file`).
 - Define the deliverable, not the process. "openapi.yaml exists and verify passes" — not "run capture then compile."
@@ -97,27 +99,48 @@ Before writing any task, analyze and decide:
 
 ## Tools
 
-Reads are straightforward — use jq or file read directly on `projects/tasks.json`.
+Reads and writes both go through `yaco task`, which has graph constraints
+(ref validation, cycle detection, state guards, parent rollup) built in:
 
-Writes must follow graph constraints (ref validation, cycle detection, state guards, parent rollup), so always use `$SKILL_DIR/scripts/update-tasks.py` which has these built in (see "Script paths" below for `$SKILL_DIR`):
+```bash
+# Read
+yaco task list                          --json    # full graph
+yaco task validate                      --json    # validate whole graph
+yaco task validate --id <id>            --json    # validate one task + parent chain
 
+# Write — three input modes per command
+yaco task set <id> --data '<json>'      --json    # inline JSON
+yaco task set <id> --stdin              --json    # JSON from stdin
+yaco task set <id> --file <path>        --json    # JSON from file
+yaco task rm      <id>                  --json
+yaco task archive <id>                  --json
 ```
-"$SKILL_DIR/scripts/update-tasks.py" set <id> <json>
-"$SKILL_DIR/scripts/update-tasks.py" rm <id>
-"$SKILL_DIR/scripts/update-tasks.py" archive <id>
-```
 
-`archive` moves a terminal task and all its descendants to `projects/archive/YYYYMMDD_<slug>.json` (or `..._<n>.json` if that day's archive file already exists). All descendants must also be terminal. When this is a completed project task, then run `/update-doc` to move the matching project docs from `projects/active/<project>/` to `projects/archive/YYYYMMDD_<project>/`.
+`archive` moves a terminal task and all its descendants to
+`projects/archive/YYYYMMDD_<slug>.json` (or `..._<n>.json` if that day's
+archive file already exists). All descendants must also be terminal. When
+this is a completed project task, then run `/update-doc` to move the
+matching project docs from `projects/active/<project>/` to
+`projects/archive/YYYYMMDD_<project>/`.
 
 Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.
 
-## Script paths
-
-Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
+## Examples
 
 ```bash
-SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/update-tasks/SKILL.md)")"
-"$SKILL_DIR/scripts/<script>"
-```
+# Create or update a task
+yaco task set workspace-state --data '{
+  "title": "Persist workspace state across refresh",
+  "description": "Extract editor state into a dedicated store module.",
+  "parent": null,
+  "depends": [],
+  "state": "ready",
+  "acceptCriteria": ["npm test passes", "no console errors on reload"]
+}' --json
 
-Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/update-tasks/scripts/<script>`.
+# Move a task to running
+yaco task set workspace-state --data '{"state":"running","agent":"w-workspace-state"}' --json
+
+# Archive a completed task and descendants
+yaco task archive workspace-state --json
+```

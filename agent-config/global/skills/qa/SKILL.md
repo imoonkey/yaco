@@ -45,7 +45,7 @@ Identify: what files changed, what features they touch, what user-facing behavio
 
 List the user flows (actions a user would take) that touch the changed code. Examples:
 - "User signs in → sees dashboard → data loads"
-- "User runs `multmux start claude` → worker spawns in tmux"
+- "User runs `yaco agent start claude` → worker spawns in tmux"
 - "API receives POST /items → validates → returns 201"
 
 ### 3. Verify Each Flow

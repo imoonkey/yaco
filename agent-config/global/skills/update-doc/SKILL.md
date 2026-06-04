@@ -129,8 +129,7 @@ Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
 - **Archive completed bundles.** When archiving
   `projects/active/<project>/` → `projects/archive/YYYYMMDD_<project>/`, check
   whether `projects/tasks.json` has the matching terminal project task and
-  archive it via `/update-tasks`
-  (`global/skills/update-tasks/scripts/update-tasks.py archive <id>`). That
+  archive it via `yaco task archive <id> --json` (or `/update-tasks`). That
   task snapshot is written separately to
   `projects/archive/YYYYMMDD_<slug>.json`.
 

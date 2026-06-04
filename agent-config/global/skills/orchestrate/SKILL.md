@@ -1,13 +1,16 @@
 ---
 name: orchestrate
-description: Execute tasks from projects/tasks.json using multmux workers. Use when the user wants to run, advance, or check on task execution.
+description: Execute tasks from projects/tasks.json using yaco agent workers. Use when the user wants to run, advance, or check on task execution.
 ---
 
-This skill is YACO-native: it reads `projects/tasks.json`, dispatches `multmux` workers against YACO session state (`~/.yaco/sessions/`), and drives the worktree lifecycle for YACO projects.
+This skill is YACO-native: it reads `projects/tasks.json` via `yaco task`,
+dispatches `yaco agent` workers against YACO session state
+(`~/.yaco/sessions/`), and drives the worktree lifecycle via `yaco worktree`.
 
 ## Dispatch
 
-Read `projects/tasks.json` via `/update-tasks`. Select tasks where ALL of:
+Read `projects/tasks.json` via `yaco task list --json` (or `/update-tasks`).
+Select tasks where ALL of:
 - state is `ready`
 - task is a **leaf** (no other task has this task as `parent`)
 - all `depends` are terminal (done/cancelled)
@@ -23,13 +26,16 @@ Each task executes in a **resolved cwd** based on the optional `worktree` field:
 | Present (e.g. `"auth-v2"`) | `<repo>/.worktrees/<slug>/` | `task/<slug>` |
 | Absent | Main checkout | Current branch |
 
-To resolve a worktree cwd (see "Script paths" below for `$SKILL_DIR`):
+To resolve a worktree cwd:
 
 ```bash
-worktree_path="$("$SKILL_DIR/scripts/worktree-create.sh" <slug>)"
+worktree_path="$(yaco worktree create <slug> --json | jq -r .data.path)"
 ```
 
-`worktree-create.sh` creates `<repo>/.worktrees/<slug>/` on branch `task/<slug>`, runs the repo's own `scripts/worktree-provision.sh` if present, and reuses existing worktrees.
+`yaco worktree create` creates `<repo>/.worktrees/<slug>/` on branch
+`task/<slug>`, runs the repo's own `scripts/worktree-provision.sh` if
+present, and reuses existing worktrees. Without `--json` it prints the
+worktree path on stdout.
 
 **Cross-repo worktrees:** If task `scope` includes paths in multiple repos, create a worktree in each repo using the same slug. Each repo manages its own `.worktrees/` directory independently.
 
@@ -58,10 +64,12 @@ All eligible tasks with non-overlapping execution context are dispatched in para
 
 ### Dispatch Command
 
-For each selected task: use `/update-tasks` to set state to `running` and `agent` to `w-<task-id>`, then start a worker:
+For each selected task: update state to `running` and `agent` to
+`w-<task-id>` via `yaco task set`, then start a worker:
 
 ```bash
-cd <resolved_cwd> && multmux start claude "<prompt>" --name "w-<task-id>"
+yaco task set <task-id> --data '{"state":"running","agent":"w-<task-id>"}' --json
+cd <resolved_cwd> && yaco agent start claude "<prompt>" --name "w-<task-id>"
 ```
 
 Prompt includes: task title, description (if any), acceptCriteria, design doc path (if any), scope.
@@ -72,12 +80,12 @@ For tasks that change implementation files (judge from scope paths — e.g., `sr
 
 1. **Record baseline**: `git rev-parse HEAD` (in the resolved cwd)
 2. **Dispatch**: start worker with task prompt, acceptCriteria, design doc, scope
-3. **Wait**: monitor worker until idle
+3. **Wait**: monitor worker until idle (`yaco agent capture <name> --wait`)
 4. **Review**: start codex review worker scoped to `git diff <base>..HEAD -- <scope globs>`
 5. **Fix**: if critical/high issues, send back to implementation worker. Up to 3 review rounds.
 6. **Verify**: independently check acceptCriteria (see below)
 7. **Doc sync**: send worker `/update-doc` and wait for it to complete successfully before marking done
-8. **Mark done**: update task state via `/update-tasks`
+8. **Mark done**: `yaco task set <task-id> --data '{"state":"done"}' --json`
 9. **Worktree completion**: if task has `worktree` field, check for worktree completion (see below)
 
 For non-implementation tasks (docs, design, planning): dispatch → wait → verify → mark done → worktree completion check. Skip review, fix, and doc sync.
@@ -92,10 +100,10 @@ After marking a worktree task as `done`, check whether the worktree can be merge
 
    ```bash
    # PR mode (default) — push branch + create PR
-   "$SKILL_DIR/scripts/worktree-merge.sh" <slug> --mode pr
+   yaco worktree merge <slug> --mode pr --json
 
    # Local merge mode — rebase + fast-forward merge
-   "$SKILL_DIR/scripts/worktree-merge.sh" <slug> --mode local
+   yaco worktree merge <slug> --mode local --json
    ```
 
    Default to `pr` mode. Use `local` only when instructed by user or task metadata.
@@ -103,7 +111,7 @@ After marking a worktree task as `done`, check whether the worktree can be merge
 4. **Cleanup**: after successful merge/PR creation
 
    ```bash
-   "$SKILL_DIR/scripts/worktree-cleanup.sh" <slug>
+   yaco worktree cleanup <slug> --json
    ```
 
 5. **Cross-repo**: if the worktree spanned multiple repos, merge and cleanup each repo independently using the same slug.
@@ -123,7 +131,7 @@ After a worker claims completion, orchestrate **independently verifies** acceptC
    - Looks like a command → run it, check exit code
    - Looks like an observable condition → use judgment (read files, check git diff)
    - For implementation tasks with user-facing changes → run `/qa` to verify affected flows
-4. **On pass** → set state to `done` via `/update-tasks`
+4. **On pass** → `yaco task set <task-id> --data '{"state":"done"}' --json`
    - If `requireHumanReview: true` → set state to `blocked` with `blockReason: "human-review"`, report and wait for human
 5. **On fail** → set state to `blocked` with `blockReason: "verification-failed"`, note = "<which criteria failed>"
    - Continue scanning other ready tasks (do not stop the whole run)
@@ -144,14 +152,3 @@ If stopped for human review, wait for human to send instructions. Human can:
 ## Blocked Tasks
 
 If a task is `blocked`, report it (read `note` field for context) and skip. Do not attempt to unblock automatically — blocked tasks require human intervention or dependency resolution.
-
-## Script paths
-
-Any `scripts/...` reference in this SKILL.md resolves relative to the **skill directory**, not the repo cwd. Resolve and invoke like this:
-
-```bash
-SKILL_DIR="$(dirname "$(readlink -f ~/.claude/skills/orchestrate/SKILL.md)")"
-"$SKILL_DIR/scripts/<script>"
-```
-
-Fallback absolute path if `$SKILL_DIR` resolution fails: `$HOME/.claude/skills/orchestrate/scripts/<script>`.

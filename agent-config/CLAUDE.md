@@ -33,11 +33,12 @@ The YACO productivity stack now lives in this monorepo.
 | Path | What |
 |------|------|
 | `app/` | Workflow web app and server |
-| `cli/` | `@yaco/cli` — `yaco` dispatcher (scaffold; `paths` is live) + `multmux` tmux runtime |
+| `cli/` | `@yaco/cli` — `yaco` unified dispatcher (`agent`, `task`, `worktree`, `align`, `init`, `paths` live; `install` and `doctor` land next) |
 | `agent-config/` | Global agent config, skills, and helper scripts |
 | `projects/` | Live root YACO task graph and project history |
 
-**Dependencies:** agent-config skills reference the installed multmux CLI and
+**Dependencies:** agent-config skills call into the installed `yaco` CLI
+(`yaco agent`, `yaco task`, `yaco worktree`, `yaco align`, `yaco init`) and
 are consumed by Workflow/Codex/Claude through global symlinks installed by
-`tools/install.sh`. When changing skill contracts or helper scripts, update the
-app and docs in the same monorepo change.
+`tools/install.sh`. When changing skill contracts or helper scripts, update
+the app and docs in the same monorepo change.
