@@ -2,9 +2,8 @@
 
 Bun-based CLI hosting the `yaco` unified dispatcher (`src/main.ts`). Eight
 top-level areas (`agent`, `task`, `worktree`, `align`, `init`, `install`,
-`doctor`, `paths`). Routes argv to per-area handlers. `agent`, `task`,
-`worktree`, `align`, `init`, and `paths` are live; `install` and `doctor`
-remain stubs returning `{area, status: "stub"}` and land in follow-up tasks.
+`doctor`, `paths`). Routes argv to per-area handlers. All eight areas are
+live.
 
 The previous standalone `multmux` entry point (`src/index.ts`) was retired in
 yc-agent-subcommand — its runtime now lives under `src/lib/core/agent/` and is
@@ -164,14 +163,92 @@ yaco init links [--cwd <path>] [--json]
 - `.claude/` is auto-created if missing so the `.agents` / `.codex` symlinks always resolve.
 - Default cwd is `process.cwd()`; `--cwd <path>` overrides for scripted use.
 
+### `yaco install` (live)
+
+```
+yaco install [--cli-only] [--skip-hooks] [--no-registry] [--skip-doctor]
+             [--dry-run] [--repo <path>] [--bin-dir <path>] [--json]
+```
+
+- Canonical idempotent installer. Two-stage bootstrap: `tools/install.sh` is the
+  ONLY entry point for first-time install / recovery from a broken yaco binary —
+  it builds `bun build cli/src/main.ts --compile --outfile $BIN_DIR/yaco`,
+  codesigns on macOS when `codesign` is available, then `exec env
+  YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR "$BIN_DIR/yaco" install "$@"`
+  (absolute-path delegation — grep `^[[:space:]]*yaco install` returns nothing).
+  `yaco install` then does the rest: writes `${YACO_HOME}/agent-wrapper.sh`,
+  merges yaco-owned entries into `~/.claude/settings.json` + `~/.codex/hooks.json`
+  (preserves all unrelated user entries), links global agent-config into
+  `~/.claude` / `~/.codex` / `~/.agents`, upserts `{id:"yaco", path:repoRoot}`
+  into `${YACO_HOME}/projects.json`, sweeps legacy `$BIN_DIR/{mt,multmux}`
+  symlinks, and runs `yaco doctor`.
+- **Hook command canonicalized** to `"$BIN_DIR/yaco" agent hook-event <Event>`
+  (absolute path; no `bun`; no repo-local source ref). The pre-yc-install-doctor
+  form (`bun .../cli/src/hook-event-bin.ts <Event>`) broke the moment yaco was
+  installed without a checkout — fixed by `lifecycle.ts#hookBinary()`, which now
+  resolves the yaco binary via `YACO_BIN_DIR/yaco > argv[0] > which yaco`.
+- **Per-event cold-start preserved** by a `main.ts` fast-path: when
+  `argv[0:2] === ['agent','hook-event']`, only `commands/agent/hook-event.ts`
+  is lazy-imported (skips the full command tree). `hook-event-bin.ts` remains
+  as an internal test convenience but is NOT what install writes into provider
+  configs.
+- **--repo flows through to doctor.** `yaco install --repo X` mutates X
+  (registry, links, hooks), then runs doctor against X's `projects/tasks.json`
+  — not whatever cwd happens to be.
+- **Registry safety.** Malformed `${YACO_HOME}/projects.json` fails fast with
+  `ENV` (exit 3) and a repair message; the corrupt file is left byte-for-byte
+  unchanged. Avoids silently overwriting other-project entries on a stale
+  registry.
+- **--json discipline.** Stderr is empty in `--json` mode (no per-check doctor
+  chatter, no `plan:` dry-run lines). The doctor report is folded into
+  `data.doctor` of the install envelope. `--dry-run` plan: lines only emit on
+  stderr in text mode.
+- **--dry-run** prints the planned action list to stderr (text mode) and
+  performs zero filesystem mutations. Re-running `yaco install` is a no-op
+  (idempotent — verified by snapshot diff).
+
+-> See: [`doc/main/install.md`](doc/main/install.md) for the full surface,
+   bootstrap-vs-canonical split, hook command resolution, and error table.
+
+### `yaco doctor` (live)
+
+```
+yaco doctor [--repo <path>] [--json]
+```
+
+- Twelve required checks in stable order: `binary`, `version`, `yaco-home`,
+  `registry`, `skills-link`, `claude-md-link`, `agent-hook-config`,
+  `agent-wrapper`, `tmux`, `git`, `providers`, `task-graph`. Each returns
+  `{name, status: 'pass'|'fail'|'skip', detail}`. Summary is `{pass, fail}`
+  only.
+- **--json envelope is ALWAYS** `{ok:true, data:{checks, summary}}` on stdout,
+  even when checks fail — doctor is a STATUS command, so the data schema stays
+  stable for callers. The exit code (0 vs 1) carries the pass/fail signal. To
+  honor this contract the handler reaches `process.exit()` directly, bypassing
+  the dispatcher's render path (same convention as `yaco align poll`).
+- `--repo <path>` scopes the `task-graph` check to a specific repo
+  (precedence: flag > `$YACO_REPO_ROOT` > `process.cwd()`). Used by
+  `yaco install --repo X` to keep install / doctor on the same tree.
+- `task-graph` runs in-process via `loadTasks + validateGraph` — no `yaco task
+  validate` subprocess, which keeps doctor's wall-clock under control.
+- `providers` passes when at least one of `claude` / `codex` is on PATH;
+  `agent-hook-config` matches the `yaco-agent-hook` marker OR a hook command
+  shape (`hook-event-bin.ts` OR `agent hook-event`) so the check survives
+  legacy + canonical install footprints.
+
+-> See: [`doc/main/doctor.md`](doc/main/doctor.md) for the full check table,
+   --json contract, and exit-code semantics.
+
 ## `yaco agent` (live runtime)
 
 The agent runtime is the tmux-backed multi-agent orchestrator (formerly
 `multmux`). All session state lives in `${YACO_HOME:-~/.yaco}/sessions/<handle>.json`;
-state files are kept current by per-event hooks that route through the slim
-TypeScript entry `cli/src/hook-event-bin.ts`. The only shell artifact is
-`cli/scripts/agent-wrapper.sh` (sole Shell Boundary exception — its EXIT trap
-deletes the state file when the tmux pane dies abruptly).
+state files are kept current by per-event hooks that route through the
+canonical `<BIN_DIR>/yaco agent hook-event <Event>` form (with a `main.ts`
+fast-path that lazy-imports only the hook handler to preserve per-event
+cold-start). The only shell artifact is `cli/scripts/agent-wrapper.sh` (sole
+Shell Boundary exception — its EXIT trap deletes the state file when the tmux
+pane dies abruptly).
 
 ### Commands
 
@@ -204,10 +281,12 @@ yaco agent hook-event <EventName>                      # provider hook entry (re
 
 ```
 src/
-  main.ts                              # dispatcher (areas, --json envelope, render)
-  hook-event-bin.ts                    # slim Bun entry for hook fires (avoids loading the full command tree)
+  main.ts                              # dispatcher (areas, --json envelope, render); fast-path for `agent hook-event`
+  hook-event-bin.ts                    # legacy slim entry; retained for tests but NOT what install writes into provider configs
   commands/
     paths.ts                           # yaco paths
+    install.ts                         # yaco install — canonical idempotent installer
+    doctor.ts                          # yaco doctor — 12-check status report (--json envelope always Ok)
     agent/
       index.ts                         # yaco agent area handler + parseStartArgs
       start.ts, send.ts, capture.ts,
@@ -219,7 +298,7 @@ src/
     providers.ts                       # PROVIDERS, isIdle (live-tail busy check)
     session-state.ts                   # state file CRUD; reads YACO_AGENT_SESSIONS_DIR override
     session-id.ts                      # Claude PID scan + Codex rollout/DB resolver
-    lifecycle.ts                       # ensureHooks (install wrapper + merge configs); buildWrappedCommand
+    lifecycle.ts                       # ensureHooks (wrapper + merge configs); hookBinary() resolves to canonical <BIN>/yaco; buildWrappedCommand
     hook-event.ts                      # applyHookEvent + runHookEventForHandle + STOP_DEBOUNCE_MS
     tmux.ts                            # tmux operations (sessions, panes, PIDs, OSC responder)
     words.ts                           # adjective/noun lists for default handles
