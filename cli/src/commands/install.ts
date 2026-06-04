@@ -60,13 +60,14 @@ Options:
   --skip-hooks     Skip merging provider hooks into ~/.claude + ~/.codex
                    (the wrapper script is still written)
   --no-registry    Do not upsert this repo into \${YACO_HOME}/projects.json
+  --skip-links     Do not write ~/.claude/* / ~/.codex/* / ~/.agents/* symlinks
   --skip-doctor    Do not run \`yaco doctor\` after install
   --dry-run        Print planned actions to stderr without changing files
   --repo <path>    Override the repo root (default: \$YACO_REPO_ROOT or cwd)
   --bin-dir <path> Override the bin dir for legacy symlink cleanup
                    (default: \$YACO_BIN_DIR or \$HOME/.local/bin)
-  --force          Overwrite an existing project registry entry whose path
-                   differs from this install's repo root (default: refuse)
+  --force          Overwrite existing global links + project registry entry
+                   whose targets differ from this install (default: refuse)
   --json           Emit the {ok,data}/{ok,error} envelope
   --help           Show this help
 `;
@@ -75,6 +76,7 @@ interface InstallOptions {
   cliOnly: boolean;
   skipHooks: boolean;
   noRegistry: boolean;
+  skipLinks: boolean;
   skipDoctor: boolean;
   dryRun: boolean;
   force: boolean;
@@ -97,6 +99,7 @@ function defaultOptions(): InstallOptions {
     cliOnly: false,
     skipHooks: false,
     noRegistry: false,
+    skipLinks: false,
     skipDoctor: false,
     dryRun: false,
     force: false,
@@ -112,6 +115,7 @@ function parseOpts(argv: string[]): InstallOptions {
       case "--cli-only": out.cliOnly = true; continue;
       case "--skip-hooks": out.skipHooks = true; continue;
       case "--no-registry": out.noRegistry = true; continue;
+      case "--skip-links": out.skipLinks = true; continue;
       case "--skip-doctor": out.skipDoctor = true; continue;
       case "--dry-run": out.dryRun = true; continue;
       case "--force": out.force = true; continue;
@@ -160,9 +164,25 @@ function pathKind(p: string): "missing" | "symlink" | "other" {
   }
 }
 
-/** Idempotent symlink upsert: missing → create; symlink → replace if target
- *  drifted; regular file/dir → refuse with IO error. */
-function upsertSymlink(linkPath: string, target: string, actions: string[], dryRun: boolean): void {
+/** Idempotent symlink upsert: missing → create; symlink whose realpath matches
+ *  target → no-op; symlink whose realpath differs → CONFLICT (refuse) unless
+ *  `force=true`; regular file/dir → refuse with IO error.
+ *
+ *  The realpath comparison closes the same shape of footgun the registry
+ *  rebind fix closed: running `yaco install` from a `.worktrees/<slug>/`
+ *  checkout (or from any non-canonical alias of the same repo) would
+ *  otherwise silently retarget the user's global `~/.claude/{CLAUDE.md,
+ *  skills}` etc. to the transient install location, breaking the live
+ *  setup the moment that location goes away. The default is to refuse;
+ *  `--force` is the operator escape hatch for legitimate checkout moves.
+ *  `--skip-links` skips all global-link writes entirely. */
+function upsertSymlink(
+  linkPath: string,
+  target: string,
+  force: boolean,
+  actions: string[],
+  dryRun: boolean,
+): void {
   const kind = pathKind(linkPath);
   if (kind === "other") {
     throw new CliError(
@@ -171,10 +191,20 @@ function upsertSymlink(linkPath: string, target: string, actions: string[], dryR
     );
   }
   if (kind === "symlink") {
-    // Read current target; if it matches, no-op for idempotency.
+    // Read current target; if realpaths match, no-op for idempotency.
     let current: string | null = null;
     try { current = readlinkSync(linkPath); } catch { /* fall through */ }
-    if (current === target) return;
+    if (current !== null) {
+      const sameTarget = realpathOr(current) === realpathOr(target);
+      if (sameTarget) return;
+      if (!force) {
+        throw new CliError(
+          ErrCode.CONFLICT,
+          `${linkPath} already points at ${current}; refusing to retarget to ${target} (re-run with --force, or --skip-links to leave it alone)`,
+          { linkPath, currentTarget: current, newTarget: target },
+        );
+      }
+    }
     if (dryRun) {
       actions.push(`relink ${linkPath} -> ${target}`);
       return;
@@ -291,7 +321,7 @@ function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dry
 }
 
 /** Install global agent-config symlinks into ~/.claude / ~/.codex / ~/.agents. */
-function installGlobalLinks(repoRoot: string, actions: string[], dryRun: boolean): void {
+function installGlobalLinks(repoRoot: string, force: boolean, actions: string[], dryRun: boolean): void {
   const home = userHome();
   const claudeMd = join(repoRoot, "agent-config", "global", "CLAUDE.md");
   const skillsDir = join(repoRoot, "agent-config", "global", "skills");
@@ -304,10 +334,10 @@ function installGlobalLinks(repoRoot: string, actions: string[], dryRun: boolean
       `missing ${claudeMd} — repo root is not a YACO checkout (or --repo is wrong)`,
     );
   }
-  upsertSymlink(join(home, ".claude", "CLAUDE.md"), claudeMd, actions, dryRun);
-  upsertSymlink(join(home, ".claude", "skills"), skillsDir, actions, dryRun);
-  upsertSymlink(join(home, ".codex", "AGENTS.md"), claudeMd, actions, dryRun);
-  upsertSymlink(join(home, ".agents", "skills"), join(home, ".claude", "skills"), actions, dryRun);
+  upsertSymlink(join(home, ".claude", "CLAUDE.md"), claudeMd, force, actions, dryRun);
+  upsertSymlink(join(home, ".claude", "skills"), skillsDir, force, actions, dryRun);
+  upsertSymlink(join(home, ".codex", "AGENTS.md"), claudeMd, force, actions, dryRun);
+  upsertSymlink(join(home, ".agents", "skills"), join(home, ".claude", "skills"), force, actions, dryRun);
 }
 
 /** Run npm install in app/server and app/ui (no-op when --cli-only). */
@@ -401,7 +431,9 @@ export function runInstall(opts: InstallOptions): InstallReport {
     }
   }
 
-  installGlobalLinks(repoRoot, actions, opts.dryRun);
+  if (!opts.skipLinks) {
+    installGlobalLinks(repoRoot, opts.force, actions, opts.dryRun);
+  }
 
   // Legacy bin symlinks left over from multmux's prior install footprint.
   removeLegacySymlink(join(binDir, "mt"), actions, opts.dryRun);

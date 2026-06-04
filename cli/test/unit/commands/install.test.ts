@@ -91,6 +91,7 @@ function baseOpts(overrides: Partial<Parameters<typeof runInstall>[0]> = {}): Pa
     cliOnly: true,
     skipHooks: false,
     noRegistry: false,
+    skipLinks: false,
     skipDoctor: true,
     dryRun: false,
     force: false,
@@ -299,6 +300,79 @@ describe("runInstall --no-registry", () => {
   it("does not write projects.json", () => {
     runInstall(baseOpts({ noRegistry: true }));
     expect(existsSync(join(process.env["YACO_HOME"]!, "projects.json"))).toBe(false);
+  });
+});
+
+describe("runInstall — global-link safety", () => {
+  it("refuses to retarget ~/.claude/CLAUDE.md when it points elsewhere — throws CONFLICT", () => {
+    // Pre-seed the global link pointing at a stale path (simulating the
+    // worktree footgun: an earlier `yaco install` from .worktrees/<slug>/
+    // pointed CLAUDE.md at the worktree's agent-config, and we now run
+    // install from a different repoRoot).
+    const home = process.env["HOME"]!;
+    const claudeDir = join(home, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    const stalePath = join(repoRoot, "..", "elsewhere", "agent-config", "global", "CLAUDE.md");
+    symlinkSync(stalePath, join(claudeDir, "CLAUDE.md"));
+    let code: string | undefined;
+    let msg = "";
+    try {
+      runInstall(baseOpts());
+    } catch (e) {
+      code = (e as { code?: string }).code;
+      msg = (e as Error).message;
+    }
+    expect(code).toBe("CONFLICT");
+    expect(msg).toContain("already points at");
+    expect(msg).toContain("--force");
+    expect(msg).toContain("--skip-links");
+    // Stale link is unchanged.
+    expect(readlinkSync(join(claudeDir, "CLAUDE.md"))).toBe(stalePath);
+  });
+
+  it("--force retargets a different-target link", () => {
+    const home = process.env["HOME"]!;
+    const claudeDir = join(home, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    symlinkSync("/some/old/CLAUDE.md", join(claudeDir, "CLAUDE.md"));
+    runInstall(baseOpts({ force: true }));
+    const newTarget = readlinkSync(join(claudeDir, "CLAUDE.md"));
+    expect(newTarget).toBe(join(repoRoot, "agent-config", "global", "CLAUDE.md"));
+  });
+
+  it("--skip-links leaves all global links untouched (even when stale)", () => {
+    const home = process.env["HOME"]!;
+    const claudeDir = join(home, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    const stalePath = "/some/old/CLAUDE.md";
+    symlinkSync(stalePath, join(claudeDir, "CLAUDE.md"));
+    runInstall(baseOpts({ skipLinks: true }));
+    // Stale link preserved verbatim — install did NOT touch it.
+    expect(readlinkSync(join(claudeDir, "CLAUDE.md"))).toBe(stalePath);
+    // And install did NOT create the other links either.
+    expect(existsSync(join(claudeDir, "skills"))).toBe(false);
+    expect(existsSync(join(home, ".codex", "AGENTS.md"))).toBe(false);
+  });
+
+  it("same-realpath alias is no-op (idempotent — no --force needed)", () => {
+    // First install plants canonical links.
+    runInstall(baseOpts());
+    const home = process.env["HOME"]!;
+    const before = readlinkSync(join(home, ".claude", "CLAUDE.md"));
+    // Re-install via a symlink alias of the same repoRoot — should NOT throw.
+    const aliasDir = join(process.env["HOME"]!, "..", "repo-alias-link");
+    try {
+      symlinkSync(repoRoot, aliasDir);
+    } catch {
+      return; // sandbox refused symlink creation
+    }
+    try {
+      runInstall(baseOpts({ repoRoot: aliasDir }));
+      // Original link target preserved.
+      expect(readlinkSync(join(home, ".claude", "CLAUDE.md"))).toBe(before);
+    } finally {
+      try { unlinkSync(aliasDir); } catch { /* best-effort */ }
+    }
   });
 });
 

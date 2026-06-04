@@ -72,6 +72,7 @@ function installPrereqs(): void {
     cliOnly: true,
     skipHooks: false,
     noRegistry: false,
+    skipLinks: false,
     skipDoctor: true,
     dryRun: false,
     force: false,
