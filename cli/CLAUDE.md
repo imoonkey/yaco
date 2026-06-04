@@ -2,9 +2,9 @@
 
 Bun-based CLI hosting the `yaco` unified dispatcher (`src/main.ts`). Eight
 top-level areas (`agent`, `task`, `worktree`, `align`, `init`, `install`,
-`doctor`, `paths`). Routes argv to per-area handlers. `agent`, `task`, and
-`paths` are live; the other five are stubs returning `{area, status: "stub"}`
-and land in follow-up tasks.
+`doctor`, `paths`). Routes argv to per-area handlers. `agent`, `task`,
+`worktree`, and `paths` are live; the other four are stubs returning
+`{area, status: "stub"}` and land in follow-up tasks.
 
 The previous standalone `multmux` entry point (`src/index.ts`) was retired in
 yc-agent-subcommand — its runtime now lives under `src/lib/core/agent/` and is
@@ -62,6 +62,7 @@ Shared core primitives (used by every area handler):
 - `src/lib/core/args.ts` — minimal positional/flag parser (recognizes `--` for passthrough)
 - `src/lib/core/paths/` — runtime + project path resolvers. Exported to `app/server` via the `package.json` exports map at `@yaco/cli/core/paths`. See [`doc/main/paths.md`](doc/main/paths.md).
 - `src/lib/core/task/` — task graph model, validation, store, archive, lock. Exported at `@yaco/cli/core/task`. See [`doc/main/task.md`](doc/main/task.md).
+- `src/lib/core/worktree/` — slug-keyed git-worktree lifecycle (create/merge/cleanup) with strict per-subcommand flag validation. See [`doc/main/worktree.md`](doc/main/worktree.md).
 - `src/lib/core/agent/` — agent runtime: `model.ts` (types + name helpers), `providers.ts`, `session-state.ts`, `session-id.ts`, `lifecycle.ts` (hook install + wrapper install + `buildWrappedCommand`), `hook-event.ts` (pure `applyHookEvent` + Stop debounce), `tmux.ts`, `words.ts`. See [`doc/main/architecture.md`](doc/main/architecture.md).
 
 End-to-end envelope shape is locked in by `test/unit/envelope.test.ts`.
@@ -119,6 +120,25 @@ yaco task list                          [--repo <p>] [--json]
 - **Cross-host stale lock** → NEVER auto-broken. Reported by `yaco task validate` under `error.details.staleLocks`; manual `rm -rf <tasks-file>.lock.d` is the escape hatch.
 
 See [`doc/main/task.md`](doc/main/task.md) for the full surface, error mapping, and parity story vs the Python script.
+
+### `yaco worktree` (live)
+
+```
+yaco worktree create  <slug> [--base <branch>]                   [--json]
+yaco worktree merge   <slug> [--mode pr|local] [--base <branch>] [--json]
+yaco worktree cleanup <slug> [--force]                           [--json]
+```
+
+- TypeScript port of `agent-config/global/skills/orchestrate/scripts/worktree-{create,merge,cleanup}.sh`. All git/gh plumbing goes through `node:child_process` spawn with array args — no shell strings, no command-injection surface.
+- Branch is always `task/<slug>`; worktree path is always `<repoRoot>/.worktrees/<slug>`. `<repoRoot>` is resolved per-invocation from cwd via `git rev-parse --git-common-dir`, so linked worktrees still target the primary checkout and the same slug succeeds independently in two separate repos.
+- **Slug**: lowercase alphanumeric + hyphens, no leading/trailing hyphen.
+- **`create`**: idempotent (reuses an existing registered worktree, removes a stale dir, reattaches an orphan branch). After a fresh `git worktree add`, runs `<repoRoot>/scripts/worktree-provision.sh` (if present + executable) with the new worktree path as `$1` — non-zero exit → `IO` (exit 1).
+- **`merge --mode pr`**: pushes the branch and runs `gh pr create --fill` with captured stdio. The PR URL is parsed out of gh's stdout and returned via envelope `data.url`; gh chatter never leaks into the dispatcher's stdout (which remains the envelope's exclusive channel). `gh` missing → `ENV` (exit 3).
+- **`merge --mode local`**: rebase `task/<slug>` onto `<base>` inside the worktree, then `git checkout <base>` + `git merge --ff-only task/<slug>` in primary. The rebase lets divergent branches still merge cleanly via fast-forward; a real-conflict rebase aborts in place (`git rebase --abort`) and surfaces `CONFLICT` (exit 1). Both modes refuse a dirty worktree (`CONFLICT`); local additionally refuses a dirty primary.
+- **`cleanup`**: conservative `git worktree remove` + `git branch -d` (refuses unmerged branches). `--force` switches to `--force` + `-D`. Tolerant of partially-cleaned state (missing dir / missing branch each skip independently).
+- **Strict flags**: each subcommand rejects any flag outside its own allowed set with `USAGE` (exit 2). Allowed sets: `create`→`--base`; `merge`→`--base`,`--mode`; `cleanup`→`--force`. `--json`/`--help` always allowed.
+
+See [`doc/main/worktree.md`](doc/main/worktree.md) for the full file map, error table, and the diff vs the shell baseline.
 
 ## `yaco agent` (live runtime)
 
