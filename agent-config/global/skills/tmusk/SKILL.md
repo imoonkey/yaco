@@ -1,15 +1,12 @@
 ---
 name: tmusk
-description: Orchestrate multiple coding agents (Claude Code, Codex) via tmux. Start workers, send messages, capture output. Skill name `tmusk` (tmux + multi-mux) avoids the over-general `/agent` keyword; the underlying CLI surface is still `yaco agent ...`.
+description: Orchestrate multiple coding agents (Claude Code, Codex) via tmux. Start workers, send messages, capture output.
 ---
 
 # tmusk — Multi-Agent tmux Orchestration
 
-Manage multiple coding agent instances via tmux. The skill name is `tmusk`
-to avoid collision with the over-general `/agent` keyword shared by Claude
-Code's built-in `/agents` listing and other agent-themed tooling. The
-underlying CLI surface remains `yaco agent ...` — only the skill marker
-differs.
+Manage multiple coding agent instances via tmux. Exposed under `yaco agent`
+in the unified CLI dispatcher.
 
 ## CLI contract for skill automation
 
