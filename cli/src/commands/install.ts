@@ -22,6 +22,7 @@ import {
   mkdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -220,6 +221,18 @@ function installAgentWrapper(repoRoot: string, actions: string[], dryRun: boolea
   actions.push(`wrote ${path}`);
 }
 
+/** Best-effort realpath that gracefully degrades to the input when the path
+ *  doesn't exist (e.g. a stale registry entry pointing at a deleted checkout)
+ *  or when realpath can't traverse it. Used only for path-equality checks
+ *  where false-equal beats false-different. */
+function realpathOr(p: string): string {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
 /** Upsert {id: "yaco", path: repoRoot} into ${YACO_HOME}/projects.json.
  *  Refuses to overwrite a malformed registry — operator must repair the file
  *  manually rather than silently lose other project entries.
@@ -229,7 +242,11 @@ function installAgentWrapper(repoRoot: string, actions: string[], dryRun: boolea
  *  `yaco install` from inside a `.worktrees/<slug>/` checkout would otherwise
  *  silently re-register the project at the worktree path and the web app
  *  would then filter every session/task/worktree view through the wrong root.
- *  Pass `--force` to override (e.g. when you actually moved the checkout). */
+ *  Pass `--force` to override (e.g. when you actually moved the checkout).
+ *
+ *  Path equality uses realpath on both sides so symlink aliases of the same
+ *  checkout don't false-CONFLICT (e.g. `cd /symlink/to/repo && yaco install`
+ *  after the registry was first written from the canonical path). */
 function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dryRun: boolean): void {
   const file = projectsRegistryPath();
   let existing: Project[] = [];
@@ -249,11 +266,12 @@ function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dry
   const target: Project = { name: "yaco", path: repoRoot };
   if (idx >= 0) {
     const currentPath = filtered[idx]!.path;
-    if (currentPath === repoRoot && filtered.length === existing.length) {
+    const samePath = realpathOr(currentPath) === realpathOr(repoRoot);
+    if (samePath && filtered.length === existing.length) {
       // No change needed.
       return;
     }
-    if (currentPath !== repoRoot && !force) {
+    if (!samePath && !force) {
       throw new CliError(
         ErrCode.CONFLICT,
         `projects.json already registers "yaco" at ${currentPath}; refusing to rebind to ${repoRoot} (re-run with --force, or edit ${file})`,

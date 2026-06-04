@@ -23,6 +23,7 @@ import {
   readlinkSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -92,6 +93,7 @@ function baseOpts(overrides: Partial<Parameters<typeof runInstall>[0]> = {}): Pa
     noRegistry: false,
     skipDoctor: true,
     dryRun: false,
+    force: false,
     json: false,
     ...overrides,
   };
@@ -372,6 +374,29 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     // Re-run install from the same repoRoot — should NOT throw CONFLICT.
     runInstall(baseOpts());
     expect(readFileSync(regPath, "utf-8")).toBe(before);
+  });
+
+  it("symlink alias of the same checkout is no-op, not CONFLICT", () => {
+    // First install at canonical repoRoot.
+    runInstall(baseOpts());
+    const regPath = join(process.env["YACO_HOME"]!, "projects.json");
+    const before = readFileSync(regPath, "utf-8");
+    // Create a symlink that points at the same repo root.
+    const aliasDir = join(process.env["HOME"]!, "..", "alias-link");
+    try {
+      symlinkSync(repoRoot, aliasDir);
+    } catch {
+      // Some sandboxes refuse symlink creation; skip if so.
+      return;
+    }
+    try {
+      // Re-run install with the symlink as --repo. realpath on both sides
+      // should resolve them equal → silent no-op, NOT a CONFLICT.
+      runInstall(baseOpts({ repoRoot: aliasDir }));
+      expect(readFileSync(regPath, "utf-8")).toBe(before);
+    } finally {
+      try { unlinkSync(aliasDir); } catch { /* best effort */ }
+    }
   });
 });
 

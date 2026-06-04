@@ -74,6 +74,7 @@ function installPrereqs(): void {
     noRegistry: false,
     skipDoctor: true,
     dryRun: false,
+    force: false,
     json: false,
   });
 }
