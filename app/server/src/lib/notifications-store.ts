@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join, dirname } from 'path'
-import { uiStateDir } from './yacoHome'
+import { uiStateDir } from '@yaco/cli/core/paths'
 import type { ProgressType } from './scanner'
 
 export interface NotificationItem {

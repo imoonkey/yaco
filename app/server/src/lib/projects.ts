@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { existsSync } from 'fs'
-import { getYacoHome, projectsFile } from './yacoHome'
+import { getYacoHome, projectsFile } from '@yaco/cli/core/paths'
 
 export interface Project {
   name: string

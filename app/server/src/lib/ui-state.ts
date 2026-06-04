@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { uiStateDir } from './yacoHome'
+import { uiStateDir } from '@yaco/cli/core/paths'
 
 const UI_STATE_DIR = uiStateDir()
 

@@ -7,7 +7,7 @@ import { emitRefresh } from './notify'
 import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 import { MULTMUX_SESSIONS_DIR } from './constants'
 import { isPathDescendantOrEqual } from './multmux'
-import { projectsFile as yacoProjectsFile } from './yacoHome'
+import { projectsFile as yacoProjectsFile } from '@yaco/cli/core/paths'
 
 const DEBOUNCE_MS = 200
 

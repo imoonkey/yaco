@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile } from 'fs/promises'
 import { existsSync } from 'fs'
 import { dirname } from 'path'
 import { randomUUID } from 'crypto'
-import { projectEventsFile } from './yacoHome'
+import { projectEventsFile } from '@yaco/cli/core/paths'
 
 /** One line of `~/.yaco/projects/<id>/events.jsonl`. Immutable once appended.
  *  See projects/active/yaco-core/final/schemas/event.schema.json. */

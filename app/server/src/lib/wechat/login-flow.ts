@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { existsSync } from 'node:fs'
 import { login as sdkLogin } from 'weixin-agent-sdk'
 import { initWeChat, isInitialized } from './index'
-import { channelScopeDir } from '../yacoHome'
+import { channelScopeDir } from '@yaco/cli/core/paths'
 
 export type LoginPhase = 'idle' | 'awaiting-qr' | 'awaiting-scan' | 'logged-in' | 'failed'
 

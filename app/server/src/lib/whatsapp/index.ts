@@ -7,7 +7,7 @@ import { createRouter, type ChannelReply } from '../channels/router'
 import { sweepStaleTaps, shutdownAllTaps } from '../channels/pty-tap'
 import { whatsappStore } from './state'
 import { authorize, getAuthSnapshot, ensureAuthLoaded } from './auth'
-import { channelScopeDir } from '../yacoHome'
+import { channelScopeDir } from '@yaco/cli/core/paths'
 
 const { Client, LocalAuth, MessageMedia } = wweb
 

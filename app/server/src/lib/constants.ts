@@ -1,5 +1,5 @@
 import { execSync } from 'child_process'
-import { sessionsDir } from './yacoHome'
+import { sessionsDir } from '@yaco/cli/core/paths'
 
 /** Resolved path to the multmux binary (startup-time resolution) */
 export const MULTMUX_PATH = (() => {

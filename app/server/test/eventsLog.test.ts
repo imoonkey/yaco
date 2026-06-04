@@ -4,7 +4,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { appendEvent, readEvents, type YacoEvent } from '../src/lib/eventsLog'
-import { projectEventsFile } from '../src/lib/yacoHome'
+import { projectEventsFile } from '@yaco/cli/core/paths'
 
 const ORIGINAL_YACO_HOME = process.env.YACO_HOME
 
