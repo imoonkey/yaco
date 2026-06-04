@@ -2363,7 +2363,7 @@
 ## 2026-04-08: Markdown link navigation — folder expansion and anchor scrolling
 
 **What changed:**
-- Folder links (hrefs ending with `/`, e.g., `[backend/](backend/)`) now expand the target folder in the file explorer sidebar instead of trying to open it as a file
+- Folder links (hrefs ending with `/`, e.g., a `backend/` folder link) now expand the target folder in the file explorer sidebar instead of trying to open it as a file
 - Anchor links (`#heading`) now scroll the preview to the matching heading — headings get slugified `id` attributes via a custom `renderer.heading` override (e.g., `## Key Data Flow` → `id="key-data-flow"`)
 - New `slugify()` utility in `markdown.ts` converts heading text to lowercase, hyphen-separated IDs
 - `WorkspaceEditorArea` detects folder links (trailing `/`) and delegates to `onNavigateDir` prop; anchor links use `scrollIntoView` on the matching `id`
@@ -2385,7 +2385,7 @@
 - `resolveRelativePath()` utility resolves `./`, `../`, and bare relative paths against the current file's directory
 
 **Why:**
-- Relative links in markdown files (e.g., `[see overview](./overview.md)`) previously triggered a full page navigation, breaking the SPA experience. Now they integrate with the tab system like any other file open action.
+- Relative links in markdown files (e.g., a `./overview.md` link) previously triggered a full page navigation, breaking the SPA experience. Now they integrate with the tab system like any other file open action.
 
 **Key files:** `ui/src/workspace/markdown.ts`, `ui/src/workspace/WorkspaceEditorArea.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`
 **Verification:** TypeScript clean, manual testing — relative links open in tabs, external links open in new browser tab, anchor links scroll in-page
