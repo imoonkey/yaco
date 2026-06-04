@@ -158,11 +158,55 @@ function isYacoHookCommand(command: unknown): boolean {
   return /hook-event-bin\.ts\b|\bagent\s+hook-event\b/.test(command);
 }
 
+/** True if a hook group was authored by yaco (marker matcher OR yaco-shaped
+ *  command). We need both signals because tool-scoped entries use matcher
+ *  "*" (a user could legitimately author the same matcher), so the marker
+ *  alone is not enough to disambiguate ownership. */
+function isYacoOwnedGroup(group: any): boolean {
+  if (group?.matcher === HOOK_MARKER) return true;
+  if (!Array.isArray(group?.hooks)) return false;
+  return group.hooks.some((h: any) => isYacoHookCommand(h?.command));
+}
+
 function hasYacoHook(hookGroups: unknown[]): boolean {
-  return hookGroups.some((group: any) =>
-    group?.matcher === HOOK_MARKER ||
-    group?.hooks?.some((h: any) => isYacoHookCommand(h?.command)),
-  );
+  return hookGroups.some((g) => isYacoOwnedGroup(g));
+}
+
+/** Deep-equal a yaco hook group against the target shape so install can
+ *  detect drift (stale command from a prior version) and overwrite in place
+ *  without disturbing the entry's array position. */
+function hookGroupEqual(a: any, b: any): boolean {
+  if (!a || !b) return false;
+  if (a.matcher !== b.matcher) return false;
+  const ah = Array.isArray(a.hooks) ? a.hooks : [];
+  const bh = Array.isArray(b.hooks) ? b.hooks : [];
+  if (ah.length !== bh.length) return false;
+  for (let i = 0; i < ah.length; i++) {
+    if (ah[i]?.command !== bh[i]?.command) return false;
+    if (ah[i]?.async !== bh[i]?.async) return false;
+    if (ah[i]?.timeout !== bh[i]?.timeout) return false;
+    if (ah[i]?.type !== bh[i]?.type) return false;
+  }
+  return true;
+}
+
+/** Idempotent merge: add the target yaco group when absent; if a yaco-owned
+ *  group is already present but differs (stale command after upgrade), replace
+ *  it in place. Returns true when the array changed. */
+function upsertYacoGroup(
+  groups: any[],
+  targetGroup: Record<string, unknown>,
+): boolean {
+  const existingIdx = groups.findIndex((g) => isYacoOwnedGroup(g));
+  if (existingIdx === -1) {
+    groups.push(targetGroup);
+    return true;
+  }
+  if (!hookGroupEqual(groups[existingIdx], targetGroup)) {
+    groups[existingIdx] = targetGroup;
+    return true;
+  }
+  return false;
 }
 
 /** Remove deprecated on-stop.sh entries from a settings object and delete the hook file.
@@ -223,13 +267,10 @@ export function ensureClaudeHooks(): void {
 
   for (const event of CLAUDE_HOOK_EVENTS) {
     settings.hooks[event] = settings.hooks[event] || [];
-    if (!hasYacoHook(settings.hooks[event])) {
-      const group = event === "SessionEnd" ? yacoSessionEndHookGroup(event)
-        : TOOL_SCOPED_EVENTS.has(event) ? yacoToolHookGroup(event)
-        : yacoHookGroup(event);
-      settings.hooks[event].push(group);
-      changed = true;
-    }
+    const targetGroup = event === "SessionEnd" ? yacoSessionEndHookGroup(event)
+      : TOOL_SCOPED_EVENTS.has(event) ? yacoToolHookGroup(event)
+      : yacoHookGroup(event);
+    if (upsertYacoGroup(settings.hooks[event], targetGroup)) changed = true;
   }
 
   if (cleanupDeprecatedHooks(settings, claudeDir)) changed = true;
@@ -261,12 +302,11 @@ export function ensureCodexHooks(): void {
 
   for (const event of CODEX_HOOK_EVENTS) {
     hooks.hooks[event] = hooks.hooks[event] || [];
-    if (!hasYacoHook(hooks.hooks[event])) {
-      // Codex doesn't support async hooks — use sync
-      const group = TOOL_SCOPED_EVENTS.has(event) ? yacoToolHookGroup(event, false) : yacoHookGroup(event, false);
-      hooks.hooks[event].push(group);
-      changed = true;
-    }
+    // Codex doesn't support async hooks — use sync
+    const targetGroup = TOOL_SCOPED_EVENTS.has(event)
+      ? yacoToolHookGroup(event, false)
+      : yacoHookGroup(event, false);
+    if (upsertYacoGroup(hooks.hooks[event], targetGroup)) changed = true;
   }
 
   if (changed) {

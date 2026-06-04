@@ -109,10 +109,9 @@ mock.module("../src/lib/core/agent/tmux.ts", () => ({
 mock.module("../src/lib/core/agent/lifecycle.ts", () => ({
   ensureHooks: () => {},
   buildWrappedCommand: (_h: string, _c: string, cmd: string) => cmd,
-  HOOK_MARKER: "multmux-hook",
-  fixToolHookMatcher: (_groups: unknown[]) => false,
-  multmuxToolHookGroup: () => ({ matcher: "*", hooks: [] }),
-  multmuxHookGroup: () => ({ matcher: "multmux-hook", hooks: [] }),
+  HOOK_MARKER: "yaco-agent-hook",
+  yacoToolHookGroup: () => ({ matcher: "*", hooks: [] }),
+  yacoHookGroup: () => ({ matcher: "yaco-agent-hook", hooks: [] }),
   TOOL_SCOPED_EVENTS: new Set(["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "PreCompact", "PostCompact"]),
 }));
 

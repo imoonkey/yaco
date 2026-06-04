@@ -42,6 +42,7 @@ const AREA_HELP: Record<Area, string> = {
 
 function helpText(): string {
   const rows = AREAS.map((a) => `  ${a.padEnd(10)} ${AREA_HELP[a]}`).join("\n");
+  const providerList = Object.keys(PROVIDERS).join(", ");
   return `yaco — YACO unified CLI
 
 Usage:
@@ -51,6 +52,12 @@ Usage:
 
 Areas:
 ${rows}
+
+Provider shortcuts:
+  yaco <provider> [args...]   Equivalent to \`yaco agent start <provider> [args...]\`
+                              Providers: ${providerList}
+                              (everything after a standalone \`--\` is forwarded
+                              verbatim to the provider CLI)
 
 Global flags:
   --json     Emit machine-readable JSON instead of text
@@ -163,6 +170,17 @@ function render(result: Result<unknown>, json: boolean): void {
   if (v && typeof v === "object" && typeof v["help"] === "string") {
     process.stdout.write(v["help"] as string);
     if (!(v["help"] as string).endsWith("\n")) process.stdout.write("\n");
+    return;
+  }
+  // Raw-text shape: capture and similar handlers wrap a plain string in
+  // { text: "..." } so the JSON envelope (in --json mode) can carry it
+  // structured, while text mode writes it as-is. The text is emitted
+  // verbatim — no trailing newline is appended if the text already ends
+  // with one, to preserve the captured pane buffer's exact bytes.
+  if (v && typeof v === "object" && typeof v["text"] === "string") {
+    const text = v["text"] as string;
+    process.stdout.write(text);
+    if (!text.endsWith("\n")) process.stdout.write("\n");
     return;
   }
   process.stdout.write(stringify(v) + "\n");

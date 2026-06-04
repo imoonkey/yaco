@@ -84,3 +84,13 @@ describe("text mode (no --json)", () => {
     expect(r.stderr).toContain("unknown area");
   });
 });
+
+describe("top-level help", () => {
+  it("documents the `yaco <provider>` shortcut", () => {
+    const r = runYaco(["--help"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("yaco <provider>");
+    expect(r.stdout).toContain("yaco agent start");
+    expect(r.stdout).toContain("Providers: claude, codex");
+  });
+});

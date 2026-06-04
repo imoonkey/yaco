@@ -1,19 +1,20 @@
 /** `yaco agent <subcommand>` — area dispatcher.
  *
  *  Subcommands:
- *    start <provider> [args...]    Start an agent session in tmux
- *    send <name> "message"         Send a message to a session
- *    capture <name> [--wait]       Capture the pane buffer
- *    status [name] [--all] [...]   Inspect session state
- *    kill <name> | --all           Kill a session
- *    rename <old> <new>            Rename an idle session
- *    hooks install                 Install provider hook configs + wrapper
- *    hook-event <EventName>        Provider hook entry (reads stdin)
+ *    start <provider> [yaco-flags] [-- ...passthrough]    Start a session
+ *    send <name> "message" | --stdin                      Send a message
+ *    capture <name> [--wait]                              Capture pane buffer
+ *    status [name] [--all] [...]                          Inspect session state
+ *    kill <name> | --all                                  Kill a session
+ *    rename <old> <new>                                   Rename an idle session
+ *    hooks install                                        Install hook configs
+ *    hook-event <EventName>                               Provider hook entry
  *
  *  Provider shortcut policy:
  *    - top-level `yaco claude ...` / `yaco codex ...` — accepted (dispatcher)
  *    - mid-layer `yaco agent claude ...` — REJECTED with USAGE exit 2
  */
+import { readFileSync } from "fs";
 import { ok, type Result } from "../../lib/core/result.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { PROVIDERS } from "../../lib/core/agent/providers.ts";
@@ -29,8 +30,9 @@ import { handleHooksInstall } from "./hooks/install.ts";
 const HELP = `yaco agent — tmux-backed agent sessions
 
 Usage:
-  yaco agent start <provider> [...passthrough]
+  yaco agent start <provider> [yaco-flags] [-- ...passthrough]
   yaco agent send <name> "message"
+  yaco agent send <name> --stdin                (read message from stdin)
   yaco agent capture <name> [--wait] [--lines <n>] [--strip-ansi true|false]
   yaco agent status [name] [--all] [--path <p>] [--json]
   yaco agent kill <name> | --all
@@ -39,6 +41,9 @@ Usage:
   yaco agent hook-event <EventName>   (called by provider hook runner)
 
 Providers (start): ${Object.keys(PROVIDERS).join(", ")}
+
+In \`start\`, everything after \`--\` is forwarded verbatim to the provider CLI
+(yaco flags like \`--json\` only bind before \`--\`).
 
 Use top-level shortcuts \`yaco claude ...\` / \`yaco codex ...\` to start a
 session in one step. \`yaco agent <provider>\` (without 'start') is rejected.
@@ -55,6 +60,7 @@ interface ParsedSubArgs {
     stripAnsi: boolean;
     json: boolean;
     path?: string;
+    stdin: boolean;
   };
 }
 
@@ -64,6 +70,7 @@ function emptyOpts(): ParsedSubArgs["options"] {
     wait: false,
     stripAnsi: true,
     json: false,
+    stdin: false,
   };
 }
 
@@ -85,6 +92,8 @@ function parseSubArgs(argv: string[]): ParsedSubArgs {
       parsed.options.wait = true;
     } else if (arg === "--json") {
       parsed.options.json = true;
+    } else if (arg === "--stdin") {
+      parsed.options.stdin = true;
     } else if (arg === "--lines") {
       parsed.options.lines = parseInt(argv[++i]!, 10);
     } else if (arg === "--strip-ansi") {
@@ -101,21 +110,37 @@ function parseSubArgs(argv: string[]): ParsedSubArgs {
   return parsed;
 }
 
-/** Parse the args for `start <provider> [...passthrough]` — everything after
- *  the provider is preserved verbatim for the agent CLI. */
-function parseStartArgs(argv: string[]): { provider: string | undefined; passthrough: string[]; json: boolean } {
+/** Parse the args for `start <provider> [yaco-flags] [-- ...passthrough]`.
+ *
+ *  Per CLI contract: everything after the first standalone `--` is forwarded
+ *  verbatim to the provider CLI. Before `--`, yaco binds only its own known
+ *  flags (currently just `--json`); any other token is treated as passthrough
+ *  to keep backward compatibility with callers that omit the `--`. */
+export function parseStartArgs(argv: string[]): {
+  provider: string | undefined;
+  passthrough: string[];
+  json: boolean;
+} {
   const provider = argv[0];
   const rest = argv.slice(1);
-  const passthrough: string[] = [];
+  const sepIdx = rest.indexOf("--");
+  const yacoSide = sepIdx >= 0 ? rest.slice(0, sepIdx) : rest;
+  const afterSep = sepIdx >= 0 ? rest.slice(sepIdx + 1) : [];
+
   let json = false;
-  for (const arg of rest) {
+  const beforeSepPassthrough: string[] = [];
+  for (const arg of yacoSide) {
     if (arg === "--json") {
       json = true;
     } else {
-      passthrough.push(arg);
+      beforeSepPassthrough.push(arg);
     }
   }
-  return { provider, passthrough, json };
+  return {
+    provider,
+    passthrough: [...beforeSepPassthrough, ...afterSep],
+    json,
+  };
 }
 
 export async function runStart(
@@ -138,6 +163,12 @@ export async function runStart(
   const state = start(provider, passthrough, undefined);
   if (json || opts.json) return ok(state);
   return ok({ handle: state.handle, state });
+}
+
+/** Read process.stdin to end-of-stream, returning the full payload as a UTF-8
+ *  string. Used by `yaco agent send --stdin`. */
+function readAllStdin(): string {
+  return readFileSync(0, "utf-8");
 }
 
 export async function handleAgent(
@@ -168,9 +199,23 @@ export async function handleAgent(
     case "send": {
       const parsed = parseSubArgs(rest);
       const name = parsed.positional[0];
-      const message = parsed.positional.slice(1).join(" ");
-      if (!name || !message) {
-        throw new CliError(ErrCode.USAGE, 'yaco agent send <name> "message"');
+      if (!name) {
+        throw new CliError(ErrCode.USAGE, 'yaco agent send <name> "message" | --stdin');
+      }
+      let message: string;
+      if (parsed.options.stdin) {
+        if (parsed.positional.length > 1) {
+          throw new CliError(
+            ErrCode.USAGE,
+            "yaco agent send: --stdin and inline message are mutually exclusive",
+          );
+        }
+        message = readAllStdin();
+      } else {
+        message = parsed.positional.slice(1).join(" ");
+      }
+      if (!message) {
+        throw new CliError(ErrCode.USAGE, 'yaco agent send <name> "message" | --stdin');
       }
       send(name, message);
       return ok({ sent: { name, length: message.length } });
@@ -187,7 +232,9 @@ export async function handleAgent(
         lines: parsed.options.lines,
         stripAnsiCodes: parsed.options.stripAnsi,
       });
-      return ok({ output });
+      // Dual mode: text-mode renderer recognizes `text` and writes it raw;
+      // JSON mode wraps as { ok: true, data: { text: "..." } }.
+      return ok({ text: output });
     }
 
     case "kill": {

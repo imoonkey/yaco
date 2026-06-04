@@ -83,6 +83,45 @@ describe("ensureClaudeHooks — merge semantics", () => {
     const second = readFileSync(join(sandbox, ".claude", "settings.json"), "utf-8");
     expect(second).toBe(first);
   });
+
+  it("overwrites a stale yaco-owned entry in place (no duplicate appended) "
+    + "while leaving unrelated user entries untouched", () => {
+    const claudeDir = join(sandbox, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    const userHook = {
+      matcher: "users-own-stop",
+      hooks: [{ type: "command", command: "/usr/local/bin/my-notifier", async: false }],
+    };
+    const staleYacoHook = {
+      matcher: HOOK_MARKER,
+      hooks: [{
+        type: "command",
+        command: "bun /old/path/that/no/longer/exists.ts Stop",
+        async: true,
+      }],
+    };
+    writeFileSync(
+      join(claudeDir, "settings.json"),
+      JSON.stringify({ hooks: { Stop: [userHook, staleYacoHook] } }),
+    );
+
+    ensureClaudeHooks();
+
+    const settings = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf-8"));
+    const stopGroups = settings.hooks.Stop;
+    // User entry preserved verbatim, including order.
+    const userPreserved = stopGroups.find((g: any) => g.matcher === "users-own-stop");
+    expect(userPreserved).toBeDefined();
+    expect(userPreserved.hooks[0].command).toBe("/usr/local/bin/my-notifier");
+    // The stale yaco entry was overwritten in place — exactly one yaco-owned
+    // group remains, and its command points at the current binary.
+    const yacoOwned = stopGroups.filter((g: any) =>
+      g?.hooks?.some((h: any) => /hook-event-bin\.ts|agent\s+hook-event/.test(h?.command)),
+    );
+    expect(yacoOwned).toHaveLength(1);
+    expect(yacoOwned[0].hooks[0].command).not.toContain("/old/path/that/no/longer/exists.ts");
+    expect(yacoOwned[0].hooks[0].command).toMatch(/hook-event-bin\.ts Stop\b|agent hook-event Stop\b/);
+  });
 });
 
 describe("ensureCodexHooks — merge semantics", () => {

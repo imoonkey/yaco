@@ -11,6 +11,19 @@ import { PENDING_SESSION_ID, type HookEvent, type SessionState } from "./model.t
 
 export type { HookEvent } from "./model.ts";
 
+/** Re-check window for Stop/StopFailure debounce. The provider event loop
+ *  can re-emit Stop for turn N concurrently with UserPromptSubmit for
+ *  turn N+1; if Stop wins the race, it overwrites the newer processing
+ *  state back to idle. We mirror the legacy shell hook: pause briefly,
+ *  re-read the state file, and back off if it mutated during the pause
+ *  (any mutation means a fresher event already won).
+ *
+ *  Kept short so synchronous Codex hooks return well inside the provider's
+ *  default hook timeout; 120ms is large enough to absorb the inter-event
+ *  jitter we observe in practice while keeping total hook cost (bun cold
+ *  start + pause + write) under ~300ms. */
+export const STOP_DEBOUNCE_MS = 120;
+
 export interface HookInput {
   hook_event_name?: string;
   session_id?: string;
@@ -105,14 +118,40 @@ export function processHookEvent(
   );
 }
 
+/** Read-apply-write loop for a known handle, with Stop debounce. Extracted
+ *  from runHookEvent so tests can drive the debounce without needing a live
+ *  tmux session backing deriveHandle. */
+export function runHookEventForHandle(
+  handle: string,
+  eventName: string,
+  input: HookInput,
+): void {
+  let state = readState(handle);
+  if (!state) return;
+
+  // Stop/StopFailure debounce: a late Stop for turn N can race with the
+  // UserPromptSubmit for turn N+1. Pause briefly, then re-read; if the state
+  // file mutated during the pause, a fresher event already won — back off.
+  if (eventName === "Stop" || eventName === "StopFailure") {
+    const beforeSnapshot = JSON.stringify(state);
+    Bun.sleepSync(STOP_DEBOUNCE_MS);
+    const refreshed = readState(handle);
+    if (!refreshed) return;
+    if (JSON.stringify(refreshed) !== beforeSnapshot) {
+      return; // newer event mutated state during the pause — stale Stop
+    }
+    state = refreshed;
+  }
+
+  const next = processHookEvent(handle, state, eventName, input);
+  if (!next) return;
+  writeState(next);
+}
+
 /** End-to-end: parse stdin JSON, look up the live handle, apply the event,
  *  write the state if anything changed. Used by `yaco agent hook-event`. */
 export function runHookEvent(eventName: string, input: HookInput): void {
   const handle = deriveHandle();
   if (!handle) return;
-  const state = readState(handle);
-  if (!state) return;
-  const next = processHookEvent(handle, state, eventName, input);
-  if (!next) return;
-  writeState(next);
+  runHookEventForHandle(handle, eventName, input);
 }
