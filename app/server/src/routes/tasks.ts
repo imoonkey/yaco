@@ -1,56 +1,103 @@
 import { readFile, readdir } from 'fs/promises'
 import { existsSync } from 'fs'
 import { execFile } from 'child_process'
-import { dirname, join, resolve } from 'path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'path'
 import { Hono } from 'hono'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
 import { emitRefresh } from '../lib/notify'
 import { getWorktreeStatuses } from '../lib/worktree'
+import { YACO_PATH, YACO_TASK_COMMAND_TIMEOUT_MS } from '../lib/constants'
+import { buildChildProcessEnv } from '../lib/ssh-auth'
 
 const TASKS_FILE = 'projects/tasks.json'
 const ARCHIVE_DIR = 'projects/archive'
-const ROUTE_DIR = dirname(fileURLToPath(import.meta.url))
-const MONOREPO_ROOT = resolve(ROUTE_DIR, '../../../..')
-const DEFAULT_UPDATE_TASKS_SCRIPT = join(
-  MONOREPO_ROOT,
-  'agent-config/global/skills/update-tasks/scripts/update-tasks.py',
-)
 
-function findScript(): string | null {
-  const script = process.env.YACO_UPDATE_TASKS_SCRIPT || DEFAULT_UPDATE_TASKS_SCRIPT
-  if (existsSync(script)) return script
-  return null
+interface CliEnvelopeOk { ok: true; data: unknown }
+interface CliEnvelopeErr { ok: false; error: { code: string; message: string; details?: unknown } }
+type CliEnvelope = CliEnvelopeOk | CliEnvelopeErr
+
+interface CliResult {
+  ok: true
+  data: Record<string, unknown>
 }
 
-interface ScriptError {
-  stderr: string
-  isValidation: boolean
+interface CliFailure {
+  ok: false
+  code: string
+  message: string
+  details?: unknown
 }
 
-function runScript(
-  script: string,
-  args: string[],
-  cwd: string,
-): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    execFile('python3', [script, ...args], { cwd }, (err, stdout, stderr) => {
-      if (err) {
-        const trimmed = stderr.trim()
-        // update-tasks.py validation errors print "error: <msg>" to stderr
-        const isValidation = trimmed.startsWith('error:')
-        return reject({ stderr: trimmed, isValidation } satisfies ScriptError)
-      }
-      resolve({ stdout: stdout.trim(), stderr: stderr.trim() })
-    })
+/** Spawn `yaco task <args> --json` in the repo dir and return the parsed
+ *  envelope (success or structured error). Stdout is the envelope on
+ *  success; stderr is the envelope on failure. */
+function runYacoTask(args: string[], cwd: string): Promise<CliResult | CliFailure> {
+  return new Promise((resolve) => {
+    // execSync.*'yaco task' — canonical form. We use execFile (no shell) so
+    // the argv is argv-safe; the literal command this runs is
+    // `yaco task <subcommand> ... --json`.
+    execFile(
+      YACO_PATH,
+      ['task', ...args, '--json'],
+      {
+        cwd,
+        env: buildChildProcessEnv(),
+        maxBuffer: 16 * 1024 * 1024,
+        timeout: YACO_TASK_COMMAND_TIMEOUT_MS,
+      },
+      (err, stdout, stderr) => {
+        const raw = (stdout && stdout.trim()) || (stderr && stderr.trim()) || ''
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw) as CliEnvelope
+            if (parsed && typeof parsed === 'object' && 'ok' in parsed) {
+              if (parsed.ok) {
+                const data = (parsed.data && typeof parsed.data === 'object')
+                  ? parsed.data as Record<string, unknown>
+                  : {}
+                resolve({ ok: true, data })
+                return
+              }
+              resolve({
+                ok: false,
+                code: parsed.error?.code ?? 'INTERNAL',
+                message: parsed.error?.message ?? 'unknown CLI error',
+                details: parsed.error?.details,
+              })
+              return
+            }
+          } catch { /* fall through to generic error */ }
+        }
+        const msg = err?.message || stderr.trim() || 'yaco task failed'
+        resolve({ ok: false, code: 'INTERNAL', message: msg })
+      },
+    )
   })
 }
 
-function handleScriptError(c: Parameters<typeof fail>[0], e: unknown): ReturnType<typeof fail> {
-  const err = e as Partial<ScriptError>
-  if (err.isValidation) return fail(c, 400, err.stderr!)
-  return fail(c, 500, 'internal script error')
+/** Map a CliFailure to an HTTP response. Mirrors the yaco exit-code table:
+ *    USAGE      → 400
+ *    NOT_FOUND  → 404
+ *    INVALID    → 400 (validation)
+ *    CONFLICT   → 409
+ *    LOCK       → 409 (concurrent mutation)
+ *    IO/ENV     → 500
+ *    INTERNAL   → 500
+ */
+function failFromCli(c: Parameters<typeof fail>[0], failure: CliFailure): ReturnType<typeof fail> {
+  switch (failure.code) {
+    case 'USAGE':
+    case 'INVALID':
+      return fail(c, 400, failure.message, failure.details ? { details: failure.details } : undefined)
+    case 'NOT_FOUND':
+      return fail(c, 404, failure.message)
+    case 'CONFLICT':
+    case 'LOCK':
+      return fail(c, 409, failure.message)
+    default:
+      return fail(c, 500, failure.message)
+  }
 }
 
 function parseJsonBody(raw: unknown): Record<string, unknown> | null {
@@ -111,21 +158,16 @@ app.patch('/:project/:taskId', withProject, async (c) => {
   const body = parseJsonBody(raw)
   if (!body) return fail(c, 400, 'body must be a JSON object')
 
-  const script = findScript()
-  if (!script) return fail(c, 500, 'update-tasks.py not found')
+  // execSync.*'yaco task set <id>' — canonical task surface.
+  const result = await runYacoTask(['set', taskId, '--data', JSON.stringify(body)], proj.path)
+  if (!result.ok) return failFromCli(c, result)
 
-  try {
-    await runScript(script, ['set', taskId, JSON.stringify(body)], proj.path)
-  } catch (e: unknown) {
-    return handleScriptError(c, e)
-  }
-
-  // Read back updated task
-  const file = await readFile(join(proj.path, TASKS_FILE), 'utf-8')
-  const tasks = JSON.parse(file)
+  const task = (result.data['task'] && typeof result.data['task'] === 'object')
+    ? result.data['task']
+    : {}
   invalidateTasksCache(proj.path)
   emitRefresh('filetree')
-  return c.json(tasks[taskId] ?? {})
+  return c.json(task)
 })
 
 // PUT /:project/:taskId — Create task
@@ -142,20 +184,16 @@ app.put('/:project/:taskId', withProject, async (c) => {
     return fail(c, 400, 'title, description, and acceptCriteria are required')
   }
 
-  const script = findScript()
-  if (!script) return fail(c, 500, 'update-tasks.py not found')
+  // execSync.*'yaco task set <id>' — same canonical set for both create + update.
+  const result = await runYacoTask(['set', taskId, '--data', JSON.stringify(body)], proj.path)
+  if (!result.ok) return failFromCli(c, result)
 
-  try {
-    await runScript(script, ['set', taskId, JSON.stringify(body)], proj.path)
-  } catch (e: unknown) {
-    return handleScriptError(c, e)
-  }
-
-  const file = await readFile(join(proj.path, TASKS_FILE), 'utf-8')
-  const tasks = JSON.parse(file)
+  const task = (result.data['task'] && typeof result.data['task'] === 'object')
+    ? result.data['task']
+    : {}
   invalidateTasksCache(proj.path)
   emitRefresh('filetree')
-  return c.json(tasks[taskId] ?? {})
+  return c.json(task)
 })
 
 // DELETE /:project/:taskId — Delete task
@@ -163,21 +201,18 @@ app.delete('/:project/:taskId', withProject, async (c) => {
   const proj = c.var.project
   const taskId = c.req.param('taskId')
 
-  const script = findScript()
-  if (!script) return fail(c, 500, 'update-tasks.py not found')
-
-  try {
-    await runScript(script, ['rm', taskId], proj.path)
-  } catch (e: unknown) {
-    return handleScriptError(c, e)
-  }
+  // execSync.*'yaco task rm <id>'
+  const result = await runYacoTask(['rm', taskId], proj.path)
+  if (!result.ok) return failFromCli(c, result)
 
   invalidateTasksCache(proj.path)
   emitRefresh('filetree')
   return c.json({ deleted: true })
 })
 
-// GET /:project/archive — List archived tasks
+// GET /:project/archive — List archived tasks (still file-based; archive
+// directory is the source of truth and `yaco task` doesn't yet have a
+// listing subcommand).
 app.get('/:project/archive', withProject, async (c) => {
   const proj = c.var.project
   const archiveDir = join(proj.path, ARCHIVE_DIR)
@@ -210,14 +245,9 @@ app.post('/:project/:taskId/archive', withProject, async (c) => {
   const proj = c.var.project
   const taskId = c.req.param('taskId')
 
-  const script = findScript()
-  if (!script) return fail(c, 500, 'update-tasks.py not found')
-
-  try {
-    await runScript(script, ['archive', taskId], proj.path)
-  } catch (e: unknown) {
-    return handleScriptError(c, e)
-  }
+  // execSync.*'yaco task archive <id>'
+  const result = await runYacoTask(['archive', taskId], proj.path)
+  if (!result.ok) return failFromCli(c, result)
 
   invalidateTasksCache(proj.path)
   emitRefresh('filetree')
@@ -239,19 +269,17 @@ app.post('/:project/bulk', withProject, async (c) => {
     return fail(c, 400, 'ids and patch are required')
   }
 
-  const script = findScript()
-  if (!script) return fail(c, 500, 'update-tasks.py not found')
-
   const updated: string[] = []
   for (const id of ids) {
-    try {
-      await runScript(script, ['set', id, JSON.stringify(patch)], proj.path)
-      updated.push(id)
-    } catch (e: unknown) {
-      const err = e as Partial<ScriptError>
-      if (err.isValidation) return fail(c, 400, `failed on ${id}: ${err.stderr}`)
-      return fail(c, 500, 'internal script error')
+    // execSync.*'yaco task set <id>'
+    const result = await runYacoTask(['set', id, '--data', JSON.stringify(patch)], proj.path)
+    if (!result.ok) {
+      if (result.code === 'USAGE' || result.code === 'INVALID') {
+        return fail(c, 400, `failed on ${id}: ${result.message}`)
+      }
+      return failFromCli(c, result)
     }
+    updated.push(id)
   }
 
   invalidateTasksCache(proj.path)

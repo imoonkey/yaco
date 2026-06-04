@@ -33,7 +33,7 @@ vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>()
   return {
     ...actual,
-    execSync: vi.fn(() => 'multmux\n'),
+    execSync: vi.fn(() => 'yaco\n'),
     spawnSync: spawnSyncMock,
   }
 })

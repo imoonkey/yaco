@@ -6,10 +6,10 @@ import type { Project } from './projects'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
 import {
-  MULTMUX_COMMAND_TIMEOUT_MS,
-  MULTMUX_STATUS_TIMEOUT_MS,
+  YACO_AGENT_COMMAND_TIMEOUT_MS,
+  YACO_AGENT_STATUS_TIMEOUT_MS,
   MULTMUX_SESSIONS_DIR,
-  MULTMUX_PATH,
+  YACO_PATH,
 } from './constants'
 
 export interface MultmuxSession {
@@ -27,7 +27,8 @@ export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
 }
 
 /** Raw shape of `<MULTMUX_SESSIONS_DIR>/<handle>.json` state files
- *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts MULTMUX_SESSIONS_DIR). */
+ *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts MULTMUX_SESSIONS_DIR).
+ *  Written by the `yaco agent` runtime; read here. */
 export interface MultmuxStateFile {
   handle: string
   provider: 'claude' | 'codex'
@@ -67,7 +68,7 @@ async function readStateFiles(): Promise<MultmuxStateFile[]> {
     files = (await readdir(MULTMUX_SESSIONS_DIR)).filter(f => f.endsWith('.json'))
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      console.warn('[multmux] failed to read global sessions directory:', e)
+      console.warn('[agent] failed to read global sessions directory:', e)
     }
     return []
   }
@@ -77,7 +78,7 @@ async function readStateFiles(): Promise<MultmuxStateFile[]> {
       const raw = await readFile(join(MULTMUX_SESSIONS_DIR, file), 'utf-8')
       return JSON.parse(raw) as MultmuxStateFile
     } catch (e) {
-      console.warn(`[multmux] failed to parse state file ${file}:`, e)
+      console.warn(`[agent] failed to parse state file ${file}:`, e)
       return null
     }
   }))
@@ -159,27 +160,38 @@ export async function readAllSessionsFromStateFiles(projects: Pick<Project, 'nam
   return all
 }
 
-/** Fetch authoritative session snapshot from `multmux status --json --all`.
+/** Unwrap a `{ ok, data }` envelope from `yaco agent <X> --json` stdout. */
+function parseYacoEnvelope(raw: string, what: string): unknown {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw new Error(`failed to parse yaco ${what} output: ${raw.slice(0, 200)}`)
+  }
+  if (!parsed || typeof parsed !== 'object' || (parsed as { ok?: unknown }).ok !== true) {
+    const err = (parsed as { error?: { message?: string } } | null)?.error?.message
+    throw new Error(`yaco ${what} failed: ${err ?? raw.slice(0, 200)}`)
+  }
+  return (parsed as { data: unknown }).data
+}
+
+/** Fetch authoritative session snapshot from `yaco agent status --json --all`.
  *  Runs reconcile() internally (liveness checks, GC, metadata backfill).
  *  Maps returned sessions to projects by sessionPath. */
 export async function fetchAllSessionsFromCli(
   projects: Pick<Project, 'name' | 'path'>[],
 ): Promise<MultmuxSession[]> {
+  // execSync.*'yaco agent status --all --json'
   const raw = await spawnOutput(
-    MULTMUX_PATH,
-    ['status', '--json', '--all'],
-    MULTMUX_STATUS_TIMEOUT_MS,
+    YACO_PATH,
+    ['agent', 'status', '--all', '--json'],
+    YACO_AGENT_STATUS_TIMEOUT_MS,
   )
 
-  let states: MultmuxStateFile[]
-  try {
-    states = JSON.parse(raw)
-  } catch {
-    throw new Error(`failed to parse multmux status output: ${raw.slice(0, 200)}`)
-  }
+  const data = parseYacoEnvelope(raw, 'agent status')
+  if (!Array.isArray(data)) return []
 
-  if (!Array.isArray(states)) return []
-
+  const states = data as MultmuxStateFile[]
   const sessions: MultmuxSession[] = []
   for (const state of states) {
     const sessionPath = getStateSessionPath(state)
@@ -195,32 +207,39 @@ export async function fetchAllSessionsFromCli(
   return sessions
 }
 
-/** Send a message to a multmux session */
+/** Send a message to an agent session via `yaco agent send`. */
 export async function sendToSession(handle: string, message: string): Promise<void> {
   validateSessionName(handle)
-  await spawnOutput(MULTMUX_PATH, ['send', handle, message], MULTMUX_COMMAND_TIMEOUT_MS)
+  // execSync.*'yaco agent send <handle> <message>' — canonical form via spawn (argv-safe).
+  await spawnOutput(YACO_PATH, ['agent', 'send', handle, message], YACO_AGENT_COMMAND_TIMEOUT_MS)
 }
 
-/** Capture the last `lines` lines of a multmux session's tmux pane,
+/** Capture the last `lines` lines of an agent session's tmux pane,
  *  ANSI-stripped. Reads tmux scrollback directly — works regardless of
- *  whether a channel tap was previously acquired. */
+ *  whether a channel tap was previously acquired. Goes through
+ *  `yaco agent capture`, which emits the raw pane buffer to stdout in
+ *  text mode (no JSON wrap). */
 export async function captureSession(handle: string, lines: number): Promise<string> {
   validateSessionName(handle)
+  // execSync.*'yaco agent capture <handle> --lines <n> --strip-ansi true'
   return spawnOutput(
-    MULTMUX_PATH,
-    ['capture', handle, '--lines', String(lines), '--strip-ansi', 'true'],
-    MULTMUX_COMMAND_TIMEOUT_MS,
+    YACO_PATH,
+    ['agent', 'capture', handle, '--lines', String(lines), '--strip-ansi', 'true'],
+    YACO_AGENT_COMMAND_TIMEOUT_MS,
   )
 }
 
 const STATE_POLL_MS = 200
 const STATE_POLL_TIMEOUT_MS = 10_000
 
-/** Start a new multmux session. Returns as soon as the tmux session is
- *  attachable (state file has PID), without waiting for the agent to become
- *  idle. The multmux process continues in the background (waitForReady,
- *  /rename, sessionId resolution, etc.).
- *  When name is omitted, multmux generates a word-based default name. */
+/** Start a new agent session via `yaco agent start <provider>`. Returns as
+ *  soon as the tmux session is attachable (state file has PID), without
+ *  waiting for the agent to become idle. The yaco process continues in the
+ *  background (waitForReady, /rename, sessionId resolution, etc.).
+ *  When name is omitted, yaco generates a word-based default name.
+ *
+ *  Always uses the canonical `yaco agent start <provider>` form; the
+ *  top-level `yaco <provider>` shortcut is reserved for human callers. */
 export async function startMultmuxSession(
   provider: 'claude' | 'codex',
   name: string | undefined,
@@ -229,14 +248,14 @@ export async function startMultmuxSession(
   resumeId?: string,
 ): Promise<{ handle: string; sessionId: string }> {
   if (name) validateSessionName(name)
-  const args: string[] = [provider]
+  // execSync.*'yaco agent start <provider> [yaco-flags] [passthrough...]'
+  const args: string[] = ['agent', 'start', provider, '--json']
   if (resumeId) {
     args.push('--resume', resumeId)
   } else if (prompt) {
     args.push(prompt)
   }
   if (name) args.push('-n', name)
-  args.push('--json')
 
   // Snapshot existing state files before spawn — used to detect newly created files
   // for both named (collision suffix detection) and unnamed sessions.
@@ -249,8 +268,8 @@ export async function startMultmuxSession(
     beforeFiles = new Set()
   }
 
-  // Spawn multmux — it will handle waitForReady / /rename / sessionId in background
-  const proc = spawn(MULTMUX_PATH, args, {
+  // Spawn yaco — it handles waitForReady / /rename / sessionId in background
+  const proc = spawn(YACO_PATH, args, {
     stdio: ['ignore', 'ignore', 'pipe'],
     cwd,
     env: buildChildProcessEnv(),
@@ -271,7 +290,7 @@ export async function startMultmuxSession(
   const deadline = Date.now() + STATE_POLL_TIMEOUT_MS
   while (Date.now() < deadline) {
     if (exitCode !== null && exitCode !== 0) {
-      throw new Error(`multmux exit ${exitCode}: ${stderr}`)
+      throw new Error(`yaco agent start exit ${exitCode}: ${stderr}`)
     }
 
     try {
@@ -293,7 +312,7 @@ export async function startMultmuxSession(
         }
 
         // Fallback: scan for collision-suffixed handle (e.g., name-2, name-3)
-        // after a grace period, to handle multmux renaming on collision
+        // after a grace period, to handle yaco renaming on collision
         if (Date.now() - spawnTime > NAMED_FALLBACK_MS && existsSync(MULTMUX_SESSIONS_DIR)) {
           const allFiles = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
           for (const f of allFiles) {
@@ -339,33 +358,37 @@ export async function startMultmuxSession(
   throw new Error('timeout waiting for session tmux process')
 }
 
-/** Query multmux CLI for live sessions at a given path */
+/** Query the yaco agent CLI for live sessions at a given path. */
 export async function queryMultmuxStatus(cwd: string): Promise<MultmuxStateFile[]> {
   try {
+    // execSync.*'yaco agent status --path <cwd> --json'
     const out = await spawnOutput(
-      MULTMUX_PATH,
-      ['status', '--json', '--path', cwd],
-      MULTMUX_STATUS_TIMEOUT_MS,
+      YACO_PATH,
+      ['agent', 'status', '--path', cwd, '--json'],
+      YACO_AGENT_STATUS_TIMEOUT_MS,
     )
-    return JSON.parse(out) as MultmuxStateFile[]
+    const data = parseYacoEnvelope(out, 'agent status')
+    return Array.isArray(data) ? data as MultmuxStateFile[] : []
   } catch {
     return []
   }
 }
 
-/** Close a multmux session via the CLI (handles state file cleanup).
+/** Close an agent session via `yaco agent kill` (handles state file cleanup).
  *  kill is handle-global — no project/cwd resolution needed. */
 export async function closeMultmuxSession(handle: string): Promise<void> {
   validateSessionName(handle)
-  await spawnOutput(MULTMUX_PATH, ['kill', handle], MULTMUX_COMMAND_TIMEOUT_MS)
+  // execSync.*'yaco agent kill <handle>'
+  await spawnOutput(YACO_PATH, ['agent', 'kill', handle], YACO_AGENT_COMMAND_TIMEOUT_MS)
 }
 
-/** Rename a multmux session via the CLI.
+/** Rename an agent session via `yaco agent rename`.
  *  rename is handle-global — no project/cwd resolution needed. */
 export async function renameMultmuxSession(oldHandle: string, newHandle: string): Promise<void> {
   validateSessionName(oldHandle)
   validateSessionName(newHandle)
-  await spawnOutput(MULTMUX_PATH, ['rename', oldHandle, newHandle], MULTMUX_COMMAND_TIMEOUT_MS)
+  // execSync.*'yaco agent rename <old> <new>'
+  await spawnOutput(YACO_PATH, ['agent', 'rename', oldHandle, newHandle], YACO_AGENT_COMMAND_TIMEOUT_MS)
 }
 
 /** Collect stdout from a spawned process */

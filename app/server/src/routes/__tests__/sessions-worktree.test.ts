@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Mock all session dependencies — we only care about worktree enrichment
-vi.mock('../../lib/multmux', () => ({
+vi.mock('../../lib/agent', () => ({
   readSessionsFromStateFiles: vi.fn(),
   readAllSessionsFromStateFiles: vi.fn(),
   closeMultmuxSession: vi.fn(),
@@ -31,7 +31,7 @@ vi.mock('../../lib/history', () => ({
 }))
 
 // Use real extractWorktreeSlug — that's what we're testing
-const { readAllSessionsFromStateFiles } = await import('../../lib/multmux')
+const { readAllSessionsFromStateFiles } = await import('../../lib/agent')
 const { sessionRoutes } = await import('../sessions')
 
 const mockReadAll = readAllSessionsFromStateFiles as ReturnType<typeof vi.fn>

@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
  *    2) every text-bearing assistant entry produces a separate onReply call
  *    3) interim events get the ⏳ prefix, final gets ✅
  *    4) a per-session lock keeps two rapid same-session turns ordered
- *  No live WhatsApp client / no real multmux required.
+ *  No live WhatsApp client / no real yaco agent required.
  */
 
 const { homeDir, projectsRoot } = vi.hoisted(() => ({
@@ -22,10 +22,10 @@ vi.mock('os', async (orig) => {
   return { ...actual, homedir: () => homeDir.value, tmpdir: actual.tmpdir }
 })
 
-// Track sendToSession calls; never spawn multmux for real.
+// Track sendToSession calls; never spawn yaco agent for real.
 const sendCalls: { handle: string; message: string; at: number }[] = []
-vi.mock('../multmux', async (orig) => {
-  const actual = await orig<typeof import('../multmux')>()
+vi.mock('../agent', async (orig) => {
+  const actual = await orig<typeof import('../agent')>()
   return {
     ...actual,
     sendToSession: vi.fn(async (handle: string, message: string) => {
@@ -46,7 +46,7 @@ await writeFile(
   JSON.stringify([{ id: 'alpha', path: projectPath }]),
 )
 
-// multmux state file describing one claude session
+// agent state file describing one claude session
 const multmuxDir = join(homeDir.value, '.yaco', 'sessions')
 await mkdir(multmuxDir, { recursive: true })
 const SESSION_HANDLE = 'claude-1'

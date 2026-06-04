@@ -1,21 +1,25 @@
 import { execSync } from 'child_process'
 import { sessionsDir } from '@yaco/cli/core/paths'
 
-/** Resolved path to the multmux binary (startup-time resolution) */
-export const MULTMUX_PATH = (() => {
+/** Resolved path to the yaco binary (startup-time resolution).
+ *  YACO_PATH env var wins (test/escape hatch); otherwise we trust `which`,
+ *  falling back to the bare `yaco` name so PATH resolution still runs. */
+export const YACO_PATH = (() => {
+  if (process.env.YACO_PATH) return process.env.YACO_PATH
   try {
-    return execSync('which multmux', { encoding: 'utf-8' }).trim()
+    return execSync('which yaco', { encoding: 'utf-8' }).trim() || 'yaco'
   } catch {
-    return 'multmux'
+    return 'yaco'
   }
 })()
 
-/** Global multmux session state directory.
+/** Global yaco agent session state directory.
  *  Resolves to `${YACO_HOME:-~/.yaco}/sessions` via the shared YACO resolver
- *  (see `./yacoHome.ts#sessionsDir`). Multmux owns writes; the YACO server
- *  reads + watches this directory. The MULTMUX_STATE_DIR override on the
- *  multmux CLI side is intentionally NOT honored here — YACO should
- *  observe the same root multmux is publishing to under default operation. */
+ *  (see `@yaco/cli/core/paths#sessionsDir`). The agent runtime owns writes;
+ *  the YACO server reads + watches this directory. The agent CLI's
+ *  YACO_AGENT_SESSIONS_DIR override is intentionally NOT honored here —
+ *  YACO should observe the same root the agent is publishing to under
+ *  default operation. */
 export const MULTMUX_SESSIONS_DIR = sessionsDir()
 
 /** Git max buffer for ls-files commands (50 MB) */
@@ -27,14 +31,17 @@ export const FILE_SIZE_LIMIT = 1_000_000
 /** Maximum file size for raw binary endpoint (20 MB) */
 export const RAW_FILE_SIZE_LIMIT = 20_000_000
 
-/** Timeout for multmux send/kill/rename commands (ms) */
-export const MULTMUX_COMMAND_TIMEOUT_MS = 5_000
+/** Timeout for `yaco agent send/kill/rename` commands (ms) */
+export const YACO_AGENT_COMMAND_TIMEOUT_MS = 5_000
 
-/** Timeout for multmux start command (ms) */
-export const MULTMUX_START_TIMEOUT_MS = 15_000
+/** Timeout for `yaco agent start` command (ms) */
+export const YACO_AGENT_START_TIMEOUT_MS = 15_000
 
-/** Timeout for multmux status --json backfill (ms) */
-export const MULTMUX_STATUS_TIMEOUT_MS = 10_000
+/** Timeout for `yaco agent status --json` backfill (ms) */
+export const YACO_AGENT_STATUS_TIMEOUT_MS = 10_000
+
+/** Timeout for `yaco task <subcommand>` commands (ms) */
+export const YACO_TASK_COMMAND_TIMEOUT_MS = 10_000
 
 /** Timeout for git status/diff commands (ms) */
 export const GIT_COMMAND_TIMEOUT_MS = 5_000

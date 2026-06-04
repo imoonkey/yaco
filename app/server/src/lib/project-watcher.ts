@@ -6,7 +6,7 @@ import { loadProjects, type Project } from './projects'
 import { emitRefresh } from './notify'
 import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 import { MULTMUX_SESSIONS_DIR } from './constants'
-import { isPathDescendantOrEqual } from './multmux'
+import { isPathDescendantOrEqual } from './agent'
 import { projectsFile as yacoProjectsFile } from '@yaco/cli/core/paths'
 
 const DEBOUNCE_MS = 200
@@ -64,7 +64,7 @@ async function primeSessionPathCache(): Promise<void> {
     files = (await readdir(MULTMUX_SESSIONS_DIR)).filter(name => name.endsWith('.json'))
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
-      console.warn('[project-watcher] failed to prime multmux session cache:', e)
+      console.warn('[project-watcher] failed to prime agent session cache:', e)
     }
     return
   }
@@ -121,7 +121,7 @@ async function watchMultmuxSessionsDir(): Promise<void> {
           return
         }
         void handleGlobalSessionChange(String(filename)).catch(err => {
-          console.warn(`[project-watcher] failed to handle multmux session change ${String(filename)}:`, err)
+          console.warn(`[project-watcher] failed to handle agent session change ${String(filename)}:`, err)
         })
       })
       watcher.on('error', (err) => {

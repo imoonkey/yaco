@@ -3,10 +3,10 @@ import { join } from 'path'
 import { readFileSync } from 'fs'
 
 /**
- * Tests for the session reconciler's delegation to multmux CLI.
+ * Tests for the session reconciler's delegation to the yaco agent CLI.
  *
  * After W2, the reconciler delegates all liveness checks, GC, and metadata
- * backfill to `multmux status --json --all`. It no longer reimplements
+ * backfill to `yaco agent status --json --all`. It no longer reimplements
  * tmux liveness checks or sessionId backfill.
  */
 
@@ -16,15 +16,15 @@ describe('session-reconciler behavior', () => {
     'utf-8',
   )
 
-  it('does not contain checkStaleStates (delegated to multmux CLI)', () => {
+  it('does not contain checkStaleStates (delegated to yaco agent CLI)', () => {
     expect(source).not.toMatch(/checkStaleStates/)
   })
 
-  it('does not contain isTmuxAlive (delegated to multmux CLI)', () => {
+  it('does not contain isTmuxAlive (delegated to yaco agent CLI)', () => {
     expect(source).not.toMatch(/isTmuxAlive/)
   })
 
-  it('does not contain backfillSessionIds (delegated to multmux CLI)', () => {
+  it('does not contain backfillSessionIds (delegated to yaco agent CLI)', () => {
     expect(source).not.toMatch(/backfillSessionIds/)
   })
 
@@ -50,10 +50,10 @@ describe('session-reconciler behavior', () => {
   })
 })
 
-describe('multmux.ts MultmuxStateFile type', () => {
+describe('agent.ts MultmuxStateFile type', () => {
   it('does not include stopped', () => {
     const source = readFileSync(
-      join(__dirname, '..', 'multmux.ts'),
+      join(__dirname, '..', 'agent.ts'),
       'utf-8',
     )
     const interfaceMatch = source.match(/interface MultmuxStateFile\s*\{[\s\S]*?\}/)

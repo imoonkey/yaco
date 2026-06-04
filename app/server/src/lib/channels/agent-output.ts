@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { encodeProjectPath } from '../session-summary'
-import type { MultmuxSession } from '../multmux'
+import type { MultmuxSession } from '../agent'
 
 /** A pending agent turn: the JSONL file we're tailing and the byte offset
  *  we started watching from. */
@@ -22,7 +22,7 @@ export type AgentEvent =
 export interface StreamOptions {
   timeoutMs?: number
   /** Called once when an AskUserQuestion is detected, BEFORE the 'question'
-   *  event is yielded. Should send Escape to the multmux session to cancel
+   *  event is yielded. Should send Escape to the agent session to cancel
    *  the TUI dialog so the agent unblocks. Errors are swallowed + logged. */
   onAskUserQuestion?: () => Promise<void>
 }
@@ -30,7 +30,7 @@ export interface StreamOptions {
 const POLL_MS = 250
 const DEFAULT_TIMEOUT_MS = 120_000
 
-/** Resolve the path to a multmux session's structured JSONL log:
+/** Resolve the path to an agent session's structured JSONL log:
  *   - claude: ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
  *   - codex:  ~/.codex/sessions/YYYY/MM/DD/rollout-...-<sessionId>.jsonl */
 export async function resolveSessionLog(session: MultmuxSession): Promise<string | null> {
@@ -65,7 +65,7 @@ export async function resolveSessionLog(session: MultmuxSession): Promise<string
   return null
 }
 
-/** Record the current size of the session's JSONL — call BEFORE multmux send. */
+/** Record the current size of the session's JSONL — call BEFORE yaco agent send. */
 export async function startTurn(session: MultmuxSession): Promise<PendingTurn | null> {
   const jsonlPath = await resolveSessionLog(session)
   if (!jsonlPath) return null

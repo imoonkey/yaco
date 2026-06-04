@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 
 const { mockedSessionsDir } = vi.hoisted(() => ({
-  mockedSessionsDir: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/workflow-multmux-test-sessions-${process.pid}`,
+  mockedSessionsDir: `${process.env.TMPDIR?.replace(/\/$/, '') || '/tmp'}/workflow-agent-test-sessions-${process.pid}`,
 }))
 
 // Must mock before importing the module under test
@@ -15,13 +15,14 @@ vi.mock('../session-names', () => ({
 }))
 
 vi.mock('../constants', () => ({
-  MULTMUX_COMMAND_TIMEOUT_MS: 5_000,
+  YACO_AGENT_COMMAND_TIMEOUT_MS: 5_000,
   MULTMUX_SESSIONS_DIR: mockedSessionsDir,
-  MULTMUX_START_TIMEOUT_MS: 15_000,
-  MULTMUX_PATH: 'multmux',
+  YACO_AGENT_START_TIMEOUT_MS: 15_000,
+  YACO_AGENT_STATUS_TIMEOUT_MS: 10_000,
+  YACO_PATH: 'yaco',
 }))
 
-import { readAllSessionsFromStateFiles, readSessionsFromStateFiles, type MultmuxStateFile } from '../multmux'
+import { readAllSessionsFromStateFiles, readSessionsFromStateFiles, type MultmuxStateFile } from '../agent'
 
 function writeStateFile(dir: string, handle: string, overrides: Partial<MultmuxStateFile> = {}) {
   const state: MultmuxStateFile = {
@@ -98,7 +99,7 @@ describe('readSessionsFromStateFiles', () => {
       sessionPath: tmpDir,
       pid: 99999,
       sessionId: '',
-      status: 'stopped', // multmux no longer writes this, but test the guard
+      status: 'stopped', // yaco agent no longer writes this, but test the guard
       createdAt: '2026-03-24T00:00:00.000Z',
     }
     writeFileSync(join(mockedSessionsDir, 'ghost.json'), JSON.stringify(state))

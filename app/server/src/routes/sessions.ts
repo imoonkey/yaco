@@ -1,12 +1,12 @@
 import { Hono } from 'hono'
 import { PENDING_SESSION_ID } from '../lib/constants'
 import { getHistory } from '../lib/history'
-import { closeMultmuxSession, queryMultmuxStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/multmux'
+import { closeMultmuxSession, queryMultmuxStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/agent'
 import { loadProjects } from '../lib/projects'
 import { resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
 import { extractWorktreeSlug } from '../lib/worktree'
-import { isPathDescendantOrEqual } from '../lib/multmux'
+import { isPathDescendantOrEqual } from '../lib/agent'
 
 const app = new Hono()
 

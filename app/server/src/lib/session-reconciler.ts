@@ -1,6 +1,6 @@
 import { loadProjects, type Project } from './projects'
-import type { MultmuxSession } from './multmux'
-import { fetchAllSessionsFromCli } from './multmux'
+import type { MultmuxSession } from './agent'
+import { fetchAllSessionsFromCli } from './agent'
 import { dispatch as dispatchNotification, emitRefresh } from './notify'
 import { appendEvent } from './eventsLog'
 

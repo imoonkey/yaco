@@ -36,7 +36,7 @@ vi.mock('../constants', () => ({
 
 import { getClaudeHistory, getCodexHistory, getHistory } from '../history'
 import { encodeProjectPath } from '../session-summary'
-import type { MultmuxSession } from '../../lib/multmux'
+import type { MultmuxSession } from '../../lib/agent'
 
 // -- Helpers --
 

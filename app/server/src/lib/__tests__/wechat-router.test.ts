@@ -157,8 +157,8 @@ describe('dispatch', () => {
 
   it('/new happy path: spawns provider, acquires tap, and binds (mocked)', async () => {
     vi.resetModules()
-    vi.doMock('../multmux', async (orig) => {
-      const actual = await orig<typeof import('../multmux')>()
+    vi.doMock('../agent', async (orig) => {
+      const actual = await orig<typeof import('../agent')>()
       return {
         ...actual,
         startMultmuxSession: vi.fn(async (provider: string, name: string | undefined) => ({
@@ -178,7 +178,7 @@ describe('dispatch', () => {
     })
 
     const { dispatch: scopedDispatch, _resetRouterState: scopedReset } = await import('../wechat/router')
-    const { startMultmuxSession } = await import('../multmux')
+    const { startMultmuxSession } = await import('../agent')
     const { acquireTap } = await import('../channels/pty-tap')
     const { getBinding } = await import('../wechat/state')
 
@@ -192,7 +192,7 @@ describe('dispatch', () => {
     const binding = await getBinding('wx-newhappy')
     expect(binding).toEqual(expect.objectContaining({ project: 'alpha', session: 'mysess' }))
 
-    vi.doUnmock('../multmux')
+    vi.doUnmock('../agent')
     vi.doUnmock('../channels/pty-tap')
   })
 

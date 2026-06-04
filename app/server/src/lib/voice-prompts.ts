@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 const WHISPER_PROMPT =
-  '我在 IDE 里做开发，用 Claude、Codex 这些 AI coding agent (orchestrated by multmux)。说的内容可能插入到 code editor、agent 的 chatbox，或者直接输入到 shell terminal。'
+  '我在 IDE 里做开发，用 Claude、Codex 这些 AI coding agent (orchestrated by yaco)。说的内容可能插入到 code editor、agent 的 chatbox，或者直接输入到 shell terminal。'
 
 const FORMATTER_CORE = `You are a speech-to-writing formatter. The user input
 comes from ASR and may contain recognition errors, missing punctuation, messy

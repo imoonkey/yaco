@@ -3,7 +3,7 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import Database from 'better-sqlite3'
-import type { MultmuxSession } from './multmux'
+import type { MultmuxSession } from './agent'
 import { PENDING_SESSION_ID } from './constants'
 
 const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')

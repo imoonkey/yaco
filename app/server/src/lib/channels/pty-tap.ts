@@ -54,7 +54,7 @@ export function sweepStaleTaps(): void {
   }
 }
 
-/** Acquire a tap on a multmux session. Lazy-starts the pipe-pane child if
+/** Acquire a tap on an agent session. Lazy-starts the pipe-pane child if
  *  no other binding holds it; otherwise just bumps the refCount. */
 export async function acquireTap(handle: string): Promise<void> {
   validateSessionName(handle)

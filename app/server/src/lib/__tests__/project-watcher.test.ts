@@ -29,7 +29,7 @@ vi.mock('../projects', () => ({
   loadProjects: vi.fn(async () => mock.projects),
 }))
 
-vi.mock('../multmux', () => ({
+vi.mock('../agent', () => ({
   isPathDescendantOrEqual: (candidatePath: string, rootPath: string) => {
     const candidate = candidatePath.replace(/[\\/]+$/, '')
     const root = rootPath.replace(/[\\/]+$/, '')
@@ -52,7 +52,7 @@ function writeSession(handle: string, sessionPath: string): void {
   }))
 }
 
-describe('project-watcher multmux session refreshes', () => {
+describe('project-watcher agent session refreshes', () => {
   let projectDir: string
 
   beforeEach(async () => {
@@ -69,7 +69,7 @@ describe('project-watcher multmux session refreshes', () => {
     rmSync(projectDir, { recursive: true, force: true })
   })
 
-  it('emits sessions refresh when a multmux session state file is created', async () => {
+  it('emits sessions refresh when an agent session state file is created', async () => {
     await startProjectWatchers(mock.projects)
 
     writeSession('created-session', projectDir)
@@ -79,7 +79,7 @@ describe('project-watcher multmux session refreshes', () => {
     }, { timeout: 2000 })
   })
 
-  it('emits sessions refresh when a primed multmux session state file is deleted', async () => {
+  it('emits sessions refresh when a primed agent session state file is deleted', async () => {
     writeSession('deleted-session', projectDir)
     await startProjectWatchers(mock.projects)
     mock.emitCalls = []
