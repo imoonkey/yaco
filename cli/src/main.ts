@@ -21,6 +21,7 @@ import { handleAlign } from "./commands/align/index.ts";
 import { handleInit } from "./commands/init.ts";
 import { handleInstall } from "./commands/install.ts";
 import { handleDoctor } from "./commands/doctor.ts";
+import { handleProject } from "./commands/project/index.ts";
 import { PROVIDERS } from "./lib/core/agent/providers.ts";
 
 const AREAS = [
@@ -32,6 +33,7 @@ const AREAS = [
   "install",
   "doctor",
   "paths",
+  "project",
 ] as const;
 type Area = (typeof AREAS)[number];
 
@@ -44,6 +46,7 @@ const AREA_HELP: Record<Area, string> = {
   install: "Install the yaco binary, hooks, wrappers, and global symlinks",
   doctor: "Run YACO health checks against ~/.yaco and the current repo",
   paths: "Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)",
+  project: "Operate on registered YACO projects (move metadata, ...)",
 };
 
 function helpText(): string {
@@ -85,6 +88,7 @@ const HANDLERS: Record<Area, AreaHandler> = {
   install: handleInstall,
   doctor: handleDoctor,
   paths: handlePaths,
+  project: handleProject,
 };
 
 function isArea(value: string): value is Area {

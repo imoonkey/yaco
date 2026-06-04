@@ -1,9 +1,9 @@
 # cli (@yaco/cli)
 
-Bun-based CLI hosting the `yaco` unified dispatcher (`src/main.ts`). Eight
+Bun-based CLI hosting the `yaco` unified dispatcher (`src/main.ts`). Nine
 top-level areas (`agent`, `task`, `worktree`, `align`, `init`, `install`,
-`doctor`, `paths`). Routes argv to per-area handlers. All eight areas are
-live.
+`doctor`, `paths`, `project`). Routes argv to per-area handlers. All nine
+areas are live.
 
 The previous standalone `multmux` entry point (`src/index.ts`) was retired in
 yc-agent-subcommand — its runtime now lives under `src/lib/core/agent/` and is
@@ -62,6 +62,7 @@ Shared core primitives (used by every area handler):
 - `src/lib/core/paths/` — runtime + project path resolvers. Exported to `app/server` via the `package.json` exports map at `@yaco/cli/core/paths`. See [`doc/main/paths.md`](doc/main/paths.md).
 - `src/lib/core/task/` — task graph model, validation, store, archive, lock. Exported at `@yaco/cli/core/task`. See [`doc/main/task.md`](doc/main/task.md).
 - `src/lib/core/worktree/` — slug-keyed git-worktree lifecycle (create/merge/cleanup) with strict per-subcommand flag validation. See [`doc/main/worktree.md`](doc/main/worktree.md).
+- `src/lib/core/project/` — `yaco project move` rekey core: `encode.ts` (Claude cwd → encoded dir name) + `move.ts` (`planMove` + `applyPlan` across yaco sessions, registry, `~/.claude/projects/`, `~/.codex/sessions/`, and `~/.codex/config.toml`).
 - `src/lib/core/agent/` — agent runtime: `model.ts` (types + name helpers), `providers.ts`, `session-state.ts`, `session-id.ts`, `lifecycle.ts` (hook install + wrapper install + `buildWrappedCommand`), `hook-event.ts` (pure `applyHookEvent` + Stop debounce), `tmux.ts`, `words.ts`. See [`doc/main/architecture.md`](doc/main/architecture.md).
 
 End-to-end envelope shape is locked in by `test/unit/envelope.test.ts`.
@@ -90,6 +91,57 @@ yaco paths project [--json] [--repo <path>]       # repo-relative paths, output 
 - `runtime` returns `{yacoHome, projectsFile, sessionsDir, uiStateDir, shellSessionsDir, channelsDir, agentWrapperPath}` (`agentWrapperPath = ${YACO_HOME}/agent-wrapper.sh`).
 - `project` reads `<repo>/yaco.toml [paths]` (or defaults) and emits the four keys (`tasks`, `active`, `archive`, `worktrees`) **resolved to absolute paths** against `--repo`. Repo-relative storage is unchanged; only the CLI output is materialized as absolute.
 - Failure modes: malformed `yaco.toml` or duplicate `[paths]` key → `ENV` (exit 3). `--repo` flag with no value → `USAGE` (exit 2). Both follow the envelope contract above.
+
+### `yaco project` (live)
+
+```
+yaco project move <old-path> <new-path> [--prefix] [--dry-run] [--force] [--json]
+```
+
+- `move` rekeys cwd-indexed metadata across five storage backends after
+  the operator has physically moved a project on disk: yaco sessions
+  (`${YACO_HOME}/sessions/*.json`, `sessionPath` field), the yaco project
+  registry (`${YACO_HOME}/projects.json`), Claude's per-cwd state
+  directory (`~/.claude/projects/<encoded-cwd>/`, renamed; `cwd` literals
+  rewritten inside each `.jsonl`), Codex rollouts
+  (`~/.codex/sessions/<date>/rollout-*.jsonl`, `cwd` literal in
+  `session_meta.payload`), and Codex per-project config sections
+  (`~/.codex/config.toml`, `[projects."<path>"]` headers). Files at
+  `<old-path>` and `<new-path>` are NEVER touched — that's `mv` / `git mv`'s
+  job.
+- **Claude cwd encoding**: `path.replace(/[^a-zA-Z0-9-]/g, "-")` (lossy:
+  `/`, `.`, and other non-alphanumerics all collapse to `-`). To stay
+  encoding-safe the planner reads the literal `cwd` from the first JSONL
+  line of each candidate directory rather than reverse-decoding the
+  directory name. When the target encoded directory already exists
+  (collision), files are moved one at a time and existing destinations are
+  refused-not-clobbered.
+- **Match modes**: default `exact` rewrites entries whose path equals
+  `<old-path>` after trailing-slash normalization. `--prefix` also
+  rewrites paths under `<old-path>/` (sub-cwd sessions, nested
+  worktrees). The match is path-boundary-safe: `/foo/bar` does not match
+  `/foo/bar-extra`.
+- **Pre-flight refusals** (override with `--force`): `<new-path>` must
+  exist on disk (`IO` exit 1 otherwise); `<old-path>` must NOT exist as a
+  directory (`IO` exit 1 otherwise — suggests the operator hasn't moved
+  the files yet).
+- **`--dry-run`** computes the plan and reports the planned-hit counts +
+  per-backend item list without touching the filesystem. The text-mode
+  output is a per-backend digest; `--json` mode returns the full
+  structured `{oldPath, newPath, mode, dryRun, rewrote, plan}` envelope.
+- **Idempotent**: re-running after a successful move returns
+  `NOT_FOUND` (exit 1) because no metadata still references the old path.
+- **Atomicity**: best-effort, per-file. Each JSON / JSONL rewrite is
+  write-temp + rename; the Claude directory rename is atomic. Partial
+  state recovers by re-running the same command (no entry is rewritten
+  twice).
+- **Out of scope**: `~/.yaco/ui-state/*`, `~/.yaco/projects/<id>/`,
+  `~/.yaco/shell-sessions/`, `~/.yaco/channels/` (all keyed by project id
+  or session id, not path); `~/.codex/{history,session_index}.jsonl` and
+  the `~/.codex/*.sqlite` databases (verified no `cwd` keying);
+  `~/.claude/{settings,history,sessions,plans,tasks,jobs,file-history,backups}`
+  (verified no per-cwd keying outside `projects/`). Hook configs reference
+  the yaco binary path, not the project path.
 
 ### `yaco task` (live)
 
