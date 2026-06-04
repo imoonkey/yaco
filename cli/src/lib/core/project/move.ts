@@ -1,13 +1,19 @@
 /** Project-move rekey core.
  *
- *  Rewrites cwd-keyed metadata in five storage backends so a project that
+ *  Rewrites cwd-keyed metadata in six storage backends so a project that
  *  moved on disk from `<old>` to `<new>` continues to find its history:
  *
  *   1. `${YACO_HOME}/sessions/*.json` — `sessionPath` field
  *   2. `${YACO_HOME}/projects.json`   — `{id, path}` entries
  *   3. `~/.claude/projects/<encoded>/` — directory rename + JSONL `cwd` rewrite
+ *      (preserves per-file mtime — the web app sorts the history list by mtime,
+ *      so a naive write-temp + rename would float every migrated session to
+ *      the top of the UI)
  *   4. `~/.codex/sessions/<date>/rollout-<id>.jsonl` — `cwd` in `session_meta`
- *   5. `~/.codex/config.toml`         — `[projects."<path>"]` section rename
+ *   5. `~/.codex/state_5.sqlite`      — `threads.cwd` (+ `threads.agent_path`)
+ *      column rewrite; the web app queries `WHERE cwd = ?` against this table
+ *      so codex history is invisible in the UI without this step
+ *   6. `~/.codex/config.toml`         — `[projects."<path>"]` section rename
  *
  *  The rekey is plan-then-apply: planMove() returns a serializable plan
  *  that lists every file/dir/registry-entry that would change. applyPlan()
@@ -24,6 +30,7 @@
  *  that has already been rekeyed returns an empty plan.
  */
 
+import { Database } from "bun:sqlite";
 import {
   existsSync,
   mkdirSync,
@@ -31,6 +38,7 @@ import {
   readdirSync,
   renameSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
@@ -99,6 +107,16 @@ export interface CodexConfigPlanItem {
   newHeader: string;
 }
 
+export interface CodexThreadsPlanItem {
+  /** Absolute path to `~/.codex/state_5.sqlite`. */
+  dbPath: string;
+  /** Thread row ids whose `cwd` (or `agent_path`) matches `oldCwd` (exact or
+   *  subtree under `oldCwd + "/"` in prefix mode). */
+  ids: string[];
+  oldCwd: string;
+  newCwd: string;
+}
+
 export interface MovePlan {
   oldPath: string;
   newPath: string;
@@ -108,6 +126,7 @@ export interface MovePlan {
   claudeProjects: ClaudeProjectPlanItem[];
   codexSessions: CodexSessionPlanItem[];
   codexConfig: CodexConfigPlanItem[];
+  codexThreads: CodexThreadsPlanItem[];
 }
 
 export interface MoveCounts {
@@ -116,6 +135,7 @@ export interface MoveCounts {
   claudeProjects: number;
   codexSessions: number;
   codexConfig: number;
+  codexThreads: number;
 }
 
 export function emptyCounts(): MoveCounts {
@@ -125,6 +145,7 @@ export function emptyCounts(): MoveCounts {
     claudeProjects: 0,
     codexSessions: 0,
     codexConfig: 0,
+    codexThreads: 0,
   };
 }
 
@@ -135,6 +156,7 @@ export function countsFor(plan: MovePlan): MoveCounts {
     claudeProjects: plan.claudeProjects.length,
     codexSessions: plan.codexSessions.length,
     codexConfig: plan.codexConfig.length,
+    codexThreads: plan.codexThreads.reduce((n, t) => n + t.ids.length, 0),
   };
 }
 
@@ -322,6 +344,97 @@ function planCodexConfig(inputs: MoveInputs): CodexConfigPlanItem[] {
   return items;
 }
 
+function planCodexThreads(inputs: MoveInputs): CodexThreadsPlanItem[] {
+  const dbPath = join(codexHomeRoot(inputs), "state_5.sqlite");
+  if (!existsSync(dbPath)) return [];
+
+  let db: Database;
+  try {
+    db = new Database(dbPath, { readonly: true });
+  } catch {
+    // Unreadable DB — silent no-op rather than aborting the whole move.
+    return [];
+  }
+
+  try {
+    // Older codex installs may have a different shape; skip silently if the
+    // expected `threads` table isn't present.
+    if (!hasThreadsTable(db)) return [];
+
+    const oldNorm = normalizePath(inputs.oldPath);
+    const newNorm = normalizePath(inputs.newPath);
+
+    // Group hits by (oldCwd, newCwd) so apply can UPDATE one bucket per
+    // transaction. In exact mode there is at most one cwd bucket; in prefix
+    // mode each distinct subtree path becomes its own bucket.
+    const buckets = new Map<string, { oldCwd: string; newCwd: string; ids: string[] }>();
+    const pushHit = (id: string, oldCwd: string, newCwd: string): void => {
+      const key = `${oldCwd} ${newCwd}`;
+      const bucket = buckets.get(key) ?? { oldCwd, newCwd, ids: [] };
+      bucket.ids.push(id);
+      buckets.set(key, bucket);
+    };
+
+    // cwd column — the one the web app filters on.
+    const cwdRows = inputs.mode === "exact"
+      ? db.prepare("SELECT id, cwd FROM threads WHERE cwd = ?").all(oldNorm) as Array<{ id: string; cwd: string }>
+      : db.prepare("SELECT id, cwd FROM threads WHERE cwd = ? OR cwd LIKE ?")
+          .all(oldNorm, `${oldNorm}/%`) as Array<{ id: string; cwd: string }>;
+    for (const row of cwdRows) {
+      const next = translatePath(row.cwd, inputs);
+      if (next === null || next === row.cwd) continue;
+      pushHit(row.id, row.cwd, next);
+    }
+
+    // agent_path column — exists in the schema but typically empty. Rewrite if
+    // populated. Column may be absent on older state files, so probe first.
+    if (hasColumn(db, "threads", "agent_path")) {
+      const apRows = inputs.mode === "exact"
+        ? db.prepare("SELECT id, agent_path FROM threads WHERE agent_path = ?").all(oldNorm) as Array<{ id: string; agent_path: string | null }>
+        : db.prepare("SELECT id, agent_path FROM threads WHERE agent_path = ? OR agent_path LIKE ?")
+            .all(oldNorm, `${oldNorm}/%`) as Array<{ id: string; agent_path: string | null }>;
+      for (const row of apRows) {
+        if (typeof row.agent_path !== "string") continue;
+        const next = translatePath(row.agent_path, inputs);
+        if (next === null || next === row.agent_path) continue;
+        // agent_path lives in the same row; we use the exact oldNorm/newNorm
+        // bucket so apply rewrites both columns in lockstep for the row.
+        pushHit(row.id, oldNorm, newNorm);
+      }
+    }
+
+    const items: CodexThreadsPlanItem[] = [];
+    for (const bucket of buckets.values()) {
+      // Dedupe ids — a row can match via both cwd and agent_path.
+      const ids = [...new Set(bucket.ids)];
+      items.push({ dbPath, ids, oldCwd: bucket.oldCwd, newCwd: bucket.newCwd });
+    }
+    return items;
+  } finally {
+    try { db.close(); } catch { /* best-effort */ }
+  }
+}
+
+function hasThreadsTable(db: Database): boolean {
+  try {
+    const row = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'threads'",
+    ).get();
+    return row !== null;
+  } catch {
+    return false;
+  }
+}
+
+function hasColumn(db: Database, table: string, column: string): boolean {
+  try {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+    return rows.some((r) => r.name === column);
+  } catch {
+    return false;
+  }
+}
+
 /** Read the first `"cwd":"..."` literal from a JSONL file (best-effort, line by
  *  line, stops at the first match). Returns null on any error. */
 function readFirstCwd(file: string): string | null {
@@ -379,6 +492,7 @@ export function planMove(inputs: MoveInputs): MovePlan {
     claudeProjects: planClaudeProjects(inputs),
     codexSessions: planCodexSessions(inputs),
     codexConfig: planCodexConfig(inputs),
+    codexThreads: planCodexThreads(inputs),
   };
 }
 
@@ -420,6 +534,18 @@ export function applyPlan(plan: MovePlan): MoveCounts {
     rewriteCodexConfig(file, items);
     counts.codexConfig += items.length;
   }
+  // Group codex threads by db path; each DB gets one open + one transaction
+  // covering every bucket (we never have more than one DB in practice, but
+  // grouping keeps the structure honest).
+  const threadsByDb = new Map<string, CodexThreadsPlanItem[]>();
+  for (const item of plan.codexThreads) {
+    const arr = threadsByDb.get(item.dbPath) ?? [];
+    arr.push(item);
+    threadsByDb.set(item.dbPath, arr);
+  }
+  for (const [dbPath, items] of threadsByDb) {
+    counts.codexThreads += applyCodexThreads(dbPath, items);
+  }
   return counts;
 }
 
@@ -447,6 +573,8 @@ function moveClaudeProjectDir(item: ClaudeProjectPlanItem): void {
   if (!item.merge) {
     // Simple case: rename the directory wholesale, then rewrite `cwd` inside
     // each JSONL. The rename is atomic; the rewrite is per-file best-effort.
+    // rename(2) preserves per-file mtimes; the rewrite step preserves them
+    // again. Together: web app's "modified DESC" sort stays accurate.
     if (!existsSync(dirname(item.newDir))) mkdirSync(dirname(item.newDir), { recursive: true });
     renameSync(item.oldDir, item.newDir);
     for (const f of item.files) {
@@ -472,11 +600,57 @@ function rewriteCwdInJsonl(file: string, oldCwd: string, newCwd: string): void {
   const oldLit = `"cwd":"${jsonEscape(oldCwd)}"`;
   const newLit = `"cwd":"${jsonEscape(newCwd)}"`;
   if (!raw.includes(oldLit)) return;
+  // preserve mtime — web app sorts by it
+  const targetMtime = chooseJsonlMtime(file, raw);
   // Use split/join for a literal string replace (no regex DoS surface).
   const next = raw.split(oldLit).join(newLit);
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, next);
   renameSync(tmp, file);
+  if (targetMtime !== null) {
+    try { utimesSync(file, targetMtime, targetMtime); } catch { /* best-effort */ }
+  }
+}
+
+/** Pick the mtime to restore on a rewritten JSONL.
+ *  1. The pre-rewrite file mtime is the natural choice — it's the actual
+ *     wall-clock when the session was last touched on disk.
+ *  2. As a fallback (and a sanity floor), scan the JSONL for the latest
+ *     `"timestamp"` field on a message line and use that instead if it's
+ *     fresher than the file mtime. This covers the case where the file mtime
+ *     was already incorrect going in (e.g. the file went through a `cp`/
+ *     `rsync` that landed today, while the messages inside it are days old).
+ *  Returns null if neither source yields a usable time. */
+function chooseJsonlMtime(file: string, raw: string): Date | null {
+  let mtime: Date | null = null;
+  try { mtime = statSync(file).mtime; } catch { /* no fs mtime */ }
+  const internal = maxJsonlTimestamp(raw);
+  if (internal !== null && (mtime === null || internal < mtime)) {
+    // Internal timestamp is older — trust it (file mtime is suspect).
+    return internal;
+  }
+  return mtime;
+}
+
+/** Walk a JSONL buffer line by line, return the max top-level `timestamp`
+ *  field as a Date. Returns null when no parseable timestamp is found.
+ *  Uses a substring guard to skip non-message metadata lines cheaply. */
+function maxJsonlTimestamp(raw: string): Date | null {
+  let best: number | null = null;
+  let start = 0;
+  while (start < raw.length) {
+    const nl = raw.indexOf("\n", start);
+    const end = nl === -1 ? raw.length : nl;
+    const line = raw.slice(start, end);
+    start = nl === -1 ? raw.length : nl + 1;
+    if (!line.includes('"timestamp"')) continue;
+    const m = /"timestamp"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(line);
+    if (!m) continue;
+    const t = Date.parse(m[1]!);
+    if (Number.isNaN(t)) continue;
+    if (best === null || t > best) best = t;
+  }
+  return best === null ? null : new Date(best);
 }
 
 function jsonEscape(s: string): string {
@@ -496,4 +670,53 @@ function rewriteCodexConfig(file: string, items: CodexConfigPlanItem[]): void {
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, raw);
   renameSync(tmp, file);
+}
+
+/** Apply codex threads-table rewrites. Each plan item carries a bucket of row
+ *  ids that share the same (oldCwd, newCwd) translation. Wraps every db's
+ *  worth of updates in BEGIN/COMMIT for atomicity. Returns the total number
+ *  of rows updated. */
+function applyCodexThreads(
+  dbPath: string,
+  items: CodexThreadsPlanItem[],
+): number {
+  if (!existsSync(dbPath)) return 0;
+  let db: Database;
+  try {
+    db = new Database(dbPath); // read-write
+  } catch {
+    return 0;
+  }
+  let updated = 0;
+  try {
+    const hasAgentPath = hasColumn(db, "threads", "agent_path");
+    db.run("BEGIN");
+    try {
+      const updateCwd = db.prepare(
+        "UPDATE threads SET cwd = ? WHERE id = ? AND cwd = ?",
+      );
+      const updateAgentPath = hasAgentPath
+        ? db.prepare(
+            "UPDATE threads SET agent_path = ? WHERE id = ? AND agent_path = ?",
+          )
+        : null;
+      for (const item of items) {
+        for (const id of item.ids) {
+          const r1 = updateCwd.run(item.newCwd, id, item.oldCwd);
+          if ((r1.changes ?? 0) > 0) updated += 1;
+          if (updateAgentPath) {
+            // Same oldCwd → newCwd applies to agent_path when it matches.
+            updateAgentPath.run(item.newCwd, id, item.oldCwd);
+          }
+        }
+      }
+      db.run("COMMIT");
+    } catch (e) {
+      try { db.run("ROLLBACK"); } catch { /* ignore */ }
+      throw e;
+    }
+  } finally {
+    try { db.close(); } catch { /* best-effort */ }
+  }
+  return updated;
 }

@@ -1,12 +1,13 @@
 /** End-to-end tests for the `yaco project move` core (planMove + applyPlan).
  *
- *  All four storage backends are exercised against tmpdir-staged fixtures
+ *  All six storage backends are exercised against tmpdir-staged fixtures
  *  with `$HOME` and `$YACO_HOME` redirected — no test ever touches the
  *  operator's real `~/.claude`, `~/.codex`, or `~/.yaco` state.
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { Database } from "bun:sqlite";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -404,5 +405,211 @@ describe("collision handling", () => {
       "aaaaaaaa-0000-0000-0000-000000000001.jsonl",
       "cccccccc-0000-0000-0000-000000000099.jsonl",
     ]);
+  });
+});
+
+// --- bug-fix coverage: codex SQLite threads + claude jsonl mtime ----------
+
+/** Stage a `state_5.sqlite` with a `threads` table matching the real codex
+ *  schema fields we touch (id, cwd, agent_path), plus the not-null columns
+ *  that codex requires so INSERTs succeed. */
+function stageCodexState5(
+  fix: Fixture,
+  rows: Array<{ id: string; cwd: string; agent_path?: string | null }>,
+): string {
+  const dbPath = join(fix.codexHome, "state_5.sqlite");
+  const db = new Database(dbPath);
+  db.run(`CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    rollout_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    model_provider TEXT NOT NULL,
+    cwd TEXT NOT NULL,
+    title TEXT NOT NULL,
+    agent_path TEXT
+  )`);
+  const insert = db.prepare(
+    `INSERT INTO threads
+     (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, agent_path)
+     VALUES (?, ?, 0, 0, 'codex_exec', 'openai', ?, '', ?)`,
+  );
+  for (const row of rows) {
+    insert.run(
+      row.id,
+      `/home/user/.codex/sessions/2026/06/04/rollout-${row.id}.jsonl`,
+      row.cwd,
+      row.agent_path ?? null,
+    );
+  }
+  db.close();
+  return dbPath;
+}
+
+function readThreadsCwd(dbPath: string): Map<string, { cwd: string; agent_path: string | null }> {
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const rows = db.prepare("SELECT id, cwd, agent_path FROM threads").all() as Array<
+      { id: string; cwd: string; agent_path: string | null }
+    >;
+    return new Map(rows.map((r) => [r.id, { cwd: r.cwd, agent_path: r.agent_path }]));
+  } finally {
+    db.close();
+  }
+}
+
+describe("codex state_5.sqlite threads.cwd rewrite", () => {
+  it("updates only exact-match rows in exact mode", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const otherPath = join(fix.root, "other");
+    const subPath = join(fix.oldPath, "subdir");
+    const dbPath = stageCodexState5(fix, [
+      { id: "t1", cwd: fix.oldPath },
+      { id: "t2", cwd: otherPath },
+      { id: "t3", cwd: subPath }, // child — not touched in exact mode
+    ]);
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+    });
+    expect(plan.codexThreads).toHaveLength(1);
+    expect(plan.codexThreads[0]!.dbPath).toBe(dbPath);
+    expect(plan.codexThreads[0]!.ids.sort()).toEqual(["t1"]);
+    expect(plan.codexThreads[0]!.oldCwd).toBe(fix.oldPath);
+    expect(plan.codexThreads[0]!.newCwd).toBe(fix.newPath);
+
+    const counts = applyPlan(plan);
+    expect(counts.codexThreads).toBe(1);
+
+    const after = readThreadsCwd(dbPath);
+    expect(after.get("t1")!.cwd).toBe(fix.newPath);
+    expect(after.get("t2")!.cwd).toBe(otherPath);   // untouched
+    expect(after.get("t3")!.cwd).toBe(subPath);     // untouched (exact mode)
+  });
+
+  it("updates subtree rows in prefix mode", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const otherPath = join(fix.root, "other");
+    const subPath = join(fix.oldPath, "a", "b");
+    const siblingPath = `${fix.oldPath}-extra`; // hyphen-extended sibling
+    const dbPath = stageCodexState5(fix, [
+      { id: "t1", cwd: fix.oldPath },
+      { id: "t2", cwd: otherPath },
+      { id: "t3", cwd: subPath },
+      { id: "t4", cwd: siblingPath },
+    ]);
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "prefix",
+      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+    });
+    // Two buckets: exact (oldPath -> newPath) + subtree (subPath -> sub of newPath)
+    const allIds = plan.codexThreads.flatMap((t) => t.ids).sort();
+    expect(allIds).toEqual(["t1", "t3"]);
+
+    applyPlan(plan);
+
+    const after = readThreadsCwd(dbPath);
+    expect(after.get("t1")!.cwd).toBe(fix.newPath);
+    expect(after.get("t2")!.cwd).toBe(otherPath);   // outside subtree
+    expect(after.get("t3")!.cwd).toBe(join(fix.newPath, "a", "b"));
+    // Hyphen-extended sibling NOT matched (path-boundary safe)
+    expect(after.get("t4")!.cwd).toBe(siblingPath);
+  });
+
+  it("rewrites agent_path when populated and matching", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const dbPath = stageCodexState5(fix, [
+      { id: "t1", cwd: fix.oldPath, agent_path: fix.oldPath },
+    ]);
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+    });
+    applyPlan(plan);
+
+    const after = readThreadsCwd(dbPath);
+    expect(after.get("t1")!.cwd).toBe(fix.newPath);
+    expect(after.get("t1")!.agent_path).toBe(fix.newPath);
+  });
+
+  it("is a no-op when state_5.sqlite is missing", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    // Do NOT stage state_5.sqlite; stage something else so totalHits>0.
+    stageYacoSession(fix, "alpha", fix.oldPath);
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+    });
+    expect(plan.codexThreads).toEqual([]);
+
+    const counts = applyPlan(plan);
+    expect(counts.codexThreads).toBe(0);
+  });
+});
+
+describe("claude jsonl mtime preservation", () => {
+  it("preserves the pre-apply mtime on rewritten jsonl files", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    const oldDir = stageClaudeProject(fix, fix.oldPath, ["aaaaaaaa-0000-0000-0000-000000000001"]);
+    const file = join(oldDir, "aaaaaaaa-0000-0000-0000-000000000001.jsonl");
+    // Set mtime to 7 days ago.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+    utimesSync(file, sevenDaysAgo, sevenDaysAgo);
+    const beforeMtime = statSync(file).mtimeMs;
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+    });
+    applyPlan(plan);
+
+    const newDir = plan.claudeProjects[0]!.newDir;
+    const newFile = join(newDir, "aaaaaaaa-0000-0000-0000-000000000001.jsonl");
+    const afterMtime = statSync(newFile).mtimeMs;
+    // Within 1s tolerance for FS clock resolution.
+    expect(Math.abs(afterMtime - beforeMtime)).toBeLessThan(1000);
+  });
+
+  it("falls back to internal max timestamp when the file mtime is newer than the messages", () => {
+    const fix = tmpFixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    // Stage a jsonl whose internal max timestamp is 7 days ago, but whose
+    // file mtime is "today" (the default — what stageClaudeProject leaves).
+    const oldDir = stageClaudeProject(fix, fix.oldPath, ["bbbbbbbb-0000-0000-0000-000000000002"]);
+    const file = join(oldDir, "bbbbbbbb-0000-0000-0000-000000000002.jsonl");
+    // Overwrite with content that carries old timestamps; keep "today" mtime
+    // (writeFileSync stamps the file with now).
+    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
+    const isoOld = sevenDaysAgo.toISOString();
+    writeFileSync(
+      file,
+      JSON.stringify({ type: "user", cwd: fix.oldPath, sessionId: "bbbbbbbb-0000-0000-0000-000000000002", timestamp: isoOld }) + "\n" +
+      JSON.stringify({ type: "user", cwd: fix.oldPath, sessionId: "bbbbbbbb-0000-0000-0000-000000000002", timestamp: isoOld }) + "\n",
+    );
+    // Sanity: file mtime is "today" (within a few seconds of now).
+    const fileMtimeMs = statSync(file).mtimeMs;
+    expect(Math.abs(Date.now() - fileMtimeMs)).toBeLessThan(5000);
+
+    const plan = planMove({
+      oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
+      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+    });
+    applyPlan(plan);
+
+    const newDir = plan.claudeProjects[0]!.newDir;
+    const newFile = join(newDir, "bbbbbbbb-0000-0000-0000-000000000002.jsonl");
+    const afterMtimeMs = statSync(newFile).mtimeMs;
+    // Should match the internal "7 days ago" timestamp, not the file mtime.
+    expect(Math.abs(afterMtimeMs - sevenDaysAgo.getTime())).toBeLessThan(1000);
   });
 });

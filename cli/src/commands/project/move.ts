@@ -78,7 +78,8 @@ export function runMove(
     plan.registry.length +
     plan.claudeProjects.length +
     plan.codexSessions.length +
-    plan.codexConfig.length;
+    plan.codexConfig.length +
+    plan.codexThreads.length;
 
   if (totalHits === 0) {
     throw new CliError(
@@ -120,6 +121,7 @@ function renderText(report: MoveReport): string {
   lines.push(`  ~/.claude/projects  ${report.rewrote.claudeProjects}`);
   lines.push(`  ~/.codex/sessions   ${report.rewrote.codexSessions}`);
   lines.push(`  ~/.codex/config     ${report.rewrote.codexConfig}`);
+  lines.push(`  ~/.codex/state_5    ${report.rewrote.codexThreads}`);
   lines.push("");
   if (report.plan.sessions.length > 0) {
     lines.push("yaco sessions:");
@@ -157,6 +159,14 @@ function renderText(report: MoveReport): string {
     lines.push("~/.codex/config.toml:");
     for (const c of report.plan.codexConfig) {
       lines.push(`  ${c.oldHeader} -> ${c.newHeader}`);
+    }
+    lines.push("");
+  }
+  if (report.plan.codexThreads.length > 0) {
+    lines.push("~/.codex/state_5.sqlite (threads):");
+    for (const t of report.plan.codexThreads) {
+      lines.push(`  ${t.dbPath}`);
+      lines.push(`       cwd ${t.oldCwd} -> ${t.newCwd}  [${t.ids.length} thread(s)]`);
     }
     lines.push("");
   }
