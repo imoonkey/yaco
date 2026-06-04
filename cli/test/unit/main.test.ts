@@ -40,12 +40,12 @@ describe("dispatch", () => {
   });
 
   it("routes a known area to its stub handler", async () => {
-    const { result, area } = await dispatch(["align"]);
-    expect(area).toBe("align");
+    const { result, area } = await dispatch(["install"]);
+    expect(area).toBe("install");
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       const v = result.value as { area: string; status: string };
-      expect(v.area).toBe("align");
+      expect(v.area).toBe("install");
       expect(v.status).toBe("stub");
     }
   });
@@ -62,12 +62,12 @@ describe("dispatch", () => {
   it("strips the area token before handing argv to the handler", async () => {
     // Stub handler with --help returns AREA_HELP for that area; we just check
     // that the handler ran and got the trailing args (not the area).
-    const { result } = await dispatch(["align", "--help"]);
+    const { result } = await dispatch(["install", "--help"]);
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       const v = result.value as { area: string; help: string };
-      expect(v.area).toBe("align");
-      expect(v.help).toContain("alignment");
+      expect(v.area).toBe("install");
+      expect(v.help).toContain("yaco binary");
     }
   });
 

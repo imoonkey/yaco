@@ -17,6 +17,8 @@ import { handlePaths } from "./commands/paths.ts";
 import { handleAgent, runStart } from "./commands/agent/index.ts";
 import { handleTask } from "./commands/task/index.ts";
 import { handleWorktree } from "./commands/worktree/index.ts";
+import { handleAlign } from "./commands/align/index.ts";
+import { handleInit } from "./commands/init.ts";
 import { PROVIDERS } from "./lib/core/agent/providers.ts";
 
 const AREAS = [
@@ -76,8 +78,8 @@ const HANDLERS: Record<Area, AreaHandler> = {
   agent: handleAgent,
   task: handleTask,
   worktree: handleWorktree,
-  align: stubHandler("align"),
-  init: stubHandler("init"),
+  align: handleAlign,
+  init: handleInit,
   install: stubHandler("install"),
   doctor: stubHandler("doctor"),
   paths: handlePaths,
