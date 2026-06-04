@@ -40,12 +40,12 @@ describe("dispatch", () => {
   });
 
   it("routes a known area to its stub handler", async () => {
-    const { result, area } = await dispatch(["worktree"]);
-    expect(area).toBe("worktree");
+    const { result, area } = await dispatch(["align"]);
+    expect(area).toBe("align");
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       const v = result.value as { area: string; status: string };
-      expect(v.area).toBe("worktree");
+      expect(v.area).toBe("align");
       expect(v.status).toBe("stub");
     }
   });
@@ -62,12 +62,12 @@ describe("dispatch", () => {
   it("strips the area token before handing argv to the handler", async () => {
     // Stub handler with --help returns AREA_HELP for that area; we just check
     // that the handler ran and got the trailing args (not the area).
-    const { result } = await dispatch(["worktree", "--help"]);
+    const { result } = await dispatch(["align", "--help"]);
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       const v = result.value as { area: string; help: string };
-      expect(v.area).toBe("worktree");
-      expect(v.help).toContain("worktrees");
+      expect(v.area).toBe("align");
+      expect(v.help).toContain("alignment");
     }
   });
 
@@ -79,6 +79,18 @@ describe("dispatch", () => {
       const v = result.value as { help?: string };
       expect(typeof v.help).toBe("string");
       expect(v.help).toContain("yaco task");
+    }
+  });
+
+  it("worktree area is live: bare `yaco worktree` returns help, not a stub", async () => {
+    const { result, area } = await dispatch(["worktree"]);
+    expect(area).toBe("worktree");
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      const v = result.value as { help?: string; status?: string };
+      expect(typeof v.help).toBe("string");
+      expect(v.help).toContain("yaco worktree");
+      expect(v.status).toBeUndefined();
     }
   });
 

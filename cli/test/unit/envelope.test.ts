@@ -28,7 +28,7 @@ function runYaco(args: string[]): { stdout: string; stderr: string; status: numb
 
 describe("--json envelope (success)", () => {
   it("wraps stub area output in {ok:true, data} on stdout, stderr empty, exit 0", () => {
-    const r = runYaco(["worktree", "--json"]);
+    const r = runYaco(["align", "--json"]);
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
     // Trim only the trailing newline emit() adds.
@@ -37,7 +37,7 @@ describe("--json envelope (success)", () => {
     expect(parsed).toEqual({
       ok: true,
       data: {
-        area: "worktree",
+        area: "align",
         status: "stub",
         note: "runtime lands in a later task",
       },
