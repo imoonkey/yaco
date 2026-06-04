@@ -5,12 +5,11 @@ Centralized AI agent configuration repo. Single source of truth for CLAUDE.md, s
 ## Stack
 
 Markdown skill prompts. All helper logic lives in the `yaco` CLI under
-`cli/`; this package contains no executable scripts.
+`cli/`.
 
 ## Build & Run
 
-Global setup: root `tools/install.sh` (or `yaco install` after the
-bootstrap binary exists)
+Global setup: `yaco install` (or root `tools/install.sh`)
 Per-project setup: `/init-all` (calls `yaco init links`)
 
 ## Architecture
@@ -30,7 +29,7 @@ Per-project setup: `/init-all` (calls `yaco init links`)
 
 ## Ecosystem
 
-The YACO productivity stack now lives in this monorepo.
+The YACO productivity stack lives in this monorepo.
 
 | Path | What |
 |------|------|

@@ -37,11 +37,10 @@ This creates:
 | `AGENTS.md` | `CLAUDE.md` | Codex config |
 | `GEMINI.md` | `CLAUDE.md` | Gemini config |
 
-Idempotent across re-runs. Hardens vs the legacy shell helper:
+Idempotent across re-runs. Semantics:
 
-- Missing `CLAUDE.md` → hard precondition failure (exit 3) instead of a
-  silent skip — callers can't end up with `AGENTS.md`/`GEMINI.md` pointing
-  at nothing.
+- Missing `CLAUDE.md` → hard precondition failure (exit 3) so callers
+  can't end up with `AGENTS.md`/`GEMINI.md` pointing at nothing.
 - A regular file or directory at a target path → refuses to clobber
   (exit 1).
 - An existing symlink at a target path is removed and re-created so the

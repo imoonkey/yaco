@@ -3,9 +3,8 @@ name: update-tasks
 description: Create and manage the project task graph in projects/tasks.json. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
 ---
 
-This skill is YACO-native: it owns and directly mutates `projects/tasks.json`
-through the `yaco task` CLI and references design bundles under
-`projects/active/<bundle>/`.
+This skill owns and mutates `projects/tasks.json` through the `yaco task`
+CLI and references design bundles under `projects/active/<bundle>/`.
 
 ## Scope
 

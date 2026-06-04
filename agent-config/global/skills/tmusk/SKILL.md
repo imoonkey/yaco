@@ -85,11 +85,8 @@ yaco agent kill "$NAME" --json
 - For tests, prefer `bun run test` for pure unit coverage and `bun run test:integration` when tmux-backed checks are needed
 - Text-mode `capture` returns clean text (ANSI codes stripped by default); `--json` mode wraps that text as `{ok:true,data:{text:"..."}}`
 
-## Provider shortcuts (HUMAN typing only — NOT for skills)
+## Provider shortcuts
 
-The top-level dispatcher accepts a one-word provider form (`yaco
-<provider> ...`) that delegates to `yaco agent start <provider>`. It
-exists for **interactive human typing at a terminal** — skills MUST NOT
-use it. No examples of the shortcut appear in this skill on purpose; if
-you are tempted to copy one, use the canonical `yaco agent start
-<provider>` form instead (and always pass `--json`).
+Skills MUST use the canonical form `yaco agent start <provider> ...`
+with `--json`. The one-word `yaco <provider> ...` shortcut is for
+interactive human typing only and MUST NOT appear in skill automation.

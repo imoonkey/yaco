@@ -3,15 +3,13 @@ name: orchestrate
 description: Execute tasks from projects/tasks.json using yaco agent workers. Use when the user wants to run, advance, or check on task execution.
 ---
 
-This skill is YACO-native: it reads `projects/tasks.json` via `yaco task`,
-dispatches `yaco agent` workers against YACO session state
-(`~/.yaco/sessions/`), and drives the worktree lifecycle via `yaco worktree`.
+Read `projects/tasks.json` via `yaco task`, dispatch `yaco agent` workers
+against session state in `~/.yaco/sessions/`, and drive the worktree
+lifecycle via `yaco worktree`.
 
 Every `yaco` invocation in this skill MUST pass `--json` so output flows
 through the `{ok,data}/{ok,error}` envelope and stays parseable from
-shell. The top-level provider shortcuts (the one-word `yaco <provider>`
-form) are for humans only — orchestrate always uses the canonical
-`yaco agent start <provider>`.
+shell. Use the canonical `yaco agent start <provider>` form.
 
 ## Dispatch
 

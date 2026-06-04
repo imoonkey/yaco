@@ -5,9 +5,10 @@ description: Two agents (Claude + Codex) independently design, cross-review, the
 
 # Double Design
 
-This skill is YACO-native: it writes the `projects/active/<project>/{initial,discussion,final}/` bundle layout and coordinates `yaco agent` workers around it.
-
-Two agents independently design, cross-review, then align via multi-round discussion.
+Two agents independently design, cross-review, then align via multi-round
+discussion. The skill writes the
+`projects/active/<project>/{initial,discussion,final}/` bundle layout and
+coordinates `yaco agent` workers around it.
 
 ## Usage
 
@@ -35,9 +36,8 @@ projects/active/<project>/
 
 All orchestration is done by the invoking agent via `yaco agent`.
 Reuse sessions across steps (`yaco agent send`) to preserve context.
-Every `yaco` invocation passes `--json` (per skill CLI contract); the
-top-level provider shortcut (the one-word `yaco <provider>` form) is
-reserved for human typing and is NOT used here.
+Every `yaco` invocation passes `--json`, using the canonical
+`yaco agent start <provider>` form.
 
 ### Step 1: Independent Design
 
