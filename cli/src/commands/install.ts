@@ -64,6 +64,8 @@ Options:
   --repo <path>    Override the repo root (default: \$YACO_REPO_ROOT or cwd)
   --bin-dir <path> Override the bin dir for legacy symlink cleanup
                    (default: \$YACO_BIN_DIR or \$HOME/.local/bin)
+  --force          Overwrite an existing project registry entry whose path
+                   differs from this install's repo root (default: refuse)
   --json           Emit the {ok,data}/{ok,error} envelope
   --help           Show this help
 `;
@@ -74,6 +76,7 @@ interface InstallOptions {
   noRegistry: boolean;
   skipDoctor: boolean;
   dryRun: boolean;
+  force: boolean;
   repoRoot?: string;
   binDir?: string;
   json: boolean;
@@ -95,6 +98,7 @@ function defaultOptions(): InstallOptions {
     noRegistry: false,
     skipDoctor: false,
     dryRun: false,
+    force: false,
     json: false,
   };
 }
@@ -109,6 +113,7 @@ function parseOpts(argv: string[]): InstallOptions {
       case "--no-registry": out.noRegistry = true; continue;
       case "--skip-doctor": out.skipDoctor = true; continue;
       case "--dry-run": out.dryRun = true; continue;
+      case "--force": out.force = true; continue;
       case "--json": out.json = true; continue;
     }
     if (a === "--repo" || a.startsWith("--repo=")) {
@@ -217,8 +222,15 @@ function installAgentWrapper(repoRoot: string, actions: string[], dryRun: boolea
 
 /** Upsert {id: "yaco", path: repoRoot} into ${YACO_HOME}/projects.json.
  *  Refuses to overwrite a malformed registry — operator must repair the file
- *  manually rather than silently lose other project entries. */
-function upsertRegistry(repoRoot: string, actions: string[], dryRun: boolean): void {
+ *  manually rather than silently lose other project entries.
+ *
+ *  Also refuses to silently rebind the "yaco" entry when an existing entry
+ *  points at a different path. This blocks the worktree footgun where running
+ *  `yaco install` from inside a `.worktrees/<slug>/` checkout would otherwise
+ *  silently re-register the project at the worktree path and the web app
+ *  would then filter every session/task/worktree view through the wrong root.
+ *  Pass `--force` to override (e.g. when you actually moved the checkout). */
+function upsertRegistry(repoRoot: string, force: boolean, actions: string[], dryRun: boolean): void {
   const file = projectsRegistryPath();
   let existing: Project[] = [];
   if (existsSync(file)) {
@@ -236,9 +248,17 @@ function upsertRegistry(repoRoot: string, actions: string[], dryRun: boolean): v
   const idx = filtered.findIndex((p) => p.name === "yaco");
   const target: Project = { name: "yaco", path: repoRoot };
   if (idx >= 0) {
-    if (filtered[idx]!.path === repoRoot && filtered.length === existing.length) {
+    const currentPath = filtered[idx]!.path;
+    if (currentPath === repoRoot && filtered.length === existing.length) {
       // No change needed.
       return;
+    }
+    if (currentPath !== repoRoot && !force) {
+      throw new CliError(
+        ErrCode.CONFLICT,
+        `projects.json already registers "yaco" at ${currentPath}; refusing to rebind to ${repoRoot} (re-run with --force, or edit ${file})`,
+        { existingPath: currentPath, newPath: repoRoot, registryPath: file },
+      );
     }
     filtered[idx] = target;
   } else {
@@ -374,7 +394,7 @@ export function runInstall(opts: InstallOptions): InstallReport {
   }
 
   if (!opts.noRegistry) {
-    upsertRegistry(repoRoot, actions, opts.dryRun);
+    upsertRegistry(repoRoot, opts.force, actions, opts.dryRun);
   }
 
   if (opts.dryRun && !opts.json) {

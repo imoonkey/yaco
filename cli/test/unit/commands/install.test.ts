@@ -320,6 +320,59 @@ describe("runInstall — registry safety (HIGH 5)", () => {
     // The corrupt file is unchanged.
     expect(readFileSync(path, "utf-8")).toBe(corrupt);
   });
+
+  it("refuses to rebind \"yaco\" to a different path — throws CONFLICT", () => {
+    // Pre-seed the registry with yaco at a different path (simulating the
+    // worktree footgun: `yaco install` ran from .worktrees/<slug> and
+    // re-registered the project at the worktree root).
+    mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
+    const regPath = join(process.env["YACO_HOME"]!, "projects.json");
+    const existingPath = "/some/other/yaco/checkout";
+    writeFileSync(regPath, JSON.stringify([{ id: "yaco", path: existingPath }]));
+    let code: string | undefined;
+    let msg = "";
+    try {
+      runInstall(baseOpts());
+    } catch (e) {
+      code = (e as { code?: string }).code;
+      msg = (e as Error).message;
+    }
+    expect(code).toBe("CONFLICT");
+    expect(msg).toContain("already registers");
+    expect(msg).toContain(existingPath);
+    expect(msg).toContain(repoRoot);
+    expect(msg).toContain("--force");
+    // Registry file is unchanged.
+    const reg = JSON.parse(readFileSync(regPath, "utf-8"));
+    expect(reg).toEqual([{ id: "yaco", path: existingPath }]);
+  });
+
+  it("--force overwrites a different-path yaco entry", () => {
+    mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
+    const regPath = join(process.env["YACO_HOME"]!, "projects.json");
+    writeFileSync(
+      regPath,
+      JSON.stringify([
+        { id: "yaco", path: "/some/other/yaco/checkout" },
+        { id: "other-project", path: "/keep/me" },
+      ]),
+    );
+    runInstall(baseOpts({ force: true }));
+    const reg = JSON.parse(readFileSync(regPath, "utf-8"));
+    expect(reg).toEqual([
+      { id: "yaco", path: repoRoot },
+      { id: "other-project", path: "/keep/me" },
+    ]);
+  });
+
+  it("same-path re-registration is a no-op (idempotent — no --force needed)", () => {
+    runInstall(baseOpts());
+    const regPath = join(process.env["YACO_HOME"]!, "projects.json");
+    const before = readFileSync(regPath, "utf-8");
+    // Re-run install from the same repoRoot — should NOT throw CONFLICT.
+    runInstall(baseOpts());
+    expect(readFileSync(regPath, "utf-8")).toBe(before);
+  });
 });
 
 describe("runInstall — canonical hook command (HIGH 4)", () => {
