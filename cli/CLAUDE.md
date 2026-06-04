@@ -2,9 +2,9 @@
 
 Bun-based CLI hosting the `yaco` unified dispatcher (`src/main.ts`). Eight
 top-level areas (`agent`, `task`, `worktree`, `align`, `init`, `install`,
-`doctor`, `paths`). Routes argv to per-area handlers. `agent` and `paths`
-are live; the other six are stubs returning `{area, status: "stub"}` and
-land in follow-up tasks.
+`doctor`, `paths`). Routes argv to per-area handlers. `agent`, `task`, and
+`paths` are live; the other five are stubs returning `{area, status: "stub"}`
+and land in follow-up tasks.
 
 The previous standalone `multmux` entry point (`src/index.ts`) was retired in
 yc-agent-subcommand — its runtime now lives under `src/lib/core/agent/` and is
@@ -61,6 +61,7 @@ Shared core primitives (used by every area handler):
 - `src/lib/core/json.ts` — `emit(value, "stdout" | "stderr")`, deterministic `stringify`, non-throwing `parse`
 - `src/lib/core/args.ts` — minimal positional/flag parser (recognizes `--` for passthrough)
 - `src/lib/core/paths/` — runtime + project path resolvers. Exported to `app/server` via the `package.json` exports map at `@yaco/cli/core/paths`. See [`doc/main/paths.md`](doc/main/paths.md).
+- `src/lib/core/task/` — task graph model, validation, store, archive, lock. Exported at `@yaco/cli/core/task`. See [`doc/main/task.md`](doc/main/task.md).
 - `src/lib/core/agent/` — agent runtime: `model.ts` (types + name helpers), `providers.ts`, `session-state.ts`, `session-id.ts`, `lifecycle.ts` (hook install + wrapper install + `buildWrappedCommand`), `hook-event.ts` (pure `applyHookEvent` + Stop debounce), `tmux.ts`, `words.ts`. See [`doc/main/architecture.md`](doc/main/architecture.md).
 
 End-to-end envelope shape is locked in by `test/unit/envelope.test.ts`.
@@ -71,6 +72,7 @@ End-to-end envelope shape is locked in by `test/unit/envelope.test.ts`.
 `app/server` (Node via `tsx`/`vitest`) over the npm workspace link:
 
 - `@yaco/cli/core/paths` — runtime + project path resolvers
+- `@yaco/cli/core/task` — task graph model, validation, store, archive, lock
 - `@yaco/cli/core/result` — `Result<T>` union + helpers
 - `@yaco/cli/core/errors` — `CliError`, `ErrCode`, `exitCodeFor`
 
@@ -88,6 +90,35 @@ yaco paths project [--json] [--repo <path>]       # repo-relative paths, output 
 - `runtime` returns `{yacoHome, projectsFile, sessionsDir, uiStateDir, shellSessionsDir, channelsDir, agentWrapperPath}` (`agentWrapperPath = ${YACO_HOME}/agent-wrapper.sh`).
 - `project` reads `<repo>/yaco.toml [paths]` (or defaults) and emits the four keys (`tasks`, `active`, `archive`, `worktrees`) **resolved to absolute paths** against `--repo`. Repo-relative storage is unchanged; only the CLI output is materialized as absolute.
 - Failure modes: malformed `yaco.toml` or duplicate `[paths]` key → `ENV` (exit 3). `--repo` flag with no value → `USAGE` (exit 2). Both follow the envelope contract above.
+
+### `yaco task` (live)
+
+```
+yaco task set <id> --data '<json>'      [--repo <p>] [--json]
+yaco task set <id> --stdin              [--repo <p>] [--json]
+yaco task set <id> --file <path>        [--repo <p>] [--json]
+yaco task rm <id>                       [--repo <p>] [--json]
+yaco task archive <id>                  [--repo <p>] [--json]
+yaco task validate [--id <id>]          [--repo <p>] [--json]
+yaco task list                          [--repo <p>] [--json]
+```
+
+- TypeScript port of `agent-config/global/skills/update-tasks/scripts/update-tasks.py` with the same semantics (type checks, leaf acceptCriteria, ref/cycle validation, milestone state rollup, running-requires-terminal-deps, archive + descendants + dangling depends cleanup, worktree-scope advisory).
+- **Fix**: the tasks-file location is now resolved through `readYacoProjectPaths(repoRoot)` — `yaco.toml [paths].tasks` / `[paths].archive` overrides are honored. The legacy script ignored them.
+- **No positional JSON**: payload comes from `--data`, `--stdin`, or `--file` (exactly one). `--file <missing>` → `USAGE` (exit 2); other read errors → `IO` (exit 1).
+- **`archive` shape**: `{ archivedCount, archivePath }` only.
+- **`set` shape**: `{ id, action, task, warnings, tasksFile }` — warnings (e.g. shared-worktree-cross-repo-scope advisory) land under `data.warnings`.
+- **`validate`** is whole-graph by default; `--id <t>` narrows to the task + its parent chain. Failures return `INVALID` (exit 1) with structured `error.details`: `cycles`, `dangling`, `selfReference`, `missingAC`, `invalidState`, `milestoneRollup` (parent state vs implied state from children). Cross-host stale lock surfaces under `error.details.staleLocks` and also fails validate per the locking design.
+
+### Locking (`yaco task`)
+
+- Lock path: `<tasks-file>.lock.d` (atomic `mkdir`).
+- Owner metadata: `<lock-dir>/owner.json` = `{ pid, hostname, startedAt, command }`.
+- Acquire retries up to 10s by default (override `YACO_TASK_LOCK_TIMEOUT_MS`); `LOCK` (exit 4) on timeout.
+- **Same-host stale lock** (recorded `hostname` matches AND PID dead) → silently reclaimed on retry.
+- **Cross-host stale lock** → NEVER auto-broken. Reported by `yaco task validate` under `error.details.staleLocks`; manual `rm -rf <tasks-file>.lock.d` is the escape hatch.
+
+See [`doc/main/task.md`](doc/main/task.md) for the full surface, error mapping, and parity story vs the Python script.
 
 ## `yaco agent` (live runtime)
 
