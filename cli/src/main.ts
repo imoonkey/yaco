@@ -13,6 +13,7 @@ import { parseArgs } from "./lib/core/args.ts";
 import { ok, isErr, type Result } from "./lib/core/result.ts";
 import { CliError, ErrCode, exitCodeFor, toErr } from "./lib/core/errors.ts";
 import { emit, stringify } from "./lib/core/json.ts";
+import { handlePaths } from "./commands/paths.ts";
 
 const AREAS = [
   "agent",
@@ -68,7 +69,7 @@ const HANDLERS: Record<Area, AreaHandler> = {
   init: stubHandler("init"),
   install: stubHandler("install"),
   doctor: stubHandler("doctor"),
-  paths: stubHandler("paths"),
+  paths: handlePaths,
 };
 
 function stubHandler(area: Area): AreaHandler {

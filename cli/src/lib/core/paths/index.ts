@@ -1,0 +1,34 @@
+/** Public surface of @yaco/cli/core/paths.
+ *
+ *  Re-exports the runtime root resolver, the [paths] reader, and the
+ *  registry helpers. Importers should always go through this barrel so
+ *  the underlying file layout can change without churning callers.
+ */
+
+export {
+  getYacoHome,
+  projectsFile,
+  sessionsDir,
+  uiStateDir,
+  shellSessionsDir,
+  channelsDir,
+  channelScopeDir,
+  projectEventsFile,
+  hookV2ScriptPath,
+  agentWrapperPath,
+} from "./yaco-home.ts";
+
+export {
+  DEFAULT_PROJECT_PATHS,
+  readYacoProjectPaths,
+  type YacoProjectPaths,
+} from "./yaco-paths.ts";
+
+export {
+  ensureYacoHome,
+  projectsRegistryPath,
+  readProjects,
+  writeProjects,
+  type Project,
+  type ProjectRecord,
+} from "./project-registry.ts";

@@ -62,12 +62,12 @@ describe("dispatch", () => {
   it("strips the area token before handing argv to the handler", async () => {
     // Stub handler with --help returns AREA_HELP for that area; we just check
     // that the handler ran and got the trailing args (not the area).
-    const { result } = await dispatch(["paths", "--help"]);
+    const { result } = await dispatch(["agent", "--help"]);
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       const v = result.value as { area: string; help: string };
-      expect(v.area).toBe("paths");
-      expect(v.help).toContain("canonical YACO paths");
+      expect(v.area).toBe("agent");
+      expect(v.help).toContain("tmux-backed agent sessions");
     }
   });
 });
