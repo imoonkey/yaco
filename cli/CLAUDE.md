@@ -1,15 +1,15 @@
 # cli (@yaco/cli)
 
-Bun-based CLI hosting two surfaces:
+Bun-based CLI hosting the `yaco` unified dispatcher (`src/main.ts`). Eight
+top-level areas (`agent`, `task`, `worktree`, `align`, `init`, `install`,
+`doctor`, `paths`). Routes argv to per-area handlers. `agent` and `paths`
+are live; the other six are stubs returning `{area, status: "stub"}` and
+land in follow-up tasks.
 
-- **`yaco` (unified dispatcher)** — `src/main.ts`, eight top-level
-  areas (`agent`, `task`, `worktree`, `align`, `init`, `install`, `doctor`,
-  `paths`). Routes argv to per-area handlers. `paths` is live
-  (`src/commands/paths.ts`); the other seven are stubs returning
-  `{area, status: "stub"}` and land in follow-up tasks.
-- **`multmux` (live runtime)** — `src/index.ts` + `src/commands/`, the
-  tmux-backed multi-agent orchestrator. This is the production CLI installed
-  by `tools/install.sh`; behavior is unchanged by the yaco scaffold.
+The previous standalone `multmux` entry point (`src/index.ts`) was retired in
+yc-agent-subcommand — its runtime now lives under `src/lib/core/agent/` and is
+driven through `yaco agent ...`. Provider shortcuts at the top level
+(`yaco claude/codex [args...]`) delegate to `yaco agent start <provider>`.
 
 ## Stack
 
@@ -20,7 +20,7 @@ Bun-based CLI hosting two surfaces:
 ## yaco dispatcher contract
 
 The dispatcher implements the [CLI contract](../projects/) — applies to every
-area handler once they ship.
+area handler.
 
 **`--json` success** — stdout is exactly one line:
 ```json
@@ -34,6 +34,14 @@ stderr is empty, exit code is 0.
 ```
 stdout is empty, exit code follows the table below.
 
+**Text-mode dual envelopes** — handlers may return a value whose shape opts
+into one of two text-mode behaviors:
+- `{ help: "..." }` → write `help` verbatim to stdout (used for usage text).
+- `{ text: "..." }` → write `text` verbatim to stdout, no JSON wrap (used by
+  `yaco agent capture` so a captured pane buffer round-trips bytes-faithfully
+  in text mode while JSON mode wraps it as `{ ok:true, data:{ text:"..." } }`).
+  Anything else falls back to pretty-printed JSON.
+
 **Exit code table** (`src/lib/core/errors.ts#exitCodeFor`):
 
 | Code | Meaning                                         | ErrCode                          |
@@ -46,13 +54,14 @@ stdout is empty, exit code follows the table below.
 | 5    | unexpected internal                             | INTERNAL                         |
 | 130  | interrupted                                     | — (signal handler not wired yet) |
 
-Shared core primitives (used by every future area handler):
+Shared core primitives (used by every area handler):
 
 - `src/lib/core/result.ts` — `Result<T> = Ok<T> | Err` discriminated union
 - `src/lib/core/errors.ts` — `CliError`, `ErrCode` table, `toErr`, `exitCodeFor`
 - `src/lib/core/json.ts` — `emit(value, "stdout" | "stderr")`, deterministic `stringify`, non-throwing `parse`
-- `src/lib/core/args.ts` — minimal positional/flag parser
-- `src/lib/core/paths/` — runtime + project path resolvers (`yaco-home.ts`, `yaco-paths.ts`, `project-registry.ts`, scoped `toml.ts`). Bun/Node neutral, exported to `app/server` via the `package.json` exports map at `@yaco/cli/core/paths`. See [`doc/main/paths.md`](doc/main/paths.md).
+- `src/lib/core/args.ts` — minimal positional/flag parser (recognizes `--` for passthrough)
+- `src/lib/core/paths/` — runtime + project path resolvers. Exported to `app/server` via the `package.json` exports map at `@yaco/cli/core/paths`. See [`doc/main/paths.md`](doc/main/paths.md).
+- `src/lib/core/agent/` — agent runtime: `model.ts` (types + name helpers), `providers.ts`, `session-state.ts`, `session-id.ts`, `lifecycle.ts` (hook install + wrapper install + `buildWrappedCommand`), `hook-event.ts` (pure `applyHookEvent` + Stop debounce), `tmux.ts`, `words.ts`. See [`doc/main/architecture.md`](doc/main/architecture.md).
 
 End-to-end envelope shape is locked in by `test/unit/envelope.test.ts`.
 
@@ -76,39 +85,81 @@ yaco paths runtime [--json]                       # YACO_HOME + helpers under it
 yaco paths project [--json] [--repo <path>]       # repo-relative paths, output absolute
 ```
 
-- `runtime` returns `{yacoHome, projectsFile, sessionsDir, uiStateDir, shellSessionsDir, channelsDir, agentWrapperPath}`. `agentWrapperPath` resolves to `${YACO_HOME}/agent-wrapper.sh` (design name) — the legacy `wrapper-v2.sh` install path is still served by the multmux runtime's separate `src/yacoHome.ts` until `yc-agent-subcommand` migrates the installer.
+- `runtime` returns `{yacoHome, projectsFile, sessionsDir, uiStateDir, shellSessionsDir, channelsDir, agentWrapperPath}` (`agentWrapperPath = ${YACO_HOME}/agent-wrapper.sh`).
 - `project` reads `<repo>/yaco.toml [paths]` (or defaults) and emits the four keys (`tasks`, `active`, `archive`, `worktrees`) **resolved to absolute paths** against `--repo`. Repo-relative storage is unchanged; only the CLI output is materialized as absolute.
 - Failure modes: malformed `yaco.toml` or duplicate `[paths]` key → `ENV` (exit 3). `--repo` flag with no value → `USAGE` (exit 2). Both follow the envelope contract above.
 
-## multmux runtime (v2)
+## `yaco agent` (live runtime)
 
-- **Global state registry**: `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` — single directory, all sessions. Resolver: `src/yacoHome.ts#sessionsDir()`. `MULTMUX_STATE_DIR` env var overrides for tests/escape hatch.
-- **Handle = tmux session name** — zero encoding/translation, no project slug or `-mt` suffix
-- **State file = sole source of truth** — fields: `handle`, `provider`, `sessionPath`, `pid`, `sessionId`, `status`, `createdAt`
-- **Transparent passthrough** — everything after `<provider>` goes to agent CLI verbatim. Multmux peeks at `--name` (for handle), `--resume` or positional `resume` (for session resume), and permission flags (to conditionally add defaults)
-- **Name sync by construction** — Claude: `--name` passthrough. Codex: `/rename` after start
-- **Hook-driven status** — `hook-v2.sh` (no env vars, derives handle from tmux session name) + `wrapper-v2.sh` (EXIT trap deletes state file; runs the agent via `bash -lic` so it inherits the user's interactive-shell env — SSH_AUTH_SOCK, PATH, etc. — and `unset`s `npm_(config|lifecycle|package)_*` to keep nvm quiet)
+The agent runtime is the tmux-backed multi-agent orchestrator (formerly
+`multmux`). All session state lives in `${YACO_HOME:-~/.yaco}/sessions/<handle>.json`;
+state files are kept current by per-event hooks that route through the slim
+TypeScript entry `cli/src/hook-event-bin.ts`. The only shell artifact is
+`cli/scripts/agent-wrapper.sh` (sole Shell Boundary exception — its EXIT trap
+deletes the state file when the tmux pane dies abruptly).
 
 ### Commands
 
 ```
-multmux <provider> [...agent-args]                  # start (shortcut)
-multmux start <provider> [...agent-args] [--json]   # start (explicit, --json for machine output)
-multmux send <name> <message>
-multmux capture <name> [--wait] [--lines N] [--strip-ansi true|false]
-multmux rename <old-name> <new-name>                # idle-only
-multmux kill <name>
-multmux kill --all                                  # sessions under cwd
-multmux status [name] [--json] [--all] [--path <p>]
-multmux hook-update                                 # debug: reads stdin JSON, updates state
-multmux install-hooks
+yaco agent start <provider> [yaco-flags] [-- ...passthrough]
+yaco agent send <name> "message"
+yaco agent send <name> --stdin                         # read message from stdin
+yaco agent capture <name> [--wait] [--lines <n>] [--strip-ansi true|false]
+yaco agent status [name] [--all] [--path <p>] [--json]
+yaco agent kill <name> | --all                         # --all = sessions under cwd
+yaco agent rename <old-name> <new-name>                # idle-only
+yaco agent hooks install                               # writes wrapper + merges hook configs
+yaco agent hook-event <EventName>                      # provider hook entry (reads stdin)
 ```
+
+### Surface contracts
+
+- **`--` separator** — `yaco agent start <provider> [yaco-flags] [-- ...passthrough]`. Yaco-side flags (`--json`) bind only before `--`; everything after is forwarded verbatim to the provider CLI. Backward-compatible when `--` is omitted (any unrecognized flag flows through to the provider, as before).
+- **`send --stdin`** — reads stdin to end-of-stream and uses it as the message. Mutually exclusive with an inline message.
+- **`capture`** — dual mode: text mode writes the raw pane buffer to stdout (no JSON wrap); `--json` mode wraps as `{ ok:true, data:{ text:"..." } }`.
+- **`hooks install`** — idempotent. Writes `${YACO_HOME}/agent-wrapper.sh` and merges yaco-owned entries into `~/.claude/settings.json` + `~/.codex/hooks.json`. Existing yaco entries are overwritten in place when their command drifts; unrelated user entries are preserved verbatim.
+- **`hook-event <EventName>`** — provider hook entry point. Reads JSON from stdin and applies `applyHookEvent` to the live session's state file. `Stop`/`StopFailure` events go through a 120ms debounce window so a late Stop for turn N cannot overwrite a fresher UserPromptSubmit for turn N+1.
+
+### Provider shortcut policy
+
+- Top-level: `yaco claude [args...]` / `yaco codex [args...]` — accepted, equivalent to `yaco agent start <provider> [args...]`.
+- Mid-layer: `yaco agent claude ...` — REJECTED with USAGE (exit 2). The canonical form is `yaco agent start <provider>`.
+
+### Agent runtime layout
+
+```
+src/
+  main.ts                              # dispatcher (areas, --json envelope, render)
+  hook-event-bin.ts                    # slim Bun entry for hook fires (avoids loading the full command tree)
+  commands/
+    paths.ts                           # yaco paths
+    agent/
+      index.ts                         # yaco agent area handler + parseStartArgs
+      start.ts, send.ts, capture.ts,
+      kill.ts, rename.ts, status.ts    # per-subcommand handlers
+      hook-event.ts                    # CLI handler that dispatches to runHookEvent
+      hooks/install.ts                 # yaco agent hooks install
+  lib/core/agent/
+    model.ts                           # SessionState + name helpers + PENDING_SESSION_ID
+    providers.ts                       # PROVIDERS, isIdle (live-tail busy check)
+    session-state.ts                   # state file CRUD; reads YACO_AGENT_SESSIONS_DIR override
+    session-id.ts                      # Claude PID scan + Codex rollout/DB resolver
+    lifecycle.ts                       # ensureHooks (install wrapper + merge configs); buildWrappedCommand
+    hook-event.ts                      # applyHookEvent + runHookEventForHandle + STOP_DEBOUNCE_MS
+    tmux.ts                            # tmux operations (sessions, panes, PIDs, OSC responder)
+    words.ts                           # adjective/noun lists for default handles
+scripts/
+  agent-wrapper.sh                     # sole shell artifact — installed verbatim to ${YACO_HOME}
+```
+
+- State directory override: `YACO_AGENT_SESSIONS_DIR` (formerly `MULTMUX_STATE_DIR`).
+- Hook marker: `yaco-agent-hook` (formerly `multmux-hook`).
 
 ## Documentation
 
 | Path | Content |
 |------|---------|
-| [`doc/main/`](doc/main/README.md) | Architecture, components, state machine, session lifecycle, providers (multmux runtime) |
+| [`doc/main/`](doc/main/README.md) | Architecture, components, state machine, session lifecycle, providers |
 | [`doc/dev/`](doc/dev/workflow.md) | Build, install, testing, conventions |
 | [`doc/PROGRESS.md`](doc/PROGRESS.md) | Changelog |
 | root `projects/` | Live YACO task graph and migrated project history |
@@ -124,18 +175,18 @@ bun run test:integration  # tmux-backed integration tests
 
 ## Ecosystem
 
-The YACO productivity stack now lives in this monorepo.
+The YACO productivity stack lives in this monorepo.
 
 | Path | What |
 |------|------|
 | `app/` | Workflow web app and server |
-| `cli/` | This package — `yaco` dispatcher (scaffold) + `multmux` runtime |
+| `cli/` | This package — `yaco` dispatcher + agent runtime |
 | `agent-config/` | Global agent config, skills, and helper scripts |
 | `projects/` | Live root YACO task graph and project history |
 
-**Dependencies:** multmux is the foundation. `agent-config/global/skills/multmux`
-and `agent-config/global/skills/orchestrate` reference the installed multmux CLI.
-Workflow reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files and calls the
-installed `multmux` binary for session management. When changing the CLI
-interface, flags, or state file format, update downstream app and skill docs in
-the same monorepo change.
+**Dependencies:** the agent runtime is the foundation. `agent-config/global/skills/multmux`
+and `agent-config/global/skills/orchestrate` reference the installed CLI.
+Workflow reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files and calls
+the installed binary for session management. When changing the CLI interface,
+flags, or state file format, update downstream app and skill docs in the same
+monorepo change.
