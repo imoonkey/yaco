@@ -84,6 +84,17 @@ export function mergeWorktree(slug: string, opts: MergeOptions = {}): MergeResul
         `primary checkout has uncommitted changes — commit or stash first`,
       );
     }
+    // Rebase the task branch onto base inside the worktree so the
+    // subsequent merge can always fast-forward. Mirrors the shell helper.
+    const rebase = runGit(["rebase", base], worktreeDir);
+    if (rebase.status !== 0) {
+      // Leave the worktree clean — abort the in-progress rebase before bailing.
+      runGit(["rebase", "--abort"], worktreeDir);
+      throw new CliError(
+        ErrCode.CONFLICT,
+        `rebase of ${branch} onto ${base} failed (conflicts? aborted): ${rebase.stderr.trim() || rebase.stdout.trim() || `exit ${rebase.status}`}`,
+      );
+    }
     const co = runGit(["checkout", base], repoRoot);
     if (co.status !== 0) {
       throw new CliError(
@@ -95,7 +106,7 @@ export function mergeWorktree(slug: string, opts: MergeOptions = {}): MergeResul
     if (m.status !== 0) {
       throw new CliError(
         ErrCode.CONFLICT,
-        `fast-forward merge of ${branch} into ${base} failed (non-ff?): ${m.stderr.trim() || `exit ${m.status}`}`,
+        `fast-forward merge of ${branch} into ${base} failed: ${m.stderr.trim() || `exit ${m.status}`}`,
       );
     }
     return { mode: "local", slug, branch, base, merged: true };

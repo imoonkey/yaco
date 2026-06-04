@@ -9,7 +9,8 @@
  *  agent-config/global/skills/orchestrate/scripts/worktree-create.sh.
  */
 
-import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { accessSync, constants, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
@@ -63,5 +64,36 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
     );
   }
 
+  runProvisionHook(repoRoot, worktreeDir);
+
   return { slug, branch, path: worktreeDir, base, reused: false };
+}
+
+/** Run `<repoRoot>/scripts/worktree-provision.sh` (if present + executable)
+ *  after a fresh `git worktree add`. The script receives the new worktree
+ *  path as $1 and runs with cwd = worktree path so it can install deps or
+ *  seed config relative to the new worktree.
+ *
+ *  stdout + stderr are captured so the dispatcher's envelope channel stays
+ *  pristine (--json contract). A non-zero exit surfaces as IO with the
+ *  captured output in the error message. */
+function runProvisionHook(repoRoot: string, worktreeDir: string): void {
+  const provision = join(repoRoot, "scripts", "worktree-provision.sh");
+  if (!existsSync(provision)) return;
+  try {
+    accessSync(provision, constants.X_OK);
+  } catch {
+    return;
+  }
+  const r = spawnSync(provision, [worktreeDir], {
+    cwd: worktreeDir,
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (r.status !== 0) {
+    throw new CliError(
+      ErrCode.IO,
+      `worktree-provision.sh failed (exit ${r.status}): ${(r.stderr ?? "").trim() || (r.stdout ?? "").trim() || "no output"}`,
+    );
+  }
 }

@@ -104,6 +104,32 @@ function assignFlag(out: ParsedSub, key: string, val: string | boolean): void {
   }
 }
 
+/** Per-subcommand allowed-flag set. --json and --help are always allowed.
+ *  Anything outside the set fails USAGE so callers don't silently lose
+ *  intent (`create --force`, `cleanup --base dev`, etc.). */
+const ALLOWED_FLAGS: Record<string, ReadonlyArray<string>> = {
+  create: ["base"],
+  merge: ["base", "mode"],
+  cleanup: ["force"],
+};
+
+function rejectExtraFlags(parsed: ParsedSub, sub: string): void {
+  const allowed = ALLOWED_FLAGS[sub];
+  if (!allowed) return;
+  const ok = new Set<string>([...allowed, "json", "help"]);
+  for (const [key, val] of Object.entries(parsed.flags)) {
+    // json defaults to false; help / mode / base / force start undefined.
+    // Skip both so we only reject flags the caller actually passed.
+    if (val === undefined || val === false) continue;
+    if (!ok.has(key)) {
+      throw new CliError(
+        ErrCode.USAGE,
+        `unknown flag for 'worktree ${sub}': --${key}`,
+      );
+    }
+  }
+}
+
 export function handleWorktree(
   argv: string[],
   opts: { json: boolean },
@@ -117,6 +143,15 @@ export function handleWorktree(
   const parsed = parseSub(rest);
   if (parsed.flags.help) return ok({ help: HELP });
   const json = opts.json || parsed.flags.json;
+
+  if (!(sub in ALLOWED_FLAGS)) {
+    throw new CliError(
+      ErrCode.USAGE,
+      `unknown subcommand: worktree ${sub}. Run \`yaco worktree --help\`.`,
+    );
+  }
+
+  rejectExtraFlags(parsed, sub);
 
   const slug = parsed.positional[0];
   if (!slug) {
@@ -145,6 +180,7 @@ export function handleWorktree(
     case "cleanup":
       return runCleanup(slug, { json, force: parsed.flags.force });
     default:
+      // Unreachable — ALLOWED_FLAGS gates the sub name above.
       throw new CliError(
         ErrCode.USAGE,
         `unknown subcommand: worktree ${sub}. Run \`yaco worktree --help\`.`,

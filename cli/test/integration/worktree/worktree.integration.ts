@@ -17,8 +17,7 @@ import {
   mkdtempSync,
   rmSync,
   writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+} from "node:fs";import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const BIN = resolve(import.meta.dir, "../../../src/main.ts");
@@ -214,22 +213,70 @@ describe("yaco worktree merge --mode local", () => {
     expect(existsSync(join(repo, "new.txt"))).toBe(true);
   });
 
-  it("refuses a non-fast-forward merge with CONFLICT (exit 1)", () => {
-    expect(runYaco(repo, ["worktree", "create", "diverge", "--json"]).status).toBe(0);
-    const wt = join(repo, ".worktrees", "diverge");
-    writeFileSync(join(wt, "branch.txt"), "branch\n");
-    expect(git(wt, "add", "branch.txt").status).toBe(0);
-    expect(git(wt, "commit", "-m", "branch commit").status).toBe(0);
-    // Diverge main so ff is impossible.
-    writeFileSync(join(repo, "main.txt"), "main\n");
-    expect(git(repo, "add", "main.txt").status).toBe(0);
-    expect(git(repo, "commit", "-m", "main commit").status).toBe(0);
+  it("rebases worktree onto an advanced base, then fast-forwards (no conflict)", () => {
+    // Fixture: worktree edits file A; base advances by editing file B. Rebase
+    // replays the worktree's commit on top of the new base, then ff-merge
+    // pulls the result into the primary checkout.
+    expect(runYaco(repo, ["worktree", "create", "advanced", "--json"]).status).toBe(0);
+    const wt = join(repo, ".worktrees", "advanced");
 
-    const r = runYaco(repo, ["worktree", "merge", "diverge", "--mode", "local", "--json"]);
+    writeFileSync(join(wt, "feature.txt"), "feature\n");
+    expect(git(wt, "add", "feature.txt").status).toBe(0);
+    expect(git(wt, "commit", "-m", "feature commit").status).toBe(0);
+
+    // Advance base independently — touches a different file so rebase has
+    // no conflict to resolve.
+    writeFileSync(join(repo, "base.txt"), "base\n");
+    expect(git(repo, "add", "base.txt").status).toBe(0);
+    expect(git(repo, "commit", "-m", "base advance").status).toBe(0);
+
+    const before = git(repo, "rev-parse", "main").stdout.trim();
+    const r = runYaco(repo, ["worktree", "merge", "advanced", "--mode", "local", "--json"]);
+    expect(r.stderr).toBe("");
+    expect(r.status).toBe(0);
+    const env = parseJson(r.stdout);
+    expect(env.data).toEqual({
+      mode: "local",
+      slug: "advanced",
+      branch: "task/advanced",
+      base: "main",
+      merged: true,
+    });
+    const after = git(repo, "rev-parse", "main").stdout.trim();
+    expect(after).not.toBe(before);
+    // Both files made it onto main after rebase + ff-merge.
+    expect(existsSync(join(repo, "feature.txt"))).toBe(true);
+    expect(existsSync(join(repo, "base.txt"))).toBe(true);
+  });
+
+  it("surfaces real rebase conflicts as CONFLICT (exit 1) and aborts the rebase", () => {
+    // Seed a tracked file both branches will modify on the same line.
+    writeFileSync(join(repo, "shared.txt"), "original\n");
+    expect(git(repo, "add", "shared.txt").status).toBe(0);
+    expect(git(repo, "commit", "-m", "seed shared.txt").status).toBe(0);
+
+    expect(runYaco(repo, ["worktree", "create", "clash", "--json"]).status).toBe(0);
+    const wt = join(repo, ".worktrees", "clash");
+
+    writeFileSync(join(wt, "shared.txt"), "branch edit\n");
+    expect(git(wt, "add", "shared.txt").status).toBe(0);
+    expect(git(wt, "commit", "-m", "branch edit").status).toBe(0);
+
+    writeFileSync(join(repo, "shared.txt"), "main edit\n");
+    expect(git(repo, "add", "shared.txt").status).toBe(0);
+    expect(git(repo, "commit", "-m", "main edit").status).toBe(0);
+
+    const r = runYaco(repo, ["worktree", "merge", "clash", "--mode", "local", "--json"]);
     expect(r.status).toBe(1);
     expect(r.stdout).toBe("");
     const env = parseJson(r.stderr);
     expect(env.error!.code).toBe("CONFLICT");
+    expect(env.error!.message).toMatch(/rebase/);
+
+    // The worktree must be left clean — the in-progress rebase was aborted.
+    const rebaseDir = git(repo, "rev-parse", "--git-path", "rebase-merge").stdout.trim();
+    expect(existsSync(join(wt, rebaseDir))).toBe(false);
+    expect(git(wt, "status", "--porcelain").stdout.trim()).toBe("");
   });
 
   it("refuses dirty worktree (CONFLICT exit 1)", () => {
@@ -415,5 +462,103 @@ describe("yaco worktree — cross-repo isolation", () => {
     // Each repo owns its own task/shared branch.
     expect(git(repoA, "rev-parse", "--verify", "task/shared").status).toBe(0);
     expect(git(repoB, "rev-parse", "--verify", "task/shared").status).toBe(0);
+  });
+});
+
+describe("yaco worktree create — provision hook", () => {
+  let repo: string;
+  beforeEach(() => {
+    repo = mkRepo("yaco-wt-int-prov-");
+  });
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  it("runs scripts/worktree-provision.sh on first create, passing worktree path as $1", () => {
+    // Commit a provision script that touches a sentinel file inside $1.
+    mkdirSync(join(repo, "scripts"), { recursive: true });
+    const script = `#!/usr/bin/env bash
+set -euo pipefail
+echo "provisioned $1" > "$1/.provisioned"
+`;
+    const scriptPath = join(repo, "scripts", "worktree-provision.sh");
+    writeFileSync(scriptPath, script);
+    chmodSync(scriptPath, 0o755);
+    expect(git(repo, "add", "scripts/worktree-provision.sh").status).toBe(0);
+    expect(git(repo, "commit", "-m", "add provision hook").status).toBe(0);
+
+    const r = runYaco(repo, ["worktree", "create", "prov", "--json"]);
+    expect(r.status).toBe(0);
+    // Sentinel proves provision ran and received the worktree path.
+    const sentinel = join(repo, ".worktrees", "prov", ".provisioned");
+    expect(existsSync(sentinel)).toBe(true);
+  });
+
+  it("skips when the script is not executable", () => {
+    mkdirSync(join(repo, "scripts"), { recursive: true });
+    const scriptPath = join(repo, "scripts", "worktree-provision.sh");
+    writeFileSync(scriptPath, "#!/usr/bin/env bash\nexit 99\n");
+    // No chmod +x — script must be skipped.
+    expect(git(repo, "add", "scripts/worktree-provision.sh").status).toBe(0);
+    expect(git(repo, "commit", "-m", "non-exec provision").status).toBe(0);
+
+    const r = runYaco(repo, ["worktree", "create", "skip", "--json"]);
+    expect(r.status).toBe(0);
+  });
+
+  it("surfaces non-zero provision exit as IO error (exit 1)", () => {
+    mkdirSync(join(repo, "scripts"), { recursive: true });
+    const scriptPath = join(repo, "scripts", "worktree-provision.sh");
+    writeFileSync(scriptPath, "#!/usr/bin/env bash\necho 'boom' >&2\nexit 42\n");
+    chmodSync(scriptPath, 0o755);
+    expect(git(repo, "add", "scripts/worktree-provision.sh").status).toBe(0);
+    expect(git(repo, "commit", "-m", "failing provision").status).toBe(0);
+
+    const r = runYaco(repo, ["worktree", "create", "boom", "--json"]);
+    expect(r.status).toBe(1);
+    expect(r.stdout).toBe("");
+    const env = parseJson(r.stderr);
+    expect(env.error!.code).toBe("IO");
+    expect(env.error!.message).toMatch(/provision/);
+  });
+});
+
+describe("yaco worktree — strict per-subcommand flag validation", () => {
+  let repo: string;
+  beforeEach(() => {
+    repo = mkRepo("yaco-wt-int-flags-");
+  });
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+  });
+
+  function expectUsage(args: string[], snippet: RegExp): void {
+    const r = runYaco(repo, args);
+    expect(r.status).toBe(2);
+    expect(r.stdout).toBe("");
+    const env = parseJson(r.stderr);
+    expect(env.ok).toBe(false);
+    expect(env.error!.code).toBe("USAGE");
+    expect(env.error!.message).toMatch(snippet);
+  }
+
+  it("create rejects --mode", () => {
+    expectUsage(["worktree", "create", "foo", "--mode", "local", "--json"], /--mode/);
+  });
+
+  it("create rejects --force", () => {
+    expectUsage(["worktree", "create", "foo", "--force", "--json"], /--force/);
+  });
+
+  it("cleanup rejects --base", () => {
+    expectUsage(["worktree", "cleanup", "foo", "--base", "dev", "--json"], /--base/);
+  });
+
+  it("cleanup rejects --mode", () => {
+    expectUsage(["worktree", "cleanup", "foo", "--mode", "pr", "--json"], /--mode/);
+  });
+
+  it("merge rejects --force", () => {
+    expectUsage(["worktree", "merge", "foo", "--force", "--json"], /--force/);
   });
 });
