@@ -6,9 +6,20 @@ import { languages } from '@codemirror/language-data'
 import { LanguageDescription } from '@codemirror/language'
 import { classHighlighter, highlightCode } from '@lezer/highlight'
 import { marked, type Tokens } from 'marked'
-import mermaid from 'mermaid'
 
-mermaid.initialize({ startOnLoad: false, theme: 'neutral' })
+// Lazy-load mermaid: top-level import would pull ~500KB into the main bundle.
+// First call dynamic-imports the module and runs initialize(); subsequent calls
+// reuse the cached promise.
+let mermaidReady: Promise<typeof import('mermaid').default> | null = null
+export function loadMermaid(): Promise<typeof import('mermaid').default> {
+  if (!mermaidReady) {
+    mermaidReady = import('mermaid').then(m => {
+      m.default.initialize({ startOnLoad: false, theme: 'neutral' })
+      return m.default
+    })
+  }
+  return mermaidReady
+}
 
 export function escapeHtml(value: string): string {
   return value

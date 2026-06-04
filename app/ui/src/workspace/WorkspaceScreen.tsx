@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
+import { lazy, Suspense, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { Plus, GitCompareArrows, X } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory, fetchGitCompare } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
@@ -6,7 +6,6 @@ import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, useWorkspaceState } fro
 import { useIsMobile, useIsTouch, useIsLandscape } from '../hooks/useIsMobile'
 import { useVoice } from '../hooks/useVoice'
 import { isPreviewableFile } from '../lib/binaryFiles'
-import { Terminal } from '../components/Terminal'
 import { VoiceControl } from '../components/VoiceControl'
 import { ComposeTray } from '../components/ComposeTray'
 import { ProviderIcon } from '../components/SessionIcons'
@@ -15,9 +14,7 @@ import type { FileExplorerHandle } from '../components/FileExplorer'
 import { FileSearch } from './WorkspaceSearch'
 import { GitChangeItem } from './WorkspaceSidebar'
 import { WorkspaceLayout } from './WorkspaceLayout'
-import { WorkspaceTextSearch } from './WorkspaceTextSearch'
-import { WorkspaceEditorColumn } from './WorkspaceEditorColumn'
-import { TaskScreen } from '../tasks/TaskScreen'
+import { WorkspaceEditorColumn, LazyTaskScreen } from './WorkspaceEditorColumn'
 import { useWorkspaceSidebarResize } from './useWorkspaceSidebarResize'
 import { useWorkspaceSessionSection } from './useWorkspaceSessionSection'
 import { ShortcutSheet } from './ShortcutSheet'
@@ -32,6 +29,31 @@ import { useWorkspaceVoice } from './useWorkspaceVoice'
 import { CompareRefPicker } from './CompareRefPicker'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
+
+// Lazy-load heavy panels that are only rendered conditionally.
+// Terminal pulls xterm (~250KB); WorkspaceTextSearch pulls ripgrep stream UI.
+const LazyTerminal = lazy(() =>
+  import('../components/Terminal').then(m => ({ default: m.Terminal })),
+)
+const LazyWorkspaceTextSearch = lazy(() =>
+  import('./WorkspaceTextSearch').then(m => ({ default: m.WorkspaceTextSearch })),
+)
+
+const TerminalFallback = (
+  <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-muted)' }}>
+    Connecting terminal…
+  </div>
+)
+const TextSearchFallback = (
+  <div className="flex items-center justify-center py-4">
+    <div className="loading-spinner" />
+  </div>
+)
+const TaskScreenFallback = (
+  <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
+    <div className="loading-spinner" />
+  </div>
+)
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
@@ -419,11 +441,13 @@ export function Workspace({
   )
 
   const searchBody = (
-    <WorkspaceTextSearch
-      projectName={projectName}
-      worktree={worktree}
-      onOpenFileAtLine={handleOpenFileAtLine}
-    />
+    <Suspense fallback={TextSearchFallback}>
+      <LazyWorkspaceTextSearch
+        projectName={projectName}
+        worktree={worktree}
+        onOpenFileAtLine={handleOpenFileAtLine}
+      />
+    </Suspense>
   )
 
   const changesBody = compareMode ? (
@@ -499,7 +523,9 @@ export function Workspace({
   }, [isMobile, mobilePane, activeTasksTab, actions, closeTab, activeTab, nav])
 
   const tasksPane = (
-    <TaskScreen projectName={projectName} onClose={handleToggleTasks} onOpenTasksFile={nav.handleOpenTasksFile} onOpenFile={nav.openFile} />
+    <Suspense fallback={TaskScreenFallback}>
+      <LazyTaskScreen projectName={projectName} onClose={handleToggleTasks} onOpenTasksFile={nav.handleOpenTasksFile} onOpenFile={nav.openFile} />
+    </Suspense>
   )
 
   // Compare file navigation
@@ -580,20 +606,22 @@ export function Workspace({
         style={{ userSelect: 'text', WebkitUserSelect: 'text', backgroundColor: 'var(--sol-editor-bg)' }}
         onMouseDown={() => setFocusTarget('terminal')}
       >
-        <Terminal
-          sessionName={attachedSession}
-          projectName={projectName}
-          provider={activeSessionInfo?.provider}
-          onInteract={() => setFocusTarget('terminal')}
-          onCloseRequest={() => {
-            sessionsMgr.detachActiveSession()
-          }}
-          onDisconnect={() => {
-            sessionsMgr.detachActiveSession()
-          }}
-          sendText={terminalSend?.text}
-          sendTextKey={terminalSend?.key}
-        />
+        <Suspense fallback={TerminalFallback}>
+          <LazyTerminal
+            sessionName={attachedSession}
+            projectName={projectName}
+            provider={activeSessionInfo?.provider}
+            onInteract={() => setFocusTarget('terminal')}
+            onCloseRequest={() => {
+              sessionsMgr.detachActiveSession()
+            }}
+            onDisconnect={() => {
+              sessionsMgr.detachActiveSession()
+            }}
+            sendText={terminalSend?.text}
+            sendTextKey={terminalSend?.key}
+          />
+        </Suspense>
       </div>
     </>
   ) : (

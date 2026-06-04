@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { lazy, Suspense, useCallback } from 'react'
 import { isDiffTab, isFileTab, isTasksTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
@@ -6,12 +6,24 @@ import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { VoiceControl } from '../components/VoiceControl'
-import { TaskScreen } from '../tasks/TaskScreen'
 import { clampLine } from './markdown'
 import { isBinaryPreviewFile, isHtmlFile, isMarkdownFile, isPreviewableFile } from '../lib/binaryFiles'
 import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
+
+// Shared lazy reference — both this file and WorkspaceScreen render the task
+// pane; sharing one lazy() call keeps the Suspense boundary coherent across
+// callers and ensures a single chunk is loaded.
+export const LazyTaskScreen = lazy(() =>
+  import('../tasks/TaskScreen').then(m => ({ default: m.TaskScreen })),
+)
+
+const TaskScreenFallback = (
+  <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
+    <div className="loading-spinner" />
+  </div>
+)
 
 type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
 
@@ -109,7 +121,9 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     }
     return (
       <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
-        <TaskScreen projectName={projectName} onClose={handleCloseTasks} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} />
+        <Suspense fallback={TaskScreenFallback}>
+          <LazyTaskScreen projectName={projectName} onClose={handleCloseTasks} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} />
+        </Suspense>
       </div>
     )
   }

@@ -3,10 +3,9 @@ import { Editor } from '../components/Editor'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
-import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath } from './markdown'
+import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath, loadMermaid } from './markdown'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import type { PreviewMode, SplitDirection } from '../hooks/useWorkspaceState'
-import mermaid from 'mermaid'
 import { DiffTab } from './diff/DiffTab'
 import { isImageFile, isPdfFile, rawFileUrl } from '../lib/binaryFiles'
 import { ImagePreview } from './ImagePreview'
@@ -128,6 +127,8 @@ export function MarkdownPreview({
     let cancelled = false
     let counter = 0
     const renderAll = async () => {
+      const mermaid = await loadMermaid()
+      if (cancelled) return
       for (const div of mermaidDivs) {
         if (cancelled) return
         const source = div.textContent?.trim()
