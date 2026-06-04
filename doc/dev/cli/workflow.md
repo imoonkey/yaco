@@ -1,0 +1,115 @@
+# Development Guide
+
+> Last updated: 2026-06-04 (yc-install-doctor)
+
+## Prerequisites
+
+- [Bun](https://bun.sh) runtime
+- tmux installed and in PATH
+- Claude Code and/or Codex CLI installed
+
+## Running
+
+```bash
+# From source
+bun run src/main.ts <area> <command> [args]
+bun run src/main.ts agent start claude
+bun run src/main.ts agent status --all --json
+
+# If installed via the monorepo install script
+yaco <area> <command> [args]
+```
+
+Top-level provider shortcuts collapse to `yaco agent start <provider>`:
+
+```bash
+yaco claude "Fix the tests" --name fixer
+yaco codex "Implement auth" --name builder --model o4-mini
+yaco claude --json -- --output-format json    # everything after `--` → claude verbatim
+```
+
+## Building
+
+```bash
+bun build src/main.ts --compile --outfile yaco
+```
+
+## Installing / Updating
+
+```bash
+tools/install.sh --cli-only
+```
+
+`tools/install.sh` is a thin bootstrap: it builds `bun build cli/src/main.ts
+--compile --outfile $BIN_DIR/yaco`, codesigns on macOS if `codesign` is
+available, then `exec env YACO_REPO_ROOT=$REPO YACO_BIN_DIR=$BIN_DIR
+"$BIN_DIR/yaco" install "$@"`. The canonical installer is `yaco install`
+itself (`cli/src/commands/install.ts`) — it merges yaco hooks into
+`~/.claude/settings.json` + `~/.codex/hooks.json` (canonical command
+`<BIN>/yaco agent hook-event <Event>`), writes `${YACO_HOME}/agent-wrapper.sh`,
+links the global agent-config skills, upserts this repo into
+`${YACO_HOME}/projects.json`, removes legacy `$BIN_DIR/{mt,multmux}`
+symlinks, and runs `yaco doctor`.
+
+Flags: `--cli-only`, `--skip-hooks`, `--no-registry`, `--skip-doctor`,
+`--dry-run`, `--repo <path>`, `--bin-dir <path>`, `--json`.
+
+`yaco doctor [--repo <path>] [--json]` runs twelve required checks; the
+`--json` envelope is always `{ok:true, data:{checks, summary}}` with exit
+0 / 1 carrying the pass/fail signal.
+
+-> See: [install.md](../../main/cli/install.md), [doctor.md](../../main/cli/doctor.md)
+
+The agent runtime skill source of truth is
+`agent-config/global/skills/agent/SKILL.md`; the installer links the whole
+`agent-config/global/skills` directory into the global skills location.
+
+## Testing
+
+```bash
+bun run test              # unit tests, no tmux required
+bun run test:integration  # tmux-backed integration tests
+```
+
+Test split:
+- `bun run test` / `bun run test:unit`: pure unit tests (model, state, providers, lifecycle, hook-event, hooks-install, agent-wrapper.sh content+exec, agent-dispatch parseStartArgs / send --stdin / capture envelope, dispatcher + envelope, task validation / graph / store / archive / lock, worktree slug validation), no tmux required.
+- `bun run test:integration`: tmux-backed integration tests (path-scoped, real-agent lifecycle/sync, lifecycle guards) plus task CLI integration (`task-cli.integration.ts`), the Python ↔ TS task parity suite (`parity.integration.ts`, skipped when `python3` is absent), and the worktree lifecycle suite (`worktree.integration.ts` — tmpdir git repo + fake `gh` on PATH, no network). The script runs the integration files sequentially so real-agent cases do not overlap in tmux.
+
+Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, milestone-rollup detection, --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
+
+`YACO_TASK_LOCK_TIMEOUT_MS=<ms>` overrides the default 10s task-lock retry budget — handy when locally reproducing cross-host lock contention without a long wait.
+
+## Project Structure
+
+```
+src/
+  main.ts                   # dispatcher; fast-path for `agent hook-event` lazy-imports just the hook handler
+  hook-event-bin.ts         # legacy slim Bun entry; retained for tests, NOT what install writes into provider configs
+  commands/                 # per-area handlers (paths/, agent/, task/, worktree/, align/, init.ts, install.ts, doctor.ts)
+  lib/core/                 # shared core primitives
+    result.ts, errors.ts, json.ts, args.ts
+    paths/                  # @yaco/cli/core/paths (exports)
+    task/                   # @yaco/cli/core/task (exports)
+    worktree/               # slug-keyed git worktree lifecycle (spawn-based, no shell)
+    agent/                  # agent runtime (model, providers, state, hooks, lifecycle, tmux, ...)
+scripts/
+  agent-wrapper.sh          # sole shell artifact (installed verbatim by yaco install / yaco agent hooks install)
+test/                       # unit + integration tests
+  unit/                     # envelope + commands/{align,init,install,doctor} + core/{paths,task,worktree}
+  integration/              # tmux-backed + task CLI/parity + worktree lifecycle + install bootstrap
+doc/main/cli/               # CLI SOTA docs
+doc/dev/cli/                # CLI workflow docs
+doc/progress/cli.md         # Imported CLI history
+```
+
+## Conventions
+
+- **Runtime**: Bun (TypeScript), no npm dependencies
+- **Commits**: conventional commits (`feat:`, `fix:`, `refactor:`, etc.)
+- **Max 400 lines/file** — extract when larger
+- **No hardcoded secrets** — env vars for sensitive data
+- **Shell Boundary**: only `cli/scripts/agent-wrapper.sh` is shell. Everything else (including the hook-event handler) is TypeScript.
+
+## Ecosystem
+
+-> See: [doc/main/architecture.md](../../main/architecture.md) for the monorepo dependency map.

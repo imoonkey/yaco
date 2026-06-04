@@ -1,45 +1,33 @@
 # agent-config
 
-Centralized AI agent configuration repo. Single source of truth for CLAUDE.md, skills, and settings across all projects.
+Global agent configuration and skill prompts for YACO. Files are Markdown-first
+and consumed through symlinks installed by `yaco install`.
 
-## Stack
+## Read First
 
-Markdown skill prompts. All helper logic lives in the `yaco` CLI under
-`cli/`.
+- [../doc/main/agent-config/README.md](../doc/main/agent-config/README.md) — config documentation map.
+- [../doc/dev/agent-config/workflow.md](../doc/dev/agent-config/workflow.md) — skill maintenance workflow.
+- [../doc/progress/agent-config.md](../doc/progress/agent-config.md) — imported agent-config history.
+- [../doc/main/architecture.md](../doc/main/architecture.md) — cross-component contracts.
 
-## Build & Run
+## Commands
 
-Global setup: `yaco install` (or root `tools/install.sh`)
-Per-project setup: `/init-all` (calls `yaco init links`)
+```bash
+tools/install.sh
+yaco install
+yaco init links
+```
 
-## Architecture
+## Layout
 
--> See `doc/main/` (SOTA)
+- `global/CLAUDE.md` — global instruction source linked into user agent homes.
+- `global/skills/*/SKILL.md` — global skill prompts.
+- `global/skills/*/references/` — stack-specific reference material.
 
-## Dev Workflow
+## Rules
 
--> See `doc/dev/` (SOTA)
-
-## Conventions
-
-- Skills follow Agent Skills spec (SKILL.md per directory)
-- Symlinks are canonical — never copy config files
-- Stack-specific content goes in `global/skills/<skill>/references/<stack>.md`
-- Project-specific skills stay local in the project's `.claude/skills/`
-
-## Ecosystem
-
-The YACO productivity stack lives in this monorepo.
-
-| Path | What |
-|------|------|
-| `app/` | Workflow web app and server |
-| `cli/` | `@yaco/cli` — `yaco` unified dispatcher (`agent`, `task`, `worktree`, `align`, `init`, `install`, `doctor`, `paths`) |
-| `agent-config/` | Global agent config and skill prompts (Markdown only) |
-| `projects/` | Live root YACO task graph and project history |
-
-**Dependencies:** agent-config skills call into the installed `yaco` CLI
-(`yaco agent`, `yaco task`, `yaco worktree`, `yaco align`, `yaco init`) and
-are consumed by Workflow/Codex/Claude through global symlinks installed by
-`yaco install`. When changing skill contracts, update the app and docs in
-the same monorepo change.
+- Keep agent-config SOTA docs in root `doc/main/agent-config/` and workflow docs in root `doc/dev/agent-config/`; do not recreate tracked `agent-config/doc`.
+- Symlinks are canonical; edit the source file, not copied target files.
+- Skills call `yaco <area> <subcommand> --json`; avoid new helper scripts unless the workflow genuinely needs a deterministic executable.
+- Stack-specific content belongs in `global/skills/<skill>/references/<stack>.md`.
+- Project-specific skills stay local to the target project's `.claude/skills/`.

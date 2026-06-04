@@ -26,6 +26,17 @@ tools/install.sh --cli-only
 yaco doctor
 ```
 
+## Documentation
+
+Canonical documentation now lives under root `doc/`:
+
+- `doc/main/README.md` — global documentation map.
+- `doc/main/app/` — Workflow app/server SOTA docs.
+- `doc/main/cli/` — `@yaco/cli` SOTA docs.
+- `doc/main/agent-config/` — global agent config SOTA docs.
+- `doc/dev/{app,cli,agent-config}/` — scoped development workflows.
+- `doc/progress/` — imported component history traces.
+
 ## Install And Update
 
 `tools/install.sh` is the ONLY entry point for first-time install or recovery
@@ -44,4 +55,4 @@ agent-wrapper, tmux, git, providers, task-graph).
 The pre-monorepo split source roots were retired on 2026-06-03 and are
 retained under `/home/qiguo/ld-workspace/split-repo-archive/20260603_*` for
 rollback insurance. One-time monorepo migration scripts are archived under
-`app/doc/dev/monorepo-migration/2026-monorepo-tools/`.
+`doc/dev/app/monorepo-migration/2026-monorepo-tools/`.
