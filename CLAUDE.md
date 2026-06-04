@@ -7,9 +7,10 @@ This is the YACO monorepo root.
 - `app/` - Workflow web app and server. See `app/CLAUDE.md`.
 - `cli/` - Bun-based CLI hosting the `yaco` unified dispatcher and the
   agent runtime (under `cli/src/lib/core/agent/`). See `cli/CLAUDE.md`.
-- `agent-config/` - global agent config, skills, and helper scripts.
+- `agent-config/` - global agent config and skill prompts (Markdown only).
 - `projects/` - live root YACO task graph and project history.
-- `tools/` - monorepo install, doctor, and one-time migration tools.
+- `tools/` - monorepo bootstrap installer; everything else lives in `cli/`
+  (`yaco doctor`, `yaco install`, ...).
 
 ## Root Commands
 
