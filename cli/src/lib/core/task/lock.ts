@@ -20,6 +20,13 @@ import { dirname, join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 
+/** Default ms to wait for the tasks-file lock before raising LOCK.
+ *  Exported so out-of-process callers (e.g. app/server's task route
+ *  spawn timeouts) can stay strictly above this and let the CLI emit
+ *  its structured LOCK envelope on contention. Override per-call with
+ *  AcquireOptions.timeoutMs or via the YACO_TASK_LOCK_TIMEOUT_MS env. */
+export const DEFAULT_TASK_LOCK_TIMEOUT_MS = 10_000;
+
 export interface LockOwner {
   pid: number;
   hostname: string;
@@ -54,7 +61,7 @@ export async function acquireLock(
   // The tasks-file dir is also the lock-file dir — make sure it exists so
   // the very first mutation on a fresh repo can succeed.
   mkdirSync(dirname(lockPath), { recursive: true });
-  const timeoutMs = opts.timeoutMs ?? envTimeoutMs() ?? 10_000;
+  const timeoutMs = opts.timeoutMs ?? envTimeoutMs() ?? DEFAULT_TASK_LOCK_TIMEOUT_MS;
   const pollMs = opts.pollMs ?? 50;
   const owner: LockOwner = {
     pid: opts.pid ?? process.pid,

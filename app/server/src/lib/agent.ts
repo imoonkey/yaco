@@ -175,6 +175,35 @@ function parseYacoEnvelope(raw: string, what: string): unknown {
   return (parsed as { data: unknown }).data
 }
 
+/** Spawn `yaco agent <args> --json` and return the unwrapped `data`.
+ *  Throws with the structured CLI error message on `{ok:false}` envelopes
+ *  or non-zero exit. Per app↔CLI contract, every spawn from app/server
+ *  uses `--json` so failures surface as parseable envelopes on stderr
+ *  rather than free-form text. */
+async function runYacoAgentJson(args: string[], timeoutMs: number, what: string): Promise<unknown> {
+  let raw: string
+  try {
+    raw = await spawnOutput(YACO_PATH, args, timeoutMs)
+  } catch (e) {
+    // Non-zero exit path: spawnOutput's rejection carries `exit <code>: <stderr>`.
+    // The stderr usually holds the failure envelope when --json was set, so try
+    // to parse it before re-throwing the opaque message.
+    const msg = (e as Error).message ?? String(e)
+    const m = msg.match(/exit \d+:\s*([\s\S]*)$/)
+    const tail = m ? m[1].trim() : ''
+    if (tail) {
+      try {
+        const parsed = JSON.parse(tail) as { ok?: boolean; error?: { code?: string; message?: string } }
+        if (parsed && parsed.ok === false && parsed.error?.message) {
+          throw new Error(`yaco ${what} failed [${parsed.error.code ?? 'INTERNAL'}]: ${parsed.error.message}`)
+        }
+      } catch { /* not JSON — fall through */ }
+    }
+    throw e
+  }
+  return parseYacoEnvelope(raw, what)
+}
+
 /** Fetch authoritative session snapshot from `yaco agent status --json --all`.
  *  Runs reconcile() internally (liveness checks, GC, metadata backfill).
  *  Maps returned sessions to projects by sessionPath. */
@@ -182,13 +211,11 @@ export async function fetchAllSessionsFromCli(
   projects: Pick<Project, 'name' | 'path'>[],
 ): Promise<MultmuxSession[]> {
   // execSync.*'yaco agent status --all --json'
-  const raw = await spawnOutput(
-    YACO_PATH,
+  const data = await runYacoAgentJson(
     ['agent', 'status', '--all', '--json'],
     YACO_AGENT_STATUS_TIMEOUT_MS,
+    'agent status',
   )
-
-  const data = parseYacoEnvelope(raw, 'agent status')
   if (!Array.isArray(data)) return []
 
   const states = data as MultmuxStateFile[]
@@ -210,23 +237,32 @@ export async function fetchAllSessionsFromCli(
 /** Send a message to an agent session via `yaco agent send`. */
 export async function sendToSession(handle: string, message: string): Promise<void> {
   validateSessionName(handle)
-  // execSync.*'yaco agent send <handle> <message>' — canonical form via spawn (argv-safe).
-  await spawnOutput(YACO_PATH, ['agent', 'send', handle, message], YACO_AGENT_COMMAND_TIMEOUT_MS)
+  // execSync.*'yaco agent send <handle> <message> --json'
+  await runYacoAgentJson(
+    ['agent', 'send', handle, message, '--json'],
+    YACO_AGENT_COMMAND_TIMEOUT_MS,
+    'agent send',
+  )
 }
 
 /** Capture the last `lines` lines of an agent session's tmux pane,
  *  ANSI-stripped. Reads tmux scrollback directly — works regardless of
- *  whether a channel tap was previously acquired. Goes through
- *  `yaco agent capture`, which emits the raw pane buffer to stdout in
- *  text mode (no JSON wrap). */
+ *  whether a channel tap was previously acquired. In `--json` mode
+ *  `yaco agent capture` wraps the pane buffer as `{ok:true,data:{text}}`. */
 export async function captureSession(handle: string, lines: number): Promise<string> {
   validateSessionName(handle)
-  // execSync.*'yaco agent capture <handle> --lines <n> --strip-ansi true'
-  return spawnOutput(
-    YACO_PATH,
-    ['agent', 'capture', handle, '--lines', String(lines), '--strip-ansi', 'true'],
+  // execSync.*'yaco agent capture <handle> --lines <n> --strip-ansi true --json'
+  const data = await runYacoAgentJson(
+    ['agent', 'capture', handle, '--lines', String(lines), '--strip-ansi', 'true', '--json'],
     YACO_AGENT_COMMAND_TIMEOUT_MS,
+    'agent capture',
   )
+  if (data && typeof data === 'object' && typeof (data as { text?: unknown }).text === 'string') {
+    return (data as { text: string }).text
+  }
+  // Defensive: capture should always wrap in {text}; if it ever changes,
+  // surface whatever stringifies cleanly rather than silently dropping it.
+  return typeof data === 'string' ? data : JSON.stringify(data ?? '')
 }
 
 const STATE_POLL_MS = 200
@@ -362,12 +398,11 @@ export async function startMultmuxSession(
 export async function queryMultmuxStatus(cwd: string): Promise<MultmuxStateFile[]> {
   try {
     // execSync.*'yaco agent status --path <cwd> --json'
-    const out = await spawnOutput(
-      YACO_PATH,
+    const data = await runYacoAgentJson(
       ['agent', 'status', '--path', cwd, '--json'],
       YACO_AGENT_STATUS_TIMEOUT_MS,
+      'agent status',
     )
-    const data = parseYacoEnvelope(out, 'agent status')
     return Array.isArray(data) ? data as MultmuxStateFile[] : []
   } catch {
     return []
@@ -378,8 +413,12 @@ export async function queryMultmuxStatus(cwd: string): Promise<MultmuxStateFile[
  *  kill is handle-global — no project/cwd resolution needed. */
 export async function closeMultmuxSession(handle: string): Promise<void> {
   validateSessionName(handle)
-  // execSync.*'yaco agent kill <handle>'
-  await spawnOutput(YACO_PATH, ['agent', 'kill', handle], YACO_AGENT_COMMAND_TIMEOUT_MS)
+  // execSync.*'yaco agent kill <handle> --json'
+  await runYacoAgentJson(
+    ['agent', 'kill', handle, '--json'],
+    YACO_AGENT_COMMAND_TIMEOUT_MS,
+    'agent kill',
+  )
 }
 
 /** Rename an agent session via `yaco agent rename`.
@@ -387,8 +426,12 @@ export async function closeMultmuxSession(handle: string): Promise<void> {
 export async function renameMultmuxSession(oldHandle: string, newHandle: string): Promise<void> {
   validateSessionName(oldHandle)
   validateSessionName(newHandle)
-  // execSync.*'yaco agent rename <old> <new>'
-  await spawnOutput(YACO_PATH, ['agent', 'rename', oldHandle, newHandle], YACO_AGENT_COMMAND_TIMEOUT_MS)
+  // execSync.*'yaco agent rename <old> <new> --json'
+  await runYacoAgentJson(
+    ['agent', 'rename', oldHandle, newHandle, '--json'],
+    YACO_AGENT_COMMAND_TIMEOUT_MS,
+    'agent rename',
+  )
 }
 
 /** Collect stdout from a spawned process */

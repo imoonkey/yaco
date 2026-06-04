@@ -1,5 +1,6 @@
 import { execSync } from 'child_process'
 import { sessionsDir } from '@yaco/cli/core/paths'
+import { DEFAULT_TASK_LOCK_TIMEOUT_MS } from '@yaco/cli/core/task'
 
 /** Resolved path to the yaco binary (startup-time resolution).
  *  YACO_PATH env var wins (test/escape hatch); otherwise we trust `which`,
@@ -40,8 +41,12 @@ export const YACO_AGENT_START_TIMEOUT_MS = 15_000
 /** Timeout for `yaco agent status --json` backfill (ms) */
 export const YACO_AGENT_STATUS_TIMEOUT_MS = 10_000
 
-/** Timeout for `yaco task <subcommand>` commands (ms) */
-export const YACO_TASK_COMMAND_TIMEOUT_MS = 10_000
+/** Timeout for `yaco task <subcommand>` commands (ms).
+ *  Must strictly EXCEED the CLI's task-lock timeout so that, under
+ *  contention, the CLI emits its structured LOCK envelope before this
+ *  server-side execFile kills the child — otherwise we'd swallow LOCK
+ *  into a generic 500. +5_000ms headroom covers fork/parse overhead. */
+export const YACO_TASK_COMMAND_TIMEOUT_MS = DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000
 
 /** Timeout for git status/diff commands (ms) */
 export const GIT_COMMAND_TIMEOUT_MS = 5_000

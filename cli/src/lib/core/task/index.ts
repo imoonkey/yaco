@@ -45,6 +45,7 @@ export {
   withLock,
   describeLock,
   lockPathFor,
+  DEFAULT_TASK_LOCK_TIMEOUT_MS,
   type LockHandle,
   type LockOwner,
   type LockStatus,

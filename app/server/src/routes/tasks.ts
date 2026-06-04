@@ -9,9 +9,19 @@ import { emitRefresh } from '../lib/notify'
 import { getWorktreeStatuses } from '../lib/worktree'
 import { YACO_PATH, YACO_TASK_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { buildChildProcessEnv } from '../lib/ssh-auth'
+import { readYacoProjectPaths } from '@yaco/cli/core/paths'
 
-const TASKS_FILE = 'projects/tasks.json'
-const ARCHIVE_DIR = 'projects/archive'
+/** Resolve absolute on-disk locations for tasksFile + archive dir, honoring
+ *  any `yaco.toml [paths]` overrides. App reads must come through this so
+ *  they share the source of truth with `yaco task <subcommand>` writes —
+ *  otherwise the UI would show one file while mutations land in another. */
+function resolveRepoPaths(repoRoot: string): { tasksFile: string; archiveDir: string } {
+  const paths = readYacoProjectPaths(repoRoot)
+  return {
+    tasksFile: join(repoRoot, paths.tasks),
+    archiveDir: join(repoRoot, paths.archive),
+  }
+}
 
 interface CliEnvelopeOk { ok: true; data: unknown }
 interface CliEnvelopeErr { ok: false; error: { code: string; message: string; details?: unknown } }
@@ -118,9 +128,9 @@ function invalidateTasksCache(projectPath: string): void {
 }
 
 async function buildTasksResponse(projectPath: string): Promise<TasksResponse | { __notfound: true }> {
-  const tasksPath = join(projectPath, TASKS_FILE)
-  if (!existsSync(tasksPath)) return { __notfound: true }
-  const raw = await readFile(tasksPath, 'utf-8')
+  const { tasksFile } = resolveRepoPaths(projectPath)
+  if (!existsSync(tasksFile)) return { __notfound: true }
+  const raw = await readFile(tasksFile, 'utf-8')
   const tasks = JSON.parse(raw) as Record<string, Record<string, unknown>>
 
   const statuses = await getWorktreeStatuses(projectPath, tasks as Record<string, { worktree?: string }>)
@@ -210,12 +220,12 @@ app.delete('/:project/:taskId', withProject, async (c) => {
   return c.json({ deleted: true })
 })
 
-// GET /:project/archive — List archived tasks (still file-based; archive
-// directory is the source of truth and `yaco task` doesn't yet have a
-// listing subcommand).
+// GET /:project/archive — List archived tasks. The archive directory
+// resolves through yaco.toml [paths].archive so override repos see the
+// same listing the CLI writes (`yaco task archive <id>` uses the same key).
 app.get('/:project/archive', withProject, async (c) => {
   const proj = c.var.project
-  const archiveDir = join(proj.path, ARCHIVE_DIR)
+  const { archiveDir } = resolveRepoPaths(proj.path)
 
   if (!existsSync(archiveDir)) return c.json({ archives: [] })
 

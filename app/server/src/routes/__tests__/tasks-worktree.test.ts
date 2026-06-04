@@ -73,3 +73,66 @@ describe('GET /:project — worktree enrichment', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('GET /:project — yaco.toml [paths] overrides', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    testProjectPath = mkdtempSync(join(tmpdir(), 'workflow-task-paths-test-'))
+    getWorktreeStatusesMock.mockResolvedValue(new Map())
+  })
+
+  afterEach(() => {
+    rmSync(testProjectPath, { recursive: true, force: true })
+  })
+
+  it('reads tasks from yaco.toml [paths].tasks override (NOT projects/tasks.json)', async () => {
+    // Set up an override: tasks live at custom/tasks.json
+    writeFileSync(
+      join(testProjectPath, 'yaco.toml'),
+      '[paths]\ntasks = "custom/tasks.json"\n',
+    )
+    mkdirSync(join(testProjectPath, 'custom'), { recursive: true })
+    writeFileSync(
+      join(testProjectPath, 'custom/tasks.json'),
+      JSON.stringify({ OVERRIDE: { title: 'lives under override' } }),
+    )
+
+    // Decoy at the default path — if the route read this, the test would
+    // pass without exercising the override resolver.
+    mkdirSync(join(testProjectPath, 'projects'), { recursive: true })
+    writeFileSync(
+      join(testProjectPath, 'projects/tasks.json'),
+      JSON.stringify({ DEFAULT: { title: 'should NOT be read' } }),
+    )
+
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.tasks).toHaveProperty('OVERRIDE')
+    expect(json.tasks).not.toHaveProperty('DEFAULT')
+  })
+
+  it('reads archives from yaco.toml [paths].archive override', async () => {
+    writeFileSync(
+      join(testProjectPath, 'yaco.toml'),
+      '[paths]\narchive = "custom/archive"\n',
+    )
+    mkdirSync(join(testProjectPath, 'custom/archive'), { recursive: true })
+    writeFileSync(
+      join(testProjectPath, 'custom/archive/20260101_done.json'),
+      JSON.stringify({ A1: { title: 'archived under override' } }),
+    )
+    // Decoy at default — must NOT be enumerated.
+    mkdirSync(join(testProjectPath, 'projects/archive'), { recursive: true })
+    writeFileSync(
+      join(testProjectPath, 'projects/archive/20260101_decoy.json'),
+      JSON.stringify({ D1: { title: 'should NOT be listed' } }),
+    )
+
+    const res = await taskRoutes.request('/test-project/archive', { method: 'GET' })
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    const files = (json.archives as Array<{ file: string }>).map(a => a.file)
+    expect(files).toEqual(['20260101_done.json'])
+  })
+})
