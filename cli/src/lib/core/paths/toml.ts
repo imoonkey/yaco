@@ -58,6 +58,12 @@ export function parseScopedToml(source: string): ParsedTomlSections {
     }
 
     const key = kv[1] ?? "";
+    if (key in sections[current]!) {
+      throw new TomlParseError(
+        `duplicate key "${key}" in [${current}]`,
+        lineNo,
+      );
+    }
     const value = parseStringValue(kv[2] ?? "", lineNo);
     sections[current]![key] = value;
   }

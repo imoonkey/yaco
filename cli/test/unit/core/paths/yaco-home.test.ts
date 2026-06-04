@@ -91,6 +91,6 @@ describe("path helpers under a YACO_HOME fixture", () => {
 
   it("hookV2ScriptPath and agentWrapperPath resolve to the managed scripts", () => {
     expect(hookV2ScriptPath()).toBe(`${FIXTURE}/hook-v2.sh`);
-    expect(agentWrapperPath()).toBe(`${FIXTURE}/wrapper-v2.sh`);
+    expect(agentWrapperPath()).toBe(`${FIXTURE}/agent-wrapper.sh`);
   });
 });

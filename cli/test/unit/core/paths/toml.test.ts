@@ -93,6 +93,18 @@ active = "p/active"`;
     );
   });
 
+  it("rejects duplicate keys in the same section", () => {
+    const src = `[paths]\ntasks = "a.json"\ntasks = "b.json"`;
+    try {
+      parseScopedToml(src);
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(TomlParseError);
+      expect((e as TomlParseError).line).toBe(3);
+      expect((e as Error).message).toMatch(/duplicate key "tasks"/);
+    }
+  });
+
   it("reports the offending line number in the error", () => {
     try {
       parseScopedToml(`[paths]\ntasks = "ok"\nbroken line here`);

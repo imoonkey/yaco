@@ -60,7 +60,7 @@ export function hookV2ScriptPath(): string {
   return join(getYacoHome(), "hook-v2.sh");
 }
 
-/** ${YACO_HOME}/wrapper-v2.sh — managed agent session wrapper script. */
+/** ${YACO_HOME}/agent-wrapper.sh — managed agent session wrapper script. */
 export function agentWrapperPath(): string {
-  return join(getYacoHome(), "wrapper-v2.sh");
+  return join(getYacoHome(), "agent-wrapper.sh");
 }

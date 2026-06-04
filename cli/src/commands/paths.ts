@@ -84,12 +84,14 @@ export async function handlePaths(
         return ok({ help: HELP });
       }
       const parsed = parseArgs(rest);
-      const repoFlag = parsed.flags["repo"];
-      const repo =
-        typeof repoFlag === "string"
-          ? resolve(repoFlag)
-          : resolve(process.cwd());
-      return ok(readYacoProjectPaths(repo));
+      const repo = resolveRepoFlag(parsed.flags["repo"]);
+      const relative = readYacoProjectPaths(repo);
+      return ok({
+        tasks: resolve(repo, relative.tasks),
+        active: resolve(repo, relative.active),
+        archive: resolve(repo, relative.archive),
+        worktrees: resolve(repo, relative.worktrees),
+      });
     }
 
     default:
@@ -98,4 +100,15 @@ export async function handlePaths(
         `unknown subcommand: paths ${sub}. Run \`yaco paths --help\`.`,
       );
   }
+}
+
+/** Validate the `--repo` flag and resolve it to an absolute path.
+ *  Absent → cwd. Present but missing a value (`--repo` alone, or
+ *  followed by another flag) → USAGE error so the contract holds. */
+function resolveRepoFlag(value: string | boolean | undefined): string {
+  if (value === undefined) return resolve(process.cwd());
+  if (typeof value !== "string" || value.length === 0) {
+    throw new CliError(ErrCode.USAGE, `--repo requires a value`);
+  }
+  return resolve(value);
 }
