@@ -8,6 +8,7 @@
  */
 
 import { spawnSync, type SpawnSyncReturns } from "node:child_process";
+import { resolve as resolvePath } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 
@@ -31,16 +32,22 @@ export function runGit(args: string[], cwd: string = process.cwd()): GitResult {
 }
 
 /** Resolve the primary checkout root from any cwd (primary or linked worktree).
- *  Uses git-common-dir which always points to the main .git directory. */
+ *  Uses git-common-dir which always points to the main .git directory.
+ *
+ *  Note: deliberately does NOT pass `--path-format=absolute` (git ≥ 2.31).
+ *  That flag is unsupported on git ≤ 2.30 (e.g. Apple's bundled git 2.25 on
+ *  macOS), where it gets echoed verbatim into stdout — silently corrupting
+ *  the resolved path. Instead, accept git's default (relative to cwd) and
+ *  resolve to absolute ourselves. */
 export function resolveRepoRoot(cwd: string = process.cwd()): string {
-  const r = runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+  const r = runGit(["rev-parse", "--git-common-dir"], cwd);
   if (r.status !== 0) {
     throw new CliError(
       ErrCode.ENV,
       `not in a git repository (cwd=${cwd}): ${r.stderr.trim() || "git rev-parse failed"}`,
     );
   }
-  const gitCommonDir = r.stdout.trim();
+  const gitCommonDir = resolvePath(cwd, r.stdout.trim());
   return gitCommonDir.replace(/\/?\.git$/, "");
 }
 
