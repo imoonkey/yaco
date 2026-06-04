@@ -3,8 +3,8 @@
 Bun-based CLI hosting the `yaco` unified dispatcher (`src/main.ts`). Eight
 top-level areas (`agent`, `task`, `worktree`, `align`, `init`, `install`,
 `doctor`, `paths`). Routes argv to per-area handlers. `agent`, `task`,
-`worktree`, and `paths` are live; the other four are stubs returning
-`{area, status: "stub"}` and land in follow-up tasks.
+`worktree`, `align`, `init`, and `paths` are live; `install` and `doctor`
+remain stubs returning `{area, status: "stub"}` and land in follow-up tasks.
 
 The previous standalone `multmux` entry point (`src/index.ts`) was retired in
 yc-agent-subcommand — its runtime now lives under `src/lib/core/agent/` and is
@@ -139,6 +139,30 @@ yaco worktree cleanup <slug> [--force]                           [--json]
 - **Strict flags**: each subcommand rejects any flag outside its own allowed set with `USAGE` (exit 2). Allowed sets: `create`→`--base`; `merge`→`--base`,`--mode`; `cleanup`→`--force`. `--json`/`--help` always allowed.
 
 See [`doc/main/worktree.md`](doc/main/worktree.md) for the full file map, error table, and the diff vs the shell baseline.
+
+### `yaco align` (live)
+
+```
+yaco align poll <status_file> <role> [--interval <sec>] [--timeout <sec>] [--json]
+```
+
+- TypeScript port of `agent-config/global/skills/align/scripts/align_poll.sh`. Pure `pollStatus` loop reads the first line of `status.txt`, parses `SEQ=[0-9]+ NEXT=[A-Z]+ CODEX=[A-Z]+ CLAUDE=[A-Z]+` with the exact `grep -oE` character classes the shell helper used, and returns `YOUR_TURN | DONE | TIMEOUT | ERROR`. Role is case-insensitive.
+- **Text-mode exit + routing parity** (load-bearing for legacy callers): all four terminal words are written to **stdout** — `YOUR_TURN\n` / `DONE\n` / `TIMEOUT\n` / `ERROR\n` — so existing `$(align_poll.sh ...)` capture-by-stdout still works. Exit codes are 0 (YOUR_TURN | DONE), 1 (TIMEOUT), 2 (ERROR).
+- **`--json` envelope**: success → `{ok:true, data:{status, seq, next, codex, claude}}` on stdout; failure → `{ok:false, error:{code, message}}` on stderr with `code = "align.timeout"` (exit 1) or `"align.error"` (exit 2). `--help --json` is wrapped in `{ok:true,data:{help:"..."}}` per the envelope contract; text-mode `--help` writes raw prose.
+- **Regex strictness** (Codex review pass 1): role/vote fields are STRICTLY `[A-Z]+`, SEQ is `[0-9]+`, match is unanchored. `NEXT=CLAUDE1` parses as `CLAUDE` (greedy stops at digit, same as shell); `NEXT=claude` fails to parse → ERROR.
+- Best-effort `poll.log` written next to `status.txt` for state-change traces; logging never blocks the poll loop.
+- Handler reaches `process.exit()` directly (bypassing the dispatcher's render+exit) because the historical exit codes (1, 2) don't fit the standard `ErrCode` → exit-code table cleanly. Usage errors still throw `CliError(USAGE)` and exit 2 through the normal path.
+
+### `yaco init` (live)
+
+```
+yaco init links [--cwd <path>] [--json]
+```
+
+- TypeScript port of `agent-config/global/skills/init-all/scripts/init-symlinks.sh`. Creates four multi-tool compatibility symlinks in the project root: `.agents/` → `.claude/`, `.codex/` → `.claude/`, `AGENTS.md` → `CLAUDE.md`, `GEMINI.md` → `CLAUDE.md`.
+- **Hardens warn-and-skip** (vs the shell baseline): missing `CLAUDE.md` is now a precondition failure → `ENV` (exit 3) instead of a silent skip, so callers can't end up with broken `AGENTS.md` / `GEMINI.md` pointing at nothing. A regular file or directory at any target path refuses to clobber → `IO` (exit 1) instead of being skipped. An existing symlink at a target path is removed and re-created (idempotent across re-runs).
+- `.claude/` is auto-created if missing so the `.agents` / `.codex` symlinks always resolve.
+- Default cwd is `process.cwd()`; `--cwd <path>` overrides for scripted use.
 
 ## `yaco agent` (live runtime)
 
