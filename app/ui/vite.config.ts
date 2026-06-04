@@ -7,7 +7,15 @@ const devGzip = (): PluginOption => ({
   name: 'dev-gzip',
   apply: 'serve',
   configureServer(server) {
-    server.middlewares.use(compression({ threshold: 512 }) as Connect.NextHandleFunction)
+    const mw = compression({
+      threshold: 512,
+      filter: (req, res) => {
+        const ct = res.getHeader('content-type')
+        if (typeof ct === 'string' && ct.includes('text/event-stream')) return false
+        return compression.filter(req, res)
+      },
+    })
+    server.middlewares.use(mw as Connect.NextHandleFunction)
   },
 })
 
