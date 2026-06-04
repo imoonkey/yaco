@@ -54,7 +54,7 @@ export async function acquireLock(
   // The tasks-file dir is also the lock-file dir — make sure it exists so
   // the very first mutation on a fresh repo can succeed.
   mkdirSync(dirname(lockPath), { recursive: true });
-  const timeoutMs = opts.timeoutMs ?? 10_000;
+  const timeoutMs = opts.timeoutMs ?? envTimeoutMs() ?? 10_000;
   const pollMs = opts.pollMs ?? 50;
   const owner: LockOwner = {
     pid: opts.pid ?? process.pid,
@@ -239,4 +239,13 @@ function isPidAlive(pid: number): boolean | null {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Test/debug override: YACO_TASK_LOCK_TIMEOUT_MS lets integration tests
+ *  exercise the LOCK exit path without waiting the full 10s default. */
+function envTimeoutMs(): number | undefined {
+  const raw = process.env["YACO_TASK_LOCK_TIMEOUT_MS"];
+  if (raw === undefined || raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }

@@ -40,5 +40,5 @@ export async function runArchive(
     process.stderr.write(`archived ${archivedCount} tasks → ${archivePath}\n`);
   }
 
-  return ok({ id, archivedCount, archivePath, tasksFile: paths.tasksFile });
+  return ok({ archivedCount, archivePath });
 }

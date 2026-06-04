@@ -22,7 +22,7 @@ import { lockPathFor } from "../../../src/lib/core/task/index.ts";
 
 const BIN = resolve(import.meta.dir, "../../../src/main.ts");
 
-function runYaco(repo: string, args: string[], stdin?: string): {
+function runYaco(repo: string, args: string[], stdin?: string, env: Record<string, string> = {}): {
   stdout: string;
   stderr: string;
   status: number;
@@ -30,7 +30,7 @@ function runYaco(repo: string, args: string[], stdin?: string): {
   const r = spawnSync("bun", ["run", BIN, ...args], {
     encoding: "utf-8",
     cwd: repo,
-    env: { ...process.env, NO_COLOR: "1" },
+    env: { ...process.env, NO_COLOR: "1", ...env },
     input: stdin,
   });
   return {
@@ -122,6 +122,60 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(parseJson(r.stdout).ok).toBe(true);
   });
 
+  it("--file with missing path fails with USAGE exit 2", () => {
+    const r = runYaco(repo, [
+      "task",
+      "set",
+      "x",
+      "--file",
+      "/no/such/file.json",
+      "--json",
+    ]);
+    expect(r.status).toBe(2);
+    const env = parseJson(r.stderr);
+    expect(env.error!.code).toBe("USAGE");
+    expect(env.error!.message).toContain("/no/such/file.json");
+  });
+
+  it("--json response uses `warnings`, not `advisories`", () => {
+    // Two tasks sharing the same worktree slug with different repo scopes
+    // triggers checkWorktreeScope to emit a warning.
+    runYaco(repo, [
+      "task",
+      "set",
+      "a",
+      "--data",
+      JSON.stringify({
+        title: "a",
+        description: "d",
+        acceptCriteria: "ok",
+        worktree: "shared",
+        scope: ["src/**"],
+      }),
+      "--json",
+    ]);
+    const r = runYaco(repo, [
+      "task",
+      "set",
+      "b",
+      "--data",
+      JSON.stringify({
+        title: "b",
+        description: "d",
+        acceptCriteria: "ok",
+        worktree: "shared",
+        scope: ["~/elsewhere/repo/**"],
+      }),
+      "--json",
+    ]);
+    expect(r.status).toBe(0);
+    const env = parseJson(r.stdout);
+    const data = env.data as Record<string, unknown>;
+    expect(Array.isArray(data["warnings"])).toBe(true);
+    expect((data["warnings"] as string[]).length).toBeGreaterThan(0);
+    expect(data["advisories"]).toBeUndefined();
+  });
+
   it("updates an existing task and preserves created timestamp", () => {
     runYaco(repo, [
       "task",
@@ -182,7 +236,7 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(parseJson(r.stderr).error!.code).toBe("CONFLICT");
   });
 
-  it("archive packs a terminal subtree under archive dir", () => {
+  it("archive --json returns exactly {archivedCount, archivePath}", () => {
     runYaco(repo, [
       "task",
       "set",
@@ -203,6 +257,10 @@ describe("yaco task set / rm / archive / list / validate", () => {
     const r = runYaco(repo, ["task", "archive", "parent", "--json"]);
     expect(r.status).toBe(0);
     const env = parseJson(r.stdout);
+    expect(Object.keys(env.data as object).sort()).toEqual([
+      "archivePath",
+      "archivedCount",
+    ]);
     const data = env.data as { archivedCount: number; archivePath: string };
     expect(data.archivedCount).toBe(2);
     expect(existsSync(data.archivePath)).toBe(true);
@@ -240,6 +298,30 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(env.error!.code).toBe("INVALID");
     const details = env.error!.details as { dangling: { id: string; kind: string; ref: string }[] };
     expect(details.dangling.some((d) => d.ref === "ghost")).toBe(true);
+  });
+
+  it("validate --json reports milestoneRollup divergence", () => {
+    // Hand-write a graph where parent state diverges from its children.
+    mkdirSync(join(repo, "projects"), { recursive: true });
+    writeFileSync(
+      join(repo, "projects/tasks.json"),
+      JSON.stringify({
+        p: { parent: null, depends: [], state: "done", title: "p", description: "d" },
+        c: { parent: "p", depends: [], state: "ready", title: "c", description: "d", acceptCriteria: "ok" },
+      }, null, 2) + "\n",
+    );
+    const r = runYaco(repo, ["task", "validate", "--json"]);
+    expect(r.status).toBe(1);
+    const env = parseJson(r.stderr);
+    const details = env.error!.details as {
+      milestoneRollup: { id: string; recordedState: string; impliedState: string }[];
+    };
+    expect(details.milestoneRollup.length).toBe(1);
+    expect(details.milestoneRollup[0]).toMatchObject({
+      id: "p",
+      recordedState: "done",
+      impliedState: "running",
+    });
   });
 
   it("list returns the configured graph", () => {
@@ -349,7 +431,7 @@ describe("lock contention", () => {
 });
 
 describe("cross-host stale lock", () => {
-  it("is reported by `yaco task validate` and never auto-broken", async () => {
+  it("validate fails with error.details.staleLocks and set fails with LOCK exit 4", async () => {
     const repo = mkRepo();
     runYaco(repo, [
       "task",
@@ -373,29 +455,42 @@ describe("cross-host stale lock", () => {
       }),
     );
 
-    // validate surfaces the stale cross-host lock in result data.
-    const r = runYaco(repo, ["task", "validate", "--json"]);
-    expect(r.status).toBe(0);
-    const env = parseJson(r.stdout);
-    const data = env.data as { lock?: { sameHost?: boolean; notes?: string[] } };
-    expect(data.lock?.sameHost).toBe(false);
-    expect(data.lock?.notes?.[0]).toContain("cross-host");
+    // validate must FAIL (exit 1) and report the stale lock under
+    // error.details.staleLocks — cross-host stale-lock is never silent.
+    const v = runYaco(repo, ["task", "validate", "--json"]);
+    expect(v.status).toBe(1);
+    const venv = parseJson(v.stderr);
+    expect(venv.ok).toBe(false);
+    expect(venv.error!.code).toBe("INVALID");
+    const vdetails = venv.error!.details as { staleLocks?: { sameHost?: boolean; notes?: string[] }[] };
+    expect(Array.isArray(vdetails.staleLocks)).toBe(true);
+    expect(vdetails.staleLocks!.length).toBe(1);
+    expect(vdetails.staleLocks![0]!.sameHost).toBe(false);
+    expect(vdetails.staleLocks![0]!.notes?.[0]).toContain("cross-host");
 
-    // set with a short retry budget should fail with LOCK rather than reclaim.
-    const setResult = runYaco(repo, [
-      "task",
-      "set",
-      "y",
-      "--data",
-      JSON.stringify({ title: "y", description: "d", acceptCriteria: "ok" }),
-      "--json",
-    ]);
-    // Default timeout 10s — too long for a unit test; we cleanup manually.
-    expect(setResult.status === 4 || setResult.status === 0).toBe(true);
-    if (setResult.status === 4) {
-      const e = parseJson(setResult.stderr);
-      expect(e.error!.code).toBe("LOCK");
-    }
+    // set must FAIL with LOCK (exit 4) — never auto-broken. Use a short
+    // timeout so the test doesn't pay the full 10s wait.
+    const setResult = runYaco(
+      repo,
+      [
+        "task",
+        "set",
+        "y",
+        "--data",
+        JSON.stringify({ title: "y", description: "d", acceptCriteria: "ok" }),
+        "--json",
+      ],
+      undefined,
+      { YACO_TASK_LOCK_TIMEOUT_MS: "200" },
+    );
+    expect(setResult.status).toBe(4);
+    expect(parseJson(setResult.stderr).error!.code).toBe("LOCK");
+
+    // Lock dir still owned by the foreign host — never auto-broken.
+    expect(existsSync(lockDir)).toBe(true);
+    const ownerNow = JSON.parse(readFileSync(join(lockDir, "owner.json"), "utf-8"));
+    expect(ownerNow.hostname).toBe(hostname() + ".foreign");
+
     rmSync(lockDir, { recursive: true, force: true });
   }, 20_000);
 });

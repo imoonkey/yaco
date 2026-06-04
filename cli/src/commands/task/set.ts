@@ -44,7 +44,7 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
   validateTypes(data);
 
   const paths = resolveTaskPaths(opts.repo);
-  const advisories: string[] = [];
+  const warnings: string[] = [];
   let action: "create" | "update" = "update";
   let resultTask!: Task;
 
@@ -91,21 +91,21 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       const wt = tasks[id]!.worktree;
       if (wt) {
         const msg = checkWorktreeScope(tasks, wt);
-        if (msg) advisories.push(msg);
+        if (msg) warnings.push(msg);
       }
     },
     { command: `yaco task set ${id}` },
   );
 
   if (!opts.json) {
-    for (const a of advisories) process.stderr.write(`advisory: ${a}\n`);
+    for (const w of warnings) process.stderr.write(`warning: ${w}\n`);
   }
 
   return ok({
     id,
     action,
     task: resultTask,
-    advisories,
+    warnings,
     tasksFile: paths.tasksFile,
   });
 }
@@ -129,7 +129,7 @@ function parsePayload(opts: SetOpts): Record<string, unknown> {
   let raw: string;
   if (opts.data !== undefined) raw = opts.data;
   else if (opts.stdin === true) raw = readFileSync(0, "utf-8");
-  else raw = readFileSync(opts.file!, "utf-8");
+  else raw = readPayloadFile(opts.file!);
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -140,6 +140,23 @@ function parsePayload(opts: SetOpts): Record<string, unknown> {
     throw new CliError(ErrCode.USAGE, "task payload must be a JSON object");
   }
   return parsed as Record<string, unknown>;
+}
+
+/** Read a user-supplied --file path. A missing path is a usage bug
+ *  (exit 2); other read errors (permission, IO) surface as IO (exit 1). */
+function readPayloadFile(path: string): string {
+  try {
+    return readFileSync(path, "utf-8");
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      throw new CliError(ErrCode.USAGE, `--file: cannot read ${path} (no such file)`);
+    }
+    throw new CliError(
+      ErrCode.IO,
+      `--file: cannot read ${path}: ${(e as Error).message}`,
+    );
+  }
 }
 
 /** Format current UTC as `YYYY-MM-DDTHH:MM:SSZ` (no fractional seconds) —

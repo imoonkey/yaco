@@ -2,7 +2,11 @@
  *
  *  Whole-graph by default; `--id` narrows to the task plus its parent
  *  chain (so a single ID still gets cycles + dangling refs in its scope).
- *  Surfaces stale lock metadata as an advisory note — never blocks.
+ *
+ *  Cross-host stale locks are part of the error payload (per the design
+ *  contract — they MUST be reported, never auto-broken). Same-host
+ *  stale locks (dead PID) and live locks are surfaced as advisories
+ *  only — they don't fail validate.
  */
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
@@ -11,6 +15,7 @@ import {
   describeLock,
   loadTasks,
   validateGraph,
+  type LockStatus,
 } from "../../lib/core/task/index.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
@@ -29,25 +34,28 @@ export function runValidate(opts: ValidateOpts): Result<unknown> {
   }
   const report = validateGraph(tasks, opts.id ? { id: opts.id } : undefined);
 
-  // Stale lock metadata is advisory — informs the user, doesn't fail.
   const lock = describeLock(paths.tasksFile);
-  const lockNotes = lock.notes ?? [];
+  const staleLocks = lock.held && lock.sameHost === false ? [lock] : [];
+  const localAdvisoryNotes = lock.held && lock.sameHost !== false ? lock.notes ?? [] : [];
 
-  if (!report.ok) {
-    return err(ErrCode.INVALID, "task graph has integrity problems", {
-      ...report.details,
-      lock: lock.held ? lock : undefined,
-    });
+  if (!report.ok || staleLocks.length > 0) {
+    const details: Record<string, unknown> = { ...report.details };
+    if (staleLocks.length > 0) details["staleLocks"] = staleLocks;
+    const reason =
+      report.ok && staleLocks.length > 0
+        ? "cross-host stale lock present (never auto-broken)"
+        : "task graph has integrity problems";
+    return err(ErrCode.INVALID, reason, details);
   }
 
   if (!opts.json) {
-    for (const note of lockNotes) process.stderr.write(`advisory: ${note}\n`);
+    for (const note of localAdvisoryNotes) process.stderr.write(`advisory: ${note}\n`);
   }
 
   return ok({
     ok: true,
     scope: opts.id ?? "all",
     tasksFile: paths.tasksFile,
-    lock: lock.held ? lock : undefined,
+    lock: lock.held ? (lock as LockStatus) : undefined,
   });
 }

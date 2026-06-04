@@ -171,6 +171,43 @@ describe("validateGraph", () => {
     expect(r.details!.cycles.length).toBeGreaterThan(0);
   });
 
+  it("reports milestone rollup divergence: parent done + non-terminal child", () => {
+    const t = makeGraph();
+    t["root"]!.state = "done";
+    // children a and b are ready → parent should be running, not done
+    const r = validateGraph(t);
+    expect(r.ok).toBe(false);
+    expect(r.details!.milestoneRollup.length).toBe(1);
+    expect(r.details!.milestoneRollup[0]).toMatchObject({
+      id: "root",
+      recordedState: "done",
+      impliedState: "running",
+    });
+  });
+
+  it("reports milestone rollup divergence: all-terminal children + non-terminal parent", () => {
+    const t = makeGraph();
+    t["a"]!.state = "done";
+    t["b"]!.state = "done";
+    // root is still "ready" → should be done
+    const r = validateGraph(t);
+    expect(r.ok).toBe(false);
+    expect(r.details!.milestoneRollup.some((m) => m.id === "root" && m.impliedState === "done")).toBe(true);
+  });
+
+  it("milestone rollup OK when parent is cancelled despite ready children", () => {
+    // cancelled is terminal — being a "terminal" parent of non-terminal
+    // kids is the same divergence (all-non-terminal → parent must not be
+    // terminal). recordedState=cancelled is reported because it's not
+    // "done" but also wouldn't make `done` implied. Actually with !allTerminal
+    // and recorded=cancelled, only the "marked done" branch triggers.
+    // This test pins that cancelled milestones don't false-trigger.
+    const t = makeGraph();
+    t["root"]!.state = "cancelled";
+    const r = validateGraph(t);
+    expect(r.details?.milestoneRollup ?? []).toEqual([]);
+  });
+
   it("narrowing by id only reports problems on the parent chain", () => {
     const t = makeGraph();
     delete t["a"]!.acceptCriteria;

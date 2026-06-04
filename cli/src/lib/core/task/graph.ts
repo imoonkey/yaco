@@ -117,7 +117,12 @@ export interface ValidationProblems {
   selfReference: string[];
   missingAC: string[];
   invalidState: { id: string; state: unknown }[];
-  invalidMilestoneState?: { id: string; state: State }[];
+  milestoneRollup: {
+    id: string;
+    recordedState: State;
+    impliedState: State;
+    reason: string;
+  }[];
 }
 
 export interface ValidationReport {
@@ -139,6 +144,7 @@ export function validateGraph(
     selfReference: [],
     missingAC: [],
     invalidState: [],
+    milestoneRollup: [],
   };
 
   for (const tid of ids) {
@@ -160,6 +166,29 @@ export function validateGraph(
     }
     if (!hasChildren(tasks, tid) && isAcceptCriteriaBlank(t.acceptCriteria)) {
       problems.missingAC.push(tid);
+    }
+
+    // Milestone rollup consistency — a parent whose recorded state
+    // disagrees with what its children imply. Mirrors the two rollup
+    // transitions: all-terminal ⇒ done, any-non-terminal ⇒ not-done.
+    const kids = childrenOf(tasks, tid);
+    if (kids.length > 0 && isState(t.state)) {
+      const allTerminal = kids.every((c) => TERMINAL.has(tasks[c]!.state));
+      if (allTerminal && !TERMINAL.has(t.state)) {
+        problems.milestoneRollup.push({
+          id: tid,
+          recordedState: t.state,
+          impliedState: "done",
+          reason: "all children are terminal but milestone state is not",
+        });
+      } else if (!allTerminal && t.state === "done") {
+        problems.milestoneRollup.push({
+          id: tid,
+          recordedState: t.state,
+          impliedState: "running",
+          reason: "milestone marked done but at least one child is non-terminal",
+        });
+      }
     }
   }
 
@@ -213,7 +242,8 @@ export function validateGraph(
     problems.dangling.length > 0 ||
     problems.selfReference.length > 0 ||
     problems.missingAC.length > 0 ||
-    problems.invalidState.length > 0;
+    problems.invalidState.length > 0 ||
+    problems.milestoneRollup.length > 0;
 
   return hasAny ? { ok: false, details: problems } : { ok: true };
 }
