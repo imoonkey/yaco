@@ -4,12 +4,14 @@ Centralized AI agent configuration repo. Single source of truth for CLAUDE.md, s
 
 ## Stack
 
-Shell scripts, Markdown, Python (update-tasks.py)
+Markdown skill prompts. All helper logic lives in the `yaco` CLI under
+`cli/`; this package contains no executable scripts.
 
 ## Build & Run
 
-Global setup: `./setup.sh` (delegates to root `tools/install.sh --cli-only`)
-Per-project setup: `/init-all`
+Global setup: root `tools/install.sh` (or `yaco install` after the
+bootstrap binary exists)
+Per-project setup: `/init-all` (calls `yaco init links`)
 
 ## Architecture
 
@@ -33,12 +35,12 @@ The YACO productivity stack now lives in this monorepo.
 | Path | What |
 |------|------|
 | `app/` | Workflow web app and server |
-| `cli/` | `@yaco/cli` — `yaco` unified dispatcher (`agent`, `task`, `worktree`, `align`, `init`, `paths` live; `install` and `doctor` land next) |
-| `agent-config/` | Global agent config, skills, and helper scripts |
+| `cli/` | `@yaco/cli` — `yaco` unified dispatcher (`agent`, `task`, `worktree`, `align`, `init`, `install`, `doctor`, `paths`) |
+| `agent-config/` | Global agent config and skill prompts (Markdown only) |
 | `projects/` | Live root YACO task graph and project history |
 
 **Dependencies:** agent-config skills call into the installed `yaco` CLI
 (`yaco agent`, `yaco task`, `yaco worktree`, `yaco align`, `yaco init`) and
 are consumed by Workflow/Codex/Claude through global symlinks installed by
-`tools/install.sh`. When changing skill contracts or helper scripts, update
-the app and docs in the same monorepo change.
+`yaco install`. When changing skill contracts, update the app and docs in
+the same monorepo change.
