@@ -70,6 +70,44 @@ describe("parseStatusFile", () => {
     const path = writeStatus(dir, "");
     expect(parseStatusFile(path)).toBeNull();
   });
+
+  // Parity with align_poll.sh's `grep -oE 'NEXT=[A-Z]+'`: role/vote fields
+  // are STRICTLY uppercase letters, SEQ is digits. Greedy match stops at
+  // the first non-class character; lowercase / missing-class values are
+  // unparseable (→ null → ERROR upstream).
+  it("greedy [A-Z]+ on NEXT: 'CLAUDE1' parses as 'CLAUDE'", () => {
+    const dir = tempDir();
+    const path = writeStatus(dir, "SEQ=7 NEXT=CLAUDE1 CODEX=APPROVE CLAUDE=PENDING\n");
+    expect(parseStatusFile(path)?.next).toBe("CLAUDE");
+  });
+
+  it("rejects lowercase NEXT value: 'NEXT=claude' → null (matches shell)", () => {
+    const dir = tempDir();
+    const path = writeStatus(dir, "NEXT=claude\n");
+    expect(parseStatusFile(path)).toBeNull();
+  });
+
+  it("SEQ is digits-only: 'SEQ=12 NEXT=DONE' parses seq='12'", () => {
+    const dir = tempDir();
+    const path = writeStatus(dir, "SEQ=12 NEXT=DONE\n");
+    expect(parseStatusFile(path)?.seq).toBe("12");
+  });
+
+  it("non-numeric SEQ leaves seq undefined but doesn't fail the whole parse", () => {
+    const dir = tempDir();
+    const path = writeStatus(dir, "SEQ=foo NEXT=CODEX\n");
+    const parsed = parseStatusFile(path);
+    expect(parsed?.next).toBe("CODEX");
+    expect(parsed?.seq).toBeUndefined();
+  });
+
+  it("vote fields obey [A-Z]+ too: 'CODEX=approve' yields undefined", () => {
+    const dir = tempDir();
+    const path = writeStatus(dir, "SEQ=1 NEXT=DONE CODEX=approve CLAUDE=APPROVE\n");
+    const parsed = parseStatusFile(path);
+    expect(parsed?.codex).toBeUndefined();
+    expect(parsed?.claude).toBe("APPROVE");
+  });
 });
 
 describe("pollStatus", () => {

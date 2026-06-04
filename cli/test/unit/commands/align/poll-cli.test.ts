@@ -86,8 +86,8 @@ describe("yaco align poll — text mode", () => {
         "2",
       ]);
       expect(r.status).toBe(1);
-      expect(r.stderr).toBe("TIMEOUT\n");
-      expect(r.stdout).toBe("");
+      expect(r.stdout).toBe("TIMEOUT\n");
+      expect(r.stderr).toBe("");
     });
   });
 
@@ -96,8 +96,8 @@ describe("yaco align poll — text mode", () => {
       const file = writeStatus(dir, "SEQ=1 CODEX=PENDING\n"); // no NEXT=
       const r = runYaco(["align", "poll", file, "CLAUDE", "--timeout", "5"]);
       expect(r.status).toBe(2);
-      expect(r.stderr).toBe("ERROR\n");
-      expect(r.stdout).toBe("");
+      expect(r.stdout).toBe("ERROR\n");
+      expect(r.stderr).toBe("");
     });
   });
 
@@ -112,7 +112,35 @@ describe("yaco align poll — text mode", () => {
         "5",
       ]);
       expect(r.status).toBe(2);
-      expect(r.stderr).toBe("ERROR\n");
+      expect(r.stdout).toBe("ERROR\n");
+      expect(r.stderr).toBe("");
+    });
+  });
+
+  it("text-mode routing parity with align_poll.sh: terminal word always on stdout", () => {
+    // The shell helper printed YOUR_TURN/DONE/TIMEOUT/ERROR to stdout for
+    // ALL four outcomes — callers parse stdout. This test pins that down
+    // so we never re-break legacy `$(align_poll.sh ...)` capture.
+    withTmp((dir) => {
+      const f = writeStatus(dir, "SEQ=1 NEXT=CLAUDE\n");
+      const turn = runYaco(["align", "poll", f, "CLAUDE", "--timeout", "5"]);
+      expect(turn.stdout).toBe("YOUR_TURN\n");
+      expect(turn.stderr).toBe("");
+
+      writeStatus(dir, "SEQ=2 NEXT=DONE\n");
+      const done = runYaco(["align", "poll", f, "CLAUDE", "--timeout", "5"]);
+      expect(done.stdout).toBe("DONE\n");
+      expect(done.stderr).toBe("");
+
+      writeStatus(dir, "SEQ=3 NEXT=CODEX\n");
+      const to = runYaco(["align", "poll", f, "CLAUDE", "--interval", "1", "--timeout", "2"]);
+      expect(to.stdout).toBe("TIMEOUT\n");
+      expect(to.stderr).toBe("");
+
+      writeStatus(dir, "SEQ=4 CODEX=PENDING\n");
+      const er = runYaco(["align", "poll", f, "CLAUDE", "--timeout", "5"]);
+      expect(er.stdout).toBe("ERROR\n");
+      expect(er.stderr).toBe("");
     });
   });
 });
@@ -194,5 +222,80 @@ describe("yaco align poll — usage", () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain("yaco align");
     expect(r.stdout).toContain("poll");
+  });
+
+  it("`align poll --help`: raw prose to stdout in text mode", () => {
+    const r = runYaco(["align", "poll", "--help"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain("yaco align poll");
+    expect(r.stderr).toBe("");
+    // Sanity: not JSON-wrapped.
+    expect(r.stdout.startsWith("{")).toBe(false);
+  });
+
+  it("`align poll --help --json`: wrapped in {ok:true,data:{help}} envelope", () => {
+    const r = runYaco(["align", "poll", "--help", "--json"]);
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.ok).toBe(true);
+    expect(typeof parsed.data.help).toBe("string");
+    expect(parsed.data.help).toContain("yaco align poll");
+  });
+});
+
+describe("yaco align poll — legacy regex parity (parse like `grep -oE`)", () => {
+  it("NEXT=CLAUDE1 polled for role=CLAUDE → YOUR_TURN (greedy [A-Z]+ stops at digit)", () => {
+    withTmp((dir) => {
+      const file = writeStatus(dir, "SEQ=1 NEXT=CLAUDE1\n");
+      const r = runYaco([
+        "align",
+        "poll",
+        file,
+        "CLAUDE",
+        "--interval",
+        "1",
+        "--timeout",
+        "2",
+      ]);
+      expect(r.status).toBe(0);
+      expect(r.stdout).toBe("YOUR_TURN\n");
+    });
+  });
+
+  it("NEXT=claude (lowercase) → ERROR (no [A-Z]+ match → unparseable)", () => {
+    withTmp((dir) => {
+      const file = writeStatus(dir, "NEXT=claude\n");
+      const r = runYaco([
+        "align",
+        "poll",
+        file,
+        "CODEX",
+        "--interval",
+        "1",
+        "--timeout",
+        "2",
+      ]);
+      expect(r.status).toBe(2);
+      expect(r.stdout).toBe("ERROR\n");
+    });
+  });
+
+  it("NEXT=OTHER (uppercase, non-matching role) → TIMEOUT (parses but never flips)", () => {
+    withTmp((dir) => {
+      const file = writeStatus(dir, "NEXT=OTHER\n");
+      const r = runYaco([
+        "align",
+        "poll",
+        file,
+        "CODEX",
+        "--interval",
+        "1",
+        "--timeout",
+        "2",
+      ]);
+      expect(r.status).toBe(1);
+      expect(r.stdout).toBe("TIMEOUT\n");
+    });
   });
 });

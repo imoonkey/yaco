@@ -143,15 +143,23 @@ export function parseStatusFile(path: string): ParsedStatusLine | null {
   const next = grab(line, "NEXT");
   if (!next) return null;
   return {
-    seq: grab(line, "SEQ"),
+    seq: grab(line, "SEQ", "[0-9]+"),
     next,
-    codex: grab(line, "CODEX"),
-    claude: grab(line, "CLAUDE"),
+    codex: grab(line, "CODEX", "[A-Z]+"),
+    claude: grab(line, "CLAUDE", "[A-Z]+"),
   };
 }
 
-function grab(line: string, key: string): string | undefined {
-  const m = line.match(new RegExp(`(?:^|\\s)${key}=([A-Za-z0-9_]+)`));
+/** Mirror the legacy `grep -oE` semantics from align_poll.sh exactly.
+ *  Role / vote fields are STRICTLY uppercase letters; SEQ is digits.
+ *  This is deliberately lossy: `NEXT=CLAUDE1` matches just `CLAUDE`
+ *  (greedy stops at the first non-[A-Z]) — preserves shell behavior so
+ *  callers don't see a new "no-match → ERROR" failure for noisy lines.
+ *  `NEXT=claude` (lowercase) fails to match → null → ERROR, same as the
+ *  shell. No left-anchor: `grep -oE` is unanchored, so `XNEXT=CODEX`
+ *  matches `NEXT=CODEX` just like the shell would. */
+function grab(line: string, key: string, valueClass: string = "[A-Z]+"): string | undefined {
+  const m = line.match(new RegExp(`${key}=(${valueClass})`));
   return m?.[1];
 }
 
@@ -254,7 +262,15 @@ function parseNonNegativeNumber(value: string, flag: string): number {
 }
 
 /** Render an outcome to stdout/stderr and exit the process. Used by the
- *  CLI handler; tests use {@link pollStatus} and skip this entirely. */
+ *  CLI handler; tests use {@link pollStatus} and skip this entirely.
+ *
+ *  Text-mode routing matches align_poll.sh exactly: ALL four terminal
+ *  words (YOUR_TURN / DONE / TIMEOUT / ERROR) go to stdout so existing
+ *  callers — every skill/script that captures the shell helper's output
+ *  with `$(align_poll.sh ...)` — still work after the port. Non-zero
+ *  exit codes carry the error signal; the terminal word stays on
+ *  stdout. JSON-mode failures continue to land on stderr per the
+ *  envelope contract. */
 export function emitOutcomeAndExit(outcome: PollOutcome, json: boolean): never {
   switch (outcome.status) {
     case "YOUR_TURN":
@@ -287,7 +303,7 @@ export function emitOutcomeAndExit(outcome: PollOutcome, json: boolean): never {
           "stderr",
         );
       } else {
-        process.stderr.write("TIMEOUT\n");
+        process.stdout.write("TIMEOUT\n");
       }
       process.exit(1);
     case "ERROR":
@@ -303,7 +319,7 @@ export function emitOutcomeAndExit(outcome: PollOutcome, json: boolean): never {
           "stderr",
         );
       } else {
-        process.stderr.write("ERROR\n");
+        process.stdout.write("ERROR\n");
       }
       process.exit(2);
   }
@@ -317,8 +333,16 @@ export async function runPoll(
   opts: { json: boolean },
 ): Promise<never> {
   const parsed = parsePollArgs(argv);
+  const json = opts.json || parsed.json;
   if (parsed.help) {
-    process.stdout.write(POLL_HELP);
+    // --json: wrap help in the standard envelope so stdout stays
+    // machine-parseable (success → exactly one {ok:true,data:...} line).
+    // Text mode: write raw prose so it renders like every other --help.
+    if (json) {
+      emit({ ok: true, data: { help: POLL_HELP } });
+    } else {
+      process.stdout.write(POLL_HELP);
+    }
     process.exit(0);
   }
   const [file, role, extra] = parsed.positional;
@@ -331,7 +355,6 @@ export async function runPoll(
       `yaco align poll: unexpected argument '${extra}'`,
     );
   }
-  const json = opts.json || parsed.json;
   const outcome = await pollStatus({
     statusFile: resolve(file),
     role,
