@@ -15,6 +15,7 @@ import { CliError, ErrCode, exitCodeFor, toErr } from "./lib/core/errors.ts";
 import { emit, stringify } from "./lib/core/json.ts";
 import { handlePaths } from "./commands/paths.ts";
 import { handleAgent, runStart } from "./commands/agent/index.ts";
+import { handleTask } from "./commands/task/index.ts";
 import { PROVIDERS } from "./lib/core/agent/providers.ts";
 
 const AREAS = [
@@ -72,7 +73,7 @@ type AreaHandler = (
 
 const HANDLERS: Record<Area, AreaHandler> = {
   agent: handleAgent,
-  task: stubHandler("task"),
+  task: handleTask,
   worktree: stubHandler("worktree"),
   align: stubHandler("align"),
   init: stubHandler("init"),
