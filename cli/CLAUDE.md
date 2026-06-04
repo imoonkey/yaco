@@ -103,7 +103,7 @@ yaco task validate [--id <id>]          [--repo <p>] [--json]
 yaco task list                          [--repo <p>] [--json]
 ```
 
-- TypeScript port of `agent-config/global/skills/update-tasks/scripts/update-tasks.py` with the same semantics (type checks, leaf acceptCriteria, ref/cycle validation, milestone state rollup, running-requires-terminal-deps, archive + descendants + dangling depends cleanup, worktree-scope advisory).
+- TypeScript port of the legacy `update-tasks.py` helper (deleted in yc-cleanup-legacy) with the same semantics (type checks, leaf acceptCriteria, ref/cycle validation, milestone state rollup, running-requires-terminal-deps, archive + descendants + dangling depends cleanup, worktree-scope advisory).
 - **Fix**: the tasks-file location is now resolved through `readYacoProjectPaths(repoRoot)` — `yaco.toml [paths].tasks` / `[paths].archive` overrides are honored. The legacy script ignored them.
 - **No positional JSON**: payload comes from `--data`, `--stdin`, or `--file` (exactly one). `--file <missing>` → `USAGE` (exit 2); other read errors → `IO` (exit 1).
 - **`archive` shape**: `{ archivedCount, archivePath }` only.
@@ -128,7 +128,7 @@ yaco worktree merge   <slug> [--mode pr|local] [--base <branch>] [--json]
 yaco worktree cleanup <slug> [--force]                           [--json]
 ```
 
-- TypeScript port of `agent-config/global/skills/orchestrate/scripts/worktree-{create,merge,cleanup}.sh`. All git/gh plumbing goes through `node:child_process` spawn with array args — no shell strings, no command-injection surface.
+- TypeScript port of the legacy `worktree-{create,merge,cleanup}.sh` helpers (deleted in yc-cleanup-legacy). All git/gh plumbing goes through `node:child_process` spawn with array args — no shell strings, no command-injection surface.
 - Branch is always `task/<slug>`; worktree path is always `<repoRoot>/.worktrees/<slug>`. `<repoRoot>` is resolved per-invocation from cwd via `git rev-parse --git-common-dir`, so linked worktrees still target the primary checkout and the same slug succeeds independently in two separate repos.
 - **Slug**: lowercase alphanumeric + hyphens, no leading/trailing hyphen.
 - **`create`**: idempotent (reuses an existing registered worktree, removes a stale dir, reattaches an orphan branch). After a fresh `git worktree add`, runs `<repoRoot>/scripts/worktree-provision.sh` (if present + executable) with the new worktree path as `$1` — non-zero exit → `IO` (exit 1).
@@ -145,7 +145,7 @@ See [`doc/main/worktree.md`](doc/main/worktree.md) for the full file map, error 
 yaco align poll <status_file> <role> [--interval <sec>] [--timeout <sec>] [--json]
 ```
 
-- TypeScript port of `agent-config/global/skills/align/scripts/align_poll.sh`. Pure `pollStatus` loop reads the first line of `status.txt`, parses `SEQ=[0-9]+ NEXT=[A-Z]+ CODEX=[A-Z]+ CLAUDE=[A-Z]+` with the exact `grep -oE` character classes the shell helper used, and returns `YOUR_TURN | DONE | TIMEOUT | ERROR`. Role is case-insensitive.
+- TypeScript port of the legacy `align_poll.sh` helper (deleted in yc-cleanup-legacy). Pure `pollStatus` loop reads the first line of `status.txt`, parses `SEQ=[0-9]+ NEXT=[A-Z]+ CODEX=[A-Z]+ CLAUDE=[A-Z]+` with the exact `grep -oE` character classes the shell helper used, and returns `YOUR_TURN | DONE | TIMEOUT | ERROR`. Role is case-insensitive.
 - **Text-mode exit + routing parity** (load-bearing for legacy callers): all four terminal words are written to **stdout** — `YOUR_TURN\n` / `DONE\n` / `TIMEOUT\n` / `ERROR\n` — so existing `$(align_poll.sh ...)` capture-by-stdout still works. Exit codes are 0 (YOUR_TURN | DONE), 1 (TIMEOUT), 2 (ERROR).
 - **`--json` envelope**: success → `{ok:true, data:{status, seq, next, codex, claude}}` on stdout; failure → `{ok:false, error:{code, message}}` on stderr with `code = "align.timeout"` (exit 1) or `"align.error"` (exit 2). `--help --json` is wrapped in `{ok:true,data:{help:"..."}}` per the envelope contract; text-mode `--help` writes raw prose.
 - **Regex strictness** (Codex review pass 1): role/vote fields are STRICTLY `[A-Z]+`, SEQ is `[0-9]+`, match is unanchored. `NEXT=CLAUDE1` parses as `CLAUDE` (greedy stops at digit, same as shell); `NEXT=claude` fails to parse → ERROR.
@@ -158,7 +158,7 @@ yaco align poll <status_file> <role> [--interval <sec>] [--timeout <sec>] [--jso
 yaco init links [--cwd <path>] [--json]
 ```
 
-- TypeScript port of `agent-config/global/skills/init-all/scripts/init-symlinks.sh`. Creates four multi-tool compatibility symlinks in the project root: `.agents/` → `.claude/`, `.codex/` → `.claude/`, `AGENTS.md` → `CLAUDE.md`, `GEMINI.md` → `CLAUDE.md`.
+- TypeScript port of the legacy `init-symlinks.sh` helper (deleted in yc-cleanup-legacy). Creates four multi-tool compatibility symlinks in the project root: `.agents/` → `.claude/`, `.codex/` → `.claude/`, `AGENTS.md` → `CLAUDE.md`, `GEMINI.md` → `CLAUDE.md`.
 - **Hardens warn-and-skip** (vs the shell baseline): missing `CLAUDE.md` is now a precondition failure → `ENV` (exit 3) instead of a silent skip, so callers can't end up with broken `AGENTS.md` / `GEMINI.md` pointing at nothing. A regular file or directory at any target path refuses to clobber → `IO` (exit 1) instead of being skipped. An existing symlink at a target path is removed and re-created (idempotent across re-runs).
 - `.claude/` is auto-created if missing so the `.agents` / `.codex` symlinks always resolve.
 - Default cwd is `process.cwd()`; `--cwd <path>` overrides for scripted use.
@@ -335,7 +335,7 @@ The YACO productivity stack lives in this monorepo.
 |------|------|
 | `app/` | Workflow web app and server |
 | `cli/` | This package — `yaco` dispatcher + agent runtime |
-| `agent-config/` | Global agent config, skills, and helper scripts |
+| `agent-config/` | Global agent config and skill prompts (Markdown only) |
 | `projects/` | Live root YACO task graph and project history |
 
 **Dependencies:** the agent runtime is the foundation. `agent-config/global/skills/multmux`

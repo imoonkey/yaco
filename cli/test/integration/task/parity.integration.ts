@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -57,7 +57,7 @@ function stripTimestamps(body: string): string {
   return body.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/g, "<ts>");
 }
 
-const PY_AVAILABLE = pythonAvailable();
+const PY_AVAILABLE = pythonAvailable() && existsSync(PY_SCRIPT);
 const describeIfPy = PY_AVAILABLE ? describe : describe.skip;
 
 describeIfPy("parity: update-tasks.py vs yaco task set", () => {
