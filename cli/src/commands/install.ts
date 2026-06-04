@@ -49,21 +49,6 @@ import {
 } from "../lib/core/agent/lifecycle.ts";
 import { runAllChecks, type DoctorReport } from "./doctor.ts";
 
-/** Read the agent-wrapper.sh body. Prefers the packaged path
- *  (readAgentWrapperScript via import.meta.url) which works under bun run,
- *  but falls back to ${YACO_REPO_ROOT}/cli/scripts/agent-wrapper.sh — the
- *  source-of-truth location — because the bun-compiled binary's VFS does
- *  not expose script siblings of import.meta.url. The two paths point at
- *  the same on-disk file at install time. */
-function readWrapperBody(repoRoot: string): string {
-  try {
-    return readAgentWrapperScript();
-  } catch {
-    const fallback = join(repoRoot, "cli", "scripts", "agent-wrapper.sh");
-    return readFileSync(fallback, "utf-8");
-  }
-}
-
 const HELP = `yaco install — install or refresh YACO on this machine
 
 Usage:
@@ -212,7 +197,7 @@ function removeLegacySymlink(p: string, actions: string[], dryRun: boolean): voi
 /** Write the agent-wrapper.sh script under ${YACO_HOME} if missing or stale. */
 function installAgentWrapper(repoRoot: string, actions: string[], dryRun: boolean): void {
   const path = agentWrapperPath();
-  const content = readWrapperBody(repoRoot);
+  const content = readAgentWrapperScript(repoRoot);
   if (existsSync(path)) {
     const current = readFileSync(path, "utf-8");
     if (current === content) return;
@@ -369,9 +354,8 @@ export function runInstall(opts: InstallOptions): InstallReport {
       actions.push(`merge ~/.codex/hooks.json hooks`);
     } else {
       // Call the per-provider helpers directly (NOT ensureHooks) — they only
-      // touch the JSON configs; we already wrote the wrapper above. ensureHooks
-      // would re-call readAgentWrapperScript(), which breaks under the
-      // bun-compiled binary VFS.
+      // touch the JSON configs; we already wrote the wrapper above and don't
+      // want to read it back a second time.
       ensureClaudeHooks();
       ensureCodexHooks();
       actions.push(`merged ~/.claude/settings.json hooks`);

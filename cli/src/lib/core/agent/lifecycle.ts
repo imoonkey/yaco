@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "path";
 import { execSync } from "child_process";
 import { homedir } from "os";
 import { getYacoHome, agentWrapperPath } from "../paths/yaco-home.ts";
+import { CliError, ErrCode } from "../errors.ts";
 
 /** Honor $HOME at call time. Bun's os.homedir() caches at process start,
  *  which breaks tests that swap HOME between invocations. */
@@ -100,16 +101,79 @@ export function _resetHookBinaryCacheForTests(): void {
   _cachedHookBinary = null;
 }
 
-/** Locate the on-disk agent-wrapper.sh shipped with the cli package. */
+/** Locate the on-disk agent-wrapper.sh shipped with the cli package.
+ *
+ *  Under `bun run`, import.meta.url points at the real source file and
+ *  the sibling `cli/scripts/agent-wrapper.sh` exists. Under a
+ *  `bun build --compile` binary, import.meta.url resolves into the bun
+ *  runtime's virtual fs (e.g. `/scripts/agent-wrapper.sh`) which has no
+ *  file siblings on disk — this function returns that virtual path
+ *  unconditionally; the caller is expected to existsSync() before reading
+ *  and fall back via {@link findExistingWrapperPath}. */
 function packagedAgentWrapperPath(): string {
   // import.meta.url → .../cli/src/lib/core/agent/lifecycle.ts
   // resolve(..., "../../../../scripts/agent-wrapper.sh") → cli/scripts/agent-wrapper.sh
   return resolve(dirname(fileURLToPath(import.meta.url)), "../../../../scripts/agent-wrapper.sh");
 }
 
-/** Read the packaged wrapper script body. */
-export function readAgentWrapperScript(): string {
-  return readFileSync(packagedAgentWrapperPath(), "utf-8");
+/** Walk a fallback chain to find the on-disk agent-wrapper.sh. The packaged
+ *  path wins when it exists (i.e. under `bun run`); otherwise the chain falls
+ *  back to a yaco checkout located via the explicit `repoRoot` arg, then
+ *  `$YACO_REPO_ROOT`, then `git rev-parse --show-toplevel` from cwd. Returns
+ *  null when nothing matches — the caller surfaces a CliError.
+ *
+ *  Exported as `_findExistingWrapperPathForTests` so the fallback chain can be
+ *  exercised under `bun run` (where the packaged path always wins and the
+ *  branch would otherwise be dead code in tests). */
+function findExistingWrapperPath(packaged: string, repoRoot?: string): string | null {
+  if (existsSync(packaged)) return packaged;
+  const candidates: string[] = [];
+  if (repoRoot && repoRoot.length > 0) {
+    candidates.push(join(repoRoot, "cli", "scripts", "agent-wrapper.sh"));
+  }
+  const envRoot = process.env["YACO_REPO_ROOT"];
+  if (envRoot && envRoot.length > 0) {
+    candidates.push(join(envRoot, "cli", "scripts", "agent-wrapper.sh"));
+  }
+  try {
+    const gitTop = execSync("git rev-parse --show-toplevel", {
+      encoding: "utf-8",
+      cwd: process.cwd(),
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (gitTop.length > 0) {
+      candidates.push(join(gitTop, "cli", "scripts", "agent-wrapper.sh"));
+    }
+  } catch { /* not in a git repo, or no git — try cwd directly */ }
+  candidates.push(join(process.cwd(), "cli", "scripts", "agent-wrapper.sh"));
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return null;
+}
+
+export const _findExistingWrapperPathForTests = findExistingWrapperPath;
+
+/** Resolve an on-disk agent-wrapper.sh path; throws INTERNAL when neither the
+ *  bundled location nor any fallback exists. Optional `repoRoot` is the
+ *  highest-priority fallback (used by install where the caller already knows
+ *  the repo). */
+function resolveAgentWrapperPath(repoRoot?: string): string {
+  const found = findExistingWrapperPath(packagedAgentWrapperPath(), repoRoot);
+  if (found === null) {
+    throw new CliError(
+      ErrCode.INTERNAL,
+      "cannot locate agent-wrapper.sh — set YACO_REPO_ROOT to a yaco checkout or reinstall",
+    );
+  }
+  return found;
+}
+
+/** Read the on-disk agent-wrapper.sh body. Under `bun run` this resolves to
+ *  the packaged path; under a bun-compiled binary it falls back to a yaco
+ *  checkout via `repoRoot` / `$YACO_REPO_ROOT` / `process.cwd()`. */
+export function readAgentWrapperScript(repoRoot?: string): string {
+  return readFileSync(resolveAgentWrapperPath(repoRoot), "utf-8");
 }
 
 function makeHookEntry(event: string, async_: boolean, timeout?: number): Record<string, unknown> {
