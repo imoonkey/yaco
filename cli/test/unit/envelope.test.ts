@@ -27,21 +27,18 @@ function runYaco(args: string[]): { stdout: string; stderr: string; status: numb
 }
 
 describe("--json envelope (success)", () => {
-  it("wraps stub area output in {ok:true, data} on stdout, stderr empty, exit 0", () => {
-    const r = runYaco(["install", "--json"]);
+  it("wraps area output in {ok:true, data} on stdout, stderr empty, exit 0", () => {
+    // `paths runtime` is a live area with a stable, side-effect-free output —
+    // safe to call from any cwd without touching the filesystem.
+    const r = runYaco(["paths", "runtime", "--json"]);
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
     // Trim only the trailing newline emit() adds.
     const trimmed = r.stdout.endsWith("\n") ? r.stdout.slice(0, -1) : r.stdout;
     const parsed = JSON.parse(trimmed);
-    expect(parsed).toEqual({
-      ok: true,
-      data: {
-        area: "install",
-        status: "stub",
-        note: "runtime lands in a later task",
-      },
-    });
+    expect(parsed.ok).toBe(true);
+    expect(typeof parsed.data?.yacoHome).toBe("string");
+    expect(typeof parsed.data?.agentWrapperPath).toBe("string");
     // No extra bytes beyond the single JSON line.
     expect(r.stdout).toBe(trimmed + "\n");
   });

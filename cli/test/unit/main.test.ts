@@ -39,14 +39,17 @@ describe("dispatch", () => {
     expect(isOk(result)).toBe(true);
   });
 
-  it("routes a known area to its stub handler", async () => {
-    const { result, area } = await dispatch(["install"]);
-    expect(area).toBe("install");
+  it("routes a known area to its handler (no stubs remain — install is live)", async () => {
+    // Pre yc-install-doctor, install/doctor were stub handlers returning
+    // {area, status: "stub"}. Both are now live; routing is exercised by
+    // confirming the dispatcher hands `paths` to its live handler whose
+    // output is the runtime path map.
+    const { result, area } = await dispatch(["paths", "runtime"]);
+    expect(area).toBe("paths");
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
-      const v = result.value as { area: string; status: string };
-      expect(v.area).toBe("install");
-      expect(v.status).toBe("stub");
+      const v = result.value as { yacoHome: string };
+      expect(typeof v.yacoHome).toBe("string");
     }
   });
 
@@ -60,14 +63,16 @@ describe("dispatch", () => {
   });
 
   it("strips the area token before handing argv to the handler", async () => {
-    // Stub handler with --help returns AREA_HELP for that area; we just check
-    // that the handler ran and got the trailing args (not the area).
-    const { result } = await dispatch(["install", "--help"]);
+    // `install --help` lands at handleInstall(["--help"]) and returns the
+    // install-specific help shape. The dispatcher's job is to peel the area
+    // token; the help body is the handler's marker that it actually ran.
+    const { result, area } = await dispatch(["install", "--help"]);
+    expect(area).toBe("install");
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
-      const v = result.value as { area: string; help: string };
-      expect(v.area).toBe("install");
-      expect(v.help).toContain("yaco binary");
+      const v = result.value as { help?: string };
+      expect(typeof v.help).toBe("string");
+      expect(v.help).toContain("yaco install");
     }
   });
 

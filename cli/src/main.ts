@@ -19,6 +19,8 @@ import { handleTask } from "./commands/task/index.ts";
 import { handleWorktree } from "./commands/worktree/index.ts";
 import { handleAlign } from "./commands/align/index.ts";
 import { handleInit } from "./commands/init.ts";
+import { handleInstall } from "./commands/install.ts";
+import { handleDoctor } from "./commands/doctor.ts";
 import { PROVIDERS } from "./lib/core/agent/providers.ts";
 
 const AREAS = [
@@ -80,19 +82,10 @@ const HANDLERS: Record<Area, AreaHandler> = {
   worktree: handleWorktree,
   align: handleAlign,
   init: handleInit,
-  install: stubHandler("install"),
-  doctor: stubHandler("doctor"),
+  install: handleInstall,
+  doctor: handleDoctor,
   paths: handlePaths,
 };
-
-function stubHandler(area: Area): AreaHandler {
-  return (argv) => {
-    if (argv[0] === "--help" || argv[0] === "-h") {
-      return ok({ area, help: AREA_HELP[area], status: "stub" });
-    }
-    return ok({ area, status: "stub", note: "runtime lands in a later task" });
-  };
-}
 
 function isArea(value: string): value is Area {
   return (AREAS as readonly string[]).includes(value);
