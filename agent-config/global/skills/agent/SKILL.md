@@ -8,6 +8,14 @@ description: Orchestrate multiple coding agents (Claude Code, Codex) via tmux. S
 Manage multiple coding agent instances via tmux. Exposed under `yaco agent`
 in the unified CLI dispatcher.
 
+## CLI contract for skill automation
+
+Skills MUST always pass `--json` to every `yaco` invocation so output is
+parseable from the `{ok,data}/{ok,error}` envelope. For `yaco agent
+capture` this matters most: without `--json` it streams the raw pane
+buffer to stdout (intended for humans tailing logs); with `--json` it
+returns `{ok:true, data:{text:"..."}}`. Every example below uses `--json`.
+
 ## Commands
 
 ```bash
@@ -15,51 +23,51 @@ in the unified CLI dispatcher.
 yaco agent start <provider> "prompt" [--name <name>] [--resume <id>] [--json]
 
 # Resume a previous conversation
-yaco agent start claude --resume <session-id> --name <name>
-yaco agent start codex --resume <session-id> --name <name>
+yaco agent start claude --resume <session-id> --name <name> --json
+yaco agent start codex  --resume <session-id> --name <name> --json
 
 # Send a follow-up message to a running agent
-yaco agent send <name> "message"
+yaco agent send <name> "message" --json
 
-# Capture agent output
-yaco agent capture <name>                          # snapshot
-yaco agent capture <name> --wait                   # block until idle
-yaco agent capture <name> --lines 50               # last N lines
-yaco agent capture <name> --strip-ansi false       # keep ANSI codes
+# Capture agent output (always pass --json from skills)
+yaco agent capture <name> --json                       # snapshot
+yaco agent capture <name> --wait --json                # block until idle
+yaco agent capture <name> --lines 50 --json            # last N lines
+yaco agent capture <name> --strip-ansi false --json    # keep ANSI codes
 
 # Kill sessions
-yaco agent kill <name>
-yaco agent kill --all                              # all sessions under cwd
+yaco agent kill <name> --json
+yaco agent kill --all --json                           # all sessions under cwd
 
 # Rename a session handle
-yaco agent rename <old-name> <new-name>
+yaco agent rename <old-name> <new-name> --json
 
 # Check status
-yaco agent status [name] [--json]
-yaco agent status --all [--json]                   # all sessions, any path
-yaco agent status --path /some/project [--json]    # sessions for specific path
+yaco agent status [name] --json
+yaco agent status --all --json                         # all sessions, any path
+yaco agent status --path /some/project --json          # sessions for specific path
 ```
 
 ## Examples
 
 ```bash
 # Start a claude agent to fix tests
-NAME=$(yaco agent start claude "Fix the failing unit tests" --name fixer)
+NAME=$(yaco agent start claude "Fix the failing unit tests" --name fixer --json | jq -r .data.handle)
 
 # Check if it's done
-yaco agent status "$NAME"
+yaco agent status "$NAME" --json
 
 # Get the result once idle
-RESULT=$(yaco agent capture "$NAME" --wait)
+RESULT=$(yaco agent capture "$NAME" --wait --json | jq -r .data.text)
 
 # Send a follow-up
-yaco agent send "$NAME" "Now also add tests for the edge cases"
+yaco agent send "$NAME" "Now also add tests for the edge cases" --json
 
 # Resume a previous session
-yaco agent start claude --resume abc123 --name fixer
+yaco agent start claude --resume abc123 --name fixer --json
 
 # Clean up the session when done
-yaco agent kill "$NAME"
+yaco agent kill "$NAME" --json
 ```
 
 ## Notes
@@ -75,17 +83,13 @@ yaco agent kill "$NAME"
 - `kill --all` is a **nuclear option** — multiple workstreams may share the same project's agent sessions; only a human should invoke it
 - Run follow-up `yaco agent` commands from the same project root, or store the returned handle from `start` and reuse it there
 - For tests, prefer `bun run test` for pure unit coverage and `bun run test:integration` when tmux-backed checks are needed
-- `capture` returns clean text (ANSI codes stripped by default)
+- Text-mode `capture` returns clean text (ANSI codes stripped by default); `--json` mode wraps that text as `{ok:true,data:{text:"..."}}`
 
-## Provider shortcuts
+## Provider shortcuts (HUMAN typing only — NOT for skills)
 
-The top-level dispatcher also accepts provider shortcuts that delegate to
-`yaco agent start <provider>`:
-
-```bash
-yaco claude "prompt" --name fixer
-yaco codex  "prompt" --name fixer
-```
-
-Skills MUST use the canonical `yaco agent start <provider>` form for
-clarity and uniformity. Reserve the shortcut for interactive shell use.
+The top-level dispatcher accepts a one-word provider form (`yaco
+<provider> ...`) that delegates to `yaco agent start <provider>`. It
+exists for **interactive human typing at a terminal** — skills MUST NOT
+use it. No examples of the shortcut appear in this skill on purpose; if
+you are tempted to copy one, use the canonical `yaco agent start
+<provider>` form instead (and always pass `--json`).

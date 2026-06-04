@@ -21,10 +21,11 @@ After `/init` completes, review the generated CLAUDE.md and trim it to follow th
 
 ### 2. Multi-Tool Symlinks
 
-Run from the project root:
+Run from the project root. Pass `--json` so the result flows through the
+`{ok,data}/{ok,error}` envelope (standard skill CLI contract):
 
 ```bash
-yaco init links
+yaco init links --json
 ```
 
 This creates:

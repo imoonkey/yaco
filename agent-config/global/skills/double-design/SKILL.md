@@ -35,20 +35,23 @@ projects/active/<project>/
 
 All orchestration is done by the invoking agent via `yaco agent`.
 Reuse sessions across steps (`yaco agent send`) to preserve context.
+Every `yaco` invocation passes `--json` (per skill CLI contract); the
+top-level provider shortcut (the one-word `yaco <provider>` form) is
+reserved for human typing and is NOT used here.
 
 ### Step 1: Independent Design
 
 Start both agents in parallel. Each runs `/design` independently — no reading the other's output.
 
 ```bash
-yaco agent start claude "Run /design for: <goal>. Write your design to projects/active/<project>/initial/design_claude.md. Do NOT read any other design files in that folder." --name claude-design
-yaco agent start codex  "Run /design for: <goal>. Write your design to projects/active/<project>/initial/design_codex.md. Do NOT read any other design files in that folder." --name codex-design
+yaco agent start claude "Run /design for: <goal>. Write your design to projects/active/<project>/initial/design_claude.md. Do NOT read any other design files in that folder." --name claude-design --json
+yaco agent start codex  "Run /design for: <goal>. Write your design to projects/active/<project>/initial/design_codex.md. Do NOT read any other design files in that folder." --name codex-design --json
 ```
 
 Wait for both in parallel (run captures in background, then read results):
 ```bash
-yaco agent capture claude-design --wait &
-yaco agent capture codex-design  --wait &
+yaco agent capture claude-design --wait --json &
+yaco agent capture codex-design  --wait --json &
 wait
 ```
 
@@ -57,14 +60,14 @@ wait
 Send each agent the other's design for review. Reuse sessions for context continuity.
 
 ```bash
-yaco agent send claude-design "Now read projects/active/<project>/initial/design_codex.md and write your review to projects/active/<project>/initial/design_review_claude.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX."
-yaco agent send codex-design  "Now read projects/active/<project>/initial/design_claude.md and write your review to projects/active/<project>/initial/design_review_codex.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX."
+yaco agent send claude-design "Now read projects/active/<project>/initial/design_codex.md and write your review to projects/active/<project>/initial/design_review_claude.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX." --json
+yaco agent send codex-design  "Now read projects/active/<project>/initial/design_claude.md and write your review to projects/active/<project>/initial/design_review_codex.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX." --json
 ```
 
 Wait for both in parallel:
 ```bash
-yaco agent capture claude-design --wait &
-yaco agent capture codex-design  --wait &
+yaco agent capture claude-design --wait --json &
+yaco agent capture codex-design  --wait --json &
 wait
 ```
 
@@ -84,8 +87,8 @@ The first draft must be conservative:
 Send both agents into `/align` mode with the first mover explicitly assigned. Example below assumes the cross-reviews selected Claude.
 
 ```bash
-yaco agent send claude-design "Run /align. Read all files in projects/active/<project>/initial/. You are CLAUDE. Alignment folder: projects/active/<project>/. Claude is the explicit first mover. If it is your turn, initialize alignment artifacts and write the first draft. That first draft must be conservative: capture consensus, avoid opinionated picks on unresolved questions, and end with an Open Questions section listing every unresolved issue. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question. If it is not your turn, wait."
-yaco agent send codex-design  "Run /align. Read all files in projects/active/<project>/initial/. You are CODEX. Alignment folder: projects/active/<project>/. Claude is the explicit first mover. Do not start drafting unless status.txt says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question."
+yaco agent send claude-design "Run /align. Read all files in projects/active/<project>/initial/. You are CLAUDE. Alignment folder: projects/active/<project>/. Claude is the explicit first mover. If it is your turn, initialize alignment artifacts and write the first draft. That first draft must be conservative: capture consensus, avoid opinionated picks on unresolved questions, and end with an Open Questions section listing every unresolved issue. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question. If it is not your turn, wait." --json
+yaco agent send codex-design  "Run /align. Read all files in projects/active/<project>/initial/. You are CODEX. Alignment folder: projects/active/<project>/. Claude is the explicit first mover. Do not start drafting unless status.txt says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question." --json
 ```
 
 If the cross-reviews pick Codex, swap the role assignment in both prompts. The key invariant is that exactly one side is named the first mover in both messages.
@@ -96,20 +99,20 @@ Minimal manual monitoring loop:
 
 ```bash
 cat projects/active/<project>/discussion/status.txt
-yaco agent status claude-design
-yaco agent status codex-design
+yaco agent status claude-design --json
+yaco agent status codex-design  --json
 ```
 
-If `status.txt` says `NEXT=CLAUDE` and `yaco agent status claude-design` returns `idle`, send:
+If `status.txt` says `NEXT=CLAUDE` and `yaco agent status claude-design --json` returns `idle`, send:
 
 ```bash
-yaco agent send claude-design "It's your turn. Read the latest discussion files and continue /align."
+yaco agent send claude-design "It's your turn. Read the latest discussion files and continue /align." --json
 ```
 
-If `status.txt` says `NEXT=CODEX` and `yaco agent status codex-design` returns `idle`, send:
+If `status.txt` says `NEXT=CODEX` and `yaco agent status codex-design --json` returns `idle`, send:
 
 ```bash
-yaco agent send codex-design "It's your turn. Read the latest discussion files and continue /align."
+yaco agent send codex-design "It's your turn. Read the latest discussion files and continue /align." --json
 ```
 
 Repeat until `status.txt` reaches `NEXT=DONE`.

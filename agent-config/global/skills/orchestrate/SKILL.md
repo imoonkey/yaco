@@ -7,6 +7,12 @@ This skill is YACO-native: it reads `projects/tasks.json` via `yaco task`,
 dispatches `yaco agent` workers against YACO session state
 (`~/.yaco/sessions/`), and drives the worktree lifecycle via `yaco worktree`.
 
+Every `yaco` invocation in this skill MUST pass `--json` so output flows
+through the `{ok,data}/{ok,error}` envelope and stays parseable from
+shell. The top-level provider shortcuts (the one-word `yaco <provider>`
+form) are for humans only — orchestrate always uses the canonical
+`yaco agent start <provider>`.
+
 ## Dispatch
 
 Read `projects/tasks.json` via `yaco task list --json` (or `/update-tasks`).
@@ -69,7 +75,7 @@ For each selected task: update state to `running` and `agent` to
 
 ```bash
 yaco task set <task-id> --data '{"state":"running","agent":"w-<task-id>"}' --json
-cd <resolved_cwd> && yaco agent start claude "<prompt>" --name "w-<task-id>"
+cd <resolved_cwd> && yaco agent start claude "<prompt>" --name "w-<task-id>" --json
 ```
 
 Prompt includes: task title, description (if any), acceptCriteria, design doc path (if any), scope.
@@ -80,7 +86,7 @@ For tasks that change implementation files (judge from scope paths — e.g., `sr
 
 1. **Record baseline**: `git rev-parse HEAD` (in the resolved cwd)
 2. **Dispatch**: start worker with task prompt, acceptCriteria, design doc, scope
-3. **Wait**: monitor worker until idle (`yaco agent capture <name> --wait`)
+3. **Wait**: monitor worker until idle (`yaco agent capture <name> --wait --json`)
 4. **Review**: start codex review worker scoped to `git diff <base>..HEAD -- <scope globs>`
 5. **Fix**: if critical/high issues, send back to implementation worker. Up to 3 review rounds.
 6. **Verify**: independently check acceptCriteria (see below)

@@ -83,14 +83,17 @@ Fields:
 2. Block-wait using the poll command (**never hand-write sleep loops — they pollute context**):
 
    ```bash
-   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX>
+   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX> --json
    ```
 
-   The command blocks and writes one line to stdout when it's your turn or
-   done (`YOUR_TURN` / `DONE`). Exit code is 0 in both cases; 1 on
-   `TIMEOUT`, 2 on `ERROR`. Best-effort poll details are appended to
+   With `--json` the command blocks and writes one envelope line to
+   stdout when it's your turn or done:
+   `{"ok":true,"data":{"status":"YOUR_TURN", ...}}` (or `"DONE"`).
+   Exit code is 0 in both cases; on `TIMEOUT` / `ERROR` the envelope
+   becomes `{"ok":false,"error":{"code":"align.timeout"|"align.error", ...}}`
+   on stderr (exit 1 / 2). Best-effort poll details are appended to
    `poll.log` next to `status.txt`.
-3. `YOUR_TURN` → go to B. `DONE` → go to C.
+3. Parse `data.status` from the envelope. `YOUR_TURN` → go to B. `DONE` → go to C.
 
 #### B) If `NEXT` is you
 
@@ -110,7 +113,7 @@ You are the **only one allowed to write** (both `discussion/` and `final/`).
 5. Call the poll command again to wait for the other agent's response or DONE:
 
    ```bash
-   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX>
+   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX> --json
    ```
 
 #### C) If `NEXT=DONE`
