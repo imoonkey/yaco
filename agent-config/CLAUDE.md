@@ -33,7 +33,7 @@ The YACO productivity stack now lives in this monorepo.
 | Path | What |
 |------|------|
 | `app/` | Workflow web app and server |
-| `multmux/` | Bun-based CLI for orchestrating agents via tmux |
+| `cli/` | `@yaco/cli` — `yaco` dispatcher (scaffold; `paths` is live) + `multmux` tmux runtime |
 | `agent-config/` | Global agent config, skills, and helper scripts |
 | `projects/` | Live root YACO task graph and project history |
 

@@ -2,10 +2,11 @@
 
 Bun-based CLI hosting two surfaces:
 
-- **`yaco` (unified dispatcher, scaffold)** — `src/main.ts`, eight top-level
+- **`yaco` (unified dispatcher)** — `src/main.ts`, eight top-level
   areas (`agent`, `task`, `worktree`, `align`, `init`, `install`, `doctor`,
-  `paths`). Routes argv to per-area handlers; current handlers are stubs that
-  return `{area, status: "stub"}`. Runtime per area lands in follow-up tasks.
+  `paths`). Routes argv to per-area handlers. `paths` is live
+  (`src/commands/paths.ts`); the other seven are stubs returning
+  `{area, status: "stub"}` and land in follow-up tasks.
 - **`multmux` (live runtime)** — `src/index.ts` + `src/commands/`, the
   tmux-backed multi-agent orchestrator. This is the production CLI installed
   by `tools/install.sh`; behavior is unchanged by the yaco scaffold.
@@ -51,8 +52,33 @@ Shared core primitives (used by every future area handler):
 - `src/lib/core/errors.ts` — `CliError`, `ErrCode` table, `toErr`, `exitCodeFor`
 - `src/lib/core/json.ts` — `emit(value, "stdout" | "stderr")`, deterministic `stringify`, non-throwing `parse`
 - `src/lib/core/args.ts` — minimal positional/flag parser
+- `src/lib/core/paths/` — runtime + project path resolvers (`yaco-home.ts`, `yaco-paths.ts`, `project-registry.ts`, scoped `toml.ts`). Bun/Node neutral, exported to `app/server` via the `package.json` exports map at `@yaco/cli/core/paths`. See [`doc/main/paths.md`](doc/main/paths.md).
 
 End-to-end envelope shape is locked in by `test/unit/envelope.test.ts`.
+
+### Exports map
+
+`cli/package.json#exports` publishes core primitives for consumption from
+`app/server` (Node via `tsx`/`vitest`) over the npm workspace link:
+
+- `@yaco/cli/core/paths` — runtime + project path resolvers
+- `@yaco/cli/core/result` — `Result<T>` union + helpers
+- `@yaco/cli/core/errors` — `CliError`, `ErrCode`, `exitCodeFor`
+
+The exports map points at the TypeScript source; both Bun (cli) and the
+`tsx`-driven app/server toolchain (`dev`, `start`, `vitest`) resolve `.ts`
+through the map without a build step.
+
+### `yaco paths` (live)
+
+```
+yaco paths runtime [--json]                       # YACO_HOME + helpers under it
+yaco paths project [--json] [--repo <path>]       # repo-relative paths, output absolute
+```
+
+- `runtime` returns `{yacoHome, projectsFile, sessionsDir, uiStateDir, shellSessionsDir, channelsDir, agentWrapperPath}`. `agentWrapperPath` resolves to `${YACO_HOME}/agent-wrapper.sh` (design name) — the legacy `wrapper-v2.sh` install path is still served by the multmux runtime's separate `src/yacoHome.ts` until `yc-agent-subcommand` migrates the installer.
+- `project` reads `<repo>/yaco.toml [paths]` (or defaults) and emits the four keys (`tasks`, `active`, `archive`, `worktrees`) **resolved to absolute paths** against `--repo`. Repo-relative storage is unchanged; only the CLI output is materialized as absolute.
+- Failure modes: malformed `yaco.toml` or duplicate `[paths]` key → `ENV` (exit 3). `--repo` flag with no value → `USAGE` (exit 2). Both follow the envelope contract above.
 
 ## multmux runtime (v2)
 

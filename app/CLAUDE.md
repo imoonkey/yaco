@@ -56,7 +56,7 @@ Hono Server (Node.js :3001)
 
 Layout/tabs/drafts/mobilePane/theme in `localStorage["workflow-*:<project>"]` (or `"workflow-*:<project>:wt:<slug>"` when in a worktree), flushed on `beforeunload`. Projects in `${YACO_HOME:-~/.yaco}/projects.json`.
 Cross-device shared state lives in `${YACO_HOME:-~/.yaco}/ui-state/` (notifications inbox + read flags, pinned sessions + order per project, per-session/project unread watermarks) and is delivered via REST + SSE (`notification`, `notifications:changed`, `ui-state:changed`). The bell badge and sidebar unread counts both derive from the same `progress + watermarks` pipeline so they stay aligned; the inbox `read` flag is overridden on the client by the watermark check (panel styling matches the badge).
-Messaging channels live under `${YACO_HOME:-~/.yaco}/channels/<scope>/` (auth/state/qr/session); legacy `~/.workflow/wechat-*` / `~/.workflow/whatsapp-*` files are migrated on boot. The YACO root is resolved by `server/src/lib/yacoHome.ts` (`getYacoHome()` → `process.env.YACO_HOME || ~/.yaco`); helpers (`projectsFile()`, `uiStateDir()`, `shellSessionsDir()`, `channelsDir()`, `channelScopeDir(scope)`, `projectEventsFile(id)`) keep call sites consistent.
+Messaging channels live under `${YACO_HOME:-~/.yaco}/channels/<scope>/` (auth/state/qr/session); legacy `~/.workflow/wechat-*` / `~/.workflow/whatsapp-*` files are migrated on boot. The YACO root is resolved by `@yaco/cli/core/paths` (workspace import from `cli/src/lib/core/paths/`): `getYacoHome()` → `process.env.YACO_HOME || ~/.yaco`; helpers (`projectsFile()`, `uiStateDir()`, `shellSessionsDir()`, `channelsDir()`, `channelScopeDir(scope)`, `projectEventsFile(id)`) keep call sites consistent. The previously separate `app/server/src/lib/yacoHome.ts` and `yacoPaths.ts` were deleted in the yc-core-paths pass.
 
 -> See: [app/doc/main/data-model/persistence.md](doc/main/data-model/persistence.md)
 
@@ -105,8 +105,8 @@ The YACO productivity stack now lives in this monorepo.
 | Path | What |
 |------|------|
 | `app/` | Workflow web app and server |
-| `multmux/` | Bun-based CLI for orchestrating agents via tmux |
+| `cli/` | `@yaco/cli` — `yaco` dispatcher (scaffold; `paths` is live) + `multmux` tmux runtime |
 | `agent-config/` | Global agent config, skills, and helper scripts |
 | `projects/` | Live root YACO task graph and project history |
 
-**Dependencies:** Workflow reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (resolved via `lib/yacoHome.ts#sessionsDir()`) and calls the installed `multmux` CLI for session management. Global skills and agent instructions come from `agent-config/global` via symlinks installed by `tools/install.sh`. When multmux state contracts or agent-config skill contracts change, update the app and docs in the same monorepo change.
+**Dependencies:** Workflow reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (resolved via `sessionsDir()` from `@yaco/cli/core/paths`, declared as a workspace dep in `app/server/package.json`) and calls the installed `multmux` CLI for session management. Global skills and agent instructions come from `agent-config/global` via symlinks installed by `tools/install.sh`. When multmux state contracts or agent-config skill contracts change, update the app and docs in the same monorepo change.
