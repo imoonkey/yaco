@@ -1,6 +1,6 @@
-import { checkSessionAlive, killSession } from "../tmux.ts";
-import { deleteState, listByPath, readState } from "../state.ts";
-import { validateName } from "../utils.ts";
+import { checkSessionAlive, killSession } from "../../lib/core/agent/tmux.ts";
+import { deleteState, listByPath, readState } from "../../lib/core/agent/session-state.ts";
+import { validateName } from "../../lib/core/agent/model.ts";
 
 interface KillOptions {
   all?: boolean;

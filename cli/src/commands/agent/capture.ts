@@ -1,5 +1,5 @@
-import { capturePane, hasSession } from "../tmux.ts";
-import { stripAnsi, validateName } from "../utils.ts";
+import { capturePane, hasSession } from "../../lib/core/agent/tmux.ts";
+import { stripAnsi, validateName } from "../../lib/core/agent/model.ts";
 import { reconcile } from "./status.ts";
 
 const POLL_INTERVAL_MS = 1000;

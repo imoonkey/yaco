@@ -3,7 +3,9 @@ import { join } from "path";
 import { homedir } from "os";
 import { Database } from "bun:sqlite";
 
-export const PENDING_SESSION_ID = "pending:awaiting-first-prompt";
+// Re-export from model.ts (single source of truth) so callers can keep
+// importing PENDING_SESSION_ID from this module without breaking.
+export { PENDING_SESSION_ID } from "./model.ts";
 
 interface ClaudeSessionFile {
   pid: number;

@@ -7,7 +7,7 @@ import {
   renameState,
   statePath,
   type SessionState,
-} from "../src/state.ts";
+} from "../src/lib/core/agent/session-state.ts";
 
 function makeState(overrides: Partial<SessionState> = {}): SessionState {
   return {

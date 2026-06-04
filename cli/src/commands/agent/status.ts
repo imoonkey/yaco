@@ -1,14 +1,13 @@
-import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid } from "../tmux.ts";
-import { isIdle, PROVIDERS } from "../providers.ts";
-import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath, type SessionState } from "../state.ts";
-import { resolveSessionId, PENDING_SESSION_ID } from "../session-id.ts";
-import { validateName } from "../utils.ts";
+import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid } from "../../lib/core/agent/tmux.ts";
+import { isIdle, PROVIDERS } from "../../lib/core/agent/providers.ts";
+import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath } from "../../lib/core/agent/session-state.ts";
+import { resolveSessionId } from "../../lib/core/agent/session-id.ts";
+import { validateName, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
 import { execSync } from "child_process";
 
-type SessionStatusValue = "idle" | "processing" | "starting" | "stopped" | "not found";
+export type { RuntimeSessionState } from "../../lib/core/agent/model.ts";
 
-/** SessionState extended with runtime-only status values (never persisted to file) */
-export type RuntimeSessionState = Omit<SessionState, 'status'> & { status: SessionState['status'] | 'stopped' };
+type SessionStatusValue = "idle" | "processing" | "starting" | "stopped" | "not found";
 
 /** Backfill PID/sessionId from the live process tree and local provider files. */
 function backfillStateMetadata(state: SessionState, handle: string): SessionState {

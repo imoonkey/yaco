@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { isIdle, getProvider, PROVIDERS } from "../src/providers.ts";
+import { isIdle, getProvider, PROVIDERS } from "../src/lib/core/agent/providers.ts";
 
 describe("isIdle", () => {
   it("detects Claude idle pattern (unicode prompt)", () => {

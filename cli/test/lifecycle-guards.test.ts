@@ -5,22 +5,22 @@ import { mock, describe, it, expect, beforeAll, afterAll, beforeEach, afterEach 
 import { mkdtempSync, readFileSync, existsSync, rmSync, utimesSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { stateDir } from "../src/state.ts";
+import { stateDir } from "../src/lib/core/agent/session-state.ts";
 
 // Redirect the session-state dir to a tmp fixture for this suite so a clean
-// CI box (no MULTMUX_STATE_DIR / YACO_HOME set) doesn't drop test state into
+// CI box (no YACO_AGENT_SESSIONS_DIR / YACO_HOME set) doesn't drop test state into
 // the real ~/.yaco/sessions root. Mirrors state.test.ts.
-const ORIGINAL_MULTMUX_STATE_DIR = process.env.MULTMUX_STATE_DIR;
+const ORIGINAL_YACO_AGENT_SESSIONS_DIR = process.env.YACO_AGENT_SESSIONS_DIR;
 let testStateDir: string;
 
 beforeAll(() => {
   testStateDir = mkdtempSync(join(tmpdir(), "multmux-guards-test-"));
-  process.env.MULTMUX_STATE_DIR = testStateDir;
+  process.env.YACO_AGENT_SESSIONS_DIR = testStateDir;
 });
 
 afterAll(() => {
-  if (ORIGINAL_MULTMUX_STATE_DIR === undefined) delete process.env.MULTMUX_STATE_DIR;
-  else process.env.MULTMUX_STATE_DIR = ORIGINAL_MULTMUX_STATE_DIR;
+  if (ORIGINAL_YACO_AGENT_SESSIONS_DIR === undefined) delete process.env.YACO_AGENT_SESSIONS_DIR;
+  else process.env.YACO_AGENT_SESSIONS_DIR = ORIGINAL_YACO_AGENT_SESSIONS_DIR;
   rmSync(testStateDir, { recursive: true, force: true });
 });
 
@@ -65,7 +65,7 @@ function resetMocks(): void {
 // Module mocks — bun hoists these before static imports
 // ---------------------------------------------------------------------------
 
-mock.module("../src/tmux.ts", () => ({
+mock.module("../src/lib/core/agent/tmux.ts", () => ({
   hasSession: () => {
     const idx = Math.min(hasSessionIdx, mockConfig.hasSession.length - 1);
     hasSessionIdx++;
@@ -106,7 +106,7 @@ mock.module("../src/tmux.ts", () => ({
   resolveAgentPidFromProcesses: () => null,
 }));
 
-mock.module("../src/hooks.ts", () => ({
+mock.module("../src/lib/core/agent/lifecycle.ts", () => ({
   ensureHooks: () => {},
   buildWrappedCommand: (_h: string, _c: string, cmd: string) => cmd,
   HOOK_MARKER: "multmux-hook",
@@ -116,7 +116,7 @@ mock.module("../src/hooks.ts", () => ({
   TOOL_SCOPED_EVENTS: new Set(["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "Notification", "PreCompact", "PostCompact"]),
 }));
 
-mock.module("../src/session-id.ts", () => ({
+mock.module("../src/lib/core/agent/session-id.ts", () => ({
   PENDING_SESSION_ID: "pending:awaiting-first-prompt",
   resolveSessionId: () => null,
 }));
@@ -125,9 +125,9 @@ mock.module("../src/session-id.ts", () => ({
 // Real imports (depend on mocked modules above)
 // ---------------------------------------------------------------------------
 
-import { send } from "../src/commands/send.ts";
-import { reconcile } from "../src/commands/status.ts";
-import { start } from "../src/commands/start.ts";
+import { send } from "../src/commands/agent/send.ts";
+import { reconcile } from "../src/commands/agent/status.ts";
+import { start } from "../src/commands/agent/start.ts";
 import {
   readState,
   writeState,
@@ -135,7 +135,7 @@ import {
   statePath,
   listStateHandles,
   type SessionState,
-} from "../src/state.ts";
+} from "../src/lib/core/agent/session-state.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers

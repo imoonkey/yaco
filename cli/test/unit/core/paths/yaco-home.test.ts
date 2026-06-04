@@ -13,7 +13,6 @@ import {
   channelScopeDir,
   channelsDir,
   getYacoHome,
-  hookV2ScriptPath,
   projectEventsFile,
   projectsFile,
   sessionsDir,
@@ -89,8 +88,7 @@ describe("path helpers under a YACO_HOME fixture", () => {
     );
   });
 
-  it("hookV2ScriptPath and agentWrapperPath resolve to the managed scripts", () => {
-    expect(hookV2ScriptPath()).toBe(`${FIXTURE}/hook-v2.sh`);
+  it("agentWrapperPath resolves to the managed wrapper script", () => {
     expect(agentWrapperPath()).toBe(`${FIXTURE}/agent-wrapper.sh`);
   });
 });

@@ -1,15 +1,59 @@
-import { randomBytes } from "crypto";
+/** Shared agent-runtime model: types, constants, and name helpers.
+ *
+ *  Co-locates the small primitives that every other module under
+ *  lib/core/agent/ needs (SessionState, PENDING_SESSION_ID, name
+ *  validation, ANSI stripping) so callers can import from one place.
+ *  Heavier surfaces live in their own files (providers, lifecycle, etc.).
+ */
+import { randomBytes } from "node:crypto";
 import { ADJECTIVES, NOUNS } from "./words.ts";
+
+export type SessionStatus = "starting" | "idle" | "processing";
+
+export interface SessionState {
+  handle: string;
+  provider: string;
+  sessionPath: string;
+  pid: number;
+  sessionId: string;
+  status: SessionStatus;
+  createdAt: string;
+}
+
+/** SessionState extended with runtime-only status values (never persisted). */
+export type RuntimeSessionState = Omit<SessionState, "status"> & {
+  status: SessionStatus | "stopped";
+};
+
+/** Sentinel sessionId written before the hook reports the real one. */
+export const PENDING_SESSION_ID = "pending:awaiting-first-prompt";
+
+/** Provider hook events recognized by the TS hook-event handler. */
+export type HookEvent =
+  | "SessionStart"
+  | "UserPromptSubmit"
+  | "Stop"
+  | "StopFailure"
+  | "PostToolUse"
+  | "PostToolUseFailure"
+  | "PreToolUse"
+  | "PermissionRequest"
+  | "Notification"
+  | "PreCompact"
+  | "PostCompact"
+  | "SessionEnd";
 
 const VALID_NAME = /^[a-zA-Z0-9_-]+$/;
 
 export function validateName(name: string): void {
   if (!VALID_NAME.test(name)) {
-    throw new Error(`Invalid session name: "${name}". Only alphanumeric, hyphens, and underscores allowed.`);
+    throw new Error(
+      `Invalid session name: "${name}". Only alphanumeric, hyphens, and underscores allowed.`,
+    );
   }
 }
 
-/** Extract --name / -n value from args (last occurrence wins, CLI convention) */
+/** Extract --name / -n value from args (last occurrence wins). */
 export function extractName(args: string[]): string | undefined {
   let name: string | undefined;
   for (let i = 0; i < args.length; i++) {
@@ -24,7 +68,6 @@ export function extractName(args: string[]): string | undefined {
   return name;
 }
 
-// ANSI escape code stripping
 const ANSI_REGEX =
   /[\u001B\u009B][[\]()#;?]*(?:\d{1,4}(?:[;:]\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]/g;
 const ANSI_OSC_REGEX = /\u001B\][\s\S]*?(?:\u0007|\u001B\\|\u009C)/g;
@@ -41,12 +84,10 @@ export function stripAnsi(text: string): string {
     .replace(CONTROL_CHARS_REGEX, "");
 }
 
-// Short hash for default session names
 export function shortHash(): string {
-  return randomBytes(2).toString("hex"); // 4 chars like "a3f1"
+  return randomBytes(2).toString("hex");
 }
 
-// Resolve name with collision handling
 export function resolveName(
   baseName: string,
   existsFn: (name: string) => boolean,
@@ -56,7 +97,6 @@ export function resolveName(
     const candidate = `${baseName}-${i}`;
     if (!existsFn(candidate)) return candidate;
   }
-  // Fallback: append random suffix
   return `${baseName}-${shortHash()}`;
 }
 
@@ -66,4 +106,3 @@ export function buildDefaultSessionName(provider: string): string {
   const hex = randomBytes(3).toString("hex");
   return `${provider}-${pick(ADJECTIVES)}-${pick(ADJECTIVES)}-${pick(NOUNS)}-${hex}`;
 }
-

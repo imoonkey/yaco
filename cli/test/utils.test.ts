@@ -5,8 +5,8 @@ import {
   resolveName,
   shortHash,
   stripAnsi,
-} from "../src/utils.ts";
-import { ADJECTIVES, NOUNS } from "../src/words.ts";
+} from "../src/lib/core/agent/model.ts";
+import { ADJECTIVES, NOUNS } from "../src/lib/core/agent/words.ts";
 
 describe("stripAnsi", () => {
   it("removes ANSI color codes", () => {

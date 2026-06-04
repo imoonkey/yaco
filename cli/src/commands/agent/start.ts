@@ -1,19 +1,25 @@
-import { capturePane, createSession, getAgentPid, hasSession, checkSessionAlive, sendRawKeys, sendKeys, startOscColorQueryResponder } from "../tmux.ts";
-import { getProvider } from "../providers.ts";
+import { capturePane, createSession, getAgentPid, hasSession, checkSessionAlive, sendRawKeys, sendKeys, startOscColorQueryResponder } from "../../lib/core/agent/tmux.ts";
+import { getProvider, isIdle } from "../../lib/core/agent/providers.ts";
 import {
   buildDefaultSessionName,
   extractName,
   resolveName,
   stripAnsi,
   validateName,
-} from "../utils.ts";
-import { ensureHooks, buildWrappedCommand } from "../hooks.ts";
-import { deleteState, readState, writeState, listStateHandles, type SessionState } from "../state.ts";
-import { resolveSessionId, PENDING_SESSION_ID } from "../session-id.ts";
-
-import { isIdle } from "../providers.ts";
+  PENDING_SESSION_ID,
+  type SessionState,
+} from "../../lib/core/agent/model.ts";
+import { ensureHooks, buildWrappedCommand } from "../../lib/core/agent/lifecycle.ts";
+import { deleteState, readState, writeState, listStateHandles } from "../../lib/core/agent/session-state.ts";
+import { resolveSessionId } from "../../lib/core/agent/session-id.ts";
 
 const TRUST_PATTERN = /trust this folder|Yes, I trust/i;
+// Codex re-prompts when hook commands change. Two screens:
+//   1. "Hooks need review ... 2. Trust all and continue" — numbered menu,
+//      cursor starts on option 1, send Down + Enter to pick "Trust all".
+//   2. "Press t to trust all" overlay — send `t`.
+const CODEX_HOOK_REVIEW_PATTERN = /Hooks need review[\s\S]*Trust all and continue/i;
+const CODEX_HOOK_TRUST_OVERLAY_PATTERN = /Press t to trust all/i;
 const READY_TIMEOUT_MS = 30000;
 const POST_INPUT_READY_TIMEOUT_MS = 120000;
 const POLL_MS = 500;
@@ -81,6 +87,22 @@ function waitForReady(handle: string, timeoutMs: number = READY_TIMEOUT_MS): boo
       const output = stripAnsi(raw);
       if (TRUST_PATTERN.test(output)) {
         sendRawKeys(handle, "Enter");
+        idleSince = null;
+        Bun.sleepSync(POLL_MS);
+        continue;
+      }
+      if (CODEX_HOOK_REVIEW_PATTERN.test(output)) {
+        // Cursor starts on option 1 (Review hooks). Down + Enter selects
+        // option 2 (Trust all and continue) and confirms.
+        sendRawKeys(handle, "Down");
+        Bun.sleepSync(100);
+        sendRawKeys(handle, "Enter");
+        idleSince = null;
+        Bun.sleepSync(POLL_MS);
+        continue;
+      }
+      if (CODEX_HOOK_TRUST_OVERLAY_PATTERN.test(output)) {
+        sendRawKeys(handle, "t");
         idleSince = null;
         Bun.sleepSync(POLL_MS);
         continue;

@@ -105,19 +105,23 @@ const BUSY_PATTERNS: readonly RegExp[] = [
   /\(\d+[smh][^)]*\u00b7/,             // Timer with "·" separator: "(5s ·", "(2m 30s ·", "(57m 19s · ↓ ..."
 ];
 
-function relevantOutputWindow(output: string): string {
+function relevantOutputWindow(output: string, tail: number = 40): string {
   const lines = output.split("\n");
   while (lines.length > 0 && !lines[lines.length - 1]!.trim()) {
     lines.pop();
   }
-  return lines.slice(-40).join("\n");
+  return lines.slice(-tail).join("\n");
 }
 
 export function isIdle(output: string): boolean {
   const lastLines = relevantOutputWindow(output);
   if (!lastLines) return false;
-  // If any busy indicator is present, agent is NOT idle
-  if (BUSY_PATTERNS.some((pat) => pat.test(lastLines))) return false;
+  // Busy indicators only count if they appear in the live UI area (last ~12
+  // lines). The MCP-boot "(0s · esc to interrupt)" line scrolls up into
+  // history once the prompt comes back; it stays detectable in the broader
+  // 40-line window for many seconds, which would otherwise mask idle.
+  const liveTail = relevantOutputWindow(output, 12);
+  if (BUSY_PATTERNS.some((pat) => pat.test(liveTail))) return false;
   // Check for idle prompt
   return ALL_IDLE_PATTERNS.some((pat) => pat.test(lastLines));
 }

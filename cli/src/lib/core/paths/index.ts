@@ -14,7 +14,6 @@ export {
   channelsDir,
   channelScopeDir,
   projectEventsFile,
-  hookV2ScriptPath,
   agentWrapperPath,
 } from "./yaco-home.ts";
 

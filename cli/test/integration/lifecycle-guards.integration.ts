@@ -16,14 +16,14 @@ import { execSync } from "child_process";
 import { mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { start } from "../../src/commands/start.ts";
-import { send } from "../../src/commands/send.ts";
-import { capture } from "../../src/commands/capture.ts";
-import { kill } from "../../src/commands/kill.ts";
-import { readState, deleteState } from "../../src/state.ts";
-import { isTmuxAvailable } from "../../src/tmux.ts";
-import { isIdle } from "../../src/providers.ts";
-import { PENDING_SESSION_ID } from "../../src/session-id.ts";
+import { start } from "../../src/commands/agent/start.ts";
+import { send } from "../../src/commands/agent/send.ts";
+import { capture } from "../../src/commands/agent/capture.ts";
+import { kill } from "../../src/commands/agent/kill.ts";
+import { readState, deleteState } from "../../src/lib/core/agent/session-state.ts";
+import { isTmuxAvailable } from "../../src/lib/core/agent/tmux.ts";
+import { isIdle } from "../../src/lib/core/agent/providers.ts";
+import { PENDING_SESSION_ID } from "../../src/lib/core/agent/session-id.ts";
 
 // ---------------------------------------------------------------------------
 // Skip conditions

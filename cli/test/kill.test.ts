@@ -5,7 +5,7 @@ import {
   deleteState,
   listByPath,
   type SessionState,
-} from "../src/state.ts";
+} from "../src/lib/core/agent/session-state.ts";
 
 // ---------------------------------------------------------------------------
 // Mock state
@@ -14,14 +14,14 @@ import {
 let aliveResult: boolean | null = true;
 let killCalled = false;
 
-mock.module("../src/tmux.ts", () => ({
+mock.module("../src/lib/core/agent/tmux.ts", () => ({
   checkSessionAlive: () => aliveResult,
   killSession: () => { killCalled = true; },
   hasSession: () => aliveResult === true,
 }));
 
 // Import after mock registration (bun hoists, but keep explicit ordering)
-const { kill } = await import("../src/commands/kill.ts");
+const { kill } = await import("../src/commands/agent/kill.ts");
 
 const testPrefix = `test-kill-${process.pid}-${Date.now()}`;
 const TEST_SESSION_PATH = "/tmp/multmux-test-kill";

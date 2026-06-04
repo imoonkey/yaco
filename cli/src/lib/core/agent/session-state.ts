@@ -1,29 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, statSync } from "fs";
 import { join } from "path";
-import { sessionsDir } from "./yacoHome.ts";
+import { sessionsDir } from "../paths/yaco-home.ts";
+import type { SessionState } from "./model.ts";
 
-export interface SessionState {
-  handle: string;
-  provider: string;
-  sessionPath: string;
-  pid: number;
-  sessionId: string;
-  status: "starting" | "idle" | "processing";
-  createdAt: string;
-}
+export type { SessionState, SessionStatus } from "./model.ts";
 
-export type SessionStatus = SessionState["status"];
-
-// Multmux agent session-state directory.
+// Agent session-state directory.
 //
 // Resolution order (call-time, NOT module-load-time so tests and explicit
-// overrides take effect even if state.ts was already imported):
-//   1. process.env.MULTMUX_STATE_DIR — explicit escape hatch / test knob
+// overrides take effect even if the module was already imported):
+//   1. process.env.YACO_AGENT_SESSIONS_DIR — explicit escape hatch / test knob
 //   2. sessionsDir() — ${YACO_HOME:-~/.yaco}/sessions (default)
-//
-// The state-file vs CLI contract is unchanged; only the storage root moves.
 function sessionsRoot(): string {
-  return process.env.MULTMUX_STATE_DIR || sessionsDir();
+  return process.env["YACO_AGENT_SESSIONS_DIR"] || sessionsDir();
 }
 
 const STALE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes

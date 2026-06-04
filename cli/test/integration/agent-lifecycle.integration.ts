@@ -3,15 +3,15 @@ import { execSync } from "child_process";
 import { mkdirSync, readFileSync, utimesSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
-import { start } from "../../src/commands/start.ts";
-import { send } from "../../src/commands/send.ts";
-import { capture } from "../../src/commands/capture.ts";
-import { kill } from "../../src/commands/kill.ts";
-import { rename } from "../../src/commands/rename.ts";
-import { status } from "../../src/commands/status.ts";
-import { readState, writeState, deleteState, statePath, type SessionState } from "../../src/state.ts";
-import { hasSession, isTmuxAvailable } from "../../src/tmux.ts";
-import { PENDING_SESSION_ID } from "../../src/session-id.ts";
+import { start } from "../../src/commands/agent/start.ts";
+import { send } from "../../src/commands/agent/send.ts";
+import { capture } from "../../src/commands/agent/capture.ts";
+import { kill } from "../../src/commands/agent/kill.ts";
+import { rename } from "../../src/commands/agent/rename.ts";
+import { status } from "../../src/commands/agent/status.ts";
+import { readState, writeState, deleteState, statePath, type SessionState } from "../../src/lib/core/agent/session-state.ts";
+import { hasSession, isTmuxAvailable } from "../../src/lib/core/agent/tmux.ts";
+import { PENDING_SESSION_ID } from "../../src/lib/core/agent/session-id.ts";
 
 // ---------------------------------------------------------------------------
 // Skip conditions

@@ -40,12 +40,12 @@ describe("dispatch", () => {
   });
 
   it("routes a known area to its stub handler", async () => {
-    const { result, area } = await dispatch(["agent"]);
-    expect(area).toBe("agent");
+    const { result, area } = await dispatch(["task"]);
+    expect(area).toBe("task");
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       const v = result.value as { area: string; status: string };
-      expect(v.area).toBe("agent");
+      expect(v.area).toBe("task");
       expect(v.status).toBe("stub");
     }
   });
@@ -62,12 +62,32 @@ describe("dispatch", () => {
   it("strips the area token before handing argv to the handler", async () => {
     // Stub handler with --help returns AREA_HELP for that area; we just check
     // that the handler ran and got the trailing args (not the area).
-    const { result } = await dispatch(["agent", "--help"]);
+    const { result } = await dispatch(["task", "--help"]);
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {
       const v = result.value as { area: string; help: string };
-      expect(v.area).toBe("agent");
-      expect(v.help).toContain("tmux-backed agent sessions");
+      expect(v.area).toBe("task");
+      expect(v.help).toContain("task graph");
+    }
+  });
+
+  it("agent area is live: bare `yaco agent` returns help, not a stub", async () => {
+    const { result, area } = await dispatch(["agent"]);
+    expect(area).toBe("agent");
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      const v = result.value as { help?: string };
+      expect(typeof v.help).toBe("string");
+      expect(v.help).toContain("yaco agent");
+    }
+  });
+
+  it("rejects mid-layer provider shortcut `yaco agent claude` with USAGE", async () => {
+    const { result } = await dispatch(["agent", "claude"]);
+    expect(isErr(result)).toBe(true);
+    if (isErr(result)) {
+      expect(result.code).toBe("USAGE");
+      expect(result.message).toContain("yaco agent start");
     }
   });
 });

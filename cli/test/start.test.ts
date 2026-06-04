@@ -3,8 +3,8 @@ import {
   extractResume,
   resolveStartHandle,
   stripResume,
-} from "../src/commands/start.ts";
-import { getProvider } from "../src/providers.ts";
+} from "../src/commands/agent/start.ts";
+import { getProvider } from "../src/lib/core/agent/providers.ts";
 
 describe("extractResume", () => {
   it("extracts --resume <id>", () => {

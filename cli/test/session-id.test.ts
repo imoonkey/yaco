@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir, homedir } from "os";
 import { Database } from "bun:sqlite";
 
-import { resolveSessionId, PENDING_SESSION_ID } from "../src/session-id.ts";
+import { resolveSessionId, PENDING_SESSION_ID } from "../src/lib/core/agent/session-id.ts";
 
 describe("PENDING_SESSION_ID", () => {
   it("is a non-UUID sentinel", () => {

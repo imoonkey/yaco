@@ -12,23 +12,23 @@ import {
   listByPath,
   stateDir,
   type SessionState,
-} from "../src/state.ts";
+} from "../src/lib/core/agent/session-state.ts";
 
 // Redirect the session-state dir to a tmp fixture for the duration of this
 // suite — keeps tests isolated from the real ~/.yaco/sessions root and
-// exercises the MULTMUX_STATE_DIR override path. The resolver in state.ts
+// exercises the YACO_AGENT_SESSIONS_DIR override path. The resolver in state.ts
 // reads process.env at call time, so this swap is sufficient.
-const ORIGINAL_MULTMUX_STATE_DIR = process.env.MULTMUX_STATE_DIR;
+const ORIGINAL_YACO_AGENT_SESSIONS_DIR = process.env.YACO_AGENT_SESSIONS_DIR;
 let testStateDir: string;
 
 beforeAll(() => {
   testStateDir = mkdtempSync(join(tmpdir(), "multmux-state-test-"));
-  process.env.MULTMUX_STATE_DIR = testStateDir;
+  process.env.YACO_AGENT_SESSIONS_DIR = testStateDir;
 });
 
 afterAll(() => {
-  if (ORIGINAL_MULTMUX_STATE_DIR === undefined) delete process.env.MULTMUX_STATE_DIR;
-  else process.env.MULTMUX_STATE_DIR = ORIGINAL_MULTMUX_STATE_DIR;
+  if (ORIGINAL_YACO_AGENT_SESSIONS_DIR === undefined) delete process.env.YACO_AGENT_SESSIONS_DIR;
+  else process.env.YACO_AGENT_SESSIONS_DIR = ORIGINAL_YACO_AGENT_SESSIONS_DIR;
   rmSync(testStateDir, { recursive: true, force: true });
 });
 
@@ -46,7 +46,7 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
 }
 
 describe("state", () => {
-  // Backed by the tmp dir set up in beforeAll above (MULTMUX_STATE_DIR override).
+  // Backed by the tmp dir set up in beforeAll above (YACO_AGENT_SESSIONS_DIR override).
   // Unique handles per test process keep parallel runs from colliding.
 
   const testPrefix = `test-${process.pid}-${Date.now()}`;
@@ -225,34 +225,34 @@ describe("state", () => {
 
 describe("sessions root resolution", () => {
   // These tests temporarily reshape the env to verify each branch of the
-  // resolver: MULTMUX_STATE_DIR wins, then YACO_HOME/sessions, then the
+  // resolver: YACO_AGENT_SESSIONS_DIR wins, then YACO_HOME/sessions, then the
   // ~/.yaco/sessions default. They restore env before yielding back.
-  const ORIGINAL_MULTMUX = process.env.MULTMUX_STATE_DIR;
+  const ORIGINAL_MULTMUX = process.env.YACO_AGENT_SESSIONS_DIR;
   const ORIGINAL_YACO = process.env.YACO_HOME;
 
   afterEach(() => {
-    if (ORIGINAL_MULTMUX === undefined) delete process.env.MULTMUX_STATE_DIR;
-    else process.env.MULTMUX_STATE_DIR = ORIGINAL_MULTMUX;
+    if (ORIGINAL_MULTMUX === undefined) delete process.env.YACO_AGENT_SESSIONS_DIR;
+    else process.env.YACO_AGENT_SESSIONS_DIR = ORIGINAL_MULTMUX;
     if (ORIGINAL_YACO === undefined) delete process.env.YACO_HOME;
     else process.env.YACO_HOME = ORIGINAL_YACO;
   });
 
-  it("MULTMUX_STATE_DIR wins over YACO_HOME", () => {
-    process.env.MULTMUX_STATE_DIR = "/tmp/multmux-state-override";
+  it("YACO_AGENT_SESSIONS_DIR wins over YACO_HOME", () => {
+    process.env.YACO_AGENT_SESSIONS_DIR = "/tmp/multmux-state-override";
     process.env.YACO_HOME = "/tmp/yaco-state-root";
     expect(stateDir()).toBe("/tmp/multmux-state-override");
     expect(statePath("worker")).toBe("/tmp/multmux-state-override/worker.json");
   });
 
-  it("falls back to ${YACO_HOME}/sessions when MULTMUX_STATE_DIR is unset", () => {
-    delete process.env.MULTMUX_STATE_DIR;
+  it("falls back to ${YACO_HOME}/sessions when YACO_AGENT_SESSIONS_DIR is unset", () => {
+    delete process.env.YACO_AGENT_SESSIONS_DIR;
     process.env.YACO_HOME = "/tmp/yaco-state-root";
     expect(stateDir()).toBe("/tmp/yaco-state-root/sessions");
     expect(statePath("worker")).toBe("/tmp/yaco-state-root/sessions/worker.json");
   });
 
-  it("treats empty MULTMUX_STATE_DIR as unset", () => {
-    process.env.MULTMUX_STATE_DIR = "";
+  it("treats empty YACO_AGENT_SESSIONS_DIR as unset", () => {
+    process.env.YACO_AGENT_SESSIONS_DIR = "";
     process.env.YACO_HOME = "/tmp/yaco-state-root";
     expect(stateDir()).toBe("/tmp/yaco-state-root/sessions");
   });

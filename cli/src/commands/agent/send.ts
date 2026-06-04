@@ -1,6 +1,6 @@
-import { sendKeys, hasSession } from "../tmux.ts";
-import { readState, writeState } from "../state.ts";
-import { validateName } from "../utils.ts";
+import { sendKeys, hasSession } from "../../lib/core/agent/tmux.ts";
+import { readState, writeState } from "../../lib/core/agent/session-state.ts";
+import { validateName } from "../../lib/core/agent/model.ts";
 
 export function send(name: string, message: string): void {
   validateName(name);

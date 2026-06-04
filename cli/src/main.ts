@@ -14,6 +14,8 @@ import { ok, isErr, type Result } from "./lib/core/result.ts";
 import { CliError, ErrCode, exitCodeFor, toErr } from "./lib/core/errors.ts";
 import { emit, stringify } from "./lib/core/json.ts";
 import { handlePaths } from "./commands/paths.ts";
+import { handleAgent, runStart } from "./commands/agent/index.ts";
+import { PROVIDERS } from "./lib/core/agent/providers.ts";
 
 const AREAS = [
   "agent",
@@ -62,7 +64,7 @@ type AreaHandler = (
 ) => Promise<Result<unknown>> | Result<unknown>;
 
 const HANDLERS: Record<Area, AreaHandler> = {
-  agent: stubHandler("agent"),
+  agent: handleAgent,
   task: stubHandler("task"),
   worktree: stubHandler("worktree"),
   align: stubHandler("align"),
@@ -98,6 +100,19 @@ async function dispatch(argv: string[]): Promise<{
   const area = top.positional[0];
   if (area === undefined) {
     return { result: ok({ help: helpText() }), json };
+  }
+
+  // Top-level provider shortcut: `yaco claude ...` / `yaco codex ...`.
+  // Routes to `agent start <provider>` with everything else passed through.
+  if (area in PROVIDERS) {
+    const idx = argv.indexOf(area);
+    const rest = idx >= 0 ? argv.slice(idx + 1) : [];
+    try {
+      const result = await runStart([area, ...rest], { json });
+      return { result, area: "agent", json };
+    } catch (e) {
+      return { result: toErr(e), area: "agent", json };
+    }
   }
 
   if (!isArea(area)) {

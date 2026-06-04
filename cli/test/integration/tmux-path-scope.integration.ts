@@ -3,17 +3,17 @@ import { mkdtempSync, mkdirSync, rmSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { describe, expect, it, afterEach } from "bun:test";
-import { capture } from "../../src/commands/capture.ts";
-import { kill } from "../../src/commands/kill.ts";
-import { send } from "../../src/commands/send.ts";
-import { status } from "../../src/commands/status.ts";
+import { capture } from "../../src/commands/agent/capture.ts";
+import { kill } from "../../src/commands/agent/kill.ts";
+import { send } from "../../src/commands/agent/send.ts";
+import { status } from "../../src/commands/agent/status.ts";
 import {
   capturePane,
   createSession,
   hasSession,
   isTmuxAvailable,
-} from "../../src/tmux.ts";
-import { writeState, deleteState, listByPath, type SessionState } from "../../src/state.ts";
+} from "../../src/lib/core/agent/tmux.ts";
+import { writeState, deleteState, listByPath, type SessionState } from "../../src/lib/core/agent/session-state.ts";
 
 const tmuxIt = isTmuxAvailable() ? it.serial : it.skip;
 const BOOT_TIMEOUT_MS = 5000;

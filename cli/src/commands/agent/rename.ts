@@ -1,6 +1,6 @@
-import { hasSession, renameSession, sendKeys } from "../tmux.ts";
-import { readState, renameState } from "../state.ts";
-import { validateName } from "../utils.ts";
+import { hasSession, renameSession, sendKeys } from "../../lib/core/agent/tmux.ts";
+import { readState, renameState } from "../../lib/core/agent/session-state.ts";
+import { validateName } from "../../lib/core/agent/model.ts";
 
 export function rename(oldName: string, newName: string): void {
   validateName(oldName);

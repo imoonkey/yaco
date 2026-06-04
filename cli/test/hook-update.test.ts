@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
-import { applyHookEvent } from "../src/commands/hook-update.ts";
-import type { SessionState } from "../src/state.ts";
+import { applyHookEvent } from "../src/lib/core/agent/hook-event.ts";
+import type { SessionState } from "../src/lib/core/agent/session-state.ts";
 
 function makeState(overrides: Partial<SessionState> = {}): SessionState {
   return {

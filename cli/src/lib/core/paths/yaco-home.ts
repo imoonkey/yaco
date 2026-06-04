@@ -55,11 +55,6 @@ export function projectEventsFile(projectId: string): string {
   return join(getYacoHome(), "projects", projectId, "events.jsonl");
 }
 
-/** ${YACO_HOME}/hook-v2.sh — managed Claude/Codex hook handler script. */
-export function hookV2ScriptPath(): string {
-  return join(getYacoHome(), "hook-v2.sh");
-}
-
 /** ${YACO_HOME}/agent-wrapper.sh — managed agent session wrapper script. */
 export function agentWrapperPath(): string {
   return join(getYacoHome(), "agent-wrapper.sh");

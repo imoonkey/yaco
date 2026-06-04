@@ -1,9 +1,9 @@
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { detectDarkMode, resolveAgentPidFromProcesses } from "../src/tmux.ts";
+import { detectDarkMode, resolveAgentPidFromProcesses } from "../src/lib/core/agent/tmux.ts";
 
-const src = readFileSync(join(__dirname, "..", "src", "tmux.ts"), "utf-8");
+const src = readFileSync(join(__dirname, "..", "src", "lib", "core", "agent", "tmux.ts"), "utf-8");
 
 describe("tmux exact-match safety", () => {
   it("all tmux -t targets use sessionTarget() or paneTarget() helpers", () => {
