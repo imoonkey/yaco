@@ -45,8 +45,9 @@ import {
   ensureClaudeHooks,
   ensureCodexHooks,
   readAgentWrapperScript,
+  _resetHookBinaryCacheForTests,
 } from "../lib/core/agent/lifecycle.ts";
-import { runAllChecks } from "./doctor.ts";
+import { runAllChecks, type DoctorReport } from "./doctor.ts";
 
 /** Read the agent-wrapper.sh body. Prefers the packaged path
  *  (readAgentWrapperScript via import.meta.url) which works under bun run,
@@ -99,6 +100,7 @@ export interface InstallReport {
   yacoHome: string;
   dryRun: boolean;
   actions: string[];
+  doctor?: DoctorReport;
 }
 
 function defaultOptions(): InstallOptions {
@@ -228,13 +230,22 @@ function installAgentWrapper(repoRoot: string, actions: string[], dryRun: boolea
   actions.push(`wrote ${path}`);
 }
 
-/** Upsert {id: "yaco", path: repoRoot} into ${YACO_HOME}/projects.json. */
+/** Upsert {id: "yaco", path: repoRoot} into ${YACO_HOME}/projects.json.
+ *  Refuses to overwrite a malformed registry — operator must repair the file
+ *  manually rather than silently lose other project entries. */
 function upsertRegistry(repoRoot: string, actions: string[], dryRun: boolean): void {
   const file = projectsRegistryPath();
-  const existing: Project[] = (() => {
-    if (!existsSync(file)) return [];
-    try { return readProjects(); } catch { return []; }
-  })();
+  let existing: Project[] = [];
+  if (existsSync(file)) {
+    try {
+      existing = readProjects();
+    } catch (e) {
+      throw new CliError(
+        ErrCode.ENV,
+        `projects.json: ${(e as Error).message} at ${file}; refusing to overwrite (repair the file or remove it and re-run \`yaco install\`)`,
+      );
+    }
+  }
   // Drop legacy ids; ensure exactly one yaco entry pointing at repoRoot.
   const filtered = existing.filter((p) => !["workflow", "multmux", "agent-config"].includes(p.name));
   const idx = filtered.findIndex((p) => p.name === "yaco");
@@ -297,15 +308,29 @@ function installAppDeps(repoRoot: string, actions: string[], dryRun: boolean): v
   }
 }
 
-/** Run the doctor checks in-process and bail if any are failing. */
-function runDoctor(actions: string[], dryRun: boolean): void {
+/** Run the doctor checks in-process and bail if any are failing.
+ *
+ *  `repoRoot` is threaded through so `yaco install --repo X` runs doctor
+ *  against X's task graph (not whatever cwd happens to be). When `quiet` is
+ *  true, the per-check chatter is suppressed (e.g. when install is running in
+ *  --json mode and the stderr stream must stay empty per the CLI contract).
+ *  The returned report is always populated; callers fold it into their
+ *  envelope when needed. */
+function runDoctor(
+  repoRoot: string,
+  actions: string[],
+  dryRun: boolean,
+  quiet: boolean,
+): DoctorReport | undefined {
   if (dryRun) {
     actions.push(`run yaco doctor`);
-    return;
+    return undefined;
   }
-  const report = runAllChecks();
-  for (const c of report.checks) {
-    process.stderr.write(`doctor: ${c.status.toUpperCase().padEnd(4)} ${c.name} — ${c.detail}\n`);
+  const report = runAllChecks(repoRoot);
+  if (!quiet) {
+    for (const c of report.checks) {
+      process.stderr.write(`doctor: ${c.status.toUpperCase().padEnd(4)} ${c.name} — ${c.detail}\n`);
+    }
   }
   if (report.summary.fail > 0) {
     throw new CliError(
@@ -315,6 +340,7 @@ function runDoctor(actions: string[], dryRun: boolean): void {
     );
   }
   actions.push(`ran yaco doctor (${report.summary.pass} pass)`);
+  return report;
 }
 
 /** Pure side-effect driver. Tests call this directly with an opts object. */
@@ -323,6 +349,16 @@ export function runInstall(opts: InstallOptions): InstallReport {
   const binDir = resolveBinDir(opts.binDir);
   const yacoHome = getYacoHome();
   const actions: string[] = [];
+
+  // Export the resolved BIN_DIR so lifecycle's hookBinary() resolves to
+  // <binDir>/yaco — the canonical form per the install/distribution design.
+  // Without this, hook commands written into ~/.claude/settings.json would
+  // point at whatever YACO_BIN_DIR happened to be in the calling shell (or
+  // an argv[0]-derived path that may not exist post-install).
+  process.env["YACO_BIN_DIR"] = binDir;
+  // Invalidate any earlier hookBinary cache so the merge writes the canonical
+  // path even if a sibling code path has already resolved it.
+  _resetHookBinaryCacheForTests();
 
   // Always: wrapper script + global links + legacy bin cleanup.
   installAgentWrapper(repoRoot, actions, opts.dryRun);
@@ -357,17 +393,21 @@ export function runInstall(opts: InstallOptions): InstallReport {
     upsertRegistry(repoRoot, actions, opts.dryRun);
   }
 
-  if (opts.dryRun) {
+  if (opts.dryRun && !opts.json) {
     // Mirror the action list to stderr so a human running --dry-run sees the
-    // plan even when --json captures the structured envelope on stdout.
+    // plan. Suppressed in --json mode where the structured envelope on stdout
+    // is the canonical channel and the CLI contract bans stderr chatter.
     for (const a of actions) process.stderr.write(`plan: ${a}\n`);
   }
 
+  let doctor: DoctorReport | undefined;
   if (!opts.skipDoctor) {
-    runDoctor(actions, opts.dryRun);
+    // Quiet doctor in --json mode so stderr stays empty per the CLI contract;
+    // the report is folded into the install envelope under `data.doctor`.
+    doctor = runDoctor(repoRoot, actions, opts.dryRun, opts.json);
   }
 
-  return { repoRoot, binDir, yacoHome, dryRun: opts.dryRun, actions };
+  return { repoRoot, binDir, yacoHome, dryRun: opts.dryRun, actions, doctor };
 }
 
 export async function handleInstall(

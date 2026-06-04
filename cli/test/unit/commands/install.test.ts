@@ -62,6 +62,10 @@ beforeEach(() => {
   repoRoot = join(sandbox, "repo");
   mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
   writeFileSync(join(repoRoot, "agent-config", "global", "CLAUDE.md"), "# fake\n");
+  // Minimal valid tasks graph so the doctor's task-graph check passes when
+  // tests opt into running doctor (skipDoctor: false).
+  mkdirSync(join(repoRoot, "projects"), { recursive: true });
+  writeFileSync(join(repoRoot, "projects", "tasks.json"), "{}\n");
   process.env["YACO_REPO_ROOT"] = repoRoot;
   // Make doctor's PATH-based checks (tmux, git, claude, codex, yaco) hermetic
   // by prepending a shim bin onto PATH.
@@ -293,5 +297,133 @@ describe("runInstall --no-registry", () => {
   it("does not write projects.json", () => {
     runInstall(baseOpts({ noRegistry: true }));
     expect(existsSync(join(process.env["YACO_HOME"]!, "projects.json"))).toBe(false);
+  });
+});
+
+describe("runInstall — registry safety (HIGH 5)", () => {
+  it("refuses to overwrite a malformed projects.json — throws ENV", () => {
+    mkdirSync(process.env["YACO_HOME"]!, { recursive: true });
+    const path = join(process.env["YACO_HOME"]!, "projects.json");
+    const corrupt = "{not valid json[";
+    writeFileSync(path, corrupt);
+    let code: string | undefined;
+    let msg = "";
+    try {
+      runInstall(baseOpts());
+    } catch (e) {
+      code = (e as { code?: string }).code;
+      msg = (e as Error).message;
+    }
+    expect(code).toBe("ENV");
+    expect(msg).toContain("projects.json");
+    expect(msg).toContain("refusing to overwrite");
+    // The corrupt file is unchanged.
+    expect(readFileSync(path, "utf-8")).toBe(corrupt);
+  });
+});
+
+describe("runInstall — canonical hook command (HIGH 4)", () => {
+  it("writes hooks pointing at <binDir>/yaco agent hook-event <Event>", () => {
+    // Stage a yaco binary at binDir/yaco so the lifecycle resolver picks it.
+    writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(binDir, "yaco"), 0o755);
+    // Subprocess: lifecycle-guards.test.ts in the same `bun test` invocation
+    // installs a process-wide mock.module on lifecycle.ts that stubs the
+    // hook command builders. A fresh bun subprocess runs the real ones.
+    const r = spawnSync(
+      "bun",
+      ["run", BIN, "install", "--cli-only", "--skip-doctor", "--json"],
+      {
+        encoding: "utf-8",
+        env: { ...process.env, NO_COLOR: "1" },
+        timeout: 20_000,
+      },
+    );
+    if (r.status !== 0) {
+      process.stderr.write(`install subprocess stderr:\n${r.stderr}\n`);
+    }
+    expect(r.status).toBe(0);
+
+    const settings = JSON.parse(
+      readFileSync(join(process.env["HOME"]!, ".claude", "settings.json"), "utf-8"),
+    );
+    const sessionStart = settings.hooks.SessionStart;
+    const yacoEntry = sessionStart.find((g: any) => g.matcher === "yaco-agent-hook");
+    expect(yacoEntry).toBeDefined();
+    const cmd = yacoEntry.hooks[0].command;
+    // Canonical form: absolute path + `agent hook-event <Event>`. Must NOT be
+    // the deprecated `bun .../hook-event-bin.ts <Event>` form.
+    expect(cmd).toBe(`${join(binDir, "yaco")} agent hook-event SessionStart`);
+    expect(cmd).not.toContain("hook-event-bin.ts");
+    expect(cmd).not.toMatch(/^bun /);
+  });
+});
+
+describe("runInstall --json — stderr discipline (MEDIUM 6)", () => {
+  it("emits no stderr chatter when --json is set", () => {
+    // Stage a binary so doctor's binary check has something to find.
+    writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(binDir, "yaco"), 0o755);
+    const captured: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: any) => {
+      captured.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      // Need to make doctor pass for runInstall to return; the in-process
+      // doctor call would normally print per-check status to stderr but with
+      // --json that chatter must be suppressed.
+      runInstall(baseOpts({
+        json: true,
+        skipDoctor: false,
+        // PATH was already seeded with the shim bin in beforeEach so all 12
+        // doctor checks pass.
+      }));
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    expect(captured.join("")).toBe("");
+  });
+
+  it("dry-run --json suppresses plan: lines on stderr too", () => {
+    const captured: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: any) => {
+      captured.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      runInstall(baseOpts({ json: true, dryRun: true }));
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+    expect(captured.join("")).toBe("");
+  });
+});
+
+describe("runInstall --repo (HIGH 2 wire-through)", () => {
+  it("threads --repo into the trailing doctor task-graph check", () => {
+    // Stage a yaco binary so the binary check passes.
+    writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(binDir, "yaco"), 0o755);
+    // Build a SECOND fake repo without a tasks.json so the task-graph check
+    // would fail when doctor runs against it.
+    const otherRepo = join(sandbox, "other-repo");
+    mkdirSync(join(otherRepo, "agent-config", "global", "skills"), { recursive: true });
+    writeFileSync(join(otherRepo, "agent-config", "global", "CLAUDE.md"), "# fake\n");
+    // No projects/tasks.json in otherRepo on purpose.
+    let code: string | undefined;
+    let report: any;
+    try {
+      runInstall(baseOpts({ repoRoot: otherRepo, skipDoctor: false }));
+    } catch (e) {
+      code = (e as { code?: string }).code;
+      report = (e as { details?: any }).details;
+    }
+    expect(code).toBe("INVALID");
+    const taskGraph = report.checks.find((c: any) => c.name === "task-graph");
+    expect(taskGraph.status).toBe("fail");
+    expect(taskGraph.detail).toContain(otherRepo);
   });
 });

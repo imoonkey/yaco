@@ -185,6 +185,18 @@ function render(result: Result<unknown>, json: boolean): void {
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  // Fast-path: `yaco agent hook-event <Event>` is fired by provider hooks on
+  // every event (and Codex blocks the loop until it returns). Loading the
+  // full command tree for what's a one-liner stdin-read + state-write would
+  // burn cold-start budget on every event. Lazy-import just the hook handler.
+  // Mirrors the silent-on-error contract of the old hook-event-bin.ts entry.
+  if (argv[0] === "agent" && argv[1] === "hook-event") {
+    try {
+      const { handleHookEvent } = await import("./commands/agent/hook-event.ts");
+      await handleHookEvent(argv.slice(2));
+    } catch { /* hooks must never block the agent loop on failure */ }
+    process.exit(0);
+  }
   const { result, json } = await dispatch(argv);
   render(result, json);
   process.exit(isErr(result) ? exitCodeFor(result.code) : 0);

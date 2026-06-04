@@ -5,7 +5,15 @@
  *    agent-hook-config, agent-wrapper, tmux, git, providers, task-graph
  *
  *  Each check returns { name, status: 'pass'|'fail'|'skip', detail }.
- *  --json envelope: { checks: CheckResult[], summary: { pass, fail } }.
+ *  --json envelope is ALWAYS `{ok:true,data:{checks,summary}}` on stdout —
+ *  doctor is a STATUS command, so the schema stays stable even when checks
+ *  fail. The exit code reflects summary.fail > 0 (exit 1) vs 0 (exit 0), so
+ *  callers can branch on the exit code without having to disambiguate two
+ *  envelope shapes.
+ *
+ *  Like `yaco align poll`, the handler reaches process.exit() directly
+ *  (bypassing the dispatcher's render path) because the standard ErrCode
+ *  table cannot express "Ok envelope but non-zero exit" cleanly.
  *
  *  `gh` is intentionally NOT included as a separate check — only ever
  *  reported as part of `providers` if at all; doctor's required surface
@@ -24,6 +32,7 @@ import { spawnSync } from "node:child_process";
 
 import { ok, type Result } from "../lib/core/result.ts";
 import { CliError, ErrCode } from "../lib/core/errors.ts";
+import { emit } from "../lib/core/json.ts";
 import {
   agentWrapperPath,
   getYacoHome,
@@ -36,8 +45,15 @@ import { loadTasks, validateGraph } from "../lib/core/task/index.ts";
 const HELP = `yaco doctor — run YACO health checks
 
 Usage:
-  yaco doctor [--json]
+  yaco doctor [--repo <path>] [--json]
   yaco doctor --help
+
+Flags:
+  --repo <path>   Repo to use for the task-graph check (default: cwd or
+                  \$YACO_REPO_ROOT)
+  --json          Emit {ok:true, data:{checks, summary}} on stdout (always —
+                  doctor never returns an error envelope; exit code is 1 when
+                  any check failed, 0 otherwise)
 
 Reports the status of: binary, version, yaco-home, registry, skills-link,
 claude-md-link, agent-hook-config, agent-wrapper, tmux, git, providers,
@@ -244,13 +260,12 @@ function checkProviders(): CheckResult {
   return fail("providers", "neither claude nor codex on $PATH");
 }
 
-function checkTaskGraph(): CheckResult {
-  // Validate in-process against the current repo (YACO_REPO_ROOT env if set,
-  // else process.cwd()). Spawning `yaco task validate --json` would force a
-  // child bun process and re-pay startup cost; the validate primitives are
-  // already pure and re-usable.
-  const repoEnv = process.env["YACO_REPO_ROOT"];
-  const repoRoot = repoEnv && repoEnv.length > 0 ? repoEnv : process.cwd();
+function checkTaskGraph(repoRoot: string): CheckResult {
+  // Validate in-process: callers thread the resolved repoRoot in (install
+  // passes --repo through; the doctor handler resolves the flag/env/cwd
+  // precedence chain before calling). Spawning `yaco task validate --json`
+  // would force a child bun process and re-pay startup cost; the validate
+  // primitives are already pure and re-usable.
   try {
     const paths = readYacoProjectPaths(repoRoot);
     const tasksFile = join(repoRoot, paths.tasks);
@@ -268,9 +283,18 @@ function checkTaskGraph(): CheckResult {
   }
 }
 
+/** Resolve the repo used by the task-graph check: explicit > env > cwd. */
+export function resolveDoctorRepo(repoFlag?: string): string {
+  if (repoFlag && repoFlag.length > 0) return repoFlag;
+  const env = process.env["YACO_REPO_ROOT"];
+  if (env && env.length > 0) return env;
+  return process.cwd();
+}
+
 /** Run all 12 required checks and return a structured report. Pure: no
  *  process.exit; callers decide how to react. */
-export function runAllChecks(): DoctorReport {
+export function runAllChecks(repoRoot?: string): DoctorReport {
+  const resolvedRepo = resolveDoctorRepo(repoRoot);
   const checks: CheckResult[] = [
     checkBinary(),
     checkVersion(),
@@ -283,7 +307,7 @@ export function runAllChecks(): DoctorReport {
     checkTmux(),
     checkGit(),
     checkProviders(),
-    checkTaskGraph(),
+    checkTaskGraph(resolvedRepo),
   ];
   const summary = { pass: 0, fail: 0 };
   for (const c of checks) {
@@ -310,21 +334,29 @@ export async function handleDoctor(
   outer: { json: boolean },
 ): Promise<Result<unknown>> {
   let json = outer.json;
-  for (const a of argv) {
+  let repoFlag: string | undefined;
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]!;
     if (a === "--help" || a === "-h") return ok({ help: HELP });
     if (a === "--json") { json = true; continue; }
+    if (a === "--repo" || a.startsWith("--repo=")) {
+      const v = a.startsWith("--repo=") ? a.slice("--repo=".length) : argv[++i];
+      if (!v) throw new CliError(ErrCode.USAGE, "--repo requires a value");
+      repoFlag = v;
+      continue;
+    }
     throw new CliError(ErrCode.USAGE, `unknown doctor flag: ${a}`);
   }
-  const report = runAllChecks();
-  if (report.summary.fail > 0) {
-    // Non-zero exit via INVALID; include the report in the error details so
-    // a --json consumer can still see which check failed.
-    throw new CliError(
-      ErrCode.INVALID,
-      `yaco doctor: ${report.summary.fail} check(s) failed`,
-      report,
-    );
+  const report = runAllChecks(repoFlag);
+  // doctor is a STATUS command: the --json envelope ALWAYS uses the success
+  // shape so the data.checks / data.summary schema is stable even when checks
+  // fail. The exit code (0 vs 1) carries the pass/fail signal, mirroring the
+  // align poll convention. Bypass the dispatcher's render path because it
+  // would map any non-zero exit to an error envelope.
+  if (json) {
+    emit({ ok: true, data: report });
+    process.exit(report.summary.fail > 0 ? 1 : 0);
   }
-  if (json) return ok(report);
-  return ok({ text: renderText(report) });
+  process.stdout.write(renderText(report));
+  process.exit(report.summary.fail > 0 ? 1 : 0);
 }

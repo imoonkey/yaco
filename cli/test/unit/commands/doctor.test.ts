@@ -181,3 +181,40 @@ describe("doctor --json — envelope contract (AC 6 + AC 7)", () => {
     }
   });
 });
+
+describe("doctor --json — stable envelope on failure (HIGH 3)", () => {
+  it("returns {ok:true, data:{checks, summary}} with exit 1 when checks fail", () => {
+    // No install — most checks fail. Subprocess used to bypass mock.module
+    // pollution and to capture the real exit code path through process.exit().
+    const r = spawnSync("bun", ["run", BIN, "doctor", "--json"], {
+      encoding: "utf-8",
+      env: { ...process.env },
+    });
+    // Exit code reflects fail count, not envelope shape.
+    expect(r.status).toBe(1);
+    // Stdout must still be the canonical success envelope so callers can
+    // parse data.checks unconditionally; stderr stays empty.
+    expect(r.stderr).toBe("");
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.ok).toBe(true);
+    expect(Array.isArray(parsed.data.checks)).toBe(true);
+    expect(parsed.data.summary.fail).toBeGreaterThan(0);
+  });
+});
+
+describe("doctor --repo (HIGH 2 wire-through)", () => {
+  it("uses --repo for the task-graph check", () => {
+    installPrereqs();
+    // Point doctor at a repo with no tasks.json — task-graph should fail.
+    const r = spawnSync(
+      "bun",
+      ["run", BIN, "doctor", "--repo", sandbox, "--json"],
+      { encoding: "utf-8", env: { ...process.env } },
+    );
+    expect(r.status).toBe(1);
+    const parsed = JSON.parse(r.stdout);
+    const taskGraph = parsed.data.checks.find((c: any) => c.name === "task-graph");
+    expect(taskGraph.status).toBe("fail");
+    expect(taskGraph.detail).toContain(sandbox);
+  });
+});

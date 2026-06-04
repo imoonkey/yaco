@@ -40,4 +40,13 @@ case "$(uname -s)" in
     ;;
 esac
 
-exec "$BIN_DIR/yaco" install "$@"
+# REPO_ROOT and BIN_DIR must survive the exec into `yaco install` — the child
+# CLI defaults repoRoot to YACO_REPO_ROOT (falling back to cwd) and the hook
+# command resolver in lib/core/agent/lifecycle reads YACO_BIN_DIR to write the
+# canonical `<BIN_DIR>/yaco agent hook-event <Event>` form into provider
+# configs. Without these envs, an install.sh invoked from /tmp would install
+# /tmp into projects.json and write hook commands pointing at a fallback path.
+exec env \
+  YACO_REPO_ROOT="$REPO_ROOT" \
+  YACO_BIN_DIR="$BIN_DIR" \
+  "$BIN_DIR/yaco" install "$@"

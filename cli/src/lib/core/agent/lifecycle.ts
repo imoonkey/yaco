@@ -41,21 +41,63 @@ function packagedHookEventBin(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "../../../hook-event-bin.ts");
 }
 
-/** Resolve the hook entry command. Always returns an absolute invocation so
- *  the hook works even if PATH at hook-fire time differs from PATH at install
- *  time (tmux server env, interactive vs login shell, etc.). Uses the slim
- *  bun entry to keep the per-event cold-start under control. */
+/** Resolve the hook entry command. Canonical form per the install/distribution
+ *  design: `<absolute-yaco-binary> agent hook-event <Event>` — points at the
+ *  installed binary, NOT repo-local source. The previous `bun .../hook-event-bin.ts`
+ *  form broke the moment yaco was installed without a checkout (no bun, no
+ *  source files). Always returns an absolute invocation so the hook works even
+ *  if PATH at hook-fire time is stripped (tmux server env, etc.).
+ *
+ *  Resolution order:
+ *    1. $YACO_BIN_DIR/yaco — set by tools/install.sh during bootstrap
+ *    2. process.argv[0] — when invoked from the compiled bun binary, this IS
+ *       the yaco binary; reuse it so doctor + install produce identical hook
+ *       commands.
+ *    3. `which yaco` — fall back to PATH lookup at install time.
+ *    4. literal "yaco" — last resort; the hook will fail at fire time but
+ *       install still completes so the user can diagnose.
+ *
+ *  main.ts has a parallel fast-path for `argv[0:2] === ['agent','hook-event']`
+ *  that lazy-imports only the hook-event handler, preserving the per-event
+ *  cold-start budget that hook-event-bin.ts used to provide. */
 let _cachedHookBinary: string | null = null;
 function hookBinary(): string {
   if (_cachedHookBinary !== null) return _cachedHookBinary;
-  _cachedHookBinary = `bun ${packagedHookEventBin()}`;
+  _cachedHookBinary = resolveYacoBinary();
   return _cachedHookBinary;
+}
+
+function resolveYacoBinary(): string {
+  const envBin = process.env["YACO_BIN_DIR"];
+  if (envBin && envBin.length > 0) {
+    const candidate = resolve(envBin, "yaco");
+    if (existsSync(candidate)) return candidate;
+  }
+  // process.argv[0] is the bun-compiled binary itself when yaco runs as a
+  // compiled artifact. Detect by checking the basename, which is always
+  // "yaco" for the compiled output and "bun" otherwise.
+  const arg0 = process.argv[0];
+  if (arg0 && arg0.endsWith("/yaco")) return arg0;
+  // PATH lookup at install time. Pass env explicitly so tests that override
+  // PATH still find the right binary.
+  try {
+    const r = execSync("which yaco", { encoding: "utf-8" }).trim();
+    if (r.length > 0) return r;
+  } catch { /* fall through */ }
+  return "yaco";
 }
 
 // Hook command points at the canonical TS entry. Provider hook runners spawn
 // this with the event name as the argv.
 function hookCommand(event: string): string {
-  return `${hookBinary()} ${event}`;
+  return `${hookBinary()} agent hook-event ${event}`;
+}
+
+/** Test helper: reset the hook binary resolution cache. The lifecycle module
+ *  caches the resolved yaco path on first use; tests that change PATH or
+ *  $YACO_BIN_DIR mid-process need to invalidate it. */
+export function _resetHookBinaryCacheForTests(): void {
+  _cachedHookBinary = null;
 }
 
 /** Locate the on-disk agent-wrapper.sh shipped with the cli package. */
