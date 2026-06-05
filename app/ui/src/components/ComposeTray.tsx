@@ -135,8 +135,7 @@ export function ComposeTray({
               {liveTranscript || <span style={{ opacity: 0.5 }}>Listening…</span>}
             </div>
             <div style={ACTIVE_FOOTER_STYLE}>
-              <span style={PULSE_DOT_STYLE} />
-              <span style={{ fontFamily: 'monospace', fontSize: 14 }}>{mm}:{ss}</span>
+              <button style={STOP_BTN_STYLE} onClick={onStop}>Stop</button>
               {pendingCount > 0 && (
                 <span style={PENDING_STYLE} title={`${pendingCount} transcribing…`}>
                   <span style={SPINNER_STYLE} />
@@ -144,7 +143,10 @@ export function ComposeTray({
                 </span>
               )}
               <span style={{ flex: 1 }} />
-              <button style={STOP_BTN_STYLE} onClick={onStop}>Stop</button>
+              <span style={TIMER_STYLE}>
+                <span style={PULSE_DOT_STYLE} />
+                <span>{mm}:{ss}</span>
+              </span>
             </div>
           </div>
         )}
@@ -295,6 +297,16 @@ const ACTIVE_FOOTER_STYLE: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 10,
+  color: 'var(--sol-red)',
+}
+
+const TIMER_STYLE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 8,
+  fontFamily: 'monospace',
+  fontSize: 14,
+  fontVariantNumeric: 'tabular-nums',
   color: 'var(--sol-red)',
 }
 
