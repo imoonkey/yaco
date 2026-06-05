@@ -105,9 +105,11 @@ export function useKeyboardViewport(): void {
     const handleTouchStart = (e: Event) => {
       touchMoved = false
       userTouching = true
-      // Only flag touches on keyboard-triggering elements or xterm terminal
+      // Estimate is an xterm-only workaround (its hidden textarea delays the
+      // Visual Viewport on iOS PWA). Other inputs (e.g. the CodeMirror editor)
+      // update it reliably, so they use the exact value via apply().
       const target = e.target as Element
-      touchedTerminal = isKbInput(target) || !!target.closest?.('.xterm')
+      touchedTerminal = !!target.closest?.('.xterm')
       if (touchCooldown) clearTimeout(touchCooldown)
     }
 
