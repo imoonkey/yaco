@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-05: Streaming voice dialog
+
+**What changed:**
+- Replaced the one-shot `/api/voice/compose` flow with split `/api/voice/transcribe` and `/api/voice/format` endpoints, including upload/type validation, transcript/filePath caps, and `retry-after` forwarding on upstream 429s.
+- Added self-hosted lazy VAD assets, a `voiceVad.ts` MicVAD wrapper with ~10s coalescing, a single-active-phase voice reducer, and `useVoice.ts` orchestration for per-chunk transcription, drain-gated final formatting, throttling, and stale-run cleanup.
+- Updated the voice tray/control UI to show live transcript + pending count, freeze insertion target per run, and keep Insert/Discard clipboard backup e2e coverage on the split endpoint path.
+- Added focused unit/e2e tests and a manual Chrome desktop + phone-over-Tailscale VAD checklist.
+
+**Why:**
+- Voice input should feel live without relying on a true streaming Whisper endpoint: VAD creates silence-aligned chunks, the client coalesces them to stay under Groq free-tier RPM limits, and the formatter runs once at Stop over the full transcript.
+
+**Key files:** `app/server/src/routes/voice.ts`, `app/ui/src/hooks/{useVoice,voiceVad,voiceStateMachine}.ts`, `app/ui/src/components/ComposeTray.tsx`, `app/ui/tests/e2e/voice-compose-backup.spec.ts`, `plan/active/voice-streaming/implementation_summary.md`
+**Verification:** `cd app/ui && npx vitest run useVoice voiceStateMachine src/hooks/__tests__/voiceVad.test.ts` passed; `cd app/ui && npx playwright test voice` passed; `cd app/ui && npm run build` passed; `cd app/server && npm test` passed.
+**Commit:** `b3026e6`
+**Next:** Optional manual VAD smoke test on Chrome desktop and phone over Tailscale.
+**Blockers:** None.
+
 ## 2026-06-04: Self-hosted, lazy-loaded VAD assets (`vs-vad-assets`)
 
 **What changed:**
