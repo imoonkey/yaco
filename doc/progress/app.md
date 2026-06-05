@@ -1,3 +1,18 @@
+## 2026-06-05: Mobile keyboard gap, input-focus zoom, terminal key bar visibility
+
+**What changed:**
+- `useKeyboardViewport.ts` — scoped the iOS keyboard-height estimate to `.xterm` taps only. The editor's `contenteditable` previously matched the input check and triggered the terminal-oriented estimate, over-shrinking `#root` and leaving an editor-bg gap above the keyboard.
+- `index.html` — added `maximum-scale=1.0` to the viewport meta, suppressing iOS auto-zoom on input focus across the whole page (incl. the 13px CodeMirror contenteditable that the form-input rule never covered). `index.css` — removed the now-redundant `input,textarea,select { font-size:16px }` hack, restoring dense form fonts.
+- `TerminalKeyBar.tsx` — converted Tailwind v4 bracket-var classes (`bg-[--sol-x]`) to the paren shorthand (`bg-(--sol-x)`). In v4 the bracket form emits unwrapped, invalid CSS, so the copy/paste Send button had no background (white text invisible on the light bg) and the keys lost their subtle backgrounds.
+
+**Why:**
+- Three mobile regressions on the phone IDE: the editor keyboard left a colored gap, focusing inputs zoomed the dense layout, and the terminal Send button was invisible in light mode. The Tailwind issue was a silent v4 behavior change — brackets no longer auto-wrap CSS vars in `var()`; documented as a pitfall in `design-system.md`.
+
+**Key files:** `app/ui/src/hooks/useKeyboardViewport.ts`, `app/ui/index.html`, `app/ui/src/index.css`, `app/ui/src/components/TerminalKeyBar.tsx`, `doc/main/app/ui/mobile.md`, `doc/main/app/ui/design-system.md`, `doc/main/app/frontend/hooks.md`
+**Verification:** `cd app/ui && npx vite build` passes; compiled CSS confirmed `bg-(--sol-accent)` → `background-color:var(--sol-accent)` with no remaining invalid `:--sol-` rules; `eslint` clean on changed files. On-device visual confirmation pending.
+**Commit:** 98d5ff8..4df16cb (+ this docs commit)
+**Blockers:** None.
+
 ## 2026-06-05: Voice streaming e2e + manual VAD checklist (vs-tests)
 
 **What changed:** `app/ui/tests/e2e/voice-compose-backup.spec.ts` now stubs

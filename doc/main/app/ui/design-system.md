@@ -54,6 +54,10 @@ VS Code Solarized Light theme adapted for web.
 | Selection | `#268BD2` at 30% | Editor and terminal text selection |
 | Focus ring | `#268BD2` at 50% | Input focus indicators |
 
+### Applying Tokens
+
+Most components apply Solarized tokens via inline `style={{ color: 'var(--sol-…)' }}`. When using a Tailwind utility with a CSS variable, use the **v4 paren shorthand** — `bg-(--sol-accent)`, `text-(--sol-base01)` — which wraps the value in `var()`. The square-bracket form `bg-[--sol-accent]` is **not** wrapped in Tailwind v4: it compiles to `background-color: --sol-accent` (invalid → silently no color). Literal arbitrary values like `bg-[#268bd2]` still work in brackets.
+
 ## Typography
 
 - **Font stack**: system-ui, sans-serif (body); monospace (editor, terminal, code)

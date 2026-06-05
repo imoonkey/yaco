@@ -146,7 +146,7 @@ The resize propagates through the existing pipeline: `#root` shrinks → App `h-
 
 **iOS keyboard viewport workaround**: iOS standalone PWA may delay `visualViewport.height` updates when the keyboard opens (WebKit limitation). The hook works around this with a deferred estimation fallback:
 
-1. **Tap detection** (touchstart/touchmove/touchend): Distinguishes taps from scrolls. Only taps inside terminal (`.xterm`) or keyboard inputs trigger the estimate. Scrolling is excluded — `touchmove` cancels the pending estimate.
+1. **Tap detection** (touchstart/touchmove/touchend): Distinguishes taps from scrolls. Only taps inside the terminal (`.xterm`) trigger the estimate — other inputs (e.g. the CodeMirror editor) update `visualViewport` reliably and use the real value, so they are excluded to avoid over-shrinking `#root`. Scrolling is excluded — `touchmove` cancels the pending estimate.
 2. **Deferred estimate** (300ms after tap): If `visualViewport` hasn't updated within 300ms, apply cached keyboard height (or 40% of viewport as first-open estimate). The delay avoids jitter when `visualViewport` updates quickly (estimate→real double-shift).
 3. **Real value correction**: When `visualViewport` reports real height, `apply()` replaces the estimate and caches the keyboard height for future instant estimates.
 4. **`--kb-safe-bottom`**: Set to `0px` when keyboard is open. TerminalKeyBar uses `calc(var(--kb-safe-bottom, env(safe-area-inset-bottom)) / 2)` — halved to redistribute vertical space to the portrait top bar.
