@@ -43,11 +43,10 @@ import {
   type Project,
 } from "../lib/core/paths/index.ts";
 import {
-  ensureClaudeHooks,
-  ensureCodexHooks,
   readAgentWrapperScript,
   _resetHookBinaryCacheForTests,
 } from "../lib/core/agent/lifecycle.ts";
+import { listProviders } from "../lib/core/agent/providers/index.ts";
 import { runAllChecks, type DoctorReport } from "./doctor.ts";
 
 const HELP = `yaco install — install or refresh YACO on this machine
@@ -417,17 +416,19 @@ export function runInstall(opts: InstallOptions): InstallReport {
   installAgentWrapper(repoRoot, actions, opts.dryRun);
 
   if (!opts.skipHooks) {
-    if (opts.dryRun) {
-      actions.push(`merge ~/.claude/settings.json hooks`);
-      actions.push(`merge ~/.codex/hooks.json hooks`);
-    } else {
-      // Call the per-provider helpers directly (NOT ensureHooks) — they only
-      // touch the JSON configs; we already wrote the wrapper above and don't
-      // want to read it back a second time.
-      ensureClaudeHooks();
-      ensureCodexHooks();
-      actions.push(`merged ~/.claude/settings.json hooks`);
-      actions.push(`merged ~/.codex/hooks.json hooks`);
+    // Merge yaco-owned hook entries into each provider config. We call the
+    // adapter's hooks.install (NOT ensureHooks) — it only touches the JSON
+    // config; the wrapper was already written above and must not be re-read.
+    for (const provider of listProviders()) {
+      const hooks = provider.hooks;
+      if (!hooks) continue;
+      const configPath = hooks.configPath();
+      if (opts.dryRun) {
+        actions.push(`merge ${configPath} hooks`);
+      } else {
+        hooks.install();
+        actions.push(`merged ${configPath} hooks`);
+      }
     }
   }
 

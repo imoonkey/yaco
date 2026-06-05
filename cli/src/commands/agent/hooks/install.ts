@@ -7,6 +7,7 @@
  */
 import { ok, type Result } from "../../../lib/core/result.ts";
 import { ensureHooks } from "../../../lib/core/agent/lifecycle.ts";
+import { listProviders } from "../../../lib/core/agent/providers/index.ts";
 
 const HELP = `yaco agent hooks install [--json]
 
@@ -21,7 +22,11 @@ export async function handleHooksInstall(
   if (argv[0] === "--help" || argv[0] === "-h") {
     return ok({ help: HELP });
   }
-  ensureHooks("claude");
-  ensureHooks("codex");
-  return ok({ installed: ["claude", "codex"] });
+  const installed: string[] = [];
+  for (const provider of listProviders()) {
+    if (!provider.hooks) continue;
+    ensureHooks(provider.id);
+    installed.push(provider.id);
+  }
+  return ok({ installed });
 }

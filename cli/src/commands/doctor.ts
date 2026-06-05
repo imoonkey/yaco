@@ -41,6 +41,7 @@ import {
   readYacoProjectPaths,
 } from "../lib/core/paths/index.ts";
 import { loadTasks, validateGraph } from "../lib/core/task/index.ts";
+import { listProviders } from "../lib/core/agent/providers/index.ts";
 
 const HELP = `yaco doctor — run YACO health checks
 
@@ -194,40 +195,24 @@ function checkClaudeMdLink(): CheckResult {
   return checkSymlinkPresent("claude-md-link", join(userHome(), ".claude", "CLAUDE.md"));
 }
 
-function fileContainsYacoHook(path: string): boolean {
-  if (!existsSync(path)) return false;
-  try {
-    const settings = JSON.parse(readFileSync(path, "utf-8"));
-    const hooks = settings?.hooks;
-    if (!hooks || typeof hooks !== "object") return false;
-    for (const ev of Object.keys(hooks)) {
-      const groups = hooks[ev];
-      if (!Array.isArray(groups)) continue;
-      for (const g of groups) {
-        if (g?.matcher === "yaco-agent-hook") return true;
-        for (const h of g?.hooks ?? []) {
-          if (typeof h?.command === "string" &&
-              /hook-event-bin\.ts\b|\bagent\s+hook-event\b/.test(h.command)) {
-            return true;
-          }
-        }
-      }
-    }
-  } catch {
-    return false;
-  }
-  return false;
-}
-
+/** `agent-hook-config` (stable check name): pass when at least one provider has
+ *  its yaco-owned hook entries installed. Detail is registry-driven — each
+ *  provider with a hooks adapter is probed via `hasInstalledHook`. */
 function checkAgentHookConfig(): CheckResult {
-  const claude = join(userHome(), ".claude", "settings.json");
-  const codex = join(userHome(), ".codex", "hooks.json");
-  const okClaude = fileContainsYacoHook(claude);
-  const okCodex = fileContainsYacoHook(codex);
-  if (okClaude && okCodex) return pass("agent-hook-config", "claude + codex hooks installed");
-  if (okClaude) return pass("agent-hook-config", "claude hooks installed (codex missing)");
-  if (okCodex) return pass("agent-hook-config", "codex hooks installed (claude missing)");
-  return fail("agent-hook-config", "no yaco-agent-hook entries in claude/codex configs");
+  const installed: string[] = [];
+  const missing: string[] = [];
+  for (const provider of listProviders()) {
+    if (!provider.hooks) continue;
+    if (provider.hooks.hasInstalledHook()) installed.push(provider.id);
+    else missing.push(provider.id);
+  }
+  if (installed.length === 0) {
+    return fail("agent-hook-config", "no yaco-agent-hook entries in provider configs");
+  }
+  const detail = missing.length > 0
+    ? `${installed.join(" + ")} hooks installed (${missing.join(", ")} missing)`
+    : `${installed.join(" + ")} hooks installed`;
+  return pass("agent-hook-config", detail);
 }
 
 function checkAgentWrapper(): CheckResult {
@@ -251,13 +236,24 @@ function checkGit(): CheckResult {
   return checkCommand("git", "git not on $PATH");
 }
 
+/** `providers` (stable check name): pass when at least one provider executable
+ *  is on $PATH. Detail is registry-driven — each registered provider's
+ *  `executable` is probed via `which`. */
 function checkProviders(): CheckResult {
-  const claudeP = which("claude");
-  const codexP = which("codex");
-  if (claudeP && codexP) return pass("providers", `claude=${claudeP}; codex=${codexP}`);
-  if (claudeP) return pass("providers", `claude=${claudeP}; codex missing`);
-  if (codexP) return pass("providers", `codex=${codexP}; claude missing`);
-  return fail("providers", "neither claude nor codex on $PATH");
+  const found: string[] = [];
+  const missing: string[] = [];
+  for (const provider of listProviders()) {
+    const path = which(provider.executable);
+    if (path) found.push(`${provider.id}=${path}`);
+    else missing.push(provider.id);
+  }
+  if (found.length === 0) {
+    return fail("providers", `no provider executable on $PATH (${missing.join(", ")})`);
+  }
+  const detail = missing.length > 0
+    ? `${found.join("; ")}; ${missing.join(", ")} missing`
+    : found.join("; ");
+  return pass("providers", detail);
 }
 
 function checkTaskGraph(repoRoot: string): CheckResult {

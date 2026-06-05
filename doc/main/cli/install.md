@@ -1,6 +1,6 @@
 # Install Subcommand
 
-> Last updated: 2026-06-04 (yc-install-doctor)
+> Last updated: 2026-06-05 (tui-provider-install-doctor)
 
 The `install` area owns the canonical, idempotent yaco install. Two-stage
 bootstrap by design:
@@ -56,10 +56,9 @@ exec, because:
   env, hook commands written to provider configs would point at a fallback
   path that may not exist.
 
-`install.ts` also exports `YACO_BIN_DIR` to `process.env` before calling
-`ensureClaudeHooks` / `ensureCodexHooks` so the lifecycle resolver picks up
-the canonical bin dir even when install was invoked directly (not via the
-bootstrap script).
+`install.ts` also exports `YACO_BIN_DIR` to `process.env` before merging hooks
+so the lifecycle resolver picks up the canonical bin dir even when install was
+invoked directly (not via the bootstrap script).
 
 ## Canonical hook command (HIGH 4 from review pass 1)
 
@@ -84,10 +83,16 @@ Hook configs written by `yaco install` use the canonical form:
 
 ## Hook merge
 
-Delegates to `ensureClaudeHooks` / `ensureCodexHooks` from
-`lib/core/agent/lifecycle.ts` (NOT `ensureHooks`, which would re-call
-`readAgentWrapperScript` and fail under the bun-compiled binary's VFS — see
-the wrapper note below).
+Iterates the provider registry (`listProviders()` from
+`lib/core/agent/providers`) and calls each provider's `hooks.install()` for
+adapters that declare hooks — Claude's resolves to `ensureClaudeHooks`, Codex's
+to `ensureCodexHooks` (both in `lib/core/agent/lifecycle.ts`). The adapter's
+`install` is called directly (NOT `ensureHooks`, which would re-call
+`readAgentWrapperScript` and fail under the bun-compiled binary's VFS — see the
+wrapper note below); the wrapper is written once, above, by
+`installAgentWrapper`. The action list / `--dry-run` plan is keyed off each
+adapter's `hooks.configPath()`, so adding a provider widens the merge loop with
+no install.ts edit.
 
 | Provider | Config | Hooks merged |
 |----------|--------|--------------|

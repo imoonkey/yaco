@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-05: install/doctor iterate the provider registry
+
+**What changed:**
+- `yaco install` hook merge now iterates `listProviders()` and calls each adapter's `hooks.install()` (Claude → `ensureClaudeHooks`, Codex → `ensureCodexHooks`), keying the action list / `--dry-run` plan off `hooks.configPath()` instead of two hard-coded `ensureClaudeHooks()` / `ensureCodexHooks()` calls. The wrapper is still written once up front, so `install` is called directly (NOT `ensureHooks`).
+- `yaco doctor` keeps its twelve fixed check names and `{checks,summary}` JSON shape, but the `providers` and `agent-hook-config` details are now registry-driven: `providers` probes each adapter's `executable` via `which`; `agent-hook-config` probes each hook-bearing adapter's `hasInstalledHook()`. Removed the inline `fileContainsYacoHook` walker. Fail strings changed to provider-neutral text (`no provider executable on $PATH (<ids>)`, `no yaco-agent-hook entries in provider configs`); pass-path detail format is byte-identical for the claude+codex pair.
+- `yaco agent hooks install` iterates registered providers with hooks and reports `installed` from the registry instead of the literal `["claude","codex"]`.
+
+**Why:**
+- The `tui-provider-adapters` design (`plan/active/tui-provider-adapters/design_codex.md`, `provider-install-doctor` task) wants adding a TUI provider to be one adapter, not edits across install + doctor. No per-provider doctor check names are introduced — adding a provider widens the detail string, not the check list, preserving the stable doctor contract.
+
+**Key files:** `cli/src/commands/{install,doctor}.ts`, `cli/src/commands/agent/hooks/install.ts`, `doc/main/cli/{install,doctor}.md`
+**Verification:** `cd cli && bun test test/hooks-install.test.ts test/unit/main.test.ts` → 24 pass / 0 fail (acceptance). `bun test test/unit/commands/{doctor,install}.test.ts` → 40 pass / 0 fail. `bun run test:unit` → 552 pass / 0 fail; `test/integration/install.test.ts` → 3 pass. `tsc --noEmit` clean for the scoped files.
+**Commit:** this commit.
+**Next:** sibling adapter tasks (`provider-output-follow-cli`, `provider-project-move`, app-side boundary tasks) and the `docs-provider-boundary` pass that retires flat `providers.ts` references.
+**Blockers:** None.
+
 ## 2026-06-05: CLI summary/history/providers JSON surfaces
 
 **What changed:**

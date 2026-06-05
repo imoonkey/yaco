@@ -1,6 +1,6 @@
 # Doctor Subcommand
 
-> Last updated: 2026-06-04 (yc-install-doctor)
+> Last updated: 2026-06-05 (tui-provider-install-doctor)
 
 `yaco doctor` runs the twelve required health checks against the current
 yaco install + repo. Each check returns
@@ -33,15 +33,22 @@ yaco doctor [--repo <path>] [--json]
 | 4 | `registry` | `${YACO_HOME}/projects.json` parses AND has a `yaco` entry | `<file> (yaco → <path>)` | `missing` / `no 'yaco' entry` |
 | 5 | `skills-link` | `~/.claude/skills` is a symlink | `<link> → <target>` | `not a symlink` / `missing` / `dangling` |
 | 6 | `claude-md-link` | `~/.claude/CLAUDE.md` is a symlink | `<link> → <target>` | `not a symlink` / `missing` / `dangling` |
-| 7 | `agent-hook-config` | At least one of `~/.claude/settings.json` or `~/.codex/hooks.json` has a yaco-owned hook entry (marker `yaco-agent-hook` OR command shape `hook-event-bin.ts` / `agent hook-event`) | which providers are wired | `no yaco-agent-hook entries in claude/codex configs` |
+| 7 | `agent-hook-config` | At least one registered provider with a hooks adapter has its yaco-owned hook entry installed (probed via `provider.hooks.hasInstalledHook()` — marker `yaco-agent-hook` OR command shape `hook-event-bin.ts` / `agent hook-event`) | which providers are wired | `no yaco-agent-hook entries in provider configs` |
 | 8 | `agent-wrapper` | `${YACO_HOME}/agent-wrapper.sh` exists and is executable | path | `missing` / `not executable` |
 | 9 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
 | 10 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
-| 11 | `providers` | `claude` OR `codex` on `$PATH` (passes when at least one is present) | which providers | `neither claude nor codex on $PATH` |
+| 11 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
 | 12 | `task-graph` | `yaco task validate` would succeed on the repo's `plan/tasks.json` (in-process via `loadTasks + validateGraph`) | `<tasksFile> ok` | `<tasksFile> missing` / `<N> integrity problem(s)` |
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
 twelve names above so consumers can rely on the contract.
+
+The `providers` and `agent-hook-config` checks keep their fixed names but build
+their detail by iterating the provider registry (`listProviders()` from
+`lib/core/agent/providers`): `providers` probes each adapter's `executable`,
+`agent-hook-config` probes each hook-bearing adapter's `hasInstalledHook()`. No
+per-provider check names are introduced — adding a provider widens the detail
+string, not the check list.
 
 ## --json envelope contract (HIGH 3 from review pass 1)
 
