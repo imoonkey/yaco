@@ -349,6 +349,40 @@ export function cleanupDeprecatedHooks(settings: Record<string, any>, claudeDir:
   return changed;
 }
 
+/** Drop legacy multmux shell-hook entries — the `bash ".../hook-v2.sh"` groups
+ *  earlier installs left in provider configs (under ~/.multmux or, after the
+ *  yaco migration, ~/.yaco). The managed `yaco agent hook-event` form supersedes
+ *  them, so a lingering shell hook just fires twice per event. Only groups
+ *  carrying such a command are touched; a group emptied by the removal is
+ *  dropped, every other group (including unrelated empties) is left in place.
+ *  Mutates the `{ event: groups[] }` map; returns true when it changed anything. */
+export function dropLegacyMultmuxHooks(hooks: Record<string, any>): boolean {
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) return false;
+  let changed = false;
+  for (const event of Object.keys(hooks)) {
+    const groups = hooks[event];
+    if (!Array.isArray(groups)) continue;
+    const next: any[] = [];
+    for (const group of groups) {
+      if (!Array.isArray(group?.hooks)) {
+        next.push(group);
+        continue;
+      }
+      const kept = group.hooks.filter(
+        (h: any) => !(typeof h?.command === "string" && h.command.includes("hook-v2.sh")),
+      );
+      if (kept.length === group.hooks.length) {
+        next.push(group);
+        continue;
+      }
+      changed = true;
+      if (kept.length > 0) next.push({ ...group, hooks: kept });
+    }
+    hooks[event] = next;
+  }
+  return changed;
+}
+
 /** Merge yaco hooks into ~/.claude/settings.json. Preserves all unrelated entries. */
 export function ensureClaudeHooks(): void {
   const claudeDir = join(userHome(), ".claude");
@@ -380,6 +414,7 @@ export function ensureClaudeHooks(): void {
   }
 
   if (cleanupDeprecatedHooks(settings, claudeDir)) changed = true;
+  if (dropLegacyMultmuxHooks(settings.hooks)) changed = true;
 
   if (changed) {
     writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n");
@@ -414,6 +449,7 @@ export function ensureCodexHooks(): void {
       : yacoHookGroup(event, false);
     if (upsertYacoGroup(hooks.hooks[event], targetGroup)) changed = true;
   }
+  if (dropLegacyMultmuxHooks(hooks.hooks)) changed = true;
 
   if (changed) {
     if (!existsSync(hooksDir)) mkdirSync(hooksDir, { recursive: true });

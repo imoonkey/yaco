@@ -16,9 +16,10 @@ bootstrap by design:
 2. **`yaco install`** (this command, `cli/src/commands/install.ts`) does the
    rest: writes `${YACO_HOME}/agent-wrapper.sh`, merges yaco-owned entries
    into `~/.claude/settings.json` + `~/.codex/hooks.json` (preserving
-   unrelated user entries), links global agent-config into `~/.claude`,
-   `~/.codex`, `~/.agents`, upserts `{id:"yaco", path: repoRoot}` into
-   `${YACO_HOME}/projects.json`, sweeps legacy `$BIN_DIR/{mt, multmux}`
+   unrelated user entries, dropping legacy `bash ".../hook-v2.sh"` shell-hook
+   groups left by pre-yaco installs), links global agent-config into
+   `~/.claude`, `~/.codex`, `~/.agents`, upserts `{id:"yaco", path: repoRoot}`
+   into `${YACO_HOME}/projects.json`, sweeps legacy `$BIN_DIR/{mt, multmux}`
    symlinks, then runs `yaco doctor`.
 
 Idempotent: re-running `yaco install` is a no-op (snapshot diff is empty).

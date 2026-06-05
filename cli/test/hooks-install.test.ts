@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir, homedir } from "os";
-import { ensureClaudeHooks, ensureCodexHooks, ensureHooks, HOOK_MARKER, CLAUDE_HOOK_EVENTS } from "../src/lib/core/agent/lifecycle.ts";
+import { ensureClaudeHooks, ensureCodexHooks, ensureHooks, dropLegacyMultmuxHooks, HOOK_MARKER, CLAUDE_HOOK_EVENTS } from "../src/lib/core/agent/lifecycle.ts";
 import { agentWrapperPath } from "../src/lib/core/paths/yaco-home.ts";
 
 const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
@@ -159,5 +159,66 @@ describe("ensureHooks(provider) — end-to-end install", () => {
     expect(existsSync(agentWrapperPath())).toBe(true);
     expect(existsSync(join(sandbox, ".claude", "settings.json"))).toBe(true);
     expect(existsSync(join(sandbox, ".codex", "hooks.json"))).toBe(true);
+  });
+});
+
+describe("dropLegacyMultmuxHooks — legacy hook-v2.sh cleanup", () => {
+  it("removes hook-v2.sh groups, prunes only groups it empties, leaves others", () => {
+    const hooks: Record<string, any> = {
+      Stop: [
+        { matcher: "multmux-hook", hooks: [{ type: "command", command: 'bash "/home/u/.yaco/hook-v2.sh"' }] },
+        { matcher: "user-tag", hooks: [{ type: "command", command: "/usr/local/bin/my-notifier" }] },
+        { matcher: "*", hooks: [] }, // unrelated pre-existing empty group — must survive
+      ],
+      PreToolUse: [
+        { matcher: "*", hooks: [{ type: "command", command: 'bash "/home/u/.multmux/hook-v2.sh"' }] },
+      ],
+    };
+
+    expect(dropLegacyMultmuxHooks(hooks)).toBe(true);
+
+    // Both legacy paths (~/.yaco and ~/.multmux) are gone.
+    expect(JSON.stringify(hooks)).not.toContain("hook-v2.sh");
+    // User group preserved; the unrelated empty group is left untouched.
+    expect(hooks.Stop.find((g: any) => g.matcher === "user-tag")).toBeDefined();
+    expect(hooks.Stop.find((g: any) => g.matcher === "*" && g.hooks.length === 0)).toBeDefined();
+    // The group we emptied (PreToolUse legacy) is dropped, not left as an empty husk.
+    expect(hooks.PreToolUse.length).toBe(0);
+  });
+
+  it("is a no-op (returns false) when there is nothing legacy to drop", () => {
+    const hooks: Record<string, any> = {
+      Stop: [{ matcher: HOOK_MARKER, hooks: [{ type: "command", command: "yaco agent hook-event Stop" }] }],
+    };
+    expect(dropLegacyMultmuxHooks(hooks)).toBe(false);
+    expect(hooks.Stop.length).toBe(1);
+  });
+
+  it("ensureClaudeHooks strips a migrated hook-v2.sh entry and installs the managed form", () => {
+    const claudeDir = join(sandbox, ".claude");
+    mkdirSync(claudeDir, { recursive: true });
+    const legacy = { matcher: "*", hooks: [{ type: "command", command: 'bash "/home/u/.yaco/hook-v2.sh"', async: true }] };
+    const userHook = { matcher: "my-custom-stop", hooks: [{ type: "command", command: "/usr/local/bin/my-notifier" }] };
+    writeFileSync(join(claudeDir, "settings.json"), JSON.stringify({ hooks: { Stop: [legacy, userHook] } }));
+
+    ensureClaudeHooks();
+
+    const settings = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf-8"));
+    expect(JSON.stringify(settings)).not.toContain("hook-v2.sh");
+    expect(settings.hooks.Stop.find((g: any) => g.matcher === "my-custom-stop")).toBeDefined();
+    expect(settings.hooks.Stop.find((g: any) => g.matcher === HOOK_MARKER)).toBeDefined();
+  });
+
+  it("ensureCodexHooks strips a legacy multmux-hook entry", () => {
+    const codexDir = join(sandbox, ".codex");
+    mkdirSync(codexDir, { recursive: true });
+    const legacy = { matcher: "multmux-hook", hooks: [{ type: "command", command: 'bash "/home/u/.yaco/hook-v2.sh"', async: false }] };
+    writeFileSync(join(codexDir, "hooks.json"), JSON.stringify({ hooks: { SessionStart: [legacy] } }));
+
+    ensureCodexHooks();
+
+    const hooks = JSON.parse(readFileSync(join(codexDir, "hooks.json"), "utf-8"));
+    expect(JSON.stringify(hooks)).not.toContain("hook-v2.sh");
+    expect(hooks.hooks.SessionStart.find((g: any) => g.matcher === HOOK_MARKER)).toBeDefined();
   });
 });
