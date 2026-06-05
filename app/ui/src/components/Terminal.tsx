@@ -472,10 +472,15 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
       }
     })
 
-    let resizeTimer: ReturnType<typeof setTimeout> | null = null
+    // Refit at most once per animation frame while the container resizes, so
+    // the grid tracks splitter drags instead of freezing until the drag pauses.
+    let resizeRaf: number | null = null
     const observer = new ResizeObserver(() => {
-      if (resizeTimer) clearTimeout(resizeTimer)
-      resizeTimer = setTimeout(() => fitTerminal(term), 150)
+      if (resizeRaf != null) return
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = null
+        fitTerminal(term)
+      })
     })
     observer.observe(container)
 
@@ -490,7 +495,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
 
     return () => {
       themeObserver.disconnect()
-      if (resizeTimer) clearTimeout(resizeTimer)
+      if (resizeRaf != null) cancelAnimationFrame(resizeRaf)
       cancelAnimationFrame(fitAnimationFrame)
       container.removeEventListener('focusin', handleFocusIn)
       container.removeEventListener('touchstart', onTouchStart)
