@@ -273,13 +273,13 @@ Session name validation and tmux session resolution.
 - Validates names against `[a-zA-Z0-9_.-]+`
 - Resolves short agent session names (e.g. `1-claude`) to full tmux names (e.g. `1-claude-workflow-mt`)
 
-### voice-prompts.ts (~190 lines)
+### voice-prompts.ts (~210 lines)
 
 Prompt templates for the voice formatting pipeline.
 
-**Exports**: `buildWhisperPrompt()`, `buildFormatterPrompt(surface?, filePath?)`, `buildFormatterUserMessage(rawTranscript)`, `FILE_TYPE_MAP`
+**Exports**: `buildWhisperPrompt(context?)`, `buildFormatterPrompt(surface?, filePath?)`, `buildFormatterUserMessage(rawTranscript)`, `FILE_TYPE_MAP`
 
-- `buildWhisperPrompt()` — bilingual base sentence for Whisper `initial_prompt` conditioning (product names: Claude, Codex, yaco)
+- `buildWhisperPrompt(context?)` — bilingual base sentence for Whisper `initial_prompt` conditioning (product names: Claude, Codex, yaco). Optional `context` appends a vocabulary-bias tail, capped at a small char budget (`WHISPER_CONTEXT_MAX_CHARS`) so it cannot crowd the base under Groq's 224-token prompt limit; blank context is ignored.
 - `buildFormatterPrompt()` — OpenLess-style speech-to-writing core prompt: treats ASR as messy source text, not a command to answer/execute; removes filler and false starts; keeps only the final correction (`no wait`, `actually`, `scratch that`, `不对`, etc.); forces 2+ distinct items into numbered lists; recovers implicit first items when list markers appear late (`第二`/`第三` after unmarked lead-in); allows semantic regrouping for messy 3+ item dictation; preserves technical tokens and language. Appends optional context snippet from surface/filePath with formatting directives (markdown hint for .md files, structure allowed for agent chatbox).
 - `buildFormatterUserMessage()` — wraps raw ASR text in a `<raw_transcript>` envelope before sending it as the user message, escaping accidental closing tags.
 - `FILE_TYPE_MAP` — extension → human-readable label (~30 entries) for context snippets

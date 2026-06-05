@@ -1,3 +1,23 @@
+## 2026-06-04: Split voice `/compose` → `/transcribe` + `/format` (vs-server-split)
+
+**What changed:**
+- `app/server/src/routes/voice.ts` — replaced `POST /api/voice/compose` with two single-responsibility endpoints:
+  - `POST /transcribe` (multipart, Whisper only) → `{ text }`. Re-creates compose's guarantees: 503 (no key), 400 (bad form / non-File audio / non-string `language`\|`context`), 413 (>20 MB), Groq 429→429 / else→502. Adds a real **audio-format allowlist** (`isAllowedAudio`): MIME-whitelisted, falling back to file extension only when the part is typeless / `application/octet-stream`. New optional `context` field flows to `buildWhisperPrompt`.
+  - `POST /format` (JSON `{ text, surface, filePath? }`, formatter only) → `{ displayText, formattingStatus, warning? }`. Caps `text` at `VOICE_MAX_TRANSCRIPT_CHARS` (413) and short-circuits blank text to `{ formattingStatus: 'empty' }` — both **before any model call**. `filePath` is hardened as opaque path data via `normalizeSafeFilePath` (rejects absolute, `..` traversal, URL/drive prefix, control chars, and any char outside `[A-Za-z0-9._@+/-]`; blank → dropped) so it cannot inject prompt text.
+- `app/server/src/lib/voice-prompts.ts` — `buildWhisperPrompt(context?)` now accepts a tiny vocab-bias snippet, capped to a small tail (`WHISPER_CONTEXT_MAX_CHARS = 120`) to stay under Groq's 224-token `initial_prompt` limit; blank context ignored.
+- `app/server/src/lib/constants.ts` — added `VOICE_MAX_TRANSCRIPT_CHARS = 8000` and `VOICE_MAX_FILEPATH_CHARS = 256`.
+- Tests: `routes/__tests__/voice.test.ts` rewritten as split-route suites (format allowlist, field-type, transcript cap, filePath injection/normal-path, `/compose` → 404); `lib/__tests__/voice-prompts.test.ts` extended for the context cap.
+- Docs: `doc/main/app/backend/routes.md` (Voice section), `doc/main/app/backend/libs.md` (voice-prompts entry), `doc/main/app/README.md` (data-flow #9).
+
+**Why:**
+- Splitting makes "formatter runs exactly once at the end" structural: the streaming client posts each captured chunk to `/transcribe` as it lands, then calls `/format` once over the joined transcript at Stop. The cost is re-creating `/compose`'s validation + error mapping in `/transcribe`, plus a new direct input bound on `/format` (the old route bounded formatter input indirectly via the audio upload size).
+
+**Key files:** `app/server/src/routes/voice.ts`, `app/server/src/lib/voice-prompts.ts`, `app/server/src/lib/constants.ts`, `app/server/src/{routes,lib}/__tests__/voice*.test.ts`
+**Verification:** targeted `vitest run voice.test.ts voice-prompts.test.ts` → 61 pass; full `cd app/server && npm test` → 420 pass (stable across 3/3 runs).
+**Commit:** docs only this pass; route/lib changes are part of the in-flight `voice-streaming` bundle (uncommitted working tree).
+**Next:** `vs-vad-module` + `vs-hook` wire the UI to the split endpoints — `app/ui/src/hooks/useVoice.ts` still calls the removed `/compose` until then (expected mid-feature).
+**Blockers:** None.
+
 ## 2026-06-04: Voice reducer — single `active` phase with derived finalize gate (vs-state-machine)
 
 **What changed:**

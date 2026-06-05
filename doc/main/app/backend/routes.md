@@ -91,7 +91,8 @@ All git routes support `?worktree=<slug>` query param via `withProject` middlewa
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/voice/status` | Voice pipeline availability and config |
-| POST | `/api/voice/compose` | Transcribe + format audio recording |
+| POST | `/api/voice/transcribe` | Transcribe one audio chunk (Whisper only) |
+| POST | `/api/voice/format` | Format a whole transcript (formatter only) |
 
 **`GET /api/voice/status`**
 
@@ -107,44 +108,63 @@ Disabled (key missing):
 { "enabled": false, "reason": "missing_api_key" }
 ```
 
-**`POST /api/voice/compose`** (`multipart/form-data`)
+The pipeline is **split** into two single-responsibility endpoints: the client
+streams each captured chunk to `/transcribe` as it is produced, then calls
+`/format` once over the joined transcript at Stop. The formatter therefore runs
+exactly once at the end.
+
+**`POST /api/voice/transcribe`** (`multipart/form-data`) — Whisper STT only.
 
 Request fields:
-- `audio` (file, required) — recorded audio blob (webm, mp4, ogg, etc.)
-- `surface` (string, required) — `editor` or `terminal`
+- `audio` (file, required) — one audio chunk. MIME-allowlisted (`audio/wav`, `webm`, `ogg`, `mpeg`, `mp4`, `m4a`, `flac`); when the part is typeless / `application/octet-stream`, the file extension is used instead.
 - `language` (string, optional) — ISO-639-1 hint for Whisper
-- `filePath` (string, optional) — active editor file path
+- `context` (string, optional) — tiny vocabulary-bias snippet; `buildWhisperPrompt` keeps only a capped tail (Groq 224-token `initial_prompt` limit)
 
-Pipeline: Whisper STT (with bilingual `initial_prompt` conditioning) → multi-model LLM formatter (shared speech-to-writing prompt + optional file-type context, tries models in order via `openai` SDK, strips thinking tokens) → response.
+Response (silence yields `{ "text": "" }`):
+```json
+{ "text": "git status dash s b" }
+```
+
+**`POST /api/voice/format`** (`application/json`) — multi-model LLM formatter only.
+
+Request body `{ text, surface, filePath? }`:
+- `text` (string, required) — joined raw transcript; capped at `VOICE_MAX_TRANSCRIPT_CHARS` (8000) → 413 before any model call
+- `surface` (string, required) — `editor` or `terminal`
+- `filePath` (string, optional) — active editor file. Validated as an **opaque repo-relative path** (`normalizeSafeFilePath`): rejects absolute paths, `..` traversal, URL/drive prefixes, control chars, and anything outside `[A-Za-z0-9._@+/-]` (so it can't inject prompt text); blank → dropped.
+
+Formatter pipeline: shared speech-to-writing prompt + optional file-type context, tries models in order via `openai` SDK, strips thinking tokens.
 
 Success (`formattingStatus: "formatted"`):
 ```json
-{ "rawText": "git status dash s b", "displayText": "git status -sb", "formattingStatus": "formatted" }
+{ "displayText": "git status -sb", "formattingStatus": "formatted" }
 ```
 
 Formatter failure (`formattingStatus: "fallback_raw"`):
 ```json
-{ "rawText": "...", "displayText": "...", "formattingStatus": "fallback_raw", "warning": "Formatting failed; showing raw transcript." }
+{ "displayText": "...", "formattingStatus": "fallback_raw", "warning": "Formatting failed; showing raw transcript." }
 ```
 
-Empty transcript (`formattingStatus: "empty"`, 200):
+Empty/blank transcript (`formattingStatus: "empty"`, 200, no model call):
 ```json
-{ "rawText": "", "displayText": "", "formattingStatus": "empty" }
+{ "displayText": "", "formattingStatus": "empty" }
 ```
 
-**Error responses** — stable JSON `{ error, message }`:
+**Error responses** — stable JSON `{ "error": "<message>" }`:
 
-| Condition | HTTP | `error` | `message` |
-|-----------|------|---------|-----------|
-| Missing GROQ_API_KEY | 503 | `service_unavailable` | Voice input is unavailable. Set GROQ_API_KEY. |
-| Invalid/missing upload or surface | 400 | `invalid_request` | Invalid voice recording. |
-| Audio > 20 MB | 413 | `payload_too_large` | Recording too large. Keep it short. |
-| Upstream rate limit | 429 | `rate_limited` | Rate limit reached. Try again shortly. |
-| Upstream timeout/network | 502 | `upstream_error` | Transcription failed. Try again. |
+| Condition | HTTP | `error` message | Route |
+|-----------|------|-----------------|-------|
+| Missing GROQ_API_KEY | 503 | Voice input is unavailable. Set GROQ_API_KEY. | both |
+| Invalid form / missing audio / non-string `language`\|`context` | 400 | Invalid voice recording. | transcribe |
+| Unsupported audio format | 400 | Unsupported audio format. | transcribe |
+| Audio > 20 MB | 413 | Recording too large. Keep it short. | transcribe |
+| Invalid JSON / `surface` / `filePath` | 400 | Invalid request. | format |
+| Transcript > `VOICE_MAX_TRANSCRIPT_CHARS` | 413 | Transcript too long. | format |
+| Upstream rate limit | 429 | Rate limit reached. Try again shortly. | transcribe |
+| Upstream timeout/network | 502 | Transcription failed. Try again. | transcribe |
 
 Audio is never persisted to disk. API key is never exposed to the browser.
 
--> Design doc: `plan/active/voice-formatting/final/design.md`
+-> Design doc: `plan/active/voice-streaming/design_claude.md`
 
 ### Tasks
 
