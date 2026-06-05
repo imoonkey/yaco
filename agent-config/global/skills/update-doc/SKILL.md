@@ -128,11 +128,10 @@ Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
   `plan/active/<project>/` bundle, write or update
   `plan/active/<project>/implementation_summary.md` — a concise summary of
   what was implemented, key decisions made, and current state.
-- **Archive completed bundles.** When archiving
-  `plan/active/<project>/` → `plan/archive/YYYYMMDD_<project>/`, check
-  whether `plan/tasks.json` has the matching terminal project task and
-  archive it via `yaco task archive <id> --json` (or `/update-tasks`). That
-  task snapshot is written separately to
-  `plan/archive/YYYYMMDD_<slug>.json`.
+- **Archive completed bundles.** When archiving a completed project, check
+  whether `plan/tasks/**/tasks.json` has the matching terminal project task
+  and archive it via `yaco task archive <id> --json` (or `/update-tasks`).
+  The command marks the terminal subtree with `workset=archive`; project docs
+  live under `plan/all/**`, with `plan/archive/*` as a symlink view.
 
 Outside YACO, follow the project's own design-doc and archive conventions.

@@ -1,7 +1,6 @@
-import { readFile, readdir } from 'fs/promises'
-import { existsSync } from 'fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { execFile } from 'child_process'
-import { join } from 'path'
+import { isAbsolute, join } from 'path'
 import { Hono } from 'hono'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
@@ -9,18 +8,40 @@ import { emitRefresh } from '../lib/notify'
 import { getWorktreeStatuses } from '../lib/worktree'
 import { YACO_PATH, YACO_TASK_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { buildChildProcessEnv } from '../lib/ssh-auth'
-import { readYacoProjectPaths } from '@yaco/cli/core/paths'
 
-/** Resolve absolute on-disk locations for tasksFile + archive dir, honoring
+/** Resolve absolute on-disk locations for the task store + archive dir, honoring
  *  any `yaco.toml [paths]` overrides. App reads must come through this so
  *  they share the source of truth with `yaco task <subcommand>` writes —
  *  otherwise the UI would show one file while mutations land in another. */
-function resolveRepoPaths(repoRoot: string): { tasksFile: string; archiveDir: string } {
-  const paths = readYacoProjectPaths(repoRoot)
+function resolveRepoPaths(repoRoot: string): { tasksPath: string } {
+  const paths = readTaskRoutePaths(repoRoot)
   return {
-    tasksFile: join(repoRoot, paths.tasks),
-    archiveDir: join(repoRoot, paths.archive),
+    tasksPath: join(repoRoot, paths.tasks),
   }
+}
+
+function readTaskRoutePaths(repoRoot: string): { tasks: string } {
+  const configPath = join(repoRoot, 'yaco.toml')
+  if (!existsSync(configPath)) return { tasks: 'plan/tasks' }
+  const raw = readFileSync(configPath, 'utf-8')
+  let inPaths = false
+  let tasks = 'plan/tasks'
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line || line.startsWith('#')) continue
+    const section = line.match(/^\[([^\]]+)\]$/)
+    if (section) {
+      inPaths = section[1] === 'paths'
+      continue
+    }
+    if (!inPaths) continue
+    const match = line.match(/^tasks\s*=\s*"([^"]+)"\s*$/)
+    if (match) tasks = match[1]
+  }
+  if (isAbsolute(tasks) || tasks.split(/[/\\]/).includes('..')) {
+    throw new Error(`yaco.toml: [paths].tasks must be repo-relative, got "${tasks}"`)
+  }
+  return { tasks }
 }
 
 interface CliEnvelopeOk { ok: true; data: unknown }
@@ -115,6 +136,38 @@ function parseJsonBody(raw: unknown): Record<string, unknown> | null {
   return raw as Record<string, unknown>
 }
 
+function loadTaskMap(tasksPath: string): Record<string, Record<string, unknown>> {
+  const files = discoverTaskFiles(tasksPath)
+  const tasks: Record<string, Record<string, unknown>> = {}
+  const sources = new Map<string, string>()
+  for (const file of files) {
+    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, Record<string, unknown>>
+    for (const [id, task] of Object.entries(parsed)) {
+      const existing = sources.get(id)
+      if (existing) throw new Error(`duplicate task id '${id}' in ${existing} and ${file}`)
+      tasks[id] = { ...task, workset: task.workset ?? 'active' }
+      sources.set(id, file)
+    }
+  }
+  return tasks
+}
+
+function discoverTaskFiles(tasksPath: string): string[] {
+  const st = statSync(tasksPath)
+  if (st.isFile()) return [tasksPath]
+  if (!st.isDirectory()) throw new Error(`tasks path ${tasksPath} must be a file or directory`)
+  const files: string[] = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) walk(path)
+      else if (entry.isFile() && entry.name === 'tasks.json') files.push(path)
+    }
+  }
+  walk(tasksPath)
+  return files
+}
+
 const app = new Hono<ProjectEnv>()
 
 interface TasksResponse { tasks: Record<string, Record<string, unknown>> }
@@ -128,10 +181,12 @@ function invalidateTasksCache(projectPath: string): void {
 }
 
 async function buildTasksResponse(projectPath: string): Promise<TasksResponse | { __notfound: true }> {
-  const { tasksFile } = resolveRepoPaths(projectPath)
-  if (!existsSync(tasksFile)) return { __notfound: true }
-  const raw = await readFile(tasksFile, 'utf-8')
-  const tasks = JSON.parse(raw) as Record<string, Record<string, unknown>>
+  const { tasksPath } = resolveRepoPaths(projectPath)
+  if (!existsSync(tasksPath)) return { __notfound: true }
+  const allTasks = loadTaskMap(tasksPath)
+  const tasks = Object.fromEntries(
+    Object.entries(allTasks).filter(([, task]) => task.workset === 'active'),
+  )
 
   const statuses = await getWorktreeStatuses(projectPath, tasks as Record<string, { worktree?: string }>)
   for (const task of Object.values(tasks)) {
@@ -221,33 +276,32 @@ app.delete('/:project/:taskId', withProject, async (c) => {
 })
 
 // GET /:project/archive — List archived tasks. The archive directory
-// resolves through yaco.toml [paths].archive so override repos see the
-// same listing the CLI writes (`yaco task archive <id>` uses the same key).
+// is now a workset view over the canonical task graph, not JSON snapshots.
 app.get('/:project/archive', withProject, async (c) => {
   const proj = c.var.project
-  const { archiveDir } = resolveRepoPaths(proj.path)
+  const { tasksPath } = resolveRepoPaths(proj.path)
+  if (!existsSync(tasksPath)) return c.json({ archives: [] })
 
-  if (!existsSync(archiveDir)) return c.json({ archives: [] })
+  const tasks = loadTaskMap(tasksPath)
+  const grouped = new Map<string, Record<string, Record<string, unknown>>>()
+  for (const [id, task] of Object.entries(tasks)) {
+    if (task.workset !== 'archive') continue
+    const stamp = typeof task.updated === 'string' ? task.updated : typeof task.created === 'string' ? task.created : ''
+    const date = stamp.slice(0, 10)
+    const key = date || 'unknown'
+    const group = grouped.get(key) ?? {}
+    group[id] = task
+    grouped.set(key, group)
+  }
+  const archives = [...grouped.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([date, tasks]) => ({
+      file: date === 'unknown' ? 'workset-archive' : `${date.replaceAll('-', '')}_workset-archive`,
+      date: date === 'unknown' ? '' : date,
+      tasks,
+    }))
 
-  const entries = await readdir(archiveDir)
-  const jsonFiles = entries.filter((f) => f.endsWith('.json')).sort()
-
-  const results = await Promise.all(
-    jsonFiles.map(async (file) => {
-      try {
-        const raw = await readFile(join(archiveDir, file), 'utf-8')
-        const dateMatch = file.match(/^(\d{8})_/)
-        const date = dateMatch
-          ? `${dateMatch[1].slice(0, 4)}-${dateMatch[1].slice(4, 6)}-${dateMatch[1].slice(6, 8)}`
-          : ''
-        return { file, date, tasks: JSON.parse(raw) }
-      } catch {
-        return null
-      }
-    }),
-  )
-
-  return c.json({ archives: results.filter(Boolean) })
+  return c.json({ archives })
 })
 
 // POST /:project/:taskId/archive — Archive a task

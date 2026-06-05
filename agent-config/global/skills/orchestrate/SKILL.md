@@ -1,11 +1,11 @@
 ---
 name: orchestrate
-description: Execute tasks from plan/tasks.json using yaco agent workers. Use when the user wants to run, advance, or check on task execution.
+description: Execute active tasks from plan/tasks/**/tasks.json using yaco agent workers. Use when the user wants to run, advance, or check on task execution.
 metadata:
   yaco-dependent: "true"
 ---
 
-Read `plan/tasks.json` via `yaco task`, dispatch `yaco agent` workers
+Read `plan/tasks/**/tasks.json` via `yaco task`, dispatch `yaco agent` workers
 against session state in `~/.yaco/sessions/`, and drive the worktree
 lifecycle via `yaco worktree`.
 
@@ -15,9 +15,10 @@ shell. Use the canonical `yaco agent start <provider>` form.
 
 ## Dispatch
 
-Read `plan/tasks.json` via `yaco task list --json` (or `/update-tasks`).
+Read the active workset via `yaco task list --json` (or `/update-tasks`).
 Select tasks where ALL of:
 - state is `ready`
+- workset is `active` (the CLI list surface filters this by default)
 - task is a **leaf** (no other task has this task as `parent`)
 - all `depends` are terminal (done/cancelled)
 - not blocked by parallelism check (see Two-Level Parallelism below)

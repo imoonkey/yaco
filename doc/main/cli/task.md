@@ -1,12 +1,11 @@
 # Task Subcommand (`@yaco/cli/core/task`)
 
-> Last updated: 2026-06-04 (yc-cleanup-legacy)
+> Last updated: 2026-06-05 (task-workset-storage)
 
 The task area owns the project task graph at `<repoRoot>/<paths.tasks>`
-(default `plan/tasks.json`, override via `yaco.toml [paths].tasks`).
-It is a TypeScript port of the legacy `update-tasks.py` helper (deleted
-in yc-cleanup-legacy) — behaviour is verbatim except where noted under
-[Differences](#differences-vs-the-python-script).
+(default `plan/tasks`, override via `yaco.toml [paths].tasks`). If the
+path is a directory, every descendant `tasks.json` is loaded recursively;
+if it is a `.json` file, that file is treated as a single-file task store.
 
 The pure library lives under `cli/src/lib/core/task/` and is published over
 the workspace exports map as `@yaco/cli/core/task`. CLI handlers in
@@ -17,11 +16,11 @@ and the `--json` envelope.
 
 | File | Surface | Notes |
 |------|---------|-------|
-| `model.ts` | `STATES`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, `isState`, types (`Task`, `TaskGraph`, …) | Schema mirrors the legacy update-tasks.py constants verbatim. |
+| `model.ts` | `STATES`, `WORKSETS`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, guards, types (`Task`, `TaskGraph`, …) | Task schema constants. `workset` is `active`, `backlog`, or `archive`; missing normalizes to `active`. |
 | `validation.ts` | `validateTypes`, `isAcceptCriteriaBlank` | Shape checks for a `set` payload. Throws `CliError(INVALID)`. |
 | `graph.ts` | `validateRefs`, `checkCycles`, `validateState`, `rollup`, `hasChildren`, `childrenOf`, `validateGraph`, `collectParentChain` | Ref + cycle + state-guard + milestone-rollup checks. `validateGraph` collects **all** problems for the `validate` command. |
-| `store.ts` | `loadTasks`, `saveTasks`, `formatJson` | On-disk I/O. `saveTasks` writes `JSON.stringify(tasks, null, 2) + "\n"` — byte-compatible with Python's `json.dumps(tasks, indent=2, ensure_ascii=False) + "\n"`. |
-| `archive.ts` | `pickArchivePath`, `collectDescendants`, `archiveTask` | Filename rotation (`YYYYMMDD_<slug>[_N].json`), subtree collection, dangling-depends pruning. |
+| `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `formatJson` | On-disk I/O. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. |
+| `archive.ts` | `collectDescendants`, `archiveTask` | Terminal-subtree collection and `workset=archive` marking. |
 | `lock.ts` | `acquireLock`, `withLock`, `describeLock`, `lockPathFor` | Atomic-mkdir lock + owner metadata. See [Locking](#locking). |
 | `index.ts` | Re-exports the public surface | Always import through this barrel. |
 
@@ -43,7 +42,7 @@ JSON payload comes from **exactly one** of `--data`, `--stdin`, `--file`.
 Positional JSON is not supported (USAGE exit 2). Payload must be a JSON
 object.
 
-- **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready"}`, then merged with the payload, then `created` and `updated` set to `now`.
+- **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready", workset: "active"}`, then merged with the payload, then `created` and `updated` set to `now`. New tasks are written to `<paths.tasks>/tasks.json` when `paths.tasks` is a directory.
 - **Update**: incoming `created` is dropped; everything else is merged. `updated` always refreshed.
 - `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics).
 - Validation order (matches Python): leaf `acceptCriteria` non-blank → `validateRefs` → `validateState` → `checkCycles` → `rollup` → save.
@@ -57,7 +56,8 @@ Response shape (`--json`):
     "action": "create" | "update",
     "task": { ...full record... },
     "warnings": [ "..." ],
-    "tasksFile": "/abs/path/to/plan/tasks.json"
+    "tasksPath": "/abs/path/to/plan/tasks",
+    "tasksFile": "/abs/path/to/plan/tasks/tasks.json"
   } }
 ```
 
@@ -71,14 +71,13 @@ delete, if there's a surviving sibling under the same parent, calls
 ### `archive <id>`
 
 Pre-flight: target task must be terminal; every descendant must be
-terminal. On success: snapshot file written under `<paths.archive>` as
-`YYYYMMDD_<slug>[_N].json`, target + descendants removed from the live
-graph, and dangling `depends` references in survivors are pruned.
+terminal. On success: target + descendants stay in the graph and are
+marked `workset=archive`. Edges and `depends` references stay intact.
 
 Response shape (`--json`) — **exactly** these two keys:
 ```json
 { "ok": true,
-  "data": { "archivedCount": <n>, "archivePath": "/abs/path/..." } }
+  "data": { "archivedCount": <n>, "workset": "archive" } }
 ```
 
 ### `validate [--id <id>]`
@@ -86,7 +85,7 @@ Response shape (`--json`) — **exactly** these two keys:
 Whole-graph by default; `--id` narrows to the named task plus its parent
 chain. Reports **all** problems in a single pass — does not short-circuit.
 
-`data` on success: `{ ok: true, scope: "all" | "<id>", tasksFile, lock? }`
+`data` on success: `{ ok: true, scope: "all" | "<id>", tasksPath, tasksFile, lock? }`
 where `lock` is only present when a same-host stale or live lock is visible.
 
 `error.details` on failure (any non-empty bucket fails the command,
@@ -99,27 +98,27 @@ returns exit 1 `INVALID`):
 | `selfReference` | `[id, ...]` | task references itself via parent or depends |
 | `missingAC` | `[id, ...]` | leaf task with blank `acceptCriteria` |
 | `invalidState` | `[{id, state}]` | `state` not in `STATES` |
+| `invalidWorkset` | `[{id, workset}]` | `workset` not in `WORKSETS` |
 | `milestoneRollup` | `[{id, recordedState, impliedState, reason}]` | parent state diverges from what its children imply (mirrors `rollup`'s two transitions) |
 | `staleLocks` | `[LockStatus]` | a cross-host lock is present (see [Locking](#locking)) |
 
 ### `list`
 
-Text mode prints `id  state  title` columns. `--json` returns
-`{ tasks, tasksFile }` — the raw graph.
+Text mode prints `id  state  title` columns for the active workset.
+`--json` returns `{ tasks, tasksPath, tasksFile }` for the active workset.
 
 ## Path resolution (the bug we fixed)
 
-Every subcommand resolves the tasks file (and the archive directory) via
-`readYacoProjectPaths(repoRoot)` from `@yaco/cli/core/paths`. This honors
-`<repoRoot>/yaco.toml [paths].tasks` and `[paths].archive`. The legacy
-Python script hardcoded `plan/tasks.json` regardless of yaco.toml —
-that's the bug yc-task-ts closed.
+Every subcommand resolves the task store via `readYacoProjectPaths(repoRoot)`
+from `@yaco/cli/core/paths`. This honors `<repoRoot>/yaco.toml
+[paths].tasks`. The legacy Python script hardcoded `plan/tasks.json`; the
+current default is the recursive directory store `plan/tasks`.
 
 `--repo <path>` overrides cwd. Empty / missing value → USAGE exit 2.
 
 ## Locking
 
-The lock primitive is an atomic `mkdir` of `<tasks-file>.lock.d`, plus a
+The lock primitive is an atomic `mkdir` of `<tasks-path>.lock.d`, plus a
 single-file owner record at `<lock-dir>/owner.json`:
 
 ```json
@@ -142,7 +141,7 @@ Stale-lock handling:
   exit 4 on timeout.
 - **Cross host** — NEVER auto-broken. Even after the retry budget
   expires the lock dir is preserved. `yaco task validate` reports it
-  under `error.details.staleLocks`. Manual `rm -rf <tasks-file>.lock.d`
+  under `error.details.staleLocks`. Manual `rm -rf <tasks-path>.lock.d`
   is the escape hatch (no separate `yaco task lock clear` command).
 
 `describeLock(path)` is the read-only inspector — exported so the
@@ -152,8 +151,8 @@ Stale-lock handling:
 
 | Behaviour | Legacy Python (`update-tasks.py`) | TS (`yaco task`) |
 |-----------|-----------------------------------|-------------------|
-| Tasks file location | Hardcoded `plan/tasks.json` | Resolved via `readYacoProjectPaths` (yaco.toml honored) |
-| Archive dir location | Hardcoded `plan/archive` | Resolved via `readYacoProjectPaths` (yaco.toml honored) |
+| Tasks storage | Hardcoded `plan/tasks.json` | Recursive `plan/tasks/**/tasks.json`, or a configured single `.json` file |
+| Archive behavior | Snapshot JSON under `plan/archive` | `workset=archive` on the terminal subtree |
 | Lock primitive | `fcntl.flock` on a single file | Atomic `mkdir` of `<file>.lock.d` + owner metadata |
 | Stale-lock detection | n/a (`flock` releases on process death) | PID + hostname check; cross-host never auto-broken |
 | `set` payload source | Positional JSON OR stdin | `--data` / `--stdin` / `--file` (exactly one); positional rejected |
@@ -161,16 +160,14 @@ Stale-lock handling:
 | Output envelope | Plain text / stderr | `--json` envelope per the dispatcher contract |
 | Warnings key | stderr `advisory: ...` | `data.warnings: [...]` in `--json`; stderr `warning: ...` in text mode |
 
-The byte-format of `tasks.json` itself is identical to what the legacy
-script produced — the `parity.integration.ts` fixture sequences that
-proved this still live in the test tree (skipped now that the Python
-script is gone, but kept as a documentation anchor).
+Single task files still use the same two-space JSON format, but Python parity
+tests were removed because `workset` and recursive task files are now part of
+the canonical model.
 
 ## Tests
 
 - `cli/test/unit/core/task/{validation,graph,store,archive,lock}.test.ts` — pure unit coverage.
 - `cli/test/integration/task/task-cli.integration.ts` — spawns `yaco` and asserts the envelope contracts (create/update/rm/archive/validate/list, --file ENOENT mapping, warnings key, milestone-rollup detection, configured-path regression, lock contention, local stale-PID reclaim, cross-host lock → exit 4 set + exit 1 validate with `staleLocks`).
-- `cli/test/integration/task/parity.integration.ts` — historical Python ↔ TS byte-identical tasks.json parity sequences (skipped now that `update-tasks.py` is deleted; retained as documentation of the verbatim semantics).
 
 ## Consumers
 

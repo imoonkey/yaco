@@ -100,6 +100,22 @@
 **Commit:** this commit.
 **Next:** `app-summary-history-boundary` and `app-output-boundary` move provider-native reads behind CLI surfaces; `ui-provider-config` carries the provider-keyed UI map.
 **Blockers:** None.
+## 2026-06-05: Task graph worksets and recursive task files
+
+**What changed:**
+- Added `workset` (`active | backlog | archive`) to the task schema. Missing values normalize to `active`; `yaco task archive` now marks a terminal subtree as `workset=archive` instead of writing/removing snapshot JSON.
+- Changed the default task store from `plan/tasks.json` to recursive `plan/tasks/**/tasks.json`, with duplicate-ID detection and source-file writeback for updates.
+- Updated app task reads so board/list/graph consume the same active-workset task API; archive view reads `workset=archive` tasks.
+- Updated task/orchestrate/design/update-doc docs and SOTA task/paths/app docs for the new storage contract.
+
+**Why:**
+- Task execution lifecycle (`state`) and human workset visibility (`workset`) are separate concepts. Recursive task files let project-local task sets live together without tying active/backlog/archive semantics to physical folders.
+
+**Key files:** `cli/src/lib/core/task/*`, `cli/src/commands/task/*`, `app/server/src/routes/tasks.ts`, `app/ui/src/hooks/useTaskGraph.ts`, `agent-config/global/skills/{update-tasks,orchestrate}/SKILL.md`, `doc/main/cli/task.md`
+**Verification:** `cd cli && bun run test:unit` -> 554 pass / 0 fail; `cd cli && bun test ./test/integration/task/task-cli.integration.ts` -> 19 pass / 0 fail; `cd app/server && npx vitest run src/routes/__tests__/tasks-worktree.test.ts src/routes/__tests__/tasks-cli.test.ts` -> 15 pass / 0 fail; `cd app/ui && npm run lint` -> 0 errors / 13 existing warnings; `cd app/ui && npm run build` passed.
+**Commit:** this commit
+**Next:** Migrate the live root `plan/tasks.json` into `plan/tasks/tasks.json`, then move docs under `plan/all/**` with `plan/{active,backlog,archive}` symlink views.
+**Blockers:** None.
 
 ## 2026-06-05: install/doctor iterate the provider registry
 

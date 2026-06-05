@@ -1,11 +1,11 @@
 ---
 name: update-tasks
-description: Create and manage the project task graph in plan/tasks.json. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
+description: Create and manage the project task graph in plan/tasks/**/tasks.json. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
 metadata:
   yaco-dependent: "true"
 ---
 
-This skill owns and mutates `plan/tasks.json` through the `yaco task`
+This skill owns and mutates `plan/tasks/**/tasks.json` through the `yaco task`
 CLI and references design bundles under `plan/active/<bundle>/`.
 
 ## Scope
@@ -17,7 +17,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
 - **Reorganization**: reparent tasks, adjust dependencies, split or merge tasks as the plan evolves
 - **Progress tracking**: update state as work proceeds, read the graph to report status
 
-## Core Schema — `plan/tasks.json`
+## Core Schema — `plan/tasks/**/tasks.json`
 
 ```json
 {
@@ -27,6 +27,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
     "parent": null,
     "depends": [],
     "state": "ready",
+    "workset": "active",
     "design": "plan/active/workspace-state/final/design_aligned.md",
     "scope": ["src/store/**", "src/hooks/useEditor*"],
     "acceptCriteria": "- editor state persists across refresh\n- npm test passes\n- no console errors on reload",
@@ -44,6 +45,7 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `parent` | yes | Parent task ID or null. Parent with children = milestone (state derived by rollup). Leaf task = executable (state managed directly) |
 | `depends` | yes | Task IDs that must be terminal (done/cancelled) before this can start |
 | `state` | yes | `ready \| running \| done \| blocked \| cancelled` |
+| `workset` | no | `active \| backlog \| archive` — visibility/workset. Missing defaults to `active`; orchestrate only dispatches active tasks. |
 | `design` | no | Path to design doc |
 | `scope` | no | File globs this task touches. Parallel tasks must not overlap |
 | `acceptCriteria` | yes | Acceptance criteria — what "done" looks like. String or string[]. See "Writing acceptCriteria" below |
@@ -97,6 +99,7 @@ Before writing any task, analyze and decide:
 - **worktree**: Does this task need an isolated checkout? Large-scope work or work that touches build artifacts/dependencies benefits from worktree isolation. Parent typically specifies the slug, subtasks inherit.
 - **acceptCriteria**: What does done look like? Include both observable outcomes and runnable verification commands.
 - **state**: Is it ready to start, or blocked on something?
+- **workset**: Is this in the active workset, backlog, or terminal archive?
 
 ## Tools
 
@@ -105,7 +108,7 @@ Reads and writes both go through `yaco task`, which has graph constraints
 
 ```bash
 # Read
-yaco task list                          --json    # full graph
+yaco task list                          --json    # active workset
 yaco task validate                      --json    # validate whole graph
 yaco task validate --id <id>            --json    # validate one task + parent chain
 
@@ -117,12 +120,9 @@ yaco task rm      <id>                  --json
 yaco task archive <id>                  --json
 ```
 
-`archive` moves a terminal task and all its descendants to
-`plan/archive/YYYYMMDD_<slug>.json` (or `..._<n>.json` if that day's
-archive file already exists). All descendants must also be terminal. When
-this is a completed project task, then run `/update-doc` to move the
-matching project docs from `plan/active/<project>/` to
-`plan/archive/YYYYMMDD_<project>/`.
+`archive` sets `workset=archive` on a terminal task and all its descendants.
+All descendants must also be terminal. Non-terminal work that should leave the
+current workset belongs in `workset=backlog`, not `archive`.
 
 Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.
 
@@ -136,6 +136,7 @@ yaco task set workspace-state --data '{
   "parent": null,
   "depends": [],
   "state": "ready",
+  "workset": "active",
   "acceptCriteria": ["npm test passes", "no console errors on reload"]
 }' --json
 

@@ -64,10 +64,10 @@ exit ${exitCode}
 
 beforeEach(() => {
   testProjectPath = mkdtempSync(join(tmpdir(), 'workflow-task-cli-test-'))
-  mkdirSync(join(testProjectPath, 'plan'), { recursive: true })
+  mkdirSync(join(testProjectPath, 'plan/tasks'), { recursive: true })
   // Pre-seed tasks.json so GET paths work; mutations are stubbed so the
   // file is never actually written.
-  writeFileSync(join(testProjectPath, 'plan/tasks.json'), '{}')
+  writeFileSync(join(testProjectPath, 'plan/tasks/tasks.json'), '{}')
 
   const stubDir = mkdtempSync(join(tmpdir(), 'workflow-task-cli-stub-'))
   stubScript = join(stubDir, 'yaco')
@@ -203,7 +203,7 @@ describe('DELETE + archive — envelope round-trip', () => {
   })
 
   it('POST .../archive returns {archived:true} on success', async () => {
-    writeStub({ ok: true, data: { archivedCount: 1, archivePath: '/stub/path' } }, 0, 'stdout')
+    writeStub({ ok: true, data: { archivedCount: 1, workset: 'archive' } }, 0, 'stdout')
     const res = await taskRoutes.request('/test-project/T1/archive', { method: 'POST' })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ archived: true })

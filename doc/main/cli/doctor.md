@@ -38,7 +38,7 @@ yaco doctor [--repo <path>] [--json]
 | 9 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
 | 10 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
 | 11 | `providers` | At least one registered provider's `executable` is on `$PATH` (probed via `which` over the provider registry) | which providers resolve | `no provider executable on $PATH (<missing ids>)` |
-| 12 | `task-graph` | `yaco task validate` would succeed on the repo's `plan/tasks.json` (in-process via `loadTasks + validateGraph`) | `<tasksFile> ok` | `<tasksFile> missing` / `<N> integrity problem(s)` |
+| 12 | `task-graph` | `yaco task validate` would succeed on the repo's `plan/tasks` store (in-process via `loadTaskStore + validateGraph`) | `<tasksPath> ok` | `<tasksPath> missing` / `<N> integrity problem(s)` |
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
 twelve names above so consumers can rely on the contract.
@@ -85,7 +85,7 @@ subprocess runs.
 ## `task-graph` in-process
 
 The `task-graph` check used to spawn `yaco task validate --json` as a child
-bun process; now it runs `validateGraph(loadTasks(tasksFile))` directly
+bun process; now it runs `validateGraph(loadTaskStore(tasksPath).tasks)` directly
 (both are pure helpers in `lib/core/task`). Eliminates one bun startup per
 doctor run and avoids the test-mode argv plumbing nightmare.
 

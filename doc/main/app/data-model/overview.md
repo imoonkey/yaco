@@ -22,8 +22,8 @@ Source-of-truth boundaries for the workflow system's data.
 | Data | Owner | Storage | Consumers |
 |------|-------|---------|-----------|
 | Project list | Server | `${YACO_HOME:-~/.yaco}/projects.json` | Frontend (via API) |
-| Task graph | Source artifact | `plan/tasks.json` | Tasks API → Frontend |
-| Task artifact bundles | Source artifact | `plan/active/<bundle>/`, `plan/archive/YYYYMMDD_<bundle>/` | Editor, design skills (opaque doc folders — not parsed by the server) |
+| Task graph | Source artifact | `plan/tasks/**/tasks.json` | Tasks API → Frontend |
+| Task artifact bundles | Source artifact | `plan/all/**` with `plan/{active,backlog,archive}` symlink views | Editor, design skills (opaque doc folders — not parsed by the server) |
 | Progress entries | YACO runtime | `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl` | Server scanner → Frontend |
 | Session list | Server (poller cache) | In-memory | Frontend (via API) |
 | Session status | yaco agent / Workflow shell state + tmux | State files + live tmux checks | Server poller → Frontend |

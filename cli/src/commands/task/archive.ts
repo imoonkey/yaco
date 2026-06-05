@@ -1,12 +1,11 @@
-/** `yaco task archive <id>` — pack a terminal subtree into plan/archive
- *  and prune dangling depends references in the survivors.
+/** `yaco task archive <id>` — mark a terminal subtree as archived.
  */
 
 import { ok, type Result } from "../../lib/core/result.ts";
 import {
   archiveTask,
-  loadTasks,
-  saveTasks,
+  loadTaskStore,
+  saveTaskStore,
   withLock,
 } from "../../lib/core/task/index.ts";
 import { resolveTaskPaths } from "./paths.ts";
@@ -22,23 +21,21 @@ export async function runArchive(
 ): Promise<Result<unknown>> {
   const paths = resolveTaskPaths(opts.repo);
   let archivedCount = 0;
-  let archivePath = "";
 
   await withLock(
-    paths.tasksFile,
+    paths.tasksPath,
     () => {
-      const tasks = loadTasks(paths.tasksFile);
-      const outcome = archiveTask(tasks, id, paths.archiveDir, new Date());
+      const store = loadTaskStore(paths.tasksPath);
+      const outcome = archiveTask(store.tasks, id);
       archivedCount = outcome.archivedIds.length;
-      archivePath = outcome.archivePath;
-      saveTasks(paths.tasksFile, tasks);
+      saveTaskStore(store);
     },
     { command: `yaco task archive ${id}` },
   );
 
   if (!opts.json) {
-    process.stderr.write(`archived ${archivedCount} tasks → ${archivePath}\n`);
+    process.stderr.write(`archived ${archivedCount} tasks\n`);
   }
 
-  return ok({ archivedCount, archivePath });
+  return ok({ archivedCount, workset: "archive" });
 }

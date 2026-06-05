@@ -24,6 +24,7 @@ describe("validateTypes", () => {
         tags: ["a"],
         estimate: "s",
         worktree: "feat-x",
+        workset: "backlog",
       }),
     ).not.toThrow();
   });
@@ -62,6 +63,10 @@ describe("validateTypes", () => {
 
   it("rejects bad worktree slug", () => {
     expect(() => validateTypes({ worktree: "-bad-" })).toThrow(/worktree must be a valid slug/);
+  });
+
+  it("rejects unknown workset", () => {
+    expect(() => validateTypes({ workset: "later" })).toThrow(/workset must be/);
   });
 
   it("allows null worktree (delete signal)", () => {

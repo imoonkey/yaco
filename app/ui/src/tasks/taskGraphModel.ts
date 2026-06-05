@@ -14,6 +14,7 @@ export type RawTaskEntry = {
   note?: string | null
   worktree?: string | null
   estimate?: string | null
+  workset?: 'active' | 'backlog' | 'archive'
 }
 
 export type RawTaskMap = Record<string, RawTaskEntry>
@@ -32,6 +33,7 @@ export type TaskGraphTask = {
   hasChildren: boolean
   worktree: string | null
   estimate: string | null
+  workset: 'active' | 'backlog' | 'archive'
 }
 
 // Layout types — flat indented tree, no nested boxes
@@ -173,6 +175,7 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
       hasChildren: childrenOf.has(id),
       worktree: entry.worktree ?? null,
       estimate: entry.estimate ?? null,
+      workset: entry.workset ?? 'active',
     })
   }
 

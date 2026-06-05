@@ -10,8 +10,10 @@
 import { CliError, ErrCode } from "../errors.ts";
 import {
   STATES,
+  DEFAULT_WORKSET,
   TERMINAL,
   isState,
+  isWorkset,
   type State,
   type Task,
   type TaskGraph,
@@ -117,6 +119,7 @@ export interface ValidationProblems {
   selfReference: string[];
   missingAC: string[];
   invalidState: { id: string; state: unknown }[];
+  invalidWorkset: { id: string; workset: unknown }[];
   milestoneRollup: {
     id: string;
     recordedState: State;
@@ -144,6 +147,7 @@ export function validateGraph(
     selfReference: [],
     missingAC: [],
     invalidState: [],
+    invalidWorkset: [],
     milestoneRollup: [],
   };
 
@@ -152,6 +156,10 @@ export function validateGraph(
     if (!t) continue;
 
     if (!isState(t.state)) problems.invalidState.push({ id: tid, state: t.state });
+    const workset = t.workset ?? DEFAULT_WORKSET;
+    if (!isWorkset(workset)) {
+      problems.invalidWorkset.push({ id: tid, workset: t.workset });
+    }
 
     if (t.parent === tid || t.depends.includes(tid)) {
       problems.selfReference.push(tid);
@@ -243,6 +251,7 @@ export function validateGraph(
     problems.selfReference.length > 0 ||
     problems.missingAC.length > 0 ||
     problems.invalidState.length > 0 ||
+    problems.invalidWorkset.length > 0 ||
     problems.milestoneRollup.length > 0;
 
   return hasAny ? { ok: false, details: problems } : { ok: true };

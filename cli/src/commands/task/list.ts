@@ -5,7 +5,7 @@
  */
 
 import { ok, type Result } from "../../lib/core/result.ts";
-import { loadTasks } from "../../lib/core/task/index.ts";
+import { DEFAULT_WORKSET, loadTaskStore, type TaskGraph } from "../../lib/core/task/index.ts";
 import { resolveTaskPaths } from "./paths.ts";
 
 interface ListOpts {
@@ -15,12 +15,13 @@ interface ListOpts {
 
 export function runList(opts: ListOpts): Result<unknown> {
   const paths = resolveTaskPaths(opts.repo);
-  const tasks = loadTasks(paths.tasksFile);
+  const store = loadTaskStore(paths.tasksPath);
+  const tasks = activeTasks(store.tasks);
 
-  if (opts.json) return ok({ tasks, tasksFile: paths.tasksFile });
+  if (opts.json) return ok({ tasks, tasksPath: paths.tasksPath, tasksFile: store.defaultFile });
 
   const ids = Object.keys(tasks);
-  if (ids.length === 0) return ok({ help: `(no tasks in ${paths.tasksFile})\n` });
+  if (ids.length === 0) return ok({ help: `(no tasks in ${paths.tasksPath})\n` });
 
   const widest = ids.reduce((m, id) => Math.max(m, id.length), 0);
   const lines = ids.map((id) => {
@@ -28,4 +29,10 @@ export function runList(opts: ListOpts): Result<unknown> {
     return `${id.padEnd(widest)}  ${t.state.padEnd(9)}  ${t.title ?? ""}`;
   });
   return ok({ help: lines.join("\n") + "\n" });
+}
+
+function activeTasks(tasks: TaskGraph): TaskGraph {
+  return Object.fromEntries(
+    Object.entries(tasks).filter(([, task]) => (task.workset ?? DEFAULT_WORKSET) === "active"),
+  );
 }

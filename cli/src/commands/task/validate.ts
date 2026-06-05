@@ -13,7 +13,7 @@ import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { err, ok, type Result } from "../../lib/core/result.ts";
 import {
   describeLock,
-  loadTasks,
+  loadTaskStore,
   validateGraph,
   type LockStatus,
 } from "../../lib/core/task/index.ts";
@@ -27,14 +27,15 @@ interface ValidateOpts {
 
 export function runValidate(opts: ValidateOpts): Result<unknown> {
   const paths = resolveTaskPaths(opts.repo);
-  const tasks = loadTasks(paths.tasksFile);
+  const store = loadTaskStore(paths.tasksPath);
+  const tasks = store.tasks;
 
   if (opts.id !== undefined && !(opts.id in tasks)) {
     throw new CliError(ErrCode.NOT_FOUND, `task '${opts.id}' not found`);
   }
   const report = validateGraph(tasks, opts.id ? { id: opts.id } : undefined);
 
-  const lock = describeLock(paths.tasksFile);
+  const lock = describeLock(paths.tasksPath);
   const staleLocks = lock.held && lock.sameHost === false ? [lock] : [];
   const localAdvisoryNotes = lock.held && lock.sameHost !== false ? lock.notes ?? [] : [];
 
@@ -55,7 +56,8 @@ export function runValidate(opts: ValidateOpts): Result<unknown> {
   return ok({
     ok: true,
     scope: opts.id ?? "all",
-    tasksFile: paths.tasksFile,
+    tasksPath: paths.tasksPath,
+    tasksFile: store.defaultFile,
     lock: lock.held ? (lock as LockStatus) : undefined,
   });
 }

@@ -9,6 +9,10 @@ export const STATES = ["ready", "running", "done", "blocked", "cancelled"] as co
 export type State = (typeof STATES)[number];
 export const TERMINAL: ReadonlySet<State> = new Set(["done", "cancelled"]);
 
+export const WORKSETS = ["active", "backlog", "archive"] as const;
+export type Workset = (typeof WORKSETS)[number];
+export const DEFAULT_WORKSET: Workset = "active";
+
 export const PRIORITIES = ["critical", "high", "normal", "low"] as const;
 export type Priority = (typeof PRIORITIES)[number];
 
@@ -32,6 +36,7 @@ export interface Task {
   parent: string | null;
   depends: string[];
   state: State;
+  workset?: Workset;
   title?: string;
   description?: string;
   acceptCriteria?: string | string[];
@@ -53,4 +58,8 @@ export type TaskGraph = Record<string, Task>;
 
 export function isState(value: unknown): value is State {
   return typeof value === "string" && (STATES as readonly string[]).includes(value);
+}
+
+export function isWorkset(value: unknown): value is Workset {
+  return typeof value === "string" && (WORKSETS as readonly string[]).includes(value);
 }

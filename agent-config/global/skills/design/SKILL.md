@@ -81,6 +81,6 @@ Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
 `plan/active/<project>/*_[codex|claude].md` (or
 `plan/active/<project>/individual/*_[claude|codex].md` when running under
 `/double-design`); surface its Tasks section through `/update-tasks` (which
-writes `plan/tasks.json`); hand execution off to `/orchestrate`, which
+writes `plan/tasks/**/tasks.json`); hand execution off to `/orchestrate`, which
 dispatches `yaco agent` workers with session state under `~/.yaco/sessions/`.
 Outside YACO, follow the project's own design-doc convention.

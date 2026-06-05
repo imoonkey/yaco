@@ -2,13 +2,17 @@
 
 export {
   STATES,
+  WORKSETS,
   TERMINAL,
+  DEFAULT_WORKSET,
   PRIORITIES,
   ESTIMATES,
   BLOCK_REASONS,
   SLUG_RE,
   isState,
+  isWorkset,
   type State,
+  type Workset,
   type Priority,
   type Estimate,
   type BlockReason,
@@ -31,10 +35,18 @@ export {
   type ValidationReport,
 } from "./graph.ts";
 
-export { loadTasks, saveTasks, formatJson } from "./store.ts";
+export {
+  loadTasks,
+  saveTasks,
+  loadTaskStore,
+  saveTaskStore,
+  sourceForTask,
+  defaultTaskFileFor,
+  formatJson,
+  type TaskStore,
+} from "./store.ts";
 
 export {
-  pickArchivePath,
   collectDescendants,
   archiveTask,
   type ArchiveOutcome,

@@ -8,6 +8,7 @@ export type { TaskState } from '../taskGraphModel'
 export type Priority = 'critical' | 'high' | 'normal' | 'low'
 export type Estimate = 'xs' | 's' | 'm' | 'l' | 'xl'
 export type BlockReason = 'verification-failed' | 'human-review' | 'external' | 'dependency'
+export type Workset = 'active' | 'backlog' | 'archive'
 
 export type WorktreeStatus = {
   active: boolean
@@ -31,6 +32,7 @@ export type RawTaskV2 = RawTaskEntry & {
   design?: string | null
   resources?: string | string[]
   requireHumanReview?: boolean
+  workset?: Workset
 }
 
 /** Normalized V2 task — all fields present with defaults */
@@ -56,6 +58,7 @@ export type TaskV2 = {
   requireHumanReview: boolean
   worktree: string | null
   worktreeStatus: WorktreeStatus | null
+  workset: Workset
 }
 
 function parseAcceptCriteria(raw: string | string[] | undefined): string[] {
@@ -90,6 +93,7 @@ export function normalizeTask(id: string, raw: RawTaskV2): TaskV2 {
     requireHumanReview: raw.requireHumanReview ?? false,
     worktree: raw.worktree ?? null,
     worktreeStatus: raw.worktreeStatus ?? null,
+    workset: raw.workset ?? 'active',
   }
 }
 

@@ -12,16 +12,21 @@ import { readYacoProjectPaths } from "../../lib/core/paths/index.ts";
 
 export interface TaskPaths {
   repoRoot: string;
-  tasksFile: string;
+  tasksPath: string;
+  defaultTasksFile: string;
   archiveDir: string;
 }
 
 export function resolveTaskPaths(repoFlag: string | boolean | undefined): TaskPaths {
   const repoRoot = resolveRepoFlag(repoFlag);
   const rel = readYacoProjectPaths(repoRoot);
+  const tasksPath = resolve(repoRoot, rel.tasks);
   return {
     repoRoot,
-    tasksFile: resolve(repoRoot, rel.tasks),
+    tasksPath,
+    defaultTasksFile: rel.tasks.endsWith(".json")
+      ? tasksPath
+      : resolve(tasksPath, "tasks.json"),
     archiveDir: resolve(repoRoot, rel.archive),
   };
 }

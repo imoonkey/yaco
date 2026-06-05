@@ -76,7 +76,7 @@ describe("yaco paths project --json", () => {
     expect(parsed).toEqual({
       ok: true,
       data: {
-        tasks: `${repo}/plan/tasks.json`,
+        tasks: `${repo}/plan/tasks`,
         active: `${repo}/plan/active`,
         archive: `${repo}/plan/archive`,
         worktrees: `${repo}/.worktrees`,

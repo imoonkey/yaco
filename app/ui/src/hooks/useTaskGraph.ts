@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { API, useSSETick } from './useApi'
 import { buildTaskGraphModel, type RawTaskMap, type TaskGraphModel } from '../tasks/taskGraphModel'
 
-export const TASKS_FILE_PATH = 'plan/tasks.json'
+export const TASKS_FILE_PATH = 'plan/tasks/tasks.json'
 
 export type UseTaskGraphResult = {
   status: 'loading' | 'ready' | 'missing' | 'error'
@@ -33,9 +33,7 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
         initialLoad.current = false
       }
       try {
-        const res = await fetch(
-          `${API}/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(TASKS_FILE_PATH)}`
-        )
+        const res = await fetch(`${API}/tasks/${encodeURIComponent(projectName)}`)
         if (!res.ok) {
           if (res.status === 403 || res.status === 404) {
             if (!cancelled) {
@@ -48,8 +46,8 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
           }
           throw new Error(`${res.status} ${res.statusText}`)
         }
-        const data = await res.json() as { content: string }
-        const raw: RawTaskMap = JSON.parse(data.content)
+        const data = await res.json() as { tasks: RawTaskMap }
+        const raw = data.tasks
 
         const { model, warnings: w } = buildTaskGraphModel(raw)
         if (!cancelled) {

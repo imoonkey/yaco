@@ -9,9 +9,9 @@
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { ok, type Result } from "../../lib/core/result.ts";
 import {
-  loadTasks,
+  loadTaskStore,
   rollup,
-  saveTasks,
+  saveTaskStore,
   withLock,
 } from "../../lib/core/task/index.ts";
 import { resolveTaskPaths } from "./paths.ts";
@@ -25,9 +25,10 @@ export async function runRm(id: string, opts: RmOpts): Promise<Result<unknown>> 
   const paths = resolveTaskPaths(opts.repo);
 
   await withLock(
-    paths.tasksFile,
+    paths.tasksPath,
     () => {
-      const tasks = loadTasks(paths.tasksFile);
+      const store = loadTaskStore(paths.tasksPath);
+      const tasks = store.tasks;
       const t = tasks[id];
       if (!t) throw new CliError(ErrCode.NOT_FOUND, `task '${id}' not found`);
       if (t.state === "running") {
@@ -48,10 +49,10 @@ export async function runRm(id: string, opts: RmOpts): Promise<Result<unknown>> 
         const remaining = Object.keys(tasks).filter((k) => tasks[k]!.parent === parentId);
         if (remaining.length > 0) rollup(tasks, remaining[0]!);
       }
-      saveTasks(paths.tasksFile, tasks);
+      saveTaskStore(store);
     },
     { command: `yaco task rm ${id}` },
   );
 
-  return ok({ id, removed: true, tasksFile: paths.tasksFile });
+  return ok({ id, removed: true, tasksPath: paths.tasksPath });
 }

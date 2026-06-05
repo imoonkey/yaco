@@ -18,9 +18,10 @@ import {
   checkCycles,
   hasChildren,
   isAcceptCriteriaBlank,
-  loadTasks,
+  loadTaskStore,
   rollup,
-  saveTasks,
+  saveTaskStore,
+  sourceForTask,
   validateRefs,
   validateState,
   validateTypes,
@@ -47,11 +48,13 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
   const warnings: string[] = [];
   let action: "create" | "update" = "update";
   let resultTask!: Task;
+  let resultTasksFile = "";
 
   await withLock(
-    paths.tasksFile,
+    paths.tasksPath,
     () => {
-      const tasks = loadTasks(paths.tasksFile);
+      const store = loadTaskStore(paths.tasksPath);
+      const tasks = store.tasks;
       const now = nowIso();
       const existed = id in tasks;
       const oldState: State | undefined = tasks[id]?.state;
@@ -67,9 +70,10 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
             `new task requires: ${missing.sort().join(", ")}`,
           );
         }
-        const seed: Task = { parent: null, depends: [], state: "ready" };
+        const seed: Task = { parent: null, depends: [], state: "ready", workset: "active" };
         tasks[id] = Object.assign(seed, data) as Task;
         tasks[id]!.created = now;
+        sourceForTask(store, id);
         action = "create";
       }
 
@@ -85,7 +89,8 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       validateState(tasks, id, oldState, tasks[id]!.state as string);
       checkCycles(tasks);
       rollup(tasks, id);
-      saveTasks(paths.tasksFile, tasks);
+      resultTasksFile = sourceForTask(store, id);
+      saveTaskStore(store);
       resultTask = tasks[id]!;
 
       const wt = tasks[id]!.worktree;
@@ -106,7 +111,8 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
     action,
     task: resultTask,
     warnings,
-    tasksFile: paths.tasksFile,
+    tasksFile: resultTasksFile,
+    tasksPath: paths.tasksPath,
   });
 }
 

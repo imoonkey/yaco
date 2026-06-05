@@ -65,8 +65,8 @@ beforeEach(() => {
   writeFileSync(join(repoRoot, "agent-config", "global", "CLAUDE.md"), "# fake\n");
   // Minimal valid tasks graph so the doctor's task-graph check passes when
   // tests opt into running doctor (skipDoctor: false).
-  mkdirSync(join(repoRoot, "plan"), { recursive: true });
-  writeFileSync(join(repoRoot, "plan", "tasks.json"), "{}\n");
+  mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
+  writeFileSync(join(repoRoot, "plan", "tasks", "tasks.json"), "{}\n");
   process.env["YACO_REPO_ROOT"] = repoRoot;
   // Make doctor's PATH-based checks (tmux, git, claude, codex, yaco) hermetic
   // by prepending a shim bin onto PATH.
@@ -559,12 +559,12 @@ describe("runInstall --repo (HIGH 2 wire-through)", () => {
     // Stage a yaco binary so the binary check passes.
     writeFileSync(join(binDir, "yaco"), "#!/bin/sh\nexit 0\n");
     chmodSync(join(binDir, "yaco"), 0o755);
-    // Build a SECOND fake repo without a tasks.json so the task-graph check
+    // Build a SECOND fake repo without a task store so the task-graph check
     // would fail when doctor runs against it.
     const otherRepo = join(sandbox, "other-repo");
     mkdirSync(join(otherRepo, "agent-config", "global", "skills"), { recursive: true });
     writeFileSync(join(otherRepo, "agent-config", "global", "CLAUDE.md"), "# fake\n");
-    // No plan/tasks.json in otherRepo on purpose.
+    // No plan/tasks in otherRepo on purpose.
     let code: string | undefined;
     let report: any;
     try {

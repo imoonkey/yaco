@@ -48,8 +48,8 @@ beforeEach(() => {
   mkdirSync(join(repoRoot, "agent-config", "global", "skills"), { recursive: true });
   writeFileSync(join(repoRoot, "agent-config", "global", "CLAUDE.md"), "# fake\n");
   // Minimal valid tasks graph for the task-graph check.
-  mkdirSync(join(repoRoot, "plan"), { recursive: true });
-  writeFileSync(join(repoRoot, "plan", "tasks.json"), "{}\n");
+  mkdirSync(join(repoRoot, "plan", "tasks"), { recursive: true });
+  writeFileSync(join(repoRoot, "plan", "tasks", "tasks.json"), "{}\n");
   process.env["YACO_REPO_ROOT"] = repoRoot;
   const shimBin = join(sandbox, "shim-bin");
   mkdirSync(shimBin, { recursive: true });
@@ -207,7 +207,7 @@ describe("doctor --json — stable envelope on failure (HIGH 3)", () => {
 describe("doctor --repo (HIGH 2 wire-through)", () => {
   it("uses --repo for the task-graph check", () => {
     installPrereqs();
-    // Point doctor at a repo with no tasks.json — task-graph should fail.
+    // Point doctor at a repo with no task store — task-graph should fail.
     const r = spawnSync(
       "bun",
       ["run", BIN, "doctor", "--repo", sandbox, "--json"],

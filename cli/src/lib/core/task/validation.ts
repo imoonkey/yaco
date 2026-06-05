@@ -15,6 +15,7 @@ import {
   ESTIMATES,
   PRIORITIES,
   SLUG_RE,
+  WORKSETS,
 } from "./model.ts";
 
 type Json =
@@ -49,6 +50,11 @@ export function validateTypes(data: Record<string, unknown>): void {
   }
   if ("state" in data) {
     if (typeof data["state"] !== "string") invalid("'state' must be str");
+  }
+  if ("workset" in data) {
+    if (!(WORKSETS as readonly string[]).includes(data["workset"] as string)) {
+      invalid(`workset must be one of: ${[...WORKSETS].sort().join(", ")}`);
+    }
   }
   if ("scope" in data) {
     if (!Array.isArray(data["scope"])) invalid("'scope' must be list");

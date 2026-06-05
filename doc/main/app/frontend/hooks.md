@@ -249,13 +249,13 @@ Sets `--kb-viewport` CSS variable on `<html>` when virtual keyboard is detected.
 
 ## useTaskGraph.ts
 
-Fetches `plan/tasks.json` via the file content API, parses it, and builds the graph model.
+Fetches the active task workset via the task API and builds the graph model.
 
 **Export**: `useTaskGraph(project)` → `{ graph, error, loading }`
 
 Behavior:
-- Fetches via `GET /api/files/:project/content?path=plan/tasks.json`
-- SSE `filetree` channel triggers automatic refresh when tasks.json changes on disk
+- Fetches via `GET /api/tasks/:project`
+- SSE `filetree` channel triggers automatic refresh when task files change on disk
 - Returns `TaskGraphModel` (normalized tasks, computed layout, search index)
 
 ## usePanZoom.ts

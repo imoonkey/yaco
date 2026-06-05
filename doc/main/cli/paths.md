@@ -20,7 +20,7 @@ exports map).
 ## Resolution rules
 
 - `getYacoHome()` returns `process.env.YACO_HOME` **verbatim when non-empty**, otherwise `~/.yaco`. Empty string falls through to the default — tested by `yaco-home.test.ts`.
-- Project-relative defaults: `tasks = "plan/tasks.json"`, `active = "plan/active"`, `archive = "plan/archive"`, `worktrees = ".worktrees"`.
+- Project-relative defaults: `tasks = "plan/tasks"`, `active = "plan/active"`, `archive = "plan/archive"`, `worktrees = ".worktrees"`.
 - `yaco.toml [paths]` overrides must be repo-relative strings. Absolute paths and any segment equal to `..` are rejected as `CliError(ENV)` (exit 3). `[project]` is ignored — project identity lives only in `~/.yaco/projects.json`.
 - The scoped TOML reader accepts: section headers, `key = "string"` (basic + literal strings), `# comments`, blank lines. Anything else — numbers, booleans, inline tables, multi-line strings, **duplicate keys**, keys outside a section — throws `TomlParseError` with a line number; the project reader wraps as `CliError(ENV)`.
 - `agentWrapperPath()` returns `${YACO_HOME}/agent-wrapper.sh`. `yaco agent hooks install` (handled by `src/lib/core/agent/lifecycle.ts#ensureHooks`) writes the wrapper body verbatim from `cli/scripts/agent-wrapper.sh` to that path. The legacy `hookV2ScriptPath`/`wrapper-v2.sh` helpers were retired in yc-agent-subcommand.

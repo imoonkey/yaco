@@ -24,7 +24,7 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 - File explorer with git status
 - Multi-tab center pane for files, diffs, and the task graph
 - Git changes panel with diff viewer
-- Tasks doorway that opens `plan/tasks.json` as a stable tab
+- Tasks doorway that opens `plan/tasks/tasks.json` as the default task file
 - Terminal with session management
 - File search
 

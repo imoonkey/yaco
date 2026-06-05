@@ -55,6 +55,14 @@ function parseJson(line: string): { ok: boolean; data?: unknown; error?: { code:
   return JSON.parse(line.endsWith("\n") ? line.slice(0, -1) : line);
 }
 
+function defaultTasksPath(repo: string): string {
+  return join(repo, "plan/tasks");
+}
+
+function defaultTasksFile(repo: string): string {
+  return join(defaultTasksPath(repo), "tasks.json");
+}
+
 describe("yaco task set / rm / archive / list / validate", () => {
   let repo: string;
   beforeEach(() => {
@@ -78,8 +86,9 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(data.action).toBe("create");
     expect(data.task["state"]).toBe("ready");
     // Default file path
-    const tasksJson = JSON.parse(readFileSync(join(repo, "plan/tasks.json"), "utf-8"));
+    const tasksJson = JSON.parse(readFileSync(defaultTasksFile(repo), "utf-8"));
     expect(tasksJson.root.title).toBe("root");
+    expect(tasksJson.root.workset).toBe("active");
   });
 
   it("rejects a new task missing title/description", () => {
@@ -185,7 +194,7 @@ describe("yaco task set / rm / archive / list / validate", () => {
       JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok" }),
       "--json",
     ]);
-    const before = JSON.parse(readFileSync(join(repo, "plan/tasks.json"), "utf-8"));
+    const before = JSON.parse(readFileSync(defaultTasksFile(repo), "utf-8"));
     const created = before.x.created;
     const r = runYaco(repo, [
       "task",
@@ -196,7 +205,7 @@ describe("yaco task set / rm / archive / list / validate", () => {
       "--json",
     ]);
     expect(r.status).toBe(0);
-    const after = JSON.parse(readFileSync(join(repo, "plan/tasks.json"), "utf-8"));
+    const after = JSON.parse(readFileSync(defaultTasksFile(repo), "utf-8"));
     expect(after.x.created).toBe(created);
     expect(after.x.title).toBe("t2");
   });
@@ -236,7 +245,7 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(parseJson(r.stderr).error!.code).toBe("CONFLICT");
   });
 
-  it("archive --json returns exactly {archivedCount, archivePath}", () => {
+  it("archive --json returns exactly {archivedCount, workset}", () => {
     runYaco(repo, [
       "task",
       "set",
@@ -258,13 +267,15 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(r.status).toBe(0);
     const env = parseJson(r.stdout);
     expect(Object.keys(env.data as object).sort()).toEqual([
-      "archivePath",
       "archivedCount",
+      "workset",
     ]);
-    const data = env.data as { archivedCount: number; archivePath: string };
+    const data = env.data as { archivedCount: number; workset: string };
     expect(data.archivedCount).toBe(2);
-    expect(existsSync(data.archivePath)).toBe(true);
-    expect(data.archivePath).toContain("/plan/archive/");
+    expect(data.workset).toBe("archive");
+    const tasksJson = JSON.parse(readFileSync(defaultTasksFile(repo), "utf-8"));
+    expect(tasksJson.parent.workset).toBe("archive");
+    expect(tasksJson.child.workset).toBe("archive");
   });
 
   it("validate --json returns {ok:true} on a clean graph", () => {
@@ -284,9 +295,9 @@ describe("yaco task set / rm / archive / list / validate", () => {
 
   it("validate --json returns {ok:false, error.details} on dangling refs", () => {
     // Inject a hand-crafted tasks.json with a dangling depends ref.
-    mkdirSync(join(repo, "plan"), { recursive: true });
+    mkdirSync(defaultTasksPath(repo), { recursive: true });
     writeFileSync(
-      join(repo, "plan/tasks.json"),
+      defaultTasksFile(repo),
       JSON.stringify({
         a: { parent: null, depends: ["ghost"], state: "ready", title: "a", description: "d", acceptCriteria: "ok" },
       }, null, 2) + "\n",
@@ -302,9 +313,9 @@ describe("yaco task set / rm / archive / list / validate", () => {
 
   it("validate --json reports milestoneRollup divergence", () => {
     // Hand-write a graph where parent state diverges from its children.
-    mkdirSync(join(repo, "plan"), { recursive: true });
+    mkdirSync(defaultTasksPath(repo), { recursive: true });
     writeFileSync(
-      join(repo, "plan/tasks.json"),
+      defaultTasksFile(repo),
       JSON.stringify({
         p: { parent: null, depends: [], state: "done", title: "p", description: "d" },
         c: { parent: "p", depends: [], state: "ready", title: "c", description: "d", acceptCriteria: "ok" },
@@ -354,26 +365,21 @@ describe("configured tasks path (yc-task-ts bug fix)", () => {
     ]);
     expect(r.status).toBe(0);
     expect(existsSync(join(repo, "custom/dir/tasks.json"))).toBe(true);
-    expect(existsSync(join(repo, "plan/tasks.json"))).toBe(false);
+    expect(existsSync(defaultTasksFile(repo))).toBe(false);
   });
 
-  it("honors yaco.toml [paths].archive", () => {
-    const repo = mkRepo({
-      tasksFile: "custom/tasks.json",
-      archive: "custom/old",
-    });
+  it("honors yaco.toml [paths].tasks directory overrides", () => {
+    const repo = mkRepo({ tasksFile: "custom/tasks" });
     runYaco(repo, [
       "task",
       "set",
       "x",
       "--data",
-      JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok", state: "done" }),
+      JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok" }),
       "--json",
     ]);
-    const r = runYaco(repo, ["task", "archive", "x", "--json"]);
-    expect(r.status).toBe(0);
-    const data = parseJson(r.stdout).data as { archivePath: string };
-    expect(data.archivePath).toContain(join(repo, "custom/old"));
+    expect(existsSync(join(repo, "custom/tasks/tasks.json"))).toBe(true);
+    expect(existsSync(defaultTasksFile(repo))).toBe(false);
   });
 });
 
@@ -423,7 +429,7 @@ describe("lock contention", () => {
     expect(r1.status).toBe(0);
     expect(r2.status).toBe(0);
 
-    const final = JSON.parse(readFileSync(join(repo, "plan/tasks.json"), "utf-8"));
+    const final = JSON.parse(readFileSync(defaultTasksFile(repo), "utf-8"));
     expect(final.a.title).toBe("alpha");
     expect(final.b.title).toBe("beta");
     expect(final.p).toBeTruthy();
@@ -442,8 +448,8 @@ describe("cross-host stale lock", () => {
       "--json",
     ]);
 
-    const tasksFile = join(repo, "plan/tasks.json");
-    const lockDir = lockPathFor(tasksFile);
+    const tasksPath = defaultTasksPath(repo);
+    const lockDir = lockPathFor(tasksPath);
     mkdirSync(lockDir);
     writeFileSync(
       join(lockDir, "owner.json"),
@@ -506,8 +512,8 @@ describe("local stale-lock recovery", () => {
       JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok" }),
       "--json",
     ]);
-    const tasksFile = join(repo, "plan/tasks.json");
-    const lockDir = lockPathFor(tasksFile);
+    const tasksPath = defaultTasksPath(repo);
+    const lockDir = lockPathFor(tasksPath);
     mkdirSync(lockDir);
     writeFileSync(
       join(lockDir, "owner.json"),

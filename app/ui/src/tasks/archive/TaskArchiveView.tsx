@@ -147,7 +147,7 @@ function EmptyState() {
         No archived tasks
       </div>
       <div className="text-[11px] max-w-[260px] text-center leading-relaxed">
-        Completed or cancelled tasks can be archived. Archives are stored in <code className="text-[10px] px-1 py-0.5 rounded" style={{ backgroundColor: 'var(--sol-subtle-bg)' }}>plan/archive/</code>.
+        Completed or cancelled tasks can be archived. Archived tasks stay in the task graph with <code className="text-[10px] px-1 py-0.5 rounded" style={{ backgroundColor: 'var(--sol-subtle-bg)' }}>workset=archive</code>.
       </div>
     </div>
   )

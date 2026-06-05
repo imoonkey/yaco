@@ -40,7 +40,7 @@ import {
   readProjects,
   readYacoProjectPaths,
 } from "../lib/core/paths/index.ts";
-import { loadTasks, validateGraph } from "../lib/core/task/index.ts";
+import { loadTaskStore, validateGraph } from "../lib/core/task/index.ts";
 import { listProviders } from "../lib/core/agent/providers/index.ts";
 
 const HELP = `yaco doctor — run YACO health checks
@@ -264,16 +264,16 @@ function checkTaskGraph(repoRoot: string): CheckResult {
   // primitives are already pure and re-usable.
   try {
     const paths = readYacoProjectPaths(repoRoot);
-    const tasksFile = join(repoRoot, paths.tasks);
-    if (!existsSync(tasksFile)) return fail("task-graph", `${tasksFile} missing`);
-    const tasks = loadTasks(tasksFile);
-    const report = validateGraph(tasks);
+    const tasksPath = join(repoRoot, paths.tasks);
+    if (!existsSync(tasksPath)) return fail("task-graph", `${tasksPath} missing`);
+    const store = loadTaskStore(tasksPath);
+    const report = validateGraph(store.tasks);
     if (!report.ok) {
-      const problems = (report.details as any)?.problems ?? {};
+      const problems = report.details ?? {};
       const count = Object.values(problems).flat().length;
-      return fail("task-graph", `${count} integrity problem(s) in ${tasksFile}`);
+      return fail("task-graph", `${count} integrity problem(s) in ${tasksPath}`);
     }
-    return pass("task-graph", `${tasksFile} ok`);
+    return pass("task-graph", `${tasksPath} ok`);
   } catch (e) {
     return fail("task-graph", (e as Error).message);
   }
