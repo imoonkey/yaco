@@ -3,7 +3,9 @@
 export type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
 export type ProgressStatus = 'active' | 'dismissed'
 export type SessionStatus = 'starting' | 'processing' | 'idle'
-export type SessionProvider = 'claude' | 'codex' | 'shell'
+// Provider ids are open strings: live and history sessions may carry providers
+// the UI has no config for yet. The startable set comes from lib/providerUi.
+export type SessionProvider = string
 
 export interface Project {
   name: string
@@ -12,7 +14,7 @@ export interface Project {
 
 export interface AgentSession {
   name: string
-  provider: SessionProvider
+  provider: string
   status: SessionStatus
   project: string
   summary: string
@@ -46,7 +48,7 @@ export interface GitChange {
 
 export interface HistorySession {
   id: string
-  provider: 'claude' | 'codex'
+  provider: string
   title: string | null
   summary: string
   created: string

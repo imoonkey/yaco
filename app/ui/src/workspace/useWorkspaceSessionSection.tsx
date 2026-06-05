@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
 import { RefreshCw, History, Radio } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
+import { getProviderUi, startableProviders } from '../lib/providerUi'
 import { SessionItem } from './WorkspaceSessionList'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
-import type { AgentSession, HistorySession, SessionProvider } from '../types'
+import type { AgentSession, HistorySession } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
@@ -15,7 +16,7 @@ interface SessionsMgr {
   getSessionUnread: (name: string) => number
   pendingRenames: Record<string, string>
   killSession: (name: string) => Promise<void>
-  handleNewSession: (provider: SessionProvider) => Promise<void>
+  handleNewSession: (provider: string) => Promise<void>
   handleRenameSession: (old: string, next: string) => Promise<void>
   togglePin: (name: string) => void
   handlePinnedReorder: (from: string, to: string) => void
@@ -86,8 +87,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     <div className="flex items-center gap-1">
       {sessionTab === 'live' && (
         <div className="flex gap-1">
-          {(['claude', 'codex', 'shell'] as const).map(p => (
-            <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${p[0].toUpperCase()}${p.slice(1)}`}>
+          {startableProviders.map(p => (
+            <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${getProviderUi(p).label}`}>
               <ProviderIcon provider={p} className="w-3.5 h-3.5" />
             </button>
           ))}

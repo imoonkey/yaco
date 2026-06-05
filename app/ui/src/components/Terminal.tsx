@@ -5,6 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { writeTextToClipboard } from '../lib/clipboard'
+import { getProviderUi } from '../lib/providerUi'
 import { useIsTouch } from '../hooks/useIsMobile'
 import { TerminalKeyBar } from './TerminalKeyBar'
 import type { TerminalKeyBarKey, Modifiers } from './TerminalKeyBar'
@@ -18,13 +19,8 @@ function parsePx(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
-// Codex renders its prose in a light gray that washes out against the editor
-// background; Claude/shell already use darker foregrounds. Lift only Codex up to
-// a high contrast floor (colour-only — no effect on size/layout). 1 = disabled.
-function contrastForProvider(provider?: string): number {
-  return provider === 'codex' ? 5 : 1
-}
-
+// Resolve the provider before metadata arrives so terminal presentation policy
+// can lock in from the session name alone.
 function inferProvider(provider: string | undefined, sessionName: string): string | undefined {
   if (provider) return provider
   const lower = sessionName.toLowerCase()
@@ -140,7 +136,7 @@ function isOscColorReportQuery(data: string): boolean {
 
 function suppressOscColorReportQuery(data: string, provider?: string): boolean {
   if (!isOscColorReportQuery(data)) return false
-  return provider === 'claude' || provider === 'shell'
+  return getProviderUi(provider).terminal.suppressOscColorReportQuery
 }
 
 function applyModifiers(data: string, mods: Modifiers): string | null {
@@ -177,7 +173,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   const onInteractRef = useRef(onInteract)
   const onCloseRequestRef = useRef(onCloseRequest)
   const onDisconnectRef = useRef(onDisconnect)
-  const providerRef = useRef(inferProvider(provider, sessionName))
+  // Resolve the provider once per render so terminal contrast and OSC suppression
+  // share one policy source, including the session-name inference before metadata.
+  const resolvedProvider = inferProvider(provider, sessionName)
+  const providerRef = useRef(resolvedProvider)
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
   const sendTextKeyRef = useRef<number | undefined>(undefined)
@@ -186,8 +185,8 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   useEffect(() => { modifiersRef.current = modifiers }, [modifiers])
 
   useEffect(() => {
-    providerRef.current = inferProvider(provider, sessionName)
-  }, [provider, sessionName])
+    providerRef.current = resolvedProvider
+  }, [resolvedProvider])
 
   const sendInput = useCallback((data: string) => {
     onInteractRef.current?.()
@@ -637,9 +636,9 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   useEffect(() => {
     const term = termRef.current
     if (!term) return
-    term.options.minimumContrastRatio = contrastForProvider(provider)
+    term.options.minimumContrastRatio = getProviderUi(resolvedProvider).terminal.minimumContrastRatio
     term.refresh(0, term.rows - 1)
-  }, [provider, containerReady])
+  }, [resolvedProvider, containerReady])
 
   return (
     <div className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>

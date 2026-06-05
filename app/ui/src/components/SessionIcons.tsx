@@ -1,5 +1,5 @@
-import type { SessionProvider } from '../types'
 import { Terminal } from 'lucide-react'
+import { getProviderUi, type ProviderIconKey } from '../lib/providerUi'
 
 function CodexIcon({ className }: { className?: string }) {
   return (
@@ -9,14 +9,18 @@ function CodexIcon({ className }: { className?: string }) {
   )
 }
 
-export function ProviderIcon({ provider, className = 'w-4 h-4' }: { provider: SessionProvider; className?: string }) {
-  if (provider === 'claude') {
+function IconForKey({ icon, className }: { icon: ProviderIconKey; className?: string }) {
+  if (icon === 'claude') {
     return <img src="/claude-code-symbol.svg" alt="" aria-hidden="true" className={className} />
   }
 
-  if (provider === 'codex') {
+  if (icon === 'codex') {
     return <CodexIcon className={className} />
   }
 
   return <Terminal className={className} aria-hidden="true" />
+}
+
+export function ProviderIcon({ provider, className = 'w-4 h-4' }: { provider: string; className?: string }) {
+  return <IconForKey icon={getProviderUi(provider).icon} className={className} />
 }
