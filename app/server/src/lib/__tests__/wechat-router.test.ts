@@ -143,11 +143,13 @@ describe('dispatch', () => {
     expect(out).toMatch(/session not found/)
   })
 
-  it('/exit and /last respond when not bound; /new validates input', async () => {
+  it('/exit and /last respond when not bound; /new shows usage without args', async () => {
     expect(await dispatchText({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/not bound/)
     expect(await dispatchText({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/not bound/)
     expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/usage/)
-    expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: ['ruby'] })).toMatch(/provider must be claude or codex/)
+    // The channel no longer hard-codes a claude/codex union: an unknown provider
+    // is not rejected here, it proceeds to the project/catalog checks downstream.
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: ['ruby'] })).toMatch(/no current project/)
   })
 
   it('/new without current project errors before spawning', async () => {
@@ -184,10 +186,12 @@ describe('dispatch', () => {
 
     scopedReset()
     await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'use', args: ['alpha'] })
-    const out = await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'new', args: ['codex', 'mysess'] })
+    // Use an arbitrary catalog-backed provider id to prove the channel no longer
+    // constrains providers to claude/codex — it forwards the id verbatim.
+    const out = await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'new', args: ['gemini', 'mysess'] })
 
     expect(out.kind === 'text' && out.text).toMatch(/started \+ bound to alpha\/mysess/)
-    expect(startAgentSession).toHaveBeenCalledWith('codex', 'mysess', expect.any(String))
+    expect(startAgentSession).toHaveBeenCalledWith('gemini', 'mysess', expect.any(String))
     expect(acquireTap).toHaveBeenCalledWith('mysess')
     const binding = await getBinding('wx-newhappy')
     expect(binding).toEqual(expect.objectContaining({ project: 'alpha', session: 'mysess' }))

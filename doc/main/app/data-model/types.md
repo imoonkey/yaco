@@ -52,7 +52,10 @@ interface ProgressEntry {
 
 ```typescript
 type SessionStatus = 'processing' | 'idle' | 'error' | 'completed'
-type SessionProvider = 'claude' | 'codex' | 'shell'
+// Agent providers are open catalog ids (e.g. 'claude', 'codex') validated
+// against the CLI provider catalog; 'shell' is the non-agent session type.
+// The server no longer constrains this to a closed union or infers it by name.
+type SessionProvider = string
 
 interface AgentSession {
   name: string           // e.g. "1-claude", "shell-1"

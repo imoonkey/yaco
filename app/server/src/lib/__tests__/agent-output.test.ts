@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mkdtemp, rm, writeFile, appendFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { streamAgentReply, type AgentEvent, type PendingTurn } from '../channels/agent-output'
+import { resolveSessionLog, startTurn, streamAgentReply, type AgentEvent, type PendingTurn } from '../channels/agent-output'
+import type { AgentSession } from '../agent'
 
 // Tight poll for tests — agent-output polls every 250ms.
 const TICK = 350
@@ -233,5 +234,20 @@ describe('streamAgentReply (timeout)', () => {
     const gen = streamAgentReply(turn, { timeoutMs: 600 })
     const events = await collect(gen)
     expect(events).toEqual([{ kind: 'timeout' }])
+  })
+})
+
+describe('provider guards (arbitrary provider strings)', () => {
+  const session = (provider: string): AgentSession => ({
+    name: 'g1', provider, status: 'idle', project: 'p',
+    sessionPath: '/tmp/p', sessionId: 'sid-1', pid: 1,
+  })
+
+  it('resolveSessionLog returns null for unknown providers (no codex fallback)', async () => {
+    expect(await resolveSessionLog(session('gemini'))).toBeNull()
+  })
+
+  it('startTurn returns null for providers without an app-side structured log', async () => {
+    expect(await startTurn(session('gemini'))).toBeNull()
   })
 })

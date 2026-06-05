@@ -14,7 +14,7 @@ import {
 
 export interface AgentSession {
   name: string
-  provider: 'claude' | 'codex'
+  provider: string
   status: 'starting' | 'idle' | 'processing'
   project: string
   sessionPath: string
@@ -22,16 +22,22 @@ export interface AgentSession {
   pid: number
 }
 
-export function inferAgentProvider(name: string): 'claude' | 'codex' {
-  return name.toLowerCase().includes('codex') ? 'codex' : 'claude'
+/** Entry of the `yaco agent providers --json` catalog — the CLI is the
+ *  authoritative source of startable agent providers. `shell` is not a CLI
+ *  agent provider and never appears here. */
+export interface ProviderCatalogEntry {
+  id: string
+  label: string
+  executable: string
 }
 
 /** Raw shape of `<AGENT_SESSIONS_DIR>/<handle>.json` state files
  *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts AGENT_SESSIONS_DIR).
- *  Written by the `yaco agent` runtime; read here. */
+ *  Written by the `yaco agent` runtime; read here. The `provider` field is
+ *  trusted verbatim — YACO owns these files, so the app does not re-infer it. */
 export interface AgentSessionState {
   handle: string
-  provider: 'claude' | 'codex'
+  provider: string
   sessionPath: string
   pid: number
   sessionId: string
@@ -90,18 +96,15 @@ function toAgentSession(
   project: Pick<Project, 'name'>,
 ): AgentSession | null {
   if (typeof state.handle !== 'string' || !state.handle) return null
+  if (typeof state.provider !== 'string' || !state.provider) return null
   const sessionPath = getStateSessionPath(state)
   if (!sessionPath) return null
 
   if (!VALID_STATUSES.has(state.status)) return null
 
-  const provider = state.provider === 'codex' || state.provider === 'claude'
-    ? state.provider
-    : inferAgentProvider(state.handle)
-
   return {
     name: state.handle,
-    provider,
+    provider: state.provider,
     status: state.status,
     project: project.name,
     sessionPath,
@@ -268,6 +271,29 @@ export async function captureSession(handle: string, lines: number): Promise<str
 const STATE_POLL_MS = 200
 const STATE_POLL_TIMEOUT_MS = 10_000
 
+/** Fetch the startable agent provider catalog from `yaco agent providers --json`.
+ *  This is the authoritative boundary: the CLI registry, not app-side name
+ *  heuristics, decides which providers exist. `shell` is intentionally absent —
+ *  it is an app-owned session type, not a CLI agent provider. */
+export async function fetchProviderCatalog(): Promise<ProviderCatalogEntry[]> {
+  // execSync.*'yaco agent providers --json'
+  const data = await runYacoAgentJson(
+    ['agent', 'providers', '--json'],
+    YACO_AGENT_COMMAND_TIMEOUT_MS,
+    'agent providers',
+  )
+  return Array.isArray(data) ? (data as ProviderCatalogEntry[]) : []
+}
+
+/** Reject a start request for a provider the CLI catalog does not know.
+ *  Shell never reaches here — callers route shell through its own start path. */
+async function assertKnownAgentProvider(provider: string): Promise<void> {
+  const catalog = await fetchProviderCatalog()
+  if (catalog.some(p => p.id === provider)) return
+  const known = catalog.map(p => p.id).join(', ')
+  throw new Error(`unknown agent provider: ${provider}${known ? ` (known: ${known})` : ''}`)
+}
+
 /** Start a new agent session via `yaco agent start <provider>`. Returns as
  *  soon as the tmux session is attachable (state file has PID), without
  *  waiting for the agent to become idle. The yaco process continues in the
@@ -277,13 +303,14 @@ const STATE_POLL_TIMEOUT_MS = 10_000
  *  Always uses the canonical `yaco agent start <provider>` form; the
  *  top-level `yaco <provider>` shortcut is reserved for human callers. */
 export async function startAgentSession(
-  provider: 'claude' | 'codex',
+  provider: string,
   name: string | undefined,
   cwd: string,
   prompt?: string,
   resumeId?: string,
 ): Promise<{ handle: string; sessionId: string }> {
   if (name) validateSessionName(name)
+  await assertKnownAgentProvider(provider)
   // execSync.*'yaco agent start <provider> [yaco-flags] [passthrough...]'
   const args: string[] = ['agent', 'start', provider, '--json']
   if (resumeId) {

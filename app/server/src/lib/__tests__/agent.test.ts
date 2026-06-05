@@ -130,10 +130,12 @@ describe('readSessionsFromStateFiles', () => {
     expect(sessions).toHaveLength(1)
   })
 
-  it('infers provider from handle when provider field is invalid', async () => {
+  it('trusts the provider string from the state file verbatim', async () => {
+    // Handle says "codex" but provider says "gemini": no inference happens —
+    // the YACO-owned provider field is the single source of truth.
     const state = {
       handle: 'my-codex-worker',
-      provider: 'unknown-provider', // invalid
+      provider: 'gemini',
       sessionPath: tmpDir,
       pid: 12345,
       sessionId: '',
@@ -143,7 +145,20 @@ describe('readSessionsFromStateFiles', () => {
     writeFileSync(join(mockedSessionsDir, 'my-codex-worker.json'), JSON.stringify(state))
     const sessions = await readSessionsFromStateFiles(project())
     expect(sessions).toHaveLength(1)
-    expect(sessions[0]!.provider).toBe('codex')
+    expect(sessions[0]!.provider).toBe('gemini')
+  })
+
+  it('excludes sessions with a missing provider field', async () => {
+    const state = {
+      handle: 'no-provider',
+      sessionPath: tmpDir,
+      pid: 12345,
+      sessionId: '',
+      status: 'idle',
+      createdAt: '2026-03-24T00:00:00.000Z',
+    }
+    writeFileSync(join(mockedSessionsDir, 'no-provider.json'), JSON.stringify(state))
+    expect(await readSessionsFromStateFiles(project())).toEqual([])
   })
 
   it('defaults empty sessionId to empty string', async () => {

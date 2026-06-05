@@ -46,7 +46,7 @@ const HELP_TEXT = [
   '/use <n|name>         select current project',
   '/sessions (/s)        list sessions of current project',
   '/use s <n|name>       bind to a session',
-  '/new <claude|codex> [name]  start a new session and auto-bind',
+  '/new <provider> [name]  start a new session and auto-bind',
   '/exit                 unbind (does not kill the session)',
   '/who                  show current binding',
   '/last [n]             capture last n pane lines (default 100, max 2000)',
@@ -250,12 +250,11 @@ export function createRouter(store: BindingStore) {
   }
 
   async function handleNew(ctx: CommandContext, args: string[]): Promise<string> {
-    if (args.length === 0) return 'usage: /new <claude|codex> [name]'
-    const providerArg = args[0].toLowerCase()
-    if (providerArg !== 'claude' && providerArg !== 'codex') {
-      return `provider must be claude or codex, got: ${args[0]}`
-    }
-    const provider: 'claude' | 'codex' = providerArg
+    if (args.length === 0) return 'usage: /new <provider> [name]'
+    // No hard-coded provider union here: startAgentSession validates against the
+    // CLI provider catalog (`yaco agent providers --json`) and reports the known
+    // ids on rejection, so new providers work without editing the channel.
+    const provider = args[0].toLowerCase()
     const project = await resolveCurrentProject(ctx.conversationId)
     if (!project) return 'no current project — run /use <name> first'
 

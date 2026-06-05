@@ -170,11 +170,15 @@ export async function resolveSessionSummaries(
     if (!isResolvableSessionId(s.sessionId)) continue
     if (s.provider === 'codex') {
       codexSessions.push(s)
-    } else {
+    } else if (s.provider === 'claude') {
       const list = claudeByPath.get(s.sessionPath) ?? []
       list.push(s)
       claudeByPath.set(s.sessionPath, list)
     }
+    // Other providers have no app-side summary source yet, so they get no
+    // summary rather than being probed against Claude storage. Provider-native
+    // summary reads move behind CLI surfaces in the app-summary-history-boundary
+    // task.
   }
 
   // Resolve Claude + Codex summaries in parallel

@@ -62,7 +62,7 @@ app.get('/', async (c) => {
 
 app.post('/start', async (c) => {
   const { provider, name, cwd, prompt, resumeId } = await c.req.json<{
-    provider: 'claude' | 'codex' | 'shell'
+    provider: string
     name?: string
     cwd: string
     prompt?: string

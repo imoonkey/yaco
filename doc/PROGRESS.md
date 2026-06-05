@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-05: app/server provider type boundary — validate against CLI catalog
+
+**What changed:**
+- `AgentSession.provider` / `AgentSessionState.provider` widen from `'claude' | 'codex'` to `string`; the YACO-owned `provider` field is trusted verbatim and a state file with no provider string is skipped. Removed `inferAgentProvider` (the handle-name heuristic) entirely.
+- Added `fetchProviderCatalog()` (`yaco agent providers --json` → `ProviderCatalogEntry[]`) and a private `assertKnownAgentProvider()`; `startAgentSession(provider: string, …)` validates the provider against the catalog before spawning and throws `unknown agent provider: <id> (known: …)` on a miss. `POST /api/sessions/start` widened its body `provider` to `string`; `shell` still routes to the shell-session path before any catalog check.
+- Made the remaining claude/codex-only call sites safe for arbitrary provider strings instead of treating every non-codex provider as Claude/Codex: channel `/new <provider>` drops its hard-coded union and delegates validation to `startAgentSession`; `channels/agent-output.ts` `resolveSessionLog`/`startTurn` return `null` for non-claude/codex providers (terminal-capture fallback); `session-summary.ts` resolves only `claude`/`codex` and skips other providers (no Claude-storage probe).
+
+**Why:**
+- `tui-app-provider-type-boundary` task of the `tui-provider-adapters` design (`plan/active/tui-provider-adapters/design_codex.md`): the CLI provider registry is the authoritative boundary, so app/server should trust YACO state provider strings and validate starts against the catalog rather than carrying a closed union and name heuristics. Provider-native summary/history/output reads stay behind the later `app-summary-history-boundary` / `app-output-boundary` tasks — this change only removes the unsafe Claude/Codex fallbacks in the meantime.
+
+**Key files:** `app/server/src/lib/agent.ts`, `app/server/src/routes/sessions.ts`, `app/server/src/lib/channels/{router,agent-output}.ts`, `app/server/src/lib/session-summary.ts` (+ scoped tests); docs `doc/main/app/backend/{libs,routes}.md`, `doc/main/app/data-model/types.md`
+**Verification:** `cd app/server && npm test` → full vitest 425/425 (one pre-existing real-tmux flake in `wechat-pty-tap` passes in isolation). Targeted: `agent`/`agent-output`/`wechat-router`/`sessions-worktree`/`session-summary` → 63 pass. `tsc --noEmit` clean for all touched production files.
+**Commit:** this commit.
+**Next:** `app-summary-history-boundary` and `app-output-boundary` move provider-native reads behind CLI surfaces; `ui-provider-config` carries the provider-keyed UI map.
+**Blockers:** None.
+
 ## 2026-06-05: install/doctor iterate the provider registry
 
 **What changed:**

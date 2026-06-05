@@ -42,6 +42,12 @@ export async function resolveSessionLog(session: AgentSession): Promise<string |
     return existsSync(path) ? path : null
   }
 
+  // Only claude and codex have a known app-side log layout. Any other provider
+  // has no structured log to resolve here, so callers fall back to terminal
+  // capture rather than mis-parsing it as codex. (Provider-native log
+  // resolution moves to the CLI in the app-output-boundary task.)
+  if (session.provider !== 'codex') return null
+
   // codex: walk YYYY/MM/DD newest-first looking for a file containing the sessionId.
   const root = join(homedir(), '.codex', 'sessions')
   if (!existsSync(root)) return null
@@ -65,8 +71,11 @@ export async function resolveSessionLog(session: AgentSession): Promise<string |
   return null
 }
 
-/** Record the current size of the session's JSONL — call BEFORE yaco agent send. */
+/** Record the current size of the session's JSONL — call BEFORE yaco agent send.
+ *  Only claude/codex expose an app-side structured log; for any other provider
+ *  there is no turn to open here and the caller streams via terminal capture. */
 export async function startTurn(session: AgentSession): Promise<PendingTurn | null> {
+  if (session.provider !== 'claude' && session.provider !== 'codex') return null
   const jsonlPath = await resolveSessionLog(session)
   if (!jsonlPath) return null
   let stats

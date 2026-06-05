@@ -119,4 +119,23 @@ describe('GET / — worktree extraction', () => {
     expect(json[1].worktree).toBeUndefined()
     expect(json[2].worktree).toBe('refactor-api')
   })
+
+  it('passes arbitrary catalog-backed provider ids through unchanged', async () => {
+    mockReadAll.mockReturnValue([
+      {
+        name: 'g1',
+        provider: 'gemini',
+        status: 'idle',
+        project: 'my-project',
+        sessionPath: '/home/user/my-project',
+        sessionId: 'sid-g',
+        pid: 300,
+      },
+    ])
+
+    const res = await sessionRoutes.request('/')
+    const json = await res.json()
+
+    expect(json[0].provider).toBe('gemini')
+  })
 })

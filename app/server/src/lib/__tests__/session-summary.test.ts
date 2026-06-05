@@ -3,6 +3,8 @@ import { join } from 'path'
 import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'fs'
 import { tmpdir } from 'os'
 
+const homeRef = vi.hoisted(() => ({ value: '' }))
+
 // Mock external dependencies before importing
 vi.mock('better-sqlite3', () => ({
   default: vi.fn(() => ({
@@ -10,6 +12,13 @@ vi.mock('better-sqlite3', () => ({
     close: vi.fn(),
   })),
 }))
+
+// Point homedir() at the per-test temp dir so the Claude JSONL resolver reads
+// from a planted fixture instead of the real home directory.
+vi.mock('os', async (orig) => {
+  const actual = await orig<typeof import('os')>()
+  return { ...actual, homedir: () => homeRef.value || actual.homedir() }
+})
 
 import { resolveSessionSummaries, encodeProjectPath } from '../session-summary'
 import type { AgentSession } from '../agent'
@@ -32,10 +41,12 @@ describe('resolveSessionSummaries', () => {
 
   beforeEach(() => {
     tmpDir = mkdtempSync(join(tmpdir(), 'workflow-summary-test-'))
+    homeRef.value = tmpDir
   })
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true })
+    homeRef.value = ''
   })
 
   it('returns empty map for empty sessions', async () => {
@@ -99,6 +110,28 @@ describe('resolveSessionSummaries', () => {
     ]
     const result = await resolveSessionSummaries(sessions)
     expect(result).toBeInstanceOf(Map)
+  })
+
+  it('resolves Claude but skips an unsupported provider with the same path + id', async () => {
+    // Plant a Claude JSONL where the resolver looks (homedir is mocked → tmpDir).
+    const sessionPath = join(tmpDir, 'proj')
+    const sessionId = 'shared-id'
+    const projectDir = join(tmpDir, '.claude', 'projects', encodeProjectPath(sessionPath))
+    mkdirSync(projectDir, { recursive: true })
+    writeFileSync(
+      join(projectDir, `${sessionId}.jsonl`),
+      JSON.stringify({ type: 'user', message: { content: 'Design the auth API' } }),
+    )
+
+    const claude = makeSession({ name: 'c', provider: 'claude', sessionPath, sessionId })
+    const gemini = makeSession({ name: 'g', provider: 'gemini', sessionPath, sessionId })
+
+    const result = await resolveSessionSummaries([claude, gemini])
+
+    // Claude resolves from its storage; the unsupported provider is skipped
+    // entirely rather than mis-resolved against the same Claude file.
+    expect(result.get('c')).toBe('Design the auth API')
+    expect(result.get('g')).toBeUndefined()
   })
 })
 
