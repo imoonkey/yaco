@@ -14,7 +14,7 @@ This is the root of the YACO productivity stack.
 - `app/` — Workflow web app and server.
 - `cli/` — Bun-based `yaco` dispatcher and agent runtime.
 - `agent-config/` — global agent config and skill prompts.
-- `projects/` — live root YACO task graph and project history.
+- `plan/` — live root YACO task graph and project history.
 - `tools/` — bootstrap installer; installed runtime commands live in `cli/`.
 
 ## Commands

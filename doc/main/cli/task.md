@@ -3,7 +3,7 @@
 > Last updated: 2026-06-04 (yc-cleanup-legacy)
 
 The task area owns the project task graph at `<repoRoot>/<paths.tasks>`
-(default `projects/tasks.json`, override via `yaco.toml [paths].tasks`).
+(default `plan/tasks.json`, override via `yaco.toml [paths].tasks`).
 It is a TypeScript port of the legacy `update-tasks.py` helper (deleted
 in yc-cleanup-legacy) — behaviour is verbatim except where noted under
 [Differences](#differences-vs-the-python-script).
@@ -57,7 +57,7 @@ Response shape (`--json`):
     "action": "create" | "update",
     "task": { ...full record... },
     "warnings": [ "..." ],
-    "tasksFile": "/abs/path/to/projects/tasks.json"
+    "tasksFile": "/abs/path/to/plan/tasks.json"
   } }
 ```
 
@@ -112,7 +112,7 @@ Text mode prints `id  state  title` columns. `--json` returns
 Every subcommand resolves the tasks file (and the archive directory) via
 `readYacoProjectPaths(repoRoot)` from `@yaco/cli/core/paths`. This honors
 `<repoRoot>/yaco.toml [paths].tasks` and `[paths].archive`. The legacy
-Python script hardcoded `projects/tasks.json` regardless of yaco.toml —
+Python script hardcoded `plan/tasks.json` regardless of yaco.toml —
 that's the bug yc-task-ts closed.
 
 `--repo <path>` overrides cwd. Empty / missing value → USAGE exit 2.
@@ -152,8 +152,8 @@ Stale-lock handling:
 
 | Behaviour | Legacy Python (`update-tasks.py`) | TS (`yaco task`) |
 |-----------|-----------------------------------|-------------------|
-| Tasks file location | Hardcoded `projects/tasks.json` | Resolved via `readYacoProjectPaths` (yaco.toml honored) |
-| Archive dir location | Hardcoded `projects/archive` | Resolved via `readYacoProjectPaths` (yaco.toml honored) |
+| Tasks file location | Hardcoded `plan/tasks.json` | Resolved via `readYacoProjectPaths` (yaco.toml honored) |
+| Archive dir location | Hardcoded `plan/archive` | Resolved via `readYacoProjectPaths` (yaco.toml honored) |
 | Lock primitive | `fcntl.flock` on a single file | Atomic `mkdir` of `<file>.lock.d` + owner metadata |
 | Stale-lock detection | n/a (`flock` releases on process death) | PID + hostname check; cross-host never auto-broken |
 | `set` payload source | Positional JSON OR stdin | `--data` / `--stdin` / `--file` (exactly one); positional rejected |

@@ -24,8 +24,8 @@ function pythonAvailable(): boolean {
 
 function mkRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "yaco-task-parity-"));
-  // The Python script writes to projects/tasks.json relative to cwd.
-  mkdirSync(join(root, "projects"), { recursive: true });
+  // The Python script writes to plan/tasks.json relative to cwd.
+  mkdirSync(join(root, "plan"), { recursive: true });
   return root;
 }
 
@@ -82,8 +82,8 @@ describeIfPy("parity: update-tasks.py vs yaco task set", () => {
       const ts = runTs(tsRepo, s.id, s.data);
       expect(ts.status).toBe(0);
     }
-    const pyBody = readFileSync(join(pyRepo, "projects/tasks.json"), "utf-8");
-    const tsBody = readFileSync(join(tsRepo, "projects/tasks.json"), "utf-8");
+    const pyBody = readFileSync(join(pyRepo, "plan/tasks.json"), "utf-8");
+    const tsBody = readFileSync(join(tsRepo, "plan/tasks.json"), "utf-8");
     expect(stripTimestamps(tsBody)).toBe(stripTimestamps(pyBody));
   });
 
@@ -102,8 +102,8 @@ describeIfPy("parity: update-tasks.py vs yaco task set", () => {
     expect(
       spawnSync("bun", ["run", BIN, "task", "rm", "a", "--json"], { cwd: tsRepo }).status,
     ).toBe(0);
-    const pyBody = readFileSync(join(pyRepo, "projects/tasks.json"), "utf-8");
-    const tsBody = readFileSync(join(tsRepo, "projects/tasks.json"), "utf-8");
+    const pyBody = readFileSync(join(pyRepo, "plan/tasks.json"), "utf-8");
+    const tsBody = readFileSync(join(tsRepo, "plan/tasks.json"), "utf-8");
     expect(stripTimestamps(tsBody)).toBe(stripTimestamps(pyBody));
   });
 });

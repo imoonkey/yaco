@@ -58,7 +58,7 @@ Managed by: `server/src/lib/projects.ts` (path from `yacoHome.projectsFile()`).
 
 ### `${YACO_HOME}/projects/<id>/events.jsonl`
 
-Append-only NDJSON event stream per registered project. **Durable source of truth** for the notification inbox, sidebar badges, and downstream channel deliveries — `${YACO_HOME}/ui-state/notifications.json` is a derived cache. One event per line; lines are immutable. Schema: [`projects/active/yaco-core/final/schemas/event.schema.json`](../../../../projects/active/yaco-core/final/schemas/event.schema.json).
+Append-only NDJSON event stream per registered project. **Durable source of truth** for the notification inbox, sidebar badges, and downstream channel deliveries — `${YACO_HOME}/ui-state/notifications.json` is a derived cache. One event per line; lines are immutable. Schema: [`plan/active/yaco-core/final/schemas/event.schema.json`](../../../../plan/active/yaco-core/final/schemas/event.schema.json).
 
 Line shape:
 
@@ -100,7 +100,7 @@ Per-project ordered list of pinned session names. Shape: `{ [projectName]: strin
 
 Per-project and per-session read cutoffs (`{ projectReadAt, sessionReadAt }`, both `Record<string, number>` of millisecond timestamps). A progress entry is "unread" iff its timestamp exceeds `max(projectReadAt[project], sessionReadAt["${project}::${session}"])`. The bell badge and sidebar unread counts both derive from this file (via `useSessionUnreadState`); marking-read actions advance the relevant watermark(s) to `Date.now()`. Mutex-protected writes via `server/src/lib/ui-state.ts`.
 
-`projects/progress.json`, `projects/active/<bundle>/progress.json`, and `projects/active/<bundle>/workstream.json` are no longer runtime inputs. The one-time migration script converts/removes them; server runtime reads `events.jsonl` only.
+`plan/progress.json`, `plan/active/<bundle>/progress.json`, and `plan/active/<bundle>/workstream.json` are no longer runtime inputs. The one-time migration script converts/removes them; server runtime reads `events.jsonl` only.
 
 ## In-Browser State
 

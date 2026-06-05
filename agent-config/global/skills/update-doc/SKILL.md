@@ -125,14 +125,14 @@ Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
 4 and 5:
 
 - **Update project implementation summary.** If changes correspond to a
-  `projects/active/<project>/` bundle, write or update
-  `projects/active/<project>/implementation_summary.md` — a concise summary of
+  `plan/active/<project>/` bundle, write or update
+  `plan/active/<project>/implementation_summary.md` — a concise summary of
   what was implemented, key decisions made, and current state.
 - **Archive completed bundles.** When archiving
-  `projects/active/<project>/` → `projects/archive/YYYYMMDD_<project>/`, check
-  whether `projects/tasks.json` has the matching terminal project task and
+  `plan/active/<project>/` → `plan/archive/YYYYMMDD_<project>/`, check
+  whether `plan/tasks.json` has the matching terminal project task and
   archive it via `yaco task archive <id> --json` (or `/update-tasks`). That
   task snapshot is written separately to
-  `projects/archive/YYYYMMDD_<slug>.json`.
+  `plan/archive/YYYYMMDD_<slug>.json`.
 
 Outside YACO, follow the project's own design-doc and archive conventions.

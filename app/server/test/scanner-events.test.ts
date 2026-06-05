@@ -15,7 +15,7 @@ beforeEach(async () => {
   fixtureRoot = await mkdtemp(join(tmpdir(), 'yaco-scanner-test-'))
   process.env.YACO_HOME = fixtureRoot
   repoRoot = join(fixtureRoot, 'repo')
-  await mkdir(join(repoRoot, 'projects', 'active', 'bundle-a'), { recursive: true })
+  await mkdir(join(repoRoot, 'plan', 'active', 'bundle-a'), { recursive: true })
 })
 
 afterEach(async () => {
@@ -35,7 +35,7 @@ describe('scanProgress with events.jsonl', () => {
       payload: { agent: 'claude', message: 'event is visible' },
     })
 
-    await writeFile(join(repoRoot, 'projects', 'active', 'bundle-a', 'progress.json'), JSON.stringify([
+    await writeFile(join(repoRoot, 'plan', 'active', 'bundle-a', 'progress.json'), JSON.stringify([
       {
         id: 'legacy-id',
         agent: 'claude',

@@ -144,7 +144,7 @@ Empty transcript (`formattingStatus: "empty"`, 200):
 
 Audio is never persisted to disk. API key is never exposed to the browser.
 
--> Design doc: `projects/active/voice-formatting/final/design.md`
+-> Design doc: `plan/active/voice-formatting/final/design.md`
 
 ### Tasks
 

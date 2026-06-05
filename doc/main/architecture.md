@@ -10,7 +10,7 @@ app, the `yaco` CLI/runtime, and global agent configuration.
 | `app/` | Browser UI, Hono server, project/file APIs, SSE, WebSocket terminal attachment, voice/autocomplete endpoints | CLI command semantics, global skill source files |
 | `cli/` | `yaco` dispatcher, agent session lifecycle, task graph mutation, worktree lifecycle, install/doctor/paths/project commands | Browser UI, agent prompt prose |
 | `agent-config/` | Global instructions and skill prompts consumed by Claude/Codex-compatible tools | Runtime state mutation, app-specific behavior |
-| `projects/` | Live task graph plus active/archive design history | SOTA architecture docs |
+| `plan/` | Live task graph plus active/archive design history | SOTA architecture docs |
 | `tools/` | First-time bootstrap entrypoint | Ongoing runtime behavior after install |
 
 ## Runtime Contracts

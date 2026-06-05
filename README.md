@@ -10,7 +10,7 @@ Source layout:
   `paths`).
 - `agent-config/` — global agent config and skills consumed by Claude/Codex
   through symlinks installed by `yaco install`.
-- `projects/` — live root YACO task graph and project design history.
+- `plan/` — live root YACO task graph and project design history.
 - `tools/` — root bootstrap installer.
 
 Useful commands from the repository root:

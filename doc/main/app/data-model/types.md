@@ -42,11 +42,11 @@ interface ProgressEntry {
   timestamp: string       // ISO 8601
   status: ProgressStatus
   project: string
-  workstream: string      // bundle directory name under projects/active/; empty for project-level entries
+  workstream: string      // bundle directory name under plan/active/; empty for project-level entries
 }
 ```
 
-> Note: the `Workstream` / `WorkstreamStatus` / `Checkpoint` types and the `workstream.json` live model have been removed. The `workstream` field on `ProgressEntry` is now the projected task/bundle id from `events.jsonl`. Planning state lives in `projects/tasks.json`; progress/activity state lives in `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl`.
+> Note: the `Workstream` / `WorkstreamStatus` / `Checkpoint` types and the `workstream.json` live model have been removed. The `workstream` field on `ProgressEntry` is now the projected task/bundle id from `events.jsonl`. Planning state lives in `plan/tasks.json`; progress/activity state lives in `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl`.
 
 ### Session
 

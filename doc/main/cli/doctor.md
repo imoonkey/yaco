@@ -38,7 +38,7 @@ yaco doctor [--repo <path>] [--json]
 | 9 | `tmux` | `tmux` on `$PATH` | path | `tmux not on $PATH — agent sessions will not start` |
 | 10 | `git` | `git` on `$PATH` | path | `git not on $PATH` |
 | 11 | `providers` | `claude` OR `codex` on `$PATH` (passes when at least one is present) | which providers | `neither claude nor codex on $PATH` |
-| 12 | `task-graph` | `yaco task validate` would succeed on the repo's `projects/tasks.json` (in-process via `loadTasks + validateGraph`) | `<tasksFile> ok` | `<tasksFile> missing` / `<N> integrity problem(s)` |
+| 12 | `task-graph` | `yaco task validate` would succeed on the repo's `plan/tasks.json` (in-process via `loadTasks + validateGraph`) | `<tasksFile> ok` | `<tasksFile> missing` / `<N> integrity problem(s)` |
 
 `gh` is intentionally NOT a required check. The doctor surface is exactly the
 twelve names above so consumers can rely on the contract.

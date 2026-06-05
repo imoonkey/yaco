@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto'
 import { projectEventsFile } from '@yaco/cli/core/paths'
 
 /** One line of `~/.yaco/projects/<id>/events.jsonl`. Immutable once appended.
- *  See projects/active/yaco-core/final/schemas/event.schema.json. */
+ *  See plan/active/yaco-core/final/schemas/event.schema.json. */
 export interface YacoEvent {
   id: string
   ts: string

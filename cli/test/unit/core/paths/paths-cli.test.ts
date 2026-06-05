@@ -76,9 +76,9 @@ describe("yaco paths project --json", () => {
     expect(parsed).toEqual({
       ok: true,
       data: {
-        tasks: `${repo}/projects/tasks.json`,
-        active: `${repo}/projects/active`,
-        archive: `${repo}/projects/archive`,
+        tasks: `${repo}/plan/tasks.json`,
+        active: `${repo}/plan/active`,
+        archive: `${repo}/plan/archive`,
         worktrees: `${repo}/.worktrees`,
       },
     });
@@ -95,7 +95,7 @@ describe("yaco paths project --json", () => {
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
     expect(parsed.data.tasks).toBe(`${repo}/p/tasks.json`);
-    expect(parsed.data.active).toBe(`${repo}/projects/active`);
+    expect(parsed.data.active).toBe(`${repo}/plan/active`);
   });
 });
 

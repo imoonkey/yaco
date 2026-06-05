@@ -3,5 +3,5 @@ global/skills/humanizer/
 .multmux/
 .reference/
 .vscode/
-projects/progress.json
-projects/progress.json.lock
+plan/progress.json
+plan/progress.json.lock

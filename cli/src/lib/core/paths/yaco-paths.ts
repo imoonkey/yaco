@@ -25,9 +25,9 @@ export interface YacoProjectPaths {
 }
 
 export const DEFAULT_PROJECT_PATHS: YacoProjectPaths = {
-  tasks: "projects/tasks.json",
-  active: "projects/active",
-  archive: "projects/archive",
+  tasks: "plan/tasks.json",
+  active: "plan/active",
+  archive: "plan/archive",
   worktrees: ".worktrees",
 };
 

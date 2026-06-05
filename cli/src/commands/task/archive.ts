@@ -1,4 +1,4 @@
-/** `yaco task archive <id>` — pack a terminal subtree into projects/archive
+/** `yaco task archive <id>` — pack a terminal subtree into plan/archive
  *  and prune dangling depends references in the survivors.
  */
 

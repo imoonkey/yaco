@@ -22,8 +22,8 @@ Source-of-truth boundaries for the workflow system's data.
 | Data | Owner | Storage | Consumers |
 |------|-------|---------|-----------|
 | Project list | Server | `${YACO_HOME:-~/.yaco}/projects.json` | Frontend (via API) |
-| Task graph | Source artifact | `projects/tasks.json` | Tasks API → Frontend |
-| Task artifact bundles | Source artifact | `projects/active/<bundle>/`, `projects/archive/YYYYMMDD_<bundle>/` | Editor, design skills (opaque doc folders — not parsed by the server) |
+| Task graph | Source artifact | `plan/tasks.json` | Tasks API → Frontend |
+| Task artifact bundles | Source artifact | `plan/active/<bundle>/`, `plan/archive/YYYYMMDD_<bundle>/` | Editor, design skills (opaque doc folders — not parsed by the server) |
 | Progress entries | YACO runtime | `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl` | Server scanner → Frontend |
 | Session list | Server (poller cache) | In-memory | Frontend (via API) |
 | Session status | yaco agent / Workflow shell state + tmux | State files + live tmux checks | Server poller → Frontend |
@@ -57,4 +57,4 @@ yaco agent state files / Workflow shell state files + tmux
 - **Agent writes**: progress entries (via Claude Stop hook script), tasks (via the same `yaco task` CLI surface)
 - **Neither rewrites the other's owned state directly** — all cross-boundary mutations go through the API
 
-> Historical note: an earlier model used `projects/active/<bundle>/workstream.json` as a live status file with its own API; that model was removed in favor of `tasks.json` (see [yaco-core design](../../../../projects/active/yaco-core/final/design.md) §First-Class Entities and §Migration).
+> Historical note: an earlier model used `plan/active/<bundle>/workstream.json` as a live status file with its own API; that model was removed in favor of `tasks.json` (see [yaco-core design](../../../../plan/active/yaco-core/final/design.md) §First-Class Entities and §Migration).

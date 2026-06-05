@@ -42,7 +42,7 @@ const AREA_HELP: Record<Area, string> = {
   task: "Read and mutate the project task graph",
   worktree: "Create, merge, and clean up git worktrees per task slug",
   align: "Drive multi-agent alignment workflows (double-design, align)",
-  init: "Initialize a YACO project (yaco.toml, projects/, .worktrees/)",
+  init: "Initialize a YACO project (yaco.toml, plan/, .worktrees/)",
   install: "Install the yaco binary, hooks, wrappers, and global symlinks",
   doctor: "Run YACO health checks against ~/.yaco and the current repo",
   paths: "Resolve canonical YACO paths (YACO_HOME, sessions, events, ...)",
