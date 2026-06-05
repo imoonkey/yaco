@@ -1,6 +1,8 @@
 ---
 name: align
 description: Align the design of the system or anything else between Codex and Claude.
+metadata:
+  yaco-dependent: "true"
 ---
 
 # Align

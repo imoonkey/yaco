@@ -1,6 +1,8 @@
 ---
 name: update-doc
 description: Sync docs with code changes and maintain changelog. Use after architecture/workflow changes, before or after commits.
+metadata:
+  yaco-dependent: "optional"
 ---
 
 # Update Doc

@@ -1,6 +1,8 @@
 ---
 name: double-design
 description: Two agents (Claude + Codex) independently design, cross-review, then align. Use for critical design decisions that benefit from diverse perspectives.
+metadata:
+  yaco-dependent: "true"
 ---
 
 # Double Design

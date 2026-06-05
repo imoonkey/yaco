@@ -57,6 +57,12 @@ as fallback).
 
 For project-local skills, `/update-doc` updates `./.claude/skills/` (`./.agents/skills/` is a symlink to it).
 
+**Tag yaco coupling.** When a new global skill's core mechanism calls `yaco`,
+add `metadata.yaco-dependent: "true"` to its frontmatter; if it runs standalone
+but has an optional "Inside a YACO project" integration, use `"optional"`.
+Omit the field for pure standalone skills — absence is the standalone default.
+-> See: [architecture.md](../../main/agent-config/architecture.md) (yaco coupling).
+
 ## Adding a New Stack
 
 Add reference files to skills that need stack-specific content:

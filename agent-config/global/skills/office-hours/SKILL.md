@@ -1,6 +1,8 @@
 ---
 name: office-hours
 description: YC-style office hours for problem definition before design. Two modes — Startup (rigorous diagnostic with forcing questions) and Builder (enthusiastic design partner). Produces a design doc, not code. Use before `/scope-review` or `/design` when the problem itself is unclear.
+metadata:
+  yaco-dependent: "optional"
 ---
 
 # YC Office Hours

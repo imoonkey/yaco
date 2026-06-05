@@ -1,6 +1,8 @@
 ---
 name: tmusk
 description: Orchestrate multiple coding agents (Claude Code, Codex) via tmux. Start workers, send messages, capture output.
+metadata:
+  yaco-dependent: "true"
 ---
 
 # tmusk — Multi-Agent tmux Orchestration

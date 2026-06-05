@@ -1,3 +1,23 @@
+## 2026-06-04: Tag skills with `metadata.yaco-dependent`
+
+**What changed:**
+- Added a `metadata.yaco-dependent` frontmatter field to global skills, classifying each by its relationship to the `yaco` CLI. Three states: `"true"` (core mechanism calls yaco), `"optional"` (standalone with an optional "Inside a YACO project" integration), and absent (standalone default).
+- `"true"` (6): align, double-design, init-all, orchestrate, tmusk, update-tasks. `"optional"` (3): design, office-hours, update-doc. The remaining 12 skills carry no field (standalone).
+- Classification derived empirically by grepping each SKILL.md for actual `yaco <area>` invocations / `projects/tasks.json` use — not the one-line descriptions.
+- Field lives under `metadata` per the Agent Skills spec (custom keys are not top-level); values are strings.
+- Documented in `doc/main/agent-config/architecture.md` (Skill Tiers → yaco coupling) and the "Adding a New Skill" workflow.
+
+**Why:**
+- Make the yaco-coupled vs standalone split machine-readable so the standalone set can later be exported as a yaco-independent bundle, and so the grouping is visible in docs rather than implicit.
+- A directory split (`skills/core/` vs `skills/optional/`) was rejected: skill discovery is a flat one-level scan (`~/.claude/skills/<name>/SKILL.md`), so nesting would hide skills. Metadata tagging achieves the grouping without breaking discovery.
+- Explicit `"false"` was dropped — absence already means standalone, so only the meaningful cases carry the field.
+
+**Key files:** `agent-config/global/skills/{align,double-design,init-all,orchestrate,tmusk,update-tasks,design,office-hours,update-doc}/SKILL.md`, `doc/main/agent-config/architecture.md`, `doc/dev/agent-config/workflow.md`
+**Verification:** All 9 frontmatters parse as YAML with `metadata.yaco-dependent` ∈ {true, optional}; tier counts confirmed 6/3.
+**Commit:** This commit
+**Next:** Optional — add `compatibility: Requires the yaco CLI` to the 6 `"true"` skills; build tooling that reads the field to export the standalone set.
+**Blockers:** None
+
 ## 2026-06-03: Skills call yaco directly; multmux skill renamed → agent (yc-skill-contracts)
 
 **What changed:**

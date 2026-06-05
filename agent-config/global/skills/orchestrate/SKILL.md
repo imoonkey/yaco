@@ -1,6 +1,8 @@
 ---
 name: orchestrate
 description: Execute tasks from projects/tasks.json using yaco agent workers. Use when the user wants to run, advance, or check on task execution.
+metadata:
+  yaco-dependent: "true"
 ---
 
 Read `projects/tasks.json` via `yaco task`, dispatch `yaco agent` workers

@@ -46,6 +46,18 @@ Agents read both global and project CLAUDE.md, merged into context:
 
 Skills that need stack-specific content (coding-standards, verify, qa) use `references/<stack>.md` and auto-detect the stack from marker files.
 
+### yaco coupling (`metadata.yaco-dependent`)
+
+Orthogonal to location, each global skill declares its relationship to the `yaco` CLI through a `metadata.yaco-dependent` frontmatter field (per the [Agent Skills spec](https://agentskills.io/specification), custom keys live under `metadata`). Absence is the default and means standalone.
+
+| Value | Meaning | Skills |
+|-------|---------|--------|
+| `"true"` | Core mechanism calls `yaco` — cannot function without it | align, double-design, init-all, orchestrate, tmusk, update-tasks |
+| `"optional"` | Runs in any repo; has an optional "Inside a YACO project" integration | design, office-hours, update-doc |
+| *(absent)* | Standalone — pure workflow prompt, runs in any repo | everything else |
+
+The field is inert metadata (no runtime reads it yet). It documents the split and lets future tooling export the yaco-independent set as a standalone bundle.
+
 ### Design decision: methodology skills are global
 
 Skills like tdd, code-review, orchestrate teach **process**, not tooling. The agent already knows the project's language from CLAUDE.md. Only coding-standards and verify need per-stack reference files.
