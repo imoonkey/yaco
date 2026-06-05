@@ -96,6 +96,11 @@ Two subtle invariants:
 
 Negotiation only applies to UI routes (`/`, `/assets/*`, and the index fallback). The `/api/*` routes — including the SSE streams — are untouched so each line can flush immediately.
 
+### Self-hosted VAD assets (`/assets/vad/<version>/`)
+
+The voice path's in-browser VAD runtime is served from the app, not a CDN, so it works offline / over Tailscale. `app/ui/vite.config.ts` uses `viteStaticCopy` to copy four files into a version-pinned dir — the vad-web worklet, `silero_vad_v5.onnx`, and the **single-threaded SIMD non-jsep** onnxruntime-web `ort-wasm-simd-threaded.{mjs,wasm}` (the WebGPU/jsep build is never used, so no `SharedArrayBuffer`/COOP+COEP). They land under `/assets/vad/<version>/`, so the existing `/assets/*` rule gives them `immutable` long cache; the version segment (pinned to the onnxruntime-web release) is the cache key and must move on any dep bump. The `MIME_TYPES` map therefore includes `.wasm` → `application/wasm` (**mandatory** for `WebAssembly.instantiateStreaming`) and `.onnx` → `application/octet-stream`. The `.mjs`/worklet `.js` get the normal precompressed-sibling negotiation; the `.wasm`/`.onnx` binaries are served identity. -> Design: `plan/active/voice-streaming/design_claude.md`.
+
+
 ## Environment Variables
 
 | Var | Default | Description |

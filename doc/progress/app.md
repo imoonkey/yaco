@@ -1,3 +1,22 @@
+## 2026-06-04: Voice reducer — single `active` phase with derived finalize gate (vs-state-machine)
+
+**What changed:**
+- `app/ui/src/hooks/voiceStateMachine.ts` — collapsed the `recording`/`transcribing`/`formatting` phase split into one `active` phase carrying `{ segments, nextIndex, closedForInput, vadStopped, pendingCount, formatting, targetLost }`. `Segment = { index, text: string | null }` (`null` = `/transcribe` in flight, `''` = dropped/failed).
+- **Derived finalize gate.** New `selectFinalization(phase)` reads state instead of awaiting: `closedForInput && vadStopped && pendingCount === 0 && !formatting` opens the gate, then branches `no_speech` (zero chunks) / `failed` (≥1 chunk, all empty) / `format` (joined transcript). A chunk flushed after Stop bumps `pendingCount` before `VAD_STOPPED`, so it can't slip past the snapshot.
+- **Run isolation tightened.** All async events carry `runId` and are dropped on mismatch — now including `PERMISSION_GRANTED`/`PERMISSION_DENIED` (closes a latent bug where a prior run's session promise resolving during a new run's `requesting_permission` would activate it with the stale session). `TARGET_LOST` deliberately has no `runId` — it is dispatched synchronously from a React effect on the live phase, so it has no async boundary.
+- **Gate cannot be bypassed.** Reducer enforces `START_FORMAT` only when finalization derives `format`, `NO_SPEECH` only when `no_speech`, `COMPOSE_READY` only while `formatting` is in flight. `FAIL` stays ungated (multiple legitimate sources).
+- Removed the old `InteractionState` members `recording`/`transcribing`/`formatting` and the MediaRecorder-era `TOO_SHORT` event. Added selectors `selectLiveTranscript`, `selectSegments`, `selectPendingCount`.
+- `app/ui/src/hooks/__tests__/voiceStateMachine.test.ts` (new) — 22 unit tests: out-of-order resolve, stale-run drops, STOP + late flush, all-failed vs no-speech, target-lost-before-compose, and gate-bypass rejection.
+
+**Why:**
+- One slice of the `voice-streaming` project (VAD + coalesced Groq transcription). A single `active` phase makes the late-final-flush and in-flight-drain canonical instead of a race across a `recording`→`transcribing` boundary, and a *derived* gate means a chunk flushed after Stop is just another segment event, not a special case. `NO_SPEECH` vs `FAIL` are kept distinct (idle notice vs error) so a 429/drop never collapses into "no speech."
+
+**Key files:** `app/ui/src/hooks/voiceStateMachine.ts`, `app/ui/src/hooks/__tests__/voiceStateMachine.test.ts`, `plan/active/voice-streaming/implementation_summary.md`
+**Verification:** `cd app/ui && npx vitest run voiceStateMachine` → 22 passed; `tsc --noEmit` + ESLint clean on both in-scope files. Full `tsc -b` is intentionally red — isolated to the four consumers that have not yet adopted the new contract (`useVoice.ts`, `ComposeTray.tsx`, `VoiceControl.tsx`, `useWorkspaceKeyboard.ts`).
+**Commit:** working tree (vs-state-machine task; code pending orchestrator commit)
+**Next:** `vs-hook` adopts the contract in `useVoice.ts` (VAD orchestration, drop `TOO_SHORT`, pass `runId`); `vs-tray-live` switches consumers to `active` + live transcript. Build greens once both land.
+**Blockers:** None (red build is the expected staged-migration state, not a regression)
+
 ## 2026-06-04: Vite dev gzip + warmup for remote Tailscale access (rpc-dev-gzip)
 
 **What changed:**

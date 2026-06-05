@@ -128,6 +128,8 @@ After a build, the backend can serve the built UI directly at `http://localhost:
 
 `ui/package.json`'s build script chains `tsc -b && vite build && node scripts/compress-dist.mjs`. The final step walks `dist/`, writes brotli (q11) and gzip (level 9) siblings for compressible types (`.js .mjs .css .html .svg .json .webmanifest .txt .map`) ≥1KB via atomic temp+rename, and always overwrites stale `.br`/`.gz` so rebuilds stay consistent. Per-file failures log a warning and skip; the summary line reports `raw → brotli / gzip (failed: N)`.
 
+During `vite build`, `viteStaticCopy` also copies the self-hosted VAD runtime (vad-web worklet + `silero_vad_v5.onnx` + onnxruntime-web single-threaded SIMD `ort-wasm-simd-threaded.{mjs,wasm}`) from `node_modules` into `dist/assets/vad/<version>/` — no binaries are committed. The same files are served in dev via the plugin's middleware. Bump `VAD_ASSET_VERSION` in `vite.config.ts` on any `@ricky0123/vad-web`/`onnxruntime-web` upgrade. -> See: [doc/main/app/backend/server.md](../../main/app/backend/server.md#self-hosted-vad-assets-assetsvadversion).
+
 ## Testing
 
 ```bash
