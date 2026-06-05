@@ -21,7 +21,7 @@ Server-side library modules providing business logic, background services, and s
 
 Shared constants extracted from across the server codebase. Single source of truth for buffer sizes, timeouts, sentinel values, and resolved paths.
 
-**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `YACO_AGENT_COMMAND_TIMEOUT_MS`, `YACO_AGENT_START_TIMEOUT_MS`, `YACO_AGENT_STATUS_TIMEOUT_MS`, `YACO_TASK_COMMAND_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `YACO_PATH`, `MULTMUX_SESSIONS_DIR`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`
+**Exports**: `GIT_MAX_BUFFER`, `FILE_SIZE_LIMIT`, `YACO_AGENT_COMMAND_TIMEOUT_MS`, `YACO_AGENT_START_TIMEOUT_MS`, `YACO_AGENT_STATUS_TIMEOUT_MS`, `YACO_TASK_COMMAND_TIMEOUT_MS`, `GIT_COMMAND_TIMEOUT_MS`, `SSE_HEARTBEAT_MS`, `PENDING_SESSION_ID`, `YACO_PATH`, `AGENT_SESSIONS_DIR`, `PTY_MAX_BUFFER_SIZE`, `VOICE_MAX_UPLOAD_BYTES`, `SEARCH_INDEX_BUDGET`, `DEFAULT_TERMINAL_COLS`, `DEFAULT_TERMINAL_ROWS`, `MAX_TERMINAL_COLS`, `MAX_TERMINAL_ROWS`, `WS_PING_INTERVAL_MS`
 
 - `YACO_PATH` — resolved once at startup: `process.env.YACO_PATH` wins (test/escape hatch); otherwise `which yaco`; otherwise the bare name `yaco` so PATH resolution still runs. Imported by `agent.ts` and `routes/tasks.ts`.
 - `YACO_TASK_COMMAND_TIMEOUT_MS` — `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `@yaco/cli/core/task`). Must strictly EXCEED the CLI's task-lock timeout so lock contention surfaces as the structured `{ok:false,error:{code:'LOCK',...}}` envelope on stderr before the server's execFile kills the child — otherwise LOCK would be swallowed into a generic 500.
@@ -82,7 +82,7 @@ The runtime-root and repo-relative path resolvers live in the workspace package 
 
 **CLI surface:** `yaco paths runtime [--json]` returns the runtime helpers keyed by name. `yaco paths project [--json] [--repo <path>]` returns the four repo paths **resolved to absolute paths** against `--repo` (defaults to cwd). `--repo` with no value is rejected as `USAGE` (exit 2). Schema: [`plan/active/yaco-core/final/schemas/yaco-toml.schema.json`](../../../../plan/active/yaco-core/final/schemas/yaco-toml.schema.json).
 
-- `constants.MULTMUX_SESSIONS_DIR` is computed via `sessionsDir()` at module load. The `YACO_AGENT_SESSIONS_DIR` env var override (formerly `MULTMUX_STATE_DIR`) is intentionally **not** honored on the workflow side — that override exists on the `yaco agent` CLI side as a test/escape hatch only; workflow tracks the default root the agent runtime publishes to under normal operation.
+- `constants.AGENT_SESSIONS_DIR` is computed via `sessionsDir()` at module load. The `YACO_AGENT_SESSIONS_DIR` env var override (formerly `MULTMUX_STATE_DIR`) is intentionally **not** honored on the workflow side — that override exists on the `yaco agent` CLI side as a test/escape hatch only; workflow tracks the default root the agent runtime publishes to under normal operation.
 - The yaco agent runtime and workflow share the same `${YACO_HOME:-~/.yaco}/sessions/` directory by construction — agent runtime owns writes (via `cli/src/lib/core/agent/session-state.ts`), workflow watches.
 
 ### scanner.ts (~80 lines)
@@ -97,24 +97,24 @@ Projects YACO events into the progress-entry shape consumed by the current UI.
 
 ### agent.ts (~430 lines)
 
-Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` state files and wraps the `yaco agent` CLI surface for live session commands. (Formerly `multmux.ts` — renamed via `git mv` in the multmux→yaco cutover; type names like `MultmuxSession`/`MultmuxStateFile` are intentionally retained as the on-the-wire schema is unchanged.)
+Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` state files and wraps the `yaco agent` CLI surface for live session commands.
 
-**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `fetchAllSessionsFromCli()`, `queryMultmuxStatus()`, `inferMultmuxProvider()`, `sendToSession()`, `captureSession()`, `startMultmuxSession()`, `closeMultmuxSession()`, `renameMultmuxSession()`, `MultmuxSession`, `MultmuxStateFile`, `isPathDescendantOrEqual()`
+**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `fetchAllSessionsFromCli()`, `queryAgentStatus()`, `inferAgentProvider()`, `sendToSession()`, `captureSession()`, `startAgentSession()`, `closeAgentSession()`, `renameAgentSession()`, `AgentSession`, `AgentSessionState`, `isPathDescendantOrEqual()`
 
-**CLI spawn contract.** Every call passes `--json` and is funneled through `runYacoAgentJson(args, timeout, what)` which `spawn`s `YACO_PATH` with `['agent', ...]` argv (no shell — argv-safe), parses the `{ok,data}/{ok,error}` envelope, and throws `yaco <X> failed [CODE]: message` when the CLI reports a failure (the stderr envelope is preserved into the thrown Error). The only direct `spawn` (no envelope unwrap) is `startMultmuxSession`, which runs the CLI detached and watches the state-file directory for the new handle — it can't wait for the envelope because the CLI keeps running in the background.
+**CLI spawn contract.** Every call passes `--json` and is funneled through `runYacoAgentJson(args, timeout, what)` which `spawn`s `YACO_PATH` with `['agent', ...]` argv (no shell — argv-safe), parses the `{ok,data}/{ok,error}` envelope, and throws `yaco <X> failed [CODE]: message` when the CLI reports a failure (the stderr envelope is preserved into the thrown Error). The only direct `spawn` (no envelope unwrap) is `startAgentSession`, which runs the CLI detached and watches the state-file directory for the new handle — it can't wait for the envelope because the CLI keeps running in the background.
 
 - `readSessionsFromStateFiles(project)` reads the global sessions dir and filters by `sessionPath` descendant-matching the registered project path
 - `readAllSessionsFromStateFiles(projects)` reads the global sessions dir once and assigns each session to the most specific matching registered project
 - `fetchAllSessionsFromCli(projects)` calls `yaco agent status --all --json`, unwraps the envelope, and maps sessions to projects. Used by the reconciler for correctness-sensitive operations.
-- `queryMultmuxStatus(cwd)` calls `yaco agent status --path <cwd> --json` for resume preflight checks
+- `queryAgentStatus(cwd)` calls `yaco agent status --path <cwd> --json` for resume preflight checks
 - Primary session source: reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (written by the yaco agent runtime via hook events)
 - Status passthrough: `starting | idle | processing` — no normalization (CLI states used as-is)
 - State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — file deletion = session ended
-- `startMultmuxSession(provider, name, cwd, prompt?, resumeId?)` spawns the CLI in canonical form `yaco agent start <provider> --json [--resume <id> | prompt] [-n <name>]` (the top-level `yaco <provider>` shortcut is reserved for human callers — code uses the canonical form). Returns early as soon as the state file has `pid > 0` (tmux session attachable, ~1-2s).
+- `startAgentSession(provider, name, cwd, prompt?, resumeId?)` spawns the CLI in canonical form `yaco agent start <provider> --json [--resume <id> | prompt] [-n <name>]` (the top-level `yaco <provider>` shortcut is reserved for human callers — code uses the canonical form). Returns early as soon as the state file has `pid > 0` (tmux session attachable, ~1-2s).
 - `sendToSession(handle, msg)` → `yaco agent send <handle> <msg> --json`
 - `captureSession(handle, lines)` → `yaco agent capture <handle> --lines <n> --strip-ansi true --json`; unwraps `data.text` from the envelope (in `--json` mode the CLI wraps the raw pane buffer instead of writing it bytes-faithfully to stdout).
-- `closeMultmuxSession(handle)` → `yaco agent kill <handle> --json` (handle-global; no cwd needed)
-- `renameMultmuxSession(old, new)` → `yaco agent rename <old> <new> --json` (handle-global)
+- `closeAgentSession(handle)` → `yaco agent kill <handle> --json` (handle-global; no cwd needed)
+- `renameAgentSession(old, new)` → `yaco agent rename <old> <new> --json` (handle-global)
 
 ### history.ts (~300 lines)
 
@@ -124,7 +124,7 @@ Reads session history from Claude Code and Codex local storage for the History t
 
 - `getClaudeHistory(projectPath)` — reads `~/.claude/projects/{encoded}/*.jsonl`. Optimized with partial reads: head 16KB for first user message (with slash-command normalization) and first top-level `timestamp`, tail 64KB for last top-level `timestamp` plus last `custom-title` (last-wins for renames). `created` / `modified` prefer embedded JSONL timestamps and fall back to filesystem times only when timestamps are absent, so path migrations or backup rewrites do not reorder history. Optional enrichment from `sessions-index.json` (accepts both `{ entries: [...] }` and raw array shapes). ~20ms for 240 files / 307MB.
 - `getCodexHistory(projectPath)` — queries `~/.codex/state_5.sqlite` threads table + reads `~/.codex/session_index.jsonl` for `thread_name` (last entry per id wins — append-only file has duplicates from renames). Does NOT use `threads.title` as handle.
-- `getHistory(projectPath, liveSessions)` — merges both providers, sorts by modified DESC, caps at 200, tags `liveSessionName` via sessionId comparison against live `MultmuxSession[]`.
+- `getHistory(projectPath, liveSessions)` — merges both providers, sorts by modified DESC, caps at 200, tags `liveSessionName` via sessionId comparison against live `AgentSession[]`.
 - `HistorySession` type: `{ id, provider, title, summary, created, modified, messageCount, gitBranch, liveSessionName }`
 
 ### notify.ts (56 lines)
@@ -155,7 +155,7 @@ Recursive filesystem watcher per project directory.
 **Exports**: `startProjectWatchers()`, `stopProjectWatchers()`
 
 - Registers lightweight global watchers first (`${YACO_HOME:-~/.yaco}/projects.json`, `${YACO_HOME:-~/.yaco}/sessions`), then installs recursive project watchers. This keeps session refreshes reliable when large workspaces consume many inotify slots.
-- Uses `fs.watch` with `recursive: true` for each project directory plus one global watcher on `${YACO_HOME:-~/.yaco}/sessions` (yaco agent state root, resolved via `constants.MULTMUX_SESSIONS_DIR` → `sessionsDir()`)
+- Uses `fs.watch` with `recursive: true` for each project directory plus one global watcher on `${YACO_HOME:-~/.yaco}/sessions` (yaco agent state root, resolved via `constants.AGENT_SESSIONS_DIR` → `sessionsDir()`)
 - Routes project-local filename changes to SSE refresh channels: `worktrees`, `git`, `filetree`
 - `.worktrees/<slug>` top-level changes → `worktrees` channel; deeper `.worktrees/<slug>/**` changes → `filetree` channel (enables live refresh when viewing a worktree)
 - Global agent session watcher reads `sessionPath` from changed state files and only emits `sessions` refreshes for registered projects whose paths descendant-match
