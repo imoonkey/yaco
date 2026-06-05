@@ -39,6 +39,8 @@ interface MockConfig {
   agentPid: number | null;
   /** If true, sendKeys throws after capturing state */
   sendKeysThrow: boolean;
+  /** Result the provider-storage resolver returns (null = unresolved) */
+  resolveSessionIdResult: { sessionId: string; summary?: string } | null;
 }
 
 let mockConfig: MockConfig;
@@ -55,6 +57,7 @@ function resetMocks(): void {
     captureOutput: "❯ ",
     agentPid: 12345,
     sendKeysThrow: false,
+    resolveSessionIdResult: null,
   };
   checkAliveIdx = 0;
   hasSessionIdx = 0;
@@ -121,7 +124,7 @@ mock.module("../src/lib/core/agent/session-id.ts", () => ({
   PENDING_SESSION_ID: "pending:awaiting-first-prompt",
   resolveSessionId: () => {
     resolveSessionIdCalls++;
-    return null;
+    return mockConfig.resolveSessionIdResult;
   },
 }));
 
@@ -389,18 +392,24 @@ describe("reconcile capture status is runtime-only", () => {
 // ===========================================================================
 
 describe("start --json contract guarantees", () => {
-  it("starts Codex without OSC responder and submits rename after publishing pid", () => {
-    const handle = `${TEST_PREFIX}-codex-fast-start`;
+  it("starts Codex OSC responder (gated by adapter terminal flag) before publishing pid", () => {
+    const handle = `${TEST_PREFIX}-codex-responder`;
     trackHandle(handle);
 
     mockConfig.checkSessionAlive = [true];
     mockConfig.hasSession = [false, false, true];
     mockConfig.captureOutput = "› ";
     mockConfig.agentPid = 42002;
+    // Provider storage *could* resolve a thread id, but a state-file-only start
+    // must not consult it; the pending sentinel stands until a hook backfills.
+    mockConfig.resolveSessionIdResult = { sessionId: "codex-thread-not-consulted-at-start" };
 
     const state = start("codex", ["--name", handle]);
 
-    expect(responderCaptures).toHaveLength(0);
+    // Codex declares terminal.respondToColorQuery, so the responder is started
+    // right after createSession — before the pid is captured into state.
+    expect(responderCaptures).toHaveLength(1);
+    expect((responderCaptures[0]!.stateAtCallTime as SessionState).pid).toBe(0);
     expect(sendKeysCaptures).toHaveLength(1);
     const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
     expect(captured.pid).toBe(42002);
@@ -439,6 +448,37 @@ describe("start --json contract guarantees", () => {
 
     // When no sessionId resolves, the pending sentinel is used (still non-empty)
     expect(state.sessionId).toBe("pending:awaiting-first-prompt");
+  });
+});
+
+// ===========================================================================
+// Codex sessionId strategy: state-file-only start, provider-storage backfill
+// ===========================================================================
+
+describe("Codex sessionId resolution strategy", () => {
+  it("status backfill resolves a pending Codex sessionId from provider storage", () => {
+    const handle = `${TEST_PREFIX}-codex-backfill`;
+    trackHandle(handle);
+    // A live Codex session whose start-time sessionId is still pending.
+    writeState(makeState({
+      handle,
+      provider: "codex",
+      sessionId: "pending:awaiting-first-prompt",
+      status: "idle",
+      pid: 43100,
+    }));
+
+    mockConfig.checkSessionAlive = [true];
+    mockConfig.agentPid = 43100;
+    mockConfig.resolveSessionIdResult = { sessionId: "codex-thread-xyz" };
+
+    const resolved = reconcile(handle);
+
+    // Backfill consults the adapter resolver and persists the real thread id.
+    expect(resolved).not.toBeNull();
+    expect(resolveSessionIdCalls).toBeGreaterThan(0);
+    expect(resolved!.sessionId).toBe("codex-thread-xyz");
+    expect(readState(handle)?.sessionId).toBe("codex-thread-xyz");
   });
 });
 

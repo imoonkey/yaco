@@ -180,6 +180,7 @@ sequenceDiagram
 
     M->>S: write {status: starting}
     M->>T: tmux new-session
+    M->>T: startOscColorQueryResponder (when adapter terminal.respondToColorQuery)
     M->>M: poll getAgentPid
     M->>S: write pid
 

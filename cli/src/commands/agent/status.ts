@@ -1,7 +1,7 @@
 import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid } from "../../lib/core/agent/tmux.ts";
-import { isIdle, PROVIDERS } from "../../lib/core/agent/providers.ts";
+import { isIdle } from "../../lib/core/agent/providers/idle.ts";
+import { getProvider, hasProvider, listProviders } from "../../lib/core/agent/providers/index.ts";
 import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath } from "../../lib/core/agent/session-state.ts";
-import { resolveSessionId } from "../../lib/core/agent/session-id.ts";
 import { validateName, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
 import { execSync } from "child_process";
 
@@ -12,7 +12,10 @@ type SessionStatusValue = "idle" | "processing" | "starting" | "stopped" | "not 
 /** Backfill PID/sessionId from the live process tree and local provider files. */
 function backfillStateMetadata(state: SessionState, handle: string): SessionState {
   let changed = false;
-  const preferredCommand = state.provider === "unknown" ? undefined : state.provider;
+  // Preferred process command is the provider executable, which the contract
+  // separates from the provider id. Synthetic "unknown" sessions have no
+  // adapter, so leave preferredCommand undefined and fall back to pane pid.
+  const preferredCommand = hasProvider(state.provider) ? getProvider(state.provider).executable : undefined;
   const agentPid = getAgentPid(handle, preferredCommand);
 
   if (agentPid && agentPid !== state.pid) {
@@ -31,7 +34,15 @@ function backfillStateMetadata(state: SessionState, handle: string): SessionStat
   }
 
   const createdMs = state.createdAt ? new Date(state.createdAt).getTime() : undefined;
-  const resolved = resolveSessionId(state.pid, state.provider, createdMs, state.sessionPath);
+  // Backfill from provider storage via the adapter. Unregistered providers
+  // (e.g. synthesized "unknown") have no adapter, so they stay pending.
+  const resolved = hasProvider(state.provider)
+    ? getProvider(state.provider).sessionId.resolve({
+        pid: state.pid,
+        sessionCreatedMs: createdMs,
+        sessionPath: state.sessionPath,
+      })
+    : null;
 
   if (resolved) {
     state.sessionId = resolved.sessionId;
@@ -168,8 +179,8 @@ export function status(name?: string, jsonOrOptions?: boolean | StatusOptions): 
     lines.push("");
     lines.push("Health:");
     lines.push(`  tmux: ${isTmuxAvailable() ? "ok" : "not found"}`);
-    for (const name of Object.keys(PROVIDERS)) {
-      lines.push(`  ${name}: ${checkCliAvailable(name) ? "ok" : "not found"}`);
+    for (const provider of listProviders()) {
+      lines.push(`  ${provider.id}: ${checkCliAvailable(provider.executable) ? "ok" : "not found"}`);
     }
     return lines.join("\n");
   }

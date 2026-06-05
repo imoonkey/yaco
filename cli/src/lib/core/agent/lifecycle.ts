@@ -16,6 +16,7 @@ import { dirname, join, resolve } from "path";
 import { execSync } from "child_process";
 import { homedir } from "os";
 import { getYacoHome, agentWrapperPath } from "../paths/yaco-home.ts";
+import { getProvider } from "./providers/index.ts";
 import { CliError, ErrCode } from "../errors.ts";
 
 /** Honor $HOME at call time. Bun's os.homedir() caches at process start,
@@ -468,14 +469,12 @@ export function ensureCodexHooks(): void {
   }
 }
 
-/** Ensure the wrapper script and the provider hook configs are in place. */
+/** Ensure the wrapper script and the provider hook configs are in place.
+ *  Provider config mutation is delegated to the adapter (`hooks.install`); the
+ *  shared runtime only owns the wrapper. */
 export function ensureHooks(provider: string): void {
   ensureManagedScript(agentWrapperPath(), readAgentWrapperScript());
-  if (provider === "claude") {
-    ensureClaudeHooks();
-  } else if (provider === "codex") {
-    ensureCodexHooks();
-  }
+  getProvider(provider).hooks?.install();
 }
 
 /** Wrap a command string so it runs inside the exit-trap wrapper. */

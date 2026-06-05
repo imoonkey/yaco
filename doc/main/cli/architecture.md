@@ -215,7 +215,7 @@ If no signal maps to a live managed state file, the command returns
 
 - `env -u CLAUDECODE` prevents nested Claude conflicts
 - `env COLORTERM=truecolor` nudges Codex toward truecolor rendering inside tmux
-- Codex starts through a short 1.5s launch delay so the runtime can attach a `tmux pipe-pane` responder before Codex emits its crossterm OSC 10/11 foreground/background queries. The responder watches the real query bytes and sends the matching OSC 10/11 replies back with `tmux send-keys -H`; this preserves the composer background in detached sessions without blind timed injection or visible `^[]10;rgb...` echo.
+- Codex's provider adapter declares `terminal.respondToColorQuery`, so `start` attaches a `tmux pipe-pane` responder right after `tmux new-session` (gated by that flag, no fixed launch delay). The responder watches the real OSC 10/11 query bytes and sends the matching replies back with `tmux send-keys -H`; this preserves the composer background in detached sessions without blind timed injection or visible `^[]10;rgb...` echo. With no launch delay it attaches best-effort and may miss a query Codex emits before pipe-pane is live.
 - `--dangerously-skip-permissions` (Claude) / `--yolo` (Codex) for autonomous operation
 - Codex "Hooks need review" trust prompt — when the installed hook command's hash changes (e.g. after upgrading yaco's binary path), Codex re-prompts on session start. `start.ts#waitForReady` recognizes both screens (`Hooks need review` numbered menu, `Press t to trust all` overlay) and accepts trust automatically so unattended starts proceed.
 

@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-05: Agent start/lifecycle consumes the provider registry
+
+**What changed:**
+- Moved the start/status/rename/whoami/lifecycle/tmux provider branches onto the committed provider registry adapters. `start.ts` now drives resume canonicalization (`command.normalizeResumeArgs`), name handling (`command.normalizeStartArgs` / `postStartInputs`), startup interstitials (`command.startupInterstitials`, generalized into one `handleStartupInterstitial` loop), the launch command (`command.build`), session-id strategy (`sessionId.startResolution` / `resolve` / `pendingValue`), and PID resolution (`prov.executable`). `status.ts` backfills via `provider.sessionId.resolve` (guarded by `hasProvider`), keys `preferredCommand` off `provider.executable`, and iterates `listProviders()` for the health check. `rename.ts` uses `command.renameInputs`; `whoami.ts` derives session-id env keys from `listProviders().flatMap(p => p.sessionId.envKeys)`; `lifecycle.ts#ensureHooks` delegates config mutation to `getProvider(provider).hooks?.install()`; `tmux.ts` derives the known-agent executable set from the registry.
+- Behavior change: the detached Codex OSC 10/11 color responder is started again, now **gated by the adapter `terminal.respondToColorQuery` flag** (no hard-coded provider check, no 1.5s launch delay). Codex start-time sessionId stays state-file-only; status backfill resolves provider storage.
+- Strengthened `cli/test/lifecycle-guards.test.ts`: the Codex start test proves the adapter resolver is *not* consulted at start even when provider storage could resolve, plus a new test that status backfill *does* resolve a pending Codex sessionId from provider storage.
+
+**Why:**
+- The lifecycle paths had hard-coded `provider === "claude" | "codex"` branches; the TUI provider-adapter design centralizes per-provider behavior so adding a provider is one adapter, not edits across startup/status/rename/whoami/hooks/tmux. The OSC responder is the canonical adapter-driven terminal-runtime quirk, so it returns gated by the adapter flag while preserving the perf win (the 1.5s launch delay and 10s sessionId wait stay removed; the responder is a non-blocking `pipe-pane`).
+
+**Key files:** `cli/src/commands/agent/{start,status,rename}.ts`, `cli/src/lib/core/agent/{whoami,lifecycle,tmux}.ts`, `cli/test/lifecycle-guards.test.ts`, `doc/main/cli/{providers,lifecycle,architecture}.md`
+**Verification:** `cd cli && bun test test/start.test.ts test/rename.test.ts test/whoami.test.ts test/hooks-install.test.ts test/tmux.test.ts test/lifecycle-guards.test.ts` → 79 pass / 0 fail. `cd cli && bun run test:unit` → 546 pass / 0 fail. `tsc --noEmit` clean for all touched files (only pre-existing out-of-scope errors remain).
+**Commit:** this commit.
+**Next:** Sibling adapter tasks (summary/history CLI, output-follow, project-move, install/doctor, app boundary) and the `docs-provider-boundary` doc pass that retires the flat `providers.ts` references.
+**Blockers:** None.
+
 ## 2026-06-05: Installer drops migrated legacy hook-v2.sh entries
 
 **What changed:**

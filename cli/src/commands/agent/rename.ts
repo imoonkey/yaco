@@ -1,4 +1,5 @@
 import { hasSession, renameSession, sendKeys } from "../../lib/core/agent/tmux.ts";
+import { getProvider, hasProvider } from "../../lib/core/agent/providers/index.ts";
 import { readState, renameState } from "../../lib/core/agent/session-state.ts";
 import { validateName } from "../../lib/core/agent/model.ts";
 
@@ -31,10 +32,13 @@ export function rename(oldName: string, newName: string): void {
   // (GC can delete old state file after tmux rename makes old name stale)
   renameState(oldName, newName, state);
 
-  // Best-effort: send /rename to the agent so it updates its internal state
-  if ((state.provider === "claude" || state.provider === "codex") && hasSession(newName)) {
-    try {
-      sendKeys(newName, `/rename ${newName}`);
-    } catch { /* best-effort */ }
+  // Best-effort: send the adapter's in-TUI rename inputs so the agent updates
+  // its internal title. Providers without native rename return no inputs.
+  if (hasSession(newName) && hasProvider(state.provider)) {
+    for (const input of getProvider(state.provider).command.renameInputs(newName)) {
+      try {
+        sendKeys(newName, input);
+      } catch { /* best-effort */ }
+    }
   }
 }

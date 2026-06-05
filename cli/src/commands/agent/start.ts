@@ -1,5 +1,7 @@
-import { capturePane, createSession, getAgentPid, hasSession, checkSessionAlive, sendRawKeys, sendKeys } from "../../lib/core/agent/tmux.ts";
-import { getProvider, isIdle } from "../../lib/core/agent/providers.ts";
+import { capturePane, createSession, getAgentPid, hasSession, checkSessionAlive, sendRawKeys, sendKeys, startOscColorQueryResponder } from "../../lib/core/agent/tmux.ts";
+import { getProvider } from "../../lib/core/agent/providers/index.ts";
+import { isIdle } from "../../lib/core/agent/providers/idle.ts";
+import type { StartupInterstitial, TuiProvider } from "../../lib/core/agent/providers/types.ts";
 import {
   buildDefaultSessionName,
   extractName,
@@ -11,15 +13,7 @@ import {
 } from "../../lib/core/agent/model.ts";
 import { ensureHooks, buildWrappedCommand } from "../../lib/core/agent/lifecycle.ts";
 import { deleteState, readState, writeState, listStateHandles } from "../../lib/core/agent/session-state.ts";
-import { resolveSessionId } from "../../lib/core/agent/session-id.ts";
 
-const TRUST_PATTERN = /trust this folder|Yes, I trust/i;
-// Codex re-prompts when hook commands change. Two screens:
-//   1. "Hooks need review ... 2. Trust all and continue" — numbered menu,
-//      cursor starts on option 1, send Down + Enter to pick "Trust all".
-//   2. "Press t to trust all" overlay — send `t`.
-const CODEX_HOOK_REVIEW_PATTERN = /Hooks need review[\s\S]*Trust all and continue/i;
-const CODEX_HOOK_TRUST_OVERLAY_PATTERN = /Press t to trust all/i;
 const READY_TIMEOUT_MS = 30000;
 const POLL_MS = 500;
 const STABLE_IDLE_MS = 1000;
@@ -66,9 +60,32 @@ function syncStateAfterStart(
   return current;
 }
 
+/** Auto-answer a startup TUI dialog (trust folder, hook review, ...) declared by
+ *  the provider adapter. Sends the first matching interstitial's keys in order,
+ *  pausing `settleMs` between them. Returns true when a dialog was handled. */
+function handleStartupInterstitial(
+  handle: string,
+  output: string,
+  interstitials: readonly StartupInterstitial[],
+): boolean {
+  for (const interstitial of interstitials) {
+    if (!interstitial.pattern.test(output)) continue;
+    interstitial.keys.forEach((key, i) => {
+      if (i > 0 && interstitial.settleMs) Bun.sleepSync(interstitial.settleMs);
+      sendRawKeys(handle, key);
+    });
+    return true;
+  }
+  return false;
+}
+
 /** Hook-first ready detection. Hook is the source of truth for status; screen is fallback
- *  for trust-dialog auto-accept and for hook-less / hook-broken scenarios. */
-function waitForReady(handle: string, timeoutMs: number = READY_TIMEOUT_MS): boolean {
+ *  for adapter-declared startup interstitials and for hook-less / hook-broken scenarios. */
+function waitForReady(
+  handle: string,
+  interstitials: readonly StartupInterstitial[],
+  timeoutMs: number = READY_TIMEOUT_MS,
+): boolean {
   const start = Date.now();
   let idleSince: number | null = null;
   while (Date.now() - start < timeoutMs) {
@@ -81,24 +98,7 @@ function waitForReady(handle: string, timeoutMs: number = READY_TIMEOUT_MS): boo
     try {
       const raw = capturePane(handle, 80);
       const output = stripAnsi(raw);
-      if (TRUST_PATTERN.test(output)) {
-        sendRawKeys(handle, "Enter");
-        idleSince = null;
-        Bun.sleepSync(POLL_MS);
-        continue;
-      }
-      if (CODEX_HOOK_REVIEW_PATTERN.test(output)) {
-        // Cursor starts on option 1 (Review hooks). Down + Enter selects
-        // option 2 (Trust all and continue) and confirms.
-        sendRawKeys(handle, "Down");
-        Bun.sleepSync(100);
-        sendRawKeys(handle, "Enter");
-        idleSince = null;
-        Bun.sleepSync(POLL_MS);
-        continue;
-      }
-      if (CODEX_HOOK_TRUST_OVERLAY_PATTERN.test(output)) {
-        sendRawKeys(handle, "t");
+      if (handleStartupInterstitial(handle, output, interstitials)) {
         idleSince = null;
         Bun.sleepSync(POLL_MS);
         continue;
@@ -118,26 +118,27 @@ function waitForReady(handle: string, timeoutMs: number = READY_TIMEOUT_MS): boo
   return false;
 }
 
-/** Poll for sessionId from state file (hook) and local file PID correlation */
+/** Poll for sessionId from state file (hook) and provider storage correlation. */
 function waitForSessionId(
   handle: string,
   pid: number,
-  provider: string,
+  prov: TuiProvider,
   sessionCreatedMs?: number,
   sessionPath?: string,
   timeoutMs: number = SID_POLL_TIMEOUT_MS,
 ): string {
   const start = Date.now();
+  const pending = prov.sessionId.pendingValue;
   while (Date.now() - start < timeoutMs) {
     // Check state file (hook may have written sessionId)
     const state = readState(handle);
-    if (state?.sessionId && state.sessionId !== PENDING_SESSION_ID) return state.sessionId;
-    // Try local file PID correlation (with rollout fallback for Codex)
-    const resolved = resolveSessionId(pid, provider, sessionCreatedMs, sessionPath);
+    if (state?.sessionId && state.sessionId !== pending) return state.sessionId;
+    // Try provider storage correlation (adapter-owned scan/DB lookup)
+    const resolved = prov.sessionId.resolve({ pid, sessionCreatedMs, sessionPath });
     if (resolved) return resolved.sessionId;
     Bun.sleepSync(SID_POLL_MS);
   }
-  return PENDING_SESSION_ID;
+  return pending;
 }
 
 export function resolveStartHandle(
@@ -217,17 +218,9 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   // Extract --resume <id> from passthrough args (flag or positional form)
   const resumeId = extractResume(args);
 
-  // Canonicalize resume args per provider:
-  // - Codex: rewrite to subcommand form (codex resume <id> ...)
-  // - Claude: rewrite to flag form (claude --resume <id> ...)
-  let effectiveArgs: string[];
-  if (resumeId && provider === "codex") {
-    effectiveArgs = ["resume", resumeId, ...stripResume(args)];
-  } else if (resumeId && provider === "claude") {
-    effectiveArgs = ["--resume", resumeId, ...stripResume(args)];
-  } else {
-    effectiveArgs = args;
-  }
+  // Canonicalize resume args into the provider's native form (Claude: --resume
+  // flag; Codex: resume subcommand). Adapters own the rewrite.
+  const effectiveArgs = prov.command.normalizeResumeArgs(args);
 
   // G11: Targeted dead-handle reclaim — if the requested handle has a stale state file
   // for a dead session, delete it so name resolution doesn't think it's taken.
@@ -250,7 +243,6 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     existingHandles,
     hasSession,
   );
-  const nameFromArgs = name ?? extractName(args);
 
   // Collision preflight: check for non-multmux tmux session with same name
   if (hasSession(resolvedName) && !readState(resolvedName)) {
@@ -272,20 +264,13 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   };
   writeState(state);
 
-  const commandArgs = [...effectiveArgs];
-  const postStartInputs: string[] = [];
+  // Adapters own all name-flag behavior: Claude injects --name at launch, Codex
+  // strips --name and learns its handle via post-start inputs (/rename).
+  const startCtx = { handle: resolvedName, args: effectiveArgs, resumeId };
+  const commandArgs = prov.command.normalizeStartArgs(startCtx);
+  const postStartInputs = [...prov.command.postStartInputs(startCtx)];
 
-  // Ensure the agent session knows its multmux handle name:
-  // - Claude: inject --name if not already present (native flag, applied at launch)
-  // - Codex: /rename post-start (Codex strips --name from CLI args)
-  if (provider === "claude" && !nameFromArgs) {
-    commandArgs.push("--name", resolvedName);
-  }
-  if (provider === "codex") {
-    postStartInputs.push(`/rename ${resolvedName}`);
-  }
-
-  const wrappedCommand = buildWrappedCommand(resolvedName, state.createdAt, prov.buildCommand(commandArgs));
+  const wrappedCommand = buildWrappedCommand(resolvedName, state.createdAt, prov.command.build(commandArgs));
   try {
     createSession(resolvedName, wrappedCommand, cwd);
   } catch (error) {
@@ -293,12 +278,18 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     throw error;
   }
 
+  // Provider-runtime terminal compatibility: detached-tmux OSC 10/11 color-query
+  // responder, started only when the adapter declares it (headless PTY behavior).
+  if (prov.terminal?.respondToColorQuery) {
+    startOscColorQueryResponder(resolvedName);
+  }
+
   // Capture PID — poll briefly since the agent process may not have spawned yet
   // inside the wrapper. Read-modify-write to avoid overwriting hook changes.
   let pid: number | null = null;
   const pidDeadline = Date.now() + 3000;
   while (Date.now() < pidDeadline) {
-    pid = getAgentPid(resolvedName, provider);
+    pid = getAgentPid(resolvedName, prov.executable);
     if (pid !== null) break;
     Bun.sleepSync(200);
   }
@@ -306,7 +297,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     syncStateAfterStart(resolvedName, pid, false, resumeId ?? "");
   }
 
-  let ready = waitForReady(resolvedName);
+  let ready = waitForReady(resolvedName, prov.command.startupInterstitials ?? []);
 
   if (ready && postStartInputs.length > 0 && hasSession(resolvedName)) {
     ready = submitPostStartInputs(resolvedName, postStartInputs) && ready;
@@ -315,15 +306,16 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   // Resolve sessionId — skip polling if already known from --resume
   let sessionId = resumeId ?? "";
   if (!resumeId) {
-    if (provider === "codex") {
-      sessionId = readState(resolvedName)?.sessionId || PENDING_SESSION_ID;
+    if (prov.sessionId.startResolution === "state-file-only") {
+      // Trust hook-written state; provider storage is not scanned at start.
+      sessionId = readState(resolvedName)?.sessionId || prov.sessionId.pendingValue;
     } else {
       const resolvedPid = pid ?? 0;
       const sessionCreatedMs = new Date(state.createdAt).getTime();
       sessionId = waitForSessionId(
         resolvedName,
         resolvedPid,
-        provider,
+        prov,
         sessionCreatedMs,
         cwd,
         SID_POLL_TIMEOUT_MS,

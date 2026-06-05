@@ -1,5 +1,6 @@
 import { execFileSync } from "child_process";
 import { listStateHandles, readState } from "./session-state.ts";
+import { listProviders } from "./providers/index.ts";
 import { PENDING_SESSION_ID, type SessionState } from "./model.ts";
 
 export type WhoamiSource = "tmux-pane" | "session-id" | "ancestor-pid";
@@ -22,10 +23,11 @@ interface ResolveWhoamiOptions {
   tmuxSessionNameFromPane?: (pane: string) => string | null;
 }
 
-const SESSION_ID_ENV_KEYS = [
-  "CODEX_THREAD_ID",
-  "CLAUDE_CODE_SESSION_ID",
-] as const;
+/** Session-id env vars carried inside a provider TUI, aggregated from every
+ *  registered adapter so a new provider needs no edit here. */
+function sessionIdEnvKeys(): readonly string[] {
+  return listProviders().flatMap((provider) => provider.sessionId.envKeys);
+}
 
 function readStates(): SessionState[] {
   const states: SessionState[] = [];
@@ -72,7 +74,7 @@ function readProcesses(): WhoamiProcessInfo[] {
 }
 
 function firstKnownSessionId(env: Record<string, string | undefined>): string | null {
-  for (const key of SESSION_ID_ENV_KEYS) {
+  for (const key of sessionIdEnvKeys()) {
     const value = env[key]?.trim();
     if (value && value !== PENDING_SESSION_ID) return value;
   }

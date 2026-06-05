@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-04 (yc-agent-subcommand)
+> Last updated: 2026-06-05 (tui-provider-start-lifecycle)
 
 ## Supported Providers
 
@@ -73,7 +73,7 @@ When resuming with `--name`, Codex submits `/rename <handle>` after ready (same 
 
 Real-agent integration tests verify that the stored UUID `sessionId` works with both `claude --resume <id>` and `codex resume <id>`.
 
-Codex sessions explicitly export `COLORTERM=truecolor` before launch so the provider sees a truecolor hint even when running under tmux. Startup no longer starts the detached OSC 10/11 color responder or delays launch for it; the tradeoff is faster session availability at the cost of best-effort Codex input-box/theme colors before a real terminal client attaches.
+Codex sessions explicitly export `COLORTERM=truecolor` before launch so the provider sees a truecolor hint even when running under tmux. The runtime starts the detached `tmux pipe-pane` OSC 10/11 color responder when the provider adapter declares `terminal.respondToColorQuery` (Codex does), gated by that adapter flag rather than a hard-coded provider check. There is no fixed launch delay, so the responder attaches best-effort right after `tmux new-session`; it watches the pane for the real OSC 10/11 query bytes and replies with `tmux send-keys -H`.
 
 -> See: [src/lib/core/agent/providers.ts](../../../cli/src/lib/core/agent/providers.ts)
 
@@ -113,7 +113,7 @@ Codex sessions explicitly export `COLORTERM=truecolor` before launch so the prov
 | X10 | session data in `~/.codex/state_5.sqlite` | reverse engineering | `src/lib/core/agent/session-id.ts` | agent-sync: sessionId recovered after repair | SQLite fails, rollout scan already succeeded or stays PENDING |
 | X11 | SQLite `threads` table has `id`, `cwd`, `created_at` (no PID column); rollout scan is primary, DB is fallback | reverse engineering DB (2026-04-11: `logs` table dropped in migration #23; priority reversed to rollout-first for ms-precision concurrency safety) | `src/lib/core/agent/session-id.ts` | session-id.test.ts: SQL validation | query empty, sessionId stays PENDING |
 | X12 | rollout files at `~/.codex/sessions/YYYY/MM/DD/` | reverse engineering | `src/lib/core/agent/session-id.ts` | **none** | sessionId stays PENDING |
-| X13 | detached Codex OSC 10/11 synthetic replies are optional; startup favors fast attach over pre-client input-box color fidelity | tradeoff decision 2026-06-05 | responder implementation remains in `src/lib/core/agent/tmux.ts`, but `start.ts` does not call it by default | lifecycle-guards test asserts fast start does not launch the responder | input box may lose background tint until a real terminal client attaches |
+| X13 | detached Codex OSC 10/11 synthetic replies are gated by the provider adapter's `terminal.respondToColorQuery`; `start.ts` launches the responder right after `tmux new-session` when the adapter declares it (Codex does), with no fixed launch delay | provider-registry slice 2026-06-05 | gating in `src/commands/agent/start.ts`, responder in `src/lib/core/agent/tmux.ts#startOscColorQueryResponder`, flag in `src/lib/core/agent/providers/codex.ts` | lifecycle-guards test asserts Codex start launches the responder before publishing pid | input box may lose background tint if the responder attaches after Codex's first query |
 | X14 | `codex resume <uuid>` restores session | Codex docs | `src/commands/agent/start.ts` | agent-sync: resume contains token | resume fails |
 | X15 | Codex tool subprocesses expose `CODEX_THREAD_ID`, matching YACO state `sessionId` | live QA 2026-06-05 (`qa-codex-whoami`) | `src/lib/core/agent/whoami.ts` | whoami.test.ts: session-id fallback; live QA: `env -u TMUX_PANE yaco agent whoami --json` | `whoami` still resolves via `TMUX_PANE`; session-id fallback fails outside tmux pane env |
 

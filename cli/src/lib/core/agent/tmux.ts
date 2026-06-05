@@ -1,5 +1,6 @@
 import { execFileSync, execSync } from "child_process";
 import { readFileSync } from "fs";
+import { listProviders } from "./providers/index.ts";
 
 const EXEC_TIMEOUT_MS = 5000;
 const SEND_SUBMIT_DELAY_MS = 300;
@@ -8,7 +9,13 @@ const RGB_TERMINAL_FEATURES = [
   "tmux-256color:RGB",
   "screen-256color:RGB",
 ] as const;
-const KNOWN_AGENT_COMMANDS = new Set(["claude", "codex"]);
+// Provider executables YACO knows how to launch, sourced from the registry so a
+// new adapter needs no edit here. Resolved lazily to keep this low-level module
+// free of a load-time registry dependency.
+let _knownAgentCommands: Set<string> | null = null;
+function knownAgentCommands(): Set<string> {
+  return (_knownAgentCommands ??= new Set(listProviders().map((p) => p.executable)));
+}
 const THEME_ENV_KEYS = ["MULTMUX_THEME", "MULTMUX_COLOR_SCHEME", "GTK_THEME", "KDE_COLOR_SCHEME"] as const;
 const LINUX_THEME_COMMANDS = [
   "gsettings get org.gnome.desktop.interface color-scheme",
@@ -316,7 +323,7 @@ export function resolveAgentPidFromProcesses(
     return preferred?.pid ?? null;
   }
 
-  const knownAgent = descendants.find((process) => KNOWN_AGENT_COMMANDS.has(process.command));
+  const knownAgent = descendants.find((process) => knownAgentCommands().has(process.command));
   if (knownAgent) return knownAgent.pid;
 
   return descendants[0]!.pid;
