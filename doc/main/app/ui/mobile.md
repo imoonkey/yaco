@@ -124,6 +124,7 @@ On desktop, right-click opens context menus (file explorer, project list, sessio
 
 - `viewport-fit=cover` in viewport meta tag — required for `env(safe-area-inset-*)` to return non-zero values
 - `interactive-widget=resizes-content` in viewport meta — tells Chrome to resize the layout viewport when the virtual keyboard opens (no effect on browsers that don't support it)
+- `maximum-scale=1.0` in viewport meta — suppresses iOS Safari's auto-zoom on input focus so the dense layout (e.g. the 13px CodeMirror editor / contenteditable) stays at scale 1. `user-scalable` is left default, so iOS still permits manual pinch-zoom. See [Input Focus Zoom Prevention](#input-focus-zoom-prevention).
 - Layout root uses `100dvh` (dynamic viewport height) instead of `100vh`
 - This accounts for iOS Safari's address bar, which makes `100vh` taller than the visible area
 - Content area is a flex column (`flex flex-col`) so panes get proper height via `flex: 1`
@@ -163,7 +164,7 @@ The bottom project tab bar applies `padding-bottom: var(--safe-area-bottom)` (de
 
 ## Input Focus Zoom Prevention
 
-iOS Safari auto-zooms the viewport when an input/textarea/select receives focus if its computed `font-size < 16px`. A global CSS rule in `index.css` forces `font-size: 16px` on all form inputs, scoped to iOS touch devices only via `@media (pointer: coarse)` + `@supports (-webkit-touch-callout: none)`. This avoids the zoom without affecting desktop or Android.
+iOS Safari auto-zooms the viewport when an editable element receives focus if its computed `font-size < 16px`. The app keeps a dense layout (e.g. the 13px CodeMirror editor, a `contenteditable` div that a form-input font rule wouldn't cover), so instead of enlarging fonts it sets `maximum-scale=1.0` in the viewport meta. This caps auto-scaling at 1, suppressing the focus zoom across the whole page while keeping fonts at their designed size. `user-scalable` is left default, so iOS still permits manual pinch-zoom (Android honors `maximum-scale` literally and disables pinch there).
 
 ## Overscroll
 
