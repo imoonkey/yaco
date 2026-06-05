@@ -44,6 +44,7 @@ interface MockConfig {
 let mockConfig: MockConfig;
 let checkAliveIdx: number;
 let hasSessionIdx: number;
+let resolveSessionIdCalls: number;
 let sendKeysCaptures: Array<{ handle: string; stateAtCallTime: unknown }>;
 let responderCaptures: Array<{ handle: string; stateAtCallTime: unknown }>;
 
@@ -57,6 +58,7 @@ function resetMocks(): void {
   };
   checkAliveIdx = 0;
   hasSessionIdx = 0;
+  resolveSessionIdCalls = 0;
   sendKeysCaptures = [];
   responderCaptures = [];
 }
@@ -117,7 +119,10 @@ mock.module("../src/lib/core/agent/lifecycle.ts", () => ({
 
 mock.module("../src/lib/core/agent/session-id.ts", () => ({
   PENDING_SESSION_ID: "pending:awaiting-first-prompt",
-  resolveSessionId: () => null,
+  resolveSessionId: () => {
+    resolveSessionIdCalls++;
+    return null;
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -384,8 +389,8 @@ describe("reconcile capture status is runtime-only", () => {
 // ===========================================================================
 
 describe("start --json contract guarantees", () => {
-  it("starts Codex OSC query responder before publishing pid", () => {
-    const handle = `${TEST_PREFIX}-codex-responder-before-pid`;
+  it("starts Codex without OSC responder and submits rename after publishing pid", () => {
+    const handle = `${TEST_PREFIX}-codex-fast-start`;
     trackHandle(handle);
 
     mockConfig.checkSessionAlive = [true];
@@ -393,12 +398,15 @@ describe("start --json contract guarantees", () => {
     mockConfig.captureOutput = "› ";
     mockConfig.agentPid = 42002;
 
-    const state = start("codex", ["--name", handle, "--resume", "resume-test-session"]);
+    const state = start("codex", ["--name", handle]);
 
-    expect(responderCaptures).toHaveLength(1);
-    const captured = responderCaptures[0]!.stateAtCallTime as SessionState;
-    expect(captured.pid).toBe(0);
+    expect(responderCaptures).toHaveLength(0);
+    expect(sendKeysCaptures).toHaveLength(1);
+    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    expect(captured.pid).toBe(42002);
     expect(state.pid).toBe(42002);
+    expect(state.sessionId).toBe("pending:awaiting-first-prompt");
+    expect(resolveSessionIdCalls).toBe(0);
   });
 
   it("returns state with pid > 0 and non-empty sessionId", () => {

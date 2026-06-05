@@ -1,4 +1,4 @@
-import { capturePane, createSession, getAgentPid, hasSession, checkSessionAlive, sendRawKeys, sendKeys, startOscColorQueryResponder } from "../../lib/core/agent/tmux.ts";
+import { capturePane, createSession, getAgentPid, hasSession, checkSessionAlive, sendRawKeys, sendKeys } from "../../lib/core/agent/tmux.ts";
 import { getProvider, isIdle } from "../../lib/core/agent/providers.ts";
 import {
   buildDefaultSessionName,
@@ -21,14 +21,10 @@ const TRUST_PATTERN = /trust this folder|Yes, I trust/i;
 const CODEX_HOOK_REVIEW_PATTERN = /Hooks need review[\s\S]*Trust all and continue/i;
 const CODEX_HOOK_TRUST_OVERLAY_PATTERN = /Press t to trust all/i;
 const READY_TIMEOUT_MS = 30000;
-const POST_INPUT_READY_TIMEOUT_MS = 120000;
 const POLL_MS = 500;
 const STABLE_IDLE_MS = 1000;
 const SID_POLL_TIMEOUT_MS = 3000;
-const NAMED_CODEX_SID_POLL_TIMEOUT_MS = 10000;
 const SID_POLL_MS = 200;
-const INPUT_START_TIMEOUT_MS = 2000;
-const INPUT_POLL_MS = 100;
 
 function sessionIdPriority(sessionId: string): number {
   if (!sessionId) return 0;
@@ -122,35 +118,6 @@ function waitForReady(handle: string, timeoutMs: number = READY_TIMEOUT_MS): boo
   return false;
 }
 
-/** After sending input, wait until the agent visibly leaves idle, then wait for idle again.
- *  Hook is primary; screen scrape is fallback for delayed/missing UserPromptSubmit hook. */
-function waitForInputToFinish(handle: string): boolean {
-  const start = Date.now();
-  while (Date.now() - start < INPUT_START_TIMEOUT_MS) {
-    if (!hasSession(handle)) return false;
-
-    // Hook-first
-    const state = readState(handle);
-    if (state?.status === "processing") {
-      return waitForReady(handle, POST_INPUT_READY_TIMEOUT_MS);
-    }
-
-    // Screen fallback
-    try {
-      const output = stripAnsi(capturePane(handle, 80));
-      if (output && !isIdle(output)) {
-        return waitForReady(handle, POST_INPUT_READY_TIMEOUT_MS);
-      }
-    } catch {
-      // Session may still be updating
-    }
-
-    Bun.sleepSync(INPUT_POLL_MS);
-  }
-
-  return waitForReady(handle, POST_INPUT_READY_TIMEOUT_MS);
-}
-
 /** Poll for sessionId from state file (hook) and local file PID correlation */
 function waitForSessionId(
   handle: string,
@@ -226,13 +193,16 @@ export function stripResume(args: string[]): string[] {
 }
 
 
-function runPostStartInputs(handle: string, inputs: readonly string[]): boolean {
-  let ready = true;
+function submitPostStartInputs(handle: string, inputs: readonly string[]): boolean {
+  let submitted = true;
   for (const input of inputs) {
-    sendKeys(handle, input);
-    ready = waitForInputToFinish(handle) && ready;
+    try {
+      sendKeys(handle, input);
+    } catch {
+      submitted = false;
+    }
   }
-  return ready;
+  return submitted;
 }
 
 export function start(provider: string, passthroughArgs: string[] | string, name?: string): SessionState {
@@ -315,16 +285,12 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     postStartInputs.push(`/rename ${resolvedName}`);
   }
 
-  const startupDelaySeconds = provider === "codex" ? 1.5 : 0;
-  const wrappedCommand = buildWrappedCommand(resolvedName, state.createdAt, prov.buildCommand(commandArgs), startupDelaySeconds);
+  const wrappedCommand = buildWrappedCommand(resolvedName, state.createdAt, prov.buildCommand(commandArgs));
   try {
     createSession(resolvedName, wrappedCommand, cwd);
   } catch (error) {
     deleteState(resolvedName);
     throw error;
-  }
-  if (provider === "codex") {
-    startOscColorQueryResponder(resolvedName);
   }
 
   // Capture PID — poll briefly since the agent process may not have spawned yet
@@ -343,29 +309,26 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   let ready = waitForReady(resolvedName);
 
   if (ready && postStartInputs.length > 0 && hasSession(resolvedName)) {
-    try {
-      ready = runPostStartInputs(resolvedName, postStartInputs) && ready;
-    } catch {
-      ready = false;
-    }
+    ready = submitPostStartInputs(resolvedName, postStartInputs) && ready;
   }
 
   // Resolve sessionId — skip polling if already known from --resume
   let sessionId = resumeId ?? "";
   if (!resumeId) {
-    const resolvedPid = pid ?? 0;
-    const sessionCreatedMs = new Date(state.createdAt).getTime();
-    const timeoutMs = provider === "codex"
-      ? NAMED_CODEX_SID_POLL_TIMEOUT_MS
-      : SID_POLL_TIMEOUT_MS;
-    sessionId = waitForSessionId(
-      resolvedName,
-      resolvedPid,
-      provider,
-      sessionCreatedMs,
-      cwd,
-      timeoutMs,
-    );
+    if (provider === "codex") {
+      sessionId = readState(resolvedName)?.sessionId || PENDING_SESSION_ID;
+    } else {
+      const resolvedPid = pid ?? 0;
+      const sessionCreatedMs = new Date(state.createdAt).getTime();
+      sessionId = waitForSessionId(
+        resolvedName,
+        resolvedPid,
+        provider,
+        sessionCreatedMs,
+        cwd,
+        SID_POLL_TIMEOUT_MS,
+      );
+    }
   }
 
   const synced = syncStateAfterStart(resolvedName, pid, ready, sessionId);

@@ -205,7 +205,7 @@ describe("codex agent lifecycle", () => {
   );
 
   codexIt(
-    "runs deferred initial input after /rename for named starts",
+    "starts named sessions without blocking on best-effort thread rename",
     async () => {
       const handle = `${TEST_PREFIX}-codex-deferred-input`;
       testHandles.push(handle);
@@ -213,17 +213,11 @@ describe("codex agent lifecycle", () => {
       const state = start("codex", ["/help", "--name", handle]);
 
       expect(state.handle).toBe(handle);
-      // Note: status may be "processing" here — codex /rename triggers UserPromptSubmit
-      // but built-in commands don't always fire Stop hook, so processing can linger.
-      // The test's real assertions are in the capture output below.
-
       const persisted = readState(handle);
       expect(persisted?.status).toBeOneOf(["idle", "processing"]);
       expect(processCommand(persisted?.pid)).toBe("codex");
 
       const output = await capture(handle, { lines: 180 });
-      expect(output).toContain(`Thread renamed to ${handle}`);
-      // Verify deferred input /help was sent (visible in pane as prompt)
       expect(output).toContain("/help");
 
       kill(handle);
@@ -305,12 +299,12 @@ describe("capture --wait", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 5: Codex name sync
+// Test 5: Codex handle independence
 // ---------------------------------------------------------------------------
 
-describe("codex name sync", () => {
+describe("codex handle independence", () => {
   codexIt(
-    "syncs the internal thread name and advertises the resume handle",
+    "keeps the YACO handle authoritative even before Codex title sync completes",
     async () => {
       const handle = `${TEST_PREFIX}-name`;
       testHandles.push(handle);
@@ -323,10 +317,6 @@ describe("codex name sync", () => {
       expect(hasSession(handle)).toBe(true);
 
       expect(state?.handle).toBe(handle);
-
-      const output = await capture(handle, { lines: 120 });
-      expect(output).toContain(`Thread renamed to ${handle}`);
-      expect(output).toContain(`codex resume ${handle}`);
 
       kill(handle);
     },

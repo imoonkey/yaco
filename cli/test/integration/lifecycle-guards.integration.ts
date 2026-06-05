@@ -2,8 +2,8 @@
 // Requires real agents (Claude/Codex) and tmux.
 //
 // Coverage notes:
-//   P6 (Codex /rename during processing) — already covered by agent-lifecycle.integration.ts
-//     "runs deferred initial input after /rename for named starts"
+//   P6 (Codex /rename during processing) — covered by agent-sync.integration.ts
+//     "renames Codex sessions across tmux, state, and the internal thread name"
 //   P7 (Claude rename verification) — already covered by agent-sync.integration.ts
 //     "renames Claude sessions across tmux, state, and Claude's own session metadata"
 //

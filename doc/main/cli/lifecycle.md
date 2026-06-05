@@ -179,9 +179,7 @@ sequenceDiagram
     Note over M: only strip --name, everything else passthrough
 
     M->>S: write {status: starting}
-    M->>T: tmux new-session (wrapper delays Codex launch by 1.5s)
-    M->>T: startOscColorQueryResponder (pipe-pane watches OSC 10/11 queries)
-    T-->>M: responder sends OSC replies only after query bytes appear
+    M->>T: tmux new-session
     M->>M: poll getAgentPid
     M->>S: write pid
 
@@ -194,12 +192,11 @@ sequenceDiagram
     Note over M: waitForReady: idle or processing both accepted<br/>auto-handles Codex "Hooks need review" trust prompt
 
     M->>T: sendKeys("/rename <handle>")
-    Note over X: "Thread renamed to <handle>" (works during processing too)
-    M->>M: waitForInputToFinish
+    Note over X: Best-effort title sync; start does not wait for completion
 
-    M->>M: waitForSessionId (10s)
+    M->>M: sessionId = hook-written value or pending sentinel
     M->>S: syncStateAfterStart
-    Note over M: can return during processing phase on bootstrap success
+    Note over M: can return during processing phase on bootstrap success; later hooks/status backfill sessionId
 ```
 
 ## Sequence Diagram 3: Resume Flow
@@ -232,7 +229,7 @@ sequenceDiagram
 
     opt Codex
         M->>T: sendKeys("/rename <handle>")
-        M->>M: waitForInputToFinish
+        Note over M: submit-only; no wait for provider title sync
     end
 
     Note over M: skip waitForSessionId (sessionId already known)
