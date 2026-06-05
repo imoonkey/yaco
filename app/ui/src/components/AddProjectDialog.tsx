@@ -72,7 +72,10 @@ export function AddProjectDialog({
     }
   }, [])
 
-  // Trigger fetch when path changes and ends with /
+  // Trigger fetch when path changes and ends with /. setAllEntries clears stale
+  // results and fetchEntries drives the async load (results set after its await);
+  // setHighlighted resets the keyboard cursor.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (path.endsWith('/') && path.length > 1) {
       setAllEntries([])
@@ -80,6 +83,7 @@ export function AddProjectDialog({
     }
     setHighlighted(-1)
   }, [path, fetchEntries])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Scroll highlighted item into view
   useEffect(() => {

@@ -7,7 +7,7 @@ export function useResize(initial: number, min: number, max: number | (() => num
   const startPos = useRef(0)
   const startSize = useRef(0)
   const maxRef = useRef(max)
-  maxRef.current = max
+  useEffect(() => { maxRef.current = max })
   const resolveMax = () => typeof maxRef.current === 'function' ? maxRef.current() : maxRef.current
   const clamp = useCallback((value: number) => Math.min(resolveMax(), Math.max(min, value)), [min])
   const setClampedSize = useCallback((value: number) => {

@@ -140,7 +140,9 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     }
   }, [projectSessions, executeRename])
 
-  // Auto-fire pending renames when session becomes idle
+  // Auto-fire pending renames when session becomes idle. This reconciles
+  // pendingRenames against live session state and triggers the rename side effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!sessions) return // sessions not loaded yet — don't clean up
     const entries = Object.entries(pendingRenames)
@@ -149,13 +151,14 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       const session = projectSessions.find(s => s.name === oldName)
       if (!session) {
         // Session gone — clean up
-        setPendingRenames(prev => { const { [oldName]: _, ...rest } = prev; return rest })
+        setPendingRenames(prev => { const rest = { ...prev }; delete rest[oldName]; return rest })
       } else if (session.status === 'idle') {
-        setPendingRenames(prev => { const { [oldName]: _, ...rest } = prev; return rest })
+        setPendingRenames(prev => { const rest = { ...prev }; delete rest[oldName]; return rest })
         void executeRename(oldName, newName)
       }
     }
   }, [sessions, projectSessions, pendingRenames, executeRename])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const detachActiveSession = useCallback(() => {
     if (!activeSession) return false

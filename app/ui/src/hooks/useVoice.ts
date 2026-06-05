@@ -76,13 +76,18 @@ function getResponseMessage(res: Response, fallback: string): Promise<string> {
 }
 
 export function useVoice(): UseVoiceReturn {
-  const [capability, setCapability] = useState<CapabilityState>({ status: 'checking' })
+  const [capability, setCapability] = useState<CapabilityState>(() => {
+    const browserCheck = checkBrowserCapability()
+    return browserCheck.ok
+      ? { status: 'checking' }
+      : { status: 'unavailable', reason: 'browser', message: browserCheck.message! }
+  })
   const [voiceState, dispatch] = useReducer(voiceReducer, INITIAL_STATE)
   const [elapsedMs, setElapsedMs] = useState(0)
   const sessionRef = useRef<VadSession | null>(null)
   const runCounterRef = useRef(0)
   const phaseRef = useRef(voiceState.phase)
-  phaseRef.current = voiceState.phase
+  useEffect(() => { phaseRef.current = voiceState.phase })
   const maxUploadBytesRef = useRef(DEFAULT_MAX_UPLOAD_BYTES)
   const transcribeTimestampsRef = useRef<number[]>([])
   const retryAfterUntilRef = useRef(0)
@@ -92,11 +97,8 @@ export function useVoice(): UseVoiceReturn {
 
   // Capability check on mount
   useEffect(() => {
-    const browserCheck = checkBrowserCapability()
-    if (!browserCheck.ok) {
-      setCapability({ status: 'unavailable', reason: 'browser', message: browserCheck.message! })
-      return
-    }
+    // Browser support was already resolved in the capability initializer.
+    if (!checkBrowserCapability().ok) return
     let cancelled = false
     fetch(`${API}/voice/status`)
       .then(res => res.json() as Promise<VoiceStatusResponse>)
@@ -287,7 +289,7 @@ export function useVoice(): UseVoiceReturn {
       }
     })()
   }, [])
-  stopRef.current = stop
+  useEffect(() => { stopRef.current = stop })
 
   useEffect(() => {
     const phase = voiceState.phase

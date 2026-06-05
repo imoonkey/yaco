@@ -133,10 +133,12 @@ export function usePersistence(projectName: string, worktree?: string | null) {
   const [initialDrafts] = useState(() => loadPersistedDrafts(projectName, worktree))
 
   const projectRef = useRef(projectName)
-  projectRef.current = projectName
-
   const worktreeRef = useRef(worktree)
-  worktreeRef.current = worktree
+  // Mirror latest project/worktree for flush callbacks that read without re-subscribing.
+  useEffect(() => {
+    projectRef.current = projectName
+    worktreeRef.current = worktree
+  })
 
   const layoutSnapshotRef = useRef<(() => PersistedState) | null>(null)
   const draftsSnapshotRef = useRef<(() => PersistedDrafts) | null>(null)

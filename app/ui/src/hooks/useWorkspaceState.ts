@@ -26,16 +26,16 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
 
   const ls = useLayoutState(initialLayout, previewLifecycle)
 
-  // Keep open tabs ref in sync for SSE refetch
-  openTabsRef.current = ls.openTabs
+  // Latest layout snapshot for SSE refetch + persistence getters.
+  const layoutValue = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, recentFiles: ls.recentFiles }
+  const layoutRef = useRef(layoutValue)
+  useEffect(() => {
+    openTabsRef.current = ls.openTabs
+    layoutRef.current = layoutValue
+  })
 
-  // Phase 3: bind persistence snapshots (once)
-  const layoutRef = useRef({ openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, recentFiles: ls.recentFiles })
-  layoutRef.current = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, recentFiles: ls.recentFiles }
-
-  const bound = useRef(false)
-  if (!bound.current) {
-    bound.current = true
+  // Phase 3: bind persistence snapshots once on mount. Getters read latest refs lazily.
+  useEffect(() => {
     bindSnapshots({
       layoutRef: () => layoutRef.current,
       draftsRef: (): PersistedDrafts => {
@@ -54,7 +54,8 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
         return { files: entries }
       },
     })
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Schedule persistence on state changes
   useEffect(() => {

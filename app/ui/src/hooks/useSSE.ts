@@ -120,7 +120,7 @@ export function addSSEListener(event: string, fn: SSEListener): () => void {
  *  the callback identity changes between renders. */
 export function useSSERefresh(channel: string, callback: () => void): void {
   const callbackRef = useRef(callback)
-  callbackRef.current = callback
+  useEffect(() => { callbackRef.current = callback })
 
   useEffect(() => {
     if (!channel) return

@@ -158,6 +158,7 @@ export function useTaskGraphInteraction(
 
   // --- Navigate to node ---
   const pendingPanRef = useRef<string | null>(null)
+  const clearPendingPan = useCallback(() => { pendingPanRef.current = null }, [])
 
   const handleNavigate = useCallback((id: string) => {
     if (!graph) return
@@ -212,5 +213,6 @@ export function useTaskGraphInteraction(
     handlePointerLeave,
     clearTooltip,
     pendingPanRef,
+    clearPendingPan,
   }
 }

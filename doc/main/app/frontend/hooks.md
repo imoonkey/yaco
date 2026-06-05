@@ -16,6 +16,22 @@ Custom React hooks for data fetching, real-time updates, and device detection.
 
 `ui/src/hooks/*.ts`
 
+## Lint constraints (React Compiler hook rules)
+
+`eslint.config.js` extends `eslint-plugin-react-hooks` `flat.recommended`, which enables
+the React Compiler ruleset. `npm run lint` enforces these — write hooks accordingly:
+
+- **No ref access during render.** Don't write `ref.current = value` in the hook/component
+  body; mirror latest values in an effect: `useEffect(() => { ref.current = value })`. Read
+  `.current` only from callbacks/effects.
+- **No `setState` synchronously in an effect.** To reset/sync state on a prop change, use the
+  "adjust state during render" pattern with a state prev-tracker (`if (x !== prevX) { setPrevX(x); setY(...) }`)
+  or derive the value; lazy-init via `useState(() => ...)` for mount-time computed state.
+- **Exceptions** (the only sanctioned `eslint-disable react-hooks/set-state-in-effect`): hand-rolled
+  data-fetching effects where state is set after `await` (no synchronous cascading render), or
+  effects that must keep specific timing — kept narrow and commented at the call site.
+
+
 ## useWorkspaceState.ts (161 lines — composition root)
 
 Per-project workspace state management. Thin wiring layer that composes three focused hooks and returns the same public shape. Accepts optional `worktree` param to isolate state per worktree checkout.
@@ -64,7 +80,7 @@ type FileState = {
 - **Draft persistence**: dirty drafts for real files are saved to localStorage with debounce (500ms). On quota exceeded, evicts oldest drafts.
 - **Layout persistence**: layout saved with 300ms debounce
 - **Tasks tab lifecycle**: `openTasksTab()` and `toggleTasksTab()` keep the Tasks tab unique per project and never treat it as a preview tab
-- **Stable derived state**: `dirtyTabs` and `conflictTabs` use structural comparison to preserve Set references when content hasn't changed (prevents downstream re-renders on every keystroke)
+- **Stable derived state**: `dirtyTabs` and `conflictTabs` are memoized on a sorted content signature, so each Set keeps a stable reference until its membership changes (prevents downstream re-renders on unrelated file-state updates such as viewport scroll)
 - **Force save**: `forceSave()` writes without revision check (for resolving conflicts)
 - **Accept disk**: `acceptDisk()` discards local draft and reloads server content
 
@@ -246,10 +262,10 @@ Behavior:
 
 Viewport transform state for SVG pan/zoom interactions.
 
-**Export**: `usePanZoom(containerRef)` → `{ state, onWheel, onPointerDown, panTo, fitToView, zoomIn, zoomOut }`
+**Export**: `usePanZoom({ graphBoundsRef, containerRef })` → `{ state, onWheel, onPointerDown, panTo, fitToView, zoomIn, zoomOut }`
 
 Behavior:
 - Manages `{ tx, ty, scale }` transform state
 - Scroll wheel zoom (centered on cursor), pointer drag pan, pinch zoom (touch)
-- `fitToView(bounds)` animates to fit entire graph with 200ms ease-out
+- `fitToView(animate?)` reads the latest bounds from `graphBoundsRef.current` and animates to fit the entire graph with 200ms ease-out (the ref breaks the render-order cycle: pan/zoom is created before the layout that produces its bounds)
 - Scale clamped to 0.25×–3.0× range

@@ -29,9 +29,11 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
 
   // Mirror the run's frozen target surface for display. Synced from voice.target;
   // never toggled mid-run — the insertion target is frozen when the run starts.
-  useEffect(() => {
-    if (voice.target?.surface) setVoiceSurface(voice.target.surface)
-  }, [voice.target?.surface])
+  const [prevSurface, setPrevSurface] = useState(voice.target?.surface)
+  if (voice.target?.surface && voice.target.surface !== prevSurface) {
+    setPrevSurface(voice.target.surface)
+    setVoiceSurface(voice.target.surface)
+  }
 
   const handleEditorVoiceStart = useCallback(() => {
     if (!activeFilePath) return

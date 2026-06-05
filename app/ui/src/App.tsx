@@ -131,16 +131,20 @@ function App() {
   const [visibilityReport, setVisibilityReport] = useState<WorkspaceVisibilityReport | null>(null)
   const [attachIntent, setAttachIntent] = useState<AttachSessionIntent | null>(null)
 
-  useEffect(() => {
-    if (!projects) return
-    const names = projects.map((project) => project.name)
-    setProjectOrder((currentOrder) => {
-      const remaining = new Set(names)
-      const nextOrder = currentOrder.filter((name) => remaining.delete(name))
-      nextOrder.push(...names.filter((name) => remaining.has(name)))
-      return arraysEqual(currentOrder, nextOrder) ? currentOrder : nextOrder
-    })
-  }, [projects])
+  // Reconcile saved project order with the live project list (adjust during render).
+  const [prevProjects, setPrevProjects] = useState(projects)
+  if (projects !== prevProjects) {
+    setPrevProjects(projects)
+    if (projects) {
+      const names = projects.map((project) => project.name)
+      setProjectOrder((currentOrder) => {
+        const remaining = new Set(names)
+        const nextOrder = currentOrder.filter((name) => remaining.delete(name))
+        nextOrder.push(...names.filter((name) => remaining.has(name)))
+        return arraysEqual(currentOrder, nextOrder) ? currentOrder : nextOrder
+      })
+    }
+  }
 
   const orderedProjects = useMemo(() => {
     if (!projects) return []
@@ -167,6 +171,10 @@ function App() {
   const [activeWorktree, setActiveWorktree] = useState<string | null>(null)
   const worktrees = useProjectWorktrees(activeProject || null)
 
+  // Worktree reset + validation are coupled with the async worktree list
+  // (useProjectWorktrees); keep the original effect timing to preserve restore-on-switch
+  // behavior rather than collapse it into render.
+  /* eslint-disable react-hooks/set-state-in-effect */
   // Reset worktree when project changes; restore from localStorage
   useEffect(() => {
     if (!activeProject) { setActiveWorktree(null); return }
@@ -180,6 +188,7 @@ function App() {
       setActiveWorktree(null)
     }
   }, [activeWorktree, worktrees])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Persist worktree selection
   useEffect(() => {

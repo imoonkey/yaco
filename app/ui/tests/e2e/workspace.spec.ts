@@ -22,20 +22,6 @@ async function openWorkspace(page: Page) {
   return project
 }
 
-/** Open a file in the editor by clicking it in the explorer */
-async function openFileInExplorer(page: Page, fileName: string) {
-  // Find and click the file in the explorer tree
-  const fileNode = page.locator(`[data-testid="tree-node"]`, { hasText: fileName }).first()
-  if (await fileNode.isVisible()) {
-    await fileNode.dblclick()
-    return
-  }
-  // Fallback: use file search (Cmd+P)
-  await page.keyboard.press('Meta+p')
-  await page.locator('input[placeholder="Search files..."]').fill(fileName)
-  await page.keyboard.press('Enter')
-}
-
 /** Wait for SSE refresh to propagate (SSE watcher fires events, UI refetches) */
 async function waitForSSERefresh(page: Page, timeoutMs = 8000) {
   // Wait for network activity to settle after SSE event
@@ -58,14 +44,6 @@ async function writeFileViaAPI(page: Page, projectName: string, filePath: string
       body: JSON.stringify({ content, baseRevision: revision }),
     })
   }, { projectName, filePath, content, revision: getRes.revision })
-}
-
-/** Get file content from API */
-async function getFileContent(page: Page, projectName: string, filePath: string) {
-  return page.evaluate(async ({ projectName, filePath }) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
-    return res.json() as Promise<{ content: string; revision: number }>
-  }, { projectName, filePath })
 }
 
 // --- Tests ---

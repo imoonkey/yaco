@@ -52,6 +52,10 @@ export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] 
     }
   }, [projectName])
 
+  // setWorktrees([]) clears the list synchronously on project change; fetch_() sets
+  // state only after its await. Worktree state is coupled with App's restore-on-switch
+  // logic, so keep the original effect timing.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     currentProject.current = projectName
     setWorktrees([])
@@ -60,6 +64,7 @@ export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] 
     const id = setInterval(() => void fetch_(), 60_000)
     return () => { ac.abort(); clearInterval(id) }
   }, [fetch_])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useSSERefresh('filetree', fetch_)
   useSSERefresh('worktrees', fetch_)

@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react'
 import { isCloseShortcut } from '../lib/shortcuts'
 import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, highlightSpecialChars, scrollPastEnd } from '@codemirror/view'
-import { EditorState, EditorSelection, Compartment } from '@codemirror/state'
+import { EditorState, EditorSelection, Compartment, Annotation } from '@codemirror/state'
 import { markdown } from '@codemirror/lang-markdown'
 import { languages } from '@codemirror/language-data'
 import { defaultKeymap, indentWithTab, history, historyKeymap } from '@codemirror/commands'
@@ -16,6 +16,11 @@ import { diffGutterExtension, setDiffData } from '../lib/diffGutter'
 import type { DiffHunk } from '../lib/parseDiff'
 import { inlineAutocomplete, autocompleteCompartment } from '../lib/editor/inlineAutocomplete.js'
 import type { CompletionProvider } from '../lib/editor/inlineAutocomplete.js'
+
+// Marks transactions dispatched programmatically (server-driven content refreshes)
+// so the change listener can skip them instead of echoing them back as user edits.
+const ProgrammaticChange = Annotation.define<boolean>()
+
 
 const autocompleteProvider: CompletionProvider = async (prefix, suffix, fp, signal) => {
   const res = await fetch('/api/autocomplete/complete', {
@@ -202,7 +207,7 @@ export function Editor({
           },
         }),
         EditorView.updateListener.of(update => {
-          if (update.docChanged && !suppressChangeRef.current) {
+          if (update.docChanged && !update.transactions.some(tr => tr.annotation(ProgrammaticChange))) {
             const nextContent = update.state.doc.toString()
             contentRef.current = nextContent
             onChangeRef.current?.(nextContent)
@@ -274,9 +279,6 @@ export function Editor({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filePath, readOnly])
 
-  // Suppress onChange during programmatic content updates (server-driven refreshes)
-  const suppressChangeRef = useRef(false)
-
   useEffect(() => {
     const view = viewRef.current
     if (!view || content === contentRef.current) return
@@ -295,11 +297,10 @@ export function Editor({
     }
 
     if (prefix === oldText.length && prefix === content.length) return // identical
-    suppressChangeRef.current = true
     view.dispatch({
       changes: { from: prefix, to: oldSuffix, insert: content.slice(prefix, newSuffix) },
+      annotations: ProgrammaticChange.of(true),
     })
-    suppressChangeRef.current = false
   }, [content])
 
   useEffect(() => {

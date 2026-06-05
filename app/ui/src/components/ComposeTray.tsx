@@ -42,13 +42,15 @@ export function ComposeTray({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
 
-  // Seed textarea when compose data arrives
-  useEffect(() => {
+  // Seed textarea when compose data arrives (adjust state during render)
+  const [prevCompose, setPrevCompose] = useState(compose)
+  if (compose !== prevCompose) {
+    setPrevCompose(compose)
     if (compose) {
       setEditText(compose.displayText)
       setShowRaw(compose.formattingStatus === 'fallback_raw')
     }
-  }, [compose])
+  }
 
   // Auto-focus textarea when entering compose state
   useEffect(() => {

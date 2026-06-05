@@ -98,9 +98,9 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
     expect(await pre.evaluate(el => el.scrollLeft)).toBeGreaterThanOrEqual(150)
 
     // Verify DOM is NOT being replaced (node identity check)
-    await pre.evaluate(el => { (el as any).__testTag = 'original' })
+    await pre.evaluate(el => { (el as Element & { __testTag?: string }).__testTag = 'original' })
     await page.waitForTimeout(500)
-    const tagAfter = await pre.evaluate(el => (el as any).__testTag)
+    const tagAfter = await pre.evaluate(el => (el as Element & { __testTag?: string }).__testTag)
     expect(tagAfter).toBe('original')
   })
 

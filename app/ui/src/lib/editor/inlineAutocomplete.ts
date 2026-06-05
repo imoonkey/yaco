@@ -234,7 +234,7 @@ function createFetchPlugin(provider: CompletionProvider, filePath: string) {
                 effects: setSuggestion.of({ text, pos, docVersion: myVersion }),
               })
             }
-          } catch (err) {
+          } catch {
             if (signal.aborted) return
           }
         }, 1500)

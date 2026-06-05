@@ -17,10 +17,10 @@ function easeOut(t: number): number {
 }
 
 export function usePanZoom(opts: {
-  graphBounds: { width: number; height: number }
+  graphBoundsRef: RefObject<{ width: number; height: number }>
   containerRef: RefObject<HTMLDivElement | null>
 }) {
-  const { graphBounds, containerRef } = opts
+  const { graphBoundsRef, containerRef } = opts
   const [state, setState] = useState<ViewportTransform>({ tx: 0, ty: 0, scale: 1 })
 
   // Gesture tracking refs
@@ -152,6 +152,7 @@ export function usePanZoom(opts: {
 
   const fitToView = useCallback((animate = true) => {
     const rect = getContainerRect()
+    const graphBounds = graphBoundsRef.current
     if (!rect.width || !rect.height || !graphBounds.width || !graphBounds.height) return
 
     const padding = 40
@@ -167,7 +168,7 @@ export function usePanZoom(opts: {
     } else {
       setState(target)
     }
-  }, [graphBounds, getContainerRect, animateTo])
+  }, [graphBoundsRef, getContainerRect, animateTo])
 
   const zoomIn = useCallback(() => {
     setState(prev => {

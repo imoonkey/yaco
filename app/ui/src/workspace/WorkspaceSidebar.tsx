@@ -1,4 +1,5 @@
-import { FileTypeIcon, FolderIcon, GIT_COLORS } from '../components/fileExplorerIcons'
+import { FileTypeIcon, FolderIcon } from '../components/fileExplorerIcons'
+import { GIT_COLORS } from '../components/fileGitColors'
 import type { GitChange } from '../types'
 
 /** Status badge background at low opacity, derived from the status color */

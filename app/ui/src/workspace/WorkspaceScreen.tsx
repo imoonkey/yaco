@@ -290,10 +290,12 @@ export function Workspace({
     onToggleShortcutSheet: () => setShowShortcutSheet(v => !v),
   })
 
-  useEffect(() => {
-    if (!isFileTab(activeTab)) return
-    setSelectedFilePath(activeTab)
-  }, [activeTab])
+  // Track the active file tab as the selected explorer path (adjust state during render).
+  const [prevActiveTab, setPrevActiveTab] = useState(activeTab)
+  if (activeTab !== prevActiveTab) {
+    setPrevActiveTab(activeTab)
+    if (isFileTab(activeTab)) setSelectedFilePath(activeTab)
+  }
 
   // Git status maps for file tree
   const gitMap = useMemo(() => {

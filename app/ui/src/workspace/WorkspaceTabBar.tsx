@@ -3,7 +3,8 @@ import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
 
 import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, type PreviewMode, type SplitDirection } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
-import { useContextMenu, Menu, MenuItem } from '../components/Menu'
+import { Menu, MenuItem } from '../components/Menu'
+import { useContextMenu } from '../components/useContextMenu'
 
 function truncateRef(ref: string, max = 12): string {
   return ref.length > max ? ref.slice(0, max - 1) + '\u2026' : ref

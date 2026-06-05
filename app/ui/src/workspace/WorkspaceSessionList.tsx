@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { Pin, FolderGit2 } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 
-import { Menu, MenuItem, useContextMenu } from '../components/Menu'
+import { Menu, MenuItem } from '../components/Menu'
+import { useContextMenu } from '../components/useContextMenu'
 import { BadgeCount } from '../components/BadgeCount'
 import type { AgentSession, SessionStatus } from '../types'
 

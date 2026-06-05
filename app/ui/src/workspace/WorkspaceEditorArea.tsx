@@ -106,9 +106,11 @@ export function MarkdownPreview({
   const appliedHtmlRef = useRef('')
   const anchorsRef = useRef<CachedAnchor[]>([])
   const onViewportLineRef = useRef(onViewportLine)
-  onViewportLineRef.current = onViewportLine
   const onRegisterSyncRef = useRef(onRegisterSync)
-  onRegisterSyncRef.current = onRegisterSync
+  useEffect(() => {
+    onViewportLineRef.current = onViewportLine
+    onRegisterSyncRef.current = onRegisterSync
+  })
   const rawHtml = renderMarkdown(content)
   const [html, setHtml] = useState(rawHtml)
 
@@ -120,6 +122,9 @@ export function MarkdownPreview({
     const doc = parser.parseFromString(rawHtml, 'text/html')
     const mermaidDivs = doc.querySelectorAll<HTMLElement>('.mermaid')
     if (mermaidDivs.length === 0) {
+      // Plain HTML (no mermaid) — sync to rawHtml. The mermaid path below updates
+      // html after async rendering; this fast path avoids a flash for the common case.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHtml(rawHtml)
       return
     }
@@ -451,12 +456,17 @@ export function WorkspaceEditorArea({
   const latestLineRef = useRef(activeViewportLine)
   const persistTimerRef = useRef(0)
   const onViewportLineRef = useRef(onViewportLine)
-  onViewportLineRef.current = onViewportLine
+  useEffect(() => { onViewportLineRef.current = onViewportLine })
 
   // Flush latest viewport line on tab or mode change so newly mounted
   // components get the current position, not a debounce-stale value.
+  // This is React's "adjust state during render on prop change" pattern; it reads
+  // mutable refs (latestLineRef updated on every scroll, persistTimerRef) during
+  // render to seed the child position without a wasted extra render — so the
+  // refs rule is scoped off for just this guarded block.
   const prevTabRef = useRef(activeTab)
   const prevPreviewModeRef = useRef(previewMode)
+  /* eslint-disable react-hooks/refs */
   if (activeTab !== prevTabRef.current) {
     prevTabRef.current = activeTab
     prevPreviewModeRef.current = previewMode
@@ -467,6 +477,7 @@ export function WorkspaceEditorArea({
     clearTimeout(persistTimerRef.current)
     setLocalViewportLine(latestLineRef.current)
   }
+  /* eslint-enable react-hooks/refs */
 
   useEffect(() => () => clearTimeout(persistTimerRef.current), [])
 

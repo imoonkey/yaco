@@ -86,6 +86,8 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
 
   // Initial fetch + polling interval — restarts when fetcher changes (e.g. project switch)
   useEffect(() => {
+    // load() sets state only after its await — no synchronous cascading render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()
     const id = setInterval(load, intervalMs)
     return () => clearInterval(id)
@@ -132,6 +134,8 @@ export function useFileTree(projectName: string | null, worktree?: string | null
   }, [projectName, worktree])
 
   // Initial load + project change
+  // loadRoot() sets state only after its await — no synchronous cascading render.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void loadRoot() }, [loadRoot])
 
   // Helper: merge children into tree at a given dir path
@@ -236,6 +240,9 @@ export function useFileContent(projectName: string | null, filePath: string | nu
   const [revision, setRevision] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
 
+  // Data-fetching effect: the synchronous setState calls reset on cleared inputs and
+  // drive the loading flag; the fetched content arrives via the async .then.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!projectName || !filePath) { setContent(null); setRevision(null); return }
     let cancelled = false
@@ -246,6 +253,7 @@ export function useFileContent(projectName: string | null, filePath: string | nu
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [projectName, filePath])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return { content, revision, loading }
 }

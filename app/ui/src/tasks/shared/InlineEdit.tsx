@@ -96,7 +96,12 @@ export function InlineEdit({
   const [draft, setDraft] = useState(value)
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
 
-  useEffect(() => { setDraft(value) }, [value])
+  // Reset draft when the source value changes (adjust state during render).
+  const [prevValue, setPrevValue] = useState(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
+    setDraft(value)
+  }
 
   useEffect(() => {
     if (editing && type !== 'dropdown') inputRef.current?.focus()

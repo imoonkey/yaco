@@ -32,7 +32,7 @@ export function usePinnedSessions(project: string): {
 } {
   const [pinnedSessions, setLocal] = useState<string[]>([])
   const stateRef = useRef<string[]>([])
-  stateRef.current = pinnedSessions
+  useEffect(() => { stateRef.current = pinnedSessions })
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pendingSave = useRef<string[] | null>(null)
@@ -67,6 +67,8 @@ export function usePinnedSessions(project: string): {
   // Initial load + refetch when project changes
   useEffect(() => {
     const ctrl = new AbortController()
+    // refetch() sets state only after its await — no synchronous cascading render.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refetch(ctrl.signal)
     return () => ctrl.abort()
   }, [refetch])

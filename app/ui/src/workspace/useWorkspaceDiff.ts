@@ -67,7 +67,9 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
       const controller = new AbortController()
       controllers.push(controller)
 
-      // Set loading only if we don't have data yet (avoid flash)
+      // Set loading only if we don't have data yet (avoid flash). Parsed diffs
+      // arrive via the async fetchGitDiff().then below — this only flips loading.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setCache(prev => {
         const current = prev[entry.key]
         if (current?.parsed) return prev // keep showing stale data while re-fetching

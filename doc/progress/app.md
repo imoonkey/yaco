@@ -1,3 +1,22 @@
+## 2026-06-05: app/ui ESLint baseline cleanup (React Compiler hook rules)
+
+**What changed:**
+- Cleared all 82 package-wide ESLint errors in `app/ui` so `npm run lint` exits clean (13 pre-existing warnings unchanged). 68 came from the React Compiler ruleset that `eslint-plugin-react-hooks@7` `flat.recommended` enables.
+- **`refs` (45):** "latest-ref" writes (`ref.current = x` during render) → `useEffect(() => { ref.current = x })`. `useFileState` dirty/conflict Sets now key on a sorted content signature instead of `prevDirtyRef`/`prevConflictRef` structural comparison (same stable-identity behavior, no render-phase ref reads). `usePanZoom` takes `{ graphBoundsRef }` and reads bounds lazily in `fitToView`. `useWorkspaceState` run-once `bindSnapshots` → mount effect (also fixed the lone `purity` error — the `Date.now()` closure is now built in an effect). `useTaskGraphInteraction` exposes `clearPendingPan()` (fixes the `immutability` error from mutating a frozen hook return).
+- **`set-state-in-effect` (20):** reset/sync-on-prop-change effects → "adjust state during render" with a state prev-tracker (`InlineEdit`, `DiffTab`, `WorkspaceScreen`, `ComposeTray`, `useWorkspaceVoice`, `App` project order); `useVoice` capability check → lazy `useState` initializer. Remaining 12 are hand-rolled data-fetching / coupled-timing effects kept as effects behind narrow, commented `eslint-disable` (state set after `await`).
+- **`immutability` (2):** `Editor.tsx` programmatic-update suppression flag replaced with a CodeMirror transaction `Annotation`.
+- **`react-refresh` (4):** extracted `fileGitColors.ts`, `explorerContext.ts`, `useContextMenu.ts` from component files and rewired importers.
+- **Config/misc:** added the standard `^_` ignore patterns to `no-unused-vars` (honors the existing `_`-prefix intentional-unused convention; rule still flags real unused vars). Typed two e2e `any` casts, removed dead test helpers.
+
+**Why:**
+- Critical unblocker: the provider UI config work (commit 38c8718) and downstream provider-adapter app review/QA tasks could not satisfy their literal `cd app/ui && npm run lint` acceptance gate because of this pre-existing debt. Fixes are behavioral/scoped — no broad rule disable, no package-level lint relaxation. The worktree state (`App` + `useProjectWorktrees`) was deliberately left on original effect timing (cross-hook-coupled with the async worktree list, untested) rather than risk a restore-on-switch regression.
+
+**Key files:** `app/ui/eslint.config.js`, `app/ui/src/hooks/{useFileState,useWorkspaceState,usePanZoom,useVoice,useApi,...}.ts`, `app/ui/src/components/{Editor,Menu,fileExplorer*,fileGitColors,explorerContext,useContextMenu}.tsx?`, `app/ui/src/{App,workspace/*,tasks/*}.tsx`, `doc/main/app/frontend/hooks.md`
+**Verification:** `cd app/ui && npm run lint` → 0 errors; `npm run build` → exit 0; `npx vitest run src/components/__tests__/Terminal.focus.test.tsx` → 8/8. Full unit suite: 121 pass, 2 fail (pre-existing `TerminalKeyBar.test.tsx`, confirmed failing on a clean tree — unrelated).
+**Commit:** working tree — task `tui-ui-lint-baseline-cleanup`, not yet committed (parent task is no-commit).
+**Next:** unblocks `tui-ui-provider-config` and downstream provider-adapter app review/QA tasks to satisfy their lint gate.
+**Blockers:** None.
+
 ## 2026-06-05: Mobile keyboard gap, input-focus zoom, terminal key bar visibility
 
 **What changed:**

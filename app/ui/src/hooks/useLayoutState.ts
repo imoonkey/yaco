@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   type WorkspaceLayout,
   type PersistedState,
@@ -21,13 +21,14 @@ export function useLayoutState(
   const [recentFiles, setRecentFiles] = useState<string[]>(initialLayout.recentFiles)
 
   const openTabsRef = useRef(openTabs)
-  openTabsRef.current = openTabs
-
   const activeTabRef = useRef(activeTab)
-  activeTabRef.current = activeTab
-
   const previewTabRef = useRef(previewTab)
-  previewTabRef.current = previewTab
+  // Mirror latest values for callbacks/effects that read without re-subscribing.
+  useEffect(() => {
+    openTabsRef.current = openTabs
+    activeTabRef.current = activeTab
+    previewTabRef.current = previewTab
+  })
 
   // --- Shared: close old preview tab when opening a new one ---
   const closeOldPreview = useCallback((newTab: string) => {

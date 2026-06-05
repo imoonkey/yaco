@@ -66,13 +66,14 @@ export function useFileState(
   })
 
   const projectRef = useRef(projectName)
-  projectRef.current = projectName
-
   const worktreeRef = useRef(worktree)
-  worktreeRef.current = worktree
-
   const filesRef = useRef(files)
-  filesRef.current = files
+  // Mirror latest values for async fetch/SSE callbacks that read without re-subscribing.
+  useEffect(() => {
+    projectRef.current = projectName
+    worktreeRef.current = worktree
+    filesRef.current = files
+  })
 
   const refetchAbortRef = useRef<AbortController | null>(null)
 
@@ -125,24 +126,24 @@ export function useFileState(
   useSSERefresh('filetree', refetchOpenFiles)
   useSSERefresh('git', refetchOpenFiles)
 
-  // --- Derived (memoized with stabilized references) ---
-  const prevDirtyRef = useRef(new Set<string>())
-  const prevConflictRef = useRef(new Set<string>())
-  const { dirtyTabs, conflictTabs } = useMemo(() => {
-    const dirty = new Set<string>()
-    const conflict = new Set<string>()
+  // --- Derived: dirty/conflict tab sets ---
+  // Key each Set on a content signature so its identity only changes when membership
+  // changes — not on unrelated file-state updates (e.g. viewport scroll) — which keeps
+  // memoized consumers (tab bar, editor column) from re-rendering needlessly.
+  const { dirtySig, conflictSig } = useMemo(() => {
+    const dirty: string[] = []
+    const conflict: string[] = []
     for (const [path, state] of Object.entries(files)) {
-      if (state.status === 'dirty' || state.status === 'saving') dirty.add(path)
-      if (state.status === 'conflict') { dirty.add(path); conflict.add(path) }
+      if (state.status === 'dirty' || state.status === 'saving' || state.status === 'conflict') dirty.push(path)
+      if (state.status === 'conflict') conflict.push(path)
     }
-    const dirtyMatch = dirty.size === prevDirtyRef.current.size && [...dirty].every(p => prevDirtyRef.current.has(p))
-    const conflictMatch = conflict.size === prevConflictRef.current.size && [...conflict].every(p => prevConflictRef.current.has(p))
-    const stableDirty = dirtyMatch ? prevDirtyRef.current : dirty
-    const stableConflict = conflictMatch ? prevConflictRef.current : conflict
-    prevDirtyRef.current = stableDirty
-    prevConflictRef.current = stableConflict
-    return { dirtyTabs: stableDirty, conflictTabs: stableConflict }
+    dirty.sort()
+    conflict.sort()
+    return { dirtySig: dirty.join('\u0000'), conflictSig: conflict.join('\u0000') }
   }, [files])
+
+  const dirtyTabs = useMemo(() => new Set(dirtySig ? dirtySig.split('\u0000') : []), [dirtySig])
+  const conflictTabs = useMemo(() => new Set(conflictSig ? conflictSig.split('\u0000') : []), [conflictSig])
 
   // --- Preview lifecycle ---
   const previewLifecycle: PreviewLifecycle = useMemo(() => ({

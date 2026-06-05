@@ -4,7 +4,8 @@ import { GitCompare, ChevronLeft, ChevronRight, ChevronsUpDown, GitBranch } from
 import type { ParsedFileDiff, DiffRow, DiffSegment } from '../../lib/parseDiff'
 import type { DiffHunk } from '../../lib/parseDiff'
 import type { GitChange } from '../../types'
-import { FileTypeIcon, GIT_COLORS } from '../../components/fileExplorerIcons'
+import { FileTypeIcon } from '../../components/fileExplorerIcons'
+import { GIT_COLORS } from '../../components/fileGitColors'
 
 // --- View mode persistence ---
 
@@ -647,11 +648,13 @@ export function DiffTab({
     saveViewMode(mode)
   }
 
-  // Reset state when parsed data changes
-  useEffect(() => {
+  // Reset hunk selection when the parsed diff changes (adjust state during render).
+  const [prevParsed, setPrevParsed] = useState(parsed)
+  if (parsed !== prevParsed) {
+    setPrevParsed(parsed)
     setActiveHunkIndex(0)
     setExpandedContexts(new Set())
-  }, [parsed])
+  }
 
   const hunkCount = parsed.hunks.length
 

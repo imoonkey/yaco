@@ -267,7 +267,8 @@ function ChannelHeaderButton({ channel }: { channel: ChannelConfig }) {
     }
   }
 
-  useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  // refresh() sets state only after its await — no synchronous cascading render.
+  useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
 
   if (enabled !== true) return null
 

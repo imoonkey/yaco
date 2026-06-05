@@ -1,7 +1,8 @@
-import { createContext, useContext, useRef, useEffect } from 'react'
+import { useContext, useRef, useEffect } from 'react'
 import type { NodeRendererProps } from 'react-arborist'
-import { FileTypeIcon, FolderIcon, GIT_COLORS, GIT_STATUS_LABELS } from './fileExplorerIcons'
-import type { ContextMenuHandlers } from './Menu'
+import { FileTypeIcon, FolderIcon } from './fileExplorerIcons'
+import { GIT_COLORS, GIT_STATUS_LABELS } from './fileGitColors'
+import { ExplorerContext } from './explorerContext'
 import type { FileNode } from '../types'
 
 // Static style constants extracted from render loops
@@ -9,20 +10,8 @@ const GITIGNORED_STYLE: React.CSSProperties = { opacity: 0.5 }
 const INPUT_STYLE: React.CSSProperties = { color: 'var(--sol-text)', borderColor: 'var(--sol-accent)' }
 const CHANGE_DOT_STYLE: React.CSSProperties = { backgroundColor: 'var(--sol-warning)' }
 
-// --- Context for passing data to node renderer ---
+// --- Context-menu state for the node renderer ---
 export type ContextMenuState = { x: number; y: number; path: string; type: 'file' | 'dir' } | null
-
-export const ExplorerContext = createContext<{
-  gitMap: Map<string, string>
-  gitFolders: Set<string>
-  bindContextMenu: (path: string, type: 'file' | 'dir') => ContextMenuHandlers
-  reportContextFolder: (path: string, type: 'file' | 'dir') => void
-  onPreviewFile?: (path: string) => void
-  onPinFile?: (path: string) => void
-  onExpandDir?: (path: string) => void
-  pendingNewId: string | null
-  cancelCreate: () => void
-}>({ gitMap: new Map(), gitFolders: new Set(), bindContextMenu: () => ({ onContextMenu: () => {}, onTouchStart: () => {}, onTouchMove: () => {}, onTouchEnd: () => {}, onTouchCancel: () => {} }), reportContextFolder: () => {}, pendingNewId: null, cancelCreate: () => {} })
 
 // --- Editing row (separate component to satisfy Rules of Hooks) ---
 function EditingRow({ node, style, dragHandle, data, pendingNewId, cancelCreate }: {

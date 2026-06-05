@@ -21,7 +21,9 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
   const [loading, setLoading] = useState(() => !getCached(projectName, false, worktree))
   const [includeIgnored, setIncludeIgnored] = useState(false)
 
-  // Fetch or background-refresh index
+  // Fetch or background-refresh index. The synchronous setState calls load cached
+  // data and drive the loading flag; fresh results arrive via the async fetchIndex.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const controller = new AbortController()
     const cached = getCached(projectName, includeIgnored, worktree)
@@ -43,6 +45,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
 
     return () => controller.abort()
   }, [projectName, worktree, includeIgnored])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const toggleIgnored = useCallback(() => {
     setIncludeIgnored(prev => !prev)

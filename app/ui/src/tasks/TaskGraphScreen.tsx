@@ -20,7 +20,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
 
   // Interaction hook — selection, filters, collapse, search, tooltip, navigate
   const panZoomBoundsRef = useRef({ width: 0, height: 0 })
-  const panZoom = usePanZoom({ graphBounds: panZoomBoundsRef.current, containerRef })
+  const panZoom = usePanZoom({ graphBoundsRef: panZoomBoundsRef, containerRef })
   const ix = useTaskGraphInteraction(projectName, graph, panZoom, isMobile)
 
   // Sync graph selection → parent (emit selected task ID upward)
@@ -51,19 +51,22 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
     )
   }, [graph, ix.collapsedTaskIds, ix.filters])
 
-  // Keep panZoom bounds in sync
-  panZoomBoundsRef.current = displayLayout?.bounds ?? { width: 0, height: 0 }
+  // Keep panZoom bounds in sync (read lazily by fitToView)
+  useEffect(() => {
+    panZoomBoundsRef.current = displayLayout?.bounds ?? { width: 0, height: 0 }
+  })
 
   // Pan to pending navigate target after layout recomputes
+  const { pendingPanRef, clearPendingPan } = ix
   useEffect(() => {
-    const id = ix.pendingPanRef.current
+    const id = pendingPanRef.current
     if (!id || !displayLayout) return
     const node = displayLayout.nodes.get(id)
     if (node) {
-      ix.pendingPanRef.current = null
+      clearPendingPan()
       panZoom.panTo(node.x + node.width / 2, node.y + node.height / 2)
     }
-  }, [displayLayout, panZoom, ix.pendingPanRef])
+  }, [displayLayout, panZoom, pendingPanRef, clearPendingPan])
 
   // Keyboard shortcuts
   useTaskGraphKeyboard(graph, displayLayout, ix.selection, ix.collapsedTaskIds, ix, panZoom)

@@ -4,10 +4,13 @@ import { moveFile, renameFile, deleteFile, createFile, createDir, revealInFinder
 import { writeTextToClipboard } from '../lib/clipboard'
 import { toast } from 'sonner'
 import { ConfirmDialog } from './ConfirmDialog'
-import { Menu, MenuItem, MenuDivider, useContextMenu } from './Menu'
+import { Menu, MenuItem, MenuDivider } from './Menu'
+import { useContextMenu } from './useContextMenu'
 import type { FileNode } from '../types'
-export { GIT_COLORS, FileTypeIcon, FolderIcon, NewFileIcon, NewFolderIcon, CollapseAllIcon } from './fileExplorerIcons'
-import { ExplorerContext, FileNodeRenderer } from './fileExplorerNode'
+export { GIT_COLORS } from './fileGitColors'
+export { FileTypeIcon, FolderIcon, NewFileIcon, NewFolderIcon, CollapseAllIcon } from './fileExplorerIcons'
+import { FileNodeRenderer } from './fileExplorerNode'
+import { ExplorerContext } from './explorerContext'
 
 function insertPendingNode(nodes: FileNode[], pending: FileNode): FileNode[] {
   const i = pending.path.lastIndexOf('/')

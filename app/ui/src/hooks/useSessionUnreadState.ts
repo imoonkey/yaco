@@ -95,7 +95,7 @@ export function useSessionUnreadState(
   const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible')
 
   const readStateRef = useRef(readState)
-  readStateRef.current = readState
+  useEffect(() => { readStateRef.current = readState })
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const pendingSave = useRef<UnreadReadState | null>(null)
