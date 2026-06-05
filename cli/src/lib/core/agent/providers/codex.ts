@@ -4,6 +4,7 @@ import { resolveSessionId, PENDING_SESSION_ID } from "../session-id.ts";
 import { shellEscape } from "./shell-escape.ts";
 import { hasPermissionFlag, stripNameFlag, extractResume, stripResume } from "./args.ts";
 import { codexHooks } from "./hooks.ts";
+import { codexHistory } from "./history.ts";
 import type { TuiProvider } from "./types.ts";
 
 // If any of these flags is present, don't add the default permission flag.
@@ -93,4 +94,6 @@ export const codexProvider: TuiProvider = {
   },
 
   hooks: codexHooks(),
+
+  history: codexHistory(),
 };

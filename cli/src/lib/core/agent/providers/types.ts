@@ -99,14 +99,25 @@ export interface ProviderSessionId {
   resolve(ctx: SessionIdContext): SessionIdResult | null;
 }
 
-/** One row in the History tab for a project, live or historical. */
+/** One row in the History tab for a project, live or historical.
+ *
+ *  Each adapter owns its own title source, summary (first user message),
+ *  timestamps, message-count semantics, and archive flag. `live`/
+ *  `liveSessionName` are filled generically by the history command, tagging
+ *  rows whose `sessionId` matches a live YACO session. */
 export interface HistorySession {
   sessionId: string;
-  title: string;
+  provider: string;
+  title: string | null;
+  summary: string;
+  created: string;
   updatedAt: string;
-  messageCount: number;
+  messageCount: number | null;
+  gitBranch: string | null;
   archived?: boolean;
   live?: boolean;
+  /** Handle of the live YACO session sharing this sessionId, else null. */
+  liveSessionName?: string | null;
 }
 
 /** A per-live-session display label. */

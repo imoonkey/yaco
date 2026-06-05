@@ -26,6 +26,9 @@ import { kill } from "./kill.ts";
 import { rename } from "./rename.ts";
 import { status } from "./status.ts";
 import { whoami } from "./whoami.ts";
+import { runHistory } from "./history.ts";
+import { runSummaries } from "./summaries.ts";
+import { runProviders } from "./providers.ts";
 import { handleHookEvent } from "./hook-event.ts";
 import { handleHooksInstall } from "./hooks/install.ts";
 
@@ -38,6 +41,9 @@ Usage:
   yaco agent capture <name> [--wait] [--lines <n>] [--strip-ansi true|false]
   yaco agent status [name] [--all] [--path <p>] [--json]
   yaco agent whoami [--json]
+  yaco agent history --path <project-path> [--json]
+  yaco agent summaries --path <project-path> [--json]
+  yaco agent providers [--json]
   yaco agent kill <name> | --all
   yaco agent rename <old> <new>
   yaco agent hooks install
@@ -288,6 +294,31 @@ export async function handleAgent(
 
       if (parsed.options.json || opts.json) return ok(identity);
       return ok({ text: identity.handle });
+    }
+
+    case "history": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        return ok({ help: "yaco agent history --path <project-path> [--json]\n" });
+      }
+      const parsed = parseSubArgs(rest);
+      const projectPath = parsed.options.path ?? process.cwd();
+      return ok(await runHistory(projectPath));
+    }
+
+    case "summaries": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        return ok({ help: "yaco agent summaries --path <project-path> [--json]\n" });
+      }
+      const parsed = parseSubArgs(rest);
+      const projectPath = parsed.options.path ?? process.cwd();
+      return ok(await runSummaries(projectPath));
+    }
+
+    case "providers": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        return ok({ help: "yaco agent providers [--json]\n" });
+      }
+      return ok(runProviders());
     }
 
     case "rename": {

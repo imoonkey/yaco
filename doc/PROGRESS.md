@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-05: CLI summary/history/providers JSON surfaces
+
+**What changed:**
+- Added three `yaco agent` JSON subcommands so app/server can read provider-reconstructed data without opening `~/.claude` or `~/.codex` itself: `history --path <project> [--json]` (project-scoped, list-valued; live rows tagged by YACO `sessionId`), `summaries --path <project> [--json]` (one `{handle, sessionId, provider, label}` record per live session under the path), and `providers [--json]` (registry catalog `{id, label, executable}` for provider-start validation).
+- Moved Claude/Codex history + summary reconstruction into the provider adapters: new `cli/src/lib/core/agent/providers/history.ts` co-locates Claude JSONL parsing (head/tail reads, slash-command-to-args normalization, custom-title/timestamp extraction, `sessions-index.json` enrichment) and Codex `threads` SQLite + rollout-file fallback, exposed as `claudeHistory()` / `codexHistory()` factories wired onto each adapter's optional `history` capability. `finalizeHistory()` owns the generic sort -> cap(200) -> live-tag merge.
+- Claude project-dir resolution now reuses the canonical `encodeClaudeCwd` (non-alphanumerics -> `-`), fixing `.worktrees`-style paths that a `/`-only encoder mis-keyed.
+- Widened the registry `HistorySession` DTO to carry the fields the History tab renders (`provider`/`summary`/`created`/`gitBranch`/`liveSessionName`).
+
+**Why:**
+- The `tui-provider-adapters` design centralizes provider-native storage under `cli/` so app/server consumes `yaco agent ... --json` instead of parsing provider homes. This slice lands the summary/history/catalog read surfaces; the matching app-side boundary removal (`app-summary-history-boundary`, `app-provider-type-boundary`) and the SOTA provider-boundary doc pass (`docs-provider-boundary`) are separate downstream tasks.
+
+**Key files:** `cli/src/lib/core/agent/providers/{history,types,claude,codex}.ts`, `cli/src/commands/agent/{history,summaries,providers,index}.ts`, `cli/test/{history,summary,agent-json-surfaces}.test.ts`, `cli/package.json`
+**Verification:** `cd cli && bun run test:unit` -> 552 pass / 0 fail (+9: `.worktrees` encoding, spawned help/catalog envelopes, hermetic data envelopes). `tsc --noEmit` clean for all touched files (only pre-existing out-of-scope errors remain). Source-entry and PATH-prefixed compiled-binary acceptance both return `{ok:true,...}` for the three surfaces.
+**Commit:** this commit.
+**Next:** `app-summary-history-boundary` (app consumes these surfaces, drops provider-home reads), `app-provider-type-boundary` (validate starts against `agent providers --json`), `docs-provider-boundary` (retire flat `providers.ts` refs, document the app/CLI boundary).
+**Blockers:** None.
+
 ## 2026-06-05: Agent start/lifecycle consumes the provider registry
 
 **What changed:**

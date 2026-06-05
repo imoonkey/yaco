@@ -4,6 +4,7 @@ import { resolveSessionId, PENDING_SESSION_ID } from "../session-id.ts";
 import { shellEscape } from "./shell-escape.ts";
 import { hasNameFlag, hasPermissionFlag, extractResume, stripResume } from "./args.ts";
 import { claudeHooks } from "./hooks.ts";
+import { claudeHistory } from "./history.ts";
 import type { TuiProvider } from "./types.ts";
 
 // If any of these flags is present, don't add the default permission flag.
@@ -75,4 +76,6 @@ export const claudeProvider: TuiProvider = {
   },
 
   hooks: claudeHooks(),
+
+  history: claudeHistory(),
 };
