@@ -7,6 +7,8 @@
  */
 import { describe, it, expect, mock } from "bun:test";
 import { spawnSync } from "child_process";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { resolve } from "path";
 import { parseStartArgs } from "../src/commands/agent/index.ts";
 
@@ -123,5 +125,32 @@ describe("yaco agent send --stdin", () => {
     // with NOT_FOUND / IO when the session does not exist.
     expect(r.status).not.toBe(2);
     expect(r.stderr).not.toContain("USAGE");
+  });
+});
+
+describe("yaco agent whoami", () => {
+  it("returns NOT_FOUND outside a yaco-managed agent session", () => {
+    const stateDir = mkdtempSync(resolve(tmpdir(), "yaco-whoami-empty-"));
+    try {
+      const r = spawnSync("bun", ["run", BIN, "agent", "whoami", "--json"], {
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          CODEX_THREAD_ID: "",
+          CLAUDE_SESSION_ID: "",
+          CLAUDE_CODE_SESSION_ID: "",
+          CLAUDECODE_SESSION_ID: "",
+          NO_COLOR: "1",
+          TMUX_PANE: "",
+          YACO_AGENT_SESSIONS_DIR: stateDir,
+        },
+      });
+
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain("NOT_FOUND");
+      expect(r.stderr).toContain("not inside a yaco-managed agent session");
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true });
+    }
   });
 });

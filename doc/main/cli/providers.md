@@ -79,7 +79,7 @@ Codex sessions explicitly export `COLORTERM=truecolor` before launch so the prov
 
 ---
 
-## Claude Assumptions (C1-C12)
+## Claude Assumptions (C1-C13)
 
 | # | Assumption | Source | Code Location | Guard Test | If Violated |
 |---|-----------|--------|---------------|------------|-------------|
@@ -95,8 +95,9 @@ Codex sessions explicitly export `COLORTERM=truecolor` before launch so the prov
 | C10 | `--dangerously-skip-permissions` skips confirmation | Claude docs | `src/lib/core/agent/providers.ts` | all Claude tests implicitly depend | trust dialog blocks, TRUST_PATTERN attempts confirmation |
 | C11 | `env -u CLAUDECODE` prevents nesting conflicts | observation | `src/lib/core/agent/providers.ts` | **none** | nesting anomaly (low risk) |
 | C12 | hook stdin is `{hook_event_name, session_id}` | Claude docs | `src/lib/core/agent/hook-event.ts#applyHookEvent` | hook-event.test.ts: end-to-end stdin/state-file | hook silently fails, capture fallback |
+| C13 | Bash/PowerShell tool subprocesses expose `CLAUDE_CODE_SESSION_ID`, matching YACO state `sessionId` | Claude docs + live QA 2026-06-05 (`qa-claude-whoami`) | `src/lib/core/agent/whoami.ts` | whoami.test.ts: session-id fallback; live QA: `env -u TMUX_PANE yaco agent whoami --json` | `whoami` still resolves via `TMUX_PANE`; session-id fallback fails outside tmux pane env |
 
-## Codex Assumptions (X1-X14)
+## Codex Assumptions (X1-X15)
 
 | # | Assumption | Source | Code Location | Guard Test | If Violated |
 |---|-----------|--------|---------------|------------|-------------|
@@ -114,6 +115,7 @@ Codex sessions explicitly export `COLORTERM=truecolor` before launch so the prov
 | X12 | rollout files at `~/.codex/sessions/YYYY/MM/DD/` | reverse engineering | `src/lib/core/agent/session-id.ts` | **none** | sessionId stays PENDING |
 | X13 | crossterm OSC 10/11 queries need synthetic replies in detached tmux; replies must be triggered by observed query bytes and continue through the startup window, not blind timing or first-hit exit | reverse engineering + Workflow repro 2026-05-14/2026-05-17 | `src/lib/core/agent/tmux.ts#startOscColorQueryResponder`; `src/commands/agent/start.ts`: Codex launch delay before query | `test/tmux.test.ts`: pipe-pane responder source guard + theme detection + startup-window listening; live probe checks background ANSI appears and literal `rgb:...` is absent | input box loses background tint or pane scrollback is polluted before clients attach |
 | X14 | `codex resume <uuid>` restores session | Codex docs | `src/commands/agent/start.ts` | agent-sync: resume contains token | resume fails |
+| X15 | Codex tool subprocesses expose `CODEX_THREAD_ID`, matching YACO state `sessionId` | live QA 2026-06-05 (`qa-codex-whoami`) | `src/lib/core/agent/whoami.ts` | whoami.test.ts: session-id fallback; live QA: `env -u TMUX_PANE yaco agent whoami --json` | `whoami` still resolves via `TMUX_PANE`; session-id fallback fails outside tmux pane env |
 
 ## Missing Guard Tests
 

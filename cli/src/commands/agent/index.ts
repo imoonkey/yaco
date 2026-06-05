@@ -5,6 +5,7 @@
  *    send <name> "message" | --stdin                      Send a message
  *    capture <name> [--wait]                              Capture pane buffer
  *    status [name] [--all] [...]                          Inspect session state
+ *    whoami                                                Print current agent handle
  *    kill <name> | --all                                  Kill a session
  *    rename <old> <new>                                   Rename an idle session
  *    hooks install                                        Install hook configs
@@ -24,6 +25,7 @@ import { capture } from "./capture.ts";
 import { kill } from "./kill.ts";
 import { rename } from "./rename.ts";
 import { status } from "./status.ts";
+import { whoami } from "./whoami.ts";
 import { handleHookEvent } from "./hook-event.ts";
 import { handleHooksInstall } from "./hooks/install.ts";
 
@@ -35,6 +37,7 @@ Usage:
   yaco agent send <name> --stdin                (read message from stdin)
   yaco agent capture <name> [--wait] [--lines <n>] [--strip-ansi true|false]
   yaco agent status [name] [--all] [--path <p>] [--json]
+  yaco agent whoami [--json]
   yaco agent kill <name> | --all
   yaco agent rename <old> <new>
   yaco agent hooks install
@@ -267,6 +270,24 @@ export async function handleAgent(
         return ok(JSON.parse(output));
       }
       return ok({ help: output });
+    }
+
+    case "whoami": {
+      const parsed = parseSubArgs(rest);
+      if (parsed.positional.length > 0) {
+        throw new CliError(ErrCode.USAGE, "yaco agent whoami [--json]");
+      }
+
+      const identity = whoami();
+      if (!identity) {
+        throw new CliError(
+          ErrCode.NOT_FOUND,
+          "current process is not inside a yaco-managed agent session",
+        );
+      }
+
+      if (parsed.options.json || opts.json) return ok(identity);
+      return ok({ text: identity.handle });
     }
 
     case "rename": {

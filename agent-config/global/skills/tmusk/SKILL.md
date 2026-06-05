@@ -48,6 +48,9 @@ yaco agent rename <old-name> <new-name> --json
 yaco agent status [name] --json
 yaco agent status --all --json                         # all sessions, any path
 yaco agent status --path /some/project --json          # sessions for specific path
+
+# Resolve the current agent's own session handle
+yaco agent whoami --json
 ```
 
 ## Examples
@@ -76,6 +79,7 @@ yaco agent kill "$NAME" --json
 
 - `status` returns one of: `starting`, `idle`, `processing`, `not found`
 - `--json` on `start` and `status` outputs full session metadata: `handle`, `provider`, `sessionPath`, `pid`, `sessionId`, `status`, `createdAt`
+- `whoami` resolves the current process to its YACO session handle. It uses `TMUX_PANE` first, then known provider session-id environment such as `CODEX_THREAD_ID` or `CLAUDE_CODE_SESSION_ID`, then process ancestry.
 - `sessionId` is the agent's conversation UUID — usable with `claude --resume` / `codex resume`
 - `--resume <id>` resumes a conversation: Claude receives `--resume` as a flag; Codex is rewritten to `codex resume <id>` subcommand. State file gets `sessionId` immediately.
 - Codex empty-start sessions return `"pending:awaiting-first-prompt"` for `sessionId` until a message is sent

@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: 2026-06-04 (yc-agent-subcommand: yaco agent area, TS hook-event handler, agent-wrapper.sh)
+> Last updated: 2026-06-05 (yaco agent whoami identity resolution)
 
 ## Overview
 
@@ -28,6 +28,7 @@ src/
       rename.ts                        # rename a session handle (idle-only)
       kill.ts                          # kill one session or all current-project sessions
       status.ts                        # list sessions and their idle/busy state (supports --json)
+      whoami.ts                        # resolve current process to its YACO session handle
       hook-event.ts                    # CLI handler for `yaco agent hook-event <EventName>`
       hooks/install.ts                 # yaco agent hooks install
   lib/core/agent/
@@ -35,6 +36,7 @@ src/
     providers.ts                       # PROVIDERS, getProvider, isIdle (live-tail busy check)
     session-state.ts                   # state file CRUD; YACO_AGENT_SESSIONS_DIR / sessionsDir() resolver
     session-id.ts                      # Claude PID scan; Codex rollout (primary) + DB (fallback)
+    whoami.ts                          # current-agent identity resolver (tmux pane, session env, ancestor pid)
     lifecycle.ts                       # ensureHooks (wrapper install + provider config merge); buildWrappedCommand
     hook-event.ts                      # applyHookEvent + runHookEventForHandle + STOP_DEBOUNCE_MS
     tmux.ts                            # tmux operations (sessions, panes, PIDs, OSC responder, theme detection)
@@ -169,6 +171,33 @@ remains as the focused command for re-installing hooks only.
 **Race avoidance:** `session-state.ts` writes state atomically via temp-file + rename. `start()` syncs the latest state file after readiness instead of trusting hook order, and `status --json` repairs PID/sessionId drift on read without persisting undocumented fields. The wrapper EXIT trap compares `createdAt` before deleting so older exits cannot wipe a newer recycled handle. Codex rollout scan only accepts files created within [sessionStart - 1s, sessionStart + 60s], preventing stale thread reuse. Codex DB fallback uses the same bounded window with `ASC` ordering to pick the earliest match — concurrent same-CWD sessions each claim their own thread as long as they start >1s apart.
 
 -> See: [src/lib/core/agent/session-id.ts](../../../cli/src/lib/core/agent/session-id.ts)
+
+### Current-Agent Identity (`whoami`)
+
+`yaco agent whoami` resolves the current process back to its YACO-managed
+session handle. Text mode prints only the handle; `--json` returns the full
+runtime state plus `source` (`tmux-pane`, `session-id`, or `ancestor-pid`).
+
+Resolution is intentionally ordered from strongest to weakest signal:
+
+1. **tmux pane identity** — if `TMUX_PANE` is present, ask tmux for that
+   pane's `#{session_name}` and accept it only when a matching YACO state file
+   exists. This is the normal local path for both Claude and Codex because the
+   YACO handle is the tmux session name.
+2. **provider session-id env** — match known tool-subprocess variables against
+   state `sessionId`: `CODEX_THREAD_ID` for Codex and
+   `CLAUDE_CODE_SESSION_ID` for Claude Code Bash/PowerShell tools and hooks.
+   YACO does not use remote-only Claude session variables for local identity.
+3. **ancestor PID** — walk the OS parent chain from the current `whoami`
+   process and choose the nearest ancestor whose PID matches a YACO state
+   `pid`. This handles wrapper/tool nesting without assuming a fixed number of
+   process levels; when multiple managed agents appear in the ancestry, the
+   closest one wins.
+
+If no signal maps to a live managed state file, the command returns
+`NOT_FOUND` instead of guessing.
+
+-> See: [src/lib/core/agent/whoami.ts](../../../cli/src/lib/core/agent/whoami.ts), [src/commands/agent/whoami.ts](../../../cli/src/commands/agent/whoami.ts)
 
 ### JSON Output (`--json`) and Dual-Mode Capture
 
