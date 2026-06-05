@@ -27,14 +27,11 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
 
   const [voiceSurface, setVoiceSurface] = useState<'editor' | 'terminal'>('terminal')
 
-  // Sync surface from voice target when it changes
+  // Mirror the run's frozen target surface for display. Synced from voice.target;
+  // never toggled mid-run — the insertion target is frozen when the run starts.
   useEffect(() => {
     if (voice.target?.surface) setVoiceSurface(voice.target.surface)
   }, [voice.target?.surface])
-
-  const handleSurfaceToggle = useCallback(() => {
-    setVoiceSurface(s => s === 'editor' ? 'terminal' : 'editor')
-  }, [])
 
   const handleEditorVoiceStart = useCallback(() => {
     if (!activeFilePath) return
@@ -46,17 +43,21 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     voice.start({ surface: 'terminal', sessionName: attachedSession })
   }, [voice, attachedSession])
 
+  // Route confirm by the run's FROZEN target, not a mutable surface — audio
+  // captured for the editor can never land in the terminal.
   const handleVoiceConfirm = useCallback((text: string) => {
-    if (voiceSurface === 'editor') {
-      if (!activeFilePath) return
+    const target = voice.target
+    if (!target) return
+    if (target.surface === 'editor') {
+      if (!activeFilePath || activeFilePath !== target.filePath) return
       setEditorInsert({ text, key: Date.now() })
     } else {
-      if (!attachedSession) return
+      if (!attachedSession || attachedSession !== target.sessionName) return
       setTerminalSend({ text, key: Date.now() })
       setFocusTarget('terminal')
     }
     voice.confirm(text)
-  }, [voice, voiceSurface, activeFilePath, attachedSession, setEditorInsert, setTerminalSend, setFocusTarget])
+  }, [voice, activeFilePath, attachedSession, setEditorInsert, setTerminalSend, setFocusTarget])
 
   // Detect target loss while composing
   useEffect(() => {
@@ -74,7 +75,6 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     voiceSurface,
     editorVoiceEligible,
     terminalVoiceEligible,
-    handleSurfaceToggle,
     handleEditorVoiceStart,
     handleTerminalVoiceStart,
     handleVoiceConfirm,

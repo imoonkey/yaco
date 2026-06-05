@@ -679,6 +679,8 @@ export function Workspace({
       compose={voice.compose}
       state={voice.state}
       elapsedMs={voice.elapsedMs}
+      liveTranscript={voice.liveTranscript}
+      pendingCount={voice.pendingCount}
       errorMessage={voice.errorMessage}
       onConfirm={voiceBridge.handleVoiceConfirm}
       onDiscard={voice.discard}
@@ -686,7 +688,6 @@ export function Workspace({
       onRetry={voice.retry}
       onDismiss={voice.dismiss}
       onStop={voice.stop}
-      onSurfaceToggle={voiceBridge.handleSurfaceToggle}
     />
     {showShortcutSheet && <ShortcutSheet onClose={() => setShowShortcutSheet(false)} />}
   </>

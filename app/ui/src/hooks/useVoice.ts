@@ -3,9 +3,10 @@ import { API } from './useApi'
 import {
   voiceReducer, INITIAL_STATE,
   selectInteractionState, selectCompose, selectTarget, selectErrorMessage, selectNotice,
+  selectLiveTranscript, selectPendingCount, selectFinalization,
   type FormattingStatus, type VoiceTargetContext, type InteractionState, type ComposeData,
 } from './voiceStateMachine'
-import { checkBrowserCapability, startRecordingSession, type RecordingSession } from './voiceRecording'
+import { checkBrowserCapability, startVadSession, MAX_RECORDING_SECONDS, type VadSession } from './voiceVad'
 
 // Re-export shared types so consumers keep importing from './useVoice'
 export type { VoiceSurface, FormattingStatus, ComposeData, VoiceTargetContext, InteractionState } from './voiceStateMachine'
@@ -19,6 +20,8 @@ export interface UseVoiceReturn {
   capability: CapabilityState
   state: InteractionState
   elapsedMs: number
+  liveTranscript: string
+  pendingCount: number
   compose: ComposeData | null
   target: VoiceTargetContext | null
   errorMessage: string | null
@@ -33,8 +36,11 @@ export interface UseVoiceReturn {
   markTargetLost: () => void
 }
 
-interface ComposeResponse {
-  rawText: string
+interface TranscribeResponse {
+  text: string
+}
+
+interface FormatResponse {
   displayText: string
   formattingStatus: string
   warning?: string
@@ -44,15 +50,45 @@ type VoiceStatusResponse =
   | { enabled: true; sttModel: string; formatterModel: string; maxUploadBytes: number }
   | { enabled: false; reason: string }
 
+const DEFAULT_MAX_UPLOAD_BYTES = 20_000_000
+const TRANSCRIBE_TIMEOUT_MS = 30_000
+const FORMAT_TIMEOUT_MS = 30_000
+const REQUEST_WINDOW_MS = 60_000
+const MAX_TRANSCRIBE_REQUESTS_PER_WINDOW = 20
+
+function parseRetryAfterMs(value: string | null): number {
+  if (!value) return 1000
+  const seconds = Number(value)
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
+  const dateMs = Date.parse(value)
+  return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : 1000
+}
+
+function delay(ms: number): Promise<void> {
+  if (ms <= 0) return Promise.resolve()
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function getResponseMessage(res: Response, fallback: string): Promise<string> {
+  return res.json()
+    .then((body: { error?: string; message?: string }) => body.error || body.message || fallback)
+    .catch(() => fallback)
+}
+
 export function useVoice(): UseVoiceReturn {
   const [capability, setCapability] = useState<CapabilityState>({ status: 'checking' })
   const [voiceState, dispatch] = useReducer(voiceReducer, INITIAL_STATE)
   const [elapsedMs, setElapsedMs] = useState(0)
-  const sessionRef = useRef<RecordingSession | null>(null)
+  const sessionRef = useRef<VadSession | null>(null)
   const runCounterRef = useRef(0)
   const phaseRef = useRef(voiceState.phase)
   phaseRef.current = voiceState.phase
-  const maxUploadBytesRef = useRef(20_000_000)
+  const maxUploadBytesRef = useRef(DEFAULT_MAX_UPLOAD_BYTES)
+  const transcribeTimestampsRef = useRef<number[]>([])
+  const retryAfterUntilRef = useRef(0)
+  const formattingRunRef = useRef<number | null>(null)
+  const stopRef = useRef<() => void>(() => {})
+  const mountedRef = useRef(true)
 
   // Capability check on mount
   useEffect(() => {
@@ -81,41 +117,124 @@ export function useVoice(): UseVoiceReturn {
   }, [])
 
   // Cleanup on unmount
-  useEffect(() => () => { sessionRef.current?.release() }, [])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      sessionRef.current?.release()
+    }
+  }, [])
 
-  // Submit audio to server
-  const submitAudio = useCallback(async (blob: Blob, ctx: VoiceTargetContext, runId: number) => {
-    dispatch({ type: 'STOP' })
-    const formData = new FormData()
-    formData.append('audio', blob, 'audio.webm')
-    formData.append('surface', ctx.surface)
-    if (ctx.filePath) formData.append('filePath', ctx.filePath)
+  const waitForTranscribeSlot = useCallback(async () => {
+    while (true) {
+      const now = Date.now()
+      transcribeTimestampsRef.current = transcribeTimestampsRef.current.filter(t => now - t < REQUEST_WINDOW_MS)
 
+      const retryWait = retryAfterUntilRef.current - now
+      if (retryWait > 0) {
+        await delay(retryWait)
+        continue
+      }
+
+      if (transcribeTimestampsRef.current.length < MAX_TRANSCRIBE_REQUESTS_PER_WINDOW) {
+        transcribeTimestampsRef.current.push(now)
+        return
+      }
+
+      const oldest = transcribeTimestampsRef.current[0]
+      await delay(Math.max(0, REQUEST_WINDOW_MS - (now - oldest) + 1))
+    }
+  }, [])
+
+  const fetchWithTimeout = useCallback(async (
+    input: RequestInfo | URL,
+    init: RequestInit,
+    timeoutMs: number,
+  ): Promise<Response> => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const res = await fetch(`${API}/voice/compose`, { method: 'POST', body: formData })
+      return await fetch(input, { ...init, signal: controller.signal })
+    } finally {
+      clearTimeout(timeout)
+    }
+  }, [])
+
+  const postTranscribe = useCallback(async (wav: Blob): Promise<string> => {
+    const formData = new FormData()
+    formData.append('audio', wav, 'chunk.wav')
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await waitForTranscribeSlot()
+      const res = await fetchWithTimeout(`${API}/voice/transcribe`, {
+        method: 'POST',
+        body: formData,
+      }, TRANSCRIBE_TIMEOUT_MS)
+
+      if (res.status === 429 && attempt === 0) {
+        const waitMs = parseRetryAfterMs(res.headers.get('retry-after'))
+        retryAfterUntilRef.current = Date.now() + waitMs
+        await delay(waitMs)
+        continue
+      }
+
       if (!res.ok) {
-        const body = await res.json().catch(() => ({ error: 'Request failed.' })) as { error?: string; message?: string }
-        dispatch({ type: 'FAIL', message: body.error || body.message || `Server error (${res.status}).`, runId })
+        return ''
+      }
+
+      const data = await res.json() as TranscribeResponse
+      return data.text ?? ''
+    }
+
+    return ''
+  }, [fetchWithTimeout, waitForTranscribeSlot])
+
+  const transcribeChunk = useCallback((wav: Blob, index: number, runId: number) => {
+    dispatch({ type: 'SEGMENT_PENDING', index, runId })
+
+    void postTranscribe(wav)
+      .then(text => {
+        dispatch({ type: 'SEGMENT_RESOLVED', index, text, runId })
+      })
+      .catch(() => {
+        // A timeout or transient network failure drops only this chunk. If every
+        // chunk drops, the reducer's finalization branch becomes FAIL.
+        dispatch({ type: 'SEGMENT_RESOLVED', index, text: '', runId })
+      })
+  }, [postTranscribe])
+
+  const formatTranscript = useCallback(async (text: string, target: VoiceTargetContext, runId: number) => {
+    dispatch({ type: 'START_FORMAT' })
+    try {
+      const res = await fetchWithTimeout(`${API}/voice/format`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, surface: target.surface, filePath: target.filePath }),
+      }, FORMAT_TIMEOUT_MS)
+      if (!res.ok) {
+        const message = await getResponseMessage(res, `Server error (${res.status}).`)
+        dispatch({ type: 'FAIL', message, runId })
         return
       }
-      const data = await res.json() as ComposeResponse
-      if (data.formattingStatus === 'empty') {
-        dispatch({ type: 'NO_SPEECH', message: 'No speech detected.', runId })
-        return
-      }
+      const data = await res.json() as FormatResponse
       const validStatuses: FormattingStatus[] = ['formatted', 'fallback_raw', 'empty']
-      const fmtStatus: FormattingStatus = validStatuses.includes(data.formattingStatus as FormattingStatus)
+      const formattingStatus: FormattingStatus = validStatuses.includes(data.formattingStatus as FormattingStatus)
         ? data.formattingStatus as FormattingStatus
         : 'fallback_raw'
       dispatch({
-        type: 'COMPOSE_READY', runId,
-        compose: { rawText: data.rawText, displayText: data.displayText, formattingStatus: fmtStatus, warning: data.warning },
+        type: 'COMPOSE_READY',
+        runId,
+        compose: {
+          rawText: text,
+          displayText: data.displayText,
+          formattingStatus,
+          warning: data.warning,
+        },
       })
     } catch {
-      if (phaseRef.current.phase === 'idle') return
       dispatch({ type: 'FAIL', message: 'Network error. Check your connection.', runId })
     }
-  }, [])
+  }, [fetchWithTimeout])
 
   const start = useCallback((ctx: VoiceTargetContext) => {
     if (capability.status !== 'ready') return
@@ -126,25 +245,78 @@ export function useVoice(): UseVoiceReturn {
     setElapsedMs(0)
     dispatch({ type: 'START', target: ctx })
 
-    startRecordingSession(maxUploadBytesRef.current, {
+    startVadSession(maxUploadBytesRef.current, {
       onElapsed: setElapsedMs,
-      onStopped: (blob) => submitAudio(blob, ctx, runId),
-      onTooShort: () => dispatch({ type: 'TOO_SHORT' }),
-      onByteLimit: () => { /* stop already called by recording module */ },
+      onChunk: (wav, index) => transcribeChunk(wav, index, runId),
       onError: (message) => dispatch({ type: 'FAIL', message, runId }),
     })
       .then(session => {
-        if (phaseRef.current.phase !== 'requesting_permission') { session.release(); return }
-        sessionRef.current = session
-        dispatch({ type: 'PERMISSION_GRANTED', startedAt: Date.now() })
+        setTimeout(() => {
+          if (!mountedRef.current) {
+            session.release()
+            return
+          }
+          sessionRef.current = session
+          dispatch({ type: 'PERMISSION_GRANTED', startedAt: Date.now(), runId })
+        }, 0)
       })
       .catch(() => {
-        if (phaseRef.current.phase !== 'requesting_permission') return
-        dispatch({ type: 'PERMISSION_DENIED', message: 'Microphone permission denied.' })
+        const phase = phaseRef.current
+        if (!mountedRef.current || phase.phase !== 'requesting_permission' || phase.runId !== runId) return
+        dispatch({ type: 'PERMISSION_DENIED', message: 'Microphone permission denied.', runId })
       })
-  }, [capability, submitAudio])
+  }, [capability, transcribeChunk])
 
-  const stop = useCallback(() => { sessionRef.current?.stop(); sessionRef.current = null }, [])
+  const stop = useCallback(() => {
+    const phase = phaseRef.current
+    if (phase.phase !== 'active') return
+    const session = sessionRef.current
+    if (!session) return
+    const runId = phase.runId
+
+    dispatch({ type: 'STOP' })
+    void (async () => {
+      try {
+        await session.stop()
+        dispatch({ type: 'VAD_STOPPED', runId })
+      } catch {
+        dispatch({ type: 'FAIL', message: 'Could not stop voice capture.', runId })
+      } finally {
+        await session.release().catch(() => {})
+        if (sessionRef.current === session) sessionRef.current = null
+      }
+    })()
+  }, [])
+  stopRef.current = stop
+
+  useEffect(() => {
+    const phase = voiceState.phase
+    if (phase.phase !== 'active') {
+      formattingRunRef.current = null
+      return
+    }
+
+    const finalization = selectFinalization(phase)
+    if (finalization.kind === 'pending') return
+    if (finalization.kind === 'no_speech') {
+      dispatch({ type: 'NO_SPEECH', message: 'No speech detected.', runId: phase.runId })
+      return
+    }
+    if (finalization.kind === 'failed') {
+      dispatch({ type: 'FAIL', message: 'Transcription failed. Try again.', runId: phase.runId })
+      return
+    }
+    if (formattingRunRef.current === phase.runId) return
+    formattingRunRef.current = phase.runId
+    void formatTranscript(finalization.text, phase.target, phase.runId)
+  }, [voiceState.phase, formatTranscript])
+
+  useEffect(() => {
+    const phase = voiceState.phase
+    if (phase.phase !== 'active') return
+    if (elapsedMs >= MAX_RECORDING_SECONDS * 1000) stopRef.current()
+  }, [elapsedMs, voiceState.phase])
+
   const confirm = useCallback((_text: string) => { dispatch({ type: 'CONFIRM' }) }, [])
   const discard = useCallback(() => { dispatch({ type: 'DISCARD' }) }, [])
   const copy = useCallback((text: string) => {
@@ -160,6 +332,8 @@ export function useVoice(): UseVoiceReturn {
     capability,
     state: selectInteractionState(phase),
     elapsedMs,
+    liveTranscript: selectLiveTranscript(phase),
+    pendingCount: selectPendingCount(phase),
     compose: selectCompose(phase),
     target: selectTarget(phase),
     errorMessage: selectErrorMessage(phase),

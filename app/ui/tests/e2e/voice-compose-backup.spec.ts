@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 
-// Drives the real ComposeTray via a fake microphone + stubbed voice API, and
+// Drives the real ComposeTray via a fake MicVAD + stubbed voice API, and
 // verifies the defensive clipboard backup: whenever the tray closes with edited
 // content (Insert / Discard), the draft lands on the clipboard so a glitched
 // insert can never silently lose carefully-edited text.
@@ -16,12 +16,40 @@ test.use({
 async function stubVoice(page: Page, displayText: string) {
   await page.route('**/api/voice/status', (route) =>
     route.fulfill({
-      json: { enabled: true, sttModel: 'stub', formatterModel: 'stub', maxUploadBytes: 20_000_000 },
+      json: { enabled: true, sttModel: 'stub', formatterModels: ['stub'], maxUploadBytes: 20_000_000 },
     }),
   )
-  await page.route('**/api/voice/compose', (route) =>
+  await page.addInitScript(() => {
+    const w = window as unknown as {
+      __YACO_FAKE_MIC_VAD__?: unknown
+      __YACO_FAKE_VAD_EVENTS__?: string[]
+    }
+    w.__YACO_FAKE_VAD_EVENTS__ = []
+    w.__YACO_FAKE_MIC_VAD__ = {
+      MicVAD: {
+        new: async (options) => {
+          w.__YACO_FAKE_VAD_EVENTS__?.push('new')
+          await new Promise((resolve) => setTimeout(resolve, 100))
+          w.__YACO_FAKE_VAD_EVENTS__?.push('ready')
+          return {
+            pause: async () => {
+              w.__YACO_FAKE_VAD_EVENTS__?.push('pause')
+              options.onSpeechEnd(new Float32Array(16000).fill(0.2))
+            },
+            destroy: async () => {
+              w.__YACO_FAKE_VAD_EVENTS__?.push('destroy')
+            },
+          }
+        },
+      },
+    }
+  })
+  await page.route('**/api/voice/transcribe', (route) =>
+    route.fulfill({ json: { text: 'original transcript' } }),
+  )
+  await page.route('**/api/voice/format', (route) =>
     route.fulfill({
-      json: { rawText: displayText, displayText, formattingStatus: 'formatted' },
+      json: { displayText, formattingStatus: 'formatted' },
     }),
   )
 }
@@ -50,15 +78,20 @@ async function openFileForVoice(page: Page): Promise<void> {
   })
 }
 
-/** Record briefly (past the 500ms minimum) then stop, landing in the compose state. */
+/** Start fake VAD, stop it, then land in the compose state. */
 async function recordToCompose(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start voice recording' }).click()
-  // Tray shows immediately in the recording state with a Stop button.
+  const fakeEvents = () =>
+    page.evaluate(() => (window as unknown as { __YACO_FAKE_VAD_EVENTS__?: string[] }).__YACO_FAKE_VAD_EVENTS__ ?? [])
+  await expect.poll(fakeEvents).toContain('new')
+  await expect.poll(fakeEvents).toContain('ready')
+  await page.waitForTimeout(300)
+  expect(await fakeEvents()).not.toContain('destroy')
+  // Tray shows immediately in the active state with a Stop button.
   const stop = page.getByRole('button', { name: 'Stop', exact: true })
   await expect(stop).toBeVisible({ timeout: 5_000 })
-  await page.waitForTimeout(800) // exceed MIN_RECORDING_MS (500ms)
   await stop.click()
-  // Compose textarea appears once the (stubbed) server responds.
+  // Compose textarea appears once /transcribe and /format have both returned.
   await expect(page.getByLabel('Voice transcript')).toBeVisible({ timeout: 10_000 })
 }
 

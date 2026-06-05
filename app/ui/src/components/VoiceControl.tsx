@@ -39,9 +39,7 @@ function resolveVisualState(
 ): VisualState {
   if (capability.status !== 'ready') return 'disabled'
   switch (interaction) {
-    case 'recording': return 'recording'
-    case 'transcribing':
-    case 'formatting':
+    case 'active': return 'recording'
     case 'requesting_permission':
       return 'processing'
     default: return 'ready'
@@ -147,12 +145,6 @@ export function VoiceControl({
         <span style={{ fontVariantNumeric: 'tabular-nums' }}>
           {formatElapsed(elapsedMs)}
         </span>
-      )}
-      {visual === 'processing' && state === 'transcribing' && (
-        <span>Transcribing</span>
-      )}
-      {visual === 'processing' && state === 'formatting' && (
-        <span>Formatting</span>
       )}
       {visual === 'processing' && state === 'requesting_permission' && (
         <span>Mic…</span>

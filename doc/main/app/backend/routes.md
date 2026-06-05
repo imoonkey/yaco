@@ -111,7 +111,10 @@ Disabled (key missing):
 The pipeline is **split** into two single-responsibility endpoints: the client
 streams each captured chunk to `/transcribe` as it is produced, then calls
 `/format` once over the joined transcript at Stop. The formatter therefore runs
-exactly once at the end.
+exactly once at the end. A "chunk" is a VAD-coalesced ~10s WAV (the client's
+`voiceVad.ts` buffers utterances and flushes on a ~10s target or an
+end-of-thought pause, never more than ~6×/min) — the coalescing is what keeps
+`/transcribe` under Groq's free-tier rate wall.
 
 **`POST /api/voice/transcribe`** (`multipart/form-data`) — Whisper STT only.
 
@@ -161,6 +164,10 @@ Empty/blank transcript (`formattingStatus: "empty"`, 200, no model call):
 | Transcript > `VOICE_MAX_TRANSCRIPT_CHARS` | 413 | Transcript too long. | format |
 | Upstream rate limit | 429 | Rate limit reached. Try again shortly. | transcribe |
 | Upstream timeout/network | 502 | Transcription failed. Try again. | transcribe |
+
+On a 429, `/transcribe` forwards the upstream Groq `retry-after` header so the
+client backs off precisely — `useVoice.ts` parses it (seconds or HTTP date) and
+holds all pending chunks until the deadline before retrying once.
 
 Audio is never persisted to disk. API key is never exposed to the browser.
 

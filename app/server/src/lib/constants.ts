@@ -63,6 +63,16 @@ export const PTY_MAX_BUFFER_SIZE = 200_000
 /** Voice upload size limit (20 MB) */
 export const VOICE_MAX_UPLOAD_BYTES = 20_000_000
 
+/** Max transcript length (chars) accepted by POST /api/voice/format.
+ *  Caps formatter input before any model call; ~8k chars stays within the
+ *  formatter's 2048-token output budget. */
+export const VOICE_MAX_TRANSCRIPT_CHARS = 8_000
+
+/** Max filePath length (chars) accepted by POST /api/voice/format.
+ *  Bounds the only caller-controlled value embedded in the formatter prompt;
+ *  real repo-relative paths are far shorter. */
+export const VOICE_MAX_FILEPATH_CHARS = 256
+
 /** Max files for non-git search-index walk */
 export const SEARCH_INDEX_BUDGET = 100_000
 

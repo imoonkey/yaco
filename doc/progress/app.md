@@ -1,3 +1,71 @@
+## 2026-06-05: Voice streaming e2e + manual VAD checklist (vs-tests)
+
+**What changed:** `app/ui/tests/e2e/voice-compose-backup.spec.ts` now stubs
+`/api/voice/transcribe` + `/api/voice/format` and drives the real
+VoiceControl/ComposeTray path with a dev-only fake MicVAD seam. Insert and
+Discard still verify the clipboard backup. Added
+`plan/active/voice-streaming/manual_vad_checklist.md` for Chrome desktop and
+phone-over-Tailscale VAD checks.
+
+**Verification:** `cd app/ui && npx playwright test voice` -> 2 passed.
+**Next:** final orchestrator verification and task closure.
+**Blockers:** None.
+
+## 2026-06-04: Voice streaming hook orchestration (vs-hook)
+
+**What changed:**
+- `app/ui/src/hooks/useVoice.ts` — rewritten to orchestrate the streaming path end to end on top of `voiceVad.ts` (capture), `voiceStateMachine.ts` (reducer), and the split `/transcribe` + `/format` routes. Replaces the old MediaRecorder + single `/compose` flow; greens the staged red build that `vs-vad-module`/`vs-state-machine`/`vs-tray-live` left behind.
+- **`start(ctx)`** computes `runId` up front (mirrors the reducer's `counter + 1`), dispatches `START`, opens `startVadSession(maxUploadBytes, { onElapsed, onChunk, onError })`, and resolves to `PERMISSION_GRANTED` only if the live phase is still `requesting_permission` with the same `runId` and the hook is mounted (else `release()`s the orphan). Rejection → `PERMISSION_DENIED`, same guard.
+- **Per chunk:** `SEGMENT_PENDING` → `POST /transcribe` (`fetchWithTimeout`, 30 s abort) → `SEGMENT_RESOLVED` carrying `index` + `text` + `runId`; a timeout/failure resolves the segment to `''` (drops only that chunk).
+- **Client rate control** (`waitForTranscribeSlot`): rolling 60 s window caps `/transcribe` at 20 req (belt-and-suspenders over the coalescer's ~6/min floor); a shared `retryAfterUntilRef` deadline holds all pending chunks back. On a 429, `postTranscribe` reads the forwarded `retry-after` header (`parseRetryAfterMs`, seconds or HTTP date), waits, and retries once.
+- **Stop → finalize:** `stop()` dispatches `STOP`, `await session.stop()` (flushes tail), `VAD_STOPPED`, then `release()`s. A finalize effect reads `selectFinalization` off the live `active` phase and fires exactly one of `NO_SPEECH` / `FAIL` / (`START_FORMAT` + one `POST /format`) — the gate is an effect (not inline) because the last chunk can resolve after `VAD_STOPPED`; `formattingRunRef` guards `/format` to once per run. A second effect calls `stop()` at `MAX_RECORDING_SECONDS`. Unmount effect releases the live session.
+- `app/server/src/routes/voice.ts` — `mapUpstreamError` + `/transcribe` now forward the upstream Groq `retry-after` header on a 429 so the hook's back-off is precise.
+- `app/ui/src/hooks/__tests__/useVoice.test.tsx` (new) — drives the hook with a fake VAD session + mocked `fetch`: happy path, 429 + `retry-after` retry, all-chunks-dropped → `failed`, unmount cleanup.
+
+**Why:**
+- The integrating slice of `voice-streaming`. The four sibling tasks each left a deliberate red build against the old `useVoice.ts`; this rewrite adopts every consumer contract (VAD session, `runId`-tagged segment events, derived finalize gate, single `/format`) and turns the streaming pipeline on. Client-side throttle + server-forwarded `retry-after` make staying under Groq's free-tier RPM wall structural rather than best-effort.
+
+**Key files:** `app/ui/src/hooks/useVoice.ts`, `app/ui/src/hooks/__tests__/useVoice.test.tsx`, `app/server/src/routes/voice.ts`, `plan/active/voice-streaming/implementation_summary.md`
+**Verification:** `cd app/ui && npx vitest run useVoice voiceStateMachine src/hooks/__tests__/voiceVad.test.ts` → 39 passed; `cd app/ui && npm run build` passes (staged red build now green); `cd app/server && npm test` passes.
+**Commit:** docs only this pass; the hook + route changes are part of the in-flight `voice-streaming` bundle (uncommitted, pending orchestrator review).
+**Next:** `vs-tests` — e2e + manual VAD checklist over the now-complete pipeline.
+**Blockers:** None.
+
+## 2026-06-04: VAD-driven voice capture with chunk coalescing (vs-vad-module)
+
+**What changed:**
+- `app/ui/src/hooks/voiceVad.ts` (new) — replaces the MediaRecorder module `voiceRecording.ts` (removed). `startVadSession(maxBytes, callbacks, load?)` wraps `@ricky0123/vad-web`'s `MicVAD.new({ model: 'v5', baseAssetPath/onnxWASMBasePath: __VAD_ASSET_BASE__, processorType: 'AudioWorklet', submitUserSpeechOnPause: true, redemptionMs: 1400, minSpeechMs: 400 })` behind a lazy `import('@ricky0123/vad-web')` (keeps vad-web + onnxruntime-web out of the main bundle; `startOnLoad` auto-starts).
+- **`VadCoalescer` (pure, exported, no timers/MicVAD).** Buffers VAD utterances (`onSpeechEnd` Float32Array) and emits a coalesced PCM16-mono WAV via `onChunk(wav, index)` on three triggers: **size** (`CHUNK_TARGET_SECONDS = 10`, or the server byte cap `maxBytes`, whichever is smaller); **end-of-thought pause** (`PAUSE_FLUSH_MS = 1000` after an utterance, **rate-gated** until `MIN_FLUSH_INTERVAL_MS = 10_000` clears, then re-armed for exactly the remaining wait); **final** (`flushRemainder()` at Stop, ungated). The rate floor caps requests at ~6/min so transcription stays under Groq's ~20 RPM free tier.
+- **Lifecycle guards.** Owns `getStream` so it can stop a mic stream `MicVAD.new()` leaks when it throws after acquiring the mic (vad-web returns no handle); on init failure stops the stream + closes the `AudioContext`, then rethrows. `stop()` is async — `vad.pause()` flushes the in-progress utterance (`submitUserSpeechOnPause`) then `flushRemainder()` emits the tail before resolving, so the caller's finalize gate sees every chunk. `release()` is idempotent and safe after a failed init. `stopping`/`released` flags drop late `onSpeechEnd` (destroy can fire one) and cancel the pause timer; `onSpeechStart` cancels a pending end-of-thought flush.
+- `MAX_RECORDING_SECONDS = 300` is reported via `onElapsed(ms)` (1s tick); the cap is enforced by the consuming hook calling `stop()`. `checkBrowserCapability()` (secure context + `getUserMedia` + `AudioWorklet`) and `encodeWav()` (PCM16 mono @ 16 kHz) carried over from `voiceRecording.ts`.
+- `app/ui/src/hooks/__tests__/voiceVad.test.ts` (new) — 12 tests: WAV encode, coalescer size/rate-gate/final/byte-cap flushes, and `startVadSession` lifecycle (pause-flush-before-stop, late-callback-after-release ignored, mic stopped when init fails) via an injected fake MicVAD module.
+
+**Why:**
+- One slice of the `voice-streaming` project. VAD replaces fixed-interval MediaRecorder chunking so silence costs nothing and the formatter runs once over a clean transcript. Coalescing utterances into ~10s WAVs (instead of one request per pause) is what keeps the streaming path under Groq's free-tier RPM wall — the rate floor makes that structural rather than best-effort. The coalescer is split out as a pure class so the flush logic is unit-tested without a real worklet/mic.
+
+**Key files:** `app/ui/src/hooks/voiceVad.ts`, `app/ui/src/hooks/__tests__/voiceVad.test.ts` (removed: `app/ui/src/hooks/voiceRecording.ts`), `plan/active/voice-streaming/implementation_summary.md`
+**Verification:** `cd app/ui && npx vitest run src/hooks/__tests__/voiceVad.test.ts voiceStateMachine` → 34 passed (12 + 22). Full `cd app/ui && npm run build` still fails **only** in `useVoice.ts` (still imports the removed `voiceRecording.ts` and posts `/compose`) — owned by `vs-hook`.
+**Commit:** docs only this pass; module is part of the in-flight `voice-streaming` working tree.
+**Next:** `vs-hook` adopts the `startVadSession` contract in `useVoice.ts` (per-chunk `/transcribe`, `runId`-tagged segment events, cap via `onElapsed`); build greens once it lands.
+**Blockers:** None (the red `useVoice.ts` build is the expected staged-migration state).
+
+## 2026-06-04: Voice tray live transcript + frozen target (vs-tray-live)
+
+**What changed:**
+- `app/ui/src/components/ComposeTray.tsx` — replaced the bare timer / processing-spinner blocks with one **active panel**: a growing live-transcript area (auto-scrolled to the latest line; `Listening…` placeholder when empty) + `mm:ss` timer + a **pending indicator** (spinner + count when `pendingCount > 0`) + Stop. `isActive` now keys off `active | composing | recoverable | error`. The header surface toggle (button + `Tab` handler) is removed → a static `Voice → Terminal/Editor` label. Compose / error / recoverable bodies unchanged.
+- `app/ui/src/workspace/useWorkspaceVoice.ts` — **froze the insertion target per run.** `handleVoiceConfirm` now routes by the run's `voice.target` (matching `filePath`/`sessionName`), not the mutable `voiceSurface`, so editor-captured audio can't land in the terminal. Dropped `handleSurfaceToggle`; `voiceSurface` is kept only as a display mirror of `voice.target.surface`.
+- `app/ui/src/components/VoiceControl.tsx` — `resolveVisualState`: `active → recording`, `requesting_permission → processing`; dropped the dead `transcribing`/`formatting` cases.
+- Wiring: `useVoice.ts` exposes `liveTranscript`/`pendingCount` (via the existing `selectLiveTranscript`/`selectPendingCount` selectors) as the tray's contract; `WorkspaceScreen.tsx` passes them and drops `onSurfaceToggle`; `useWorkspaceKeyboard.ts` toggles on `state === 'active'` (was `'recording'`).
+
+**Why:**
+- Adopts `vs-state-machine`'s single `active` phase so the tray shows a Typeless-style growing transcript instead of a stop-and-wait spinner. Freezing the target closes a real bug: the old tray let you re-target surface mid-capture, so audio captured for the editor could be inserted into the terminal.
+
+**Key files:** `app/ui/src/components/ComposeTray.tsx`, `app/ui/src/components/VoiceControl.tsx`, `app/ui/src/workspace/useWorkspaceVoice.ts`, `app/ui/src/hooks/useVoice.ts`, `app/ui/src/workspace/{WorkspaceScreen,useWorkspaceKeyboard}.ts`
+**Verification:** `cd app/ui && npm run build` — all in-scope + wired files type-check; the only remaining `tsc -b` errors are in `useVoice.ts` and are exclusively `vs-hook`'s (removed `./voiceRecording`, dropped `TOO_SHORT`, `runId`-less permission dispatches). `npx vitest run voiceStateMachine` → 22 pass; ESLint adds no new errors.
+**Commit:** docs only this pass; UI changes are part of the in-flight `voice-streaming` bundle (uncommitted, pending orchestrator review).
+**Next:** `vs-hook` migrates `useVoice.ts` (VAD orchestration, per-chunk `/transcribe`, single `/format` at Stop, drop `TOO_SHORT`, pass `runId`). Build greens once it lands.
+**Blockers:** None for this task; the red `tsc -b` is owned by `vs-hook`.
+
 ## 2026-06-04: Split voice `/compose` → `/transcribe` + `/format` (vs-server-split)
 
 **What changed:**

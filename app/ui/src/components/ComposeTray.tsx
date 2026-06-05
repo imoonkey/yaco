@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, ChevronRight, ArrowLeftRight } from 'lucide-react'
+import { X, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { DialogShell } from './DialogShell'
 import { writeTextToClipboard } from '../lib/clipboard'
@@ -10,6 +10,8 @@ export function ComposeTray({
   compose,
   state,
   elapsedMs,
+  liveTranscript,
+  pendingCount,
   errorMessage,
   onConfirm,
   onDiscard,
@@ -17,12 +19,13 @@ export function ComposeTray({
   onRetry,
   onDismiss,
   onStop,
-  onSurfaceToggle,
 }: {
   surface: VoiceSurface
   compose: ComposeData | null
   state: InteractionState
   elapsedMs: number
+  liveTranscript: string
+  pendingCount: number
   errorMessage: string | null
   onConfirm: (text: string) => void
   onDiscard: () => void
@@ -30,14 +33,14 @@ export function ComposeTray({
   onRetry: () => void
   onDismiss: () => void
   onStop: () => void
-  onSurfaceToggle: () => void
 }) {
-  const isActive = state === 'recording' || state === 'transcribing' || state === 'formatting'
+  const isActive = state === 'active'
     || state === 'composing' || state === 'recoverable' || state === 'error'
   const [editText, setEditText] = useState('')
   const [showRaw, setShowRaw] = useState(false)
   const [copiedRaw, setCopiedRaw] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const transcriptRef = useRef<HTMLDivElement>(null)
 
   // Seed textarea when compose data arrives
   useEffect(() => {
@@ -65,6 +68,12 @@ export function ComposeTray({
 
   useEffect(() => { autoSize() }, [editText, autoSize])
 
+  // Keep the growing live transcript pinned to its latest line.
+  useEffect(() => {
+    const el = transcriptRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [liveTranscript])
+
   // Defensive safety net: whenever the tray closes with edited content (Insert,
   // Discard, X, or Esc), stash the draft on the clipboard first. If the insert
   // glitches (WS dropped, session detached) the text is never silently lost.
@@ -88,7 +97,6 @@ export function ComposeTray({
   const confirmLabel = 'Insert'
   const isRecoverable = state === 'recoverable'
   const isFallback = compose?.formattingStatus === 'fallback_raw'
-  const canToggleSurface = state === 'recording' || state === 'composing'
 
   if (!isActive) return null
 
@@ -96,7 +104,7 @@ export function ComposeTray({
   const mm = String(Math.floor(elapsed / 60)).padStart(2, '0')
   const ss = String(elapsed % 60).padStart(2, '0')
 
-  const handleClose = state === 'recording' ? onStop : handleDiscard
+  const handleClose = state === 'active' ? onStop : handleDiscard
 
   return (
     <DialogShell
@@ -111,42 +119,33 @@ export function ComposeTray({
         backgroundColor: 'color-mix(in srgb, var(--sol-editor-bg) 90%, transparent)',
       }}
     >
-      <div onKeyDown={(e) => {
-        if (e.key === 'Tab' && canToggleSurface) {
-          e.preventDefault()
-          onSurfaceToggle()
-        }
-      }}>
-        {/* Header with toggleable surface */}
+      <div>
+        {/* Header — surface is frozen for the run; not toggleable once started */}
         <div style={HEADER_STYLE}>
-          <button
-            style={{
-              ...SURFACE_TOGGLE_STYLE,
-              ...(canToggleSurface ? { cursor: 'pointer' } : { cursor: 'default', opacity: 0.7 }),
-            }}
-            onClick={canToggleSurface ? onSurfaceToggle : undefined}
-            title={canToggleSurface ? 'Click to switch target' : undefined}
-          >
+          <span style={SURFACE_LABEL_STYLE}>
             Voice → {surface === 'terminal' ? 'Terminal' : 'Editor'}
-            {canToggleSurface && <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.5, display: 'inline-flex', alignItems: 'center', gap: 2 }}>Tab <ArrowLeftRight size={10} /></span>}
-          </button>
+          </span>
           <button style={CLOSE_BTN_STYLE} onClick={handleClose} aria-label="Close"><X size={14} /></button>
         </div>
 
-        {/* Recording state */}
-        {state === 'recording' && (
-          <div style={RECORDING_STYLE}>
-            <span style={PULSE_DOT_STYLE} />
-            <span style={{ fontFamily: 'monospace', fontSize: 20 }}>{mm}:{ss}</span>
-            <button style={STOP_BTN_STYLE} onClick={onStop}>Stop</button>
-          </div>
-        )}
-
-        {/* Processing states */}
-        {(state === 'transcribing' || state === 'formatting') && (
-          <div style={PROCESSING_STYLE}>
-            <span style={SPINNER_STYLE} />
-            <span>{state === 'transcribing' ? 'Transcribing…' : 'Formatting…'}</span>
+        {/* Active: growing live transcript + timer + pending indicator */}
+        {state === 'active' && (
+          <div style={ACTIVE_STYLE}>
+            <div ref={transcriptRef} style={TRANSCRIPT_STYLE} aria-live="polite">
+              {liveTranscript || <span style={{ opacity: 0.5 }}>Listening…</span>}
+            </div>
+            <div style={ACTIVE_FOOTER_STYLE}>
+              <span style={PULSE_DOT_STYLE} />
+              <span style={{ fontFamily: 'monospace', fontSize: 14 }}>{mm}:{ss}</span>
+              {pendingCount > 0 && (
+                <span style={PENDING_STYLE} title={`${pendingCount} transcribing…`}>
+                  <span style={SPINNER_STYLE} />
+                  <span>{pendingCount}</span>
+                </span>
+              )}
+              <span style={{ flex: 1 }} />
+              <button style={STOP_BTN_STYLE} onClick={onStop}>Stop</button>
+            </div>
           </div>
         )}
 
@@ -254,14 +253,11 @@ const HEADER_STYLE: React.CSSProperties = {
   color: 'var(--sol-base01)',
 }
 
-const SURFACE_TOGGLE_STYLE: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
+const SURFACE_LABEL_STYLE: React.CSSProperties = {
   fontWeight: 500,
   fontSize: 12,
   color: 'var(--sol-base01)',
   padding: '2px 4px',
-  borderRadius: 4,
 }
 
 const CLOSE_BTN_STYLE: React.CSSProperties = {
@@ -274,13 +270,40 @@ const CLOSE_BTN_STYLE: React.CSSProperties = {
   lineHeight: 1,
 }
 
-const RECORDING_STYLE: React.CSSProperties = {
+const ACTIVE_STYLE: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 10,
+}
+
+const TRANSCRIPT_STYLE: React.CSSProperties = {
+  fontSize: 14,
+  lineHeight: 1.5,
+  color: 'var(--sol-editor-fg)',
+  background: 'var(--sol-input-bg)',
+  border: '1px solid var(--sol-border)',
+  borderRadius: 4,
+  padding: '8px 10px',
+  minHeight: 60,
+  maxHeight: '30vh',
+  overflowY: 'auto',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+}
+
+const ACTIVE_FOOTER_STYLE: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center',
-  gap: 12,
-  padding: '24px 0',
+  gap: 10,
   color: 'var(--sol-red)',
+}
+
+const PENDING_STYLE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 4,
+  fontSize: 11,
+  color: 'var(--sol-base1)',
 }
 
 const PULSE_DOT_STYLE: React.CSSProperties = {
@@ -289,6 +312,7 @@ const PULSE_DOT_STYLE: React.CSSProperties = {
   borderRadius: '50%',
   background: 'var(--sol-red)',
   animation: 'voice-pulse 1.2s ease-in-out infinite',
+  flexShrink: 0,
 }
 
 const STOP_BTN_STYLE: React.CSSProperties = {
@@ -303,19 +327,9 @@ const STOP_BTN_STYLE: React.CSSProperties = {
   fontWeight: 500,
 }
 
-const PROCESSING_STYLE: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  gap: 8,
-  padding: '24px 0',
-  fontSize: 13,
-  color: 'var(--sol-base1)',
-}
-
 const SPINNER_STYLE: React.CSSProperties = {
-  width: 14,
-  height: 14,
+  width: 12,
+  height: 12,
   border: '2px solid var(--sol-border)',
   borderTopColor: 'var(--sol-base01)',
   borderRadius: '50%',

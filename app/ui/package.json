@@ -21,6 +21,7 @@
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.40.0",
     "@lezer/highlight": "^1.2.3",
+    "@ricky0123/vad-web": "0.0.30",
     "@tailwindcss/vite": "^4.2.2",
     "@types/diff": "^7.0.2",
     "@xterm/addon-fit": "^0.11.0",
@@ -33,6 +34,7 @@
     "lucide-react": "^1.8.0",
     "marked": "^17.0.4",
     "mermaid": "^11.13.0",
+    "onnxruntime-web": "1.20.1",
     "parse-diff": "^0.11.1",
     "react": "^19.2.4",
     "react-arborist": "^3.4.3",
@@ -58,6 +60,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.0.0",
+    "vite-plugin-static-copy": "^4.1.0",
     "vitest": "^4.1.0"
   }
 }

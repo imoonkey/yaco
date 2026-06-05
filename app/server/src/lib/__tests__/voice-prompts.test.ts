@@ -18,6 +18,29 @@ describe('buildWhisperPrompt', () => {
     expect(prompt).toContain('editor')
     expect(prompt).toContain('terminal')
   })
+
+  it('ignores blank context', () => {
+    expect(buildWhisperPrompt('')).toBe(buildWhisperPrompt())
+    expect(buildWhisperPrompt('   ')).toBe(buildWhisperPrompt())
+  })
+
+  it('appends context as vocab bias after the base prompt', () => {
+    const prompt = buildWhisperPrompt('voiceVad encodeWav')
+    expect(prompt).toContain('IDE')
+    expect(prompt).toContain('voiceVad encodeWav')
+    expect(prompt.indexOf('voiceVad')).toBeGreaterThan(prompt.indexOf('IDE'))
+  })
+
+  it('caps long context to a small tail so it cannot crowd the base', () => {
+    const base = buildWhisperPrompt()
+    const context = `HEAD${'a'.repeat(300)}TAIL`
+    const prompt = buildWhisperPrompt(context)
+    // Recent tail survives, stale head is dropped.
+    expect(prompt).toContain('TAIL')
+    expect(prompt).not.toContain('HEAD')
+    // The appended slice stays tiny relative to the full context.
+    expect(prompt.length).toBeLessThan(base.length + 130)
+  })
 })
 
 describe('buildFormatterPrompt', () => {

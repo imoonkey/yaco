@@ -201,7 +201,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
       // Ctrl+Shift+V or F5: toggle voice recording
       if ((key === 'v' && !e.metaKey && e.ctrlKey && !e.altKey && e.shiftKey) || e.key === 'F5') {
         e.preventDefault()
-        if (voice.state === 'recording') {
+        if (voice.state === 'active') {
           voice.stop()
         } else if (voice.state === 'idle' && voice.capability.status === 'ready') {
           if (editorVoiceEligible && focusTarget === 'editor') {

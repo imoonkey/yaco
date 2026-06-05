@@ -5,6 +5,9 @@
 const WHISPER_PROMPT =
   '我在 IDE 里做开发，用 Claude、Codex 这些 AI coding agent (orchestrated by yaco)。说的内容可能插入到 code editor、agent 的 chatbox，或者直接输入到 shell terminal。'
 
+/** Char budget for the optional Whisper vocab-bias context (Groq 224-token cap) */
+const WHISPER_CONTEXT_MAX_CHARS = 120
+
 const FORMATTER_CORE = `You are a speech-to-writing formatter. The user input
 comes from ASR and may contain recognition errors, missing punctuation, messy
 order, filler words, false starts, and mid-sentence corrections.
@@ -160,8 +163,16 @@ export const FILE_TYPE_MAP: Record<string, string> = {
 }
 
 /** Generic bilingual base sentence for Whisper initial_prompt conditioning */
-export function buildWhisperPrompt(): string {
-  return WHISPER_PROMPT
+export function buildWhisperPrompt(context?: string): string {
+  const bias = context?.trim()
+  if (!bias) return WHISPER_PROMPT
+  // Vocabulary/style bias only. Groq caps the Whisper prompt at 224 tokens, so
+  // keep context tiny and take the recent tail — it must never crowd the base.
+  const capped =
+    bias.length > WHISPER_CONTEXT_MAX_CHARS
+      ? bias.slice(-WHISPER_CONTEXT_MAX_CHARS)
+      : bias
+  return `${WHISPER_PROMPT} ${capped}`
 }
 
 /** Shared formatter system prompt with optional context snippet */
