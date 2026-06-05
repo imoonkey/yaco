@@ -108,7 +108,7 @@ Folders containing changed files show a yellow dot indicator.
 - Panel padding: `8px`
 - Section gap: `4px`
 - Resize handle: `3px` width, expands on hover/drag
-- Terminal gutter: `2px` inner right + `2px` outer pane padding
+- Terminal pane padding: `3px` symmetric (no extra right-side gutter)
 
 ## Markdown Preview
 

@@ -60,7 +60,6 @@ function buildXtermTheme() {
   }
 }
 
-const TERMINAL_RIGHT_GUTTER_PX = 3
 const ARROW_KEY_SUFFIX: Partial<Record<TerminalKeyBarKey, 'A' | 'B' | 'C' | 'D'>> = {
   'arrow-left': 'D',
   'arrow-down': 'B',
@@ -289,7 +288,6 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
       term.element.style.boxSizing = 'border-box'
       term.element.style.height = '100%'
       term.element.style.backgroundColor = 'var(--sol-editor-bg)'
-      term.element.style.paddingRight = `${TERMINAL_RIGHT_GUTTER_PX}px`
       const viewport = term.element.querySelector<HTMLElement>('.xterm-viewport')
       if (viewport) viewport.style.backgroundColor = 'var(--sol-editor-bg)'
     }
