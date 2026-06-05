@@ -2,7 +2,7 @@
 // and owns chunk coalescing: VAD hands us one complete utterance per natural
 // pause; we accumulate utterances and emit a coalesced ~10s WAV per request so
 // transcription stays under Groq's ~20 RPM free-tier wall (see design doc,
-// plan/active/voice-streaming/design_claude.md). Replaces voiceRecording.ts.
+// plan/archive/20260605_voice-streaming/design_claude.md). Replaces voiceRecording.ts.
 
 import type { RealTimeVADOptions } from '@ricky0123/vad-web'
 

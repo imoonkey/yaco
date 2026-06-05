@@ -4,7 +4,7 @@
 `/api/voice/transcribe` + `/api/voice/format` and drives the real
 VoiceControl/ComposeTray path with a dev-only fake MicVAD seam. Insert and
 Discard still verify the clipboard backup. Added
-`plan/active/voice-streaming/manual_vad_checklist.md` for Chrome desktop and
+`plan/archive/20260605_voice-streaming/manual_vad_checklist.md` for Chrome desktop and
 phone-over-Tailscale VAD checks.
 
 **Verification:** `cd app/ui && npx playwright test voice` -> 2 passed.
@@ -25,7 +25,7 @@ phone-over-Tailscale VAD checks.
 **Why:**
 - The integrating slice of `voice-streaming`. The four sibling tasks each left a deliberate red build against the old `useVoice.ts`; this rewrite adopts every consumer contract (VAD session, `runId`-tagged segment events, derived finalize gate, single `/format`) and turns the streaming pipeline on. Client-side throttle + server-forwarded `retry-after` make staying under Groq's free-tier RPM wall structural rather than best-effort.
 
-**Key files:** `app/ui/src/hooks/useVoice.ts`, `app/ui/src/hooks/__tests__/useVoice.test.tsx`, `app/server/src/routes/voice.ts`, `plan/active/voice-streaming/implementation_summary.md`
+**Key files:** `app/ui/src/hooks/useVoice.ts`, `app/ui/src/hooks/__tests__/useVoice.test.tsx`, `app/server/src/routes/voice.ts`, `plan/archive/20260605_voice-streaming/implementation_summary.md`
 **Verification:** `cd app/ui && npx vitest run useVoice voiceStateMachine src/hooks/__tests__/voiceVad.test.ts` → 39 passed; `cd app/ui && npm run build` passes (staged red build now green); `cd app/server && npm test` passes.
 **Commit:** docs only this pass; the hook + route changes are part of the in-flight `voice-streaming` bundle (uncommitted, pending orchestrator review).
 **Next:** `vs-tests` — e2e + manual VAD checklist over the now-complete pipeline.
@@ -43,7 +43,7 @@ phone-over-Tailscale VAD checks.
 **Why:**
 - One slice of the `voice-streaming` project. VAD replaces fixed-interval MediaRecorder chunking so silence costs nothing and the formatter runs once over a clean transcript. Coalescing utterances into ~10s WAVs (instead of one request per pause) is what keeps the streaming path under Groq's free-tier RPM wall — the rate floor makes that structural rather than best-effort. The coalescer is split out as a pure class so the flush logic is unit-tested without a real worklet/mic.
 
-**Key files:** `app/ui/src/hooks/voiceVad.ts`, `app/ui/src/hooks/__tests__/voiceVad.test.ts` (removed: `app/ui/src/hooks/voiceRecording.ts`), `plan/active/voice-streaming/implementation_summary.md`
+**Key files:** `app/ui/src/hooks/voiceVad.ts`, `app/ui/src/hooks/__tests__/voiceVad.test.ts` (removed: `app/ui/src/hooks/voiceRecording.ts`), `plan/archive/20260605_voice-streaming/implementation_summary.md`
 **Verification:** `cd app/ui && npx vitest run src/hooks/__tests__/voiceVad.test.ts voiceStateMachine` → 34 passed (12 + 22). Full `cd app/ui && npm run build` still fails **only** in `useVoice.ts` (still imports the removed `voiceRecording.ts` and posts `/compose`) — owned by `vs-hook`.
 **Commit:** docs only this pass; module is part of the in-flight `voice-streaming` working tree.
 **Next:** `vs-hook` adopts the `startVadSession` contract in `useVoice.ts` (per-chunk `/transcribe`, `runId`-tagged segment events, cap via `onElapsed`); build greens once it lands.
@@ -99,7 +99,7 @@ phone-over-Tailscale VAD checks.
 **Why:**
 - One slice of the `voice-streaming` project (VAD + coalesced Groq transcription). A single `active` phase makes the late-final-flush and in-flight-drain canonical instead of a race across a `recording`→`transcribing` boundary, and a *derived* gate means a chunk flushed after Stop is just another segment event, not a special case. `NO_SPEECH` vs `FAIL` are kept distinct (idle notice vs error) so a 429/drop never collapses into "no speech."
 
-**Key files:** `app/ui/src/hooks/voiceStateMachine.ts`, `app/ui/src/hooks/__tests__/voiceStateMachine.test.ts`, `plan/active/voice-streaming/implementation_summary.md`
+**Key files:** `app/ui/src/hooks/voiceStateMachine.ts`, `app/ui/src/hooks/__tests__/voiceStateMachine.test.ts`, `plan/archive/20260605_voice-streaming/implementation_summary.md`
 **Verification:** `cd app/ui && npx vitest run voiceStateMachine` → 22 passed; `tsc --noEmit` + ESLint clean on both in-scope files. Full `tsc -b` is intentionally red — isolated to the four consumers that have not yet adopted the new contract (`useVoice.ts`, `ComposeTray.tsx`, `VoiceControl.tsx`, `useWorkspaceKeyboard.ts`).
 **Commit:** working tree (vs-state-machine task; code pending orchestrator commit)
 **Next:** `vs-hook` adopts the contract in `useVoice.ts` (VAD orchestration, drop `TOO_SHORT`, pass `runId`); `vs-tray-live` switches consumers to `active` + live transcript. Build greens once both land.
