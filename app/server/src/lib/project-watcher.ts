@@ -5,7 +5,7 @@ import type { Ignore } from 'ignore'
 import { loadProjects, type Project } from './projects'
 import { emitRefresh } from './notify'
 import { getProjectGitignore, clearGitignoreCache } from './gitignore'
-import { MULTMUX_SESSIONS_DIR } from './constants'
+import { AGENT_SESSIONS_DIR } from './constants'
 import { isPathDescendantOrEqual } from './agent'
 import { projectsFile as yacoProjectsFile } from '@yaco/cli/core/paths'
 
@@ -61,7 +61,7 @@ async function primeSessionPathCache(): Promise<void> {
 
   let files: string[]
   try {
-    files = (await readdir(MULTMUX_SESSIONS_DIR)).filter(name => name.endsWith('.json'))
+    files = (await readdir(AGENT_SESSIONS_DIR)).filter(name => name.endsWith('.json'))
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
       console.warn('[project-watcher] failed to prime agent session cache:', e)
@@ -70,7 +70,7 @@ async function primeSessionPathCache(): Promise<void> {
   }
 
   await Promise.all(files.map(async (file) => {
-    const sessionPath = await readSessionPath(join(MULTMUX_SESSIONS_DIR, file))
+    const sessionPath = await readSessionPath(join(AGENT_SESSIONS_DIR, file))
     if (sessionPath) sessionPathCache.set(file, sessionPath)
   }))
 }
@@ -78,7 +78,7 @@ async function primeSessionPathCache(): Promise<void> {
 async function handleGlobalSessionChange(filename: string): Promise<void> {
   if (!filename.endsWith('.json')) return
 
-  const stateFile = join(MULTMUX_SESSIONS_DIR, filename)
+  const stateFile = join(AGENT_SESSIONS_DIR, filename)
   const currentSessionPath = await readSessionPath(stateFile)
   const previousSessionPath = sessionPathCache.get(filename) ?? null
 
@@ -110,11 +110,11 @@ function watchProjectsFile(): void {
   }
 }
 
-async function watchMultmuxSessionsDir(): Promise<void> {
-  if (existsSync(MULTMUX_SESSIONS_DIR)) {
+async function watchAgentSessionsDir(): Promise<void> {
+  if (existsSync(AGENT_SESSIONS_DIR)) {
     await primeSessionPathCache()
     try {
-      const watcher = watch(MULTMUX_SESSIONS_DIR, (_event, filename) => {
+      const watcher = watch(AGENT_SESSIONS_DIR, (_event, filename) => {
         if (!filename) {
           // macOS FSEvents may deliver null filename on deletion — emit blanket refresh
           debouncedEmit('sessions')
@@ -129,7 +129,7 @@ async function watchMultmuxSessionsDir(): Promise<void> {
       })
       watchers.push(watcher)
     } catch (e) {
-      console.warn(`[project-watcher] failed to watch ${MULTMUX_SESSIONS_DIR}:`, e)
+      console.warn(`[project-watcher] failed to watch ${AGENT_SESSIONS_DIR}:`, e)
     }
   }
 }
@@ -141,7 +141,7 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
   // Register small, high-value global watchers before recursive project
   // watchers, which can consume many inotify slots in large workspaces.
   watchProjectsFile()
-  await watchMultmuxSessionsDir()
+  await watchAgentSessionsDir()
 
   for (const project of projects) {
     if (!existsSync(project.path)) continue

@@ -2,7 +2,6 @@ node_modules
 dist
 *.local
 .DS_Store
-.multmux/
 progress.json
 progress.json.lock
 reference/

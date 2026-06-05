@@ -3,10 +3,10 @@ import { mkdtemp, rm, mkdir, writeFile } from 'fs/promises'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-const { homeDir, projectsRoot, multmuxDir } = vi.hoisted(() => ({
+const { homeDir, projectsRoot, agentDir } = vi.hoisted(() => ({
   homeDir: { value: '' },
   projectsRoot: { value: '' },
-  multmuxDir: { value: '' },
+  agentDir: { value: '' },
 }))
 
 vi.mock('os', async (orig) => {
@@ -18,8 +18,8 @@ homeDir.value = await mkdtemp(join(tmpdir(), 'wechat-router-test-'))
 projectsRoot.value = await mkdtemp(join(tmpdir(), 'wechat-router-projects-'))
 await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 
-multmuxDir.value = join(homeDir.value, '.yaco', 'sessions')
-await mkdir(multmuxDir.value, { recursive: true })
+agentDir.value = join(homeDir.value, '.yaco', 'sessions')
+await mkdir(agentDir.value, { recursive: true })
 
 const projectAPath = join(projectsRoot.value, 'alpha')
 const projectBPath = join(projectsRoot.value, 'beta')
@@ -35,7 +35,7 @@ await writeFile(
 )
 
 await writeFile(
-  join(multmuxDir.value, 'claude-1.json'),
+  join(agentDir.value, 'claude-1.json'),
   JSON.stringify({
     handle: 'claude-1',
     provider: 'claude',
@@ -161,7 +161,7 @@ describe('dispatch', () => {
       const actual = await orig<typeof import('../agent')>()
       return {
         ...actual,
-        startMultmuxSession: vi.fn(async (provider: string, name: string | undefined) => ({
+        startAgentSession: vi.fn(async (provider: string, name: string | undefined) => ({
           handle: name ?? `${provider}-fake-handle`,
           sessionId: 'fake-session-id',
         })),
@@ -178,7 +178,7 @@ describe('dispatch', () => {
     })
 
     const { dispatch: scopedDispatch, _resetRouterState: scopedReset } = await import('../wechat/router')
-    const { startMultmuxSession } = await import('../agent')
+    const { startAgentSession } = await import('../agent')
     const { acquireTap } = await import('../channels/pty-tap')
     const { getBinding } = await import('../wechat/state')
 
@@ -187,7 +187,7 @@ describe('dispatch', () => {
     const out = await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'new', args: ['codex', 'mysess'] })
 
     expect(out.kind === 'text' && out.text).toMatch(/started \+ bound to alpha\/mysess/)
-    expect(startMultmuxSession).toHaveBeenCalledWith('codex', 'mysess', expect.any(String))
+    expect(startAgentSession).toHaveBeenCalledWith('codex', 'mysess', expect.any(String))
     expect(acquireTap).toHaveBeenCalledWith('mysess')
     const binding = await getBinding('wx-newhappy')
     expect(binding).toEqual(expect.objectContaining({ project: 'alpha', session: 'mysess' }))

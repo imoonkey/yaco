@@ -47,12 +47,12 @@ await writeFile(
 )
 
 // agent state file describing one claude session
-const multmuxDir = join(homeDir.value, '.yaco', 'sessions')
-await mkdir(multmuxDir, { recursive: true })
+const agentDir = join(homeDir.value, '.yaco', 'sessions')
+await mkdir(agentDir, { recursive: true })
 const SESSION_HANDLE = 'claude-1'
 const SESSION_ID = 'sess-1'
 await writeFile(
-  join(multmuxDir, `${SESSION_HANDLE}.json`),
+  join(agentDir, `${SESSION_HANDLE}.json`),
   JSON.stringify({
     handle: SESSION_HANDLE,
     provider: 'claude',

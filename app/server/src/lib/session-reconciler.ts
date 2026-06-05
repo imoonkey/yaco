@@ -1,5 +1,5 @@
 import { loadProjects, type Project } from './projects'
-import type { MultmuxSession } from './agent'
+import type { AgentSession } from './agent'
 import { fetchAllSessionsFromCli } from './agent'
 import { dispatch as dispatchNotification, emitRefresh } from './notify'
 import { appendEvent } from './eventsLog'
@@ -46,7 +46,7 @@ async function reconcile(): Promise<void> {
     const projects = await loadProjects()
     const allSessions = await fetchAllSessionsFromCli(projects)
 
-    const sessionsByProject = new Map<string, MultmuxSession[]>()
+    const sessionsByProject = new Map<string, AgentSession[]>()
     for (const session of allSessions) {
       const list = sessionsByProject.get(session.project) ?? []
       list.push(session)
@@ -75,7 +75,7 @@ async function reconcile(): Promise<void> {
 }
 
 /** Detect processing→idle transitions and write session_idle progress entries. */
-async function detectIdleTransitions(sessions: MultmuxSession[], project: Project): Promise<void> {
+async function detectIdleTransitions(sessions: AgentSession[], project: Project): Promise<void> {
   const now = Date.now()
   const currentKeys = new Set<string>()
 
@@ -132,7 +132,7 @@ function pruneStaleKeys(projects: Project[]): void {
 /** Emit a `session_idle` event to YACO events.jsonl and dispatch the corresponding
  *  notification. Replaces the legacy repo-local progress.json write — events.jsonl
  *  is the durable source, notifications-store is the projected inbox cache. */
-async function emitSessionIdle(project: Project, session: MultmuxSession): Promise<void> {
+async function emitSessionIdle(project: Project, session: AgentSession): Promise<void> {
   const ts = new Date().toISOString()
   const eventId = `session-idle-${session.name}-${Date.now()}`
 

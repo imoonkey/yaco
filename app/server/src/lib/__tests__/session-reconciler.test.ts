@@ -50,13 +50,13 @@ describe('session-reconciler behavior', () => {
   })
 })
 
-describe('agent.ts MultmuxStateFile type', () => {
+describe('agent.ts AgentSessionState type', () => {
   it('does not include stopped', () => {
     const source = readFileSync(
       join(__dirname, '..', 'agent.ts'),
       'utf-8',
     )
-    const interfaceMatch = source.match(/interface MultmuxStateFile\s*\{[\s\S]*?\}/)
+    const interfaceMatch = source.match(/interface AgentSessionState\s*\{[\s\S]*?\}/)
     expect(interfaceMatch).not.toBeNull()
     expect(interfaceMatch![0]).not.toContain("'stopped'")
   })

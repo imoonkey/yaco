@@ -4,10 +4,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('../../lib/agent', () => ({
   readSessionsFromStateFiles: vi.fn(),
   readAllSessionsFromStateFiles: vi.fn(),
-  closeMultmuxSession: vi.fn(),
-  renameMultmuxSession: vi.fn(),
+  closeAgentSession: vi.fn(),
+  renameAgentSession: vi.fn(),
   sendToSession: vi.fn(),
-  startMultmuxSession: vi.fn(),
+  startAgentSession: vi.fn(),
 }))
 
 vi.mock('../../lib/projects', () => ({

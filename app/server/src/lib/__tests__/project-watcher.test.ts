@@ -11,7 +11,7 @@ const mock = vi.hoisted(() => ({
 }))
 
 vi.mock('../constants', () => ({
-  MULTMUX_SESSIONS_DIR: mock.sessionsDir,
+  AGENT_SESSIONS_DIR: mock.sessionsDir,
 }))
 
 vi.mock('../gitignore', () => ({

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { encodeProjectPath } from '../session-summary'
-import type { MultmuxSession } from '../agent'
+import type { AgentSession } from '../agent'
 
 /** A pending agent turn: the JSONL file we're tailing and the byte offset
  *  we started watching from. */
@@ -33,7 +33,7 @@ const DEFAULT_TIMEOUT_MS = 120_000
 /** Resolve the path to an agent session's structured JSONL log:
  *   - claude: ~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl
  *   - codex:  ~/.codex/sessions/YYYY/MM/DD/rollout-...-<sessionId>.jsonl */
-export async function resolveSessionLog(session: MultmuxSession): Promise<string | null> {
+export async function resolveSessionLog(session: AgentSession): Promise<string | null> {
   if (!session.sessionId || session.sessionId.startsWith('pending:')) return null
 
   if (session.provider === 'claude') {
@@ -66,7 +66,7 @@ export async function resolveSessionLog(session: MultmuxSession): Promise<string
 }
 
 /** Record the current size of the session's JSONL — call BEFORE yaco agent send. */
-export async function startTurn(session: MultmuxSession): Promise<PendingTurn | null> {
+export async function startTurn(session: AgentSession): Promise<PendingTurn | null> {
   const jsonlPath = await resolveSessionLog(session)
   if (!jsonlPath) return null
   let stats

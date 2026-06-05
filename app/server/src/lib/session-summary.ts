@@ -3,7 +3,7 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import Database from 'better-sqlite3'
-import type { MultmuxSession } from './agent'
+import type { AgentSession } from './agent'
 import { PENDING_SESSION_ID } from './constants'
 
 const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions')
@@ -157,14 +157,14 @@ async function resolveCodexRolloutSummary(sessionId: string): Promise<SummaryRes
 /** Resolve summaries for all sessions in a single batch.
  *  Reads each data source at most once. */
 export async function resolveSessionSummaries(
-  sessions: MultmuxSession[],
+  sessions: AgentSession[],
 ): Promise<Map<string, string>> {
   const result = new Map<string, string>()
   if (sessions.length === 0) return result
 
   // Group Claude sessions by launch path for JSONL resolution.
-  const claudeByPath = new Map<string, MultmuxSession[]>()
-  const codexSessions: MultmuxSession[] = []
+  const claudeByPath = new Map<string, AgentSession[]>()
+  const codexSessions: AgentSession[] = []
 
   for (const s of sessions) {
     if (!isResolvableSessionId(s.sessionId)) continue

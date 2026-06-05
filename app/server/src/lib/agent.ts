@@ -8,11 +8,11 @@ import { buildChildProcessEnv } from './ssh-auth'
 import {
   YACO_AGENT_COMMAND_TIMEOUT_MS,
   YACO_AGENT_STATUS_TIMEOUT_MS,
-  MULTMUX_SESSIONS_DIR,
+  AGENT_SESSIONS_DIR,
   YACO_PATH,
 } from './constants'
 
-export interface MultmuxSession {
+export interface AgentSession {
   name: string
   provider: 'claude' | 'codex'
   status: 'starting' | 'idle' | 'processing'
@@ -22,14 +22,14 @@ export interface MultmuxSession {
   pid: number
 }
 
-export function inferMultmuxProvider(name: string): 'claude' | 'codex' {
+export function inferAgentProvider(name: string): 'claude' | 'codex' {
   return name.toLowerCase().includes('codex') ? 'codex' : 'claude'
 }
 
-/** Raw shape of `<MULTMUX_SESSIONS_DIR>/<handle>.json` state files
- *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts MULTMUX_SESSIONS_DIR).
+/** Raw shape of `<AGENT_SESSIONS_DIR>/<handle>.json` state files
+ *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts AGENT_SESSIONS_DIR).
  *  Written by the `yaco agent` runtime; read here. */
-export interface MultmuxStateFile {
+export interface AgentSessionState {
   handle: string
   provider: 'claude' | 'codex'
   sessionPath: string
@@ -47,7 +47,7 @@ function normalizePath(path: string): string {
   return normalized.replace(/[\\/]+$/, '')
 }
 
-function getStateSessionPath(state: MultmuxStateFile): string | null {
+function getStateSessionPath(state: AgentSessionState): string | null {
   if (typeof state.sessionPath !== 'string' || !state.sessionPath) return null
   return normalizePath(state.sessionPath)
 }
@@ -62,10 +62,10 @@ export function isPathDescendantOrEqual(candidatePath: string, rootPath: string)
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
 }
 
-async function readStateFiles(): Promise<MultmuxStateFile[]> {
+async function readStateFiles(): Promise<AgentSessionState[]> {
   let files: string[]
   try {
-    files = (await readdir(MULTMUX_SESSIONS_DIR)).filter(f => f.endsWith('.json'))
+    files = (await readdir(AGENT_SESSIONS_DIR)).filter(f => f.endsWith('.json'))
   } catch (e: unknown) {
     if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') {
       console.warn('[agent] failed to read global sessions directory:', e)
@@ -75,20 +75,20 @@ async function readStateFiles(): Promise<MultmuxStateFile[]> {
 
   const reads = await Promise.all(files.map(async (file) => {
     try {
-      const raw = await readFile(join(MULTMUX_SESSIONS_DIR, file), 'utf-8')
-      return JSON.parse(raw) as MultmuxStateFile
+      const raw = await readFile(join(AGENT_SESSIONS_DIR, file), 'utf-8')
+      return JSON.parse(raw) as AgentSessionState
     } catch (e) {
       console.warn(`[agent] failed to parse state file ${file}:`, e)
       return null
     }
   }))
-  return reads.filter((s): s is MultmuxStateFile => s !== null)
+  return reads.filter((s): s is AgentSessionState => s !== null)
 }
 
-function toMultmuxSession(
-  state: MultmuxStateFile,
+function toAgentSession(
+  state: AgentSessionState,
   project: Pick<Project, 'name'>,
-): MultmuxSession | null {
+): AgentSession | null {
   if (typeof state.handle !== 'string' || !state.handle) return null
   const sessionPath = getStateSessionPath(state)
   if (!sessionPath) return null
@@ -97,7 +97,7 @@ function toMultmuxSession(
 
   const provider = state.provider === 'codex' || state.provider === 'claude'
     ? state.provider
-    : inferMultmuxProvider(state.handle)
+    : inferAgentProvider(state.handle)
 
   return {
     name: state.handle,
@@ -126,16 +126,16 @@ function resolveProjectForSessionPath(
   return match
 }
 
-/** Read sessions from `<MULTMUX_SESSIONS_DIR>/*.json` state files
- *  (primary source of truth; see constants.ts MULTMUX_SESSIONS_DIR). */
-export async function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): Promise<MultmuxSession[]> {
-  const sessions: MultmuxSession[] = []
+/** Read sessions from `<AGENT_SESSIONS_DIR>/*.json` state files
+ *  (primary source of truth; see constants.ts AGENT_SESSIONS_DIR). */
+export async function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): Promise<AgentSession[]> {
+  const sessions: AgentSession[] = []
 
   for (const state of await readStateFiles()) {
     const sessionPath = getStateSessionPath(state)
     if (!sessionPath || !isPathDescendantOrEqual(sessionPath, project.path)) continue
 
-    const session = toMultmuxSession(state, project)
+    const session = toAgentSession(state, project)
     if (session) sessions.push(session)
   }
 
@@ -143,8 +143,8 @@ export async function readSessionsFromStateFiles(project: Pick<Project, 'name' |
 }
 
 /** Read sessions from state files across all projects */
-export async function readAllSessionsFromStateFiles(projects: Pick<Project, 'name' | 'path'>[]): Promise<MultmuxSession[]> {
-  const all: MultmuxSession[] = []
+export async function readAllSessionsFromStateFiles(projects: Pick<Project, 'name' | 'path'>[]): Promise<AgentSession[]> {
+  const all: AgentSession[] = []
 
   for (const state of await readStateFiles()) {
     const sessionPath = getStateSessionPath(state)
@@ -153,7 +153,7 @@ export async function readAllSessionsFromStateFiles(projects: Pick<Project, 'nam
     const project = resolveProjectForSessionPath(sessionPath, projects)
     if (!project) continue
 
-    const session = toMultmuxSession(state, project)
+    const session = toAgentSession(state, project)
     if (session) all.push(session)
   }
 
@@ -209,7 +209,7 @@ async function runYacoAgentJson(args: string[], timeoutMs: number, what: string)
  *  Maps returned sessions to projects by sessionPath. */
 export async function fetchAllSessionsFromCli(
   projects: Pick<Project, 'name' | 'path'>[],
-): Promise<MultmuxSession[]> {
+): Promise<AgentSession[]> {
   // execSync.*'yaco agent status --all --json'
   const data = await runYacoAgentJson(
     ['agent', 'status', '--all', '--json'],
@@ -218,8 +218,8 @@ export async function fetchAllSessionsFromCli(
   )
   if (!Array.isArray(data)) return []
 
-  const states = data as MultmuxStateFile[]
-  const sessions: MultmuxSession[] = []
+  const states = data as AgentSessionState[]
+  const sessions: AgentSession[] = []
   for (const state of states) {
     const sessionPath = getStateSessionPath(state)
     if (!sessionPath) continue
@@ -227,7 +227,7 @@ export async function fetchAllSessionsFromCli(
     const project = resolveProjectForSessionPath(sessionPath, projects)
     if (!project) continue
 
-    const session = toMultmuxSession(state, project)
+    const session = toAgentSession(state, project)
     if (session) sessions.push(session)
   }
 
@@ -276,7 +276,7 @@ const STATE_POLL_TIMEOUT_MS = 10_000
  *
  *  Always uses the canonical `yaco agent start <provider>` form; the
  *  top-level `yaco <provider>` shortcut is reserved for human callers. */
-export async function startMultmuxSession(
+export async function startAgentSession(
   provider: 'claude' | 'codex',
   name: string | undefined,
   cwd: string,
@@ -297,8 +297,8 @@ export async function startMultmuxSession(
   // for both named (collision suffix detection) and unnamed sessions.
   let beforeFiles: Set<string>
   try {
-    beforeFiles = existsSync(MULTMUX_SESSIONS_DIR)
-      ? new Set(readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json')))
+    beforeFiles = existsSync(AGENT_SESSIONS_DIR)
+      ? new Set(readdirSync(AGENT_SESSIONS_DIR).filter(f => f.endsWith('.json')))
       : new Set()
   } catch {
     beforeFiles = new Set()
@@ -336,8 +336,8 @@ export async function startMultmuxSession(
         // (prevents attaching to a pre-existing colliding session)
         if (!beforeFiles.has(expectedFile)) {
           try {
-            const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, expectedFile), 'utf-8')
-            const state = JSON.parse(raw) as MultmuxStateFile
+            const raw = readFileSync(join(AGENT_SESSIONS_DIR, expectedFile), 'utf-8')
+            const state = JSON.parse(raw) as AgentSessionState
             if (state.pid > 0) {
               // For resumes, verify sessionId matches to avoid wrong-session attachment
               if (!resumeId || state.sessionId === resumeId) {
@@ -349,12 +349,12 @@ export async function startMultmuxSession(
 
         // Fallback: scan for collision-suffixed handle (e.g., name-2, name-3)
         // after a grace period, to handle yaco renaming on collision
-        if (Date.now() - spawnTime > NAMED_FALLBACK_MS && existsSync(MULTMUX_SESSIONS_DIR)) {
-          const allFiles = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
+        if (Date.now() - spawnTime > NAMED_FALLBACK_MS && existsSync(AGENT_SESSIONS_DIR)) {
+          const allFiles = readdirSync(AGENT_SESSIONS_DIR).filter(f => f.endsWith('.json'))
           for (const f of allFiles) {
             try {
-              const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, f), 'utf-8')
-              const state = JSON.parse(raw) as MultmuxStateFile
+              const raw = readFileSync(join(AGENT_SESSIONS_DIR, f), 'utf-8')
+              const state = JSON.parse(raw) as AgentSessionState
               if (state.pid <= 0) continue
               if (state.sessionPath !== cwd || state.provider !== provider) continue
               // Match by resumeId if resuming, or by handle prefix if starting fresh
@@ -370,13 +370,13 @@ export async function startMultmuxSession(
       } else {
         // Unnamed session: find new state file with matching cwd
         // Use beforeFiles snapshot + spawnTime window to narrow correlation
-        if (existsSync(MULTMUX_SESSIONS_DIR)) {
-          const nowFiles = readdirSync(MULTMUX_SESSIONS_DIR).filter(f => f.endsWith('.json'))
+        if (existsSync(AGENT_SESSIONS_DIR)) {
+          const nowFiles = readdirSync(AGENT_SESSIONS_DIR).filter(f => f.endsWith('.json'))
           for (const f of nowFiles) {
             if (beforeFiles.has(f)) continue
             try {
-              const raw = readFileSync(join(MULTMUX_SESSIONS_DIR, f), 'utf-8')
-              const state = JSON.parse(raw) as MultmuxStateFile
+              const raw = readFileSync(join(AGENT_SESSIONS_DIR, f), 'utf-8')
+              const state = JSON.parse(raw) as AgentSessionState
               if (state.sessionPath !== cwd || state.provider !== provider || state.pid <= 0) continue
               // Require createdAt within spawn window to avoid matching stale sessions
               const createdAt = Date.parse(state.createdAt)
@@ -395,7 +395,7 @@ export async function startMultmuxSession(
 }
 
 /** Query the yaco agent CLI for live sessions at a given path. */
-export async function queryMultmuxStatus(cwd: string): Promise<MultmuxStateFile[]> {
+export async function queryAgentStatus(cwd: string): Promise<AgentSessionState[]> {
   try {
     // execSync.*'yaco agent status --path <cwd> --json'
     const data = await runYacoAgentJson(
@@ -403,7 +403,7 @@ export async function queryMultmuxStatus(cwd: string): Promise<MultmuxStateFile[
       YACO_AGENT_STATUS_TIMEOUT_MS,
       'agent status',
     )
-    return Array.isArray(data) ? data as MultmuxStateFile[] : []
+    return Array.isArray(data) ? data as AgentSessionState[] : []
   } catch {
     return []
   }
@@ -411,7 +411,7 @@ export async function queryMultmuxStatus(cwd: string): Promise<MultmuxStateFile[
 
 /** Close an agent session via `yaco agent kill` (handles state file cleanup).
  *  kill is handle-global — no project/cwd resolution needed. */
-export async function closeMultmuxSession(handle: string): Promise<void> {
+export async function closeAgentSession(handle: string): Promise<void> {
   validateSessionName(handle)
   // execSync.*'yaco agent kill <handle> --json'
   await runYacoAgentJson(
@@ -423,7 +423,7 @@ export async function closeMultmuxSession(handle: string): Promise<void> {
 
 /** Rename an agent session via `yaco agent rename`.
  *  rename is handle-global — no project/cwd resolution needed. */
-export async function renameMultmuxSession(oldHandle: string, newHandle: string): Promise<void> {
+export async function renameAgentSession(oldHandle: string, newHandle: string): Promise<void> {
   validateSessionName(oldHandle)
   validateSessionName(newHandle)
   // execSync.*'yaco agent rename <old> <new> --json'

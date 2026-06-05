@@ -1,6 +1,5 @@
 global/skills/skill-creator/
 global/skills/humanizer/
-.multmux/
 .reference/
 .vscode/
 plan/progress.json

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { PENDING_SESSION_ID } from '../lib/constants'
 import { getHistory } from '../lib/history'
-import { closeMultmuxSession, queryMultmuxStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameMultmuxSession, sendToSession, startMultmuxSession } from '../lib/agent'
+import { closeAgentSession, queryAgentStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameAgentSession, sendToSession, startAgentSession } from '../lib/agent'
 import { loadProjects } from '../lib/projects'
 import { resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
@@ -26,16 +26,16 @@ async function buildSessionsResponse(projectName: string | null): Promise<unknow
   // Read state files (always fresh — picks up new sessions immediately).
   // Stale state files (stuck at "processing" when hooks fail) are corrected
   // by the session reconciler writing fixes directly to state files.
-  let multmuxSessions
+  let agentSessions
   if (projectName) {
     const project = projects.find(item => item.name === projectName)
-    multmuxSessions = project ? await readSessionsFromStateFiles(project) : []
+    agentSessions = project ? await readSessionsFromStateFiles(project) : []
   } else {
-    multmuxSessions = await readAllSessionsFromStateFiles(projects)
+    agentSessions = await readAllSessionsFromStateFiles(projects)
   }
 
-  const summaries = await resolveSessionSummaries(multmuxSessions)
-  const enriched = multmuxSessions.map(s => ({
+  const summaries = await resolveSessionSummaries(agentSessions)
+  const enriched = agentSessions.map(s => ({
     ...s,
     summary: summaries.get(s.name) ?? '',
     worktree: extractWorktreeSlug(s.sessionPath),
@@ -89,14 +89,14 @@ app.post('/start', async (c) => {
 
     // Idempotency preflight: if resuming, query CLI for live session with this sessionId
     if (resumeId) {
-      const liveSessions = await queryMultmuxStatus(cwd)
+      const liveSessions = await queryAgentStatus(cwd)
       const existing = liveSessions.find(
         s => s.provider === provider && s.sessionId === resumeId && s.sessionId !== PENDING_SESSION_ID
       )
       if (existing) return c.json({ name: existing.handle })
     }
 
-    const { handle } = await startMultmuxSession(provider, name, cwd, prompt, resumeId)
+    const { handle } = await startAgentSession(provider, name, cwd, prompt, resumeId)
     invalidateSessionsCache()
     return c.json({ name: handle })
   } catch (e) {
@@ -142,7 +142,7 @@ app.post('/:handle/rename', async (c) => {
   const { name } = await c.req.json<{ name: string }>()
   if (!name) return c.json({ error: 'name required' }, 400)
   try {
-    await renameMultmuxSession(handle, name)
+    await renameAgentSession(handle, name)
     invalidateSessionsCache()
     return c.json({ name })
   } catch (e) {
@@ -158,7 +158,7 @@ app.post('/:handle/close', async (c) => {
       return c.json({})
     }
 
-    await closeMultmuxSession(handle)
+    await closeAgentSession(handle)
     invalidateSessionsCache()
     return c.json({})
   } catch {

@@ -16,16 +16,16 @@ vi.mock('../session-names', () => ({
 
 vi.mock('../constants', () => ({
   YACO_AGENT_COMMAND_TIMEOUT_MS: 5_000,
-  MULTMUX_SESSIONS_DIR: mockedSessionsDir,
+  AGENT_SESSIONS_DIR: mockedSessionsDir,
   YACO_AGENT_START_TIMEOUT_MS: 15_000,
   YACO_AGENT_STATUS_TIMEOUT_MS: 10_000,
   YACO_PATH: 'yaco',
 }))
 
-import { readAllSessionsFromStateFiles, readSessionsFromStateFiles, type MultmuxStateFile } from '../agent'
+import { readAllSessionsFromStateFiles, readSessionsFromStateFiles, type AgentSessionState } from '../agent'
 
-function writeStateFile(dir: string, handle: string, overrides: Partial<MultmuxStateFile> = {}) {
-  const state: MultmuxStateFile = {
+function writeStateFile(dir: string, handle: string, overrides: Partial<AgentSessionState> = {}) {
+  const state: AgentSessionState = {
     handle,
     provider: 'claude',
     sessionPath: '/tmp/project',

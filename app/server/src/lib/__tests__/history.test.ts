@@ -36,7 +36,7 @@ vi.mock('../constants', () => ({
 
 import { getClaudeHistory, getCodexHistory, getHistory } from '../history'
 import { encodeProjectPath } from '../session-summary'
-import type { MultmuxSession } from '../../lib/agent'
+import type { AgentSession } from '../../lib/agent'
 
 // -- Helpers --
 
@@ -50,7 +50,7 @@ function writeJsonl(dir: string, sessionId: string, lines: unknown[]): string {
   return filePath
 }
 
-function makeLiveSession(overrides: Partial<MultmuxSession> = {}): MultmuxSession {
+function makeLiveSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     name: 'live-session',
     provider: 'claude',
@@ -503,7 +503,7 @@ describe('getHistory', () => {
       { type: 'user', message: { content: 'some work' } },
     ])
 
-    const liveSessions: MultmuxSession[] = [
+    const liveSessions: AgentSession[] = [
       makeLiveSession({ sessionId: 'live-uuid-1', name: 'my-live-session' }),
     ]
 
@@ -519,7 +519,7 @@ describe('getHistory', () => {
       { type: 'user', message: { content: 'work' } },
     ])
 
-    const liveSessions: MultmuxSession[] = [
+    const liveSessions: AgentSession[] = [
       makeLiveSession({ sessionId: 'pending:awaiting-first-prompt', name: 'pending-session' }),
     ]
 

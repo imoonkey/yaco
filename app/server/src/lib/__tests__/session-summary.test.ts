@@ -12,9 +12,9 @@ vi.mock('better-sqlite3', () => ({
 }))
 
 import { resolveSessionSummaries, encodeProjectPath } from '../session-summary'
-import type { MultmuxSession } from '../agent'
+import type { AgentSession } from '../agent'
 
-function makeSession(overrides: Partial<MultmuxSession> = {}): MultmuxSession {
+function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     name: 'test-session',
     provider: 'claude',

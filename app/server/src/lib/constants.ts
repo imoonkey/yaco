@@ -21,7 +21,7 @@ export const YACO_PATH = (() => {
  *  YACO_AGENT_SESSIONS_DIR override is intentionally NOT honored here —
  *  YACO should observe the same root the agent is publishing to under
  *  default operation. */
-export const MULTMUX_SESSIONS_DIR = sessionsDir()
+export const AGENT_SESSIONS_DIR = sessionsDir()
 
 /** Git max buffer for ls-files commands (50 MB) */
 export const GIT_MAX_BUFFER = 50 * 1024 * 1024

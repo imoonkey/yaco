@@ -3,7 +3,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import { encodeProjectPath, getCodexDb } from './session-summary'
 import { PENDING_SESSION_ID } from './constants'
-import type { MultmuxSession } from './agent'
+import type { AgentSession } from './agent'
 
 export interface HistorySession {
   id: string
@@ -313,7 +313,7 @@ function epochToISO(epoch: number): string {
  *  Tags live sessions via sessionId comparison against liveSessions. */
 export async function getHistory(
   projectPath: string,
-  liveSessions: MultmuxSession[],
+  liveSessions: AgentSession[],
 ): Promise<HistorySession[]> {
   const [claude, codex] = await Promise.all([
     getClaudeHistory(projectPath),

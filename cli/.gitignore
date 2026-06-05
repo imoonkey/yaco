@@ -39,13 +39,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # local settings
 settings.local.json
 
-# session state (ephemeral, managed by hooks)
-.multmux/
-
 # build artifacts
-/multmux
-/tmusk
-/tmusk-sidebar
+/yaco
 
 # IDE
 .vscode/

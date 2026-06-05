@@ -179,10 +179,10 @@ describe('eventsLog.readEvents', () => {
 
 describe('projectEventsFile path resolution under YACO_HOME', () => {
   it('writes events under the YACO_HOME override, not under ~/.yaco', async () => {
-    await appendEvent('multmux', { kind: 'dispatched', taskId: 'foo' })
-    const file = projectEventsFile('multmux')
+    await appendEvent('demo', { kind: 'dispatched', taskId: 'foo' })
+    const file = projectEventsFile('demo')
     expect(file.startsWith(fixtureRoot)).toBe(true)
-    expect(file.endsWith(join('projects', 'multmux', 'events.jsonl'))).toBe(true)
+    expect(file.endsWith(join('projects', 'demo', 'events.jsonl'))).toBe(true)
     expect(existsSync(file)).toBe(true)
   })
 

@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import { resolve as resolvePath, sep as pathSep } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { loadProjects, type Project } from '../projects'
-import { readSessionsFromStateFiles, sendToSession, startMultmuxSession, captureSession, type MultmuxSession } from '../agent'
+import { readSessionsFromStateFiles, sendToSession, startAgentSession, captureSession, type AgentSession } from '../agent'
 import type { BindingStore } from './state'
 import { acquireTap, releaseTap, recordOffset, sliceFromOffset, waitForQuiet, hasTap } from './pty-tap'
 import { startTurn, streamAgentReply } from './agent-output'
@@ -98,18 +98,18 @@ async function pickProjectByArg(arg: string): Promise<Project | undefined> {
   return projects.find(p => p.name === arg)
 }
 
-async function listSessions(project: Project): Promise<MultmuxSession[]> {
+async function listSessions(project: Project): Promise<AgentSession[]> {
   return readSessionsFromStateFiles(project)
 }
 
-function formatSessions(sessions: MultmuxSession[], boundName?: string): string {
+function formatSessions(sessions: AgentSession[], boundName?: string): string {
   if (sessions.length === 0) return '(no sessions)'
   return sessions
     .map((s, i) => `${i + 1}. ${s.name === boundName ? '* ' : '  '}${s.name} [${s.provider}, ${s.status}]`)
     .join('\n')
 }
 
-async function pickSessionByArg(project: Project, arg: string): Promise<MultmuxSession | undefined> {
+async function pickSessionByArg(project: Project, arg: string): Promise<AgentSession | undefined> {
   const sessions = await listSessions(project)
   if (/^\d+$/.test(arg)) return sessions[Number(arg) - 1]
   return sessions.find(s => s.name === arg)
@@ -262,7 +262,7 @@ export function createRouter(store: BindingStore) {
     const name = args[1]
     let handle: string
     try {
-      const result = await startMultmuxSession(provider, name, project.path)
+      const result = await startAgentSession(provider, name, project.path)
       handle = result.handle
     } catch (e) {
       return `failed to start ${provider} session: ${(e as Error).message}`
