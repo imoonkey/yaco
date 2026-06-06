@@ -1,4 +1,4 @@
-import type { LayoutNode, TaskGraphTask, LayoutGroup } from './taskGraphModel'
+import type { LayoutNode, TaskGraphTask, LayoutGroup, Priority } from './taskGraphModel'
 import { NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
@@ -59,6 +59,78 @@ function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel, worktre
   return 1
 }
 
+// --- Metadata rail ---------------------------------------------------------
+// A right-aligned strip of metadata badges. Fields are kept in priority order
+// (id > priority > workset > agent) and dropped from the RIGHT as the row
+// narrows, so a shrinking card sheds agent first, then workset, then priority,
+// then id — id is the stable anchor closest to the title. The full metadata set
+// always lives in the tooltip and detail panel, so dropping here loses nothing.
+//
+// Conditional presence (default/common values are hidden to avoid noise):
+//   - id      always shown (truncated)
+//   - priority shown only when != 'normal'
+//   - workset  shown only when != 'active'
+//   - agent    shown only when set
+// Visibility is width-driven (measured against node.width), not CSS breakpoints.
+
+const RAIL_GAP = 5
+const RAIL_PADX = 5
+const RAIL_CHAR_W = 5.4   // approx glyph advance at fontSize 9
+const RAIL_MIN_TITLE = 72 // px of title kept before the rail may claim space
+
+const PRIORITY_COLOR: Record<Priority, string> = {
+  critical: 'var(--sol-red)',
+  high: 'var(--sol-orange)',
+  normal: 'var(--sol-muted)',
+  low: 'var(--sol-base1)',
+}
+
+function truncate(s: string, n: number): string {
+  return s.length > n ? s.slice(0, n - 1) + '…' : s
+}
+
+function railItemWidth(text: string): number {
+  return Math.ceil(text.length * RAIL_CHAR_W) + RAIL_PADX * 2
+}
+
+type RailItem = { key: string; text: string; color: string; mono: boolean; width: number; x: number }
+
+function buildRail(task: TaskGraphTask, leftBound: number, rightBound: number): RailItem[] {
+  const candidates: Omit<RailItem, 'x'>[] = []
+  const idText = truncate(task.id, 16)
+  candidates.push({ key: 'id', text: idText, color: 'var(--sol-base1)', mono: true, width: railItemWidth(idText) })
+  if (task.priority !== 'normal') {
+    candidates.push({ key: 'priority', text: task.priority, color: PRIORITY_COLOR[task.priority], mono: false, width: railItemWidth(task.priority) })
+  }
+  if (task.workset !== 'active') {
+    candidates.push({ key: 'workset', text: task.workset, color: 'var(--sol-violet)', mono: false, width: railItemWidth(task.workset) })
+  }
+  if (task.agent) {
+    const agentText = truncate(task.agent, 12)
+    candidates.push({ key: 'agent', text: agentText, color: 'var(--sol-cyan)', mono: false, width: railItemWidth(agentText) })
+  }
+
+  // Greedily keep fields from the front (highest priority) while they fit; the
+  // first field that overflows drops itself and everything lower-priority after it.
+  const avail = rightBound - leftBound
+  const kept: Omit<RailItem, 'x'>[] = []
+  let used = 0
+  for (const c of candidates) {
+    const add = c.width + (kept.length ? RAIL_GAP : 0)
+    if (used + add > avail) break
+    used += add
+    kept.push(c)
+  }
+
+  // Right-align the kept group so its last badge ends at rightBound.
+  let x = rightBound - used
+  return kept.map(c => {
+    const item: RailItem = { ...c, x }
+    x += c.width + RAIL_GAP
+    return item
+  })
+}
+
 export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isCollapsed, depCount, scale, onClick, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   node: LayoutNode
   task: TaskGraphTask
@@ -90,6 +162,15 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
 
   // Single-line: vertically centered
   const titleY = node.y + NODE_HEIGHT / 2 + 4.5
+
+  // Metadata rail — right-aligned, between the title and the existing right
+  // label (progress/dep count) and clear of the right dependency gutter.
+  const titleClipX = node.x + chevronWidth + 22 + estimateWidth
+  const rightLabelX = node.x + node.width - rightLabelWidth
+  const rail = buildRail(task, titleClipX + RAIL_MIN_TITLE, rightLabelX - RAIL_GAP)
+  const clipRight = rail.length ? rail[0].x - RAIL_GAP : rightLabelX
+  const titleClipWidth = Math.max(0, clipRight - titleClipX)
+  const railTextY = node.y + NODE_HEIGHT / 2 + 3
 
   return (
     <g
@@ -213,9 +294,9 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Clip path for text overflow */}
       <clipPath id={`clip-${node.id}`}>
         <rect
-          x={node.x + chevronWidth + 22 + estimateWidth}
+          x={titleClipX}
           y={node.y}
-          width={node.width - chevronWidth - 22 - estimateWidth - rightLabelWidth}
+          width={titleClipWidth}
           height={NODE_HEIGHT}
         />
       </clipPath>
@@ -265,6 +346,33 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           {depCount}
         </text>
       )}
+
+      {/* Metadata rail — id / priority / workset / agent badges, width-driven */}
+      {rail.map(item => (
+        <g key={item.key} opacity={showLabels ? 1 : 0} style={{ transition: 'opacity 150ms ease-out' }}>
+          <rect
+            x={item.x}
+            y={node.y + NODE_HEIGHT / 2 - 8}
+            width={item.width}
+            height={16}
+            rx={4}
+            fill={item.color}
+            fillOpacity={0.12}
+          />
+          <text
+            x={item.x + item.width / 2}
+            y={railTextY}
+            textAnchor="middle"
+            fontSize={9}
+            fontWeight={600}
+            fill={item.color}
+            fontFamily={item.mono ? 'var(--font-mono)' : undefined}
+            letterSpacing={item.mono ? '0' : '0.02em'}
+          >
+            {item.text}
+          </text>
+        </g>
+      ))}
     </g>
   )
 }
