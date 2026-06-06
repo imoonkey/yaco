@@ -71,6 +71,12 @@ export function defaultTaskFileFor(tasksPath: string): string {
     : join(tasksPath, "tasks.json");
 }
 
+export function defaultTaskFileForId(tasksPath: string, id: string): string {
+  return basename(tasksPath).endsWith(".json")
+    ? tasksPath
+    : join(tasksPath, id, "tasks.json");
+}
+
 export function loadTaskStore(tasksPath: string): TaskStore {
   const defaultFile = defaultTaskFileFor(tasksPath);
   const files = discoverTaskFiles(tasksPath);
@@ -98,7 +104,7 @@ export function loadTaskStore(tasksPath: string): TaskStore {
 export function saveTaskStore(store: TaskStore): void {
   const files = new Set(store.files);
   for (const id of Object.keys(store.tasks)) {
-    if (!store.sources.has(id)) store.sources.set(id, store.defaultFile);
+    if (!store.sources.has(id)) store.sources.set(id, defaultTaskFileForId(store.tasksPath, id));
     files.add(store.sources.get(id)!);
   }
 
@@ -114,8 +120,20 @@ export function saveTaskStore(store: TaskStore): void {
 export function sourceForTask(store: TaskStore, id: string): string {
   const source = store.sources.get(id);
   if (source) return source;
-  store.sources.set(id, store.defaultFile);
-  return store.defaultFile;
+  const fallback = defaultTaskFileForId(store.tasksPath, id);
+  store.sources.set(id, fallback);
+  return fallback;
+}
+
+export function sourceForNewTask(store: TaskStore, id: string, parent: string | null): string {
+  if (parent) {
+    const parentSource = store.sources.get(parent);
+    if (parentSource) {
+      store.sources.set(id, parentSource);
+      return parentSource;
+    }
+  }
+  return sourceForTask(store, id);
 }
 
 function discoverTaskFiles(tasksPath: string): string[] {

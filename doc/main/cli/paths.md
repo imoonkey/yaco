@@ -64,5 +64,5 @@ There are 11 import sites total. New consumers should always go through
 
 ## Related
 
-- Schema: [`plan/active/yaco-core/final/schemas/yaco-toml.schema.json`](../../../plan/active/yaco-core/final/schemas/yaco-toml.schema.json)
+- Schema: [`plan/all/yaco-core/final/schemas/yaco-toml.schema.json`](../../../plan/all/yaco-core/final/schemas/yaco-toml.schema.json)
 - App-side overview: [`doc/main/app/backend/libs.md`](../app/backend/libs.md#path-resolvers-yacoclicorepaths)

@@ -57,4 +57,4 @@ yaco agent state files / Workflow shell state files + tmux
 - **Agent writes**: progress entries (via Claude Stop hook script), tasks (via the same `yaco task` CLI surface)
 - **Neither rewrites the other's owned state directly** — all cross-boundary mutations go through the API
 
-> Historical note: an earlier model used `plan/active/<bundle>/workstream.json` as a live status file with its own API; that model was removed in favor of `tasks.json` (see [yaco-core design](../../../../plan/active/yaco-core/final/design.md) §First-Class Entities and §Migration).
+> Historical note: an earlier model used `plan/active/<bundle>/workstream.json` as a live status file with its own API; that model was removed in favor of `tasks.json` (see [yaco-core design](../../../../plan/all/yaco-core/final/design.md) §First-Class Entities and §Migration).

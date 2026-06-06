@@ -21,6 +21,7 @@ import {
   loadTaskStore,
   rollup,
   saveTaskStore,
+  sourceForNewTask,
   sourceForTask,
   validateRefs,
   validateState,
@@ -73,7 +74,7 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
         const seed: Task = { parent: null, depends: [], state: "ready", workset: "active" };
         tasks[id] = Object.assign(seed, data) as Task;
         tasks[id]!.created = now;
-        sourceForTask(store, id);
+        sourceForNewTask(store, id, tasks[id]!.parent);
         action = "create";
       }
 

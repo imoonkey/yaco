@@ -447,5 +447,6 @@ Offer handoff: "Ready to implement? Use `/design` to refine the architecture, th
 
 Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
 `yaco.toml` path overrides), write the design doc under
-`plan/active/<bundle>/` so it threads into the rest of the YACO workflow.
+`plan/all/<bundle>/` so it threads into the rest of the YACO workflow; keep
+`plan/active/<bundle>` as a symlink view while it is active.
 Outside YACO, follow the project's own design-doc convention.

@@ -42,7 +42,7 @@ JSON payload comes from **exactly one** of `--data`, `--stdin`, `--file`.
 Positional JSON is not supported (USAGE exit 2). Payload must be a JSON
 object.
 
-- **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready", workset: "active"}`, then merged with the payload, then `created` and `updated` set to `now`. New tasks are written to `<paths.tasks>/tasks.json` when `paths.tasks` is a directory.
+- **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready", workset: "active"}`, then merged with the payload, then `created` and `updated` set to `now`. A new child task is written to its parent's source file; a new top-level task is written to `<paths.tasks>/<id>/tasks.json` when `paths.tasks` is a directory.
 - **Update**: incoming `created` is dropped; everything else is merged. `updated` always refreshed.
 - `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics).
 - Validation order (matches Python): leaf `acceptCriteria` non-blank → `validateRefs` → `validateState` → `checkCycles` → `rollup` → save.
@@ -57,7 +57,7 @@ Response shape (`--json`):
     "task": { ...full record... },
     "warnings": [ "..." ],
     "tasksPath": "/abs/path/to/plan/tasks",
-    "tasksFile": "/abs/path/to/plan/tasks/tasks.json"
+    "tasksFile": "/abs/path/to/plan/tasks/<id>/tasks.json"
   } }
 ```
 

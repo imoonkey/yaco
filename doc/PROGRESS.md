@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-06: Plan docs moved to all/ and task roots split by bundle
+
+**What changed:**
+- Removed root `plan/tasks/tasks.json` stores by splitting active/root tasks into bundle files such as `plan/tasks/ac-gstack-adopt/tasks.json` and `plan/tasks/tui-provider-adapters/tasks.json`; new top-level tasks now default to `plan/tasks/<id>/tasks.json`, while new child tasks inherit the parent task file.
+- Migrated real plan docs from `plan/active/*` and `plan/archive/*` into `plan/all/*`; `plan/active`, `plan/backlog`, and `plan/archive` are now symlink-only views across registered project plan roots.
+- Updated design/double-design/update-tasks/update-doc/office-hours skills to write real docs under `plan/all/**` and treat active/archive as symlink views.
+- Updated task design references from `plan/active/**` to `plan/all/**`.
+
+**Why:**
+- `state` and `workset` are now data fields, not directory semantics. Real docs need one stable home (`plan/all/**`), while view directories stay lightweight navigation projections.
+
+**Key files:** `plan/tasks/**/tasks.json`, `plan/all/**`, `plan/{active,archive}/**` symlinks, `agent-config/global/skills/{design,double-design,update-tasks,update-doc,office-hours}/SKILL.md`, `cli/src/lib/core/task/store.ts`
+**Verification:** all registered projects passed `yaco task validate --repo <path> --json`; all `plan/{active,backlog,archive}` entries are symlinks; `cd cli && bun test ./test/integration/task/task-cli.integration.ts` -> 19 pass / 0 fail; `cd app/server && npx vitest run src/routes/__tests__/tasks-worktree.test.ts src/routes/__tests__/tasks-cli.test.ts` -> 15 pass / 0 fail; `cd app/ui && npm run lint` -> 0 errors / 13 existing warnings; `cd app/ui && npm run build` passed.
+**Commit:** this commit
+**Next:** None for the task/doc storage design.
+**Blockers:** None.
+
 ## 2026-06-06: Archived task snapshots moved into task store
 
 **What changed:**

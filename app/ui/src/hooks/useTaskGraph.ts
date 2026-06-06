@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { API, useSSETick } from './useApi'
 import { buildTaskGraphModel, type RawTaskMap, type TaskGraphModel } from '../tasks/taskGraphModel'
 
-export const TASKS_FILE_PATH = 'plan/tasks/tasks.json'
+export const TASKS_FILE_PATH = 'plan/tasks/inbox/tasks.json'
 
 export type UseTaskGraphResult = {
   status: 'loading' | 'ready' | 'missing' | 'error'

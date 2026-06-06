@@ -80,7 +80,7 @@ The runtime-root and repo-relative path resolvers live in the workspace package 
 
 **Constraints:** Bun/Node neutral — uses only `node:os`, `node:path`, and `node:fs` (sync APIs only). `app/server` (Node via `tsx`/`vitest`) and `cli` (Bun) consume the same TypeScript source through the exports map at `cli/package.json`.
 
-**CLI surface:** `yaco paths runtime [--json]` returns the runtime helpers keyed by name. `yaco paths project [--json] [--repo <path>]` returns the four repo paths **resolved to absolute paths** against `--repo` (defaults to cwd). `--repo` with no value is rejected as `USAGE` (exit 2). Schema: [`plan/active/yaco-core/final/schemas/yaco-toml.schema.json`](../../../../plan/active/yaco-core/final/schemas/yaco-toml.schema.json).
+**CLI surface:** `yaco paths runtime [--json]` returns the runtime helpers keyed by name. `yaco paths project [--json] [--repo <path>]` returns the four repo paths **resolved to absolute paths** against `--repo` (defaults to cwd). `--repo` with no value is rejected as `USAGE` (exit 2). Schema: [`plan/all/yaco-core/final/schemas/yaco-toml.schema.json`](../../../../plan/all/yaco-core/final/schemas/yaco-toml.schema.json).
 
 - `constants.AGENT_SESSIONS_DIR` is computed via `sessionsDir()` at module load. The `YACO_AGENT_SESSIONS_DIR` env var override (formerly `MULTMUX_STATE_DIR`) is intentionally **not** honored on the workflow side — that override exists on the `yaco agent` CLI side as a test/escape hatch only; workflow tracks the default root the agent runtime publishes to under normal operation.
 - The yaco agent runtime and workflow share the same `${YACO_HOME:-~/.yaco}/sessions/` directory by construction — agent runtime owns writes (via `cli/src/lib/core/agent/session-state.ts`), workflow watches.

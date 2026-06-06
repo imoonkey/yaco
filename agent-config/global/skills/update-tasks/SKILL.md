@@ -6,7 +6,8 @@ metadata:
 ---
 
 This skill owns and mutates `plan/tasks/**/tasks.json` through the `yaco task`
-CLI and references design bundles under `plan/active/<bundle>/`.
+CLI and references real design bundles under `plan/all/<bundle>/`; `plan/active`,
+`plan/backlog`, and `plan/archive` are symlink views.
 
 ## Scope
 
@@ -28,7 +29,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
     "depends": [],
     "state": "ready",
     "workset": "active",
-    "design": "plan/active/workspace-state/final/design_aligned.md",
+    "design": "plan/all/workspace-state/final/design_aligned.md",
     "scope": ["src/store/**", "src/hooks/useEditor*"],
     "acceptCriteria": "- editor state persists across refresh\n- npm test passes\n- no console errors on reload",
     "note": null

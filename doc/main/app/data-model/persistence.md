@@ -58,7 +58,7 @@ Managed by: `server/src/lib/projects.ts` (path from `yacoHome.projectsFile()`).
 
 ### `${YACO_HOME}/projects/<id>/events.jsonl`
 
-Append-only NDJSON event stream per registered project. **Durable source of truth** for the notification inbox, sidebar badges, and downstream channel deliveries — `${YACO_HOME}/ui-state/notifications.json` is a derived cache. One event per line; lines are immutable. Schema: [`plan/active/yaco-core/final/schemas/event.schema.json`](../../../../plan/active/yaco-core/final/schemas/event.schema.json).
+Append-only NDJSON event stream per registered project. **Durable source of truth** for the notification inbox, sidebar badges, and downstream channel deliveries — `${YACO_HOME}/ui-state/notifications.json` is a derived cache. One event per line; lines are immutable. Schema: [`plan/all/yaco-core/final/schemas/event.schema.json`](../../../../plan/all/yaco-core/final/schemas/event.schema.json).
 
 Line shape:
 

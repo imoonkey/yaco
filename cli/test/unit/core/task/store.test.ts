@@ -91,7 +91,7 @@ describe("loadTasks / saveTasks", () => {
     expect(() => loadTaskStore(join(root, "tasks"))).toThrow(/duplicate task id 'x'/);
   });
 
-  it("saveTaskStore writes existing tasks back to their source file and new tasks to the root file", () => {
+  it("saveTaskStore writes existing tasks back to their source file and new tasks to their own bundle file", () => {
     const root = tmp();
     const tasksRoot = join(root, "tasks");
     const source = join(tasksRoot, "cli", "tasks.json");
@@ -106,7 +106,7 @@ describe("loadTasks / saveTasks", () => {
     saveTaskStore(store);
 
     const sourceGraph = JSON.parse(readFileSync(source, "utf-8"));
-    const rootGraph = JSON.parse(readFileSync(join(tasksRoot, "tasks.json"), "utf-8"));
+    const rootGraph = JSON.parse(readFileSync(join(tasksRoot, "y", "tasks.json"), "utf-8"));
     expect(sourceGraph.x.title).toBe("updated");
     expect(rootGraph.y.title).toBe("y");
   });

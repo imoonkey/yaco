@@ -171,7 +171,7 @@ holds all pending chunks until the deadline before retrying once.
 
 Audio is never persisted to disk. API key is never exposed to the browser.
 
--> Design doc: `plan/archive/20260605_voice-streaming/design_claude.md`
+-> Design doc: `plan/all/20260605_voice-streaming/design_claude.md`
 
 ### Tasks
 

@@ -41,7 +41,9 @@ export {
   loadTaskStore,
   saveTaskStore,
   sourceForTask,
+  sourceForNewTask,
   defaultTaskFileFor,
+  defaultTaskFileForId,
   formatJson,
   type TaskStore,
 } from "./store.ts";
