@@ -124,3 +124,56 @@ test.describe('Worktree features', () => {
     await expect(fileTree.locator('text=src')).toBeVisible({ timeout: 5_000 })
   })
 })
+
+// Worktree metadata is surfaced through the GRAPH path: open the task workspace,
+// click a worktree-bearing task node, and read its detail panel. This replaces
+// the deleted board-path worktree-metadata coverage. It is project-agnostic — it
+// discovers a root task that actually has an active worktree from the API — so it
+// runs against whatever project the workspace exposes (no worktree-qa fixture).
+test.describe('Worktree metadata via the task graph', () => {
+  test('detail panel shows worktree label, branch, and status badge', async ({ page }) => {
+    await page.goto('/')
+    const projects = await page.evaluate(async () => {
+      const res = await fetch('/api/projects')
+      return res.json() as Promise<{ name: string; path: string }[]>
+    })
+    expect(projects.length).toBeGreaterThan(0)
+
+    // Find a project + a top-level task that has an active worktree on disk.
+    let target: { project: string; title: string; worktree: string; branch: string } | null = null
+    for (const p of projects) {
+      const tasks = await page.evaluate(async (name: string) => {
+        const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+        if (!res.ok) return {}
+        const body = await res.json() as { tasks?: Record<string, {
+          title: string; parent: string | null; worktree?: string | null
+          worktreeStatus?: { active?: boolean; branch?: string }
+        }> }
+        return body.tasks ?? {}
+      }, p.name)
+      const hit = Object.values(tasks).find(t => t.parent === null && t.worktree && t.worktreeStatus?.active && t.worktreeStatus.branch)
+      if (hit) {
+        target = { project: p.name, title: hit.title, worktree: hit.worktree as string, branch: hit.worktreeStatus!.branch as string }
+        break
+      }
+    }
+    expect(target, 'a project with an active-worktree root task').toBeTruthy()
+
+    // Open the task workspace for that project.
+    await page.locator('button', { hasText: target!.project }).first().click()
+    await page.evaluate((name: string) => localStorage.removeItem(`yaco-task-workspace:${name}`), target!.project)
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first()).toBeVisible({ timeout: 15_000 })
+
+    // Click the worktree-bearing task node → detail panel opens.
+    await page.locator(`g[role="button"][aria-label^="Task: ${target!.title}, status:"]`).first().click()
+    const panel = page.getByRole('complementary', { name: 'Task details' })
+    await expect(panel).toBeVisible({ timeout: 3_000 })
+
+    // Worktree metadata: section label, worktree/branch name, and Active badge.
+    await expect(panel.getByText('Worktree', { exact: true })).toBeVisible()
+    await expect(panel.getByText(target!.worktree, { exact: true }).first()).toBeVisible()
+    await expect(panel.getByText(target!.branch, { exact: true })).toBeVisible()
+    await expect(panel.getByText('Active', { exact: true })).toBeVisible()
+  })
+})
