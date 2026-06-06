@@ -3,7 +3,7 @@ import { NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { STATE_COLORS, getWorktreeColor } from './taskGraphConstants'
-import { buildRail, RAIL_GAP, RAIL_MIN_TITLE } from './metadataRail'
+import { buildRail, RAIL_GAP, RAIL_MIN_TITLE, RAIL_FONT_SIZE } from './metadataRail'
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
   const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
@@ -86,8 +86,9 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   const chevronWidth = hasGroupAffordances ? 18 : 0
   const estimateWidth = task.estimate ? 11 : 0
   const progressText = group ? `${group.progress.done}/${group.progress.total}` : ''
-  const hasRightLabel = (hasGroupAffordances && !!progressText) || (!hasGroupAffordances && depCount > 0)
-  const rightLabelWidth = hasRightLabel ? 32 : 6
+  // Always reserve the right-number column (even when this row has no count) so the
+  // metadata rails right-align to the same edge across every row.
+  const rightLabelWidth = 32
 
   // Single-line: vertically centered
   const titleY = node.y + NODE_HEIGHT / 2 + 4.5
@@ -99,7 +100,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   const rail = buildRail(task, titleClipX + RAIL_MIN_TITLE, rightLabelX - RAIL_GAP)
   const clipRight = rail.length ? rail[0].x - RAIL_GAP : rightLabelX
   const titleClipWidth = Math.max(0, clipRight - titleClipX)
-  const railTextY = node.y + NODE_HEIGHT / 2 + 3
+  const railTextY = node.y + NODE_HEIGHT / 2 + 3.7
 
   return (
     <g
@@ -276,14 +277,15 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         </text>
       )}
 
-      {/* Metadata rail — id / priority / workset / agent badges, width-driven */}
+      {/* Metadata rail — id / agent / priority / workset badges, width-driven.
+          Every badge shares identical geometry and monospace text; only color differs. */}
       {rail.map(item => (
         <g key={item.key} opacity={showLabels ? 1 : 0} style={{ transition: 'opacity 150ms ease-out' }}>
           <rect
             x={item.x}
-            y={node.y + NODE_HEIGHT / 2 - 8}
+            y={node.y + NODE_HEIGHT / 2 - 9}
             width={item.width}
-            height={16}
+            height={18}
             rx={4}
             fill={item.color}
             fillOpacity={0.12}
@@ -292,11 +294,11 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
             x={item.x + item.width / 2}
             y={railTextY}
             textAnchor="middle"
-            fontSize={9}
+            fontSize={RAIL_FONT_SIZE}
             fontWeight={500}
             fill={item.color}
-            fontFamily={item.mono ? 'var(--font-mono)' : undefined}
-            letterSpacing={item.mono ? '0' : '0.02em'}
+            fontFamily={'var(--font-mono)'}
+            letterSpacing="0"
           >
             {item.text}
           </text>

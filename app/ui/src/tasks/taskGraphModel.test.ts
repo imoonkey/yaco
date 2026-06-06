@@ -169,24 +169,24 @@ describe('title', () => {
 describe('metadata rail — width-driven collapse (buildRail)', () => {
   const task = makeTask({ title: 'X', priority: 'high', workset: 'backlog', agent: 'claude' }, 'long-task-id')
 
-  it('shows id, priority, workset, agent (in that order) when there is room', () => {
+  it('shows id, agent, priority, workset (in that order) when there is room', () => {
     const rail = buildRail(task, 0, 1000)
-    expect(rail.map(i => i.key)).toEqual(['id', 'priority', 'workset', 'agent'])
+    expect(rail.map(i => i.key)).toEqual(['id', 'agent', 'priority', 'workset'])
     // Right-aligned: the last badge ends exactly at the right bound.
     const last = rail[rail.length - 1]
     expect(last.x + last.width).toBe(1000)
   })
 
   it('drops fields from the low-priority end as the row narrows, through every intermediate prefix', () => {
-    // Field badge widths for this task (railItemWidth = ceil(len*5.4) + 10):
-    //   id 'long-task-id'(12)=75, priority 'high'(4)=32, workset 'backlog'(7)=48, agent 'claude'(6)=43
+    // Field badge widths for this task (railItemWidth = ceil(len*6.3) + 10):
+    //   id 'long-task-id'(12)=86, agent 'claude'(6)=48, priority 'high'(4)=36, workset 'backlog'(7)=55
     // Greedy cumulative thresholds (first item has no leading gap; RAIL_GAP=5):
-    //   id 75 | +priority 112 | +workset 165 | +agent 213
+    //   id 86 | +agent 139 | +priority 180 | +workset 240
     // Each width below lands squarely inside one band so the exact prefix is asserted.
-    expect(buildRail(task, 0, 220).map(i => i.key)).toEqual(['id', 'priority', 'workset', 'agent'])
-    expect(buildRail(task, 0, 180).map(i => i.key)).toEqual(['id', 'priority', 'workset'])
-    expect(buildRail(task, 0, 140).map(i => i.key)).toEqual(['id', 'priority'])
-    expect(buildRail(task, 0, 90).map(i => i.key)).toEqual(['id'])
+    expect(buildRail(task, 0, 250).map(i => i.key)).toEqual(['id', 'agent', 'priority', 'workset'])
+    expect(buildRail(task, 0, 200).map(i => i.key)).toEqual(['id', 'agent', 'priority'])
+    expect(buildRail(task, 0, 160).map(i => i.key)).toEqual(['id', 'agent'])
+    expect(buildRail(task, 0, 110).map(i => i.key)).toEqual(['id'])
     expect(buildRail(task, 0, 30).map(i => i.key)).toEqual([])
   })
 

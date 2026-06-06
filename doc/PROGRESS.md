@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-06: Task node metadata-rail polish (margins, order, alignment, mobile, size)
+
+**What changed (`app/ui/src/tasks/metadataRail.ts`, `TaskGraphNode.tsx`, `taskGraphModel.test.ts`):**
+- **Uniform badges:** every rail badge now renders with identical geometry and monospace typography (same padding, same letterSpacing); only color differs per field. The old mix of mono `id` (tight) vs proportional `agent` (loose) left visibly unequal inner margins — now id and agent measure ~5px symmetric padding on both sides.
+- **Order** is now `id → agent → priority → workset` (was id → priority → workset → agent).
+- **Right alignment:** the right-number column width is always reserved (constant 32px) even when a row has no count, so every row's rail ends at the same right edge (browser-verified: all rows align to one x).
+- **Mobile/title priority:** `RAIL_MIN_TITLE` raised to 150px so the title keeps a readable chunk before the rail claims space; on narrow cards the rail sheds priority/agent and collapses to a width-fitted id (browser-verified: title holds ~150px on 280px cards, badges no longer cover the title).
+- **Bigger rail font:** badge text 9→10.5px, with the mono char-width constant recalibrated (5.4→6.3) so width math stays accurate; badge height 16→18 to fit.
+- Unit tests updated for the new order and recalibrated widths (13 pass).
+
+**Why:** user-reported polish — agent badge had wider inner margins than id; tags weren't right-aligned when some rows lacked a count; on mobile the id/priority badges crowded the title; tag font felt small; requested order id-agent-priority.
+
+**Verification:** `npm run build` ✓, `tsc -b`/`tsc --noEmit` ✓, `npm run lint` ✓ (0 errors), `vitest taskGraphModel.test.ts` → 13 passed, plus live browser measurement at 1920px and 420px viewports.
+
+**Key files:** `app/ui/src/tasks/{metadataRail.ts, TaskGraphNode.tsx, taskGraphModel.test.ts}`
+
 ## 2026-06-06: Task node metadata-rail readability fixes
 
 **What changed:**
