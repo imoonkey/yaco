@@ -5,7 +5,7 @@
  *    rm <id> [--repo <p>] [--json]
  *    archive <id> [--repo <p>] [--json]
  *    validate [--id <id>] [--repo <p>] [--json]
- *    list [--repo <p>] [--json]
+ *    list [--workset active|backlog|archive|all] [--repo <p>] [--json]
  *
  *  Every subcommand goes through readYacoProjectPaths(repoRoot) for the
  *  tasks file location — fixes the long-standing update-tasks.py bug
@@ -15,7 +15,7 @@
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { ok, type Result } from "../../lib/core/result.ts";
 import { runArchive } from "./archive.ts";
-import { runList } from "./list.ts";
+import { runList, type TaskListWorkset } from "./list.ts";
 import { runRm } from "./rm.ts";
 import { runSet } from "./set.ts";
 import { runValidate } from "./validate.ts";
@@ -29,13 +29,14 @@ Usage:
   yaco task rm <id>                    [--repo <p>] [--json]
   yaco task archive <id>               [--repo <p>] [--json]
   yaco task validate [--id <id>]       [--repo <p>] [--json]
-  yaco task list                       [--repo <p>] [--json]
+  yaco task list                       [--workset active|backlog|archive|all] [--repo <p>] [--json]
 
 Flags:
   --data '<json>'   Inline JSON payload (mutually exclusive with --stdin/--file)
   --stdin           Read JSON payload from stdin
   --file <path>     Read JSON payload from a file
   --id <id>         Narrow \`validate\` to one task + its parent chain
+  --workset <w>     Filter \`list\` by workset: active, backlog, archive, or all
   --repo <path>     Override repo root (defaults to cwd)
   --json            Emit the {ok,data}/{ok,error} envelope
 `;
@@ -49,6 +50,7 @@ interface ParsedSub {
     stdin?: boolean;
     file?: string;
     id?: string;
+    workset?: TaskListWorkset;
     help?: boolean;
   };
 }
@@ -122,6 +124,15 @@ function assignFlag(out: ParsedSub, key: string, val: string | boolean): void {
       }
       out.flags.repo = val;
       return;
+    case "workset":
+      if (typeof val !== "string") {
+        throw new CliError(ErrCode.USAGE, "--workset requires a value");
+      }
+      if (!["active", "backlog", "archive", "all"].includes(val)) {
+        throw new CliError(ErrCode.USAGE, "--workset must be one of: active, backlog, archive, all");
+      }
+      out.flags.workset = val as TaskListWorkset;
+      return;
     default:
       throw new CliError(ErrCode.USAGE, `unknown flag: --${key}`);
   }
@@ -186,7 +197,7 @@ export async function handleTask(
       if (parsed.positional.length > 0) {
         throw new CliError(ErrCode.USAGE, "yaco task list takes no positional args");
       }
-      return runList({ json, repo: parsed.flags.repo });
+      return runList({ json, repo: parsed.flags.repo, workset: parsed.flags.workset });
     }
     default:
       throw new CliError(

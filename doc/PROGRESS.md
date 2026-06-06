@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-06: Task graph workset reads, ranking, and section dividers
+
+**What changed:**
+- `yaco task list` now accepts `--workset active|backlog|archive|all`; the default remains active for orchestrator-style reads, while app/server uses `--workset all`.
+- `GET /api/tasks/:project` now consumes the canonical CLI envelope (`yaco task list --workset all --json`) instead of reading `plan/tasks/**` directly, keeping task-store ownership inside the CLI.
+- The stacked task graph ranks same-level nodes by workset (`active -> backlog -> archive`), removes per-row workset badges from the metadata rail, and renders subtle `Backlog` / `Archive` section dividers for visible non-active root groups.
+- Docs and tests now cover the CLI workset selector, server CLI boundary, metadata rail behavior, and workset ordering.
+
+**Why:**
+- The UI could not show backlog/archive tasks through the correct boundary because the CLI list surface only exposed active tasks. Direct server reads were the wrong ownership split, and per-row workset badges were noisy once backlog/archive are grouped visually.
+
+**Key files:** `cli/src/commands/task/{index.ts,list.ts}`, `app/server/src/routes/tasks.ts`, `app/ui/src/tasks/{taskGraphModel.ts,TaskGraphCanvas.tsx,metadataRail.ts}`, `doc/main/{cli/task.md,app/backend/routes.md,app/frontend/components.md}`
+**Verification:** `cd cli && bun test ./test/integration/task/task-cli.integration.ts` passed; `cd app/server && npx vitest run src/routes/__tests__/tasks-cli.test.ts src/routes/__tests__/tasks-worktree.test.ts` passed; `cd app/ui && npx vitest run src/tasks/taskGraphModel.test.ts`, `npm run lint`, `npm run build`, and targeted Playwright workset tests passed; live `/api/tasks/yaco` returns active, backlog, and archive tasks.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-06: Task detail overlay and click-to-toggle behavior
 
 **What changed:**

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
@@ -78,6 +78,43 @@ beforeEach(() => {
 afterEach(() => {
   rmSync(testProjectPath, { recursive: true, force: true })
   if (stubScript) rmSync(join(stubScript, '..'), { recursive: true, force: true })
+})
+
+describe('GET /:project — CLI list boundary', () => {
+  it('calls yaco task list --workset all and returns every workset', async () => {
+    writeStub(
+      {
+        ok: true,
+        data: {
+          tasks: {
+            A1: { title: 'archived', state: 'done', workset: 'archive' },
+            B1: { title: 'backlog', state: 'ready', workset: 'backlog' },
+            D1: { title: 'active', state: 'ready', workset: 'active' },
+          },
+        },
+      },
+      0,
+      'stdout',
+    )
+
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      tasks: {
+        A1: { title: 'archived', state: 'done', workset: 'archive' },
+        B1: { title: 'backlog', state: 'ready', workset: 'backlog' },
+        D1: { title: 'active', state: 'ready', workset: 'active' },
+      },
+    })
+    expect(readFileSync(stubLog, 'utf-8').trim()).toBe('task list --workset all --json')
+  })
+
+  it('maps task list CLI failures to HTTP errors', async () => {
+    writeStub({ ok: false, error: { code: 'INVALID', message: 'bad graph' } }, 1, 'stderr')
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error).toBe('bad graph')
+  })
 })
 
 describe('PUT /:project/:taskId — envelope success', () => {

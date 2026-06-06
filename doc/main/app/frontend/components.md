@@ -73,6 +73,7 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
 │   │     a Filter popover and hides the layout/collapse controls.
 │   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row
 │   │     card, estimate badge, worktree icon, right-aligned metadata rail) +
+│   │     TaskGraphSectionHeader dividers for non-active worksets +
 │   │     TaskGraphEdges. The SVG is sized to the scaled layout bounds inside an
 │   │     overflow-y scroll container.
 │   └── TaskGraphTooltip — hover overlay (title, description, progress, full
@@ -95,6 +96,9 @@ Workset is a filter, not a view: the workspace receives all worksets and shows
 The visible-set filter is applied before layout in `TaskGraphScreen` (drop tasks
 whose workset is disabled), and a selection that drops out of the recomputed
 layout is cleared so the detail panel can't show a hidden task.
+Visible same-level tasks are ranked by workset (`active`, then `backlog`, then
+`archive`) before the existing group/state/title tie-breaks. Root-level backlog
+and archive blocks get subtle section dividers when those worksets are visible.
 
 Task selection is distinct from opening details. A first click selects/highlights
 the task only; clicking the selected task opens the detail overlay, and clicking
@@ -117,17 +121,16 @@ teardown.
 
 The node metadata rail (`metadataRail.ts` `buildRail`, rendered by
 `TaskGraphNode.tsx`) is width-driven, not
-CSS breakpoints: badges are kept in priority order `id > priority > workset >
-agent` and dropped from the right as the row narrows (agent first, then workset,
-then priority, then id), so the rail collapses before overlapping the title clip
-or the right `depends` gutter. Default/common values are hidden to cut noise —
-`priority === 'normal'` and `workset === 'active'` render no badge; `id` is the
-always-present anchor (truncated). Full metadata is never lost: it stays in the
-tooltip chips and `TaskDetailPanel`.
+CSS breakpoints: badges are kept in priority order `id > agent > priority` and
+dropped from the right as the row narrows (priority first, then agent, then id),
+so the rail collapses before overlapping the title clip or the right `depends`
+gutter. Workset is not rendered as a per-row badge because the row ordering and
+section dividers carry that grouping; full metadata still lives in the tooltip
+chips and `TaskDetailPanel`.
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
-- `taskGraphModel.ts` — stacked full-width layout: roots stack vertically (by increasing `y`), each row fills the container width to a shared right edge with 24px indent/level for children, left-side guide lines, SCC cycle detection, `computeDisplayLayout(..., containerWidth)` with visible-tree semantics. `LayoutNode.width` drives card width; NODE_WIDTH=280 is now a min-width floor only. Real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge so arcs clear intervening cards; no non-dependency edges. NODE_HEIGHT=36.
+- `taskGraphModel.ts` — stacked full-width layout: roots stack vertically (by increasing `y`), same-level tasks rank `active -> backlog -> archive`, and non-active root worksets emit section divider metadata. Each row fills the container width to a shared right edge with 24px indent/level for children, left-side guide lines, SCC cycle detection, `computeDisplayLayout(..., containerWidth)` with visible-tree semantics. `LayoutNode.width` drives card width; NODE_WIDTH=280 is now a min-width floor only. Real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge so arcs clear intervening cards; no non-dependency edges. NODE_HEIGHT=36.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 - `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
 

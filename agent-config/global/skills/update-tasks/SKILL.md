@@ -110,6 +110,7 @@ Reads and writes both go through `yaco task`, which has graph constraints
 ```bash
 # Read
 yaco task list                          --json    # active workset
+yaco task list --workset all            --json    # full graph across all worksets
 yaco task validate                      --json    # validate whole graph
 yaco task validate --id <id>            --json    # validate one task + parent chain
 

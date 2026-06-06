@@ -1,6 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'fs'
 import { execFile } from 'child_process'
-import { isAbsolute, join } from 'path'
 import { Hono } from 'hono'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
@@ -8,41 +6,6 @@ import { emitRefresh } from '../lib/notify'
 import { getWorktreeStatuses } from '../lib/worktree'
 import { YACO_PATH, YACO_TASK_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { buildChildProcessEnv } from '../lib/ssh-auth'
-
-/** Resolve absolute on-disk locations for the task store + archive dir, honoring
- *  any `yaco.toml [paths]` overrides. App reads must come through this so
- *  they share the source of truth with `yaco task <subcommand>` writes —
- *  otherwise the UI would show one file while mutations land in another. */
-function resolveRepoPaths(repoRoot: string): { tasksPath: string } {
-  const paths = readTaskRoutePaths(repoRoot)
-  return {
-    tasksPath: join(repoRoot, paths.tasks),
-  }
-}
-
-function readTaskRoutePaths(repoRoot: string): { tasks: string } {
-  const configPath = join(repoRoot, 'yaco.toml')
-  if (!existsSync(configPath)) return { tasks: 'plan/tasks' }
-  const raw = readFileSync(configPath, 'utf-8')
-  let inPaths = false
-  let tasks = 'plan/tasks'
-  for (const rawLine of raw.split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (!line || line.startsWith('#')) continue
-    const section = line.match(/^\[([^\]]+)\]$/)
-    if (section) {
-      inPaths = section[1] === 'paths'
-      continue
-    }
-    if (!inPaths) continue
-    const match = line.match(/^tasks\s*=\s*"([^"]+)"\s*$/)
-    if (match) tasks = match[1]
-  }
-  if (isAbsolute(tasks) || tasks.split(/[/\\]/).includes('..')) {
-    throw new Error(`yaco.toml: [paths].tasks must be repo-relative, got "${tasks}"`)
-  }
-  return { tasks }
-}
 
 interface CliEnvelopeOk { ok: true; data: unknown }
 interface CliEnvelopeErr { ok: false; error: { code: string; message: string; details?: unknown } }
@@ -136,55 +99,25 @@ function parseJsonBody(raw: unknown): Record<string, unknown> | null {
   return raw as Record<string, unknown>
 }
 
-function loadTaskMap(tasksPath: string): Record<string, Record<string, unknown>> {
-  const files = discoverTaskFiles(tasksPath)
-  const tasks: Record<string, Record<string, unknown>> = {}
-  const sources = new Map<string, string>()
-  for (const file of files) {
-    const parsed = JSON.parse(readFileSync(file, 'utf-8')) as Record<string, Record<string, unknown>>
-    for (const [id, task] of Object.entries(parsed)) {
-      const existing = sources.get(id)
-      if (existing) throw new Error(`duplicate task id '${id}' in ${existing} and ${file}`)
-      tasks[id] = { ...task, workset: task.workset ?? 'active' }
-      sources.set(id, file)
-    }
-  }
-  return tasks
-}
-
-function discoverTaskFiles(tasksPath: string): string[] {
-  const st = statSync(tasksPath)
-  if (st.isFile()) return [tasksPath]
-  if (!st.isDirectory()) throw new Error(`tasks path ${tasksPath} must be a file or directory`)
-  const files: string[] = []
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
-      const path = join(dir, entry.name)
-      if (entry.isDirectory()) walk(path)
-      else if (entry.isFile() && entry.name === 'tasks.json') files.push(path)
-    }
-  }
-  walk(tasksPath)
-  return files
-}
-
 const app = new Hono<ProjectEnv>()
 
 interface TasksResponse { tasks: Record<string, Record<string, unknown>> }
 
 /** Coalesce concurrent identical GET /:project requests by effective project path
  *  (so worktree variants don't share the main repo's promise). */
-const tasksInflight = new Map<string, Promise<TasksResponse | { __notfound: true }>>()
+const tasksInflight = new Map<string, Promise<TasksResponse | CliFailure>>()
 
 function invalidateTasksCache(projectPath: string): void {
   tasksInflight.delete(projectPath)
 }
 
-async function buildTasksResponse(projectPath: string): Promise<TasksResponse | { __notfound: true }> {
-  const { tasksPath } = resolveRepoPaths(projectPath)
-  if (!existsSync(tasksPath)) return { __notfound: true }
+async function buildTasksResponse(projectPath: string): Promise<TasksResponse | CliFailure> {
   // Return every workset (active, backlog, archive); the workspace filters client-side.
-  const tasks = loadTaskMap(tasksPath)
+  const result = await runYacoTask(['list', '--workset', 'all'], projectPath)
+  if (!result.ok) return result
+  const tasks = (result.data['tasks'] && typeof result.data['tasks'] === 'object')
+    ? result.data['tasks'] as Record<string, Record<string, unknown>>
+    : {}
 
   const statuses = await getWorktreeStatuses(projectPath, tasks as Record<string, { worktree?: string }>)
   for (const task of Object.values(tasks)) {
@@ -207,7 +140,7 @@ app.get('/:project', withProject, async (c) => {
     tasksInflight.set(key, pending)
   }
   const result = await pending
-  if ('__notfound' in result) return fail(c, 404, 'tasks.json not found')
+  if ('ok' in result && !result.ok) return failFromCli(c, result)
   return c.json(result)
 })
 

@@ -4,6 +4,7 @@
 export type TaskState = 'ready' | 'running' | 'done' | 'blocked' | 'cancelled'
 
 export type Priority = 'critical' | 'high' | 'normal' | 'low'
+export type Workset = 'active' | 'backlog' | 'archive'
 
 export type RawTaskEntry = {
   title: string
@@ -16,7 +17,7 @@ export type RawTaskEntry = {
   note?: string | null
   worktree?: string | null
   estimate?: string | null
-  workset?: 'active' | 'backlog' | 'archive'
+  workset?: Workset
   priority?: Priority
   agent?: string | null
   tags?: string[]
@@ -38,7 +39,7 @@ export type TaskGraphTask = {
   hasChildren: boolean
   worktree: string | null
   estimate: string | null
-  workset: 'active' | 'backlog' | 'archive'
+  workset: Workset
   priority: Priority
   agent: string | null
   tags: string[]
@@ -80,6 +81,7 @@ export interface LayoutEdge {
 }
 
 export interface GraphLayout {
+  sections: LayoutSection[]
   groups: LayoutGroup[]
   nodes: Map<string, LayoutNode>
   edges: LayoutEdge[]
@@ -87,6 +89,15 @@ export interface GraphLayout {
   visibleChildrenByTask: Map<string, string[]>
   bounds: { width: number; height: number }
   hasCycles: boolean
+}
+
+export interface LayoutSection {
+  id: string
+  workset: Workset
+  label: string
+  x: number
+  y: number
+  width: number
 }
 
 export interface TaskGraphModel {
@@ -109,6 +120,7 @@ export const NODE_HEIGHT = 36
 export const NODE_GAP = 6
 export const INDENT = 24
 export const ROOT_GAP = 28       // vertical gap between stacked root sections
+export const WORKSET_SECTION_HEIGHT = 30
 export const GRAPH_PADDING = 12
 export const DEPENDS_GUTTER = 32 // reserved right-side gutter for dependency arcs
 export const ARC_OFFSET = 18
@@ -120,6 +132,17 @@ const STATE_PRIORITY: Record<TaskState, number> = {
   running: 2,
   done: 3,
   cancelled: 4,
+}
+
+const WORKSET_PRIORITY: Record<Workset, number> = {
+  active: 0,
+  backlog: 1,
+  archive: 2,
+}
+
+const WORKSET_SECTION_LABEL: Partial<Record<Workset, string>> = {
+  backlog: 'Backlog',
+  archive: 'Archive',
 }
 
 // --- Normalization ---
@@ -351,6 +374,10 @@ function orderSiblings(
   }
 
   const { sorted } = topoSort(siblingIds, edges, (a, b) => {
+    // Workset priority: active, then backlog, then archive.
+    const aw = WORKSET_PRIORITY[tasks.get(a)?.workset ?? 'active']
+    const bw = WORKSET_PRIORITY[tasks.get(b)?.workset ?? 'active']
+    if (aw !== bw) return aw - bw
     // Group before leaf
     const aHas = tasks.get(a)?.hasChildren ? 0 : 1
     const bHas = tasks.get(b)?.hasChildren ? 0 : 1
@@ -659,7 +686,7 @@ export function computeDisplayLayout(
   const visibleSet = computeVisibleSet(tasks, childIdsByTask, rootIds, collapsedTaskIds, filters)
 
   if (visibleSet.size === 0) {
-    return { groups: [], nodes: new Map(), edges: [], visibleOrder: [], visibleChildrenByTask: new Map(), bounds: { width: 0, height: 0 }, hasCycles: cycleEdgeIds.size > 0 }
+    return { sections: [], groups: [], nodes: new Map(), edges: [], visibleOrder: [], visibleChildrenByTask: new Map(), bounds: { width: 0, height: 0 }, hasCycles: cycleEdgeIds.size > 0 }
   }
 
   // Order root-level items
@@ -674,15 +701,31 @@ export function computeDisplayLayout(
   }
 
   // Stack roots vertically — each fills the width, sections separated by ROOT_GAP
+  const sections: LayoutSection[] = []
   const groups: LayoutGroup[] = []
   const nodes = new Map<string, LayoutNode>()
   const visibleOrder: string[] = []
   const visibleChildrenByTask = new Map<string, string[]>()
 
   let rootY = GRAPH_PADDING
+  let previousRootWorkset: Workset | null = null
   for (const root of measuredRoots) {
+    const rootWorkset = tasks.get(root.id)?.workset ?? 'active'
+    const label = WORKSET_SECTION_LABEL[rootWorkset]
+    if (label && rootWorkset !== previousRootWorkset) {
+      sections.push({
+        id: `${rootWorkset}-${sections.length}`,
+        workset: rootWorkset,
+        label,
+        x: GRAPH_PADDING,
+        y: rootY,
+        width: rightEdge - GRAPH_PADDING,
+      })
+      rootY += WORKSET_SECTION_HEIGHT
+    }
     const endY = positionTree(root, GRAPH_PADDING, rootY, 0, rightEdge, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, groups, nodes, visibleOrder, visibleChildrenByTask)
     rootY = endY + ROOT_GAP
+    previousRootWorkset = rootWorkset
   }
 
   // Single global right edge across all visible cards. Under the NODE_WIDTH floor a deep
@@ -741,6 +784,7 @@ export function computeDisplayLayout(
   }
 
   return {
+    sections,
     groups,
     nodes,
     edges,

@@ -91,6 +91,42 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(tasksJson.root.workset).toBe("active");
   });
 
+  it("list filters by workset and can return all worksets", () => {
+    for (const [id, workset] of [
+      ["active-task", "active"],
+      ["backlog-task", "backlog"],
+      ["archive-task", "archive"],
+    ] as const) {
+      const r = runYaco(repo, [
+        "task",
+        "set",
+        id,
+        "--data",
+        JSON.stringify({
+          title: id,
+          description: "d",
+          acceptCriteria: "ok",
+          state: workset === "archive" ? "done" : "ready",
+          workset,
+        }),
+        "--json",
+      ]);
+      expect(r.status).toBe(0);
+    }
+
+    const active = parseJson(runYaco(repo, ["task", "list", "--json"]).stdout).data as { tasks: Record<string, unknown> };
+    expect(Object.keys(active.tasks).sort()).toEqual(["active-task"]);
+
+    const backlog = parseJson(runYaco(repo, ["task", "list", "--workset", "backlog", "--json"]).stdout).data as { tasks: Record<string, unknown> };
+    expect(Object.keys(backlog.tasks).sort()).toEqual(["backlog-task"]);
+
+    const archive = parseJson(runYaco(repo, ["task", "list", "--workset=archive", "--json"]).stdout).data as { tasks: Record<string, unknown> };
+    expect(Object.keys(archive.tasks).sort()).toEqual(["archive-task"]);
+
+    const all = parseJson(runYaco(repo, ["task", "list", "--workset", "all", "--json"]).stdout).data as { tasks: Record<string, unknown> };
+    expect(Object.keys(all.tasks).sort()).toEqual(["active-task", "archive-task", "backlog-task"]);
+  });
+
   it("rejects a new task missing title/description", () => {
     const r = runYaco(repo, [
       "task",

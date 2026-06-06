@@ -1,7 +1,7 @@
 // Metadata rail — a right-aligned strip of metadata badges for a task card.
-// Fields are kept in display order (id > agent > priority > workset) and dropped
-// from the RIGHT as the row narrows, so a shrinking card sheds workset first, then
-// priority, then agent, then id — id is the stable anchor closest to the title.
+// Fields are kept in display order (id > agent > priority) and dropped from the
+// RIGHT as the row narrows, so a shrinking card sheds priority first, then agent,
+// then id — id is the stable anchor closest to the title.
 // The full metadata set always lives in the tooltip and detail panel, so dropping
 // here loses nothing.
 //
@@ -15,7 +15,6 @@
 //   - id       always a candidate
 //   - agent    shown only when set
 //   - priority shown only when != 'normal'
-//   - workset  shown only when != 'active'
 // Visibility is width-driven (measured against the leftover space), not breakpoints.
 
 import type { TaskGraphTask, Priority } from './taskGraphModel'
@@ -50,9 +49,6 @@ export function buildRail(task: TaskGraphTask, leftBound: number, rightBound: nu
   }
   if (task.priority !== 'normal') {
     candidates.push({ key: 'priority', text: task.priority, color: PRIORITY_COLOR[task.priority], width: railItemWidth(task.priority) })
-  }
-  if (task.workset !== 'active') {
-    candidates.push({ key: 'workset', text: task.workset, color: 'var(--sol-violet)', width: railItemWidth(task.workset) })
   }
 
   // Greedily keep full-width badges from the front (highest priority) while they

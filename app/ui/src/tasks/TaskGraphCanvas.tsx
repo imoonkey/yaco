@@ -1,10 +1,39 @@
-import type { GraphLayout, TaskGraphModel } from './taskGraphModel'
+import type { GraphLayout, LayoutSection, TaskGraphModel } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { TaskGraphEdges } from './TaskGraphEdges'
 import { TaskGraphGroup } from './TaskGraphGroup'
 import { TaskGraphNode } from './TaskGraphNode'
+
+function TaskGraphSectionHeader({ section }: { section: LayoutSection }) {
+  const labelWidth = section.label.length * 7 + 20
+  const lineY = section.y + 13
+
+  return (
+    <g pointerEvents="none" opacity={0.95}>
+      <text
+        x={section.x}
+        y={section.y + 17}
+        fontSize={11}
+        fontWeight={600}
+        fill="var(--sol-muted)"
+        letterSpacing="0"
+      >
+        {section.label}
+      </text>
+      <line
+        x1={section.x + labelWidth}
+        y1={lineY}
+        x2={section.x + section.width}
+        y2={lineY}
+        stroke="var(--sol-border)"
+        strokeWidth={1}
+        opacity={0.55}
+      />
+    </g>
+  )
+}
 
 export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   graph: TaskGraphModel
@@ -35,7 +64,14 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, sele
     >
       <g transform={`scale(${scale})`}>
         <style>{`.tg-focusable { outline: none; } .tg-focusable:focus-visible { outline: 2px solid var(--sol-focus-border); outline-offset: 2px; }`}</style>
-        {/* Layer 1: Indentation guide lines */}
+        {/* Layer 1: Workset section headers */}
+        <g data-layer="sections">
+          {layout.sections.map(section => (
+            <TaskGraphSectionHeader key={section.id} section={section} />
+          ))}
+        </g>
+
+        {/* Layer 2: Indentation guide lines */}
         <g data-layer="guides">
           {layout.groups.map(group => (
             <TaskGraphGroup
@@ -47,10 +83,10 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, sele
           ))}
         </g>
 
-        {/* Layer 2: Dependency edges */}
+        {/* Layer 3: Dependency edges */}
         <TaskGraphEdges edges={layout.edges} highlight={highlight} />
 
-        {/* Layer 3: Task cards (all visible tasks) */}
+        {/* Layer 4: Task cards (all visible tasks) */}
         <g data-layer="nodes">
           {Array.from(layout.nodes.values()).map(node => {
             const task = graph.tasks.get(node.id)

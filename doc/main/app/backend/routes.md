@@ -175,11 +175,11 @@ Audio is never persisted to disk. API key is never exposed to the browser.
 
 ### Tasks
 
-All mutations spawn `yaco task <sub> --json` (canonical CLI surface) and parse the `{ok,data}/{ok,error}` envelope. CliError codes map to HTTP statuses: `USAGE`/`INVALID` → 400 (with `details` preserved), `NOT_FOUND` → 404, `CONFLICT`/`LOCK` → 409, others → 500. The server execFile timeout is `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `@yaco/cli/core/task`) so a held lock surfaces as a structured 409 envelope instead of an opaque 500 timeout. GET reads resolve the tasks file through `resolveRepoPaths(repoRoot)` so `yaco.toml [paths].tasks` overrides are honored (reads and writes target the same file).
+All task routes spawn `yaco task <sub> --json` (canonical CLI surface) and parse the `{ok,data}/{ok,error}` envelope. CliError codes map to HTTP statuses: `USAGE`/`INVALID` → 400 (with `details` preserved), `NOT_FOUND` → 404, `CONFLICT`/`LOCK` → 409, others → 500. The server execFile timeout is `DEFAULT_TASK_LOCK_TIMEOUT_MS + 5_000` (imported from `@yaco/cli/core/task`) so a held lock surfaces as a structured 409 envelope instead of an opaque 500 timeout. GET uses `yaco task list --workset all --json`; path resolution and `yaco.toml [paths].tasks` handling stay owned by the CLI.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/tasks/:project` | Read the tasks file. Returns **all worksets** (active, backlog, archive) — the workspace filters client-side; the server no longer drops non-active rows. Response enriched with `worktreeStatus` for each task that has a `worktree` field (resolved via `getWorktreeStatuses`) |
+| GET | `/api/tasks/:project` | `yaco task list --workset all --json`. Returns **all worksets** (active, backlog, archive) — the workspace filters client-side. Response enriched with `worktreeStatus` for each task that has a `worktree` field (resolved via `getWorktreeStatuses`) |
 | PATCH | `/api/tasks/:project/:taskId` | Partial task update (`yaco task set <id> --data <json> --json`); returns the updated task body |
 | PUT | `/api/tasks/:project/:taskId` | Create task — requires `title`, `description`, `acceptCriteria`. Same `yaco task set` envelope as PATCH |
 | DELETE | `/api/tasks/:project/:taskId` | `yaco task rm <id> --json`; returns `{deleted: true}` |

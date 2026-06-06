@@ -78,6 +78,32 @@ describe('workset filtering', () => {
     expect(archiveOnly.nodes.has('a')).toBe(false)
     expect(archiveOnly.nodes.has('b')).toBe(false)
   })
+
+  it('orders same-level nodes by workset: active, then backlog, then archive', () => {
+    const layout = layoutFor({
+      backlog: entry({ title: 'A backlog task', workset: 'backlog' }),
+      archive: entry({ title: 'B archived task', workset: 'archive' }),
+      active: entry({ title: 'Z active task', workset: 'active' }),
+    }, new Set(['active', 'backlog', 'archive']))
+
+    expect(layout.visibleOrder).toEqual(['active', 'backlog', 'archive'])
+  })
+
+  it('adds subtle section headers before visible non-active root sections', () => {
+    const layout = layoutFor(raw, new Set(['active', 'backlog', 'archive']))
+    expect(layout.sections.map(s => [s.workset, s.label])).toEqual([
+      ['backlog', 'Backlog'],
+      ['archive', 'Archive'],
+    ])
+
+    const activeY = layout.nodes.get('a')!.y
+    const backlogY = layout.nodes.get('b')!.y
+    const archiveY = layout.nodes.get('c')!.y
+    expect(layout.sections[0].y).toBeGreaterThan(activeY)
+    expect(layout.sections[0].y).toBeLessThan(backlogY)
+    expect(layout.sections[1].y).toBeGreaterThan(backlogY)
+    expect(layout.sections[1].y).toBeLessThan(archiveY)
+  })
 })
 
 // --- Criterion 2: vertical stacked root sections -----------------------------
@@ -169,9 +195,9 @@ describe('title', () => {
 describe('metadata rail — width-driven collapse (buildRail)', () => {
   const task = makeTask({ title: 'X', priority: 'high', workset: 'backlog', agent: 'claude' }, 'long-task-id')
 
-  it('shows id, agent, priority, workset (in that order) when there is room', () => {
+  it('shows id, agent, and priority, but not the workset badge', () => {
     const rail = buildRail(task, 0, 1000)
-    expect(rail.map(i => i.key)).toEqual(['id', 'agent', 'priority', 'workset'])
+    expect(rail.map(i => i.key)).toEqual(['id', 'agent', 'priority'])
     // Right-aligned: the last badge ends exactly at the right bound.
     const last = rail[rail.length - 1]
     expect(last.x + last.width).toBe(1000)
@@ -179,20 +205,25 @@ describe('metadata rail — width-driven collapse (buildRail)', () => {
 
   it('drops fields from the low-priority end as the row narrows, through every intermediate prefix', () => {
     // Field badge widths for this task (railItemWidth = ceil(len*6.3) + 10):
-    //   id 'long-task-id'(12)=86, agent 'claude'(6)=48, priority 'high'(4)=36, workset 'backlog'(7)=55
+    //   id 'long-task-id'(12)=86, agent 'claude'(6)=48, priority 'high'(4)=36
     // Greedy cumulative thresholds (first item has no leading gap; RAIL_GAP=5):
-    //   id 86 | +agent 139 | +priority 180 | +workset 240
+    //   id 86 | +agent 139 | +priority 180
     // Each width below lands squarely inside one band so the exact prefix is asserted.
-    expect(buildRail(task, 0, 250).map(i => i.key)).toEqual(['id', 'agent', 'priority', 'workset'])
+    expect(buildRail(task, 0, 250).map(i => i.key)).toEqual(['id', 'agent', 'priority'])
     expect(buildRail(task, 0, 200).map(i => i.key)).toEqual(['id', 'agent', 'priority'])
     expect(buildRail(task, 0, 160).map(i => i.key)).toEqual(['id', 'agent'])
     expect(buildRail(task, 0, 110).map(i => i.key)).toEqual(['id'])
     expect(buildRail(task, 0, 30).map(i => i.key)).toEqual([])
   })
 
-  it('hides default-valued fields (normal priority, active workset, no agent)', () => {
+  it('hides default-valued fields (normal priority, no agent)', () => {
     const plain = makeTask({ title: 'X', priority: 'normal', workset: 'active' }, 'plain-id')
     expect(buildRail(plain, 0, 1000).map(i => i.key)).toEqual(['id'])
+  })
+
+  it('does not render archive as a workset badge either', () => {
+    const archived = makeTask({ title: 'X', priority: 'normal', workset: 'archive' }, 'archived-id')
+    expect(buildRail(archived, 0, 1000).map(i => i.key)).toEqual(['id'])
   })
 
   it('shows the full id when the row is wide instead of a fixed-width truncation', () => {

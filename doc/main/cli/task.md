@@ -33,7 +33,7 @@ yaco task set <id> --file <path>        [--repo <p>] [--json]
 yaco task rm <id>                       [--repo <p>] [--json]
 yaco task archive <id>                  [--repo <p>] [--json]
 yaco task validate [--id <id>]          [--repo <p>] [--json]
-yaco task list                          [--repo <p>] [--json]
+yaco task list                          [--workset active|backlog|archive|all] [--repo <p>] [--json]
 ```
 
 ### `set <id>`
@@ -105,7 +105,12 @@ returns exit 1 `INVALID`):
 ### `list`
 
 Text mode prints `id  state  title` columns for the active workset.
-`--json` returns `{ tasks, tasksPath, tasksFile }` for the active workset.
+`--json` returns `{ tasks, tasksPath, tasksFile }`.
+
+By default `list` returns the active workset, matching orchestrator dispatch
+semantics. Use `--workset backlog` or `--workset archive` for a single
+non-active workset, and `--workset all` for consumers such as `app/server`
+that need the full graph and apply their own UI filter.
 
 ## Path resolution (the bug we fixed)
 
