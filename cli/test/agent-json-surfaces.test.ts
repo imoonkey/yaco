@@ -6,9 +6,10 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import { spawnSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { resolve, join } from "path";
+import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
 
 const BIN = resolve(import.meta.dir, "../src/main.ts");
 
@@ -75,5 +76,37 @@ describe("agent history/summaries data envelopes", () => {
     const { status, data } = runJson(["agent", "summaries", "--path", "/no/such/project/xyz", "--json"], hermetic);
     expect(status).toBe(0);
     expect(data).toEqual({ ok: true, data: [] });
+  });
+
+  it("`agent history --json` flushes a large envelope completely", () => {
+    const projectPath = join(sandbox, "large-project");
+    const projectDir = join(sandbox, ".claude", "projects", encodeClaudeCwd(projectPath));
+    mkdirSync(projectDir, { recursive: true });
+
+    const largeText = "x".repeat(900);
+    for (let i = 0; i < 220; i++) {
+      const sessionId = `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`;
+      const timestamp = new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString();
+      writeFileSync(
+        join(projectDir, `${sessionId}.jsonl`),
+        JSON.stringify({
+          type: "user",
+          timestamp,
+          message: { content: `prompt ${i} ${largeText}` },
+        }) + "\n",
+      );
+    }
+
+    const r = spawnSync("bun", ["run", BIN, "agent", "history", "--path", projectPath, "--json"], {
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1", ...hermetic },
+    });
+
+    expect(r.status).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(r.stdout.length).toBeGreaterThan(180_000);
+    const envelope = JSON.parse(r.stdout) as { ok: boolean; data: unknown[] };
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data).toHaveLength(200);
   });
 });

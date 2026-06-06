@@ -203,7 +203,9 @@ async function main(): Promise<void> {
   }
   const { result, json } = await dispatch(argv);
   render(result, json);
-  process.exit(isErr(result) ? exitCodeFor(result.code) : 0);
+  // Let stdout/stderr drain naturally. Calling process.exit() immediately after
+  // rendering can truncate large JSON envelopes when stdout is a pipe.
+  process.exitCode = isErr(result) ? exitCodeFor(result.code) : 0;
 }
 
 if (import.meta.main) {
