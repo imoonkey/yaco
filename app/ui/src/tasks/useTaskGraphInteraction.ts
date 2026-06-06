@@ -3,9 +3,51 @@ import type { TaskState, TaskGraphModel } from './taskGraphModel'
 import { type Selection, computeHighlight, searchTasks, EMPTY_HIGHLIGHT } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 
+export type TaskWorkspaceLayout = 'stacked' | 'dag'
+export type Workset = 'active' | 'backlog' | 'archive'
+
+export type TaskGraphFilters = {
+  states: Set<TaskState>
+  worksets: Set<Workset>
+}
+
 const ALL_STATES: TaskState[] = ['ready', 'running', 'done', 'blocked', 'cancelled']
+const ALL_WORKSETS: Workset[] = ['active', 'backlog', 'archive']
+const DEFAULT_WORKSETS: Workset[] = ['active', 'backlog']
 
 export type TaskGraphInteraction = ReturnType<typeof useTaskGraphInteraction>
+
+// Persisted workspace state (new key). Unknown/stale layout resolves to stacked.
+type LoadedWorkspace = {
+  layout: TaskWorkspaceLayout
+  worksets: Set<Workset>
+  states: Set<TaskState>
+  collapsed: Set<string>
+}
+
+function loadWorkspace(project: string): LoadedWorkspace {
+  const base: LoadedWorkspace = {
+    layout: 'stacked',
+    worksets: new Set(DEFAULT_WORKSETS),
+    states: new Set(ALL_STATES),
+    collapsed: new Set(),
+  }
+  try {
+    const stored = localStorage.getItem(`yaco-task-workspace:${project}`)
+    if (!stored) return base
+    const p = JSON.parse(stored)
+    const worksets = Array.isArray(p.worksets) ? p.worksets.filter((w: unknown): w is Workset => ALL_WORKSETS.includes(w as Workset)) : []
+    const states = Array.isArray(p.states) ? p.states.filter((s: unknown): s is TaskState => ALL_STATES.includes(s as TaskState)) : []
+    return {
+      layout: p.layout === 'dag' ? 'dag' : 'stacked',
+      worksets: worksets.length ? new Set(worksets) : new Set(DEFAULT_WORKSETS),
+      states: states.length ? new Set(states) : new Set(ALL_STATES),
+      collapsed: Array.isArray(p.collapsedTaskIds) ? new Set(p.collapsedTaskIds) : new Set(),
+    }
+  } catch {
+    return base
+  }
+}
 
 export function useTaskGraphInteraction(
   projectName: string,
@@ -13,30 +55,29 @@ export function useTaskGraphInteraction(
   panZoom: { didDrag: React.RefObject<boolean> },
   isMobile: boolean,
 ) {
+  const [initial] = useState(() => loadWorkspace(projectName))
   const [selection, setSelection] = useState<Selection>(null)
-  const [filters, setFilters] = useState<Set<TaskState>>(() => new Set(ALL_STATES))
+  const [layout, setLayout] = useState<TaskWorkspaceLayout>(initial.layout)
+  const [stateFilters, setStateFilters] = useState<Set<TaskState>>(initial.states)
+  const [worksets, setWorksets] = useState<Set<Workset>>(initial.worksets)
   const [searchQuery, setSearchQuery] = useState('')
+
+  const filters = useMemo<TaskGraphFilters>(() => ({ states: stateFilters, worksets }), [stateFilters, worksets])
 
   const clickConsumed = useRef(false)
 
   // --- Collapse state ---
-  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(() => {
-    try {
-      const stored = localStorage.getItem(`yaco-taskgraph:${projectName}`)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        const ids = parsed.collapsedTaskIds ?? parsed.collapsedMilestones
-        if (Array.isArray(ids)) return new Set(ids)
-      }
-    } catch { /* ignore */ }
-    return new Set()
-  })
+  const [collapsedTaskIds, setCollapsedTaskIds] = useState<Set<string>>(initial.collapsed)
 
-  // Persist collapse state
+  // Persist workspace state under the new key
   useEffect(() => {
-    localStorage.setItem(`yaco-taskgraph:${projectName}`,
-      JSON.stringify({ collapsedTaskIds: [...collapsedTaskIds] }))
-  }, [projectName, collapsedTaskIds])
+    localStorage.setItem(`yaco-task-workspace:${projectName}`, JSON.stringify({
+      layout,
+      worksets: [...worksets],
+      states: [...stateFilters],
+      collapsedTaskIds: [...collapsedTaskIds],
+    }))
+  }, [projectName, layout, worksets, stateFilters, collapsedTaskIds])
 
   // --- Tooltip state ---
   const [tooltipTarget, setTooltipTarget] = useState<TooltipTarget | null>(null)
@@ -148,13 +189,29 @@ export function useTaskGraphInteraction(
   }, [clearTooltip, panZoom.didDrag])
 
   const handleToggleFilter = useCallback((state: TaskState) => {
-    setFilters(prev => {
+    setStateFilters(prev => {
       const next = new Set(prev)
       if (next.has(state)) next.delete(state)
       else next.add(state)
       return next
     })
   }, [])
+
+  const handleToggleWorkset = useCallback((workset: Workset) => {
+    setWorksets(prev => {
+      const next = new Set(prev)
+      if (next.has(workset)) next.delete(workset)
+      else next.add(workset)
+      return next
+    })
+    // Clear selection if the selected task is now hidden by the workset filter,
+    // so the detail panel never holds a stale hidden reference.
+    setSelection(prev => {
+      if (!prev || !graph) return prev
+      const task = graph.tasks.get(prev)
+      return task && task.workset === workset && worksets.has(workset) ? null : prev
+    })
+  }, [graph, worksets])
 
   // --- Navigate to node ---
   const pendingPanRef = useRef<string | null>(null)
@@ -191,6 +248,8 @@ export function useTaskGraphInteraction(
   return {
     selection,
     setSelection,
+    layout,
+    setLayout,
     filters,
     searchQuery,
     setSearchQuery,
@@ -204,6 +263,7 @@ export function useTaskGraphInteraction(
     handleSelectTask,
     handleClearSelection,
     handleToggleFilter,
+    handleToggleWorkset,
     handleToggleCollapse,
     handleCollapseAll,
     handleExpandAll,

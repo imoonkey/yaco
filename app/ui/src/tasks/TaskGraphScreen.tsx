@@ -39,12 +39,16 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
     }
   }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Compute display layout from graph + interaction view state
+  // Compute display layout from graph + interaction view state.
+  // The workset filter is applied to the rendered set here: tasks whose workset is
+  // disabled (archive by default) are dropped before layout, so they never render.
   const displayLayout = useMemo(() => {
     if (!graph) return null
+    const worksets = ix.filters.worksets
+    const visibleTasks = new Map([...graph.tasks].filter(([, t]) => worksets.has(t.workset)))
     return computeDisplayLayout(
-      { tasks: graph.tasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask },
-      { collapsedTaskIds: ix.collapsedTaskIds, filters: ix.filters },
+      { tasks: visibleTasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask },
+      { collapsedTaskIds: ix.collapsedTaskIds, filters: ix.filters.states },
       graph.aggregateStateByTask,
       graph.leafProgressByTask,
       graph.cycleEdgeIds,
@@ -164,7 +168,9 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
     <div className="flex flex-col h-full">
       <TaskGraphToolbar
         scale={panZoom.state.scale}
-        filters={ix.filters}
+        layout={ix.layout}
+        stateFilters={ix.filters.states}
+        worksets={ix.filters.worksets}
         searchQuery={ix.searchQuery}
         searchMatchCount={ix.searchMatchIds.size}
         allCollapsed={ix.allCollapsed}
@@ -172,7 +178,9 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
         onZoomIn={panZoom.zoomIn}
         onZoomOut={panZoom.zoomOut}
         onFitToView={() => panZoom.fitToView()}
-        onToggleFilter={ix.handleToggleFilter}
+        onSetLayout={ix.setLayout}
+        onToggleState={ix.handleToggleFilter}
+        onToggleWorkset={ix.handleToggleWorkset}
         onSearchChange={ix.setSearchQuery}
         onSearchSubmit={ix.handleSearchSubmit}
         onCollapseAll={ix.handleCollapseAll}
