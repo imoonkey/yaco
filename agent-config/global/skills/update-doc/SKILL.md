@@ -132,6 +132,8 @@ Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
   whether `plan/tasks/**/tasks.json` has the matching terminal project task
   and archive it via `yaco task archive <id> --json` (or `/update-tasks`).
   The command marks the terminal subtree with `workset=archive`; project docs
-  live under `plan/all/**`, with `plan/archive/*` as a symlink view.
+  live under `plan/all/**`, with `plan/archive/*` as a symlink view. Move the
+  project symlink view from `plan/active/<project>` or `plan/backlog/<project>`
+  to `plan/archive/YYYYMMDD_<project>`, using the archive date.
 
 Outside YACO, follow the project's own design-doc and archive conventions.

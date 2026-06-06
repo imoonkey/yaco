@@ -125,6 +125,12 @@ yaco task archive <id>                  --json
 All descendants must also be terminal. Non-terminal work that should leave the
 current workset belongs in `workset=backlog`, not `archive`.
 
+When archiving a top-level bundle, follow the `update-doc` skill's YACO archive
+convention for doc views: real docs stay under `plan/all/<bundle>/`, and the
+view symlink moves to the dated `plan/archive/YYYYMMDD_<bundle>` name. If the
+bundle task store is moved under the archive task-store area, use that same
+dated name: `plan/tasks/archive/YYYYMMDD_<bundle>/tasks.json`.
+
 Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.
 
 ## Examples
