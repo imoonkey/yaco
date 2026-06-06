@@ -1,5 +1,15 @@
 # Progress
 
+## 2026-06-06: Task workspace — tighter horizontal margins
+
+**What changed (`app/ui/src/tasks/taskGraphModel.ts`):** reduced the stacked-layout outer padding and right gutter so cards use more of the panel width. `GRAPH_PADDING` 40→16 (left/right base padding), `DEPENDS_GUTTER` 56→36 (right-side arc gutter), `ARC_OFFSET` 24→22. Net: left margin 40→16px; right margin 96→~52px (36px functional arc gutter + 16px base padding symmetric with the left).
+
+**Why:** user-reported excessive whitespace on both sides — cards started 40px in on the left and ended ~96px before the right edge, most of it empty.
+
+**Verification (browser-measured at 1500px):** left card margin 16px; dependency arcs bow ~21–28px into the 36px gutter and are not clipped (43 edges checked); right space is now the arc gutter rather than dead margin. `npm run build` ✓, `tsc -b` ✓, `npm run lint` ✓ (0 errors), `vitest` → 13 passed.
+
+**Key files:** `app/ui/src/tasks/taskGraphModel.ts`
+
 ## 2026-06-06: Task node — title takes priority over metadata rail on narrow rows
 
 **What changed (`app/ui/src/tasks/TaskGraphNode.tsx`, `metadataRail.ts`, `taskGraphModel.test.ts`):**
