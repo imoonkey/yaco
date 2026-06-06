@@ -179,10 +179,13 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
           </button>
           {filtersOpen && (
             <div
-              className="absolute top-full left-0 mt-1 p-2 rounded-md shadow-md z-10 flex flex-col gap-2"
+              className="absolute top-full left-0 mt-1 p-2.5 rounded-md shadow-md z-10 flex flex-col gap-1.5"
               style={{ backgroundColor: 'var(--sol-bg)', border: '1px solid var(--sol-border)' }}
             >
+              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-muted)' }}>Workset</span>
               {worksetChips}
+              <div className="my-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />
+              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-muted)' }}>State</span>
               {filterChips}
             </div>
           )}

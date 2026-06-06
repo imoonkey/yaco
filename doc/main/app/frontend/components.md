@@ -71,7 +71,8 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
 │   │     Gantt shows only when the viewport is wide enough — landscape phone
 │   │     qualifies, portrait does not), workset filter (active/backlog/archive),
 │   │     state filter, search (`/` focuses it), collapse/expand. Mobile folds
-│   │     workset+state into a Filter popover and hides the collapse controls.
+│   │     workset+state into a Filter popover (each group labeled, with a divider
+│   │     between) and hides the collapse controls.
 │   │     (There is no zoom — Stacked fits the width and Gantt scrolls.)
 │   ├── (Stacked) TaskGraphCanvas → TaskGraphRows (shared row renderer: section
 │   │     dividers + indent guides + TaskGraphNode[] 36px width-driven cards) +
