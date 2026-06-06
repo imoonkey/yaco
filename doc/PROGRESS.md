@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-06: Vertical-scroll viewport for the task workspace
+
+**What changed:**
+- Replaced the SVG infinite-canvas pan/zoom with native vertical scroll. `TaskGraphCanvas` sizes the SVG to `bounds.{width,height} * scale` with a `<g transform="scale(scale)">` inside an `overflow-y-scroll overflow-x-auto` container; layout width comes from the scroll container's `clientWidth` so it fits exactly at scale 1 (no horizontal scrollbar). Pan pointer handlers dropped.
+- Added `useViewport.ts` (`{ scale, didDrag, zoomIn, zoomOut, resetZoom, scrollNodeIntoView }`) and **deleted** `usePanZoom.ts` + `TaskGraphMinimap.tsx` (no remaining importers). `didDrag` is an always-false ref kept only for `useTaskGraphInteraction`'s click-vs-drag guard.
+- Search submit and keyboard navigation (Tab/arrows/Home/End) scroll the target node to vertical center via `viewport.scrollNodeIntoView`. Keyboard `0` maps to `resetZoom`; `+/-/=` zoom.
+- `TaskGraphTooltip` positions from `scale` + the scroll container's `scrollLeft/scrollTop`; cleared on scroll and on zoom so it never strands. Selection lives inside the scaled `<g>`, so it tracks scroll/zoom automatically.
+
+**Why:**
+- The stacked layout is width-fit, so horizontal pan had nothing to navigate to and fought the layout; a minimap only makes sense for an infinite canvas. Native scroll is smaller in surface and more robust (browser handles wheel/trackpad/touch/momentum). Decision per design Open Question #1: delete rather than constrain, since all pan/zoom/minimap importers were in scope.
+
+**Key files:** `app/ui/src/tasks/{useViewport.ts (new), TaskGraphScreen.tsx, TaskGraphCanvas.tsx, TaskGraphTooltip.tsx, useTaskGraphKeyboard.ts}`; deleted `app/ui/src/hooks/usePanZoom.ts`, `app/ui/src/tasks/TaskGraphMinimap.tsx`
+**Verification:** `cd app/ui && npx tsc --noEmit` clean; `npm run lint` → 0 errors / 13 existing warnings; `npm run build` green.
+**Commit:** 91885b5
+**Next:** `metadata-rail`, `remove-legacy-surfaces`, `dag-layout-mode`, `workspace-verification`.
+**Blockers:** None.
+
 ## 2026-06-06: Single task workspace shell + workset filter
 
 **What changed:**

@@ -65,14 +65,14 @@ App (384 lines)
 ```
 TaskScreen — workspace shell: loads task data, owns selectedTaskId, renders
 │            the one graph workspace + detail panel. No view switching.
-├── TaskGraphScreen — the single workspace (SVG dependency graph, pan/zoom)
+├── TaskGraphScreen — the single workspace (SVG dependency graph, vertical scroll)
 │   ├── TaskGraphToolbar — the one toolbar: layout (Stacked; DAG disabled until
 │   │     built), workset filter (active/backlog/archive), state filter, search
 │   │     (`/` focuses it), zoom, collapse/expand. Mobile folds workset+state into
 │   │     a Filter popover and hides the layout/collapse controls.
 │   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row
-│   │     card, estimate badge, worktree icon) + TaskGraphEdges
-│   ├── TaskGraphMinimap — overview with viewport rect (desktop only)
+│   │     card, estimate badge, worktree icon) + TaskGraphEdges. The SVG is sized
+│   │     to the scaled layout bounds inside an overflow-y scroll container.
 │   └── TaskGraphTooltip — hover overlay
 └── TaskDetailPanel — shared right sidebar (editable; archive tasks are in the
     │   map now, so no read-only mode is wired)
@@ -94,6 +94,11 @@ Workset is a filter, not a view: the workspace receives all worksets and shows
 The visible-set filter is applied before layout in `TaskGraphScreen` (drop tasks
 whose workset is disabled), and a selection that drops out of the recomputed
 layout is cleared so the detail panel can't show a hidden task.
+
+Navigation is native vertical scroll (no horizontal infinite canvas); zoom is a
+uniform scale applied to the SVG. Search and keyboard navigation scroll the
+target node to vertical center via `useViewport.scrollNodeIntoView`. -> See:
+frontend/hooks.md `useViewport.ts`.
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
