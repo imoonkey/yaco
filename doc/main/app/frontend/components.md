@@ -85,12 +85,8 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId, renders
     ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
     ├── Children progress bar (for parent tasks)
     └── Design doc link → opens in editor (file paths) or new tab (URLs)
-
-Legacy surfaces — no longer mounted by TaskScreen, files pending deletion in the
-remove-legacy-surfaces task: TaskToolbar (view tabs + 1/2/3/4 shortcuts),
-TaskBoardView, TaskListView, TaskArchiveView, useTaskViewState, shared/StateBadge,
-shared/PriorityTag.
 ```
+
 
 Workset is a filter, not a view: the workspace receives all worksets and shows
 `active + backlog` by default; archive is hidden until enabled in the toolbar.
@@ -117,7 +113,6 @@ tooltip chips and `TaskDetailPanel`.
 - `taskGraphModel.ts` — stacked full-width layout: roots stack vertically (by increasing `y`), each row fills the container width to a shared right edge with 24px indent/level for children, left-side guide lines, SCC cycle detection, `computeDisplayLayout(..., containerWidth)` with visible-tree semantics. `LayoutNode.width` drives card width; NODE_WIDTH=280 is now a min-width floor only. Real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge so arcs clear intervening cards; no non-dependency edges. NODE_HEIGHT=36.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 - `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
-- `hooks/useTaskViewState.ts` — persisted view state (active view, filters, sort, selection)
 
 **Supporting modules (non-component):**
 - `workspace/markdown.ts` — escapeHtml, renderMarkdown, resolveRelativePath, code highlighting, heading slugification, plus `loadMermaid()` lazy-loader (memoized dynamic import + first-use `initialize`)

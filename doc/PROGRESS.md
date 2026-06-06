@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-06: Remove legacy Board/List/Archive task surfaces and dead code
+
+**What changed:**
+- Deleted the multi-view task UI now that the Tasks screen is a single graph workspace: `TaskToolbar`, `board/**`, `list/**`, `archive/TaskArchiveView.tsx`, `archive/useArchiveData.ts` (18 files; empty `board/`+`list/` dirs removed).
+- Evidence-based dead-code sweep — all 7 named candidates lost their last importer and were deleted: `TaskGraphDetailPanel.tsx`, `shared/StateBadge.tsx`, `shared/PriorityTag.tsx`, `hooks/{useTaskBoard,useTaskList,useColumnWidths,useTaskViewState}.ts`. Kept (still imported): `shared/StateDot`, `shared/InlineEdit`, `model/taskModel`, `archive/archiveTask.ts`.
+- Server: removed the dead `GET /:project/archive` read route (only consumers were the deleted `useArchiveData`/Archive panel); `POST /:project/:taskId/archive` action untouched.
+- Tests: replaced the `GET /archive` server test with a workset-filter test asserting `GET /:project` returns all worksets; removed 5 dead Board/List/Graph view-switch e2e tests from `worktree.spec.ts`.
+- Docs: `frontend/components.md` (dropped the "pending deletion" legacy block + `useTaskViewState` line), `backend/routes.md` (removed GET /archive row, GET /:project now documented as returning all worksets).
+
+**Why:**
+- Subtraction follow-up to the single-workspace migration — the old surfaces were already unmounted; this removes the now-dead files, the dead archive READ path, and surface-specific tests. The archive POST action stays because the detail panel uses it. No backward-compat shim (pre-release).
+
+**Key files:** `app/ui/src/tasks/**` (deletions), `app/server/src/routes/tasks.ts`, `app/server/src/routes/__tests__/tasks-worktree.test.ts`, `app/ui/tests/e2e/worktree.spec.ts`
+**Verification:** `cd app/server && npm test` → 409 passed; `cd app/ui && npm run lint` → 0 errors / 13 existing warnings; `npx tsc --noEmit` clean; `npm run build` green.
+**Commit:** bf7c69a
+**Next:** `dag-layout-mode`, `workspace-verification`.
+**Blockers:** None.
+
 ## 2026-06-06: Responsive width-driven metadata rail on task nodes
 
 **What changed:**
