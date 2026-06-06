@@ -63,6 +63,287 @@ async function nodeRects(page: Page) {
     })))
 }
 
+// --- Pseudo-Gantt helpers ----------------------------------------------------
+
+const layoutModeGroup = (page: Page) => page.locator('[role="group"][aria-label="Layout mode"]')
+const ganttBars = (page: Page) => page.locator('[data-layer="bars"] g[data-task-id]')
+// The single scroll container owned by TaskGraphScreen (vertical scroll + the
+// Gantt's one approved horizontal carve-out).
+const ganttScroll = (page: Page) => page.locator('.overflow-y-scroll.overflow-x-auto').first()
+
+/** Switch the workspace into Pseudo-Gantt mode and wait for bars to render. */
+async function switchToGantt(page: Page) {
+  await layoutModeGroup(page).getByRole('button', { name: 'Gantt' }).click()
+  await expect(page.locator('[data-layer="bars"]')).toBeVisible({ timeout: 10_000 })
+  await expect(ganttBars(page).first()).toBeVisible({ timeout: 10_000 })
+}
+
+/** Re-open the task workspace for `project` after a fresh navigation WITHOUT
+ *  clearing persisted workspace state, so layout/workset/collapse restore. The
+ *  tasks view normally auto-restores from the persisted layout; only toggle it
+ *  open if it did not come back on its own. */
+async function reopenWorkspace(page: Page, project: Project) {
+  await page.goto('/')
+  await page.locator('button', { hasText: project.name }).first().click()
+  const nodes = page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first()
+  const restored = await nodes.waitFor({ state: 'visible', timeout: 4_000 }).then(() => true).catch(() => false)
+  if (!restored) await page.keyboard.press('Meta+Shift+t')
+  await expect(nodes).toBeVisible({ timeout: 15_000 })
+}
+
+/** Zoom in `n` steps (+0.25 each) via the toolbar to force scroll overflow. */
+async function zoomInSteps(page: Page, n: number) {
+  const btn = page.locator('button[title="Zoom in"]')
+  for (let i = 0; i < n; i++) await btn.click()
+}
+
+test.describe('Task workspace (Pseudo-Gantt mode)', () => {
+  test.use({ viewport: { width: 1280, height: 800 } })
+
+  test('layout switch toggles Stacked↔Gantt, persists across reload, and a stale layout falls back to Stacked', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    const group = layoutModeGroup(page)
+
+    // Default: Stacked selected, no Gantt bars in the DOM.
+    await expect(group.getByRole('button', { name: 'Stacked' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-layer="bars"]')).toHaveCount(0)
+
+    // Switch to Gantt → bars render and Gantt is pressed.
+    await switchToGantt(page)
+    await expect(group.getByRole('button', { name: 'Gantt' })).toHaveAttribute('aria-pressed', 'true')
+    expect(await ganttBars(page).count()).toBeGreaterThan(0)
+
+    // Switch back to Stacked → bars gone, stacked rows present.
+    await group.getByRole('button', { name: 'Stacked' }).click()
+    await expect(page.locator('[data-layer="bars"]')).toHaveCount(0)
+    await expect(taskNodes(page).first()).toBeVisible()
+
+    // Persistence: re-enter Gantt, re-open the workspace from a fresh load → still Gantt.
+    await switchToGantt(page)
+    await reopenWorkspace(page, project)
+    await expect(layoutModeGroup(page).getByRole('button', { name: 'Gantt' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(ganttBars(page).first()).toBeVisible({ timeout: 10_000 })
+
+    // A stale/unknown persisted layout value resolves back to Stacked.
+    await page.evaluate((name: string) => {
+      const key = `yaco-task-workspace:${name}`
+      const cur = JSON.parse(localStorage.getItem(key) || '{}')
+      localStorage.setItem(key, JSON.stringify({ ...cur, layout: 'timeline-x9' }))
+    }, project.name)
+    await reopenWorkspace(page, project)
+    await expect(layoutModeGroup(page).getByRole('button', { name: 'Stacked' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-layer="bars"]')).toHaveCount(0)
+  })
+
+  test('the frozen left task column does not move during horizontal scroll', async ({ page }) => {
+    await openTaskGraph(page)
+    await switchToGantt(page)
+    await zoomInSteps(page, 4) // 2.0x — guarantees the time pane overflows horizontally
+
+    const scroller = ganttScroll(page)
+    const overflow = await scroller.evaluate(el => el.scrollWidth - el.clientWidth)
+    expect(overflow).toBeGreaterThan(0)
+
+    const node = taskNodes(page).first()
+    const bar = ganttBars(page).first()
+    const nodeBefore = await node.boundingBox()
+    const barBefore = await bar.boundingBox()
+    expect(nodeBefore).toBeTruthy()
+    expect(barBefore).toBeTruthy()
+
+    await scroller.evaluate(el => { el.scrollLeft = Math.floor((el.scrollWidth - el.clientWidth) / 2) })
+    await expect.poll(() => scroller.evaluate(el => el.scrollLeft)).toBeGreaterThan(0)
+
+    const nodeAfter = await node.boundingBox()
+    const barAfter = await bar.boundingBox()
+    // Sticky-left column: the left-pane node's viewport x must not move with the scroll.
+    expect(Math.abs(nodeAfter!.x - nodeBefore!.x)).toBeLessThan(1.5)
+    // The time pane DID scroll — a bar moved left by (roughly) the scroll amount.
+    expect(barAfter!.x).toBeLessThan(barBefore!.x - 50)
+  })
+
+  test('the frozen ruler does not move during vertical scroll', async ({ page }) => {
+    await openTaskGraph(page)
+    await switchToGantt(page)
+    await zoomInSteps(page, 4) // 2.0x — guarantees vertical overflow
+
+    const scroller = ganttScroll(page)
+    const overflow = await scroller.evaluate(el => el.scrollHeight - el.clientHeight)
+    expect(overflow).toBeGreaterThan(0)
+
+    const ruler = page.locator('[data-testid="gantt-ruler"]')
+    await expect(ruler).toBeVisible()
+    const rulerBefore = await ruler.boundingBox()
+    const barBefore = await ganttBars(page).first().boundingBox()
+
+    await scroller.evaluate(el => { el.scrollTop = Math.floor((el.scrollHeight - el.clientHeight) / 2) })
+    await expect.poll(() => scroller.evaluate(el => el.scrollTop)).toBeGreaterThan(0)
+
+    const rulerAfter = await ruler.boundingBox()
+    const barAfter = await ganttBars(page).first().boundingBox()
+    // Sticky-top ruler: its viewport y must not move with the vertical scroll.
+    expect(Math.abs(rulerAfter!.y - rulerBefore!.y)).toBeLessThan(1.5)
+    // The content DID scroll under it — a bar moved up.
+    expect(barAfter!.y).toBeLessThan(barBefore!.y - 50)
+  })
+
+  test('zoom keeps left-pane rows aligned with their time-pane bars (no drift)', async ({ page }) => {
+    await openTaskGraph(page)
+    await switchToGantt(page)
+    const scroller = ganttScroll(page)
+    await scroller.evaluate(el => { el.scrollTop = 0; el.scrollLeft = 0 })
+
+    // A task that has both a left-pane row and a time-pane bar.
+    const id = await ganttBars(page).first().getAttribute('data-task-id')
+    expect(id).toBeTruthy()
+    const nodeRect = page.locator(`[data-layer="nodes"] g[data-task-id="${id}"] > rect`).first()
+    const barRect = page.locator(`[data-layer="bars"] g[data-task-id="${id}"] rect`).first()
+
+    const centerY = async (loc: ReturnType<Page['locator']>) => {
+      const b = await loc.boundingBox()
+      expect(b).toBeTruthy()
+      return b!.y + b!.height / 2
+    }
+    const rowHeight = async () => (await nodeRect.boundingBox())!.height
+
+    // Aligned at 100% — left card and bar share the row's vertical center.
+    expect(Math.abs(await centerY(nodeRect) - await centerY(barRect))).toBeLessThan(2)
+    const h1 = await rowHeight()
+
+    // Zoom in and re-check from the same scroll origin: rows must still line up.
+    await zoomInSteps(page, 4)
+    await scroller.evaluate(el => { el.scrollTop = 0; el.scrollLeft = 0 })
+    expect(Math.abs(await centerY(nodeRect) - await centerY(barRect))).toBeLessThan(3)
+    // The scale actually changed (the row grew), so the alignment held across zoom.
+    expect(await rowHeight()).toBeGreaterThan(h1 * 1.5)
+  })
+
+  test('a task with a missing estimate renders the assumed-estimate hatch', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    // A default-visible leaf (non-archive, no archived ancestor) with no estimate.
+    const id = await page.evaluate(async (name: string) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+      const { tasks } = await res.json() as {
+        tasks: Record<string, { parent: string | null; workset?: string; estimate?: string | null }>
+      }
+      const childOf = new Set<string>()
+      for (const t of Object.values(tasks)) if (t.parent) childOf.add(t.parent)
+      const ws = (tid: string) => tasks[tid]?.workset ?? 'active'
+      const archived = (tid: string) => {
+        let cur: string | null = tid
+        const seen = new Set<string>()
+        while (cur && !seen.has(cur)) { seen.add(cur); if (ws(cur) === 'archive') return true; cur = tasks[cur]?.parent ?? null }
+        return false
+      }
+      for (const [tid, t] of Object.entries(tasks)) {
+        if (!childOf.has(tid) && !archived(tid) && !t.estimate) return tid
+      }
+      return null
+    }, project.name)
+    expect(id, 'a default-visible leaf with a missing estimate').toBeTruthy()
+
+    await switchToGantt(page)
+    const bar = page.locator(`[data-layer="bars"] g[data-task-id="${id}"]`)
+    await expect(bar).toHaveCount(1)
+    await expect(bar).toHaveAttribute('data-assumed', 'true')
+    // The assumed flag is backed by the diagonal hatch overlay rect.
+    await expect(bar.locator('rect[fill="url(#gantt-assumed-hatch)"]')).toHaveCount(1)
+  })
+
+  test('renders only real depends edges — never CPM effective-predecessor edges', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    // Distinct real-`depends` anchor pairs among the default-visible tasks.
+    const expectedPairs = await page.evaluate(async (name: string) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+      const { tasks } = await res.json() as { tasks: Record<string, { depends?: string[]; workset?: string }> }
+      const visible = new Set(Object.entries(tasks)
+        .filter(([, t]) => (t.workset ?? 'active') !== 'archive')
+        .map(([id]) => id))
+      const pairs = new Set<string>()
+      for (const id of visible) {
+        for (const dep of tasks[id].depends ?? []) {
+          if (visible.has(dep) && dep !== id) pairs.add(`${dep}->${id}`)
+        }
+      }
+      return pairs.size
+    }, project.name)
+    expect(expectedPairs).toBeGreaterThan(0)
+
+    await switchToGantt(page)
+    const edgeCount = await page.locator('[data-layer="edges"] > g > path').count()
+    // Gantt draws ONLY real `depends` (finish-to-start), resolved to visible anchors
+    // and minus right-to-left back-edges. Leaking the CPM effective-predecessor graph
+    // (group deps expanded to per-leaf edges) would inflate the count well past the
+    // real-depends pairs — assert it is non-empty and never exceeds them.
+    expect(edgeCount).toBeGreaterThan(0)
+    expect(edgeCount).toBeLessThanOrEqual(expectedPairs)
+  })
+
+  test('workset filter drops and restores rows in Gantt mode', async ({ page }) => {
+    await openTaskGraph(page)
+    await switchToGantt(page)
+    const before = await taskNodes(page).count()
+    const barsBefore = await ganttBars(page).count()
+    expect(before).toBeGreaterThan(0)
+
+    await page.locator('button[aria-label="Workset: active"]').click()
+    await expect(page.locator('button[aria-label="Workset: active"]')).toHaveAttribute('aria-pressed', 'false')
+    await expect.poll(() => taskNodes(page).count()).toBeLessThan(before)
+    await expect.poll(() => ganttBars(page).count()).toBeLessThanOrEqual(barsBefore)
+
+    await page.locator('button[aria-label="Workset: active"]').click()
+    await expect.poll(() => taskNodes(page).count()).toBe(before)
+  })
+
+  test('collapse/expand all responds in Gantt mode', async ({ page }) => {
+    await openTaskGraph(page)
+    await switchToGantt(page)
+    const expanded = await taskNodes(page).count()
+
+    await page.locator('button[title="Collapse all groups"]').click()
+    await expect.poll(() => taskNodes(page).count()).toBeLessThan(expanded)
+
+    await page.locator('button[title="Expand all groups"]').click()
+    await expect.poll(() => taskNodes(page).count()).toBe(expanded)
+  })
+
+  test('selecting a leaf bar highlights its row in Gantt mode', async ({ page }) => {
+    await openTaskGraph(page)
+    await switchToGantt(page)
+
+    const leafBar = page.locator('[data-layer="bars"] g[data-task-id][data-summary="false"]').first()
+    const id = await leafBar.getAttribute('data-task-id')
+    expect(id).toBeTruthy()
+    const node = page.locator(`[data-layer="nodes"] g[data-task-id="${id}"]`)
+
+    await expect(node).toHaveAttribute('data-selected', 'false')
+    await leafBar.click()
+    await expect(node).toHaveAttribute('data-selected', 'true')
+  })
+
+  test('search highlights matches and Enter selects in Gantt mode', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    await switchToGantt(page)
+
+    const search = page.locator('input[placeholder="Search tasks..."]')
+    await expect(search).toBeVisible()
+    const term = await page.evaluate(async (name: string) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+      const { tasks } = await res.json() as { tasks: Record<string, unknown> }
+      const id = Object.keys(tasks)[0] ?? ''
+      return id.split('-')[0] || id
+    }, project.name)
+    expect(term.length).toBeGreaterThan(0)
+
+    await search.fill(term)
+    await expect(page.locator('span', { hasText: /[1-9]\d* match/ })).toBeVisible({ timeout: 3_000 })
+
+    await search.press('Enter')
+    await expect(page.locator('[data-layer="nodes"] g[data-selected="true"]')).toHaveCount(1, { timeout: 3_000 })
+    await expect(page.getByRole('complementary', { name: 'Task details' })).toHaveCount(0)
+  })
+})
+
 test.describe('Task workspace (V1 stacked graph)', () => {
   test('renders task nodes — no milestone columns, no Board/List/Archive surfaces', async ({ page }) => {
     await openTaskGraph(page)
@@ -79,10 +360,10 @@ test.describe('Task workspace (V1 stacked graph)', () => {
       expect(await page.getByRole('tab', { name: surface, exact: true }).count()).toBe(0)
     }
 
-    // Layout is Stacked (selected) with DAG present-but-disabled (phase 2).
+    // Layout is Stacked (selected); Pseudo-Gantt is the enabled second mode (desktop).
     const layout = page.locator('[role="group"][aria-label="Layout mode"]')
     await expect(layout.getByRole('button', { name: 'Stacked' })).toHaveAttribute('aria-pressed', 'true')
-    await expect(layout.getByRole('button', { name: 'DAG' })).toBeDisabled()
+    await expect(layout.getByRole('button', { name: 'Gantt' })).toBeEnabled()
   })
 
   test('root sections stack vertically and share one left edge (full-width rows)', async ({ page }) => {

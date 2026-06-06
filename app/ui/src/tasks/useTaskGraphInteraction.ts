@@ -3,8 +3,10 @@ import type { TaskState, TaskGraphModel } from './taskGraphModel'
 import { type Selection, computeHighlight, searchTasks, EMPTY_HIGHLIGHT } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 
-export type TaskWorkspaceLayout = 'stacked' | 'dag'
+export type TaskWorkspaceLayout = 'stacked' | 'gantt'
 export type Workset = 'active' | 'backlog' | 'archive'
+
+const ALL_LAYOUTS: TaskWorkspaceLayout[] = ['stacked', 'gantt']
 
 export type TaskGraphFilters = {
   states: Set<TaskState>
@@ -39,8 +41,8 @@ function loadWorkspace(project: string): LoadedWorkspace {
     const worksets = Array.isArray(p.worksets) ? p.worksets.filter((w: unknown): w is Workset => ALL_WORKSETS.includes(w as Workset)) : []
     const states = Array.isArray(p.states) ? p.states.filter((s: unknown): s is TaskState => ALL_STATES.includes(s as TaskState)) : []
     return {
-      // DAG isn't built yet; any stored layout resolves to stacked until it ships.
-      layout: 'stacked',
+      // Unknown/stale persisted layout resolves to stacked.
+      layout: ALL_LAYOUTS.includes(p.layout) ? p.layout : 'stacked',
       worksets: worksets.length ? new Set(worksets) : new Set(DEFAULT_WORKSETS),
       states: states.length ? new Set(states) : new Set(ALL_STATES),
       collapsed: Array.isArray(p.collapsedTaskIds) ? new Set(p.collapsedTaskIds) : new Set(),

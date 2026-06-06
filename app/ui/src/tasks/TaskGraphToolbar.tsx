@@ -54,7 +54,7 @@ export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, search
 
   const pct = Math.round(scale * 100)
 
-  // Layout mode — stacked ships first; DAG is disabled until built.
+  // Layout mode — Stacked (daily scan) + Pseudo-Gantt (execution-flow). Desktop only.
   const layoutControl = (
     <div className="flex items-center gap-0.5" role="group" aria-label="Layout mode">
       <button
@@ -70,13 +70,16 @@ export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, search
         Stacked
       </button>
       <button
-        disabled
-        aria-disabled
-        title="DAG layout — coming soon"
-        className="px-2 py-0.5 rounded text-[11px] font-medium cursor-not-allowed opacity-50"
-        style={{ color: 'var(--sol-muted)', border: '1px solid var(--sol-border)' }}
+        onClick={() => onSetLayout('gantt')}
+        className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
+        aria-pressed={layout === 'gantt'}
+        style={{
+          backgroundColor: layout === 'gantt' ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
+          color: layout === 'gantt' ? 'var(--sol-accent)' : 'var(--sol-muted)',
+          border: `1px solid ${layout === 'gantt' ? 'color-mix(in srgb, var(--sol-accent) 40%, transparent)' : 'var(--sol-border)'}`,
+        }}
       >
-        DAG
+        Gantt
       </button>
     </div>
   )

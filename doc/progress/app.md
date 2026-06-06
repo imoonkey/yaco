@@ -1,3 +1,17 @@
+## 2026-06-06: Pseudo-Gantt task workspace mode (replaces DAG)
+
+**What changed:**
+- Added a second task workspace layout mode, `gantt`, beside `stacked`. It renders the task graph as an optimistic execution schedule: x = synthetic units derived from `estimate`, bars positioned by `depends` (earliest start), finish-to-start links, critical-path highlight. DAG mode is dropped — the two shipped modes are now Stacked (daily scan) and Pseudo-Gantt (execution-flow / critical-path).
+- `ganttSchedule.ts` (new, pure CPM, unit-tested) — duration map `xs/s/m/l/xl=1/2/3/5/8`, missing estimate → `m` (`assumed`); internal effective-predecessor graph `E` (ancestor-inherited, group-expanded, self-edges stripped, view-local to the filter-visible leaf set); Kahn topo on `E` flags effective cycles; forward/backward passes give integer-exact `slack`/`critical`; group rows get summary entries.
+- `taskGraphModel.ts` — extracted shared `layoutRows()` used by both modes (no duplicated tree code); added `computeGanttLayout()` returning `GanttLayout extends GraphLayout` (carries nodes/groups/edges/visibleOrder so selection/keyboard/search/collapse work unchanged) with `bars`, `ruler`, depth-derived `leftWidth`, `timeWidth`. `GanttBar` carries `assumed`/`critical`/`cycle`/`isSummary`.
+- `TaskGanttCanvas.tsx` / `TaskGanttRuler.tsx` / `TaskGanttBar.tsx` (new) — two-pane sticky spreadsheet: frozen left task column (reuses TaskGraphNode/Group) + horizontally-scrollable time pane (sticky ruler, FS edges, bars, gridlines), one `scale()` transform per pane. Bar visuals: state colors, shared-`<pattern>` assumed hatch, accent critical outline, thin end-capped summary spans, red cycle bars. Selection reuses `computeHighlight` + keeps the critical chain prominent; hover/click reuse the node tooltip/select handlers (tooltip offset by `leftWidth` + `RULER_HEIGHT`).
+- `useTaskGraphInteraction.ts` (`'stacked' | 'gantt'`, stale → stacked), `TaskGraphToolbar.tsx` (enabled Gantt button, desktop-only), `TaskGraphScreen.tsx` (branches on `ix.layout`, forces stacked on mobile), `taskGraphConstants.ts` (`PX_PER_UNIT`, `LEFT_COL_PAD`, `MIN_BAR`, bar-visual constants).
+
+**Key files:** `app/ui/src/tasks/{ganttSchedule,taskGraphModel,taskGraphConstants,TaskGanttCanvas,TaskGanttRuler,TaskGanttBar,TaskGraphScreen,TaskGraphToolbar,useTaskGraphInteraction}.{ts,tsx}`, `app/ui/tests/e2e/task-graph.spec.ts`, `doc/main/app/frontend/{components,hooks}.md`
+**Verification:** `cd app/ui && npm run lint` → 0 errors (13 pre-existing warnings); `npm run build` (`tsc -b && vite build`) → clean; `npx vitest run` (ganttSchedule + taskGraphModel) pass, incl. a cycle-bar test asserting `cycle:true` / non-critical; Playwright `task-graph.spec.ts` covers mode switch + persist, frozen column/ruler, zoom no-drift, assumed hatch, only-real-`depends` edges, filter/collapse/select/search in Gantt.
+**Commit:** d99887d..c9eb0aa (+ this docs commit)
+**Blockers:** None.
+
 ## 2026-06-06: Task graph rows fill container width (ResizeObserver lifecycle fix)
 
 **What changed:**

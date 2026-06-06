@@ -3,9 +3,10 @@ import { createFile, saveFileContent } from '../hooks/useApi'
 import { TASKS_FILE_PATH, useTaskGraph } from '../hooks/useTaskGraph'
 import { useViewport } from './useViewport'
 import { useIsMobile } from '../hooks/useIsMobile'
-import { computeDisplayLayout } from './taskGraphModel'
+import { computeDisplayLayout, computeGanttLayout, type GanttLayout } from './taskGraphModel'
 import { TaskGraphTooltip } from './TaskGraphTooltip'
 import { TaskGraphCanvas } from './TaskGraphCanvas'
+import { TaskGanttCanvas } from './TaskGanttCanvas'
 import { TaskGraphToolbar } from './TaskGraphToolbar'
 import { TaskGraphStatusPane } from './TaskGraphStatusPane'
 import { useTaskGraphInteraction } from './useTaskGraphInteraction'
@@ -81,19 +82,19 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
   // Compute display layout from graph + interaction view state.
   // The workset filter is applied to the rendered set here: tasks whose workset is
   // disabled (archive by default) are dropped before layout, so they never render.
+  // Gantt is desktop-only; mobile always falls back to the stacked layout.
+  const isGantt = ix.layout === 'gantt' && !isMobile
   const displayLayout = useMemo(() => {
     if (!graph) return null
     const worksets = ix.filters.worksets
     const visibleTasks = new Map([...graph.tasks].filter(([, t]) => worksets.has(t.workset)))
-    return computeDisplayLayout(
-      { tasks: visibleTasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask },
-      { collapsedTaskIds: ix.collapsedTaskIds, filters: ix.filters.states },
-      graph.aggregateStateByTask,
-      graph.leafProgressByTask,
-      graph.cycleEdgeIds,
-      containerWidth,
-    )
-  }, [graph, ix.collapsedTaskIds, ix.filters, containerWidth])
+    const model = { tasks: visibleTasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask }
+    const viewState = { collapsedTaskIds: ix.collapsedTaskIds, filters: ix.filters.states }
+    if (isGantt) {
+      return computeGanttLayout(model, viewState, graph.aggregateStateByTask, graph.leafProgressByTask, graph.cycleEdgeIds)
+    }
+    return computeDisplayLayout(model, viewState, graph.aggregateStateByTask, graph.leafProgressByTask, graph.cycleEdgeIds, containerWidth)
+  }, [graph, ix.collapsedTaskIds, ix.filters, isGantt, containerWidth])
 
   // Clear selection when the selected task is no longer in the rendered layout —
   // hidden by any filter (workset, state, or a filtered-out ancestor). Robust to all
@@ -234,21 +235,39 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
             className="absolute inset-0 overflow-y-scroll overflow-x-auto"
             onScroll={ix.clearTooltip}
           >
-            <TaskGraphCanvas
-              graph={graph}
-              layout={displayLayout}
-              searchMatchIds={ix.searchMatchIds}
-              highlight={ix.highlight}
-              selection={ix.selection}
-              scale={viewport.scale}
-              collapsedTaskIds={ix.collapsedTaskIds}
-              onSelectTask={handleTaskClick}
-              onOpenTask={handleTaskDoubleClick}
-              onClearSelection={ix.handleClearSelection}
-              onToggleCollapse={ix.handleToggleCollapse}
-              onPointerEnter={ix.handlePointerEnter}
-              onPointerLeave={ix.handlePointerLeave}
-            />
+            {isGantt ? (
+              <TaskGanttCanvas
+                graph={graph}
+                layout={displayLayout as GanttLayout}
+                searchMatchIds={ix.searchMatchIds}
+                highlight={ix.highlight}
+                selection={ix.selection}
+                scale={viewport.scale}
+                collapsedTaskIds={ix.collapsedTaskIds}
+                onSelectTask={handleTaskClick}
+                onOpenTask={handleTaskDoubleClick}
+                onClearSelection={ix.handleClearSelection}
+                onToggleCollapse={ix.handleToggleCollapse}
+                onPointerEnter={ix.handlePointerEnter}
+                onPointerLeave={ix.handlePointerLeave}
+              />
+            ) : (
+              <TaskGraphCanvas
+                graph={graph}
+                layout={displayLayout}
+                searchMatchIds={ix.searchMatchIds}
+                highlight={ix.highlight}
+                selection={ix.selection}
+                scale={viewport.scale}
+                collapsedTaskIds={ix.collapsedTaskIds}
+                onSelectTask={handleTaskClick}
+                onOpenTask={handleTaskDoubleClick}
+                onClearSelection={ix.handleClearSelection}
+                onToggleCollapse={ix.handleToggleCollapse}
+                onPointerEnter={ix.handlePointerEnter}
+                onPointerLeave={ix.handlePointerLeave}
+              />
+            )}
           </div>
 
           {ix.tooltipTarget && (

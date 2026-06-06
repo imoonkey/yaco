@@ -1,6 +1,9 @@
 // Pure-function graph model: normalize, layout, edge paths
 // No React dependency — independently testable
 
+import { PX_PER_UNIT, LEFT_COL_PAD, MIN_BAR } from './taskGraphConstants'
+import { computeGanttSchedule } from './ganttSchedule'
+
 export type TaskState = 'ready' | 'running' | 'done' | 'blocked' | 'cancelled'
 
 export type Priority = 'critical' | 'high' | 'normal' | 'low'
@@ -98,6 +101,27 @@ export interface LayoutSection {
   x: number
   y: number
   width: number
+}
+
+// Pseudo-Gantt layout — extends GraphLayout so selection/keyboard/search/collapse
+// keep working unchanged, and adds the time-pane bars + ruler + column widths.
+
+export interface GanttBar {
+  x: number
+  width: number
+  y: number
+  state: TaskState
+  assumed: boolean
+  critical: boolean
+  cycle: boolean
+  isSummary: boolean
+}
+
+export interface GanttLayout extends GraphLayout {
+  bars: Map<string, GanttBar>
+  ruler: { ticks: { x: number; label: string }[] }
+  leftWidth: number
+  timeWidth: number
 }
 
 export interface TaskGraphModel {
@@ -656,13 +680,25 @@ function computeEdgePath(
   return `M ${sx},${sy} C ${cpx},${sy} ${cpx},${ty} ${tx},${ty}`
 }
 
-export function computeDisplayLayout(
+// Shared row layout — the measureTree + positionTree core used by BOTH the stacked
+// and the Pseudo-Gantt modes. Positions every visible card at its indented (x, y);
+// callers stretch widths / build edges on top. No tree algorithm is duplicated.
+interface RowLayout {
+  sections: LayoutSection[]
+  nodes: Map<string, LayoutNode>
+  groups: LayoutGroup[]
+  visibleOrder: string[]
+  visibleChildrenByTask: Map<string, string[]>
+  totalHeight: number
+  maxVisibleDepth: number
+}
+
+function layoutRows(
   model: {
     tasks: Map<string, TaskGraphTask>
     childIdsByTask: Map<string, string[]>
     rootIds: string[]
     subtreeIdsByTask: Map<string, string[]>
-    dependenciesByTask: Map<string, string[]>
   },
   viewState: {
     collapsedTaskIds: Set<string>
@@ -670,42 +706,31 @@ export function computeDisplayLayout(
   },
   aggregateStateByTask: Map<string, TaskState>,
   leafProgressByTask: Map<string, { done: number; total: number }>,
-  cycleEdgeIds: Set<string>,
-  containerWidth = 0,
-): GraphLayout {
+  rightEdge: number,
+): RowLayout {
   const { tasks, childIdsByTask, rootIds, subtreeIdsByTask } = model
   const { collapsedTaskIds, filters } = viewState
 
-  // Stacked rows fill the container width; reserve the right gutter for dependency arcs.
-  const rightEdge = Math.max(
-    GRAPH_PADDING + NODE_WIDTH,
-    containerWidth - GRAPH_PADDING - DEPENDS_GUTTER,
-  )
+  const groups: LayoutGroup[] = []
+  const nodes = new Map<string, LayoutNode>()
+  const visibleOrder: string[] = []
+  const visibleChildrenByTask = new Map<string, string[]>()
+  const sections: LayoutSection[] = []
 
-  // Compute visible set
   const visibleSet = computeVisibleSet(tasks, childIdsByTask, rootIds, collapsedTaskIds, filters)
-
   if (visibleSet.size === 0) {
-    return { sections: [], groups: [], nodes: new Map(), edges: [], visibleOrder: [], visibleChildrenByTask: new Map(), bounds: { width: 0, height: 0 }, hasCycles: cycleEdgeIds.size > 0 }
+    return { sections, nodes, groups, visibleOrder, visibleChildrenByTask, totalHeight: 0, maxVisibleDepth: 0 }
   }
 
-  // Order root-level items
+  // Order root-level items, then measure + position each root tree stacked vertically.
   const visibleRoots = rootIds.filter(id => visibleSet.has(id))
   const orderedRoots = orderSiblings(visibleRoots, tasks, subtreeIdsByTask, aggregateStateByTask)
 
-  // Measure each root tree
   const measuredRoots: MeasuredItem[] = []
   for (const rootId of orderedRoots) {
     const measured = measureTree(rootId, tasks, childIdsByTask, subtreeIdsByTask, aggregateStateByTask, collapsedTaskIds, visibleSet)
     if (measured) measuredRoots.push(measured)
   }
-
-  // Stack roots vertically — each fills the width, sections separated by ROOT_GAP
-  const sections: LayoutSection[] = []
-  const groups: LayoutGroup[] = []
-  const nodes = new Map<string, LayoutNode>()
-  const visibleOrder: string[] = []
-  const visibleChildrenByTask = new Map<string, string[]>()
 
   let rootY = GRAPH_PADDING
   let previousRootWorkset: Workset | null = null
@@ -726,6 +751,57 @@ export function computeDisplayLayout(
     const endY = positionTree(root, GRAPH_PADDING, rootY, 0, rightEdge, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, groups, nodes, visibleOrder, visibleChildrenByTask)
     rootY = endY + ROOT_GAP
     previousRootWorkset = rootWorkset
+  }
+
+  let maxY = 0
+  let maxVisibleDepth = 0
+  for (const node of nodes.values()) {
+    maxY = Math.max(maxY, node.y + node.height)
+    maxVisibleDepth = Math.max(maxVisibleDepth, node.depth)
+  }
+
+  return {
+    sections,
+    nodes,
+    groups,
+    visibleOrder,
+    visibleChildrenByTask,
+    totalHeight: maxY + GRAPH_PADDING,
+    maxVisibleDepth,
+  }
+}
+
+export function computeDisplayLayout(
+  model: {
+    tasks: Map<string, TaskGraphTask>
+    childIdsByTask: Map<string, string[]>
+    rootIds: string[]
+    subtreeIdsByTask: Map<string, string[]>
+    dependenciesByTask: Map<string, string[]>
+  },
+  viewState: {
+    collapsedTaskIds: Set<string>
+    filters: Set<TaskState>
+  },
+  aggregateStateByTask: Map<string, TaskState>,
+  leafProgressByTask: Map<string, { done: number; total: number }>,
+  cycleEdgeIds: Set<string>,
+  containerWidth = 0,
+): GraphLayout {
+  const { tasks } = model
+
+  // Stacked rows fill the container width; reserve the right gutter for dependency arcs.
+  const rightEdge = Math.max(
+    GRAPH_PADDING + NODE_WIDTH,
+    containerWidth - GRAPH_PADDING - DEPENDS_GUTTER,
+  )
+
+  const { sections, nodes, groups, visibleOrder, visibleChildrenByTask, totalHeight } = layoutRows(
+    model, viewState, aggregateStateByTask, leafProgressByTask, rightEdge,
+  )
+
+  if (nodes.size === 0) {
+    return { sections: [], groups: [], nodes: new Map(), edges: [], visibleOrder: [], visibleChildrenByTask: new Map(), bounds: { width: 0, height: 0 }, hasCycles: cycleEdgeIds.size > 0 }
   }
 
   // Single global right edge across all visible cards. Under the NODE_WIDTH floor a deep
@@ -777,10 +853,138 @@ export function computeDisplayLayout(
     })
   }
 
-  // Bounds — global right edge plus the gutter + padding on the right
-  let maxY = 0
-  for (const node of nodes.values()) {
-    maxY = Math.max(maxY, node.y + node.height)
+  return {
+    sections,
+    groups,
+    nodes,
+    edges,
+    visibleOrder,
+    visibleChildrenByTask,
+    bounds: { width: Math.max(containerWidth, globalRight + DEPENDS_GUTTER + GRAPH_PADDING), height: totalHeight },
+    hasCycles: cycleEdgeIds.size > 0,
+  }
+}
+
+// --- Pseudo-Gantt layout ---
+
+export function computeGanttLayout(
+  model: {
+    tasks: Map<string, TaskGraphTask>
+    childIdsByTask: Map<string, string[]>
+    rootIds: string[]
+    subtreeIdsByTask: Map<string, string[]>
+    dependenciesByTask: Map<string, string[]>
+  },
+  viewState: {
+    collapsedTaskIds: Set<string>
+    filters: Set<TaskState>
+  },
+  aggregateStateByTask: Map<string, TaskState>,
+  leafProgressByTask: Map<string, { done: number; total: number }>,
+  cycleEdgeIds: Set<string>,
+): GanttLayout {
+  const { tasks, childIdsByTask, rootIds, subtreeIdsByTask } = model
+  const { filters } = viewState
+
+  // Depth probe — `maxVisibleDepth` is structural (independent of the right edge), so a
+  // throwaway pass fixes `leftWidth` before the real pass shares that column right edge.
+  const probe = layoutRows(model, viewState, aggregateStateByTask, leafProgressByTask, GRAPH_PADDING + NODE_WIDTH)
+  const leftWidth = GRAPH_PADDING + probe.maxVisibleDepth * INDENT + NODE_WIDTH + LEFT_COL_PAD
+
+  const { sections, nodes, groups, visibleOrder, visibleChildrenByTask, totalHeight } = layoutRows(
+    model, viewState, aggregateStateByTask, leafProgressByTask, leftWidth,
+  )
+
+  if (nodes.size === 0) {
+    return {
+      sections: [], groups: [], nodes: new Map(), edges: [], visibleOrder: [], visibleChildrenByTask: new Map(),
+      bounds: { width: 0, height: 0 }, hasCycles: cycleEdgeIds.size > 0,
+      bars: new Map(), ruler: { ticks: [] }, leftWidth, timeWidth: 0,
+    }
+  }
+
+  // Schedule over the filter-visible leaf set. Collapse does NOT change the scheduled set
+  // (it only hides rows), so a collapsed group's summary bar stays meaningful.
+  const scheduleVisible = computeVisibleSet(tasks, childIdsByTask, rootIds, new Set(), filters)
+  const schedule = computeGanttSchedule({ tasks, subtreeIdsByTask }, scheduleVisible)
+
+  // Time-pane bars (origin x=0) — one per visible row that has a schedule entry.
+  const bars = new Map<string, GanttBar>()
+  for (const id of visibleOrder) {
+    const entry = schedule.entries.get(id)
+    const node = nodes.get(id)
+    if (!entry || !node) continue
+    bars.set(id, {
+      x: entry.start * PX_PER_UNIT,
+      width: Math.max(MIN_BAR, entry.duration * PX_PER_UNIT),
+      y: node.y,
+      state: aggregateStateByTask.get(id) ?? 'ready',
+      assumed: entry.assumed,
+      critical: entry.critical,
+      cycle: entry.cycle,
+      isSummary: entry.isSummary,
+    })
+  }
+
+  // Edges — real `depends` only, routed FINISH-TO-START as cubic beziers (left→right).
+  // View-local: an endpoint may only render if it has a leaf in the schedule set S. A
+  // predecessor hidden by the STATE filter is not in S — it must NOT resurface as an edge
+  // through a visible ancestor that merely carries a summary bar over its OTHER leaves.
+  // (Collapse keeps leaves in S, so a collapsed group's summary anchor stays legitimate.)
+  const scheduledLeaves = new Set([...scheduleVisible].filter(id => tasks.get(id)?.hasChildren === false))
+  const hasScheduledLeaf = (id: string): boolean => {
+    const task = tasks.get(id)
+    if (!task) return false
+    if (!task.hasChildren) return scheduledLeaves.has(id)
+    return (subtreeIdsByTask.get(id) ?? []).some(x => scheduledLeaves.has(x))
+  }
+
+  const edgeGroups = new Map<string, { ids: { id: string; isCycle: boolean }[]; sourceId: string; targetId: string }>()
+  for (const [tid, task] of tasks) {
+    if (!hasScheduledLeaf(tid)) continue
+    for (const dep of task.depends) {
+      if (!hasScheduledLeaf(dep)) continue
+      const sourceAnchor = resolveVisibleAnchor(dep, nodes, tasks)
+      const targetAnchor = resolveVisibleAnchor(tid, nodes, tasks)
+      if (!sourceAnchor || !targetAnchor || sourceAnchor === targetAnchor) continue
+      if (!bars.has(sourceAnchor) || !bars.has(targetAnchor)) continue
+
+      const key = `${sourceAnchor}->${targetAnchor}`
+      const edgeId = `${dep}->${tid}`
+      if (!edgeGroups.has(key)) edgeGroups.set(key, { ids: [], sourceId: sourceAnchor, targetId: targetAnchor })
+      edgeGroups.get(key)!.ids.push({ id: edgeId, isCycle: cycleEdgeIds.has(edgeId) })
+    }
+  }
+
+  const edges: LayoutEdge[] = []
+  for (const [key, group] of edgeGroups) {
+    const src = bars.get(group.sourceId)!
+    const tgt = bars.get(group.targetId)!
+    const sx = src.x + src.width
+    const sy = src.y + NODE_HEIGHT / 2
+    const tx = tgt.x
+    const ty = tgt.y + NODE_HEIGHT / 2
+    // Back-edges (sx > tx, from raw `depends` cycles or a summary source that overruns the
+    // target) would route right-to-left with negative bezier control coords. FS arcs are
+    // forward-only; omit them. The cycle's other (forward) arc still renders red via isCycle.
+    if (sx > tx) continue
+    const k = Math.max(MIN_BAR, (tx - sx) / 2)
+    edges.push({
+      id: key,
+      sourceId: group.sourceId,
+      targetId: group.targetId,
+      path: `M ${sx},${sy} C ${sx + k},${sy} ${tx - k},${ty} ${tx},${ty}`,
+      isCycle: group.ids.some(e => e.isCycle),
+      isSameLane: false,
+      count: group.ids.length,
+      originalEdgeIds: group.ids.map(e => e.id), // ALWAYS populated (even count===1)
+    })
+  }
+
+  // Ruler — one tick per optimistic unit in 0..ceil(makespan).
+  const ticks: { x: number; label: string }[] = []
+  for (let unit = 0; unit <= Math.ceil(schedule.makespan); unit++) {
+    ticks.push({ x: unit * PX_PER_UNIT, label: String(unit) })
   }
 
   return {
@@ -790,8 +994,12 @@ export function computeDisplayLayout(
     edges,
     visibleOrder,
     visibleChildrenByTask,
-    bounds: { width: Math.max(containerWidth, globalRight + DEPENDS_GUTTER + GRAPH_PADDING), height: maxY + GRAPH_PADDING },
+    bounds: { width: leftWidth, height: totalHeight },
     hasCycles: cycleEdgeIds.size > 0,
+    bars,
+    ruler: { ticks },
+    leftWidth,
+    timeWidth: schedule.makespan * PX_PER_UNIT + LEFT_COL_PAD,
   }
 }
 

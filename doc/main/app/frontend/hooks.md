@@ -284,13 +284,13 @@ search, collapse, tooltip) and is the home of the workspace state model.
 `{ selection, layout, filters, searchQuery, collapsedTaskIds, highlight, ... handlers }`
 
 State model:
-- `layout: 'stacked' | 'dag'` — stacked ships; DAG is disabled in the toolbar until built.
+- `layout: 'stacked' | 'gantt'` — both ship. Stacked is the daily-scan view; Gantt is the execution-flow / critical-path Pseudo-Gantt (desktop only). DAG was dropped.
 - `filters: { states: Set<TaskState>; worksets: Set<Workset> }` — defaults: all states, worksets `{active, backlog}` (archive hidden until enabled).
 - `searchQuery`, `collapsedTaskIds`, `selection`.
 
 Persistence:
 - Persisted under `yaco-task-workspace:${project}` as `{ layout, worksets, states, collapsedTaskIds }`.
-- On load, layout is coerced to `stacked` while DAG is unbuilt; invalid/empty worksets/states fall back to defaults.
+- On load, an unknown/stale layout falls back to `stacked`; invalid/empty worksets/states fall back to defaults. `TaskGraphScreen` additionally forces `stacked` on mobile (Gantt is desktop-only).
 
 Notes:
 - The workset filter is applied to the rendered set in `TaskGraphScreen` (tasks whose workset is disabled are dropped before `computeDisplayLayout`).
