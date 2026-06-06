@@ -179,7 +179,7 @@ export function useTaskGraphInteraction(
     clickConsumed.current = true
     queueMicrotask(() => { clickConsumed.current = false })
     clearTooltip()
-    setSelection(prev => prev === id ? null : id)
+    setSelection(id)
   }, [clearTooltip])
 
   const handleClearSelection = useCallback(() => {

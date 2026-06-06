@@ -11,7 +11,17 @@ import { TaskGraphStatusPane } from './TaskGraphStatusPane'
 import { useTaskGraphInteraction } from './useTaskGraphInteraction'
 import { useTaskGraphKeyboard } from './useTaskGraphKeyboard'
 
-export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, selectedTaskId }: { projectName: string; onOpenTasksFile?: () => void; onSelectTask?: (id: string | null) => void; selectedTaskId?: string | null }) {
+type TaskGraphScreenProps = {
+  projectName: string
+  onOpenTasksFile?: () => void
+  onSelectTask?: (id: string | null) => void
+  onOpenTask?: (id: string) => void
+  onCloseTask?: (id: string) => void
+  selectedTaskId?: string | null
+  openTaskId?: string | null
+}
+
+export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, onOpenTask, onCloseTask, selectedTaskId, openTaskId }: TaskGraphScreenProps) {
   const { status, graph, error, warnings, refresh } = useTaskGraph(projectName)
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -38,22 +48,35 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
   // Viewport — native vertical scroll for navigation, uniform zoom via scale.
   const viewport = useViewport({ scrollRef })
   const ix = useTaskGraphInteraction(projectName, graph, viewport, isMobile)
+  const graphSelection = ix.selection
+  const setGraphSelection = ix.setSelection
+  const selectGraphTask = ix.handleSelectTask
+  const clearGraphSelection = ix.handleClearSelection
 
   // Sync graph selection → parent (emit selected task ID upward)
-  const prevGraphSelection = useRef(ix.selection)
+  const prevGraphSelection = useRef(graphSelection)
   useEffect(() => {
-    if (ix.selection !== prevGraphSelection.current) {
-      prevGraphSelection.current = ix.selection
-      onSelectTask?.(ix.selection)
+    if (graphSelection !== prevGraphSelection.current) {
+      prevGraphSelection.current = graphSelection
+      onSelectTask?.(graphSelection)
     }
-  }, [ix.selection, onSelectTask])
+  }, [graphSelection, onSelectTask])
 
-  // Sync parent selection → graph (when cleared externally)
+  // Sync parent selection changes → graph. This only reacts when the prop itself
+  // changes, so a fresh graph click cannot be overwritten by the parent's stale
+  // value from the same render.
+  const prevSelectedTaskId = useRef(selectedTaskId)
   useEffect(() => {
-    if (selectedTaskId === null && ix.selection !== null) {
-      ix.handleClearSelection()
+    if (selectedTaskId === prevSelectedTaskId.current) return
+    prevSelectedTaskId.current = selectedTaskId
+    if (selectedTaskId === null && graphSelection !== null) {
+      clearGraphSelection()
+      return
     }
-  }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (selectedTaskId && selectedTaskId !== graphSelection) {
+      setGraphSelection(selectedTaskId)
+    }
+  }, [selectedTaskId, graphSelection, setGraphSelection, clearGraphSelection])
 
   // Compute display layout from graph + interaction view state.
   // The workset filter is applied to the rendered set here: tasks whose workset is
@@ -96,6 +119,21 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
 
   // Keyboard shortcuts
   useTaskGraphKeyboard(graph, displayLayout, ix.selection, ix.collapsedTaskIds, ix, viewport)
+
+  const handleTaskClick = useCallback((id: string) => {
+    const wasSelected = graphSelection === id
+    selectGraphTask(id)
+    if (openTaskId === id) {
+      onCloseTask?.(id)
+      return
+    }
+    if (wasSelected) onOpenTask?.(id)
+  }, [graphSelection, selectGraphTask, openTaskId, onCloseTask, onOpenTask])
+
+  const handleTaskDoubleClick = useCallback((id: string) => {
+    selectGraphTask(id)
+    onOpenTask?.(id)
+  }, [selectGraphTask, onOpenTask])
 
   // Clear tooltip on zoom (scroll clears it via the container's onScroll)
   useEffect(() => {
@@ -204,7 +242,8 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
               selection={ix.selection}
               scale={viewport.scale}
               collapsedTaskIds={ix.collapsedTaskIds}
-              onSelectTask={ix.handleSelectTask}
+              onSelectTask={handleTaskClick}
+              onOpenTask={handleTaskDoubleClick}
               onClearSelection={ix.handleClearSelection}
               onToggleCollapse={ix.handleToggleCollapse}
               onPointerEnter={ix.handlePointerEnter}

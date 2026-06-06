@@ -82,7 +82,7 @@ function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel, worktre
   return 1
 }
 
-export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isCollapsed, depCount, scale, onClick, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isCollapsed, depCount, scale, onClick, onOpen, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   node: LayoutNode
   task: TaskGraphTask
   group?: LayoutGroup
@@ -93,6 +93,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   depCount: number
   scale: number
   onClick: (id: string) => void
+  onOpen: (id: string) => void
   onToggleCollapse: (id: string) => void
   onPointerEnter: (target: TooltipTarget) => void
   onPointerLeave: () => void
@@ -137,7 +138,11 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       tabIndex={0}
       role="button"
       aria-label={`Task: ${task.title}, status: ${task.state}`}
+      aria-pressed={isSelected}
+      data-task-id={node.id}
+      data-selected={isSelected ? 'true' : 'false'}
       onClick={(e) => { e.stopPropagation(); onClick(node.id) }}
+      onDoubleClick={(e) => { e.stopPropagation(); onOpen(node.id) }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()

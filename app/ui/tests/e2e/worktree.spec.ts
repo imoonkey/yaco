@@ -165,8 +165,8 @@ test.describe('Worktree metadata via the task graph', () => {
     await page.keyboard.press('Meta+Shift+t')
     await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first()).toBeVisible({ timeout: 15_000 })
 
-    // Click the worktree-bearing task node → detail panel opens.
-    await page.locator(`g[role="button"][aria-label^="Task: ${target!.title}, status:"]`).first().click()
+    // Double-click the worktree-bearing task node → detail panel opens.
+    await page.locator(`g[role="button"][aria-label^="Task: ${target!.title}, status:"]`).first().dblclick()
     const panel = page.getByRole('complementary', { name: 'Task details' })
     await expect(panel).toBeVisible({ timeout: 3_000 })
 

@@ -140,7 +140,7 @@ test.describe('Task workspace (V1 stacked graph)', () => {
     expect(await edgePaths.count()).toBe(expectedEdgePairs)
   })
 
-  test('clicking a node opens the detail panel and shows the full title', async ({ page }) => {
+  test('node click selects first, then toggles the detail panel for the selected task', async ({ page }) => {
     await openTaskGraph(page)
 
     // Pick the node with the longest title to exercise full-title access.
@@ -154,14 +154,69 @@ test.describe('Task workspace (V1 stacked graph)', () => {
 
     // The node carries the full, untruncated title in its accessible name.
     const node = page.locator(`g[role="button"][aria-label^="Task: ${longest}, status:"]`).first()
-    await node.click()
-
     const panel = page.getByRole('complementary', { name: 'Task details' })
+    const clickVisibleNodeEdge = () => node.click({ position: { x: 24, y: 18 } })
+
+    await clickVisibleNodeEdge()
+    await expect(node).toHaveAttribute('data-selected', 'true')
+    await expect(panel).toHaveCount(0)
+
+    await clickVisibleNodeEdge()
     await expect(panel).toBeVisible({ timeout: 3_000 })
     await expect(panel.getByText(longest, { exact: true }).first()).toBeVisible()
+
+    await clickVisibleNodeEdge()
+    await expect(panel).toHaveCount(0)
+    await expect(node).toHaveAttribute('data-selected', 'true')
+
+    await clickVisibleNodeEdge()
+    await expect(panel).toBeVisible({ timeout: 3_000 })
+
+    await panel.getByRole('button', { name: 'Close task details' }).click()
+    await expect(panel).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(node).toHaveAttribute('data-selected', 'false')
+
+    await node.dblclick({ position: { x: 24, y: 18 } })
+    await expect(panel).toBeVisible({ timeout: 3_000 })
   })
 
-  test('search highlights matches and Enter navigates to the detail panel', async ({ page }) => {
+  test('detail panel overlays the graph and resizes from its left border', async ({ page }) => {
+    await openTaskGraph(page)
+
+    const svg = page.locator('svg').first()
+    const node = taskNodes(page).first()
+    const beforeSvg = await svg.boundingBox()
+    expect(beforeSvg).toBeTruthy()
+
+    await node.dblclick()
+    const panel = page.getByRole('complementary', { name: 'Task details' })
+    await expect(panel).toBeVisible({ timeout: 3_000 })
+
+    const openSvg = await svg.boundingBox()
+    expect(openSvg).toBeTruthy()
+    expect(Math.abs(openSvg!.width - beforeSvg!.width)).toBeLessThan(8)
+
+    const beforePanel = await panel.boundingBox()
+    const handle = page.getByRole('separator', { name: 'Resize task details' })
+    const handleBox = await handle.boundingBox()
+    expect(beforePanel).toBeTruthy()
+    expect(handleBox).toBeTruthy()
+
+    await page.mouse.move(handleBox!.x + handleBox!.width / 2, handleBox!.y + handleBox!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(handleBox!.x - 120, handleBox!.y + handleBox!.height / 2, { steps: 6 })
+    await page.mouse.up()
+
+    const afterPanel = await panel.boundingBox()
+    const resizedSvg = await svg.boundingBox()
+    expect(afterPanel).toBeTruthy()
+    expect(resizedSvg).toBeTruthy()
+    expect(afterPanel!.width).toBeGreaterThan(beforePanel!.width + 80)
+    expect(Math.abs(resizedSvg!.width - beforeSvg!.width)).toBeLessThan(8)
+  })
+
+  test('search highlights matches and Enter selects without opening the detail panel', async ({ page }) => {
     const project = await openTaskGraph(page)
 
     const search = page.locator('input[placeholder="Search tasks..."]')
@@ -182,7 +237,8 @@ test.describe('Task workspace (V1 stacked graph)', () => {
     await expect(matches).toBeVisible({ timeout: 3_000 })
 
     await search.press('Enter')
-    await expect(page.getByRole('complementary', { name: 'Task details' })).toBeVisible({ timeout: 3_000 })
+    await expect(page.locator('[data-layer="nodes"] g[data-selected="true"]')).toHaveCount(1, { timeout: 3_000 })
+    await expect(page.getByRole('complementary', { name: 'Task details' })).toHaveCount(0)
   })
 
   test('workset filter: defaults to active+backlog with archive off, and filters the graph', async ({ page }) => {

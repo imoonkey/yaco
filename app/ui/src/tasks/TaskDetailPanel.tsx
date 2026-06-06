@@ -182,6 +182,9 @@ export type TaskDetailPanelProps = {
   onOpenFile?: (path: string) => void
   mutate: TaskMutations
   readOnly?: boolean
+  width?: number
+  isResizing?: boolean
+  onResizeStart?: (e: React.MouseEvent) => void
 }
 
 export function TaskDetailPanel({
@@ -193,6 +196,9 @@ export function TaskDetailPanel({
   onOpenFile,
   mutate,
   readOnly = false,
+  width = 380,
+  isResizing = false,
+  onResizeStart,
 }: TaskDetailPanelProps) {
   const isMobile = useIsMobile()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -596,22 +602,43 @@ export function TaskDetailPanel({
     )
   }
 
-  // Desktop: right panel
+  // Desktop: right overlay panel
   return (
     <div
       ref={panelRef}
       role="complementary"
       aria-label="Task details"
-      className="shrink-0 overflow-y-auto"
+      className="absolute top-0 right-0 bottom-0 z-20 flex flex-col shadow-lg"
       style={{
-        width: 340,
+        width,
+        maxWidth: 'calc(100% - 48px)',
         backgroundColor: 'var(--sol-bg)',
         borderLeft: '1px solid var(--sol-border)',
+        boxShadow: 'var(--elevation-3)',
         animation: 'panel-slide-right 200ms cubic-bezier(0.16, 1, 0.3, 1) both',
       }}
     >
+      {onResizeStart && (
+        <div
+          role="separator"
+          aria-label="Resize task details"
+          aria-orientation="vertical"
+          onMouseDown={(e) => { e.stopPropagation(); onResizeStart(e) }}
+          className="absolute top-0 bottom-0 left-0 z-20 w-2 -translate-x-1/2 cursor-col-resize"
+          style={{ touchAction: 'none' }}
+        >
+          <div
+            className="absolute top-0 bottom-0 left-1/2 w-px"
+            style={{
+              backgroundColor: isResizing ? 'var(--sol-accent)' : 'var(--sol-border)',
+              transform: 'translateX(-0.5px)',
+              transition: 'background-color var(--transition-fast)',
+            }}
+          />
+        </div>
+      )}
       <div
-        className="flex items-center justify-between px-3 sticky top-0 z-10"
+        className="flex items-center justify-between px-3 shrink-0"
         style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       >
         <span className="flex items-center gap-2">
@@ -632,11 +659,14 @@ export function TaskDetailPanel({
           className="w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
           style={{ color: 'var(--sol-base1)' }}
           title="Close (Esc)"
+          aria-label="Close task details"
         >
           <X size={14} />
         </button>
       </div>
-      {content}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {content}
+      </div>
     </div>
   )
 }

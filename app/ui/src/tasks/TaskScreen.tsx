@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useTaskData } from './hooks/useTaskData'
 import { TaskGraphScreen } from './TaskGraphScreen'
 import { TaskDetailPanel } from './TaskDetailPanel'
+import { useResize } from '../workspace/useResize'
 
 interface TaskScreenProps {
   projectName: string
@@ -17,34 +18,55 @@ interface TaskScreenProps {
  */
 export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScreenProps) {
   const { tasks, mutate } = useTaskData(projectName)
+  const rootRef = useRef<HTMLDivElement>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  const detailPane = useResize(380, 300, () => {
+    const containerWidth = rootRef.current?.clientWidth ?? (typeof window === 'undefined' ? 1200 : window.innerWidth)
+    return Math.max(300, containerWidth - 48)
+  }, 'right')
 
-  const selectedTask = selectedTaskId ? tasks.get(selectedTaskId) ?? null : null
+  const openTask = openTaskId ? tasks.get(openTaskId) ?? null : null
+
+  const handleSelectTask = useCallback((id: string | null) => {
+    setSelectedTaskId(id)
+    if (id === null) {
+      setOpenTaskId(null)
+      return
+    }
+    setOpenTaskId(prev => prev ? id : prev)
+  }, [])
+
+  const handleOpenTask = useCallback((id: string) => {
+    setSelectedTaskId(id)
+    setOpenTaskId(id)
+  }, [])
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-1 min-h-0 flex">
-        <div className="flex-1 min-h-0 relative">
-          <TaskGraphScreen
-            projectName={projectName}
-            onOpenTasksFile={onOpenTasksFile}
-            onSelectTask={setSelectedTaskId}
-            selectedTaskId={selectedTaskId}
-          />
-        </div>
+    <div ref={rootRef} className="relative h-full min-h-0 overflow-hidden">
+      <TaskGraphScreen
+        projectName={projectName}
+        onOpenTasksFile={onOpenTasksFile}
+        onSelectTask={handleSelectTask}
+        onOpenTask={handleOpenTask}
+        onCloseTask={() => setOpenTaskId(null)}
+        selectedTaskId={selectedTaskId}
+        openTaskId={openTaskId}
+      />
 
-        {/* Detail panel — right sidebar */}
-        {selectedTask && (
-          <TaskDetailPanel
-            task={selectedTask}
-            allTasks={tasks}
-            onClose={() => setSelectedTaskId(null)}
-            onSelectTask={setSelectedTaskId}
-            onOpenFile={onOpenFile}
-            mutate={mutate}
-          />
-        )}
-      </div>
+      {openTask && (
+        <TaskDetailPanel
+          task={openTask}
+          allTasks={tasks}
+          onClose={() => setOpenTaskId(null)}
+          onSelectTask={handleOpenTask}
+          onOpenFile={onOpenFile}
+          mutate={mutate}
+          width={detailPane.size}
+          isResizing={detailPane.isDragging}
+          onResizeStart={detailPane.onMouseDown}
+        />
+      )}
     </div>
   )
 }

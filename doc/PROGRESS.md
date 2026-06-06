@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-06: Task detail overlay and click-to-toggle behavior
+
+**What changed:**
+- `TaskScreen` now separates graph selection (`selectedTaskId`) from detail overlay state (`openTaskId`). Selecting a task no longer automatically opens details.
+- Desktop `TaskDetailPanel` is an absolute right-side overlay with a draggable left edge, so it no longer shares flex width with or compresses `TaskGraphScreen`.
+- Task clicks are now a toggle sequence: first click selects, clicking the selected task opens details, clicking the same open task closes details, and double-click opens directly. Search/keyboard navigation still selects and scrolls without opening details.
+- E2E coverage now asserts select/open/close toggle behavior, overlay resizing, and search selection without auto-opening; the worktree metadata test opens details via double-click.
+
+**Why:**
+- User-reported responsive bug: the old sidebar shared width with the graph and could leave the task pane stuck halfway on narrow widths. Opening details on first click also made simple selection too heavy.
+
+**Key files:** `app/ui/src/tasks/{TaskScreen.tsx, TaskGraphScreen.tsx, TaskDetailPanel.tsx, TaskGraphCanvas.tsx, TaskGraphNode.tsx, useTaskGraphInteraction.ts}`, `app/ui/tests/e2e/{task-graph.spec.ts,worktree.spec.ts}`, `doc/main/app/frontend/components.md`
+**Verification:** `cd app/ui && npm run lint` passed (0 errors / existing warnings); `cd app/ui && npm run build` passed; targeted Playwright `task-graph.spec.ts -g "node click selects|detail panel overlays|search highlights"` passed (3/3).
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-06: Task workspace — direct/transitive selection tiers + tighter margins
 
 **What changed:**

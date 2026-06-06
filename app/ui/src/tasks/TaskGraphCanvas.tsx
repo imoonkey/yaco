@@ -6,7 +6,7 @@ import { TaskGraphEdges } from './TaskGraphEdges'
 import { TaskGraphGroup } from './TaskGraphGroup'
 import { TaskGraphNode } from './TaskGraphNode'
 
-export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   graph: TaskGraphModel
   layout: GraphLayout
   searchMatchIds: Set<string>
@@ -15,6 +15,7 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, sele
   scale: number
   collapsedTaskIds: Set<string>
   onSelectTask: (id: string) => void
+  onOpenTask: (id: string) => void
   onClearSelection: () => void
   onToggleCollapse: (id: string) => void
   onPointerEnter: (target: TooltipTarget) => void
@@ -69,6 +70,7 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, sele
                 depCount={depCount}
                 scale={scale}
                 onClick={onSelectTask}
+                onOpen={onOpenTask}
                 onToggleCollapse={onToggleCollapse}
                 onPointerEnter={onPointerEnter}
                 onPointerLeave={onPointerLeave}

@@ -63,8 +63,9 @@ App (384 lines)
 
 **Task system (`ui/src/tasks/`) — single graph workspace:**
 ```
-TaskScreen — workspace shell: loads task data, owns selectedTaskId, renders
-│            the one graph workspace + detail panel. No view switching.
+TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
+│            renders the one graph workspace + overlay detail panel. No view
+│            switching.
 ├── TaskGraphScreen — the single workspace (SVG dependency graph, vertical scroll)
 │   ├── TaskGraphToolbar — the one toolbar: layout (Stacked; DAG disabled until
 │   │     built), workset filter (active/backlog/archive), state filter, search
@@ -76,9 +77,10 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId, renders
 │   │     overflow-y scroll container.
 │   └── TaskGraphTooltip — hover overlay (title, description, progress, full
 │         metadata chips: id/priority/workset/agent/tags)
-└── TaskDetailPanel — shared right sidebar (editable; archive tasks are in the
+└── TaskDetailPanel — shared right overlay (editable; archive tasks are in the
     │   map now, so no read-only mode is wired)
-    ├── Desktop: 340px right sidebar with slide-right animation
+    ├── Desktop: slide-right overlay anchored to the right edge; left edge
+    │   resizes width without shrinking the graph workspace underneath
     ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
     ├── InlineEdit — click-to-edit with custom dropdown popover
     ├── State/Priority/Estimate/Workset row (workset is display-only)
@@ -93,6 +95,11 @@ Workset is a filter, not a view: the workspace receives all worksets and shows
 The visible-set filter is applied before layout in `TaskGraphScreen` (drop tasks
 whose workset is disabled), and a selection that drops out of the recomputed
 layout is cleared so the detail panel can't show a hidden task.
+
+Task selection is distinct from opening details. A first click selects/highlights
+the task only; clicking the selected task opens the detail overlay, and clicking
+the same open task again closes it. Double-click opens directly. When the overlay
+is open, selecting another task switches the overlay contents to that task.
 
 Navigation is native vertical scroll (no horizontal infinite canvas); zoom is a
 uniform scale applied to the SVG. Search and keyboard navigation scroll the
