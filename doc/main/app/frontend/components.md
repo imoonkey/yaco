@@ -76,7 +76,7 @@ TaskScreen — master controller (view switcher, filtering, detail panel, onClos
 │   ├── Desktop: ListHeader (resizable) + ListRow (7 columns + worktree badge)
 │   └── Mobile: MobileListRow (44px, StateDot + title + parent + priority)
 ├── TaskGraphScreen — SVG dependency graph with pan/zoom
-│   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line, estimate badge, worktree icon) + TaskGraphEdges
+│   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row card, estimate badge, worktree icon) + TaskGraphEdges
 │   ├── TaskGraphToolbar (mobile: larger touch targets, hides collapse controls)
 │   ├── TaskGraphMinimap — overview with viewport rect (desktop only)
 │   └── TaskGraphTooltip — hover overlay
@@ -94,7 +94,7 @@ TaskScreen — master controller (view switcher, filtering, detail panel, onClos
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
-- `taskGraphModel.ts` — flat indented tree layout: 24px indent/level, guide lines, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics. NODE_WIDTH=280, NODE_HEIGHT=36.
+- `taskGraphModel.ts` — stacked full-width layout: roots stack vertically (by increasing `y`), each row fills the container width to a shared right edge with 24px indent/level for children, left-side guide lines, SCC cycle detection, `computeDisplayLayout(..., containerWidth)` with visible-tree semantics. `LayoutNode.width` drives card width; NODE_WIDTH=280 is now a min-width floor only. Real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge so arcs clear intervening cards; no non-dependency edges. NODE_HEIGHT=36.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 - `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
 - `hooks/useTaskViewState.ts` — persisted view state (active view, filters, sort, selection)

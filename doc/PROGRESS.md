@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-06: Stacked vertical full-width task graph layout
+
+**What changed:**
+- Default graph layout stacks root sections vertically (positioned by increasing `y`, separated by `ROOT_GAP`) and fills the container width instead of laying roots out in side-by-side horizontal lanes. `computeDisplayLayout` now takes a `containerWidth`; `LayoutNode.width` (`max(NODE_WIDTH, rightEdge - x)`) drives card width, with children indented to a shared right edge. `NODE_WIDTH` is now a min-width floor; `LANE_GAP` removed.
+- `TaskGraphNode` renders from `node.width` instead of the `NODE_WIDTH` constant. Title stays single-line with full title on hover/detail.
+- Real `depends` edges route through a reserved right-side gutter (`DEPENDS_GUTTER`): control points bow past a single **global** right edge (max `x+width` across visible nodes), endpoints anchored at each card's own right edge, so arcs never cross intervening cards/titles even when a deep row overflows under the width floor. Same/cross-lane geometry (`getRootLane`) removed. No non-dependency edges.
+
+**Why:**
+- Stacked full-width rows are the daily workspace layout (vertical scroll as primary navigation); horizontal lanes don't use available width and made cross-lane dependency curves sweep across row bodies. The global-edge bow keeps the shared-right-edge invariant honest under the `NODE_WIDTH` floor on narrow containers.
+
+**Key files:** `app/ui/src/tasks/taskGraphModel.ts`, `app/ui/src/tasks/TaskGraphNode.tsx`, `app/ui/src/tasks/TaskGraphScreen.tsx`
+**Verification:** `cd app/ui && npm run build` -> green; `cd app/ui && npm run lint` -> 0 errors / 13 existing warnings.
+**Commit:** ec86969..362d196
+**Next:** `viewport-scroll` — native vertical scroll / constrain pan-zoom for the stacked layout.
+**Blockers:** None.
+
 ## 2026-06-06: Task read returns all worksets; graph carries display fields
 
 **What changed:**
