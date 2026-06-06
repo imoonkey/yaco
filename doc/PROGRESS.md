@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-06: Responsive width-driven metadata rail on task nodes
+
+**What changed:**
+- `TaskGraphNode` renders a right-aligned metadata rail (`buildRail`) of id/priority/workset/agent badges. Visibility is computed from the actual `node.width`, not CSS breakpoints: badges are kept in priority order `id > priority > workset > agent` and dropped from the right as the row narrows (agent → workset → priority → id). The rail occupies only the band `[titleStart + 72px, rightLabel − gap]`, so it collapses before overlapping the title clip or the reserved right `depends` gutter; the title clip width is recomputed to end at the leftmost badge.
+- Noise reduction: `priority === 'normal'` and `workset === 'active'` render no badge (default/common values); `id` is the always-present anchor (truncated to 16 chars, agent to 12).
+- `TaskGraphTooltip` gains a full-metadata chip footer (id/priority/workset/agent/#tags) so nothing is lost when the rail collapses — added content only; the `scrollLeft/scrollTop`-based positioning math is untouched.
+- `TaskDetailPanel` adds a display-only **Workset** field to the State/Priority/Estimate row (id, priority, agent, tags were already shown).
+
+**Why:**
+- Full-width stacked rows have room for metadata when wide but must not crowd the title or dependency arcs when deeply indented/narrow. A width-driven drop order keeps the rail honest at any width while the tooltip + detail panel remain the lossless source. Resolves design Open Question #3 (rail thresholds and field order).
+
+**Key files:** `app/ui/src/tasks/{TaskGraphNode.tsx, TaskGraphTooltip.tsx, TaskDetailPanel.tsx}`
+**Verification:** `cd app/ui && npm run lint` → 0 errors / 13 existing warnings; `npx tsc --noEmit` clean; `npm run build` green.
+**Commit:** ea43ca8
+**Next:** `remove-legacy-surfaces`, `dag-layout-mode`, `workspace-verification`.
+**Blockers:** None.
+
 ## 2026-06-06: Vertical-scroll viewport for the task workspace
 
 **What changed:**

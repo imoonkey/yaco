@@ -71,14 +71,17 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId, renders
 │   │     (`/` focuses it), zoom, collapse/expand. Mobile folds workset+state into
 │   │     a Filter popover and hides the layout/collapse controls.
 │   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row
-│   │     card, estimate badge, worktree icon) + TaskGraphEdges. The SVG is sized
-│   │     to the scaled layout bounds inside an overflow-y scroll container.
-│   └── TaskGraphTooltip — hover overlay
+│   │     card, estimate badge, worktree icon, right-aligned metadata rail) +
+│   │     TaskGraphEdges. The SVG is sized to the scaled layout bounds inside an
+│   │     overflow-y scroll container.
+│   └── TaskGraphTooltip — hover overlay (title, description, progress, full
+│         metadata chips: id/priority/workset/agent/tags)
 └── TaskDetailPanel — shared right sidebar (editable; archive tasks are in the
     │   map now, so no read-only mode is wired)
     ├── Desktop: 340px right sidebar with slide-right animation
     ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
     ├── InlineEdit — click-to-edit with custom dropdown popover
+    ├── State/Priority/Estimate/Workset row (workset is display-only)
     ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
     ├── Children progress bar (for parent tasks)
     └── Design doc link → opens in editor (file paths) or new tab (URLs)
@@ -99,6 +102,15 @@ Navigation is native vertical scroll (no horizontal infinite canvas); zoom is a
 uniform scale applied to the SVG. Search and keyboard navigation scroll the
 target node to vertical center via `useViewport.scrollNodeIntoView`. -> See:
 frontend/hooks.md `useViewport.ts`.
+
+The node metadata rail (`TaskGraphNode.tsx` `buildRail`) is width-driven, not
+CSS breakpoints: badges are kept in priority order `id > priority > workset >
+agent` and dropped from the right as the row narrows (agent first, then workset,
+then priority, then id), so the rail collapses before overlapping the title clip
+or the right `depends` gutter. Default/common values are hidden to cut noise —
+`priority === 'normal'` and `workset === 'active'` render no badge; `id` is the
+always-present anchor (truncated). Full metadata is never lost: it stays in the
+tooltip chips and `TaskDetailPanel`.
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
