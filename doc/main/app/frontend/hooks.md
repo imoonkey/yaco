@@ -249,7 +249,7 @@ Sets `--kb-viewport` CSS variable on `<html>` when virtual keyboard is detected.
 
 ## useTaskGraph.ts
 
-Fetches the active task workset via the task API and builds the graph model.
+Fetches all task worksets via the task API and builds the graph model. The server returns active, backlog, and archive tasks; workset filtering happens client-side.
 
 **Export**: `useTaskGraph(project)` → `{ graph, error, loading }`
 

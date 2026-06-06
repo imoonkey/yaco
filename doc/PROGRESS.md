@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-06: Task read returns all worksets; graph carries display fields
+
+**What changed:**
+- `GET /api/tasks/:project` (`buildTasksResponse`) no longer filters to the active workset — it returns active, backlog, and archive tasks so the workspace can filter client-side.
+- `TaskGraphTask` normalization now carries `priority`, `agent`, and `tags` (defaults `normal`/`null`/`[]`); `Priority` is centralized in `taskGraphModel` and re-exported from `taskModel`. No task storage schema change.
+
+**Why:**
+- Workset is a filter, not a server-side cut. The single Tasks workspace needs the full task map to switch between active/backlog/archive views; display fields (priority/agent) feed the workspace cards.
+
+**Key files:** `app/server/src/routes/tasks.ts`, `app/ui/src/tasks/taskGraphModel.ts`, `app/ui/src/tasks/model/taskModel.ts`
+**Verification:** `cd app/server && npm test` -> 409 pass / 0 fail; `cd app/ui && npm run lint` -> 0 errors / 13 existing warnings; `cd app/ui && npx tsc --noEmit` clean.
+**Commit:** 22c35a4
+**Next:** Workspace toolbar — default workset filter to active+backlog, archive hidden until enabled.
+**Blockers:** None.
+
 ## 2026-06-06: CLI JSON envelopes flush before exit
 
 **What changed:**
