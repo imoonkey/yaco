@@ -1,11 +1,10 @@
 import { promises as fs } from 'node:fs'
 import { resolve as resolvePath, sep as pathSep } from 'node:path'
-import { stat } from 'node:fs/promises'
 import { loadProjects, type Project } from '../projects'
 import { readSessionsFromStateFiles, sendToSession, startAgentSession, captureSession, type AgentSession } from '../agent'
 import type { BindingStore } from './state'
 import { acquireTap, releaseTap, recordOffset, sliceFromOffset, waitForQuiet, hasTap } from './pty-tap'
-import { startTurn, streamAgentReply } from './agent-output'
+import { startTurn, streamAgentReply, queueHandleStream } from './agent-output'
 import { sendEscape } from './keys'
 
 export type ChannelReply =
@@ -120,24 +119,11 @@ async function pickSessionByArg(project: Project, arg: string): Promise<AgentSes
 export function createRouter(store: BindingStore) {
   const currentProjectByConversation = new Map<string, string>()
 
-  // Per-session lock for the reply-streaming phase. Sends to *different*
-  // sessions stream replies in parallel (so a slow agent on session A
-  // can't block a quick reply on session B), but two rapid sends to the
-  // *same* session queue their reply streams so the older turn's
-  // streamAgentReply doesn't see the newer turn's content.
-  const sessionStreamLock = new Map<string, Promise<void>>()
-
-  function queueSessionStream(handle: string, fn: () => Promise<void>): void {
-    const prev = sessionStreamLock.get(handle) ?? Promise.resolve()
-    const next = prev.then(fn, fn)
-    const tail = next.catch(err => {
-      console.error('[channel-router] reply stream error:', err)
-    })
-    sessionStreamLock.set(handle, tail)
-    void tail.then(() => {
-      if (sessionStreamLock.get(handle) === tail) sessionStreamLock.delete(handle)
-    })
-  }
+  // Reply-stream serialization is per session handle and lives in shared module
+  // state (queueHandleStream), NOT per-router. Sends to *different* sessions
+  // stream in parallel, but two rapid sends to the *same* session — even from a
+  // different channel router bound to it — queue so there is at most one live
+  // output-follow child per handle and the older turn's stream finishes first.
 
   async function resolveCurrentProject(conversationId: string): Promise<Project | undefined> {
     const explicit = currentProjectByConversation.get(conversationId)
@@ -340,8 +326,9 @@ export function createRouter(store: BindingStore) {
    *  message, so interleaved replies (after /use s X then send to Y) stay
    *  unambiguous in the chat UI.
    *
-   *  Falls back to the tap-buffer slice if the JSONL log can't be located
-   *  (e.g. session just started, sessionId not yet written). */
+   *  Falls back to the tap-buffer slice when the provider exposes no output
+   *  cursor (e.g. session just started, sessionId not yet written, or a
+   *  provider without an `output` adapter). */
   async function passthroughText(
     ctx: CommandContext,
     text: string,
@@ -359,8 +346,9 @@ export function createRouter(store: BindingStore) {
       return
     }
 
-    // Open a JSONL turn marker BEFORE sending — captures the file's current
-    // size so streamAgentReply only considers entries appended after our send.
+    // Resolve the output cursor BEFORE sending — captures the provider log
+    // position that predates the agent's reply, so streamAgentReply only sees
+    // entries appended after our send. null means no output cursor (tap fallback).
     const turn = await startTurn(session)
 
     try {
@@ -371,28 +359,16 @@ export function createRouter(store: BindingStore) {
       return
     }
 
-    // Fire-and-forget reply streaming under a per-session lock.
+    // Fire-and-forget reply streaming under the shared per-handle lock.
     const sessionHandle = binding.session
-    queueSessionStream(sessionHandle, async () => {
+    queueHandleStream(sessionHandle, async () => {
       if (!turn) {
         await passthroughViaTap(ctx, sessionHandle, onReply)
         return
       }
 
-      // Re-stat the JSONL at lock-acquire time. If a prior queued stream
-      // already consumed earlier content, the file is now larger than
-      // turn.startSize — start watching from `now` so we don't replay it.
-      // (When this is the only/first stream, currentSize === turn.startSize
-      //  and the agent's response will arrive in subsequent polls.)
-      let startSize = turn.startSize
-      try {
-        const stats = await stat(turn.jsonlPath)
-        if (stats.size > startSize) startSize = stats.size
-      } catch { /* keep original */ }
-      const adjustedTurn = startSize === turn.startSize ? turn : { ...turn, startSize }
-
       let sentAny = false
-      for await (const ev of streamAgentReply(adjustedTurn, {
+      for await (const ev of streamAgentReply(turn, {
         timeoutMs: PASSTHROUGH_TIMEOUT_MS,
         onAskUserQuestion: async () => sendEscape(sessionHandle),
       })) {
@@ -404,8 +380,8 @@ export function createRouter(store: BindingStore) {
         }
         if (!ev.text) continue
         // Visual prefix so the user can tell progress from completion at a
-        // glance. AskUserQuestion already prefixes itself with 🤔 in
-        // formatQuestion (agent-output.ts), so we don't double-mark it.
+        // glance. A 'question' event already carries the 🤔 prefix from the
+        // CLI classifier, so we don't double-mark it.
         const prefix = ev.kind === 'final' ? '✅ '
           : ev.kind === 'interim' ? '⏳ '
           : ''
@@ -417,9 +393,9 @@ export function createRouter(store: BindingStore) {
     })
   }
 
-  /** Legacy tap-based passthrough — only used when the JSONL log can't be
-   *  found. Kept as a safety net so a freshly-started session that hasn't
-   *  written a sessionId yet still produces some output. */
+  /** Legacy tap-based passthrough — only used when the provider exposes no
+   *  output cursor. Kept as a safety net so a freshly-started session that
+   *  hasn't written a sessionId yet still produces some output. */
   async function passthroughViaTap(
     ctx: CommandContext,
     handle: string,

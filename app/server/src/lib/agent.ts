@@ -5,6 +5,7 @@ import { isAbsolute, join, normalize, relative, sep } from 'path'
 import type { Project } from './projects'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
+import { cancelAgentOutput } from './channels/agent-output'
 import {
   YACO_AGENT_COMMAND_TIMEOUT_MS,
   YACO_AGENT_STATUS_TIMEOUT_MS,
@@ -492,6 +493,9 @@ export async function queryAgentStatus(cwd: string): Promise<AgentSessionState[]
  *  kill is handle-global — no project/cwd resolution needed. */
 export async function closeAgentSession(handle: string): Promise<void> {
   validateSessionName(handle)
+  // Terminate any live channel output-follow child first so it doesn't linger
+  // (polling a now-static log) until the app timeout after the session is gone.
+  cancelAgentOutput(handle)
   // execSync.*'yaco agent kill <handle> --json'
   await runYacoAgentJson(
     ['agent', 'kill', handle, '--json'],

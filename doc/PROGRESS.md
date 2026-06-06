@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-05: channel reply streaming via CLI output-follow
+
+**What changed:**
+- `channels/agent-output.ts` no longer resolves provider log paths or parses Claude/Codex JSONL. `startTurn(session)` resolves an opaque pre-send cursor via `yaco agent output-cursor <handle> --json`; `streamAgentReply(turn)` spawns ONE persistent `yaco agent output-follow <handle> --cursor <token> --offset <bytes> --json` child per turn and maps its NDJSON frames to `{kind:'interim'|'question'|'final'|'timeout', text}` events. `resolveSessionLog`, `classifyClaude`/`classifyCodex`, `formatQuestion`, and the `awaitFinalReply` back-compat shim are gone.
+- App keeps its three boundary-owned concerns: the stream **timeout** (the CLI emits no timeout event), the **AskUserQuestion Escape side effect** (`onAskUserQuestion` awaited before the `question` event, with the `Dialog auto-cancelled …` note appended app-side), and **follow-child lifecycle** (terminated on final/end/error, app timeout, session close, and consumer disconnect).
+- **Single follower per handle, process-wide.** The per-session lock moved out of the `createRouter` closure into a shared module-level serializer `queueHandleStream(handle, fn)` in `agent-output.ts`, so two separate routers (`wechat` + `whatsapp`) bound to the same session can never spawn overlapping `output-follow` children. `router.ts` dropped its `sessionStreamLock`/`queueSessionStream`.
+- **No fast-reply skip.** The follower starts from `max(turn.offset, lastConsumed[handle])` — the pre-send cursor floor (so a reply written between send and follow-startup is never skipped) bumped only past a prior queued turn's consumed `nextOffset` (so a back-to-back same-session turn doesn't replay). Current EOF is never re-sampled after send.
+- `agent.ts` `closeAgentSession(handle)` now calls `cancelAgentOutput(handle)` first, terminating any live follower for the killed session. `spawnFollow` attaches `child.on('error', …)` so an OS spawn failure routes through controlled stream termination instead of an unhandled `EventEmitter` crash.
+
+**Why:**
+- `app-output-boundary` task of the `tui-provider-adapters` design (`plan/active/tui-provider-adapters/design_codex.md`): app/server must stop resolving and parsing provider homes so each provider's private log layout lives only under `cli/`. The persistent `output-follow` stream is one subprocess per turn (not per poll), preserving the provider boundary without a spawn storm.
+
+**Key files:** `app/server/src/lib/channels/{agent-output,router}.ts`, `app/server/src/lib/agent.ts`, `app/server/src/lib/__tests__/{agent-output,channel-streaming}.test.ts`; doc `doc/main/app/backend/libs.md`
+**Verification:** `cd app/server && npx vitest run agent-output channel-streaming` → 17 pass (incl. two-router singleton + spawn-error tests, deterministic ×3); full server suite → 413 pass; `tsc --noEmit` adds zero errors over the pre-existing baseline.
+**Commit:** this commit.
+**Next:** `docs-provider-boundary` consolidates the TUI-only provider model and app/CLI boundary docs.
+**Blockers:** None.
+
 ## 2026-06-05: project move rewrites owned by provider adapters
 
 **What changed:**
