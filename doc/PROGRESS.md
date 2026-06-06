@@ -16,6 +16,109 @@
 **Next:** None.
 **Blockers:** None.
 
+## 2026-06-06: Session rename link integrity (`astl-session-rename-link-integrity`)
+
+**What changed:**
+- `yaco agent rename` now re-points handle references after the authoritative session-state/tmux rename, best-effort: `rewriteChildParentSessions(old, new)` rewrites live child sessions' `parentSession`, and `rewriteTaskAgentHandle(tasksPath, old, new)` rewrites task `agents` links under the tasks-file lock (order-preserving, deduped, per-source-file patch). The task store is resolved from the renamed session's `sessionPath` via new `resolveTasksPathForSessionPath()`, which walks up to the nearest project root (first ancestor with `yaco.toml` or `plan/tasks`, so worktree/subdir paths resolve) and honors `yaco.toml [paths].tasks`.
+- `rename()` became async and returns `{ childSessions, tasks, warnings }`; a skipped/failed rewrite never aborts the session rename — the cause is collected in `data.warnings` (surfaced in the `--json` envelope by the agent dispatcher). No durable alias table; `.renamed-*` breadcrumbs stay cleanup/stale-env support only.
+- Fixed an adjacent Codex start race: `start()` fired the post-start `/rename <handle>` without waiting, so a follow-up rename could race the in-flight slash command. Added `waitForPostInputSettle()` — after submitting post-start inputs it waits for the TUI to drain to a stable idle prompt before returning (only runs for providers with post-start inputs, i.e. Codex). Updated the live integration assertion to the version-robust `renamed to <handle>` (Codex v0.137.0 emits "Session renamed to", older "Thread renamed to") and the repair tests' state-schema check to allow the optional lineage fields (`spawnedBy`/`parentSession`).
+
+**Why:**
+- `session-rename-link-integrity` task of the agent-session-task-links bundle: task `agents` and child `parentSession` store handles, so rename must rewrite them or links/lineage break. Review round 1 surfaced the Codex post-start rename race (second rename lost) and the stale exact-key state-schema assertions; both fixed. See `plan/all/agent-session-task-links/final/design.md`.
+
+**Key files:** `cli/src/commands/agent/{rename.ts,index.ts,start.ts}`, `cli/src/lib/core/agent/session-state.ts`, `cli/src/lib/core/task/{link.ts,store.ts,index.ts}`, `cli/test/unit/commands/agent/rename-link-integrity.test.ts`, `cli/test/unit/core/task/rewrite-agent-handle.test.ts`, `cli/test/unit/core/agent/rewrite-child-parent-sessions.test.ts`, `cli/test/integration/agent-sync.integration.ts`, `doc/main/cli/{lifecycle.md,task.md,state-contract.md}`
+**Verification:** `bun run test:unit` → 669 pass / 0 fail; targeted `bun test rename-link-integrity + rewrite-agent-handle + rewrite-child-parent-sessions + rename + start` → 57 pass; `bun test ./test/integration/agent-sync.integration.ts` (live tmux+claude+codex) → 6 pass (incl. Codex live rename + repair schema checks); `bun test ./test/integration/task/task-cli.integration.ts` → 26 pass; `bunx tsc --noEmit` → only the 4 pre-existing baseline errors (none in touched files).
+**Commit:** branch `task/agent-session-task-links` (code commit owned by orchestrator)
+**Next:** None — closes the rename-link-integrity task of the ASTL bundle.
+**Blockers:** None.
+
+## 2026-06-06: Workspace task↔session links — terminal jump + active-session highlight (`astl-workspace-session-task-links`)
+
+**What changed:**
+- `TaskDetailPanel` now renders an **Agents** section listing every linked session handle. A live handle (one in `liveSessionHandles`) shows a pulsing green dot and an **Open Terminal** action; the currently attached handle gets an **Attached** badge and a **Show Terminal** action (re-reveals the surface when it was hidden while the handle stayed active); a non-live handle stays visible but muted and is never auto-removed. The action calls `onOpenTerminal(handle)`.
+- New pure `computeLinkedTaskIds(tasks, activeSession)` (`taskGraphSelection.ts`): the set of visible tasks whose `agents` include the active session. Threaded `TaskGraphScreen` → `TaskGraphCanvas`/`TaskGanttCanvas` → `TaskGraphRows` → `TaskGraphNode` as `linkedTaskIds`/`isLinkedToActiveSession`, rendered as a distinct **solid-green ring** — independent of selection/search/dependency highlight, adds **no graph edge**, and overrides dim so a linked node stays full-opacity under an unrelated selection. A dead handle never highlights (it can't be the active session).
+- `activeSession`, `liveSessionHandles`, and `onOpenTerminal` thread `TaskScreen` ← `WorkspaceEditorColumn` / `WorkspaceScreen` for both the desktop tasks tab and the mobile tasks pane. `WorkspaceScreen` derives `liveSessionHandles` from the project session list and `handleOpenSessionTerminal` reuses the attach flow (set active session + reveal terminal surface: right panel on desktop, terminal pane on mobile), gated on liveness.
+- The metadata rail already displays linked handles all-or-nothing when width allows (no title-truncation regression) — left unchanged.
+
+**Why:**
+- `workspace-session-task-links` task of the agent-session-task-links bundle: the locked single task workspace must jump from a task to a live terminal and highlight tasks linked to the active terminal, without adding graph edges or mixing with dependency/selection/search highlight state. Review round 1 (Medium) widened the terminal action to active handles so a hidden-but-attached surface can be reopened. See `plan/all/agent-session-task-links/final/design.md`.
+
+**Key files:** `app/ui/src/tasks/{taskGraphSelection.ts,TaskGraphNode.tsx,TaskGraphRows.tsx,TaskGraphCanvas.tsx,TaskGanttCanvas.tsx,TaskGraphScreen.tsx,TaskScreen.tsx,TaskDetailPanel.tsx,taskGraphModel.test.ts}`, `app/ui/src/workspace/{WorkspaceEditorColumn.tsx,WorkspaceScreen.tsx}`, `doc/main/app/frontend/components.md`
+**Verification:** `cd app/ui && npx vitest run src/tasks src/workspace` → 7 files / 96 pass (incl. new `computeLinkedTaskIds` cases); `npx tsc --noEmit` exit 0; `npm run lint` exit 0 (13 pre-existing warnings, none in touched files); `npm run build` green.
+**Commit:** branch `task/agent-session-task-links` (code commit owned by orchestrator)
+**Next:** None — closes the workspace UI task of the ASTL bundle.
+**Blockers:** None.
+
+## 2026-06-06: Task↔agent link delta mutation + orchestrate writer migration (`astl-task-agent-link-mutation`)
+
+**What changed:**
+- New `cli/src/lib/core/task/link.ts`: `mutateTaskAgentLink({tasksPath, taskId, sessionHandle, op})` — the locked attach/detach delta on `task.agents`, plus the pure `applyAgentLink(current, handle, op)`. Attach appends only if missing, detach removes only if present (both idempotent), and the last detach deletes the `agents` key. Liveness is not required. Exported through the `core/task` barrel.
+- New CLI surface `yaco task attach|detach <id> <session-handle>` (`cli/src/commands/task/link.ts`, wired in `commands/task/index.ts`). Returns `{taskId, agents, op, tasksPath}`.
+- `cli/src/commands/task/set.ts` now rejects any payload carrying `agent` **or** `agents` (`INVALID`) — closing the last non-delta writer so a stale full-array `set` can't clobber concurrently-attached handles.
+- The link write patches only the target task's raw record in its own source file (resolve via store, write via `loadTasks`/`saveTasks`) instead of re-saving the normalized store, so load-time `workset` defaulting / sibling `agent`→`agents` upgrades never leak to disk on unrelated fields or file-mates.
+- `agent-config/global/skills/orchestrate/SKILL.md`: dispatch sets `state:running` via `yaco task set`, then links the worker with `yaco task attach <id> w-<id>`; the legacy `{"agent":"w-..."}` payload is gone.
+
+**Why:**
+- `task-agent-link-mutation-and-writer-migration` task of the agent-session-task-links bundle. A delta + lock is required because a full-array overwrite loses concurrent links; review round 1 added the `set` agents rejection (High 1) and the patch-only-`agents` write to stop synthesized `workset` reaching disk (High 2). No app-server route in v1 — the UI only displays links. See `plan/all/agent-session-task-links/final/design.md`.
+
+**Key files:** `cli/src/lib/core/task/{link.ts,index.ts}`, `cli/src/commands/task/{link.ts,index.ts,set.ts}`, `cli/test/unit/core/task/link.test.ts`, `cli/test/integration/task/task-cli.integration.ts`, `agent-config/global/skills/orchestrate/SKILL.md`, `doc/main/cli/task.md`
+**Verification:** `bun --cwd cli test test/unit/core/task test/integration/task` → 651 pass, 0 fail; `bun test test/unit` (from `cli/`) → 390 pass, 0 fail. Confirmed `app/server` task route forwards no `agents` field, so the `set` rejection breaks nothing.
+**Commit:** branch `task/agent-session-task-links` (code commit owned by orchestrator)
+**Next:** `session-rename-link-integrity` — rewrite task `agents` references on `yaco agent rename`.
+**Blockers:** `agent-config/global/skills/update-tasks/SKILL.md:152` still shows a legacy `{"state":"running","agent":...}` `task set` example (out of this task's scope) that would now be rejected — fix in a follow-up so the example stops teaching a rejected payload.
+
+## 2026-06-06: Session list parent/child lineage rendering (`session-lineage-ui`)
+
+**What changed:**
+- UI `AgentSession` type gains optional `spawnedBy`/`parentSession` (`app/ui/src/types.ts`); the `/api/sessions` surface already forwarded them.
+- New pure, tested `app/ui/src/workspace/sessionLineage.ts`: `buildSessionLineage(sessions)` flattens an ordered list into depth-annotated `{ session, depth }` rows (parent immediately followed by visible descendants, input order preserved, roots = no/absent/self parent, cycle-guarded). `groupSessionLineage(sessions, isPinned)` builds lineage over the **full** visible list then buckets each root-anchored subtree into the existing pinned/processing/idle tiers by its root.
+- `useWorkspaceSessionSection.tsx` renders from `groupSessionLineage(orderedSessions, …)` instead of per-tier filtering, so a parent and its differently-statused/pinned descendants stay contiguous and indented; pin state is derived per row. `SessionItem` gains a `depth` prop → `paddingLeft = 8 + depth*14`.
+- Existing affordances unchanged: click-attach, rename, kill, pin/drag-reorder, unread badge, provider/status dots, shortcut index, dividers.
+
+**Why:**
+- `session-lineage-ui` task of the agent-session-task-links bundle: surface live agent spawn lineage in the session list as indentation, derived only from `parentSession` (no persisted `childSessions`, no new tree store). Building lineage over the full list (not per tier) was the review fix — per-bucket lineage orphaned a child whose status/pin differed from its visible parent. See `plan/all/agent-session-task-links/final/design.md`.
+
+**Key files:** `app/ui/src/types.ts`, `app/ui/src/workspace/{sessionLineage.ts,useWorkspaceSessionSection.tsx,WorkspaceSessionList.tsx}`, `app/ui/src/workspace/__tests__/sessionLineage.test.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace` (5 files, 31 pass incl. 13 lineage cases); `npx tsc --noEmit` exit 0; `npm run lint` exit 0 (pre-existing warnings only); `cd app/server && npm test` (412 pass).
+**Commit:** branch `task/agent-session-task-links` (code commit owned by orchestrator)
+**Next:** `session-rename-link-integrity` — rewrite task `agents` + live child `parentSession` on `yaco agent rename` (orphaning on parent rename is deferred there, not the UI).
+**Blockers:** None.
+
+## 2026-06-06: Session lineage capture at agent start (`spawnedBy` / `parentSession`)
+
+**What changed:**
+- Extended the persisted `SessionState` with `spawnedBy?: "user:web" | "user:terminal" | "agent"` and optional `parentSession` (`cli/src/lib/core/agent/model.ts`). Optional so legacy state files load unchanged; new starts always write `spawnedBy`.
+- `start()` derives lineage once before the first state write via `deriveSessionLineage()` (`cli/src/commands/agent/start.ts`): `YACO_AGENT_HANDLE` → `agent` + `parentSession`; `YACO_AGENT_SPAWNED_BY=user:web` → `user:web`; else `user:terminal`. A malformed inherited handle is ignored (falls through), not fatal.
+- Wrapper (`cli/scripts/agent-wrapper.sh`) exports `YACO_AGENT_HANDLE="$sn"` for the provider process and `unset`s the one-shot `YACO_AGENT_SPAWNED_BY` web marker so it can't leak into child sessions.
+- Stale renamed-parent handles are normalized through the `.renamed-*` breadcrumb chain via new `resolveRenamedHandle()` (cycle-safe, live-file-wins). Fixed `renameState()` to be chain-safe: incoming breadcrumbs are re-pointed to the new handle *before* any cleanup, so `a→b→c` leaves both `.renamed-a` and `.renamed-b` pointing at `c` (previously the incoming crumb was deleted first, breaking the chain).
+- App server (`app/server/src/lib/agent.ts`): `AgentSessionState`/`AgentSession` carry the lineage fields; `toAgentSession` passes them through best-effort (validates `spawnedBy`, drops unknown values, omits when absent); `startAgentSession` spawns the CLI with `YACO_AGENT_SPAWNED_BY=user:web`. The `/api/sessions` list surface forwards them unchanged.
+
+**Why:**
+- `session-lineage-start` task of the agent-session-task-links bundle: agent sessions need an explicit spawn source and parent link so the session list can render parent/child nesting and the workspace can reason about who launched whom. Explicit-first (`YACO_AGENT_HANDLE`) over ambient inference; breadcrumbs only normalize a stale env handle, they are not the durable model. See `plan/all/agent-session-task-links/final/design.md`.
+
+**Key files:** `cli/src/lib/core/agent/{model,session-state}.ts`, `cli/src/commands/agent/start.ts`, `cli/scripts/agent-wrapper.sh`, `app/server/src/lib/agent.ts`, `cli/test/unit/{core/agent/resolve-renamed-handle,commands/agent/lineage}.test.ts`, `cli/test/agent-wrapper.test.ts`, `app/server/src/lib/__tests__/agent.test.ts`, `doc/main/cli/{state-contract,architecture,lifecycle}.md`, `doc/main/app/data-model/types.md`
+**Verification:** `bun --cwd cli test test/unit/core/agent test/unit/commands/agent test/agent-wrapper.test.ts` (28 pass, 0 fail); `cd app/server && npm test` (412 pass); `bunx tsc --noEmit` no new errors in touched files (pre-existing `session-id.ts` errors only).
+**Commit:** branch `task/agent-session-task-links` (code commit owned by orchestrator)
+**Next:** `session-rename-link-integrity` — rewrite task `agents` + live child `parentSession` on rename; `session-lineage-ui` — render parent/child cascade in the session list.
+**Blockers:** None.
+
+## 2026-06-06: Task agents link schema (`agent` → `agents[]`)
+
+**What changed:**
+- Canonical task field `agent?: string | null` replaced by `agents?: string[]` (YACO session-handle links) across CLI core (`cli/src/lib/core/task/{model,store,validation}.ts`) and the two UI task normalizers (`app/ui/src/tasks/{taskGraphModel.ts,model/taskModel.ts}`).
+- Load-time normalization upgrades legacy `agent` → `agents`: trims, drops empties, dedupes order-preserving, and lets an explicit `agents` array — even empty — win over a stale scalar `agent`; save omits `agent`.
+- Validation now rejects an incoming `agent` payload outright and validates each `agents` handle against `AGENT_HANDLE_RE` `/^[a-zA-Z0-9_-]+$/` on the raw string (leading/trailing whitespace rejected, not silently trimmed).
+- Mechanical UI ripple so the rename stays coherent (rail/tooltip/detail read `agents`); full multi-handle display/jump/highlight UX stays for the `workspace-session-task-links` task.
+
+**Why:**
+- First task of the agent-session-task-links bundle: a task needs durable links to every session handle that worked on it, not a single scalar. `agents[]` is deduped/order-preserving and avoids the role/status/timestamp sync bugs a relation object would carry. See `plan/all/agent-session-task-links/final/design.md`.
+
+**Key files:** `cli/src/lib/core/task/{model,store,validation}.ts`, `cli/test/unit/core/task/{validation,store}.test.ts`, `app/ui/src/tasks/{taskGraphModel.ts,taskGraphModel.test.ts,model/taskModel.ts,metadataRail.ts,TaskGraphTooltip.tsx,TaskDetailPanel.tsx}`, `doc/main/cli/task.md`, `doc/main/app/frontend/components.md`
+**Verification:** `bun --cwd cli test test/unit/core/task` (640 pass, 0 fail), `npx vitest run src/tasks/taskGraphModel.test.ts` (30 passed), `cd app/ui && npm run lint` (exit 0).
+**Commit:** branch `task/agent-session-task-links` (code commit owned by orchestrator)
+**Next:** `task-agent-link-mutation-and-writer-migration` — locked attach/detach delta mutation + migrate `orchestrate/SKILL.md` off legacy `agent` writes (which now fail validation).
+**Blockers:** None.
+
 ## 2026-06-06: Pseudo-Gantt task workspace mode
 
 **What changed:**

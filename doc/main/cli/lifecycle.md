@@ -1,6 +1,6 @@
 # Lifecycle
 
-> Last updated: 2026-06-04 (yc-agent-subcommand: TS hook-event handler, agent-wrapper.sh, Stop debounce)
+> Last updated: 2026-06-06 (astl-session-rename-link-integrity: rename rewrites task `agents` + child `parentSession` best-effort with warnings; Codex post-start `/rename` settles before start returns. Prior: astl-session-lineage-start — wrapper exports YACO_AGENT_HANDLE, lineage capture at start, chain-safe rename breadcrumbs)
 
 Visual state diagrams and sequence flows for session lifecycle. For the text-based state machine summary, see [architecture.md](architecture.md#state-machine). For provider-specific hooks and assumptions, see [providers.md](providers.md).
 
@@ -193,7 +193,7 @@ sequenceDiagram
     Note over M: waitForReady: idle or processing both accepted<br/>auto-handles Codex "Hooks need review" trust prompt
 
     M->>T: sendKeys("/rename <handle>")
-    Note over X: Best-effort title sync; start does not wait for completion
+    Note over X: start waits for the /rename to settle back to a stable idle prompt (waitForPostInputSettle) before returning, so a follow-up rename can't race the in-flight slash command
 
     M->>M: sessionId = hook-written value or pending sentinel
     M->>S: syncStateAfterStart
@@ -230,7 +230,7 @@ sequenceDiagram
 
     opt Codex
         M->>T: sendKeys("/rename <handle>")
-        Note over M: submit-only; no wait for provider title sync
+        Note over M: waits for the /rename to settle to a stable idle prompt before returning
     end
 
     Note over M: skip waitForSessionId (sessionId already known)
@@ -271,4 +271,41 @@ sequenceDiagram
     end
 ```
 
+**Wrapper environment (lineage capture).** Before launching the provider, the
+wrapper also exports `YACO_AGENT_HANDLE="$sn"` (so a child `yaco agent start`
+records `parentSession`) and `unset`s the one-shot `YACO_AGENT_SPAWNED_BY` web
+marker so it cannot leak into long-lived child sessions. A child renamed-parent
+handle stays valid because `start()` normalizes it through the `.renamed-*`
+breadcrumb chain — which `renameState()` keeps chain-safe by re-pointing
+incoming breadcrumbs to the new handle (a→b→c leaves both `.renamed-a` and
+`.renamed-b` pointing at `c`). -> See: [state-contract.md](state-contract.md#session-lineage-spawnedby--parentsession)
+
 -> See: [architecture.md](architecture.md#exit-trap-wrapper), [src/lib/core/agent/lifecycle.ts](../../../cli/src/lib/core/agent/lifecycle.ts), [scripts/agent-wrapper.sh](../../../cli/scripts/agent-wrapper.sh)
+## Rename Link Integrity
+
+Handles are stored in two places outside the renamed session's own state file:
+child sessions' `parentSession` lineage and tasks' `agents` links. `yaco agent
+rename` re-points both so a rename never orphans a reference.
+
+The session-state/tmux rename (`renameState` + tmux rename + provider in-TUI
+`/rename`) is **authoritative**. The two reference rewrites run **after** it and
+are **best-effort**: a failure is collected as a warning, never aborting the
+session rename.
+
+- **Child lineage** — `rewriteChildParentSessions(old, new)` scans live state
+  files and rewrites any `parentSession === old` to `new`. Idempotent.
+- **Task links** — the task store is resolved from the renamed session's
+  `sessionPath` via `resolveTasksPathForSessionPath()`, which walks upward to the
+  nearest project root (first ancestor with `yaco.toml` or `plan/tasks`, so a
+  worktree or subdirectory `sessionPath` still resolves), then honors
+  `yaco.toml [paths].tasks`. `rewriteTaskAgentHandle(tasksPath, old, new)` rewrites
+  matching `agents` entries under the tasks-file lock — order-preserving, deduped
+  if `new` was already linked, patched per-source-file so unrelated tasks aren't
+  re-normalized. Idempotent.
+
+If no task store resolves, or either rewrite throws, the rename still succeeds
+and the cause is returned in `data.warnings` (`--json`). No durable alias table
+is added; `.renamed-*` breadcrumbs remain wrapper-cleanup / stale-env-handle
+support only, not the link model.
+
+-> See: [src/commands/agent/rename.ts](../../../cli/src/commands/agent/rename.ts), [src/lib/core/task/link.ts](../../../cli/src/lib/core/task/link.ts), [src/lib/core/task/store.ts](../../../cli/src/lib/core/task/store.ts), [task.md](task.md#agents-link-rewrite-on-rename)

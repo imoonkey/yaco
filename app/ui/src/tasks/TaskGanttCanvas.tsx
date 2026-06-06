@@ -20,10 +20,11 @@ const DIVIDER_GUTTER = 19
 // the stacked canvas, so cards, indent guides, and workset section dividers render
 // identically; a draggable divider (the app's VResizeHandle style) between the
 // panes resizes that column.
-export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave, onResizeLeftWidth }: {
+export function TaskGanttCanvas({ graph, layout, searchMatchIds, linkedTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave, onResizeLeftWidth }: {
   graph: TaskGraphModel
   layout: GanttLayout
   searchMatchIds: Set<string>
+  linkedTaskIds: Set<string>
   highlight: HighlightModel
   selection: Selection
   scale: number
@@ -76,6 +77,7 @@ export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, sele
             graph={graph}
             layout={layout}
             searchMatchIds={searchMatchIds}
+            linkedTaskIds={linkedTaskIds}
             highlight={highlight}
             selection={selection}
             scale={scale}

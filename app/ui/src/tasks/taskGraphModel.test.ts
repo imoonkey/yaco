@@ -17,6 +17,7 @@ import {
 } from './taskGraphModel'
 import { PX_PER_UNIT, MIN_BAR } from './taskGraphConstants'
 import { buildRail } from './metadataRail'
+import { computeLinkedTaskIds } from './taskGraphSelection'
 
 type Workset = 'active' | 'backlog' | 'archive'
 
@@ -213,6 +214,30 @@ describe('title', () => {
 })
 
 // --- Criterion 4b: metadata rail collapses width-driven ----------------------
+
+describe('agents normalization', () => {
+  it('upgrades a legacy agent string to an agents list', () => {
+    const { tasks } = normalizeTasks({ t: entry({ title: 'T', agent: 'claude' }) })
+    expect(tasks.get('t')!.agents).toEqual(['claude'])
+  })
+
+  it('prefers agents over a legacy agent and trims, dedupes, and drops empties', () => {
+    const { tasks } = normalizeTasks({
+      t: entry({ title: 'T', agent: 'old', agents: [' claude ', 'claude', '', 'codex'] }),
+    })
+    expect(tasks.get('t')!.agents).toEqual(['claude', 'codex'])
+  })
+
+  it('honors an explicit empty agents array over a stale legacy agent', () => {
+    const { tasks } = normalizeTasks({ t: entry({ title: 'T', agent: 'old', agents: [] }) })
+    expect(tasks.get('t')!.agents).toEqual([])
+  })
+
+  it('defaults to an empty agents list when neither field is present', () => {
+    const { tasks } = normalizeTasks({ t: entry({ title: 'T' }) })
+    expect(tasks.get('t')!.agents).toEqual([])
+  })
+})
 
 describe('metadata rail — width-driven collapse (buildRail)', () => {
   const task = makeTask({ title: 'X', priority: 'high', workset: 'backlog', agent: 'claude' }, 'long-task-id')
@@ -489,5 +514,27 @@ describe('gantt layout — critical-path flags propagate to the bars', () => {
     const c = layout.bars.get('c')!
     expect(a.x + a.width).toBe(c.x)
     expect(b.x + b.width).toBeLessThan(c.x)
+  })
+})
+
+// --- Terminal→task linked highlight: visible tasks whose agents include the active session ---
+
+describe('computeLinkedTaskIds', () => {
+  const tasks = normalizeTasks({
+    a: entry({ title: 'A', agents: ['w-1', 'w-2'] }),
+    b: entry({ title: 'B', agents: ['w-2'] }),
+    c: entry({ title: 'C' }),
+  }).tasks
+
+  it('returns every task whose agents include the active session', () => {
+    expect(computeLinkedTaskIds(tasks, 'w-2')).toEqual(new Set(['a', 'b']))
+    expect(computeLinkedTaskIds(tasks, 'w-1')).toEqual(new Set(['a']))
+  })
+
+  it('returns an empty set for no active session or an unmatched handle', () => {
+    expect(computeLinkedTaskIds(tasks, null).size).toBe(0)
+    expect(computeLinkedTaskIds(tasks, undefined).size).toBe(0)
+    expect(computeLinkedTaskIds(tasks, '').size).toBe(0)
+    expect(computeLinkedTaskIds(tasks, 'w-404').size).toBe(0)
   })
 })

@@ -204,7 +204,8 @@ If no signal maps to a live managed state file, the command returns
 
 `yaco agent start --json` and `yaco agent status --json` output full
 `SessionState` as JSON inside the envelope. Fields: `handle`, `provider`,
-`sessionPath`, `pid`, `sessionId`, `status`, `createdAt`.
+`sessionPath`, `pid`, `sessionId`, `status`, `createdAt`, and optional lineage
+`spawnedBy` / `parentSession` (see [state-contract.md](state-contract.md#session-lineage-spawnedby--parentsession)).
 
 `yaco agent capture` is dual-mode:
 - **text mode** (no `--json`) — the renderer recognizes the handler's `{ text: "..." }` shape and writes the captured pane buffer to stdout verbatim. No JSON wrap, no surrounding text — bytes round-trip.

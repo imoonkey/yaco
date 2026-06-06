@@ -316,6 +316,21 @@ export function Workspace({
   const hasOpenTabs = openTabs.length > 0
   const activeSessionInfo = sessionsMgr.projectSessions.find(s => s.name === attachedSession) ?? null
 
+  // Live session handles for this project — drives task→session linking: a linked
+  // handle is clickable only when live, and the task graph highlights tasks linked
+  // to the attached session. Opening a live handle reuses the attach flow (set
+  // active session, reveal the terminal surface).
+  const liveSessionHandles = useMemo(
+    () => new Set((sessions ?? []).map(s => s.name)),
+    [sessions],
+  )
+  const handleOpenSessionTerminal = useCallback((handle: string) => {
+    if (!liveSessionHandles.has(handle)) return
+    actions.setActiveSession(handle)
+    if (isMobile) actions.setMobilePane('terminal')
+    else actions.updateLayout({ showRightPanel: true })
+  }, [liveSessionHandles, actions, isMobile])
+
   const handleNewFile = useCallback(() => {
     explorerRef.current?.createFile(contextFolder || undefined)
   }, [contextFolder])
@@ -526,7 +541,7 @@ export function Workspace({
 
   const tasksPane = (
     <Suspense fallback={TaskScreenFallback}>
-      <LazyTaskScreen projectName={projectName} onClose={handleToggleTasks} onOpenTasksFile={nav.handleOpenTasksFile} onOpenFile={nav.openFile} />
+      <LazyTaskScreen projectName={projectName} onClose={handleToggleTasks} onOpenTasksFile={nav.handleOpenTasksFile} onOpenFile={nav.openFile} activeSession={activeSession} liveSessionHandles={liveSessionHandles} onOpenTerminal={handleOpenSessionTerminal} />
     </Suspense>
   )
 
@@ -585,6 +600,9 @@ export function Workspace({
       onFocusEditor={() => setFocusTarget('editor')}
       onOpenTasksFile={nav.handleOpenTasksFile}
       compareContext={editorCompareContext}
+      activeSession={activeSession}
+      liveSessionHandles={liveSessionHandles}
+      onOpenTerminal={handleOpenSessionTerminal}
     />
   )
 

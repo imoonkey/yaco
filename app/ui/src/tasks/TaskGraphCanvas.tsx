@@ -5,10 +5,11 @@ import type { TooltipTarget } from './TaskGraphTooltip'
 import { TaskGraphEdges } from './TaskGraphEdges'
 import { TaskGraphRows } from './TaskGraphRows'
 
-export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphCanvas({ graph, layout, searchMatchIds, linkedTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   graph: TaskGraphModel
   layout: GraphLayout
   searchMatchIds: Set<string>
+  linkedTaskIds: Set<string>
   highlight: HighlightModel
   selection: Selection
   scale: number
@@ -35,6 +36,7 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, sele
         graph={graph}
         layout={layout}
         searchMatchIds={searchMatchIds}
+        linkedTaskIds={linkedTaskIds}
         highlight={highlight}
         selection={selection}
         scale={scale}

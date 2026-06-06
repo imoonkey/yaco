@@ -129,7 +129,9 @@ export function TaskGraphTooltip({ target, graph, scale, containerRef }: {
         <MetaChip mono>{task.id}</MetaChip>
         <MetaChip color="var(--sol-base01)">{task.priority}</MetaChip>
         <MetaChip color="var(--sol-violet)">{task.workset}</MetaChip>
-        {task.agent && <MetaChip color="var(--sol-cyan)">{task.agent}</MetaChip>}
+        {task.agents.map(a => (
+          <MetaChip key={a} color="var(--sol-cyan)">{a}</MetaChip>
+        ))}
         {task.tags.map(tag => (
           <MetaChip key={tag}>#{tag}</MetaChip>
         ))}

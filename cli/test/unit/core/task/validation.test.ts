@@ -20,7 +20,7 @@ describe("validateTypes", () => {
         scope: ["a/**"],
         requireHumanReview: false,
         priority: "high",
-        agent: "w-x",
+        agents: ["w-x"],
         tags: ["a"],
         estimate: "s",
         worktree: "feat-x",
@@ -41,8 +41,36 @@ describe("validateTypes", () => {
     expect(() => validateTypes({ priority: "urgent" })).toThrow(/priority must be/);
   });
 
-  it("rejects empty agent string", () => {
-    expect(() => validateTypes({ agent: "  " })).toThrow(/agent must not be empty/);
+  it("rejects the legacy agent field outright", () => {
+    expect(() => validateTypes({ agent: "claude" })).toThrow(/no longer supported/);
+    expect(() => validateTypes({ agent: null })).toThrow(/no longer supported/);
+  });
+
+  it("accepts agents handles with uppercase, digits, underscore, and hyphen", () => {
+    expect(() =>
+      validateTypes({ agents: ["Claude_1", "codex-2", "ABC", "a"] }),
+    ).not.toThrow();
+    expect(() => validateTypes({ agents: [] })).not.toThrow();
+  });
+
+  it("rejects agents that is not a string list", () => {
+    expect(() => validateTypes({ agents: "claude" })).toThrow(/agents must be a list/);
+    expect(() => validateTypes({ agents: ["ok", 1 as unknown] })).toThrow(/agents must be a list/);
+  });
+
+  it("rejects empty or whitespace-only agents handles", () => {
+    expect(() => validateTypes({ agents: ["ok", "  "] })).toThrow(/empty handles/);
+  });
+
+  it("rejects agents handles with illegal characters", () => {
+    expect(() => validateTypes({ agents: ["bad handle"] })).toThrow(/must match/);
+    expect(() => validateTypes({ agents: ["weird!"] })).toThrow(/must match/);
+  });
+
+  it("rejects agents handles with leading or trailing whitespace", () => {
+    expect(() => validateTypes({ agents: [" codex "] })).toThrow(/must match/);
+    expect(() => validateTypes({ agents: ["claude "] })).toThrow(/must match/);
+    expect(() => validateTypes({ agents: ["\tclaude"] })).toThrow(/must match/);
   });
 
   it("rejects non-string tag entries", () => {

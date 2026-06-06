@@ -85,6 +85,34 @@ export function cleanupOrphanBreadcrumbs(): void {
   } catch { /* best effort */ }
 }
 
+/** Resolve a possibly-stale handle to its current name by following the
+ *  `.renamed-<old>` breadcrumb chain. A renamed parent process keeps the old
+ *  handle in its env (env can't be mutated post-rename), so start capture walks
+ *  the breadcrumbs to record the live handle as `parentSession`.
+ *
+ *  A handle that still has a live state file is returned as-is (it is current,
+ *  even if a stale breadcrumb of the same name lingers from a reused name).
+ *  Bounded by a visited set so a breadcrumb cycle cannot loop forever. */
+export function resolveRenamedHandle(handle: string): string {
+  const dir = sessionsRoot();
+  let current = handle;
+  const visited = new Set<string>();
+  while (!visited.has(current)) {
+    visited.add(current);
+    if (existsSync(statePath(current))) return current;
+    const crumb = join(dir, `.renamed-${current}`);
+    if (!existsSync(crumb)) break;
+    try {
+      const next = readFileSync(crumb, "utf-8").trim();
+      if (!next || visited.has(next)) break;
+      current = next;
+    } catch {
+      break;
+    }
+  }
+  return current;
+}
+
 /** Rename a session's state file and update its contents. */
 export function renameState(
   oldHandle: string,
@@ -102,28 +130,47 @@ export function renameState(
   // Delete old file (may already be gone if GC raced us — that's fine)
   const oldPath = statePath(oldHandle);
   if (existsSync(oldPath)) unlinkSync(oldPath);
-  cleanupBreadcrumbs(oldHandle);
 
-  // Write breadcrumb so wrapper EXIT trap can find the new name after kill-session.
-  // Chain-safe: if A→B was renamed and now B→C, update A's breadcrumb to point to C.
+  // Update breadcrumbs so any stale handle resolves to newHandle. Chain-safe:
+  // if A→B was renamed and now B→C, A's breadcrumb (target B) must be rewritten
+  // to C. This MUST run before deleting/overwriting B's own crumbs — calling a
+  // destructive cleanup first would remove the incoming A→B crumb and break the
+  // chain, so a child holding YACO_AGENT_HANDLE=A could no longer reach C.
   ensureStateDir();
   const dir = sessionsRoot();
   try {
-    const files = readdirSync(dir);
-    let updated = false;
-    for (const f of files) {
+    for (const f of readdirSync(dir)) {
       if (!f.startsWith(".renamed-")) continue;
+      // The FROM-crumb for oldHandle is (re)written below; skip it here.
+      if (f === `.renamed-${oldHandle}`) continue;
       const target = readFileSync(join(dir, f), "utf-8").trim();
-      if (target === oldHandle) {
-        writeFileSync(join(dir, f), newHandle);
-        updated = true;
-        break;
-      }
+      if (target === oldHandle) writeFileSync(join(dir, f), newHandle);
     }
-    if (!updated) {
-      writeFileSync(join(dir, `.renamed-${oldHandle}`), newHandle);
-    }
+    // Breadcrumb FROM oldHandle → newHandle. Overwrites any stale FROM-crumb
+    // left by a prior session that reused this name.
+    writeFileSync(join(dir, `.renamed-${oldHandle}`), newHandle);
   } catch { /* best effort */ }
+}
+
+/** Rewrite live child sessions' `parentSession` from oldHandle to newHandle.
+ *
+ *  Called best-effort after `yaco agent rename` performs the authoritative
+ *  state-file/tmux rename: lineage stores parent handles, so a parent rename
+ *  must re-point its children. Idempotent — a second run finds no child
+ *  pointing at oldHandle. Returns the handles of children that were rewritten. */
+export function rewriteChildParentSessions(
+  oldHandle: string,
+  newHandle: string,
+): string[] {
+  const rewritten: string[] = [];
+  for (const handle of listStateHandles()) {
+    const state = readState(handle);
+    if (!state || state.parentSession !== oldHandle) continue;
+    state.parentSession = newHandle;
+    writeState(state);
+    rewritten.push(state.handle);
+  }
+  return rewritten;
 }
 
 /** Check if state file's status is stale (mtime too old for "processing" or "starting") */

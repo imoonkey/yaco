@@ -3,6 +3,7 @@ import { RefreshCw, History, Radio } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 import { getProviderUi, startableProviders } from '../lib/providerUi'
 import { SessionItem } from './WorkspaceSessionList'
+import { groupSessionLineage, type SessionLineageRow } from './sessionLineage'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import type { AgentSession, HistorySession } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
@@ -134,15 +135,18 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   )
 
   // --- Body ---
-  const pinned = sessionsMgr.orderedSessions.filter(s => sessionsMgr.pinnedSet.has(s.name))
-  const unpinnedProcessing = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && (s.status === 'processing' || s.status === 'starting'))
-  const unpinnedIdle = sessionsMgr.orderedSessions.filter(s => !sessionsMgr.pinnedSet.has(s.name) && s.status === 'idle')
+  // Lineage is built over the FULL visible list (not per status/pin bucket) so a
+  // parent is always immediately followed by its visible descendants, indented
+  // by depth. Subtrees are then assigned to the pinned/active/idle dividers by
+  // their root, keeping a parent and its differently-statused children together.
+  const { pinned: pinnedRows, processing: processingRows, idle: idleRows } =
+    groupSessionLineage(sessionsMgr.orderedSessions, name => sessionsMgr.pinnedSet.has(name))
 
-  const renderSessionItem = (s: AgentSession, isPinned?: boolean) => {
+  const renderSessionItem = (s: AgentSession, isPinned?: boolean, depth = 0) => {
     const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
     const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
     return (
-    <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned}
+    <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
       unreadCount={sessionsMgr.getSessionUnread(s.name)}
       pendingName={sessionsMgr.pendingRenames[s.name]}
       shortcutIndex={shortcutIndex}
@@ -162,13 +166,17 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   }
 
   const divider = <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
+  // Pin state is per-item (a subtree can mix pinned/unpinned), so derive it per row.
+  const renderRows = (rows: SessionLineageRow[]) =>
+    rows.map(({ session, depth }) => renderSessionItem(session, sessionsMgr.pinnedSet.has(session.name), depth))
+
   const liveSessionsBody = (
     <>
-      {pinned.map(s => renderSessionItem(s, true))}
-      {pinned.length > 0 && (unpinnedProcessing.length > 0 || unpinnedIdle.length > 0) && divider}
-      {unpinnedProcessing.map(s => renderSessionItem(s))}
-      {unpinnedProcessing.length > 0 && unpinnedIdle.length > 0 && divider}
-      {unpinnedIdle.map(s => renderSessionItem(s))}
+      {renderRows(pinnedRows)}
+      {pinnedRows.length > 0 && (processingRows.length > 0 || idleRows.length > 0) && divider}
+      {renderRows(processingRows)}
+      {processingRows.length > 0 && idleRows.length > 0 && divider}
+      {renderRows(idleRows)}
       {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No live sessions</div>}
     </>
   )

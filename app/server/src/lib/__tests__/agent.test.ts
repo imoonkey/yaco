@@ -190,4 +190,30 @@ describe('readSessionsFromStateFiles', () => {
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.project).toBe('child')
   })
+
+  it('passes through spawnedBy and parentSession lineage when present', async () => {
+    writeStateFile(mockedSessionsDir, 'child', {
+      sessionPath: tmpDir,
+      spawnedBy: 'agent',
+      parentSession: 'parent-handle',
+    } as Partial<AgentSessionState>)
+    const sessions = await readSessionsFromStateFiles(project())
+    expect(sessions[0]).toMatchObject({ spawnedBy: 'agent', parentSession: 'parent-handle' })
+  })
+
+  it('omits lineage fields for legacy state files without them', async () => {
+    writeStateFile(mockedSessionsDir, 'legacy', { sessionPath: tmpDir })
+    const sessions = await readSessionsFromStateFiles(project())
+    expect(sessions[0]).not.toHaveProperty('spawnedBy')
+    expect(sessions[0]).not.toHaveProperty('parentSession')
+  })
+
+  it('drops an unknown spawnedBy value', async () => {
+    writeStateFile(mockedSessionsDir, 'weird', {
+      sessionPath: tmpDir,
+      spawnedBy: 'user:carrier-pigeon',
+    } as unknown as Partial<AgentSessionState>)
+    const sessions = await readSessionsFromStateFiles(project())
+    expect(sessions[0]).not.toHaveProperty('spawnedBy')
+  })
 })

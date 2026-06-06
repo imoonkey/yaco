@@ -43,6 +43,12 @@ interface SetOpts {
 
 export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>> {
   const data = parsePayload(opts);
+  if ("agents" in data) {
+    throw new CliError(
+      ErrCode.INVALID,
+      "task set cannot write 'agents'; use `yaco task attach|detach <id> <handle>`",
+    );
+  }
   validateTypes(data);
 
   const paths = resolveTaskPaths(opts.repo);

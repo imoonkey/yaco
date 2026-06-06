@@ -178,8 +178,12 @@ export type TaskDetailPanelProps = {
   allTasks: Map<string, TaskV2>
   onClose: () => void
   onSelectTask: (id: string) => void
-  onOpenTerminal?: (agent: string) => void
+  onOpenTerminal?: (handle: string) => void
   onOpenFile?: (path: string) => void
+  // Live session handles for this project. A linked handle is clickable only when live.
+  liveSessionHandles?: Set<string>
+  // The currently attached terminal session handle, if any.
+  activeSession?: string | null
   mutate: TaskMutations
   readOnly?: boolean
   width?: number
@@ -194,6 +198,8 @@ export function TaskDetailPanel({
   onSelectTask,
   onOpenTerminal,
   onOpenFile,
+  liveSessionHandles,
+  activeSession,
   mutate,
   readOnly = false,
   width = 380,
@@ -315,29 +321,48 @@ export function TaskDetailPanel({
         </div>
       </div>
 
-      {/* Agent */}
-      {task.agent && (
+      {/* Agents — every linked session handle. A live handle (one matching a running
+          session) opens/reveals its terminal; the attached one is marked but still
+          offers a Show Terminal action because the surface can be hidden while it
+          stays the active session. A non-live handle stays visible but inactive and
+          is never auto-removed. */}
+      {task.agents.length > 0 && (
         <div className="flex flex-col gap-1">
-          <SectionHeader>Agent</SectionHeader>
-          <div className="flex items-center gap-2">
-            {task.state === 'running' && (
-              <span
-                className="w-2 h-2 rounded-full animate-pulse"
-                style={{ backgroundColor: 'var(--sol-green)' }}
-              />
-            )}
-            <span>{task.agent}</span>
-            {onOpenTerminal && (
-              <button
-                onClick={() => onOpenTerminal(task.agent!)}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors hover:bg-sol-hover-bg"
-                style={{ border: '1px solid var(--sol-border)' }}
-              >
-                <Terminal size={12} />
-                Open Terminal
-              </button>
-            )}
-          </div>
+          <SectionHeader>{task.agents.length > 1 ? 'Agents' : 'Agent'}</SectionHeader>
+          {task.agents.map(agent => {
+            const isLive = liveSessionHandles?.has(agent) ?? false
+            const isActive = !!activeSession && agent === activeSession
+            return (
+              <div key={agent} className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0${isLive ? ' animate-pulse' : ''}`}
+                  style={{ backgroundColor: isLive ? 'var(--sol-green)' : 'var(--sol-base1)' }}
+                  title={isLive ? 'Live session' : 'No live session'}
+                />
+                <span className="font-mono" style={{ color: isLive ? 'var(--sol-text)' : 'var(--sol-muted)' }}>
+                  {agent}
+                </span>
+                {isActive && (
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+                    style={{ color: 'var(--sol-green)', backgroundColor: 'color-mix(in srgb, var(--sol-green) 10%, transparent)' }}
+                  >
+                    Attached
+                  </span>
+                )}
+                {isLive && onOpenTerminal && (
+                  <button
+                    onClick={() => onOpenTerminal(agent)}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors hover:bg-sol-hover-bg"
+                    style={{ border: '1px solid var(--sol-border)' }}
+                  >
+                    <Terminal size={12} />
+                    {isActive ? 'Show Terminal' : 'Open Terminal'}
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 

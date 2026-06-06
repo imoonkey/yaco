@@ -30,6 +30,10 @@ export type BlockReason = (typeof BLOCK_REASONS)[number];
 
 export const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
+/** YACO agent session-handle syntax. Duplicated from agent core rather than
+ *  imported so task validation stays dependency-free. */
+export const AGENT_HANDLE_RE = /^[a-zA-Z0-9_-]+$/;
+
 /** A single task record as stored on disk. Open-ended: callers may attach
  *  free-form metadata (notes, etc.) that the validator ignores. */
 export interface Task {
@@ -44,7 +48,7 @@ export interface Task {
   scope?: string[];
   requireHumanReview?: boolean;
   priority?: Priority;
-  agent?: string | null;
+  agents?: string[];
   tags?: string[];
   estimate?: Estimate;
   blockReason?: BlockReason;

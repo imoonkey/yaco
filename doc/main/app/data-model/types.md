@@ -64,6 +64,8 @@ interface AgentSession {
   project: string
   summary: string
   worktree?: string      // slug extracted from sessionPath (e.g. "my-feature")
+  spawnedBy?: 'user:web' | 'user:terminal' | 'agent'  // spawn source (best-effort; legacy state omits it)
+  parentSession?: string // parent handle; present only when spawnedBy === 'agent'
 }
 ```
 

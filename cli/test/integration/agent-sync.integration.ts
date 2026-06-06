@@ -39,6 +39,17 @@ const DOCUMENTED_STATE_FIELDS = [
   "sessionPath",
   "status",
 ];
+// Lineage fields new starts persist: spawnedBy is always written, parentSession
+// only for agent children. Both are optional in the documented state contract.
+const OPTIONAL_STATE_FIELDS = ["spawnedBy", "parentSession"];
+
+/** Assert a session-state record carries exactly the documented required fields
+ *  plus only the allowed optional lineage fields — no stray keys leaked in. */
+function expectCleanStateSchema(keys: string[]): void {
+  const allowed = new Set([...DOCUMENTED_STATE_FIELDS, ...OPTIONAL_STATE_FIELDS]);
+  for (const required of DOCUMENTED_STATE_FIELDS) expect(keys).toContain(required);
+  for (const key of keys) expect(allowed.has(key)).toBe(true);
+}
 
 const testHandles: string[] = [];
 
@@ -110,7 +121,7 @@ describe("runtime metadata repair", () => {
       expect(repaired.pid).toBe(live.pid);
       expect(repaired.sessionId).toBe(live.sessionId);
       expect(processCommand(repaired.pid)).toBe("claude");
-      expect(Object.keys(readState(handle)!).sort()).toEqual(DOCUMENTED_STATE_FIELDS);
+      expectCleanStateSchema(Object.keys(readState(handle)!));
 
       kill(handle);
     },
@@ -138,7 +149,7 @@ describe("runtime metadata repair", () => {
       expect(repaired.pid).toBe(live.pid);
       expect(repaired.sessionId).toBe(live.sessionId);
       expect(processCommand(repaired.pid)).toBe("codex");
-      expect(Object.keys(readState(handle)!).sort()).toEqual(DOCUMENTED_STATE_FIELDS);
+      expectCleanStateSchema(Object.keys(readState(handle)!));
 
       kill(handle);
     },
@@ -157,7 +168,7 @@ describe("rename sync", () => {
       start("claude", ["--name", oldHandle]);
 
       const before = readState(oldHandle)!;
-      rename(oldHandle, newHandle);
+      await rename(oldHandle, newHandle);
 
       await waitFor(() => readClaudeSessionFile(before.pid)?.name === newHandle, 10000);
 
@@ -180,12 +191,14 @@ describe("rename sync", () => {
 
       start("codex", ["--name", oldHandle]);
 
-      rename(oldHandle, newHandle);
+      await rename(oldHandle, newHandle);
 
       await waitFor(() => hasSession(newHandle) && !hasSession(oldHandle), 10000);
       const output = await capture(newHandle, { wait: true, lines: 200 });
 
-      expect(output).toContain(`Thread renamed to ${newHandle}`);
+      // Codex confirms in-TUI rename as "<Thread|Session> renamed to <handle>"
+      // (wording varies across versions); assert the new handle's confirmation.
+      expect(output).toContain(`renamed to ${newHandle}`);
       expect(readState(oldHandle)).toBeNull();
       expect(readState(newHandle)?.handle).toBe(newHandle);
 

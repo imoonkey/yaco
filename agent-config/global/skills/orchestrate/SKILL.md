@@ -71,13 +71,20 @@ All eligible tasks with non-overlapping execution context are dispatched in para
 
 ### Dispatch Command
 
-For each selected task: update state to `running` and `agent` to
-`w-<task-id>` via `yaco task set`, then start a worker:
+For each selected task: set state to `running` via `yaco task set`, start the
+worker, then link its session handle `w-<task-id>` via `yaco task attach`:
 
 ```bash
-yaco task set <task-id> --data '{"state":"running","agent":"w-<task-id>"}' --json
+yaco task set <task-id> --data '{"state":"running"}' --json
 cd <resolved_cwd> && yaco agent start claude "<prompt>" --name "w-<task-id>" --json
+yaco task attach <task-id> w-<task-id> --json
 ```
+
+`yaco task attach` is a locked delta mutation on the task's `agents` list:
+it is idempotent and never overwrites handles attached by concurrent workers.
+Detach a handle the same way with `yaco task detach <task-id> w-<task-id>`.
+Never write session links through `yaco task set` — the legacy `agent` field
+is rejected.
 
 Prompt includes: task title, description (if any), acceptCriteria, design doc path (if any), scope.
 

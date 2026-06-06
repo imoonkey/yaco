@@ -44,6 +44,7 @@ export {
   sourceForNewTask,
   defaultTaskFileFor,
   defaultTaskFileForId,
+  resolveTasksPathForSessionPath,
   formatJson,
   type TaskStore,
 } from "./store.ts";
@@ -65,3 +66,12 @@ export {
   type LockStatus,
   type AcquireOptions,
 } from "./lock.ts";
+
+export {
+  applyAgentLink,
+  mutateTaskAgentLink,
+  rewriteTaskAgentHandle,
+  type TaskAgentLinkOp,
+  type TaskAgentLinkMutation,
+  type TaskAgentLinkResult,
+} from "./link.ts";

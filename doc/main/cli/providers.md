@@ -47,7 +47,8 @@ Adapter responsibilities, by capability:
 The shared runtime owns tmux, YACO state files, wrapper installation, name
 validation, send/capture/kill/rename commands, and the HTTP/UI boundary. The
 canonical `SessionState` (`handle`, `provider`, `sessionPath`, `pid`,
-`sessionId`, `status`, `createdAt`) is the runtime registry; provider-native
+`sessionId`, `status`, `createdAt`, plus optional lineage `spawnedBy` /
+`parentSession`) is the runtime registry; provider-native
 state is never canonical — it is only an adapter-owned source for derived data.
 
 ### Terminal Runtime Compatibility

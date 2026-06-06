@@ -68,6 +68,11 @@ export interface WorkspaceEditorColumnProps {
   onNavigateDir: (dir: string) => Promise<void>
   onFocusEditor: () => void
   onOpenTasksFile: () => void
+  // Task workspace ↔ terminal-session links: highlight tasks linked to the attached
+  // session and open the existing terminal surface for a live linked handle.
+  activeSession?: string | null
+  liveSessionHandles?: Set<string>
+  onOpenTerminal?: (handle: string) => void
 }
 
 export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
@@ -79,6 +84,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     onSelectTab, onDoubleClickTab, onCloseTab, onLayoutUpdate,
     onSaveFile, onForceSave, onAcceptDisk, onUpdateDraft, onUpdateViewport,
     onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onOpenTasksFile,
+    activeSession, liveSessionHandles, onOpenTerminal,
   } = props
 
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
@@ -122,7 +128,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
         <Suspense fallback={TaskScreenFallback}>
-          <LazyTaskScreen projectName={projectName} onClose={handleCloseTasks} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} />
+          <LazyTaskScreen projectName={projectName} onClose={handleCloseTasks} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} activeSession={activeSession} liveSessionHandles={liveSessionHandles} onOpenTerminal={onOpenTerminal} />
         </Suspense>
       </div>
     )

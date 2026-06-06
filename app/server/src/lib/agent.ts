@@ -21,6 +21,8 @@ export interface AgentSession {
   sessionPath: string
   sessionId: string
   pid: number
+  spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
+  parentSession?: string
 }
 
 /** Entry of the `yaco agent providers --json` catalog — the CLI is the
@@ -70,9 +72,12 @@ export interface AgentSessionState {
   sessionId: string
   status: 'starting' | 'idle' | 'processing'
   createdAt: string
+  spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
+  parentSession?: string
 }
 
 const VALID_STATUSES = new Set(['starting', 'idle', 'processing'])
+const VALID_SPAWNED_BY = new Set(['user:web', 'user:terminal', 'agent'])
 
 function normalizePath(path: string): string {
   const normalized = normalize(path)
@@ -129,7 +134,7 @@ function toAgentSession(
 
   if (!VALID_STATUSES.has(state.status)) return null
 
-  return {
+  const session: AgentSession = {
     name: state.handle,
     provider: state.provider,
     status: state.status,
@@ -138,6 +143,14 @@ function toAgentSession(
     sessionId: state.sessionId ?? '',
     pid: state.pid,
   }
+  // Lineage is best-effort: legacy state files omit these fields entirely.
+  if (typeof state.spawnedBy === 'string' && VALID_SPAWNED_BY.has(state.spawnedBy)) {
+    session.spawnedBy = state.spawnedBy
+  }
+  if (typeof state.parentSession === 'string' && state.parentSession) {
+    session.parentSession = state.parentSession
+  }
+  return session
 }
 
 function resolveProjectForSessionPath(
@@ -384,11 +397,14 @@ export async function startAgentSession(
     beforeFiles = new Set()
   }
 
-  // Spawn yaco — it handles waitForReady / /rename / sessionId in background
+  // Spawn yaco — it handles waitForReady / /rename / sessionId in background.
+  // Mark the spawn source so the CLI records spawnedBy=user:web. The wrapper
+  // clears this marker before launching the provider, so it never leaks into
+  // long-lived child sessions started from inside the agent.
   const proc = spawn(YACO_PATH, args, {
     stdio: ['ignore', 'ignore', 'pipe'],
     cwd,
-    env: buildChildProcessEnv(),
+    env: { ...buildChildProcessEnv(), YACO_AGENT_SPAWNED_BY: 'user:web' },
   })
   proc.unref()
 

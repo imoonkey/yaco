@@ -82,13 +82,14 @@ function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel, worktre
   return 1
 }
 
-export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isCollapsed, depCount, scale, onClick, onOpen, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isLinkedToActiveSession, isCollapsed, depCount, scale, onClick, onOpen, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   node: LayoutNode
   task: TaskGraphTask
   group?: LayoutGroup
   highlight: HighlightModel
   isSelected: boolean
   isSearchMatch: boolean
+  isLinkedToActiveSession: boolean
   isCollapsed: boolean
   depCount: number
   scale: number
@@ -98,7 +99,9 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   onPointerEnter: (target: TooltipTarget) => void
   onPointerLeave: () => void
 }) {
-  const opacity = getNodeOpacity(node, highlight)
+  // A task linked to the active terminal session stays fully readable even when an
+  // unrelated selection would otherwise dim it — the link is an independent signal.
+  const opacity = isLinkedToActiveSession ? 1 : getNodeOpacity(node, highlight)
   const showLabels = scale >= 0.45
 
   const strokeColor = isSearchMatch ? 'var(--sol-violet)' : isSelected ? 'var(--sol-accent)' : 'var(--sol-border)'
@@ -213,6 +216,23 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           strokeWidth={1}
           strokeDasharray="4 3"
           opacity={0.5}
+        />
+      )}
+
+      {/* Linked-to-active-session ring — a solid green outline marking a task whose
+          agents include the currently attached terminal session. Distinct from the
+          accent selection stroke and the violet dashed search ring; adds no edge. */}
+      {isLinkedToActiveSession && (
+        <rect
+          x={node.x - 2}
+          y={node.y - 2}
+          width={node.width + 4}
+          height={NODE_HEIGHT + 4}
+          rx={8}
+          fill="none"
+          stroke={'var(--sol-green)'}
+          strokeWidth={1.5}
+          opacity={0.9}
         />
       )}
 

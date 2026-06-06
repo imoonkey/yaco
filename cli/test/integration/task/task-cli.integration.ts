@@ -388,6 +388,85 @@ describe("yaco task set / rm / archive / list / validate", () => {
   });
 });
 
+describe("task attach / detach (agents link delta)", () => {
+  let repo: string;
+  beforeEach(() => {
+    repo = mkRepo();
+    runYaco(repo, [
+      "task",
+      "set",
+      "x",
+      "--data",
+      JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok" }),
+      "--json",
+    ]);
+  });
+
+  function agentsOnDisk(): unknown {
+    return JSON.parse(readFileSync(defaultTasksFile(repo, "x"), "utf-8")).x.agents;
+  }
+
+  it("attach adds a handle, is idempotent, and detach omits the key after last", () => {
+    const a = runYaco(repo, ["task", "attach", "x", "w-x", "--json"]);
+    expect(a.status).toBe(0);
+    expect((parseJson(a.stdout).data as { agents: string[] }).agents).toEqual(["w-x"]);
+    expect(agentsOnDisk()).toEqual(["w-x"]);
+
+    // Idempotent attach.
+    runYaco(repo, ["task", "attach", "x", "w-x", "--json"]);
+    expect(agentsOnDisk()).toEqual(["w-x"]);
+
+    const d = runYaco(repo, ["task", "detach", "x", "w-x", "--json"]);
+    expect(d.status).toBe(0);
+    expect((parseJson(d.stdout).data as { agents: string[] }).agents).toEqual([]);
+    expect("agents" in JSON.parse(readFileSync(defaultTasksFile(repo, "x"), "utf-8")).x).toBe(false);
+  });
+
+  it("the orchestrate dispatch flow links a worker without writing legacy agent", () => {
+    runYaco(repo, ["task", "set", "x", "--data", JSON.stringify({ state: "running" }), "--json"]);
+    runYaco(repo, ["task", "attach", "x", "w-x", "--json"]);
+    const task = JSON.parse(readFileSync(defaultTasksFile(repo, "x"), "utf-8")).x;
+    expect(task.state).toBe("running");
+    expect(task.agents).toEqual(["w-x"]);
+    expect("agent" in task).toBe(false);
+  });
+
+  it("rejects an invalid session handle with INVALID exit 1", () => {
+    const r = runYaco(repo, ["task", "attach", "x", "bad handle", "--json"]);
+    expect(r.status).toBe(1);
+    expect(parseJson(r.stderr).error!.code).toBe("INVALID");
+  });
+
+  it("task set refuses to write agents (forces callers through attach/detach)", () => {
+    const r = runYaco(repo, [
+      "task",
+      "set",
+      "x",
+      "--data",
+      JSON.stringify({ agents: ["w-other"] }),
+      "--json",
+    ]);
+    expect(r.status).toBe(1);
+    const env = parseJson(r.stderr);
+    expect(env.error!.code).toBe("INVALID");
+    expect(env.error!.message).toMatch(/attach\|detach/);
+    // The legacy full-array write never reached disk.
+    expect("agents" in JSON.parse(readFileSync(defaultTasksFile(repo, "x"), "utf-8")).x).toBe(false);
+  });
+
+  it("rejects attach on a missing task with NOT_FOUND exit 1", () => {
+    const r = runYaco(repo, ["task", "attach", "ghost", "w-x", "--json"]);
+    expect(r.status).toBe(1);
+    expect(parseJson(r.stderr).error!.code).toBe("NOT_FOUND");
+  });
+
+  it("requires both id and handle", () => {
+    const r = runYaco(repo, ["task", "attach", "x", "--json"]);
+    expect(r.status).toBe(2);
+    expect(parseJson(r.stderr).error!.code).toBe("USAGE");
+  });
+});
+
 describe("configured tasks path (yc-task-ts bug fix)", () => {
   it("honors yaco.toml [paths].tasks instead of hardcoded plan/tasks.json", () => {
     const repo = mkRepo({ tasksFile: "custom/dir/tasks.json" });
