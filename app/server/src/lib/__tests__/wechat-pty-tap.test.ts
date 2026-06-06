@@ -72,13 +72,18 @@ describe('pty-tap (real tmux)', () => {
     await acquireTap(sessionName)
     expect(hasTap(sessionName)).toBe(true)
 
-    // Wait for the script's burst to flow through
-    await new Promise(r => setTimeout(r, 2000))
+    // Poll until the script's full burst has flowed through the tap, rather
+    // than racing a fixed sleep against the subprocess's 0.2s line cadence
+    // (the fixed wait was flaky under load). Bounded well within the 10s budget.
+    const deadline = Date.now() + 8000
+    let slice = sliceFromOffset(sessionName, 0)
+    while (!/line 5/.test(slice.text) && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 100))
+      slice = sliceFromOffset(sessionName, 0)
+    }
 
     const offset = recordOffset(sessionName)
     expect(offset).toBeGreaterThan(0)
-
-    const slice = sliceFromOffset(sessionName, 0)
     expect(slice.text).toMatch(/line 5/)
     expect(slice.truncated).toBe(false)
 
