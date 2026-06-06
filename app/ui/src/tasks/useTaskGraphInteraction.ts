@@ -39,7 +39,8 @@ function loadWorkspace(project: string): LoadedWorkspace {
     const worksets = Array.isArray(p.worksets) ? p.worksets.filter((w: unknown): w is Workset => ALL_WORKSETS.includes(w as Workset)) : []
     const states = Array.isArray(p.states) ? p.states.filter((s: unknown): s is TaskState => ALL_STATES.includes(s as TaskState)) : []
     return {
-      layout: p.layout === 'dag' ? 'dag' : 'stacked',
+      // DAG isn't built yet; any stored layout resolves to stacked until it ships.
+      layout: 'stacked',
       worksets: worksets.length ? new Set(worksets) : new Set(DEFAULT_WORKSETS),
       states: states.length ? new Set(states) : new Set(ALL_STATES),
       collapsed: Array.isArray(p.collapsedTaskIds) ? new Set(p.collapsedTaskIds) : new Set(),
@@ -204,14 +205,9 @@ export function useTaskGraphInteraction(
       else next.add(workset)
       return next
     })
-    // Clear selection if the selected task is now hidden by the workset filter,
-    // so the detail panel never holds a stale hidden reference.
-    setSelection(prev => {
-      if (!prev || !graph) return prev
-      const task = graph.tasks.get(prev)
-      return task && task.workset === workset && worksets.has(workset) ? null : prev
-    })
-  }, [graph, worksets])
+    // Selection that becomes hidden by this change is cleared centrally where the
+    // rendered layout is known (TaskGraphScreen), so any filter is covered.
+  }, [])
 
   // --- Navigate to node ---
   const pendingPanRef = useRef<string | null>(null)

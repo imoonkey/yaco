@@ -56,6 +56,16 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
     )
   }, [graph, ix.collapsedTaskIds, ix.filters, containerSize.width])
 
+  // Clear selection when the selected task is no longer in the rendered layout —
+  // hidden by any filter (workset, state, or a filtered-out ancestor). Robust to all
+  // cases; propagates up via the selection-sync effect so the detail panel clears too.
+  const { selection, setSelection } = ix
+  useEffect(() => {
+    if (selection && displayLayout && !displayLayout.nodes.has(selection)) {
+      setSelection(null)
+    }
+  }, [displayLayout, selection, setSelection])
+
   // Keep panZoom bounds in sync (read lazily by fitToView)
   useEffect(() => {
     panZoomBoundsRef.current = displayLayout?.bounds ?? { width: 0, height: 0 }
