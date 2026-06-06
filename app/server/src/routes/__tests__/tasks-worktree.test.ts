@@ -112,21 +112,22 @@ describe('GET /:project — yaco.toml [paths] overrides', () => {
     expect(json.tasks).not.toHaveProperty('DEFAULT')
   })
 
-  it('lists archived tasks from workset=archive', async () => {
+  it('returns every workset (active, backlog, archive) without server-side filtering', async () => {
     mkdirSync(join(testProjectPath, 'plan/tasks'), { recursive: true })
     writeFileSync(
       join(testProjectPath, 'plan/tasks/tasks.json'),
       JSON.stringify({
-        A1: { title: 'archived', state: 'done', workset: 'archive', updated: '2026-01-01T00:00:00Z' },
+        A1: { title: 'archived', state: 'done', workset: 'archive' },
+        B1: { title: 'backlog', state: 'ready', workset: 'backlog' },
         D1: { title: 'active', state: 'ready', workset: 'active' },
       }),
     )
-    const res = await taskRoutes.request('/test-project/archive', { method: 'GET' })
+    const res = await taskRoutes.request('/test-project', { method: 'GET' })
     expect(res.status).toBe(200)
     const json = await res.json()
-    const files = (json.archives as Array<{ file: string }>).map(a => a.file)
-    expect(files).toEqual(['20260101_workset-archive'])
-    expect(json.archives[0].tasks).toHaveProperty('A1')
-    expect(json.archives[0].tasks).not.toHaveProperty('D1')
+    // Archive is a workset in the canonical map now; the client filters it, not the server.
+    expect(json.tasks).toHaveProperty('A1')
+    expect(json.tasks).toHaveProperty('B1')
+    expect(json.tasks).toHaveProperty('D1')
   })
 })
