@@ -560,6 +560,36 @@ describe("agent output-follow cursor validation (security)", () => {
     const err = JSON.parse((r.stderr ?? "").trim());
     expect(err.error.code).toBe("INVALID");
   });
+
+  // A path-traversal handle must be rejected before `readState` opens any file,
+  // so it can never aim the state read at a `.json` outside the sessions dir.
+  // Every other session-targeted command (status/rename/kill) validates first.
+  it("rejects a traversal handle without reading an out-of-tree state file", () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "yaco-follow-traversal-"));
+    const sessionsDir = join(sandbox, "sessions");
+    mkdirSync(join(sandbox, "secret"), { recursive: true });
+    mkdirSync(sessionsDir, { recursive: true });
+    // A valid-looking state file OUTSIDE the sessions dir that a `../` handle
+    // would otherwise reach.
+    writeFileSync(
+      join(sandbox, "secret", "leak.json"),
+      JSON.stringify(makeState({ handle: "leak" })),
+    );
+    const env = { ...process.env, NO_COLOR: "1", YACO_AGENT_SESSIONS_DIR: sessionsDir };
+    for (const sub of ["output-cursor", "output-follow"]) {
+      const r = spawnSync(
+        "bun",
+        ["run", BIN, "agent", sub, "../secret/leak", "--offset", "0", "--json"],
+        { encoding: "utf-8", env },
+      );
+      expect(r.status).not.toBe(0);
+      expect((r.stdout ?? "").trim()).toBe(""); // no cursor / no NDJSON frames
+      const err = JSON.parse((r.stderr ?? "").trim());
+      expect(err.ok).toBe(false);
+      expect(err.error.message).toContain("Invalid session name");
+    }
+    rmSync(sandbox, { recursive: true, force: true });
+  });
 });
 
 describe("agent output-follow offset validation", () => {

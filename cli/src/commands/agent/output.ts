@@ -14,11 +14,16 @@ import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { getProvider, hasProvider } from "../../lib/core/agent/providers/index.ts";
 import { decodeCursorToken, followOutput } from "../../lib/core/agent/providers/output.ts";
 import type { OutputCursor, ProviderOutput } from "../../lib/core/agent/providers/types.ts";
-import type { SessionState } from "../../lib/core/agent/model.ts";
+import { validateName, type SessionState } from "../../lib/core/agent/model.ts";
 import { readState } from "../../lib/core/agent/session-state.ts";
 
 /** Resolve a live session's output-capable provider, or throw a typed error. */
 function resolveOutput(handle: string): { state: SessionState; output: ProviderOutput } {
+  // Validate before any state read so a traversal handle (e.g. `../foo`) can
+  // never aim `readState` at a `.json` outside the sessions dir — matching the
+  // name validation every other session-targeted command (status/rename/kill)
+  // applies. This surface is app/server-facing, so the handle is external input.
+  validateName(handle);
   const state = readState(handle);
   if (!state) {
     throw new CliError(ErrCode.NOT_FOUND, `no live session named "${handle}"`);
