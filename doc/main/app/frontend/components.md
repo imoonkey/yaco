@@ -99,6 +99,15 @@ uniform scale applied to the SVG. Search and keyboard navigation scroll the
 target node to vertical center via `useViewport.scrollNodeIntoView`. -> See:
 frontend/hooks.md `useViewport.ts`.
 
+The `containerWidth` fed into `computeDisplayLayout` is the scroll container's
+`clientWidth` (excludes the vertical scrollbar), measured by a `ResizeObserver`
+bound through a **callback ref**, not a mount-time effect: the scroll div does
+not exist while the loading pane is shown, so an empty-dep effect would bind
+against a null ref and never re-run, leaving `containerWidth` stuck at 0 and
+every row collapsed to the `NODE_WIDTH` floor. The callback ref (re)binds the
+observer whenever the div mounts/unmounts and clears the stored observer on
+teardown.
+
 The node metadata rail (`metadataRail.ts` `buildRail`, rendered by
 `TaskGraphNode.tsx`) is width-driven, not
 CSS breakpoints: badges are kept in priority order `id > priority > workset >

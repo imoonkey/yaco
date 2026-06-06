@@ -1,3 +1,16 @@
+## 2026-06-06: Task graph rows fill container width (ResizeObserver lifecycle fix)
+
+**What changed:**
+- `TaskGraphScreen.tsx` — the `ResizeObserver` measuring the scroll container's `clientWidth` (the `containerWidth` input to `computeDisplayLayout`) is now bound through a **callback ref** (`attachScrollRef`) instead of an empty-dep mount effect. The callback keeps `scrollRef.current` in sync, (re)binds the observer on every mount, and disconnects + nulls the stored observer on teardown.
+
+**Why:**
+- The old `useEffect(..., [])` ran once on first mount while `status === 'loading'`, when the scroll div isn't rendered (loading pane shown). It returned early on the null ref and never re-ran after the graph mounted, so `containerWidth` stayed 0 — collapsing every stacked row to the `NODE_WIDTH` (280px) floor regardless of available width, with no reflow on resize. The callback ref binds whenever the div actually mounts (incl. the loading→ready transition). Nulling the observer ref on the null/teardown path prevents a disconnected observer (closing over the old `el`/SVG subtree) being retained across ready→missing/error.
+
+**Key files:** `app/ui/src/tasks/TaskGraphScreen.tsx`, `doc/main/app/frontend/components.md`
+**Verification:** Reproduced in-browser via Playwright (yaco project, 28 tasks): before — roots 280px at 913px viewport; after — roots 821px / children 797px sharing the right edge at 957px container, reflowing to 414px / 390px at 550px container, svg width == container width (no horizontal overflow). `npx tsc --noEmit` exit 0; `cd app/ui && npm run lint` 0 errors (13 pre-existing warnings); `npm run build` ✓.
+**Commit:** 466cdae (+ this docs commit)
+**Blockers:** None.
+
 ## 2026-06-05: app/ui ESLint baseline cleanup (React Compiler hook rules)
 
 **What changed:**
