@@ -12,3 +12,8 @@ test-results/
 .wwebjs_cache/
 .wwebjs_auth/
 .playwright-mcp/
+
+# Transient align/monitor logs (regenerated per run)
+plan/**/poll.log
+plan/**/poll.err
+plan/**/_monitor.log
