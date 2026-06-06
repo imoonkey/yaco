@@ -62,8 +62,11 @@ function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) 
 function getNodeOpacity(node: LayoutNode, highlight: HighlightModel): number {
   if (!highlight.dimUnrelated) return 1
   const { id } = node
-  if (highlight.activeTaskIds.has(id) || highlight.upstreamTaskIds.has(id) || highlight.downstreamTaskIds.has(id)) return 1
-  return 0.4
+  // Selected + direct (one-hop) neighbours stay full; transitive ancestors/descendants
+  // recede; everything unrelated fades further so the immediate relationships read clearly.
+  if (highlight.activeTaskIds.has(id) || highlight.directTaskIds.has(id)) return 1
+  if (highlight.upstreamTaskIds.has(id) || highlight.downstreamTaskIds.has(id)) return 0.55
+  return 0.22
 }
 
 function getNodeFill(node: LayoutNode, highlight: HighlightModel, worktree: string | null): string {

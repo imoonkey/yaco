@@ -13,6 +13,13 @@ function isActiveEdge(edge: LayoutEdge, highlight: HighlightModel): boolean {
   return edge.originalEdgeIds?.some(id => highlight.activeEdgeIds.has(id)) ?? false
 }
 
+// Direct edges touch the selected task itself (one hop). They stay prominent while
+// transitive ancestor/descendant edges recede, so a deep selection reads cleanly.
+function isDirectEdge(edge: LayoutEdge, highlight: HighlightModel): boolean {
+  if (highlight.directEdgeIds.has(edge.id)) return true
+  return edge.originalEdgeIds?.some(id => highlight.directEdgeIds.has(id)) ?? false
+}
+
 function edgeColor(edge: LayoutEdge, highlight: HighlightModel): string {
   if (edge.isCycle) return COLORS.cycle
   if (!highlight.dimUnrelated || !isActiveEdge(edge, highlight)) return COLORS.default
@@ -25,12 +32,15 @@ function edgeColor(edge: LayoutEdge, highlight: HighlightModel): string {
 function edgeOpacity(edge: LayoutEdge, highlight: HighlightModel): number {
   if (edge.isCycle) return 0.7
   if (!highlight.dimUnrelated) return 0.45
-  return isActiveEdge(edge, highlight) ? 0.9 : 0.1
+  if (isDirectEdge(edge, highlight)) return 0.95   // one hop from the selection
+  if (isActiveEdge(edge, highlight)) return 0.28   // transitive — faint background
+  return 0.06
 }
 
 function edgeWidth(edge: LayoutEdge, highlight: HighlightModel): number {
   if (!highlight.dimUnrelated) return 1.5
-  return isActiveEdge(edge, highlight) ? 2 : 1
+  if (isDirectEdge(edge, highlight)) return 2.2
+  return 1
 }
 
 function markerRef(edge: LayoutEdge, highlight: HighlightModel): string {

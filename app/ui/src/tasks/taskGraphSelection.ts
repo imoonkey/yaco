@@ -9,7 +9,9 @@ export type HighlightModel = {
   activeTaskIds: Set<string>
   upstreamTaskIds: Set<string>
   downstreamTaskIds: Set<string>
+  directTaskIds: Set<string>
   activeEdgeIds: Set<string>
+  directEdgeIds: Set<string>
   dimUnrelated: boolean
 }
 
@@ -17,7 +19,9 @@ export const EMPTY_HIGHLIGHT: HighlightModel = {
   activeTaskIds: new Set(),
   upstreamTaskIds: new Set(),
   downstreamTaskIds: new Set(),
+  directTaskIds: new Set(),
   activeEdgeIds: new Set(),
+  directEdgeIds: new Set(),
   dimUnrelated: false,
 }
 
@@ -84,7 +88,10 @@ export function computeHighlight(selection: Selection, model: TaskGraphModel): H
       activeTaskIds: subtreeIds,
       upstreamTaskIds: upstream,
       downstreamTaskIds: downstream,
+      // Group boundary neighbours are all one hop from the subtree — treat them as direct.
+      directTaskIds: new Set([...upstream, ...downstream]),
       activeEdgeIds,
+      directEdgeIds: activeEdgeIds,
       dimUnrelated: true,
     }
   }
@@ -94,12 +101,26 @@ export function computeHighlight(selection: Selection, model: TaskGraphModel): H
   const downstream = getDownstream(selection, model.dependentsByTask)
   const allRelevant = new Set([selection, ...upstream, ...downstream])
 
+  // Direct (one-hop) neighbours get emphasised; transitive ancestors/descendants recede.
+  const directTaskIds = new Set<string>([
+    ...(model.dependenciesByTask.get(selection) ?? []),
+    ...(model.dependentsByTask.get(selection) ?? []),
+  ])
+
   const activeEdgeIds = new Set<string>()
+  const directEdgeIds = new Set<string>()
   for (const edge of model.layout.edges) {
     if (allRelevant.has(edge.sourceId) && allRelevant.has(edge.targetId)) {
       activeEdgeIds.add(edge.id)
       if (edge.originalEdgeIds) {
         for (const eid of edge.originalEdgeIds) activeEdgeIds.add(eid)
+      }
+      // Direct edges are the ones touching the selected task itself.
+      if (edge.sourceId === selection || edge.targetId === selection) {
+        directEdgeIds.add(edge.id)
+        if (edge.originalEdgeIds) {
+          for (const eid of edge.originalEdgeIds) directEdgeIds.add(eid)
+        }
       }
     }
   }
@@ -108,7 +129,9 @@ export function computeHighlight(selection: Selection, model: TaskGraphModel): H
     activeTaskIds: new Set([selection]),
     upstreamTaskIds: upstream,
     downstreamTaskIds: downstream,
+    directTaskIds,
     activeEdgeIds,
+    directEdgeIds,
     dimUnrelated: true,
   }
 }

@@ -1,5 +1,17 @@
 # Progress
 
+## 2026-06-06: Task workspace — direct/transitive selection tiers + tighter margins
+
+**What changed:**
+- **Selection emphasis tiers** (`taskGraphSelection.ts`, `TaskGraphNode.tsx`, `TaskGraphEdges.tsx`): selecting a leaf task used to highlight its entire transitive ancestor/descendant closure at one flat strength, so a deep selection lit up a cluttered web of equally-bold arcs. The highlight model now also carries `directTaskIds` / `directEdgeIds` (one hop from the selection). Rendering tiers them: selected + direct neighbours stay full (node opacity 1, edge 0.95, width 2.2); transitive ancestors/descendants recede (node 0.55, edge 0.28, width 1); unrelated fades further (node 0.22, edge 0.06). Direction colors (upstream orange / downstream cyan) are unchanged; the opacity does the depth distinction. Group selection keeps its existing one-hop-boundary behavior.
+- **Tighter horizontal margins** (`taskGraphModel.ts`): `GRAPH_PADDING` 16→12, `DEPENDS_GUTTER` 36→32, `ARC_OFFSET` 22→18. Left margin now 12px, right ~44px (gutter + base padding).
+
+**Why:** user-reported — selecting a task showed all ancestors/descendants with no distinction between first-order and higher-order relationships, and the right-side dependency arcs overlapped into a messy tangle; also the panel still had more side margin than needed.
+
+**Verification (browser-measured at 1500px):** selecting a root showed exactly its 4 direct dependents at full opacity, the 2 distance-2 tasks at 0.55, and 21 unrelated at 0.22; edges split 4 direct (0.95/2.2) · 9 transitive (0.28/1) · inactive (0.06). Left margin 12px, arcs not clipped. `tsc -b` ✓, `npm run lint` ✓ (0 errors), `npm run build` ✓, `vitest` → 13 passed.
+
+**Key files:** `app/ui/src/tasks/{taskGraphSelection.ts, TaskGraphNode.tsx, TaskGraphEdges.tsx, taskGraphModel.ts}`
+
 ## 2026-06-06: Task workspace — tighter horizontal margins
 
 **What changed (`app/ui/src/tasks/taskGraphModel.ts`):** reduced the stacked-layout outer padding and right gutter so cards use more of the panel width. `GRAPH_PADDING` 40→16 (left/right base padding), `DEPENDS_GUTTER` 56→36 (right-side arc gutter), `ARC_OFFSET` 24→22. Net: left margin 40→16px; right margin 96→~52px (36px functional arc gutter + 16px base padding symmetric with the left).

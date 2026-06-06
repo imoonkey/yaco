@@ -109,9 +109,9 @@ export const NODE_HEIGHT = 36
 export const NODE_GAP = 6
 export const INDENT = 24
 export const ROOT_GAP = 28       // vertical gap between stacked root sections
-export const GRAPH_PADDING = 16
-export const DEPENDS_GUTTER = 36 // reserved right-side gutter for dependency arcs
-export const ARC_OFFSET = 22
+export const GRAPH_PADDING = 12
+export const DEPENDS_GUTTER = 32 // reserved right-side gutter for dependency arcs
+export const ARC_OFFSET = 18
 
 // State priority for sorting
 const STATE_PRIORITY: Record<TaskState, number> = {
