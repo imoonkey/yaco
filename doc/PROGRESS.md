@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-06: Task node — title takes priority over metadata rail on narrow rows
+
+**What changed (`app/ui/src/tasks/TaskGraphNode.tsx`, `metadataRail.ts`, `taskGraphModel.test.ts`):**
+- The metadata rail is now gated on the **full title fitting**. `TaskGraphNode` measures the title's rendered width (cached canvas `measureText` with the app's 13px title font) and only offers `buildRail` the space left **after** the full title; if the title cannot fully fit, the rail yields entirely and the title gets the whole row. Replaces the previous fixed `RAIL_MIN_TITLE` reservation.
+- Tags are now **all-or-nothing**: `buildRail` shows a badge in full or drops it — the width-fitted/ellipsis id fallback is gone (`fitText`, `RAIL_MIN_TITLE`, `RAIL_MIN_BADGE` removed). A clipped title beats a clipped title + a clipped tag.
+- Net effect (browser-verified at 1700/560/400px): wide rows show full titles plus tags in the leftover and titles are never clipped while tags show; medium rows drop the tags when title+tag won't both fit; mobile/portrait shows **no tags at all**, every title taking the full card width.
+- Unit tests updated: the truncation test replaced with an all-or-nothing assertion (a badge that can't fully fit is dropped, not truncated). 13 pass.
+
+**Why:** user-reported — on mobile portrait the id/priority tags crowded a title that itself couldn't fully show; neither read well. Title must win; tags only fill genuine leftover.
+
+**Implementation note:** canvas `measureText` overestimates the rendered title by ~2–3px (no letter-spacing applied), which biases toward hiding the rail — the title-first direction we want.
+
+**Verification:** `npm run build` ✓, `tsc -b` ✓, `npm run lint` ✓ (0 errors), `vitest taskGraphModel.test.ts` → 13 passed, plus live DOM measurement at three viewports.
+
+**Key files:** `app/ui/src/tasks/{TaskGraphNode.tsx, metadataRail.ts, taskGraphModel.test.ts}`
+
 ## 2026-06-06: Task node metadata-rail polish (margins, order, alignment, mobile, size)
 
 **What changed (`app/ui/src/tasks/metadataRail.ts`, `TaskGraphNode.tsx`, `taskGraphModel.test.ts`):**

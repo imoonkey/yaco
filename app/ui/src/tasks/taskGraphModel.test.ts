@@ -207,15 +207,14 @@ describe('metadata rail — width-driven collapse (buildRail)', () => {
     expect(rail[0].x + rail[0].width).toBe(1000) // still right-aligned to the bound
   })
 
-  it('width-fits the id (ellipsis) only when the full id cannot fit, and hides a too-small rail', () => {
-    const longId = 'workspace-state-toolbar'
+  it('drops a badge entirely rather than truncating it when it cannot fully fit', () => {
+    // Tags are all-or-nothing: a field shows its full text or is dropped. No ellipsis.
+    const longId = 'workspace-state-toolbar' // full badge width ~155
     const task = makeTask({ title: 'X', priority: 'normal', workset: 'active' }, longId)
-    // Moderate space: id cannot fit in full, so it shrinks with an ellipsis rather than vanish.
-    const fitted = buildRail(task, 0, 90)
-    expect(fitted.map(i => i.key)).toEqual(['id'])
-    expect(fitted[0].text).toContain('…')
-    expect(fitted[0].x + fitted[0].width).toBe(90)
-    // Too narrow to read even a stub → rail hides entirely.
-    expect(buildRail(task, 0, 20)).toEqual([])
+    expect(buildRail(task, 0, 90)).toEqual([])   // id cannot fit in full → no rail
+    expect(buildRail(task, 0, 20)).toEqual([])   // far too narrow → no rail
+    const ok = buildRail(task, 0, 1000)
+    expect(ok.map(i => i.key)).toEqual(['id'])   // fits in full when there is room
+    expect(ok[0].text).toBe(longId)
   })
 })

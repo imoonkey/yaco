@@ -3,7 +3,26 @@ import { NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { STATE_COLORS, getWorktreeColor } from './taskGraphConstants'
-import { buildRail, RAIL_GAP, RAIL_MIN_TITLE, RAIL_FONT_SIZE } from './metadataRail'
+import { buildRail, RAIL_GAP, RAIL_FONT_SIZE } from './metadataRail'
+
+// Measure a title's rendered width so we can decide whether the FULL title fits
+// before the metadata rail is allowed to claim any space. A clipped title beats a
+// clipped title plus a clipped tag, so on narrow rows the rail yields entirely.
+// Uses a cached canvas context with the app's title font (13px body font, weight
+// 400); falls back to a char-count estimate when no DOM is available (SSR/tests).
+let _titleMeasureCtx: CanvasRenderingContext2D | null | undefined
+function measureTitleWidth(text: string): number {
+  if (typeof document === 'undefined') return text.length * 7
+  if (_titleMeasureCtx === undefined) {
+    const ctx = document.createElement('canvas').getContext('2d')
+    if (ctx) {
+      const family = getComputedStyle(document.body).fontFamily || 'sans-serif'
+      ctx.font = `400 13px ${family}`
+    }
+    _titleMeasureCtx = ctx
+  }
+  return _titleMeasureCtx ? _titleMeasureCtx.measureText(text).width : text.length * 7
+}
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
   const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
@@ -93,12 +112,20 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   // Single-line: vertically centered
   const titleY = node.y + NODE_HEIGHT / 2 + 4.5
 
-  // Metadata rail — right-aligned, between the title and the existing right
-  // label (progress/dep count) and clear of the right dependency gutter.
+  // Metadata rail — tags are SECONDARY to the title. Reserve the title's full
+  // rendered width first; only the space left over (before the right-number column)
+  // is offered to the rail. If the title cannot fully fit, the rail yields entirely
+  // so the title gets the whole row — a clipped title beats a clipped title + tags.
   const titleClipX = node.x + chevronWidth + 22 + estimateWidth
+  const titleTextX = node.x + chevronWidth + 24 + estimateWidth
   const rightLabelX = node.x + node.width - rightLabelWidth
-  const rail = buildRail(task, titleClipX + RAIL_MIN_TITLE, rightLabelX - RAIL_GAP)
-  const clipRight = rail.length ? rail[0].x - RAIL_GAP : rightLabelX
+  const titleAreaEnd = rightLabelX - RAIL_GAP
+  const fullTitleWidth = measureTitleWidth(task.title)
+  const titleFitsFull = titleTextX + fullTitleWidth <= titleAreaEnd
+  const rail = titleFitsFull
+    ? buildRail(task, titleTextX + fullTitleWidth + RAIL_GAP, titleAreaEnd)
+    : []
+  const clipRight = rail.length ? rail[0].x - RAIL_GAP : titleAreaEnd
   const titleClipWidth = Math.max(0, clipRight - titleClipX)
   const railTextY = node.y + NODE_HEIGHT / 2 + 3.7
 
