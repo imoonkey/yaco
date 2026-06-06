@@ -1,8 +1,9 @@
 import type { LayoutNode, TaskGraphTask, LayoutGroup } from './taskGraphModel'
-import { NODE_WIDTH, NODE_HEIGHT } from './taskGraphModel'
+import { NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { STATE_COLORS, getWorktreeColor } from './taskGraphConstants'
+import { buildRail, RAIL_GAP, RAIL_MIN_TITLE } from './metadataRail'
 
 function StateDot({ state, cx, cy }: { state: string; cx: number; cy: number }) {
   const color = STATE_COLORS[state] ?? 'var(--sol-base1)'
@@ -91,6 +92,15 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   // Single-line: vertically centered
   const titleY = node.y + NODE_HEIGHT / 2 + 4.5
 
+  // Metadata rail — right-aligned, between the title and the existing right
+  // label (progress/dep count) and clear of the right dependency gutter.
+  const titleClipX = node.x + chevronWidth + 22 + estimateWidth
+  const rightLabelX = node.x + node.width - rightLabelWidth
+  const rail = buildRail(task, titleClipX + RAIL_MIN_TITLE, rightLabelX - RAIL_GAP)
+  const clipRight = rail.length ? rail[0].x - RAIL_GAP : rightLabelX
+  const titleClipWidth = Math.max(0, clipRight - titleClipX)
+  const railTextY = node.y + NODE_HEIGHT / 2 + 3
+
   return (
     <g
       tabIndex={0}
@@ -119,7 +129,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       <rect
         x={node.x}
         y={node.y}
-        width={NODE_WIDTH}
+        width={node.width}
         height={NODE_HEIGHT}
         rx={6}
         fill={getNodeFill(node, highlight, task.worktree)}
@@ -131,7 +141,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Worktree indicator — right accent bar */}
       {task.worktree && (
         <rect
-          x={node.x + NODE_WIDTH - 3}
+          x={node.x + node.width - 3}
           y={node.y + 6}
           width={2.5}
           height={NODE_HEIGHT - 12}
@@ -159,7 +169,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <rect
           x={node.x - 3}
           y={node.y - 3}
-          width={NODE_WIDTH + 6}
+          width={node.width + 6}
           height={NODE_HEIGHT + 6}
           rx={9}
           fill="none"
@@ -213,9 +223,9 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Clip path for text overflow */}
       <clipPath id={`clip-${node.id}`}>
         <rect
-          x={node.x + chevronWidth + 22 + estimateWidth}
+          x={titleClipX}
           y={node.y}
-          width={NODE_WIDTH - chevronWidth - 22 - estimateWidth - rightLabelWidth}
+          width={titleClipWidth}
           height={NODE_HEIGHT}
         />
       </clipPath>
@@ -238,7 +248,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Right-aligned: progress for groups, dep count for leaves */}
       {hasGroupAffordances && progressText && (
         <text
-          x={node.x + NODE_WIDTH - 10}
+          x={node.x + node.width - 10}
           y={titleY}
           fontSize={10}
           fontWeight={500}
@@ -253,7 +263,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
 
       {!hasGroupAffordances && depCount > 0 && (
         <text
-          x={node.x + NODE_WIDTH - 10}
+          x={node.x + node.width - 10}
           y={titleY}
           fontSize={10}
           fontWeight={500}
@@ -265,6 +275,33 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           {depCount}
         </text>
       )}
+
+      {/* Metadata rail — id / priority / workset / agent badges, width-driven */}
+      {rail.map(item => (
+        <g key={item.key} opacity={showLabels ? 1 : 0} style={{ transition: 'opacity 150ms ease-out' }}>
+          <rect
+            x={item.x}
+            y={node.y + NODE_HEIGHT / 2 - 8}
+            width={item.width}
+            height={16}
+            rx={4}
+            fill={item.color}
+            fillOpacity={0.12}
+          />
+          <text
+            x={item.x + item.width / 2}
+            y={railTextY}
+            textAnchor="middle"
+            fontSize={9}
+            fontWeight={600}
+            fill={item.color}
+            fontFamily={item.mono ? 'var(--font-mono)' : undefined}
+            letterSpacing={item.mono ? '0' : '0.02em'}
+          >
+            {item.text}
+          </text>
+        </g>
+      ))}
     </g>
   )
 }

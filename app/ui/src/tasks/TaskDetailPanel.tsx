@@ -301,6 +301,12 @@ export function TaskDetailPanel({
             displayClassName="text-[11px] font-semibold"
           />
         </div>
+        <div className="flex items-center gap-1.5">
+          <SectionHeader divider={false}>Workset</SectionHeader>
+          <span className="text-[11px] font-semibold capitalize" style={{ color: 'var(--sol-text)' }}>
+            {task.workset}
+          </span>
+        </div>
       </div>
 
       {/* Agent */}

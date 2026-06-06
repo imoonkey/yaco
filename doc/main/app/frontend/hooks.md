@@ -249,7 +249,7 @@ Sets `--kb-viewport` CSS variable on `<html>` when virtual keyboard is detected.
 
 ## useTaskGraph.ts
 
-Fetches the active task workset via the task API and builds the graph model.
+Fetches all task worksets via the task API and builds the graph model. The server returns active, backlog, and archive tasks; workset filtering happens client-side.
 
 **Export**: `useTaskGraph(project)` → `{ graph, error, loading }`
 
@@ -258,14 +258,40 @@ Behavior:
 - SSE `filetree` channel triggers automatic refresh when task files change on disk
 - Returns `TaskGraphModel` (normalized tasks, computed layout, search index)
 
-## usePanZoom.ts
+## useViewport.ts
 
-Viewport transform state for SVG pan/zoom interactions.
+Viewport state for the Tasks graph: native vertical scroll for navigation, with
+zoom as a uniform scale. Lives in `ui/src/tasks/`. Replaced the old SVG pan/zoom
+(infinite-canvas) machinery once the stacked layout became width-fit.
 
-**Export**: `usePanZoom({ graphBoundsRef, containerRef })` → `{ state, onWheel, onPointerDown, panTo, fitToView, zoomIn, zoomOut }`
+**Export**: `useViewport({ scrollRef })` → `{ scale, didDrag, zoomIn, zoomOut, resetZoom, scrollNodeIntoView }`
 
 Behavior:
-- Manages `{ tx, ty, scale }` transform state
-- Scroll wheel zoom (centered on cursor), pointer drag pan, pinch zoom (touch)
-- `fitToView(animate?)` reads the latest bounds from `graphBoundsRef.current` and animates to fit the entire graph with 200ms ease-out (the ref breaks the render-order cycle: pan/zoom is created before the layout that produces its bounds)
-- Scale clamped to 0.25×–3.0× range
+- `scale` clamped to 0.25×–3.0×; `resetZoom` returns to 1 (width already fits).
+- `scrollNodeIntoView(node)` scrolls the container so the node's center lands at
+  the vertical mid-viewport — wired to search submit and keyboard navigation.
+- The SVG is sized to `bounds.{width,height} * scale` inside an `overflow-y-scroll`
+  container; the browser handles wheel/trackpad/touch. No horizontal infinite canvas.
+- `didDrag` is an always-false ref kept only to satisfy `useTaskGraphInteraction`'s
+  click-vs-drag guard (there is no canvas drag).
+
+## useTaskGraphInteraction.ts
+
+Owns the single-workspace UI state for the Tasks graph (selection, filters,
+search, collapse, tooltip) and is the home of the workspace state model.
+
+**Export**: `useTaskGraphInteraction(project, graph, viewport, isMobile)` →
+`{ selection, layout, filters, searchQuery, collapsedTaskIds, highlight, ... handlers }`
+
+State model:
+- `layout: 'stacked' | 'dag'` — stacked ships; DAG is disabled in the toolbar until built.
+- `filters: { states: Set<TaskState>; worksets: Set<Workset> }` — defaults: all states, worksets `{active, backlog}` (archive hidden until enabled).
+- `searchQuery`, `collapsedTaskIds`, `selection`.
+
+Persistence:
+- Persisted under `yaco-task-workspace:${project}` as `{ layout, worksets, states, collapsedTaskIds }`.
+- On load, layout is coerced to `stacked` while DAG is unbuilt; invalid/empty worksets/states fall back to defaults.
+
+Notes:
+- The workset filter is applied to the rendered set in `TaskGraphScreen` (tasks whose workset is disabled are dropped before `computeDisplayLayout`).
+- Selection clearing for hidden tasks lives in `TaskGraphScreen`: when the selection is absent from the recomputed `displayLayout.nodes` (any filter — workset, state, or filtered-out ancestor), it clears and propagates up via `onSelectTask(null)`.

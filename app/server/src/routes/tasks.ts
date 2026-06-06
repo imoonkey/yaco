@@ -183,10 +183,8 @@ function invalidateTasksCache(projectPath: string): void {
 async function buildTasksResponse(projectPath: string): Promise<TasksResponse | { __notfound: true }> {
   const { tasksPath } = resolveRepoPaths(projectPath)
   if (!existsSync(tasksPath)) return { __notfound: true }
-  const allTasks = loadTaskMap(tasksPath)
-  const tasks = Object.fromEntries(
-    Object.entries(allTasks).filter(([, task]) => task.workset === 'active'),
-  )
+  // Return every workset (active, backlog, archive); the workspace filters client-side.
+  const tasks = loadTaskMap(tasksPath)
 
   const statuses = await getWorktreeStatuses(projectPath, tasks as Record<string, { worktree?: string }>)
   for (const task of Object.values(tasks)) {
@@ -273,41 +271,6 @@ app.delete('/:project/:taskId', withProject, async (c) => {
   invalidateTasksCache(proj.path)
   emitRefresh('filetree')
   return c.json({ deleted: true })
-})
-
-// GET /:project/archive — List archived tasks. The archive directory
-// is now a workset view over the canonical task graph, not JSON snapshots.
-app.get('/:project/archive', withProject, async (c) => {
-  const proj = c.var.project
-  const { tasksPath } = resolveRepoPaths(proj.path)
-  if (!existsSync(tasksPath)) return c.json({ archives: [] })
-
-  const tasks = loadTaskMap(tasksPath)
-  const grouped = new Map<string, Record<string, Record<string, unknown>>>()
-  for (const [id, task] of Object.entries(tasks)) {
-    if (task.workset !== 'archive') continue
-    const stamp = typeof task.archivedDate === 'string'
-      ? task.archivedDate
-      : typeof task.updated === 'string'
-        ? task.updated
-        : typeof task.created === 'string'
-          ? task.created
-          : ''
-    const date = stamp.slice(0, 10)
-    const key = date || 'unknown'
-    const group = grouped.get(key) ?? {}
-    group[id] = task
-    grouped.set(key, group)
-  }
-  const archives = [...grouped.entries()]
-    .sort((a, b) => b[0].localeCompare(a[0]))
-    .map(([date, tasks]) => ({
-      file: date === 'unknown' ? 'workset-archive' : `${date.replaceAll('-', '')}_workset-archive`,
-      date: date === 'unknown' ? '' : date,
-      tasks,
-    }))
-
-  return c.json({ archives })
 })
 
 // POST /:project/:taskId/archive — Archive a task

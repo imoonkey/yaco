@@ -1,11 +1,10 @@
 // V2 task types + normalizer
 // Backward compatible: V1 tasks.json works without any new fields
 
-import type { TaskState, RawTaskEntry } from '../taskGraphModel'
+import type { TaskState, RawTaskEntry, Priority } from '../taskGraphModel'
 
-export type { TaskState } from '../taskGraphModel'
+export type { TaskState, Priority } from '../taskGraphModel'
 
-export type Priority = 'critical' | 'high' | 'normal' | 'low'
 export type Estimate = 'xs' | 's' | 'm' | 'l' | 'xl'
 export type BlockReason = 'verification-failed' | 'human-review' | 'external' | 'dependency'
 export type Workset = 'active' | 'backlog' | 'archive'

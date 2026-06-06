@@ -3,6 +3,8 @@
 
 export type TaskState = 'ready' | 'running' | 'done' | 'blocked' | 'cancelled'
 
+export type Priority = 'critical' | 'high' | 'normal' | 'low'
+
 export type RawTaskEntry = {
   title: string
   description?: string
@@ -15,6 +17,9 @@ export type RawTaskEntry = {
   worktree?: string | null
   estimate?: string | null
   workset?: 'active' | 'backlog' | 'archive'
+  priority?: Priority
+  agent?: string | null
+  tags?: string[]
 }
 
 export type RawTaskMap = Record<string, RawTaskEntry>
@@ -34,6 +39,9 @@ export type TaskGraphTask = {
   worktree: string | null
   estimate: string | null
   workset: 'active' | 'backlog' | 'archive'
+  priority: Priority
+  agent: string | null
+  tags: string[]
 }
 
 // Layout types — flat indented tree, no nested boxes
@@ -96,13 +104,14 @@ export interface TaskGraphModel {
 
 // Constants — flat indented tree layout
 
-export const NODE_WIDTH = 280
+export const NODE_WIDTH = 280   // minimum card width floor (stacked rows are width-driven)
 export const NODE_HEIGHT = 36
 export const NODE_GAP = 6
 export const INDENT = 24
-export const LANE_GAP = 60
+export const ROOT_GAP = 28       // vertical gap between stacked root sections
 export const GRAPH_PADDING = 40
-export const ARC_OFFSET = 30
+export const DEPENDS_GUTTER = 56 // reserved right-side gutter for dependency arcs
+export const ARC_OFFSET = 24
 
 // State priority for sorting
 const STATE_PRIORITY: Record<TaskState, number> = {
@@ -176,6 +185,9 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
       worktree: entry.worktree ?? null,
       estimate: entry.estimate ?? null,
       workset: entry.workset ?? 'active',
+      priority: entry.priority ?? 'normal',
+      agent: entry.agent ?? null,
+      tags: entry.tags ?? [],
     })
   }
 
@@ -430,7 +442,6 @@ function findSCCCycleEdges(
 
 interface MeasuredItem {
   id: string
-  width: number
   height: number
   isGroup: boolean
   children: MeasuredItem[]
@@ -455,7 +466,7 @@ function measureTree(
 
   // Leaf or collapsed group — just the card
   if (rawChildren.length === 0 || isCollapsed) {
-    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: task.hasChildren, children: [] }
+    return { id, height: NODE_HEIGHT, isGroup: task.hasChildren, children: [] }
   }
 
   // Expanded group: order and measure children
@@ -473,17 +484,14 @@ function measureTree(
   }
 
   if (measuredChildren.length === 0) {
-    return { id, width: NODE_WIDTH, height: NODE_HEIGHT, isGroup: true, children: [] }
+    return { id, height: NODE_HEIGHT, isGroup: true, children: [] }
   }
-
-  const maxChildWidth = Math.max(...measuredChildren.map(c => c.width))
-  const width = Math.max(NODE_WIDTH, INDENT + maxChildWidth)
 
   const childrenHeight = measuredChildren.reduce((sum, c) => sum + c.height, 0) +
     (measuredChildren.length - 1) * NODE_GAP
   const height = NODE_HEIGHT + NODE_GAP + childrenHeight
 
-  return { id, width, height, isGroup: true, children: measuredChildren }
+  return { id, height, isGroup: true, children: measuredChildren }
 }
 
 function positionTree(
@@ -491,6 +499,7 @@ function positionTree(
   x: number,
   y: number,
   depth: number,
+  rightEdge: number,
   tasks: Map<string, TaskGraphTask>,
   aggregateStateByTask: Map<string, TaskState>,
   leafProgressByTask: Map<string, { done: number; total: number }>,
@@ -506,12 +515,12 @@ function positionTree(
 
   outVisibleOrder.push(item.id)
 
-  // Every task is a card at (x, y)
+  // Every task is a card at (x, y); width fills to the shared right edge (indentation-driven)
   outNodes.set(item.id, {
     id: item.id,
     x,
     y,
-    width: NODE_WIDTH,
+    width: Math.max(NODE_WIDTH, rightEdge - x),
     height: NODE_HEIGHT,
     parentId: task.parent,
     hasChildren: task.hasChildren,
@@ -525,7 +534,7 @@ function positionTree(
     let childY = y + NODE_HEIGHT + NODE_GAP
     let lastChildEndY = childY
     for (const child of item.children) {
-      lastChildEndY = positionTree(child, x + INDENT, childY, depth + 1, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
+      lastChildEndY = positionTree(child, x + INDENT, childY, depth + 1, rightEdge, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, outGroups, outNodes, outVisibleOrder, outVisibleChildren)
       childY = lastChildEndY + NODE_GAP
     }
 
@@ -601,59 +610,23 @@ function computeVisibleSet(
   return visible
 }
 
-// Find root lane for a task (walk to root)
-function getRootLane(id: string, tasks: Map<string, TaskGraphTask>): string {
-  let current = id
-  const visited = new Set<string>()
-  while (true) {
-    const task = tasks.get(current)
-    if (!task?.parent || visited.has(current)) return current
-    visited.add(current)
-    current = task.parent
-  }
-}
-
-// Edge path computation
+// Edge path computation — endpoints anchor at each card's own right edge, but every
+// real `depends` arc bows past a single global right edge so it clears intervening
+// cards (deep rows can overflow the shared edge under the NODE_WIDTH floor).
 function computeEdgePath(
   source: LayoutNode,
   target: LayoutNode,
-  sameLane: boolean,
-): { path: string; isSameLane: boolean } {
-  if (sameLane) {
-    // Arc to the right of nodes
-    const sx = source.x + NODE_WIDTH
-    const sy = source.y + NODE_HEIGHT / 2
-    const tx = target.x + NODE_WIDTH
-    const ty = target.y + NODE_HEIGHT / 2
-    // Scale arc offset by vertical distance so arcs don't overlap
-    const vertDist = Math.abs(ty - sy)
-    const arcOffset = ARC_OFFSET + Math.min(vertDist * 0.12, 50)
-    return {
-      path: `M ${sx},${sy} C ${sx + arcOffset},${sy} ${tx + arcOffset},${ty} ${tx},${ty}`,
-      isSameLane: true,
-    }
-  }
-
-  // Cross-lane: right edge of source → left edge of target
-  const sx = source.x + NODE_WIDTH
+  baseline: number,
+  gutter: number,
+): string {
+  const sx = source.x + source.width
   const sy = source.y + NODE_HEIGHT / 2
-  const tx = target.x
+  const tx = target.x + target.width
   const ty = target.y + NODE_HEIGHT / 2
-  const gap = tx - sx
-  if (gap > 0) {
-    // Target is to the right — normal bezier
-    const cpOffset = Math.max(gap / 2, 20)
-    return {
-      path: `M ${sx},${sy} C ${sx + cpOffset},${sy} ${tx - cpOffset},${ty} ${tx},${ty}`,
-      isSameLane: false,
-    }
-  }
-  // Target is to the left or overlapping — route around via top/bottom
-  const detour = Math.max(Math.abs(gap) / 2, 30)
-  return {
-    path: `M ${sx},${sy} C ${sx + detour},${sy} ${tx - detour},${ty} ${tx},${ty}`,
-    isSameLane: false,
-  }
+  // Bow further out for longer vertical spans so neighbouring arcs separate, capped to the gutter.
+  const vertDist = Math.abs(ty - sy)
+  const cpx = baseline + Math.min(gutter - 8, ARC_OFFSET + vertDist * 0.08)
+  return `M ${sx},${sy} C ${cpx},${sy} ${cpx},${ty} ${tx},${ty}`
 }
 
 export function computeDisplayLayout(
@@ -671,9 +644,16 @@ export function computeDisplayLayout(
   aggregateStateByTask: Map<string, TaskState>,
   leafProgressByTask: Map<string, { done: number; total: number }>,
   cycleEdgeIds: Set<string>,
+  containerWidth = 0,
 ): GraphLayout {
   const { tasks, childIdsByTask, rootIds, subtreeIdsByTask } = model
   const { collapsedTaskIds, filters } = viewState
+
+  // Stacked rows fill the container width; reserve the right gutter for dependency arcs.
+  const rightEdge = Math.max(
+    GRAPH_PADDING + NODE_WIDTH,
+    containerWidth - GRAPH_PADDING - DEPENDS_GUTTER,
+  )
 
   // Compute visible set
   const visibleSet = computeVisibleSet(tasks, childIdsByTask, rootIds, collapsedTaskIds, filters)
@@ -693,16 +673,23 @@ export function computeDisplayLayout(
     if (measured) measuredRoots.push(measured)
   }
 
-  // Position roots horizontally
+  // Stack roots vertically — each fills the width, sections separated by ROOT_GAP
   const groups: LayoutGroup[] = []
   const nodes = new Map<string, LayoutNode>()
   const visibleOrder: string[] = []
   const visibleChildrenByTask = new Map<string, string[]>()
 
-  let rootX = GRAPH_PADDING
+  let rootY = GRAPH_PADDING
   for (const root of measuredRoots) {
-    positionTree(root, rootX, GRAPH_PADDING, 0, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, groups, nodes, visibleOrder, visibleChildrenByTask)
-    rootX += Math.max(root.width, NODE_WIDTH) + LANE_GAP
+    const endY = positionTree(root, GRAPH_PADDING, rootY, 0, rightEdge, tasks, aggregateStateByTask, leafProgressByTask, collapsedTaskIds, groups, nodes, visibleOrder, visibleChildrenByTask)
+    rootY = endY + ROOT_GAP
+  }
+
+  // Single global right edge across all visible cards. Under the NODE_WIDTH floor a deep
+  // row can overflow `rightEdge`, so the bow baseline must be the true max, not `rightEdge`.
+  let globalRight = rightEdge
+  for (const node of nodes.values()) {
+    globalRight = Math.max(globalRight, node.x + node.width)
   }
 
   // Compute edges
@@ -732,11 +719,7 @@ export function computeDisplayLayout(
     const targetNode = nodes.get(group.targetId)
     if (!sourceNode || !targetNode) continue
 
-    const sourceLane = getRootLane(group.sourceId, tasks)
-    const targetLane = getRootLane(group.targetId, tasks)
-    const sameLane = sourceLane === targetLane
-
-    const { path, isSameLane } = computeEdgePath(sourceNode, targetNode, sameLane)
+    const path = computeEdgePath(sourceNode, targetNode, globalRight, DEPENDS_GUTTER)
     const hasCycle = group.edges.some(e => e.isCycle)
 
     edges.push({
@@ -745,16 +728,15 @@ export function computeDisplayLayout(
       targetId: group.targetId,
       path,
       isCycle: hasCycle,
-      isSameLane,
+      isSameLane: false,
       count: group.edges.length,
       originalEdgeIds: group.edges.length > 1 ? group.edges.map(e => e.id) : undefined,
     })
   }
 
-  // Bounds — only from nodes now (groups are just guide lines)
-  let maxX = 0, maxY = 0
+  // Bounds — global right edge plus the gutter + padding on the right
+  let maxY = 0
   for (const node of nodes.values()) {
-    maxX = Math.max(maxX, node.x + node.width)
     maxY = Math.max(maxY, node.y + node.height)
   }
 
@@ -764,7 +746,7 @@ export function computeDisplayLayout(
     edges,
     visibleOrder,
     visibleChildrenByTask,
-    bounds: { width: maxX + GRAPH_PADDING, height: maxY + GRAPH_PADDING },
+    bounds: { width: Math.max(containerWidth, globalRight + DEPENDS_GUTTER + GRAPH_PADDING), height: maxY + GRAPH_PADDING },
     hasCycles: cycleEdgeIds.size > 0,
   }
 }

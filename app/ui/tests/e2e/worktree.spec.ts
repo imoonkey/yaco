@@ -27,11 +27,6 @@ async function fetchTasks(page: Page, projectName: string) {
   }, projectName)
 }
 
-async function openTaskPanel(page: Page) {
-  await page.keyboard.press('Meta+Shift+t')
-  await expect(page.locator('input[placeholder*="Search"]')).toBeVisible({ timeout: 10_000 })
-}
-
 test.describe('Worktree features', () => {
   test.beforeEach(async ({ page }) => {
     // Clear any persisted worktree state for the test project
@@ -128,141 +123,57 @@ test.describe('Worktree features', () => {
     // File explorer should be back at the main project — src/ should still be visible
     await expect(fileTree.locator('text=src')).toBeVisible({ timeout: 5_000 })
   })
+})
 
-  test('task board view shows worktree badges on cards', async ({ page }) => {
-    await selectProject(page, TEST_PROJECT)
-    await openTaskPanel(page)
+// Worktree metadata is surfaced through the GRAPH path: open the task workspace,
+// click a worktree-bearing task node, and read its detail panel. This replaces
+// the deleted board-path worktree-metadata coverage. It is project-agnostic — it
+// discovers a root task that actually has an active worktree from the API — so it
+// runs against whatever project the workspace exposes (no worktree-qa fixture).
+test.describe('Worktree metadata via the task graph', () => {
+  test('detail panel shows worktree label, branch, and status badge', async ({ page }) => {
+    await page.goto('/')
+    const projects = await page.evaluate(async () => {
+      const res = await fetch('/api/projects')
+      return res.json() as Promise<{ name: string; path: string }[]>
+    })
+    expect(projects.length).toBeGreaterThan(0)
 
-    // Switch to Board view (key 1 or click)
-    await page.keyboard.press('1')
-    await page.waitForTimeout(1000)
+    // Find a project + a top-level task that has an active worktree on disk.
+    let target: { project: string; title: string; worktree: string; branch: string } | null = null
+    for (const p of projects) {
+      const tasks = await page.evaluate(async (name: string) => {
+        const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+        if (!res.ok) return {}
+        const body = await res.json() as { tasks?: Record<string, {
+          title: string; parent: string | null; worktree?: string | null
+          worktreeStatus?: { active?: boolean; branch?: string }
+        }> }
+        return body.tasks ?? {}
+      }, p.name)
+      const hit = Object.values(tasks).find(t => t.parent === null && t.worktree && t.worktreeStatus?.active && t.worktreeStatus.branch)
+      if (hit) {
+        target = { project: p.name, title: hit.title, worktree: hit.worktree as string, branch: hit.worktreeStatus!.branch as string }
+        break
+      }
+    }
+    expect(target, 'a project with an active-worktree root task').toBeTruthy()
 
-    // Board cards with worktree should have FolderGit2 icon + slug text
-    const authCard = page.locator('[role="listitem"][aria-label*="Auth v2"]')
-    await expect(authCard).toBeVisible({ timeout: 10_000 })
-    await expect(authCard.locator('text=auth-v2')).toBeVisible()
+    // Open the task workspace for that project.
+    await page.locator('button', { hasText: target!.project }).first().click()
+    await page.evaluate((name: string) => localStorage.removeItem(`yaco-task-workspace:${name}`), target!.project)
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first()).toBeVisible({ timeout: 15_000 })
 
-    // perf-cache card should also show worktree badge
-    const perfCard = page.locator('[role="listitem"][aria-label*="Performance caching"]')
-    await expect(perfCard).toBeVisible()
-    await expect(perfCard.locator('text=perf-cache')).toBeVisible()
+    // Click the worktree-bearing task node → detail panel opens.
+    await page.locator(`g[role="button"][aria-label^="Task: ${target!.title}, status:"]`).first().click()
+    const panel = page.getByRole('complementary', { name: 'Task details' })
+    await expect(panel).toBeVisible({ timeout: 3_000 })
 
-    // ui-cleanup card should NOT have a worktree badge
-    const uiCard = page.locator('[role="listitem"][aria-label*="UI cleanup"]')
-    await expect(uiCard).toBeVisible()
-    const uiWorktreeBadge = uiCard.locator('.inline-flex.items-center.gap-1')
-    await expect(uiWorktreeBadge).toHaveCount(0)
-  })
-
-  test('task list view shows worktree column', async ({ page }) => {
-    await selectProject(page, TEST_PROJECT)
-    await openTaskPanel(page)
-
-    // Switch to List view
-    await page.keyboard.press('2')
-    await page.waitForTimeout(1000)
-
-    // Worktree column header button should be visible (uppercase WORKTREE text)
-    const worktreeColumnHeader = page.getByRole('button', { name: 'Worktree' }).nth(3)
-    await expect(worktreeColumnHeader).toBeVisible({ timeout: 5_000 })
-
-    // auth-v2 and perf-cache should appear in list rows
-    await expect(page.locator('[role="listitem"]').locator('text=auth-v2')).toBeVisible()
-    await expect(page.locator('[role="listitem"]').locator('text=perf-cache')).toBeVisible()
-  })
-
-  test('worktree filter in toolbar filters tasks', async ({ page }) => {
-    await selectProject(page, TEST_PROJECT)
-    await openTaskPanel(page)
-
-    // Ensure we're on board view first
-    await page.keyboard.press('1')
-    await page.waitForTimeout(500)
-
-    // The Worktree filter dropdown should exist in the toolbar filter bar
-    // Filter buttons have h-[22px] class and uppercase text
-    const worktreeFilterBtn = page.locator('button.h-\\[22px\\]', { hasText: /WORKTREE/i })
-    await expect(worktreeFilterBtn).toBeVisible({ timeout: 5_000 })
-
-    // Open the Worktree filter dropdown
-    await worktreeFilterBtn.click()
-    await page.waitForTimeout(500)
-
-    // The dropdown appears below the button — find checkboxes within it
-    // Checkbox items are buttons with gap-2 and px-3
-    const filterOptions = page.locator('.absolute.top-full.left-0 button')
-    await expect(filterOptions).toHaveCount(2, { timeout: 5_000 })
-
-    // Select auth-v2 filter
-    await filterOptions.filter({ hasText: 'auth-v2' }).click()
-    await page.waitForTimeout(500)
-
-    // Close dropdown by clicking the filter button again (toggle)
-    await worktreeFilterBtn.click()
-    await page.waitForTimeout(300)
-
-    // A filter pill for auth-v2 should appear (pill has a remove button with specific aria-label)
-    await expect(page.locator('button[aria-label="Remove filter: auth-v2"]')).toBeVisible()
-
-    // Only auth-v2 task should be visible in board view
-    const cards = page.locator('[role="listitem"]')
-    await expect(cards).toHaveCount(1)
-    await expect(cards.first()).toContainText('Auth v2')
-
-    // Clear filters
-    const clearBtn = page.locator('text=Clear all')
-    await expect(clearBtn).toBeVisible()
-    await clearBtn.click()
-    await page.waitForTimeout(500)
-    // All cards should be back
-    const allCards = page.locator('[role="listitem"]')
-    const count = await allCards.count()
-    expect(count).toBeGreaterThanOrEqual(3)
-  })
-
-  test('task detail panel shows worktree metadata', async ({ page }) => {
-    await selectProject(page, TEST_PROJECT)
-    await openTaskPanel(page)
-
-    // Switch to Board view
-    await page.keyboard.press('1')
-    await page.waitForTimeout(1000)
-
-    // Click on auth-v2 card to open detail panel
-    const authCard = page.locator('[role="listitem"][aria-label*="Auth v2"]')
-    await authCard.click()
-    await page.waitForTimeout(500)
-
-    // Detail panel has role="complementary" and aria-label="Task details"
-    const detailPanel = page.locator('[role="complementary"][aria-label="Task details"]')
-    await expect(detailPanel).toBeVisible({ timeout: 5_000 })
-
-    // Should show "Worktree" section header
-    await expect(detailPanel.locator('text=Worktree')).toBeVisible()
-    // Should show the slug
-    await expect(detailPanel.locator('.font-mono.text-\\[12px\\]', { hasText: 'auth-v2' })).toBeVisible()
-    // Should show branch name
-    await expect(detailPanel.locator('text=task/auth-v2')).toBeVisible()
-    // Should show "Active" badge since worktree exists
-    await expect(detailPanel.locator('text=Active')).toBeVisible()
-    // Should show "Modified" badge since worktree is dirty
-    await expect(detailPanel.locator('text=Modified')).toBeVisible()
-  })
-
-  test('task graph view shows worktree coloring on nodes', async ({ page }) => {
-    await selectProject(page, TEST_PROJECT)
-    await openTaskPanel(page)
-
-    // Switch to Graph view
-    await page.keyboard.press('3')
-    await page.waitForTimeout(2000)
-
-    // Graph should render with task nodes
-    await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
-
-    // Task nodes with worktree should exist
-    const taskNodes = page.locator('[data-layer="nodes"] g[role="button"]')
-    const count = await taskNodes.count()
-    expect(count).toBeGreaterThanOrEqual(3)
+    // Worktree metadata: section label, worktree/branch name, and Active badge.
+    await expect(panel.getByText('Worktree', { exact: true })).toBeVisible()
+    await expect(panel.getByText(target!.worktree, { exact: true }).first()).toBeVisible()
+    await expect(panel.getByText(target!.branch, { exact: true })).toBeVisible()
+    await expect(panel.getByText('Active', { exact: true })).toBeVisible()
   })
 })

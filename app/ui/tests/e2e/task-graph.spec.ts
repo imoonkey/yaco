@@ -1,187 +1,238 @@
 import { test, expect, type Page } from '@playwright/test'
 
-// --- Helpers ---
+// V1 task workspace: a single stacked graph workspace. No Board/List/Archive
+// panels, no milestone columns, no horizontal pan/zoom canvas — roots stack
+// vertically, workset is a filter, and only real `depends` edges render.
 
-/** Navigate to the Task Graph view for the first project */
-async function openTaskGraph(page: Page) {
+type Project = { name: string; path: string }
+
+/** Open the single Tasks workspace (overlay) for the first project. */
+async function openTaskGraph(page: Page): Promise<Project> {
   await page.goto('/')
-  await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
-
-  // Get first project from API
   const projects = await page.evaluate(async () => {
     const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
+    return res.json() as Promise<Project[]>
   })
   expect(projects.length).toBeGreaterThan(0)
   const project = projects[0]
 
-  // Select project in sidebar
-  await page.locator('button', { hasText: project.name }).click()
+  await page.locator('button', { hasText: project.name }).first().click()
+  // Start from default workspace state (active+backlog, nothing collapsed).
+  await page.evaluate((name: string) => localStorage.removeItem(`yaco-task-workspace:${name}`), project.name)
 
-  // Open Tasks tab via keyboard shortcut
   await page.keyboard.press('Meta+Shift+t')
-
-  // Wait for graph to render (SVG nodes layer visible)
   await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
-
-  // Clear any persisted collapse state so tests start clean
-  await page.evaluate((name: string) => {
-    localStorage.removeItem(`workflow-taskgraph:${name}`)
-  }, project.name)
-
+  await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first()).toBeVisible({ timeout: 15_000 })
   return project
 }
 
-/** Get the SVG transform string from the root <g> inside the canvas SVG */
-async function getTransform(page: Page): Promise<string> {
-  return page.locator('svg.absolute > g').first().getAttribute('transform') as Promise<string>
+const taskNodes = (page: Page) => page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]')
+
+const nodeByTitle = (page: Page, title: string) =>
+  page.locator(`g[role="button"][aria-label^="Task: ${title}, status:"]`)
+
+/**
+ * Discover a root task in each of the active + archive worksets, with a unique,
+ * selector-safe title, so the test can assert node presence/absence by title.
+ */
+async function discoverWorksetRoots(page: Page, project: string) {
+  return page.evaluate(async (name: string) => {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+    const { tasks } = await res.json() as {
+      tasks: Record<string, { title: string; parent: string | null; workset?: string }>
+    }
+    const entries = Object.values(tasks)
+    const titleCount = new Map<string, number>()
+    for (const t of entries) titleCount.set(t.title, (titleCount.get(t.title) ?? 0) + 1)
+    const safe = (t: { title: string }) => !/["\\]/.test(t.title) && titleCount.get(t.title) === 1
+    const pick = (ws: string) => entries.find(t =>
+      (t.workset ?? 'active') === ws && t.parent === null && safe(t))
+    const archive = pick('archive')
+    const active = pick('active')
+    return { archiveTitle: archive?.title ?? null, activeTitle: active?.title ?? null }
+  }, project)
 }
 
-// --- Tests ---
+/** Background-rect geometry for every visible task node. */
+async function nodeRects(page: Page) {
+  return page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"] > rect:nth-of-type(1)')
+    .evaluateAll(els => els.map(el => ({
+      x: parseFloat(el.getAttribute('x') || '0'),
+      y: parseFloat(el.getAttribute('y') || '0'),
+      width: parseFloat(el.getAttribute('width') || '0'),
+    })))
+}
 
-test.describe('Task Graph', () => {
-  test('renders with milestone columns and task nodes', async ({ page }) => {
+test.describe('Task workspace (V1 stacked graph)', () => {
+  test('renders task nodes — no milestone columns, no Board/List/Archive surfaces', async ({ page }) => {
     await openTaskGraph(page)
 
-    // Milestones layer should contain milestone groups
-    const milestones = page.locator('[data-layer="milestones"] g[role="button"][aria-label^="Milestone:"]')
-    await expect(milestones.first()).toBeVisible({ timeout: 5_000 })
-    expect(await milestones.count()).toBeGreaterThan(0)
+    // Task nodes render.
+    expect(await taskNodes(page).count()).toBeGreaterThan(0)
 
-    // Nodes layer should contain task nodes
-    const taskNodes = page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]')
-    await expect(taskNodes.first()).toBeVisible()
-    expect(await taskNodes.count()).toBeGreaterThan(0)
+    // The retired milestone-column layer is gone.
+    expect(await page.locator('[data-layer="milestones"]').count()).toBe(0)
+
+    // No Board/List/Archive surface switchers anywhere in the workspace.
+    for (const surface of ['Board', 'List', 'Archive']) {
+      expect(await page.getByRole('button', { name: surface, exact: true }).count()).toBe(0)
+      expect(await page.getByRole('tab', { name: surface, exact: true }).count()).toBe(0)
+    }
+
+    // Layout is Stacked (selected) with DAG present-but-disabled (phase 2).
+    const layout = page.locator('[role="group"][aria-label="Layout mode"]')
+    await expect(layout.getByRole('button', { name: 'Stacked' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(layout.getByRole('button', { name: 'DAG' })).toBeDisabled()
   })
 
-  test('clicking a task node selects it and opens detail panel', async ({ page }) => {
+  test('root sections stack vertically and share one left edge (full-width rows)', async ({ page }) => {
     await openTaskGraph(page)
+    const rects = await nodeRects(page)
+    expect(rects.length).toBeGreaterThan(1)
 
-    // Ensure detail panel is NOT visible initially (close button title="Close")
-    await expect(page.locator('button[title="Close"]')).not.toBeVisible()
+    const xs = rects.map(r => r.x)
+    const ys = rects.map(r => r.y)
+    const minX = Math.min(...xs)
 
-    // Find and click the first task node
-    const taskNode = page.locator('g[role="button"][aria-label^="Task:"]').first()
-    await expect(taskNode).toBeVisible()
-    const ariaLabel = await taskNode.getAttribute('aria-label')
-    const taskTitle = ariaLabel!.match(/^Task: (.+), status:/)?.[1] ?? ''
-    expect(taskTitle).toBeTruthy()
+    // Multiple top-level rows share the leftmost edge (a vertical stack, not a
+    // side-by-side root lane layout).
+    const atLeftEdge = rects.filter(r => Math.abs(r.x - minX) < 0.5)
+    expect(atLeftEdge.length).toBeGreaterThan(1)
+    // Those left-edge rows sit at distinct, increasing y values.
+    const leftYs = [...new Set(atLeftEdge.map(r => r.y))].sort((a, b) => a - b)
+    expect(leftYs.length).toBe(atLeftEdge.length)
 
-    await taskNode.click()
+    // The layout is far taller than it is wide (vertical scroll, not horizontal).
+    const ySpan = Math.max(...ys) - Math.min(...ys)
+    const xSpan = Math.max(...xs) - minX
+    expect(ySpan).toBeGreaterThan(xSpan)
 
-    // Detail panel should open — the task title should appear in the panel
-    // The panel renders the title in a font-semibold span; locate by the close button inside it
-    const detailPanel = page.locator('div.shrink-0.overflow-y-auto').filter({ has: page.locator('button[title="Close"]') })
-    await expect(detailPanel).toBeVisible({ timeout: 3_000 })
-    await expect(detailPanel.locator('span.font-semibold')).toContainText(taskTitle)
-
-    // Close button should be visible
-    await expect(page.locator('button[title="Close"]')).toBeVisible()
+    // Rows share a right edge, so every left-edge (root) row has the same width,
+    // at least the minimum card-width floor (280). Exact width-fill is proven
+    // precisely in the taskGraphModel unit test.
+    const leftWidths = new Set(atLeftEdge.map(r => Math.round(r.width)))
+    expect(leftWidths.size).toBe(1)
+    expect(atLeftEdge[0].width).toBeGreaterThanOrEqual(280)
   })
 
-  test('clicking chevron collapses a milestone', async ({ page }) => {
+  test('only real dependency edges render (count matches the depends graph)', async ({ page }) => {
     const project = await openTaskGraph(page)
 
-    // Clear collapse state again after navigation
-    await page.evaluate((name: string) => {
-      localStorage.removeItem(`workflow-taskgraph:${name}`)
+    // Expected: distinct dependency anchor-pairs among the visible (default
+    // active+backlog, all expanded) tasks — nothing structural.
+    const expectedEdgePairs = await page.evaluate(async (name: string) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+      const { tasks } = await res.json() as { tasks: Record<string, { depends?: string[]; workset?: string }> }
+      const visible = new Set(Object.entries(tasks)
+        .filter(([, t]) => (t.workset ?? 'active') !== 'archive')
+        .map(([id]) => id))
+      const pairs = new Set<string>()
+      for (const id of visible) {
+        for (const dep of tasks[id].depends ?? []) {
+          if (visible.has(dep) && dep !== id) pairs.add(`${dep}->${id}`)
+        }
+      }
+      return pairs.size
     }, project.name)
-    // Reload to ensure clean state
-    await page.reload()
-    await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
 
-    // Count task nodes before collapse
-    const nodesBefore = await page.locator('g[role="button"][aria-label^="Task:"]').count()
-    expect(nodesBefore).toBeGreaterThan(0)
-
-    // Find a collapse chevron and click it
-    const collapseChevron = page.locator('g[role="button"][aria-label="Collapse milestone"]').first()
-    await expect(collapseChevron).toBeVisible()
-    await collapseChevron.click()
-
-    // After collapse: an "Expand milestone" chevron should appear
-    await expect(page.locator('g[role="button"][aria-label="Expand milestone"]').first()).toBeVisible({ timeout: 3_000 })
-
-    // Fewer task nodes should be visible (collapsed milestone hides its children)
-    const nodesAfter = await page.locator('g[role="button"][aria-label^="Task:"]').count()
-    expect(nodesAfter).toBeLessThan(nodesBefore)
+    const edgePaths = page.locator('[data-layer="edges"] > g > path')
+    expect(expectedEdgePairs).toBeGreaterThan(0)
+    expect(await edgePaths.count()).toBe(expectedEdgePairs)
   })
 
-  test('hovering without clicking does NOT pan the graph', async ({ page }) => {
+  test('clicking a node opens the detail panel and shows the full title', async ({ page }) => {
     await openTaskGraph(page)
 
-    const initialTransform = await getTransform(page)
+    // Pick the node with the longest title to exercise full-title access.
+    const labels = await taskNodes(page).evaluateAll(els =>
+      els.map(el => el.getAttribute('aria-label') || ''))
+    const longest = labels
+      .map(l => l.match(/^Task: (.+), status:/)?.[1] ?? '')
+      .filter(Boolean)
+      .sort((a, b) => b.length - a.length)[0]
+    expect(longest.length).toBeGreaterThan(0)
 
-    // Get SVG bounding box
-    const svg = page.locator('svg.absolute')
-    const box = await svg.boundingBox()
-    expect(box).toBeTruthy()
+    // The node carries the full, untruncated title in its accessible name.
+    const node = page.locator(`g[role="button"][aria-label^="Task: ${longest}, status:"]`).first()
+    await node.click()
 
-    // Hover across the canvas without pressing
-    await page.mouse.move(box!.x + 50, box!.y + 50)
-    await page.waitForTimeout(50)
-    await page.mouse.move(box!.x + 200, box!.y + 150)
-    await page.waitForTimeout(50)
-    await page.mouse.move(box!.x + 350, box!.y + 250)
-    await page.waitForTimeout(50)
-
-    // Transform must NOT have changed
-    const afterTransform = await getTransform(page)
-    expect(afterTransform).toBe(initialTransform)
+    const panel = page.getByRole('complementary', { name: 'Task details' })
+    await expect(panel).toBeVisible({ timeout: 3_000 })
+    await expect(panel.getByText(longest, { exact: true }).first()).toBeVisible()
   })
 
-  test('dragging pans the graph', async ({ page }) => {
-    await openTaskGraph(page)
+  test('search highlights matches and Enter navigates to the detail panel', async ({ page }) => {
+    const project = await openTaskGraph(page)
 
-    const initialTransform = await getTransform(page)
+    const search = page.locator('input[placeholder="Search tasks..."]')
+    await expect(search).toBeVisible()
 
-    const svg = page.locator('svg.absolute')
-    const box = await svg.boundingBox()
-    expect(box).toBeTruthy()
+    // Derive a term guaranteed to match: the leading segment of a real task id
+    // (searchTasks matches substrings of title or id).
+    const term = await page.evaluate(async (name: string) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+      const { tasks } = await res.json() as { tasks: Record<string, unknown> }
+      const id = Object.keys(tasks)[0] ?? ''
+      return id.split('-')[0] || id
+    }, project.name)
+    expect(term.length).toBeGreaterThan(0)
 
-    const cx = box!.x + box!.width / 2
-    const cy = box!.y + box!.height / 2
+    await search.fill(term)
+    const matches = page.locator('span', { hasText: /[1-9]\d* match/ })
+    await expect(matches).toBeVisible({ timeout: 3_000 })
 
-    // Drag: press, move beyond threshold (>3px), release
-    await page.mouse.move(cx, cy)
-    await page.mouse.down()
-    await page.mouse.move(cx + 80, cy + 60, { steps: 10 })
-    await page.mouse.up()
-
-    // Transform should have changed (panning happened)
-    const afterTransform = await getTransform(page)
-    expect(afterTransform).not.toBe(initialTransform)
+    await search.press('Enter')
+    await expect(page.getByRole('complementary', { name: 'Task details' })).toBeVisible({ timeout: 3_000 })
   })
 
-  test('search input matches and highlights tasks, Enter navigates', async ({ page }) => {
+  test('workset filter: defaults to active+backlog with archive off, and filters the graph', async ({ page }) => {
     await openTaskGraph(page)
 
-    const searchInput = page.locator('input[placeholder="Search tasks..."]')
-    await expect(searchInput).toBeVisible()
+    const worksetGroup = page.locator('[role="group"][aria-label="Workset filter"]')
+    await expect(worksetGroup).toBeVisible()
 
-    // Get a known task title to search for — read from a visible node
-    const firstNode = page.locator('g[role="button"][aria-label^="Task:"]').first()
-    const ariaLabel = await firstNode.getAttribute('aria-label')
-    const fullTitle = ariaLabel!.match(/^Task: (.+), status:/)?.[1] ?? ''
-    // Use first word as search term (more likely to get matches)
-    const searchTerm = fullTitle.split(' ')[0]
-    expect(searchTerm.length).toBeGreaterThan(0)
+    // Default workset state: active + backlog enabled, archive hidden.
+    await expect(page.locator('button[aria-label="Workset: active"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('button[aria-label="Workset: backlog"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('button[aria-label="Workset: archive"]')).toHaveAttribute('aria-pressed', 'false')
 
-    // Type into search
-    await searchInput.fill(searchTerm)
+    // Workset is a real filter: disabling the active workset drops active nodes.
+    const before = await taskNodes(page).count()
+    expect(before).toBeGreaterThan(0)
+    await page.locator('button[aria-label="Workset: active"]').click()
+    await expect(page.locator('button[aria-label="Workset: active"]')).toHaveAttribute('aria-pressed', 'false')
+    await expect.poll(() => taskNodes(page).count()).toBeLessThan(before)
 
-    // Match count indicator should appear (e.g. "3 matches" or "1 match")
-    const matchIndicator = page.locator('span', { hasText: /\d+ match/ })
-    await expect(matchIndicator).toBeVisible({ timeout: 3_000 })
+    // Re-enabling restores them.
+    await page.locator('button[aria-label="Workset: active"]').click()
+    await expect.poll(() => taskNodes(page).count()).toBe(before)
+  })
 
-    // The count should be at least 1
-    const text = await matchIndicator.textContent()
-    const count = parseInt(text!.match(/(\d+)/)?.[1] ?? '0', 10)
-    expect(count).toBeGreaterThanOrEqual(1)
+  test('archive workset: an archived task NODE is hidden by default and rendered when enabled', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    const { archiveTitle, activeTitle } = await discoverWorksetRoots(page, project.name)
+    // There ARE archived tasks in this repo's data; fail loudly (not silent skip) if not.
+    expect(archiveTitle, 'an archived root task with a unique title').toBeTruthy()
+    expect(activeTitle, 'an active root task with a unique title').toBeTruthy()
 
-    // Press Enter to navigate to first match — detail panel should open
-    await searchInput.press('Enter')
-    const detailPanel = page.locator('div.shrink-0.overflow-y-auto').filter({ has: page.locator('button[title="Close"]') })
-    await expect(detailPanel).toBeVisible({ timeout: 3_000 })
+    const archiveNode = nodeByTitle(page, archiveTitle!)
+    const activeNode = nodeByTitle(page, activeTitle!)
+
+    // Default (active+backlog): the archived node is NOT rendered; the active one is.
+    await expect(activeNode).toHaveCount(1)
+    await expect(archiveNode).toHaveCount(0)
+    const defaultCount = await taskNodes(page).count()
+
+    // Enable the archive workset → the archived node renders; the active one stays.
+    await page.locator('button[aria-label="Workset: archive"]').click()
+    await expect(page.locator('button[aria-label="Workset: archive"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(archiveNode).toHaveCount(1)
+    await expect(activeNode).toHaveCount(1)
+    expect(await taskNodes(page).count()).toBeGreaterThan(defaultCount)
+
+    // Disabling it again hides the archived node; the active one remains.
+    await page.locator('button[aria-label="Workset: archive"]').click()
+    await expect(archiveNode).toHaveCount(0)
+    await expect(activeNode).toHaveCount(1)
   })
 })

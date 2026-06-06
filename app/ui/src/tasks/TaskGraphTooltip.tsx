@@ -1,6 +1,5 @@
 import { useRef, useLayoutEffect } from 'react'
 import type { TaskGraphModel } from './taskGraphModel'
-import type { ViewportTransform } from '../hooks/usePanZoom'
 
 export type TooltipTarget = {
   id: string
@@ -9,25 +8,44 @@ export type TooltipTarget = {
   graphH: number   // height in graph coords
 }
 
-export function TaskGraphTooltip({ target, graph, viewportTransform, containerRef }: {
+function MetaChip({ children, color, mono }: { children: React.ReactNode; color?: string; mono?: boolean }) {
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        lineHeight: 1.4,
+        padding: '1px 5px',
+        borderRadius: 4,
+        color: color ?? 'var(--sol-base01)',
+        backgroundColor: 'var(--sol-subtle-bg)',
+        fontFamily: mono ? 'var(--font-mono)' : undefined,
+      }}
+    >
+      {children}
+    </span>
+  )
+}
+
+// `containerRef` is the scroll container: its scroll offsets map graph coords to
+// the visible viewport, and its client size clamps the tooltip on screen. The
+// tooltip is cleared on scroll/zoom, so reading offsets in layout effect is exact.
+export function TaskGraphTooltip({ target, graph, scale, containerRef }: {
   target: TooltipTarget
   graph: TaskGraphModel
-  viewportTransform: ViewportTransform
+  scale: number
   containerRef: React.RefObject<HTMLDivElement | null>
 }) {
   const tooltipRef = useRef<HTMLDivElement>(null)
-
-  const { tx, ty, scale } = viewportTransform
-  const screenX = target.graphX * scale + tx
-  const screenY = target.graphY * scale + ty
-  const screenBottom = (target.graphY + target.graphH) * scale + ty
-
-  const flipped = screenY - 8 < 40
 
   useLayoutEffect(() => {
     const el = tooltipRef.current
     const container = containerRef.current
     if (!el || !container) return
+
+    const screenX = target.graphX * scale - container.scrollLeft
+    const screenY = target.graphY * scale - container.scrollTop
+    const screenBottom = (target.graphY + target.graphH) * scale - container.scrollTop
+    const flipped = screenY - 8 < 40
 
     const cw = container.clientWidth
     const ch = container.clientHeight
@@ -48,7 +66,7 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
 
     el.style.left = `${left}px`
     el.style.top = `${top}px`
-  }, [screenX, screenY, screenBottom, flipped, containerRef])
+  }, [target, scale, containerRef])
 
   const task = graph.tasks.get(target.id)
   if (!task) return null
@@ -106,6 +124,16 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
           {progress}
         </div>
       )}
+      {/* Full metadata — always present here so nothing is lost when the node rail collapses */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5 }}>
+        <MetaChip mono>{task.id}</MetaChip>
+        <MetaChip color="var(--sol-base01)">{task.priority}</MetaChip>
+        <MetaChip color="var(--sol-violet)">{task.workset}</MetaChip>
+        {task.agent && <MetaChip color="var(--sol-cyan)">{task.agent}</MetaChip>}
+        {task.tags.map(tag => (
+          <MetaChip key={tag}>#{tag}</MetaChip>
+        ))}
+      </div>
     </div>
   )
 }

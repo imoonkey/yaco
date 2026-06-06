@@ -1,13 +1,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { createFile, saveFileContent } from '../hooks/useApi'
 import { TASKS_FILE_PATH, useTaskGraph } from '../hooks/useTaskGraph'
-import { usePanZoom } from '../hooks/usePanZoom'
+import { useViewport } from './useViewport'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { computeDisplayLayout } from './taskGraphModel'
 import { TaskGraphTooltip } from './TaskGraphTooltip'
 import { TaskGraphCanvas } from './TaskGraphCanvas'
 import { TaskGraphToolbar } from './TaskGraphToolbar'
-import { TaskGraphMinimap } from './TaskGraphMinimap'
 import { TaskGraphStatusPane } from './TaskGraphStatusPane'
 import { useTaskGraphInteraction } from './useTaskGraphInteraction'
 import { useTaskGraphKeyboard } from './useTaskGraphKeyboard'
@@ -16,12 +15,12 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
   const { status, graph, error, warnings, refresh } = useTaskGraph(projectName)
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState(0)
 
-  // Interaction hook — selection, filters, collapse, search, tooltip, navigate
-  const panZoomBoundsRef = useRef({ width: 0, height: 0 })
-  const panZoom = usePanZoom({ graphBoundsRef: panZoomBoundsRef, containerRef })
-  const ix = useTaskGraphInteraction(projectName, graph, panZoom, isMobile)
+  // Viewport — native vertical scroll for navigation, uniform zoom via scale.
+  const viewport = useViewport({ scrollRef })
+  const ix = useTaskGraphInteraction(projectName, graph, viewport, isMobile)
 
   // Sync graph selection → parent (emit selected task ID upward)
   const prevGraphSelection = useRef(ix.selection)
@@ -39,24 +38,34 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
     }
   }, [selectedTaskId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Compute display layout from graph + interaction view state
+  // Compute display layout from graph + interaction view state.
+  // The workset filter is applied to the rendered set here: tasks whose workset is
+  // disabled (archive by default) are dropped before layout, so they never render.
   const displayLayout = useMemo(() => {
     if (!graph) return null
+    const worksets = ix.filters.worksets
+    const visibleTasks = new Map([...graph.tasks].filter(([, t]) => worksets.has(t.workset)))
     return computeDisplayLayout(
-      { tasks: graph.tasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask },
-      { collapsedTaskIds: ix.collapsedTaskIds, filters: ix.filters },
+      { tasks: visibleTasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask },
+      { collapsedTaskIds: ix.collapsedTaskIds, filters: ix.filters.states },
       graph.aggregateStateByTask,
       graph.leafProgressByTask,
       graph.cycleEdgeIds,
+      containerWidth,
     )
-  }, [graph, ix.collapsedTaskIds, ix.filters])
+  }, [graph, ix.collapsedTaskIds, ix.filters, containerWidth])
 
-  // Keep panZoom bounds in sync (read lazily by fitToView)
+  // Clear selection when the selected task is no longer in the rendered layout —
+  // hidden by any filter (workset, state, or a filtered-out ancestor). Robust to all
+  // cases; propagates up via the selection-sync effect so the detail panel clears too.
+  const { selection, setSelection } = ix
   useEffect(() => {
-    panZoomBoundsRef.current = displayLayout?.bounds ?? { width: 0, height: 0 }
-  })
+    if (selection && displayLayout && !displayLayout.nodes.has(selection)) {
+      setSelection(null)
+    }
+  }, [displayLayout, selection, setSelection])
 
-  // Pan to pending navigate target after layout recomputes
+  // Scroll pending navigate target into view after layout recomputes
   const { pendingPanRef, clearPendingPan } = ix
   useEffect(() => {
     const id = pendingPanRef.current
@@ -64,43 +73,28 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
     const node = displayLayout.nodes.get(id)
     if (node) {
       clearPendingPan()
-      panZoom.panTo(node.x + node.width / 2, node.y + node.height / 2)
+      viewport.scrollNodeIntoView(node)
     }
-  }, [displayLayout, panZoom, pendingPanRef, clearPendingPan])
+  }, [displayLayout, viewport, pendingPanRef, clearPendingPan])
 
   // Keyboard shortcuts
-  useTaskGraphKeyboard(graph, displayLayout, ix.selection, ix.collapsedTaskIds, ix, panZoom)
+  useTaskGraphKeyboard(graph, displayLayout, ix.selection, ix.collapsedTaskIds, ix, viewport)
 
-  // Clear tooltip on viewport change
-  const prevViewportRef = useRef(panZoom.state)
+  // Clear tooltip on zoom (scroll clears it via the container's onScroll)
   useEffect(() => {
-    const prev = prevViewportRef.current
-    prevViewportRef.current = panZoom.state
-    if (prev.tx !== panZoom.state.tx || prev.ty !== panZoom.state.ty || prev.scale !== panZoom.state.scale) {
-      ix.clearTooltip()
-    }
-  }, [panZoom.state, ix])
+    ix.clearTooltip()
+  }, [viewport.scale]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track container size for minimap
+  // Track scroll-container width for width-driven layout (excludes the vertical
+  // scrollbar, so the SVG fits exactly and never adds a horizontal scrollbar).
   useEffect(() => {
-    const el = containerRef.current
+    const el = scrollRef.current
     if (!el) return
-    const ro = new ResizeObserver(entries => {
-      const { width, height } = entries[0].contentRect
-      setContainerSize({ width, height })
-    })
+    const ro = new ResizeObserver(() => setContainerWidth(el.clientWidth))
     ro.observe(el)
+    setContainerWidth(el.clientWidth)
     return () => ro.disconnect()
   }, [])
-
-  // Fit to view on first data load
-  const fittedRef = useRef(false)
-  useEffect(() => {
-    if (graph && !fittedRef.current && containerSize.width > 0) {
-      fittedRef.current = true
-      requestAnimationFrame(() => panZoom.fitToView(false))
-    }
-  }, [graph, containerSize.width, panZoom])
 
   // Create tasks file handler
   const [creating, setCreating] = useState(false)
@@ -162,16 +156,20 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
   return (
     <div className="flex flex-col h-full">
       <TaskGraphToolbar
-        scale={panZoom.state.scale}
-        filters={ix.filters}
+        scale={viewport.scale}
+        layout={ix.layout}
+        stateFilters={ix.filters.states}
+        worksets={ix.filters.worksets}
         searchQuery={ix.searchQuery}
         searchMatchCount={ix.searchMatchIds.size}
         allCollapsed={ix.allCollapsed}
         allExpanded={ix.allExpanded}
-        onZoomIn={panZoom.zoomIn}
-        onZoomOut={panZoom.zoomOut}
-        onFitToView={() => panZoom.fitToView()}
-        onToggleFilter={ix.handleToggleFilter}
+        onZoomIn={viewport.zoomIn}
+        onZoomOut={viewport.zoomOut}
+        onFitToView={viewport.resetZoom}
+        onSetLayout={ix.setLayout}
+        onToggleState={ix.handleToggleFilter}
+        onToggleWorkset={ix.handleToggleWorkset}
         onSearchChange={ix.setSearchQuery}
         onSearchSubmit={ix.handleSearchSubmit}
         onCollapseAll={ix.handleCollapseAll}
@@ -187,40 +185,33 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
 
       <div className="flex flex-1 overflow-hidden">
         <div ref={containerRef} className="relative flex-1 overflow-hidden">
-          <TaskGraphCanvas
-            graph={graph}
-            layout={displayLayout}
-            searchMatchIds={ix.searchMatchIds}
-            transform={panZoom.transform}
-            highlight={ix.highlight}
-            selection={ix.selection}
-            scale={panZoom.state.scale}
-            collapsedTaskIds={ix.collapsedTaskIds}
-            handlers={panZoom.handlers}
-            onSelectTask={ix.handleSelectTask}
-            onClearSelection={ix.handleClearSelection}
-            onToggleCollapse={ix.handleToggleCollapse}
-            onPointerEnter={ix.handlePointerEnter}
-            onPointerLeave={ix.handlePointerLeave}
-          />
+          <div
+            ref={scrollRef}
+            className="absolute inset-0 overflow-y-scroll overflow-x-auto"
+            onScroll={ix.clearTooltip}
+          >
+            <TaskGraphCanvas
+              graph={graph}
+              layout={displayLayout}
+              searchMatchIds={ix.searchMatchIds}
+              highlight={ix.highlight}
+              selection={ix.selection}
+              scale={viewport.scale}
+              collapsedTaskIds={ix.collapsedTaskIds}
+              onSelectTask={ix.handleSelectTask}
+              onClearSelection={ix.handleClearSelection}
+              onToggleCollapse={ix.handleToggleCollapse}
+              onPointerEnter={ix.handlePointerEnter}
+              onPointerLeave={ix.handlePointerLeave}
+            />
+          </div>
 
           {ix.tooltipTarget && (
             <TaskGraphTooltip
               target={ix.tooltipTarget}
               graph={graph}
-              viewportTransform={panZoom.state}
-              containerRef={containerRef}
-            />
-          )}
-
-          {!isMobile && (
-            <TaskGraphMinimap
-              layout={displayLayout}
-              graph={graph}
-              viewport={panZoom.state}
-              containerWidth={containerSize.width}
-              containerHeight={containerSize.height}
-              onPanTo={panZoom.panTo}
+              scale={viewport.scale}
+              containerRef={scrollRef}
             />
           )}
         </div>

@@ -1,5 +1,123 @@
 # Progress
 
+## 2026-06-06: V1 task workspace verification coverage
+
+**What changed:**
+- Unit (`app/ui/src/tasks/taskGraphModel.test.ts`, vitest, 11 tests): workset filtering (default active+backlog, archive opt-in), vertical stacked roots + child indentation + width-driven rows (NODE_WIDTH floor), only-real-`depends` edges (parent/priority/state/tag create none), full-title integrity, and width-driven metadata-rail collapse asserting the **exact field prefix at every threshold** (`[id,priority,workset,agent]`→`[id,priority,workset]`→`[id,priority]`→`[id]`→`[]`).
+- E2E (`tests/e2e/task-graph.spec.ts`, `workspace-tasks-tab.spec.ts`): rewritten for the single stacked workspace — task nodes, no milestone/Board/List/Archive surfaces, vertical roots sharing one left edge, edge count == depends graph, detail-panel full title, search. Archive guarantee asserted at the **node** level: an archived node is absent by default and renders after enabling the archive chip (active node visible throughout).
+- E2E (`tests/e2e/worktree.spec.ts`): added a graph-path worktree-metadata test (open a worktree-bearing node → detail panel shows Worktree label, branch, Active badge), replacing the deleted board-path coverage.
+- Refactor: extracted `buildRail` from `TaskGraphNode.tsx` into new `app/ui/src/tasks/metadataRail.ts` so the rail logic is unit-testable without tripping the component-only-export lint rule (no behavior change).
+
+**Why:**
+- Final V1 task (`workspace-verification`). The old `task-graph.spec.ts`/`workspace-tasks-tab.spec.ts` were stale (milestones, pan/zoom drag, removed `header`, editor-tab/doorway semantics) and the archive/rail coverage was false-green — chip toggles and rail endpoints were checked, but never node-level archive rendering or intermediate rail prefixes, so a mid-order regression would pass.
+
+**Key files:** `app/ui/src/tasks/{taskGraphModel.test.ts, metadataRail.ts, TaskGraphNode.tsx}`, `app/ui/tests/e2e/{task-graph,workspace-tasks-tab,worktree}.spec.ts`
+**Verification:** `npx vitest run src/tasks/taskGraphModel.test.ts` → 11 passed; targeted e2e (task-graph + workspace-tasks-tab + worktree graph-path) → 11 passed against the worktree server (all-worksets data, since the shared dev server on :3001 is a stale build that still filters to active-only); `npm run lint` → 0 errors / 13 existing warnings.
+**Commit:** b4d1955, f276f83
+**Next:** `dag-layout-mode` (phase 2).
+**Blockers:** None.
+
+## 2026-06-06: Remove legacy Board/List/Archive task surfaces and dead code
+
+**What changed:**
+- Deleted the multi-view task UI now that the Tasks screen is a single graph workspace: `TaskToolbar`, `board/**`, `list/**`, `archive/TaskArchiveView.tsx`, `archive/useArchiveData.ts` (18 files; empty `board/`+`list/` dirs removed).
+- Evidence-based dead-code sweep — all 7 named candidates lost their last importer and were deleted: `TaskGraphDetailPanel.tsx`, `shared/StateBadge.tsx`, `shared/PriorityTag.tsx`, `hooks/{useTaskBoard,useTaskList,useColumnWidths,useTaskViewState}.ts`. Kept (still imported): `shared/StateDot`, `shared/InlineEdit`, `model/taskModel`, `archive/archiveTask.ts`.
+- Server: removed the dead `GET /:project/archive` read route (only consumers were the deleted `useArchiveData`/Archive panel); `POST /:project/:taskId/archive` action untouched.
+- Tests: replaced the `GET /archive` server test with a workset-filter test asserting `GET /:project` returns all worksets; removed 5 dead Board/List/Graph view-switch e2e tests from `worktree.spec.ts`.
+- Docs: `frontend/components.md` (dropped the "pending deletion" legacy block + `useTaskViewState` line), `backend/routes.md` (removed GET /archive row, GET /:project now documented as returning all worksets).
+
+**Why:**
+- Subtraction follow-up to the single-workspace migration — the old surfaces were already unmounted; this removes the now-dead files, the dead archive READ path, and surface-specific tests. The archive POST action stays because the detail panel uses it. No backward-compat shim (pre-release).
+
+**Key files:** `app/ui/src/tasks/**` (deletions), `app/server/src/routes/tasks.ts`, `app/server/src/routes/__tests__/tasks-worktree.test.ts`, `app/ui/tests/e2e/worktree.spec.ts`
+**Verification:** `cd app/server && npm test` → 409 passed; `cd app/ui && npm run lint` → 0 errors / 13 existing warnings; `npx tsc --noEmit` clean; `npm run build` green.
+**Commit:** bf7c69a
+**Next:** `dag-layout-mode`, `workspace-verification`.
+**Blockers:** None.
+
+## 2026-06-06: Responsive width-driven metadata rail on task nodes
+
+**What changed:**
+- `TaskGraphNode` renders a right-aligned metadata rail (`buildRail`) of id/priority/workset/agent badges. Visibility is computed from the actual `node.width`, not CSS breakpoints: badges are kept in priority order `id > priority > workset > agent` and dropped from the right as the row narrows (agent → workset → priority → id). The rail occupies only the band `[titleStart + 72px, rightLabel − gap]`, so it collapses before overlapping the title clip or the reserved right `depends` gutter; the title clip width is recomputed to end at the leftmost badge.
+- Noise reduction: `priority === 'normal'` and `workset === 'active'` render no badge (default/common values); `id` is the always-present anchor (truncated to 16 chars, agent to 12).
+- `TaskGraphTooltip` gains a full-metadata chip footer (id/priority/workset/agent/#tags) so nothing is lost when the rail collapses — added content only; the `scrollLeft/scrollTop`-based positioning math is untouched.
+- `TaskDetailPanel` adds a display-only **Workset** field to the State/Priority/Estimate row (id, priority, agent, tags were already shown).
+
+**Why:**
+- Full-width stacked rows have room for metadata when wide but must not crowd the title or dependency arcs when deeply indented/narrow. A width-driven drop order keeps the rail honest at any width while the tooltip + detail panel remain the lossless source. Resolves design Open Question #3 (rail thresholds and field order).
+
+**Key files:** `app/ui/src/tasks/{TaskGraphNode.tsx, TaskGraphTooltip.tsx, TaskDetailPanel.tsx}`
+**Verification:** `cd app/ui && npm run lint` → 0 errors / 13 existing warnings; `npx tsc --noEmit` clean; `npm run build` green.
+**Commit:** ea43ca8
+**Next:** `remove-legacy-surfaces`, `dag-layout-mode`, `workspace-verification`.
+**Blockers:** None.
+
+## 2026-06-06: Vertical-scroll viewport for the task workspace
+
+**What changed:**
+- Replaced the SVG infinite-canvas pan/zoom with native vertical scroll. `TaskGraphCanvas` sizes the SVG to `bounds.{width,height} * scale` with a `<g transform="scale(scale)">` inside an `overflow-y-scroll overflow-x-auto` container; layout width comes from the scroll container's `clientWidth` so it fits exactly at scale 1 (no horizontal scrollbar). Pan pointer handlers dropped.
+- Added `useViewport.ts` (`{ scale, didDrag, zoomIn, zoomOut, resetZoom, scrollNodeIntoView }`) and **deleted** `usePanZoom.ts` + `TaskGraphMinimap.tsx` (no remaining importers). `didDrag` is an always-false ref kept only for `useTaskGraphInteraction`'s click-vs-drag guard.
+- Search submit and keyboard navigation (Tab/arrows/Home/End) scroll the target node to vertical center via `viewport.scrollNodeIntoView`. Keyboard `0` maps to `resetZoom`; `+/-/=` zoom.
+- `TaskGraphTooltip` positions from `scale` + the scroll container's `scrollLeft/scrollTop`; cleared on scroll and on zoom so it never strands. Selection lives inside the scaled `<g>`, so it tracks scroll/zoom automatically.
+
+**Why:**
+- The stacked layout is width-fit, so horizontal pan had nothing to navigate to and fought the layout; a minimap only makes sense for an infinite canvas. Native scroll is smaller in surface and more robust (browser handles wheel/trackpad/touch/momentum). Decision per design Open Question #1: delete rather than constrain, since all pan/zoom/minimap importers were in scope.
+
+**Key files:** `app/ui/src/tasks/{useViewport.ts (new), TaskGraphScreen.tsx, TaskGraphCanvas.tsx, TaskGraphTooltip.tsx, useTaskGraphKeyboard.ts}`; deleted `app/ui/src/hooks/usePanZoom.ts`, `app/ui/src/tasks/TaskGraphMinimap.tsx`
+**Verification:** `cd app/ui && npx tsc --noEmit` clean; `npm run lint` → 0 errors / 13 existing warnings; `npm run build` green.
+**Commit:** 91885b5
+**Next:** `metadata-rail`, `remove-legacy-surfaces`, `dag-layout-mode`, `workspace-verification`.
+**Blockers:** None.
+
+## 2026-06-06: Single task workspace shell + workset filter
+
+**What changed:**
+- `TaskScreen` is now one workspace shell: it renders only `TaskGraphScreen` + `TaskDetailPanel` (holds a local `selectedTaskId`, loads `useTaskData` just for the detail-panel map) and no longer switches Board/List/Graph/Archive panes. The graph's `TaskGraphToolbar` is the only toolbar.
+- `useTaskGraphInteraction` becomes the workspace-state owner: `layout` (`'stacked' | 'dag'`, default stacked) and `filters = { states, worksets }` (worksets default `{active, backlog}`). Persisted under the new key `yaco-task-workspace:${project}`; load coerces any stored layout to `stacked` while DAG is unbuilt.
+- `TaskGraphToolbar` adds a layout control (Stacked active; DAG disabled until built) and workset chips (active/backlog/archive) next to the state filter + search; `/` still focuses search.
+- Workset filter applied to the rendered set in `TaskGraphScreen` (drop disabled-workset tasks before `computeDisplayLayout`) — archive (~217 tasks) no longer leaks in. Stale selection cleared centrally when the selection leaves `displayLayout.nodes` (any filter), propagated via `onSelectTask(null)`.
+- Old `1/2/3/4` view-switch shortcuts removed (they lived in the no-longer-mounted `TaskToolbar`). Optional priority/agent/worktree/parent filters omitted in V1.
+
+**Why:**
+- Workset is a filter, not a separate view. Collapsing the four panes into one graph workspace removes the double toolbar and the archive-leak gap, and centralizing selection-clear on the rendered layout keeps the detail panel from showing a hidden task under any filter.
+
+**Key files:** `app/ui/src/tasks/TaskScreen.tsx`, `app/ui/src/tasks/TaskGraphToolbar.tsx`, `app/ui/src/tasks/useTaskGraphInteraction.ts`, `app/ui/src/tasks/TaskGraphScreen.tsx`
+**Verification:** `cd app/ui && npm run lint` → 0 errors / 13 existing warnings; `npx tsc --noEmit` clean; `npm run build` green.
+**Commit:** d94c276..89198dc
+**Next:** `remove-legacy-surfaces` — delete Board/List/Archive panels, `TaskToolbar`, `useTaskViewState`, dead `GET /:project/archive` route + tests; then `viewport-scroll`.
+**Blockers:** None.
+
+## 2026-06-06: Stacked vertical full-width task graph layout
+
+**What changed:**
+- Default graph layout stacks root sections vertically (positioned by increasing `y`, separated by `ROOT_GAP`) and fills the container width instead of laying roots out in side-by-side horizontal lanes. `computeDisplayLayout` now takes a `containerWidth`; `LayoutNode.width` (`max(NODE_WIDTH, rightEdge - x)`) drives card width, with children indented to a shared right edge. `NODE_WIDTH` is now a min-width floor; `LANE_GAP` removed.
+- `TaskGraphNode` renders from `node.width` instead of the `NODE_WIDTH` constant. Title stays single-line with full title on hover/detail.
+- Real `depends` edges route through a reserved right-side gutter (`DEPENDS_GUTTER`): control points bow past a single **global** right edge (max `x+width` across visible nodes), endpoints anchored at each card's own right edge, so arcs never cross intervening cards/titles even when a deep row overflows under the width floor. Same/cross-lane geometry (`getRootLane`) removed. No non-dependency edges.
+
+**Why:**
+- Stacked full-width rows are the daily workspace layout (vertical scroll as primary navigation); horizontal lanes don't use available width and made cross-lane dependency curves sweep across row bodies. The global-edge bow keeps the shared-right-edge invariant honest under the `NODE_WIDTH` floor on narrow containers.
+
+**Key files:** `app/ui/src/tasks/taskGraphModel.ts`, `app/ui/src/tasks/TaskGraphNode.tsx`, `app/ui/src/tasks/TaskGraphScreen.tsx`
+**Verification:** `cd app/ui && npm run build` -> green; `cd app/ui && npm run lint` -> 0 errors / 13 existing warnings.
+**Commit:** ec86969..362d196
+**Next:** `viewport-scroll` — native vertical scroll / constrain pan-zoom for the stacked layout.
+**Blockers:** None.
+
+## 2026-06-06: Task read returns all worksets; graph carries display fields
+
+**What changed:**
+- `GET /api/tasks/:project` (`buildTasksResponse`) no longer filters to the active workset — it returns active, backlog, and archive tasks so the workspace can filter client-side.
+- `TaskGraphTask` normalization now carries `priority`, `agent`, and `tags` (defaults `normal`/`null`/`[]`); `Priority` is centralized in `taskGraphModel` and re-exported from `taskModel`. No task storage schema change.
+
+**Why:**
+- Workset is a filter, not a server-side cut. The single Tasks workspace needs the full task map to switch between active/backlog/archive views; display fields (priority/agent) feed the workspace cards.
+
+**Key files:** `app/server/src/routes/tasks.ts`, `app/ui/src/tasks/taskGraphModel.ts`, `app/ui/src/tasks/model/taskModel.ts`
+**Verification:** `cd app/server && npm test` -> 409 pass / 0 fail; `cd app/ui && npm run lint` -> 0 errors / 13 existing warnings; `cd app/ui && npx tsc --noEmit` clean.
+**Commit:** 22c35a4
+**Next:** Workspace toolbar — default workset filter to active+backlog, archive hidden until enabled.
+**Blockers:** None.
+
 ## 2026-06-06: CLI JSON envelopes flush before exit
 
 **What changed:**

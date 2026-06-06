@@ -61,43 +61,59 @@ App (384 lines)
         └── ProviderIcon
 ```
 
-**Task system (`ui/src/tasks/`) — multi-view task management:**
+**Task system (`ui/src/tasks/`) — single graph workspace:**
 ```
-TaskScreen — master controller (view switcher, filtering, detail panel, onClose)
-├── TaskToolbar — view tabs, filter dropdowns (incl. worktree filter), search, close button
-│   ├── Desktop: two rows (view tabs + search | filter dropdowns + pills)
-│   └── Mobile: single row (icon-only tabs | filter icon | search toggle | X)
-├── TaskBoardView — kanban columns (Blocked → Ready → Running → Done)
-│   ├── Desktop: flex columns
-│   ├── Mobile: scroll-snap horizontal swipe (one column at a time, 12px inset)
-│   ├── BoardColumn — collapsible column with drag-drop
-│   └── BoardCard — task card (compact mode for done), worktree badge (GitBranch icon)
-├── TaskListView — virtual-scroll table with sortable columns
-│   ├── Desktop: ListHeader (resizable) + ListRow (7 columns + worktree badge)
-│   └── Mobile: MobileListRow (44px, StateDot + title + parent + priority)
-├── TaskGraphScreen — SVG dependency graph with pan/zoom
-│   ├── TaskGraphCanvas → TaskGraphNode[] (280x36 single-line, estimate badge, worktree icon) + TaskGraphEdges
-│   ├── TaskGraphToolbar (mobile: larger touch targets, hides collapse controls)
-│   ├── TaskGraphMinimap — overview with viewport rect (desktop only)
-│   └── TaskGraphTooltip — hover overlay
-├── TaskArchiveView — date-grouped archive with search, click-to-detail, worktree badge
-│   └── Mobile: hides task ID + unarchive button, taller touch targets
-├── TaskDetailPanel — shared right sidebar (editable, readOnly mode for archives)
-│   ├── Desktop: 340px right sidebar with slide-right animation
-│   ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
-│   ├── InlineEdit — click-to-edit with custom dropdown popover
-│   ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
-│   ├── Children progress bar (for parent tasks)
-│   └── Design doc link → opens in editor (file paths) or new tab (URLs)
-└── shared/ — StateDot, StateBadge, PriorityTag, InlineEdit
+TaskScreen — workspace shell: loads task data, owns selectedTaskId, renders
+│            the one graph workspace + detail panel. No view switching.
+├── TaskGraphScreen — the single workspace (SVG dependency graph, vertical scroll)
+│   ├── TaskGraphToolbar — the one toolbar: layout (Stacked; DAG disabled until
+│   │     built), workset filter (active/backlog/archive), state filter, search
+│   │     (`/` focuses it), zoom, collapse/expand. Mobile folds workset+state into
+│   │     a Filter popover and hides the layout/collapse controls.
+│   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row
+│   │     card, estimate badge, worktree icon, right-aligned metadata rail) +
+│   │     TaskGraphEdges. The SVG is sized to the scaled layout bounds inside an
+│   │     overflow-y scroll container.
+│   └── TaskGraphTooltip — hover overlay (title, description, progress, full
+│         metadata chips: id/priority/workset/agent/tags)
+└── TaskDetailPanel — shared right sidebar (editable; archive tasks are in the
+    │   map now, so no read-only mode is wired)
+    ├── Desktop: 340px right sidebar with slide-right animation
+    ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
+    ├── InlineEdit — click-to-edit with custom dropdown popover
+    ├── State/Priority/Estimate/Workset row (workset is display-only)
+    ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
+    ├── Children progress bar (for parent tasks)
+    └── Design doc link → opens in editor (file paths) or new tab (URLs)
 ```
+
+
+Workset is a filter, not a view: the workspace receives all worksets and shows
+`active + backlog` by default; archive is hidden until enabled in the toolbar.
+The visible-set filter is applied before layout in `TaskGraphScreen` (drop tasks
+whose workset is disabled), and a selection that drops out of the recomputed
+layout is cleared so the detail panel can't show a hidden task.
+
+Navigation is native vertical scroll (no horizontal infinite canvas); zoom is a
+uniform scale applied to the SVG. Search and keyboard navigation scroll the
+target node to vertical center via `useViewport.scrollNodeIntoView`. -> See:
+frontend/hooks.md `useViewport.ts`.
+
+The node metadata rail (`metadataRail.ts` `buildRail`, rendered by
+`TaskGraphNode.tsx`) is width-driven, not
+CSS breakpoints: badges are kept in priority order `id > priority > workset >
+agent` and dropped from the right as the row narrows (agent first, then workset,
+then priority, then id), so the rail collapses before overlapping the title clip
+or the right `depends` gutter. Default/common values are hidden to cut noise —
+`priority === 'normal'` and `workset === 'active'` render no badge; `id` is the
+always-present anchor (truncated). Full metadata is never lost: it stays in the
+tooltip chips and `TaskDetailPanel`.
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
-- `taskGraphModel.ts` — flat indented tree layout: 24px indent/level, guide lines, SCC cycle detection, `computeDisplayLayout()` with visible-tree semantics. NODE_WIDTH=280, NODE_HEIGHT=36.
+- `taskGraphModel.ts` — stacked full-width layout: roots stack vertically (by increasing `y`), each row fills the container width to a shared right edge with 24px indent/level for children, left-side guide lines, SCC cycle detection, `computeDisplayLayout(..., containerWidth)` with visible-tree semantics. `LayoutNode.width` drives card width; NODE_WIDTH=280 is now a min-width floor only. Real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge so arcs clear intervening cards; no non-dependency edges. NODE_HEIGHT=36.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 - `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
-- `hooks/useTaskViewState.ts` — persisted view state (active view, filters, sort, selection)
 
 **Supporting modules (non-component):**
 - `workspace/markdown.ts` — escapeHtml, renderMarkdown, resolveRelativePath, code highlighting, heading slugification, plus `loadMermaid()` lazy-loader (memoized dynamic import + first-use `initialize`)

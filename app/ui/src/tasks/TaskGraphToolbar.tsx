@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Minus, Plus, Maximize2, ChevronsRight, ChevronsDown } from 'lucide-react'
 import type { TaskState } from './taskGraphModel'
+import type { TaskWorkspaceLayout, Workset } from './useTaskGraphInteraction'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { STATE_COLORS } from './taskGraphConstants'
 
@@ -13,10 +14,13 @@ const STATE_LABELS: Record<TaskState, string> = {
 }
 
 const ALL_STATES: TaskState[] = ['ready', 'running', 'done', 'blocked', 'cancelled']
+const ALL_WORKSETS: Workset[] = ['active', 'backlog', 'archive']
 
-export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount, allCollapsed, allExpanded, onZoomIn, onZoomOut, onFitToView, onToggleFilter, onSearchChange, onSearchSubmit, onCollapseAll, onExpandAll }: {
+export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, searchQuery, searchMatchCount, allCollapsed, allExpanded, onZoomIn, onZoomOut, onFitToView, onSetLayout, onToggleState, onToggleWorkset, onSearchChange, onSearchSubmit, onCollapseAll, onExpandAll }: {
   scale: number
-  filters: Set<TaskState>
+  layout: TaskWorkspaceLayout
+  stateFilters: Set<TaskState>
+  worksets: Set<Workset>
   searchQuery: string
   searchMatchCount: number
   allCollapsed: boolean
@@ -24,7 +28,9 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
   onZoomIn: () => void
   onZoomOut: () => void
   onFitToView: () => void
-  onToggleFilter: (state: TaskState) => void
+  onSetLayout: (layout: TaskWorkspaceLayout) => void
+  onToggleState: (state: TaskState) => void
+  onToggleWorkset: (workset: Workset) => void
   onSearchChange: (query: string) => void
   onSearchSubmit: () => void
   onCollapseAll: () => void
@@ -48,15 +54,66 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
 
   const pct = Math.round(scale * 100)
 
+  // Layout mode — stacked ships first; DAG is disabled until built.
+  const layoutControl = (
+    <div className="flex items-center gap-0.5" role="group" aria-label="Layout mode">
+      <button
+        onClick={() => onSetLayout('stacked')}
+        className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
+        aria-pressed={layout === 'stacked'}
+        style={{
+          backgroundColor: layout === 'stacked' ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
+          color: layout === 'stacked' ? 'var(--sol-accent)' : 'var(--sol-muted)',
+          border: `1px solid ${layout === 'stacked' ? 'color-mix(in srgb, var(--sol-accent) 40%, transparent)' : 'var(--sol-border)'}`,
+        }}
+      >
+        Stacked
+      </button>
+      <button
+        disabled
+        aria-disabled
+        title="DAG layout — coming soon"
+        className="px-2 py-0.5 rounded text-[11px] font-medium cursor-not-allowed opacity-50"
+        style={{ color: 'var(--sol-muted)', border: '1px solid var(--sol-border)' }}
+      >
+        DAG
+      </button>
+    </div>
+  )
+
+  const worksetChips = (
+    <div className="flex items-center gap-1" role="group" aria-label="Workset filter">
+      {ALL_WORKSETS.map(ws => {
+        const active = worksets.has(ws)
+        return (
+          <button
+            key={ws}
+            onClick={() => onToggleWorkset(ws)}
+            className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
+            aria-label={`Workset: ${ws}`}
+            aria-pressed={active}
+            style={{
+              backgroundColor: active ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
+              color: active ? 'var(--sol-accent)' : 'var(--sol-muted)',
+              border: `1px solid ${active ? 'color-mix(in srgb, var(--sol-accent) 40%, transparent)' : 'var(--sol-border)'}`,
+            }}
+          >
+            {ws}
+          </button>
+        )
+      })}
+    </div>
+  )
+
   const filterChips = (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-1" role="group" aria-label="State filter">
       {ALL_STATES.map(state => {
-        const active = filters.has(state)
+        const active = stateFilters.has(state)
         const color = STATE_COLORS[state]
         return (
           <button
             key={state}
-            onClick={() => onToggleFilter(state)}
+            onClick={() => onToggleState(state)}
             className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
             aria-label={`Filter: ${STATE_LABELS[state]}`}
             aria-pressed={active}
@@ -111,6 +168,11 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
 
       {!isMobile && <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />}
 
+      {/* Layout mode — desktop only (stacked is the sole mobile option) */}
+      {!isMobile && layoutControl}
+
+      {!isMobile && <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />}
+
       {/* Collapse/expand controls — hide on mobile to save space */}
       {!isMobile && (
         <div className="flex items-center gap-0.5">
@@ -139,7 +201,7 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
 
       {!isMobile && <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />}
 
-      {/* State filters */}
+      {/* Workset + state filters */}
       {isMobile ? (
         <div className="relative">
           <button
@@ -151,14 +213,21 @@ export function TaskGraphToolbar({ scale, filters, searchQuery, searchMatchCount
           </button>
           {filtersOpen && (
             <div
-              className="absolute top-full left-0 mt-1 p-2 rounded-md shadow-md z-10"
+              className="absolute top-full left-0 mt-1 p-2 rounded-md shadow-md z-10 flex flex-col gap-2"
               style={{ backgroundColor: 'var(--sol-bg)', border: '1px solid var(--sol-border)' }}
             >
+              {worksetChips}
               {filterChips}
             </div>
           )}
         </div>
-      ) : filterChips}
+      ) : (
+        <>
+          {worksetChips}
+          <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />
+          {filterChips}
+        </>
+      )}
 
       <div className="flex-1" />
 
