@@ -610,11 +610,13 @@ function computeVisibleSet(
   return visible
 }
 
-// Edge path computation — all stacked cards share a right edge, so every real
-// `depends` arc bows out into the reserved right-side gutter (never over title/metadata).
+// Edge path computation — endpoints anchor at each card's own right edge, but every
+// real `depends` arc bows past a single global right edge so it clears intervening
+// cards (deep rows can overflow the shared edge under the NODE_WIDTH floor).
 function computeEdgePath(
   source: LayoutNode,
   target: LayoutNode,
+  baseline: number,
   gutter: number,
 ): string {
   const sx = source.x + source.width
@@ -623,8 +625,8 @@ function computeEdgePath(
   const ty = target.y + NODE_HEIGHT / 2
   // Bow further out for longer vertical spans so neighbouring arcs separate, capped to the gutter.
   const vertDist = Math.abs(ty - sy)
-  const bulge = Math.min(gutter - 8, ARC_OFFSET + vertDist * 0.08)
-  return `M ${sx},${sy} C ${sx + bulge},${sy} ${tx + bulge},${ty} ${tx},${ty}`
+  const cpx = baseline + Math.min(gutter - 8, ARC_OFFSET + vertDist * 0.08)
+  return `M ${sx},${sy} C ${cpx},${sy} ${cpx},${ty} ${tx},${ty}`
 }
 
 export function computeDisplayLayout(
@@ -683,6 +685,13 @@ export function computeDisplayLayout(
     rootY = endY + ROOT_GAP
   }
 
+  // Single global right edge across all visible cards. Under the NODE_WIDTH floor a deep
+  // row can overflow `rightEdge`, so the bow baseline must be the true max, not `rightEdge`.
+  let globalRight = rightEdge
+  for (const node of nodes.values()) {
+    globalRight = Math.max(globalRight, node.x + node.width)
+  }
+
   // Compute edges
   const edges: LayoutEdge[] = []
   const edgeGroups = new Map<string, { edges: { id: string; isCycle: boolean }[]; sourceId: string; targetId: string }>()
@@ -710,7 +719,7 @@ export function computeDisplayLayout(
     const targetNode = nodes.get(group.targetId)
     if (!sourceNode || !targetNode) continue
 
-    const path = computeEdgePath(sourceNode, targetNode, DEPENDS_GUTTER)
+    const path = computeEdgePath(sourceNode, targetNode, globalRight, DEPENDS_GUTTER)
     const hasCycle = group.edges.some(e => e.isCycle)
 
     edges.push({
@@ -725,10 +734,9 @@ export function computeDisplayLayout(
     })
   }
 
-  // Bounds — nodes share the right edge; add the gutter + padding on the right
-  let maxX = 0, maxY = 0
+  // Bounds — global right edge plus the gutter + padding on the right
+  let maxY = 0
   for (const node of nodes.values()) {
-    maxX = Math.max(maxX, node.x + node.width)
     maxY = Math.max(maxY, node.y + node.height)
   }
 
@@ -738,7 +746,7 @@ export function computeDisplayLayout(
     edges,
     visibleOrder,
     visibleChildrenByTask,
-    bounds: { width: Math.max(containerWidth, maxX + DEPENDS_GUTTER + GRAPH_PADDING), height: maxY + GRAPH_PADDING },
+    bounds: { width: Math.max(containerWidth, globalRight + DEPENDS_GUTTER + GRAPH_PADDING), height: maxY + GRAPH_PADDING },
     hasCycles: cycleEdgeIds.size > 0,
   }
 }
