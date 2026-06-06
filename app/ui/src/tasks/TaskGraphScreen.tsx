@@ -242,6 +242,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
             ref={attachScrollRef}
             className="absolute inset-0 overflow-y-scroll overflow-x-auto"
             onScroll={ix.clearTooltip}
+            onClick={ix.handleClearSelection}
           >
             {isGantt ? (
               <TaskGanttCanvas
