@@ -1,6 +1,5 @@
 import { useRef, useLayoutEffect } from 'react'
 import type { TaskGraphModel } from './taskGraphModel'
-import type { ViewportTransform } from '../hooks/usePanZoom'
 
 export type TooltipTarget = {
   id: string
@@ -9,25 +8,26 @@ export type TooltipTarget = {
   graphH: number   // height in graph coords
 }
 
-export function TaskGraphTooltip({ target, graph, viewportTransform, containerRef }: {
+// `containerRef` is the scroll container: its scroll offsets map graph coords to
+// the visible viewport, and its client size clamps the tooltip on screen. The
+// tooltip is cleared on scroll/zoom, so reading offsets in layout effect is exact.
+export function TaskGraphTooltip({ target, graph, scale, containerRef }: {
   target: TooltipTarget
   graph: TaskGraphModel
-  viewportTransform: ViewportTransform
+  scale: number
   containerRef: React.RefObject<HTMLDivElement | null>
 }) {
   const tooltipRef = useRef<HTMLDivElement>(null)
-
-  const { tx, ty, scale } = viewportTransform
-  const screenX = target.graphX * scale + tx
-  const screenY = target.graphY * scale + ty
-  const screenBottom = (target.graphY + target.graphH) * scale + ty
-
-  const flipped = screenY - 8 < 40
 
   useLayoutEffect(() => {
     const el = tooltipRef.current
     const container = containerRef.current
     if (!el || !container) return
+
+    const screenX = target.graphX * scale - container.scrollLeft
+    const screenY = target.graphY * scale - container.scrollTop
+    const screenBottom = (target.graphY + target.graphH) * scale - container.scrollTop
+    const flipped = screenY - 8 < 40
 
     const cw = container.clientWidth
     const ch = container.clientHeight
@@ -48,7 +48,7 @@ export function TaskGraphTooltip({ target, graph, viewportTransform, containerRe
 
     el.style.left = `${left}px`
     el.style.top = `${top}px`
-  }, [screenX, screenY, screenBottom, flipped, containerRef])
+  }, [target, scale, containerRef])
 
   const task = graph.tasks.get(target.id)
   if (!task) return null

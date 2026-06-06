@@ -6,21 +6,14 @@ import { TaskGraphEdges } from './TaskGraphEdges'
 import { TaskGraphGroup } from './TaskGraphGroup'
 import { TaskGraphNode } from './TaskGraphNode'
 
-export function TaskGraphCanvas({ graph, layout, searchMatchIds, transform, highlight, selection, scale, collapsedTaskIds, handlers, onSelectTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   graph: TaskGraphModel
   layout: GraphLayout
   searchMatchIds: Set<string>
-  transform: string
   highlight: HighlightModel
   selection: Selection
   scale: number
   collapsedTaskIds: Set<string>
-  handlers: {
-    onWheel: (e: React.WheelEvent) => void
-    onPointerDown: (e: React.PointerEvent) => void
-    onPointerMove: (e: React.PointerEvent) => void
-    onPointerUp: (e: React.PointerEvent) => void
-  }
   onSelectTask: (id: string) => void
   onClearSelection: () => void
   onToggleCollapse: (id: string) => void
@@ -30,14 +23,16 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, transform, high
   // Build group lookup for node progress info
   const groupById = new Map(layout.groups.map(g => [g.id, g]))
 
+  // The SVG is sized to the scaled layout bounds so the scroll container
+  // navigates it natively (vertical scroll); zoom is a uniform scale.
   return (
     <svg
-      className="absolute inset-0 h-full w-full"
-      style={{ touchAction: 'none' }}
+      className="block"
+      width={layout.bounds.width * scale}
+      height={layout.bounds.height * scale}
       onClick={onClearSelection}
-      {...handlers}
     >
-      <g transform={transform}>
+      <g transform={`scale(${scale})`}>
         <style>{`.tg-focusable { outline: none; } .tg-focusable:focus-visible { outline: 2px solid var(--sol-focus-border); outline-offset: 2px; }`}</style>
         {/* Layer 1: Indentation guide lines */}
         <g data-layer="guides">
