@@ -67,14 +67,20 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
 │            renders the one graph workspace + overlay detail panel. No view
 │            switching.
 ├── TaskGraphScreen — the single workspace (SVG dependency graph, vertical scroll)
-│   ├── TaskGraphToolbar — the one toolbar: layout (Stacked; DAG disabled until
-│   │     built), workset filter (active/backlog/archive), state filter, search
-│   │     (`/` focuses it), zoom, collapse/expand. Mobile folds workset+state into
-│   │     a Filter popover and hides the layout/collapse controls.
-│   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row
-│   │     card, estimate badge, worktree icon, right-aligned metadata rail) +
-│   │     TaskGraphEdges. The SVG is sized to the scaled layout bounds inside an
+│   ├── TaskGraphToolbar — the one toolbar: layout switch (Stacked / Gantt;
+│   │     Gantt is desktop-only), workset filter (active/backlog/archive), state
+│   │     filter, search (`/` focuses it), zoom, collapse/expand. Mobile folds
+│   │     workset+state into a Filter popover, hides the layout/collapse controls,
+│   │     and always renders Stacked.
+│   ├── (Stacked) TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven
+│   │     full-row card, estimate badge, worktree icon, right-aligned metadata rail)
+│   │     + TaskGraphEdges. The SVG is sized to the scaled layout bounds inside an
 │   │     overflow-y scroll container.
+│   ├── (Gantt) TaskGanttCanvas → two-pane sticky spreadsheet: a frozen left task
+│   │     column (sticky-left, reuses TaskGraphNode/Group) + a horizontally-scrollable
+│   │     time pane (sticky-top TaskGanttRuler, TaskGraphEdges as finish-to-start
+│   │     links, one TaskGanttBar per row, faint gridlines). One `scale()` transform
+│   │     per pane; rows keep their `y` so switching modes is non-disorienting.
 │   └── TaskGraphTooltip — hover overlay (title, description, progress, full
 │         metadata chips: id/priority/workset/agent/tags)
 └── TaskDetailPanel — shared right overlay (editable; archive tasks are in the
@@ -104,7 +110,9 @@ is open, selecting another task switches the overlay contents to that task.
 Navigation is native vertical scroll (no horizontal infinite canvas); zoom is a
 uniform scale applied to the SVG. Search and keyboard navigation scroll the
 target node to vertical center via `useViewport.scrollNodeIntoView`. -> See:
-frontend/hooks.md `useViewport.ts`.
+frontend/hooks.md `useViewport.ts`. Gantt mode adds the one horizontal-scroll
+carve-out: its time pane scrolls horizontally (bounded by makespan) while the
+left task column stays frozen; Stacked stays vertical-only.
 
 The `containerWidth` fed into `computeDisplayLayout` is the scroll container's
 `clientWidth` (excludes the vertical scrollbar), measured by a `ResizeObserver`
@@ -127,7 +135,9 @@ tooltip chips and `TaskDetailPanel`.
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
-- `taskGraphModel.ts` — stacked full-width layout: roots stack vertically (by increasing `y`), each row fills the container width to a shared right edge with 24px indent/level for children, left-side guide lines, SCC cycle detection, `computeDisplayLayout(..., containerWidth)` with visible-tree semantics. `LayoutNode.width` drives card width; NODE_WIDTH=280 is now a min-width floor only. Real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge so arcs clear intervening cards; no non-dependency edges. NODE_HEIGHT=36.
+- `taskGraphModel.ts` — shared `layoutRows()` core (measure + position the indented row tree) feeds BOTH modes. **Stacked**: `computeDisplayLayout(..., containerWidth)` stretches rows to fill container width to a shared right edge (24px indent/level, left-side guide lines), SCC cycle detection, visible-tree semantics; `LayoutNode.width` drives card width (NODE_WIDTH=280 is a min-width floor); real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge; NODE_HEIGHT=36. **Gantt**: `computeGanttLayout(...)` returns `GanttLayout extends GraphLayout` (so selection/keyboard/search/collapse work unchanged) and adds `bars` (per-row `GanttBar` from the schedule), `ruler.ticks` (optimistic units), depth-derived `leftWidth`, and `timeWidth = makespan·PX`; FS `depends` edges are cubic, left→right only, with `originalEdgeIds` always populated. All Gantt coords are unscaled (the canvas applies one `scale()` per pane).
+- `ganttSchedule.ts` — pure CPM schedule for Gantt mode (no React). Duration map `xs/s/m/l/xl = 1/2/3/5/8`, missing/unknown estimate → `m` (3) flagged `assumed`. Builds the internal effective-predecessor graph `E` over the filter-visible leaf set (ancestor-inherited + group-expanded deps, self-edges stripped, intersected with the visible set), runs Kahn topo on `E` (effective-cycle nodes flagged `cycle`), then forward/backward passes for `start`/`finish`/`slack`/`critical` (integer-exact slack===0; cycle nodes excluded from critical). Group rows get a summary entry (`start=min`, `finish=max`, `critical=any`). View-local: a predecessor filtered out of the visible set is dropped. `E` is schedule-internal and never rendered as edges.
+- `TaskGanttCanvas.tsx` / `TaskGanttRuler.tsx` / `TaskGanttBar.tsx` — the Gantt view. `TaskGanttBar` colors each bar by aggregate state (`STATE_COLORS`), overlays a diagonal hatch (one shared `<pattern>` via `GanttBarDefs`) when `assumed`, outlines critical-path bars in accent, renders summary bars as a thin lighter span with end-cap wedges, and fills effective-`cycle` bars red (never critical-styled). Selection reuses `computeHighlight` for upstream/downstream dim while the critical chain stays prominent; hover/click reuse the same tooltip/select handlers as nodes.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
 - `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
 
