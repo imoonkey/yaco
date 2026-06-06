@@ -435,3 +435,28 @@ describe('gantt layout — extends GraphLayout', () => {
     expect(layout.timeWidth).toBeGreaterThan(0)
   })
 })
+
+describe('gantt layout — critical-path flags propagate to the bars', () => {
+  it('marks the converging critical chain and leaves the slack branch unmarked', () => {
+    // A (m=3) and B (s=2) both feed C (m=3). The long branch A→C is critical
+    // (slack 0); B carries 1 unit of slack. Criticality must reach the bars.
+    const raw: RawTaskMap = {
+      a: entry({ title: 'A', estimate: 'm' }),
+      b: entry({ title: 'B', estimate: 's' }),
+      c: entry({ title: 'C', depends: ['a', 'b'], estimate: 'm' }),
+    }
+    const layout = ganttLayoutFor(raw, new Set(['active']))
+
+    expect(layout.bars.get('a')!.critical).toBe(true)
+    expect(layout.bars.get('c')!.critical).toBe(true)
+    expect(layout.bars.get('b')!.critical).toBe(false)
+
+    // Integer-exact: the critical bars abut edge-to-edge (zero slack gap), while the
+    // slack branch ends short of the converging successor's start.
+    const a = layout.bars.get('a')!
+    const b = layout.bars.get('b')!
+    const c = layout.bars.get('c')!
+    expect(a.x + a.width).toBe(c.x)
+    expect(b.x + b.width).toBeLessThan(c.x)
+  })
+})

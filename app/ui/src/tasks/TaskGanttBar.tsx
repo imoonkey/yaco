@@ -134,6 +134,9 @@ export function TaskGanttBar({ id, bar, leftWidth, highlight, isSelected, onClic
   return (
     <g
       data-task-id={id}
+      data-assumed={bar.assumed ? 'true' : 'false'}
+      data-critical={showCritical ? 'true' : 'false'}
+      data-summary={bar.isSummary ? 'true' : 'false'}
       onClick={(e) => { e.stopPropagation(); onClick(id) }}
       onDoubleClick={(e) => { e.stopPropagation(); onOpen(id) }}
       onPointerEnter={() => onPointerEnter({

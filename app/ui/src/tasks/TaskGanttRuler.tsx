@@ -12,6 +12,7 @@ export function TaskGanttRuler({ ticks, scale, timeWidth }: {
   return (
     <svg
       className="block"
+      data-testid="gantt-ruler"
       width={timeWidth * scale}
       height={RULER_HEIGHT * scale}
       style={{ position: 'sticky', top: 0, zIndex: 1 }}

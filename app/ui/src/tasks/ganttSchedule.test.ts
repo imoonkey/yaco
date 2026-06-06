@@ -297,3 +297,65 @@ describe('empty visible set', () => {
     expect(s.makespan).toBe(0)
   })
 })
+
+// --- determinism -------------------------------------------------------------
+
+// Order-independent fingerprint of an entire schedule (sorted by id so two runs
+// with different Map insertion order still compare equal when truly identical).
+function fingerprint(s: GanttSchedule): { makespan: number; rows: string[] } {
+  return {
+    makespan: s.makespan,
+    rows: [...s.entries.entries()]
+      .map(([id, e]) =>
+        `${id}:${e.start},${e.finish},${e.duration},${e.slack},` +
+        `${e.critical ? 1 : 0},${e.cycle ? 1 : 0},${e.assumed ? 1 : 0},${e.isSummary ? 1 : 0}`)
+      .sort(),
+  }
+}
+
+const reversed = (raw: RawTaskMap): RawTaskMap =>
+  Object.fromEntries(Object.entries(raw).reverse()) as RawTaskMap
+
+describe('determinism — identical input yields an identical schedule', () => {
+  // Exercises every path at once: a group summary, a multi-dep converging sink,
+  // explicit + assumed estimates, and an independent longer chain (slack).
+  const raw: RawTaskMap = {
+    G: entry({ title: 'G' }),
+    G1: entry({ title: 'G1', parent: 'G', estimate: 'l' }), // 5
+    G2: entry({ title: 'G2', parent: 'G', estimate: 's' }), // 2
+    mid: entry({ title: 'Mid', depends: ['G'], estimate: 'm' }), // starts at 5
+    sink: entry({ title: 'Sink', depends: ['mid', 'G2'] }), // missing estimate → assumed
+    lone: entry({ title: 'Lone', estimate: 'xl' }), // 8, independent
+  }
+
+  it('is byte-identical across repeated runs of the same input', () => {
+    expect(fingerprint(schedule(raw))).toEqual(fingerprint(schedule(raw)))
+  })
+
+  it('does not depend on the input key insertion order', () => {
+    expect(fingerprint(schedule(reversed(raw)))).toEqual(fingerprint(schedule(raw)))
+  })
+})
+
+describe('determinism — effective-cycle scheduling is stable and terminates', () => {
+  // A 3-node effective cycle (A→B→C→A). Cycle members must be flagged, kept
+  // non-critical, given finite integer bars, and positioned identically in any order.
+  const raw: RawTaskMap = {
+    A: entry({ title: 'A', depends: ['C'], estimate: 'm' }),
+    B: entry({ title: 'B', depends: ['A'], estimate: 's' }),
+    C: entry({ title: 'C', depends: ['B'], estimate: 'l' }),
+  }
+
+  it('flags every cycle node the same way each run, in any input order', () => {
+    const a = schedule(raw)
+    const b = schedule(reversed(raw))
+    for (const id of ['A', 'B', 'C']) {
+      const e = a.entries.get(id)!
+      expect(e.cycle).toBe(true)
+      expect(e.critical).toBe(false)
+      expect(Number.isInteger(e.start)).toBe(true)
+      expect(e.finish).toBe(e.start + e.duration)
+    }
+    expect(fingerprint(a)).toEqual(fingerprint(b))
+  })
+})
