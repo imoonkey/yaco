@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const { fetchSessionSummaries } = vi.hoisted(() => ({ fetchSessionSummaries: vi.fn() }))
 vi.mock('../agent', () => ({ fetchSessionSummaries }))
 
-import { resolveSessionSummaries, invalidateSummaryCache, encodeProjectPath } from '../session-summary'
+import { resolveSessionSummaries, invalidateSummaryCache } from '../session-summary'
 import type { AgentSession } from '../agent'
 import type { CliSessionSummary } from '../agent'
 
@@ -145,23 +145,5 @@ describe('resolveSessionSummaries', () => {
     fetchSessionSummaries.mockRejectedValue(new Error('cli exploded'))
     const result = await resolveSessionSummaries([makeSession()])
     expect(result.get('test-session')).toBeUndefined()
-  })
-})
-
-describe('encodeProjectPath', () => {
-  it('replaces slashes with dashes', () => {
-    expect(encodeProjectPath('/Users/test/project')).toBe('-Users-test-project')
-  })
-
-  it('strips trailing slash before encoding', () => {
-    expect(encodeProjectPath('/Users/test/project/')).toBe('-Users-test-project')
-  })
-
-  it('strips multiple trailing slashes', () => {
-    expect(encodeProjectPath('/Users/test/project///')).toBe('-Users-test-project')
-  })
-
-  it('handles path without trailing slash unchanged', () => {
-    expect(encodeProjectPath('/Users/test/project')).toBe(encodeProjectPath('/Users/test/project/'))
   })
 })

@@ -6,11 +6,6 @@ function isResolvableSessionId(id: string): boolean {
   return !!id && id !== PENDING_SESSION_ID
 }
 
-/** Encode a project path the same way Claude Code does: replace `/` with `-` */
-export function encodeProjectPath(projectPath: string): string {
-  return projectPath.replace(/\/+$/, '').replace(/\//g, '-')
-}
-
 /** In-process summary cache keyed by `(provider, sessionId, sessionPath)`. The
  *  CLI is spawned only for sessions missing from this cache; a fully cached
  *  session list resolves with no subprocess. Only positive labels are stored —
