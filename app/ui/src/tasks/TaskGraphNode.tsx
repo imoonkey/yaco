@@ -210,7 +210,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           x={node.x + chevronWidth + 22}
           y={titleY}
           fontSize={9}
-          fontWeight={700}
+          fontWeight={600}
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 0.7 : 0}
           letterSpacing="0.03em"
@@ -235,7 +235,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         x={node.x + chevronWidth + 24 + estimateWidth}
         y={titleY}
         fontSize={13}
-        fontWeight={500}
+        fontWeight={400}
         fill={'var(--sol-text-dark)'}
         opacity={showLabels ? 1 : 0}
         letterSpacing="-0.01em"
@@ -251,7 +251,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           x={node.x + node.width - 10}
           y={titleY}
           fontSize={10}
-          fontWeight={500}
+          fontWeight={400}
           textAnchor="end"
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 0.85 : 0}
@@ -266,7 +266,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           x={node.x + node.width - 10}
           y={titleY}
           fontSize={10}
-          fontWeight={500}
+          fontWeight={400}
           textAnchor="end"
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 0.75 : 0}
@@ -293,7 +293,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
             y={railTextY}
             textAnchor="middle"
             fontSize={9}
-            fontWeight={600}
+            fontWeight={500}
             fill={item.color}
             fontFamily={item.mono ? 'var(--font-mono)' : undefined}
             letterSpacing={item.mono ? '0' : '0.02em'}

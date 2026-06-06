@@ -194,4 +194,28 @@ describe('metadata rail — width-driven collapse (buildRail)', () => {
     const plain = makeTask({ title: 'X', priority: 'normal', workset: 'active' }, 'plain-id')
     expect(buildRail(plain, 0, 1000).map(i => i.key)).toEqual(['id'])
   })
+
+  it('shows the full id when the row is wide instead of a fixed-width truncation', () => {
+    // Regression: a long id used to be hard-capped at 16 chars, so it showed an
+    // ellipsis even on very wide rows. It must now render in full when it fits.
+    const longId = 'workspace-state-toolbar' // 23 chars, well over the old 16 cap
+    const wide = makeTask({ title: 'X', priority: 'normal', workset: 'active' }, longId)
+    const rail = buildRail(wide, 0, 1000)
+    expect(rail.map(i => i.key)).toEqual(['id'])
+    expect(rail[0].text).toBe(longId)        // full id, no ellipsis
+    expect(rail[0].text).not.toContain('…')
+    expect(rail[0].x + rail[0].width).toBe(1000) // still right-aligned to the bound
+  })
+
+  it('width-fits the id (ellipsis) only when the full id cannot fit, and hides a too-small rail', () => {
+    const longId = 'workspace-state-toolbar'
+    const task = makeTask({ title: 'X', priority: 'normal', workset: 'active' }, longId)
+    // Moderate space: id cannot fit in full, so it shrinks with an ellipsis rather than vanish.
+    const fitted = buildRail(task, 0, 90)
+    expect(fitted.map(i => i.key)).toEqual(['id'])
+    expect(fitted[0].text).toContain('…')
+    expect(fitted[0].x + fitted[0].width).toBe(90)
+    // Too narrow to read even a stub → rail hides entirely.
+    expect(buildRail(task, 0, 20)).toEqual([])
+  })
 })

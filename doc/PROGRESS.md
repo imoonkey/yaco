@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-06-06: Task node metadata-rail readability fixes
+
+**What changed:**
+- `app/ui/src/tasks/metadataRail.ts`: the rail id/agent badges are now **width-driven** instead of hard-capped (id at 16 chars, agent at 12). Every badge shows its full text when it fits the rail's reserved band, so wide rows no longer show a fixed-width `id…` with empty space beside it. Truncation (with ellipsis) happens only when the id is wider than the available space; below a small minimum (`RAIL_MIN_BADGE`) the rail hides rather than show an unreadable stub.
+- `app/ui/src/tasks/TaskGraphNode.tsx`: lighter font weights for readability — title 500→400, estimate 700→600, progress/dep-count labels 500→400, rail badge text 600→500. Hierarchy preserved via size/color, not heavy weights.
+- Unit tests (`taskGraphModel.test.ts`, +2): a long id renders in full on a wide row (no ellipsis, still right-aligned), width-fits with an ellipsis only when it cannot fit, and the rail hides when too narrow for a readable stub. Existing drop-order coverage unchanged.
+
+**Why:**
+- User-reported: right-side metadata tags were fixed-width and truncated with `…` even on wide rows with large empty middles; and node text was uniformly heavy, hurting readability.
+
+**Verification:** `npm run build` ✓, `npx tsc --noEmit` ✓, `npm run lint` ✓ (0 errors), `vitest taskGraphModel.test.ts` → 13 passed.
+
+**Key files:** `app/ui/src/tasks/{metadataRail.ts, TaskGraphNode.tsx, taskGraphModel.test.ts}`
+
 ## 2026-06-06: V1 task workspace verification coverage
 
 **What changed:**

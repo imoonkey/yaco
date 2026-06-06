@@ -5,8 +5,13 @@
 // The full metadata set always lives in the tooltip and detail panel, so dropping
 // here loses nothing.
 //
+// Field text is WIDTH-DRIVEN, not fixed-width: every badge shows its full text
+// when it fits, so a wide row with plenty of empty space never shows a clipped
+// "id…". Truncation happens only when the id itself is wider than the space the
+// rail has to work with (then the id shrinks to fit rather than vanish).
+//
 // Conditional presence (default/common values are hidden to avoid noise):
-//   - id      always shown (truncated)
+//   - id       always shown (full when it fits, otherwise width-fitted)
 //   - priority shown only when != 'normal'
 //   - workset  shown only when != 'active'
 //   - agent    shown only when set
@@ -18,6 +23,7 @@ export const RAIL_GAP = 5
 export const RAIL_PADX = 5
 export const RAIL_CHAR_W = 5.4   // approx glyph advance at fontSize 9
 export const RAIL_MIN_TITLE = 72 // px of title kept before the rail may claim space
+export const RAIL_MIN_BADGE = 36 // smallest id badge worth showing; below this the rail hides
 
 export const PRIORITY_COLOR: Record<Priority, string> = {
   critical: 'var(--sol-red)',
@@ -26,20 +32,31 @@ export const PRIORITY_COLOR: Record<Priority, string> = {
   low: 'var(--sol-base1)',
 }
 
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n - 1) + '…' : s
-}
-
 function railItemWidth(text: string): number {
   return Math.ceil(text.length * RAIL_CHAR_W) + RAIL_PADX * 2
+}
+
+// Largest prefix of `text` (with a trailing ellipsis when shortened) whose badge
+// fits in `maxWidth`. Returns '' when not even a one-character badge fits.
+function fitText(text: string, maxWidth: number): string {
+  if (railItemWidth(text) <= maxWidth) return text
+  for (let n = text.length - 1; n >= 1; n--) {
+    const candidate = text.slice(0, n) + '…'
+    if (railItemWidth(candidate) <= maxWidth) return candidate
+  }
+  return ''
 }
 
 export type RailItem = { key: string; text: string; color: string; mono: boolean; width: number; x: number }
 
 export function buildRail(task: TaskGraphTask, leftBound: number, rightBound: number): RailItem[] {
+  const avail = rightBound - leftBound
+  if (avail <= 0) return []
+
+  // Full-text candidates in priority order; widths come from the full text so a
+  // badge expands to show everything when the row is wide.
   const candidates: Omit<RailItem, 'x'>[] = []
-  const idText = truncate(task.id, 16)
-  candidates.push({ key: 'id', text: idText, color: 'var(--sol-base1)', mono: true, width: railItemWidth(idText) })
+  candidates.push({ key: 'id', text: task.id, color: 'var(--sol-base1)', mono: true, width: railItemWidth(task.id) })
   if (task.priority !== 'normal') {
     candidates.push({ key: 'priority', text: task.priority, color: PRIORITY_COLOR[task.priority], mono: false, width: railItemWidth(task.priority) })
   }
@@ -47,13 +64,11 @@ export function buildRail(task: TaskGraphTask, leftBound: number, rightBound: nu
     candidates.push({ key: 'workset', text: task.workset, color: 'var(--sol-violet)', mono: false, width: railItemWidth(task.workset) })
   }
   if (task.agent) {
-    const agentText = truncate(task.agent, 12)
-    candidates.push({ key: 'agent', text: agentText, color: 'var(--sol-cyan)', mono: false, width: railItemWidth(agentText) })
+    candidates.push({ key: 'agent', text: task.agent, color: 'var(--sol-cyan)', mono: false, width: railItemWidth(task.agent) })
   }
 
-  // Greedily keep fields from the front (highest priority) while they fit; the
-  // first field that overflows drops itself and everything lower-priority after it.
-  const avail = rightBound - leftBound
+  // Greedily keep full-width badges from the front (highest priority) while they
+  // fit; the first field that overflows drops itself and everything after it.
   const kept: Omit<RailItem, 'x'>[] = []
   let used = 0
   for (const c of candidates) {
@@ -61,6 +76,15 @@ export function buildRail(task: TaskGraphTask, leftBound: number, rightBound: nu
     if (used + add > avail) break
     used += add
     kept.push(c)
+  }
+
+  // The id alone is wider than the rail's space: show a width-fitted id rather
+  // than nothing — unless even that would be too small to read.
+  if (kept.length === 0) {
+    const idText = fitText(task.id, avail)
+    const width = railItemWidth(idText)
+    if (!idText || width < RAIL_MIN_BADGE) return []
+    return [{ key: 'id', text: idText, color: 'var(--sol-base1)', mono: true, width, x: rightBound - width }]
   }
 
   // Right-align the kept group so its last badge ends at rightBound.
