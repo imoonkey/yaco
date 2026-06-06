@@ -183,10 +183,8 @@ function invalidateTasksCache(projectPath: string): void {
 async function buildTasksResponse(projectPath: string): Promise<TasksResponse | { __notfound: true }> {
   const { tasksPath } = resolveRepoPaths(projectPath)
   if (!existsSync(tasksPath)) return { __notfound: true }
-  const allTasks = loadTaskMap(tasksPath)
-  const tasks = Object.fromEntries(
-    Object.entries(allTasks).filter(([, task]) => task.workset === 'active'),
-  )
+  // Return every workset (active, backlog, archive); the workspace filters client-side.
+  const tasks = loadTaskMap(tasksPath)
 
   const statuses = await getWorktreeStatuses(projectPath, tasks as Record<string, { worktree?: string }>)
   for (const task of Object.values(tasks)) {

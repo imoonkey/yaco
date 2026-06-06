@@ -3,6 +3,8 @@
 
 export type TaskState = 'ready' | 'running' | 'done' | 'blocked' | 'cancelled'
 
+export type Priority = 'critical' | 'high' | 'normal' | 'low'
+
 export type RawTaskEntry = {
   title: string
   description?: string
@@ -15,6 +17,9 @@ export type RawTaskEntry = {
   worktree?: string | null
   estimate?: string | null
   workset?: 'active' | 'backlog' | 'archive'
+  priority?: Priority
+  agent?: string | null
+  tags?: string[]
 }
 
 export type RawTaskMap = Record<string, RawTaskEntry>
@@ -34,6 +39,9 @@ export type TaskGraphTask = {
   worktree: string | null
   estimate: string | null
   workset: 'active' | 'backlog' | 'archive'
+  priority: Priority
+  agent: string | null
+  tags: string[]
 }
 
 // Layout types — flat indented tree, no nested boxes
@@ -176,6 +184,9 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
       worktree: entry.worktree ?? null,
       estimate: entry.estimate ?? null,
       workset: entry.workset ?? 'active',
+      priority: entry.priority ?? 'normal',
+      agent: entry.agent ?? null,
+      tags: entry.tags ?? [],
     })
   }
 
