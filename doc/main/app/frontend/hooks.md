@@ -269,3 +269,24 @@ Behavior:
 - Scroll wheel zoom (centered on cursor), pointer drag pan, pinch zoom (touch)
 - `fitToView(animate?)` reads the latest bounds from `graphBoundsRef.current` and animates to fit the entire graph with 200ms ease-out (the ref breaks the render-order cycle: pan/zoom is created before the layout that produces its bounds)
 - Scale clamped to 0.25×–3.0× range
+
+## useTaskGraphInteraction.ts
+
+Owns the single-workspace UI state for the Tasks graph (selection, filters,
+search, collapse, tooltip) and is the home of the workspace state model.
+
+**Export**: `useTaskGraphInteraction(project, graph, panZoom, isMobile)` →
+`{ selection, layout, filters, searchQuery, collapsedTaskIds, highlight, ... handlers }`
+
+State model:
+- `layout: 'stacked' | 'dag'` — stacked ships; DAG is disabled in the toolbar until built.
+- `filters: { states: Set<TaskState>; worksets: Set<Workset> }` — defaults: all states, worksets `{active, backlog}` (archive hidden until enabled).
+- `searchQuery`, `collapsedTaskIds`, `selection`.
+
+Persistence:
+- Persisted under `yaco-task-workspace:${project}` as `{ layout, worksets, states, collapsedTaskIds }`.
+- On load, layout is coerced to `stacked` while DAG is unbuilt; invalid/empty worksets/states fall back to defaults.
+
+Notes:
+- The workset filter is applied to the rendered set in `TaskGraphScreen` (tasks whose workset is disabled are dropped before `computeDisplayLayout`).
+- Selection clearing for hidden tasks lives in `TaskGraphScreen`: when the selection is absent from the recomputed `displayLayout.nodes` (any filter — workset, state, or filtered-out ancestor), it clears and propagates up via `onSelectTask(null)`.

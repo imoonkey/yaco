@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-06: Single task workspace shell + workset filter
+
+**What changed:**
+- `TaskScreen` is now one workspace shell: it renders only `TaskGraphScreen` + `TaskDetailPanel` (holds a local `selectedTaskId`, loads `useTaskData` just for the detail-panel map) and no longer switches Board/List/Graph/Archive panes. The graph's `TaskGraphToolbar` is the only toolbar.
+- `useTaskGraphInteraction` becomes the workspace-state owner: `layout` (`'stacked' | 'dag'`, default stacked) and `filters = { states, worksets }` (worksets default `{active, backlog}`). Persisted under the new key `yaco-task-workspace:${project}`; load coerces any stored layout to `stacked` while DAG is unbuilt.
+- `TaskGraphToolbar` adds a layout control (Stacked active; DAG disabled until built) and workset chips (active/backlog/archive) next to the state filter + search; `/` still focuses search.
+- Workset filter applied to the rendered set in `TaskGraphScreen` (drop disabled-workset tasks before `computeDisplayLayout`) — archive (~217 tasks) no longer leaks in. Stale selection cleared centrally when the selection leaves `displayLayout.nodes` (any filter), propagated via `onSelectTask(null)`.
+- Old `1/2/3/4` view-switch shortcuts removed (they lived in the no-longer-mounted `TaskToolbar`). Optional priority/agent/worktree/parent filters omitted in V1.
+
+**Why:**
+- Workset is a filter, not a separate view. Collapsing the four panes into one graph workspace removes the double toolbar and the archive-leak gap, and centralizing selection-clear on the rendered layout keeps the detail panel from showing a hidden task under any filter.
+
+**Key files:** `app/ui/src/tasks/TaskScreen.tsx`, `app/ui/src/tasks/TaskGraphToolbar.tsx`, `app/ui/src/tasks/useTaskGraphInteraction.ts`, `app/ui/src/tasks/TaskGraphScreen.tsx`
+**Verification:** `cd app/ui && npm run lint` → 0 errors / 13 existing warnings; `npx tsc --noEmit` clean; `npm run build` green.
+**Commit:** d94c276..89198dc
+**Next:** `remove-legacy-surfaces` — delete Board/List/Archive panels, `TaskToolbar`, `useTaskViewState`, dead `GET /:project/archive` route + tests; then `viewport-scroll`.
+**Blockers:** None.
+
 ## 2026-06-06: Stacked vertical full-width task graph layout
 
 **What changed:**

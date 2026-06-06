@@ -61,36 +61,39 @@ App (384 lines)
         └── ProviderIcon
 ```
 
-**Task system (`ui/src/tasks/`) — multi-view task management:**
+**Task system (`ui/src/tasks/`) — single graph workspace:**
 ```
-TaskScreen — master controller (view switcher, filtering, detail panel, onClose)
-├── TaskToolbar — view tabs, filter dropdowns (incl. worktree filter), search, close button
-│   ├── Desktop: two rows (view tabs + search | filter dropdowns + pills)
-│   └── Mobile: single row (icon-only tabs | filter icon | search toggle | X)
-├── TaskBoardView — kanban columns (Blocked → Ready → Running → Done)
-│   ├── Desktop: flex columns
-│   ├── Mobile: scroll-snap horizontal swipe (one column at a time, 12px inset)
-│   ├── BoardColumn — collapsible column with drag-drop
-│   └── BoardCard — task card (compact mode for done), worktree badge (GitBranch icon)
-├── TaskListView — virtual-scroll table with sortable columns
-│   ├── Desktop: ListHeader (resizable) + ListRow (7 columns + worktree badge)
-│   └── Mobile: MobileListRow (44px, StateDot + title + parent + priority)
-├── TaskGraphScreen — SVG dependency graph with pan/zoom
-│   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row card, estimate badge, worktree icon) + TaskGraphEdges
-│   ├── TaskGraphToolbar (mobile: larger touch targets, hides collapse controls)
+TaskScreen — workspace shell: loads task data, owns selectedTaskId, renders
+│            the one graph workspace + detail panel. No view switching.
+├── TaskGraphScreen — the single workspace (SVG dependency graph, pan/zoom)
+│   ├── TaskGraphToolbar — the one toolbar: layout (Stacked; DAG disabled until
+│   │     built), workset filter (active/backlog/archive), state filter, search
+│   │     (`/` focuses it), zoom, collapse/expand. Mobile folds workset+state into
+│   │     a Filter popover and hides the layout/collapse controls.
+│   ├── TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven full-row
+│   │     card, estimate badge, worktree icon) + TaskGraphEdges
 │   ├── TaskGraphMinimap — overview with viewport rect (desktop only)
 │   └── TaskGraphTooltip — hover overlay
-├── TaskArchiveView — date-grouped archive with search, click-to-detail, worktree badge
-│   └── Mobile: hides task ID + unarchive button, taller touch targets
-├── TaskDetailPanel — shared right sidebar (editable, readOnly mode for archives)
-│   ├── Desktop: 340px right sidebar with slide-right animation
-│   ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
-│   ├── InlineEdit — click-to-edit with custom dropdown popover
-│   ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
-│   ├── Children progress bar (for parent tasks)
-│   └── Design doc link → opens in editor (file paths) or new tab (URLs)
-└── shared/ — StateDot, StateBadge, PriorityTag, InlineEdit
+└── TaskDetailPanel — shared right sidebar (editable; archive tasks are in the
+    │   map now, so no read-only mode is wired)
+    ├── Desktop: 340px right sidebar with slide-right animation
+    ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
+    ├── InlineEdit — click-to-edit with custom dropdown popover
+    ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
+    ├── Children progress bar (for parent tasks)
+    └── Design doc link → opens in editor (file paths) or new tab (URLs)
+
+Legacy surfaces — no longer mounted by TaskScreen, files pending deletion in the
+remove-legacy-surfaces task: TaskToolbar (view tabs + 1/2/3/4 shortcuts),
+TaskBoardView, TaskListView, TaskArchiveView, useTaskViewState, shared/StateBadge,
+shared/PriorityTag.
 ```
+
+Workset is a filter, not a view: the workspace receives all worksets and shows
+`active + backlog` by default; archive is hidden until enabled in the toolbar.
+The visible-set filter is applied before layout in `TaskGraphScreen` (drop tasks
+whose workset is disabled), and a selection that drops out of the recomputed
+layout is cleared so the detail panel can't show a hidden task.
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
