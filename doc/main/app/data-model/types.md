@@ -42,7 +42,7 @@ interface ProgressEntry {
   timestamp: string       // ISO 8601
   status: ProgressStatus
   project: string
-  workstream: string      // bundle directory name under plan/active/; empty for project-level entries
+  workstream: string      // bundle directory name under plan/all/; empty for project-level entries
 }
 ```
 
