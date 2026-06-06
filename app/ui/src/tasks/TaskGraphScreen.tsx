@@ -48,8 +48,9 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
       graph.aggregateStateByTask,
       graph.leafProgressByTask,
       graph.cycleEdgeIds,
+      containerSize.width,
     )
-  }, [graph, ix.collapsedTaskIds, ix.filters])
+  }, [graph, ix.collapsedTaskIds, ix.filters, containerSize.width])
 
   // Keep panZoom bounds in sync (read lazily by fitToView)
   useEffect(() => {

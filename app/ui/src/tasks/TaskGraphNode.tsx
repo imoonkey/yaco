@@ -1,5 +1,5 @@
 import type { LayoutNode, TaskGraphTask, LayoutGroup } from './taskGraphModel'
-import { NODE_WIDTH, NODE_HEIGHT } from './taskGraphModel'
+import { NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { STATE_COLORS, getWorktreeColor } from './taskGraphConstants'
@@ -119,7 +119,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       <rect
         x={node.x}
         y={node.y}
-        width={NODE_WIDTH}
+        width={node.width}
         height={NODE_HEIGHT}
         rx={6}
         fill={getNodeFill(node, highlight, task.worktree)}
@@ -131,7 +131,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Worktree indicator — right accent bar */}
       {task.worktree && (
         <rect
-          x={node.x + NODE_WIDTH - 3}
+          x={node.x + node.width - 3}
           y={node.y + 6}
           width={2.5}
           height={NODE_HEIGHT - 12}
@@ -159,7 +159,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <rect
           x={node.x - 3}
           y={node.y - 3}
-          width={NODE_WIDTH + 6}
+          width={node.width + 6}
           height={NODE_HEIGHT + 6}
           rx={9}
           fill="none"
@@ -215,7 +215,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <rect
           x={node.x + chevronWidth + 22 + estimateWidth}
           y={node.y}
-          width={NODE_WIDTH - chevronWidth - 22 - estimateWidth - rightLabelWidth}
+          width={node.width - chevronWidth - 22 - estimateWidth - rightLabelWidth}
           height={NODE_HEIGHT}
         />
       </clipPath>
@@ -238,7 +238,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Right-aligned: progress for groups, dep count for leaves */}
       {hasGroupAffordances && progressText && (
         <text
-          x={node.x + NODE_WIDTH - 10}
+          x={node.x + node.width - 10}
           y={titleY}
           fontSize={10}
           fontWeight={500}
@@ -253,7 +253,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
 
       {!hasGroupAffordances && depCount > 0 && (
         <text
-          x={node.x + NODE_WIDTH - 10}
+          x={node.x + node.width - 10}
           y={titleY}
           fontSize={10}
           fontWeight={500}
