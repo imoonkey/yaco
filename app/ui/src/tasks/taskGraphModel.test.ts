@@ -395,6 +395,23 @@ describe('gantt layout — finish-to-start dependency edges', () => {
   })
 })
 
+describe('gantt layout — effective-cycle bars', () => {
+  it('flags cycle tasks on the bar (cycle:true) and never marks them critical', () => {
+    // A↔B mutual depends → an effective cycle; both bars carry cycle and stay non-critical.
+    const raw: RawTaskMap = {
+      A: entry({ title: 'A', depends: ['B'], estimate: 's' }),
+      B: entry({ title: 'B', depends: ['A'], estimate: 's' }),
+    }
+    const layout = ganttLayoutFor(raw, new Set(['active']))
+
+    for (const id of ['A', 'B']) {
+      const bar = layout.bars.get(id)!
+      expect(bar.cycle).toBe(true)
+      expect(bar.critical).toBe(false)
+    }
+  })
+})
+
 describe('gantt layout — extends GraphLayout', () => {
   it('carries nodes/groups/edges/visibleOrder/visibleChildrenByTask/bounds/hasCycles', () => {
     const raw: RawTaskMap = {

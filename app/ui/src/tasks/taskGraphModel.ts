@@ -102,6 +102,7 @@ export interface GanttBar {
   state: TaskState
   assumed: boolean
   critical: boolean
+  cycle: boolean
   isSummary: boolean
 }
 
@@ -874,6 +875,7 @@ export function computeGanttLayout(
       state: aggregateStateByTask.get(id) ?? 'ready',
       assumed: entry.assumed,
       critical: entry.critical,
+      cycle: entry.cycle,
       isSummary: entry.isSummary,
     })
   }

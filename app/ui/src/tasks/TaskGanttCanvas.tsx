@@ -1,12 +1,11 @@
 import type { GanttLayout, TaskGraphModel } from './taskGraphModel'
-import { NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel, Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { TaskGraphEdges } from './TaskGraphEdges'
 import { TaskGraphGroup } from './TaskGraphGroup'
 import { TaskGraphNode } from './TaskGraphNode'
+import { TaskGanttBar, GanttBarDefs } from './TaskGanttBar'
 import { TaskGanttRuler, RULER_HEIGHT } from './TaskGanttRuler'
-import { STATE_COLORS } from './taskGraphConstants'
 
 // Two-pane Pseudo-Gantt: a frozen left task column (sticky left) + a horizontally
 // scrollable time pane with a sticky top ruler. Both panes share the same row `y`
@@ -109,16 +108,19 @@ export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, sele
             <TaskGraphEdges edges={layout.edges} highlight={highlight} />
 
             <g data-layer="bars">
+              <GanttBarDefs />
               {Array.from(layout.bars.entries()).map(([id, bar]) => (
-                <rect
+                <TaskGanttBar
                   key={id}
-                  x={bar.x}
-                  y={bar.y + 6}
-                  width={bar.width}
-                  height={NODE_HEIGHT - 12}
-                  rx={3}
-                  fill={STATE_COLORS[bar.state] ?? 'var(--sol-base1)'}
-                  opacity={0.85}
+                  id={id}
+                  bar={bar}
+                  leftWidth={layout.leftWidth}
+                  highlight={highlight}
+                  isSelected={selection === id}
+                  onClick={onSelectTask}
+                  onOpen={onOpenTask}
+                  onPointerEnter={onPointerEnter}
+                  onPointerLeave={onPointerLeave}
                 />
               ))}
             </g>
