@@ -210,6 +210,11 @@ If no signal maps to a live managed state file, the command returns
 - **text mode** (no `--json`) — the renderer recognizes the handler's `{ text: "..." }` shape and writes the captured pane buffer to stdout verbatim. No JSON wrap, no surrounding text — bytes round-trip.
 - **`--json` mode** — same handler return wraps as `{ ok:true, data:{ text:"..." } }` per the dispatcher envelope.
 
+After rendering an envelope, the dispatcher sets `process.exitCode` and returns
+instead of calling `process.exit()`. This is load-bearing for large JSON
+responses such as `yaco agent history --json`: stdout/stderr must drain fully
+before the process exits, otherwise pipe readers can receive truncated JSON.
+
 `yaco agent output-follow` is a third mode: a persistent NDJSON **stdout stream**
 (not the single envelope), for provider reply streaming. -> See:
 [providers.md](providers.md#provider-output--reply-streaming).

@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-06: CLI JSON envelopes flush before exit
+
+**What changed:**
+- Changed the main CLI dispatcher to set `process.exitCode` after rendering instead of calling `process.exit()` immediately. The hook-event fast path keeps its direct exit behavior.
+- Added a spawned regression test that writes a large `yaco agent history --json` envelope and parses the complete stdout payload.
+
+**Why:**
+- `yaco agent history --json` can legitimately return a few hundred KB (still capped at 200 rows). Immediate `process.exit()` could terminate before stdout flushed, so app/server received truncated JSON and History tabs appeared empty or failed to load. This is a correctness fix, not a pagination/optimization change.
+
+**Key files:** `cli/src/main.ts`, `cli/test/agent-json-surfaces.test.ts`
+**Verification:** `cd cli && bun test test/agent-json-surfaces.test.ts` passed; `cd cli && bun test test/unit/envelope.test.ts` passed; `cd cli && bun run test:unit` -> 614 pass / 0 fail; app/server `getHistory()` smoke returned `yaco` 200 rows, `quant` 200 rows, `frontier-llms` 3 rows.
+**Commit:** 28ae413
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-06: Plan docs moved to all/ and task roots split by bundle
 
 **What changed:**
