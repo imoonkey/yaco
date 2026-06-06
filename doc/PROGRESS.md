@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-05: CLI provider output cursor + output-follow stream
+
+**What changed:**
+- Added the `output` capability to the provider contract and registered it for Claude and Codex. `ProviderOutput` (`cli/src/lib/core/agent/providers/types.ts`) now exposes `resolveCursor(session)` and `classifyLine(line)`; `classifyLine` returns **`AgentOutputEvent | null`** (at most one event per complete log line — the contract changed from an array to enforce safe `nextOffset` resume).
+- New `cli/src/lib/core/agent/providers/output.ts`: `claudeOutput()`/`codexOutput()` adapters (cursor resolution + line classification, ported from the app's parsing), an **opaque cursor token** codec (`oc1_<base64url>` of `{provider,sessionId,path}`), and the provider-agnostic `followOutput()` tailer (`stat` + byte-range reads + byte-space partial-line buffering + offset advancement; terminates on `final`, a defensive max-lifetime cap, caller abort, or read error).
+- New CLI surfaces wired in `cli/src/commands/agent/index.ts` via `cli/src/commands/agent/output.ts`: `yaco agent output-cursor <name>` → `{token,offset,sourceMtimeMs}`, and `yaco agent output-follow <name> [--cursor <token>] [--offset <bytes>]` → a persistent NDJSON **stdout stream** of `event`/`end` frames (not the single envelope; the process self-exits). One provider turn = one subprocess that polls internally.
+- Strict, security-hardened input handling: a dedicated allowlist parser (`parseOutputFollowArgs`) accepts only the handle + `--cursor`/`--cursor=`, `--offset`/`--offset=`, `--json`. `--offset` (split/equal) is validated to a non-negative integer; `--cursor` values must be present/non-empty/non-flag-like → all reject as `USAGE` before any frame. A well-formed token bound to a different session/provider, or a raw path, is rejected as `INVALID` (the follower always re-resolves the read path from the session's provider and never trusts caller input). `--help`/`-h` is honored only as a standalone request.
+
+**Why:**
+- `provider-output-follow-cli` task of the `tui-provider-adapters` design (`plan/active/tui-provider-adapters/design_codex.md`): channel reply streaming must move behind a CLI surface so provider-home log reads stay under `cli/`, while avoiding a per-poll subprocess spawn storm. The opaque cursor + provider re-resolution keeps app/server from parsing provider paths and closes a path-injection vector; the one-event-per-line contract keeps `nextOffset` resume lossless. The app still owns stream timeout and the AskUserQuestion Escape side effect — the CLI never emits a `timeout` provider event.
+
+**Key files:** `cli/src/lib/core/agent/providers/{output.ts,types.ts,claude.ts,codex.ts}`, `cli/src/commands/agent/{output.ts,index.ts}`, `cli/test/unit/agent-output.test.ts`; docs `doc/main/cli/providers.md`, `doc/main/cli/architecture.md`
+**Verification:** `cd cli && bun test test/unit/agent-output.test.ts` → 54 pass; `cd cli && bun run test:unit` → 602 pass / 0 fail (44 files); `tsc --noEmit` clean for all touched files; temp-built `yaco` binary confirmed help envelopes, NDJSON streaming with `nextOffset`, and split/equal-form `--offset`/`--cursor`/unknown-flag/standalone-help validation.
+**Commit:** this commit.
+**Next:** `app-output-boundary` — app/server consumes `output-cursor` + persistent `output-follow` and drops its own provider log parsing (`channels/agent-output.ts`), keeping app-side timeout + AskUserQuestion side effect.
+**Blockers:** None.
+
 ## 2026-06-05: app/server provider type boundary — validate against CLI catalog
 
 **What changed:**

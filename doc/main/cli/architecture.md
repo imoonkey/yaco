@@ -209,6 +209,10 @@ If no signal maps to a live managed state file, the command returns
 - **text mode** (no `--json`) — the renderer recognizes the handler's `{ text: "..." }` shape and writes the captured pane buffer to stdout verbatim. No JSON wrap, no surrounding text — bytes round-trip.
 - **`--json` mode** — same handler return wraps as `{ ok:true, data:{ text:"..." } }` per the dispatcher envelope.
 
+`yaco agent output-follow` is a third mode: a persistent NDJSON **stdout stream**
+(not the single envelope), for provider reply streaming. -> See:
+[providers.md](providers.md#provider-output--reply-streaming).
+
 -> See: [src/commands/agent/start.ts](../../../cli/src/commands/agent/start.ts), [src/commands/agent/status.ts](../../../cli/src/commands/agent/status.ts), [src/commands/agent/capture.ts](../../../cli/src/commands/agent/capture.ts), [src/main.ts](../../../cli/src/main.ts) (`render` accepts `{help}` and `{text}` shapes).
 
 ### Provider Isolation

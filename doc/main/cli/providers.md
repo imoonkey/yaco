@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-05 (tui-provider-start-lifecycle)
+> Last updated: 2026-06-05 (tui-provider-output-follow-cli)
 
 ## Supported Providers
 
@@ -76,6 +76,65 @@ Real-agent integration tests verify that the stored UUID `sessionId` works with 
 Codex sessions explicitly export `COLORTERM=truecolor` before launch so the provider sees a truecolor hint even when running under tmux. The runtime starts the detached `tmux pipe-pane` OSC 10/11 color responder when the provider adapter declares `terminal.respondToColorQuery` (Codex does), gated by that adapter flag rather than a hard-coded provider check. There is no fixed launch delay, so the responder attaches best-effort right after `tmux new-session`; it watches the pane for the real OSC 10/11 query bytes and replies with `tmux send-keys -H`.
 
 -> See: [src/lib/core/agent/providers.ts](../../../cli/src/lib/core/agent/providers.ts)
+
+## Provider Output & Reply Streaming
+
+A provider may declare an optional `output` capability (`ProviderOutput` in
+`src/lib/core/agent/providers/types.ts`) so YACO can reconstruct turn-scoped
+reply events from the provider's persisted JSONL log. Claude and Codex both
+declare it (`src/lib/core/agent/providers/output.ts`). A provider without
+`output` falls back to `capture` (rendered-pane snapshot).
+
+Two CLI surfaces drive it (consumed by `app/server`, so provider-home reads stay
+under `cli/`):
+
+```text
+yaco agent output-cursor <name> [--json]
+yaco agent output-follow <name> [--cursor <token>] [--offset <bytes>] [--json]
+```
+
+- **`output-cursor`** resolves the session's current log into an **opaque**
+  cursor `{ token, offset, sourceMtimeMs }`. `token` is `oc1_<base64url>` of
+  `{provider, sessionId, path}` — app/server stores and round-trips it but must
+  not parse it or derive a path from it.
+- **`output-follow`** is a persistent NDJSON **stdout stream** (not the single
+  `{ok,data}` envelope): it tails the log and writes one frame per line, then
+  the process exits. One provider turn is one `output-follow` subprocess that
+  polls internally — not one subprocess per poll.
+
+Frame shapes:
+
+```json
+{"type":"event","event":{"kind":"interim|question|final","text":"..."},"nextOffset":1234}
+{"type":"end","reason":"final|max-lifetime|error","nextOffset":2201}
+```
+
+Contract details:
+
+- The shared follower (`followOutput`) owns `stat`, byte-range reads,
+  byte-space partial-line buffering, and offset advancement. Providers only
+  `resolveCursor` and `classifyLine`.
+- `classifyLine` returns **at most one** `AgentOutputEvent` per complete line
+  (`AgentOutputEvent | null`), so each event maps to a unique `nextOffset` and
+  no same-line event is lost across a reconnect. Claude folds lead-in text into
+  the single `question` event.
+- `nextOffset` is the byte offset just past the consumed line; pass it back as
+  the next `--offset` to resume without replay.
+- **Termination:** first `final` event, a defensive **max-lifetime** cap
+  (default 30 min, override `YACO_OUTPUT_FOLLOW_MAX_MS`), caller abort
+  (SIGTERM/SIGINT), reader `EPIPE`, or a read `error`. `timeout` is never a
+  provider event — the app owns stream timeout and the AskUserQuestion Escape
+  side effect; the CLI only emits the `question` event.
+- **Input validation (before any frame, normal error envelope):** a strict
+  allowlist parser accepts only the handle plus `--cursor`/`--cursor=`,
+  `--offset`/`--offset=`, and `--json`. Any other flag (including generic agent
+  flags) → `USAGE`. `--offset` must be a non-negative integer (split or equal
+  form) → else `USAGE`. A `--cursor` value must be present, non-empty, and not
+  flag-like → else `USAGE`; a well-formed token that doesn't match the session's
+  provider/sessionId → `INVALID`. `--help`/`-h` is honored only as a standalone
+  help request.
+
+-> See: [src/lib/core/agent/providers/output.ts](../../../cli/src/lib/core/agent/providers/output.ts), [src/commands/agent/output.ts](../../../cli/src/commands/agent/output.ts)
 
 ---
 

@@ -29,6 +29,7 @@ import { whoami } from "./whoami.ts";
 import { runHistory } from "./history.ts";
 import { runSummaries } from "./summaries.ts";
 import { runProviders } from "./providers.ts";
+import { runOutputCursor, runOutputFollow, parseOutputFollowArgs, OUTPUT_FOLLOW_USAGE } from "./output.ts";
 import { handleHookEvent } from "./hook-event.ts";
 import { handleHooksInstall } from "./hooks/install.ts";
 
@@ -44,6 +45,8 @@ Usage:
   yaco agent history --path <project-path> [--json]
   yaco agent summaries --path <project-path> [--json]
   yaco agent providers [--json]
+  yaco agent output-cursor <name> [--json]
+  yaco agent output-follow <name> [--cursor <token>] [--offset <bytes>] [--json]
   yaco agent kill <name> | --all
   yaco agent rename <old> <new>
   yaco agent hooks install
@@ -319,6 +322,53 @@ export async function handleAgent(
         return ok({ help: "yaco agent providers [--json]\n" });
       }
       return ok(runProviders());
+    }
+
+    case "output-cursor": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        return ok({ help: "yaco agent output-cursor <name> [--json]\n" });
+      }
+      const parsed = parseSubArgs(rest);
+      const name = parsed.positional[0];
+      if (!name) {
+        throw new CliError(ErrCode.USAGE, "yaco agent output-cursor <name> [--json]");
+      }
+      return ok(await runOutputCursor(name));
+    }
+
+    case "output-follow": {
+      // Help is only a STANDALONE request: exactly `--help`/`-h` (the global
+      // `--json` is parsed separately by the dispatcher). A `--help`/`-h` that
+      // appears as a flag value — e.g. `--cursor --help` — is NOT help; it falls
+      // through to strict parsing and fails as USAGE before any stream.
+      const nonGlobal = rest.filter((a) => a !== "--json");
+      if (nonGlobal.length === 1 && (nonGlobal[0] === "--help" || nonGlobal[0] === "-h")) {
+        return ok({ help: `${OUTPUT_FOLLOW_USAGE}\n` });
+      }
+      // A dedicated strict-allowlist parser: only the handle, --cursor/--cursor=,
+      // --offset/--offset=, and --json are accepted. Generic agent flags and any
+      // other token fail with USAGE here — before any frame is written — and
+      // --offset is validated so a bad value never reaches the follower as NaN.
+      const followArgs = parseOutputFollowArgs(rest);
+      // output-follow is a persistent NDJSON stdout stream, not a single
+      // envelope: frames are written directly and the process exits when the
+      // stream ends, so render() never appends a trailing envelope. Setup
+      // errors (unknown name / no log) still surface before any frame is
+      // written and route through the normal error envelope.
+      const signal = { aborted: false };
+      const abort = () => {
+        signal.aborted = true;
+      };
+      process.once("SIGTERM", abort);
+      process.once("SIGINT", abort);
+      // Reader closed the pipe (EPIPE) — stop without a stack trace.
+      process.stdout.once("error", () => process.exit(0));
+      await runOutputFollow(
+        followArgs,
+        { write: (line) => process.stdout.write(line) },
+        signal,
+      );
+      process.exit(0);
     }
 
     case "rename": {

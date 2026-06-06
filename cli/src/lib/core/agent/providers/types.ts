@@ -148,7 +148,14 @@ export type AgentOutputEvent =
 
 export interface ProviderOutput {
   resolveCursor(session: SessionState): Promise<OutputCursor | null>;
-  classifyLine(line: string): readonly AgentOutputEvent[];
+  /** Classify one COMPLETE provider log line into at most one event.
+   *
+   *  The single-event return is a contract, not a convention: the follower
+   *  tags each event with the byte offset just past its line, so two events
+   *  sharing one line's offset could be dropped on reconnect. Providers fold
+   *  any multi-part content (e.g. lead-in text plus a question) into one
+   *  event. A line that carries no reply event returns null. */
+  classifyLine(line: string): AgentOutputEvent | null;
 }
 
 /** How a project-move path comparison is performed. */
