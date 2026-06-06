@@ -1,3 +1,8 @@
+// Pseudo-Gantt layout constants (unscaled; zoom is applied in the canvas).
+export const PX_PER_UNIT = 48   // pixels per optimistic schedule unit
+export const LEFT_COL_PAD = 24  // right padding of the frozen left task column / time pane
+export const MIN_BAR = 8        // minimum rendered bar width floor
+
 export const STATE_COLORS: Record<string, string> = {
   ready: 'var(--sol-blue)',
   running: 'var(--sol-yellow)',
