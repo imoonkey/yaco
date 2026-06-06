@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-05 (tui-provider-project-move)
+> Last updated: 2026-06-06 (tui-provider-docs)
 
 ## Supported Providers
 
@@ -8,6 +8,65 @@
 |----------|------------|--------------|-------|
 | claude   | `env -u CLAUDECODE claude` | `^❯\s` (NBSP-tolerant) | `--dangerously-skip-permissions` |
 | codex    | `env COLORTERM=truecolor codex` | `›` prompt | `-c features.hooks=true --yolo` |
+
+## Provider Adapter Model
+
+YACO providers are **local TUI CLIs running in tmux**. The browser attaches to
+the provider's TUI; YACO reconstructs session metadata, history, summaries, and
+reply events from provider-persisted files and databases. ACP / JSON-RPC agent
+streams are out of scope — there is no agent control protocol, only a local CLI
+stdout stream over persisted logs (see [output-follow](#provider-output--reply-streaming)).
+
+Each provider is a typed adapter (`TuiProvider`) under
+`src/lib/core/agent/providers/`. The registry (`providers/index.ts`:
+`getProvider`, `listProviders`, `listProviderIds`, `hasProvider`) is the single
+authority; the flat `providers.ts` is now a thin legacy shim that adapts the
+registry to the `Provider` shape a few not-yet-migrated call sites still import.
+New code imports from `providers/` directly.
+
+All provider-specific filesystem, database, and log parsing lives under `cli/`.
+`app/server` never resolves or parses `~/.claude`, `~/.codex`, or a future
+provider home directly — it consumes `yaco agent ... --json` or one explicit CLI
+stream. Adding a TUI provider is **one CLI adapter plus UI metadata**, not edits
+across start, status, session-id, history, streaming, project move, doctor, and
+terminal quirks.
+
+Adapter responsibilities, by capability:
+
+| Capability | Required? | Owns |
+|---|---|---|
+| `command` | yes | launch command (`build`), resume canonicalization (`normalizeResumeArgs`), name-flag policy (`normalizeStartArgs`/`postStartInputs`), live rename (`renameInputs`), trust/review prompts (`startupInterstitials`) |
+| `detection` | yes | `idlePatterns` / `busyPatterns` for screen-scrape status fallback |
+| `sessionId` | yes | pending sentinel, session-id env keys, start-resolution strategy, `resolve` from provider storage |
+| `hooks` | optional | hook events, install/merge, config path, install probe (drives `install` + `doctor`) |
+| `terminal` | optional | provider-runtime / headless-PTY terminal compatibility (see below) |
+| `history` | optional | History-tab rows + per-session summary labels; absent ⇒ provider omitted from history |
+| `output` | optional | output cursor + line classification for reply streaming; absent ⇒ callers fall back to `capture` |
+| `projectMove` | optional | provider-native cwd-keyed rewrites (see [Project Move](#project-move)) |
+
+The shared runtime owns tmux, YACO state files, wrapper installation, name
+validation, send/capture/kill/rename commands, and the HTTP/UI boundary. The
+canonical `SessionState` (`handle`, `provider`, `sessionPath`, `pid`,
+`sessionId`, `status`, `createdAt`) is the runtime registry; provider-native
+state is never canonical — it is only an adapter-owned source for derived data.
+
+### Terminal Runtime Compatibility
+
+`TuiProvider.terminal` is **CLI provider-runtime / headless-PTY** compatibility:
+behavior that must work with **no browser attached**.
+
+| Field | Purpose | Example |
+|---|---|---|
+| `launchEnv` | env the provider needs at launch | Codex `COLORTERM=truecolor` |
+| `respondToColorQuery` | reply to detached-tmux OSC 10/11 color queries at startup | Codex `true` |
+
+This is **distinct from** the browser presentation policy in app/ui
+(`ProviderUiConfig.terminal`: xterm contrast floor + OSC report suppression).
+The split rule: **if it must happen with no browser attached, it is CLI runtime
+config; if it only matters while xterm renders to a human, it is app/ui config.**
+The same provider can require opposite actions in the two domains (a detached
+tmux OSC color *responder* vs. xterm OSC *suppression*), so a single shared OSC
+flag would be wrong. See [architecture.md](architecture.md#cli--app-boundary).
 
 ## Hook Availability
 
@@ -40,11 +99,17 @@ Codex's missing `SessionEnd` is compensated by the exit-trap wrapper (`${YACO_HO
 
 ## Adding a Provider
 
-Define in `src/lib/core/agent/providers.ts`:
-- `command`: shell command to launch the agent
-- `idlePattern`: regex for "waiting for input" state
-- `busyPatterns`: regexes for "still working" indicators
-- `flags`: CLI flags for autonomous mode
+1. Add a `TuiProvider` adapter at `src/lib/core/agent/providers/<id>.ts`.
+   `command` + `detection` + `sessionId` are required; `hooks`, `terminal`,
+   `history`, `output`, and `projectMove` are optional (a provider can start as
+   a usable tmux-backed TUI and gain richer reconstruction later).
+2. Register it in `src/lib/core/agent/providers/index.ts`.
+3. Add browser presentation metadata (icon, contrast floor, OSC suppression,
+   `canStart`) in `app/ui/src/lib/providerUi.ts`.
+
+Start/status/rename/whoami/lifecycle/tmux, install/doctor, project move, and the
+app boundary all read the registry, so no per-call-site provider branch is
+needed.
 
 ## Provider Shortcuts
 
@@ -75,7 +140,7 @@ Real-agent integration tests verify that the stored UUID `sessionId` works with 
 
 Codex sessions explicitly export `COLORTERM=truecolor` before launch so the provider sees a truecolor hint even when running under tmux. The runtime starts the detached `tmux pipe-pane` OSC 10/11 color responder when the provider adapter declares `terminal.respondToColorQuery` (Codex does), gated by that adapter flag rather than a hard-coded provider check. There is no fixed launch delay, so the responder attaches best-effort right after `tmux new-session`; it watches the pane for the real OSC 10/11 query bytes and replies with `tmux send-keys -H`.
 
--> See: [src/lib/core/agent/providers.ts](../../../cli/src/lib/core/agent/providers.ts)
+-> See: [src/lib/core/agent/providers/index.ts](../../../cli/src/lib/core/agent/providers/index.ts) (registry), [providers/claude.ts](../../../cli/src/lib/core/agent/providers/claude.ts), [providers/codex.ts](../../../cli/src/lib/core/agent/providers/codex.ts)
 
 ## Provider Output & Reply Streaming
 
@@ -190,17 +255,17 @@ apply displays apply counts (matching the historical plan-vs-apply split).
 
 | # | Assumption | Source | Code Location | Guard Test | If Violated |
 |---|-----------|--------|---------------|------------|-------------|
-| C1 | idle prompt is `❯` (U+276F) followed by NBSP+text or whitespace | TUI observation; Claude UI added a placeholder hint after `❯` separated by U+00A0 in 2026-05 — naive `❯\s*$` regex fails | `src/lib/core/agent/providers.ts` (regex `/^❯\s/m`) | providers.test.ts: NBSP placeholder regression | waitForReady falls back to hook signal; if hook also broken → 30s timeout |
-| C2 | shows "esc to interrupt" / "Thinking" / "Running…" when busy | TUI observation | `src/lib/core/agent/providers.ts` (BUSY_PATTERNS) | agent-lifecycle: send→processing | isIdle false positive, capture --wait returns too early |
+| C1 | idle prompt is `❯` (U+276F) followed by NBSP+text or whitespace | TUI observation; Claude UI added a placeholder hint after `❯` separated by U+00A0 in 2026-05 — naive `❯\s*$` regex fails | `src/lib/core/agent/providers/claude.ts` (regex `/^❯\s/m`) | providers.test.ts: NBSP placeholder regression | waitForReady falls back to hook signal; if hook also broken → 30s timeout |
+| C2 | shows "esc to interrupt" / "Thinking" / "Running…" when busy | TUI observation | `src/lib/core/agent/providers/idle.ts` (BUSY_PATTERNS) | agent-lifecycle: send→processing | isIdle false positive, capture --wait returns too early |
 | C3 | hooks in `~/.claude/settings.json` | Claude docs | `src/lib/core/agent/lifecycle.ts#ensureClaudeHooks` | agent-lifecycle: processing→idle | hooks inactive, capture-only fallback |
 | C4 | 12 hook events (SessionStart/UserPromptSubmit/Stop/StopFailure/PreToolUse/PostToolUse/PostToolUseFailure/PermissionRequest/Notification/PreCompact/PostCompact/SessionEnd) | Claude docs (code.claude.com/docs/en/hooks) | `src/lib/core/agent/lifecycle.ts` (CLAUDE_HOOK_EVENTS) | hook-event.test.ts: applyHookEvent transitions; hooks-install.test.ts: install + idempotent overwrite | missing event → status stale, 3min fallback |
 | C5 | SessionStart delayed until first prompt | R1 tested | `src/commands/agent/start.ts` ready→idle compensation | status detection: no-prompt start asserts idle | if Claude fires at boot → no impact (idempotent) |
 | C6 | session file at `~/.claude/sessions/<pid>.json` | reverse engineering | `src/lib/core/agent/session-id.ts` | agent-lifecycle: sessionId not pending | sessionId fails, falls back to PENDING |
 | C7 | session file has `{pid, sessionId, name}` | reverse engineering | `src/lib/core/agent/session-id.ts` | agent-sync: rename verifies name field | name sync verification fails (multmux doesn't depend on this field) |
-| C8 | `--name` sets session name | Claude docs | `src/lib/core/agent/providers.ts` | agent-lifecycle: session file name === handle | if Claude ignores --name → handle still correct |
+| C8 | `--name` sets session name | Claude docs | `src/lib/core/agent/providers/claude.ts` | agent-lifecycle: session file name === handle | if Claude ignores --name → handle still correct |
 | C9 | `--resume <uuid>` restores session | Claude docs | `src/commands/agent/start.ts` | agent-sync: capture after resume contains token | resume fails |
-| C10 | `--dangerously-skip-permissions` skips confirmation | Claude docs | `src/lib/core/agent/providers.ts` | all Claude tests implicitly depend | trust dialog blocks, TRUST_PATTERN attempts confirmation |
-| C11 | `env -u CLAUDECODE` prevents nesting conflicts | observation | `src/lib/core/agent/providers.ts` | **none** | nesting anomaly (low risk) |
+| C10 | `--dangerously-skip-permissions` skips confirmation | Claude docs | `src/lib/core/agent/providers/claude.ts` | all Claude tests implicitly depend | trust dialog blocks, TRUST_PATTERN attempts confirmation |
+| C11 | `env -u CLAUDECODE` prevents nesting conflicts | observation | `src/lib/core/agent/providers/claude.ts` | **none** | nesting anomaly (low risk) |
 | C12 | hook stdin is `{hook_event_name, session_id}` | Claude docs | `src/lib/core/agent/hook-event.ts#applyHookEvent` | hook-event.test.ts: end-to-end stdin/state-file | hook silently fails, capture fallback |
 | C13 | Bash/PowerShell tool subprocesses expose `CLAUDE_CODE_SESSION_ID`, matching YACO state `sessionId` | Claude docs + live QA 2026-06-05 (`qa-claude-whoami`) | `src/lib/core/agent/whoami.ts` | whoami.test.ts: session-id fallback; live QA: `env -u TMUX_PANE yaco agent whoami --json` | `whoami` still resolves via `TMUX_PANE`; session-id fallback fails outside tmux pane env |
 
@@ -208,14 +273,14 @@ apply displays apply counts (matching the historical plan-vs-apply split).
 
 | # | Assumption | Source | Code Location | Guard Test | If Violated |
 |---|-----------|--------|---------------|------------|-------------|
-| X1 | idle prompt is `›` (U+203A) | TUI observation | `src/lib/core/agent/providers.ts` | agent-lifecycle: start→idle | waitForReady timeout |
-| X2 | does not accept `--name` flag | tested | `src/lib/core/agent/providers.ts` | codex name sync: /rename verification | stripNameFlag harmless but redundant |
+| X1 | idle prompt is `›` (U+203A) | TUI observation | `src/lib/core/agent/providers/codex.ts` | agent-lifecycle: start→idle | waitForReady timeout |
+| X2 | does not accept `--name` flag | tested | `src/lib/core/agent/providers/codex.ts` | codex name sync: /rename verification | stripNameFlag harmless but redundant |
 | X3 | accepts `/rename <name>` when delivered via bracketed paste + Enter | tested | `src/commands/agent/start.ts`, `src/lib/core/agent/tmux.ts` | explicit rename integration verifies "Thread renamed"; `tmux.test.ts` enforces bracketed paste | provider title may lag or remain unsynced; YACO handle remains authoritative |
 | X4 | hooks in `~/.codex/hooks.json` | Codex docs + source (codex-rs/hooks) | `src/lib/core/agent/lifecycle.ts#ensureCodexHooks` | agent-lifecycle: processing transition | hooks inactive |
 | X5 | 8 hook events (SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/PermissionRequest/PreCompact/PostCompact/Stop); PreCompact/PostCompact present in source but not yet in public docs | Codex source (`codex-rs/hooks/src/schema.rs`) confirmed via codex-hooks-research session 2026-05-10 | `src/lib/core/agent/lifecycle.ts` (CODEX_HOOK_EVENTS) | hook-event.test.ts: applyHookEvent transitions | fewer → reduced status updates |
 | X6 | hooks synchronous (async=false) | Codex limitation | `src/lib/core/agent/lifecycle.ts#yacoHookGroup(event, false)` | hooks-install.test.ts: async flag verification | could switch to async |
 | X7 | Stop hook reliable in single test (P5, 2026-04-10) | R1 tested → P5 retested | capture fallback | G4 guard test ongoing monitoring | capture handles correctly |
-| X8 | requires `-c features.hooks=true` | Codex CLI feature list | `src/lib/core/agent/providers.ts` | all Codex tests implicitly depend | hooks inactive |
+| X8 | requires `-c features.hooks=true` | Codex CLI feature list | `src/lib/core/agent/providers/codex.ts` | all Codex tests implicitly depend | hooks inactive |
 | X9 | `suppress_unstable_features_warning` in config.toml | Codex docs | `src/lib/core/agent/lifecycle.ts#ensureCodexHooks` | **none** | warning text disrupts idle detection |
 | X10 | session data in `~/.codex/state_5.sqlite` | reverse engineering | `src/lib/core/agent/session-id.ts` | agent-sync: sessionId recovered after repair | SQLite fails, rollout scan already succeeded or stays PENDING |
 | X11 | SQLite `threads` table has `id`, `cwd`, `created_at` (no PID column); rollout scan is primary, DB is fallback | reverse engineering DB (2026-04-11: `logs` table dropped in migration #23; priority reversed to rollout-first for ms-precision concurrency safety) | `src/lib/core/agent/session-id.ts` | session-id.test.ts: SQL validation | query empty, sessionId stays PENDING |

@@ -1,6 +1,6 @@
 # Development Guide
 
-> Last updated: 2026-06-04 (yc-install-doctor)
+> Last updated: 2026-06-06 (tui-provider-docs)
 
 ## Prerequisites
 
@@ -78,6 +78,42 @@ Test split:
 Integration tests live in `test/integration/`. Agent lifecycle tests verify hook-driven status transitions, ready-state syncing, PID/sessionId resolution, real name sync, and real resume flows with Claude/Codex. Task tests assert the `--json` envelope, the `--repo`/`yaco.toml [paths]` resolution, milestone-rollup detection, --file ENOENT → USAGE, and the lock contracts (contention + local stale-PID reclaim + cross-host never-auto-broken). Worktree tests cover create idempotence + provision hook + `--base`, local merge rebase + ff-only, real-conflict rebase abort, PR mode envelope (asserts gh stdout never leaks into caller stdout), cleanup safety + `--force`, cross-repo isolation, and strict per-subcommand flag rejection.
 
 `YACO_TASK_LOCK_TIMEOUT_MS=<ms>` overrides the default 10s task-lock retry budget — handy when locally reproducing cross-host lock contention without a long wait.
+
+### Verifying provider adapter changes
+
+Provider work lives in the typed registry under
+`src/lib/core/agent/providers/` (see
+[providers.md](../../main/cli/providers.md#provider-adapter-model)). Run the
+slice that matches what you touched, then the full unit suite:
+
+```bash
+# Contract / start / status / rename / whoami / tmux / terminal runtime
+bun test test/providers.test.ts test/start.test.ts test/rename.test.ts \
+  test/whoami.test.ts test/tmux.test.ts test/lifecycle-guards.test.ts
+
+# Hooks, install, doctor (registry-driven)
+bun test test/hooks-install.test.ts test/unit/commands/doctor.test.ts \
+  test/unit/commands/install.test.ts
+
+# History / summaries / providers JSON surfaces
+bun test test/history.test.ts test/summary.test.ts test/agent-json-surfaces.test.ts
+
+# Output cursor + output-follow NDJSON stream
+bun test test/unit/agent-output.test.ts
+
+# Provider-owned project move
+bun test test/unit/core/project/move.test.ts test/unit/commands/project/move.test.ts
+
+# Full gate (always run before commit)
+bun run test:unit
+tsc --noEmit
+```
+
+Real-agent / tmux behavior (startup, resume, OSC color responder, install
+bootstrap) is covered by `bun run test:integration`. App-side consumers of the
+CLI JSON/stream surfaces have their own suites under `app/server` (e.g.
+`npx vitest run agent-output history session-summary`); changing a CLI surface
+shape should re-run those too.
 
 ## Project Structure
 

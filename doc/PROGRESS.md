@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-06: TUI provider adapter boundary docs
+
+**What changed:**
+- `doc/main/cli/providers.md` gained a **Provider Adapter Model** section: the TUI-only product model (local tmux CLIs, browser attaches to the TUI, reconstruction from provider-persisted files, ACP out of scope), the typed `TuiProvider` registry under `providers/` with the flat `providers.ts` now documented as a legacy shim, a capability-responsibility table, and a **Terminal Runtime Compatibility** subsection (`TuiProvider.terminal` = headless/no-browser runtime vs. app/ui browser presentation). Rewrote the stale "Adding a Provider" steps (adapter + `providers/index.ts` registration + `app/ui/src/lib/providerUi.ts` metadata) and retired flat-`providers.ts` code-location references (assumption tables C1/C2/C8/C10/C11, X1/X2/X8, and the `-> See` link) to the per-adapter files.
+- `doc/main/cli/architecture.md` gained a **CLI ↔ App Boundary** section: the CLI JSON/stream surfaces `app/server` consumes (`providers`/`history`/`summaries`/`output-cursor`/`output-follow`), the YACO-owned state files the app still reads directly, capture-vs-output-follow, app/ui owning `ProviderUiConfig` browser presentation, and the OSC runtime-vs-browser split. Fixed the component map's `providers.ts` line to show the `providers/` registry + legacy shim.
+- `doc/dev/cli/workflow.md` gained a **Verifying provider adapter changes** subsection listing the per-slice `bun test` commands (contract/lifecycle, hooks/install/doctor, history/summaries/providers JSON, output-follow, project move), the full `bun run test:unit` + `tsc --noEmit` gate, and the matching `app/server` consumer suites.
+
+**Why:**
+- `tui-provider-docs` (final task of the `tui-provider-adapters` design, `plan/active/tui-provider-adapters/design_codex.md`): after the CLI adapter registry, app/server boundary, output-follow stream, provider-owned project move, and UI provider config all landed, the SOTA docs needed to describe the finalized TUI-only provider model and CLI/app/UI ownership split, and to retire the stale flat-`providers.ts` references the implementation left behind.
+
+**Key files:** `doc/main/cli/providers.md`, `doc/main/cli/architecture.md`, `doc/dev/cli/workflow.md`, `doc/PROGRESS.md`
+**Verification:** `yaco task validate --json` → `{ok:true}`. Doc-only change; no code touched. Internal anchors (`architecture.md#cli--app-boundary`, `providers.md#provider-adapter-model`) and referenced test paths verified against the tree.
+**Commit:** this commit.
+**Next:** None — closes the `tui-provider-adapters` milestone docs.
+**Blockers:** None.
+
 ## 2026-06-05: channel reply streaming via CLI output-follow
 
 **What changed:**

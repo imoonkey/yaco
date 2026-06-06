@@ -1,6 +1,6 @@
 # Architecture
 
-> Last updated: 2026-06-05 (yaco agent whoami identity resolution)
+> Last updated: 2026-06-06 (tui-provider-docs)
 
 ## Overview
 
@@ -33,7 +33,8 @@ src/
       hooks/install.ts                 # yaco agent hooks install
   lib/core/agent/
     model.ts                           # SessionState, RuntimeSessionState, HookEvent, PENDING_SESSION_ID, name helpers, ANSI strip
-    providers.ts                       # PROVIDERS, getProvider, isIdle (live-tail busy check)
+    providers/                         # typed TuiProvider registry (index, types, claude, codex; idle/hooks/history/output/project-move capabilities)
+    providers.ts                       # legacy shim over providers/ for not-yet-migrated call sites (Provider, getProvider, isIdle)
     session-state.ts                   # state file CRUD; YACO_AGENT_SESSIONS_DIR / sessionsDir() resolver
     session-id.ts                      # Claude PID scan; Codex rollout (primary) + DB (fallback)
     whoami.ts                          # current-agent identity resolver (tmux pane, session env, ancestor pid)
@@ -80,7 +81,7 @@ Three-layer approach, in priority order. All read paths (`status` text/JSON, `ca
 
    **Stop debounce.** `Stop`/`StopFailure` events go through a 120 ms re-check window: read state, sleep, re-read; if the file mutated during the pause, a fresher event (typically the next turn's `UserPromptSubmit`) already won and the Stop is dropped. Otherwise, the transition to `idle` is applied. This protects against a late Stop for turn N overwriting the processing state of turn N+1.
 
-2. **Screen-scrape fallback**: Regex pattern matching on the live tail of terminal output (`isIdle`, `BUSY_PATTERNS` in `providers.ts`). Used when hooks aren't installed (third-party providers, broken hook script) or to auto-accept the trust dialog at startup. The busy-pattern check uses a tighter ~12-line window so transient MCP-boot messages (`esc to interrupt`) that scroll into history do not mask a settled idle prompt. Each provider defines `idlePattern` (prompt regex) and `busyPatterns` (working indicators). The Claude prompt regex `/^❯\s/m` accepts both U+0020 and U+00A0 (NBSP) after `❯`.
+2. **Screen-scrape fallback**: Regex pattern matching on the live tail of terminal output (`isIdle`, `BUSY_PATTERNS` in `providers/idle.ts`). Used when hooks aren't installed (third-party providers, broken hook script) or to auto-accept the trust dialog at startup. The busy-pattern check uses a tighter ~12-line window so transient MCP-boot messages (`esc to interrupt`) that scroll into history do not mask a settled idle prompt. Each adapter's `detection` declares `idlePatterns` (prompt regexes) and `busyPatterns` (working indicators), aggregated by `providers/idle.ts`. The Claude prompt regex `/^❯\s/m` accepts both U+0020 and U+00A0 (NBSP) after `❯`.
 
 3. **Staleness fallback**: If the state file says `processing` but its mtime is > 30 minutes old, distrust it and fall through to capture-based detection.
 
@@ -214,6 +215,55 @@ If no signal maps to a live managed state file, the command returns
 [providers.md](providers.md#provider-output--reply-streaming).
 
 -> See: [src/commands/agent/start.ts](../../../cli/src/commands/agent/start.ts), [src/commands/agent/status.ts](../../../cli/src/commands/agent/status.ts), [src/commands/agent/capture.ts](../../../cli/src/commands/agent/capture.ts), [src/main.ts](../../../cli/src/main.ts) (`render` accepts `{help}` and `{text}` shapes).
+
+### CLI ↔ App Boundary
+
+The CLI owns all provider-native storage; `app/server` consumes structured CLI
+surfaces instead of resolving or parsing `~/.claude`, `~/.codex`, or a future
+provider home. This keeps each provider's private file/DB/log layout under
+`cli/` so adding a provider is one CLI adapter, not edits across the server.
+
+CLI surfaces consumed by `app/server` (all `--json` except the NDJSON stream):
+
+| Surface | Shape | Server consumer |
+|---|---|---|
+| `yaco agent providers --json` | provider catalog `{id,label,executable}` | provider-start validation; drops the old closed `'claude'\|'codex'` union and `inferAgentProvider` heuristic |
+| `yaco agent history --path <p> --json` | project-scoped `HistorySession[]`, live rows tagged by YACO `sessionId` | History tab |
+| `yaco agent summaries --path <p> --json` | per-live-session `{handle,sessionId,provider,label}` | session-list labels (app-side cache; misses only) |
+| `yaco agent output-cursor <h> --json` | opaque `{token,offset,sourceMtimeMs}` | pre-send reply cursor |
+| `yaco agent output-follow <h> --cursor <t> --offset <b> --json` | persistent NDJSON `event`/`end` stream | channel reply streaming (one subprocess per turn) |
+
+The app still reads **YACO-owned** state files directly (`${YACO_HOME}/sessions`,
+`projects.json`) for fast session lists and file-watch signals — those are
+YACO-owned snapshots, not provider storage. `AgentSession.provider` is a bare
+`string` trusted from the YACO state file, validated against the catalog only on
+start (`shell` bypasses the catalog).
+
+**Capture vs. output-follow.** `capture` snapshots the rendered tmux pane
+(provider-agnostic, point-in-time, lossy) for raw terminal fallback and idle
+screen-scraping. `output-follow` reads provider-persisted logs and emits
+turn-scoped reply events (`interim`/`question`/`final`); it is the primary
+channel reply path when a provider declares `output`, with `capture` the
+fallback when it does not. The CLI owns log location, byte reads, buffering,
+offset advancement, and line classification; the app owns stream **timeout** and
+the AskUserQuestion Escape side effect — the CLI never emits a `timeout` event.
+
+**Browser presentation lives in app/ui, not the CLI.** `app/ui` owns a
+provider-keyed presentation config (`app/ui/src/lib/providerUi.ts`,
+`ProviderUiConfig`): icon, xterm contrast floor, OSC report suppression, and the
+`canStart` startable-controls flag. It is a UI-local **superset** of the CLI
+catalog — it also carries `shell` and a generic terminal fallback, neither a CLI
+agent provider.
+
+**OSC runtime vs. browser presentation split.** Terminal behavior is owned by
+runtime: if it must happen with **no browser attached**, it is CLI provider-
+runtime config (`TuiProvider.terminal` — launch env, detached-tmux OSC 10/11
+color *responder*); if it only matters while **xterm renders to a human**, it is
+app/ui config (`ProviderUiConfig.terminal` — xterm OSC *suppression*, contrast
+floor). The same provider can require opposite actions in the two domains, so a
+single shared OSC flag would be wrong.
+
+-> See: [providers.md](providers.md#provider-adapter-model), [src/commands/agent/index.ts](../../../cli/src/commands/agent/index.ts), [src/lib/core/agent/providers/output.ts](../../../cli/src/lib/core/agent/providers/output.ts)
 
 ### Provider Isolation
 
