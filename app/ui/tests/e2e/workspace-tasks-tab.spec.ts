@@ -54,4 +54,34 @@ test.describe('Workspace Tasks', () => {
     await expect(page.locator('button[aria-label="Workset: backlog"]')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('button[aria-label="Workset: archive"]')).toHaveAttribute('aria-pressed', 'false')
   })
+
+  test('archive node is hidden by default and rendered after enabling the archive chip', async ({ page }) => {
+    const projects = await openWorkspace(page)
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first())
+      .toBeVisible({ timeout: 15_000 })
+
+    // Discover a uniquely-titled archived root task from the live data.
+    const archiveTitle = await page.evaluate(async (name: string) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+      const { tasks } = await res.json() as {
+        tasks: Record<string, { title: string; parent: string | null; workset?: string }>
+      }
+      const entries = Object.values(tasks)
+      const count = new Map<string, number>()
+      for (const t of entries) count.set(t.title, (count.get(t.title) ?? 0) + 1)
+      const hit = entries.find(t => t.workset === 'archive' && t.parent === null
+        && !/["\\]/.test(t.title) && count.get(t.title) === 1)
+      return hit?.title ?? null
+    }, projects[0].name)
+    // There ARE archived tasks in this repo's data; fail loudly if not.
+    expect(archiveTitle, 'an archived root task with a unique title').toBeTruthy()
+
+    const archiveNode = page.locator(`g[role="button"][aria-label^="Task: ${archiveTitle}, status:"]`)
+
+    // Hidden by default; rendered once the archive workset is enabled.
+    await expect(archiveNode).toHaveCount(0)
+    await page.locator('button[aria-label="Workset: archive"]').click()
+    await expect(archiveNode).toHaveCount(1)
+  })
 })

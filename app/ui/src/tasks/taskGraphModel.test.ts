@@ -177,15 +177,17 @@ describe('metadata rail — width-driven collapse (buildRail)', () => {
     expect(last.x + last.width).toBe(1000)
   })
 
-  it('drops fields from the low-priority end as the row narrows, keeping id last', () => {
-    const wide = buildRail(task, 0, 1000).map(i => i.key)
-    const mid = buildRail(task, 0, 80).map(i => i.key)
-    const tiny = buildRail(task, 0, 30).map(i => i.key)
-
-    // Each narrower rail is a prefix of the wider one (id is the stable anchor).
-    expect(wide).toEqual(['id', 'priority', 'workset', 'agent'])
-    expect(mid).toEqual(['id'])
-    expect(tiny).toEqual([])
+  it('drops fields from the low-priority end as the row narrows, through every intermediate prefix', () => {
+    // Field badge widths for this task (railItemWidth = ceil(len*5.4) + 10):
+    //   id 'long-task-id'(12)=75, priority 'high'(4)=32, workset 'backlog'(7)=48, agent 'claude'(6)=43
+    // Greedy cumulative thresholds (first item has no leading gap; RAIL_GAP=5):
+    //   id 75 | +priority 112 | +workset 165 | +agent 213
+    // Each width below lands squarely inside one band so the exact prefix is asserted.
+    expect(buildRail(task, 0, 220).map(i => i.key)).toEqual(['id', 'priority', 'workset', 'agent'])
+    expect(buildRail(task, 0, 180).map(i => i.key)).toEqual(['id', 'priority', 'workset'])
+    expect(buildRail(task, 0, 140).map(i => i.key)).toEqual(['id', 'priority'])
+    expect(buildRail(task, 0, 90).map(i => i.key)).toEqual(['id'])
+    expect(buildRail(task, 0, 30).map(i => i.key)).toEqual([])
   })
 
   it('hides default-valued fields (normal priority, active workset, no agent)', () => {

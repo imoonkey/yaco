@@ -28,6 +28,31 @@ async function openTaskGraph(page: Page): Promise<Project> {
 
 const taskNodes = (page: Page) => page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]')
 
+const nodeByTitle = (page: Page, title: string) =>
+  page.locator(`g[role="button"][aria-label^="Task: ${title}, status:"]`)
+
+/**
+ * Discover a root task in each of the active + archive worksets, with a unique,
+ * selector-safe title, so the test can assert node presence/absence by title.
+ */
+async function discoverWorksetRoots(page: Page, project: string) {
+  return page.evaluate(async (name: string) => {
+    const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+    const { tasks } = await res.json() as {
+      tasks: Record<string, { title: string; parent: string | null; workset?: string }>
+    }
+    const entries = Object.values(tasks)
+    const titleCount = new Map<string, number>()
+    for (const t of entries) titleCount.set(t.title, (titleCount.get(t.title) ?? 0) + 1)
+    const safe = (t: { title: string }) => !/["\\]/.test(t.title) && titleCount.get(t.title) === 1
+    const pick = (ws: string) => entries.find(t =>
+      (t.workset ?? 'active') === ws && t.parent === null && safe(t))
+    const archive = pick('archive')
+    const active = pick('active')
+    return { archiveTitle: archive?.title ?? null, activeTitle: active?.title ?? null }
+  }, project)
+}
+
 /** Background-rect geometry for every visible task node. */
 async function nodeRects(page: Page) {
   return page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"] > rect:nth-of-type(1)')
@@ -181,5 +206,33 @@ test.describe('Task workspace (V1 stacked graph)', () => {
     // Re-enabling restores them.
     await page.locator('button[aria-label="Workset: active"]').click()
     await expect.poll(() => taskNodes(page).count()).toBe(before)
+  })
+
+  test('archive workset: an archived task NODE is hidden by default and rendered when enabled', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    const { archiveTitle, activeTitle } = await discoverWorksetRoots(page, project.name)
+    // There ARE archived tasks in this repo's data; fail loudly (not silent skip) if not.
+    expect(archiveTitle, 'an archived root task with a unique title').toBeTruthy()
+    expect(activeTitle, 'an active root task with a unique title').toBeTruthy()
+
+    const archiveNode = nodeByTitle(page, archiveTitle!)
+    const activeNode = nodeByTitle(page, activeTitle!)
+
+    // Default (active+backlog): the archived node is NOT rendered; the active one is.
+    await expect(activeNode).toHaveCount(1)
+    await expect(archiveNode).toHaveCount(0)
+    const defaultCount = await taskNodes(page).count()
+
+    // Enable the archive workset → the archived node renders; the active one stays.
+    await page.locator('button[aria-label="Workset: archive"]').click()
+    await expect(page.locator('button[aria-label="Workset: archive"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(archiveNode).toHaveCount(1)
+    await expect(activeNode).toHaveCount(1)
+    expect(await taskNodes(page).count()).toBeGreaterThan(defaultCount)
+
+    // Disabling it again hides the archived node; the active one remains.
+    await page.locator('button[aria-label="Workset: archive"]').click()
+    await expect(archiveNode).toHaveCount(0)
+    await expect(activeNode).toHaveCount(1)
   })
 })
