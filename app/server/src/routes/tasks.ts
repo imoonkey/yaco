@@ -286,7 +286,13 @@ app.get('/:project/archive', withProject, async (c) => {
   const grouped = new Map<string, Record<string, Record<string, unknown>>>()
   for (const [id, task] of Object.entries(tasks)) {
     if (task.workset !== 'archive') continue
-    const stamp = typeof task.updated === 'string' ? task.updated : typeof task.created === 'string' ? task.created : ''
+    const stamp = typeof task.archivedDate === 'string'
+      ? task.archivedDate
+      : typeof task.updated === 'string'
+        ? task.updated
+        : typeof task.created === 'string'
+          ? task.created
+          : ''
     const date = stamp.slice(0, 10)
     const key = date || 'unknown'
     const group = grouped.get(key) ?? {}

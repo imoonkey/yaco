@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-06: Archived task snapshots moved into task store
+
+**What changed:**
+- Migrated legacy archived task JSON snapshots from `plan/archive/**/*.json` into recursive task-store files under `plan/tasks/archive/**/tasks.json`.
+- Added `workset: "archive"`, `archivedFrom`, and `archivedDate` metadata to migrated task records. Non-task JSON artifacts under `plan/archive` were left in place.
+- Updated the task archive API grouping to use `archivedDate` before falling back to `updated` / `created`.
+- Applied the same migration to registered projects with archived task snapshots (`openweb-projects`, `closepaw-projects`; symlinked projects consume those stores).
+
+**Why:**
+- Archived tasks are task data, not document-folder state. Keeping them in `plan/tasks/**/tasks.json` lets the recursive task store own all task records while `plan/archive` remains available for docs and non-task artifacts.
+
+**Key files:** `plan/tasks/archive/**/tasks.json`, `app/server/src/routes/tasks.ts`; external repos `openweb-projects`, `closepaw-projects`
+**Verification:** all registered projects passed `yaco task validate --repo <path> --json`; `cd app/server && npx vitest run src/routes/__tests__/tasks-worktree.test.ts src/routes/__tests__/tasks-cli.test.ts` -> 15 pass / 0 fail.
+**Commit:** this commit
+**Next:** Optional doc-bundle migration to `plan/all/**` plus `plan/{active,backlog,archive}` symlink views.
+**Blockers:** None.
+
 ## 2026-06-06: TUI provider adapter boundary docs
 
 **What changed:**
