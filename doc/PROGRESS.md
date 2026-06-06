@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-05: app/server summaries + history via CLI surfaces
+
+**What changed:**
+- `session-summary.ts` no longer resolves `~/.claude` JSONL or `~/.codex` SQLite/rollout files. `resolveSessionSummaries()` now serves from an in-process cache keyed by `(provider, sessionId, sessionPath)` and, for misses grouped by project path, calls `yaco agent summaries --path <p> --json` once per path. Only positive labels are cached; a `processing` → `idle` transition drops a cached label so a turn that changed it re-resolves. New `invalidateSummaryCache()` is wired into the sessions route's `invalidateSessionsCache()` (rename/close/start/manual refresh). `encodeProjectPath()` is retained as a pure helper for the not-yet-migrated `channels/agent-output.ts`.
+- `history.ts` shrank from ~300 lines of Claude/Codex parsing to a thin mapper: `getHistory()` calls `yaco agent history --path <p> --json`, maps the CLI row shape (`sessionId`/`updatedAt`) to the UI shape (`id`/`modified`), and re-tags `liveSessionName` by matching CLI `sessionId` against the live YACO session list. `HistorySession.provider` widened from `'claude' | 'codex'` to `string`. `getClaudeHistory`/`getCodexHistory` and `getCodexDb` are gone.
+- `agent.ts` gained the thin CLI transports `fetchHistory()` (`CliHistorySession[]`) and `fetchSessionSummaries()` (`CliSessionSummary[]`), mirroring `fetchProviderCatalog()`.
+- Tests rewritten to mock the `../agent` CLI transports instead of planting `~/.claude`/`~/.codex` fixtures.
+
+**Why:**
+- `app-summary-history-boundary` task of the `tui-provider-adapters` design (`plan/active/tui-provider-adapters/design_codex.md`): app/server must stop resolving and parsing provider homes so each provider's private file/DB layout lives only under `cli/`. The app-side summary cache keeps the migration from spawning a subprocess on every `GET /api/sessions` poll while the boundary is observable before any persistent-helper optimization.
+
+**Key files:** `app/server/src/lib/{agent.ts,session-summary.ts,history.ts}`, `app/server/src/routes/sessions.ts`, `app/server/src/lib/__tests__/{session-summary,history}.test.ts`; docs `doc/main/app/backend/libs.md`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/server && npm test -- session-summary.test.ts history.test.ts` → 20 pass (2 files); `tsc --noEmit` adds zero errors over the pre-existing baseline; consumes CLI summary/history surfaces from commit 4575fd7.
+**Commit:** this commit.
+**Next:** `app-output-boundary` migrates `channels/agent-output.ts` off provider-home log reads (then `encodeProjectPath` becomes removable).
+**Blockers:** None.
+
 ## 2026-06-05: CLI provider output cursor + output-follow stream
 
 **What changed:**

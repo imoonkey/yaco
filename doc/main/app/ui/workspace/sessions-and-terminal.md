@@ -42,13 +42,10 @@ Pin state and order are client-side only (not persisted across page reloads).
 
 ### Summary Resolution
 
-Server resolves summaries on each `GET /api/sessions` poll:
-1. Read `sessionId` and `sessionPath` from `${YACO_HOME:-~/.yaco}/sessions/*.json` state files
-2. If empty, PID fallback:
-   - **Claude**: build process tree via `ps`, find descendant of pane PID in `~/.claude/sessions/*.json`
-   - **Codex**: run `lsof` on pane PIDs to find open rollout JSONL files, extract session ID from filename
-3. Claude: encode `sessionPath` and read first user message from `~/.claude/projects/{encoded(sessionPath)}/<sessionId>.jsonl`
-4. Codex: query `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
+Server resolves summaries on `GET /api/sessions`, but not by reading provider homes:
+1. Read the fast session list from `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (`sessionId`, `sessionPath`, `provider`).
+2. Serve summaries from an in-process cache keyed by `(provider, sessionId, sessionPath)`. Cache misses are grouped by project path and resolved with one `yaco agent summaries --path <p> --json` call per path; sentinel `pending:awaiting-first-prompt` ids are never resolved.
+3. The CLI provider adapters own all provider-native reconstruction (Claude JSONL first user message, Codex `state_5.sqlite` title / `first_user_message`, rollout-file fallback). app/server no longer opens `~/.claude` or `~/.codex`. → See: `doc/main/cli/providers.md`.
 
 Full summary strings are returned (no server-side truncation). The UI truncates with CSS `text-overflow: ellipsis`.
 
@@ -58,7 +55,7 @@ Full summary strings are returned (no server-side truncation). The UI truncates 
 
 ### History Tab
 
-The History tab calls `GET /api/sessions/history?project=<name>` and renders the merged Claude/Codex list returned by the server. The server sorts by `modified` descending and caps the response at 200 entries. Claude entries use embedded top-level JSONL `timestamp` values for created/modified times when present, falling back to file times only for legacy logs; Codex entries use `~/.codex/state_5.sqlite` thread timestamps. This keeps provider ordering stable even after path migrations or bulk JSONL rewrites touch Claude file mtimes.
+The History tab calls `GET /api/sessions/history?project=<name>` and renders the list returned by the server. The server fetches rows from `yaco agent history --path <p> --json` (sorting and the 200-row cap are CLI-owned), maps the CLI shape to the UI shape (`sessionId` → `id`, `updatedAt` → `modified`), and tags `liveSessionName` by matching CLI `sessionId` against the live YACO session list. Provider-native reads and timestamp logic (Claude embedded JSONL timestamps, Codex thread timestamps) live in the CLI provider adapters. → See: `doc/main/cli/providers.md`.
 
 ### Actions
 

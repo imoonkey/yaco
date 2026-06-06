@@ -31,6 +31,32 @@ export interface ProviderCatalogEntry {
   executable: string
 }
 
+/** Raw history row from `yaco agent history --path <p> --json`. The CLI owns
+ *  all provider-home reads and parsing; `sessionId`/`updatedAt` are mapped to
+ *  the app's `id`/`modified` UI shape in history.ts. */
+export interface CliHistorySession {
+  sessionId: string
+  provider: string
+  title: string | null
+  summary: string
+  created: string
+  updatedAt: string
+  messageCount: number | null
+  gitBranch: string | null
+  archived?: boolean
+  live?: boolean
+  liveSessionName?: string | null
+}
+
+/** A per-live-session display label from `yaco agent summaries --path <p> --json`,
+ *  keyed back to the YACO session by `handle`. */
+export interface CliSessionSummary {
+  handle: string
+  sessionId: string
+  provider: string
+  label: string
+}
+
 /** Raw shape of `<AGENT_SESSIONS_DIR>/<handle>.json` state files
  *  (`${YACO_HOME:-~/.yaco}/sessions/`, see constants.ts AGENT_SESSIONS_DIR).
  *  Written by the `yaco agent` runtime; read here. The `provider` field is
@@ -283,6 +309,32 @@ export async function fetchProviderCatalog(): Promise<ProviderCatalogEntry[]> {
     'agent providers',
   )
   return Array.isArray(data) ? (data as ProviderCatalogEntry[]) : []
+}
+
+/** Fetch project session history rows from `yaco agent history --path <p> --json`.
+ *  Provider-home resolution and parsing live in the CLI provider adapters; the
+ *  app only maps field names and applies its own live-session marker. */
+export async function fetchHistory(projectPath: string): Promise<CliHistorySession[]> {
+  // execSync.*'yaco agent history --path <p> --json'
+  const data = await runYacoAgentJson(
+    ['agent', 'history', '--path', projectPath, '--json'],
+    YACO_AGENT_STATUS_TIMEOUT_MS,
+    'agent history',
+  )
+  return Array.isArray(data) ? (data as CliHistorySession[]) : []
+}
+
+/** Fetch per-live-session summary labels from `yaco agent summaries --path <p>
+ *  --json`. The CLI resolves a label for every live session under the path via
+ *  provider adapters; the app caches the result so this spawns only on misses. */
+export async function fetchSessionSummaries(projectPath: string): Promise<CliSessionSummary[]> {
+  // execSync.*'yaco agent summaries --path <p> --json'
+  const data = await runYacoAgentJson(
+    ['agent', 'summaries', '--path', projectPath, '--json'],
+    YACO_AGENT_STATUS_TIMEOUT_MS,
+    'agent summaries',
+  )
+  return Array.isArray(data) ? (data as CliSessionSummary[]) : []
 }
 
 /** Reject a start request for a provider the CLI catalog does not know.

@@ -99,7 +99,7 @@ Projects YACO events into the progress-entry shape consumed by the current UI.
 
 Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` state files and wraps the `yaco agent` CLI surface for live session commands.
 
-**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `fetchAllSessionsFromCli()`, `queryAgentStatus()`, `fetchProviderCatalog()`, `sendToSession()`, `captureSession()`, `startAgentSession()`, `closeAgentSession()`, `renameAgentSession()`, `AgentSession`, `AgentSessionState`, `ProviderCatalogEntry`, `isPathDescendantOrEqual()`
+**Exports**: `readSessionsFromStateFiles()`, `readAllSessionsFromStateFiles()`, `fetchAllSessionsFromCli()`, `queryAgentStatus()`, `fetchProviderCatalog()`, `fetchHistory()`, `fetchSessionSummaries()`, `sendToSession()`, `captureSession()`, `startAgentSession()`, `closeAgentSession()`, `renameAgentSession()`, `AgentSession`, `AgentSessionState`, `ProviderCatalogEntry`, `CliHistorySession`, `CliSessionSummary`, `isPathDescendantOrEqual()`
 
 **CLI spawn contract.** Every call passes `--json` and is funneled through `runYacoAgentJson(args, timeout, what)` which `spawn`s `YACO_PATH` with `['agent', ...]` argv (no shell — argv-safe), parses the `{ok,data}/{ok,error}` envelope, and throws `yaco <X> failed [CODE]: message` when the CLI reports a failure (the stderr envelope is preserved into the thrown Error). The only direct `spawn` (no envelope unwrap) is `startAgentSession`, which runs the CLI detached and watches the state-file directory for the new handle — it can't wait for the envelope because the CLI keeps running in the background.
 
@@ -111,22 +111,23 @@ Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.jso
 - Status passthrough: `starting | idle | processing` — no normalization (CLI states used as-is)
 - State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt }` — file deletion = session ended. `provider` is an open string (the YACO-owned catalog id, e.g. `claude`/`codex`), trusted verbatim — there is no app-side name inference (`inferAgentProvider` was removed); a state file with no `provider` string is skipped.
 - `fetchProviderCatalog()` → `yaco agent providers --json`, returning `ProviderCatalogEntry[]` (`{ id, label, executable }`). This is the authoritative list of startable agent providers; `shell` is an app-owned session type and never appears here.
+- `fetchHistory(projectPath)` → `yaco agent history --path <p> --json`, returning raw `CliHistorySession[]` (`sessionId`/`updatedAt` shape). Consumed by `history.ts`. Provider-home reads live in the CLI.
+- `fetchSessionSummaries(projectPath)` → `yaco agent summaries --path <p> --json`, returning `CliSessionSummary[]` (`{ handle, sessionId, provider, label }`) for every live session under the path. Consumed (and cached) by `session-summary.ts`.
 - `startAgentSession(provider, name, cwd, prompt?, resumeId?)` spawns the CLI in canonical form `yaco agent start <provider> --json [--resume <id> | prompt] [-n <name>]` (the top-level `yaco <provider>` shortcut is reserved for human callers — code uses the canonical form). Validates `provider` against `fetchProviderCatalog()` before spawning and throws `unknown agent provider: <id> (known: …)` on a miss. Returns early as soon as the state file has `pid > 0` (tmux session attachable, ~1-2s).
 - `sendToSession(handle, msg)` → `yaco agent send <handle> <msg> --json`
 - `captureSession(handle, lines)` → `yaco agent capture <handle> --lines <n> --strip-ansi true --json`; unwraps `data.text` from the envelope (in `--json` mode the CLI wraps the raw pane buffer instead of writing it bytes-faithfully to stdout).
 - `closeAgentSession(handle)` → `yaco agent kill <handle> --json` (handle-global; no cwd needed)
 - `renameAgentSession(old, new)` → `yaco agent rename <old> <new> --json` (handle-global)
 
-### history.ts (~300 lines)
+### history.ts (~45 lines)
 
-Reads session history from Claude Code and Codex local storage for the History tab.
+Returns session history for the History tab via the CLI, in the UI-facing shape.
 
-**Exports**: `getClaudeHistory()`, `getCodexHistory()`, `getHistory()`, `HistorySession`
+**Exports**: `getHistory()`, `HistorySession`
 
-- `getClaudeHistory(projectPath)` — reads `~/.claude/projects/{encoded}/*.jsonl`. Optimized with partial reads: head 16KB for first user message (with slash-command normalization) and first top-level `timestamp`, tail 64KB for last top-level `timestamp` plus last `custom-title` (last-wins for renames). `created` / `modified` prefer embedded JSONL timestamps and fall back to filesystem times only when timestamps are absent, so path migrations or backup rewrites do not reorder history. Optional enrichment from `sessions-index.json` (accepts both `{ entries: [...] }` and raw array shapes). ~20ms for 240 files / 307MB.
-- `getCodexHistory(projectPath)` — queries `~/.codex/state_5.sqlite` threads table + reads `~/.codex/session_index.jsonl` for `thread_name` (last entry per id wins — append-only file has duplicates from renames). Does NOT use `threads.title` as handle.
-- `getHistory(projectPath, liveSessions)` — merges both providers, sorts by modified DESC, caps at 200, tags `liveSessionName` via sessionId comparison against live `AgentSession[]`.
-- `HistorySession` type: `{ id, provider, title, summary, created, modified, messageCount, gitBranch, liveSessionName }`
+- `getHistory(projectPath, liveSessions)` — calls `fetchHistory(projectPath)` (`agent.ts` → `yaco agent history --path <p> --json`), then maps each CLI row to the UI shape (`sessionId` → `id`, `updatedAt` → `modified`) and tags `liveSessionName` by matching CLI `sessionId` against the live `AgentSession[]` (skipping `pending:awaiting-first-prompt`). Sorting and the 200-row cap are CLI-owned.
+- Provider-home reads (`~/.claude` JSONL, `~/.codex` SQLite/`session_index.jsonl`) now live in the CLI provider adapters; app/server never opens them. -> See: `doc/main/cli/providers.md`.
+- `HistorySession` type: `{ id, provider, title, summary, created, modified, messageCount, gitBranch, liveSessionName }` — `provider` is `string` (no longer a `'claude' | 'codex'` union).
 
 ### notify.ts (56 lines)
 
@@ -252,19 +253,18 @@ Pipe image bytes into the X11 CLIPBOARD selection via `xclip` so a TUI agent (Cl
 - Spawns `xclip -selection clipboard -t <mime> -i` with the env from `discoverClipboardEnv()`. xclip reads stdin to EOF then forks itself into a daemon that serves subsequent paste requests; the parent process exits with code 0 once stdin closes.
 - Pivoted to xclip + Xwayland because GNOME mutter's Wayland clipboard portal hangs `wl-copy` / `wl-paste` indefinitely on this setup; xclip via Xwayland round-trips reliably and both Claude Code (`xclip -t image/png -o`) and Codex (arboard Rust crate) read from the same X11 CLIPBOARD selection.
 
-### session-summary.ts (~170 lines)
+### session-summary.ts (~85 lines)
 
-Resolves conversation summaries for session list display.
+Resolves conversation summaries (`handle -> summary`) for session list display via the CLI, with an in-process cache.
 
-**Exports**: `resolveSessionSummaries()`
+**Exports**: `resolveSessionSummaries()`, `invalidateSummaryCache()`, `encodeProjectPath()`
 
-- Batch resolution: one call per `GET /api/sessions` poll, reads each data source at most once
-- Skips sentinel sessionId (`pending:awaiting-first-prompt`) — shows no summary until next reconcile populates it
-- Claude: groups by `sessionPath` and reads first user message from `~/.claude/projects/{encoded(sessionPath)}/<sessionId>.jsonl`
-- Codex (primary): queries `~/.codex/state_5.sqlite` threads table for `title` or `first_user_message`
-- Codex (fallback): if SQLite has no entry, scans `~/.codex/sessions/YYYY/MM/DD/rollout-*-<sessionId>.jsonl` for the last real user message (skips system context lines starting with `#` or `<`). Searches up to 7 days back.
-- Only `claude` and `codex` are resolved — any other provider id is skipped (no summary) rather than probed against Claude storage. Provider-native summary reads move behind CLI surfaces in the `app-summary-history-boundary` task.
-- Cached Codex DB handle (opened once per server lifecycle, reopened on error)
+- In-process cache keyed by `(provider, sessionId, sessionPath)` (JSON-tuple key). A fully cached session list resolves with no subprocess; only positive labels are cached.
+- Skips sentinel sessionId (`pending:awaiting-first-prompt`) and empty ids — never cached, never sent to the CLI.
+- Misses are grouped by `sessionPath`; one `yaco agent summaries --path <p> --json` call (via `agent.ts` `fetchSessionSummaries`) runs per path with a miss, and its `{handle -> label}` rows fill the cache. Provider-home reads (Claude JSONL, Codex SQLite + rollout scan) live in the CLI provider adapters. -> See: `doc/main/cli/providers.md`.
+- A session settling from `processing` → `idle` drops its cached label so a turn that changed it (e.g. a generated title) re-resolves.
+- `invalidateSummaryCache()` clears the cache; the sessions route calls it from `invalidateSessionsCache()` (rename/close/start/manual refresh).
+- `encodeProjectPath()` is a pure `/`→`-` path encoder retained for `channels/agent-output.ts` until that file migrates in `app-output-boundary`.
 
 ### session-names.ts (27 lines)
 

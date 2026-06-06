@@ -1,27 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { join } from 'path'
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'fs'
-import { tmpdir } from 'os'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-const homeRef = vi.hoisted(() => ({ value: '' }))
+// Mock the CLI transport: session-summary resolves labels via the CLI surface,
+// not by reading provider homes, so the test drives fetchSessionSummaries.
+const { fetchSessionSummaries } = vi.hoisted(() => ({ fetchSessionSummaries: vi.fn() }))
+vi.mock('../agent', () => ({ fetchSessionSummaries }))
 
-// Mock external dependencies before importing
-vi.mock('better-sqlite3', () => ({
-  default: vi.fn(() => ({
-    prepare: vi.fn(() => ({ get: vi.fn(() => null) })),
-    close: vi.fn(),
-  })),
-}))
-
-// Point homedir() at the per-test temp dir so the Claude JSONL resolver reads
-// from a planted fixture instead of the real home directory.
-vi.mock('os', async (orig) => {
-  const actual = await orig<typeof import('os')>()
-  return { ...actual, homedir: () => homeRef.value || actual.homedir() }
-})
-
-import { resolveSessionSummaries, encodeProjectPath } from '../session-summary'
+import { resolveSessionSummaries, invalidateSummaryCache, encodeProjectPath } from '../session-summary'
 import type { AgentSession } from '../agent'
+import type { CliSessionSummary } from '../agent'
 
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
@@ -36,121 +22,146 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   }
 }
 
+function summary(overrides: Partial<CliSessionSummary> = {}): CliSessionSummary {
+  return {
+    handle: 'test-session',
+    sessionId: 'valid-session-id',
+    provider: 'claude',
+    label: 'Design the auth API',
+    ...overrides,
+  }
+}
+
 describe('resolveSessionSummaries', () => {
-  let tmpDir: string
-
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), 'workflow-summary-test-'))
-    homeRef.value = tmpDir
+    fetchSessionSummaries.mockReset()
+    invalidateSummaryCache()
   })
 
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true })
-    homeRef.value = ''
-  })
-
-  it('returns empty map for empty sessions', async () => {
+  it('returns empty map for empty sessions without calling the CLI', async () => {
     const result = await resolveSessionSummaries([])
     expect(result.size).toBe(0)
+    expect(fetchSessionSummaries).not.toHaveBeenCalled()
   })
 
   it('skips sentinel sessionId (pending:awaiting-first-prompt)', async () => {
-    const session = makeSession({
-      sessionId: 'pending:awaiting-first-prompt',
-      provider: 'claude',
-    })
+    const session = makeSession({ sessionId: 'pending:awaiting-first-prompt' })
     const result = await resolveSessionSummaries([session])
-    // Should not crash and should not resolve a summary for sentinel ID
     expect(result.get('test-session')).toBeUndefined()
+    expect(fetchSessionSummaries).not.toHaveBeenCalled()
   })
 
-  it('skips empty sessionId without crashing', async () => {
+  it('skips empty sessionId without calling the CLI', async () => {
     const session = makeSession({ sessionId: '' })
     const result = await resolveSessionSummaries([session])
     expect(result.get('test-session')).toBeUndefined()
+    expect(fetchSessionSummaries).not.toHaveBeenCalled()
   })
 
-  it('skips codex sessions with sentinel sessionId', async () => {
-    const session = makeSession({
-      provider: 'codex',
-      sessionId: 'pending:awaiting-first-prompt',
+  it('resolves a summary from the CLI keyed by handle', async () => {
+    fetchSessionSummaries.mockResolvedValue([summary({ handle: 'test-session', label: 'Build the API' })])
+    const result = await resolveSessionSummaries([makeSession()])
+    expect(result.get('test-session')).toBe('Build the API')
+    expect(fetchSessionSummaries).toHaveBeenCalledWith('/tmp/test-project')
+  })
+
+  it('caches per (provider, sessionId, sessionPath): a second resolve does not re-call the CLI', async () => {
+    fetchSessionSummaries.mockResolvedValue([summary({ label: 'cached label' })])
+    const session = makeSession()
+
+    const first = await resolveSessionSummaries([session])
+    expect(first.get('test-session')).toBe('cached label')
+
+    const second = await resolveSessionSummaries([session])
+    expect(second.get('test-session')).toBe('cached label')
+    expect(fetchSessionSummaries).toHaveBeenCalledTimes(1)
+  })
+
+  it('calls the CLI once per distinct project path with a miss', async () => {
+    fetchSessionSummaries.mockImplementation(async (path: string) => {
+      if (path === '/tmp/p1') {
+        return [
+          summary({ handle: 's1', sessionId: 'id1', label: 'one' }),
+          summary({ handle: 's2', sessionId: 'id2', label: 'two' }),
+        ]
+      }
+      return [summary({ handle: 's3', sessionId: 'id3', label: 'three' })]
     })
-    const result = await resolveSessionSummaries([session])
+
+    const result = await resolveSessionSummaries([
+      makeSession({ name: 's1', sessionId: 'id1', sessionPath: '/tmp/p1' }),
+      makeSession({ name: 's2', sessionId: 'id2', sessionPath: '/tmp/p1' }),
+      makeSession({ name: 's3', sessionId: 'id3', sessionPath: '/tmp/p2' }),
+    ])
+
+    expect(result.get('s1')).toBe('one')
+    expect(result.get('s2')).toBe('two')
+    expect(result.get('s3')).toBe('three')
+    // Two distinct paths → exactly two CLI calls (not one per session).
+    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache sessions the CLI has no label for (still a miss next time)', async () => {
+    fetchSessionSummaries.mockResolvedValue([])
+    const session = makeSession({ provider: 'gemini' })
+
+    const first = await resolveSessionSummaries([session])
+    expect(first.get('test-session')).toBeUndefined()
+
+    const second = await resolveSessionSummaries([session])
+    expect(second.get('test-session')).toBeUndefined()
+    // No label cached → both resolves re-query the CLI.
+    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+  })
+
+  it('re-resolves a label when a session settles from processing to idle', async () => {
+    fetchSessionSummaries
+      .mockResolvedValueOnce([summary({ label: 'first title' })])
+      .mockResolvedValueOnce([summary({ label: 'updated title' })])
+
+    const processing = makeSession({ status: 'processing' })
+    const firstRun = await resolveSessionSummaries([processing])
+    expect(firstRun.get('test-session')).toBe('first title')
+
+    // Same session now idle — the cached label is dropped and re-fetched.
+    const idle = makeSession({ status: 'idle' })
+    const secondRun = await resolveSessionSummaries([idle])
+    expect(secondRun.get('test-session')).toBe('updated title')
+    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidateSummaryCache forces a fresh CLI call', async () => {
+    fetchSessionSummaries.mockResolvedValue([summary({ label: 'label' })])
+    const session = makeSession()
+
+    await resolveSessionSummaries([session])
+    invalidateSummaryCache()
+    await resolveSessionSummaries([session])
+
+    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+  })
+
+  it('survives a CLI error without throwing', async () => {
+    fetchSessionSummaries.mockRejectedValue(new Error('cli exploded'))
+    const result = await resolveSessionSummaries([makeSession()])
     expect(result.get('test-session')).toBeUndefined()
-  })
-
-  it('resolves Claude summary from JSONL file', async () => {
-    // Set up the Claude project directory structure
-    const encoded = tmpDir.replace(/\//g, '-')
-    const projectDir = join(tmpDir, '.claude-projects', encoded)
-    mkdirSync(projectDir, { recursive: true })
-
-    const sessionId = 'test-uuid-123'
-    const jsonlContent = [
-      JSON.stringify({ type: 'system', message: { content: 'system prompt' } }),
-      JSON.stringify({ type: 'user', message: { content: 'Design the auth API' } }),
-      JSON.stringify({ type: 'assistant', message: { content: 'Sure thing' } }),
-    ].join('\n')
-    writeFileSync(join(projectDir, `${sessionId}.jsonl`), jsonlContent)
-
-    const session = makeSession({ sessionId })
-    // makeClaudeResolver uses homedir(), so this only verifies the batch path
-    // still tolerates a launch path without crashing.
-    const result = await resolveSessionSummaries([session])
-    // The JSONL file won't be found because homedir() points elsewhere,
-    // but the function should not crash
-    expect(result).toBeInstanceOf(Map)
-  })
-
-  it('groups Claude sessions by launch path for batch resolution', async () => {
-    const sessions = [
-      makeSession({ name: 's1', sessionId: 'id1', project: 'p1', sessionPath: '/tmp/p1' }),
-      makeSession({ name: 's2', sessionId: 'id2', project: 'p1', sessionPath: '/tmp/p1' }),
-      makeSession({ name: 's3', sessionId: 'id3', project: 'p2', sessionPath: '/tmp/p2' }),
-    ]
-    const result = await resolveSessionSummaries(sessions)
-    expect(result).toBeInstanceOf(Map)
-  })
-
-  it('resolves Claude but skips an unsupported provider with the same path + id', async () => {
-    // Plant a Claude JSONL where the resolver looks (homedir is mocked → tmpDir).
-    const sessionPath = join(tmpDir, 'proj')
-    const sessionId = 'shared-id'
-    const projectDir = join(tmpDir, '.claude', 'projects', encodeProjectPath(sessionPath))
-    mkdirSync(projectDir, { recursive: true })
-    writeFileSync(
-      join(projectDir, `${sessionId}.jsonl`),
-      JSON.stringify({ type: 'user', message: { content: 'Design the auth API' } }),
-    )
-
-    const claude = makeSession({ name: 'c', provider: 'claude', sessionPath, sessionId })
-    const gemini = makeSession({ name: 'g', provider: 'gemini', sessionPath, sessionId })
-
-    const result = await resolveSessionSummaries([claude, gemini])
-
-    // Claude resolves from its storage; the unsupported provider is skipped
-    // entirely rather than mis-resolved against the same Claude file.
-    expect(result.get('c')).toBe('Design the auth API')
-    expect(result.get('g')).toBeUndefined()
   })
 })
 
 describe('encodeProjectPath', () => {
-  it('replaces slashes with dashes', async () => {
+  it('replaces slashes with dashes', () => {
     expect(encodeProjectPath('/Users/test/project')).toBe('-Users-test-project')
   })
 
-  it('strips trailing slash before encoding', async () => {
+  it('strips trailing slash before encoding', () => {
     expect(encodeProjectPath('/Users/test/project/')).toBe('-Users-test-project')
   })
 
-  it('strips multiple trailing slashes', async () => {
+  it('strips multiple trailing slashes', () => {
     expect(encodeProjectPath('/Users/test/project///')).toBe('-Users-test-project')
   })
 
-  it('handles path without trailing slash unchanged', async () => {
-    expect(encodeProjectPath('/Users/test/project')).toBe(
-      encodeProjectPath('/Users/test/project/'),
-    )
+  it('handles path without trailing slash unchanged', () => {
+    expect(encodeProjectPath('/Users/test/project')).toBe(encodeProjectPath('/Users/test/project/'))
   })
 })

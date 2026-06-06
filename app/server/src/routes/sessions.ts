@@ -3,7 +3,7 @@ import { PENDING_SESSION_ID } from '../lib/constants'
 import { getHistory } from '../lib/history'
 import { closeAgentSession, queryAgentStatus, readSessionsFromStateFiles, readAllSessionsFromStateFiles, renameAgentSession, sendToSession, startAgentSession } from '../lib/agent'
 import { loadProjects } from '../lib/projects'
-import { resolveSessionSummaries } from '../lib/session-summary'
+import { invalidateSummaryCache, resolveSessionSummaries } from '../lib/session-summary'
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
 import { extractWorktreeSlug } from '../lib/worktree'
 import { isPathDescendantOrEqual } from '../lib/agent'
@@ -13,10 +13,12 @@ const app = new Hono()
 /** Coalesce concurrent identical /api/sessions requests, keyed by project (or '' for all). */
 const sessionsInflight = new Map<string, Promise<unknown[]>>()
 
-/** Drop any in-flight cached responses so the next GET reads fresh state.
+/** Drop any in-flight cached responses so the next GET reads fresh state, and
+ *  drop cached session summaries so a rename or restart re-resolves labels.
  *  Sessions GET aggregates across all projects, so any mutation invalidates everything. */
 function invalidateSessionsCache(): void {
   sessionsInflight.clear()
+  invalidateSummaryCache()
 }
 
 async function buildSessionsResponse(projectName: string | null): Promise<unknown[]> {
