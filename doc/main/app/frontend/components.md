@@ -99,7 +99,8 @@ uniform scale applied to the SVG. Search and keyboard navigation scroll the
 target node to vertical center via `useViewport.scrollNodeIntoView`. -> See:
 frontend/hooks.md `useViewport.ts`.
 
-The node metadata rail (`TaskGraphNode.tsx` `buildRail`) is width-driven, not
+The node metadata rail (`metadataRail.ts` `buildRail`, rendered by
+`TaskGraphNode.tsx`) is width-driven, not
 CSS breakpoints: badges are kept in priority order `id > priority > workset >
 agent` and dropped from the right as the row narrows (agent first, then workset,
 then priority, then id), so the rail collapses before overlapping the title clip

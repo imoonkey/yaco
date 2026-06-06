@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-06: V1 task workspace verification coverage
+
+**What changed:**
+- Unit (`app/ui/src/tasks/taskGraphModel.test.ts`, vitest, 11 tests): workset filtering (default active+backlog, archive opt-in), vertical stacked roots + child indentation + width-driven rows (NODE_WIDTH floor), only-real-`depends` edges (parent/priority/state/tag create none), full-title integrity, and width-driven metadata-rail collapse asserting the **exact field prefix at every threshold** (`[id,priority,workset,agent]`→`[id,priority,workset]`→`[id,priority]`→`[id]`→`[]`).
+- E2E (`tests/e2e/task-graph.spec.ts`, `workspace-tasks-tab.spec.ts`): rewritten for the single stacked workspace — task nodes, no milestone/Board/List/Archive surfaces, vertical roots sharing one left edge, edge count == depends graph, detail-panel full title, search. Archive guarantee asserted at the **node** level: an archived node is absent by default and renders after enabling the archive chip (active node visible throughout).
+- E2E (`tests/e2e/worktree.spec.ts`): added a graph-path worktree-metadata test (open a worktree-bearing node → detail panel shows Worktree label, branch, Active badge), replacing the deleted board-path coverage.
+- Refactor: extracted `buildRail` from `TaskGraphNode.tsx` into new `app/ui/src/tasks/metadataRail.ts` so the rail logic is unit-testable without tripping the component-only-export lint rule (no behavior change).
+
+**Why:**
+- Final V1 task (`workspace-verification`). The old `task-graph.spec.ts`/`workspace-tasks-tab.spec.ts` were stale (milestones, pan/zoom drag, removed `header`, editor-tab/doorway semantics) and the archive/rail coverage was false-green — chip toggles and rail endpoints were checked, but never node-level archive rendering or intermediate rail prefixes, so a mid-order regression would pass.
+
+**Key files:** `app/ui/src/tasks/{taskGraphModel.test.ts, metadataRail.ts, TaskGraphNode.tsx}`, `app/ui/tests/e2e/{task-graph,workspace-tasks-tab,worktree}.spec.ts`
+**Verification:** `npx vitest run src/tasks/taskGraphModel.test.ts` → 11 passed; targeted e2e (task-graph + workspace-tasks-tab + worktree graph-path) → 11 passed against the worktree server (all-worksets data, since the shared dev server on :3001 is a stale build that still filters to active-only); `npm run lint` → 0 errors / 13 existing warnings.
+**Commit:** b4d1955, f276f83
+**Next:** `dag-layout-mode` (phase 2).
+**Blockers:** None.
+
 ## 2026-06-06: Remove legacy Board/List/Archive task surfaces and dead code
 
 **What changed:**
