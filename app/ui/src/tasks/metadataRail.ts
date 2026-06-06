@@ -44,8 +44,9 @@ export function buildRail(task: TaskGraphTask, leftBound: number, rightBound: nu
   // Full-text candidates in display order; widths come from the full text.
   const candidates: Omit<RailItem, 'x'>[] = []
   candidates.push({ key: 'id', text: task.id, color: 'var(--sol-base1)', width: railItemWidth(task.id) })
-  if (task.agent) {
-    candidates.push({ key: 'agent', text: task.agent, color: 'var(--sol-cyan)', width: railItemWidth(task.agent) })
+  if (task.agents.length > 0) {
+    const text = task.agents.join(' ')
+    candidates.push({ key: 'agent', text, color: 'var(--sol-cyan)', width: railItemWidth(text) })
   }
   if (task.priority !== 'normal') {
     candidates.push({ key: 'priority', text: task.priority, color: PRIORITY_COLOR[task.priority], width: railItemWidth(task.priority) })

@@ -2,6 +2,7 @@
 // Backward compatible: V1 tasks.json works without any new fields
 
 import type { TaskState, RawTaskEntry, Priority } from '../taskGraphModel'
+import { normalizeAgents } from '../taskGraphModel'
 
 export type { TaskState, Priority } from '../taskGraphModel'
 
@@ -23,6 +24,7 @@ export type RawTaskV2 = RawTaskEntry & {
   worktreeStatus?: WorktreeStatus
   priority?: Priority
   agent?: string | null
+  agents?: string[]
   tags?: string[]
   created?: string
   updated?: string
@@ -46,7 +48,7 @@ export type TaskV2 = {
   acceptCriteria: string[]
   note: string | null
   priority: Priority
-  agent: string | null
+  agents: string[]
   tags: string[]
   created: string | null
   updated: string | null
@@ -81,7 +83,7 @@ export function normalizeTask(id: string, raw: RawTaskV2): TaskV2 {
     acceptCriteria: parseAcceptCriteria(raw.acceptCriteria),
     note: raw.note ?? null,
     priority: raw.priority ?? 'normal',
-    agent: raw.agent ?? null,
+    agents: normalizeAgents(raw),
     tags: raw.tags ?? [],
     created: raw.created ?? null,
     updated: raw.updated ?? null,

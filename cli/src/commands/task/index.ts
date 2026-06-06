@@ -2,6 +2,8 @@
  *
  *  Subcommands:
  *    set <id> --data | --stdin | --file [--repo <p>] [--json]
+ *    attach <id> <session-handle> [--repo <p>] [--json]
+ *    detach <id> <session-handle> [--repo <p>] [--json]
  *    rm <id> [--repo <p>] [--json]
  *    archive <id> [--repo <p>] [--json]
  *    validate [--id <id>] [--repo <p>] [--json]
@@ -15,6 +17,7 @@
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { ok, type Result } from "../../lib/core/result.ts";
 import { runArchive } from "./archive.ts";
+import { runLink } from "./link.ts";
 import { runList, type TaskListWorkset } from "./list.ts";
 import { runRm } from "./rm.ts";
 import { runSet } from "./set.ts";
@@ -26,6 +29,8 @@ Usage:
   yaco task set <id> --data '<json>' [--repo <p>] [--json]
   yaco task set <id> --stdin           [--repo <p>] [--json]
   yaco task set <id> --file <path>     [--repo <p>] [--json]
+  yaco task attach <id> <session-handle>  [--repo <p>] [--json]
+  yaco task detach <id> <session-handle>  [--repo <p>] [--json]
   yaco task rm <id>                    [--repo <p>] [--json]
   yaco task archive <id>               [--repo <p>] [--json]
   yaco task validate [--id <id>]       [--repo <p>] [--json]
@@ -176,6 +181,15 @@ export async function handleTask(
         throw new CliError(ErrCode.USAGE, "yaco task rm <id>");
       }
       return runRm(id, { json, repo: parsed.flags.repo });
+    }
+    case "attach":
+    case "detach": {
+      const id = parsed.positional[0];
+      const handle = parsed.positional[1];
+      if (!id || !handle || parsed.positional.length !== 2) {
+        throw new CliError(ErrCode.USAGE, `yaco task ${sub} <id> <session-handle>`);
+      }
+      return runLink(sub, id, handle, { json, repo: parsed.flags.repo });
     }
     case "archive": {
       const id = parsed.positional[0];

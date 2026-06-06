@@ -16,9 +16,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import type { Dirent, Stats } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
+import { readYacoProjectPaths } from "../paths/index.ts";
 import { DEFAULT_WORKSET, type Task, type TaskGraph } from "./model.ts";
 
 export function loadTasks(path: string): TaskGraph {
@@ -75,6 +76,29 @@ export function defaultTaskFileForId(tasksPath: string, id: string): string {
   return basename(tasksPath).endsWith(".json")
     ? tasksPath
     : join(tasksPath, id, "tasks.json");
+}
+
+/** Resolve the tasks path for a session whose `sessionPath` may be a worktree
+ *  or a subdirectory rather than the project root.
+ *
+ *  Walks upward from `sessionPath` to the nearest YACO project root — the first
+ *  ancestor carrying a `yaco.toml` or the default `plan/tasks` directory — then
+ *  resolves that root's configured tasks path (honoring `yaco.toml [paths]`).
+ *  Returns null when no project root is found, so callers can skip best-effort
+ *  task rewrites rather than throw. */
+export function resolveTasksPathForSessionPath(sessionPath: string): string | null {
+  let dir = resolve(sessionPath);
+  const visited = new Set<string>();
+  while (!visited.has(dir)) {
+    visited.add(dir);
+    if (existsSync(join(dir, "yaco.toml")) || existsSync(join(dir, "plan", "tasks"))) {
+      return resolve(dir, readYacoProjectPaths(dir).tasks);
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
 }
 
 export function loadTaskStore(tasksPath: string): TaskStore {
@@ -176,11 +200,35 @@ function walkTaskDir(dir: string, result: string[]): void {
   }
 }
 
+/** Upgrade legacy `agent?: string` to canonical `agents?: string[]`.
+ *  An explicit `agents` array always wins — even when empty, so an intentional
+ *  clear is honored rather than resurrected from a stale `agent`. Handles are
+ *  trimmed, empties dropped, and duplicates collapsed while preserving order.
+ *  Returns undefined when the result is empty. */
+function normalizeTaskAgents(task: Record<string, unknown>): string[] | undefined {
+  const legacy =
+    typeof task.agent === "string" && task.agent.trim() ? [task.agent] : [];
+  const source = Array.isArray(task.agents) ? task.agents : legacy;
+  const agents = [...new Set(source.map((s) => String(s).trim()).filter(Boolean))];
+  return agents.length > 0 ? agents : undefined;
+}
+
+/** Canonicalize a task read from disk: default the workset and upgrade the
+ *  legacy `agent` field to `agents` in place (so the field keeps its position
+ *  and `agent` never reaches disk again). */
 function normalizeLoadedTask(task: Task): Task {
-  return {
-    ...task,
-    workset: task.workset ?? DEFAULT_WORKSET,
-  };
+  const agents = normalizeTaskAgents(task as Record<string, unknown>);
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(task)) {
+    if (key === "agent" || key === "agents") {
+      if (agents && !("agents" in out)) out.agents = agents;
+      continue;
+    }
+    out[key] = value;
+  }
+  if (agents && !("agents" in out)) out.agents = agents;
+  if (!("workset" in out)) out.workset = DEFAULT_WORKSET;
+  return out as Task;
 }
 
 /** Format an arbitrary value the same way the tasks file is serialized.

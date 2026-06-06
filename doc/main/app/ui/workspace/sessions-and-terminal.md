@@ -17,7 +17,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
+`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
 
 ## Session List
 
@@ -39,6 +39,12 @@ Sessions display in three tiers with dividers between non-empty tiers:
 3. **Idle** — waiting sessions (not pinned)
 
 Pin state and order are client-side only (not persisted across page reloads).
+
+**Parent/child lineage.** Within this ordering, the live list renders agent spawn lineage as indentation, derived from each session's `parentSession` handle (no `childSessions` is persisted or required). `sessionLineage.ts` is the pure, tested core:
+- `buildSessionLineage(sessions)` flattens the ordered list into `{ session, depth }` rows — each parent immediately followed by its visible descendants, depth-first, preserving input order for roots and siblings. A session is a **root** when it has no `parentSession`, its parent is not in the visible list, or it self-references. Cycles are broken with a visited set; a session reachable only through a cycle is rendered as a root, so nothing loops or drops.
+- `groupSessionLineage(sessions, isPinned)` builds lineage over the **full** visible list (not per tier), then assigns each root-anchored subtree to the pinned/processing/idle tier **by its root**. This keeps a parent and all its visible descendants contiguous and indented even when a child's status or pin state differs (e.g. a processing child of an idle parent renders indented under that parent, not split off as a stray root). Pin state for drag/star affordances is still derived per row.
+
+Indentation is `paddingLeft = 8 + depth*14` px on the row. Renaming a parent does not rewrite a live child's `parentSession` here — that reference rewrite is owned by the CLI `yaco agent rename` path, not the UI. → See: `doc/main/cli/lifecycle.md` (rename).
 
 ### Summary Resolution
 

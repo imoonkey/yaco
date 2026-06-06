@@ -10,6 +10,9 @@ import { ADJECTIVES, NOUNS } from "./words.ts";
 
 export type SessionStatus = "starting" | "idle" | "processing";
 
+/** How a session was spawned. Captured once at start; never mutated after. */
+export type SpawnedBy = "user:web" | "user:terminal" | "agent";
+
 export interface SessionState {
   handle: string;
   provider: string;
@@ -18,6 +21,10 @@ export interface SessionState {
   sessionId: string;
   status: SessionStatus;
   createdAt: string;
+  /** Spawn source. New starts always write it; legacy files may omit it. */
+  spawnedBy?: SpawnedBy;
+  /** Parent session handle. Present only when spawnedBy === "agent". */
+  parentSession?: string;
 }
 
 /** SessionState extended with runtime-only status values (never persisted). */
@@ -44,6 +51,11 @@ export type HookEvent =
   | "SessionEnd";
 
 const VALID_NAME = /^[a-zA-Z0-9_-]+$/;
+
+/** Non-throwing handle-syntax check (for ambient env-derived handles). */
+export function isValidSessionHandle(name: string): boolean {
+  return VALID_NAME.test(name);
+}
 
 export function validateName(name: string): void {
   if (!VALID_NAME.test(name)) {

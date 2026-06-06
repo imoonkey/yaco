@@ -11,6 +11,7 @@ import { TaskGraphToolbar } from './TaskGraphToolbar'
 import { TaskGraphStatusPane } from './TaskGraphStatusPane'
 import { useTaskGraphInteraction } from './useTaskGraphInteraction'
 import { useTaskGraphKeyboard } from './useTaskGraphKeyboard'
+import { computeLinkedTaskIds } from './taskGraphSelection'
 
 type TaskGraphScreenProps = {
   projectName: string
@@ -20,9 +21,10 @@ type TaskGraphScreenProps = {
   onCloseTask?: (id: string) => void
   selectedTaskId?: string | null
   openTaskId?: string | null
+  activeSession?: string | null
 }
 
-export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, onOpenTask, onCloseTask, selectedTaskId, openTaskId }: TaskGraphScreenProps) {
+export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, onOpenTask, onCloseTask, selectedTaskId, openTaskId, activeSession }: TaskGraphScreenProps) {
   const { status, graph, error, warnings, refresh } = useTaskGraph(projectName)
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -95,6 +97,13 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
     }
     return computeDisplayLayout(model, viewState, graph.aggregateStateByTask, graph.leafProgressByTask, graph.cycleEdgeIds, containerWidth)
   }, [graph, ix.collapsedTaskIds, ix.filters, isGantt, containerWidth, ix.ganttLeftWidth])
+
+  // Tasks linked to the active terminal session get a distinct highlight on their
+  // visible nodes. Independent of selection/search/dependency state and adds no edge.
+  const linkedTaskIds = useMemo(
+    () => computeLinkedTaskIds(graph?.tasks ?? new Map(), activeSession),
+    [graph, activeSession],
+  )
 
   // Clear selection when the selected task is no longer in the rendered layout —
   // hidden by any filter (workset, state, or a filtered-out ancestor). Robust to all
@@ -240,6 +249,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
                 graph={graph}
                 layout={displayLayout as GanttLayout}
                 searchMatchIds={ix.searchMatchIds}
+                linkedTaskIds={linkedTaskIds}
                 highlight={ix.highlight}
                 selection={ix.selection}
                 scale={viewport.scale}
@@ -257,6 +267,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
                 graph={graph}
                 layout={displayLayout}
                 searchMatchIds={ix.searchMatchIds}
+                linkedTaskIds={linkedTaskIds}
                 highlight={ix.highlight}
                 selection={ix.selection}
                 scale={viewport.scale}

@@ -23,8 +23,24 @@ interface StateFile {
   sessionId: string                           // resolved id, resume id, or "pending:awaiting-first-prompt"
   status: "starting" | "idle" | "processing"  // lifecycle status
   createdAt: string                           // ISO 8601
+  spawnedBy?: "user:web" | "user:terminal" | "agent"  // spawn source, captured once at start
+  parentSession?: string                      // parent handle; present only when spawnedBy === "agent"
 }
 ```
+
+### Session Lineage (`spawnedBy` / `parentSession`)
+
+Captured once at `start()` before the first state write, derived from the
+environment (`src/commands/agent/start.ts#deriveSessionLineage`):
+
+- `YACO_AGENT_HANDLE` present → `spawnedBy="agent"`, `parentSession=<resolved handle>`. The agent wrapper exports `YACO_AGENT_HANDLE=<this session>` for the provider process, so a child `yaco agent start` launched from inside an agent inherits it. A stale parent handle (parent renamed after launch — process env can't be mutated) is normalized through the `.renamed-*` breadcrumb chain via `resolveRenamedHandle()`.
+- `YACO_AGENT_SPAWNED_BY=user:web` (set by the app server in the spawned child env) → `spawnedBy="user:web"`. The wrapper clears this marker before launching the provider so it never leaks into child sessions.
+- otherwise → `spawnedBy="user:terminal"`.
+
+Lineage is captured-once and never mutated after start; legacy state files
+predating this field omit it (treated as unknown). Children are derived by
+scanning live sessions for `parentSession === handle`; no `childSessions` field
+is persisted.
 
 ### Guarantees
 
@@ -87,6 +103,7 @@ The authoritative reconciled view. This is the **single source of runtime truth*
 - Mutation APIs, handle-global
 - Do not require workflow to resolve project path
 - `send --stdin` reads the message from process.stdin (mutually exclusive with an inline message)
+- `rename` is authoritative for the session state/tmux rename, then best-effort rewrites handle references (child `parentSession`, task `agents`); failures return in `data.warnings`. -> See: [lifecycle.md](lifecycle.md#rename-link-integrity)
 
 ### `yaco agent hooks install`
 

@@ -23,6 +23,7 @@ export type RawTaskEntry = {
   workset?: Workset
   priority?: Priority
   agent?: string | null
+  agents?: string[]
   tags?: string[]
 }
 
@@ -44,7 +45,7 @@ export type TaskGraphTask = {
   estimate: string | null
   workset: Workset
   priority: Priority
-  agent: string | null
+  agents: string[]
   tags: string[]
 }
 
@@ -180,6 +181,16 @@ function parseAcceptCriteria(raw: string | string[] | undefined): string[] {
     .filter(Boolean)
 }
 
+/** Canonical session handles for a task. Upgrades the legacy `agent?: string`
+ *  field to `agents`. An explicit `agents` array always wins — even when empty,
+ *  so an intentional clear is honored rather than resurrected from a stale
+ *  `agent`. Trims, dedupes, and drops empties while preserving order. */
+export function normalizeAgents(raw: { agents?: string[]; agent?: string | null }): string[] {
+  const legacy = typeof raw.agent === 'string' && raw.agent.trim() ? [raw.agent] : []
+  const source = Array.isArray(raw.agents) ? raw.agents : legacy
+  return [...new Set(source.map(s => String(s).trim()).filter(Boolean))]
+}
+
 function getDepth(id: string, raw: RawTaskMap): number {
   let depth = 0
   let current = id
@@ -233,7 +244,7 @@ export function normalizeTasks(raw: RawTaskMap): { tasks: Map<string, TaskGraphT
       estimate: entry.estimate ?? null,
       workset: entry.workset ?? 'active',
       priority: entry.priority ?? 'normal',
-      agent: entry.agent ?? null,
+      agents: normalizeAgents(entry),
       tags: entry.tags ?? [],
     })
   }

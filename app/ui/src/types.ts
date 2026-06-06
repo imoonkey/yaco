@@ -12,6 +12,8 @@ export interface Project {
   path: string
 }
 
+export type SpawnedBy = 'user:web' | 'user:terminal' | 'agent'
+
 export interface AgentSession {
   name: string
   provider: string
@@ -19,6 +21,10 @@ export interface AgentSession {
   project: string
   summary: string
   worktree?: string
+  // Lineage is best-effort: legacy/state files may omit these. `parentSession`
+  // is present only for sessions spawned from inside another agent.
+  spawnedBy?: SpawnedBy
+  parentSession?: string
 }
 
 export interface ProgressEntry {

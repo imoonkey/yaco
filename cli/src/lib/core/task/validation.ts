@@ -11,6 +11,7 @@
 
 import { CliError, ErrCode } from "../errors.ts";
 import {
+  AGENT_HANDLE_RE,
   BLOCK_REASONS,
   ESTIMATES,
   PRIORITIES,
@@ -98,12 +99,17 @@ export function validateTypes(data: Record<string, unknown>): void {
   }
 
   if ("agent" in data) {
-    const a = data["agent"];
-    if (!(typeof a === "string" || a === null)) {
-      invalid("agent must be string or null");
-    }
-    if (typeof a === "string" && a.trim() === "") {
-      invalid("agent must not be empty");
+    invalid("agent is no longer supported; use agents (list of session handles)");
+  }
+
+  if ("agents" in data) {
+    const agents = data["agents"];
+    if (!isStringList(agents)) invalid("agents must be a list of strings");
+    for (const handle of agents) {
+      if (handle.trim() === "") invalid("agents must not contain empty handles");
+      if (!AGENT_HANDLE_RE.test(handle)) {
+        invalid("agents handles must match /^[a-zA-Z0-9_-]+$/");
+      }
     }
   }
 

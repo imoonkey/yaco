@@ -1,6 +1,6 @@
 // Selection traversal and highlight derivation — pure functions, no React dependency
 
-import type { TaskGraphModel } from './taskGraphModel'
+import type { TaskGraphModel, TaskGraphTask } from './taskGraphModel'
 
 // Selection is just a task id or null — no separate milestone type
 export type Selection = string | null
@@ -134,6 +134,22 @@ export function computeHighlight(selection: Selection, model: TaskGraphModel): H
     directEdgeIds,
     dimUnrelated: true,
   }
+}
+
+// Tasks linked to the active terminal session — those whose `agents` list contains
+// the active session handle. This is a SEPARATE relationship from selection/search/
+// dependency highlight: it adds no graph edge and never changes the selection. A dead
+// handle can never be the active session, so dead handles never produce a linked set.
+export function computeLinkedTaskIds(
+  tasks: Map<string, TaskGraphTask>,
+  activeSession: string | null | undefined,
+): Set<string> {
+  const linked = new Set<string>()
+  if (!activeSession) return linked
+  for (const [id, task] of tasks) {
+    if (task.agents.includes(activeSession)) linked.add(id)
+  }
+  return linked
 }
 
 // Search: returns matching task IDs (case-insensitive substring match on all tasks)

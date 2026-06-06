@@ -86,7 +86,7 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
 │   │     gridlines). One `scale()` transform per pane; rows keep their `y` so
 │   │     switching modes is non-disorienting.
 │   └── TaskGraphTooltip — hover overlay (title, description, progress, full
-│         metadata chips: id/priority/workset/agent/tags)
+│         metadata chips: id/priority/workset/agents/tags)
 └── TaskDetailPanel — shared right overlay (editable; archive tasks are in the
     │   map now, so no read-only mode is wired)
     ├── Desktop: slide-right overlay anchored to the right edge; left edge
@@ -94,6 +94,10 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
     ├── Mobile: bottom sheet (75vh max) with backdrop overlay + close button
     ├── InlineEdit — click-to-edit with custom dropdown popover
     ├── State/Priority/Estimate/Workset row (workset is display-only)
+    ├── Agents section: every linked session handle; a live handle shows a pulsing
+    │   green dot + Open/Show Terminal action (opens/reveals the existing terminal
+    │   surface for that session), the attached one is badged; dead handles stay
+    │   visible but inactive and are never auto-removed
     ├── Worktree section: branch name, dirty/clean status, ahead/behind counts
     ├── Children progress bar (for parent tasks)
     └── Design doc link → opens in editor (file paths) or new tab (URLs)
@@ -113,6 +117,21 @@ Task selection is distinct from opening details. A first click selects/highlight
 the task only; clicking the selected task opens the detail overlay, and clicking
 the same open task again closes it. Double-click opens directly. When the overlay
 is open, selecting another task switches the overlay contents to that task.
+
+Task↔session links: a task's `agents` are durable YACO session-handle links. When a
+terminal session is attached (`activeSession`), every visible task whose `agents`
+include it gets a distinct solid-green linked ring (`computeLinkedTaskIds` →
+`TaskGraphNode`'s `isLinkedToActiveSession`), independent of selection/search/
+dependency highlight and adding **no** graph edge; a linked node stays full-opacity
+even when an unrelated selection dims the graph, and a dead handle never highlights
+(it can't be the active session). `TaskDetailPanel`'s Open/Show Terminal action
+calls `onOpenTerminal(handle)`, which `WorkspaceScreen` resolves to setting the
+active session and revealing the terminal surface (right panel desktop / terminal
+pane mobile) — Show Terminal re-reveals it when the surface was hidden while the
+handle stayed active. `activeSession`, `liveSessionHandles`, and `onOpenTerminal`
+thread down TaskScreen ← WorkspaceEditorColumn / WorkspaceScreen (both the desktop
+tasks tab and the mobile tasks pane). No app-server route is added; the UI only
+displays links, opens terminals, and highlights.
 
 Navigation is native vertical scroll (no horizontal infinite canvas); zoom is a
 uniform scale applied to the SVG. Search and keyboard navigation scroll the
@@ -140,12 +159,12 @@ section dividers carry that grouping; full metadata still lives in the tooltip
 chips and `TaskDetailPanel`.
 
 **Task data model (non-component):**
-- `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
+- `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agents, tags, estimate, worktree, worktreeStatus). `agents: string[]` is the canonical session-handle link list (legacy scalar `agent` is upgraded on read by `normalizeAgents`; an explicit `agents` array — even empty — wins over a stale `agent`). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
 - `taskGraphModel.ts` — shared `layoutRows()` core (measure + position the indented row tree, emitting non-active workset section divider metadata) feeds BOTH modes. **Stacked**: `computeDisplayLayout(..., containerWidth)` stretches rows to fill container width to a shared right edge (24px indent/level, left-side guide lines), SCC cycle detection, visible-tree semantics; `LayoutNode.width` drives card width (NODE_WIDTH=280 is a min-width floor); real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge; NODE_HEIGHT=36. **Gantt**: `computeGanttLayout(..., leftWidthOverride?)` returns `GanttLayout extends GraphLayout` (so selection/keyboard/search/collapse work unchanged) and adds `bars` (per-row `GanttBar` from the schedule), `ruler.ticks` (optimistic units), `leftWidth` (depth-derived auto floor, widened by `leftWidthOverride` for the resizable divider — clamped so cards never clip), and `timeWidth = makespan·PX`; FS `depends` edges are cubic, left→right only, with `originalEdgeIds` always populated. All Gantt coords are unscaled (the canvas applies one `scale()` per pane).
 - `TaskGraphRows.tsx` — the shared SVG row renderer used by BOTH the Stacked canvas and the Gantt left column: scaled `<g>` with section-divider, indent-guide, and TaskGraphNode layers (`TaskGraphSectionHeader` lives here), plus an optional `edges` slot painted between guides and cards (Stacked passes its dependency arcs; Gantt routes links in the time pane instead). One code path → the two modes' left columns are pixel-identical.
 - `ganttSchedule.ts` — pure CPM schedule for Gantt mode (no React). Duration map `xs/s/m/l/xl = 1/2/3/5/8`, missing/unknown estimate → `m` (3) flagged `assumed`. Builds the internal effective-predecessor graph `E` over the filter-visible leaf set (ancestor-inherited + group-expanded deps, self-edges stripped, intersected with the visible set), runs Kahn topo on `E` (effective-cycle nodes flagged `cycle`), then forward/backward passes for `start`/`finish`/`slack`/`critical` (integer-exact slack===0; cycle nodes excluded from critical). Group rows get a summary entry (`start=min`, `finish=max`, `critical=any`). View-local: a predecessor filtered out of the visible set is dropped. `E` is schedule-internal and never rendered as edges.
 - `TaskGanttCanvas.tsx` / `TaskGanttRuler.tsx` / `TaskGanttBar.tsx` — the Gantt view. `TaskGanttBar` colors each bar by aggregate state (`STATE_COLORS`), overlays a diagonal hatch (one shared `<pattern>` via `GanttBarDefs`) when `assumed`, outlines critical-path bars in accent, renders summary bars as a thin lighter span with end-cap wedges, and fills effective-`cycle` bars red (never critical-styled). Selection reuses `computeHighlight` for upstream/downstream dim while the critical chain stays prominent; hover/click reuse the same tooltip/select handlers as nodes.
-- `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
+- `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search, and `computeLinkedTaskIds(tasks, activeSession)` (visible tasks whose `agents` include the active session — the linked-highlight set, separate from the selection-derived `HighlightModel`)
 - `hooks/useTaskData.ts` — fetch + optimistic mutations (PATCH/PUT/DELETE/bulk)
 
 **Supporting modules (non-component):**

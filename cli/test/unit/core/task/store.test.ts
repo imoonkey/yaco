@@ -91,8 +91,7 @@ describe("loadTasks / saveTasks", () => {
     expect(() => loadTaskStore(join(root, "tasks"))).toThrow(/duplicate task id 'x'/);
   });
 
-  it("saveTaskStore writes existing tasks back to their source file and new tasks to their own bundle file", () => {
-    const root = tmp();
+  it("saveTaskStore writes existing tasks back to their source file and new tasks to their own bundle file", () => {    const root = tmp();
     const tasksRoot = join(root, "tasks");
     const source = join(tasksRoot, "cli", "tasks.json");
     mkdirSync(dirname(source), { recursive: true });
@@ -109,5 +108,51 @@ describe("loadTasks / saveTasks", () => {
     const rootGraph = JSON.parse(readFileSync(join(tasksRoot, "y", "tasks.json"), "utf-8"));
     expect(sourceGraph.x.title).toBe("updated");
     expect(rootGraph.y.title).toBe("y");
+  });
+});
+
+describe("loadTaskStore agents normalization", () => {
+  function storeWith(task: Record<string, unknown>) {
+    const root = tmp();
+    const file = join(root, "tasks", "tasks.json");
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, formatJson({ t: { parent: null, depends: [], state: "ready", ...task } }));
+    return { store: loadTaskStore(join(root, "tasks")), file };
+  }
+
+  it("upgrades a legacy agent string to an agents list", () => {
+    const { store } = storeWith({ agent: "claude" });
+    expect(store.tasks.t!.agents).toEqual(["claude"]);
+    expect("agent" in store.tasks.t!).toBe(false);
+  });
+
+  it("trims, drops empty handles, and dedupes the agents list", () => {
+    const { store } = storeWith({ agents: [" claude ", "claude", "", "codex"] });
+    expect(store.tasks.t!.agents).toEqual(["claude", "codex"]);
+  });
+
+  it("prefers agents over a stale legacy agent when both appear", () => {
+    const { store } = storeWith({ agent: "old", agents: ["claude"] });
+    expect(store.tasks.t!.agents).toEqual(["claude"]);
+  });
+
+  it("honors an explicit empty agents array over a stale legacy agent", () => {
+    const { store } = storeWith({ agent: "old", agents: [] });
+    expect("agents" in store.tasks.t!).toBe(false);
+    expect("agent" in store.tasks.t!).toBe(false);
+  });
+
+  it("drops an empty or whitespace-only legacy agent entirely", () => {
+    const { store } = storeWith({ agent: "  " });
+    expect("agents" in store.tasks.t!).toBe(false);
+    expect("agent" in store.tasks.t!).toBe(false);
+  });
+
+  it("omits agent and writes only agents back to disk", () => {
+    const { store, file } = storeWith({ agent: "claude" });
+    saveTaskStore(store);
+    const body = readFileSync(file, "utf-8");
+    expect(body).toContain('"agents"');
+    expect(body).not.toContain('"agent"');
   });
 });

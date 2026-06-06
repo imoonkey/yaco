@@ -5,18 +5,21 @@ import type { StartupInterstitial, TuiProvider } from "../../lib/core/agent/prov
 import {
   buildDefaultSessionName,
   extractName,
+  isValidSessionHandle,
   resolveName,
   stripAnsi,
   validateName,
   PENDING_SESSION_ID,
   type SessionState,
+  type SpawnedBy,
 } from "../../lib/core/agent/model.ts";
 import { ensureHooks, buildWrappedCommand } from "../../lib/core/agent/lifecycle.ts";
-import { deleteState, readState, writeState, listStateHandles } from "../../lib/core/agent/session-state.ts";
+import { deleteState, readState, writeState, listStateHandles, resolveRenamedHandle } from "../../lib/core/agent/session-state.ts";
 
 const READY_TIMEOUT_MS = 30000;
 const POLL_MS = 500;
 const STABLE_IDLE_MS = 1000;
+const POST_INPUT_SETTLE_TIMEOUT_MS = 8000;
 const SID_POLL_TIMEOUT_MS = 3000;
 const SID_POLL_MS = 200;
 
@@ -141,6 +144,32 @@ function waitForSessionId(
   return pending;
 }
 
+/** Derive session lineage from the environment at start, before writing state.
+ *
+ *  Precedence (per design):
+ *    YACO_AGENT_HANDLE present  -> spawnedBy=agent, parentSession=<resolved handle>
+ *    YACO_AGENT_SPAWNED_BY=user:web -> spawnedBy=user:web
+ *    otherwise                  -> spawnedBy=user:terminal
+ *
+ *  The wrapper exports YACO_AGENT_HANDLE for every provider process, so a child
+ *  `yaco agent start` from inside an agent inherits its parent's handle. That
+ *  handle may be stale if the parent was renamed after launch (env can't be
+ *  mutated in place), so we normalize it through the `.renamed-*` breadcrumb
+ *  chain. A malformed inherited handle is ignored (falls through to web/terminal)
+ *  rather than aborting the start. */
+export function deriveSessionLineage(
+  env: NodeJS.ProcessEnv = process.env,
+): { spawnedBy: SpawnedBy; parentSession?: string } {
+  const parent = env["YACO_AGENT_HANDLE"]?.trim();
+  if (parent && isValidSessionHandle(parent)) {
+    return { spawnedBy: "agent", parentSession: resolveRenamedHandle(parent) };
+  }
+  if (env["YACO_AGENT_SPAWNED_BY"] === "user:web") {
+    return { spawnedBy: "user:web" };
+  }
+  return { spawnedBy: "user:terminal" };
+}
+
 export function resolveStartHandle(
   provider: string,
   args: string[],
@@ -206,6 +235,38 @@ function submitPostStartInputs(handle: string, inputs: readonly string[]): boole
   return submitted;
 }
 
+/** Wait for a just-submitted post-start input (e.g. Codex's `/rename <handle>`)
+ *  to drain back to a stable idle prompt before start() returns.
+ *
+ *  The post-start `/rename` is a slash command the TUI applies asynchronously.
+ *  Without waiting, start() can return mid-command, and a caller that issues a
+ *  second command immediately — notably `yaco agent rename`, which sends its own
+ *  `/rename <newHandle>` — races the in-flight one and loses it. Re-using the
+ *  same stable-idle signal as waitForReady (fresh window, no hook short-circuit)
+ *  serializes the two. Bounded; best-effort if the session dies or stays busy. */
+function waitForPostInputSettle(
+  handle: string,
+  timeoutMs: number = POST_INPUT_SETTLE_TIMEOUT_MS,
+): void {
+  const start = Date.now();
+  let idleSince: number | null = null;
+  while (Date.now() - start < timeoutMs) {
+    if (!hasSession(handle)) return;
+    try {
+      const output = stripAnsi(capturePane(handle, 80));
+      if (isIdle(output)) {
+        idleSince ??= Date.now();
+        if (Date.now() - idleSince >= STABLE_IDLE_MS) return;
+      } else {
+        idleSince = null;
+      }
+    } catch {
+      idleSince = null;
+    }
+    Bun.sleepSync(POLL_MS);
+  }
+}
+
 export function start(provider: string, passthroughArgs: string[] | string, name?: string): SessionState {
   // Support legacy string prompt for backward compat
   const args: string[] = typeof passthroughArgs === "string"
@@ -253,6 +314,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   ensureHooks(provider);
 
   // Write initial state file
+  const lineage = deriveSessionLineage();
   const state: SessionState = {
     handle: resolvedName,
     provider,
@@ -261,6 +323,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     sessionId: resumeId ?? "",
     status: "starting",
     createdAt: new Date().toISOString(),
+    ...lineage,
   };
   writeState(state);
 
@@ -301,6 +364,9 @@ export function start(provider: string, passthroughArgs: string[] | string, name
 
   if (ready && postStartInputs.length > 0 && hasSession(resolvedName)) {
     ready = submitPostStartInputs(resolvedName, postStartInputs) && ready;
+    // Let the post-start command (Codex `/rename`) settle so a follow-up rename
+    // doesn't race it. Only runs for providers that declare post-start inputs.
+    if (ready) waitForPostInputSettle(resolvedName);
   }
 
   // Resolve sessionId — skip polling if already known from --resume

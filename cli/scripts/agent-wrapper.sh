@@ -38,6 +38,13 @@ trap '
 # server caches its initial env, so this can persist even when the immediate
 # parent already stripped them.
 unset $(env | awk -F= '/^npm_(config|lifecycle|package)_/{print $1}')
+# Session lineage capture: export this session's handle so a child `yaco agent
+# start` launched from inside the agent inherits it and records spawnedBy=agent
+# with parentSession=<this handle>. Clear the one-shot web spawn marker so it
+# never leaks into long-lived child environments (handle precedence already
+# makes an inherited user:web harmless; clearing it is cheap env hygiene).
+export YACO_AGENT_HANDLE="$sn"
+unset YACO_AGENT_SPAWNED_BY
 # Run the agent through a login + interactive bash so it sees the same env as
 # if launched from a terminal (sources /etc/profile, ~/.profile, ~/.bashrc) —
 # this is what makes SSH_AUTH_SOCK / PATH / etc behave the same in workflow

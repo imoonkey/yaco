@@ -1,6 +1,6 @@
 # Task Subcommand (`@yaco/cli/core/task`)
 
-> Last updated: 2026-06-05 (task-workset-storage)
+> Last updated: 2026-06-06 (astl-session-rename-link-integrity: `agents` rewrite on rename; prior astl-task-agent-link-mutation)
 
 The task area owns the project task graph at `<repoRoot>/<paths.tasks>`
 (default `plan/tasks`, override via `yaco.toml [paths].tasks`). If the
@@ -16,10 +16,11 @@ and the `--json` envelope.
 
 | File | Surface | Notes |
 |------|---------|-------|
-| `model.ts` | `STATES`, `WORKSETS`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, guards, types (`Task`, `TaskGraph`, …) | Task schema constants. `workset` is `active`, `backlog`, or `archive`; missing normalizes to `active`. |
+| `model.ts` | `STATES`, `WORKSETS`, `TERMINAL`, `PRIORITIES`, `ESTIMATES`, `BLOCK_REASONS`, `SLUG_RE`, `AGENT_HANDLE_RE`, guards, types (`Task`, `TaskGraph`, …) | Task schema constants. `workset` is `active`, `backlog`, or `archive`; missing normalizes to `active`. `agents?: string[]` holds session-handle links (validated against `AGENT_HANDLE_RE` `/^[a-zA-Z0-9_-]+$/`); the legacy scalar `agent` is upgraded to `agents` on load. Both `agent` and a full `agents` array are rejected on `set` — links are mutated only through `attach`/`detach`. |
 | `validation.ts` | `validateTypes`, `isAcceptCriteriaBlank` | Shape checks for a `set` payload. Throws `CliError(INVALID)`. |
 | `graph.ts` | `validateRefs`, `checkCycles`, `validateState`, `rollup`, `hasChildren`, `childrenOf`, `validateGraph`, `collectParentChain` | Ref + cycle + state-guard + milestone-rollup checks. `validateGraph` collects **all** problems for the `validate` command. |
-| `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `formatJson` | On-disk I/O. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. |
+| `store.ts` | `loadTasks`, `saveTasks`, `loadTaskStore`, `saveTaskStore`, `resolveTasksPathForSessionPath`, `formatJson` | On-disk I/O. Directory stores recursively load descendant `tasks.json` files and remember each task's source file so updates write back to the owning file. `resolveTasksPathForSessionPath` walks a session's `sessionPath` upward to the nearest project root (used by `yaco agent rename`). |
+| `link.ts` | `mutateTaskAgentLink`, `applyAgentLink`, `rewriteTaskAgentHandle` | Locked attach/detach delta on `task.agents`, plus the handle-rewrite used by rename. See [`attach`/`detach`](#attach-id-handle--detach-id-handle) and [agents rewrite on rename](#agents-link-rewrite-on-rename). |
 | `archive.ts` | `collectDescendants`, `archiveTask` | Terminal-subtree collection and `workset=archive` marking. |
 | `lock.ts` | `acquireLock`, `withLock`, `describeLock`, `lockPathFor` | Atomic-mkdir lock + owner metadata. See [Locking](#locking). |
 | `index.ts` | Re-exports the public surface | Always import through this barrel. |
@@ -30,6 +31,8 @@ and the `--json` envelope.
 yaco task set <id> --data '<json>'      [--repo <p>] [--json]
 yaco task set <id> --stdin              [--repo <p>] [--json]
 yaco task set <id> --file <path>        [--repo <p>] [--json]
+yaco task attach <id> <session-handle>  [--repo <p>] [--json]
+yaco task detach <id> <session-handle>  [--repo <p>] [--json]
 yaco task rm <id>                       [--repo <p>] [--json]
 yaco task archive <id>                  [--repo <p>] [--json]
 yaco task validate [--id <id>]          [--repo <p>] [--json]
@@ -45,6 +48,7 @@ object.
 - **New task**: requires `title` and `description`. Seeded with `{parent: null, depends: [], state: "ready", workset: "active"}`, then merged with the payload, then `created` and `updated` set to `now`. A new child task is written to its parent's source file; a new top-level task is written to `<paths.tasks>/<id>/tasks.json` when `paths.tasks` is a directory.
 - **Update**: incoming `created` is dropped; everything else is merged. `updated` always refreshed.
 - `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics).
+- A payload carrying `agent` or `agents` is rejected (`INVALID` exit 1) — session links are mutated only through [`attach`/`detach`](#attach-id-handle--detach-id-handle).
 - Validation order (matches Python): leaf `acceptCriteria` non-blank → `validateRefs` → `validateState` → `checkCycles` → `rollup` → save.
 - After save, if the task has a `worktree` slug, an advisory check compares scope globs across siblings sharing the slug and emits a warning if the implied repo sets diverge. Warnings land under `data.warnings` (text mode: `warning: ...` on stderr).
 
@@ -60,6 +64,36 @@ Response shape (`--json`):
     "tasksFile": "/abs/path/to/plan/tasks/<id>/tasks.json"
   } }
 ```
+
+### `attach <id> <handle>` / `detach <id> <handle>`
+
+The only writers of `task.agents`. A full-array `set` of `agents` is rejected
+(see [`set`](#set-id)) because a whole-list overwrite can clobber a handle that
+a concurrent worker linked between read and write. Both subcommands run the
+locked delta `mutateTaskAgentLink` (`link.ts`):
+
+- the session handle is validated against `AGENT_HANDLE_RE` (`/^[a-zA-Z0-9_-]+$/`); a bad handle is `INVALID` exit 1, and liveness is **not** required;
+- `attach` appends the handle only if missing; `detach` removes it only if present — both are idempotent;
+- the last `detach` deletes the `agents` key entirely (empty lists are never written);
+- only the target task's `agents` is touched. The write patches that one task's
+  raw record in its own source file rather than re-saving the normalized store,
+  so load-time normalization (e.g. defaulting a legacy task's `workset` to
+  `active`) never leaks to disk on the target or its file-mates. State, workset,
+  timestamps, and session/lineage state are left unchanged.
+
+Response shape (`--json`): `{ ok: true, data: { taskId, agents: [...], op: "attach" | "detach", tasksPath } }`.
+A missing task is `NOT_FOUND` exit 1.
+
+### `agents` link rewrite on rename
+
+`task.agents` stores session handles, which are mutable via `yaco agent rename`.
+That command rewrites matching links through `rewriteTaskAgentHandle(tasksPath,
+old, new)` (`link.ts`) so a rename never orphans a task link. It runs under the
+tasks-file lock, rewrites each affected task's `agents` in place (order-preserving,
+deduped if `new` was already linked), and patches per-source-file like
+attach/detach. It is best-effort from rename's side: failures surface as warnings,
+never aborting the authoritative session rename. There is no `yaco task` subcommand
+for it — only `yaco agent rename` calls it. -> See: [lifecycle.md](lifecycle.md#rename-link-integrity).
 
 ### `rm <id>`
 
@@ -171,10 +205,11 @@ the canonical model.
 
 ## Tests
 
-- `cli/test/unit/core/task/{validation,graph,store,archive,lock}.test.ts` — pure unit coverage.
-- `cli/test/integration/task/task-cli.integration.ts` — spawns `yaco` and asserts the envelope contracts (create/update/rm/archive/validate/list, --file ENOENT mapping, warnings key, milestone-rollup detection, configured-path regression, lock contention, local stale-PID reclaim, cross-host lock → exit 4 set + exit 1 validate with `staleLocks`).
+- `cli/test/unit/core/task/{validation,graph,store,archive,lock,link}.test.ts` — pure unit coverage (`link.test.ts` covers idempotent attach/detach, last-detach key omission, legacy `agent` upgrade, concurrent attaches, and absent-`workset` preservation).
+- `cli/test/integration/task/task-cli.integration.ts` — spawns `yaco` and asserts the envelope contracts (create/update/rm/archive/validate/list, attach/detach lifecycle, `set` agents rejection, --file ENOENT mapping, warnings key, milestone-rollup detection, configured-path regression, lock contention, local stale-PID reclaim, cross-host lock → exit 4 set + exit 1 validate with `staleLocks`).
 
 ## Consumers
 
 - `agent-config/global/skills/update-tasks/SKILL.md` now drives the `yaco task ...` surface directly (the legacy `update-tasks.py` was deleted in yc-cleanup-legacy).
-- Any other caller (orchestrate, `app/server`, etc.) should use the TS surface, either through the CLI envelope or the `@yaco/cli/core/task` export.
+- `agent-config/global/skills/orchestrate/SKILL.md` links a worker to its task with `yaco task attach <id> w-<id>` after dispatch; it no longer writes the legacy `agent` field through `yaco task set`.
+- Any other caller (`app/server`, etc.) should use the TS surface, either through the CLI envelope or the `@yaco/cli/core/task` export. The web UI only displays links in v1, so no app-server attach/detach route exists.

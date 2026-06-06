@@ -42,10 +42,11 @@ export function TaskGraphSectionHeader({ section }: { section: LayoutSection }) 
 // by one code path in both modes. `edges` is an optional slot painted between
 // the guides and the cards (stacked draws dependency arcs here; Gantt routes its
 // finish-to-start links in the separate time pane instead).
-export function TaskGraphRows({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onToggleCollapse, onPointerEnter, onPointerLeave, edges }: {
+export function TaskGraphRows({ graph, layout, searchMatchIds, linkedTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onToggleCollapse, onPointerEnter, onPointerLeave, edges }: {
   graph: TaskGraphModel
   layout: GraphLayout
   searchMatchIds: Set<string>
+  linkedTaskIds: Set<string>
   highlight: HighlightModel
   selection: Selection
   scale: number
@@ -95,6 +96,7 @@ export function TaskGraphRows({ graph, layout, searchMatchIds, highlight, select
               highlight={highlight}
               isSelected={selection === node.id}
               isSearchMatch={searchMatchIds.has(node.id)}
+              isLinkedToActiveSession={linkedTaskIds.has(node.id)}
               isCollapsed={collapsedTaskIds.has(node.id)}
               depCount={task.depends.length}
               scale={scale}

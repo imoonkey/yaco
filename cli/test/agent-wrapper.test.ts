@@ -48,6 +48,11 @@ describe("agent-wrapper.sh content", () => {
   it("runs command via $@", () => {
     expect(WRAPPER_SCRIPT).toContain('"$@"');
   });
+
+  it("exports YACO_AGENT_HANDLE for lineage capture and clears the web marker", () => {
+    expect(WRAPPER_SCRIPT).toContain('export YACO_AGENT_HANDLE="$sn"');
+    expect(WRAPPER_SCRIPT).toContain("unset YACO_AGENT_SPAWNED_BY");
+  });
 });
 
 describe("agent-wrapper.sh execution", () => {
@@ -112,6 +117,28 @@ describe("agent-wrapper.sh execution", () => {
     });
 
     expect(readFileSync(outFile, "utf-8").trim()).toBe("hello");
+  });
+
+  it("exports the handle and clears the web marker for the wrapped process", () => {
+    const fakeHome = join(tmpDir, "fakehome");
+    const fakeSessionsDir = join(fakeHome, ".yaco", "sessions");
+    mkdirSync(fakeSessionsDir, { recursive: true });
+    writeFileSync(
+      join(fakeSessionsDir, "test.json"),
+      `{"status":"idle","sessionId":"","createdAt":"${createdAt}"}`,
+    );
+    const outFile = join(tmpDir, "env.txt");
+
+    execSync(
+      `bash ${WRAPPER_PATH} test ${createdAt} bash -c 'echo "H=$YACO_AGENT_HANDLE S=\${YACO_AGENT_SPAWNED_BY-unset}" > ${outFile}'`,
+      {
+        encoding: "utf-8",
+        env: { ...defaultChildEnv(fakeHome), YACO_AGENT_SPAWNED_BY: "user:web" },
+        timeout: 5000,
+      },
+    );
+
+    expect(readFileSync(outFile, "utf-8").trim()).toBe("H=test S=unset");
   });
 
   it("does not delete state file of a prefix-matching session", () => {

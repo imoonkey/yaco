@@ -9,6 +9,13 @@ interface TaskScreenProps {
   onClose?: () => void
   onOpenTasksFile?: () => void
   onOpenFile?: (path: string) => void
+  // Active terminal session handle — highlights linked task nodes and marks the
+  // matching handle in the detail panel. Empty/absent means no attached terminal.
+  activeSession?: string | null
+  // Live session handles for this project — a linked handle is clickable only when live.
+  liveSessionHandles?: Set<string>
+  // Open the existing terminal surface for a live session handle.
+  onOpenTerminal?: (handle: string) => void
 }
 
 /**
@@ -16,7 +23,7 @@ interface TaskScreenProps {
  * workset, state, and search) plus the detail panel for the selected task. No
  * Board/List/Graph/Archive pane switching — workset is a filter, not a separate view.
  */
-export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScreenProps) {
+export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile, activeSession, liveSessionHandles, onOpenTerminal }: TaskScreenProps) {
   const { tasks, mutate } = useTaskData(projectName)
   const rootRef = useRef<HTMLDivElement>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
@@ -52,6 +59,7 @@ export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScr
         onCloseTask={() => setOpenTaskId(null)}
         selectedTaskId={selectedTaskId}
         openTaskId={openTaskId}
+        activeSession={activeSession}
       />
 
       {openTask && (
@@ -61,6 +69,9 @@ export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile }: TaskScr
           onClose={() => setOpenTaskId(null)}
           onSelectTask={handleOpenTask}
           onOpenFile={onOpenFile}
+          onOpenTerminal={onOpenTerminal}
+          liveSessionHandles={liveSessionHandles}
+          activeSession={activeSession}
           mutate={mutate}
           width={detailPane.size}
           isResizing={detailPane.isDragging}

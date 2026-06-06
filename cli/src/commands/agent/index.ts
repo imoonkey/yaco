@@ -378,8 +378,13 @@ export async function handleAgent(
       if (!oldName || !newName || parsed.positional.length !== 2) {
         throw new CliError(ErrCode.USAGE, "yaco agent rename <old-name> <new-name>");
       }
-      rename(oldName, newName);
-      return ok({ renamed: { from: oldName, to: newName } });
+      const outcome = await rename(oldName, newName);
+      return ok({
+        renamed: { from: oldName, to: newName },
+        childSessions: outcome.childSessions,
+        tasks: outcome.tasks,
+        warnings: outcome.warnings,
+      });
     }
 
     case "hooks": {
