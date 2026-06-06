@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-06: Pseudo-Gantt task workspace mode
+
+**What changed:**
+- Added a second task workspace layout, **Pseudo-Gantt**, beside Stacked (replaces the dropped DAG mode). Toolbar toggle, persisted, desktop-only.
+- `ganttSchedule.ts` — pure CPM schedule over the filter-visible leaf set: duration map `xs/s/m/l/xl=1/2/3/5/8` (missing→`m`, `assumed`), effective-predecessor graph with on-`E` cycle detection, forward/backward passes for integer-exact `slack`/`critical`, group summaries.
+- `computeGanttLayout` returns `GanttLayout extends GraphLayout` (bars + ruler + `leftWidth`/`timeWidth`); `TaskGanttCanvas` renders a two-pane sticky spreadsheet (frozen left column + sticky ruler + horizontally-scrollable time pane), one `scale()` per pane.
+- Extracted `TaskGraphRows` so the Gantt left column reuses the **exact** stacked row renderer — identical cards, indent guides, and Backlog/Archive section dividers.
+- Resizable pane divider (app `VResizeHandle` style) in a margined gutter; width persists via `ganttLeftWidth`, clamped to the depth-derived auto floor so cards never clip.
+- Bars: state colors, assumed-estimate hatch, critical-path outline, distinct summary bars, effective-cycle bars red; selection emphasizes upstream/downstream + critical chain.
+
+**Why:**
+- Gantt answers what DAG was meant to (what unlocks what, critical path, parallelism) but adds scale via estimate-weighted bars on a synthetic optimistic-unit axis. Sharing the stacked renderer keeps the two modes' left columns pixel-identical and avoids a second row-layout code path.
+
+**Key files:** `app/ui/src/tasks/{ganttSchedule.ts,taskGraphModel.ts,TaskGraphRows.tsx,TaskGanttCanvas.tsx,TaskGanttRuler.tsx,TaskGanttBar.tsx,TaskGraphCanvas.tsx,TaskGraphScreen.tsx,useTaskGraphInteraction.ts}`, `doc/main/app/frontend/components.md`
+**Verification:** `cd app/ui && npm run build`, `npm run lint` (0 errors), `npx vitest run src/tasks` (59 passed), and the `task-graph.spec.ts` Playwright suite (20 passed, incl. mode switch/persist, frozen column+ruler, zoom no-drift, assumed hatch, only-real-`depends` edges, shared section dividers, divider resize+persist) all pass.
+**Commit:** d99887d..ba72cd4
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-06: Task graph workset reads, ranking, and section dividers
 
 **What changed:**

@@ -72,16 +72,19 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
 │   │     filter, search (`/` focuses it), zoom, collapse/expand. Mobile folds
 │   │     workset+state into a Filter popover, hides the layout/collapse controls,
 │   │     and always renders Stacked.
-│   ├── (Stacked) TaskGraphCanvas → TaskGraphNode[] (36px single-line, width-driven
-│   │     full-row card, estimate badge, worktree icon, right-aligned metadata rail) +
-│   │     TaskGraphSectionHeader dividers for non-active worksets +
-│   │     TaskGraphEdges. The SVG is sized to the scaled layout bounds inside an
-│   │     overflow-y scroll container.
+│   ├── (Stacked) TaskGraphCanvas → TaskGraphRows (shared row renderer: section
+│   │     dividers + indent guides + TaskGraphNode[] 36px width-driven cards) +
+│   │     TaskGraphEdges painted between guides and cards. The SVG is sized to the
+│   │     scaled layout bounds inside an overflow-y scroll container.
 │   ├── (Gantt) TaskGanttCanvas → two-pane sticky spreadsheet: a frozen left task
-│   │     column (sticky-left, reuses TaskGraphNode/Group) + a horizontally-scrollable
-│   │     time pane (sticky-top TaskGanttRuler, TaskGraphEdges as finish-to-start
-│   │     links, one TaskGanttBar per row, faint gridlines). One `scale()` transform
-│   │     per pane; rows keep their `y` so switching modes is non-disorienting.
+│   │     column (sticky-left) that reuses the SAME TaskGraphRows renderer — so
+│   │     cards, indent guides, and Backlog/Archive section dividers are identical
+│   │     to Stacked — then a resize-handle gutter (VResizeHandle style: 3px,
+│   │     sol-border → sol-accent on drag; persists leftWidth via ganttLeftWidth),
+│   │     then a horizontally-scrollable time pane (sticky-top TaskGanttRuler,
+│   │     TaskGraphEdges as finish-to-start links, one TaskGanttBar per row, faint
+│   │     gridlines). One `scale()` transform per pane; rows keep their `y` so
+│   │     switching modes is non-disorienting.
 │   └── TaskGraphTooltip — hover overlay (title, description, progress, full
 │         metadata chips: id/priority/workset/agent/tags)
 └── TaskDetailPanel — shared right overlay (editable; archive tasks are in the
@@ -138,7 +141,8 @@ chips and `TaskDetailPanel`.
 
 **Task data model (non-component):**
 - `model/taskModel.ts` — TaskV2 types + normalizer (extends V1 with priority, agent, tags, estimate, worktree, worktreeStatus). `WorktreeStatus` type: `{ active, dirty, branch, ahead, behind }`
-- `taskGraphModel.ts` — shared `layoutRows()` core (measure + position the indented row tree, emitting non-active workset section divider metadata) feeds BOTH modes. **Stacked**: `computeDisplayLayout(..., containerWidth)` stretches rows to fill container width to a shared right edge (24px indent/level, left-side guide lines), SCC cycle detection, visible-tree semantics; `LayoutNode.width` drives card width (NODE_WIDTH=280 is a min-width floor); real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge; NODE_HEIGHT=36. **Gantt**: `computeGanttLayout(...)` returns `GanttLayout extends GraphLayout` (so selection/keyboard/search/collapse work unchanged) and adds `bars` (per-row `GanttBar` from the schedule), `ruler.ticks` (optimistic units), depth-derived `leftWidth`, and `timeWidth = makespan·PX`; FS `depends` edges are cubic, left→right only, with `originalEdgeIds` always populated. All Gantt coords are unscaled (the canvas applies one `scale()` per pane).
+- `taskGraphModel.ts` — shared `layoutRows()` core (measure + position the indented row tree, emitting non-active workset section divider metadata) feeds BOTH modes. **Stacked**: `computeDisplayLayout(..., containerWidth)` stretches rows to fill container width to a shared right edge (24px indent/level, left-side guide lines), SCC cycle detection, visible-tree semantics; `LayoutNode.width` drives card width (NODE_WIDTH=280 is a min-width floor); real `depends` edges bow into a reserved right-side gutter (DEPENDS_GUTTER) past a single global right edge; NODE_HEIGHT=36. **Gantt**: `computeGanttLayout(..., leftWidthOverride?)` returns `GanttLayout extends GraphLayout` (so selection/keyboard/search/collapse work unchanged) and adds `bars` (per-row `GanttBar` from the schedule), `ruler.ticks` (optimistic units), `leftWidth` (depth-derived auto floor, widened by `leftWidthOverride` for the resizable divider — clamped so cards never clip), and `timeWidth = makespan·PX`; FS `depends` edges are cubic, left→right only, with `originalEdgeIds` always populated. All Gantt coords are unscaled (the canvas applies one `scale()` per pane).
+- `TaskGraphRows.tsx` — the shared SVG row renderer used by BOTH the Stacked canvas and the Gantt left column: scaled `<g>` with section-divider, indent-guide, and TaskGraphNode layers (`TaskGraphSectionHeader` lives here), plus an optional `edges` slot painted between guides and cards (Stacked passes its dependency arcs; Gantt routes links in the time pane instead). One code path → the two modes' left columns are pixel-identical.
 - `ganttSchedule.ts` — pure CPM schedule for Gantt mode (no React). Duration map `xs/s/m/l/xl = 1/2/3/5/8`, missing/unknown estimate → `m` (3) flagged `assumed`. Builds the internal effective-predecessor graph `E` over the filter-visible leaf set (ancestor-inherited + group-expanded deps, self-edges stripped, intersected with the visible set), runs Kahn topo on `E` (effective-cycle nodes flagged `cycle`), then forward/backward passes for `start`/`finish`/`slack`/`critical` (integer-exact slack===0; cycle nodes excluded from critical). Group rows get a summary entry (`start=min`, `finish=max`, `critical=any`). View-local: a predecessor filtered out of the visible set is dropped. `E` is schedule-internal and never rendered as edges.
 - `TaskGanttCanvas.tsx` / `TaskGanttRuler.tsx` / `TaskGanttBar.tsx` — the Gantt view. `TaskGanttBar` colors each bar by aggregate state (`STATE_COLORS`), overlays a diagonal hatch (one shared `<pattern>` via `GanttBarDefs`) when `assumed`, outlines critical-path bars in accent, renders summary bars as a thin lighter span with end-cap wedges, and fills effective-`cycle` bars red (never critical-styled). Selection reuses `computeHighlight` for upstream/downstream dim while the critical chain stays prominent; hover/click reuse the same tooltip/select handlers as nodes.
 - `taskGraphSelection.ts` — `Selection = string | null`, subtree-aware highlight, search
