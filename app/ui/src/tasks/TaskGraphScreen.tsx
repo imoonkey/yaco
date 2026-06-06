@@ -16,7 +16,24 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
   const isMobile = useIsMobile()
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const [containerWidth, setContainerWidth] = useState(0)
+
+  // Track scroll-container width for width-driven layout (clientWidth excludes the
+  // vertical scrollbar, so the SVG fits exactly and never adds a horizontal scrollbar).
+  // A callback ref binds the observer whenever the scroll container mounts — including
+  // the loading→ready transition, which a mount-time effect would miss (the div does
+  // not exist while the loading pane is shown, leaving containerWidth stuck at 0).
+  const attachScrollRef = useCallback((el: HTMLDivElement | null) => {
+    scrollRef.current = el
+    resizeObserverRef.current?.disconnect()
+    resizeObserverRef.current = null
+    if (!el) return
+    const ro = new ResizeObserver(() => setContainerWidth(el.clientWidth))
+    ro.observe(el)
+    resizeObserverRef.current = ro
+    setContainerWidth(el.clientWidth)
+  }, [])
 
   // Viewport — native vertical scroll for navigation, uniform zoom via scale.
   const viewport = useViewport({ scrollRef })
@@ -84,17 +101,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
   useEffect(() => {
     ix.clearTooltip()
   }, [viewport.scale]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Track scroll-container width for width-driven layout (excludes the vertical
-  // scrollbar, so the SVG fits exactly and never adds a horizontal scrollbar).
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setContainerWidth(el.clientWidth))
-    ro.observe(el)
-    setContainerWidth(el.clientWidth)
-    return () => ro.disconnect()
-  }, [])
 
   // Create tasks file handler
   const [creating, setCreating] = useState(false)
@@ -186,7 +192,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, se
       <div className="flex flex-1 overflow-hidden">
         <div ref={containerRef} className="relative flex-1 overflow-hidden">
           <div
-            ref={scrollRef}
+            ref={attachScrollRef}
             className="absolute inset-0 overflow-y-scroll overflow-x-auto"
             onScroll={ix.clearTooltip}
           >
