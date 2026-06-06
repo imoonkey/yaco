@@ -91,10 +91,10 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
     const model = { tasks: visibleTasks, childIdsByTask: graph.childIdsByTask, rootIds: graph.rootIds, subtreeIdsByTask: graph.subtreeIdsByTask, dependenciesByTask: graph.dependenciesByTask }
     const viewState = { collapsedTaskIds: ix.collapsedTaskIds, filters: ix.filters.states }
     if (isGantt) {
-      return computeGanttLayout(model, viewState, graph.aggregateStateByTask, graph.leafProgressByTask, graph.cycleEdgeIds)
+      return computeGanttLayout(model, viewState, graph.aggregateStateByTask, graph.leafProgressByTask, graph.cycleEdgeIds, ix.ganttLeftWidth ?? undefined)
     }
     return computeDisplayLayout(model, viewState, graph.aggregateStateByTask, graph.leafProgressByTask, graph.cycleEdgeIds, containerWidth)
-  }, [graph, ix.collapsedTaskIds, ix.filters, isGantt, containerWidth])
+  }, [graph, ix.collapsedTaskIds, ix.filters, isGantt, containerWidth, ix.ganttLeftWidth])
 
   // Clear selection when the selected task is no longer in the rendered layout —
   // hidden by any filter (workset, state, or a filtered-out ancestor). Robust to all
@@ -250,6 +250,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
                 onToggleCollapse={ix.handleToggleCollapse}
                 onPointerEnter={ix.handlePointerEnter}
                 onPointerLeave={ix.handlePointerLeave}
+                onResizeLeftWidth={ix.setGanttLeftWidth}
               />
             ) : (
               <TaskGraphCanvas

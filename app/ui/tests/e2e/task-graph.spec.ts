@@ -342,6 +342,51 @@ test.describe('Task workspace (Pseudo-Gantt mode)', () => {
     await expect(page.locator('[data-layer="nodes"] g[data-selected="true"]')).toHaveCount(1, { timeout: 3_000 })
     await expect(page.getByRole('complementary', { name: 'Task details' })).toHaveCount(0)
   })
+
+  test('the left column renders the same workset section dividers as stacked', async ({ page }) => {
+    await openTaskGraph(page)
+    // Show every workset so non-active section dividers (Backlog/Archive) exist.
+    await page.locator('button[aria-label="Workset: archive"]').click()
+
+    const sections = page.locator('[data-layer="sections"] text')
+    await expect.poll(() => sections.count()).toBeGreaterThan(0) // stacked draws dividers
+    const stackedLabels = await sections.allTextContents()
+
+    // Gantt reuses the same TaskGraphRows path → identical section dividers.
+    await switchToGantt(page)
+    await expect.poll(() => sections.count()).toBe(stackedLabels.length)
+    expect(await sections.allTextContents()).toEqual(stackedLabels)
+  })
+
+  test('the divider resizes the left column and the width persists', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    await switchToGantt(page)
+
+    const divider = page.locator('[data-testid="gantt-divider"]')
+    await expect(divider).toBeVisible()
+    const leftCol = page.locator('[data-layer="nodes"]').first()
+    const startWidth = (await leftCol.boundingBox())!.width
+
+    // Drag the divider handle right by ~160px → the left column widens by ~that much.
+    const box = (await divider.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + 200)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width / 2 + 80, box.y + 200, { steps: 4 })
+    await page.mouse.move(box.x + box.width / 2 + 160, box.y + 200, { steps: 4 })
+    await page.mouse.up()
+
+    await expect.poll(async () => (await leftCol.boundingBox())!.width).toBeGreaterThan(startWidth + 40)
+    const widened = (await leftCol.boundingBox())!.width
+
+    // The override persists and is re-applied on a fresh load.
+    const persisted = await page.evaluate((name: string) =>
+      JSON.parse(localStorage.getItem(`yaco-task-workspace:${name}`) || '{}').ganttLeftWidth, project.name)
+    expect(persisted).toBeGreaterThan(startWidth + 40)
+
+    await reopenWorkspace(page, project)
+    await switchToGantt(page)
+    await expect.poll(async () => (await page.locator('[data-layer="nodes"]').first().boundingBox())!.width).toBeGreaterThan(widened - 5)
+  })
 })
 
 test.describe('Task workspace (V1 stacked graph)', () => {

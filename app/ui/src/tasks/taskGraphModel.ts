@@ -882,6 +882,7 @@ export function computeGanttLayout(
   aggregateStateByTask: Map<string, TaskState>,
   leafProgressByTask: Map<string, { done: number; total: number }>,
   cycleEdgeIds: Set<string>,
+  leftWidthOverride?: number,
 ): GanttLayout {
   const { tasks, childIdsByTask, rootIds, subtreeIdsByTask } = model
   const { filters } = viewState
@@ -889,7 +890,10 @@ export function computeGanttLayout(
   // Depth probe — `maxVisibleDepth` is structural (independent of the right edge), so a
   // throwaway pass fixes `leftWidth` before the real pass shares that column right edge.
   const probe = layoutRows(model, viewState, aggregateStateByTask, leafProgressByTask, GRAPH_PADDING + NODE_WIDTH)
-  const leftWidth = GRAPH_PADDING + probe.maxVisibleDepth * INDENT + NODE_WIDTH + LEFT_COL_PAD
+  // Auto width fits the deepest row + a full card; a user drag may only widen it
+  // (never below the auto floor, so cards never clip).
+  const autoLeftWidth = GRAPH_PADDING + probe.maxVisibleDepth * INDENT + NODE_WIDTH + LEFT_COL_PAD
+  const leftWidth = leftWidthOverride != null ? Math.max(autoLeftWidth, leftWidthOverride) : autoLeftWidth
 
   const { sections, nodes, groups, visibleOrder, visibleChildrenByTask, totalHeight } = layoutRows(
     model, viewState, aggregateStateByTask, leafProgressByTask, leftWidth,

@@ -25,6 +25,7 @@ type LoadedWorkspace = {
   worksets: Set<Workset>
   states: Set<TaskState>
   collapsed: Set<string>
+  ganttLeftWidth: number | null
 }
 
 function loadWorkspace(project: string): LoadedWorkspace {
@@ -33,6 +34,7 @@ function loadWorkspace(project: string): LoadedWorkspace {
     worksets: new Set(DEFAULT_WORKSETS),
     states: new Set(ALL_STATES),
     collapsed: new Set(),
+    ganttLeftWidth: null,
   }
   try {
     const stored = localStorage.getItem(`yaco-task-workspace:${project}`)
@@ -46,6 +48,7 @@ function loadWorkspace(project: string): LoadedWorkspace {
       worksets: worksets.length ? new Set(worksets) : new Set(DEFAULT_WORKSETS),
       states: states.length ? new Set(states) : new Set(ALL_STATES),
       collapsed: Array.isArray(p.collapsedTaskIds) ? new Set(p.collapsedTaskIds) : new Set(),
+      ganttLeftWidth: typeof p.ganttLeftWidth === 'number' && p.ganttLeftWidth > 0 ? p.ganttLeftWidth : null,
     }
   } catch {
     return base
@@ -64,6 +67,7 @@ export function useTaskGraphInteraction(
   const [stateFilters, setStateFilters] = useState<Set<TaskState>>(initial.states)
   const [worksets, setWorksets] = useState<Set<Workset>>(initial.worksets)
   const [searchQuery, setSearchQuery] = useState('')
+  const [ganttLeftWidth, setGanttLeftWidth] = useState<number | null>(initial.ganttLeftWidth)
 
   const filters = useMemo<TaskGraphFilters>(() => ({ states: stateFilters, worksets }), [stateFilters, worksets])
 
@@ -79,8 +83,9 @@ export function useTaskGraphInteraction(
       worksets: [...worksets],
       states: [...stateFilters],
       collapsedTaskIds: [...collapsedTaskIds],
+      ganttLeftWidth,
     }))
-  }, [projectName, layout, worksets, stateFilters, collapsedTaskIds])
+  }, [projectName, layout, worksets, stateFilters, collapsedTaskIds, ganttLeftWidth])
 
   // --- Tooltip state ---
   const [tooltipTarget, setTooltipTarget] = useState<TooltipTarget | null>(null)
@@ -248,6 +253,8 @@ export function useTaskGraphInteraction(
     setSelection,
     layout,
     setLayout,
+    ganttLeftWidth,
+    setGanttLeftWidth,
     filters,
     searchQuery,
     setSearchQuery,

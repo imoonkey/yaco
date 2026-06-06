@@ -1,18 +1,26 @@
+import { useCallback, useState } from 'react'
 import type { GanttLayout, TaskGraphModel } from './taskGraphModel'
 import type { HighlightModel, Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { TaskGraphEdges } from './TaskGraphEdges'
-import { TaskGraphGroup } from './TaskGraphGroup'
-import { TaskGraphNode } from './TaskGraphNode'
+import { TaskGraphRows } from './TaskGraphRows'
 import { TaskGanttBar, GanttBarDefs } from './TaskGanttBar'
 import { TaskGanttRuler, RULER_HEIGHT } from './TaskGanttRuler'
+
+// Width of the gutter between the two panes. The 3px resize handle is centered in
+// it, so the leftover space on each side is the breathing room between the task
+// cards / time grid and the divider.
+const DIVIDER_GUTTER = 19
 
 // Two-pane Pseudo-Gantt: a frozen left task column (sticky left) + a horizontally
 // scrollable time pane with a sticky top ruler. Both panes share the same row `y`
 // and the same single scale() transform, so zoom and vertical scroll stay in lock
 // step with no manual scroll-sync. A blank corner spacer keeps both panes' rows
-// aligned beneath the ruler band.
-export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+// aligned beneath the ruler band. The left column reuses the same row renderer as
+// the stacked canvas, so cards, indent guides, and workset section dividers render
+// identically; a draggable divider (the app's VResizeHandle style) between the
+// panes resizes that column.
+export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave, onResizeLeftWidth }: {
   graph: TaskGraphModel
   layout: GanttLayout
   searchMatchIds: Set<string>
@@ -26,14 +34,34 @@ export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, sele
   onToggleCollapse: (id: string) => void
   onPointerEnter: (target: TooltipTarget) => void
   onPointerLeave: () => void
+  onResizeLeftWidth: (unscaledWidth: number) => void
 }) {
-  const groupById = new Map(layout.groups.map(g => [g.id, g]))
   const leftW = layout.leftWidth * scale
   const timeW = layout.timeWidth * scale
   const contentH = layout.bounds.height * scale
+  const fullH = RULER_HEIGHT * scale + contentH
+  const [dragging, setDragging] = useState(false)
+
+  // Drag the divider: screen-pixel delta is converted back to unscaled layout
+  // units (computeGanttLayout clamps below the auto floor so cards never clip).
+  const onDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const startX = e.clientX
+    const startWidth = layout.leftWidth
+    setDragging(true)
+    const onMove = (ev: MouseEvent) => onResizeLeftWidth(startWidth + (ev.clientX - startX) / scale)
+    const onUp = () => {
+      setDragging(false)
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [layout.leftWidth, scale, onResizeLeftWidth])
 
   return (
-    <div className="flex" style={{ width: leftW + timeW, position: 'relative' }}>
+    <div className="flex" style={{ width: leftW + DIVIDER_GUTTER + timeW, position: 'relative' }}>
       {/* Left frozen task column — stays put during horizontal scroll. */}
       <div className="shrink-0" style={{ position: 'sticky', left: 0, zIndex: 2, width: leftW }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 3, height: RULER_HEIGHT * scale, backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)' }} />
@@ -44,45 +72,38 @@ export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, sele
           onClick={onClearSelection}
           style={{ backgroundColor: 'var(--sol-editor-bg)' }}
         >
-          <g transform={`scale(${scale})`}>
-            <style>{`.tg-focusable { outline: none; } .tg-focusable:focus-visible { outline: 2px solid var(--sol-focus-border); outline-offset: 2px; }`}</style>
-            <g data-layer="guides">
-              {layout.groups.map(group => (
-                <TaskGraphGroup
-                  key={group.id}
-                  group={group}
-                  subtreeIds={graph.subtreeIdsByTask.get(group.id) ?? [group.id]}
-                  highlight={highlight}
-                />
-              ))}
-            </g>
-            <g data-layer="nodes">
-              {Array.from(layout.nodes.values()).map(node => {
-                const task = graph.tasks.get(node.id)
-                if (!task) return null
-                return (
-                  <TaskGraphNode
-                    key={node.id}
-                    node={node}
-                    task={task}
-                    group={groupById.get(node.id)}
-                    highlight={highlight}
-                    isSelected={selection === node.id}
-                    isSearchMatch={searchMatchIds.has(node.id)}
-                    isCollapsed={collapsedTaskIds.has(node.id)}
-                    depCount={task.depends.length}
-                    scale={scale}
-                    onClick={onSelectTask}
-                    onOpen={onOpenTask}
-                    onToggleCollapse={onToggleCollapse}
-                    onPointerEnter={onPointerEnter}
-                    onPointerLeave={onPointerLeave}
-                  />
-                )
-              })}
-            </g>
-          </g>
+          <TaskGraphRows
+            graph={graph}
+            layout={layout}
+            searchMatchIds={searchMatchIds}
+            highlight={highlight}
+            selection={selection}
+            scale={scale}
+            collapsedTaskIds={collapsedTaskIds}
+            onSelectTask={onSelectTask}
+            onOpenTask={onOpenTask}
+            onToggleCollapse={onToggleCollapse}
+            onPointerEnter={onPointerEnter}
+            onPointerLeave={onPointerLeave}
+          />
         </svg>
+      </div>
+
+      {/* Resizable divider gutter — sticky just past the frozen column, so it stays
+          at the column edge during horizontal scroll. The 3px handle is centered,
+          leaving margin on both sides. Matches the app's VResizeHandle. */}
+      <div
+        className="shrink-0 flex justify-center"
+        style={{ position: 'sticky', left: leftW, zIndex: 3, width: DIVIDER_GUTTER, height: fullH, backgroundColor: 'var(--sol-editor-bg)' }}
+      >
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          data-testid="gantt-divider"
+          onMouseDown={onDividerMouseDown}
+          className="resize-handle-v shrink-0 cursor-col-resize relative"
+          style={{ width: 3, backgroundColor: dragging ? 'var(--sol-accent)' : 'var(--sol-border)', transition: 'background-color var(--transition-fast)' }}
+        />
       </div>
 
       {/* Time pane — bars + FS links over a synthetic-unit grid; scrolls horizontally. */}
@@ -114,7 +135,7 @@ export function TaskGanttCanvas({ graph, layout, searchMatchIds, highlight, sele
                   key={id}
                   id={id}
                   bar={bar}
-                  leftWidth={layout.leftWidth}
+                  leftWidth={layout.leftWidth + DIVIDER_GUTTER / scale}
                   highlight={highlight}
                   isSelected={selection === id}
                   onClick={onSelectTask}
