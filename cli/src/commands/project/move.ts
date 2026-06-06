@@ -18,7 +18,9 @@ import { ok, type Result } from "../../lib/core/result.ts";
 import {
   applyPlan,
   countsFor,
+  moveCountRows,
   planMove,
+  renderProviderSections,
   resolveMoveArg,
   type MatchMode,
   type MovePlan,
@@ -73,13 +75,11 @@ export function runMove(
   const mode: MatchMode = opts.prefix ? "prefix" : "exact";
   const plan = planMove({ oldPath, newPath, mode });
 
-  const totalHits =
-    plan.sessions.length +
-    plan.registry.length +
-    plan.claudeProjects.length +
-    plan.codexSessions.length +
-    plan.codexConfig.length +
-    plan.codexThreads.length;
+  const providerHits = plan.providers.reduce(
+    (n, p) => n + Object.values(p.counts).reduce((a, b) => a + b, 0),
+    0,
+  );
+  const totalHits = plan.sessions.length + plan.registry.length + providerHits;
 
   if (totalHits === 0) {
     throw new CliError(
@@ -116,12 +116,11 @@ function renderText(report: MoveReport): string {
   lines.push(`    -> ${report.newPath}`);
   lines.push("");
   lines.push(`${verb}:`);
-  lines.push(`  yaco sessions       ${report.rewrote.sessions}`);
-  lines.push(`  yaco registry       ${report.rewrote.registry}`);
-  lines.push(`  ~/.claude/projects  ${report.rewrote.claudeProjects}`);
-  lines.push(`  ~/.codex/sessions   ${report.rewrote.codexSessions}`);
-  lines.push(`  ~/.codex/config     ${report.rewrote.codexConfig}`);
-  lines.push(`  ~/.codex/state_5    ${report.rewrote.codexThreads}`);
+  // Count table: generic YACO rows + provider-owned legacy rows (rendered even
+  // at zero), so the historical count surface and labels stay stable.
+  for (const row of moveCountRows(report.rewrote)) {
+    lines.push(`  ${row.label.padEnd(20)}${row.count}`);
+  }
   lines.push("");
   if (report.plan.sessions.length > 0) {
     lines.push("yaco sessions:");
@@ -137,39 +136,8 @@ function renderText(report: MoveReport): string {
     }
     lines.push("");
   }
-  if (report.plan.claudeProjects.length > 0) {
-    lines.push("~/.claude/projects:");
-    for (const c of report.plan.claudeProjects) {
-      const tag = c.merge ? " (merge into existing target)" : "";
-      lines.push(`  ${c.oldDir}`);
-      lines.push(`    -> ${c.newDir}${tag}`);
-      lines.push(`       cwd ${c.oldCwd} -> ${c.newCwd}  [${c.files.length} jsonl file(s)]`);
-    }
-    lines.push("");
-  }
-  if (report.plan.codexSessions.length > 0) {
-    lines.push("~/.codex/sessions:");
-    for (const c of report.plan.codexSessions) {
-      lines.push(`  ${c.file}`);
-      lines.push(`       cwd ${c.oldCwd} -> ${c.newCwd}`);
-    }
-    lines.push("");
-  }
-  if (report.plan.codexConfig.length > 0) {
-    lines.push("~/.codex/config.toml:");
-    for (const c of report.plan.codexConfig) {
-      lines.push(`  ${c.oldHeader} -> ${c.newHeader}`);
-    }
-    lines.push("");
-  }
-  if (report.plan.codexThreads.length > 0) {
-    lines.push("~/.codex/state_5.sqlite (threads):");
-    for (const t of report.plan.codexThreads) {
-      lines.push(`  ${t.dbPath}`);
-      lines.push(`       cwd ${t.oldCwd} -> ${t.newCwd}  [${t.ids.length} thread(s)]`);
-    }
-    lines.push("");
-  }
+  // Provider-owned detail sections are rendered by each adapter.
+  lines.push(...renderProviderSections(report.plan));
   if (report.dryRun) {
     lines.push("Re-run without --dry-run to apply.");
   } else {

@@ -11,16 +11,15 @@ export {
   translatePath,
   planMove,
   applyPlan,
+  moveCountRows,
+  renderProviderSections,
   type MovePlan,
   type MoveCounts,
+  type MoveCountRow,
   type MoveInputs,
   type MatchMode,
   type SessionPlanItem,
   type RegistryPlanItem,
-  type ClaudeProjectPlanItem,
-  type CodexSessionPlanItem,
-  type CodexConfigPlanItem,
-  type CodexThreadsPlanItem,
 } from "./move.ts";
 
 export { encodeClaudeCwd } from "./encode.ts";

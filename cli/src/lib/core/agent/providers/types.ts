@@ -180,7 +180,22 @@ export interface ProviderMovePlan {
 
 export type ProviderMoveCounts = Record<string, number>;
 
+/** A legacy count-table row this provider contributes to `yaco project move`
+ *  output. The provider owns the storage label and the stable count key so the
+ *  generic mover can render the historical count surface (text rows + flat JSON
+ *  `rewrote` fields) without knowing any provider's storage schema. */
+export interface ProviderMoveCountRow {
+  /** Stable key, matching this provider's `ProviderMovePlan.counts` entries and
+   *  the legacy flat `rewrote` JSON field (e.g. `claudeProjects`). */
+  key: string;
+  /** Human label for the move command's count table (e.g. `~/.claude/projects`). */
+  label: string;
+}
+
 export interface ProviderProjectMove {
+  /** Count-table rows this provider always contributes (rendered as zero when
+   *  the move has no hits), keeping the command's count surface stable. */
+  countRows: readonly ProviderMoveCountRow[];
   plan(inputs: ProjectMoveInputs): ProviderMovePlan | null;
   apply(plan: ProviderMovePlan): ProviderMoveCounts;
   renderText(plan: ProviderMovePlan): readonly string[];

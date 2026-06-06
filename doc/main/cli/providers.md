@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-05 (tui-provider-output-follow-cli)
+> Last updated: 2026-06-05 (tui-provider-project-move)
 
 ## Supported Providers
 
@@ -135,6 +135,54 @@ Contract details:
   help request.
 
 -> See: [src/lib/core/agent/providers/output.ts](../../../cli/src/lib/core/agent/providers/output.ts), [src/commands/agent/output.ts](../../../cli/src/commands/agent/output.ts)
+
+## Project Move
+
+`yaco project move <old> <new>` rekeys cwd-keyed metadata after a project moves
+on disk. The generic mover (`src/lib/core/project/move.ts`) owns **only**
+YACO-owned state — session-state `sessionPath` and the `projects.json` registry —
+and aggregates **opaque** per-provider plans by iterating the registry. It never
+inspects a provider's storage schema or payload shape.
+
+A provider may declare an optional `projectMove` capability
+(`ProviderProjectMove` in `src/lib/core/agent/providers/types.ts`,
+implemented in `src/lib/core/agent/providers/project-move.ts`). Each adapter owns
+its own private rewrites:
+
+- **Claude:** `~/.claude/projects/<encoded-cwd>/` directory rename + per-file
+  JSONL `cwd` rewrite. The rewrite preserves each file's mtime (the web app
+  sorts history by mtime), and handles encoded-name collisions by merging
+  file-by-file without clobbering.
+- **Codex:** `~/.codex/sessions/.../rollout-*.jsonl` `cwd`, `~/.codex/config.toml`
+  `[projects."<path>"]` section rename, and `~/.codex/state_5.sqlite`
+  `threads.cwd` (+ `agent_path`) in one transaction.
+
+Contract (`ProviderProjectMove`):
+
+- `plan(inputs) → ProviderMovePlan | null` — side-effect-free; returns `null`
+  when the provider has no hits. `ProviderMovePlan.payload` is provider-specific
+  but **serializable**: the mover persists it in dry-run JSON and passes it back
+  to the same adapter for `apply`/`renderText` without reading it.
+- `apply(plan) → counts` — performs the mutations and returns the real applied
+  counts (e.g. codex threads = rows actually updated).
+- `renderText(plan) → lines` — the provider's dry-run/apply detail section.
+- `countRows` — the provider's legacy count-table rows (`{ key, label }`), e.g.
+  Claude `{claudeProjects → ~/.claude/projects}`, Codex
+  `{codexSessions → ~/.codex/sessions}`, `{codexConfig → ~/.codex/config}`,
+  `{codexThreads → ~/.codex/state_5}`.
+
+**Command boundary preserves the legacy surface.** Although provider plans are
+opaque/nested internally, `MoveCounts` stays the flat legacy shape
+(`{ sessions, registry, claudeProjects, codexSessions, codexConfig,
+codexThreads }`) and the text count table keeps its historical labels — both
+rendered even when a provider has zero hits. The labels and keys come from each
+provider's `countRows` (provider-owned), so the command iterates the registry
+rather than hard-coding provider knowledge. `ProjectMoveInputs.providerHomeOverrides`
+(keyed by provider id) is the test seam for provider homes — the shared inputs
+type does not grow `claudeHome`/`codexHome`. Dry-run displays plan counts; a real
+apply displays apply counts (matching the historical plan-vs-apply split).
+
+-> See: [src/lib/core/project/move.ts](../../../cli/src/lib/core/project/move.ts), [src/lib/core/agent/providers/project-move.ts](../../../cli/src/lib/core/agent/providers/project-move.ts), [src/commands/project/move.ts](../../../cli/src/commands/project/move.ts)
 
 ---
 

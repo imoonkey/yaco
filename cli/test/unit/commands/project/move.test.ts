@@ -14,6 +14,7 @@
  */
 
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -32,6 +33,7 @@ import { isOk } from "../../../../src/lib/core/result.ts";
 const BIN = resolve(import.meta.dir, "../../../../src/main.ts");
 
 const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
+const ORIGINAL_HOME = process.env["HOME"];
 const TMP_ROOTS: string[] = [];
 
 afterAll(() => {
@@ -63,6 +65,74 @@ function stageRegistry(fix: Fix, entries: { id: string; path: string }[]): void 
   );
 }
 
+// --- provider-home staging (for the legacy count-surface tests) -----------
+//
+// These tests redirect $HOME to a sandbox so the provider adapters scan staged
+// `.claude`/`.codex` trees instead of the operator's real homes, then assert
+// the command boundary still exposes the legacy per-provider count rows/keys.
+
+function encodeClaudePath(p: string): string {
+  return p.replace(/[^a-zA-Z0-9-]/g, "-");
+}
+
+function stageClaudeProject(fix: Fix, cwd: string, id: string): void {
+  const dir = join(fix.root, ".claude", "projects", encodeClaudePath(cwd));
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `${id}.jsonl`),
+    JSON.stringify({ type: "user", cwd, sessionId: id, timestamp: "2026-06-04T00:00:00.000Z" }) + "\n",
+  );
+}
+
+function stageCodexRollout(fix: Fix, cwd: string, id: string): void {
+  const dir = join(fix.root, ".codex", "sessions", "2026", "06", "04");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, `rollout-2026-06-04T00-00-00-${id}.jsonl`),
+    JSON.stringify({ timestamp: "2026-06-04T00:00:00.000Z", type: "session_meta", payload: { id, cwd } }) + "\n",
+  );
+}
+
+function stageCodexConfig(fix: Fix, p: string): void {
+  mkdirSync(join(fix.root, ".codex"), { recursive: true });
+  writeFileSync(
+    join(fix.root, ".codex", "config.toml"),
+    `model = "x"\n\n[projects."${p}"]\ntrust_level = "trusted"\n`,
+  );
+}
+
+function stageCodexState5(fix: Fix, rows: Array<{ id: string; cwd: string }>): void {
+  mkdirSync(join(fix.root, ".codex"), { recursive: true });
+  const db = new Database(join(fix.root, ".codex", "state_5.sqlite"));
+  db.run(`CREATE TABLE threads (
+    id TEXT PRIMARY KEY,
+    rollout_path TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    source TEXT NOT NULL,
+    model_provider TEXT NOT NULL,
+    cwd TEXT NOT NULL,
+    title TEXT NOT NULL,
+    agent_path TEXT
+  )`);
+  const insert = db.prepare(
+    `INSERT INTO threads
+     (id, rollout_path, created_at, updated_at, source, model_provider, cwd, title, agent_path)
+     VALUES (?, ?, 0, 0, 'codex_exec', 'openai', ?, '', NULL)`,
+  );
+  for (const row of rows) insert.run(row.id, `/r/${row.id}.jsonl`, row.cwd);
+  db.close();
+}
+
+/** Stage one matching rewrite in every provider store under a sandbox $HOME. */
+function stageAllProviders(fix: Fix): void {
+  process.env["HOME"] = fix.root;
+  stageClaudeProject(fix, fix.oldPath, "aaaaaaaa-0000-0000-0000-000000000001");
+  stageCodexRollout(fix, fix.oldPath, "019e0000-0000-7000-0000-000000000001");
+  stageCodexConfig(fix, fix.oldPath);
+  stageCodexState5(fix, [{ id: "t1", cwd: fix.oldPath }]);
+}
+
 beforeEach(() => {
   delete process.env["YACO_AGENT_SESSIONS_DIR"];
 });
@@ -70,6 +140,8 @@ beforeEach(() => {
 afterEach(() => {
   if (ORIGINAL_YACO_HOME === undefined) delete process.env["YACO_HOME"];
   else process.env["YACO_HOME"] = ORIGINAL_YACO_HOME;
+  if (ORIGINAL_HOME === undefined) delete process.env["HOME"];
+  else process.env["HOME"] = ORIGINAL_HOME;
 });
 
 describe("yaco project — help", () => {
@@ -214,6 +286,80 @@ describe("yaco project move — apply", () => {
     expect(isOk(r)).toBe(true);
     const raw = JSON.parse(readFileSync(join(fix.yacoHome, "projects.json"), "utf-8"));
     expect(raw).toEqual([{ id: "alpha", path: fix.newPath }]);
+  });
+});
+
+describe("yaco project move — legacy provider count surface", () => {
+  it("dry-run exposes legacy flat provider count keys in JSON", () => {
+    const fix = fixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    stageAllProviders(fix);
+
+    const r = handleProject(["move", fix.oldPath, fix.newPath, "--dry-run"], { json: true });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      const v = r.value as { dryRun: boolean; rewrote: Record<string, number> };
+      expect(v.dryRun).toBe(true);
+      // Legacy flat shape: sessions/registry + one field per provider store.
+      expect(v.rewrote.claudeProjects).toBe(1);
+      expect(v.rewrote.codexSessions).toBe(1);
+      expect(v.rewrote.codexConfig).toBe(1);
+      expect(v.rewrote.codexThreads).toBe(1);
+    }
+  });
+
+  it("dry-run text shows the legacy per-store count rows", () => {
+    const fix = fixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    stageAllProviders(fix);
+
+    const r = handleProject(["move", fix.oldPath, fix.newPath, "--dry-run"], { json: false });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      const help = (r.value as { help: string }).help;
+      expect(help).toContain("~/.claude/projects");
+      expect(help).toContain("~/.codex/sessions");
+      expect(help).toContain("~/.codex/config");
+      expect(help).toContain("~/.codex/state_5");
+      // Detail section headers stay legacy too.
+      expect(help).toContain("~/.codex/config.toml:");
+      expect(help).toContain("~/.codex/state_5.sqlite (threads):");
+    }
+  });
+
+  it("legacy count rows are present even when a provider has zero hits", () => {
+    const fix = fixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    // Only the registry matches; provider stores stay empty.
+    stageRegistry(fix, [{ id: "alpha", path: fix.oldPath }]);
+
+    const r = handleProject(["move", fix.oldPath, fix.newPath, "--dry-run"], { json: true });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      const v = r.value as { rewrote: Record<string, number> };
+      // Keys are always present (zeroed), preserving the legacy flat shape.
+      expect(v.rewrote.claudeProjects).toBe(0);
+      expect(v.rewrote.codexSessions).toBe(0);
+      expect(v.rewrote.codexConfig).toBe(0);
+      expect(v.rewrote.codexThreads).toBe(0);
+    }
+  });
+
+  it("real apply reports legacy provider apply counts", () => {
+    const fix = fixture();
+    process.env["YACO_HOME"] = fix.yacoHome;
+    stageAllProviders(fix);
+
+    const r = handleProject(["move", fix.oldPath, fix.newPath], { json: true });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      const v = r.value as { dryRun: boolean; rewrote: Record<string, number> };
+      expect(v.dryRun).toBe(false);
+      expect(v.rewrote.claudeProjects).toBe(1);
+      expect(v.rewrote.codexSessions).toBe(1);
+      expect(v.rewrote.codexConfig).toBe(1);
+      expect(v.rewrote.codexThreads).toBe(1);
+    }
   });
 });
 

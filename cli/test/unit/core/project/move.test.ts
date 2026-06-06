@@ -14,11 +14,51 @@ import { join } from "node:path";
 import {
   applyPlan,
   planMove,
+  type MovePlan,
 } from "../../../../src/lib/core/project/index.ts";
+import type {
+  ClaudeProjectPlanItem,
+  CodexConfigPlanItem,
+  CodexSessionPlanItem,
+  CodexThreadsPlanItem,
+} from "../../../../src/lib/core/agent/providers/project-move.ts";
 
 const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 const ORIGINAL_AGENT_DIR = process.env["YACO_AGENT_SESSIONS_DIR"];
 const TMP_ROOTS: string[] = [];
+
+/** Build the provider-home test seam from a fixture. */
+function homes(fix: Fixture): Record<string, string> {
+  return { claude: fix.claudeHome, codex: fix.codexHome };
+}
+
+/** Sum of every provider's plan counts — the provider-side of total hits. */
+function providerHits(plan: MovePlan): number {
+  return plan.providers.reduce(
+    (n, p) => n + Object.values(p.counts).reduce((a, b) => a + b, 0),
+    0,
+  );
+}
+
+function claudeItems(plan: MovePlan): ClaudeProjectPlanItem[] {
+  const p = plan.providers.find((x) => x.provider === "claude");
+  return p ? (p.payload as { items: ClaudeProjectPlanItem[] }).items : [];
+}
+
+function codexSessionItems(plan: MovePlan): CodexSessionPlanItem[] {
+  const p = plan.providers.find((x) => x.provider === "codex");
+  return p ? (p.payload as { sessions: CodexSessionPlanItem[] }).sessions : [];
+}
+
+function codexConfigItems(plan: MovePlan): CodexConfigPlanItem[] {
+  const p = plan.providers.find((x) => x.provider === "codex");
+  return p ? (p.payload as { config: CodexConfigPlanItem[] }).config : [];
+}
+
+function codexThreadItems(plan: MovePlan): CodexThreadsPlanItem[] {
+  const p = plan.providers.find((x) => x.provider === "codex");
+  return p ? (p.payload as { threads: CodexThreadsPlanItem[] }).threads : [];
+}
 
 afterAll(() => {
   for (const dir of TMP_ROOTS) rmSync(dir, { recursive: true, force: true });
@@ -212,17 +252,19 @@ describe("planMove + applyPlan — exact mode", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
-    expect(plan.claudeProjects).toHaveLength(1);
-    expect(plan.claudeProjects[0]!.oldDir).toBe(oldDir);
-    expect(plan.claudeProjects[0]!.newDir).toBe(
+    const claude = claudeItems(plan);
+    expect(claude).toHaveLength(1);
+    expect(claude[0]!.oldDir).toBe(oldDir);
+    expect(claude[0]!.newDir).toBe(
       join(fix.claudeHome, "projects", encodeClaudePath(fix.newPath)),
     );
 
-    applyPlan(plan);
+    const counts = applyPlan(plan);
+    expect(counts.claudeProjects).toBe(1);
     expect(existsSync(oldDir)).toBe(false);
-    const newDir = plan.claudeProjects[0]!.newDir;
+    const newDir = claude[0]!.newDir;
     expect(existsSync(newDir)).toBe(true);
     const files = require("node:fs").readdirSync(newDir);
     expect(files).toHaveLength(1);
@@ -238,10 +280,11 @@ describe("planMove + applyPlan — exact mode", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
-    expect(plan.codexSessions).toHaveLength(1);
-    expect(plan.codexSessions[0]!.file).toBe(file);
+    const sessions = codexSessionItems(plan);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.file).toBe(file);
 
     applyPlan(plan);
     const body = readFileSync(file, "utf-8");
@@ -256,9 +299,9 @@ describe("planMove + applyPlan — exact mode", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
-    expect(plan.codexConfig).toHaveLength(1);
+    expect(codexConfigItems(plan)).toHaveLength(1);
     applyPlan(plan);
 
     const body = readFileSync(cfg, "utf-8");
@@ -307,9 +350,9 @@ describe("planMove + applyPlan — prefix mode", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "prefix",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
-    expect(plan.claudeProjects).toHaveLength(2);
+    expect(claudeItems(plan)).toHaveLength(2);
     applyPlan(plan);
 
     const newRoot = encodeClaudePath(fix.newPath);
@@ -331,19 +374,17 @@ describe("idempotency", () => {
 
     const first = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
     applyPlan(first);
 
     const second = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
     expect(second.sessions).toEqual([]);
     expect(second.registry).toEqual([]);
-    expect(second.claudeProjects).toEqual([]);
-    expect(second.codexSessions).toEqual([]);
-    expect(second.codexConfig).toEqual([]);
+    expect(second.providers).toEqual([]);
   });
 });
 
@@ -367,7 +408,7 @@ describe("dry-run isolation", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
     // plan computed; do NOT apply.
 
@@ -378,8 +419,7 @@ describe("dry-run isolation", () => {
     expect(readFileSync(join(fix.codexHome, "config.toml"), "utf-8")).toBe(before.config);
 
     // Sanity: plan is non-empty
-    expect(plan.sessions.length + plan.registry.length + plan.claudeProjects.length +
-      plan.codexSessions.length + plan.codexConfig.length).toBeGreaterThan(0);
+    expect(plan.sessions.length + plan.registry.length + providerHits(plan)).toBeGreaterThan(0);
   });
 });
 
@@ -393,13 +433,14 @@ describe("collision handling", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
-    expect(plan.claudeProjects).toHaveLength(1);
-    expect(plan.claudeProjects[0]!.merge).toBe(true);
+    const claude = claudeItems(plan);
+    expect(claude).toHaveLength(1);
+    expect(claude[0]!.merge).toBe(true);
     applyPlan(plan);
 
-    const newDir = plan.claudeProjects[0]!.newDir;
+    const newDir = claude[0]!.newDir;
     const files = require("node:fs").readdirSync(newDir).sort();
     expect(files).toEqual([
       "aaaaaaaa-0000-0000-0000-000000000001.jsonl",
@@ -473,13 +514,14 @@ describe("codex state_5.sqlite threads.cwd rewrite", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
-    expect(plan.codexThreads).toHaveLength(1);
-    expect(plan.codexThreads[0]!.dbPath).toBe(dbPath);
-    expect(plan.codexThreads[0]!.ids.sort()).toEqual(["t1"]);
-    expect(plan.codexThreads[0]!.oldCwd).toBe(fix.oldPath);
-    expect(plan.codexThreads[0]!.newCwd).toBe(fix.newPath);
+    const threads = codexThreadItems(plan);
+    expect(threads).toHaveLength(1);
+    expect(threads[0]!.dbPath).toBe(dbPath);
+    expect(threads[0]!.ids.sort()).toEqual(["t1"]);
+    expect(threads[0]!.oldCwd).toBe(fix.oldPath);
+    expect(threads[0]!.newCwd).toBe(fix.newPath);
 
     const counts = applyPlan(plan);
     expect(counts.codexThreads).toBe(1);
@@ -505,10 +547,10 @@ describe("codex state_5.sqlite threads.cwd rewrite", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "prefix",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
     // Two buckets: exact (oldPath -> newPath) + subtree (subPath -> sub of newPath)
-    const allIds = plan.codexThreads.flatMap((t) => t.ids).sort();
+    const allIds = codexThreadItems(plan).flatMap((t) => t.ids).sort();
     expect(allIds).toEqual(["t1", "t3"]);
 
     applyPlan(plan);
@@ -530,7 +572,7 @@ describe("codex state_5.sqlite threads.cwd rewrite", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
     applyPlan(plan);
 
@@ -547,9 +589,9 @@ describe("codex state_5.sqlite threads.cwd rewrite", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
-    expect(plan.codexThreads).toEqual([]);
+    expect(codexThreadItems(plan)).toEqual([]);
 
     const counts = applyPlan(plan);
     expect(counts.codexThreads).toBe(0);
@@ -569,11 +611,11 @@ describe("claude jsonl mtime preservation", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
     applyPlan(plan);
 
-    const newDir = plan.claudeProjects[0]!.newDir;
+    const newDir = claudeItems(plan)[0]!.newDir;
     const newFile = join(newDir, "aaaaaaaa-0000-0000-0000-000000000001.jsonl");
     const afterMtime = statSync(newFile).mtimeMs;
     // Within 1s tolerance for FS clock resolution.
@@ -602,11 +644,11 @@ describe("claude jsonl mtime preservation", () => {
 
     const plan = planMove({
       oldPath: fix.oldPath, newPath: fix.newPath, mode: "exact",
-      claudeHome: fix.claudeHome, codexHome: fix.codexHome,
+      providerHomeOverrides: homes(fix),
     });
     applyPlan(plan);
 
-    const newDir = plan.claudeProjects[0]!.newDir;
+    const newDir = claudeItems(plan)[0]!.newDir;
     const newFile = join(newDir, "bbbbbbbb-0000-0000-0000-000000000002.jsonl");
     const afterMtimeMs = statSync(newFile).mtimeMs;
     // Should match the internal "7 days ago" timestamp, not the file mtime.

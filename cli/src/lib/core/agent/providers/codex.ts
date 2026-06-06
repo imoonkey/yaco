@@ -6,6 +6,7 @@ import { hasPermissionFlag, stripNameFlag, extractResume, stripResume } from "./
 import { codexHooks } from "./hooks.ts";
 import { codexHistory } from "./history.ts";
 import { codexOutput } from "./output.ts";
+import { codexProjectMove } from "./project-move.ts";
 import type { TuiProvider } from "./types.ts";
 
 // If any of these flags is present, don't add the default permission flag.
@@ -99,4 +100,6 @@ export const codexProvider: TuiProvider = {
   history: codexHistory(),
 
   output: codexOutput(),
+
+  projectMove: codexProjectMove(),
 };

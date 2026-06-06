@@ -6,6 +6,7 @@ import { hasNameFlag, hasPermissionFlag, extractResume, stripResume } from "./ar
 import { claudeHooks } from "./hooks.ts";
 import { claudeHistory } from "./history.ts";
 import { claudeOutput } from "./output.ts";
+import { claudeProjectMove } from "./project-move.ts";
 import type { TuiProvider } from "./types.ts";
 
 // If any of these flags is present, don't add the default permission flag.
@@ -81,4 +82,6 @@ export const claudeProvider: TuiProvider = {
   history: claudeHistory(),
 
   output: claudeOutput(),
+
+  projectMove: claudeProjectMove(),
 };

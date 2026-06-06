@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-05: project move rewrites owned by provider adapters
+
+**What changed:**
+- `cli/src/lib/core/project/move.ts` is now a thin orchestrator: it owns only YACO-owned state (session-state `sessionPath`, `projects.json` registry) and aggregates opaque `ProviderMovePlan` buckets by iterating the provider registry. All Claude/Codex provider-home schema logic (encoded project-dir rename + JSONL `cwd` rewrite with mtime preservation; codex rollout/`config.toml`/`state_5.sqlite threads` rewrites) moved to the new `cli/src/lib/core/agent/providers/project-move.ts` behind `provider.projectMove` (`claudeProjectMove()` / `codexProjectMove()`).
+- New `ProviderProjectMove` contract (`providers/types.ts`): `plan(inputs) → ProviderMovePlan | null` (side-effect-free, **serializable opaque `payload`**), `apply(plan) → counts` (real applied counts), `renderText(plan) → lines`, and `countRows` (provider-owned legacy `{key,label}` count rows). `ProjectMoveInputs.providerHomeOverrides` (keyed by provider id) replaces the old `claudeHome`/`codexHome` test seam.
+- New `cli/src/lib/core/project/match.ts` holds the dependency-free path helpers (`normalizePath`, `resolveMoveArg`, `isPathOrChild`, `translatePath`, `MatchMode`) shared by the mover and the adapters, breaking the would-be `move.ts ↔ providers` import cycle.
+- **Command boundary keeps the legacy surface** (review-required): `MoveCounts` stays the flat legacy shape (`{ sessions, registry, claudeProjects, codexSessions, codexConfig, codexThreads }`) and the text count table keeps its historical labels (`~/.claude/projects`, `~/.codex/sessions`, `~/.codex/config`, `~/.codex/state_5`) — both rendered even at zero. Keys/labels come from each provider's `countRows`, so `commands/project/move.ts` iterates the registry instead of hard-coding provider knowledge. `moveCountRows()` + `renderProviderSections()` are exported from the project barrel for the command.
+
+**Why:**
+- `provider-project-move` task of the `tui-provider-adapters` design (`plan/active/tui-provider-adapters/design_codex.md`): a new provider should not require editing the generic mover to teach it that provider's private persisted cwd layout. Extraction is guarded by the existing move tests; the legacy count rows/keys/labels are preserved at the command boundary so dry-run JSON/text and real apply counts are unchanged for consumers.
+
+**Key files:** `cli/src/lib/core/project/{move,match,index}.ts`, `cli/src/lib/core/agent/providers/{types,claude,codex,project-move}.ts`, `cli/src/commands/project/move.ts`, `cli/test/unit/{core,commands}/project/move.test.ts`; doc `doc/main/cli/providers.md`
+**Verification:** `cd cli && bun test test/unit/core/project/move.test.ts test/unit/commands/project/move.test.ts` → 38 pass; `cd cli && bun run test:unit` → 610 pass, 0 fail; `tsc --noEmit` adds zero errors over the pre-existing baseline.
+**Commit:** this commit.
+**Next:** `docs-provider-boundary` consolidates the TUI-only provider model and app/CLI boundary docs.
+**Blockers:** None.
+
 ## 2026-06-05: app/server summaries + history via CLI surfaces
 
 **What changed:**
