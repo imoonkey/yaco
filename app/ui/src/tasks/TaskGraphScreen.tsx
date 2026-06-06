@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { createFile, saveFileContent } from '../hooks/useApi'
 import { TASKS_FILE_PATH, useTaskGraph } from '../hooks/useTaskGraph'
 import { useViewport } from './useViewport'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile, useIsWideViewport } from '../hooks/useIsMobile'
 import { computeDisplayLayout, computeGanttLayout, type GanttLayout } from './taskGraphModel'
 import { TaskGraphTooltip } from './TaskGraphTooltip'
 import { TaskGraphCanvas } from './TaskGraphCanvas'
@@ -25,6 +25,9 @@ type TaskGraphScreenProps = {
 export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, onOpenTask, onCloseTask, selectedTaskId, openTaskId }: TaskGraphScreenProps) {
   const { status, graph, error, warnings, refresh } = useTaskGraph(projectName)
   const isMobile = useIsMobile()
+  // Gantt needs real horizontal room; gate it on viewport width (not platform) so
+  // a landscape phone qualifies but a portrait one does not.
+  const ganttCapable = useIsWideViewport()
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
@@ -83,7 +86,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
   // The workset filter is applied to the rendered set here: tasks whose workset is
   // disabled (archive by default) are dropped before layout, so they never render.
   // Gantt is desktop-only; mobile always falls back to the stacked layout.
-  const isGantt = ix.layout === 'gantt' && !isMobile
+  const isGantt = ix.layout === 'gantt' && ganttCapable
   const displayLayout = useMemo(() => {
     if (!graph) return null
     const worksets = ix.filters.worksets
@@ -119,7 +122,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
   }, [displayLayout, viewport, pendingPanRef, clearPendingPan])
 
   // Keyboard shortcuts
-  useTaskGraphKeyboard(graph, displayLayout, ix.selection, ix.collapsedTaskIds, ix, viewport)
+  useTaskGraphKeyboard(graph, displayLayout, ix.selection, ix.collapsedTaskIds, ix)
 
   const handleTaskClick = useCallback((id: string) => {
     const wasSelected = graphSelection === id
@@ -201,7 +204,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
   return (
     <div className="flex flex-col h-full">
       <TaskGraphToolbar
-        scale={viewport.scale}
         layout={ix.layout}
         stateFilters={ix.filters.states}
         worksets={ix.filters.worksets}
@@ -209,9 +211,6 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
         searchMatchCount={ix.searchMatchIds.size}
         allCollapsed={ix.allCollapsed}
         allExpanded={ix.allExpanded}
-        onZoomIn={viewport.zoomIn}
-        onZoomOut={viewport.zoomOut}
-        onFitToView={viewport.resetZoom}
         onSetLayout={ix.setLayout}
         onToggleState={ix.handleToggleFilter}
         onToggleWorkset={ix.handleToggleWorkset}

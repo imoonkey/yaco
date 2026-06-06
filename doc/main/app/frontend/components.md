@@ -68,10 +68,11 @@ TaskScreen — workspace shell: loads task data, owns selectedTaskId/openTaskId,
 │            switching.
 ├── TaskGraphScreen — the single workspace (SVG dependency graph, vertical scroll)
 │   ├── TaskGraphToolbar — the one toolbar: layout switch (Stacked / Gantt;
-│   │     Gantt is desktop-only), workset filter (active/backlog/archive), state
-│   │     filter, search (`/` focuses it), zoom, collapse/expand. Mobile folds
-│   │     workset+state into a Filter popover, hides the layout/collapse controls,
-│   │     and always renders Stacked.
+│   │     Gantt shows only when the viewport is wide enough — landscape phone
+│   │     qualifies, portrait does not), workset filter (active/backlog/archive),
+│   │     state filter, search (`/` focuses it), collapse/expand. Mobile folds
+│   │     workset+state into a Filter popover and hides the collapse controls.
+│   │     (There is no zoom — Stacked fits the width and Gantt scrolls.)
 │   ├── (Stacked) TaskGraphCanvas → TaskGraphRows (shared row renderer: section
 │   │     dividers + indent guides + TaskGraphNode[] 36px width-driven cards) +
 │   │     TaskGraphEdges painted between guides and cards. The SVG is sized to the
@@ -114,9 +115,10 @@ the task only; clicking the selected task opens the detail overlay, and clicking
 the same open task again closes it. Double-click opens directly. When the overlay
 is open, selecting another task switches the overlay contents to that task.
 
-Navigation is native vertical scroll (no horizontal infinite canvas); zoom is a
-uniform scale applied to the SVG. Search and keyboard navigation scroll the
-target node to vertical center via `useViewport.scrollNodeIntoView`. -> See:
+Navigation is native vertical scroll (no horizontal infinite canvas, no zoom).
+Search and keyboard navigation scroll the target node to vertical center via
+`useViewport.scrollNodeIntoView` (`useViewport.scale` is a fixed 1 identity kept
+only so the SVG renderers share one transform path). -> See:
 frontend/hooks.md `useViewport.ts`. Gantt mode adds the one horizontal-scroll
 carve-out: its time pane scrolls horizontally (bounded by makespan) while the
 left task column stays frozen; Stacked stays vertical-only.

@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Minus, Plus, Maximize2, ChevronsRight, ChevronsDown } from 'lucide-react'
+import { ChevronsRight, ChevronsDown } from 'lucide-react'
 import type { TaskState } from './taskGraphModel'
 import type { TaskWorkspaceLayout, Workset } from './useTaskGraphInteraction'
-import { useIsMobile } from '../hooks/useIsMobile'
+import { useIsMobile, useIsWideViewport } from '../hooks/useIsMobile'
 import { STATE_COLORS } from './taskGraphConstants'
 
 const STATE_LABELS: Record<TaskState, string> = {
@@ -16,8 +16,7 @@ const STATE_LABELS: Record<TaskState, string> = {
 const ALL_STATES: TaskState[] = ['ready', 'running', 'done', 'blocked', 'cancelled']
 const ALL_WORKSETS: Workset[] = ['active', 'backlog', 'archive']
 
-export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, searchQuery, searchMatchCount, allCollapsed, allExpanded, onZoomIn, onZoomOut, onFitToView, onSetLayout, onToggleState, onToggleWorkset, onSearchChange, onSearchSubmit, onCollapseAll, onExpandAll }: {
-  scale: number
+export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, searchMatchCount, allCollapsed, allExpanded, onSetLayout, onToggleState, onToggleWorkset, onSearchChange, onSearchSubmit, onCollapseAll, onExpandAll }: {
   layout: TaskWorkspaceLayout
   stateFilters: Set<TaskState>
   worksets: Set<Workset>
@@ -25,9 +24,6 @@ export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, search
   searchMatchCount: number
   allCollapsed: boolean
   allExpanded: boolean
-  onZoomIn: () => void
-  onZoomOut: () => void
-  onFitToView: () => void
   onSetLayout: (layout: TaskWorkspaceLayout) => void
   onToggleState: (state: TaskState) => void
   onToggleWorkset: (workset: Workset) => void
@@ -37,6 +33,7 @@ export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, search
   onExpandAll: () => void
 }) {
   const isMobile = useIsMobile()
+  const ganttCapable = useIsWideViewport()
   const [filtersOpen, setFiltersOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -52,9 +49,7 @@ export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, search
     return () => document.removeEventListener('keydown', handler)
   }, [])
 
-  const pct = Math.round(scale * 100)
-
-  // Layout mode — Stacked (daily scan) + Pseudo-Gantt (execution-flow). Desktop only.
+  // Layout mode — Stacked (daily scan) + Pseudo-Gantt (execution-flow).
   const layoutControl = (
     <div className="flex items-center gap-0.5" role="group" aria-label="Layout mode">
       <button
@@ -138,41 +133,9 @@ export function TaskGraphToolbar({ scale, layout, stateFilters, worksets, search
       className="shrink-0 flex items-center gap-2 px-2"
       style={{ height: isMobile ? 40 : 36, backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)' }}
     >
-      {/* Zoom controls */}
-      <div className="flex items-center gap-0.5">
-        <button
-          onClick={onZoomOut}
-          className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg`}
-          style={{ color: 'var(--sol-text)' }}
-          title="Zoom out"
-        >
-          <Minus size={isMobile ? 16 : 13} />
-        </button>
-        <span className="text-[11px] font-medium w-10 text-center tabular-nums" style={{ color: 'var(--sol-muted)' }}>
-          {pct}%
-        </span>
-        <button
-          onClick={onZoomIn}
-          className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg`}
-          style={{ color: 'var(--sol-text)' }}
-          title="Zoom in"
-        >
-          <Plus size={isMobile ? 16 : 13} />
-        </button>
-        <button
-          onClick={onFitToView}
-          className={`${isMobile ? 'w-8 h-8' : 'w-6 h-6'} rounded flex items-center justify-center cursor-pointer transition-colors hover:bg-sol-hover-bg`}
-          style={{ color: 'var(--sol-text)' }}
-          title="Fit to view"
-        >
-          <Maximize2 size={isMobile ? 16 : 13} />
-        </button>
-      </div>
-
-      {!isMobile && <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />}
-
-      {/* Layout mode — desktop only (stacked is the sole mobile option) */}
-      {!isMobile && layoutControl}
+      {/* Layout mode — shown when the viewport is wide enough for two-pane Gantt
+          (landscape phone qualifies; portrait does not). */}
+      {ganttCapable && layoutControl}
 
       {!isMobile && <div style={{ width: 1, height: 16, backgroundColor: 'var(--sol-border)' }} />}
 

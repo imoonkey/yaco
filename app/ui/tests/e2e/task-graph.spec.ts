@@ -91,10 +91,16 @@ async function reopenWorkspace(page: Page, project: Project) {
   await expect(nodes).toBeVisible({ timeout: 15_000 })
 }
 
-/** Zoom in `n` steps (+0.25 each) via the toolbar to force scroll overflow. */
-async function zoomInSteps(page: Page, n: number) {
-  const btn = page.locator('button[title="Zoom in"]')
-  for (let i = 0; i < n; i++) await btn.click()
+/** Drag the Gantt divider right by `dx` px to widen the frozen left column
+ *  (used to force horizontal overflow without a zoom control). */
+async function widenLeftColumn(page: Page, dx: number) {
+  const divider = page.locator('[data-testid="gantt-divider"]')
+  const box = (await divider.boundingBox())!
+  const cy = box.y + 200
+  await page.mouse.move(box.x + box.width / 2, cy)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + dx, cy, { steps: 6 })
+  await page.mouse.up()
 }
 
 test.describe('Task workspace (Pseudo-Gantt mode)', () => {
@@ -138,11 +144,10 @@ test.describe('Task workspace (Pseudo-Gantt mode)', () => {
   test('the frozen left task column does not move during horizontal scroll', async ({ page }) => {
     await openTaskGraph(page)
     await switchToGantt(page)
-    await zoomInSteps(page, 4) // 2.0x — guarantees the time pane overflows horizontally
+    await widenLeftColumn(page, 700) // push total width past the viewport → horizontal overflow
 
     const scroller = ganttScroll(page)
-    const overflow = await scroller.evaluate(el => el.scrollWidth - el.clientWidth)
-    expect(overflow).toBeGreaterThan(0)
+    await expect.poll(() => scroller.evaluate(el => el.scrollWidth - el.clientWidth)).toBeGreaterThan(0)
 
     const node = taskNodes(page).first()
     const bar = ganttBars(page).first()
@@ -163,13 +168,12 @@ test.describe('Task workspace (Pseudo-Gantt mode)', () => {
   })
 
   test('the frozen ruler does not move during vertical scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 400 }) // short viewport → vertical overflow
     await openTaskGraph(page)
     await switchToGantt(page)
-    await zoomInSteps(page, 4) // 2.0x — guarantees vertical overflow
 
     const scroller = ganttScroll(page)
-    const overflow = await scroller.evaluate(el => el.scrollHeight - el.clientHeight)
-    expect(overflow).toBeGreaterThan(0)
+    await expect.poll(() => scroller.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(0)
 
     const ruler = page.locator('[data-testid="gantt-ruler"]')
     await expect(ruler).toBeVisible()
@@ -185,37 +189,6 @@ test.describe('Task workspace (Pseudo-Gantt mode)', () => {
     expect(Math.abs(rulerAfter!.y - rulerBefore!.y)).toBeLessThan(1.5)
     // The content DID scroll under it — a bar moved up.
     expect(barAfter!.y).toBeLessThan(barBefore!.y - 50)
-  })
-
-  test('zoom keeps left-pane rows aligned with their time-pane bars (no drift)', async ({ page }) => {
-    await openTaskGraph(page)
-    await switchToGantt(page)
-    const scroller = ganttScroll(page)
-    await scroller.evaluate(el => { el.scrollTop = 0; el.scrollLeft = 0 })
-
-    // A task that has both a left-pane row and a time-pane bar.
-    const id = await ganttBars(page).first().getAttribute('data-task-id')
-    expect(id).toBeTruthy()
-    const nodeRect = page.locator(`[data-layer="nodes"] g[data-task-id="${id}"] > rect`).first()
-    const barRect = page.locator(`[data-layer="bars"] g[data-task-id="${id}"] rect`).first()
-
-    const centerY = async (loc: ReturnType<Page['locator']>) => {
-      const b = await loc.boundingBox()
-      expect(b).toBeTruthy()
-      return b!.y + b!.height / 2
-    }
-    const rowHeight = async () => (await nodeRect.boundingBox())!.height
-
-    // Aligned at 100% — left card and bar share the row's vertical center.
-    expect(Math.abs(await centerY(nodeRect) - await centerY(barRect))).toBeLessThan(2)
-    const h1 = await rowHeight()
-
-    // Zoom in and re-check from the same scroll origin: rows must still line up.
-    await zoomInSteps(page, 4)
-    await scroller.evaluate(el => { el.scrollTop = 0; el.scrollLeft = 0 })
-    expect(Math.abs(await centerY(nodeRect) - await centerY(barRect))).toBeLessThan(3)
-    // The scale actually changed (the row grew), so the alignment held across zoom.
-    expect(await rowHeight()).toBeGreaterThan(h1 * 1.5)
   })
 
   test('a task with a missing estimate renders the assumed-estimate hatch', async ({ page }) => {

@@ -15,7 +15,6 @@ export function useTaskGraphKeyboard(
   selection: Selection,
   collapsedTaskIds: Set<string>,
   interaction: Pick<TaskGraphInteraction, 'setSelection' | 'handleNavigate' | 'handleToggleCollapse' | 'handleCollapseAll' | 'handleExpandAll' | 'clearTooltip'>,
-  viewport: { zoomIn: () => void; zoomOut: () => void; resetZoom: () => void },
 ) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -26,9 +25,6 @@ export function useTaskGraphKeyboard(
         interaction.clearTooltip()
         return
       }
-      if (e.key === '+' || e.key === '=') { viewport.zoomIn(); return }
-      if (e.key === '-') { viewport.zoomOut(); return }
-      if (e.key === '0') { viewport.resetZoom(); return }
 
       // Collapse shortcuts
       if (e.key === 'c' && !e.shiftKey && selection && graph?.tasks.get(selection)?.hasChildren) {
@@ -127,5 +123,5 @@ export function useTaskGraphKeyboard(
 
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [graph, displayLayout, selection, viewport, interaction, collapsedTaskIds])
+  }, [graph, displayLayout, selection, interaction, collapsedTaskIds])
 }

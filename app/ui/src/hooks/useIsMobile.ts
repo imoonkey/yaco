@@ -24,6 +24,13 @@ export function useIsMobile(maxWidth = 768): boolean {
   return narrowWidth || landscapePhone
 }
 
+// Width-only check (ignores pointer/orientation): true when the viewport is wide
+// enough for layouts that need real horizontal room, e.g. the two-pane Gantt.
+// A landscape phone is wide enough; a portrait phone is not.
+export function useIsWideViewport(minWidth = 768): boolean {
+  return useMediaQuery(`(min-width: ${minWidth}px)`)
+}
+
 export function useIsTouch(): boolean {
   return useMediaQuery('(pointer: coarse)')
 }

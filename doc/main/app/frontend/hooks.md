@@ -260,18 +260,18 @@ Behavior:
 
 ## useViewport.ts
 
-Viewport state for the Tasks graph: native vertical scroll for navigation, with
-zoom as a uniform scale. Lives in `ui/src/tasks/`. Replaced the old SVG pan/zoom
-(infinite-canvas) machinery once the stacked layout became width-fit.
+Viewport state for the Tasks graph: native scroll for navigation, no zoom. Lives
+in `ui/src/tasks/`. Replaced the old SVG pan/zoom (infinite-canvas) machinery once
+the stacked layout became width-fit; zoom was later dropped entirely (Stacked fits
+the width, Gantt scrolls horizontally), leaving `scale` a fixed 1 identity.
 
-**Export**: `useViewport({ scrollRef })` → `{ scale, didDrag, zoomIn, zoomOut, resetZoom, scrollNodeIntoView }`
+**Export**: `useViewport({ scrollRef })` → `{ scale, didDrag, scrollNodeIntoView }`
 
 Behavior:
-- `scale` clamped to 0.25×–3.0×; `resetZoom` returns to 1 (width already fits).
+- `scale` is a constant `1` — kept only so the SVG renderers share one transform
+  path (no zoom controls or shortcuts remain).
 - `scrollNodeIntoView(node)` scrolls the container so the node's center lands at
   the vertical mid-viewport — wired to search submit and keyboard navigation.
-- The SVG is sized to `bounds.{width,height} * scale` inside an `overflow-y-scroll`
-  container; the browser handles wheel/trackpad/touch. No horizontal infinite canvas.
 - `didDrag` is an always-false ref kept only to satisfy `useTaskGraphInteraction`'s
   click-vs-drag guard (there is no canvas drag).
 

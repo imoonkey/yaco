@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-06: Task workspace — width-gated Gantt, zoom removed
+
+**What changed:**
+- Gantt availability is now gated on viewport width (`useIsWideViewport`, ≥768px) instead of platform — a landscape phone qualifies, a portrait one does not. Both `TaskGraphScreen` (`isGantt`) and the toolbar's layout switch use it.
+- Removed the zoom controls entirely (the `−`/`%`/`+`/fit toolbar buttons and the `+`/`-`/`0` keyboard shortcuts). `useViewport.scale` is now a fixed `1` identity; the SVG renderers keep their (no-op) `scale` path. Stacked fits the width; Gantt scrolls horizontally — zoom added nothing.
+- Removing the toolbar zoom group also moves the mobile Filter button to the left edge, fixing the filter popover overflowing the right side of the screen on narrow phones.
+
+**Why:**
+- Zoom was meaningless for the new Stacked-list + Gantt-chart modes and crowded the mobile toolbar. Platform-based gating wrongly blocked Gantt on wide landscape phones; width is the correct signal.
+
+**Key files:** `app/ui/src/hooks/useIsMobile.ts`, `app/ui/src/tasks/{TaskGraphScreen.tsx,TaskGraphToolbar.tsx,useViewport.ts,useTaskGraphKeyboard.ts}`, `app/ui/tests/e2e/task-graph.spec.ts`, `doc/main/app/frontend/{components.md,hooks.md}`
+**Verification:** `cd app/ui && npm run build`, `npm run lint` (0 errors), `npx playwright test tests/e2e/task-graph.spec.ts` (19 passed); browser-checked Gantt switch present at 850px / hidden at 400px, no zoom buttons, Filter popover within viewport.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-06: Pseudo-Gantt task workspace mode
 
 **What changed:**
