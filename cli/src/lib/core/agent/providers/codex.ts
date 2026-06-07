@@ -79,7 +79,6 @@ export const codexProvider: TuiProvider = {
   detection: {
     idlePatterns: [
       /^\s*›/m, // codex prompt (Unicode ›, U+203A)
-      />\s*$/m, // fallback simple prompt
     ],
   },
 

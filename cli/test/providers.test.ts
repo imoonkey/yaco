@@ -37,9 +37,11 @@ describe("isIdle", () => {
     expect(isIdle(output)).toBe(true);
   });
 
-  it("detects generic prompt pattern", () => {
-    const output = "some output\n> ";
-    expect(isIdle(output)).toBe(true);
+  it("does not treat a bare '>' line as idle (avoids false idle during thinking)", () => {
+    // A stray line ending in '>' (markdown blockquote, diff marker, shell echo)
+    // must not match an idle prompt — only the real ❯ / › prompts count.
+    expect(isIdle("some output\n> ")).toBe(false);
+    expect(isIdle("here is a quote:\n> blockquote text")).toBe(false);
   });
 
   it("returns false when agent is processing", () => {

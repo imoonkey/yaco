@@ -15,7 +15,7 @@ function sessionsRoot(): string {
   return process.env["YACO_AGENT_SESSIONS_DIR"] || sessionsDir();
 }
 
-const STALE_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes
+const STALE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
 export function stateDir(): string {
   return sessionsRoot();

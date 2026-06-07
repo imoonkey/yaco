@@ -66,7 +66,6 @@ export const claudeProvider: TuiProvider = {
   detection: {
     idlePatterns: [
       /^❯\s/m, // Claude Code idle prompt (\s matches U+00A0 NBSP that follows ❯)
-      />\s*$/m, // fallback simple prompt
     ],
   },
 
