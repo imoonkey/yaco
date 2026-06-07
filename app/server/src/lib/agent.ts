@@ -206,16 +206,19 @@ function isUsableRow(row: unknown): row is AgentSessionRow {
   return typeof r.name === 'string' && typeof r.provider === 'string' && VALID_STATUSES.has(r.status)
 }
 
-/** Fetch authoritative session snapshot from `yaco agent list --all --json`.
- *  The CLI runs reconcile() internally (liveness checks, GC, metadata backfill)
- *  and returns rows already projected to project name via the shared registry.
- *  Sessions whose project isn't in this server's loaded set are dropped. */
+/** Fetch authoritative session snapshot from `yaco agent list --reconcile --all
+ *  --json`. This is the app's single mutation point: `--reconcile` makes the CLI
+ *  GC confirmed-dead tombstones, clean orphan breadcrumbs, and persist
+ *  stale-status corrections (pid-guarded, socket-safe). Only the 60s reconcile
+ *  loop calls this; display reads use the pure `yaco agent list` (queryAgentStatus)
+ *  or direct state-file reads. Rows arrive already projected to project name via
+ *  the shared registry; sessions whose project isn't loaded here are dropped. */
 export async function fetchAllSessionsFromCli(
   projects: Pick<Project, 'name' | 'path'>[],
 ): Promise<AgentSession[]> {
-  // execSync.*'yaco agent list --all --json'
+  // execSync.*'yaco agent list --reconcile --all --json'
   const data = await runYacoAgentJson(
-    ['agent', 'list', '--all', '--json'],
+    ['agent', 'list', '--reconcile', '--all', '--json'],
     YACO_AGENT_STATUS_TIMEOUT_MS,
     'agent list',
   )
@@ -438,7 +441,9 @@ export async function startAgentSession(
   throw new Error('timeout waiting for session tmux process')
 }
 
-/** Query the yaco agent CLI for live sessions at a given path. */
+/** Query the yaco agent CLI for live sessions at a given path. PURE read —
+ *  `yaco agent list --path` performs no GC or status-correction writes. Used by
+ *  the resume idempotency preflight; mutation belongs to the reconcile loop. */
 export async function queryAgentStatus(cwd: string): Promise<AgentSession[]> {
   try {
     // execSync.*'yaco agent list --path <cwd> --json'

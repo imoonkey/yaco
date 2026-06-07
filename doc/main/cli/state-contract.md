@@ -61,7 +61,7 @@ is persisted.
 
 - `fs.watch` invalidation trigger
 - Project routing (sessionPath)
-- **Direct reads for UI session list** — state files are kept accurate by hooks (real-time) and reconcile correction (background). Downstream consumers can trust status without CLI reconciliation.
+- **Direct reads for UI session list** — state files are kept accurate by hooks (real-time) and the background reconcile loop (`yaco agent list --reconcile`). Direct reads are themselves pure; downstream consumers can trust status without running their own reconciliation.
 
 ### Not allowed
 
@@ -70,7 +70,7 @@ is persisted.
 
 ## 2. Runtime Contract — CLI JSON
 
-The authoritative reconciled view. This is the **single source of runtime truth**.
+The authoritative runtime view. This is the **single source of runtime truth**. Read commands (`list`, `status`) resolve status read-only; the `--reconcile` variants additionally persist corrections and GC dead sessions.
 
 ### `yaco agent start <provider> [yaco-flags] [-- ...passthrough] --json`
 
@@ -79,22 +79,24 @@ The authoritative reconciled view. This is the **single source of runtime truth*
 - On bootstrap death, exits non-zero (no phantom state)
 - `--json` and other yaco-side flags bind only before `--`; tokens after `--` are forwarded verbatim to the provider CLI
 
-### `yaco agent list [--all] [--path <path>] --json`
+### `yaco agent list [--all] [--path <path>] [--reconcile] --json`
 
 - Collection view of live sessions. Default scope is the cwd subtree; `--all` spans every project; `--path <path>` scopes to an explicit subtree. `--all` and `--path` are mutually exclusive — passing both exits non-zero (`USAGE`).
-- Runs `reconcile()` per session: liveness checks, staleness fallback, capture fallback, metadata backfill. Owns GC: deletes state files for confirmed-dead sessions.
-- **GC is socket-safe.** `tmux has-session` is scoped to one tmux socket and yaco pins none, so a `list` whose `$TMUX` points at the wrong tmux server would see every live session as "dead" and wipe all state. Deletion is therefore gated on `confirmedDead()` = tmux reports gone **AND** the recorded PID is not running (`isProcessAlive`, a socket-independent `process.kill(pid, 0)` probe). A live process is never GC'd, regardless of which socket the caller can see.
+- **Default is a PURE READ.** It resolves each session read-only (`resolveSession`): liveness check (for the dead/visible verdict only), state read, capture-based status refinement **for display**, and in-memory metadata backfill. It **never** deletes a state file and **never** persists a status/backfill correction. Confirmed-dead sessions are filtered out of the returned rows, but their files are left untouched.
+- **`--reconcile` is the single mutation point.** Only this path performs side effects: it GCs confirmed-dead tombstones (`deleteState`), cleans orphan breadcrumbs, and persists stale-status / metadata corrections (`writeState`) via `reconcileSession`. The app server's 60s session-reconciler loop is the intended caller; everything else (UI display reads, polling) uses the pure default.
+- **GC is socket-safe.** `tmux has-session` is scoped to one tmux socket and yaco pins none, so a `list` whose `$TMUX` points at the wrong tmux server would see every live session as "dead". Even under `--reconcile`, deletion is gated on `confirmedDead()` = tmux reports gone **AND** the recorded PID is not running (`isProcessAlive`, a socket-independent `process.kill(pid, 0)` probe). A live process is never GC'd, regardless of which socket the caller can see. The pure default never deletes at all.
 - Returns an array of `AgentSessionRow` (not raw state): each row adds the resolved `project`/`projectPath` (longest-prefix match against the project registry; basename fallback for unregistered paths) to the session fields, and passes through valid `spawnedBy`/`parentSession`. Text mode renders a `name  status  project` table.
-- Projection is the pure `toSessionRow` helper exported from `@yaco/cli/core/agent` and shared with the app server's hot state-file reads. `reconcile()` is **not** exported — it stays CLI-only so the app never pulls liveness/GC into its hot read path.
+- Projection is the pure `toSessionRow` helper exported from `@yaco/cli/core/agent` and shared with the app server's hot state-file reads. The resolvers (`resolveSession`/`reconcileSession`) are **not** exported from the core package — they stay CLI-only so the app never pulls liveness/GC into its hot read path.
 
-### `yaco agent status <handle> --json`
+### `yaco agent status <handle> [--reconcile] --json`
 
-- Single-session reconciled view. The handle is **required**: `yaco agent status` with no handle exits non-zero (`USAGE`). There is no no-arg collection mode — use `yaco agent list`. An absent or dead session exits non-zero (`NOT_FOUND`) — the `--json` failure envelope is `{ok:false,error:{code:"NOT_FOUND"}}`, never `{ok:true,data:{error:"not found"}}`.
+- Single-session view. **Default is a PURE READ** (`resolveSession`): same read-only resolution as `list`, no writes, no deletes. The handle is **required**: `yaco agent status` with no handle exits non-zero (`USAGE`). There is no no-arg collection mode — use `yaco agent list`. An absent or confirmed-dead session exits non-zero (`NOT_FOUND`) **without deleting** — the `--json` failure envelope is `{ok:false,error:{code:"NOT_FOUND"}}`, never `{ok:true,data:{error:"not found"}}`.
+- `--reconcile` mirrors `list --reconcile`: it persists a stale-status / backfill correction and GCs a confirmed-dead tombstone. Default `status` is pure; reach for `--reconcile` only when a single-session correction must be written.
 
 ### `yaco agent capture <handle>`
 
 - **Dual-mode** — text mode writes the raw pane buffer to stdout (no JSON wrap); `--json` mode wraps as `{ ok:true, data:{ text:"..." } }`
-- `--wait` polls reconciliation until status is `idle` before capturing
+- `capture` is a diagnostic snapshot only — `--wait` is rejected (`USAGE`). Use `yaco agent wait` for turn completion; it tracks provider-log cursors and never reconciles or mutates state.
 
 ### `yaco agent send`, `rename`, `kill`
 
@@ -116,15 +118,16 @@ The authoritative reconciled view. This is the **single source of runtime truth*
 State files are kept in sync with runtime status through two mechanisms:
 
 1. **Hooks (real-time)** — Claude Code hooks fire on `UserPromptSubmit` (→processing), `Stop`/`StopFailure` (→idle), `SessionStart` (→idle). Updates are near-instant.
-2. **Reconcile correction (background)** — when `reconcile()` detects a stale state file (mtime > 5min) and capture-based detection returns a different status, it writes the correction to disk. This catches cases where hooks fail to fire.
+2. **Reconcile correction (background)** — the app server's 60s loop runs `yaco agent list --reconcile --all --json`. When the reconcile pass detects a stale state file (mtime > 5min) and capture-based detection returns a different status, it writes the correction to disk and GCs confirmed-dead tombstones. This is the **only** place corrections and GC happen — read commands never write.
 
-`reconcile()` resolves the current runtime status through a multi-step pipeline:
+Resolution splits into a pure read and a mutating wrapper:
 
-1. **Liveness check** — is the tmux session alive? Deletion only happens when `confirmedDead()` holds (tmux says gone **and** the recorded PID is not running); a wrong-socket tmux reading alone never deletes a live session.
-2. **State file read** — get persisted status
-3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 5min)
-4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators
-5. **Persist correction** — if capture status differs from state file, write it to disk
-6. **Metadata backfill** — resolve PID and sessionId from process tree
+- **`resolveSession` (pure)** — backs `list` (default), `status`, `whoami`, and every polling caller. It resolves the current runtime status for **display** without ever writing or deleting:
+  1. **Liveness check** — is the tmux session alive? A session counts as confirmed-dead only when `confirmedDead()` holds (tmux says gone **and** the recorded PID is not running); a wrong-socket tmux reading alone never marks a live session dead. Confirmed-dead sessions resolve to `null` (filtered from views) but their files are **not** touched.
+  2. **State file read** — get persisted status.
+  3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 5min)
+  4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators (display only).
+  5. **Metadata backfill** — resolve PID and sessionId from the process tree, in memory only.
+- **`reconcileSession` (mutating)** — backs `list --reconcile` / `status --reconcile`. It runs the pure resolver, then **persists** any stale-status / backfill correction and **deletes** a confirmed-dead tombstone.
 
-Consumers can read state files directly for both speed and correctness — files are kept accurate by hooks and reconcile correction. The CLI runtime contract remains the most authoritative for point-in-time queries.
+Consumers can read state files directly for both speed and correctness — files are kept accurate by hooks and the background reconcile loop. The pure CLI read commands (`list`, `status`) are equally safe and never mutate; reach for `--reconcile` only when you intend to drive GC + correction.

@@ -13,8 +13,19 @@ export type { RuntimeSessionState } from "../../lib/core/agent/model.ts";
 
 type SessionStatusValue = "idle" | "processing" | "starting" | "stopped" | "not found";
 
-/** Backfill PID/sessionId from the live process tree and local provider files. */
-function backfillStateMetadata(state: SessionState, handle: string): SessionState {
+/** Outcome of a pure metadata backfill: the (in-place mutated) state plus a
+ *  flag telling the mutating caller whether a field changed and is worth
+ *  persisting. The backfill itself never writes — persistence is the job of the
+ *  `reconcileSession` wrapper, not the read-only `resolveSession` path. */
+interface BackfillResult {
+  state: SessionState;
+  changed: boolean;
+}
+
+/** Backfill PID/sessionId from the live process tree and local provider files.
+ *  PURE: mutates the passed-in `state` object in memory only and reports whether
+ *  anything changed. It never touches disk. */
+function backfillStateMetadata(state: SessionState, handle: string): BackfillResult {
   let changed = false;
   // Preferred process command is the provider executable, which the contract
   // separates from the provider id. Synthetic "unknown" sessions have no
@@ -28,13 +39,11 @@ function backfillStateMetadata(state: SessionState, handle: string): SessionStat
   }
 
   if (state.sessionId && state.sessionId !== PENDING_SESSION_ID) {
-    if (changed) writeState(state);
-    return state;
+    return { state, changed };
   }
 
   if (state.pid <= 0) {
-    if (changed) writeState(state);
-    return state;
+    return { state, changed };
   }
 
   const createdMs = state.createdAt ? new Date(state.createdAt).getTime() : undefined;
@@ -56,8 +65,7 @@ function backfillStateMetadata(state: SessionState, handle: string): SessionStat
     changed = true;
   }
 
-  if (changed) writeState(state);
-  return state;
+  return { state, changed };
 }
 
 /** Synthesize a minimal state for sessions with no state file */
@@ -84,51 +92,90 @@ export function confirmedDead(tmuxAlive: boolean | null, pid: number | undefined
   return !isProcessAlive(pid);
 }
 
-/** G8: Shared reconciliation contract — single source of truth for runtime state resolution.
- *  Used by: status (text+JSON), agent list runtime resolution.
- *  Returns resolved state or null if session is dead/not found.
- *  Optional cachedAlive skips the tmux has-session call when the caller already checked. */
-export function reconcile(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {
-  // Step 1: Liveness check. tmux has-session is socket-scoped, so before
-  // deleting we confirm the recorded process is actually gone (see confirmedDead).
+/** A resolved runtime view plus the persistence intents a mutating caller would
+ *  act on. `dead` means the session is confirmed gone (GC candidate). When not
+ *  dead, `state` is the runtime view to display; `persist` holds the state value
+ *  the reconcile path should write when a backfill or capture correction drifted
+ *  from disk (null = nothing to persist). */
+interface ResolveDetail {
+  dead: boolean;
+  state: RuntimeSessionState | null;
+  persist: SessionState | null;
+}
+
+/** Pure core of resolution — NO writes, NO deletes. Reads the state file, checks
+ *  liveness for the dead/GC verdict, backfills metadata in memory, and (for a
+ *  stale or missing status) captures the pane to derive a display status. The
+ *  returned `persist` describes what a mutating caller could write; the pure
+ *  callers ignore it. */
+function resolveDetail(handle: string, cachedAlive?: boolean | null): ResolveDetail {
+  // Liveness. tmux has-session is socket-scoped, so a session is only dead when
+  // tmux says gone AND the recorded process is gone (see confirmedDead).
   const tmuxAlive = cachedAlive === undefined ? checkSessionAlive(handle) : cachedAlive;
   const state = readState(handle);
   if (confirmedDead(tmuxAlive, state?.pid)) {
-    if (isTmuxAvailable()) deleteState(handle);
-    return null;
+    return { dead: true, state: null, persist: null };
   }
   // tmuxAlive === null, or process still alive on another socket → continue.
 
   if (state) {
-    // Step 3: Staleness check — if processing/starting too long, fall through to capture
     const stale = (state.status === "processing" || state.status === "starting") && isStale(handle);
     const invalidStatus = (state.status as string) === "stopped";
-
     if (!stale && !invalidStatus) {
-      // Step 4: Valid non-stale state — backfill metadata and return
-      return backfillStateMetadata(state, handle);
+      // Valid non-stale state — backfill metadata in memory and return.
+      const { state: backfilled, changed } = backfillStateMetadata(state, handle);
+      return { dead: false, state: backfilled, persist: changed ? backfilled : null };
     }
   }
 
-  // Step 5: Capture-based fallback (state is stale or missing)
+  // Capture-based fallback (state is stale or missing). Capture refines the
+  // display status without persisting — the mutating path decides whether the
+  // drift is worth writing back.
   try {
     const output = capturePane(handle, 15);
     const capturedStatus = isIdle(output) ? "idle" : "processing";
     if (state) {
-      const backfilled = backfillStateMetadata(state, handle);
-      // State file is stale — hooks stopped updating. Safe to persist the
-      // capture-derived status so all readers see it.
-      if (backfilled.status !== capturedStatus) {
-        writeState({ ...backfilled, status: capturedStatus });
-      }
-      return { ...backfilled, status: capturedStatus };
+      const { state: backfilled, changed } = backfillStateMetadata(state, handle);
+      const corrected: SessionState = { ...backfilled, status: capturedStatus };
+      // State file is stale — hooks stopped updating. A mutating caller persists
+      // the capture-derived status (and any backfill) so all readers converge.
+      const drift = changed || backfilled.status !== capturedStatus;
+      return { dead: false, state: corrected, persist: drift ? corrected : null };
     }
-    return { ...synthesizeState(handle), status: capturedStatus };
+    return { dead: false, state: { ...synthesizeState(handle), status: capturedStatus }, persist: null };
   } catch {
-    // Can't capture — return whatever state we have
-    if (state) return backfillStateMetadata(state, handle);
-    return synthesizeState(handle);
+    // Can't capture — return whatever state we have.
+    if (state) {
+      const { state: backfilled, changed } = backfillStateMetadata(state, handle);
+      return { dead: false, state: backfilled, persist: changed ? backfilled : null };
+    }
+    return { dead: false, state: synthesizeState(handle), persist: null };
   }
+}
+
+/** PURE read-only resolver — the single source of truth for runtime state.
+ *  Used by `list` (default), `status`, `whoami`, and all polling callers.
+ *  Returns the resolved runtime view, or null when the session is confirmed
+ *  dead/not found. Performs NO writes and NO deletes: it never persists status
+ *  corrections nor GCs tombstones. `cachedAlive` skips the per-session tmux
+ *  has-session call when the caller already checked liveness. */
+export function resolveSession(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {
+  return resolveDetail(handle, cachedAlive).state;
+}
+
+/** MUTATING reconcile wrapper — the only resolver that writes. It runs the pure
+ *  `resolveDetail`, then: GCs a confirmed-dead session's state file (gated on
+ *  `confirmedDead` inside resolveDetail), and persists any backfill / stale
+ *  status correction the pure pass computed. Used by `list --reconcile` and the
+ *  app server's 60s reconcile loop. */
+export function reconcileSession(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {
+  const detail = resolveDetail(handle, cachedAlive);
+  if (detail.dead) {
+    if (isTmuxAvailable()) deleteState(handle);
+    return null;
+  }
+  if (detail.persist) writeState(detail.persist);
+  return detail.state;
 }
 
 function checkCliAvailable(cmd: string): boolean {
@@ -142,17 +189,21 @@ function checkCliAvailable(cmd: string): boolean {
 
 interface StatusOptions {
   json?: boolean;
+  /** When true, persist a stale-status correction / metadata backfill and GC a
+   *  confirmed-dead tombstone. Default false: `status` is a pure read. */
+  reconcile?: boolean;
 }
 
 /** Inspect a single session by handle. Single source for `yaco agent status
- *  <name>`. The collection view lives in `list()`. */
+ *  <name>`. The collection view lives in `list()`. PURE read by default —
+ *  `--reconcile` opts into the mutating resolver (persist corrections + GC). */
 export function status(name: string, jsonOrOptions?: boolean | StatusOptions): string {
   const opts: StatusOptions = typeof jsonOrOptions === "boolean"
     ? { json: jsonOrOptions }
     : (jsonOrOptions ?? {});
 
   validateName(name);
-  const resolved = reconcile(name);
+  const resolved = opts.reconcile ? reconcileSession(name) : resolveSession(name);
   if (!resolved) {
     throw new CliError(ErrCode.NOT_FOUND, `no agent session: ${name}`);
   }
@@ -164,6 +215,10 @@ interface ListOptions {
   json?: boolean;
   all?: boolean;
   path?: string;
+  /** When true, perform the mutating pass: GC confirmed-dead tombstones, persist
+   *  stale-status corrections, and clean up orphan breadcrumbs. Default false:
+   *  `list` is a pure read that filters dead sessions out without deleting. */
+  reconcile?: boolean;
 }
 
 /** Unregistered session paths still deserve a row — fall back to the path's
@@ -175,15 +230,23 @@ function deriveProject(sessionPath: string, projects: ProjectRef[]): ProjectRef 
 
 /** List live sessions as shared projection rows. Source for `yaco agent list`.
  *  Default scope is the cwd subtree; `--all` spans every project; `--path`
- *  scopes to an explicit subtree. */
+ *  scopes to an explicit subtree.
+ *
+ *  PURE READ by default: enumerates state files, resolves each session
+ *  read-only (`resolveSession`), filters confirmed-dead sessions OUT of the
+ *  returned rows, and never deletes their files or persists corrections.
+ *
+ *  `--reconcile` is the single mutation point: it GCs confirmed-dead tombstones,
+ *  cleans orphan breadcrumbs, and persists stale-status / backfill corrections
+ *  via `reconcileSession`. The app server's 60s loop is the intended caller. */
 export function list(options: ListOptions = {}): string {
   const filterPath = options.path ?? (options.all ? undefined : process.cwd());
   const sessions = filterPath
     ? listByPath(filterPath)
     : listStateHandles().map(h => readState(h)).filter(Boolean) as SessionState[];
 
-  // Cache liveness results — checkSessionAlive spawns a process per call,
-  // and we need the result in GC, filter, and reconcile. One check per session.
+  // Cache liveness results — checkSessionAlive spawns a process per call, and
+  // we need the result for the dead-filter and the resolver. One check per session.
   const aliveCache = new Map<string, boolean | null>();
   if (isTmuxAvailable()) {
     for (const session of sessions) {
@@ -191,24 +254,29 @@ export function list(options: ListOptions = {}): string {
     }
   }
 
-  // GC: delete state files only for sessions CONFIRMED dead — tmux reports them
-  // gone AND their recorded process is not running. The PID guard makes this
-  // socket-safe: a `list` run on the wrong tmux socket sees every session as
-  // dead via has-session, but must not wipe state for live processes.
-  for (const session of sessions) {
-    if (confirmedDead(aliveCache.get(session.handle) ?? null, session.pid)) {
-      deleteState(session.handle);
+  // GC + breadcrumb cleanup ONLY in the mutating path. The PID guard makes
+  // deletion socket-safe: a `list` run on the wrong tmux socket sees every
+  // session as dead via has-session, but must not wipe state for live processes.
+  if (options.reconcile) {
+    for (const session of sessions) {
+      if (confirmedDead(aliveCache.get(session.handle) ?? null, session.pid)) {
+        deleteState(session.handle);
+      }
     }
+    if (isTmuxAvailable()) cleanupOrphanBreadcrumbs();
   }
-  if (isTmuxAvailable()) cleanupOrphanBreadcrumbs();
 
-  // Filter to live sessions (keep anything not confirmed dead).
+  // Filter confirmed-dead sessions out of the view (keep anything not confirmed
+  // dead). The pure path does this WITHOUT deleting their files.
   const liveSessions = sessions.filter(s => !confirmedDead(aliveCache.get(s.handle) ?? null, s.pid));
 
   const projects = readProjects();
   const rows: AgentSessionRow[] = [];
   for (const session of liveSessions) {
-    const resolved = reconcile(session.handle, aliveCache.get(session.handle));
+    const alive = aliveCache.get(session.handle);
+    const resolved = options.reconcile
+      ? reconcileSession(session.handle, alive)
+      : resolveSession(session.handle, alive);
     if (!resolved) continue;
     const row = toSessionRow(resolved, deriveProject(resolved.sessionPath, projects));
     if (row) rows.push(row);

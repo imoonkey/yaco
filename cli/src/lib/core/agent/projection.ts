@@ -2,9 +2,9 @@
  *
  *  This is the single state-to-row mapping shared by the CLI `agent list`
  *  command and the app server's hot state-file reads. It is intentionally
- *  pure: no tmux, no filesystem, no reconcile. Liveness resolution and GC
- *  (`reconcile`) stay CLI-only — the app must never pull them into its hot
- *  read path.
+ *  pure: no tmux, no filesystem, no liveness resolution. Liveness resolution and
+ *  GC (`resolveSession` / `reconcileSession`) stay CLI-only — the app must never
+ *  pull them into its hot read path.
  */
 import { isAbsolute, normalize, relative, sep } from "node:path";
 import type { SessionStatus, SpawnedBy } from "./model.ts";
