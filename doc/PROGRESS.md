@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-06: agent reads/mutation split — pure `list`/`status`, `--reconcile` owns GC
+
+**What changed:**
+- **`yaco agent list` (default) and `yaco agent status <handle>` are now pure reads.** They resolve a session's display status read-only (state file + capture-refined status for stale entries + in-memory pid/sessionId backfill) and filter confirmed-dead sessions out of the view, but never call `deleteState`/`writeState`. A read-shaped command no longer has a destructive side effect — a `list` on the wrong tmux socket can never GC a live session's state file (the pid-guard already prevented data loss; this removes the mutation entirely from the read path).
+- **`yaco agent list --reconcile` is the single mutation point.** Only it performs the side effects that previously lived in `reconcile()`: GC confirmed-dead tombstones (`deleteState`, still gated on `confirmedDead`), persist stale-status / backfill corrections (`writeState`), and `cleanupOrphanBreadcrumbs()`. `status --reconcile` mirrors it for a single handle.
+- **`reconcile()` split** into a pure `resolveSession` (+ shared `resolveDetail` core) and a thin mutating `reconcileSession` wrapper. `backfillStateMetadata` is now pure (mutates in memory, reports `changed`); only `reconcileSession` writes. `whoami` and all polling callers use the pure resolver.
+- **App server stops implying its own session logic.** The 60s `session-reconciler` loop (`fetchAllSessionsFromCli`) now calls `yaco agent list --reconcile --all --json` — the intended background mutation point. Display reads (`/api/sessions` direct state-file reads, `queryAgentStatus`'s `list --path`) use the pure path. The app owns no GC/liveness/correction; that is the CLI's job via `--reconcile`.
+
+**Why:**
+- Closes the previous entry's "Next": making `list` fully read-only and moving dead-tombstone GC to a dedicated reconcile pass. Reads and mutation are now contract-separated so no display/polling caller can mutate state; the one background loop that *should* reconcile does so explicitly.
+
+**Contract decision:** added `status --reconcile` (default `status` stays pure) for symmetry with `list` and to cover single-session corrections; documented in the help text and state-contract doc.
+
+**Key files:** `cli/src/commands/agent/{status,index,whoami}.ts`, `cli/test/lifecycle-guards.test.ts`, `app/server/src/lib/agent.ts`, `app/server/src/routes/sessions.ts`, `doc/main/cli/state-contract.md`
+**Verification:** `bun --cwd cli test` → 761 pass, 0 fail (added pure-read + pid-guarded-GC unit tests). CLI compiles (`bun build src/main.ts --compile`). `app/server` session-reconciler/agent/session-summary vitest suites → 35 pass; no new typecheck errors in the changed files.
+**Commit:** c6becdb..HEAD
+**Next:** Out of scope here but on the backlog: pin a fixed tmux socket (or add a `@yaco` session marker) so create + has-session always agree on one server.
+**Blockers:** None.
+
 ## 2026-06-07: agent state-transition fixes — SessionStart hook + socket-safe GC
 
 **What changed:**
