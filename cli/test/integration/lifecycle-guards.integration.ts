@@ -13,8 +13,8 @@
 
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdirSync } from "fs";
-import { homedir } from "os";
+import { mkdirSync, mkdtempSync, rmSync } from "fs";
+import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { start } from "../../src/commands/agent/start.ts";
 import { send } from "../../src/commands/agent/send.ts";
@@ -55,8 +55,24 @@ const testHandles: string[] = [];
 // Run agents in an isolated directory so they don't interfere with the project
 const TEST_CWD = "/tmp/multmux-test";
 let savedCwd: string;
-beforeAll(() => { mkdirSync(TEST_CWD, { recursive: true }); savedCwd = process.cwd(); process.chdir(TEST_CWD); });
-afterAll(() => { process.chdir(savedCwd); });
+// Sandbox YACO_HOME so session-state files land in a throwaway dir, not the live
+// ~/.yaco/sessions the web app reads (env propagates into the spawned agents'
+// tmux session, isolating hook/wrapper state writes too).
+const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
+let yacoSandbox: string;
+beforeAll(() => {
+  mkdirSync(TEST_CWD, { recursive: true });
+  yacoSandbox = mkdtempSync(join(tmpdir(), "yaco-itest-"));
+  process.env["YACO_HOME"] = yacoSandbox;
+  savedCwd = process.cwd();
+  process.chdir(TEST_CWD);
+});
+afterAll(() => {
+  process.chdir(savedCwd);
+  if (ORIGINAL_YACO_HOME === undefined) delete process.env["YACO_HOME"];
+  else process.env["YACO_HOME"] = ORIGINAL_YACO_HOME;
+  rmSync(yacoSandbox, { recursive: true, force: true });
+});
 
 afterEach(() => {
   for (const handle of testHandles) {
