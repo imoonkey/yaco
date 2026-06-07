@@ -130,7 +130,7 @@ Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
   what was implemented, key decisions made, and current state.
 - **Archive completed bundles.** When archiving a completed project, check
   whether `plan/tasks/**/tasks.json` has the matching terminal project task
-  and archive it via `yaco task archive <id> --json` (or `/update-tasks`).
+  and archive it via `yaco task archive <id> --json` (or `/yaco-task`).
   The command marks the terminal subtree with `workset=archive`; project docs
   live under `plan/all/**`, with `plan/archive/*` as a symlink view. Move the
   project symlink view from `plan/active/<project>` or `plan/backlog/<project>`

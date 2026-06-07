@@ -21,7 +21,16 @@ import {
   followOutput,
   type FollowFrame,
 } from "../../src/lib/core/agent/providers/output.ts";
-import { parseByteOffset, parseOutputFollowArgs } from "../../src/commands/agent/output.ts";
+import {
+  captureWaitCursor,
+  parseByteOffset,
+  parseOutputFollowArgs,
+  parseTimeoutMs,
+  resolveSendWaitOrigin,
+  waitForAgentCompletion,
+} from "../../src/commands/agent/output.ts";
+import { parseWaitArgs } from "../../src/commands/agent/wait.ts";
+import { CliError } from "../../src/lib/core/errors.ts";
 import { encodeClaudeCwd } from "../../src/lib/core/project/encode.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../../src/lib/core/agent/model.ts";
 
@@ -663,4 +672,365 @@ describe("agent output-follow offset validation", () => {
       expect(JSON.parse((r.stderr ?? "").trim()).error.code).toBe("USAGE");
     });
   }
+});
+
+// -- Completion wait helper --
+
+function codexLine(message: string, phase: string): string {
+  return JSON.stringify({ type: "event_msg", payload: { type: "agent_message", phase, message } });
+}
+
+/** Build a hermetic sandbox: one session state file plus (optionally) its
+ *  provider log, with HOME + sessions dir pointed at the sandbox. Returns the
+ *  handle and a cleanup that restores env and removes the sandbox. */
+function waitSandbox(opts: {
+  provider?: "claude" | "codex";
+  sessionId?: string;
+  logLines?: string[];
+  trailingNewline?: boolean;
+}): { handle: string; logPath: string; cleanup: () => void } {
+  const root = mkdtempSync(join(tmpdir(), "yaco-wait-"));
+  const home = join(root, "home");
+  const sessionsDir = join(root, "sessions");
+  mkdirSync(sessionsDir, { recursive: true });
+
+  const provider = opts.provider ?? "claude";
+  const handle = "wait-h";
+  const sessionId = opts.sessionId ?? "sess-wait";
+  const sessionPath = "/tmp/yaco-wait-proj";
+  writeFileSync(
+    join(sessionsDir, `${handle}.json`),
+    JSON.stringify(makeState({ handle, provider, sessionId, sessionPath, pid: 999_999 })),
+  );
+
+  let logPath = "";
+  if (opts.logLines) {
+    if (provider === "claude") {
+      const dir = join(home, ".claude", "projects", encodeClaudeCwd(sessionPath));
+      mkdirSync(dir, { recursive: true });
+      logPath = join(dir, `${sessionId}.jsonl`);
+    } else {
+      const dir = join(home, ".codex", "sessions", "2026", "01", "01");
+      mkdirSync(dir, { recursive: true });
+      logPath = join(dir, `rollout-${sessionId}.jsonl`);
+    }
+    writeFileSync(
+      logPath,
+      opts.logLines.join("\n") + (opts.trailingNewline === false ? "" : "\n"),
+    );
+  }
+
+  const prevHome = process.env["HOME"];
+  const prevSessions = process.env["YACO_AGENT_SESSIONS_DIR"];
+  process.env["HOME"] = home;
+  process.env["YACO_AGENT_SESSIONS_DIR"] = sessionsDir;
+  const cleanup = () => {
+    if (prevHome === undefined) delete process.env["HOME"];
+    else process.env["HOME"] = prevHome;
+    if (prevSessions === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
+    else process.env["YACO_AGENT_SESSIONS_DIR"] = prevSessions;
+    rmSync(root, { recursive: true, force: true });
+  };
+  return { handle, logPath, cleanup };
+}
+
+/** Run the wait helper with an injected fast clock and liveness, capturing a
+ *  thrown CliError's code for assertions. */
+async function runWait(
+  handle: string,
+  origin: Parameters<typeof waitForAgentCompletion>[1],
+  over: { isAlive?: boolean; timeoutMs?: number; step?: number } = {},
+) {
+  return waitForAgentCompletion(handle, origin, {
+    isAlive: () => over.isAlive ?? true,
+    timeoutMs: over.timeoutMs ?? 100_000,
+    pollMs: 1,
+    ...fakeTimer(over.step ?? 10),
+  });
+}
+
+async function expectWaitError(
+  handle: string,
+  origin: Parameters<typeof waitForAgentCompletion>[1],
+  over: { isAlive?: boolean; timeoutMs?: number; step?: number } = {},
+): Promise<CliError> {
+  try {
+    await runWait(handle, origin, over);
+  } catch (e) {
+    return e as CliError;
+  }
+  throw new Error("expected waitForAgentCompletion to reject");
+}
+
+describe("waitForAgentCompletion", () => {
+  it("returns the Claude final answer from provider-log start", async () => {
+    const { handle, cleanup } = waitSandbox({
+      logLines: [claudeLine("thinking", false), claudeLine("done", true)],
+    });
+    try {
+      const r = await runWait(handle, { kind: "from-start" });
+      expect(r).toEqual({ handle, provider: "claude", outcome: "final", text: "done" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("returns a Claude question as outcome=question without waiting for a final", async () => {
+    const questionLine = JSON.stringify({
+      type: "assistant",
+      message: {
+        stop_reason: "tool_use",
+        content: [{ type: "tool_use", name: "AskUserQuestion", input: { questions: [{ question: "Proceed?", options: [{ label: "Yes" }] }] } }],
+      },
+    });
+    const { handle, cleanup } = waitSandbox({ logLines: [questionLine] });
+    try {
+      const r = await runWait(handle, { kind: "from-start" });
+      expect(r.outcome).toBe("question");
+      expect(r.text).toContain("Proceed?");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("returns the Codex final_answer", async () => {
+    const { handle, cleanup } = waitSandbox({
+      provider: "codex",
+      logLines: [codexLine("step", "commentary"), codexLine("the answer", "final_answer")],
+    });
+    try {
+      const r = await runWait(handle, { kind: "from-start" });
+      expect(r).toEqual({ handle, provider: "codex", outcome: "final", text: "the answer" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("raises TIMEOUT when no final arrives within the lifetime cap (session alive)", async () => {
+    const { handle, cleanup } = waitSandbox({ logLines: [claudeLine("working", false)] });
+    try {
+      const err = await expectWaitError(handle, { kind: "from-start" }, { timeoutMs: 1000, step: 600 });
+      expect(err.code).toBe("TIMEOUT");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("raises NOT_FOUND when there is no provider log", async () => {
+    const { handle, cleanup } = waitSandbox({}); // no log written
+    try {
+      const err = await expectWaitError(handle, { kind: "from-start" }, { isAlive: false });
+      expect(err.code).toBe("NOT_FOUND");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("raises INVALID for a malformed cursor token", async () => {
+    const { handle, cleanup } = waitSandbox({ logLines: [claudeLine("done", true)] });
+    try {
+      const err = await expectWaitError(handle, { kind: "cursor", token: "not-a-token", offset: 0 });
+      expect(err.code).toBe("INVALID");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("raises INVALID for a well-formed cursor minted for a different session", async () => {
+    const { handle, cleanup } = waitSandbox({ logLines: [claudeLine("done", true)] });
+    const foreign = encodeCursorToken({ provider: "claude", sessionId: "other-session", path: "/tmp/x.jsonl" });
+    try {
+      const err = await expectWaitError(handle, { kind: "cursor", token: foreign, offset: 0 });
+      expect(err.code).toBe("INVALID");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("does not replay a resumed session's old final answer (stale-answer guard)", async () => {
+    // The log holds an OLD final from before the resume. A wait from a cursor at
+    // the log's current EOF must not return it; with no new content and the
+    // session gone, it drains to ENDED_NO_FINAL.
+    const { handle, cleanup } = waitSandbox({ logLines: [claudeLine("OLD answer", true)] });
+    try {
+      const cursor = await captureWaitCursor(handle);
+      expect(cursor).not.toBeNull();
+      const err = await expectWaitError(
+        handle,
+        { kind: "cursor", token: cursor!.token, offset: cursor!.offset },
+        { isAlive: false },
+      );
+      expect(err.code).toBe("NOT_FOUND");
+      expect((err.details as { reason?: string }).reason).toBe("ENDED_NO_FINAL");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("captureWaitCursor returns null for a pending-id session (Codex first send)", async () => {
+    const { handle, cleanup } = waitSandbox({
+      provider: "codex",
+      sessionId: PENDING_SESSION_ID,
+      logLines: [codexLine("hi", "final_answer")],
+    });
+    try {
+      expect(await captureWaitCursor(handle)).toBeNull();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("recovers a final found while draining a session that ended before it was parsed", async () => {
+    const { handle, cleanup } = waitSandbox({
+      logLines: [claudeLine("interim", false), claudeLine("recovered", true)],
+    });
+    try {
+      const r = await runWait(handle, { kind: "from-start" }, { isAlive: false });
+      expect(r).toEqual({ handle, provider: "claude", outcome: "final", text: "recovered" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("recovers a dead session's final record written WITHOUT a trailing newline", async () => {
+    // The session flushed its final JSON record but died before the closing
+    // newline; the drain must still classify it rather than report ENDED_NO_FINAL.
+    const { handle, cleanup } = waitSandbox({
+      logLines: [claudeLine("interim", false), claudeLine("tail final", true)],
+      trailingNewline: false,
+    });
+    try {
+      const r = await runWait(handle, { kind: "from-start" }, { isAlive: false });
+      expect(r).toEqual({ handle, provider: "claude", outcome: "final", text: "tail final" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("raises NOT_FOUND(reason=ENDED_NO_FINAL) when a dead session has no final", async () => {
+    const { handle, cleanup } = waitSandbox({ logLines: [claudeLine("interim only", false)] });
+    try {
+      const err = await expectWaitError(handle, { kind: "from-start" }, { isAlive: false });
+      expect(err.code).toBe("NOT_FOUND");
+      expect((err.details as { reason?: string }).reason).toBe("ENDED_NO_FINAL");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("raises INVALID for an unsupported provider", async () => {
+    const { handle, cleanup } = waitSandbox({ logLines: [claudeLine("done", true)] });
+    // Rewrite the state file to an unknown provider id.
+    const sessionsDir = process.env["YACO_AGENT_SESSIONS_DIR"]!;
+    writeFileSync(
+      join(sessionsDir, `${handle}.json`),
+      JSON.stringify(makeState({ handle, provider: "unknown", sessionId: "sess-wait" })),
+    );
+    try {
+      const err = await expectWaitError(handle, { kind: "from-start" });
+      expect(err.code).toBe("INVALID");
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe("resolveSendWaitOrigin", () => {
+  it("returns a cursor origin when a prior provider log exists", async () => {
+    const { handle, cleanup } = waitSandbox({ logLines: [claudeLine("old", true)] });
+    try {
+      const origin = await resolveSendWaitOrigin(handle);
+      expect(origin.kind).toBe("cursor");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("waits from log start for a Codex pending first send (no prior log)", async () => {
+    const { handle, cleanup } = waitSandbox({ provider: "codex", sessionId: PENDING_SESSION_ID });
+    try {
+      expect(await resolveSendWaitOrigin(handle)).toEqual({ kind: "from-start" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("waits from log start when a resolved session has no log file yet", async () => {
+    // No log on disk → nothing to replay → from-start is safe.
+    const { handle, cleanup } = waitSandbox({ sessionId: "resolved-sess" }); // no log written
+    try {
+      expect(await resolveSendWaitOrigin(handle)).toEqual({ kind: "from-start" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("FAILS (never from-start) when a pending session ALREADY has a log with an old final", async () => {
+    // Reproduces the stale-answer bug: a pending sessionId whose provider log
+    // already exists on disk. resolveCursor is null (id unresolved), but the log
+    // is present — from-start would replay the OLD final once the hook backfills
+    // the id, so this must error instead.
+    const { handle, cleanup } = waitSandbox({
+      sessionId: PENDING_SESSION_ID,
+      logLines: [claudeLine("OLD answer", true)],
+    });
+    try {
+      let err: CliError | undefined;
+      try {
+        await resolveSendWaitOrigin(handle);
+      } catch (e) {
+        err = e as CliError;
+      }
+      expect(err?.code).toBe("NOT_FOUND");
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe("parseWaitArgs", () => {
+  it("accepts a handle with --from-start", () => {
+    expect(parseWaitArgs(["h", "--from-start"])).toEqual({ handle: "h", origin: { kind: "from-start" }, timeoutMs: undefined });
+  });
+
+  it("accepts a handle with --cursor + --offset and --timeout-ms", () => {
+    expect(parseWaitArgs(["h", "--cursor", "oc1_x", "--offset", "5", "--timeout-ms", "200"])).toEqual({
+      handle: "h",
+      origin: { kind: "cursor", token: "oc1_x", offset: 5 },
+      timeoutMs: 200,
+    });
+  });
+
+  it("requires a handle and an explicit origin", () => {
+    expect(() => parseWaitArgs(["--from-start"])).toThrow(); // no handle
+    expect(() => parseWaitArgs(["h"])).toThrow(); // no origin
+    expect(() => parseWaitArgs(["h", "--json"])).toThrow(); // no origin
+  });
+
+  it("rejects mixing --from-start with --cursor/--offset", () => {
+    expect(() => parseWaitArgs(["h", "--from-start", "--cursor", "oc1_x", "--offset", "5"])).toThrow();
+  });
+
+  it("rejects --cursor without --offset and --offset without --cursor", () => {
+    expect(() => parseWaitArgs(["h", "--cursor", "oc1_x"])).toThrow();
+    expect(() => parseWaitArgs(["h", "--offset", "5"])).toThrow();
+  });
+
+  it("rejects unknown flags and a bad offset", () => {
+    expect(() => parseWaitArgs(["h", "--from-start", "--bogus"])).toThrow();
+    expect(() => parseWaitArgs(["h", "--cursor", "oc1_x", "--offset", "abc"])).toThrow();
+  });
+});
+
+describe("parseTimeoutMs", () => {
+  it("accepts positive integers", () => {
+    expect(parseTimeoutMs("1")).toBe(1);
+    expect(parseTimeoutMs("60000")).toBe(60000);
+  });
+
+  it("rejects missing, zero, negative, and non-numeric values", () => {
+    for (const bad of [undefined, "", "0", "-5", "abc", "1.5"]) {
+      expect(() => parseTimeoutMs(bad as string | undefined)).toThrow();
+    }
+  });
 });

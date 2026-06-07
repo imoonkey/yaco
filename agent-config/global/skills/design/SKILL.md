@@ -55,7 +55,7 @@ Cover:
 - **Approach** — key design decisions and rationale
 - **Components** — what changes, what's new, what's removed
 - **Interactions** — how components connect, data flow, state transitions
-- **Tasks** — break the design into implementable tasks. Each task: slug, scope (file globs), acceptance criteria, dependencies. This section feeds `/update-tasks` to populate the task graph.
+- **Tasks** — break the design into implementable tasks. Each task: slug, scope (file globs), acceptance criteria, dependencies. This section feeds `/yaco-task` to populate the task graph.
 - **Trade-offs** — what alternatives were considered, why this approach wins
 
 Keep it concise. The doc should be readable in 5 minutes.
@@ -72,7 +72,7 @@ If gaps exist, iterate steps 3-5.
 ### 6. Ready for Review
 
 Present the design doc for review (human or `/eng-plan-review`).
-After approval, use `/update-tasks` to create the task graph from the Tasks section, then proceed to `/implement` or `/orchestrate`.
+After approval, use `/yaco-task` to create the task graph from the Tasks section, then proceed to `/implement` or `/orchestrate`.
 
 ## YACO compatibility
 
@@ -81,7 +81,7 @@ Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
 `plan/all/<project>/*_[codex|claude].md` (or
 `plan/all/<project>/individual/*_[claude|codex].md` when running under
 `/double-design`), with `plan/active/<project>` kept as a symlink view when
-the bundle is active; surface its Tasks section through `/update-tasks` (which
+the bundle is active; surface its Tasks section through `/yaco-task` (which
 writes `plan/tasks/**/tasks.json`); hand execution off to `/orchestrate`, which
 dispatches `yaco agent` workers with session state under `~/.yaco/sessions/`.
 Outside YACO, follow the project's own design-doc convention.

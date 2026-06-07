@@ -52,7 +52,7 @@ Orthogonal to location, each global skill declares its relationship to the `yaco
 
 | Value | Meaning | Skills |
 |-------|---------|--------|
-| `"true"` | Core mechanism calls `yaco` — cannot function without it | align, double-design, init-all, orchestrate, tmusk, update-tasks |
+| `"true"` | Core mechanism calls `yaco` — cannot function without it | align, double-design, init-all, orchestrate, yaco-agent, yaco-task |
 | `"optional"` | Runs in any repo; has an optional "Inside a YACO project" integration | design, office-hours, update-doc |
 | *(absent)* | Standalone — pure workflow prompt, runs in any repo | everything else |
 

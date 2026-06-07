@@ -1,13 +1,17 @@
 ---
-name: update-tasks
-description: Create and manage the project task graph in plan/tasks/**/tasks.json. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
+name: yaco-task
+description: Create and manage the project task graph through the yaco task CLI. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
 metadata:
   yaco-dependent: "true"
 ---
 
-This skill owns and mutates `plan/tasks/**/tasks.json` through the `yaco task`
-CLI and references real design bundles under `plan/all/<bundle>/`; `plan/active`,
-`plan/backlog`, and `plan/archive` are symlink views.
+This skill is the operation manual for `yaco task`. The task graph lives in
+`plan/tasks/**/tasks.json`, but you never edit those files directly and never
+manipulate them with helper scripts or Python — every read and write goes
+through the `yaco task` CLI, which owns the graph constraints (ref validation,
+cycle detection, state guards, parent rollup). Design bundles live under
+`plan/all/<bundle>/`; `plan/active`, `plan/backlog`, and `plan/archive` are
+symlink views.
 
 ## Scope
 
@@ -54,7 +58,7 @@ ID (JSON key) is a stable slug — used in `depends`/`parent` references, never 
 | `requireHumanReview` | no | If true, orchestrate stops after this task completes and waits for human input. Default: false |
 | `note` | no | Free-text annotation — block reason, review comment, human notes |
 | `priority` | no | `critical \| high \| normal \| low` — orchestrate uses as tiebreak on scope conflict |
-| `agent` | no | Session handle (e.g. `w-auth-fix`). Set by orchestrate on dispatch, retained after done as audit trail |
+| `agents` | no | `string[]` of session handles (e.g. `["w-auth-fix"]`) linked to this task. Never set through `task set` — written only via `yaco task attach`/`detach`. Retained after done as audit trail |
 | `tags` | no | Free-form string[] for semantic grouping (e.g. `["backend", "refactor"]`) |
 | `estimate` | no | `xs \| s \| m \| l \| xl` — helps scheduling and workload assessment |
 | `blockReason` | no | `verification-failed \| human-review \| external \| dependency` — distinguishes why a task is blocked |
@@ -109,8 +113,9 @@ Reads and writes both go through `yaco task`, which has graph constraints
 
 ```bash
 # Read
-yaco task list                          --json    # active workset
-yaco task list --workset all            --json    # full graph across all worksets
+yaco task list                          --json    # active workset (default)
+yaco task list --workset all            --json    # full task map: active + backlog + archive
+yaco task list --workset archive        --json    # archive only
 yaco task validate                      --json    # validate whole graph
 yaco task validate --id <id>            --json    # validate one task + parent chain
 
@@ -120,7 +125,21 @@ yaco task set <id> --stdin              --json    # JSON from stdin
 yaco task set <id> --file <path>        --json    # JSON from file
 yaco task rm      <id>                  --json
 yaco task archive <id>                  --json
+
+# Task-agent links — the ONLY writers of `agents`
+yaco task attach <id> <session-handle> [--repo <path>] --json   # add a handle to agents
+yaco task detach <id> <session-handle> [--repo <path>] --json   # remove a handle from agents
 ```
+
+`yaco task list --json` returns the active workset by default. Use
+`--workset all` to get the full task map across active, backlog, and archive in
+one read; use `--workset archive` to inspect the archive alone.
+
+`yaco task set` mutates ordinary task fields only. It **rejects** both `agent`
+and `agents` — the `agents` link list is delta-mutated exclusively through
+`yaco task attach` and `yaco task detach`. To dispatch a task to a worker,
+move its state with `task set` and link the handle with `task attach` as two
+separate commands.
 
 `archive` sets `workset=archive` on a terminal task and all its descendants.
 All descendants must also be terminal. Non-terminal work that should leave the
@@ -148,8 +167,10 @@ yaco task set workspace-state --data '{
   "acceptCriteria": ["npm test passes", "no console errors on reload"]
 }' --json
 
-# Move a task to running
-yaco task set workspace-state --data '{"state":"running","agent":"w-workspace-state"}' --json
+# Move a task to running and link its worker handle (two commands —
+# `task set` never writes `agent`/`agents`)
+yaco task set workspace-state --data '{"state":"running"}' --json
+yaco task attach workspace-state w-workspace-state --json
 
 # Archive a completed task and descendants
 yaco task archive workspace-state --json

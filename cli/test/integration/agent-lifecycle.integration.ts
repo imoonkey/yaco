@@ -269,36 +269,6 @@ describe("status detection", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Test 4: Capture --wait
-// ---------------------------------------------------------------------------
-
-describe("capture --wait", () => {
-  claudeIt(
-    "waits for agent to finish processing before returning",
-    async () => {
-      const handle = `${TEST_PREFIX}-wait`;
-      testHandles.push(handle);
-
-      start("claude", ["--name", handle]);
-      await waitFor(() => readState(handle)?.status === "idle");
-
-      // Send a message that will take a moment to process
-      send(handle, "Reply with exactly: done");
-
-      // capture --wait should block until idle
-      const output = await capture(handle, { wait: true, lines: 50 });
-
-      // After capture returns, state should be idle
-      expect(readState(handle)?.status).toBe("idle");
-      expect(output).toBeTruthy();
-
-      kill(handle);
-    },
-    120000,
-  );
-});
-
-// ---------------------------------------------------------------------------
 // Test 5: Codex handle independence
 // ---------------------------------------------------------------------------
 

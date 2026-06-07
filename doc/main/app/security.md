@@ -31,7 +31,7 @@ All file operations validate that the requested path (before symlink resolution)
 
 ## File Write Safety
 
-Task writes are serialized by the canonical `update-tasks` helper. Runtime event writes use append-only NDJSON (`eventsLog.appendEvent`) with per-file in-process serialization; there is no read-modify-write cycle against repo-local progress files.
+Task writes are serialized by the `yaco task` store lock (`saveTaskStore`). Runtime event writes use append-only NDJSON (`eventsLog.appendEvent`) with per-file in-process serialization; there is no read-modify-write cycle against repo-local progress files.
 
 The file content endpoint (`PUT /api/files/:project/content`) validates the target path but does not restrict by file extension.
 

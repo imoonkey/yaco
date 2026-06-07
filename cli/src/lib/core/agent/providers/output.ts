@@ -178,6 +178,12 @@ export function claudeOutput(): ProviderOutput {
       if (!hasResolvedId(session)) return null;
       return cursorForPath("claude", session.sessionId, claudeLogPath(session));
     },
+    async logExists(session) {
+      // Existence at the session's current log path is the signal — the
+      // resolved-id guard that resolveCursor applies is intentionally skipped,
+      // so a pending session that already wrote a log is still detected.
+      return existsSync(claudeLogPath(session));
+    },
     classifyLine: classifyClaude,
   };
 }
@@ -240,6 +246,12 @@ export function codexOutput(): ProviderOutput {
       const path = await codexLogPath(session.sessionId);
       return path ? cursorForPath("codex", session.sessionId, path) : null;
     },
+    async logExists(session) {
+      // A rollout file is only created once the first prompt is sent; a pending
+      // (awaiting-first-prompt) session genuinely has none yet.
+      if (!session.sessionId || session.sessionId === PENDING_SESSION_ID) return false;
+      return (await codexLogPath(session.sessionId)) !== null;
+    },
     classifyLine: classifyCodex,
   };
 }
@@ -277,6 +289,12 @@ export interface FollowParams {
   sleep?: (ms: number) => Promise<void>;
   /** Cooperative cancel — caller termination flips `aborted`. */
   signal?: { aborted: boolean };
+  /** Flush a complete-but-unterminated trailing record on the terminal `end`.
+   *  Off for the streaming `output-follow` surface (a partial line may still be
+   *  growing). On for the completion-wait drain, where a session that died after
+   *  writing its final record but before the closing newline must still surface
+   *  that final rather than read as "ended without a final". */
+  flushPendingOnEnd?: boolean;
 }
 
 export const DEFAULT_POLL_MS = 250;
@@ -318,7 +336,20 @@ export async function followOutput(p: FollowParams): Promise<void> {
   let lineOffset = readPos; // byte offset just past the last consumed line
   let pending: Buffer = Buffer.alloc(0); // unconsumed bytes of the current partial line
 
-  const end = (reason: FollowEndReason) => p.emit({ type: "end", reason, nextOffset: lineOffset });
+  const end = (reason: FollowEndReason) => {
+    // A complete record written without its closing newline (e.g. a final the
+    // session flushed just before dying) is still sitting in `pending`, never
+    // classified by the newline loop. On an opt-in terminal end, classify it
+    // once. An incomplete record parses to null, so this is safe even mid-write.
+    if (p.flushPendingOnEnd && pending.length > 0) {
+      const line = pending.toString("utf-8").replace(/\r$/, "").trim();
+      if (line) {
+        const event = p.classify(line);
+        if (event) p.emit({ type: "event", event, nextOffset: lineOffset + pending.length });
+      }
+    }
+    p.emit({ type: "end", reason, nextOffset: lineOffset });
+  };
 
   while (true) {
     if (p.signal?.aborted) return end("max-lifetime");

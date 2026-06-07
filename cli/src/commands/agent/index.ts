@@ -3,7 +3,7 @@
  *  Subcommands:
  *    start <provider> [yaco-flags] [-- ...passthrough]    Start a session
  *    send <name> "message" | --stdin                      Send a message
- *    capture <name> [--wait]                              Capture pane buffer
+ *    capture <name>                                       Capture pane buffer
  *    list [--all] [--path <p>]                             List live sessions
  *    status <name>                                         Inspect one session
  *    whoami                                                Print current agent handle
@@ -20,7 +20,7 @@ import { readFileSync } from "fs";
 import { ok, type Result } from "../../lib/core/result.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { PROVIDERS } from "../../lib/core/agent/providers.ts";
-import { start } from "./start.ts";
+import { start, extractResume } from "./start.ts";
 import { send } from "./send.ts";
 import { capture } from "./capture.ts";
 import { kill } from "./kill.ts";
@@ -31,16 +31,25 @@ import { runHistory } from "./history.ts";
 import { runSummaries } from "./summaries.ts";
 import { runProviders } from "./providers.ts";
 import { runOutputCursor, runOutputFollow, parseOutputFollowArgs, OUTPUT_FOLLOW_USAGE } from "./output.ts";
+import {
+  parseTimeoutMs,
+  resolveResumeCursor,
+  resolveSendWaitOrigin,
+  waitForAgentCompletion,
+  type WaitOrigin,
+} from "./output.ts";
+import { parseWaitArgs, runWait, WAIT_USAGE } from "./wait.ts";
 import { handleHookEvent } from "./hook-event.ts";
 import { handleHooksInstall } from "./hooks/install.ts";
 
 const HELP = `yaco agent — tmux-backed agent sessions
 
 Usage:
-  yaco agent start <provider> [yaco-flags] [-- ...passthrough]
-  yaco agent send <name> "message"
+  yaco agent start <provider> [yaco-flags] [--wait [--timeout-ms <ms>]] [-- ...passthrough]
+  yaco agent send <name> "message" [--wait [--timeout-ms <ms>]]
   yaco agent send <name> --stdin                (read message from stdin)
-  yaco agent capture <name> [--wait] [--lines <n>] [--strip-ansi true|false]
+  yaco agent wait <name> (--from-start | --cursor <token> --offset <bytes>) [--timeout-ms <ms>] [--json]
+  yaco agent capture <name> [--lines <n>] [--strip-ansi true|false]
   yaco agent list [--all] [--path <p>] [--json]
   yaco agent status <name> [--json]
   yaco agent whoami [--json]
@@ -70,6 +79,7 @@ interface ParsedSubArgs {
     name?: string;
     all: boolean;
     wait: boolean;
+    timeoutMs?: number;
     lines?: number;
     stripAnsi: boolean;
     json: boolean;
@@ -104,6 +114,10 @@ function parseSubArgs(argv: string[]): ParsedSubArgs {
       parsed.options.all = true;
     } else if (arg === "--wait") {
       parsed.options.wait = true;
+    } else if (arg === "--timeout-ms") {
+      parsed.options.timeoutMs = parseTimeoutMs(argv[++i]);
+    } else if (arg.startsWith("--timeout-ms=")) {
+      parsed.options.timeoutMs = parseTimeoutMs(arg.slice("--timeout-ms=".length));
     } else if (arg === "--json") {
       parsed.options.json = true;
     } else if (arg === "--stdin") {
@@ -134,6 +148,8 @@ export function parseStartArgs(argv: string[]): {
   provider: string | undefined;
   passthrough: string[];
   json: boolean;
+  wait: boolean;
+  timeoutMs?: number;
 } {
   const provider = argv[0];
   const rest = argv.slice(1);
@@ -142,18 +158,46 @@ export function parseStartArgs(argv: string[]): {
   const afterSep = sepIdx >= 0 ? rest.slice(sepIdx + 1) : [];
 
   let json = false;
+  let wait = false;
+  let timeoutMs: number | undefined;
   const beforeSepPassthrough: string[] = [];
-  for (const arg of yacoSide) {
+  for (let i = 0; i < yacoSide.length; i++) {
+    const arg = yacoSide[i]!;
     if (arg === "--json") {
       json = true;
+    } else if (arg === "--wait") {
+      wait = true;
+    } else if (arg === "--timeout-ms") {
+      timeoutMs = parseTimeoutMs(yacoSide[++i]);
+    } else if (arg.startsWith("--timeout-ms=")) {
+      timeoutMs = parseTimeoutMs(arg.slice("--timeout-ms=".length));
     } else {
       beforeSepPassthrough.push(arg);
     }
   }
+
+  // `--wait` / `--timeout-ms` are YACO-side flags wherever they appear: a
+  // post-`--` occurrence must still be consumed here and NEVER forwarded to the
+  // provider CLI. `--json` after `--` stays provider-side (unchanged).
+  const afterSepPassthrough: string[] = [];
+  for (let i = 0; i < afterSep.length; i++) {
+    const arg = afterSep[i]!;
+    if (arg === "--wait") {
+      wait = true;
+    } else if (arg === "--timeout-ms") {
+      timeoutMs = parseTimeoutMs(afterSep[++i]);
+    } else if (arg.startsWith("--timeout-ms=")) {
+      timeoutMs = parseTimeoutMs(arg.slice("--timeout-ms=".length));
+    } else {
+      afterSepPassthrough.push(arg);
+    }
+  }
   return {
     provider,
-    passthrough: [...beforeSepPassthrough, ...afterSep],
+    passthrough: [...beforeSepPassthrough, ...afterSepPassthrough],
     json,
+    wait,
+    timeoutMs,
   };
 }
 
@@ -161,7 +205,7 @@ export async function runStart(
   argv: string[],
   opts: { json: boolean },
 ): Promise<Result<unknown>> {
-  const { provider, passthrough, json } = parseStartArgs(argv);
+  const { provider, passthrough, json, wait, timeoutMs } = parseStartArgs(argv);
   if (!provider) {
     throw new CliError(
       ErrCode.USAGE,
@@ -174,6 +218,30 @@ export async function runStart(
       `unknown provider: ${provider}. Available: ${Object.keys(PROVIDERS).join(", ")}`,
     );
   }
+
+  if (wait) {
+    // Pick the wait origin BEFORE launching. A resumed session must wait from a
+    // cursor captured at the resume log's current EOF, or we risk replaying its
+    // old final answer; if that cursor cannot be resolved, fail rather than
+    // return a stale answer. A fresh session waits from provider-log start.
+    let origin: WaitOrigin;
+    const resumeId = extractResume(passthrough);
+    if (resumeId) {
+      const pre = await resolveResumeCursor(provider, resumeId, process.cwd());
+      if (!pre) {
+        throw new CliError(
+          ErrCode.NOT_FOUND,
+          `cannot resolve resume cursor for "${provider}" session "${resumeId}"`,
+        );
+      }
+      origin = { kind: "cursor", token: pre.token, offset: pre.offset };
+    } else {
+      origin = { kind: "from-start" };
+    }
+    const state = start(provider, passthrough, undefined);
+    return ok(await waitForAgentCompletion(state.handle, origin, { timeoutMs }));
+  }
+
   const state = start(provider, passthrough, undefined);
   if (json || opts.json) return ok(state);
   return ok({ handle: state.handle, state });
@@ -231,18 +299,41 @@ export async function handleAgent(
       if (!message) {
         throw new CliError(ErrCode.USAGE, 'yaco agent send <name> "message" | --stdin');
       }
+      if (parsed.options.wait) {
+        // Pick the wait origin BEFORE sending so a fast reply cannot land
+        // between send and wait. resolveSendWaitOrigin waits from log start only
+        // when no provider log existed before the send (Codex pending first
+        // turn); it fails rather than risk replaying an old final answer when a
+        // resolved session's cursor is only momentarily unresolved.
+        const origin = await resolveSendWaitOrigin(name);
+        send(name, message);
+        return ok(await waitForAgentCompletion(name, origin, { timeoutMs: parsed.options.timeoutMs }));
+      }
       send(name, message);
       return ok({ sent: { name, length: message.length } });
+    }
+
+    case "wait": {
+      if (rest.includes("--help") || rest.includes("-h")) {
+        return ok({ help: `${WAIT_USAGE}\n` });
+      }
+      const waitArgs = parseWaitArgs(rest);
+      return ok(await runWait(waitArgs));
     }
 
     case "capture": {
       const parsed = parseSubArgs(rest);
       const name = parsed.positional[0];
       if (!name) {
-        throw new CliError(ErrCode.USAGE, "yaco agent capture <name> [--wait] [--lines <n>]");
+        throw new CliError(ErrCode.USAGE, "yaco agent capture <name> [--lines <n>]");
+      }
+      if (parsed.options.wait) {
+        throw new CliError(
+          ErrCode.USAGE,
+          "yaco agent capture is a diagnostic snapshot. Use `yaco agent wait` for completion.",
+        );
       }
       const output = await capture(name, {
-        wait: parsed.options.wait,
         lines: parsed.options.lines,
         stripAnsiCodes: parsed.options.stripAnsi,
       });

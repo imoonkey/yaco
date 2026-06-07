@@ -15,7 +15,7 @@ shell. Use the canonical `yaco agent start <provider>` form.
 
 ## Dispatch
 
-Read the active workset via `yaco task list --json` (or `/update-tasks`).
+Read the active workset via `yaco task list --json` (or `/yaco-task`).
 Select tasks where ALL of:
 - state is `ready`
 - workset is `active` (the CLI list surface filters this by default)
@@ -94,11 +94,11 @@ For tasks that change implementation files (judge from scope paths — e.g., `sr
 
 1. **Record baseline**: `git rev-parse HEAD` (in the resolved cwd)
 2. **Dispatch**: start worker with task prompt, acceptCriteria, design doc, scope
-3. **Wait**: monitor worker until idle (`yaco agent capture <name> --wait --json`)
-4. **Review**: start codex review worker scoped to `git diff <base>..HEAD -- <scope globs>`
-5. **Fix**: if critical/high issues, send back to implementation worker. Up to 3 review rounds.
+3. **Wait**: block on the worker's final answer with `yaco agent wait w-<task-id> --from-start --json` (a fresh non-resumed worker waits from provider-log start)
+4. **Review**: start codex review worker scoped to `git diff <base>..HEAD -- <scope globs>`, then wait on it with `yaco agent wait <review-handle> --from-start --json`
+5. **Fix**: if critical/high issues, send back to the implementation worker with `yaco agent send w-<task-id> "<fixes>" --wait --json`. Up to 3 review rounds.
 6. **Verify**: independently check acceptCriteria (see below)
-7. **Doc sync**: send worker `/update-doc` and wait for it to complete successfully before marking done
+7. **Doc sync**: send the worker `yaco agent send w-<task-id> "/update-doc" --wait --json` and confirm it completes successfully before marking done
 8. **Mark done**: `yaco task set <task-id> --data '{"state":"done"}' --json`
 9. **Worktree completion**: if task has `worktree` field, check for worktree completion (see below)
 

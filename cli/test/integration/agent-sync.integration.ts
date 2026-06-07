@@ -194,10 +194,15 @@ describe("rename sync", () => {
       await rename(oldHandle, newHandle);
 
       await waitFor(() => hasSession(newHandle) && !hasSession(oldHandle), 10000);
-      const output = await capture(newHandle, { wait: true, lines: 200 });
+      // Codex confirms the in-TUI rename as "<Thread|Session> renamed to
+      // <handle>" (wording varies across versions). Poll the diagnostic snapshot
+      // until that confirmation lands.
+      let output = "";
+      await waitFor(async () => {
+        output = await capture(newHandle, { lines: 200 });
+        return output.includes(`renamed to ${newHandle}`);
+      }, 30000);
 
-      // Codex confirms in-TUI rename as "<Thread|Session> renamed to <handle>"
-      // (wording varies across versions); assert the new handle's confirmation.
       expect(output).toContain(`renamed to ${newHandle}`);
       expect(readState(oldHandle)).toBeNull();
       expect(readState(newHandle)?.handle).toBe(newHandle);

@@ -8,8 +8,8 @@ export function send(name: string, message: string): void {
     throw new Error(`Session "${name}" not found`);
   }
 
-  // G10: Write optimistic processing hint so capture --wait doesn't
-  // return pre-send idle buffer. Hook is still the authority and will overwrite.
+  // Write optimistic processing hint so list/status don't show a pre-send idle
+  // buffer. Hook is still the authority and will overwrite.
   const state = readState(name);
   const previousStatus = state?.status;
   const createdAt = state?.createdAt;

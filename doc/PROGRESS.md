@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-07: yaco skills + provider-log agent completion wait
+
+**What changed:**
+- Added a provider-neutral completion-wait path over the existing `ProviderOutput.classifyLine`/`followOutput` parser: `yaco agent wait <handle>` (explicit `--from-start` | `--cursor`+`--offset`), plus `start --wait` and `send --wait`. Success is the four-field `AgentCompletionResult` (`handle`, `provider`, `outcome: final|question`, `text`).
+- `send --wait` resolves origin from real provider-log presence on disk (`ProviderOutput.logExists`), not session-id state; dead-session drain flushes a complete-but-unterminated trailing record before concluding `NOT_FOUND reason=ENDED_NO_FINAL`. Added `ErrCode.TIMEOUT` (exit 1). `--wait`/`--timeout-ms` are YACO-side flags, never forwarded past `--`.
+- `yaco agent capture` is snapshot-only; `capture --wait` now errors and points to `yaco agent wait`. `reconcile()` stays the list/status authority.
+- Skill set became `/yaco` (new router), `/yaco-task` (renamed from `update-tasks`), `/yaco-agent` (renamed from `tmusk`); no compatibility aliases. `/orchestrate`, `/double-design`, `/design`, `/update-doc` and SOTA docs moved completion language to provider-log waits; `/double-design` align mode keeps `status.txt`+nudge; `update-tasks.py` script provenance and history docs left intact. `doc/main/app/security.md` now names the `yaco task` store lock (`saveTaskStore`) as the task-write serializer.
+
+**Why:**
+- Completion waits should return the model's structured final message, sourced from provider logs (consistent with app/server streaming), not tmux pane text. The skills become operation manuals for the locked `yaco` CLI/core contract.
+
+**Key files:** `cli/src/commands/agent/{wait,index,capture,send,status,output}.ts`, `cli/src/lib/core/agent/providers/{output,types}.ts`, `cli/src/lib/core/errors.ts`, `cli/test/**`, `agent-config/global/skills/{yaco,yaco-task,yaco-agent,orchestrate,double-design,design,update-doc}/`, `doc/main/cli/{architecture,lifecycle,providers,task}.md`, `doc/main/{agent-config/architecture,app/security}.md`, `doc/dev/agent-config/workflow.md`, `plan/all/yaco-skills-completion/implementation_summary.md`
+**Verification:** `bun --cwd cli test` → 738 pass, 0 fail. Three Codex review rounds on the wait path (EOF-no-newline final flush, `send --wait` stale-cursor fallback, post-`--` flag leakage), each with regression tests. Acceptance `rg` for retired skill names / `capture --wait` across live skills + SOTA docs is empty.
+**Commit:** aebb1bb..HEAD
+**Next:** `acw-claude-pending-origin-hardening` (backlog) — harden `resolveSendWaitOrigin` for pending Claude sessions with a pre-existing UUID-named log.
+**Blockers:** None.
+
 ## 2026-06-06: yaco CLI surface contract drift cleanup
 
 **What changed:**

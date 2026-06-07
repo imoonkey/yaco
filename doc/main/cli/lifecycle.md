@@ -44,7 +44,7 @@ stateDiagram-v2
           process may still be alive after context reset)
         • Stop debounce drops stale Stop if a fresher event
           mutated state during the 120ms re-check window
-        • text status / JSON status / capture --wait
+        • text status / JSON status / agent list
           must share same reconciliation contract [Gap G8]
         • GC only triggered passively in
           reconcile/status / kill / EXIT trap, not background

@@ -13,6 +13,7 @@ export const ErrCode = {
   INVALID: "INVALID",
   CONFLICT: "CONFLICT",
   IO: "IO",
+  TIMEOUT: "TIMEOUT",
   ENV: "ENV",
   LOCK: "LOCK",
   INTERNAL: "INTERNAL",
@@ -46,7 +47,7 @@ export function toErr(thrown: unknown): Err {
 
 /** Canonical exit code table (yaco CLI contract):
  *    0   success
- *    1   domain/runtime: NOT_FOUND, INVALID, CONFLICT, IO
+ *    1   domain/runtime: NOT_FOUND, INVALID, CONFLICT, IO, TIMEOUT
  *    2   usage:          USAGE
  *    3   environment:    ENV
  *    4   lock:           LOCK
@@ -67,6 +68,7 @@ export function exitCodeFor(code: string): number {
     case ErrCode.INVALID:
     case ErrCode.CONFLICT:
     case ErrCode.IO:
+    case ErrCode.TIMEOUT:
       return 1;
     default:
       return 5;

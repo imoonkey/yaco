@@ -30,7 +30,7 @@ cd agent-config
 | `/retro` | End of week | Engineering retrospective across projects |
 | `/tdd` | For core logic | Test-first development |
 | `/update-doc` | After changes | Sync docs, local skills, and changelog |
-| `/update-tasks` | Task management | Create/edit/remove tasks in `plan/tasks/**/tasks.json` |
+| `/yaco-task` | Task management | Create/edit/remove tasks in `plan/tasks/**/tasks.json` |
 | `/orchestrate` | Task execution | Dispatch ready tasks to `yaco agent` workers with review loops |
 
 ## Adding a New Skill

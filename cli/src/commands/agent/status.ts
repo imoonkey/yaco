@@ -75,7 +75,7 @@ function synthesizeState(handle: string): RuntimeSessionState {
 }
 
 /** G8: Shared reconciliation contract — single source of truth for runtime state resolution.
- *  Used by: status (text+JSON), capture --wait.
+ *  Used by: status (text+JSON), agent list runtime resolution.
  *  Returns resolved state or null if session is dead/not found.
  *  Optional cachedAlive skips the tmux has-session call when the caller already checked. */
 export function reconcile(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {

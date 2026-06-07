@@ -210,6 +210,6 @@ the canonical model.
 
 ## Consumers
 
-- `agent-config/global/skills/update-tasks/SKILL.md` now drives the `yaco task ...` surface directly (the legacy `update-tasks.py` was deleted in yc-cleanup-legacy).
+- `agent-config/global/skills/yaco-task/SKILL.md` now drives the `yaco task ...` surface directly (the legacy `update-tasks.py` was deleted in yc-cleanup-legacy).
 - `agent-config/global/skills/orchestrate/SKILL.md` links a worker to its task with `yaco task attach <id> w-<id>` after dispatch; it no longer writes the legacy `agent` field through `yaco task set`.
 - Any other caller (`app/server`, etc.) should use the TS surface, either through the CLI envelope or the `@yaco/cli/core/task` export. The web UI only displays links in v1, so no app-server attach/detach route exists.

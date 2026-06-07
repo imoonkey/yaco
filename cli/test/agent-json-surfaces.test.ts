@@ -38,6 +38,12 @@ describe("agent help envelopes", () => {
       expect(data).toMatchObject({ ok: true, data: { help: expect.any(String) } });
     });
   }
+
+  it("`agent wait --help --json` returns a success envelope", () => {
+    const { status, data } = runJson(["agent", "wait", "--help", "--json"]);
+    expect(status).toBe(0);
+    expect(data).toMatchObject({ ok: true, data: { help: expect.any(String) } });
+  });
 });
 
 describe("agent list/status surface split", () => {

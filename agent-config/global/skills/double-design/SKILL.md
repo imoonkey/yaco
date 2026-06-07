@@ -51,26 +51,20 @@ yaco agent start claude "Run /design for: <goal>. Write your design to plan/all/
 yaco agent start codex  "Run /design for: <goal>. Write your design to plan/all/<project>/initial/design_codex.md. Do NOT read any other design files in that folder." --name codex-design --json
 ```
 
-Wait for both in parallel (run captures in background, then read results):
+Wait for both in parallel (provider-log waits, run in background, then read results):
 ```bash
-yaco agent capture claude-design --wait --json &
-yaco agent capture codex-design  --wait --json &
+yaco agent wait claude-design --from-start --json &
+yaco agent wait codex-design  --from-start --json &
 wait
 ```
 
 ### Step 2: Cross-Review
 
-Send each agent the other's design for review. Reuse sessions for context continuity.
+Send each agent the other's design for review. Reuse sessions for context continuity. Each `send --wait` captures the provider cursor before sending, so backgrounding both keeps the reviews running in parallel:
 
 ```bash
-yaco agent send claude-design "Now read plan/all/<project>/initial/design_codex.md and write your review to plan/all/<project>/initial/design_review_claude.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX." --json
-yaco agent send codex-design  "Now read plan/all/<project>/initial/design_claude.md and write your review to plan/all/<project>/initial/design_review_codex.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX." --json
-```
-
-Wait for both in parallel:
-```bash
-yaco agent capture claude-design --wait --json &
-yaco agent capture codex-design  --wait --json &
+yaco agent send claude-design "Now read plan/all/<project>/initial/design_codex.md and write your review to plan/all/<project>/initial/design_review_claude.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX." --wait --json &
+yaco agent send codex-design  "Now read plan/all/<project>/initial/design_claude.md and write your review to plan/all/<project>/initial/design_review_codex.md. Focus on correctness, gaps, and design trade-offs. End the review by stating which design is the better base for the first aligned draft: CLAUDE or CODEX." --wait --json &
 wait
 ```
 
@@ -96,7 +90,7 @@ yaco agent send codex-design  "Run /align. Read all files in plan/all/<project>/
 
 If the cross-reviews pick Codex, swap the role assignment in both prompts. The key invariant is that exactly one side is named the first mover in both messages.
 
-**Do NOT use `capture --wait` here** — it can deadlock. Agents self-poll via `/align`, but may go idle prematurely (especially Codex). The invoking agent should manually monitor and nudge the side whose turn it is.
+**Do NOT block-wait on alignment turns (`send --wait` or `agent wait`)** — it can deadlock. Agents self-poll via `/align`, but may go idle prematurely (especially Codex). The invoking agent should manually monitor and nudge the side whose turn it is.
 
 Minimal manual monitoring loop:
 
@@ -129,7 +123,7 @@ Hand off to `/implement` when ready.
 
 - Both agents must NOT read each other's work during Step 1 — independent thinking is the whole point
 - Session reuse (`send` instead of `start`) keeps prior context so agents build on their own reasoning
-- Steps 1 & 2: `capture --wait` is safe (bounded tasks, agents will finish)
-- Step 3: never `capture --wait` — manually monitor `status.txt` plus `yaco agent status`, then nudge the side whose turn it is if that session is idle
+- Steps 1 & 2: blocking provider-log waits (`wait --from-start` for fresh starts, `send --wait` for follow-up turns) are safe (bounded tasks, agents will finish)
+- Step 3: never block-wait — manually monitor `status.txt` plus `yaco agent status`, then nudge the side whose turn it is if that session is idle
 - Step 3: the first mover owns the first draft, but that draft should mostly record shared ground plus explicit open questions, not force unresolved choices
 - Final output must remain self-contained throughout alignment; resolving an open question is not complete until the resolved design is reflected in `final/*.md`

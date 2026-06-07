@@ -148,6 +148,12 @@ export type AgentOutputEvent =
 
 export interface ProviderOutput {
   resolveCursor(session: SessionState): Promise<OutputCursor | null>;
+  /** Whether a provider log FILE already exists for this session, independent of
+   *  whether a cursor can be resolved. Lets `send --wait` distinguish a genuine
+   *  first-prompt session (no log yet → safe to wait from log start) from a
+   *  session whose log exists but whose cursor is momentarily unresolvable
+   *  (must NOT wait from start, or it would replay the old final answer). */
+  logExists(session: SessionState): Promise<boolean>;
   /** Classify one COMPLETE provider log line into at most one event.
    *
    *  The single-event return is a contract, not a convention: the follower

@@ -12,13 +12,19 @@
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { getProvider, hasProvider } from "../../lib/core/agent/providers/index.ts";
-import { decodeCursorToken, followOutput } from "../../lib/core/agent/providers/output.ts";
-import type { OutputCursor, ProviderOutput } from "../../lib/core/agent/providers/types.ts";
+import {
+  decodeCursorToken,
+  followOutput,
+  DEFAULT_MAX_LIFETIME_MS,
+  type FollowEndReason,
+} from "../../lib/core/agent/providers/output.ts";
+import type { AgentOutputEvent, OutputCursor, ProviderOutput } from "../../lib/core/agent/providers/types.ts";
 import { validateName, type SessionState } from "../../lib/core/agent/model.ts";
 import { readState } from "../../lib/core/agent/session-state.ts";
+import { checkSessionAlive } from "../../lib/core/agent/tmux.ts";
 
 /** Resolve a live session's output-capable provider, or throw a typed error. */
-function resolveOutput(handle: string): { state: SessionState; output: ProviderOutput } {
+export function resolveOutput(handle: string): { state: SessionState; output: ProviderOutput } {
   // Validate before any state read so a traversal handle (e.g. `../foo`) can
   // never aim `readState` at a `.json` outside the sessions dir — matching the
   // name validation every other session-targeted command (status/rename/kill)
@@ -169,4 +175,239 @@ export async function runOutputFollow(
     maxLifetimeMs: args.maxLifetimeMs ?? envMaxLifetimeMs(),
     signal,
   });
+}
+
+// -- Completion wait --
+//
+// `waitForAgentCompletion` is the single provider-neutral path that turns a
+// follow over the existing provider-output layer into one terminal result. It
+// reuses `output.classifyLine` and `followOutput`; no second parser. The only
+// extras over `output-follow` are: stop on the first `question` (not just
+// `final`), and treat session death as "drain the log to EOF, then conclude".
+
+/** The four-field, shell-friendly success shape. `sessionId` is intentionally
+ *  omitted — it is derivable from `handle` via `agent status`. */
+export interface AgentCompletionResult {
+  handle: string;
+  provider: string;
+  outcome: "final" | "question";
+  text: string;
+}
+
+/** Where the wait begins. `from-start` reads the provider log from byte 0;
+ *  `cursor` resumes from a previously captured, session-bound cursor. */
+export type WaitOrigin =
+  | { kind: "from-start" }
+  | { kind: "cursor"; token: string; offset: number };
+
+export interface WaitOptions {
+  /** Max lifetime before a TIMEOUT error (ms). */
+  timeoutMs?: number;
+  /** Poll cadence while the log is quiet (ms). */
+  pollMs?: number;
+  /** Injectable clock for deterministic tests. */
+  now?: () => number;
+  /** Injectable sleep for deterministic tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Liveness probe; default treats only a tmux-confirmed-dead session as gone. */
+  isAlive?: (handle: string) => boolean;
+}
+
+const WAIT_POLL_MS = 250;
+/** Bounded re-reads after a session is confirmed gone, to catch a trailing
+ *  final/question line still being flushed before concluding ENDED_NO_FINAL. */
+const DRAIN_POLLS = 4;
+
+/** Capture the current provider-log cursor for a live handle, or null when the
+ *  session has no resolved provider log yet (e.g. Codex pending first prompt).
+ *  Used by `send --wait` to snapshot the cursor BEFORE sending. */
+export async function captureWaitCursor(
+  handle: string,
+): Promise<{ token: string; offset: number } | null> {
+  const { state, output } = resolveOutput(handle);
+  const cursor = await output.resolveCursor(state);
+  return cursor ? { token: cursor.token, offset: cursor.offset } : null;
+}
+
+/** Pick the wait origin for `send --wait`, capturing the cursor BEFORE the send.
+ *
+ *  A resolved cursor means a prior provider log exists — wait from there so a
+ *  fast reply cannot land between send and wait. A null cursor is only safe to
+ *  treat as "wait from log start" when NO provider log FILE existed before the
+ *  send (true first prompt / Codex `awaiting-first-prompt`). If a log file
+ *  already exists but its cursor is momentarily unresolvable — e.g. a pending
+ *  session whose id the hook has not backfilled yet — from-start would replay
+ *  that log's OLD final after backfill, so we fail instead. The discriminator is
+ *  the actual presence of a log file, never the session-id state. */
+export async function resolveSendWaitOrigin(handle: string): Promise<WaitOrigin> {
+  const { state, output } = resolveOutput(handle);
+  const cursor = await output.resolveCursor(state);
+  if (cursor) return { kind: "cursor", token: cursor.token, offset: cursor.offset };
+  if (await output.logExists(state)) {
+    throw new CliError(
+      ErrCode.NOT_FOUND,
+      `provider log exists but its cursor is unresolved for "${handle}"`,
+    );
+  }
+  return { kind: "from-start" };
+}
+
+/** Resolve a resume session's provider-log cursor from its resume id, before a
+ *  resumed session is launched. Returns null when the provider does not support
+ *  output streaming or the log cannot be found, so `start --wait` fails rather
+ *  than risk replaying the resumed conversation's old final answer. */
+export async function resolveResumeCursor(
+  provider: string,
+  sessionId: string,
+  sessionPath: string,
+): Promise<{ token: string; offset: number } | null> {
+  if (!hasProvider(provider)) return null;
+  const output = getProvider(provider).output;
+  if (!output) return null;
+  const synthetic: SessionState = {
+    handle: "",
+    provider,
+    sessionPath,
+    pid: 0,
+    sessionId,
+    status: "idle",
+    createdAt: "",
+  };
+  const cursor = await output.resolveCursor(synthetic);
+  return cursor ? { token: cursor.token, offset: cursor.offset } : null;
+}
+
+/** Wait for a provider turn to reach a `final` or `question`, reading only the
+ *  provider log (never tmux capture).
+ *
+ *  Race handling (per design state machine):
+ *    - status going idle is NOT a completion signal — keep following;
+ *    - on session death, drain the log to EOF (bounded re-read, not a fixed
+ *      sleep) before concluding NOT_FOUND(reason=ENDED_NO_FINAL);
+ *    - a `final`/`question` found during that drain is a normal success;
+ *    - the lifetime cap is a TIMEOUT error, a read error is an IO error. */
+export async function waitForAgentCompletion(
+  handle: string,
+  origin: WaitOrigin,
+  options: WaitOptions = {},
+): Promise<AgentCompletionResult> {
+  const { state, output } = resolveOutput(handle);
+  const now = options.now ?? (() => Date.now());
+  const sleep = options.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms)));
+  const isAlive = options.isAlive ?? ((h) => checkSessionAlive(h) !== false);
+  const pollMs = options.pollMs ?? WAIT_POLL_MS;
+  const maxLifetimeMs = options.timeoutMs ?? DEFAULT_MAX_LIFETIME_MS;
+  const start = now();
+
+  // A cursor origin must carry a token WE minted for THIS session/provider. A
+  // malformed or foreign token is INVALID — we never read its embedded path.
+  let startOffset = 0;
+  if (origin.kind === "cursor") {
+    const decoded = decodeCursorToken(origin.token);
+    if (!decoded || decoded.provider !== state.provider || decoded.sessionId !== state.sessionId) {
+      throw new CliError(ErrCode.INVALID, `cursor token does not match session "${handle}"`);
+    }
+    startOffset = origin.offset;
+  }
+
+  // Resolve the read path from the session's own provider, waiting (bounded by
+  // the lifetime cap) for a not-yet-written log to appear. Re-read state each
+  // poll so a pending→resolved sessionId (Codex first prompt) is picked up.
+  let sourcePath: string | undefined;
+  while (!sourcePath) {
+    const fresh = readState(handle) ?? state;
+    const cursor = await output.resolveCursor(fresh);
+    sourcePath = cursor ? decodeCursorToken(cursor.token)?.path : undefined;
+    if (sourcePath) break;
+    if (now() - start >= maxLifetimeMs || !isAlive(handle)) {
+      throw new CliError(ErrCode.NOT_FOUND, `no provider output log for "${handle}"`);
+    }
+    await sleep(pollMs);
+  }
+
+  let firstEvent: AgentOutputEvent | undefined;
+  let endReason: FollowEndReason | undefined;
+  let drainedNoFinal = false;
+  let drainLeft = DRAIN_POLLS;
+  const signal = { aborted: false };
+
+  // `followOutput` only sleeps once it has read to EOF, so this hook is the
+  // "caught up, nothing new" point. A captured question ends the wait; a dead
+  // session is granted a bounded re-read before we conclude no final arrived.
+  const onCaughtUp = async (ms: number) => {
+    if (firstEvent) {
+      signal.aborted = true;
+      return;
+    }
+    if (!isAlive(handle)) {
+      if (drainLeft-- <= 0) {
+        drainedNoFinal = true;
+        signal.aborted = true;
+        return;
+      }
+    } else {
+      drainLeft = DRAIN_POLLS;
+    }
+    await sleep(ms);
+  };
+
+  await followOutput({
+    sourcePath,
+    startOffset,
+    classify: (line) => output.classifyLine(line),
+    emit: (frame) => {
+      if (frame.type === "event") {
+        if ((frame.event.kind === "final" || frame.event.kind === "question") && !firstEvent) {
+          firstEvent = frame.event;
+        }
+      } else {
+        endReason = frame.reason;
+      }
+    },
+    now,
+    sleep: onCaughtUp,
+    pollMs,
+    maxLifetimeMs,
+    signal,
+    // A session can die after writing its final record but before the closing
+    // newline; flush that trailing record on end so the drain still finds it.
+    flushPendingOnEnd: true,
+  });
+
+  if (firstEvent) {
+    return {
+      handle,
+      provider: state.provider,
+      outcome: firstEvent.kind as "final" | "question",
+      text: firstEvent.text,
+    };
+  }
+  if (endReason === "error") {
+    throw new CliError(ErrCode.IO, `failed to read provider output log for "${handle}"`);
+  }
+  if (drainedNoFinal) {
+    throw new CliError(
+      ErrCode.NOT_FOUND,
+      `session "${handle}" ended without a final answer`,
+      { reason: "ENDED_NO_FINAL" },
+    );
+  }
+  throw new CliError(ErrCode.TIMEOUT, `timed out waiting for "${handle}" to complete`);
+}
+
+/** Parse a yaco-side `--timeout-ms` value into a positive integer (ms). Shared
+ *  by `agent wait`, `start --wait`, and `send --wait`; these flags are parsed
+ *  before provider passthrough and never forwarded to the provider CLI. */
+export function parseTimeoutMs(raw: string | undefined): number {
+  if (raw === undefined || !/^\d+$/.test(raw)) {
+    throw new CliError(
+      ErrCode.USAGE,
+      `--timeout-ms requires a positive integer (got: ${raw ?? "<missing>"})`,
+    );
+  }
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isSafeInteger(n) || n <= 0) {
+    throw new CliError(ErrCode.USAGE, `--timeout-ms out of range: ${raw}`);
+  }
+  return n;
 }
