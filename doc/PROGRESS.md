@@ -15,6 +15,8 @@
 
 **Key files:** `cli/src/lib/core/render.ts`, `cli/src/lib/core/worktree/convention.ts`, `cli/src/commands/{task/get,project/current}.ts`, `cli/src/lib/core/project/find-cwd.ts`, `cli/src/main.ts`, `cli/package.json`, `app/server/src/lib/worktree.ts`, `agent-config/global/skills/{yaco,yaco-agent,yaco-task}/SKILL.md`, `doc/main/cli/**`, `cli/CLAUDE.md`.
 **Design:** [plan/all/yaco-read-surface/design_claude.md](../plan/all/yaco-read-surface/design_claude.md).
+**Verification:** `cd cli && bun run test` → 793 pass / 0 fail; `cd app/server && npm test` → 424 pass / 0 fail; `tsc --noEmit` clean on all touched files (the 4 remaining errors are pre-existing in `agent/session-id.*`). Codex design-conformance re-review closed two follow-ups: `project add/remove/move` + `agent list` were still returning `{help}` for results (now `{text}`, so `{help}` is truly usage-only), and `worktree merge`/`cleanup` still re-spelled the slug templates (now routed through `worktreePath`/`worktreeBranch` so `convention.ts` is the sole source).
+**Commit:** 7237c8d..3fcabcc
 **Blockers:** None.
 
 ## 2026-06-06: agent reads/mutation split — pure `list`/`status`, `--reconcile` owns GC

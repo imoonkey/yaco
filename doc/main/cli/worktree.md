@@ -64,8 +64,9 @@ export const worktreeBranch = (slug: string): string => `task/${slug}`;
 
 Both are re-exported from the `cli/src/lib/core/worktree/index.ts` barrel and
 published over the workspace exports map as `@yaco/cli/core/worktree`
-(`cli/package.json#exports`). `create.ts` uses them so the scheme is never
-re-spelled inside the CLI.
+(`cli/package.json#exports`). `create.ts`, `merge.ts`, and `cleanup.ts` all use
+them (and `create.ts` derives its `.worktrees` parent dir via
+`dirname(worktreePath(...))`), so the scheme is never re-spelled inside the CLI.
 
 `app/server/src/lib/worktree.ts` imports `worktreePath` / `worktreeBranch` from
 `@yaco/cli/core/worktree` instead of hardcoding `.worktrees/<slug>` and
