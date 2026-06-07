@@ -125,6 +125,24 @@ export function checkSessionAlive(handle: string): boolean | null {
   }
 }
 
+/** Socket-independent liveness: is the recorded agent process still running?
+ *
+ *  `tmux has-session` is scoped to ONE tmux socket (the caller's $TMUX), so a
+ *  caller on the wrong socket sees every live session as "dead". The OS process
+ *  table is global, so a live PID is authoritative regardless of socket. GC uses
+ *  this to gate state-file deletion: a session whose process is alive is never
+ *  deleted, even if tmux on the current socket can't see it. */
+export function isProcessAlive(pid: number | undefined | null): boolean {
+  if (!pid || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e: unknown) {
+    // EPERM = process exists but we may not signal it → still alive.
+    return typeof e === "object" && e !== null && "code" in e && (e as { code: string }).code === "EPERM";
+  }
+}
+
 export function ensureTrueColorSupport(): void {
   const existing = exec(`tmux show-options -gv terminal-features 2>/dev/null || true`);
   const configured = new Set(existing.split("\n").map((line) => line.trim()).filter(Boolean));
@@ -140,11 +158,18 @@ export function ensureTrueColorSupport(): void {
 export function createSession(handle: string, command: string, cwd?: string): void {
   const projectPath = cwd ?? process.cwd();
   const cwdArg = `-c "${projectPath}"`;
+  // Propagate an explicit YACO_HOME into the session so the agent's hooks and
+  // wrapper write state to the same runtime root as the launching `yaco`
+  // process. tmux new-session against an already-running server does not copy
+  // arbitrary caller env vars, so without this an explicit YACO_HOME (tests,
+  // multi-root setups) is ignored and the session's state lands in ~/.yaco.
+  const yacoHome = process.env["YACO_HOME"];
+  const envArg = yacoHome && yacoHome.length > 0 ? `-e "YACO_HOME=${yacoHome}" ` : "";
   // -x/-y is the initial detached size; window-size=latest sizes the window
   // to whatever client most recently became active — so the device you're
   // currently using always sees content fit to its own screen.
   execSync(
-    `${cgroupEscapePrefix()}tmux new-session -d -s "${handle}" ${cwdArg} -x 333 -y 100 ${command}`,
+    `${cgroupEscapePrefix()}tmux new-session -d -s "${handle}" ${cwdArg} ${envArg}-x 333 -y 100 ${command}`,
     { stdio: "pipe", cwd: projectPath, timeout: EXEC_TIMEOUT_MS },
   );
   ensureTrueColorSupport();

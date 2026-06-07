@@ -1,4 +1,4 @@
-import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid } from "../../lib/core/agent/tmux.ts";
+import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid, isProcessAlive } from "../../lib/core/agent/tmux.ts";
 import { isIdle } from "../../lib/core/agent/providers/idle.ts";
 import { getProvider, hasProvider, listProviders } from "../../lib/core/agent/providers/index.ts";
 import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath } from "../../lib/core/agent/session-state.ts";
@@ -74,21 +74,30 @@ function synthesizeState(handle: string): RuntimeSessionState {
   };
 }
 
+/** A session is only safe to GC when tmux reports it gone AND its recorded
+ *  process is no longer running. `tmux has-session` is socket-scoped: a caller
+ *  whose $TMUX points at the wrong tmux server sees every live session as dead
+ *  and would otherwise wipe all their state files. The PID check is global and
+ *  authoritative — a live process means the session is alive on some socket. */
+export function confirmedDead(tmuxAlive: boolean | null, pid: number | undefined): boolean {
+  if (tmuxAlive !== false) return false; // alive or uncertain → never delete
+  return !isProcessAlive(pid);
+}
+
 /** G8: Shared reconciliation contract — single source of truth for runtime state resolution.
  *  Used by: status (text+JSON), agent list runtime resolution.
  *  Returns resolved state or null if session is dead/not found.
  *  Optional cachedAlive skips the tmux has-session call when the caller already checked. */
 export function reconcile(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {
-  // Step 1: Liveness check
-  const alive = cachedAlive === undefined ? checkSessionAlive(handle) : cachedAlive;
-  if (alive === false) {
+  // Step 1: Liveness check. tmux has-session is socket-scoped, so before
+  // deleting we confirm the recorded process is actually gone (see confirmedDead).
+  const tmuxAlive = cachedAlive === undefined ? checkSessionAlive(handle) : cachedAlive;
+  const state = readState(handle);
+  if (confirmedDead(tmuxAlive, state?.pid)) {
     if (isTmuxAvailable()) deleteState(handle);
     return null;
   }
-  // alive === null → uncertain, continue with state file
-
-  // Step 2: Read state file
-  const state = readState(handle);
+  // tmuxAlive === null, or process still alive on another socket → continue.
 
   if (state) {
     // Step 3: Staleness check — if processing/starting too long, fall through to capture
@@ -182,16 +191,19 @@ export function list(options: ListOptions = {}): string {
     }
   }
 
-  // GC: delete state files for sessions CONFIRMED dead (checkSessionAlive === false).
+  // GC: delete state files only for sessions CONFIRMED dead — tmux reports them
+  // gone AND their recorded process is not running. The PID guard makes this
+  // socket-safe: a `list` run on the wrong tmux socket sees every session as
+  // dead via has-session, but must not wipe state for live processes.
   for (const session of sessions) {
-    if (aliveCache.get(session.handle) === false) {
+    if (confirmedDead(aliveCache.get(session.handle) ?? null, session.pid)) {
       deleteState(session.handle);
     }
   }
   if (isTmuxAvailable()) cleanupOrphanBreadcrumbs();
 
-  // Filter to live sessions
-  const liveSessions = sessions.filter(s => aliveCache.get(s.handle) !== false);
+  // Filter to live sessions (keep anything not confirmed dead).
+  const liveSessions = sessions.filter(s => !confirmedDead(aliveCache.get(s.handle) ?? null, s.pid));
 
   const projects = readProjects();
   const rows: AgentSessionRow[] = [];
