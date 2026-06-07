@@ -5,9 +5,9 @@ import type { GitChange } from '../types'
 /** Status badge background at low opacity, derived from the status color */
 const STATUS_BG: Record<string, string> = {
   M: 'color-mix(in srgb, var(--sol-warning) 14%, transparent)',
-  U: 'color-mix(in srgb, #73C991 14%, transparent)',
-  A: 'color-mix(in srgb, #73C991 14%, transparent)',
-  D: 'color-mix(in srgb, #C74E39 14%, transparent)',
+  U: 'color-mix(in srgb, var(--sol-diff-add) 14%, transparent)',
+  A: 'color-mix(in srgb, var(--sol-diff-add) 14%, transparent)',
+  D: 'color-mix(in srgb, var(--sol-diff-del) 14%, transparent)',
 }
 
 export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: { change: GitChange; isActive: boolean; onActivate: () => void; onFolderClick?: (dir: string) => void }) {

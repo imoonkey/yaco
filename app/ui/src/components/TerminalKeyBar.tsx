@@ -61,7 +61,7 @@ const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 const BTN =
   'flex-1 h-7 px-1.5 rounded bg-(--sol-subtle-bg) active:bg-(--sol-subtle-bg-active) text-(--sol-base01) font-mono text-xs select-none touch-manipulation'
 const BTN_MOD_ON =
-  'flex-1 h-7 px-1.5 rounded bg-[#268bd2] text-[#fdf6e3] font-mono text-xs select-none touch-manipulation'
+  'flex-1 h-7 px-1.5 rounded bg-[var(--sol-blue)] text-[var(--sol-base3)] font-mono text-xs select-none touch-manipulation'
 
 export function TerminalKeyBar({
   sendInput,

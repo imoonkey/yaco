@@ -116,6 +116,9 @@
   --sol-preview-text: #657b83;
   --sol-preview-heading: #586e75;
   --sol-preview-heading-border: rgba(0, 0, 0, 0.18);
+  /* Git diff status tints */
+  --sol-diff-add: #73C991;
+  --sol-diff-del: #C74E39;
 }
 
 /* Solarized Dark — VS Code Solarized Dark values */
@@ -179,6 +182,9 @@
   --sol-preview-text: #839496;
   --sol-preview-heading: #93a1a1;
   --sol-preview-heading-border: rgba(238, 232, 213, 0.15);
+  /* Git diff status tints */
+  --sol-diff-add: #73C991;
+  --sol-diff-del: #C74E39;
 }
 
 /* Register all Solarized vars as Tailwind color tokens */
@@ -234,6 +240,8 @@
   --color-sol-syntax-comment: var(--sol-syntax-comment);
   --color-sol-syntax-modifier: var(--sol-syntax-modifier);
   --color-sol-warning: var(--sol-warning);
+  --color-sol-diff-add: var(--sol-diff-add);
+  --color-sol-diff-del: var(--sol-diff-del);
   /* Design system tokens */
   --font-family-ui: var(--font-ui);
   --font-family-mono: var(--font-mono);

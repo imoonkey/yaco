@@ -128,21 +128,21 @@ describe('TerminalKeyBar', () => {
     it('Ctrl button shows active style when modifier is on', () => {
       renderBar({ ctrl: true, shift: false, meta: false })
       const btn = screen.getByRole('button', { name: 'Control modifier' })
-      expect(btn.className).toContain('bg-[#268bd2]')
+      expect(btn.className).toContain('bg-[var(--sol-blue)]')
     })
 
     it('Shift button shows active style when modifier is on', () => {
       renderBar({ ctrl: false, shift: true, meta: false })
       expandSecondaryRow()
       const btn = screen.getByRole('button', { name: 'Shift modifier' })
-      expect(btn.className).toContain('bg-[#268bd2]')
+      expect(btn.className).toContain('bg-[var(--sol-blue)]')
     })
 
     it('Meta button shows active style when modifier is on', () => {
       renderBar({ ctrl: false, shift: false, meta: true })
       expandSecondaryRow()
       const btn = screen.getByRole('button', { name: 'Meta modifier' })
-      expect(btn.className).toContain('bg-[#268bd2]')
+      expect(btn.className).toContain('bg-[var(--sol-blue)]')
     })
   })
 

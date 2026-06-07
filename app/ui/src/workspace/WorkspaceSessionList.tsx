@@ -5,6 +5,7 @@ import { ProviderIcon } from '../components/SessionIcons'
 import { Menu, MenuItem } from '../components/Menu'
 import { useContextMenu } from '../components/useContextMenu'
 import { BadgeCount } from '../components/BadgeCount'
+import { sanitizeSummary } from './sanitizeSummary'
 import type { AgentSession, SessionStatus } from '../types'
 
 // Static style constants extracted from render
@@ -85,6 +86,8 @@ export function SessionItem({
     }
   }
 
+  const summary = sanitizeSummary(session.summary, session.name)
+
   return (
     <div ref={itemRef} onClick={renaming ? undefined : onClick}
       draggable={!!onDragStart && !renaming}
@@ -147,8 +150,8 @@ export function SessionItem({
               {session.worktree}
             </span>
           )}
-          {session.summary && (
-            <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-muted)' }}>{session.summary}</span>
+          {summary && (
+            <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-muted)' }}>{summary}</span>
           )}
         </div>
       )}

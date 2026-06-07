@@ -48,7 +48,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
     <DialogShell onClose={onClose} className="rounded-lg p-6 w-full max-w-lg">
       <h2
         className="text-base font-semibold mb-4"
-        style={{ color: 'var(--sol-heading)', fontFamily: 'var(--font-ui)' }}
+        style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}
       >
         Keyboard Shortcuts
       </h2>
@@ -57,7 +57,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
           <section key={group.title}>
             <h3
               className="text-xs font-semibold uppercase tracking-wide mb-2"
-              style={{ color: 'var(--sol-comment)' }}
+              style={{ color: 'var(--sol-muted)' }}
             >
               {group.title}
             </h3>
@@ -71,8 +71,8 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
                     className="text-xs px-1.5 py-0.5 rounded shrink-0"
                     style={{
                       fontFamily: 'var(--font-mono)',
-                      color: 'var(--sol-comment)',
-                      backgroundColor: 'var(--sol-bg-alt)',
+                      color: 'var(--sol-muted)',
+                      backgroundColor: 'var(--sol-code-bg)',
                       border: '1px solid var(--sol-border)',
                     }}
                   >

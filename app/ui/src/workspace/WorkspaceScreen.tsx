@@ -499,7 +499,7 @@ export function Workspace({
       })}
       {!compareLoading && compareFiles.length === 0 && (
         <div className="flex flex-col items-center py-4 gap-1">
-          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-muted)' }}>No differences</span>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-text-dim)' }}>No differences</span>
           <span className="text-[10px]" style={{ color: 'var(--sol-base1)' }}>These refs are identical</span>
         </div>
       )}
@@ -518,7 +518,7 @@ export function Workspace({
       })}
       {changes.length === 0 && (
         <div className="flex flex-col items-center py-4 gap-1">
-          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-muted)' }}>No changes</span>
+          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-text-dim)' }}>No changes</span>
           <span className="text-[10px]" style={{ color: 'var(--sol-base1)' }}>Working tree is clean</span>
         </div>
       )}
@@ -645,7 +645,7 @@ export function Workspace({
       </div>
     </>
   ) : (
-    <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-muted)' }}>Select a session to attach terminal</div>
+    <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-text-dim)' }}>Select a session to attach terminal</div>
   )
 
   return (
