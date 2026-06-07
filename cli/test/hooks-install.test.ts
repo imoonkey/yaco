@@ -11,6 +11,27 @@ import { tmpdir, homedir } from "os";
 import { ensureClaudeHooks, ensureCodexHooks, ensureHooks, dropLegacyMultmuxHooks, HOOK_MARKER, CLAUDE_HOOK_EVENTS } from "../src/lib/core/agent/lifecycle.ts";
 import { agentWrapperPath } from "../src/lib/core/paths/yaco-home.ts";
 
+/** Identify a yaco-owned hook group by its command (the canonical ownership
+ *  signal). Lifecycle groups carry no matcher; tool groups use "*". */
+const isYacoGroup = (g: any): boolean =>
+  Array.isArray(g?.hooks) &&
+  g.hooks.some((h: any) => typeof h?.command === "string" && /hook-event-bin\.ts|agent\s+hook-event/.test(h.command));
+
+/** Replicate Claude Code's hook `matcher` evaluation. SessionStart filters on
+ *  the start *source* (startup|resume|clear|compact); this mirrors the
+ *  documented rule so a test can assert the installed matcher actually fires:
+ *    - "*", "" or undefined  → match all
+ *    - only [A-Za-z0-9_|]    → exact value / "|"-separated alternation
+ *    - anything else         → compiled as a JS regexp
+ *  https://code.claude.com/docs/en/hooks */
+function matcherFiresOnSource(matcher: string | undefined, source: string): boolean {
+  if (matcher === undefined || matcher === "" || matcher === "*") return true;
+  if (/^[A-Za-z0-9_|]+$/.test(matcher)) return matcher.split("|").includes(source);
+  try { return new RegExp(matcher).test(source); } catch { return false; }
+}
+
+const START_SOURCES = ["startup", "resume", "clear", "compact"] as const;
+
 const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 const ORIGINAL_HOME = process.env["HOME"];
 let sandbox: string;
@@ -27,6 +48,26 @@ afterEach(() => {
   if (ORIGINAL_HOME === undefined) delete process.env["HOME"];
   else process.env["HOME"] = ORIGINAL_HOME;
   rmSync(sandbox, { recursive: true, force: true });
+});
+
+describe("SessionStart matcher semantics — regression guard", () => {
+  it("models Claude's rule: a label matcher silently misses every real start source", () => {
+    // The exact bug: "yaco-agent-hook" has a hyphen, so Claude compiles it as a
+    // regex /yaco-agent-hook/ and tests it against the source — which is one of
+    // startup|resume|clear|compact. None match, so the hook never fires.
+    for (const source of START_SOURCES) {
+      expect(matcherFiresOnSource("yaco-agent-hook", source)).toBe(false);
+    }
+    // Unfiltered forms fire on all sources.
+    for (const m of [undefined, "", "*"] as const) {
+      for (const source of START_SOURCES) {
+        expect(matcherFiresOnSource(m, source)).toBe(true);
+      }
+    }
+    // Explicit source alternation fires only on its listed sources.
+    expect(matcherFiresOnSource("startup|resume", "startup")).toBe(true);
+    expect(matcherFiresOnSource("startup|resume", "clear")).toBe(false);
+  });
 });
 
 describe("ensureHooks(provider) — wrapper installation", () => {
@@ -47,9 +88,23 @@ describe("ensureClaudeHooks — merge semantics", () => {
     for (const event of CLAUDE_HOOK_EVENTS) {
       const groups = settings.hooks[event];
       expect(Array.isArray(groups)).toBe(true);
-      const ours = groups.find((g: any) => g.matcher === HOOK_MARKER || g.matcher === "*");
+      const ours = groups.find(isYacoGroup);
       expect(ours).toBeDefined();
       expect(ours.hooks[0].command).toMatch(new RegExp(`hook-event-bin\\.ts ${event}\\b|agent hook-event ${event}\\b`));
+    }
+  });
+
+  it("installs a SessionStart hook that actually fires on every start source", () => {
+    // Regression: a label matcher ("yaco-agent-hook") is compiled by Claude Code
+    // as a regex that matches none of startup|resume|clear|compact, silently
+    // disabling the hook — so sessions never got promoted starting→idle by the
+    // hook and lingered in "starting". Assert the installed matcher fires.
+    ensureClaudeHooks();
+    const settings = JSON.parse(readFileSync(join(sandbox, ".claude", "settings.json"), "utf-8"));
+    const ours = settings.hooks.SessionStart.find(isYacoGroup);
+    expect(ours).toBeDefined();
+    for (const source of START_SOURCES) {
+      expect(matcherFiresOnSource(ours.matcher, source)).toBe(true);
     }
   });
 
@@ -71,7 +126,7 @@ describe("ensureClaudeHooks — merge semantics", () => {
     expect(customPreserved).toBeDefined();
     expect(customPreserved.hooks[0].command).toBe("/usr/local/bin/my-notifier");
     // Our Stop entry added alongside
-    const ourStop = settings.hooks.Stop.find((g: any) => g.matcher === HOOK_MARKER);
+    const ourStop = settings.hooks.Stop.find(isYacoGroup);
     expect(ourStop).toBeDefined();
     expect(ourStop.hooks[0].command).toMatch(/hook-event-bin\.ts Stop\b|agent hook-event Stop\b/);
   });
@@ -128,11 +183,15 @@ describe("ensureCodexHooks — merge semantics", () => {
   it("adds yaco entries to fresh ~/.codex/hooks.json", () => {
     ensureCodexHooks();
     const hooks = JSON.parse(readFileSync(join(sandbox, ".codex", "hooks.json"), "utf-8"));
-    const sessionStart = hooks.hooks.SessionStart.find((g: any) => g.matcher === HOOK_MARKER || g.matcher === "*");
+    const sessionStart = hooks.hooks.SessionStart.find(isYacoGroup);
     expect(sessionStart).toBeDefined();
     expect(sessionStart.hooks[0].command).toMatch(/hook-event-bin\.ts SessionStart\b|agent hook-event SessionStart\b/);
     // Codex hooks are sync (not async)
     expect(sessionStart.hooks[0].async).toBe(false);
+    // Unfiltered so the hook fires on session start (see Claude SessionStart note).
+    for (const source of START_SOURCES) {
+      expect(matcherFiresOnSource(sessionStart.matcher, source)).toBe(true);
+    }
   });
 
   it("preserves pre-existing unrelated entries", () => {
@@ -206,7 +265,7 @@ describe("dropLegacyMultmuxHooks — legacy hook-v2.sh cleanup", () => {
     const settings = JSON.parse(readFileSync(join(claudeDir, "settings.json"), "utf-8"));
     expect(JSON.stringify(settings)).not.toContain("hook-v2.sh");
     expect(settings.hooks.Stop.find((g: any) => g.matcher === "my-custom-stop")).toBeDefined();
-    expect(settings.hooks.Stop.find((g: any) => g.matcher === HOOK_MARKER)).toBeDefined();
+    expect(settings.hooks.Stop.find(isYacoGroup)).toBeDefined();
   });
 
   it("ensureCodexHooks strips a legacy multmux-hook entry", () => {
@@ -219,6 +278,6 @@ describe("dropLegacyMultmuxHooks — legacy hook-v2.sh cleanup", () => {
 
     const hooks = JSON.parse(readFileSync(join(codexDir, "hooks.json"), "utf-8"));
     expect(JSON.stringify(hooks)).not.toContain("hook-v2.sh");
-    expect(hooks.hooks.SessionStart.find((g: any) => g.matcher === HOOK_MARKER)).toBeDefined();
+    expect(hooks.hooks.SessionStart.find(isYacoGroup)).toBeDefined();
   });
 });

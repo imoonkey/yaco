@@ -187,9 +187,17 @@ function makeHookEntry(event: string, async_: boolean, timeout?: number): Record
   return entry;
 }
 
+/** A yaco-managed hook group for a lifecycle event (SessionStart,
+ *  UserPromptSubmit, Stop, ...). These groups carry NO `matcher`: ownership is
+ *  identified by the hook *command* (see {@link isYacoOwnedGroup}), and an
+ *  absent matcher means "match all".
+ *
+ *  This matters most for SessionStart, whose `matcher` filters on the start
+ *  *source* (`startup|resume|clear|compact`). A label there is compiled as a
+ *  regex that matches no source, silently disabling the hook — so we leave it
+ *  unset. UserPromptSubmit/Stop ignore `matcher` entirely. */
 function yacoHookGroup(event: string, async_ = true): Record<string, unknown> {
   return {
-    matcher: HOOK_MARKER,
     hooks: [makeHookEntry(event, async_)],
   };
 }
@@ -217,7 +225,6 @@ const TOOL_SCOPED_EVENTS = new Set([
 
 function yacoSessionEndHookGroup(event: string): Record<string, unknown> {
   return {
-    matcher: HOOK_MARKER,
     hooks: [makeHookEntry(event, true, 1)],
   };
 }
@@ -265,10 +272,11 @@ function isYacoHookCommand(command: unknown): boolean {
   return /hook-event-bin\.ts\b|\bagent\s+hook-event\b/.test(command);
 }
 
-/** True if a hook group was authored by yaco (marker matcher OR yaco-shaped
- *  command). We need both signals because tool-scoped entries use matcher
- *  "*" (a user could legitimately author the same matcher), so the marker
- *  alone is not enough to disambiguate ownership. */
+/** True if a hook group was authored by yaco. The hook *command* is the
+ *  canonical ownership signal: every yaco entry runs `agent hook-event <Event>`.
+ *  The legacy `matcher === HOOK_MARKER` check is kept only to recognize — and
+ *  thus migrate/overwrite — groups written by older installs that abused the
+ *  marker as a matcher (which silently disabled SessionStart). */
 function isYacoOwnedGroup(group: any): boolean {
   if (group?.matcher === HOOK_MARKER) return true;
   if (!Array.isArray(group?.hooks)) return false;

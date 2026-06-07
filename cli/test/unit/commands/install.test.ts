@@ -235,7 +235,8 @@ describe("runInstall — hook merge semantics (AC 4)", () => {
     const userHook = sessionStart.find((g: any) => g.matcher === "my-custom-marker");
     expect(userHook).toBeDefined();
     expect(userHook.hooks[0].command).toBe("/usr/local/bin/my-hook");
-    const yacoHook = sessionStart.find((g: any) => g.matcher === "yaco-agent-hook");
+    const yacoHook = sessionStart.find((g: any) =>
+      g.hooks?.some((h: any) => /agent hook-event/.test(h.command)));
     expect(yacoHook).toBeDefined();
     expect(yacoHook.hooks[0].command).toMatch(/hook-event/);
   });
@@ -500,7 +501,8 @@ describe("runInstall — canonical hook command (HIGH 4)", () => {
       readFileSync(join(process.env["HOME"]!, ".claude", "settings.json"), "utf-8"),
     );
     const sessionStart = settings.hooks.SessionStart;
-    const yacoEntry = sessionStart.find((g: any) => g.matcher === "yaco-agent-hook");
+    const yacoEntry = sessionStart.find((g: any) =>
+      g.hooks?.some((h: any) => /agent hook-event/.test(h.command)));
     expect(yacoEntry).toBeDefined();
     const cmd = yacoEntry.hooks[0].command;
     // Canonical form: absolute path + `agent hook-event <Event>`. Must NOT be

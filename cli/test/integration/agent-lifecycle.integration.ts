@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "bun:test";
 import { execSync } from "child_process";
-import { mkdirSync, readFileSync, utimesSync } from "fs";
-import { homedir } from "os";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync } from "fs";
+import { homedir, tmpdir } from "os";
 import { join } from "path";
 import { start } from "../../src/commands/agent/start.ts";
 import { send } from "../../src/commands/agent/send.ts";
@@ -57,8 +57,25 @@ const testHandles: string[] = [];
 // Run agents in an isolated directory so they don't interfere with the project
 const TEST_CWD = "/tmp/multmux-test";
 let savedCwd: string;
-beforeAll(() => { mkdirSync(TEST_CWD, { recursive: true }); savedCwd = process.cwd(); process.chdir(TEST_CWD); });
-afterAll(() => { process.chdir(savedCwd); });
+// Sandbox YACO_HOME so session-state files land in a throwaway dir instead of
+// the live ~/.yaco/sessions the web app reads. The spawned agents' tmux session
+// inherits this env (tmux new-session copies the caller's env), so hook/wrapper
+// state writes stay isolated too.
+const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
+let yacoSandbox: string;
+beforeAll(() => {
+  mkdirSync(TEST_CWD, { recursive: true });
+  yacoSandbox = mkdtempSync(join(tmpdir(), "yaco-itest-"));
+  process.env["YACO_HOME"] = yacoSandbox;
+  savedCwd = process.cwd();
+  process.chdir(TEST_CWD);
+});
+afterAll(() => {
+  process.chdir(savedCwd);
+  if (ORIGINAL_YACO_HOME === undefined) delete process.env["YACO_HOME"];
+  else process.env["YACO_HOME"] = ORIGINAL_YACO_HOME;
+  rmSync(yacoSandbox, { recursive: true, force: true });
+});
 
 afterEach(() => {
   for (const handle of testHandles) {
@@ -180,6 +197,11 @@ describe("codex agent lifecycle", () => {
       expect(state.handle).toBe(handle);
       expect(state.provider).toBe("codex");
 
+      // start() is best-effort: a slow boot (e.g. under load) can return before
+      // the SessionStart hook has fired. The hook settles the session to idle
+      // shortly after — wait for that rather than trusting the sync return.
+      await waitFor(() => readState(handle)?.status === "idle", 60000);
+
       const stateAfterStart = readState(handle);
       expect(stateAfterStart?.status).toBe("idle");
       expect(stateAfterStart?.pid).toBeGreaterThan(0);
@@ -213,6 +235,9 @@ describe("codex agent lifecycle", () => {
       const state = start("codex", ["/help", "--name", handle]);
 
       expect(state.handle).toBe(handle);
+      // Best-effort start may return while still booting under load; wait for
+      // the session to leave "starting" before asserting the settled status.
+      await waitFor(() => readState(handle)?.status !== "starting", 60000);
       const persisted = readState(handle);
       expect(persisted?.status).toBeOneOf(["idle", "processing"]);
       expect(processCommand(persisted?.pid)).toBe("codex");
@@ -281,6 +306,8 @@ describe("codex handle independence", () => {
 
       start("codex", ["--name", handle]);
 
+      // start() is best-effort; the SessionStart hook settles status to idle.
+      await waitFor(() => readState(handle)?.status === "idle", 60000);
       const state = readState(handle);
       expect(state?.status).toBe("idle");
       expect(processCommand(state?.pid)).toBe("codex");
@@ -294,17 +321,16 @@ describe("codex handle independence", () => {
   );
 
   codexIt(
-    "keeps unnamed empty starts pending until the first real prompt resolves a sessionId",
+    "resolves a stable sessionId for an unnamed empty start and keeps the handle authoritative",
     async () => {
       const started = start("codex", []);
       const handle = started.handle;
       testHandles.push(handle);
 
-      const initial = readState(handle);
-      expect(initial?.status).toBe("idle");
-      expect(initial?.sessionId).toBe(PENDING_SESSION_ID);
-      expect(processCommand(initial?.pid)).toBe("codex");
-      expect(JSON.parse(status(handle, { json: true })).sessionId).toBe(PENDING_SESSION_ID);
+      // start() is best-effort; wait for the SessionStart hook to settle idle.
+      // (Pre-fix the hook never fired, so this would hang in "starting".)
+      await waitFor(() => readState(handle)?.status === "idle", 60000);
+      expect(processCommand(readState(handle)?.pid)).toBe("codex");
 
       send(handle, `Reply with exactly the word: first-${Date.now()}`);
 
