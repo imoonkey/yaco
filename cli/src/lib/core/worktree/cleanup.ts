@@ -10,11 +10,11 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 import { branchExists, resolveRepoRoot, runGit } from "./git.ts";
 import { validateSlug } from "./slug.ts";
+import { worktreeBranch, worktreePath } from "./convention.ts";
 
 export interface CleanupOptions {
   force?: boolean;
@@ -36,8 +36,8 @@ export function cleanupWorktree(slug: string, opts: CleanupOptions = {}): Cleanu
   const force = opts.force === true;
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
-  const branch = `task/${slug}`;
-  const worktreeDir = join(repoRoot, ".worktrees", slug);
+  const branch = worktreeBranch(slug);
+  const worktreeDir = worktreePath(repoRoot, slug);
 
   const result: CleanupResult = {
     slug,

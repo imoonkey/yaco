@@ -13,12 +13,12 @@
  */
 
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 import { isDirty, resolveRepoRoot, runGit } from "./git.ts";
 import { createPullRequest } from "./pr.ts";
 import { validateSlug } from "./slug.ts";
+import { worktreeBranch, worktreePath } from "./convention.ts";
 
 export type MergeMode = "pr" | "local";
 
@@ -52,8 +52,8 @@ export function mergeWorktree(slug: string, opts: MergeOptions = {}): MergeResul
   const base = opts.base ?? "main";
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
-  const branch = `task/${slug}`;
-  const worktreeDir = join(repoRoot, ".worktrees", slug);
+  const branch = worktreeBranch(slug);
+  const worktreeDir = worktreePath(repoRoot, slug);
 
   if (!existsSync(worktreeDir)) {
     throw new CliError(ErrCode.NOT_FOUND, `worktree not found: ${worktreeDir}`);

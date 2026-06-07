@@ -11,7 +11,7 @@
 
 import { spawnSync } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 import {
@@ -52,7 +52,7 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
     rmSync(worktreeDir, { recursive: true, force: true });
   }
 
-  mkdirSync(join(repoRoot, ".worktrees"), { recursive: true });
+  mkdirSync(dirname(worktreeDir), { recursive: true });
 
   const args = branchExists(repoRoot, branch)
     ? ["worktree", "add", worktreeDir, branch]
