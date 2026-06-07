@@ -19,3 +19,14 @@ export async function runHistory(projectPath: string): Promise<HistorySession[]>
   );
   return finalizeHistory(perProvider.flat(), liveSessions);
 }
+
+/** Concise text rendering: one line per session, newest-first as returned. */
+export function renderHistory(sessions: HistorySession[]): string {
+  if (sessions.length === 0) return "(no sessions)\n";
+  const lines = sessions.map((s) => {
+    const live = s.live ? " *" : "";
+    const title = s.title ?? s.summary ?? "";
+    return `${s.provider.padEnd(7)} ${s.sessionId}${live}  ${title}`;
+  });
+  return lines.join("\n") + "\n";
+}

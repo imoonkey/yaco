@@ -21,6 +21,7 @@ import {
   runGit,
 } from "./git.ts";
 import { validateSlug } from "./slug.ts";
+import { worktreeBranch, worktreePath } from "./convention.ts";
 
 export interface CreateOptions {
   base?: string;
@@ -40,8 +41,8 @@ export function createWorktree(slug: string, opts: CreateOptions = {}): CreateRe
   const base = opts.base ?? "main";
   const cwd = opts.cwd ?? process.cwd();
   const repoRoot = resolveRepoRoot(cwd);
-  const branch = `task/${slug}`;
-  const worktreeDir = join(repoRoot, ".worktrees", slug);
+  const branch = worktreeBranch(slug);
+  const worktreeDir = worktreePath(repoRoot, slug);
 
   if (existsSync(worktreeDir)) {
     const resolvedDir = realpathSync(worktreeDir);

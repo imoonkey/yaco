@@ -13,7 +13,8 @@
 import { readFileSync } from "node:fs";
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import {
   checkCycles,
   hasChildren,
@@ -113,14 +114,18 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
     for (const w of warnings) process.stderr.write(`warning: ${w}\n`);
   }
 
-  return ok({
-    id,
-    action,
-    task: resultTask,
-    warnings,
-    tasksFile: resultTasksFile,
-    tasksPath: paths.tasksPath,
-  });
+  return dual(
+    opts.json,
+    {
+      id,
+      action,
+      task: resultTask,
+      warnings,
+      tasksFile: resultTasksFile,
+      tasksPath: paths.tasksPath,
+    },
+    () => `${action === "create" ? "created" : "updated"} task '${id}' (${resultTasksFile})\n`,
+  );
 }
 
 function parsePayload(opts: SetOpts): Record<string, unknown> {

@@ -18,6 +18,7 @@
  */
 import { readFileSync } from "fs";
 import { ok, type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { PROVIDERS } from "../../lib/core/agent/providers.ts";
 import { start, extractResume } from "./start.ts";
@@ -27,9 +28,9 @@ import { kill } from "./kill.ts";
 import { rename } from "./rename.ts";
 import { status, list } from "./status.ts";
 import { whoami } from "./whoami.ts";
-import { runHistory } from "./history.ts";
-import { runSummaries } from "./summaries.ts";
-import { runProviders } from "./providers.ts";
+import { runHistory, renderHistory } from "./history.ts";
+import { runSummaries, renderSummaries } from "./summaries.ts";
+import { runProviders, renderProviders } from "./providers.ts";
 import { runOutputCursor, runOutputFollow, parseOutputFollowArgs, OUTPUT_FOLLOW_USAGE } from "./output.ts";
 import {
   parseTimeoutMs,
@@ -247,12 +248,16 @@ export async function runStart(
       origin = { kind: "from-start" };
     }
     const state = start(provider, passthrough, undefined);
-    return ok(await waitForAgentCompletion(state.handle, origin, { timeoutMs }));
+    const result = await waitForAgentCompletion(state.handle, origin, { timeoutMs });
+    // Text mode prints the reply text raw (pipe-friendly); --json keeps the
+    // AgentCompletionResult record.
+    return dual(json || opts.json, result, () => result.text);
   }
 
   const state = start(provider, passthrough, undefined);
-  if (json || opts.json) return ok(state);
-  return ok({ handle: state.handle, state });
+  // Text mode prints the handle raw (pipe-friendly); --json keeps the full
+  // session-state record so callers can read pid/sessionId/path etc.
+  return dual(json || opts.json, state, () => `${state.handle}\n`);
 }
 
 /** Read process.stdin to end-of-stream, returning the full payload as a UTF-8
@@ -315,10 +320,15 @@ export async function handleAgent(
         // resolved session's cursor is only momentarily unresolved.
         const origin = await resolveSendWaitOrigin(name);
         send(name, message);
-        return ok(await waitForAgentCompletion(name, origin, { timeoutMs: parsed.options.timeoutMs }));
+        const result = await waitForAgentCompletion(name, origin, { timeoutMs: parsed.options.timeoutMs });
+        return dual(parsed.options.json || opts.json, result, () => result.text);
       }
       send(name, message);
-      return ok({ sent: { name, length: message.length } });
+      return dual(
+        parsed.options.json || opts.json,
+        { sent: { name, length: message.length } },
+        () => `sent to ${name} (${message.length} bytes)\n`,
+      );
     }
 
     case "wait": {
@@ -326,7 +336,8 @@ export async function handleAgent(
         return ok({ help: `${WAIT_USAGE}\n` });
       }
       const waitArgs = parseWaitArgs(rest);
-      return ok(await runWait(waitArgs));
+      const result = await runWait(waitArgs);
+      return dual(opts.json, result, () => result.text);
     }
 
     case "capture": {
@@ -352,19 +363,20 @@ export async function handleAgent(
 
     case "kill": {
       const parsed = parseSubArgs(rest);
+      const json = parsed.options.json || opts.json;
       if (parsed.options.all) {
         if (parsed.positional.length > 0) {
           throw new CliError(ErrCode.USAGE, "yaco agent kill --all takes no positional");
         }
         kill(undefined, { all: true });
-        return ok({ killed: "all" });
+        return dual(json, { killed: "all" }, () => `killed all sessions\n`);
       }
       const name = parsed.positional[0];
       if (!name || parsed.positional.length !== 1) {
         throw new CliError(ErrCode.USAGE, "yaco agent kill <name> | --all");
       }
       kill(name);
-      return ok({ killed: name });
+      return dual(json, { killed: name }, () => `killed ${name}\n`);
     }
 
     case "list": {
@@ -387,7 +399,7 @@ export async function handleAgent(
       if (json) {
         return ok(JSON.parse(output));
       }
-      return ok({ help: output });
+      return ok({ text: output });
     }
 
     case "status": {
@@ -401,11 +413,12 @@ export async function handleAgent(
       }
       const json = parsed.options.json || opts.json;
       const output = status(name, { json, reconcile: parsed.options.reconcile });
-      // status() returns a string (JSON or text). Pre-parse for JSON envelope.
+      // status() returns a string (JSON or the text detail block). Pre-parse for
+      // the JSON envelope; text mode carries the block raw via `{text}`.
       if (json) {
         return ok(JSON.parse(output));
       }
-      return ok({ help: output });
+      return ok({ text: output });
     }
 
     case "whoami": {
@@ -432,7 +445,8 @@ export async function handleAgent(
       }
       const parsed = parseSubArgs(rest);
       const projectPath = parsed.options.path ?? process.cwd();
-      return ok(await runHistory(projectPath));
+      const sessions = await runHistory(projectPath);
+      return dual(parsed.options.json || opts.json, sessions, () => renderHistory(sessions));
     }
 
     case "summaries": {
@@ -441,14 +455,16 @@ export async function handleAgent(
       }
       const parsed = parseSubArgs(rest);
       const projectPath = parsed.options.path ?? process.cwd();
-      return ok(await runSummaries(projectPath));
+      const summaries = await runSummaries(projectPath);
+      return dual(parsed.options.json || opts.json, summaries, () => renderSummaries(summaries));
     }
 
     case "providers": {
       if (rest.includes("--help") || rest.includes("-h")) {
         return ok({ help: "yaco agent providers [--json]\n" });
       }
-      return ok(runProviders());
+      const catalog = runProviders();
+      return dual(opts.json, catalog, () => renderProviders(catalog));
     }
 
     case "output-cursor": {
@@ -460,7 +476,8 @@ export async function handleAgent(
       if (!name) {
         throw new CliError(ErrCode.USAGE, "yaco agent output-cursor <name> [--json]");
       }
-      return ok(await runOutputCursor(name));
+      const cursor = await runOutputCursor(name);
+      return dual(parsed.options.json || opts.json, cursor, () => `${cursor.token} ${cursor.offset}\n`);
     }
 
     case "output-follow": {
@@ -506,12 +523,20 @@ export async function handleAgent(
         throw new CliError(ErrCode.USAGE, "yaco agent rename <old-name> <new-name>");
       }
       const outcome = await rename(oldName, newName);
-      return ok({
-        renamed: { from: oldName, to: newName },
-        childSessions: outcome.childSessions,
-        tasks: outcome.tasks,
-        warnings: outcome.warnings,
-      });
+      const json = parsed.options.json || opts.json;
+      if (!json) {
+        for (const w of outcome.warnings) process.stderr.write(`warning: ${w}\n`);
+      }
+      return dual(
+        json,
+        {
+          renamed: { from: oldName, to: newName },
+          childSessions: outcome.childSessions,
+          tasks: outcome.tasks,
+          warnings: outcome.warnings,
+        },
+        () => `renamed '${oldName}' -> '${newName}'\n`,
+      );
     }
 
     case "hooks": {
@@ -525,7 +550,7 @@ export async function handleAgent(
           `unknown subcommand: agent hooks ${action}. Run \`yaco agent hooks --help\`.`,
         );
       }
-      return handleHooksInstall(rest.slice(1));
+      return handleHooksInstall(rest.slice(1), opts.json);
     }
 
     case "hook-event":

@@ -7,7 +7,8 @@
  */
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import {
   loadTaskStore,
   rollup,
@@ -54,5 +55,5 @@ export async function runRm(id: string, opts: RmOpts): Promise<Result<unknown>> 
     { command: `yaco task rm ${id}` },
   );
 
-  return ok({ id, removed: true, tasksPath: paths.tasksPath });
+  return dual(opts.json, { id, removed: true, tasksPath: paths.tasksPath }, () => `removed task '${id}'\n`);
 }

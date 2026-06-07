@@ -113,9 +113,10 @@ Reads and writes both go through `yaco task`, which has graph constraints
 
 ```bash
 # Read
-yaco task list                          --json    # active workset (default)
-yaco task list --workset all            --json    # full task map: active + backlog + archive
-yaco task list --workset archive        --json    # archive only
+yaco task list                                    # active workset (default)
+yaco task list --workset all                      # full task map: active + backlog + archive
+yaco task list --workset archive                  # archive only
+yaco task get <id>                                # one task's full detail
 yaco task validate                      --json    # validate whole graph
 yaco task validate --id <id>            --json    # validate one task + parent chain
 
@@ -131,9 +132,11 @@ yaco task attach <id> <session-handle> [--repo <path>] --json   # add a handle t
 yaco task detach <id> <session-handle> [--repo <path>] --json   # remove a handle from agents
 ```
 
-`yaco task list --json` returns the active workset by default. Use
+`yaco task list` returns the active workset by default. Use
 `--workset all` to get the full task map across active, backlog, and archive in
-one read; use `--workset archive` to inspect the archive alone.
+one read; use `--workset archive` to inspect the archive alone. `yaco task get
+<id>` reads a single task's full detail. All three default to readable text;
+add `--json` when you need to parse the records programmatically.
 
 `yaco task set` mutates ordinary task fields only. It **rejects** both `agent`
 and `agents` — the `agents` link list is delta-mutated exclusively through

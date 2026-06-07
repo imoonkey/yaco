@@ -45,7 +45,8 @@ This module is loaded by both Bun (cli) and Node via `tsx`/`vitest`
 ```
 yaco paths runtime [--json]                       # YACO_HOME + helpers under it
 yaco paths project [--json] [--repo <path>]       # repo-relative paths, output absolute
-yaco project list|add|remove --json               # project registry surface
+yaco project list|add|remove [--json]             # project registry surface
+yaco project current [--json]                     # cwd → owning registered project
 ```
 
 - `runtime` returns the seven runtime helpers keyed by name. Useful for shell scripts that need a path without sourcing TS.
@@ -58,6 +59,15 @@ yaco project list|add|remove --json               # project registry surface
   `{project, projectsFile}` and `remove` returns `{removed:true, project,
   projectsFile}` on success, and both use the shared registry validation
   above for `INVALID`, `CONFLICT`, and `NOT_FOUND` failures.
+- `yaco project current` resolves the cwd back to its owning registered project
+  via `findProjectForCwd` (`cli/src/lib/core/project/find-cwd.ts`): it
+  canonicalizes the cwd and each registered path, then selects the **longest**
+  registered path that is a prefix of (or equal to) the cwd — so when a parent
+  dir and a nested child project are both registered, the child wins. Text mode
+  prints `name  path`; `--json` returns `{project, projectsFile}`. A cwd outside
+  every registered project is `NOT_FOUND` exit 1. This is the cwd→owner read
+  with real value; there is no `project get` (a `{name, path}` record adds
+  nothing over `list`).
 
 End-to-end shape is locked in by `test/unit/core/paths/paths-cli.test.ts`.
 

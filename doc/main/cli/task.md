@@ -1,6 +1,6 @@
 # Task Subcommand (`@yaco/cli/core/task`)
 
-> Last updated: 2026-06-06 (astl-session-rename-link-integrity: `agents` rewrite on rename; prior astl-task-agent-link-mutation)
+> Last updated: 2026-06-07 (yaco-read-surface: `task get` single-record read, `task list --state`; prior astl-session-rename-link-integrity)
 
 The task area owns the project task graph at `<repoRoot>/<paths.tasks>`
 (default `plan/tasks`, override via `yaco.toml [paths].tasks`). If the
@@ -28,6 +28,7 @@ and the `--json` envelope.
 ## CLI surface
 
 ```
+yaco task get <id>                      [--repo <p>] [--json]
 yaco task set <id> --data '<json>'      [--repo <p>] [--json]
 yaco task set <id> --stdin              [--repo <p>] [--json]
 yaco task set <id> --file <path>        [--repo <p>] [--json]
@@ -36,8 +37,25 @@ yaco task detach <id> <session-handle>  [--repo <p>] [--json]
 yaco task rm <id>                       [--repo <p>] [--json]
 yaco task archive <id>                  [--repo <p>] [--json]
 yaco task validate [--id <id>]          [--repo <p>] [--json]
-yaco task list                          [--workset active|backlog|archive|all] [--repo <p>] [--json]
+yaco task list  [--workset active|backlog|archive|all] [--state <s>] [--repo <p>] [--json]
 ```
+
+Reads (`get`, `list`) default to a rendered `{text}` block; `--json` returns the
+structured record. See [command-surface.md](command-surface.md#output-convention--text-is-the-default-result-envelope).
+
+### `get <id>`
+
+Pure single-record read. Loads the task store, looks up `<id>`, and renders a
+labeled detail block in text mode (`id/state/title/workset/parent/depends/
+agents/worktree/scope/accept/description`, only present fields shown). A miss is
+`NOT_FOUND` exit 1.
+
+`--json` returns `{ id, task, tasksPath, tasksFile }`. **`id` is included** —
+the stored record is keyed by id in the graph and carries no id of its own;
+`tasksFile` is the owning source file for the task (directory stores remember
+each task's file). This replaces the `list --json | filter` round-trip an agent
+otherwise needs to inspect a single task.
+
 
 ### `set <id>`
 
@@ -145,6 +163,13 @@ By default `list` returns the active workset, matching orchestrator dispatch
 semantics. Use `--workset backlog` or `--workset archive` for a single
 non-active workset, and `--workset all` for consumers such as `app/server`
 that need the full graph and apply their own UI filter.
+
+`--state <s>` filters to a single task state and **composes with `--workset`**
+(default workset `active`). The value is validated against the `STATES` enum;
+an invalid state is `USAGE` exit 2. It is a pure read — no roll-up, no mutation
+— so it never collapses a parent to `done` the way a `set`-triggered rollup
+would. `--json` returns the same `{ tasks, tasksPath, tasksFile }` shape over the
+filtered map.
 
 ## Path resolution (the bug we fixed)
 

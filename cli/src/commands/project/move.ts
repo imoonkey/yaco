@@ -97,7 +97,7 @@ export function runMove(
   };
 
   if (opts.json) return ok(report);
-  return ok({ help: renderText(report) });
+  return ok({ text: renderText(report) });
 }
 
 function isDirectory(p: string): boolean {

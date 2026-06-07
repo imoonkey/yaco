@@ -2,6 +2,7 @@
  *
  *  Subcommands:
  *    list
+ *    current
  *    add    <name> <absolute-path>
  *    remove <name>
  *    move   <old-path> <new-path> [--prefix] [--dry-run] [--force]
@@ -16,6 +17,7 @@
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { ok, type Result } from "../../lib/core/result.ts";
 import { runList } from "./list.ts";
+import { runCurrent } from "./current.ts";
 import { runAdd } from "./add.ts";
 import { runRemove } from "./remove.ts";
 import { runMove } from "./move.ts";
@@ -24,6 +26,7 @@ const HELP = `yaco project — operations on registered YACO projects
 
 Usage:
   yaco project list
+  yaco project current
   yaco project add <name> <absolute-path>
   yaco project remove <name>
   yaco project move <old-path> <new-path> [options]
@@ -31,6 +34,8 @@ Usage:
 
 Subcommands:
   list    List registered projects (and the registry file path under --json).
+  current Resolve the current directory to its owning registered project
+          (longest-prefix, canonicalized match). NOT_FOUND when unregistered.
   add     Register <name> -> <absolute-path>. Validates a URL-safe name and an
           absolute existing directory; rejects duplicate names and paths.
   remove  Unregister a project by name.
@@ -106,6 +111,12 @@ export function handleProject(
   switch (sub) {
     case "list":
       return runList({ json });
+
+    case "current":
+      if (parsed.positional.length !== 0) {
+        throw new CliError(ErrCode.USAGE, `yaco project current`);
+      }
+      return runCurrent({ json });
 
     case "add":
       if (parsed.positional.length !== 2) {

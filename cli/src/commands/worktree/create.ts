@@ -1,6 +1,7 @@
 /** `yaco worktree create` — handler that wraps createWorktree in a Result. */
 
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import { createWorktree } from "../../lib/core/worktree/index.ts";
 
 export interface CreateHandlerOpts {
@@ -10,5 +11,7 @@ export interface CreateHandlerOpts {
 
 export function runCreate(slug: string, opts: CreateHandlerOpts): Result<unknown> {
   const result = createWorktree(slug, { base: opts.base });
-  return ok(result);
+  return dual(opts.json, result, () =>
+    `${result.reused ? "reused" : "created"} worktree '${result.slug}' at ${result.path} (${result.branch})\n`,
+  );
 }

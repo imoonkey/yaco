@@ -259,19 +259,19 @@ describe("yaco project move — dry-run", () => {
     expect(readFileSync(join(fix.yacoHome, "projects.json"), "utf-8")).toBe(beforeRaw);
   });
 
-  it("text mode returns a human-readable help payload (not raw JSON)", () => {
+  it("text mode returns a human-readable text payload (not raw JSON)", () => {
     const fix = fixture();
     process.env["YACO_HOME"] = fix.yacoHome;
     stageRegistry(fix, [{ id: "alpha", path: fix.oldPath }]);
     const r = handleProject(["move", fix.oldPath, fix.newPath, "--dry-run"], { json: false });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
-      const v = r.value as { help: string };
-      expect(typeof v.help).toBe("string");
-      expect(v.help).toContain("yaco project move (exact, dry-run)");
-      expect(v.help).toContain("would rewrite:");
-      expect(v.help).toContain("yaco registry");
-      expect(v.help).toContain("Re-run without --dry-run to apply.");
+      const v = r.value as { text: string };
+      expect(typeof v.text).toBe("string");
+      expect(v.text).toContain("yaco project move (exact, dry-run)");
+      expect(v.text).toContain("would rewrite:");
+      expect(v.text).toContain("yaco registry");
+      expect(v.text).toContain("Re-run without --dry-run to apply.");
     }
   });
 });
@@ -316,7 +316,7 @@ describe("yaco project move — legacy provider count surface", () => {
     const r = handleProject(["move", fix.oldPath, fix.newPath, "--dry-run"], { json: false });
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
-      const help = (r.value as { help: string }).help;
+      const help = (r.value as { text: string }).text;
       expect(help).toContain("~/.claude/projects");
       expect(help).toContain("~/.codex/sessions");
       expect(help).toContain("~/.codex/config");

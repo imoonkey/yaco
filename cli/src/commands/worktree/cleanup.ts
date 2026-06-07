@@ -1,6 +1,7 @@
 /** `yaco worktree cleanup` — handler that wraps cleanupWorktree in a Result. */
 
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import { cleanupWorktree } from "../../lib/core/worktree/index.ts";
 
 export interface CleanupHandlerOpts {
@@ -10,5 +11,7 @@ export interface CleanupHandlerOpts {
 
 export function runCleanup(slug: string, opts: CleanupHandlerOpts): Result<unknown> {
   const result = cleanupWorktree(slug, { force: opts.force });
-  return ok(result);
+  return dual(opts.json, result, () =>
+    `cleaned up '${result.slug}' (worktree: ${result.removed.worktree ? "removed" : "absent"}, branch: ${result.removed.branch ? "removed" : "absent"})\n`,
+  );
 }

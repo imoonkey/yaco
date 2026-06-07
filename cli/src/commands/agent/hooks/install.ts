@@ -6,6 +6,7 @@
  *  are dropped on the way through.
  */
 import { ok, type Result } from "../../../lib/core/result.ts";
+import { dual } from "../../../lib/core/render.ts";
 import { ensureHooks } from "../../../lib/core/agent/lifecycle.ts";
 import { listProviders } from "../../../lib/core/agent/providers/index.ts";
 
@@ -18,6 +19,7 @@ agent-wrapper.sh helper under \${YACO_HOME} and merges yaco-owned entries into
 
 export async function handleHooksInstall(
   argv: string[],
+  json = false,
 ): Promise<Result<unknown>> {
   if (argv[0] === "--help" || argv[0] === "-h") {
     return ok({ help: HELP });
@@ -28,5 +30,7 @@ export async function handleHooksInstall(
     ensureHooks(provider.id);
     installed.push(provider.id);
   }
-  return ok({ installed });
+  return dual(json || argv.includes("--json"), { installed }, () =>
+    `installed hooks: ${installed.join(", ") || "(none)"}\n`,
+  );
 }

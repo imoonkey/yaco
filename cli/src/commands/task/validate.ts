@@ -10,7 +10,8 @@
  */
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
-import { err, ok, type Result } from "../../lib/core/result.ts";
+import { err, type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import {
   describeLock,
   loadTaskStore,
@@ -53,11 +54,15 @@ export function runValidate(opts: ValidateOpts): Result<unknown> {
     for (const note of localAdvisoryNotes) process.stderr.write(`advisory: ${note}\n`);
   }
 
-  return ok({
-    ok: true,
-    scope: opts.id ?? "all",
-    tasksPath: paths.tasksPath,
-    tasksFile: store.defaultFile,
-    lock: lock.held ? (lock as LockStatus) : undefined,
-  });
+  return dual(
+    opts.json,
+    {
+      ok: true,
+      scope: opts.id ?? "all",
+      tasksPath: paths.tasksPath,
+      tasksFile: store.defaultFile,
+      lock: lock.held ? (lock as LockStatus) : undefined,
+    },
+    () => `valid: ${opts.id ?? "all"} (${store.defaultFile})\n`,
+  );
 }

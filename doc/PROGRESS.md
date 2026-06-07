@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-07: yaco CLI read surface + text-first output
+
+**What changed:**
+- **Missing read primitives added.** `yaco task get <id>` returns a single task as a labeled `{text}` block (or `{id, task, tasksPath, tasksFile}` JSON, `id` included since the stored record carries no key; `NOT_FOUND` on a miss) — replacing the `list --json | filter` round-trip an agent needed to inspect one task. `yaco task list --state <s>` filters by task state, validated against `STATES` (invalid → `USAGE`) and composing with `--workset`, as a pure read (no roll-up). `yaco project current` resolves the cwd to its owning registered project via longest-prefix match (`findProjectForCwd`), `NOT_FOUND` when the cwd is unregistered.
+- **`{text}` is now the single ordinary-result envelope.** Result-bearing handlers branch once through `dual` (`cli/src/lib/core/render.ts`): `--json` emits the structured record, text mode emits a rendered `{text}` block. `{help}` is usage-only. `main.ts`'s `render()` writes both verbatim and now treats any ordinary command that reaches text mode without a `{text}`/`{help}` envelope as an `INTERNAL` error — the old silent compact-JSON fallback is gone. Streaming/process-owning commands (`agent output-follow`, `align poll`, `doctor`) are the explicit allowlist; they own stdout directly. `agent status` gained a text detail block (JSON runtime-state fields pinned, unchanged); `agent wait` / `start --wait` / `send --wait` print the final `text` raw, dropping the `| jq -r .data.text` ceremony.
+- **Worktree convention shared, not duplicated.** `worktreePath(repoRoot, slug)` / `worktreeBranch(slug)` are hoisted to `cli/src/lib/core/worktree/convention.ts`, re-exported from the barrel, and published as `@yaco/cli/core/worktree` (`cli/package.json#exports`). `app/server/src/lib/worktree.ts` imports them and drops its two hardcoded `.worktrees/<slug>` / `task/<slug>` templates; a scheme change can no longer break the app's worktree-status reader silently. The app's git-status aggregation and `{active, dirty, branch, ahead, behind}` shape are unchanged; `app/ui` untouched.
+- **`/yaco*` skills flipped to text-first.** Read/inspect examples drop `--json`; `--json` is reserved for programmatic consumption of a structured record and the `{ok}` success/failure discriminator.
+
+**Why:**
+- The `yaco` CLI is consumed by AI agents, not just humans and the web app. Two gaps made it agent-hostile: no single-record reads (forcing whole-collection `--json` + client-side filter), and a text mode that fell through to a compact JSON dump for ~60% of result-bearing commands. This pass adds the read primitives, makes text the readable default, and shares the one real app↔CLI convention gap.
+
+**Docs:** Added [doc/main/cli/command-surface.md](main/cli/command-surface.md) as the canonical Command Surface Matrix + output convention; updated `doc/main/cli/{README,task,worktree,paths}.md` and `cli/CLAUDE.md`. Area consolidation (9 → 6: `env`, `install` folding) is split out as a deferred `surface-hygiene` follow-up.
+
+**Key files:** `cli/src/lib/core/render.ts`, `cli/src/lib/core/worktree/convention.ts`, `cli/src/commands/{task/get,project/current}.ts`, `cli/src/lib/core/project/find-cwd.ts`, `cli/src/main.ts`, `cli/package.json`, `app/server/src/lib/worktree.ts`, `agent-config/global/skills/{yaco,yaco-agent,yaco-task}/SKILL.md`, `doc/main/cli/**`, `cli/CLAUDE.md`.
+**Design:** [plan/all/yaco-read-surface/design_claude.md](../plan/all/yaco-read-surface/design_claude.md).
+**Blockers:** None.
+
 ## 2026-06-06: agent reads/mutation split — pure `list`/`status`, `--reconcile` owns GC
 
 **What changed:**

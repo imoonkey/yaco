@@ -6,6 +6,7 @@
  */
 
 export { validateSlug } from "./slug.ts";
+export { worktreePath, worktreeBranch } from "./convention.ts";
 export {
   branchExists,
   isDirty,

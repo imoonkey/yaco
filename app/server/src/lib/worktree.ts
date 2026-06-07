@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from 'fs'
 import { execFile } from 'child_process'
-import { join } from 'path'
+import { worktreePath, worktreeBranch } from '@yaco/cli/core/worktree'
 
 export interface WorktreeStatus {
   active: boolean
@@ -44,9 +44,9 @@ async function listRegistered(projectPath: string): Promise<Set<string>> {
   }
 }
 
-function isRegistered(worktreePath: string, registered: Set<string>): boolean {
+function isRegistered(dir: string, registered: Set<string>): boolean {
   try {
-    return registered.has(realpathSync(worktreePath))
+    return registered.has(realpathSync(dir))
   } catch {
     return false
   }
@@ -56,12 +56,12 @@ function inactive(branch: string): WorktreeStatus {
   return { active: false, dirty: false, branch, ahead: 0, behind: 0 }
 }
 
-async function resolveActive(worktreePath: string, branch: string): Promise<WorktreeStatus> {
+async function resolveActive(dir: string, branch: string): Promise<WorktreeStatus> {
   const [dirty, aheadBehind] = await Promise.all([
-    git(worktreePath, ['status', '--porcelain'])
+    git(dir, ['status', '--porcelain'])
       .then(out => out.trim().length > 0)
       .catch(() => false),
-    git(worktreePath, ['rev-list', '--count', '--left-right', `main...HEAD`])
+    git(dir, ['rev-list', '--count', '--left-right', `main...HEAD`])
       .then(parseAheadBehind)
       .catch(() => ({ ahead: 0, behind: 0 })),
   ])
@@ -70,13 +70,13 @@ async function resolveActive(worktreePath: string, branch: string): Promise<Work
 
 /** Resolve worktree status for a single slug within a project */
 export async function getWorktreeStatus(projectPath: string, slug: string): Promise<WorktreeStatus> {
-  const worktreePath = join(projectPath, '.worktrees', slug)
-  const branch = `task/${slug}`
-  if (!existsSync(worktreePath)) return inactive(branch)
+  const dir = worktreePath(projectPath, slug)
+  const branch = worktreeBranch(slug)
+  if (!existsSync(dir)) return inactive(branch)
 
   const registered = await listRegistered(projectPath)
-  if (!isRegistered(worktreePath, registered)) return inactive(branch)
-  return resolveActive(worktreePath, branch)
+  if (!isRegistered(dir, registered)) return inactive(branch)
+  return resolveActive(dir, branch)
 }
 
 /** Extract worktree slug from a session path, if it's inside a .worktrees directory */
@@ -103,13 +103,13 @@ export async function getWorktreeStatuses(
 
   await Promise.all(
     [...slugs].map(async (slug) => {
-      const worktreePath = join(projectPath, '.worktrees', slug)
-      const branch = `task/${slug}`
-      if (!existsSync(worktreePath) || !isRegistered(worktreePath, registered)) {
+      const dir = worktreePath(projectPath, slug)
+      const branch = worktreeBranch(slug)
+      if (!existsSync(dir) || !isRegistered(dir, registered)) {
         results.set(slug, inactive(branch))
         return
       }
-      results.set(slug, await resolveActive(worktreePath, branch))
+      results.set(slug, await resolveActive(dir, branch))
     }),
   )
   return results

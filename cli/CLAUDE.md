@@ -45,7 +45,7 @@ The dispatcher routes argv from `src/main.ts` to these live areas:
 
 - `--json` success writes exactly one `{ok:true,data:...}` line to stdout.
 - `--json` failure writes exactly one `{ok:false,error:...}` line to stderr.
-- Text mode may return `{help}` or `{text}` envelopes when a command needs raw stdout.
+- Text mode (no `--json`) is the default readable surface: ordinary result-bearing commands branch once through `dual` (`src/lib/core/render.ts`) and return a `{text}` envelope; `{help}` is usage-only. `render()` writes both verbatim and treats any other bare object in text mode as an `INTERNAL` error. Streaming/process-owning commands (`agent output-follow`, `align poll`, `doctor`) are the explicit exceptions — they own stdout directly. See [../doc/main/cli/command-surface.md](../doc/main/cli/command-surface.md).
 - No npm dependencies beyond Bun built-ins and tmux-facing process calls.
 - Shell boundary stays narrow: `cli/scripts/agent-wrapper.sh` is the durable shell artifact; new behavior should be TypeScript unless a specific task proves otherwise.
 

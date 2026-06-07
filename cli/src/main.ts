@@ -12,7 +12,7 @@
 import { parseArgs } from "./lib/core/args.ts";
 import { ok, isErr, type Result } from "./lib/core/result.ts";
 import { CliError, ErrCode, exitCodeFor, toErr } from "./lib/core/errors.ts";
-import { emit, stringify } from "./lib/core/json.ts";
+import { emit } from "./lib/core/json.ts";
 import { handlePaths } from "./commands/paths.ts";
 import { handleAgent, runStart } from "./commands/agent/index.ts";
 import { handleTask } from "./commands/task/index.ts";
@@ -146,6 +146,25 @@ async function dispatch(argv: string[]): Promise<{
   }
 }
 
+/** The two text-mode envelopes render() prints verbatim. Every ordinary
+ *  result-bearing command must produce one of these (via `dual` for results,
+ *  or `{help}` for usage). Returns the raw string to print, or undefined when
+ *  the value is neither — which render() treats as an internal bug.
+ *
+ *  Streaming / process-owning commands are NOT covered here because they never
+ *  reach render(): `agent output-follow` writes its NDJSON stream and exits,
+ *  `align poll` and `doctor` own stdout and `process.exit()` directly. That
+ *  allowlist is exact — anything else returning a bare object in text mode is a
+ *  bug, surfaced as INTERNAL rather than a silent JSON dump. */
+function textEnvelope(value: unknown): string | undefined {
+  if (value && typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    if (typeof v["help"] === "string") return v["help"];
+    if (typeof v["text"] === "string") return v["text"];
+  }
+  return undefined;
+}
+
 function render(result: Result<unknown>, json: boolean): void {
   if (isErr(result)) {
     if (json) {
@@ -166,25 +185,34 @@ function render(result: Result<unknown>, json: boolean): void {
     emit({ ok: true, data: result.value });
     return;
   }
-  // Text mode: print known shapes; otherwise fall back to pretty JSON.
-  const v = result.value as Record<string, unknown> | undefined;
-  if (v && typeof v === "object" && typeof v["help"] === "string") {
-    process.stdout.write(v["help"] as string);
-    if (!(v["help"] as string).endsWith("\n")) process.stdout.write("\n");
-    return;
-  }
-  // Raw-text shape: capture and similar handlers wrap a plain string in
-  // { text: "..." } so the JSON envelope (in --json mode) can carry it
-  // structured, while text mode writes it as-is. The text is emitted
-  // verbatim — no trailing newline is appended if the text already ends
-  // with one, to preserve the captured pane buffer's exact bytes.
-  if (v && typeof v === "object" && typeof v["text"] === "string") {
-    const text = v["text"] as string;
+  // Text mode: the value must be a `{help}` or `{text}` envelope. Both are
+  // written verbatim; no trailing newline is appended when one is already
+  // present, preserving captured buffers / tables byte-for-byte.
+  const text = textEnvelope(result.value);
+  if (text !== undefined) {
     process.stdout.write(text);
     if (!text.endsWith("\n")) process.stdout.write("\n");
     return;
   }
-  process.stdout.write(stringify(v) + "\n");
+  // Guarded fallback: reaching here means an ordinary command returned a bare
+  // object in text mode instead of `{text}`/`{help}`. That is a bug — every
+  // result-bearing handler must branch through `dual`. The exit code is set to
+  // INTERNAL by main() (see renderExitCode).
+  process.stderr.write(
+    "error [INTERNAL]: command returned an unrendered result in text mode " +
+      "(expected a {text} or {help} envelope)\n",
+  );
+}
+
+/** Exit code for a rendered result: error code on failure, INTERNAL when an ok
+ *  text-mode result lacked a `{text}`/`{help}` envelope (the guarded fallback),
+ *  0 otherwise. */
+function renderExitCode(result: Result<unknown>, json: boolean): number {
+  if (isErr(result)) return exitCodeFor(result.code);
+  if (!json && textEnvelope(result.value) === undefined) {
+    return exitCodeFor(ErrCode.INTERNAL);
+  }
+  return 0;
 }
 
 async function main(): Promise<void> {
@@ -205,11 +233,11 @@ async function main(): Promise<void> {
   render(result, json);
   // Let stdout/stderr drain naturally. Calling process.exit() immediately after
   // rendering can truncate large JSON envelopes when stdout is a pipe.
-  process.exitCode = isErr(result) ? exitCodeFor(result.code) : 0;
+  process.exitCode = renderExitCode(result, json);
 }
 
 if (import.meta.main) {
   void main();
 }
 
-export { AREAS, helpText, dispatch };
+export { AREAS, helpText, dispatch, textEnvelope, renderExitCode };

@@ -14,6 +14,7 @@ import { resolve } from "node:path";
 import { parseArgs } from "../lib/core/args.ts";
 import { CliError, ErrCode } from "../lib/core/errors.ts";
 import { ok, type Result } from "../lib/core/result.ts";
+import { dual } from "../lib/core/render.ts";
 import {
   agentWrapperPath,
   channelsDir,
@@ -39,7 +40,7 @@ Flags for 'project':
   --repo <path>   Override the repo root (defaults to cwd)
 `;
 
-export interface RuntimePaths {
+export type RuntimePaths = {
   yacoHome: string;
   projectsFile: string;
   sessionsDir: string;
@@ -47,7 +48,7 @@ export interface RuntimePaths {
   shellSessionsDir: string;
   channelsDir: string;
   agentWrapperPath: string;
-}
+};
 
 function runtimePaths(): RuntimePaths {
   return {
@@ -63,7 +64,7 @@ function runtimePaths(): RuntimePaths {
 
 export async function handlePaths(
   argv: string[],
-  _opts: { json: boolean },
+  opts: { json: boolean },
 ): Promise<Result<unknown>> {
   if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h") {
     return ok({ help: HELP });
@@ -73,11 +74,13 @@ export async function handlePaths(
   const rest = argv.slice(1);
 
   switch (sub) {
-    case "runtime":
+    case "runtime": {
       if (rest.some((t) => t === "--help" || t === "-h")) {
         return ok({ help: HELP });
       }
-      return ok(runtimePaths());
+      const data = runtimePaths();
+      return dual(opts.json, data, () => renderPaths(data));
+    }
 
     case "project": {
       if (rest.some((t) => t === "--help" || t === "-h")) {
@@ -86,12 +89,13 @@ export async function handlePaths(
       const parsed = parseArgs(rest);
       const repo = resolveRepoFlag(parsed.flags["repo"]);
       const relative = readYacoProjectPaths(repo);
-      return ok({
+      const data = {
         tasks: resolve(repo, relative.tasks),
         active: resolve(repo, relative.active),
         archive: resolve(repo, relative.archive),
         worktrees: resolve(repo, relative.worktrees),
-      });
+      };
+      return dual(opts.json, data, () => renderPaths(data));
     }
 
     default:
@@ -100,6 +104,13 @@ export async function handlePaths(
         `unknown subcommand: paths ${sub}. Run \`yaco paths --help\`.`,
       );
   }
+}
+
+/** Render a flat path map as aligned `key: value` lines. */
+function renderPaths(paths: Record<string, string>): string {
+  const keys = Object.keys(paths);
+  const width = Math.max(...keys.map((k) => k.length));
+  return keys.map((k) => `${k.padEnd(width)}  ${paths[k]}`).join("\n") + "\n";
 }
 
 /** Validate the `--repo` flag and resolve it to an absolute path.

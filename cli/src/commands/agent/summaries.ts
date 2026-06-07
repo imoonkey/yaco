@@ -32,3 +32,10 @@ export async function runSummaries(projectPath: string): Promise<SessionSummary[
 
   return resolved.filter((r): r is SessionSummary => r !== null);
 }
+
+/** Concise text rendering: one `handle  label` line per live session. */
+export function renderSummaries(summaries: SessionSummary[]): string {
+  if (summaries.length === 0) return "(no live sessions)\n";
+  const width = Math.max(...summaries.map((s) => s.handle.length));
+  return summaries.map((s) => `${s.handle.padEnd(width)}  ${s.label}`).join("\n") + "\n";
+}

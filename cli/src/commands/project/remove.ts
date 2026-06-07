@@ -11,5 +11,5 @@ import { removeProject, projectsRegistryPath } from "../../lib/core/paths/index.
 export function runRemove(name: string, opts: { json: boolean }): Result<unknown> {
   const project = removeProject(name);
   if (opts.json) return ok({ removed: true, project, projectsFile: projectsRegistryPath() });
-  return ok({ help: `removed project ${project.name}\n` });
+  return ok({ text: `removed project ${project.name}` });
 }

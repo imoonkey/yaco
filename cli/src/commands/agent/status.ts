@@ -194,9 +194,35 @@ interface StatusOptions {
   reconcile?: boolean;
 }
 
+/** Render the resolved runtime state as a labeled detail block for text mode.
+ *  Text-only enrichment: `project` is derived from `sessionPath` + the registry
+ *  here, for display, and never enters the `--json` runtime-state record. */
+function renderStatusText(resolved: RuntimeSessionState): string {
+  const project = resolveProjectForPath(resolved.sessionPath, readProjects());
+  const rows: [string, string | number | undefined][] = [
+    ["handle", resolved.handle],
+    ["status", resolved.status],
+    ["provider", resolved.provider],
+    ["pid", resolved.pid > 0 ? resolved.pid : undefined],
+    ["sessionId", resolved.sessionId],
+    ["path", resolved.sessionPath || undefined],
+    ["project", project?.name],
+    ["spawnedBy", resolved.spawnedBy],
+    ["parentSession", resolved.parentSession],
+  ];
+  const width = Math.max(...rows.map(([label]) => label.length));
+  return rows
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([label, value]) => `${(label + ":").padEnd(width + 1)}  ${value}`)
+    .join("\n");
+}
+
 /** Inspect a single session by handle. Single source for `yaco agent status
  *  <name>`. The collection view lives in `list()`. PURE read by default —
- *  `--reconcile` opts into the mutating resolver (persist corrections + GC). */
+ *  `--reconcile` opts into the mutating resolver (persist corrections + GC).
+ *
+ *  `--json` returns the resolved runtime session state verbatim (pinned by
+ *  test); text mode renders a labeled detail block. */
 export function status(name: string, jsonOrOptions?: boolean | StatusOptions): string {
   const opts: StatusOptions = typeof jsonOrOptions === "boolean"
     ? { json: jsonOrOptions }
@@ -208,7 +234,7 @@ export function status(name: string, jsonOrOptions?: boolean | StatusOptions): s
     throw new CliError(ErrCode.NOT_FOUND, `no agent session: ${name}`);
   }
   if (opts.json) return JSON.stringify(resolved);
-  return resolved.status;
+  return renderStatusText(resolved);
 }
 
 interface ListOptions {

@@ -8,9 +8,10 @@ metadata:
 # yaco — CLI Surface Router
 
 `yaco` is the dispatcher for the YACO stack. This skill is an index: it routes
-you to the detailed operation manual for whatever you need to do. Every
-automation command passes `--json` so output is the parseable `{ok,data}` /
-`{ok,error}` envelope — the detailed skills show the exact forms.
+you to the detailed operation manual for whatever you need to do. Reads and
+inspection default to readable text on stdout; pass `--json` for mutations and
+when you need to parse fields or branch on the `{ok,data}` / `{ok,error}`
+discriminator — the detailed skills show the exact forms.
 
 ## Routing
 
@@ -25,7 +26,8 @@ automation command passes `--json` so output is the parseable `{ok,data}` /
 
 ## Notes
 
-- Every automation command uses `--json`.
+- Reads and inspection print text by default; `--json` is for mutations and
+  parse/discriminator flows.
 - This skill only routes. Task schema, agent command tables, verification
   policy, and project move details live in the skill or help topic each section
   points to.

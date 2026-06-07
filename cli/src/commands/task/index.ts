@@ -7,7 +7,8 @@
  *    rm <id> [--repo <p>] [--json]
  *    archive <id> [--repo <p>] [--json]
  *    validate [--id <id>] [--repo <p>] [--json]
- *    list [--workset active|backlog|archive|all] [--repo <p>] [--json]
+ *    get <id> [--repo <p>] [--json]
+ *    list [--workset active|backlog|archive|all] [--state <s>] [--repo <p>] [--json]
  *
  *  Every subcommand goes through readYacoProjectPaths(repoRoot) for the
  *  tasks file location — fixes the long-standing update-tasks.py bug
@@ -16,7 +17,9 @@
 
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { ok, type Result } from "../../lib/core/result.ts";
+import { isState, STATES, type State } from "../../lib/core/task/index.ts";
 import { runArchive } from "./archive.ts";
+import { runGet, runListState } from "./get.ts";
 import { runLink } from "./link.ts";
 import { runList, type TaskListWorkset } from "./list.ts";
 import { runRm } from "./rm.ts";
@@ -34,7 +37,8 @@ Usage:
   yaco task rm <id>                    [--repo <p>] [--json]
   yaco task archive <id>               [--repo <p>] [--json]
   yaco task validate [--id <id>]       [--repo <p>] [--json]
-  yaco task list                       [--workset active|backlog|archive|all] [--repo <p>] [--json]
+  yaco task get <id>                   [--repo <p>] [--json]
+  yaco task list                       [--workset active|backlog|archive|all] [--state <s>] [--repo <p>] [--json]
 
 Flags:
   --data '<json>'   Inline JSON payload (mutually exclusive with --stdin/--file)
@@ -42,6 +46,7 @@ Flags:
   --file <path>     Read JSON payload from a file
   --id <id>         Narrow \`validate\` to one task + its parent chain
   --workset <w>     Filter \`list\` by workset: active, backlog, archive, or all
+  --state <s>       Filter \`list\` by state: ${STATES.join(", ")}
   --repo <path>     Override repo root (defaults to cwd)
   --json            Emit the {ok,data}/{ok,error} envelope
 `;
@@ -56,6 +61,7 @@ interface ParsedSub {
     file?: string;
     id?: string;
     workset?: TaskListWorkset;
+    state?: State;
     help?: boolean;
   };
 }
@@ -138,6 +144,15 @@ function assignFlag(out: ParsedSub, key: string, val: string | boolean): void {
       }
       out.flags.workset = val as TaskListWorkset;
       return;
+    case "state":
+      if (typeof val !== "string") {
+        throw new CliError(ErrCode.USAGE, "--state requires a value");
+      }
+      if (!isState(val)) {
+        throw new CliError(ErrCode.USAGE, `--state must be one of: ${STATES.join(", ")}`);
+      }
+      out.flags.state = val;
+      return;
     default:
       throw new CliError(ErrCode.USAGE, `unknown flag: --${key}`);
   }
@@ -207,9 +222,24 @@ export async function handleTask(
       }
       return runValidate({ json, id: parsed.flags.id, repo: parsed.flags.repo });
     }
+    case "get": {
+      const id = parsed.positional[0];
+      if (!id || parsed.positional.length !== 1) {
+        throw new CliError(ErrCode.USAGE, "yaco task get <id>");
+      }
+      return runGet(id, { json, repo: parsed.flags.repo });
+    }
     case "list": {
       if (parsed.positional.length > 0) {
         throw new CliError(ErrCode.USAGE, "yaco task list takes no positional args");
+      }
+      if (parsed.flags.state !== undefined) {
+        return runListState({
+          json,
+          repo: parsed.flags.repo,
+          workset: parsed.flags.workset,
+          state: parsed.flags.state,
+        });
       }
       return runList({ json, repo: parsed.flags.repo, workset: parsed.flags.workset });
     }

@@ -15,11 +15,14 @@ never through raw `tmux` commands.
 
 ## CLI contract for skill automation
 
-Always pass `--json` to every `yaco` invocation so output is parseable from the
-`{ok,data}` / `{ok,error}` envelope. This matters most for `yaco agent
-capture`: without `--json` it streams the raw pane buffer to stdout (for humans
-tailing logs); with `--json` it returns `{ok:true, data:{text:"..."}}`. Every
-example below uses `--json`.
+Text is the default surface for reads and inspection. `agent list`, `status`,
+`whoami`, `capture`, and the `--wait` family print human/pipe-friendly text
+straight to stdout — no `--json`, no `jq`. Pass `--json` when you need to parse
+returned fields programmatically or branch on the `{ok,data}` / `{ok,error}`
+discriminator; mutations (`start`, `send`, `rename`, `kill`, and task
+`attach`/`detach`) carry it so you can check success. `yaco agent capture` has
+two modes: text streams the clean pane buffer (default), `--json` wraps it as
+`{ok:true, data:{text:"..."}}`.
 
 ## Session model
 
@@ -43,8 +46,8 @@ example below uses `--json`.
 # Start a session (providers: claude, codex)
 yaco agent start <provider> "prompt" --name <handle> --json
 
-# Start and block until the agent finishes its first turn
-yaco agent start <provider> "prompt" --name <handle> --wait --json
+# Start and block until the agent finishes its first turn (prints the reply raw)
+yaco agent start <provider> "prompt" --name <handle> --wait
 
 # Resume a previous conversation by its sessionId
 yaco agent start claude --resume <session-id> --name <handle> --json
@@ -53,17 +56,17 @@ yaco agent start codex  --resume <session-id> --name <handle> --json
 # Send a follow-up turn to a running session
 yaco agent send <handle> "message" --json
 
-# Send and block until the agent finishes that turn
-yaco agent send <handle> "message" --wait --json
+# Send and block until the agent finishes that turn (prints the reply raw)
+yaco agent send <handle> "message" --wait
 
 # Wait for the completion of a freshly started, non-resumed session
-yaco agent wait <handle> --from-start --json
+yaco agent wait <handle> --from-start
 
 # Rename a session handle
 yaco agent rename <old-handle> <new-handle> --json
 
 # Resolve the current process to its own YACO session handle
-yaco agent whoami --json
+yaco agent whoami
 
 # Tear down a session
 yaco agent kill <handle> --json
@@ -80,8 +83,9 @@ Codex is rewritten to the `codex resume <id>` subcommand. The state file records
 ## Waiting for completion
 
 A completion wait returns the provider's **structured final message**, parsed
-from the provider's own session log — not pane text. Successful output is the
-small provider-neutral shape:
+from the provider's own session log — not pane text. In text mode the agent's
+final answer (`text`) prints raw to stdout, pipe-friendly with no prefix. With
+`--json` the successful payload is the small provider-neutral shape:
 
 ```ts
 { handle, provider, outcome: "final" | "question", text }
@@ -97,11 +101,11 @@ small provider-neutral shape:
 Pick the form by situation:
 
 - **Fresh, non-resumed worker started non-blocking** (e.g. parallel fanout):
-  start without `--wait`, then `yaco agent wait <handle> --from-start --json`.
+  start without `--wait`, then `yaco agent wait <handle> --from-start`.
 - **Interactive or sequential one-shot start**:
-  `yaco agent start <provider> "prompt" --name <handle> --wait --json`.
+  `yaco agent start <provider> "prompt" --name <handle> --wait`.
 - **Follow-up turn**:
-  `yaco agent send <handle> "message" --wait --json`.
+  `yaco agent send <handle> "message" --wait`.
 
 `start --wait` and `send --wait` resolve the correct provider-log origin
 internally (from-start for a new session, a pre-send cursor for a follow-up, the
@@ -117,14 +121,14 @@ completion comes from `start --wait`, `send --wait`, or an explicit-origin
 
 ```bash
 # List sessions for a project (defaults to the current project root)
-yaco agent list --json
-yaco agent list --path <project-path> --json
+yaco agent list
+yaco agent list --path <project-path>
 
 # List every session across all projects
-yaco agent list --all --json
+yaco agent list --all
 
 # Inspect a single session by handle
-yaco agent status <handle> --json
+yaco agent status <handle>
 ```
 
 `list` enumerates sessions; `status` takes exactly one handle and returns that
@@ -134,9 +138,9 @@ session's full metadata: `handle`, `provider`, `sessionPath`, `pid`,
 ## Diagnostic capture
 
 ```bash
-yaco agent capture <handle> --json                    # snapshot
-yaco agent capture <handle> --lines 50 --json         # last N lines
-yaco agent capture <handle> --strip-ansi false --json # keep ANSI codes
+yaco agent capture <handle>                    # snapshot
+yaco agent capture <handle> --lines 50         # last N lines
+yaco agent capture <handle> --strip-ansi false # keep ANSI codes
 ```
 
 `capture` is a diagnostic snapshot of the tmux pane — use it to eyeball what a
@@ -184,16 +188,16 @@ handle at a time.
 # Start a claude worker non-blocking, then wait for its first turn
 HANDLE=$(yaco agent start claude "Fix the failing unit tests" \
   --name fixer --json | jq -r .data.handle)
-RESULT=$(yaco agent wait "$HANDLE" --from-start --json | jq -r .data.text)
+RESULT=$(yaco agent wait "$HANDLE" --from-start)
 
 # Or do it in one blocking call
-yaco agent start claude "Fix the failing unit tests" --name fixer --wait --json
+yaco agent start claude "Fix the failing unit tests" --name fixer --wait
 
 # Send a follow-up turn and wait for its completion
-yaco agent send "$HANDLE" "Now add tests for the edge cases" --wait --json
+yaco agent send "$HANDLE" "Now add tests for the edge cases" --wait
 
 # Inspect the session and its lineage
-yaco agent status "$HANDLE" --json
+yaco agent status "$HANDLE"
 
 # Resume a previous conversation
 yaco agent start claude --resume abc123 --name fixer --json
@@ -208,4 +212,4 @@ yaco agent kill "$HANDLE" --json
   `bun run test:integration` when tmux-backed checks are needed.
 - Provider shortcuts (the one-word `yaco <provider> ...` form) are for
   interactive human typing only and MUST NOT appear in skill automation. Skills
-  always use the canonical `yaco agent start <provider> ...` with `--json`.
+  always use the canonical `yaco agent start <provider> ...` form.

@@ -1,6 +1,7 @@
 /** `yaco worktree merge` — handler that wraps mergeWorktree in a Result. */
 
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import {
   mergeWorktree,
   type MergeMode,
@@ -14,5 +15,9 @@ export interface MergeHandlerOpts {
 
 export function runMerge(slug: string, opts: MergeHandlerOpts): Result<unknown> {
   const result = mergeWorktree(slug, { mode: opts.mode, base: opts.base });
-  return ok(result);
+  return dual(opts.json, result, () =>
+    result.mode === "pr"
+      ? `opened PR for '${result.slug}': ${result.url}\n`
+      : `merged ${result.branch} into ${result.base}\n`,
+  );
 }

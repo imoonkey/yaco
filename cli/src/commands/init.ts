@@ -31,6 +31,7 @@ import { join, resolve } from "node:path";
 
 import { CliError, ErrCode } from "../lib/core/errors.ts";
 import { ok, type Result } from "../lib/core/result.ts";
+import { dual } from "../lib/core/render.ts";
 
 const HELP = `yaco init — initialize a YACO project
 
@@ -152,7 +153,7 @@ export function runInitLinks(cwd: string): InitLinksResult {
 
 export async function handleInit(
   argv: string[],
-  _opts: { json: boolean },
+  opts: { json: boolean },
 ): Promise<Result<unknown>> {
   if (argv.length === 0 || argv[0] === "--help" || argv[0] === "-h") {
     return ok({ help: HELP });
@@ -161,7 +162,7 @@ export async function handleInit(
   const rest = argv.slice(1);
 
   if (sub === "links") {
-    return handleInitLinks(rest);
+    return handleInitLinks(rest, opts.json);
   }
 
   throw new CliError(
@@ -170,12 +171,12 @@ export async function handleInit(
   );
 }
 
-function handleInitLinks(argv: string[]): Result<unknown> {
+function handleInitLinks(argv: string[], json: boolean): Result<unknown> {
   let cwd = process.cwd();
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--help" || a === "-h") return ok({ help: HELP });
-    if (a === "--json") continue;
+    if (a === "--json") { json = true; continue; }
     if (a === "--cwd" || a.startsWith("--cwd=")) {
       const v = a.startsWith("--cwd=")
         ? a.slice("--cwd=".length)
@@ -197,5 +198,8 @@ function handleInitLinks(argv: string[]): Result<unknown> {
       `yaco init links: unexpected argument '${a}'`,
     );
   }
-  return ok(runInitLinks(cwd));
+  const result = runInitLinks(cwd);
+  return dual(json, result, () =>
+    `linked ${result.links.length} path${result.links.length === 1 ? "" : "s"} in ${result.cwd}\n`,
+  );
 }

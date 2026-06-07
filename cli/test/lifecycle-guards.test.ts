@@ -531,6 +531,56 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     expect(obj.handle).toBe(handle);
     expect(obj.status).toBe("idle");
   });
+
+  // render-foundation: the text sweep must not silently shift the status JSON
+  // contract. Pin the resolved runtime-state fields a consumer relies on.
+  it("`status --json` pins the resolved runtime-state fields", () => {
+    const handle = `${TEST_PREFIX}-status-json-pin`;
+    trackHandle(handle);
+    writeState(makeState({
+      handle,
+      provider: "claude",
+      sessionPath: "/tmp/multmux-test-guards",
+      pid: 12345,
+      sessionId: "test-session-id",
+      status: "idle",
+      spawnedBy: "agent",
+      parentSession: "guard-parent",
+    }));
+    mockConfig.checkSessionAlive = [true];
+
+    const obj = JSON.parse(status(handle, { json: true }));
+    expect(obj).toMatchObject({
+      handle,
+      provider: "claude",
+      sessionPath: "/tmp/multmux-test-guards",
+      pid: 12345,
+      sessionId: "test-session-id",
+      status: "idle",
+      spawnedBy: "agent",
+      parentSession: "guard-parent",
+    });
+    expect(typeof obj.createdAt).toBe("string");
+  });
+
+  // render-foundation: text mode is a multi-line labeled detail block, not the
+  // one-word status it used to print.
+  it("`status` text mode renders a multi-line labeled block", () => {
+    const handle = `${TEST_PREFIX}-status-text-block`;
+    trackHandle(handle);
+    writeState(makeState({ handle, status: "idle", sessionId: "test-session-id" }));
+    mockConfig.checkSessionAlive = [true];
+
+    const text = status(handle);
+    expect(text.split("\n").length).toBeGreaterThan(1);
+    expect(text).not.toBe("idle");
+    expect(text).toContain(`handle:`);
+    expect(text).toContain(`status:`);
+    expect(text).toContain(`provider:`);
+    expect(text).toContain(`sessionId:`);
+    expect(text).toContain(`idle`);
+    expect(text).toContain(handle);
+  });
 });
 
 // ===========================================================================

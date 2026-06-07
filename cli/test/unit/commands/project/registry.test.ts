@@ -90,6 +90,22 @@ describe("yaco project list", () => {
       expect(v.projects).toEqual([{ name: "alpha", path }]);
     }
   });
+
+  // render-foundation: text mode re-homed from `{help}` to `{text}`, byte output
+  // unchanged. Pin the exact rendered table.
+  it("text mode returns a `{text}` envelope with the byte-identical table", () => {
+    const fix = fixture();
+    const path = fix.dir("alpha");
+    handleProject(["add", "alpha", path], { json: true });
+    const projectsFile = join(fix.yacoHome, "projects.json");
+    const r = handleProject(["list"], { json: false });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value).toEqual({
+        text: `projects (${projectsFile}):\n  alpha  ${path}\n`,
+      });
+    }
+  });
 });
 
 describe("yaco project add", () => {

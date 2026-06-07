@@ -43,8 +43,9 @@ describe("dispatch", () => {
     // Pre yc-install-doctor, install/doctor were stub handlers returning
     // {area, status: "stub"}. Both are now live; routing is exercised by
     // confirming the dispatcher hands `paths` to its live handler whose
-    // output is the runtime path map.
-    const { result, area } = await dispatch(["paths", "runtime"]);
+    // --json output is the runtime path map. (Text mode now returns a
+    // `{text}` envelope per the text-render convention, so we assert on JSON.)
+    const { result, area } = await dispatch(["paths", "runtime", "--json"]);
     expect(area).toBe("paths");
     expect(isOk(result)).toBe(true);
     if (isOk(result)) {

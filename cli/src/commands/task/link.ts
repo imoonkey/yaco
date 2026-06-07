@@ -6,7 +6,8 @@
  *  detaches one handle. Idempotent; the last detach drops the `agents` key.
  */
 
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import {
   mutateTaskAgentLink,
   type TaskAgentLinkOp,
@@ -31,5 +32,12 @@ export async function runLink(
     sessionHandle: handle,
     op,
   });
-  return ok({ ...result, op, tasksPath: paths.tasksPath });
+  return dual(
+    opts.json,
+    { ...result, op, tasksPath: paths.tasksPath },
+    () =>
+      op === "attach"
+        ? `attached '${handle}' to task '${id}'\n`
+        : `detached '${handle}' from task '${id}'\n`,
+  );
 }

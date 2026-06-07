@@ -15,5 +15,5 @@ export function runAdd(
 ): Result<unknown> {
   const project = addProject({ name, path });
   if (opts.json) return ok({ project, projectsFile: projectsRegistryPath() });
-  return ok({ help: `added project ${project.name} -> ${project.path}\n` });
+  return ok({ text: `added project ${project.name} -> ${project.path}` });
 }

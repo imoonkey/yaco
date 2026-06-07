@@ -1,7 +1,8 @@
 /** `yaco task archive <id>` — mark a terminal subtree as archived.
  */
 
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import {
   archiveTask,
   loadTaskStore,
@@ -33,9 +34,9 @@ export async function runArchive(
     { command: `yaco task archive ${id}` },
   );
 
-  if (!opts.json) {
-    process.stderr.write(`archived ${archivedCount} tasks\n`);
-  }
-
-  return ok({ archivedCount, workset: "archive" });
+  return dual(
+    opts.json,
+    { archivedCount, workset: "archive" },
+    () => `archived ${archivedCount} task${archivedCount === 1 ? "" : "s"}\n`,
+  );
 }

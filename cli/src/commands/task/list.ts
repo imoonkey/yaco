@@ -4,7 +4,8 @@
  *  the raw graph so consumers can render whatever shape they need.
  */
 
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import {
   DEFAULT_WORKSET,
@@ -29,17 +30,20 @@ export function runList(opts: ListOpts): Result<unknown> {
   const workset = opts.workset ?? DEFAULT_WORKSET;
   const tasks = filterTasksByWorkset(store.tasks, workset);
 
-  if (opts.json) return ok({ tasks, tasksPath: paths.tasksPath, tasksFile: store.defaultFile });
+  const data = { tasks, tasksPath: paths.tasksPath, tasksFile: store.defaultFile };
+  return dual(opts.json, data, () => renderText(tasks, workset, paths.tasksPath));
+}
 
+function renderText(tasks: TaskGraph, workset: TaskListWorkset, tasksPath: string): string {
   const ids = Object.keys(tasks);
-  if (ids.length === 0) return ok({ help: `(no ${workset} tasks in ${paths.tasksPath})\n` });
+  if (ids.length === 0) return `(no ${workset} tasks in ${tasksPath})\n`;
 
   const widest = ids.reduce((m, id) => Math.max(m, id.length), 0);
   const lines = ids.map((id) => {
     const t = tasks[id]!;
     return `${id.padEnd(widest)}  ${t.state.padEnd(9)}  ${t.title ?? ""}`;
   });
-  return ok({ help: lines.join("\n") + "\n" });
+  return lines.join("\n") + "\n";
 }
 
 function filterTasksByWorkset(tasks: TaskGraph, workset: TaskListWorkset): TaskGraph {

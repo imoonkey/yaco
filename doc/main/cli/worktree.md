@@ -1,6 +1,6 @@
 # Worktree Subcommand
 
-> Last updated: 2026-06-04 (yc-worktree-ts)
+> Last updated: 2026-06-07 (yaco-read-surface: slug↔path↔branch convention export; prior yc-worktree-ts)
 
 The `worktree` area provisions, merges, and cleans up git worktrees keyed
 by task slug. It is a pure-TypeScript port of the three legacy shell helpers
@@ -17,6 +17,7 @@ strings, no command-injection surface**.
 
 | File | Surface | Notes |
 |------|---------|-------|
+| `convention.ts` | `worktreePath(repoRoot, slug)`, `worktreeBranch(slug)` | Single source of the slug↔path↔branch convention (`<repoRoot>/.worktrees/<slug>`, `task/<slug>`). Exported via `@yaco/cli/core/worktree` and imported by `app/server`. See [convention export](#convention-export). |
 | `slug.ts` | `validateSlug` | Lowercase alphanumeric + hyphens, no leading/trailing hyphen. Throws `CliError(USAGE)`. |
 | `git.ts` | `runGit`, `resolveRepoRoot`, `branchExists`, `isDirty`, `isWorktreeRegistered`, `GitResult` | Thin spawn wrapper. Repo root resolved via `git rev-parse --path-format=absolute --git-common-dir` so linked worktrees still target the primary checkout. |
 | `pr.ts` | `createPullRequest` | `gh pr create --fill` with captured stdio. URL extracted by regex from gh's stdout (or stderr fallback). |
@@ -44,6 +45,36 @@ yaco worktree cleanup <slug> [--force]                           [--json]
   - `create`: `--base`
   - `merge`: `--base`, `--mode`
   - `cleanup`: `--force`
+
+There is **no** `yaco worktree list` / `status` command. A worktree is a git
+object, so `git worktree list` and `git -C .worktrees/<slug> status` are its
+canonical readers; `worktree merge` already guards a dirty worktree, so agents
+do not need a status verb. `worktree --help` and the `/yaco` skills point ad-hoc
+inspection at those git commands.
+
+## Convention export
+
+The slug↔path↔branch templates live in exactly one place — `convention.ts`:
+
+```ts
+export const worktreePath = (repoRoot: string, slug: string): string =>
+  join(repoRoot, ".worktrees", slug);
+export const worktreeBranch = (slug: string): string => `task/${slug}`;
+```
+
+Both are re-exported from the `cli/src/lib/core/worktree/index.ts` barrel and
+published over the workspace exports map as `@yaco/cli/core/worktree`
+(`cli/package.json#exports`). `create.ts` uses them so the scheme is never
+re-spelled inside the CLI.
+
+`app/server/src/lib/worktree.ts` imports `worktreePath` / `worktreeBranch` from
+`@yaco/cli/core/worktree` instead of hardcoding `.worktrees/<slug>` and
+`task/<slug>`. Previously the app re-spelled both templates, so a YACO scheme
+change would have broken the app's worktree-status reader silently. The app's
+git-status aggregation (dirty / ahead-behind, async + batched, safe-defaulting
+on git failure) is generic git and stays in the app — only the convention is
+shared; `getWorktreeStatus(es)`'s `{active, dirty, branch, ahead, behind}` shape
+and `app/ui` are unchanged.
 
 ### `create <slug>`
 

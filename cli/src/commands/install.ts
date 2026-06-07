@@ -33,6 +33,7 @@ import { spawnSync } from "node:child_process";
 
 import { CliError, ErrCode } from "../lib/core/errors.ts";
 import { ok, type Result } from "../lib/core/result.ts";
+import { dual } from "../lib/core/render.ts";
 import {
   agentWrapperPath,
   ensureYacoHome,
@@ -475,5 +476,17 @@ export async function handleInstall(
   const opts = parseOpts(argv);
   opts.json = opts.json || outer.json;
   const report = runInstall(opts);
-  return ok(report);
+  return dual(opts.json, report, () => renderInstall(report));
+}
+
+/** Concise text confirmation: the (dry-run) plan header plus one line per
+ *  action, then the doctor summary when doctor ran. */
+function renderInstall(report: InstallReport): string {
+  const verb = report.dryRun ? "would install" : "installed";
+  const lines = [`${verb} yaco (repo: ${report.repoRoot})`];
+  for (const a of report.actions) lines.push(`  ${a}`);
+  if (report.doctor) {
+    lines.push(`  doctor: ${report.doctor.summary.pass} pass, ${report.doctor.summary.fail} fail`);
+  }
+  return lines.join("\n") + "\n";
 }

@@ -4,7 +4,8 @@
  *  registered set and the on-disk registry location in one envelope.
  */
 
-import { ok, type Result } from "../../lib/core/result.ts";
+import { type Result } from "../../lib/core/result.ts";
+import { dual } from "../../lib/core/render.ts";
 import {
   projectsRegistryPath,
   readProjects,
@@ -14,8 +15,7 @@ import {
 export function runList(opts: { json: boolean }): Result<unknown> {
   const projects = readProjects();
   const projectsFile = projectsRegistryPath();
-  if (opts.json) return ok({ projects, projectsFile });
-  return ok({ help: renderText(projects, projectsFile) });
+  return dual(opts.json, { projects, projectsFile }, () => renderText(projects, projectsFile));
 }
 
 function renderText(projects: Project[], projectsFile: string): string {
