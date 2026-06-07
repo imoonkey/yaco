@@ -133,7 +133,7 @@ mock.module("../src/lib/core/agent/session-id.ts", () => ({
 // ---------------------------------------------------------------------------
 
 import { send } from "../src/commands/agent/send.ts";
-import { reconcileSession, resolveSession } from "../src/commands/agent/status.ts";
+import { list, reconcileSession, resolveSession, status } from "../src/commands/agent/status.ts";
 import { start } from "../src/commands/agent/start.ts";
 import {
   readState,
@@ -479,6 +479,57 @@ describe("reconcileSession GC is pid-guarded", () => {
     const result = reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(readState(handle)).not.toBeNull();
+  });
+});
+
+// ===========================================================================
+// Command surface: `list` / `status` are pure reads; `--reconcile` gates all
+// mutation (GC) and stays socket-safe via the live-pid veto.
+// ===========================================================================
+
+describe("list/status command surface — read vs --reconcile mutation", () => {
+  it("default `list` filters a confirmed-dead session out of the view WITHOUT deleting it", () => {
+    const handle = `${TEST_PREFIX}-list-pure-dead`;
+    trackHandle(handle);
+    writeState(makeState({ handle, pid: 0 })); // pid dead
+    mockConfig.checkSessionAlive = [false];     // tmux gone → confirmed dead
+
+    const rows = JSON.parse(list({ all: true, json: true }));
+    expect(rows.find((r: any) => r.name === handle)).toBeUndefined(); // hidden
+    expect(readState(handle)).not.toBeNull();                          // not GC'd
+  });
+
+  it("`list --reconcile` GCs a confirmed-dead session (tmux gone AND pid dead)", () => {
+    const handle = `${TEST_PREFIX}-list-recon-dead`;
+    trackHandle(handle);
+    writeState(makeState({ handle, pid: 0 }));
+    mockConfig.checkSessionAlive = [false];
+
+    JSON.parse(list({ all: true, reconcile: true, json: true }));
+    expect(readState(handle)).toBeNull(); // GC'd
+  });
+
+  it("`list --reconcile` preserves a live-pid session even when tmux reports it gone (wrong socket)", () => {
+    const handle = `${TEST_PREFIX}-list-recon-livepid`;
+    trackHandle(handle);
+    // The running test process is a guaranteed-live pid.
+    writeState(makeState({ handle, pid: process.pid, status: "idle" }));
+    mockConfig.checkSessionAlive = [false]; // wrong-socket: tmux says gone
+
+    const rows = JSON.parse(list({ all: true, reconcile: true, json: true }));
+    expect(readState(handle)).not.toBeNull();                        // live pid vetoes GC
+    expect(rows.find((r: any) => r.name === handle)).toBeDefined();  // still listed
+  });
+
+  it("`status --reconcile --json` returns the resolved session as a parseable object", () => {
+    const handle = `${TEST_PREFIX}-status-recon`;
+    trackHandle(handle);
+    writeState(makeState({ handle, status: "idle" }));
+    mockConfig.checkSessionAlive = [true]; // alive
+
+    const obj = JSON.parse(status(handle, { json: true, reconcile: true }));
+    expect(obj.handle).toBe(handle);
+    expect(obj.status).toBe("idle");
   });
 });
 

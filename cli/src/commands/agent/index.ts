@@ -396,7 +396,7 @@ export async function handleAgent(
       if (!name) {
         throw new CliError(
           ErrCode.USAGE,
-          "yaco agent status <name> [--json]. Use `yaco agent list` to enumerate sessions.",
+          "yaco agent status <name> [--reconcile] [--json]. Use `yaco agent list` to enumerate sessions.",
         );
       }
       const json = parsed.options.json || opts.json;
