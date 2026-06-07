@@ -19,7 +19,7 @@ class PreviewErrorBoundary extends Component<{ children: ReactNode; fileName: st
   render() {
     if (this.state.error) {
       return (
-        <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+        <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text-secondary)' }}>
           <span className="text-[12px]">Unable to preview {this.props.fileName}</span>
           <span className="text-[11px]" style={{ opacity: 0.7 }}>{this.state.error.message}</span>
         </div>
@@ -595,7 +595,7 @@ export function WorkspaceEditorArea({
       ) : isDiffTab ? (
         !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
         : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} compareContext={compareContext} />
-        : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load diff</div>
+        : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-secondary)' }}>Unable to load diff</div>
       ) : activeTab ? (
         activeFilePath && isImageFile(activeFilePath) ? (
           <PreviewErrorBoundary key={activeFilePath} fileName={activeFilePath.split('/').pop() ?? ''}>
@@ -625,8 +625,8 @@ export function WorkspaceEditorArea({
           ) : (
             editorElement
           )
-        ) : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>Unable to load file</div>
-      ) : <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+        ) : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-secondary)' }}>Unable to load file</div>
+      ) : <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text-secondary)' }}>
           <span className="text-[12px]">No file open</span>
           <span className="text-[11px]" style={{ opacity: 0.7 }}>
             Press <kbd className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-muted) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--sol-muted) 20%, transparent)' }}>{navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl'}+P</kbd> to open a file

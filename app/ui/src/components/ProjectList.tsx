@@ -167,7 +167,7 @@ export function ProjectList({
         )
       })}
       {projects.length === 0 && (
-        <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>
+        <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text-secondary)' }}>
           No projects
         </div>
       )}

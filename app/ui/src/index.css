@@ -90,6 +90,7 @@
   --sol-text: #586e75;
   --sol-header-bg: #d9d2c2;
   --sol-text-dim: #657b83;
+  --sol-text-secondary: #586e75;
   --sol-text-dark: #073642;
   --sol-text-brown: #584c27;
   --sol-muted: #93a1a1;
@@ -156,6 +157,7 @@
   --sol-text: #839496;
   --sol-header-bg: #004052;
   --sol-text-dim: #657b83;
+  --sol-text-secondary: #93a1a1;
   --sol-text-dark: #93a1a1;
   --sol-text-brown: #93a1a1;
   --sol-muted: #586e75;
@@ -214,6 +216,7 @@
   --color-sol-border: var(--sol-border);
   --color-sol-text: var(--sol-text);
   --color-sol-text-dim: var(--sol-text-dim);
+  --color-sol-text-secondary: var(--sol-text-secondary);
   --color-sol-text-dark: var(--sol-text-dark);
   --color-sol-text-brown: var(--sol-text-brown);
   --color-sol-muted: var(--sol-muted);

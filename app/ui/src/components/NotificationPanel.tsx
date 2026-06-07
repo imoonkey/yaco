@@ -86,7 +86,7 @@ export function NotificationPanel({
 
       <div className="flex-1 overflow-y-auto">
         {notifications.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--sol-muted)' }}>
+          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--sol-text-secondary)' }}>
             No notifications
           </div>
         ) : (

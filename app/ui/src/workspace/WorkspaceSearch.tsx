@@ -108,7 +108,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
             onHover={() => setSelectedIdx(i)}
           />
         ))}
-        {!loading && displayItems.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-muted)' }}>{isEmptyQuery ? 'No recent files' : 'No files found'}</div>}
+        {!loading && displayItems.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-text-secondary)' }}>{isEmptyQuery ? 'No recent files' : 'No files found'}</div>}
       </div>
     </DialogShell>
   )

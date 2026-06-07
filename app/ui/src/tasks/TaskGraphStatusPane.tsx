@@ -35,7 +35,7 @@ function StatePane({
         <div className="text-[14px] font-bold" style={{ color: tone }}>{title}</div>
         <div className="mt-1.5 text-[12px]" style={{ color: 'var(--sol-text)' }}>{message}</div>
         {actions && <div className="mt-3 flex flex-wrap justify-center gap-2">{actions}</div>}
-        {detail && <div className="mt-2 text-[11px]" style={{ color: 'var(--sol-muted)' }}>{detail}</div>}
+        {detail && <div className="mt-2 text-[11px]" style={{ color: 'var(--sol-text-secondary)' }}>{detail}</div>}
       </div>
     </div>
   )
@@ -60,7 +60,7 @@ export function TaskGraphStatusPane({
 }) {
   if (status === 'loading') {
     return (
-      <div className="flex items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+      <div className="flex items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text-secondary)' }}>
         <div className="loading-spinner" />
         <span className="text-[12px]">Loading task graph...</span>
       </div>
@@ -104,7 +104,7 @@ export function TaskGraphStatusPane({
 
   // empty
   return (
-    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
+    <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text-secondary)' }}>
       <span className="text-[12px]">No tasks defined</span>
     </div>
   )
