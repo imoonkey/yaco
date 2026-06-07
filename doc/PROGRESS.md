@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-07: agent state-transition fixes — SessionStart hook + socket-safe GC
+
+**What changed:**
+- **SessionStart hook now fires.** The hook installer set `matcher: "yaco-agent-hook"` on lifecycle hook groups. Claude Code compiles any matcher with a non-word char as a regex and tests it against the SessionStart *source* (`startup|resume|clear|compact`), so the label matched nothing and the hook silently never ran — sessions lingered in `starting` until the slower screen-scrape fallback caught up (and `processing`→`idle` worked only because `UserPromptSubmit`/`Stop` ignore the matcher). Lifecycle hook groups now carry **no** matcher (absent = match all); yaco ownership is keyed off the hook command (`agent hook-event <Event>`). The legacy marker is still recognized so old installs migrate in place.
+- **`yaco agent list` GC is socket-safe.** GC deleted state files for any session where `tmux has-session` returned not-found. tmux is socket-scoped and yaco pins no socket, so a `list` whose `$TMUX` pointed at the wrong server (the app server's 60s `session-reconciler` launched from a Warp shell) saw every live session as dead and wiped **all** state files — emptying the CLI list and the web view while 31 agents were still running. Added `isProcessAlive()` (`process.kill(pid,0)`, socket-independent) and `confirmedDead()`; deletion now requires tmux-gone **and** PID-dead. Wired into `reconcile()` and `list()`.
+- Sandboxed `YACO_HOME` in the `agent-sync` / `lifecycle-guards` integration suites so real-agent tests no longer write into the live `~/.yaco/sessions` the web app reads.
+
+**Why:**
+- Both bugs presented as "agent status is wrong/delayed" for Claude and Codex. The matcher bug is a Claude-hook-semantics pitfall (a label is not a source filter); the GC bug is a latent destructive side effect of a read-shaped command that only became active once the app polled `list` every 60s and a second tmux socket (Warp) appeared. Process liveness is the authoritative, socket-independent signal.
+
+**Key files:** `cli/src/lib/core/agent/lifecycle.ts`, `cli/src/commands/agent/status.ts`, `cli/src/lib/core/agent/tmux.ts`, `cli/test/{hooks-install,unit/agent/gc-liveness,unit/commands/install,integration/agent-lifecycle,integration/agent-sync,integration/lifecycle-guards}.ts`, `doc/main/cli/{install,state-contract}.md`
+**Verification:** `bun --cwd cli test` → 755 pass, 0 fail; 6 real-session lifecycle integration tests pass (Claude `start→idle→processing→idle` in ~3s). Reproduced the GC bug and confirmed the fix: a `list` on the wrong (Warp) socket left state files 31→31 (was → 0). Restored the 31 live sessions' state files from tmux; `yaco agent list` and the web now show them.
+**Commit:** a986cf0..c015b9a
+**Next:** Consider making `list` fully read-only (move dead-tombstone GC to a dedicated background reconcile) and/or pinning a fixed tmux socket so create + has-session always agree.
+**Blockers:** None.
+
 ## 2026-06-07: yaco skills + provider-log agent completion wait
 
 **What changed:**

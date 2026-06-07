@@ -96,11 +96,23 @@ no install.ts edit.
 
 | Provider | Config | Hooks merged |
 |----------|--------|--------------|
-| Claude | `~/.claude/settings.json` | 12 events (SessionStart, UserPromptSubmit, Stop, StopFailure, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, Notification, PreCompact, PostCompact, SessionEnd). Tool-scoped events use matcher `"*"`; others use marker `yaco-agent-hook`. SessionEnd uses `timeout: 1`. |
+| Claude | `~/.claude/settings.json` | 12 events (SessionStart, UserPromptSubmit, Stop, StopFailure, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, Notification, PreCompact, PostCompact, SessionEnd). Tool-scoped events use matcher `"*"`; lifecycle events (SessionStart, UserPromptSubmit, Stop, …) carry **no** matcher. SessionEnd uses `timeout: 1`. |
 | Codex | `~/.codex/hooks.json` | 8 events (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, PreCompact, PostCompact, Stop). All `async: false` (Codex doesn't support async hooks). |
 
 Existing yaco entries are overwritten in place when their command drifts;
 unrelated user entries are preserved verbatim, in their original position.
+yaco ownership is keyed off the hook **command** (`agent hook-event <Event>`),
+never the matcher (the legacy `yaco-agent-hook` marker is still recognized so
+older installs migrate in place).
+
+> **Matcher pitfall (why lifecycle events carry no matcher).** Claude Code
+> evaluates the `SessionStart` matcher against the start *source*
+> (`startup|resume|clear|compact`), and any value with a non-word char is
+> compiled as a regex. A label like `yaco-agent-hook` therefore matches no
+> source and silently disables the hook — sessions then linger in `starting`
+> until the slower screen-scrape fallback fires. Lifecycle groups are emitted
+> with the matcher omitted (= match all); `UserPromptSubmit`/`Stop` ignore the
+> matcher entirely.
 
 ## Agent-wrapper write
 

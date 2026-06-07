@@ -83,6 +83,7 @@ The authoritative reconciled view. This is the **single source of runtime truth*
 
 - Collection view of live sessions. Default scope is the cwd subtree; `--all` spans every project; `--path <path>` scopes to an explicit subtree. `--all` and `--path` are mutually exclusive — passing both exits non-zero (`USAGE`).
 - Runs `reconcile()` per session: liveness checks, staleness fallback, capture fallback, metadata backfill. Owns GC: deletes state files for confirmed-dead sessions.
+- **GC is socket-safe.** `tmux has-session` is scoped to one tmux socket and yaco pins none, so a `list` whose `$TMUX` points at the wrong tmux server would see every live session as "dead" and wipe all state. Deletion is therefore gated on `confirmedDead()` = tmux reports gone **AND** the recorded PID is not running (`isProcessAlive`, a socket-independent `process.kill(pid, 0)` probe). A live process is never GC'd, regardless of which socket the caller can see.
 - Returns an array of `AgentSessionRow` (not raw state): each row adds the resolved `project`/`projectPath` (longest-prefix match against the project registry; basename fallback for unregistered paths) to the session fields, and passes through valid `spawnedBy`/`parentSession`. Text mode renders a `name  status  project` table.
 - Projection is the pure `toSessionRow` helper exported from `@yaco/cli/core/agent` and shared with the app server's hot state-file reads. `reconcile()` is **not** exported — it stays CLI-only so the app never pulls liveness/GC into its hot read path.
 
@@ -119,7 +120,7 @@ State files are kept in sync with runtime status through two mechanisms:
 
 `reconcile()` resolves the current runtime status through a multi-step pipeline:
 
-1. **Liveness check** — is the tmux session alive?
+1. **Liveness check** — is the tmux session alive? Deletion only happens when `confirmedDead()` holds (tmux says gone **and** the recorded PID is not running); a wrong-socket tmux reading alone never deletes a live session.
 2. **State file read** — get persisted status
 3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 3min)
 4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators
