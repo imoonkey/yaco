@@ -27,7 +27,7 @@ You manage the project's task graph — from top-level milestones down to leaf t
 ```json
 {
   "workspace-state": {
-    "title": "修复 editor 刷新/同步/状态持久化",
+    "title": "Fix editor refresh, sync, and state persistence",
     "description": "Extract editor state into a dedicated store module with localStorage persistence. Hook into window beforeunload to save and onload to restore.",
     "parent": null,
     "depends": [],
