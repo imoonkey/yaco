@@ -133,7 +133,7 @@ mock.module("../src/lib/core/agent/session-id.ts", () => ({
 // ---------------------------------------------------------------------------
 
 import { send } from "../src/commands/agent/send.ts";
-import { reconcile } from "../src/commands/agent/status.ts";
+import { reconcileSession, resolveSession } from "../src/commands/agent/status.ts";
 import { start } from "../src/commands/agent/start.ts";
 import {
   readState,
@@ -196,7 +196,7 @@ describe("G8: reconcile stale-detection consistency", () => {
     trackHandle(handle);
     writeState(makeState({ handle, status: "processing" }));
 
-    const result = reconcile(handle);
+    const result = reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("processing");
   });
@@ -212,7 +212,7 @@ describe("G8: reconcile stale-detection consistency", () => {
 
     mockConfig.captureOutput = "❯ "; // idle prompt
 
-    const result = reconcile(handle);
+    const result = reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("idle");
   });
@@ -227,7 +227,7 @@ describe("G8: reconcile stale-detection consistency", () => {
 
     mockConfig.captureOutput = "Thinking..."; // busy indicator
 
-    const result = reconcile(handle);
+    const result = reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("processing");
   });
@@ -239,7 +239,7 @@ describe("G8: reconcile stale-detection consistency", () => {
 
     mockConfig.checkSessionAlive = [false];
 
-    const result = reconcile(handle);
+    const result = reconcileSession(handle);
     expect(result).toBeNull();
     expect(readState(handle)).toBeNull();
   });
@@ -376,7 +376,7 @@ describe("reconcile capture status is runtime-only", () => {
 
     mockConfig.captureOutput = "❯ "; // idle prompt
 
-    const result = reconcile(handle);
+    const result = reconcileSession(handle);
     expect(result).not.toBeNull();
     expect(result!.status).toBe("idle"); // runtime view shows idle
 
@@ -384,6 +384,101 @@ describe("reconcile capture status is runtime-only", () => {
     const persisted = readState(handle);
     expect(persisted).not.toBeNull();
     expect(persisted!.status).toBe("idle");
+  });
+});
+
+// ===========================================================================
+// resolveSession is a PURE READ — refines display status without persisting,
+// and never deletes a confirmed-dead session's state file.
+// ===========================================================================
+
+describe("resolveSession is a pure read", () => {
+  it("refines stale status for display but does NOT persist the correction", () => {
+    const handle = `${TEST_PREFIX}-resolve-pure`;
+    trackHandle(handle);
+    writeState(makeState({ handle, status: "processing" }));
+
+    // Backdate mtime to trigger the stale → capture fallback.
+    const past = new Date(Date.now() - 35 * 60 * 1000);
+    utimesSync(statePath(handle), past, past);
+
+    mockConfig.captureOutput = "❯ "; // idle prompt
+
+    const result = resolveSession(handle);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("idle"); // runtime view shows idle
+
+    // Disk must be UNTOUCHED — the pure read never persists.
+    expect(readState(handle)?.status).toBe("processing");
+  });
+
+  it("filters a confirmed-dead session (null) without deleting its state file", () => {
+    const handle = `${TEST_PREFIX}-resolve-dead`;
+    trackHandle(handle);
+    // pid 0 → isProcessAlive false, so tmux-gone makes it confirmed dead.
+    writeState(makeState({ handle, pid: 0 }));
+
+    mockConfig.checkSessionAlive = [false];
+
+    const result = resolveSession(handle);
+    expect(result).toBeNull();
+    // Pure read does NOT GC — the state file must still exist.
+    expect(readState(handle)).not.toBeNull();
+  });
+
+  it("never reports dead on an uncertain liveness reading, even pid-less", () => {
+    const handle = `${TEST_PREFIX}-resolve-uncertain`;
+    trackHandle(handle);
+    writeState(makeState({ handle, pid: 0, status: "idle" }));
+
+    mockConfig.checkSessionAlive = [null]; // tmux timeout / wrong socket
+
+    const result = resolveSession(handle);
+    expect(result).not.toBeNull(); // uncertain → keep the session
+    expect(readState(handle)).not.toBeNull();
+  });
+});
+
+// ===========================================================================
+// reconcileSession GCs only a CONFIRMED-dead session (tmux gone AND pid dead).
+// ===========================================================================
+
+describe("reconcileSession GC is pid-guarded", () => {
+  it("deletes the state file when tmux is gone AND the pid is dead", () => {
+    const handle = `${TEST_PREFIX}-recon-dead`;
+    trackHandle(handle);
+    writeState(makeState({ handle, pid: 0 }));
+
+    mockConfig.checkSessionAlive = [false];
+
+    const result = reconcileSession(handle);
+    expect(result).toBeNull();
+    expect(readState(handle)).toBeNull(); // GC'd
+  });
+
+  it("does NOT delete when tmux is gone but the recorded pid is alive", () => {
+    const handle = `${TEST_PREFIX}-recon-live-pid`;
+    trackHandle(handle);
+    // The running test process is a guaranteed-live pid.
+    writeState(makeState({ handle, pid: process.pid, status: "idle" }));
+
+    mockConfig.checkSessionAlive = [false]; // wrong-socket: tmux says gone
+
+    const result = reconcileSession(handle);
+    expect(result).not.toBeNull(); // live pid vetoes deletion
+    expect(readState(handle)).not.toBeNull();
+  });
+
+  it("does NOT delete on an uncertain (null) liveness reading", () => {
+    const handle = `${TEST_PREFIX}-recon-uncertain`;
+    trackHandle(handle);
+    writeState(makeState({ handle, pid: 0, status: "idle" }));
+
+    mockConfig.checkSessionAlive = [null];
+
+    const result = reconcileSession(handle);
+    expect(result).not.toBeNull();
+    expect(readState(handle)).not.toBeNull();
   });
 });
 
@@ -472,7 +567,7 @@ describe("Codex sessionId resolution strategy", () => {
     mockConfig.agentPid = 43100;
     mockConfig.resolveSessionIdResult = { sessionId: "codex-thread-xyz" };
 
-    const resolved = reconcile(handle);
+    const resolved = reconcileSession(handle);
 
     // Backfill consults the adapter resolver and persists the real thread id.
     expect(resolved).not.toBeNull();

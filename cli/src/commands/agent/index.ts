@@ -4,8 +4,8 @@
  *    start <provider> [yaco-flags] [-- ...passthrough]    Start a session
  *    send <name> "message" | --stdin                      Send a message
  *    capture <name>                                       Capture pane buffer
- *    list [--all] [--path <p>]                             List live sessions
- *    status <name>                                         Inspect one session
+ *    list [--all] [--path <p>] [--reconcile]              List live sessions
+ *    status <name> [--reconcile]                          Inspect one session
  *    whoami                                                Print current agent handle
  *    kill <name> | --all                                  Kill a session
  *    rename <old> <new>                                   Rename an idle session
@@ -50,8 +50,8 @@ Usage:
   yaco agent send <name> --stdin                (read message from stdin)
   yaco agent wait <name> (--from-start | --cursor <token> --offset <bytes>) [--timeout-ms <ms>] [--json]
   yaco agent capture <name> [--lines <n>] [--strip-ansi true|false]
-  yaco agent list [--all] [--path <p>] [--json]
-  yaco agent status <name> [--json]
+  yaco agent list [--all] [--path <p>] [--reconcile] [--json]
+  yaco agent status <name> [--reconcile] [--json]
   yaco agent whoami [--json]
   yaco agent history --path <project-path> [--json]
   yaco agent summaries --path <project-path> [--json]
@@ -70,6 +70,10 @@ In \`start\`, everything after \`--\` is forwarded verbatim to the provider CLI
 
 Use top-level shortcuts \`yaco claude ...\` / \`yaco codex ...\` to start a
 session in one step. \`yaco agent <provider>\` (without 'start') is rejected.
+
+\`list\` and \`status\` are pure reads. \`--reconcile\` opts into the mutating
+pass: GC confirmed-dead tombstones and persist stale-status corrections (the
+app server's 60s loop is the intended reconcile caller).
 `;
 
 interface ParsedSubArgs {
@@ -85,6 +89,7 @@ interface ParsedSubArgs {
     json: boolean;
     path?: string;
     stdin: boolean;
+    reconcile: boolean;
   };
 }
 
@@ -95,6 +100,7 @@ function emptyOpts(): ParsedSubArgs["options"] {
     stripAnsi: true,
     json: false,
     stdin: false,
+    reconcile: false,
   };
 }
 
@@ -122,6 +128,8 @@ function parseSubArgs(argv: string[]): ParsedSubArgs {
       parsed.options.json = true;
     } else if (arg === "--stdin") {
       parsed.options.stdin = true;
+    } else if (arg === "--reconcile") {
+      parsed.options.reconcile = true;
     } else if (arg === "--lines") {
       parsed.options.lines = parseInt(argv[++i]!, 10);
     } else if (arg === "--strip-ansi") {
@@ -372,6 +380,7 @@ export async function handleAgent(
         json,
         all: parsed.options.all,
         path: parsed.options.path,
+        reconcile: parsed.options.reconcile,
       });
       // list() returns a string (JSON array or text table). Pre-parse for the
       // JSON envelope so the dispatcher emits one `{ok,data:[...]}` line.
@@ -391,7 +400,7 @@ export async function handleAgent(
         );
       }
       const json = parsed.options.json || opts.json;
-      const output = status(name, { json });
+      const output = status(name, { json, reconcile: parsed.options.reconcile });
       // status() returns a string (JSON or text). Pre-parse for JSON envelope.
       if (json) {
         return ok(JSON.parse(output));
