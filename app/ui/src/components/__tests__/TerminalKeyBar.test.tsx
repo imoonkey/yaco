@@ -105,8 +105,9 @@ describe('TerminalKeyBar', () => {
   })
 
   describe('modifier toggles', () => {
-    it('Ctrl pointerDown toggles ctrl modifier (row 1)', () => {
+    it('Ctrl pointerDown toggles ctrl modifier (row 2)', () => {
       renderBar()
+      expandSecondaryRow()
       pointerDownByAriaLabel('Control modifier')
       expect(onModifierChange).toHaveBeenCalledWith({ ctrl: true, shift: false, meta: false })
     })
@@ -127,6 +128,7 @@ describe('TerminalKeyBar', () => {
 
     it('Ctrl button shows active style when modifier is on', () => {
       renderBar({ ctrl: true, shift: false, meta: false })
+      expandSecondaryRow()
       const btn = screen.getByRole('button', { name: 'Control modifier' })
       expect(btn.className).toContain('bg-[var(--sol-blue)]')
     })
