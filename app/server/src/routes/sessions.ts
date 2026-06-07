@@ -26,8 +26,10 @@ async function buildSessionsResponse(projectName: string | null): Promise<unknow
   const projects = await loadProjects()
 
   // Read state files (always fresh — picks up new sessions immediately).
-  // Stale state files (stuck at "processing" when hooks fail) are corrected
-  // by the session reconciler writing fixes directly to state files.
+  // This is a PURE read; it never mutates state. Stale state files (stuck at
+  // "processing" when hooks fail) are corrected out-of-band by the 60s session
+  // reconciler, which calls `yaco agent list --reconcile` — the CLI owns all
+  // GC and status-correction writes.
   let agentSessions
   if (projectName) {
     const project = projects.find(item => item.name === projectName)
