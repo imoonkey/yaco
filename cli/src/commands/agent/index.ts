@@ -4,7 +4,8 @@
  *    start <provider> [yaco-flags] [-- ...passthrough]    Start a session
  *    send <name> "message" | --stdin                      Send a message
  *    capture <name> [--wait]                              Capture pane buffer
- *    status [name] [--all] [...]                          Inspect session state
+ *    list [--all] [--path <p>]                             List live sessions
+ *    status <name>                                         Inspect one session
  *    whoami                                                Print current agent handle
  *    kill <name> | --all                                  Kill a session
  *    rename <old> <new>                                   Rename an idle session
@@ -24,7 +25,7 @@ import { send } from "./send.ts";
 import { capture } from "./capture.ts";
 import { kill } from "./kill.ts";
 import { rename } from "./rename.ts";
-import { status } from "./status.ts";
+import { status, list } from "./status.ts";
 import { whoami } from "./whoami.ts";
 import { runHistory } from "./history.ts";
 import { runSummaries } from "./summaries.ts";
@@ -40,7 +41,8 @@ Usage:
   yaco agent send <name> "message"
   yaco agent send <name> --stdin                (read message from stdin)
   yaco agent capture <name> [--wait] [--lines <n>] [--strip-ansi true|false]
-  yaco agent status [name] [--all] [--path <p>] [--json]
+  yaco agent list [--all] [--path <p>] [--json]
+  yaco agent status <name> [--json]
   yaco agent whoami [--json]
   yaco agent history --path <project-path> [--json]
   yaco agent summaries --path <project-path> [--json]
@@ -266,14 +268,33 @@ export async function handleAgent(
       return ok({ killed: name });
     }
 
-    case "status": {
+    case "list": {
       const parsed = parseSubArgs(rest);
       const json = parsed.options.json || opts.json;
-      const output = status(parsed.positional[0], {
+      const output = list({
         json,
         all: parsed.options.all,
         path: parsed.options.path,
       });
+      // list() returns a string (JSON array or text table). Pre-parse for the
+      // JSON envelope so the dispatcher emits one `{ok,data:[...]}` line.
+      if (json) {
+        return ok(JSON.parse(output));
+      }
+      return ok({ help: output });
+    }
+
+    case "status": {
+      const parsed = parseSubArgs(rest);
+      const name = parsed.positional[0];
+      if (!name) {
+        throw new CliError(
+          ErrCode.USAGE,
+          "yaco agent status <name> [--json]. Use `yaco agent list` to enumerate sessions.",
+        );
+      }
+      const json = parsed.options.json || opts.json;
+      const output = status(name, { json });
       // status() returns a string (JSON or text). Pre-parse for JSON envelope.
       if (json) {
         return ok(JSON.parse(output));

@@ -1,5 +1,40 @@
 # Progress
 
+## 2026-06-07: yaco project list/add/remove shared registry surface
+
+**What changed:**
+- Added `yaco project list/add/remove` on top of the shared project registry core. `list --json` returns `{projects, projectsFile}`; `add` validates URL-safe names, absolute existing directories, duplicate names, and duplicate canonical paths; `remove` deletes by name and returns `NOT_FOUND` when missing.
+- `addProject()` now stores canonical paths (`resolve()` plus `realpath` when available), rejects bare `.`/`..`, rejects leading/trailing whitespace instead of trimming, and defensively rejects non-string name/path inputs with `INVALID`.
+- Move-only flags (`--prefix`, `--dry-run`, `--force`) are rejected by list/add/remove and do not mutate state.
+- App project POST/DELETE delegate to shared `addProject`/`removeProject`; reorder stays app-owned and writes through the shared registry writer.
+- Added `plan/all/yaco-cli-surface/final/design.md` and `implementation_summary.md` for the workstream.
+
+**Why:**
+- Project registry behavior should not diverge between app and CLI. Keeping validation and duplicate rules in `@yaco/cli/core/paths` gives humans, agents, and app routes the same contract without extracting a separate SDK package.
+
+**Key files:** `cli/src/commands/project/{index,add,list,remove}.ts`, `cli/src/lib/core/paths/{project-registry,index}.ts`, `app/server/src/lib/projects.ts`, `app/server/src/routes/projects.ts`, `cli/test/unit/commands/project/registry.test.ts`, `app/server/src/lib/__tests__/projects.test.ts`, `doc/main/cli/paths.md`, `doc/main/app/backend/libs.md`, `plan/all/yaco-cli-surface/`
+**Verification:** `cd cli && bun test test/unit/commands/project/registry.test.ts test/unit/commands/project/move.test.ts test/unit/core/paths/project-registry.test.ts` → 46 pass; `cd app/server && npm test -- --run src/lib/__tests__/projects.test.ts` → 15 pass; direct CLI smoke covered list envelope, add success, canonical duplicate `CONFLICT`, missing remove `NOT_FOUND`, and remove success.
+**Commit:** branch `task/yaco-cli-surface`
+**Next:** `ycs-verification` bundle-wide validation.
+**Blockers:** None.
+
+## 2026-06-06: yaco agent list/status split + shared session projection
+
+**What changed:**
+- Split the overloaded `yaco agent status` collection mode into a dedicated `yaco agent list [--all] [--path <p>] [--json]`. `yaco agent status <name>` is now single-session only and **requires** a handle — no-arg `status` exits non-zero (`USAGE`).
+- `yaco agent list` returns an array of `AgentSessionRow`: session fields keyed as `name`, plus the resolved `project`/`projectPath` (longest-prefix match against the project registry; basename fallback for unregistered paths). Text mode renders a `name  status  project` table.
+- New pure `toSessionRow` projection in `cli/src/lib/core/agent/projection.ts`, exported via the new `@yaco/cli/core/agent` barrel. `reconcile` stays CLI-only (not exported). The app server's hot state-file reads (`readSessionsFromStateFiles`/`readAllSessionsFromStateFiles`) now use the shared projection so app and CLI agree on the row shape without pulling reconcile into the hot path.
+- App adopters switched off the retired collection mode: `fetchAllSessionsFromCli` → `yaco agent list --all --json`, `queryAgentStatus` → `yaco agent list --path <cwd> --json`.
+
+**Why:**
+- `list` is the conventional verb for multi-session output; overloading `status` for both single inspection and collection was ambiguous and blocked adding a project column. Sharing one pure projection removes app/CLI drift in how a state file becomes a display row, while keeping liveness/GC (`reconcile`) out of the app's hot read path.
+
+**Key files:** `cli/src/lib/core/agent/{projection,index}.ts` (new), `cli/src/commands/agent/{status,index}.ts`, `cli/package.json`, `app/server/src/lib/agent.ts`, `app/server/src/routes/sessions.ts`, `cli/test/unit/core/agent/projection.test.ts` (new), `cli/test/agent-json-surfaces.test.ts`, `cli/test/integration/tmux-path-scope.integration.ts`, `app/server/src/lib/__tests__/agent.test.ts`, `doc/main/cli/{state-contract,architecture}.md`, `doc/main/app/backend/libs.md`, `doc/dev/cli/workflow.md`
+**Verification:** `cd cli && bun run test:unit` → 697 pass; CLI typecheck clean (only 4 pre-existing unrelated errors). App server: workspace symlink resolves `@yaco/cli` to the main repo's cli (lacks the not-yet-merged export), so app tests were proven via a throwaway vitest alias pointing at the worktree cli → all 420 app/server tests pass (config removed after). `ycs-verification` re-runs post-merge.
+**Commit:** (pending)
+**Next:** sibling tasks `ycs-project-commands` + `ycs-verification` in the same `yaco-cli-surface` worktree.
+**Blockers:** None — app-test resolution is a worktree/workspace constraint, resolved by merge.
+
 ## 2026-06-06: Task workspace — width-gated Gantt, zoom removed
 
 **What changed:**

@@ -1,46 +1,39 @@
-import { readFile, writeFile, mkdir } from 'fs/promises'
-import { existsSync } from 'fs'
-import { getYacoHome, projectsFile } from '@yaco/cli/core/paths'
+import {
+  readProjects,
+  writeProjects,
+  addProject as coreAddProject,
+  removeProject as coreRemoveProject,
+  ensureYacoHome as coreEnsureYacoHome,
+  type Project,
+} from '@yaco/cli/core/paths'
 
-export interface Project {
-  name: string
-  path: string
-}
+export type { Project }
 
-const PROJECTS_FILE = projectsFile()
-
-interface ProjectRecord {
-  id: string
-  path: string
-}
-
-function normalizeProject(p: ProjectRecord): Project {
-  return { name: p.id, path: p.path.replace(/\/+$/, '') || '/' }
-}
+/** Async adapters over the shared sync registry core. The app keeps an async
+ *  surface for its route handlers; the on-disk shape, normalization, name/path
+ *  validation, and duplicate rules all live in @yaco/cli/core/paths so the CLI
+ *  and the app server never diverge. */
 
 export async function ensureYacoHome(): Promise<void> {
-  const yacoHome = getYacoHome()
-  if (!existsSync(yacoHome)) {
-    await mkdir(yacoHome, { recursive: true })
-  }
+  coreEnsureYacoHome()
 }
 
 export async function loadProjects(): Promise<Project[]> {
-  await ensureYacoHome()
-  if (!existsSync(PROJECTS_FILE)) {
-    await writeFile(PROJECTS_FILE, '[]', 'utf-8')
-    return []
-  }
-  const raw = await readFile(PROJECTS_FILE, 'utf-8')
-  const parsed = JSON.parse(raw) as ProjectRecord[]
-  return parsed.map(normalizeProject)
+  return readProjects()
 }
 
 export async function saveProjects(projects: Project[]): Promise<void> {
-  await ensureYacoHome()
-  const onDisk = projects.map(p => ({
-    id: p.name,
-    path: p.path.replace(/\/+$/, '') || '/',
-  }))
-  await writeFile(PROJECTS_FILE, JSON.stringify(onDisk, null, 2), 'utf-8')
+  writeProjects(projects)
+}
+
+/** Register a project through the shared core. Throws CliError
+ *  (INVALID/CONFLICT) on validation failure. */
+export function addProject(input: { name: string; path: string }): Project {
+  return coreAddProject(input)
+}
+
+/** Remove a project by name through the shared core. Throws
+ *  CliError(NOT_FOUND) when missing. */
+export function removeProject(name: string): Project {
+  return coreRemoveProject(name)
 }

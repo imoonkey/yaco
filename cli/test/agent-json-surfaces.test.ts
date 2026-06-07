@@ -40,6 +40,34 @@ describe("agent help envelopes", () => {
   }
 });
 
+describe("agent list/status surface split", () => {
+  // Hermetic: empty HOME + empty sessions dir so the result depends only on the
+  // command surface, not the dev machine's live sessions.
+  function hermetic(): Record<string, string> {
+    const sandbox = mkdtempSync(join(tmpdir(), "yaco-list-"));
+    return { HOME: sandbox, YACO_AGENT_SESSIONS_DIR: join(sandbox, "sessions") };
+  }
+
+  it("`agent list --all --json` returns an ok envelope with an array payload", () => {
+    const { status, data } = runJson(["agent", "list", "--all", "--json"], hermetic());
+    expect(status).toBe(0);
+    const envelope = data as { ok: boolean; data: unknown };
+    expect(envelope.ok).toBe(true);
+    expect(Array.isArray(envelope.data)).toBe(true);
+  });
+
+  it("`agent status` without a handle exits non-zero with a USAGE error", () => {
+    const r = spawnSync("bun", ["run", BIN, "agent", "status", "--json"], {
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1", ...hermetic() },
+    });
+    expect(r.status).not.toBe(0);
+    const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string } };
+    expect(err.ok).toBe(false);
+    expect(err.error.code).toBe("USAGE");
+  });
+});
+
 describe("agent providers catalog", () => {
   it("`agent providers --json` lists registered CLI providers", () => {
     const { status, data } = runJson(["agent", "providers", "--json"]);

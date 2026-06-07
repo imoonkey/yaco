@@ -14,7 +14,7 @@
 # From source
 bun run src/main.ts <area> <command> [args]
 bun run src/main.ts agent start claude
-bun run src/main.ts agent status --all --json
+bun run src/main.ts agent list --all --json
 
 # If installed via the monorepo install script
 yaco <area> <command> [args]

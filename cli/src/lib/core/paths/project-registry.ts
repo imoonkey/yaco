@@ -6,9 +6,17 @@
  *  Workflow server) are free to wrap these in async helpers.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
 
+import { CliError, ErrCode } from "../errors.ts";
 import { getYacoHome, projectsFile } from "./yaco-home.ts";
 
 /** Normalized project shape consumed by app/server and CLI surfaces. */
@@ -64,4 +72,75 @@ function toProject(rec: ProjectRecord): Project {
 
 function normalizePath(p: string): string {
   return p.replace(/\/+$/, "") || "/";
+}
+
+/** Canonical absolute path for duplicate comparison: collapses `.`/`..`
+ *  and trailing slashes via resolve(), then resolves symlinks via realpath
+ *  when the path exists on disk (falling back to the lexical form). Two
+ *  inputs that name the same directory compare equal. */
+function canonicalPath(p: string): string {
+  const abs = resolve(p);
+  try {
+    return realpathSync(abs);
+  } catch {
+    return normalizePath(abs);
+  }
+}
+
+/** URL-safe project name: letters, digits, dot, underscore, dash. The bare
+ *  `.` and `..` segments are rejected — they are not safe path segments. */
+const PROJECT_NAME_RE = /^[A-Za-z0-9._-]+$/;
+
+function isUrlSafeName(name: string): boolean {
+  return PROJECT_NAME_RE.test(name) && name !== "." && name !== "..";
+}
+
+/** Register a project. Validates a URL-safe name and an absolute existing
+ *  directory, and rejects duplicate names or duplicate normalized paths
+ *  (equivalent absolute paths compare equal). Throws CliError
+ *  (INVALID/CONFLICT) on any failure. Returns the added project. */
+export function addProject(input: { name: string; path: string }): Project {
+  // Validate the original string (no trimming): the URL-safe charset already
+  // excludes whitespace, so a leading/trailing space must be rejected, not
+  // silently stripped into a different stored name.
+  const name = typeof input.name === "string" ? input.name : "";
+  if (!isUrlSafeName(name)) {
+    throw new CliError(
+      ErrCode.INVALID,
+      `invalid project name: ${String(input.name)}. Use URL-safe characters [A-Za-z0-9._-] (not '.' or '..').`,
+    );
+  }
+  const rawPath = typeof input.path === "string" ? input.path : "";
+  if (!isAbsolute(rawPath)) {
+    throw new CliError(ErrCode.INVALID, `path must be absolute: ${String(input.path)}`);
+  }
+  const resolved = resolve(rawPath);
+  if (!existsSync(resolved) || !statSync(resolved).isDirectory()) {
+    throw new CliError(ErrCode.INVALID, `path is not an existing directory: ${resolved}`);
+  }
+  const path = canonicalPath(rawPath);
+
+  const projects = readProjects();
+  if (projects.some((p) => p.name === name)) {
+    throw new CliError(ErrCode.CONFLICT, `project name already registered: ${name}`);
+  }
+  if (projects.some((p) => canonicalPath(p.path) === path)) {
+    throw new CliError(ErrCode.CONFLICT, `project path already registered: ${path}`);
+  }
+
+  const project: Project = { name, path };
+  writeProjects([...projects, project]);
+  return project;
+}
+
+/** Remove a project by name. Throws CliError(NOT_FOUND) when no project
+ *  with that name is registered. Returns the removed project. */
+export function removeProject(name: string): Project {
+  const projects = readProjects();
+  const found = projects.find((p) => p.name === name);
+  if (!found) {
+    throw new CliError(ErrCode.NOT_FOUND, `project not found: ${name}`);
+  }
+  writeProjects(projects.filter((p) => p.name !== name));
+  return found;
 }

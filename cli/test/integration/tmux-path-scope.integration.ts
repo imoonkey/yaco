@@ -6,7 +6,7 @@ import { describe, expect, it, afterEach } from "bun:test";
 import { capture } from "../../src/commands/agent/capture.ts";
 import { kill } from "../../src/commands/agent/kill.ts";
 import { send } from "../../src/commands/agent/send.ts";
-import { status } from "../../src/commands/agent/status.ts";
+import { list } from "../../src/commands/agent/status.ts";
 import {
   capturePane,
   createSession,
@@ -160,10 +160,10 @@ describe("tmux global handles", () => {
 
       await waitFor(() => hasSession(h1) && hasSession(h2) && hasSession(h3));
 
-      // Status from parent should see h1 and h2 but not h3
-      const output = await withCwd(parentDir, () => status(undefined, { json: true }));
+      // List from parent should see h1 and h2 but not h3
+      const output = await withCwd(parentDir, () => list({ json: true }));
       const sessions = JSON.parse(output);
-      const handles = sessions.map((s: any) => s.handle);
+      const handles = sessions.map((s: any) => s.name);
       expect(handles).toContain(h1);
       expect(handles).toContain(h2);
       expect(handles).not.toContain(h3);

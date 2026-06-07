@@ -28,6 +28,8 @@ export {
   projectsRegistryPath,
   readProjects,
   writeProjects,
+  addProject,
+  removeProject,
   type Project,
   type ProjectRecord,
 } from "./project-registry.ts";

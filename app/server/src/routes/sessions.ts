@@ -95,7 +95,7 @@ app.post('/start', async (c) => {
       const existing = liveSessions.find(
         s => s.provider === provider && s.sessionId === resumeId && s.sessionId !== PENDING_SESSION_ID
       )
-      if (existing) return c.json({ name: existing.handle })
+      if (existing) return c.json({ name: existing.name })
     }
 
     const { handle } = await startAgentSession(provider, name, cwd, prompt, resumeId)

@@ -61,11 +61,15 @@ Hono middleware for project-scoped routes. Resolves `:project` param via `loadPr
 - Routes that scan ALL projects (GET /) keep their own `loadProjects()` call
 - When `?worktree=slug` is present: validates slug format (lowercase alphanumeric + hyphens via regex), resolves path with `path.resolve()` and verifies it stays under `.worktrees/` (path traversal prevention), then rewrites `project.path` to the worktree checkout. Returns 400 for invalid slugs, 404 if directory doesn't exist.
 
-### projects.ts (42 lines)
+### projects.ts
 
-Project registry management. Reads/writes `${YACO_HOME:-~/.yaco}/projects.json` (path from the shared `projectsFile()` helper in `@yaco/cli/core/paths`). Normalizes trailing `/` on paths in both load and save — downstream `validateNewPath` relies on this to avoid double-slash `startsWith` mismatches.
+Project registry adapter. Reads/writes `${YACO_HOME:-~/.yaco}/projects.json`
+through the shared registry helpers from `@yaco/cli/core/paths`, so app POST
+and DELETE use the same validation, canonical path comparison, duplicate
+handling, and `NOT_FOUND` behavior as `yaco project add/remove`. Reorder stays
+app-owned presentation state and persists through the shared writer.
 
-**Exports**: `ensureYacoHome()`, `loadProjects()`, `saveProjects()`
+**Exports**: `loadProjects()`, `saveProjects()`, `addProject()`, `removeProject()`
 
 ### Path resolvers (`@yaco/cli/core/paths`)
 
@@ -73,9 +77,9 @@ The runtime-root and repo-relative path resolvers live in the workspace package 
 
 **Surface (re-exported from `@yaco/cli/core/paths`):**
 
-- Runtime helpers (`yaco-home.ts`): `getYacoHome()` returns `process.env.YACO_HOME` verbatim when non-empty, else `~/.yaco`. Helpers: `projectsFile()`, `sessionsDir()`, `uiStateDir()`, `shellSessionsDir()`, `channelsDir()`, `channelScopeDir(scope)`, `projectEventsFile(projectId)`, `hookV2ScriptPath()`, `agentWrapperPath()` (resolves to `${YACO_HOME}/agent-wrapper.sh` — the design's renamed wrapper; the legacy `wrapper-v2.sh` install path is still served by `cli/src/yacoHome.ts` until `yc-agent-subcommand` flips it).
+- Runtime helpers (`yaco-home.ts`): `getYacoHome()` returns `process.env.YACO_HOME` verbatim when non-empty, else `~/.yaco`. Helpers: `projectsFile()`, `sessionsDir()`, `uiStateDir()`, `shellSessionsDir()`, `channelsDir()`, `channelScopeDir(scope)`, `projectEventsFile(projectId)`, `agentWrapperPath()` (resolves to `${YACO_HOME}/agent-wrapper.sh`).
 - Repo-relative reader (`yaco-paths.ts`): `readYacoProjectPaths(repoRoot)` returns the canonical four paths (`tasks`, `active`, `archive`, `worktrees`) merging optional `yaco.toml [paths]` overrides over the defaults. Defaults: `plan/tasks`, `plan/active`, `plan/archive`, `.worktrees`. Project identity lives only in `~/.yaco/projects.json`, so `[project]` is never read.
-- Project registry (`project-registry.ts`): `readProjects()`, `writeProjects()`, `projectsRegistryPath()`, `ensureYacoHome()` — sync I/O helpers usable from both Bun and Node.
+- Project registry (`project-registry.ts`): `readProjects()`, `writeProjects()`, `addProject()`, `removeProject()`, `projectsRegistryPath()`, `ensureYacoHome()` — sync I/O and validated registry mutation helpers usable from both Bun and Node.
 - Scoped TOML parser (`toml.ts`): a minimal handwritten reader scoped to `[section]` + `key = "string"` pairs (no heavy dep). Rejects duplicate keys, unquoted values, and any line that is not a section header, key-value pair, comment, or blank. All parse failures surface as `TomlParseError` with the offending line number; the project reader wraps them as `CliError(ENV)` so the dispatcher exits 3 with the stderr `ok:false` envelope.
 
 **Constraints:** Bun/Node neutral — uses only `node:os`, `node:path`, and `node:fs` (sync APIs only). `app/server` (Node via `tsx`/`vitest`) and `cli` (Bun) consume the same TypeScript source through the exports map at `cli/package.json`.
@@ -105,8 +109,9 @@ Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.jso
 
 - `readSessionsFromStateFiles(project)` reads the global sessions dir and filters by `sessionPath` descendant-matching the registered project path
 - `readAllSessionsFromStateFiles(projects)` reads the global sessions dir once and assigns each session to the most specific matching registered project
-- `fetchAllSessionsFromCli(projects)` calls `yaco agent status --all --json`, unwraps the envelope, and maps sessions to projects. Used by the reconciler for correctness-sensitive operations.
-- `queryAgentStatus(cwd)` calls `yaco agent status --path <cwd> --json` for resume preflight checks
+- Both hot reads project state files into rows via the **shared** `toSessionRow`/`resolveProjectForPath` helpers from `@yaco/cli/core/agent` (the same pure projection the CLI's `yaco agent list` uses), so app and CLI agree on the row shape without pulling `reconcile` into the app's hot read path. `AgentSession` is the app-side view of `AgentSessionRow` (adds optional `projectPath`).
+- `fetchAllSessionsFromCli(projects)` calls `yaco agent list --all --json`, which returns already-projected `AgentSessionRow`s (project resolved CLI-side via the shared registry); rows whose project isn't in this server's loaded set are dropped. Used by the reconciler for correctness-sensitive operations.
+- `queryAgentStatus(cwd)` calls `yaco agent list --path <cwd> --json` for resume preflight checks
 - Primary session source: reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (written by the yaco agent runtime via hook events)
 - Status passthrough: `starting | idle | processing` — no normalization (CLI states used as-is)
 - State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt, spawnedBy?, parentSession? }` — file deletion = session ended. `provider` is an open string (the YACO-owned catalog id, e.g. `claude`/`codex`), trusted verbatim — there is no app-side name inference (`inferAgentProvider` was removed); a state file with no `provider` string is skipped. Optional `spawnedBy` (`user:web`/`user:terminal`/`agent`) and `parentSession` lineage are passed through best-effort (validated, dropped when unknown/absent).
@@ -146,7 +151,7 @@ Low-frequency background reconciler for session health and idle detection.
 **Exports**: `startSessionReconciler()`, `stopSessionReconciler()`
 
 - Runs every 60 seconds as a safety net (not primary session source). First reconcile runs immediately on startup.
-- Calls `fetchAllSessionsFromCli(projects)` which runs `yaco agent status --all --json` — the authoritative reconciled snapshot. The yaco agent runtime owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, sessionId backfill, and **stale state file correction** (writes capture-derived status to disk when mtime > 3min).
+- Calls `fetchAllSessionsFromCli(projects)` which runs `yaco agent list --all --json` — the authoritative reconciled snapshot. The yaco agent runtime owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, sessionId backfill, and **stale state file correction** (writes capture-derived status to disk when mtime > 3min).
 - Emits `refresh:sessions` if drift detected (missed watcher events)
 - Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
 

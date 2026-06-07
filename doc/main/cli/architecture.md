@@ -31,8 +31,16 @@ src/
       whoami.ts                        # resolve current process to its YACO session handle
       hook-event.ts                    # CLI handler for `yaco agent hook-event <EventName>`
       hooks/install.ts                 # yaco agent hooks install
+    project/
+      index.ts                         # yaco project area handler (list/add/remove/move dispatch; move-only flag scoping)
+      list.ts                          # yaco project list — {projects, projectsFile} envelope
+      add.ts                           # yaco project add <name> <abs-path> — validated registry insert
+      remove.ts                        # yaco project remove <name> — by-name delete, NOT_FOUND when missing
+      move.ts                          # yaco project move — cwd-metadata rekey after an on-disk path move
   lib/core/agent/
     model.ts                           # SessionState, RuntimeSessionState, HookEvent, PENDING_SESSION_ID, name helpers, ANSI strip
+    projection.ts                      # pure state→AgentSessionRow projection (project/projectPath resolve, lineage passthrough)
+    index.ts                           # @yaco/cli/core/agent barrel — exports projection only (reconcile stays CLI-only)
     providers/                         # typed TuiProvider registry (index, types, claude, codex; idle/hooks/history/output/project-move capabilities)
     providers.ts                       # legacy shim over providers/ for not-yet-migrated call sites (Provider, getProvider, isIdle)
     session-state.ts                   # state file CRUD; YACO_AGENT_SESSIONS_DIR / sessionsDir() resolver
@@ -202,10 +210,10 @@ If no signal maps to a live managed state file, the command returns
 
 ### JSON Output (`--json`) and Dual-Mode Capture
 
-`yaco agent start --json` and `yaco agent status --json` output full
+`yaco agent start --json` and `yaco agent status <handle> --json` output full
 `SessionState` as JSON inside the envelope. Fields: `handle`, `provider`,
 `sessionPath`, `pid`, `sessionId`, `status`, `createdAt`, and optional lineage
-`spawnedBy` / `parentSession` (see [state-contract.md](state-contract.md#session-lineage-spawnedby--parentsession)).
+`spawnedBy` / `parentSession` (see [state-contract.md](state-contract.md#session-lineage-spawnedby--parentsession)). `yaco agent list --json` returns an array of `AgentSessionRow` — the same fields keyed as `name`, plus the resolved `project`/`projectPath` (see [state-contract.md](state-contract.md#2-runtime-contract--cli-json)).
 
 `yaco agent capture` is dual-mode:
 - **text mode** (no `--json`) — the renderer recognizes the handler's `{ text: "..." }` shape and writes the captured pane buffer to stdout verbatim. No JSON wrap, no surrounding text — bytes round-trip.

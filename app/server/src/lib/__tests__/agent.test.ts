@@ -68,6 +68,7 @@ describe('readSessionsFromStateFiles', () => {
       provider: 'claude',
       status: 'idle',
       project: 'test-project',
+      projectPath: tmpDir,
       sessionPath: tmpDir,
       sessionId: 'abc-123',
     })
@@ -189,6 +190,7 @@ describe('readSessionsFromStateFiles', () => {
 
     expect(sessions).toHaveLength(1)
     expect(sessions[0]!.project).toBe('child')
+    expect(sessions[0]!.projectPath).toBe(child)
   })
 
   it('passes through spawnedBy and parentSession lineage when present', async () => {

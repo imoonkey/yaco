@@ -1,7 +1,14 @@
 import { spawn } from 'child_process'
 import { existsSync, readFileSync, readdirSync } from 'fs'
 import { readdir, readFile } from 'fs/promises'
-import { isAbsolute, join, normalize, relative, sep } from 'path'
+import { join } from 'path'
+import {
+  isPathDescendantOrEqual,
+  normalizeProjectPath,
+  resolveProjectForPath,
+  toSessionRow,
+  type AgentSessionRow,
+} from '@yaco/cli/core/agent'
 import type { Project } from './projects'
 import { validateSessionName } from './session-names'
 import { buildChildProcessEnv } from './ssh-auth'
@@ -13,11 +20,17 @@ import {
   YACO_PATH,
 } from './constants'
 
+/** Re-exported for route code (sessions.ts) that filters by project subtree. */
+export { isPathDescendantOrEqual } from '@yaco/cli/core/agent'
+
 export interface AgentSession {
   name: string
   provider: string
   status: 'starting' | 'idle' | 'processing'
   project: string
+  /** Absolute path of the owning project. Always set by the shared projection;
+   *  optional only so legacy in-test fixtures need not supply it. */
+  projectPath?: string
   sessionPath: string
   sessionId: string
   pid: number
@@ -77,27 +90,10 @@ export interface AgentSessionState {
 }
 
 const VALID_STATUSES = new Set(['starting', 'idle', 'processing'])
-const VALID_SPAWNED_BY = new Set(['user:web', 'user:terminal', 'agent'])
-
-function normalizePath(path: string): string {
-  const normalized = normalize(path)
-  if (normalized === sep) return normalized
-  return normalized.replace(/[\\/]+$/, '')
-}
 
 function getStateSessionPath(state: AgentSessionState): string | null {
   if (typeof state.sessionPath !== 'string' || !state.sessionPath) return null
-  return normalizePath(state.sessionPath)
-}
-
-export function isPathDescendantOrEqual(candidatePath: string, rootPath: string): boolean {
-  if (!candidatePath || !rootPath) return false
-
-  const candidate = normalizePath(candidatePath)
-  const root = normalizePath(rootPath)
-  const rel = relative(root, candidate)
-
-  return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
+  return normalizeProjectPath(state.sessionPath)
 }
 
 async function readStateFiles(): Promise<AgentSessionState[]> {
@@ -123,54 +119,10 @@ async function readStateFiles(): Promise<AgentSessionState[]> {
   return reads.filter((s): s is AgentSessionState => s !== null)
 }
 
-function toAgentSession(
-  state: AgentSessionState,
-  project: Pick<Project, 'name'>,
-): AgentSession | null {
-  if (typeof state.handle !== 'string' || !state.handle) return null
-  if (typeof state.provider !== 'string' || !state.provider) return null
-  const sessionPath = getStateSessionPath(state)
-  if (!sessionPath) return null
-
-  if (!VALID_STATUSES.has(state.status)) return null
-
-  const session: AgentSession = {
-    name: state.handle,
-    provider: state.provider,
-    status: state.status,
-    project: project.name,
-    sessionPath,
-    sessionId: state.sessionId ?? '',
-    pid: state.pid,
-  }
-  // Lineage is best-effort: legacy state files omit these fields entirely.
-  if (typeof state.spawnedBy === 'string' && VALID_SPAWNED_BY.has(state.spawnedBy)) {
-    session.spawnedBy = state.spawnedBy
-  }
-  if (typeof state.parentSession === 'string' && state.parentSession) {
-    session.parentSession = state.parentSession
-  }
-  return session
-}
-
-function resolveProjectForSessionPath(
-  sessionPath: string,
-  projects: Pick<Project, 'name' | 'path'>[],
-): Pick<Project, 'name' | 'path'> | null {
-  let match: Pick<Project, 'name' | 'path'> | null = null
-
-  for (const project of projects) {
-    if (!isPathDescendantOrEqual(sessionPath, project.path)) continue
-    if (!match || normalizePath(project.path).length > normalizePath(match.path).length) {
-      match = project
-    }
-  }
-
-  return match
-}
-
 /** Read sessions from `<AGENT_SESSIONS_DIR>/*.json` state files
- *  (primary source of truth; see constants.ts AGENT_SESSIONS_DIR). */
+ *  (primary source of truth; see constants.ts AGENT_SESSIONS_DIR). Projection
+ *  uses the shared @yaco/cli/core/agent helper so app hot reads and the CLI
+ *  agree on the row shape — without pulling reconcile into the hot path. */
 export async function readSessionsFromStateFiles(project: Pick<Project, 'name' | 'path'>): Promise<AgentSession[]> {
   const sessions: AgentSession[] = []
 
@@ -178,8 +130,8 @@ export async function readSessionsFromStateFiles(project: Pick<Project, 'name' |
     const sessionPath = getStateSessionPath(state)
     if (!sessionPath || !isPathDescendantOrEqual(sessionPath, project.path)) continue
 
-    const session = toAgentSession(state, project)
-    if (session) sessions.push(session)
+    const row = toSessionRow(state, project)
+    if (row) sessions.push(row)
   }
 
   return sessions
@@ -193,11 +145,11 @@ export async function readAllSessionsFromStateFiles(projects: Pick<Project, 'nam
     const sessionPath = getStateSessionPath(state)
     if (!sessionPath) continue
 
-    const project = resolveProjectForSessionPath(sessionPath, projects)
+    const project = resolveProjectForPath(sessionPath, projects)
     if (!project) continue
 
-    const session = toAgentSession(state, project)
-    if (session) all.push(session)
+    const row = toSessionRow(state, project)
+    if (row) all.push(row)
   }
 
   return all
@@ -247,34 +199,30 @@ async function runYacoAgentJson(args: string[], timeoutMs: number, what: string)
   return parseYacoEnvelope(raw, what)
 }
 
-/** Fetch authoritative session snapshot from `yaco agent status --json --all`.
- *  Runs reconcile() internally (liveness checks, GC, metadata backfill).
- *  Maps returned sessions to projects by sessionPath. */
+/** True when a CLI `agent list` row is structurally usable. */
+function isUsableRow(row: unknown): row is AgentSessionRow {
+  if (!row || typeof row !== 'object') return false
+  const r = row as AgentSessionRow
+  return typeof r.name === 'string' && typeof r.provider === 'string' && VALID_STATUSES.has(r.status)
+}
+
+/** Fetch authoritative session snapshot from `yaco agent list --all --json`.
+ *  The CLI runs reconcile() internally (liveness checks, GC, metadata backfill)
+ *  and returns rows already projected to project name via the shared registry.
+ *  Sessions whose project isn't in this server's loaded set are dropped. */
 export async function fetchAllSessionsFromCli(
   projects: Pick<Project, 'name' | 'path'>[],
 ): Promise<AgentSession[]> {
-  // execSync.*'yaco agent status --all --json'
+  // execSync.*'yaco agent list --all --json'
   const data = await runYacoAgentJson(
-    ['agent', 'status', '--all', '--json'],
+    ['agent', 'list', '--all', '--json'],
     YACO_AGENT_STATUS_TIMEOUT_MS,
-    'agent status',
+    'agent list',
   )
   if (!Array.isArray(data)) return []
 
-  const states = data as AgentSessionState[]
-  const sessions: AgentSession[] = []
-  for (const state of states) {
-    const sessionPath = getStateSessionPath(state)
-    if (!sessionPath) continue
-
-    const project = resolveProjectForSessionPath(sessionPath, projects)
-    if (!project) continue
-
-    const session = toAgentSession(state, project)
-    if (session) sessions.push(session)
-  }
-
-  return sessions
+  const known = new Set(projects.map(p => p.name))
+  return (data as unknown[]).filter(isUsableRow).filter(row => known.has(row.project))
 }
 
 /** Send a message to an agent session via `yaco agent send`. */
@@ -491,15 +439,15 @@ export async function startAgentSession(
 }
 
 /** Query the yaco agent CLI for live sessions at a given path. */
-export async function queryAgentStatus(cwd: string): Promise<AgentSessionState[]> {
+export async function queryAgentStatus(cwd: string): Promise<AgentSession[]> {
   try {
-    // execSync.*'yaco agent status --path <cwd> --json'
+    // execSync.*'yaco agent list --path <cwd> --json'
     const data = await runYacoAgentJson(
-      ['agent', 'status', '--path', cwd, '--json'],
+      ['agent', 'list', '--path', cwd, '--json'],
       YACO_AGENT_STATUS_TIMEOUT_MS,
-      'agent status',
+      'agent list',
     )
-    return Array.isArray(data) ? data as AgentSessionState[] : []
+    return Array.isArray(data) ? (data as unknown[]).filter(isUsableRow) : []
   } catch {
     return []
   }

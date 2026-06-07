@@ -79,19 +79,16 @@ The authoritative reconciled view. This is the **single source of runtime truth*
 - On bootstrap death, exits non-zero (no phantom state)
 - `--json` and other yaco-side flags bind only before `--`; tokens after `--` are forwarded verbatim to the provider CLI
 
-### `yaco agent status --json --all`
+### `yaco agent list [--all] [--path <path>] --json`
 
-- Returns authoritative snapshot for all managed sessions
-- Runs `reconcile()` internally: liveness checks, staleness fallback, capture fallback, metadata backfill
-- Owns GC: deletes state files for confirmed-dead sessions
-
-### `yaco agent status --json --path <path>`
-
-- Same runtime contract, filtered by `sessionPath`
+- Collection view of live sessions. Default scope is the cwd subtree; `--all` spans every project; `--path <path>` scopes to an explicit subtree.
+- Runs `reconcile()` per session: liveness checks, staleness fallback, capture fallback, metadata backfill. Owns GC: deletes state files for confirmed-dead sessions.
+- Returns an array of `AgentSessionRow` (not raw state): each row adds the resolved `project`/`projectPath` (longest-prefix match against the project registry; basename fallback for unregistered paths) to the session fields, and passes through valid `spawnedBy`/`parentSession`. Text mode renders a `name  status  project` table.
+- Projection is the pure `toSessionRow` helper exported from `@yaco/cli/core/agent` and shared with the app server's hot state-file reads. `reconcile()` is **not** exported — it stays CLI-only so the app never pulls liveness/GC into its hot read path.
 
 ### `yaco agent status <handle> --json`
 
-- Single-session reconciled view
+- Single-session reconciled view. The handle is **required**: `yaco agent status` with no handle exits non-zero (`USAGE`). There is no no-arg collection mode — use `yaco agent list`.
 
 ### `yaco agent capture <handle>`
 

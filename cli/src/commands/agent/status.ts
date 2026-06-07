@@ -3,6 +3,9 @@ import { isIdle } from "../../lib/core/agent/providers/idle.ts";
 import { getProvider, hasProvider, listProviders } from "../../lib/core/agent/providers/index.ts";
 import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath } from "../../lib/core/agent/session-state.ts";
 import { validateName, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
+import { resolveProjectForPath, toSessionRow, type AgentSessionRow, type ProjectRef } from "../../lib/core/agent/index.ts";
+import { readProjects } from "../../lib/core/paths/index.ts";
+import { basename } from "node:path";
 import { execSync } from "child_process";
 
 export type { RuntimeSessionState } from "../../lib/core/agent/model.ts";
@@ -129,28 +132,45 @@ function checkCliAvailable(cmd: string): boolean {
 
 interface StatusOptions {
   json?: boolean;
-  all?: boolean;
-  path?: string;
 }
 
-export function status(name?: string, jsonOrOptions?: boolean | StatusOptions): string {
+/** Inspect a single session by handle. Single source for `yaco agent status
+ *  <name>`. The collection view lives in `list()`. */
+export function status(name: string, jsonOrOptions?: boolean | StatusOptions): string {
   const opts: StatusOptions = typeof jsonOrOptions === "boolean"
     ? { json: jsonOrOptions }
     : (jsonOrOptions ?? {});
 
-  if (name) {
-    validateName(name);
-    const resolved = reconcile(name);
-    if (opts.json) {
-      if (!resolved) return JSON.stringify({ error: "not found" });
-      return JSON.stringify(resolved);
-    }
-    return resolved?.status ?? "not found";
+  validateName(name);
+  const resolved = reconcile(name);
+  if (opts.json) {
+    if (!resolved) return JSON.stringify({ error: "not found" });
+    return JSON.stringify(resolved);
   }
+  return resolved?.status ?? "not found";
+}
 
-  // List sessions — filter by path
-  const filterPath = opts.path ?? (opts.all ? undefined : process.cwd());
-  const sessions = filterPath ? listByPath(filterPath) : listStateHandles().map(h => readState(h)).filter(Boolean) as SessionState[];
+interface ListOptions {
+  json?: boolean;
+  all?: boolean;
+  path?: string;
+}
+
+/** Unregistered session paths still deserve a row — fall back to the path's
+ *  basename so `yaco agent list` never hides a live session. */
+function deriveProject(sessionPath: string, projects: ProjectRef[]): ProjectRef {
+  return resolveProjectForPath(sessionPath, projects)
+    ?? { name: basename(sessionPath) || sessionPath, path: sessionPath };
+}
+
+/** List live sessions as shared projection rows. Source for `yaco agent list`.
+ *  Default scope is the cwd subtree; `--all` spans every project; `--path`
+ *  scopes to an explicit subtree. */
+export function list(options: ListOptions = {}): string {
+  const filterPath = options.path ?? (options.all ? undefined : process.cwd());
+  const sessions = filterPath
+    ? listByPath(filterPath)
+    : listStateHandles().map(h => readState(h)).filter(Boolean) as SessionState[];
 
   // Cache liveness results — checkSessionAlive spawns a process per call,
   // and we need the result in GC, filter, and reconcile. One check per session.
@@ -172,12 +192,20 @@ export function status(name?: string, jsonOrOptions?: boolean | StatusOptions): 
   // Filter to live sessions
   const liveSessions = sessions.filter(s => aliveCache.get(s.handle) !== false);
 
-  if (liveSessions.length === 0) {
-    if (opts.json) return JSON.stringify([]);
+  const projects = readProjects();
+  const rows: AgentSessionRow[] = [];
+  for (const session of liveSessions) {
+    const resolved = reconcile(session.handle, aliveCache.get(session.handle));
+    if (!resolved) continue;
+    const row = toSessionRow(resolved, deriveProject(resolved.sessionPath, projects));
+    if (row) rows.push(row);
+  }
+
+  if (options.json) return JSON.stringify(rows);
+
+  if (rows.length === 0) {
     // Health check mode
-    const lines: string[] = ["No active sessions."];
-    lines.push("");
-    lines.push("Health:");
+    const lines: string[] = ["No active sessions.", "", "Health:"];
     lines.push(`  tmux: ${isTmuxAvailable() ? "ok" : "not found"}`);
     for (const provider of listProviders()) {
       lines.push(`  ${provider.id}: ${checkCliAvailable(provider.executable) ? "ok" : "not found"}`);
@@ -185,19 +213,7 @@ export function status(name?: string, jsonOrOptions?: boolean | StatusOptions): 
     return lines.join("\n");
   }
 
-  if (opts.json) {
-    const states: RuntimeSessionState[] = [];
-    for (const session of liveSessions) {
-      const resolved = reconcile(session.handle, aliveCache.get(session.handle));
-      if (resolved) states.push(resolved);
-    }
-    return JSON.stringify(states);
-  }
-
-  const lines: string[] = [];
-  for (const session of liveSessions) {
-    const resolved = reconcile(session.handle, aliveCache.get(session.handle));
-    lines.push(`${session.handle.padEnd(30)} ${resolved?.status ?? "not found"}`);
-  }
-  return lines.join("\n");
+  return rows
+    .map(r => `${r.name.padEnd(30)} ${r.status.padEnd(12)} ${r.project}`)
+    .join("\n");
 }

@@ -11,7 +11,8 @@
     "./core/paths": "./src/lib/core/paths/index.ts",
     "./core/result": "./src/lib/core/result.ts",
     "./core/errors": "./src/lib/core/errors.ts",
-    "./core/task": "./src/lib/core/task/index.ts"
+    "./core/task": "./src/lib/core/task/index.ts",
+    "./core/agent": "./src/lib/core/agent/index.ts"
   },
   "scripts": {
     "start": "bun run src/main.ts",

@@ -1,9 +1,30 @@
 import { Hono } from 'hono'
-import { stat } from 'fs/promises'
-import { isAbsolute } from 'path'
-import { loadProjects, saveProjects, type Project } from '../lib/projects'
+import { fail } from '../lib/response'
+import {
+  loadProjects,
+  saveProjects,
+  addProject,
+  removeProject,
+  type Project,
+} from '../lib/projects'
 
 const app = new Hono()
+
+/** Map a thrown CliError from the shared registry core to an HTTP response. */
+function failFromError(c: Parameters<typeof fail>[0], e: unknown): ReturnType<typeof fail> {
+  const code = (e as { code?: string }).code
+  const message = (e as { message?: string }).message ?? 'project operation failed'
+  switch (code) {
+    case 'INVALID':
+      return fail(c, 400, message)
+    case 'CONFLICT':
+      return fail(c, 409, message)
+    case 'NOT_FOUND':
+      return fail(c, 404, message)
+    default:
+      return fail(c, 500, message)
+  }
+}
 
 app.get('/', async (c) => {
   const projects = await loadProjects()
@@ -11,29 +32,16 @@ app.get('/', async (c) => {
 })
 
 app.post('/', async (c) => {
-  const body = await c.req.json<Project>()
+  const body = await c.req.json<Partial<Project>>()
   if (!body.name || !body.path) {
-    return c.json({ error: 'name and path required' }, 400)
-  }
-  if (!isAbsolute(body.path)) {
-    return c.json({ error: 'path must be absolute' }, 400)
+    return fail(c, 400, 'name and path required')
   }
   try {
-    const info = await stat(body.path)
-    if (!info.isDirectory()) {
-      return c.json({ error: 'path is not a directory' }, 400)
-    }
-  } catch {
-    return c.json({ error: 'path does not exist' }, 400)
+    const project = addProject({ name: body.name, path: body.path })
+    return c.json(project, 201)
+  } catch (e) {
+    return failFromError(c, e)
   }
-  const projects = await loadProjects()
-  const existing = projects.find(p => p.path === body.path)
-  if (existing) {
-    return c.json({ error: 'project already registered' }, 409)
-  }
-  projects.push({ name: body.name, path: body.path })
-  await saveProjects(projects)
-  return c.json(body, 201)
 })
 
 app.post('/reorder', async (c) => {
@@ -73,13 +81,12 @@ app.post('/reorder', async (c) => {
 
 app.delete('/:name', async (c) => {
   const name = c.req.param('name')
-  const projects = await loadProjects()
-  const filtered = projects.filter(p => p.name !== name)
-  if (filtered.length === projects.length) {
-    return c.json({ error: 'not found' }, 404)
+  try {
+    removeProject(name)
+    return c.json({})
+  } catch (e) {
+    return failFromError(c, e)
   }
-  await saveProjects(filtered)
-  return c.json({})
 })
 
 export const projectRoutes = app
