@@ -116,13 +116,13 @@ The authoritative reconciled view. This is the **single source of runtime truth*
 State files are kept in sync with runtime status through two mechanisms:
 
 1. **Hooks (real-time)** — Claude Code hooks fire on `UserPromptSubmit` (→processing), `Stop`/`StopFailure` (→idle), `SessionStart` (→idle). Updates are near-instant.
-2. **Reconcile correction (background)** — when `reconcile()` detects a stale state file (mtime > 3min) and capture-based detection returns a different status, it writes the correction to disk. This catches cases where hooks fail to fire.
+2. **Reconcile correction (background)** — when `reconcile()` detects a stale state file (mtime > 5min) and capture-based detection returns a different status, it writes the correction to disk. This catches cases where hooks fail to fire.
 
 `reconcile()` resolves the current runtime status through a multi-step pipeline:
 
 1. **Liveness check** — is the tmux session alive? Deletion only happens when `confirmedDead()` holds (tmux says gone **and** the recorded PID is not running); a wrong-socket tmux reading alone never deletes a live session.
 2. **State file read** — get persisted status
-3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 3min)
+3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 5min)
 4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators
 5. **Persist correction** — if capture status differs from state file, write it to disk
 6. **Metadata backfill** — resolve PID and sessionId from process tree

@@ -151,7 +151,7 @@ Low-frequency background reconciler for session health and idle detection.
 **Exports**: `startSessionReconciler()`, `stopSessionReconciler()`
 
 - Runs every 60 seconds as a safety net (not primary session source). First reconcile runs immediately on startup.
-- Calls `fetchAllSessionsFromCli(projects)` which runs `yaco agent list --all --json` — the authoritative reconciled snapshot. The yaco agent runtime owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, sessionId backfill, and **stale state file correction** (writes capture-derived status to disk when mtime > 3min).
+- Calls `fetchAllSessionsFromCli(projects)` which runs `yaco agent list --all --json` — the authoritative reconciled snapshot. The yaco agent runtime owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, sessionId backfill, and **stale state file correction** (writes capture-derived status to disk when mtime > 5min).
 - Emits `refresh:sessions` if drift detected (missed watcher events)
 - Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
 

@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-06-06: stop false idle while an agent is thinking
+
+**What changed:**
+- Removed the `>\s*$` fallback idle pattern from both providers
+  (`claude.ts`, `codex.ts`); only the real prompt glyphs `❯` / `›` remain.
+- Raised the stale threshold 3min → 5min (`session-state.ts`
+  `STALE_THRESHOLD_MS`).
+- Replaced the `providers.test.ts` "generic prompt" test (which pinned the
+  removed behavior) with a guard: bare `>` / blockquote lines must not read
+  as idle.
+
+**Why:**
+- A no-tool turn (pure reasoning / long generation) fires no `PostToolUse`,
+  so mtime crossed the stale threshold while the agent was still working.
+  `reconcile()` then capture-screened and `isIdle()` false-matched a stray
+  `>`-terminated line, flipping `processing → idle` (and persisting it),
+  until the next tool call's hook snapped it back. The app showed a
+  thinking session as idle.
+- Crucially `isIdle()` tests the **union of all providers' `idlePatterns`**
+  (`ALL_IDLE_PATTERNS`), so a loose fallback in any one provider leaks to
+  every session — the `>` fallback had to go from both, not just Claude.
+- Kept the capture net (and bumped, not removed, the threshold) so a
+  genuinely missed `Stop` hook on a live session still self-corrects.
+
+**Key files:** `cli/src/lib/core/agent/providers/{claude,codex}.ts`,
+`cli/src/lib/core/agent/session-state.ts`, `cli/test/providers.test.ts`
+**Verification:** `bun test test/providers.test.ts` (39 pass);
+`bun test test/state.test.ts test/lifecycle-guards.test.ts` (35 pass)
+**Commit:** 5d843e5
+**Blockers:** None
+
 ## 2026-06-04: yaco project move — rekey cwd-indexed metadata after a path change
 
 **What changed:**
