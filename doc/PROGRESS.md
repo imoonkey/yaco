@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-06: yaco CLI surface contract drift cleanup
+
+**What changed:**
+- `yaco agent status <name> --json` now exits non-zero with a `NOT_FOUND` error envelope when the session is absent or dead, instead of `{ok:true,data:{error:"not found"}}`. Text mode throws `NOT_FOUND` too.
+- `yaco agent list --all --path <p>` now exits non-zero with `USAGE` — `--all` and `--path` are mutually exclusive rather than silently letting `--path` win.
+- `yaco project add <name> <abs-path> --json` returns `{project, projectsFile}`; `yaco project remove <name> --json` returns `{removed:true, project, projectsFile}`.
+- Design/doc alignment in `plan/all/yaco-cli-surface/final/design.md`: `AgentSessionRow` documented as the actual flat v1 row (`name`, `provider`, `status`, `project`, `projectPath`, `sessionPath`, `sessionId`, `pid`, optional lineage) rather than a `RuntimeSessionState & …` spread; `POST /api/tasks/:project/:taskId/agents` marked future/conditional (not v1); app project POST/DELETE documented as preferring the shared registry core helpers (no requirement to shell out to `yaco project`).
+
+**Why:**
+- Close low-risk drift between the locked `yaco-cli-surface` design and the shipped implementation without reopening the workstream. The four surfaces now match the documented envelope/exit contracts, and the design reflects what v1 actually ships.
+
+**Key files:** `cli/src/commands/agent/{status,index}.ts`, `cli/src/commands/project/{add,remove}.ts`, `cli/test/agent-json-surfaces.test.ts`, `cli/test/unit/commands/project/registry.test.ts`, `plan/all/yaco-cli-surface/final/design.md`, `doc/main/cli/{state-contract,paths}.md`
+**Verification:** `cd cli && bun test test/agent-json-surfaces.test.ts test/unit/commands/project/registry.test.ts` → 33 pass; full `bun run test` → 706 pass; direct CLI smoke confirmed all four envelopes/exit codes; `yaco task validate --id yaco-cli-surface --json` → ok.
+**Blockers:** None.
+
 ## 2026-06-07: yaco project list/add/remove shared registry surface
 
 **What changed:**

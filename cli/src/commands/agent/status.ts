@@ -5,6 +5,7 @@ import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, 
 import { validateName, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
 import { resolveProjectForPath, toSessionRow, type AgentSessionRow, type ProjectRef } from "../../lib/core/agent/index.ts";
 import { readProjects } from "../../lib/core/paths/index.ts";
+import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { basename } from "node:path";
 import { execSync } from "child_process";
 
@@ -143,11 +144,11 @@ export function status(name: string, jsonOrOptions?: boolean | StatusOptions): s
 
   validateName(name);
   const resolved = reconcile(name);
-  if (opts.json) {
-    if (!resolved) return JSON.stringify({ error: "not found" });
-    return JSON.stringify(resolved);
+  if (!resolved) {
+    throw new CliError(ErrCode.NOT_FOUND, `no agent session: ${name}`);
   }
-  return resolved?.status ?? "not found";
+  if (opts.json) return JSON.stringify(resolved);
+  return resolved.status;
 }
 
 interface ListOptions {

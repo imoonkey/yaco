@@ -101,6 +101,19 @@ describe("yaco project add", () => {
     expect(registryRaw(fix)).toEqual([{ id: "alpha", path }]);
   });
 
+  it("returns { project, projectsFile } in the json envelope", () => {
+    const fix = fixture();
+    const path = fix.dir("alpha");
+    const r = handleProject(["add", "alpha", path], { json: true });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value).toEqual({
+        project: { name: "alpha", path },
+        projectsFile: join(fix.yacoHome, "projects.json"),
+      });
+    }
+  });
+
   it("rejects a non URL-safe name with INVALID", () => {
     const fix = fixture();
     const path = fix.dir("alpha");
@@ -186,6 +199,21 @@ describe("yaco project remove", () => {
     const r = handleProject(["remove", "alpha"], { json: true });
     expect(isOk(r)).toBe(true);
     expect(registryRaw(fix).map((p) => p.id)).toEqual(["beta"]);
+  });
+
+  it("returns { removed: true, project, projectsFile } in the json envelope", () => {
+    const fix = fixture();
+    const path = fix.dir("alpha");
+    handleProject(["add", "alpha", path], { json: true });
+    const r = handleProject(["remove", "alpha"], { json: true });
+    expect(isOk(r)).toBe(true);
+    if (isOk(r)) {
+      expect(r.value).toEqual({
+        removed: true,
+        project: { name: "alpha", path },
+        projectsFile: join(fix.yacoHome, "projects.json"),
+      });
+    }
   });
 
   it("returns NOT_FOUND when the name is missing", () => {

@@ -66,6 +66,34 @@ describe("agent list/status surface split", () => {
     expect(err.ok).toBe(false);
     expect(err.error.code).toBe("USAGE");
   });
+
+  it("`agent status <missing> --json` exits non-zero with NOT_FOUND (no ok:true envelope)", () => {
+    // Isolate only the sessions dir (no state file for the handle) and keep the
+    // real $HOME so tmux can authoritatively confirm the session is dead. The
+    // `=`-prefixed exact handle below cannot collide with a live session.
+    const sessionsDir = join(mkdtempSync(join(tmpdir(), "yaco-status-")), "sessions");
+    const r = spawnSync("bun", ["run", BIN, "agent", "status", "yaco-test-absent-handle-xyz", "--json"], {
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1", YACO_AGENT_SESSIONS_DIR: sessionsDir },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout.trim()).toBe("");
+    const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string } };
+    expect(err.ok).toBe(false);
+    expect(err.error.code).toBe("NOT_FOUND");
+  });
+
+  it("`agent list --all --path <p> --json` exits non-zero with USAGE (mutually exclusive)", () => {
+    const r = spawnSync("bun", ["run", BIN, "agent", "list", "--all", "--path", "/tmp", "--json"], {
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1", ...hermetic() },
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stdout.trim()).toBe("");
+    const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string } };
+    expect(err.ok).toBe(false);
+    expect(err.error.code).toBe("USAGE");
+  });
 });
 
 describe("agent providers catalog", () => {

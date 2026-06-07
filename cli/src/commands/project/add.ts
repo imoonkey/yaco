@@ -6,7 +6,7 @@
  */
 
 import { ok, type Result } from "../../lib/core/result.ts";
-import { addProject } from "../../lib/core/paths/index.ts";
+import { addProject, projectsRegistryPath } from "../../lib/core/paths/index.ts";
 
 export function runAdd(
   name: string,
@@ -14,6 +14,6 @@ export function runAdd(
   opts: { json: boolean },
 ): Result<unknown> {
   const project = addProject({ name, path });
-  if (opts.json) return ok({ project });
+  if (opts.json) return ok({ project, projectsFile: projectsRegistryPath() });
   return ok({ help: `added project ${project.name} -> ${project.path}\n` });
 }

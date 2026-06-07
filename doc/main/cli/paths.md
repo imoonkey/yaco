@@ -54,8 +54,9 @@ yaco project list|add|remove --json               # project registry surface
   - `--repo` with no value → `USAGE` (exit 2).
   - Malformed `yaco.toml` (including duplicate `[paths]` key) → `ENV` (exit 3).
   - Both follow the dispatcher's `--json` envelope: `{ok:false, error:{code, message}}` on stderr, stdout empty.
-- `yaco project list --json` returns `{projects, projectsFile}`. `add` and
-  `remove` return `{project}` on success and use the shared registry validation
+- `yaco project list --json` returns `{projects, projectsFile}`. `add` returns
+  `{project, projectsFile}` and `remove` returns `{removed:true, project,
+  projectsFile}` on success, and both use the shared registry validation
   above for `INVALID`, `CONFLICT`, and `NOT_FOUND` failures.
 
 End-to-end shape is locked in by `test/unit/core/paths/paths-cli.test.ts`.

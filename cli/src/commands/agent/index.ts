@@ -270,6 +270,12 @@ export async function handleAgent(
 
     case "list": {
       const parsed = parseSubArgs(rest);
+      if (parsed.options.all && parsed.options.path !== undefined) {
+        throw new CliError(
+          ErrCode.USAGE,
+          "yaco agent list: --all and --path are mutually exclusive",
+        );
+      }
       const json = parsed.options.json || opts.json;
       const output = list({
         json,

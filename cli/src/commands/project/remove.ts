@@ -6,10 +6,10 @@
  */
 
 import { ok, type Result } from "../../lib/core/result.ts";
-import { removeProject } from "../../lib/core/paths/index.ts";
+import { removeProject, projectsRegistryPath } from "../../lib/core/paths/index.ts";
 
 export function runRemove(name: string, opts: { json: boolean }): Result<unknown> {
   const project = removeProject(name);
-  if (opts.json) return ok({ project });
+  if (opts.json) return ok({ removed: true, project, projectsFile: projectsRegistryPath() });
   return ok({ help: `removed project ${project.name}\n` });
 }

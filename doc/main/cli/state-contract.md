@@ -81,14 +81,14 @@ The authoritative reconciled view. This is the **single source of runtime truth*
 
 ### `yaco agent list [--all] [--path <path>] --json`
 
-- Collection view of live sessions. Default scope is the cwd subtree; `--all` spans every project; `--path <path>` scopes to an explicit subtree.
+- Collection view of live sessions. Default scope is the cwd subtree; `--all` spans every project; `--path <path>` scopes to an explicit subtree. `--all` and `--path` are mutually exclusive — passing both exits non-zero (`USAGE`).
 - Runs `reconcile()` per session: liveness checks, staleness fallback, capture fallback, metadata backfill. Owns GC: deletes state files for confirmed-dead sessions.
 - Returns an array of `AgentSessionRow` (not raw state): each row adds the resolved `project`/`projectPath` (longest-prefix match against the project registry; basename fallback for unregistered paths) to the session fields, and passes through valid `spawnedBy`/`parentSession`. Text mode renders a `name  status  project` table.
 - Projection is the pure `toSessionRow` helper exported from `@yaco/cli/core/agent` and shared with the app server's hot state-file reads. `reconcile()` is **not** exported — it stays CLI-only so the app never pulls liveness/GC into its hot read path.
 
 ### `yaco agent status <handle> --json`
 
-- Single-session reconciled view. The handle is **required**: `yaco agent status` with no handle exits non-zero (`USAGE`). There is no no-arg collection mode — use `yaco agent list`.
+- Single-session reconciled view. The handle is **required**: `yaco agent status` with no handle exits non-zero (`USAGE`). There is no no-arg collection mode — use `yaco agent list`. An absent or dead session exits non-zero (`NOT_FOUND`) — the `--json` failure envelope is `{ok:false,error:{code:"NOT_FOUND"}}`, never `{ok:true,data:{error:"not found"}}`.
 
 ### `yaco agent capture <handle>`
 
