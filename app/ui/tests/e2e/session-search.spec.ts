@@ -99,7 +99,7 @@ test.describe('Session search', () => {
     await expect(page.getByText('summary:')).toBeVisible()
     await expect(page.getByText(/frontend panel rendering/).last()).toBeVisible()
 
-    await liveSearch.fill('cdx ui')
+    await liveSearch.fill('codex ui')
     await expect(page.getByText('codex-ui')).toBeVisible()
     await expect(page.getByText('claude-main')).not.toBeVisible()
 
@@ -114,7 +114,7 @@ test.describe('Session search', () => {
     await expect(page.getByText('Session history branch polish')).toBeVisible()
     await expect(page.getByText('Voice formatter')).toBeVisible()
 
-    await historySearch.fill('task brn')
+    await historySearch.fill('task branch')
     await expect(page.getByText('Session history branch polish')).toBeVisible()
     await expect(page.getByText('Voice formatter')).not.toBeVisible()
     await expect(page.getByText('branch:')).toBeVisible()

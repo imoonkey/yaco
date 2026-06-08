@@ -1,4 +1,3 @@
-import { Fzf, extendedMatch } from 'fzf'
 import { sanitizeSummary } from './sanitizeSummary'
 import type { AgentSession, HistorySession } from '../types'
 
@@ -123,8 +122,42 @@ function buildMatch(
     })
   }
 
-  const snippetField = fields.find(field => snippetKeys.has(field.key))
+  const snippetField = fields
+    .filter(field => snippetKeys.has(field.key))
+    .sort((a, b) => b.positions.size - a.positions.size)[0]
   return { fields, snippet: snippetField ? buildSnippet(snippetField) : null }
+}
+
+function queryTerms(query: string): string[] {
+  return query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+}
+
+function termPositions(text: string, term: string): Set<number> | null {
+  const positions = new Set<number>()
+  let start = 0
+
+  while (start < text.length) {
+    const index = text.indexOf(term, start)
+    if (index === -1) break
+    for (let offset = 0; offset < term.length; offset++) {
+      positions.add(index + offset)
+    }
+    start = index + Math.max(1, term.length)
+  }
+
+  return positions.size > 0 ? positions : null
+}
+
+function substringMatchPositions(text: string, terms: string[]): Set<number> | null {
+  const positions = new Set<number>()
+
+  for (const term of terms) {
+    const termMatch = termPositions(text, term)
+    if (!termMatch) return null
+    for (const position of termMatch) positions.add(position)
+  }
+
+  return positions
 }
 
 function matchByFields<T extends object>(
@@ -133,21 +166,23 @@ function matchByFields<T extends object>(
   fieldsFor: (item: T) => SearchFieldInput[],
   snippetKeys: SearchFieldKey[],
 ): SearchResult<T>[] {
-  const trimmed = query.trim().toLocaleLowerCase()
-  if (!trimmed) return items.map(item => ({ item, match: null }))
+  const terms = queryTerms(query)
+  if (terms.length === 0) return items.map(item => ({ item, match: null }))
 
   const searchable = items.map(item => toSearchableItem(item, fieldsFor(item)))
-  const fzf = new Fzf(searchable, {
-    selector: (entry: SearchableItem<T>) => entry.text,
-    match: extendedMatch,
-    limit: items.length,
-    sort: false,
-  })
   const snippetKeySet = new Set(snippetKeys)
-  return fzf.find(trimmed).map(result => ({
-    item: result.item.item,
-    match: buildMatch(result.item, result.positions, snippetKeySet),
-  }))
+  const results: SearchResult<T>[] = []
+
+  for (const entry of searchable) {
+    const positions = substringMatchPositions(entry.text, terms)
+    if (!positions) continue
+    results.push({
+      item: entry.item,
+      match: buildMatch(entry, positions, snippetKeySet),
+    })
+  }
+
+  return results
 }
 
 export function fieldMatch(

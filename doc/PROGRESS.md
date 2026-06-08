@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Session search substring matching restored
+
+**What changed:**
+- Session search matching was reverted from `fzf` to case-insensitive substring matching with AND semantics across query terms.
+- Match highlighting and snippets were kept, now driven by exact substring positions instead of fuzzy positions.
+- Snippet selection now prefers the strongest matching snippet field, so branch/live/summary evidence is more likely to explain the actual match.
+
+**Why:**
+- Fuzzy matching over long session summaries produced too many unrelated results. Substring matching is more predictable for filtering sessions while still showing why a row matched.
+
+**Key files:** `app/ui/src/workspace/{sessionSearch.ts,WorkspaceSessionList.tsx,WorkspaceHistoryList.tsx}`, `app/ui/src/workspace/__tests__/sessionSearch.test.ts`, `app/ui/tests/e2e/session-search.spec.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/sessionSearch.test.ts` passed; `cd app/ui && npx playwright test tests/e2e/session-search.spec.ts` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Session search match evidence
 
 **What changed:**

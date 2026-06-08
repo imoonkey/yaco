@@ -67,10 +67,10 @@ The History tab calls `GET /api/sessions/history?project=<name>` and renders the
 
 ### Search
 
-The Sessions panel has one local search box shared by the Live and History tabs. The query is kept in memory and filters only the active tab; switching tabs keeps the text so the same phrase can be reused. Matching uses `fzf` in case-insensitive extended-match mode so skipped letters and small typos can still match, but `sort: false` preserves the original list order instead of ranking by fuzzy score.
+The Sessions panel has one local search box shared by the Live and History tabs. The query is kept in memory and filters only the active tab; switching tabs keeps the text so the same phrase can be reused. Matching is case-insensitive substring matching with AND semantics across whitespace-separated terms; it intentionally does not use fuzzy matching because long summaries create noisy matches.
 
 - Live search filters the already-loaded session rows by name, provider, status, project, summary, worktree, and lineage metadata. Lineage grouping then runs over the filtered visible set, so a child whose parent is filtered out renders as a root through the normal lineage fallback.
-- History search filters the already-loaded history rows by title, summary, provider, id, branch, and live-session handle. Timestamps and message counts are intentionally excluded from fuzzy matching because they create noisy matches for handle-like queries such as `live-7`. Sorting and the 200-row cap remain CLI/server-owned.
+- History search filters the already-loaded history rows by title, summary, provider, id, branch, and live-session handle. Timestamps and message counts are intentionally excluded from matching because they create noisy hits for handle-like queries such as `live-7`. Sorting and the 200-row cap remain CLI/server-owned.
 - Matched characters are highlighted inside visible fields. When a match lands in a non-primary field (for example summary, branch, provider, status, worktree, or live handle), the row also renders a labeled one-line snippet so the user can see why it matched even when the normal row text is clipped.
 
 ### Actions

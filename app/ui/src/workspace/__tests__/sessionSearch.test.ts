@@ -44,15 +44,16 @@ describe('filterAgentSessions', () => {
     expect(filterAgentSessions(sessions, 'SESSION-search')).toEqual([sessions[1]])
   })
 
-  it('matches live sessions fuzzily while preserving source order', () => {
+  it('does not match skipped-letter or typo queries', () => {
     const sessions = [
       liveSession({ name: 'codex-search', provider: 'codex', summary: 'Search sessions' }),
       liveSession({ name: 'claude-main', provider: 'claude', summary: 'Planning task graph cleanup' }),
       liveSession({ name: 'codex-ui', provider: 'codex', summary: 'Implement search UI' }),
     ]
 
-    expect(filterAgentSessions(sessions, 'cdx ui')).toEqual([sessions[2]])
-    expect(filterAgentSessions(sessions, 'codxe')).toEqual([sessions[0], sessions[2]])
+    expect(filterAgentSessions(sessions, 'cdx ui')).toEqual([])
+    expect(filterAgentSessions(sessions, 'codxe')).toEqual([])
+    expect(filterAgentSessions(sessions, 'codex ui')).toEqual([sessions[2]])
   })
 
   it('requires all search terms to match one session', () => {
@@ -64,13 +65,13 @@ describe('filterAgentSessions', () => {
     expect(filterAgentSessions(sessions, 'codex search idle')).toEqual([sessions[0]])
   })
 
-  it('returns match positions and a summary snippet for fuzzy live session matches', () => {
+  it('returns match positions and a summary snippet for live session substring matches', () => {
     const session = liveSession({
       name: 'worker',
       summary: 'Investigating clipped session summaries before the frontend panel renders matching text near the end',
     })
 
-    const result = matchAgentSessions([session], 'frntnd')[0]
+    const result = matchAgentSessions([session], 'frontend')[0]
     expect(result?.item).toBe(session)
 
     const summary = fieldMatch(result?.match, 'summary')
@@ -107,13 +108,14 @@ describe('filterHistorySessions', () => {
     expect(filterHistorySessions(history, 'live-7')).toEqual([history[1]])
   })
 
-  it('matches history fuzzily without fzf score reordering', () => {
+  it('matches history substrings without score reordering', () => {
     const history = [
       historySession({ id: 'older', provider: 'codex', title: 'Codex search followup' }),
       historySession({ id: 'newer', provider: 'codex', title: 'Codex session search UI' }),
     ]
 
-    expect(filterHistorySessions(history, 'cdx srch')).toEqual(history)
+    expect(filterHistorySessions(history, 'codex search')).toEqual(history)
+    expect(filterHistorySessions(history, 'cdx srch')).toEqual([])
   })
 
   it('returns match positions and a live handle snippet for history matches', () => {
@@ -129,5 +131,19 @@ describe('filterHistorySessions', () => {
     expect(liveHandle?.text).toBe('codex-live-7')
     expect(result?.match?.snippet?.label).toBe('live')
     expect(result?.match?.snippet?.text).toBe('codex-live-7')
+  })
+
+  it('prefers the strongest snippet field when multiple fields match', () => {
+    const history = [
+      historySession({
+        title: 'Session history branch polish',
+        summary: 'Refined branch-polish metadata handling',
+        gitBranch: 'task/branch-polish',
+      }),
+    ]
+
+    const result = matchHistorySessions(history, 'task branch')[0]
+    expect(result?.match?.snippet?.label).toBe('branch')
+    expect(result?.match?.snippet?.text).toBe('task/branch-polish')
   })
 })
