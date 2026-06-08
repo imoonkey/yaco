@@ -10,6 +10,12 @@ import { SearchHighlightedText } from './SearchHighlightedText'
 import { fieldMatch, type SearchMatch } from './sessionSearch'
 import type { AgentSession, SessionStatus } from '../types'
 
+// Indentation geometry for nested (parent → child) sessions.
+const INDENT_BASE = 8
+const INDENT_STEP = 14
+// Dashed guide column sits centred in the indent step, left of the child icon.
+const GUIDE_OFFSET = 7
+
 // Static style constants extracted from render
 const INACTIVE_COLOR: React.CSSProperties = { color: 'var(--sol-text)' }
 const SESSION_TRANSITION: React.CSSProperties = { transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }
@@ -108,8 +114,16 @@ export function SessionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
-      style={{ ...(isActive ? undefined : INACTIVE_COLOR), opacity: dragging ? 0.55 : 1, ...(depth > 0 ? { paddingLeft: 8 + depth * 14 } : null), ...SESSION_TRANSITION }}>
+      className={`relative flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
+      style={{ ...(isActive ? undefined : INACTIVE_COLOR), opacity: dragging ? 0.55 : 1, ...(depth > 0 ? { paddingLeft: INDENT_BASE + depth * INDENT_STEP } : null), ...SESSION_TRANSITION }}>
+      {depth > 0 && Array.from({ length: depth }, (_, level) => (
+        <span
+          key={level}
+          aria-hidden
+          className="absolute top-0 bottom-0 pointer-events-none"
+          style={{ left: INDENT_BASE + level * INDENT_STEP + GUIDE_OFFSET, borderLeft: '1px dashed var(--sol-text-dim)', opacity: 0.6 }}
+        />
+      ))}
       {onPin && (
         <button
           onClick={e => { e.stopPropagation(); onPin() }}
