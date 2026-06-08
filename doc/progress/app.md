@@ -1,3 +1,22 @@
+## 2026-06-07: UI text-color scale collapse + contrast-audit AA pass
+
+**What changed:**
+- Reworked the Solarized semantic text scale into a **two-tier system** for non-primary text: `--sol-text` ("you read this") and `--sol-text-faint` ("ambient companion"). Removed `--sol-text-secondary` entirely — it resolved to the same `#586e75` as `--sol-text` in light, a redundant middle tier; all ~76 usages folded into `text` (must-read: empty states, dialog bodies/hints, status, section labels, inactive controls, control icons) or `text-faint` (paths, timestamps, counts, nav glyphs, tab suffixes, detail-panel meta, chart ticks, gitignored filenames, placeholders).
+- Added tokens (theme-split, registered under `@theme`): `--sol-text-faint` (light `#889392` / dark `#6a8088`), `--sol-text-disabled` (light `#93a1a1` / dark `#506872`). Applied the disabled token to VoiceControl + ComposeTray's opacity-only disabled states and standardized `cursor: default`.
+- Resolved the catalogued contrast-audit AA failures: empty-state lines, dialog bodies, section/uppercase labels, and other must-read text raised to `--sol-text` (AA in both themes).
+- Sidebar primary/secondary hierarchy now driven by **font-weight** — session/history names get `font-medium` (matching Projects/file-tree) so Changes/Sessions no longer read heavier than Projects; companions recede via `text-faint`.
+- `SectionHeader`: replaced the warm list-selection hover (`--sol-hover-bg`, a bright yellow band across the full bar — regressed in a764c91) with a neutral header-bg darken/lighten via a new `.section-header-bar` class.
+- Spawn-action buttons (New Claude/Codex/Shell): dropped the `opacity-80` ghost look for neutral icons that lift to an accent tint on hover (`.spawn-btn`).
+- gitignored filenames → `text-faint` (the de-emphasis token); breadcrumb leaf → `text-dark`, trail → `text`; tokenized duplicated git tints and `#fff` → `--sol-base3` in WorkspaceSearch.
+
+**Why:**
+- The machine-generated [contrast-audit](../../plan/all/frontend-improve/contrast-audit.md) flagged 41 AA failures (the `--sol-muted` body-text family). A prior pass added `--sol-text-secondary`, but in light it equals `--sol-text`, so it was an invisible middle tier that flattened hierarchy. Collapsing to a clean two-tier scale + weight-based hierarchy fixes both the AA floor and the visual consistency (Changes/Sessions vs Projects) without darkening primaries.
+
+**Key files:** `app/ui/src/index.css` (tokens, `.spawn-btn`, `.section-header-bar`), `app/ui/src/{workspace,components,tasks}/**` (~30 files), `doc/main/app/ui/design-system.md`.
+**Verification:** `cd app/ui && npx tsc -b` → clean; `npm run lint` → 0 errors (13 pre-existing warnings); `npx vitest run src/` → 209 pass; spot-measured representative fixes in both themes via Playwright against resolved backgrounds; visually reviewed sidebar/tasks/dialogs in light + dark.
+**Commit:** fc0a436 (+ this docs commit)
+**Blockers:** None.
+
 ## 2026-06-06: Pseudo-Gantt task workspace mode (replaces DAG)
 
 **What changed:**

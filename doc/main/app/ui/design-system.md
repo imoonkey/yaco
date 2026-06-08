@@ -58,6 +58,25 @@ VS Code Solarized Light theme adapted for web.
 
 Most components apply Solarized tokens via inline `style={{ color: 'var(--sol-…)' }}`. When using a Tailwind utility with a CSS variable, use the **v4 paren shorthand** — `bg-(--sol-accent)`, `text-(--sol-base01)` — which wraps the value in `var()`. The square-bracket form `bg-[--sol-accent]` is **not** wrapped in Tailwind v4: it compiles to `background-color: --sol-accent` (invalid → silently no color). Literal arbitrary values like `bg-[#268bd2]` still work in brackets.
 
+### Semantic Text Color Scale
+
+Text uses **theme-split semantic tokens** (resolved per `[data-theme]`), not the raw base colors above. Picking the right tier is a two-question test — *is this the main thing in its area, or a companion to something else?* and *must it be read, or just glanced at?*
+
+| Token | Light / Dark | Role | WCAG (on bg / editor-bg) |
+|-------|--------------|------|--------------------------|
+| `--sol-text-dark` | `#073642` / `#93a1a1` | Strongest primary: active names, dialog titles, current file | AA+ |
+| `--sol-text` | `#586e75` / `#839496` | **Default "you read this":** body, empty states, dialog bodies/hints, status messages, section labels, inactive controls, names | AA both themes |
+| `--sol-text-faint` | `#889392` / `#6a8088` | **Ambient companion ("glance"):** paths beside filenames, timestamps, counts, nav glyphs, tab suffixes, detail-panel meta, chart ticks, gitignored filenames, placeholders | sub-AA by design (~2.6–4.0) |
+| `--sol-text-dim` | `#657b83` (fixed) | Controls / icons / diff body / chrome — **not** a readable-text role | varies; **fails AA on dark editor-bg (~3.4)** |
+| `--sol-muted` | `#93a1a1` / `#586e75` | Decorative chrome, icons, skeletons | sub-AA |
+| `--sol-text-disabled` | `#93a1a1` / `#506872` | Disabled controls (replaces opacity-only fades); reads "off" but visible | ~2.5 (intentional) |
+
+**Rules & pitfalls:**
+- Non-primary text is a **two-tier scale**: `--sol-text` (read it) → `--sol-text-faint` (ambient). There is **no `--sol-text-secondary`** — it was removed because it resolved to the same `#586e75` as `--sol-text` in light (a redundant middle tier). Don't reintroduce it.
+- Sidebar primary/secondary hierarchy is driven by **font-weight** (names get `font-medium`, matching Projects/file-tree), not by darkening the primary — keep primary tone consistent across the sidebar so Changes/Sessions don't read heavier than Projects.
+- Do **not** use `--sol-text-dim` for must-read text: it is fixed `#657b83` and only ~3.4:1 on the dark editor surface. Use `--sol-text` (must-read) or `--sol-text-faint` (ambient) instead.
+- Section-header hover uses a neutral header-bg darken/lighten (`.section-header-bar`), **not** `--sol-hover-bg` (the warm list-selection tint, which flashes a bright band across the full-width bar).
+
 ## Typography
 
 - **Font stack**: system-ui, sans-serif (body); monospace (editor, terminal, code)
