@@ -19,7 +19,7 @@ function PanelCloseButton() {
     <button
       onClick={close ?? undefined}
       className="cursor-pointer"
-      style={{ color: 'var(--sol-muted)' }}
+      style={{ color: 'var(--sol-text)' }}
     >
       <X size={14} />
     </button>
@@ -67,14 +67,14 @@ export function NotificationPanel({
               <button
                 onClick={onMarkAllRead}
                 className="text-[11px] cursor-pointer hover:underline"
-                style={{ color: 'var(--sol-muted)' }}
+                style={{ color: 'var(--sol-text)' }}
               >
                 Mark all read
               </button>
               <button
                 onClick={onClearAll}
                 className="text-[11px] cursor-pointer hover:underline"
-                style={{ color: 'var(--sol-muted)' }}
+                style={{ color: 'var(--sol-text)' }}
               >
                 Clear
               </button>
@@ -86,7 +86,7 @@ export function NotificationPanel({
 
       <div className="flex-1 overflow-y-auto">
         {notifications.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--sol-text-secondary)' }}>
+          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--sol-text)' }}>
             No notifications
           </div>
         ) : (
@@ -105,18 +105,18 @@ export function NotificationPanel({
               <div className="flex items-center justify-between gap-2">
                 <span
                   className="text-[12px] font-medium truncate flex-1"
-                  style={{ color: n.read ? 'var(--sol-text-dim)' : 'var(--sol-text-dark)' }}
+                  style={{ color: n.read ? 'var(--sol-text)' : 'var(--sol-text-dark)' }}
                 >
                   {n.title}
                 </span>
-                <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-muted)' }}>
+                <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
                   {timeAgo(n.timestamp)}
                 </span>
               </div>
               {n.message && (
                 <div
                   className="text-[11px] truncate mt-0.5"
-                  style={{ color: 'var(--sol-muted)' }}
+                  style={{ color: 'var(--sol-text)' }}
                 >
                   {n.message}
                 </div>

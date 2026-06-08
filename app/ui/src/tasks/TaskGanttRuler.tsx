@@ -23,7 +23,7 @@ export function TaskGanttRuler({ ticks, scale, timeWidth }: {
         {ticks.map(tick => (
           <g key={tick.label}>
             <line x1={tick.x} y1={RULER_HEIGHT - 6} x2={tick.x} y2={RULER_HEIGHT} stroke="var(--sol-border)" strokeWidth={1} />
-            <text x={tick.x + 3} y={RULER_HEIGHT - 9} fontSize={10} fill="var(--sol-muted)" className="tabular-nums">
+            <text x={tick.x + 3} y={RULER_HEIGHT - 9} fontSize={10} fill="var(--sol-text-faint)" className="tabular-nums">
               {tick.label}
             </text>
           </g>

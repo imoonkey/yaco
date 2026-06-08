@@ -76,8 +76,7 @@ const BASE_STYLE: React.CSSProperties = {
 const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
   disabled: {
     background: 'transparent',
-    color: 'var(--sol-base1)',
-    opacity: 0.5,
+    color: 'var(--sol-text-disabled)',
     cursor: 'default',
   },
   ready: {
@@ -93,7 +92,7 @@ const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
   },
   processing: {
     background: 'var(--sol-subtle-bg)',
-    color: 'var(--sol-base1)',
+    color: 'var(--sol-text)',
     opacity: 1,
     cursor: 'default',
   },

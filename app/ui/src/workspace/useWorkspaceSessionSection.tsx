@@ -89,7 +89,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
       {sessionTab === 'live' && (
         <div className="flex gap-1">
           {startableProviders.map(p => (
-            <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="flex items-center gap-0.5 text-[10px] px-1 py-0 rounded cursor-pointer opacity-80 hover:opacity-100" title={`New ${getProviderUi(p).label}`}>
+            <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="spawn-btn flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded cursor-pointer" title={`New ${getProviderUi(p).label}`}>
               <ProviderIcon provider={p} className="w-3.5 h-3.5" />
             </button>
           ))}
@@ -177,7 +177,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
       {renderRows(processingRows)}
       {processingRows.length > 0 && idleRows.length > 0 && divider}
       {renderRows(idleRows)}
-      {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No live sessions</div>}
+      {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>No live sessions</div>}
     </>
   )
 

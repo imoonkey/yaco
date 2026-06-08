@@ -19,7 +19,7 @@ export function TaskGraphSectionHeader({ section }: { section: LayoutSection }) 
         y={section.y + 17}
         fontSize={11}
         fontWeight={600}
-        fill="var(--sol-muted)"
+        fill="var(--sol-text-faint)"
         letterSpacing="0"
       >
         {section.label}

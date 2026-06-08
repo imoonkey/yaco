@@ -98,7 +98,7 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
         width: 34,
         textAlign: 'right',
         paddingRight: 6,
-        color: 'var(--sol-base1)',
+        color: 'var(--sol-text-faint)',
         userSelect: 'none',
         flexShrink: 0,
         fontSize: 11,
@@ -271,7 +271,7 @@ function HunkHeader({ hunk, isActive }: { hunk: DiffHunk; isActive: boolean }) {
     <div
       style={{
         backgroundColor: COLORS.hunkBg,
-        color: isActive ? 'var(--sol-blue)' : 'var(--sol-base1)',
+        color: isActive ? 'var(--sol-blue)' : 'var(--sol-text-faint)',
         padding: '3px 12px',
         fontSize: 11,
         fontFamily: 'var(--font-mono)',
@@ -410,7 +410,7 @@ function FileListDropdown({
         padding: '4px 0',
       }}
     >
-      <div className="px-2 pb-1 mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--sol-muted)', borderBottom: '1px solid var(--sol-border)' }}>
+      <div className="px-2 pb-1 mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--sol-text)', borderBottom: '1px solid var(--sol-border)' }}>
         Files in comparison
       </div>
       {files.map((file, idx) => {
@@ -436,7 +436,7 @@ function FileListDropdown({
           >
             <FileTypeIcon name={name} />
             <span className="truncate font-medium" style={{ color: isCurrent ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
-            {dir && <span className="truncate text-[10px] min-w-0 shrink" style={{ color: 'var(--sol-muted)' }}>{dir}</span>}
+            {dir && <span className="truncate text-[10px] min-w-0 shrink" style={{ color: 'var(--sol-text-faint)' }}>{dir}</span>}
             <span
               className="ml-auto shrink-0 rounded text-[9px] font-bold leading-none"
               style={{ color: GIT_COLORS[file.status], backgroundColor: STATUS_BG[file.status], padding: '2px 4px' }}
@@ -530,7 +530,7 @@ function DiffToolbar({
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--sol-text-dim)', marginRight: 10 }}>
             <GitBranch size={10} style={{ color: 'var(--sol-accent)' }} />
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.base}</span>
-            <span style={{ color: 'var(--sol-muted)', fontSize: 10 }}>&rarr;</span>
+            <span style={{ color: 'var(--sol-text-faint)', fontSize: 10 }}>&rarr;</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.compare}</span>
           </span>
           <div className="toolbar-sep" />
@@ -589,7 +589,7 @@ function DiffToolbar({
                 transition: 'background-color 80ms',
               }}
             >
-              {currentIdx + 1}<span style={{ color: 'var(--sol-muted)', fontWeight: 400 }}> / </span>{fileCount}
+              {currentIdx + 1}<span style={{ color: 'var(--sol-text-faint)', fontWeight: 400 }}> / </span>{fileCount}
             </button>
             <button style={navBtnStyle} onClick={onNextFile} disabled={currentIdx >= fileCount - 1} aria-label="Next file">
               <ChevronRight size={11} />
@@ -605,7 +605,7 @@ function DiffToolbar({
         <button style={navBtnStyle} onClick={onNext} disabled={hunkCount === 0} aria-label="Next change">&#8595;</button>
         {hunkCount > 0 && (
           <span style={{ fontSize: 10, color: 'var(--sol-text-dim)', marginLeft: 4, fontWeight: 500, whiteSpace: 'nowrap' }}>
-            {activeIndex + 1}<span style={{ color: 'var(--sol-muted)', fontWeight: 400 }}> / </span>{hunkCount}
+            {activeIndex + 1}<span style={{ color: 'var(--sol-text-faint)', fontWeight: 400 }}> / </span>{hunkCount}
           </span>
         )}
       </span>
@@ -732,7 +732,7 @@ export function DiffTab({
   // Binary placeholder
   if (parsed.mode === 'binary') {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+      <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text)' }}>
         <div style={{ fontSize: 24, opacity: 0.3 }}>&#x1F4E6;</div>
         <span className="text-[12px] font-medium">Binary file changed</span>
         <span className="text-[10px]">Preview not available for binary files</span>
@@ -743,7 +743,7 @@ export function DiffTab({
   // Empty diff
   if (hunkCount === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-muted)' }}>
+      <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text)' }}>
         <GitCompare size={20} style={{ opacity: 0.3 }} />
         <span className="text-[12px] font-medium">No changes detected</span>
         <span className="text-[10px]">The files are identical</span>

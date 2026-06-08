@@ -40,13 +40,13 @@ function HistoryItem({
         <span className="w-3 h-3 shrink-0 mt-0.5 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--sol-muted)' }} />
       )}
       <div className="min-w-0 flex-1 line-clamp-2">
-        <span>{primary}</span>
-        <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-muted)' }}>
+        <span className="font-medium">{primary}</span>
+        <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
           {secondary}
           {meta.length > 0 && ` · ${meta.join(' · ')}`}
         </span>
       </div>
-      <span className="shrink-0 text-[10px] mt-0.5" style={{ color: 'var(--sol-muted)' }}>
+      <span className="shrink-0 text-[10px] mt-0.5" style={{ color: 'var(--sol-text-faint)' }}>
         {formatRelativeTime(entry.modified)}
       </span>
     </div>
@@ -86,11 +86,11 @@ export function WorkspaceHistoryList({
   }
 
   if (loading && !history) {
-    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>Loading…</div>
+    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>Loading…</div>
   }
 
   if (!history || history.length === 0) {
-    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>No past sessions</div>
+    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>No past sessions</div>
   }
 
   return (

@@ -57,7 +57,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
           <section key={group.title}>
             <h3
               className="text-xs font-semibold uppercase tracking-wide mb-2"
-              style={{ color: 'var(--sol-muted)' }}
+              style={{ color: 'var(--sol-text)' }}
             >
               {group.title}
             </h3>
@@ -71,7 +71,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
                     className="text-xs px-1.5 py-0.5 rounded shrink-0"
                     style={{
                       fontFamily: 'var(--font-mono)',
-                      color: 'var(--sol-muted)',
+                      color: 'var(--sol-text)',
                       backgroundColor: 'var(--sol-code-bg)',
                       border: '1px solid var(--sol-border)',
                     }}

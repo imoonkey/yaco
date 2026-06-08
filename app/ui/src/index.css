@@ -90,7 +90,8 @@
   --sol-text: #586e75;
   --sol-header-bg: #d9d2c2;
   --sol-text-dim: #657b83;
-  --sol-text-secondary: #586e75;
+  --sol-text-disabled: #93a1a1;
+  --sol-text-faint: #889392;
   --sol-text-dark: #073642;
   --sol-text-brown: #584c27;
   --sol-muted: #93a1a1;
@@ -157,7 +158,8 @@
   --sol-text: #839496;
   --sol-header-bg: #004052;
   --sol-text-dim: #657b83;
-  --sol-text-secondary: #93a1a1;
+  --sol-text-disabled: #506872;
+  --sol-text-faint: #6a8088;
   --sol-text-dark: #93a1a1;
   --sol-text-brown: #93a1a1;
   --sol-muted: #586e75;
@@ -216,7 +218,8 @@
   --color-sol-border: var(--sol-border);
   --color-sol-text: var(--sol-text);
   --color-sol-text-dim: var(--sol-text-dim);
-  --color-sol-text-secondary: var(--sol-text-secondary);
+  --color-sol-text-disabled: var(--sol-text-disabled);
+  --color-sol-text-faint: var(--sol-text-faint);
   --color-sol-text-dark: var(--sol-text-dark);
   --color-sol-text-brown: var(--sol-text-brown);
   --color-sol-muted: var(--sol-muted);
@@ -661,6 +664,31 @@ body {
 /* Conflict banner buttons — CSS hover instead of JS onMouseEnter/Leave */
 .conflict-btn:hover {
   background-color: color-mix(in srgb, var(--sol-warning) 12%, transparent);
+}
+
+/* Sidebar section-header bar — solid header surface with a faint NEUTRAL hover
+   (a few % of black/white over the header tint), not the warm list-selection
+   color, so the full-width bar doesn't flash a bright band on hover. */
+.section-header-bar {
+  background-color: var(--sol-header-bg);
+}
+.section-header-bar:hover {
+  background-color: color-mix(in srgb, #000 7%, var(--sol-header-bg));
+}
+[data-theme="dark"] .section-header-bar:hover {
+  background-color: color-mix(in srgb, #fff 8%, var(--sol-header-bg));
+}
+
+/* Session-spawn action buttons — the app's primary creative act. Quiet neutral
+   icons at rest (full opacity, not the old 80% ghost), lifting to an accent tint
+   on hover so they read as "create" without a loud persistent fill. */
+.spawn-btn {
+  color: var(--sol-text);
+  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
+}
+.spawn-btn:hover {
+  color: var(--sol-accent);
+  background: color-mix(in srgb, var(--sol-accent) 12%, transparent);
 }
 
 /* ═══ Keyframe Animations ═══ */

@@ -120,7 +120,7 @@ export function TaskGraphTooltip({ target, graph, scale, containerRef }: {
         </div>
       )}
       {progress && (
-        <div style={{ fontSize: 10, color: 'var(--sol-muted)', marginTop: 3, fontWeight: 500 }}>
+        <div style={{ fontSize: 10, color: 'var(--sol-text-faint)', marginTop: 3, fontWeight: 500 }}>
           {progress}
         </div>
       )}

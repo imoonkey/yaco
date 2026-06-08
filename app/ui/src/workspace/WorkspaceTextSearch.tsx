@@ -393,7 +393,7 @@ function FileGroupView({ group, expanded, onToggle, onMatchClick, focusIndex, fl
       >
         <span className="w-3 flex items-center justify-center shrink-0">{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <span className="truncate flex-1 font-medium">{group.file}</span>
-        <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: 'var(--sol-muted)' }}>{group.matches.length}</span>
+        <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: 'var(--sol-text-faint)' }}>{group.matches.length}</span>
       </div>
       {expanded && group.matches.map((m, mi) => {
         const matchIdx = flatItems.findIndex(i => i.kind === 'match' && i.file === group.file && i.line === m.line)
@@ -433,7 +433,7 @@ function MatchLine({ match, focused, dataIdx, onClick }: {
       }}
       onClick={onClick}
     >
-      <span className="shrink-0 text-[10px] w-7 text-right" style={{ color: 'var(--sol-muted)' }}>{match.line}</span>
+      <span className="shrink-0 text-[10px] w-7 text-right" style={{ color: 'var(--sol-text-faint)' }}>{match.line}</span>
       <span className="truncate">
         {before}
         <span style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 19%, transparent)', color: 'var(--sol-base02)', fontWeight: 600 }}>{highlighted}</span>

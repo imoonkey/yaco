@@ -89,14 +89,14 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
           className="px-2 py-1 mr-1.5 rounded text-[10px] font-medium"
           style={{
             backgroundColor: includeIgnored ? 'var(--sol-blue)' : 'transparent',
-            color: includeIgnored ? '#fff' : 'var(--sol-muted)',
+            color: includeIgnored ? 'var(--sol-base3)' : 'var(--sol-text)',
             border: includeIgnored ? '1px solid var(--sol-blue)' : '1px solid var(--sol-border)',
           }}
         >.gitignore</button>
       </div>
       <div className="max-h-[300px] overflow-y-auto">
         {isEmptyQuery && displayItems.length > 0 && (
-          <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--sol-muted)' }}>Recent</div>
+          <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>Recent</div>
         )}
         {displayItems.map((r, i) => (
           <SearchResultRow
@@ -108,7 +108,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
             onHover={() => setSelectedIdx(i)}
           />
         ))}
-        {!loading && displayItems.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-text-secondary)' }}>{isEmptyQuery ? 'No recent files' : 'No files found'}</div>}
+        {!loading && displayItems.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-text)' }}>{isEmptyQuery ? 'No recent files' : 'No files found'}</div>}
       </div>
     </DialogShell>
   )
@@ -175,7 +175,7 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
             <HighlightedText
               text={entry.path}
               positions={positions}
-              color={'var(--sol-muted)'}
+              color={'var(--sol-text-faint)'}
               highlightColor={'var(--sol-blue)'}
             />
           </span>
@@ -183,7 +183,7 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
       ) : (
         <>
           <span style={{ color: selected ? undefined : 'var(--sol-text-dark)' }}>{entry.name}</span>
-          <span className="text-[10px]" style={{ color: 'var(--sol-muted)' }}>{entry.path}</span>
+          <span className="text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>{entry.path}</span>
         </>
       )}
     </div>

@@ -36,7 +36,7 @@ function SectionHeader({ children, divider = true }: { children: React.ReactNode
     <div className={divider ? 'mb-1' : ''}>
       <div
         className="text-[10px] font-semibold uppercase tracking-[0.06em]"
-        style={{ color: 'var(--sol-muted)' }}
+        style={{ color: 'var(--sol-text)' }}
       >
         {children}
       </div>
@@ -63,14 +63,14 @@ function Breadcrumb({ task, allTasks, onSelectTask }: {
   if (ancestors.length === 0) return null
 
   return (
-    <div className="flex items-center gap-1 flex-wrap text-[11px]" style={{ color: 'var(--sol-base1)' }}>
+    <div className="flex items-center gap-1 flex-wrap text-[11px]" style={{ color: 'var(--sol-text-faint)' }}>
       {ancestors.map((a, i) => (
         <span key={a.id} className="flex items-center gap-1">
           {i > 0 && <ChevronRight size={10} />}
           <button
             onClick={() => onSelectTask(a.id)}
             className="cursor-pointer transition-colors hover:text-[var(--sol-base01)]"
-            style={{ color: 'var(--sol-base1)' }}
+            style={{ color: 'var(--sol-text-faint)' }}
           >
             {a.title}
           </button>
@@ -163,7 +163,7 @@ function ChildrenProgressBar({ leaves }: { leaves: TaskV2[] }) {
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
         {segments.map(seg => (
-          <span key={seg.state} className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
+          <span key={seg.state} className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATE_COLORS[seg.state] }} />
             {counts[seg.state]} {seg.state}
           </span>
@@ -339,7 +339,7 @@ export function TaskDetailPanel({
                   style={{ backgroundColor: isLive ? 'var(--sol-green)' : 'var(--sol-base1)' }}
                   title={isLive ? 'Live session' : 'No live session'}
                 />
-                <span className="font-mono" style={{ color: isLive ? 'var(--sol-text)' : 'var(--sol-muted)' }}>
+                <span className="font-mono" style={{ color: isLive ? 'var(--sol-text)' : 'var(--sol-text-faint)' }}>
                   {agent}
                 </span>
                 {isActive && (
@@ -372,7 +372,7 @@ export function TaskDetailPanel({
           <SectionHeader>Worktree</SectionHeader>
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
-              <FolderGit2 size={12} style={{ color: task.worktreeStatus?.active ? 'var(--sol-green)' : 'var(--sol-muted)' }} />
+              <FolderGit2 size={12} style={{ color: task.worktreeStatus?.active ? 'var(--sol-green)' : 'var(--sol-text)' }} />
               <span className="font-mono text-[12px]" style={{ color: 'var(--sol-text)' }}>{task.worktree}</span>
               {task.worktreeStatus?.active && (
                 <span
@@ -386,7 +386,7 @@ export function TaskDetailPanel({
             {task.worktreeStatus?.active && (
               <>
                 <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--sol-text)' }}>
-                  <GitBranch size={11} style={{ color: 'var(--sol-muted)' }} />
+                  <GitBranch size={11} style={{ color: 'var(--sol-text)' }} />
                   <span className="font-mono">{task.worktreeStatus.branch}</span>
                   {task.worktreeStatus.dirty && (
                     <span
@@ -398,7 +398,7 @@ export function TaskDetailPanel({
                   )}
                 </div>
                 {(task.worktreeStatus.ahead > 0 || task.worktreeStatus.behind > 0) && (
-                  <div className="flex items-center gap-3 text-[10px]" style={{ color: 'var(--sol-muted)' }}>
+                  <div className="flex items-center gap-3 text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>
                     {task.worktreeStatus.ahead > 0 && (
                       <span className="tabular-nums">&uarr;{task.worktreeStatus.ahead} ahead</span>
                     )}
@@ -473,7 +473,7 @@ export function TaskDetailPanel({
           <SectionHeader>Children ({children.length})</SectionHeader>
           {leafDescendants.length > 0 && (
             <div className="mb-1">
-              <div className="text-[11px] mb-1" style={{ color: 'var(--sol-muted)' }}>
+              <div className="text-[11px] mb-1" style={{ color: 'var(--sol-text)' }}>
                 {leafDescendants.filter(t => t.state === 'done').length}/{leafDescendants.length} done
               </div>
               <ChildrenProgressBar leaves={leafDescendants} />
@@ -599,13 +599,13 @@ export function TaskDetailPanel({
               style={{ borderBottom: '1px solid var(--sol-border)' }}
             >
               <span className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-text)' }}>
                   Task Details
                 </span>
                 {readOnly && (
                   <span
                     className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
-                    style={{ color: 'var(--sol-base1)', backgroundColor: 'var(--sol-subtle-bg)' }}
+                    style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
                   >
                     Archived
                   </span>
@@ -614,7 +614,7 @@ export function TaskDetailPanel({
               <button
                 onClick={onClose}
                 className="w-7 h-7 flex items-center justify-center rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
-                style={{ color: 'var(--sol-base1)' }}
+                style={{ color: 'var(--sol-text)' }}
                 aria-label="Close"
               >
                 <X size={16} />
@@ -667,13 +667,13 @@ export function TaskDetailPanel({
         style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       >
         <span className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-muted)' }}>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-text)' }}>
             Task Details
           </span>
           {readOnly && (
             <span
               className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
-              style={{ color: 'var(--sol-base1)', backgroundColor: 'var(--sol-subtle-bg)' }}
+              style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
             >
               Archived
             </span>
@@ -682,7 +682,7 @@ export function TaskDetailPanel({
         <button
           onClick={onClose}
           className="w-6 h-6 flex items-center justify-center rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
-          style={{ color: 'var(--sol-base1)' }}
+          style={{ color: 'var(--sol-text)' }}
           title="Close (Esc)"
           aria-label="Close task details"
         >

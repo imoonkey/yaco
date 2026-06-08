@@ -71,7 +71,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
   const folderChanged = d.type === 'dir' && gitFolders.has(d.path)
   const isSelected = node.isSelected
   const isGitignored = d.gitignored === true
-  const nameColor = isGitignored ? 'var(--sol-muted)'
+  const nameColor = isGitignored ? 'var(--sol-text-faint)'
     : gitStatus ? (GIT_COLORS[gitStatus] || 'var(--sol-text)')
     : folderChanged ? 'var(--sol-warning)'
     : isSelected ? 'var(--sol-accent)'

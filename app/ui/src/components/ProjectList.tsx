@@ -98,7 +98,7 @@ export function ProjectList({
                   ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
                   : isActive
                     ? 'text-[var(--sol-blue)]'
-                    : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
+                    : 'text-[var(--sol-text)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
               }`}
               style={{
                 transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
@@ -111,7 +111,7 @@ export function ProjectList({
                 <span
                   className="text-[10px] tabular-nums px-1 rounded shrink-0"
                   style={{
-                    color: 'var(--sol-muted)',
+                    color: 'var(--sol-text-faint)',
                     border: '1px solid var(--sol-border)',
                     background: 'var(--sol-subtle-bg)',
                   }}
@@ -124,7 +124,8 @@ export function ProjectList({
                 <BadgeCount count={unreadCount} />
                 {sc && sc.total > 0 && (
                   <span
-                    className="text-[12px] tabular-nums opacity-50"
+                    className="text-[12px] tabular-nums"
+                    style={{ color: 'var(--sol-text-faint)' }}
                     title={`${sc.active} active / ${sc.total} total sessions`}
                   >
                     {sc.active}/{sc.total}
@@ -145,7 +146,7 @@ export function ProjectList({
                       className={`w-full text-left pl-5 pr-2 py-0.5 rounded text-[11px] cursor-pointer flex items-center gap-1.5 ${
                         isWtActive
                           ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)] font-medium'
-                          : 'text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
+                          : 'text-[var(--sol-text)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
                       }`}
                       style={{
                         transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1)',
@@ -167,7 +168,7 @@ export function ProjectList({
         )
       })}
       {projects.length === 0 && (
-        <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text-secondary)' }}>
+        <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>
           No projects
         </div>
       )}

@@ -58,7 +58,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
         aria-pressed={layout === 'stacked'}
         style={{
           backgroundColor: layout === 'stacked' ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
-          color: layout === 'stacked' ? 'var(--sol-accent)' : 'var(--sol-muted)',
+          color: layout === 'stacked' ? 'var(--sol-accent)' : 'var(--sol-text)',
           border: `1px solid ${layout === 'stacked' ? 'color-mix(in srgb, var(--sol-accent) 40%, transparent)' : 'var(--sol-border)'}`,
         }}
       >
@@ -70,7 +70,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
         aria-pressed={layout === 'gantt'}
         style={{
           backgroundColor: layout === 'gantt' ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
-          color: layout === 'gantt' ? 'var(--sol-accent)' : 'var(--sol-muted)',
+          color: layout === 'gantt' ? 'var(--sol-accent)' : 'var(--sol-text)',
           border: `1px solid ${layout === 'gantt' ? 'color-mix(in srgb, var(--sol-accent) 40%, transparent)' : 'var(--sol-border)'}`,
         }}
       >
@@ -92,7 +92,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
             aria-pressed={active}
             style={{
               backgroundColor: active ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
-              color: active ? 'var(--sol-accent)' : 'var(--sol-muted)',
+              color: active ? 'var(--sol-accent)' : 'var(--sol-text)',
               border: `1px solid ${active ? 'color-mix(in srgb, var(--sol-accent) 40%, transparent)' : 'var(--sol-border)'}`,
             }}
           >
@@ -117,7 +117,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
             aria-pressed={active}
             style={{
               backgroundColor: active ? `color-mix(in srgb, ${color} 15%, transparent)` : 'transparent',
-              color: active ? color : 'var(--sol-muted)',
+              color: active ? color : 'var(--sol-text)',
               border: `1px solid ${active ? `color-mix(in srgb, ${color} 40%, transparent)` : 'var(--sol-border)'}`,
             }}
           >
@@ -182,10 +182,10 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
               className="absolute top-full left-0 mt-1 p-2.5 rounded-md shadow-md z-10 flex flex-col gap-1.5"
               style={{ backgroundColor: 'var(--sol-bg)', border: '1px solid var(--sol-border)' }}
             >
-              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-muted)' }}>Workset</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>Workset</span>
               {worksetChips}
               <div className="my-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />
-              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-muted)' }}>State</span>
+              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>State</span>
               {filterChips}
             </div>
           )}
@@ -218,7 +218,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
           }}
         />
         {searchQuery.trim() && (
-          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: searchMatchCount > 0 ? 'var(--sol-accent)' : 'var(--sol-muted)' }}>
+          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: searchMatchCount > 0 ? 'var(--sol-accent)' : 'var(--sol-text-faint)' }}>
             {searchMatchCount} match{searchMatchCount !== 1 ? 'es' : ''}
           </span>
         )}

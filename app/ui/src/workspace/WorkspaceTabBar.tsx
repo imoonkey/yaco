@@ -186,7 +186,7 @@ export function WorkspaceTabBar({
     <div className="flex items-center shrink-0" style={BAR_STYLE}>
       <div ref={scrollRef} className="flex-1 min-w-0 flex items-center h-full overflow-x-auto" style={fadeMask ? { maskImage: fadeMask, WebkitMaskImage: fadeMask } : undefined}>
       {openTabs.length === 0 ? (
-        <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text-dim)' }}>No files open</span>
+        <span className="px-3 text-[11px] shrink-0" style={{ color: 'var(--sol-text)' }}>No files open</span>
       ) : openTabs.map(tab => {
         const parentDirSuffix = disambigSuffixes.get(tab)
         const isActive = tab === activeTab
@@ -205,15 +205,15 @@ export function WorkspaceTabBar({
             className="group flex items-center gap-1 px-1.5 h-full cursor-pointer text-[11px] shrink-0"
             style={{
               ...TAB_STYLE_BASE,
-              backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)',
+              backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)',
               borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
               borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
               fontStyle: isPreview ? 'italic' : undefined,
             }} title={tabTitle(tab)}>
             {!isTasks && !isDiff && <FileTypeIcon name={tab} />}
             <span className="truncate max-w-[120px]" style={isPreview ? { paddingRight: 2 } : undefined}>{tabName(tab)}</span>
-            {isPreview && <span className="text-[9px] shrink-0" style={{ color: 'var(--sol-muted)', fontStyle: 'italic' }}>(preview)</span>}
-            {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-muted)' }}>{parentDirSuffix}</span>}
+            {isPreview && <span className="text-[9px] shrink-0" style={{ color: 'var(--sol-text-faint)', fontStyle: 'italic' }}>(preview)</span>}
+            {parentDirSuffix && <span className="text-[10px] ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{parentDirSuffix}</span>}
             {isConflict ? (
               <span className="w-3 h-3 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={10} /></span>
             ) : isDirty ? (

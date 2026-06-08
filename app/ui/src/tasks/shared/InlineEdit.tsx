@@ -134,7 +134,7 @@ export function InlineEdit({
           <span style={selected?.color ? { color: selected.color } : undefined}>
             {selected?.label ?? value}
           </span>
-          {!readOnly && <ChevronDown size={10} style={{ color: 'var(--sol-muted)' }} />}
+          {!readOnly && <ChevronDown size={10} style={{ color: 'var(--sol-text)' }} />}
         </span>
       )
     }
@@ -145,7 +145,7 @@ export function InlineEdit({
         className={`text-left rounded px-1 py-0.5 ${readOnly ? '' : 'cursor-pointer transition-colors hover:bg-sol-hover-bg'} ${displayClassName}`}
         style={{ color: 'var(--sol-text-dark)' }}
       >
-        {value || <span style={{ color: 'var(--sol-muted)', fontStyle: 'italic' }}>{readOnly ? '\u2014' : (placeholder ?? 'Click to edit')}</span>}
+        {value || <span style={{ color: 'var(--sol-text-faint)', fontStyle: 'italic' }}>{readOnly ? '\u2014' : (placeholder ?? 'Click to edit')}</span>}
       </span>
     )
   }

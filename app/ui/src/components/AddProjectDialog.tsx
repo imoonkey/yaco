@@ -181,7 +181,7 @@ export function AddProjectDialog({
         <button
           onClick={onClose}
           className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
-          style={{ color: 'var(--sol-muted)' }}
+          style={{ color: 'var(--sol-text)' }}
           aria-label="Close"
         >
           <X size={14} />
@@ -245,7 +245,7 @@ export function AddProjectDialog({
                 </span>
                 <span className="flex-1 truncate">{entry.name}</span>
                 {entry.isGit && (
-                  <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-muted)' }}>
+                  <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
                     git
                   </span>
                 )}
@@ -256,19 +256,19 @@ export function AddProjectDialog({
 
         {/* Empty state */}
         {!loading && entries.length === 0 && path.endsWith('/') && path.length > 1 && (
-          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-text)' }}>
             No subdirectories
           </div>
         )}
         {!loading && entries.length === 0 && suffix && allEntries.length > 0 && (
-          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-text)' }}>
             No matches
           </div>
         )}
 
         {/* Loading */}
         {loading && (
-          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-muted)' }}>
+          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-text)' }}>
             Loading…
           </div>
         )}

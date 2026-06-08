@@ -228,7 +228,7 @@ export function ComposeTray({
               <button
                 style={{
                   ...CONFIRM_BTN_STYLE,
-                  ...(isRecoverable ? { opacity: 0.5, cursor: 'default' } : {}),
+                  ...(isRecoverable ? { background: 'var(--sol-subtle-bg)', color: 'var(--sol-text-disabled)', cursor: 'default' } : {}),
                 }}
                 disabled={isRecoverable}
                 onClick={() => handleConfirm(editText)}
@@ -254,20 +254,20 @@ const HEADER_STYLE: React.CSSProperties = {
   justifyContent: 'space-between',
   marginBottom: 10,
   fontSize: 12,
-  color: 'var(--sol-base01)',
+  color: 'var(--sol-text)',
 }
 
 const SURFACE_LABEL_STYLE: React.CSSProperties = {
   fontWeight: 500,
   fontSize: 12,
-  color: 'var(--sol-base01)',
+  color: 'var(--sol-text)',
   padding: '2px 4px',
 }
 
 const CLOSE_BTN_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  color: 'var(--sol-base1)',
+  color: 'var(--sol-text)',
   fontSize: 14,
   cursor: 'pointer',
   padding: '2px 6px',
@@ -317,7 +317,7 @@ const PENDING_STYLE: React.CSSProperties = {
   alignItems: 'center',
   gap: 4,
   fontSize: 11,
-  color: 'var(--sol-base1)',
+  color: 'var(--sol-text-faint)',
 }
 
 const PULSE_DOT_STYLE: React.CSSProperties = {
@@ -422,19 +422,19 @@ const CONFIRM_BTN_STYLE: React.CSSProperties = {
 const COPY_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
   background: 'var(--sol-subtle-bg)',
-  color: 'var(--sol-base01)',
+  color: 'var(--sol-text)',
 }
 
 const DISCARD_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
   background: 'none',
-  color: 'var(--sol-base1)',
+  color: 'var(--sol-text)',
 }
 
 const DISCLOSURE_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  color: 'var(--sol-base1)',
+  color: 'var(--sol-text)',
   fontSize: 11,
   cursor: 'pointer',
   padding: 0,
@@ -443,7 +443,7 @@ const DISCLOSURE_STYLE: React.CSSProperties = {
 const RAW_TEXT_STYLE: React.CSSProperties = {
   fontFamily: 'monospace',
   fontSize: 11,
-  color: 'var(--sol-text-dim)',
+  color: 'var(--sol-text)',
   background: 'var(--sol-subtle-bg)',
   padding: '4px 8px',
   borderRadius: 4,
@@ -457,7 +457,7 @@ const RAW_TEXT_STYLE: React.CSSProperties = {
 const COPY_RAW_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
-  color: 'var(--sol-base1)',
+  color: 'var(--sol-text)',
   fontSize: 10,
   cursor: 'pointer',
   padding: '0 2px',

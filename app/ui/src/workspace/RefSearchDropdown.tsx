@@ -217,7 +217,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
               onClick={() => { setActiveTab(tab.id); setFocusIdx(0) }}
               className="px-1.5 py-0.5 rounded text-[10px] cursor-pointer"
               style={{
-                color: isActive ? 'var(--sol-accent)' : 'var(--sol-muted)',
+                color: isActive ? 'var(--sol-accent)' : 'var(--sol-text)',
                 backgroundColor: isActive ? 'color-mix(in srgb, var(--sol-accent) 10%, transparent)' : 'transparent',
                 fontWeight: isActive ? 600 : 400,
                 transition: 'all 100ms',
@@ -243,7 +243,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
             {activeTab === 'all' && (
               <div
                 className="sticky top-0 px-2 py-0.5 text-[9px] uppercase tracking-wider font-semibold"
-                style={{ color: 'var(--sol-muted)', backgroundColor: 'var(--sol-glass-bg)' }}
+                style={{ color: 'var(--sol-text)', backgroundColor: 'var(--sol-glass-bg)' }}
               >
                 {group.label}
               </div>
@@ -275,7 +275,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
           </div>
         ))}
         {filtered.length === 0 && (
-          <div className="px-2 py-3 text-[12px] text-center" style={{ color: 'var(--sol-muted)' }}>
+          <div className="px-2 py-3 text-[12px] text-center" style={{ color: 'var(--sol-text)' }}>
             No matches
           </div>
         )}
@@ -295,7 +295,7 @@ function CommitRow({ item }: { item: RefItem }) {
       <span className="truncate flex-1 min-w-0">{item.label.slice((item.hash?.length ?? 0) + 1)}</span>
       <span
         className="shrink-0 text-[9px]"
-        style={{ color: 'var(--sol-muted)', whiteSpace: 'nowrap' }}
+        style={{ color: 'var(--sol-text-faint)', whiteSpace: 'nowrap' }}
       >
         {item.author && <span>{item.author}</span>}
         {item.author && item.relTime && <span> · </span>}

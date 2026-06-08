@@ -135,7 +135,7 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
         <button
           onClick={onClose}
           className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
-          style={{ color: 'var(--sol-muted)' }}
+          style={{ color: 'var(--sol-text)' }}
           aria-label="Close"
         >
           <X size={14} />
@@ -143,7 +143,7 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
       </div>
 
       <div className="px-4 py-4 space-y-3">
-        {!status && <div className="text-[12px]" style={{ color: 'var(--sol-muted)' }}>Loading status…</div>}
+        {!status && <div className="text-[12px]" style={{ color: 'var(--sol-text)' }}>Loading status…</div>}
 
         {status && !status.enabled && (
           <div className="text-[12px]" style={{ color: 'var(--sol-warning)' }}>
@@ -178,14 +178,14 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
                     margin: 0,
                   }}
                 >{status.login.qrAscii}</pre>
-                <div className="text-[11px] text-center" style={{ color: 'var(--sol-muted)' }}>
+                <div className="text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>
                   {channel.qrHint}
                 </div>
               </div>
             )}
 
             {isQrLive && !status.login.qrAscii && (
-              <div className="text-[12px]" style={{ color: 'var(--sol-muted)' }}>
+              <div className="text-[12px]" style={{ color: 'var(--sol-text)' }}>
                 Waiting for QR…
               </div>
             )}
@@ -244,7 +244,7 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
 function StatusRow({ label, value }: { label: string, value: string }) {
   return (
     <div className="flex items-center justify-between text-[12px]">
-      <span style={{ color: 'var(--sol-muted)' }}>{label}</span>
+      <span style={{ color: 'var(--sol-text-faint)' }}>{label}</span>
       <span style={{ color: 'var(--sol-text)' }}>{value}</span>
     </div>
   )
@@ -283,7 +283,7 @@ function ChannelHeaderButton({ channel }: { channel: ChannelConfig }) {
         className="inline-flex items-center justify-center rounded border p-1 cursor-pointer"
         style={{
           borderColor: 'var(--sol-border)',
-          color: loggedIn ? 'var(--sol-green, #859900)' : 'var(--sol-muted)',
+          color: loggedIn ? 'var(--sol-green, #859900)' : 'var(--sol-text)',
         }}
       >
         <Icon size={14} strokeWidth={2.5} />

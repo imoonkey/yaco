@@ -126,12 +126,12 @@ export function SessionItem({
         />
       ) : (
         <div className="min-w-0 flex-1 line-clamp-2">
-          <span>{session.name}</span>
+          <span className="font-medium">{session.name}</span>
           {shortcutIndex != null && (
             <span
               className="text-[10px] tabular-nums px-1 rounded ml-1.5 align-middle"
               style={{
-                color: 'var(--sol-muted)',
+                color: 'var(--sol-text-faint)',
                 border: '1px solid var(--sol-border)',
                 background: 'var(--sol-subtle-bg)',
               }}
@@ -140,18 +140,18 @@ export function SessionItem({
               {shortcutIndex}
             </span>
           )}
-          {pendingName && <span style={{ color: 'var(--sol-muted)' }}>{` → ${pendingName}`}</span>}
+          {pendingName && <span style={{ color: 'var(--sol-text-faint)' }}>{` → ${pendingName}`}</span>}
           {session.worktree && (
             <span
               className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[9px] font-medium ml-1.5 align-middle"
-              style={{ color: 'var(--sol-muted)', backgroundColor: 'var(--sol-subtle-bg)' }}
+              style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
             >
               <FolderGit2 size={9} />
               {session.worktree}
             </span>
           )}
           {summary && (
-            <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-muted)' }}>{summary}</span>
+            <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>{summary}</span>
           )}
         </div>
       )}

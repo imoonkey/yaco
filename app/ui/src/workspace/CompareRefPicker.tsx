@@ -39,7 +39,7 @@ export function CompareRefPicker({ base, compare, onChange, projectName }: Compa
       >
         <span
           className="w-[50px] shrink-0 text-[9px] uppercase tracking-wider font-semibold px-1.5"
-          style={{ color: 'var(--sol-muted)' }}
+          style={{ color: 'var(--sol-text)' }}
         >base</span>
         <span
           className="flex-1 text-[12px] truncate font-medium"
@@ -49,7 +49,7 @@ export function CompareRefPicker({ base, compare, onChange, projectName }: Compa
           size={10}
           className="shrink-0 mr-1"
           style={{
-            color: openRow === 'base' ? 'var(--sol-accent)' : 'var(--sol-muted)',
+            color: openRow === 'base' ? 'var(--sol-accent)' : 'var(--sol-text)',
             transform: openRow === 'base' ? 'rotate(180deg)' : 'rotate(0deg)',
             transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), color 120ms',
           }}
@@ -62,12 +62,12 @@ export function CompareRefPicker({ base, compare, onChange, projectName }: Compa
           key={swapKey}
           className="flex items-center justify-center cursor-pointer rounded-sm w-[18px] h-[14px]"
           style={{
-            color: 'var(--sol-muted)',
+            color: 'var(--sol-text)',
             transition: 'color 120ms, background-color 120ms',
             animation: swapKey > 0 ? 'swap-rotate 300ms cubic-bezier(0.2, 0, 0, 1)' : undefined,
           }}
           onMouseEnter={e => { e.currentTarget.style.color = 'var(--sol-accent)'; e.currentTarget.style.backgroundColor = 'var(--sol-hover-bg)' }}
-          onMouseLeave={e => { e.currentTarget.style.color = 'var(--sol-muted)'; e.currentTarget.style.backgroundColor = '' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--sol-text)'; e.currentTarget.style.backgroundColor = '' }}
           onClick={handleSwap}
           title="Swap base and compare"
         >
@@ -86,7 +86,7 @@ export function CompareRefPicker({ base, compare, onChange, projectName }: Compa
       >
         <span
           className="w-[50px] shrink-0 text-[9px] uppercase tracking-wider font-semibold px-1.5"
-          style={{ color: 'var(--sol-muted)' }}
+          style={{ color: 'var(--sol-text)' }}
         >head</span>
         <span
           className="flex-1 text-[12px] truncate font-medium"
@@ -96,7 +96,7 @@ export function CompareRefPicker({ base, compare, onChange, projectName }: Compa
           size={10}
           className="shrink-0 mr-1"
           style={{
-            color: openRow === 'compare' ? 'var(--sol-accent)' : 'var(--sol-muted)',
+            color: openRow === 'compare' ? 'var(--sol-accent)' : 'var(--sol-text)',
             transform: openRow === 'compare' ? 'rotate(180deg)' : 'rotate(0deg)',
             transition: 'transform 200ms cubic-bezier(0.2, 0, 0, 1), color 120ms',
           }}

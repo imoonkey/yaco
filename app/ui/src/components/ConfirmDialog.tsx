@@ -24,7 +24,7 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
         <button
           onClick={onClose}
           className="w-6 h-6 flex items-center justify-center rounded cursor-pointer"
-          style={{ color: 'var(--sol-muted)' }}
+          style={{ color: 'var(--sol-text)' }}
           aria-label="Close"
         >
           <X size={14} />
@@ -32,7 +32,7 @@ export function ConfirmDialog({ title, description, confirmLabel, danger, onConf
       </div>
 
       {description && (
-        <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--sol-text-dim)' }}>
+        <div className="px-4 py-3 text-[12px]" style={{ color: 'var(--sol-text)' }}>
           {description}
         </div>
       )}

@@ -36,7 +36,7 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
       <span className="truncate font-medium" style={{ color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
       {dir && <span
         className="truncate text-[10px] hover:underline shrink min-w-0"
-        style={{ color: 'var(--sol-muted)' }}
+        style={{ color: 'var(--sol-text-faint)' }}
         onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
       >{dir}</span>}
       <span

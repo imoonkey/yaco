@@ -4,7 +4,7 @@ export function SectionHeader({ title, collapsed, onToggle, actions, badge, stat
   title: string; collapsed: boolean; onToggle: () => void; actions?: React.ReactNode; badge?: number; stats?: React.ReactNode
 }) {
   return (
-    <div className="flex items-center h-7 px-2 text-[11px] font-semibold uppercase tracking-wider cursor-pointer select-none shrink-0 bg-[var(--sol-header-bg)] hover:bg-[var(--sol-hover-bg)]"
+    <div className="section-header-bar flex items-center h-7 px-2 text-[11px] font-semibold uppercase tracking-wider cursor-pointer select-none shrink-0"
       style={{ color: 'var(--sol-text-brown)', borderBottom: '1px solid color-mix(in srgb, var(--sol-border) 50%, transparent)', transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
       role="button" aria-expanded={!collapsed} aria-label={`${title} section`}
       onClick={onToggle}>
