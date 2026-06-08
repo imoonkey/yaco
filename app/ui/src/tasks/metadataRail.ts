@@ -18,9 +18,8 @@
 // Visibility is width-driven (measured against the leftover space), not breakpoints.
 
 import type { TaskGraphTask, Priority } from './taskGraphModel'
+import { RAIL_CHAR_W } from './graphType'
 
-export const RAIL_FONT_SIZE = 10.5 // badge text size
-export const RAIL_CHAR_W = 6.3      // monospace glyph advance at RAIL_FONT_SIZE (≈ size*0.6)
 export const RAIL_GAP = 5
 export const RAIL_PADX = 5           // symmetric horizontal padding inside each badge
 

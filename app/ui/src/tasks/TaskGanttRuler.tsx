@@ -2,6 +2,8 @@
 // units (not dates). Matches the shipped zoom pattern: the <svg> is sized to the
 // scaled bounds and a single <g transform="scale()"> wraps unscaled coords, so the
 // ruler zooms in lock step with the panes.
+import { COUNT_FONT_SIZE } from './graphType'
+
 export const RULER_HEIGHT = 26
 
 export function TaskGanttRuler({ ticks, scale, timeWidth }: {
@@ -23,7 +25,7 @@ export function TaskGanttRuler({ ticks, scale, timeWidth }: {
         {ticks.map(tick => (
           <g key={tick.label}>
             <line x1={tick.x} y1={RULER_HEIGHT - 6} x2={tick.x} y2={RULER_HEIGHT} stroke="var(--sol-border)" strokeWidth={1} />
-            <text x={tick.x + 3} y={RULER_HEIGHT - 9} fontSize={10} fill="var(--sol-text-faint)" className="tabular-nums">
+            <text x={tick.x + 3} y={RULER_HEIGHT - 9} fontSize={COUNT_FONT_SIZE} fill="var(--sol-text-faint)" className="tabular-nums">
               {tick.label}
             </text>
           </g>

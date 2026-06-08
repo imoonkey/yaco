@@ -3,7 +3,8 @@ import { NODE_HEIGHT } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { STATE_COLORS, getWorktreeColor } from './taskGraphConstants'
-import { buildRail, RAIL_GAP, RAIL_FONT_SIZE } from './metadataRail'
+import { buildRail, RAIL_GAP } from './metadataRail'
+import { TITLE_FONT_SIZE, ESTIMATE_FONT_SIZE, COUNT_FONT_SIZE, RAIL_FONT_SIZE } from './graphType'
 
 // Measure a title's rendered width so we can decide whether the FULL title fits
 // before the metadata rail is allowed to claim any space. A clipped title beats a
@@ -17,7 +18,7 @@ function measureTitleWidth(text: string): number {
     const ctx = document.createElement('canvas').getContext('2d')
     if (ctx) {
       const family = getComputedStyle(document.body).fontFamily || 'sans-serif'
-      ctx.font = `400 13px ${family}`
+      ctx.font = `400 ${TITLE_FONT_SIZE}px ${family}`
     }
     _titleMeasureCtx = ctx
   }
@@ -265,7 +266,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <text
           x={node.x + chevronWidth + 22}
           y={titleY}
-          fontSize={9}
+          fontSize={ESTIMATE_FONT_SIZE}
           fontWeight={600}
           fill={'var(--sol-muted)'}
           opacity={showLabels ? 0.7 : 0}
@@ -290,7 +291,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       <text
         x={node.x + chevronWidth + 24 + estimateWidth}
         y={titleY}
-        fontSize={13}
+        fontSize={TITLE_FONT_SIZE}
         fontWeight={400}
         fill={'var(--sol-text-dark)'}
         opacity={showLabels ? 1 : 0}
@@ -306,7 +307,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <text
           x={node.x + node.width - 10}
           y={titleY}
-          fontSize={10}
+          fontSize={COUNT_FONT_SIZE}
           fontWeight={400}
           textAnchor="end"
           fill={'var(--sol-muted)'}
@@ -321,7 +322,7 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
         <text
           x={node.x + node.width - 10}
           y={titleY}
-          fontSize={10}
+          fontSize={COUNT_FONT_SIZE}
           fontWeight={400}
           textAnchor="end"
           fill={'var(--sol-muted)'}

@@ -4,6 +4,7 @@ import type { HighlightModel, Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
 import { TaskGraphGroup } from './TaskGraphGroup'
 import { TaskGraphNode } from './TaskGraphNode'
+import { SECTION_FONT_SIZE } from './graphType'
 
 // Workset divider (e.g. "Backlog", "Archive") shown above the first root of a
 // non-active workset. Shared by the stacked canvas and the Gantt left column so
@@ -17,7 +18,7 @@ export function TaskGraphSectionHeader({ section }: { section: LayoutSection }) 
       <text
         x={section.x}
         y={section.y + 17}
-        fontSize={11}
+        fontSize={SECTION_FONT_SIZE}
         fontWeight={600}
         fill="var(--sol-text-faint)"
         letterSpacing="0"

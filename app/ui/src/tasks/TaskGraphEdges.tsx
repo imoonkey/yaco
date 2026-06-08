@@ -1,5 +1,6 @@
 import type { LayoutEdge } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
+import { COUNT_FONT_SIZE } from './graphType'
 
 const COLORS = {
   default: 'var(--sol-base1)',
@@ -105,7 +106,7 @@ export function TaskGraphEdges({ edges, highlight }: {
               <text
                 x={mid.x}
                 y={mid.y - 4}
-                fontSize={10}
+                fontSize={COUNT_FONT_SIZE}
                 textAnchor="middle"
                 fill={'var(--sol-base01)'}
                 opacity={edgeOpacity(edge, highlight)}
