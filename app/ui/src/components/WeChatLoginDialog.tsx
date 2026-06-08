@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type ComponentType } from 'react'
-import { X, MessageCircle, MessageSquare, RefreshCw } from 'lucide-react'
+import { X, MessagesSquare, RefreshCw } from 'lucide-react'
 import { DialogShell } from './DialogShell'
+import { WeChatIcon, WhatsAppIcon } from './BrandIcons'
 
 interface LoginState {
   phase: string
@@ -26,7 +27,7 @@ interface ChannelConfig {
   label: string
   /** Env var that must be set on the server for the dialog to be useful. */
   envVar: string
-  /** Lucide icon component for the header trigger. */
+  /** Brand icon component for the dropdown row. */
   Icon: ComponentType<{ size?: number; strokeWidth?: number }>
   /** Phases to keep polling fast for (1.5s). Other phases poll every 5s. */
   livePhases: string[]
@@ -39,7 +40,7 @@ const CHANNELS: Record<string, ChannelConfig> = {
     id: 'wechat',
     label: 'WeChat',
     envVar: 'WECHAT_ENABLED',
-    Icon: MessageCircle,
+    Icon: WeChatIcon,
     livePhases: ['awaiting-qr', 'awaiting-scan', 'authenticating'],
     qrHint: 'Scan with WeChat to complete login (enlarge the window for better scan reliability)',
   },
@@ -47,7 +48,7 @@ const CHANNELS: Record<string, ChannelConfig> = {
     id: 'whatsapp',
     label: 'WhatsApp',
     envVar: 'WHATSAPP_ENABLED',
-    Icon: MessageSquare,
+    Icon: WhatsAppIcon,
     livePhases: ['awaiting-qr', 'authenticating'],
     qrHint: 'Scan with WhatsApp → Settings → Linked devices → Link a device',
   },
@@ -250,54 +251,78 @@ function StatusRow({ label, value }: { label: string, value: string }) {
   )
 }
 
-/** Header button + dialog for a single messaging channel. Renders nothing
- *  when the channel's env gate is unset on the server. */
-function ChannelHeaderButton({ channel }: { channel: ChannelConfig }) {
+/** Single merged header trigger for all messaging channels. Opens a dropdown
+ *  to pick a channel, then shows that channel's login dialog. Renders nothing
+ *  until at least one channel is enabled on the server. */
+export function ChannelsHeaderButton() {
   const [open, setOpen] = useState(false)
-  const [enabled, setEnabled] = useState<boolean | null>(null)
-  const [loggedIn, setLoggedIn] = useState(false)
+  const [active, setActive] = useState<ChannelConfig | null>(null)
+  const [statuses, setStatuses] = useState<Record<string, { enabled: boolean, loggedIn: boolean }>>({})
 
   const refresh = async () => {
-    try {
-      const data = await fetchStatus(channel.id)
-      setEnabled(data.enabled)
-      setLoggedIn(data.loggedIn)
-    } catch {
-      setEnabled(false)
-    }
+    const entries = await Promise.all(
+      Object.values(CHANNELS).map(async (c): Promise<[string, { enabled: boolean, loggedIn: boolean }]> => {
+        try {
+          const d = await fetchStatus(c.id)
+          return [c.id, { enabled: d.enabled, loggedIn: d.loggedIn }]
+        } catch {
+          return [c.id, { enabled: false, loggedIn: false }]
+        }
+      }),
+    )
+    setStatuses(Object.fromEntries(entries))
   }
 
   // refresh() sets state only after its await — no synchronous cascading render.
-  useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps, react-hooks/set-state-in-effect
+  useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/set-state-in-effect
 
-  if (enabled !== true) return null
-
-  const Icon = channel.Icon
+  const channels = Object.values(CHANNELS).filter(c => statuses[c.id]?.enabled)
+  if (channels.length === 0) return null
+  const anyLoggedIn = channels.some(c => statuses[c.id]?.loggedIn)
 
   return (
-    <>
+    <span className="relative">
       <button
-        onClick={() => setOpen(true)}
-        title={`${channel.label} (${loggedIn ? 'logged in' : 'not logged in'})`}
-        aria-label={channel.label}
-        className="inline-flex items-center justify-center rounded border p-1 cursor-pointer"
-        style={{
-          borderColor: 'var(--sol-border)',
-          color: loggedIn ? 'var(--sol-green, #859900)' : 'var(--sol-text)',
-        }}
+        onClick={() => setOpen(v => !v)}
+        title="Messaging channels"
+        aria-label="Messaging channels"
+        className="flex items-center justify-center cursor-pointer hover:opacity-80 w-7 h-7 rounded"
+        style={{ color: 'var(--sol-text-dim)', transition: 'color 120ms' }}
       >
-        <Icon size={14} strokeWidth={2.5} />
+        <MessagesSquare size={15} />
       </button>
-      {open && <ChannelLoginDialog channel={channel} onClose={() => { setOpen(false); refresh() }} />}
-    </>
+      {anyLoggedIn && (
+        <span
+          className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full"
+          style={{ backgroundColor: 'var(--sol-green)' }}
+        />
+      )}
+      {open && (
+        <DialogShell
+          onClose={() => setOpen(false)}
+          overlay={false}
+          animation="panel"
+          className="absolute right-0 top-8 z-50 rounded-xl w-max min-w-[132px] overflow-hidden"
+        >
+          {channels.map(c => (
+            <button
+              key={c.id}
+              onClick={() => { setActive(c); setOpen(false) }}
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[var(--sol-hover-bg)]"
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full shrink-0"
+                style={{ backgroundColor: statuses[c.id]?.loggedIn ? 'var(--sol-green)' : 'var(--sol-text-faint)' }}
+              />
+              <span className="inline-flex" style={{ color: 'var(--sol-text-dim)' }}>
+                <c.Icon size={14} strokeWidth={2.5} />
+              </span>
+              <span style={{ color: 'var(--sol-text)' }}>{c.label}</span>
+            </button>
+          ))}
+        </DialogShell>
+      )}
+      {active && <ChannelLoginDialog channel={active} onClose={() => { setActive(null); refresh() }} />}
+    </span>
   )
 }
-
-// Public exports — kept stable so App.tsx doesn't need to know channel internals.
-export const WeChatHeaderButton = () => <ChannelHeaderButton channel={CHANNELS.wechat} />
-export const WhatsAppHeaderButton = () => <ChannelHeaderButton channel={CHANNELS.whatsapp} />
-
-/** Backwards-compatible export so nothing else has to be renamed. */
-export const WeChatLoginDialog = ({ onClose }: { onClose: () => void }) => (
-  <ChannelLoginDialog channel={CHANNELS.wechat} onClose={onClose} />
-)

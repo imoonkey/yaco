@@ -5,7 +5,7 @@ import { useProjectWorktrees } from './hooks/useProjectWorktrees'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NotificationBell } from './components/NotificationBell'
-import { WeChatHeaderButton, WhatsAppHeaderButton } from './components/WeChatLoginDialog'
+import { ChannelsHeaderButton } from './components/WeChatLoginDialog'
 import { useNotifications } from './hooks/useNotifications'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
@@ -359,8 +359,7 @@ function App() {
           <span className="text-[13px] font-semibold">{activeProject || 'YACO'}</span>
           <span className="flex items-center gap-2">
             <NotificationBell {...notificationBellProps} />
-            <WeChatHeaderButton />
-            <WhatsAppHeaderButton />
+            <ChannelsHeaderButton />
             <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
               <span className="icon-sun rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Sun size={14} strokeWidth={2.5} /></span>
               <span className="icon-moon rounded px-1.5 py-0.5 leading-none transition-colors flex items-center justify-center"><Moon size={14} strokeWidth={2.5} /></span>
