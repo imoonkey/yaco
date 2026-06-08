@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Workspace section refresh controls
+
+**What changed:**
+- Explorer, Changes, and Sessions section headers now expose a manual refresh action at the far right of each header action group.
+- The shared section refresh button spins while its refresh Promise is pending and disables duplicate clicks until the request settles.
+- Explorer refresh re-fetches the expanded file tree, Changes refresh re-fetches git status or the active compare, and Sessions refresh re-fetches live sessions or history depending on the active tab.
+
+**Why:**
+- SSE/watch events can be missed or delayed, leaving a section out of sync. Users now have a targeted resync control without refreshing the whole page, and the spinner confirms the click was accepted.
+
+**Key files:** `app/ui/src/workspace/SectionHeader.tsx`, `app/ui/src/workspace/WorkspaceScreen.tsx`, `app/ui/src/workspace/useWorkspaceSessionSection.tsx`, `app/ui/src/hooks/useApi.ts`, `doc/main/app/ui/workspace/{explorer-and-changes.md,sessions-and-terminal.md}`
+**Verification:** `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings; Playwright smoke check verified button ordering, API requests, and request-bound spinner state.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Codex prompt frame multiline height
 
 **What changed:**

@@ -1,10 +1,11 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
-import { RefreshCw, History, Radio } from 'lucide-react'
+import { History, Radio } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 import { getProviderUi, startableProviders } from '../lib/providerUi'
 import { SessionItem } from './WorkspaceSessionList'
 import { groupSessionLineage, type SessionLineageRow } from './sessionLineage'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
+import { SectionRefreshButton } from './SectionHeader'
 import type { AgentSession, HistorySession } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
 
@@ -27,14 +28,14 @@ interface UseWorkspaceSessionSectionOpts {
   sessionsMgr: SessionsMgr
   attachedSession: string
   isMobile: boolean
-  history: { data: HistorySession[] | null; loading: boolean; refresh: () => void }
+  history: { data: HistorySession[] | null; loading: boolean; refresh: () => Promise<void> }
   projectPath: string
   projectName: string
   actions: {
     setActiveSession: (name: string) => void
     setMobilePane: (pane: MobilePane) => void
   }
-  refreshSessions: () => void
+  refreshSessions: () => Promise<void>
   setFocusTarget: (t: FocusTarget) => void
 }
 
@@ -72,7 +73,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   useEffect(() => {
     if (sessionTab === 'history' && !historyFetchedRef.current) {
       historyFetchedRef.current = true
-      history.refresh()
+      void history.refresh()
     }
   }, [sessionTab, history])
 
@@ -81,6 +82,13 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     setFocusTarget('session')
     if (isMobile) actions.setMobilePane('terminal')
   }, [actions, setFocusTarget, isMobile])
+
+  const handleRefresh = useCallback(() => {
+    if (sessionTab === 'history') {
+      return history.refresh()
+    }
+    return refreshSessions()
+  }, [history, refreshSessions, sessionTab])
 
   // --- Actions bar ---
   const sessionsActions: ReactNode = (
@@ -93,16 +101,6 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
             </button>
           ))}
         </div>
-      )}
-      {sessionTab === 'history' && (
-        <button
-          onClick={() => history.refresh()}
-          className="cursor-pointer hover:opacity-80 transition-opacity"
-          title="Refresh history"
-          style={{ color: 'var(--sol-text-dim)' }}
-        >
-          <RefreshCw size={12} />
-        </button>
       )}
       <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div
@@ -130,6 +128,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
           <History size={14} />
         </span>
       </div>
+      <SectionRefreshButton onClick={handleRefresh} title={sessionTab === 'history' ? 'Refresh history' : 'Refresh live sessions'} />
     </div>
   )
 
@@ -191,8 +190,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         setSessionTab('live')
         actions.setActiveSession(handle)
         if (isMobile) actions.setMobilePane('terminal')
-        refreshSessions()
-        history.refresh()
+        void refreshSessions()
+        void history.refresh()
       }}
       onGoLive={(liveSessionName) => {
         setSessionTab('live')

@@ -61,7 +61,7 @@ export function useSSETick(sseChannel: string): { tick: number; refresh: () => v
  *  A monotonic sequence counter ensures only the most recent fetch wins,
  *  preventing starvation when rapid SSE signals arrive faster than git
  *  commands complete. */
-function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel?: string): AsyncData<T> & { refresh: () => void } {
+function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel?: string): AsyncData<T> & { refresh: () => Promise<void> } {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [loading, setLoading] = useState(true)
@@ -79,10 +79,10 @@ function usePolling<T>(fetcher: () => Promise<T>, intervalMs: number, sseChannel
     }
   }, [fetcher])
 
-  const refresh = useCallback(() => { void load() }, [load])
+  const refresh = useCallback(() => load(), [load])
 
   // Wire SSE refresh signal to immediate re-fetch (no effect restart)
-  useSSERefresh(sseChannel ?? '', refresh)
+  useSSERefresh(sseChannel ?? '', () => { void refresh() })
 
   // Initial fetch + polling interval — restarts when fetcher changes (e.g. project switch)
   useEffect(() => {
@@ -356,7 +356,7 @@ export function useGitStatus(projectName: string | null, worktree?: string | nul
   return usePolling(fetcher, 30_000, 'git')
 }
 
-export function useHistory(projectName: string | null): AsyncData<HistorySession[]> & { refresh: () => void } {
+export function useHistory(projectName: string | null): AsyncData<HistorySession[]> & { refresh: () => Promise<void> } {
   const [data, setData] = useState<HistorySession[] | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [loading, setLoading] = useState(false)

@@ -28,6 +28,7 @@ import { useWorkspaceDiff } from './useWorkspaceDiff'
 import { useWorkspaceVoice } from './useWorkspaceVoice'
 import { CompareRefPicker } from './CompareRefPicker'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
+import { SectionRefreshButton } from './SectionHeader'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 
 // Lazy-load heavy panels that are only rendered conditionally.
@@ -138,26 +139,36 @@ export function Workspace({
   const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, previewMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName, worktree)
   const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
-  const { data: gitData } = useGitStatus(projectName, worktree)
+  const { data: gitData, refresh: refreshGitStatus } = useGitStatus(projectName, worktree)
   const history = useHistory(projectName)
 
   // Mark quick-open search index stale on filetree changes
   const markStaleForProject = useCallback(() => markSearchIndexStale(projectName, worktree), [projectName, worktree])
   useSSERefresh('filetree', markStaleForProject)
 
-  // Fetch compare data when refs change
   const compareKey = `${compareBase}:${compareHead}`
   const compareLoading = compareMode && compareResult?.key !== compareKey
   const compareFiles = useMemo(() => compareResult?.files ?? [], [compareResult])
+  const loadCompareResult = useCallback(async (signal?: AbortSignal) => {
+    if (!projectName) return
+    const key = `${compareBase}:${compareHead}`
+    try {
+      const data = await fetchGitCompare(projectName, compareBase, compareHead, worktree)
+      if (!signal?.aborted) setCompareResult({ files: data.files, stats: data.stats, key })
+    } catch {
+      if (!signal?.aborted) setCompareResult({ files: [], stats: { added: 0, deleted: 0 }, key })
+    }
+  }, [compareBase, compareHead, projectName, worktree])
+
+  // Fetch compare data when refs change
   useEffect(() => {
     if (!compareMode || !projectName) return
-    const key = `${compareBase}:${compareHead}`
     const controller = new AbortController()
-    fetchGitCompare(projectName, compareBase, compareHead, worktree)
-      .then(data => { if (!controller.signal.aborted) setCompareResult({ files: data.files, stats: data.stats, key }) })
-      .catch(() => { if (!controller.signal.aborted) setCompareResult({ files: [], stats: { added: 0, deleted: 0 }, key }) })
+    // loadCompareResult sets state only after its await.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadCompareResult(controller.signal)
     return () => controller.abort()
-  }, [compareMode, compareBase, compareHead, projectName, worktree])
+  }, [compareMode, loadCompareResult, projectName])
 
   useEffect(() => {
     if (!onVisibilityReport) return
@@ -361,11 +372,16 @@ export function Workspace({
     clearLoadedDirs()
   }, [clearLoadedDirs])
 
+  const handleRefreshExplorer = useCallback(() => {
+    return refreshTree()
+  }, [refreshTree])
+
   const explorerActions = (
     <div className="flex gap-0.5">
       <button onClick={handleCollapseAll} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="Collapse All"><CollapseAllIcon /></button>
       <button onClick={handleNewFile} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
       <button onClick={handleNewFolder} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
+      <SectionRefreshButton onClick={handleRefreshExplorer} title="Refresh explorer" />
     </div>
   )
 
@@ -378,6 +394,13 @@ export function Workspace({
       {rawStats.deleted > 0 && <span style={{ color: 'var(--sol-red)' }}>-{rawStats.deleted}</span>}
     </span>
   ) : null
+
+  const handleRefreshChanges = useCallback(() => {
+    if (compareMode) {
+      return loadCompareResult()
+    }
+    return refreshGitStatus()
+  }, [compareMode, loadCompareResult, refreshGitStatus])
 
   const changesActions = (
     <div className="flex gap-0.5 items-center">
@@ -404,6 +427,7 @@ export function Workspace({
           <X size={11} />
         </button>
       )}
+      <SectionRefreshButton onClick={handleRefreshChanges} title={compareMode ? 'Refresh compare' : 'Refresh changes'} />
     </div>
   )
 

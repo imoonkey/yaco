@@ -72,12 +72,15 @@ Right-click on any tree node shows:
 
 ## Header Actions
 
-Explorer header has two buttons:
+Explorer header actions are icon buttons, with refresh fixed at the far right so
+manual sync controls land consistently across workspace sections:
 
 | Button | Behavior |
 |--------|----------|
+| Collapse All | Collapses all visible directories and clears the loaded-directory cache |
 | New File | Creates file in last-focused directory (or root if none focused) |
 | New Folder | Creates directory in last-focused directory |
+| Refresh Explorer | Re-fetches the root tree and every currently expanded directory via `useFileTree.refresh()`; the icon spins until the fetch cycle finishes |
 
 ## CRUD Operations
 
@@ -132,7 +135,11 @@ Displays git-changed files from `useGitStatus()`.
 
 ### Refresh
 
-Git status refreshes via SSE `git` channel with 30s fallback polling.
+Git status refreshes via SSE `git` channel with 30s fallback polling. The
+Changes header also exposes a far-right refresh action for user-initiated
+resync; in normal mode it calls `useGitStatus().refresh()`, and in Compare mode
+it re-fetches the active compare refs. The refresh icon spins until the request
+settles.
 
 ## File Search (Cmd+P)
 

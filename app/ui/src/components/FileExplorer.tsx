@@ -120,7 +120,7 @@ interface FileExplorerProps {
   onFileRenamed?: (oldPath: string, newPath: string) => void
   onFileDeleted?: (path: string) => void
   patchTree?: (fn: (prev: FileNode[] | null) => FileNode[] | null) => void
-  refreshTree?: () => void
+  refreshTree?: () => void | Promise<void>
 }
 
 const FileExplorerInner = forwardRef<FileExplorerHandle, FileExplorerProps>(
@@ -252,7 +252,7 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
     }))
     if (failures.length) {
       toast.error(failures.length === 1 ? `Failed to delete: ${failures[0]}` : `Failed to delete ${failures.length} items`)
-      refreshTree?.()
+      void refreshTree?.()
     }
   }, [confirmDelete, projectName, worktree, patchTree, refreshTree, onFileDeleted])
 
@@ -302,7 +302,7 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
     }))
     if (failed.length) {
       for (const m of failed) onFileRenamed?.(m.expectedNew, m.source)
-      refreshTree?.()
+      void refreshTree?.()
     }
   }, [projectName, worktree, patchTree, refreshTree, onFileRenamed])
 
@@ -346,7 +346,7 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
         }
       } catch (err) {
         toast.error(`Failed to create: ${err instanceof Error ? err.message : String(err)}`)
-        refreshTree?.()
+        void refreshTree?.()
       }
       return
     }
@@ -364,7 +364,7 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
       console.error('Failed to rename:', err)
       // Rollback: undo tab/state retargeting
       onFileRenamed?.(newPath, oldPath)
-      refreshTree?.()
+      void refreshTree?.()
     }
   }, [projectName, worktree, onSelectFile, patchTree, refreshTree, onFileRenamed])
 

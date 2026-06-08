@@ -678,6 +678,18 @@ body {
 [data-theme="dark"] .section-header-bar:hover {
   background-color: color-mix(in srgb, #fff 8%, var(--sol-header-bg));
 }
+.section-header-icon-btn {
+  color: var(--sol-text-dim);
+  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
+}
+.section-header-icon-btn:hover {
+  color: var(--sol-text);
+  background: color-mix(in srgb, var(--sol-text) 10%, transparent);
+}
+.section-header-icon-btn:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
 
 /* Session-spawn action buttons — the app's primary creative act. Quiet neutral
    icons at rest (full opacity, not the old 80% ghost), lifting to an accent tint

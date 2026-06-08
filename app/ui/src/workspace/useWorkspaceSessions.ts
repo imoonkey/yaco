@@ -14,7 +14,7 @@ interface UseWorkspaceSessionsOpts {
   projectPath: string
   activeSession: string
   sessions: AgentSession[] | null
-  refreshSessions: () => void
+  refreshSessions: () => Promise<void>
   setFocusTarget: (t: FocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   projectName: string
@@ -84,7 +84,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       actions.setActiveSession(name)
       setFocusTarget(provider === 'shell' ? 'terminal' : 'session')
       actions.setMobilePane('terminal')
-      refreshSessions()
+      void refreshSessions()
     } catch (err) {
       console.error('Failed to start session:', err)
     }
@@ -96,7 +96,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     if (shouldDetach) actions.setActiveSession('')
     try {
       await closeRemoteSession(sessionName)
-      refreshSessions()
+      void refreshSessions()
       onSessionChange?.()
     } catch (err) {
       console.error('Failed to close session:', err)
@@ -109,7 +109,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       await renameSession(oldName, newName)
       setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
       if (activeSession === oldName) actions.setActiveSession(newName)
-      refreshSessions()
+      void refreshSessions()
       onSessionChange?.()
     } catch (err) {
       console.error('Failed to rename session:', err)

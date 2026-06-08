@@ -1,4 +1,5 @@
-import { ChevronRight } from 'lucide-react'
+import { useState } from 'react'
+import { ChevronRight, RefreshCw } from 'lucide-react'
 
 export function SectionHeader({ title, collapsed, onToggle, actions, badge, stats }: {
   title: string; collapsed: boolean; onToggle: () => void; actions?: React.ReactNode; badge?: number; stats?: React.ReactNode
@@ -16,5 +17,37 @@ export function SectionHeader({ title, collapsed, onToggle, actions, badge, stat
       )}
       {!collapsed && actions && <div onClick={e => e.stopPropagation()}>{actions}</div>}
     </div>
+  )
+}
+
+export function SectionRefreshButton({ onClick, title = 'Refresh' }: {
+  onClick: () => void | Promise<void>
+  title?: string
+}) {
+  const [refreshing, setRefreshing] = useState(false)
+
+  return (
+    <button
+      type="button"
+      onClick={async (event) => {
+        event.stopPropagation()
+        if (refreshing) return
+        setRefreshing(true)
+        try {
+          await onClick()
+        } catch (error) {
+          console.error(`${title} failed`, error)
+        } finally {
+          setRefreshing(false)
+        }
+      }}
+      disabled={refreshing}
+      className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+      title={title}
+      aria-label={title}
+      aria-busy={refreshing}
+    >
+      <RefreshCw size={12} className={refreshing ? 'animate-spin' : undefined} />
+    </button>
   )
 }

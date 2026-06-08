@@ -76,6 +76,7 @@ The History tab calls `GET /api/sessions/history?project=<name>` and renders the
 | Kill session | Click Kill button on row | `POST /api/sessions/:handle/close` |
 | Rename session | Right-click → Rename (inline edit) | `POST /api/sessions/:handle/rename { name, cwd }`; the CLI renames state/tmux immediately and input-gates provider-native `/rename` so it never merges into a user's draft |
 | Reorder session | Drag pinned session row vertically | Reorders within pinned section (client-side only, not persisted) |
+| Refresh sessions | Click refresh in the Sessions header | Live tab re-fetches `GET /api/sessions?project=<name>`; History tab re-fetches `GET /api/sessions/history?project=<name>`. The refresh icon is the far-right header action and spins until the request settles. |
 
 ### Session Scoping
 
