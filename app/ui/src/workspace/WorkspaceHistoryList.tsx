@@ -23,7 +23,7 @@ function HistoryItem({
     ? entry.summary : entry.id.slice(0, 8)
 
   const meta: string[] = []
-  if (entry.gitBranch) meta.push(entry.gitBranch)
+  if (entry.gitBranch && entry.gitBranch !== 'main' && entry.gitBranch !== 'master') meta.push(entry.gitBranch)
   if (entry.messageCount != null) meta.push(`${entry.messageCount} msgs`)
 
   return (

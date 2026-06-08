@@ -64,7 +64,7 @@ afterEach(() => {
 });
 
 describe("claude summarize", () => {
-  it("returns the first user message verbatim", async () => {
+  it("returns the first meaningful user message, whitespace-normalized", async () => {
     writeClaudeSession("c-1", [
       { type: "system", message: { content: "boot" } },
       { type: "user", message: { content: "Implement   the parser" } },
@@ -72,6 +72,61 @@ describe("claude summarize", () => {
     ]);
     const r = await claudeHistory().summarize(session({ sessionId: "c-1" }));
     expect(r).toEqual({ sessionId: "c-1", label: "Implement the parser" });
+  });
+
+  it("skips a leading system-reminder and returns the real prompt", async () => {
+    writeClaudeSession("c-rem", [
+      { type: "user", message: { content: '<system-reminder>\nThe user named this session "worker".\n</system-reminder>' } },
+      { type: "user", message: { content: " clone the skills repo and review it" } },
+    ]);
+    const r = await claudeHistory().summarize(session({ sessionId: "c-rem", handle: "worker" }));
+    expect(r).toEqual({ sessionId: "c-rem", label: "clone the skills repo and review it" });
+  });
+
+  it("restores a leading slash command to its original /name args input", async () => {
+    const content =
+      "<command-message>frontend-design</command-message>\n" +
+      "<command-name>/frontend-design:frontend-design</command-name>\n" +
+      "<command-args>audit the font sizes</command-args>";
+    writeClaudeSession("c-cmd", [{ type: "user", message: { content } }]);
+    const r = await claudeHistory().summarize(session({ sessionId: "c-cmd" }));
+    expect(r).toEqual({ sessionId: "c-cmd", label: "/frontend-design:frontend-design audit the font sizes" });
+  });
+
+  it("restores a bare slash command with no args to /name", async () => {
+    const content =
+      "<command-message>retro</command-message>\n" +
+      "<command-name>/retro</command-name>\n" +
+      "<command-args></command-args>";
+    writeClaudeSession("c-bare", [{ type: "user", message: { content } }]);
+    const r = await claudeHistory().summarize(session({ sessionId: "c-bare" }));
+    expect(r).toEqual({ sessionId: "c-bare", label: "/retro" });
+  });
+
+  it("ignores a /rename whose args echo the handle and returns the next message", async () => {
+    const rename =
+      "<command-message>rename</command-message>\n" +
+      "<command-name>/rename</command-name>\n" +
+      "<command-args>worker</command-args>\n" +
+      "<local-command-stdout>Session renamed to: worker</local-command-stdout>";
+    writeClaudeSession("c-rn", [
+      { type: "user", message: { content: rename } },
+      { type: "user", message: { content: "fix the failing build" } },
+    ]);
+    const r = await claudeHistory().summarize(session({ sessionId: "c-rn", handle: "worker" }));
+    expect(r).toEqual({ sessionId: "c-rn", label: "fix the failing build" });
+  });
+
+  it("prefers prose typed alongside a /rename in the same message", async () => {
+    const combined =
+      "<command-message>rename</command-message>\n" +
+      "<command-name>/rename</command-name>\n" +
+      "<command-args>worker</command-args>\n" +
+      "<local-command-stdout>Session renamed to: worker</local-command-stdout>\n" +
+      "improve the summary generation";
+    writeClaudeSession("c-combo", [{ type: "user", message: { content: combined } }]);
+    const r = await claudeHistory().summarize(session({ sessionId: "c-combo", handle: "worker" }));
+    expect(r).toEqual({ sessionId: "c-combo", label: "improve the summary generation" });
   });
 
   it("returns null when the session JSONL is missing", async () => {
@@ -91,16 +146,29 @@ describe("claude summarize", () => {
 });
 
 describe("codex summarize", () => {
-  it("prefers the thread title over first_user_message", async () => {
-    createCodexThread("cx-1", { title: "Refactor router", first: "please refactor" });
-    const r = await codexHistory().summarize(session({ provider: "codex", sessionId: "cx-1" }));
-    expect(r).toEqual({ sessionId: "cx-1", label: "Refactor router" });
+  it("prefers first_user_message over the auto-renamed title (handle echo)", async () => {
+    // Codex runs `/rename <handle>` on start, so `title` is the handle.
+    createCodexThread("cx-1", { title: "worker", first: "fix the build" });
+    const r = await codexHistory().summarize(session({ provider: "codex", sessionId: "cx-1", handle: "worker" }));
+    expect(r).toEqual({ sessionId: "cx-1", label: "fix the build" });
+  });
+
+  it("returns first_user_message even when it is a short message", async () => {
+    createCodexThread("cx-hi", { title: "codex-hazy-short", first: "hi" });
+    const r = await codexHistory().summarize(session({ provider: "codex", sessionId: "cx-hi", handle: "codex-hazy-short" }));
+    expect(r).toEqual({ sessionId: "cx-hi", label: "hi" });
   });
 
   it("falls back to first_user_message when there is no title", async () => {
     createCodexThread("cx-2", { first: "fix the build" });
     const r = await codexHistory().summarize(session({ provider: "codex", sessionId: "cx-2" }));
     expect(r).toEqual({ sessionId: "cx-2", label: "fix the build" });
+  });
+
+  it("returns null when first_user_message is empty and title only echoes the handle", async () => {
+    createCodexThread("cx-empty", { title: "worker", first: "" });
+    const r = await codexHistory().summarize(session({ provider: "codex", sessionId: "cx-empty", handle: "worker" }));
+    expect(r).toBeNull();
   });
 
   it("falls back to the rollout file when the thread is absent from the DB", async () => {
@@ -118,6 +186,7 @@ describe("codex summarize", () => {
       [
         JSON.stringify({ type: "response_item", payload: { role: "user", content: [{ type: "input_text", text: "# AGENTS context" }] } }),
         JSON.stringify({ type: "response_item", payload: { role: "user", content: [{ type: "input_text", text: "real codex prompt" }] } }),
+        JSON.stringify({ type: "response_item", payload: { role: "user", content: [{ type: "input_text", text: "later follow-up" }] } }),
       ].join("\n") + "\n",
     );
     const r = await codexHistory().summarize(session({ provider: "codex", sessionId }));

@@ -41,13 +41,8 @@ function extractUserText(content: unknown): string {
   return "";
 }
 
-function isCommandMessage(text: string): boolean {
-  return text.includes("<command-message>");
-}
-
 /** Extract `<command-args>` content from a `<command-message>` wrapper. */
 function extractCommandArgs(text: string): string | null {
-  if (!isCommandMessage(text)) return null;
   const match = text.match(/<command-args>([\s\S]*?)<\/command-args>/);
   const args = match?.[1]?.trim();
   return args ? args : null;
@@ -57,6 +52,43 @@ function extractCommandArgs(text: string): string | null {
 function extractCommandName(text: string): string | null {
   const match = text.match(/<command-name>([\s\S]*?)<\/command-name>/);
   return match ? match[1]!.trim() || null : null;
+}
+
+/** Harness-injected blocks that carry no user intent. */
+const NOISE_BLOCKS =
+  /<system-reminder>[\s\S]*?<\/system-reminder>|<local-command-stdout>[\s\S]*?<\/local-command-stdout>/gi;
+/** Slash-command wrapper tags; stripped so only the human-facing args/prose remain. */
+const COMMAND_BLOCKS = /<command-(?:message|name|args)>[\s\S]*?<\/command-(?:message|name|args)>/gi;
+/** Session-management commands that carry no task intent — skipped so the real
+ *  prompt surfaces instead. */
+const META_COMMANDS = new Set(["/rename", "/clear", "/compact"]);
+
+/** Collapse one user message to its display intent, or "" if it is pure noise.
+ *  Reminders and command stdout are dropped. Prose typed alongside a command
+ *  wins; a slash command is restored to its original `/name args` input; a
+ *  session-management command (e.g. `/rename`) collapses to "". */
+function collapseUserMessage(raw: string): string {
+  const stripped = raw.replace(NOISE_BLOCKS, "");
+  const prose = stripped.replace(COMMAND_BLOCKS, "").replace(/\s+/g, " ").trim();
+  if (prose) return prose;
+  const name = extractCommandName(stripped);
+  if (!name) return "";
+  if (META_COMMANDS.has(name)) return "";
+  const args = extractCommandArgs(stripped);
+  return (args ? `${name} ${args}` : name).replace(/\s+/g, " ").trim();
+}
+
+/** First user message that carries real intent, collapsed for display. Skips
+ *  noise (reminders, stdout, session-management commands) and, when a handle is
+ *  given, messages that merely echo it (e.g. an auto-assigned title). */
+function firstMeaningfulMessage(rawTexts: Iterable<string>, handle?: string): string | null {
+  for (const raw of rawTexts) {
+    const label = collapseUserMessage(raw);
+    if (!label) continue;
+    if (handle && handle.startsWith(label)) continue;
+    return label;
+  }
+  return null;
 }
 
 // -- Claude JSONL parsing --
@@ -102,27 +134,19 @@ function parseLastTimestamp(text: string): string | null {
   return ts;
 }
 
-/** Parse the first user message from the head of a Claude JSONL file. Slash
- *  commands collapse to their args, falling back to the command name. */
+/** Parse the first meaningful user message from the head of a Claude JSONL file.
+ *  Slash commands collapse to their args; reminders and stdout are skipped. */
 function parseFirstUserMessage(head: string): string | null {
-  let commandName: string | null = null;
+  const texts: string[] = [];
   for (const line of head.split("\n")) {
     if (!line) continue;
     try {
       const entry = JSON.parse(line);
       if (entry.type !== "user" || !entry.message?.content) continue;
-      const raw = extractUserText(entry.message.content).replace(/\s+/g, " ").trim();
-      if (!raw) continue;
-      if (isCommandMessage(raw)) {
-        const args = extractCommandArgs(raw);
-        if (args) return args.replace(/\s+/g, " ").trim();
-        if (!commandName) commandName = extractCommandName(raw);
-      } else {
-        return raw;
-      }
+      texts.push(extractUserText(entry.message.content));
     } catch { continue; }
   }
-  return commandName;
+  return firstMeaningfulMessage(texts);
 }
 
 // -- Claude provider history --
@@ -232,8 +256,8 @@ async function claudeList(projectPath: string): Promise<HistorySession[]> {
   return rows.filter((r): r is HistorySession => r !== null);
 }
 
-/** Resolve a Claude session's label from the first real user message in its
- *  project JSONL. Unlike history, the raw message is used verbatim. */
+/** Resolve a Claude session's label from the first meaningful user message in
+ *  its project JSONL, skipping reminders, command stdout, and `/rename` echoes. */
 async function claudeSummarize(session: SessionState): Promise<SummaryResult | null> {
   if (!session.sessionPath) return null;
   const jsonlPath = join(claudeProjectDir(session.sessionPath), `${session.sessionId}.jsonl`);
@@ -243,17 +267,19 @@ async function claudeSummarize(session: SessionState): Promise<SummaryResult | n
     content = await readFile(jsonlPath, "utf-8");
   } catch { return null; }
 
+  const texts: string[] = [];
   for (const line of content.split("\n")) {
     if (!line) continue;
     try {
       const entry = JSON.parse(line);
       if (entry.type === "user" && entry.message?.content) {
-        const label = extractUserText(entry.message.content).replace(/\s+/g, " ").trim();
-        if (label) return { sessionId: session.sessionId, label };
+        texts.push(extractUserText(entry.message.content));
       }
     } catch { continue; }
   }
-  return null;
+
+  const label = firstMeaningfulMessage(texts, session.handle);
+  return label ? { sessionId: session.sessionId, label } : null;
 }
 
 export function claudeHistory(): ProviderHistory {
@@ -339,8 +365,8 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
 }
 
 /** Find a Codex session's rollout JSONL (today and 7 days back) and return the
- *  last real user message, skipping system/AGENTS.md context blocks. */
-async function codexRolloutSummary(sessionId: string): Promise<string | null> {
+ *  first real user message, skipping system/AGENTS.md context blocks. */
+async function codexRolloutSummary(sessionId: string, handle?: string): Promise<string | null> {
   const now = new Date();
   for (let daysBack = 0; daysBack <= 7; daysBack++) {
     const d = new Date(now.getTime() - daysBack * 86400000);
@@ -364,7 +390,7 @@ async function codexRolloutSummary(sessionId: string): Promise<string | null> {
       content = await readFile(join(dayDir, match), "utf-8");
     } catch { continue; }
 
-    let lastUserText = "";
+    const texts: string[] = [];
     for (const line of content.split("\n")) {
       if (!line) continue;
       try {
@@ -375,21 +401,25 @@ async function codexRolloutSummary(sessionId: string): Promise<string | null> {
             block.type === "input_text" && block.text &&
             !block.text.startsWith("#") && !block.text.startsWith("<")
           ) {
-            lastUserText = block.text;
+            texts.push(block.text);
           }
         }
       } catch { continue; }
     }
-    if (lastUserText) return lastUserText.replace(/\s+/g, " ").trim();
+    const label = firstMeaningfulMessage(texts, handle);
+    if (label) return label;
   }
   return null;
 }
 
-/** Resolve a Codex session's label: threads table title/first message, then a
- *  rollout-file fallback. */
+/** Resolve a Codex session's label. Codex auto-renames the thread `title` to the
+ *  YACO handle on start, so the real signal is `first_user_message`; the rollout
+ *  file is the fallback, and `title` only when it is not a handle echo. */
 async function codexSummarize(session: SessionState): Promise<SummaryResult | null> {
   const sessionId = session.sessionId;
+  const handle = session.handle;
 
+  let title: string | null = null;
   if (existsSync(codexDbPath())) {
     try {
       const db = new Database(codexDbPath(), { readonly: true });
@@ -399,16 +429,20 @@ async function codexSummarize(session: SessionState): Promise<SummaryResult | nu
             "SELECT title, first_user_message FROM threads WHERE id = ?",
           )
           .get(sessionId);
-        const label = row?.title || row?.first_user_message || "";
-        if (label) return { sessionId, label };
+        title = row?.title ?? null;
+        const first = firstMeaningfulMessage([row?.first_user_message ?? ""], handle);
+        if (first) return { sessionId, label: first };
       } finally {
         db.close();
       }
     } catch { /* fall back to rollout scan */ }
   }
 
-  const label = await codexRolloutSummary(sessionId);
-  return label ? { sessionId, label } : null;
+  const rollout = await codexRolloutSummary(sessionId, handle);
+  if (rollout) return { sessionId, label: rollout };
+
+  const titleLabel = firstMeaningfulMessage([title ?? ""], handle);
+  return titleLabel ? { sessionId, label: titleLabel } : null;
 }
 
 export function codexHistory(): ProviderHistory {

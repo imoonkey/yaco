@@ -1,6 +1,6 @@
 const TAG_BLOCKS =
-  /<system-reminder>[\s\S]*?<\/system-reminder>|<command-(?:message|name|args)>[\s\S]*?<\/command-(?:message|name|args)>/gi
-const STRAY_TAGS = /<\/?(?:system-reminder|command-(?:message|name|args))>/gi
+  /<system-reminder>[\s\S]*?<\/system-reminder>|<local-command-stdout>[\s\S]*?<\/local-command-stdout>|<command-(?:message|name|args)>[\s\S]*?<\/command-(?:message|name|args)>/gi
+const STRAY_TAGS = /<\/?(?:system-reminder|local-command-stdout|command-(?:message|name|args))>/gi
 
 /** Clean a session summary for inline display; returns '' when nothing should render. */
 export function sanitizeSummary(summary: string | null | undefined, name: string): string {
