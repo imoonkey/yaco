@@ -16,8 +16,17 @@ export interface ProviderUiConfig {
     // Codex needs the real OSC 10/11/12 color report to theme itself; Claude and
     // shell never read it, so we swallow the query to avoid a visible echo.
     suppressOscColorReportQuery: boolean
+    inputPromptFrame?: TerminalInputPromptFrame
   }
   canStart: boolean
+}
+
+export interface TerminalInputPromptFrame {
+  promptPattern: RegExp
+  maxRows: number
+  lineWidth: number
+  topPadding: number
+  bottomPadding: number
 }
 
 // Single source of truth for provider presentation. Adding a provider here is the
@@ -34,7 +43,11 @@ const PROVIDER_UI = {
     id: 'codex',
     label: 'Codex',
     icon: 'codex',
-    terminal: { minimumContrastRatio: 5, suppressOscColorReportQuery: false },
+    terminal: {
+      minimumContrastRatio: 5,
+      suppressOscColorReportQuery: false,
+      inputPromptFrame: { promptPattern: /^\s*›/, maxRows: 24, lineWidth: 2, topPadding: 19, bottomPadding: 19 },
+    },
     canStart: true,
   },
   shell: {

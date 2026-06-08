@@ -301,6 +301,7 @@ xterm.js wrapper with WebSocket PTY connection.
 - Ctrl/Shift modifier state management (shared with TerminalKeyBar)
 - Mobile IME workaround (capture-phase input listener)
 - Terminal resize handling, including the xterm DOM renderer's internal scrollbar width so the rightmost glyph is not drawn under the scrollbar gutter
+- Codex-only browser overlay that frames visible `›` input prompt rows for stable input-row identification
 - Copy shortcut (`Cmd+C` / `Ctrl+Shift+C`)
 - Close shortcut (`Cmd+W` for detach)
 - Renders `TerminalKeyBar` on touch devices for special key input

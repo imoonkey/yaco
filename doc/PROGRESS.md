@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-08: Codex terminal input prompt frame
+
+**What changed:**
+- Codex terminal panes now render a browser-side cyan frame around visible `›` input prompt rows, including historical user prompts in the current xterm viewport.
+- The frame is configured from provider UI metadata (`inputPromptFrame`) and updates after cursor, write, scroll, and resize events through a coalesced `requestAnimationFrame` pass. It scans only the current viewport and does not write to tmux or replace OSC color-query handling.
+- Terminal component tests now mock xterm buffer rows and cover current prompt framing, historical prompt framing, and non-Codex suppression.
+
+**Why:**
+- Codex input background tint can be visually unstable across redraws. The overlay gives a stable input-row boundary while keeping provider output and OSC compatibility unchanged.
+
+**Key files:** `app/ui/src/components/Terminal.tsx`, `app/ui/src/lib/providerUi.ts`, `app/ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`, `doc/main/app/frontend/components.md`
+
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` → 11 pass; `cd app/ui && npm run build` passed.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Rename input guard for agent sessions
 
 **What changed:**

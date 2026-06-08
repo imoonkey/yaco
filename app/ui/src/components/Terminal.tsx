@@ -5,7 +5,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import { writeTextToClipboard } from '../lib/clipboard'
-import { getProviderUi } from '../lib/providerUi'
+import { getProviderUi, type TerminalInputPromptFrame } from '../lib/providerUi'
 import { useIsTouch } from '../hooks/useIsMobile'
 import { TerminalKeyBar } from './TerminalKeyBar'
 import type { TerminalKeyBarKey, Modifiers } from './TerminalKeyBar'
@@ -70,6 +70,7 @@ const WS_RECONNECT_MAX_MS = 15000
 const WS_PRESSURE_INITIAL_MS = 5000
 const WS_PRESSURE_MAX_MS = 60000
 const WS_PRESSURE_CLOSE_CODE = 4002
+const INPUT_PROMPT_FRAME_COLOR = 'color-mix(in srgb, var(--sol-cyan) 62%, var(--sol-editor-bg))'
 
 type TerminalWithCore = XTerm & {
   _core?: {
@@ -85,6 +86,11 @@ type TerminalWithCore = XTerm & {
       }
     }
   }
+}
+
+interface InputPromptFrame {
+  top: number
+  height: number
 }
 
 function fitTerminal(term: XTerm): void {
@@ -107,6 +113,55 @@ function fitTerminal(term: XTerm): void {
 
   core?._renderService?.clear?.()
   term.resize(cols, rows)
+}
+
+function sameInputPromptFrame(a: InputPromptFrame | null, b: InputPromptFrame | null): boolean {
+  if (a === null || b === null) return a === b
+  return a.top === b.top && a.height === b.height
+}
+
+function sameInputPromptFrames(a: readonly InputPromptFrame[], b: readonly InputPromptFrame[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((frame, index) => sameInputPromptFrame(frame, b[index] ?? null))
+}
+
+function promptPatternMatches(pattern: RegExp, text: string): boolean {
+  pattern.lastIndex = 0
+  const matches = pattern.test(text)
+  pattern.lastIndex = 0
+  return matches
+}
+
+function readInputPromptFrames(term: XTerm, config?: TerminalInputPromptFrame): InputPromptFrame[] {
+  if (!config) return []
+
+  const cellHeight = (term as TerminalWithCore)._core?._renderService?.dimensions?.css?.cell?.height
+  if (!cellHeight) return []
+
+  const buffer = term.buffer.active
+  const firstRow = buffer.viewportY
+  const lastRow = Math.min(buffer.viewportY + term.rows - 1, buffer.length - 1)
+  const fullHeight = term.rows * cellHeight
+  const frames: InputPromptFrame[] = []
+
+  for (let row = firstRow; row <= lastRow; row++) {
+    const line = buffer.getLine(row)
+    if (!line || !promptPatternMatches(config.promptPattern, line.translateToString(true))) continue
+
+    let bottomRow = row
+    while (bottomRow + 1 <= lastRow && bottomRow - row + 1 < config.maxRows) {
+      const nextLine = buffer.getLine(bottomRow + 1)
+      if (!nextLine?.isWrapped) break
+      bottomRow++
+    }
+
+    const top = Math.max(0, (row - buffer.viewportY) * cellHeight - config.topPadding)
+    const bottom = Math.min(fullHeight, (bottomRow - buffer.viewportY + 1) * cellHeight + config.bottomPadding)
+    frames.push({ top, height: bottom - top })
+    row = bottomRow
+  }
+
+  return frames
 }
 
 interface TerminalProps {
@@ -179,6 +234,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   const providerRef = useRef(resolvedProvider)
   const isTouch = useIsTouch()
   const [containerReady, setContainerReady] = useState(false)
+  const [inputPromptFrames, setInputPromptFrames] = useState<InputPromptFrame[]>([])
   const sendTextKeyRef = useRef<number | undefined>(undefined)
   const [modifiers, setModifiers] = useState<Modifiers>({ ctrl: false, shift: false, meta: false })
   const modifiersRef = useRef(modifiers)
@@ -298,6 +354,24 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
       fitTerminal(term)
       term.refresh(0, term.rows - 1)
     })
+
+    let inputPromptFrameRaf: number | null = null
+    const applyInputPromptFrame = () => {
+      inputPromptFrameRaf = null
+      const next = readInputPromptFrames(term, getProviderUi(providerRef.current).terminal.inputPromptFrame)
+      setInputPromptFrames(prev => sameInputPromptFrames(prev, next) ? prev : next)
+    }
+    const scheduleInputPromptFrame = () => {
+      if (inputPromptFrameRaf != null) return
+      inputPromptFrameRaf = requestAnimationFrame(applyInputPromptFrame)
+    }
+    scheduleInputPromptFrame()
+    const inputPromptFrameDisposables = [
+      term.onCursorMove(scheduleInputPromptFrame),
+      term.onWriteParsed(scheduleInputPromptFrame),
+      term.onScroll(scheduleInputPromptFrame),
+      term.onResize(scheduleInputPromptFrame),
+    ]
 
     // Touch scroll bridge
     let touchY: number | null = null
@@ -493,6 +567,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
     return () => {
       themeObserver.disconnect()
       if (resizeRaf != null) cancelAnimationFrame(resizeRaf)
+      if (inputPromptFrameRaf != null) cancelAnimationFrame(inputPromptFrameRaf)
       cancelAnimationFrame(fitAnimationFrame)
       container.removeEventListener('focusin', handleFocusIn)
       container.removeEventListener('touchstart', onTouchStart)
@@ -501,6 +576,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
       container.removeEventListener('touchcancel', onTouchEnd)
       osc52Disposable.dispose()
       for (const disposable of oscColorDisposables) disposable.dispose()
+      for (const disposable of inputPromptFrameDisposables) disposable.dispose()
       container.removeEventListener('keydown', handleKeyDown, { capture: true })
       container.removeEventListener('input', handleUnprocessedInput, { capture: true })
       container.removeEventListener('paste', handlePaste, { capture: true })
@@ -636,19 +712,41 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   useEffect(() => {
     const term = termRef.current
     if (!term) return
-    term.options.minimumContrastRatio = getProviderUi(resolvedProvider).terminal.minimumContrastRatio
+    const terminalPolicy = getProviderUi(resolvedProvider).terminal
+    term.options.minimumContrastRatio = terminalPolicy.minimumContrastRatio
+    const next = readInputPromptFrames(term, terminalPolicy.inputPromptFrame)
+    setInputPromptFrames(prev => sameInputPromptFrames(prev, next) ? prev : next)
     term.refresh(0, term.rows - 1)
   }, [resolvedProvider, containerReady])
 
   return (
     <div className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
       <div
-        ref={containerRef}
-        className="flex-1 min-h-0 w-full select-text"
+        className="relative flex-1 min-h-0 w-full select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
         onMouseDown={onInteract}
         onFocusCapture={onInteract}
-      />
+      >
+        <div
+          ref={containerRef}
+          className="absolute inset-0 select-text"
+          style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
+        />
+        {inputPromptFrames.map((frame, index) => (
+          <div
+            key={`${frame.top}:${frame.height}:${index}`}
+            aria-hidden="true"
+            data-terminal-input-frame="true"
+            className="pointer-events-none absolute inset-x-0 z-[4]"
+            style={{
+              top: frame.top,
+              height: frame.height,
+              borderTop: `${getProviderUi(resolvedProvider).terminal.inputPromptFrame?.lineWidth ?? 1}px solid ${INPUT_PROMPT_FRAME_COLOR}`,
+              borderBottom: `${getProviderUi(resolvedProvider).terminal.inputPromptFrame?.lineWidth ?? 1}px solid ${INPUT_PROMPT_FRAME_COLOR}`,
+            }}
+          />
+        ))}
+      </div>
       {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} modifiers={modifiers} onModifierChange={setModifiers} />}
     </div>
   )

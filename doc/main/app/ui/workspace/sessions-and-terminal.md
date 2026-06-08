@@ -174,6 +174,10 @@ Fallback: `document.execCommand('copy')` when async Clipboard API is unavailable
 - Terminal pane has explicit `user-select: text` (overrides workspace `select-none`)
 - Selection background: Solarized blue tint (`#268BD2` at 30%) instead of terminal background color
 
+### Codex Input Prompt Frame
+
+Codex terminal panes draw a browser-side overlay around visible `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
+
 ## Terminal Fit
 
 Custom fit calculation:

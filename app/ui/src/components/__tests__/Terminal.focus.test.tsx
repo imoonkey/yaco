@@ -12,6 +12,41 @@ type OscHandler = (data: string) => boolean | Promise<boolean>
 const oscHandlers = new Map<number, OscHandler[]>()
 const wsSends: string[] = []
 
+interface FakeBufferLine {
+  isWrapped: boolean
+  translateToString(trimRight?: boolean): string
+}
+
+type FakeBufferRow = string | { text: string; isWrapped?: boolean }
+
+let fakeLines: FakeBufferLine[] = []
+const fakeBuffer = {
+  type: 'alternate' as const,
+  cursorY: 0,
+  cursorX: 0,
+  viewportY: 0,
+  baseY: 0,
+  get length() { return fakeLines.length },
+  getLine(row: number) { return fakeLines[row] },
+  getNullCell() { return {} },
+}
+
+function makeFakeLine(row: FakeBufferRow | undefined): FakeBufferLine {
+  const text = typeof row === 'string' ? row : row?.text ?? ''
+  return {
+    isWrapped: typeof row === 'string' ? false : row?.isWrapped ?? false,
+    translateToString: (trimRight?: boolean) => trimRight ? text.trimEnd() : text,
+  }
+}
+
+function resetFakeBuffer(rows: FakeBufferRow[] = [''], cursorY: number = rows.length - 1): void {
+  fakeLines = Array.from({ length: 24 }, (_, index) => makeFakeLine(rows[index]))
+  fakeBuffer.cursorY = Math.max(0, cursorY)
+  fakeBuffer.cursorX = 0
+  fakeBuffer.viewportY = 0
+  fakeBuffer.baseY = 0
+}
+
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 vi.mock('@xterm/xterm', () => {
@@ -45,6 +80,7 @@ vi.mock('@xterm/xterm', () => {
       },
     }
     options: Record<string, unknown> = {}
+    buffer = { active: fakeBuffer }
     focus = focusSpy
     constructor() {
       this.element = document.createElement('div')
@@ -74,6 +110,9 @@ vi.mock('@xterm/xterm', () => {
     clear() { /* no-op */ }
     attachCustomKeyEventHandler() { /* no-op */ }
     onData() { return { dispose: () => undefined } }
+    onCursorMove() { return { dispose: () => undefined } }
+    onWriteParsed() { return { dispose: () => undefined } }
+    onScroll() { return { dispose: () => undefined } }
     onResize() { return { dispose: () => undefined } }
     onSelectionChange() { return { dispose: () => undefined } }
     onBell() { return { dispose: () => undefined } }
@@ -150,6 +189,7 @@ beforeEach(() => {
   clearSpy.mockClear()
   wsSends.length = 0
   oscHandlers.clear()
+  resetFakeBuffer()
 })
 
 afterEach(() => {
@@ -236,6 +276,52 @@ describe('Terminal focus handoff', () => {
     const handler = oscHandlers.get(11)?.at(-1)
     expect(handler).toBeDefined()
     expect(handler?.('?')).toBe(false)
+  })
+
+  it('frames the current Codex input prompt with horizontal rules', async () => {
+    resetFakeBuffer([
+      { text: '› write a fix that wraps onto the next line' },
+      { text: '  continued input', isWrapped: true },
+    ], 1)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
+  it('frames visible historical Codex user prompts too', async () => {
+    resetFakeBuffer([
+      'assistant output',
+      { text: '› older prompt' },
+      { text: '  wrapped older prompt', isWrapped: true },
+      'more assistant output',
+      { text: '› current prompt' },
+    ], 4)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frames = Array.from(container.querySelectorAll<HTMLElement>('[data-terminal-input-frame="true"]'))
+      expect(frames).toHaveLength(2)
+      expect(frames.map(frame => frame.style.top)).toEqual(['1px', '61px'])
+      expect(frames.map(frame => frame.style.height)).toEqual(['78px', '58px'])
+    })
+  })
+
+  it('does not frame non-Codex terminal prompt-looking rows', async () => {
+    resetFakeBuffer(['›'], 0)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="shell-1" provider="shell" />)
+
+    await waitFor(() => {
+      expect(resizeSpy).toHaveBeenCalled()
+    })
+    expect(container.querySelector('[data-terminal-input-frame="true"]')).toBeNull()
   })
 
   it('reserves xterm internal scrollbar width when fitting columns', async () => {
