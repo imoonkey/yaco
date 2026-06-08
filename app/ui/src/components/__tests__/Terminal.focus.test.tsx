@@ -294,6 +294,61 @@ describe('Terminal focus handoff', () => {
     })
   })
 
+  it('frames explicit multiline Codex input rows', async () => {
+    resetFakeBuffer([
+      { text: '› first line' },
+      { text: '  second line' },
+      { text: '  third line' },
+    ], 2)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('79px')
+    })
+  })
+
+  it('frames explicit multiline historical Codex prompt rows', async () => {
+    resetFakeBuffer([
+      { text: '› previous prompt' },
+      { text: '  second prompt line' },
+      { text: '  third prompt line' },
+      '',
+      { text: '  indented output after submit' },
+      'assistant output',
+    ], 5)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('79px')
+    })
+  })
+
+  it('does not count blank rows after a Codex prompt', async () => {
+    resetFakeBuffer([
+      { text: '› previous prompt' },
+      { text: '  second prompt line' },
+      { text: '', isWrapped: true },
+      { text: '  later indented output' },
+    ], 3)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
   it('frames visible historical Codex user prompts too', async () => {
     resetFakeBuffer([
       'assistant output',

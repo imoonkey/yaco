@@ -23,6 +23,7 @@ export interface ProviderUiConfig {
 
 export interface TerminalInputPromptFrame {
   promptPattern: RegExp
+  continuationPattern?: RegExp
   maxRows: number
   lineWidth: number
   topPadding: number
@@ -46,7 +47,7 @@ const PROVIDER_UI = {
     terminal: {
       minimumContrastRatio: 5,
       suppressOscColorReportQuery: false,
-      inputPromptFrame: { promptPattern: /^\s*›/, maxRows: 24, lineWidth: 2, topPadding: 19, bottomPadding: 19 },
+      inputPromptFrame: { promptPattern: /^\s*›/, continuationPattern: /^\s{2,}/, maxRows: 24, lineWidth: 2, topPadding: 19, bottomPadding: 19 },
     },
     canStart: true,
   },

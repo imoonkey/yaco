@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Codex prompt frame multiline height
+
+**What changed:**
+- Codex terminal prompt frames now size to explicit multiline user prompts, not only xterm soft-wrapped rows.
+- Frame scanning treats consecutive non-empty continuation rows as part of the prompt for both current and historical messages, and treats blank rows as a hard stop so post-message whitespace is not counted.
+- Terminal component tests cover active multiline input, historical multiline prompts, and blank-row termination.
+
+**Why:**
+- The first prompt-frame implementation used fixed one-line/soft-wrap assumptions. Real Codex history renders multiline user messages as continuation rows and may leave blank rows after the user message; counting those blanks made the horizontal rules too tall.
+
+**Key files:** `app/ui/src/components/Terminal.tsx`, `app/ui/src/lib/providerUi.ts`, `app/ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` → 14 pass; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Session summaries from the first meaningful prompt
 
 **What changed:**

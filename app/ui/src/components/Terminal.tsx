@@ -125,11 +125,16 @@ function sameInputPromptFrames(a: readonly InputPromptFrame[], b: readonly Input
   return a.every((frame, index) => sameInputPromptFrame(frame, b[index] ?? null))
 }
 
-function promptPatternMatches(pattern: RegExp, text: string): boolean {
+function patternMatches(pattern: RegExp | undefined, text: string): boolean {
+  if (!pattern) return false
   pattern.lastIndex = 0
   const matches = pattern.test(text)
   pattern.lastIndex = 0
   return matches
+}
+
+function isInputContinuation(text: string, config: TerminalInputPromptFrame): boolean {
+  return !patternMatches(config.promptPattern, text) && patternMatches(config.continuationPattern, text)
 }
 
 function readInputPromptFrames(term: XTerm, config?: TerminalInputPromptFrame): InputPromptFrame[] {
@@ -146,12 +151,20 @@ function readInputPromptFrames(term: XTerm, config?: TerminalInputPromptFrame): 
 
   for (let row = firstRow; row <= lastRow; row++) {
     const line = buffer.getLine(row)
-    if (!line || !promptPatternMatches(config.promptPattern, line.translateToString(true))) continue
+    if (!line || !patternMatches(config.promptPattern, line.translateToString(true))) continue
 
     let bottomRow = row
     while (bottomRow + 1 <= lastRow && bottomRow - row + 1 < config.maxRows) {
-      const nextLine = buffer.getLine(bottomRow + 1)
-      if (!nextLine?.isWrapped) break
+      const nextRow = bottomRow + 1
+      const nextLine = buffer.getLine(nextRow)
+      if (!nextLine) break
+      const nextText = nextLine.translateToString(true)
+      if (nextText.trim() === '') break
+      if (nextLine.isWrapped) {
+        bottomRow++
+        continue
+      }
+      if (!isInputContinuation(nextText, config)) break
       bottomRow++
     }
 
