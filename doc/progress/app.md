@@ -1,3 +1,20 @@
+## 2026-06-08: Self-host JetBrains Mono + line-height/weight tokens
+
+**What changed:**
+- **Mono delivered, not just named.** `--font-mono` was a wishlist stack (`'SF Mono','Fira Code','JetBrains Mono',…`) that hit nothing on most non-Mac machines → fell back to bare `monospace` (DejaVu). Self-hosted JetBrains Mono via `@fontsource/jetbrains-mono` (weights 400/500/600/700 imported in `main.tsx`, woff2 bundled by Vite — local-first, no CDN). New stack `'SF Mono', 'JetBrains Mono', ui-monospace, monospace`: Mac unchanged, others upgrade DejaVu→JBM. xterm literal stack (`Terminal.tsx`) reordered to match.
+- **Line-height rhythm tokens.** Added `--lh-tight: 1.3` / `--lh-normal: 1.5`, applied only to the ~6 genuinely multi-line spots (compose transcript/textarea, diff content, graph tooltip). `lineHeight: 1` geometry, xterm, and CodeMirror editor metrics left alone (no blanket apply).
+- **Weight vocabulary unified.** All inline `fontWeight: <number>` → Tailwind `font-*` classes (search highlights, diff toolbar, tooltip, compose tray). SVG `<text>` weight attrs left (presentation attribute).
+
+**Why:**
+- Holistic typography critique: the size scale was already coherent, but (a) mono wasn't actually being delivered off-Mac, and (b) line-height and weight were the remaining "dual-track / no-system" gaps. These were the highest-value polish after the token migration.
+- Delivered via 3 parallel subagents on disjoint scopes (mono / components+hooks / workspace+tasks).
+
+**Key files:** `app/ui/src/index.css`, `app/ui/src/main.tsx`, `app/ui/package.json`, `app/ui/src/components/{ComposeTray,Terminal}.tsx`, `app/ui/src/workspace/{diff/DiffTab,RefSearchDropdown,WorkspaceSearch,WorkspaceTextSearch}.tsx`, `app/ui/src/tasks/{TaskGraphTooltip,shared/InlineEdit}.tsx`, `app/ui/src/hooks/useNotifications.ts`.
+**Verification:** vite build clean; lint 0 errors; token e2e + a JetBrains-Mono-load e2e probe both pass (font resolves via `document.fonts.check`).
+**Commit:** `9f73d92` (+ this docs commit).
+**Next:** Optional — collapse the size scale to a tighter 5–6 steps (now a one-line token edit); `tabular-nums` pass.
+**Blockers:** None.
+
 ## 2026-06-08: Typography font-size token scale (`--text-ui-*`)
 
 **What changed:**

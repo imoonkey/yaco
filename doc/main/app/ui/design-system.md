@@ -79,10 +79,19 @@ Text uses **theme-split semantic tokens** (resolved per `[data-theme]`), not the
 
 ## Typography
 
-- **Font stack**: system-ui, sans-serif (body); monospace (editor, terminal, code)
+- **UI font**: `Instrument Sans` (loaded via Google Fonts), `--font-ui`.
+- **Mono font**: `--font-mono` = `'SF Mono', 'JetBrains Mono', ui-monospace, monospace`. JetBrains Mono is **self-hosted** (`@fontsource/jetbrains-mono`, imported in `main.tsx`, woff2 bundled — local-first, no CDN). Mac resolves SF Mono first (unchanged); other platforms, which used to fall back to a bare generic mono (e.g. DejaVu), now get JetBrains Mono. xterm keeps a literal copy of the same stack (`Terminal.tsx`) since it can't read CSS vars.
 - **Body text**: `#586E75` (base01) — deliberately darker than raw Solarized `#93A1A1` for readability
-- **Editor**: CodeMirror 6 with Solarized Light syntax theme
+- **Editor**: CodeMirror 6 with Solarized Light syntax theme (its own line-height metrics — not the `--lh-*` tokens below)
 - **Terminal**: xterm.js with Solarized Light terminal colors
+
+### Line-Height Tokens
+
+`--lh-tight: 1.3` (compact multi-line: tooltips) and `--lh-normal: 1.5` (wrapped body: compose transcript/textarea, diff content). **Applied only to genuinely multi-line / wrapping text** — single-line fixed-height rows, icon/badge geometry (`lineHeight: 1`), xterm, and the CodeMirror editor set no `--lh-*` (they have their own tuned metrics). Don't blanket-apply line-height to chrome rows.
+
+### Font-Weight
+
+One vocabulary: Tailwind `font-{normal,medium,semibold,bold}` classes (= 400/500/600/700). Don't hardcode inline `fontWeight: <number>`. Exception: SVG `<text fontWeight={…}>` in the task graph (presentation attribute, can't take a class).
 
 ### Font-Size Token Scale
 

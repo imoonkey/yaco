@@ -37,7 +37,7 @@ cd app/ui && npx playwright test
 - Server routes return data directly on success and use `fail(c, status, error)` for failures.
 - Project-scoped routes go through `withProject`; worktree routing is driven by `?worktree=<slug>`.
 - UI uses Solarized semantic CSS variables from `ui/src/index.css`; avoid hardcoded UI colors.
-- UI font sizes use the `--text-ui-*` token scale (`@theme static` in `ui/src/index.css`): `text-ui-*` classes or `var(--text-ui-*)` inline. Don't hardcode `text-[Npx]` or numeric `fontSize`. Exceptions: xterm (canvas), the task-graph `graphType.ts` constants (canvas-measurement), and decorative/relative-`em` sizes.
+- UI font sizes use the `--text-ui-*` token scale (`@theme static` in `ui/src/index.css`): `text-ui-*` classes or `var(--text-ui-*)` inline. Don't hardcode `text-[Npx]` or numeric `fontSize`. Weights use Tailwind `font-{normal,medium,semibold,bold}` (not inline `fontWeight: N`); multi-line text uses `--lh-tight`/`--lh-normal`. Exceptions: xterm (canvas), the task-graph `graphType.ts` constants + SVG `<text>` attrs, and decorative/relative-`em` sizes.
 - Use `lucide-react` icons for UI icons.
 - Use `DialogShell`, `ConfirmDialog`, and `sonner` instead of native alert/confirm flows.
 - Feature-detect secure-context browser APIs before calling them directly.
