@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
-import { FileSearch as FileSearchIcon, GitCompareArrows, Plus, Search, SearchCode, Undo2, X } from 'lucide-react'
+import { ChevronsDownUp, FilePlus, FileSearch as FileSearchIcon, FolderPlus, GitCompareArrows, Plus, Search, SearchCode, Undo2, X } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory, fetchGitCompare } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, useWorkspaceState } from '../hooks/useWorkspaceState'
@@ -9,7 +9,7 @@ import { isPreviewableFile } from '../lib/binaryFiles'
 import { VoiceControl } from '../components/VoiceControl'
 import { ComposeTray } from '../components/ComposeTray'
 import { ProviderIcon } from '../components/SessionIcons'
-import { FileExplorer, NewFileIcon, NewFolderIcon, CollapseAllIcon } from '../components/FileExplorer'
+import { FileExplorer } from '../components/FileExplorer'
 import type { FileExplorerHandle } from '../components/FileExplorer'
 import { FileSearch } from './WorkspaceSearch'
 import { GitChangeItem } from './WorkspaceSidebar'
@@ -390,30 +390,29 @@ export function Workspace({
           <button
             type="button"
             onClick={handleOpenQuickSearch}
-            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            className="section-header-icon-btn"
             title="Quick file search"
             aria-label="Quick file search"
           >
-            <FileSearchIcon size={12} />
+            <FileSearchIcon />
           </button>
           <button
             type="button"
-            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            className="section-header-icon-btn"
             title="Full text search"
             aria-label="Full text search"
             aria-pressed="true"
-            style={{ color: 'var(--sol-accent)', backgroundColor: 'color-mix(in srgb, var(--sol-accent) 12%, transparent)' }}
           >
-            <SearchCode size={12} />
+            <SearchCode />
           </button>
           <button
             type="button"
             onClick={handleShowExplorerTree}
-            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            className="section-header-icon-btn"
             title="Back to explorer"
             aria-label="Back to explorer"
           >
-            <Undo2 size={12} />
+            <Undo2 />
           </button>
         </>
       ) : (
@@ -421,15 +420,39 @@ export function Workspace({
           <button
             type="button"
             onClick={handleToggleTextSearch}
-            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            className="section-header-icon-btn"
             title="Search in files"
             aria-label="Search in files"
           >
-            <Search size={12} />
+            <Search />
           </button>
-          <button onClick={handleCollapseAll} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="Collapse All"><CollapseAllIcon /></button>
-          <button onClick={handleNewFile} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
-          <button onClick={handleNewFolder} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
+          <button
+            type="button"
+            onClick={handleCollapseAll}
+            className="section-header-icon-btn"
+            title="Collapse All"
+            aria-label="Collapse All"
+          >
+            <ChevronsDownUp />
+          </button>
+          <button
+            type="button"
+            onClick={handleNewFile}
+            className="section-header-icon-btn"
+            title="New File"
+            aria-label="New File"
+          >
+            <FilePlus />
+          </button>
+          <button
+            type="button"
+            onClick={handleNewFolder}
+            className="section-header-icon-btn"
+            title="New Folder"
+            aria-label="New Folder"
+          >
+            <FolderPlus />
+          </button>
           <SectionRefreshButton onClick={handleRefreshExplorer} title="Refresh explorer" />
         </>
       )}
@@ -456,26 +479,24 @@ export function Workspace({
   const changesActions = (
     <div className="flex gap-0.5 items-center">
       <button
+        type="button"
         onClick={() => setCompareMode(m => !m)}
-        className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer"
+        className="section-header-icon-btn"
         title={compareMode ? 'Exit compare mode' : 'Compare refs'}
-        style={compareMode
-          ? { color: 'var(--sol-accent)', backgroundColor: 'color-mix(in srgb, var(--sol-accent) 12%, transparent)', padding: '1px 3px', borderRadius: 3, transition: 'all 120ms' }
-          : { opacity: 0.7, transition: 'all 120ms' }
-        }
+        aria-label={compareMode ? 'Exit compare mode' : 'Compare refs'}
+        aria-pressed={compareMode}
       >
-        <GitCompareArrows size={12} />
+        <GitCompareArrows />
       </button>
       {compareMode && (
         <button
+          type="button"
           onClick={() => setCompareMode(false)}
-          className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer"
+          className="section-header-icon-btn"
           title="Exit compare mode"
-          style={{ color: 'var(--sol-text)', transition: 'color 120ms' }}
-          onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-text)')}
-          onMouseLeave={e => (e.currentTarget.style.color = 'var(--sol-text)')}
+          aria-label="Exit compare mode"
         >
-          <X size={11} />
+          <X />
         </button>
       )}
       <SectionRefreshButton onClick={handleRefreshChanges} title={compareMode ? 'Refresh compare' : 'Refresh changes'} />
@@ -500,12 +521,13 @@ export function Workspace({
 
   const projectActions = (
     <button
+      type="button"
       onClick={onAddProject}
       aria-label="Add project"
       title="Add project"
-      className="w-[18px] h-[18px] rounded flex items-center justify-center cursor-pointer text-[var(--sol-base01)] hover:text-[var(--sol-base02)] hover:bg-[var(--sol-base2)] transition-colors"
+      className="section-header-icon-btn"
     >
-      <Plus size={14} />
+      <Plus />
     </button>
   )
 

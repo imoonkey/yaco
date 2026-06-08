@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Folder, FolderOpen, FilePlus, FolderPlus, ChevronsDownUp } from 'lucide-react'
+import { Folder, FolderOpen } from 'lucide-react'
 import { getIcon } from '../lib/setiIcons'
 
 // --- Seti color name to hex (VS Code Seti icon theme, light background) ---
@@ -33,16 +33,4 @@ export function FileTypeIcon({ name }: { name: string }) {
 export function FolderIcon({ open }: { open?: boolean }) {
   const Icon = open ? FolderOpen : Folder
   return <Icon size={14} className="shrink-0" color="#C09553" />
-}
-
-export function NewFileIcon() {
-  return <FilePlus size={14} className="shrink-0" />
-}
-
-export function CollapseAllIcon() {
-  return <ChevronsDownUp size={14} className="shrink-0" />
-}
-
-export function NewFolderIcon() {
-  return <FolderPlus size={14} className="shrink-0" />
 }

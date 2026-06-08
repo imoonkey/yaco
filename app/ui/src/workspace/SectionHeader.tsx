@@ -42,12 +42,12 @@ export function SectionRefreshButton({ onClick, title = 'Refresh' }: {
         }
       }}
       disabled={refreshing}
-      className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+      className="section-header-icon-btn"
       title={title}
       aria-label={title}
       aria-busy={refreshing}
     >
-      <RefreshCw size={12} className={refreshing ? 'animate-spin' : undefined} />
+      <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
     </button>
   )
 }

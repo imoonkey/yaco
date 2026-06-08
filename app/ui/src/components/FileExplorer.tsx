@@ -8,7 +8,7 @@ import { Menu, MenuItem, MenuDivider } from './Menu'
 import { useContextMenu } from './useContextMenu'
 import type { FileNode } from '../types'
 export { GIT_COLORS } from './fileGitColors'
-export { FileTypeIcon, FolderIcon, NewFileIcon, NewFolderIcon, CollapseAllIcon } from './fileExplorerIcons'
+export { FileTypeIcon, FolderIcon } from './fileExplorerIcons'
 import { FileNodeRenderer } from './fileExplorerNode'
 import { ExplorerContext } from './explorerContext'
 

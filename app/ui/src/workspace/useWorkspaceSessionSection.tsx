@@ -109,8 +109,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
       {sessionTab === 'live' && (
         <div className="flex gap-1">
           {startableProviders.map(p => (
-            <button key={p} onClick={() => { void sessionsMgr.handleNewSession(p) }} className="spawn-btn flex items-center gap-0.5 text-ui-xs px-1.5 py-0.5 rounded cursor-pointer" title={`New ${getProviderUi(p).label}`}>
-              <ProviderIcon provider={p} className="w-3.5 h-3.5" />
+            <button key={p} type="button" onClick={() => { void sessionsMgr.handleNewSession(p) }} className="section-header-icon-btn" title={`New ${getProviderUi(p).label}`} aria-label={`New ${getProviderUi(p).label}`}>
+              <ProviderIcon provider={p} className="" />
             </button>
           ))}
         </div>
@@ -118,16 +118,12 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
       <button
         type="button"
         onClick={handleToggleSessionSearch}
-        className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+        className="section-header-icon-btn"
         title={sessionSearchOpen ? 'Hide session search' : 'Search sessions'}
         aria-label={sessionSearchOpen ? 'Hide session search' : 'Search sessions'}
         aria-pressed={sessionSearchOpen}
-        style={sessionSearchOpen
-          ? { color: 'var(--sol-accent)', backgroundColor: 'color-mix(in srgb, var(--sol-accent) 12%, transparent)' }
-          : undefined
-        }
       >
-        <Search size={12} />
+        <Search />
       </button>
       <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div

@@ -700,12 +700,35 @@ body {
   background-color: color-mix(in srgb, #fff 8%, var(--sol-header-bg));
 }
 .section-header-icon-btn {
+  --section-icon-box: 18px;
+  --section-icon-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--section-icon-box);
+  height: var(--section-icon-box);
+  border-radius: 4px;
+  cursor: pointer;
   color: var(--sol-text-dim);
   transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
 }
+.section-header-icon-btn :is(svg, img) {
+  width: var(--section-icon-size);
+  height: var(--section-icon-size);
+}
 .section-header-icon-btn:hover {
   color: var(--sol-text);
-  background: color-mix(in srgb, var(--sol-text) 10%, transparent);
+  background: var(--sol-base2);
+}
+.section-header-icon-btn[aria-pressed="true"] {
+  color: var(--sol-text-brown);
+  background: var(--sol-base3);
+}
+[data-theme="dark"] .section-header-icon-btn:hover {
+  background: color-mix(in srgb, #fff 12%, transparent);
+}
+[data-theme="dark"] .section-header-icon-btn[aria-pressed="true"] {
+  background: color-mix(in srgb, #fff 20%, transparent);
 }
 .section-header-icon-btn:disabled {
   cursor: default;
@@ -743,18 +766,6 @@ body {
 .quick-search-ignore-button:hover {
   border-color: color-mix(in srgb, var(--sol-blue) 55%, var(--sol-border));
   background-color: color-mix(in srgb, var(--sol-blue) 8%, transparent);
-}
-
-/* Session-spawn action buttons — the app's primary creative act. Quiet neutral
-   icons at rest (full opacity, not the old 80% ghost), lifting to an accent tint
-   on hover so they read as "create" without a loud persistent fill. */
-.spawn-btn {
-  color: var(--sol-text);
-  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
-}
-.spawn-btn:hover {
-  color: var(--sol-accent);
-  background: color-mix(in srgb, var(--sol-accent) 12%, transparent);
 }
 
 /* ═══ Keyframe Animations ═══ */
