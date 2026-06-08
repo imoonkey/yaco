@@ -82,7 +82,7 @@ function readPromptFrameBoundary(
 ): PromptFrameBoundary | null {
   const trimmed = text.trim()
   if (trimmed === '') return null
-  if (trimmed.startsWith('•') || trimmed.startsWith('■')) return 'reply'
+  if (trimmed.startsWith('•') || trimmed.startsWith('■') || trimmed.startsWith('$')) return 'reply'
   if (/^tab to queue message\b/i.test(trimmed) && isViewportTailBlank(buffer, row, lastRow)) return 'status'
   if (!trimmed.includes(' · ')) return null
   return trimmed.split(/\s·\s/).filter(Boolean).length >= 3 && isViewportTailBlank(buffer, row, lastRow)

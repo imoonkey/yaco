@@ -422,6 +422,24 @@ describe('Terminal focus handoff', () => {
     })
   })
 
+  it('stops no-background Codex prompt frames at line-start shell marker rows', async () => {
+    resetFakeBuffer([
+      { text: '› previous prompt' },
+      { text: 'run this command' },
+      { text: '' },
+      '$ npm test',
+    ], 3)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
   it('stops no-background Codex prompt frames at dot-separated status lines', async () => {
     resetFakeBuffer([
       { text: '› Improve documentation in @filename' },
