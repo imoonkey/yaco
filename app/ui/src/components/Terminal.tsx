@@ -338,7 +338,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
     const initialTheme = buildXtermTheme()
     const term = new XTerm({
       theme: initialTheme,
-      fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+      fontFamily: "'SF Mono', 'JetBrains Mono', ui-monospace, monospace",
       fontSize: 12,
       lineHeight: 1.4,
       // Real value is applied by the provider effect below (keeps the xterm

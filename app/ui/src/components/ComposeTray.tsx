@@ -124,7 +124,7 @@ export function ComposeTray({
       <div>
         {/* Header — surface is frozen for the run; not toggleable once started */}
         <div style={HEADER_STYLE}>
-          <span style={SURFACE_LABEL_STYLE}>
+          <span className="font-medium" style={SURFACE_LABEL_STYLE}>
             Voice → {surface === 'terminal' ? 'Terminal' : 'Editor'}
           </span>
           <button style={CLOSE_BTN_STYLE} onClick={handleClose} aria-label="Close"><X size={14} /></button>
@@ -137,7 +137,7 @@ export function ComposeTray({
               {liveTranscript || <span style={{ opacity: 0.5 }}>Listening…</span>}
             </div>
             <div style={ACTIVE_FOOTER_STYLE}>
-              <button style={STOP_BTN_STYLE} onClick={onStop}>Stop</button>
+              <button className="font-medium" style={STOP_BTN_STYLE} onClick={onStop}>Stop</button>
               {pendingCount > 0 && (
                 <span style={PENDING_STYLE} title={`${pendingCount} transcribing…`}>
                   <span style={SPINNER_STYLE} />
@@ -158,8 +158,8 @@ export function ComposeTray({
           <div style={ERROR_ROW_STYLE} role="alert">
             <span>{errorMessage}</span>
             <span style={{ display: 'flex', gap: 6 }}>
-              <button style={ERROR_ACTION_STYLE} onClick={onRetry}>Retry</button>
-              <button style={ERROR_ACTION_STYLE} onClick={onDismiss}>Dismiss</button>
+              <button className="font-medium" style={ERROR_ACTION_STYLE} onClick={onRetry}>Retry</button>
+              <button className="font-medium" style={ERROR_ACTION_STYLE} onClick={onDismiss}>Dismiss</button>
             </span>
           </div>
         )}
@@ -226,6 +226,7 @@ export function ComposeTray({
 
             <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
               <button
+                className="font-medium"
                 style={{
                   ...CONFIRM_BTN_STYLE,
                   ...(isRecoverable ? { background: 'var(--sol-subtle-bg)', color: 'var(--sol-text-disabled)', cursor: 'default' } : {}),
@@ -236,8 +237,8 @@ export function ComposeTray({
               >
                 {confirmLabel}
               </button>
-              <button style={COPY_BTN_STYLE} onClick={() => onCopy(editText)}>Copy</button>
-              <button style={DISCARD_BTN_STYLE} onClick={handleDiscard}>Discard</button>
+              <button className="font-medium" style={COPY_BTN_STYLE} onClick={() => onCopy(editText)}>Copy</button>
+              <button className="font-medium" style={DISCARD_BTN_STYLE} onClick={handleDiscard}>Discard</button>
             </div>
           </>
         )}
@@ -258,7 +259,6 @@ const HEADER_STYLE: React.CSSProperties = {
 }
 
 const SURFACE_LABEL_STYLE: React.CSSProperties = {
-  fontWeight: 500,
   fontSize: 'var(--text-ui-md)',
   color: 'var(--sol-text)',
   padding: '2px 4px',
@@ -282,7 +282,7 @@ const ACTIVE_STYLE: React.CSSProperties = {
 
 const TRANSCRIPT_STYLE: React.CSSProperties = {
   fontSize: 'var(--text-ui-xl)',
-  lineHeight: 1.5,
+  lineHeight: 'var(--lh-normal)',
   color: 'var(--sol-editor-fg)',
   background: 'var(--sol-input-bg)',
   border: '1px solid var(--sol-border)',
@@ -338,7 +338,6 @@ const STOP_BTN_STYLE: React.CSSProperties = {
   color: 'var(--sol-red)',
   cursor: 'pointer',
   padding: '0 16px',
-  fontWeight: 500,
 }
 
 const SPINNER_STYLE: React.CSSProperties = {
@@ -362,7 +361,7 @@ const TEXTAREA_STYLE: React.CSSProperties = {
   resize: 'vertical',
   outline: 'none',
   boxSizing: 'border-box',
-  lineHeight: 1.5,
+  lineHeight: 'var(--lh-normal)',
   minHeight: 50,
 }
 
@@ -394,7 +393,6 @@ const ERROR_ACTION_STYLE: React.CSSProperties = {
   border: 'none',
   color: 'var(--sol-red)',
   fontSize: 'var(--text-ui-sm)',
-  fontWeight: 500,
   cursor: 'pointer',
   padding: '2px 4px',
   textDecoration: 'underline',
@@ -408,7 +406,6 @@ const BTN_BASE: React.CSSProperties = {
   cursor: 'pointer',
   padding: '0 12px',
   touchAction: 'manipulation',
-  fontWeight: 500,
   lineHeight: 1,
   transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
 }

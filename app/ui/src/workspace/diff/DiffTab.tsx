@@ -499,7 +499,6 @@ function DiffToolbar({
     color: 'var(--sol-text)',
     letterSpacing: '0.02em',
     textTransform: 'uppercase',
-    fontWeight: 500,
     transition: 'background-color 80ms, color 80ms',
   }
 
@@ -529,16 +528,16 @@ function DiffToolbar({
         <>
           <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-ui-sm)', color: 'var(--sol-text-dim)', marginRight: 10 }}>
             <GitBranch size={10} style={{ color: 'var(--sol-accent)' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-ui-xs)', fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.base}</span>
+            <span className="font-semibold" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-ui-xs)', color: 'var(--sol-text)' }}>{compareContext.base}</span>
             <span style={{ color: 'var(--sol-text-faint)', fontSize: 'var(--text-ui-xs)' }}>&rarr;</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-ui-xs)', fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.compare}</span>
+            <span className="font-semibold" style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-ui-xs)', color: 'var(--sol-text)' }}>{compareContext.compare}</span>
           </span>
           <div className="toolbar-sep" />
         </>
       )}
 
       {/* Stats */}
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 10px', fontSize: 'var(--text-ui-sm)', fontWeight: 600 }}>
+      <span className="font-semibold" style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 10px', fontSize: 'var(--text-ui-sm)' }}>
         <span style={{ color: 'var(--sol-green)' }}>+{parsed.stats.added}</span>
         <span style={{ color: 'var(--sol-red)' }}>-{parsed.stats.deleted}</span>
       </span>
@@ -550,11 +549,13 @@ function DiffToolbar({
         <>
           <span style={{ display: 'flex', margin: '0 10px' }}>
             <button
-              style={{ ...viewBtnBase, borderRadius: '3px 0 0 3px', backgroundColor: viewMode === 'unified' ? 'var(--sol-bg)' : 'transparent', fontWeight: viewMode === 'unified' ? 700 : 500, color: viewMode === 'unified' ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)' }}
+              className={viewMode === 'unified' ? 'font-bold' : 'font-medium'}
+              style={{ ...viewBtnBase, borderRadius: '3px 0 0 3px', backgroundColor: viewMode === 'unified' ? 'var(--sol-bg)' : 'transparent', color: viewMode === 'unified' ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)' }}
               onClick={() => onViewMode('unified')}
             >Unified</button>
             <button
-              style={{ ...viewBtnBase, borderRadius: '0 3px 3px 0', borderLeft: 'none', backgroundColor: viewMode === 'split' ? 'var(--sol-bg)' : 'transparent', fontWeight: viewMode === 'split' ? 700 : 500, color: viewMode === 'split' ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)' }}
+              className={viewMode === 'split' ? 'font-bold' : 'font-medium'}
+              style={{ ...viewBtnBase, borderRadius: '0 3px 3px 0', borderLeft: 'none', backgroundColor: viewMode === 'split' ? 'var(--sol-bg)' : 'transparent', color: viewMode === 'split' ? 'var(--sol-text-dark)' : 'var(--sol-text-dim)' }}
               onClick={() => onViewMode('split')}
             >Split</button>
           </span>
@@ -575,9 +576,9 @@ function DiffToolbar({
             <button
               ref={fileCountRef}
               onClick={() => setShowFileDropdown(v => !v)}
+              className="font-semibold"
               style={{
                 fontSize: 'var(--text-ui-xs)',
-                fontWeight: 600,
                 color: 'var(--sol-text-dim)',
                 cursor: 'pointer',
                 background: showFileDropdown ? 'color-mix(in srgb, var(--sol-blue) 10%, transparent)' : 'transparent',
@@ -589,7 +590,7 @@ function DiffToolbar({
                 transition: 'background-color 80ms',
               }}
             >
-              {currentIdx + 1}<span style={{ color: 'var(--sol-text-faint)', fontWeight: 400 }}> / </span>{fileCount}
+              {currentIdx + 1}<span className="font-normal" style={{ color: 'var(--sol-text-faint)' }}> / </span>{fileCount}
             </button>
             <button style={navBtnStyle} onClick={onNextFile} disabled={currentIdx >= fileCount - 1} aria-label="Next file">
               <ChevronRight size={11} />
@@ -604,8 +605,8 @@ function DiffToolbar({
         <button style={navBtnStyle} onClick={onPrev} disabled={hunkCount === 0} aria-label="Previous change">&#8593;</button>
         <button style={navBtnStyle} onClick={onNext} disabled={hunkCount === 0} aria-label="Next change">&#8595;</button>
         {hunkCount > 0 && (
-          <span style={{ fontSize: 'var(--text-ui-xs)', color: 'var(--sol-text-dim)', marginLeft: 4, fontWeight: 500, whiteSpace: 'nowrap' }}>
-            {activeIndex + 1}<span style={{ color: 'var(--sol-text-faint)', fontWeight: 400 }}> / </span>{hunkCount}
+          <span className="font-medium" style={{ fontSize: 'var(--text-ui-xs)', color: 'var(--sol-text-dim)', marginLeft: 4, whiteSpace: 'nowrap' }}>
+            {activeIndex + 1}<span className="font-normal" style={{ color: 'var(--sol-text-faint)' }}> / </span>{hunkCount}
           </span>
         )}
       </span>
@@ -773,7 +774,7 @@ export function DiffTab({
           overflow: 'auto',
           fontFamily: 'var(--font-mono)',
           fontSize: 'var(--text-ui-md)',
-          lineHeight: '1.6',
+          lineHeight: 'var(--lh-normal)',
           backgroundColor: 'var(--sol-editor-bg)',
         }}
       >

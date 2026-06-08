@@ -63,7 +63,7 @@ function DropdownPopover({ options, value, onSelect, onClose }: {
             key={opt.value}
             onClick={() => onSelect(opt.value)}
             onMouseEnter={() => setFocusedIdx(i)}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-ui-sm text-left cursor-pointer transition-colors"
+            className={`flex items-center gap-2 w-full px-3 py-1.5 text-ui-sm text-left cursor-pointer transition-colors ${isSelected ? 'font-semibold' : 'font-normal'}`}
             style={{
               color: opt.color ?? 'var(--sol-text)',
               backgroundColor: isFocused
@@ -71,7 +71,6 @@ function DropdownPopover({ options, value, onSelect, onClose }: {
                 : isSelected
                   ? 'color-mix(in srgb, var(--sol-accent) 6%, transparent)'
                   : 'transparent',
-              fontWeight: isSelected ? 600 : 400,
             }}
           >
             {opt.label}

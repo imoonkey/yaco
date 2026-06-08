@@ -157,7 +157,7 @@ export function useNotifications(
               },
               onClick: handleClick?.(id),
             },
-              createElement('div', { style: { fontWeight: 500 } }, displayTitle),
+              createElement('div', { className: 'font-medium' }, displayTitle),
               item.message
                 ? createElement('div', { style: { opacity: 0.7, fontSize: '0.875em', marginTop: 2 } }, item.message)
                 : null,

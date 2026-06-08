@@ -13,7 +13,7 @@ function MetaChip({ children, color, mono }: { children: React.ReactNode; color?
     <span
       style={{
         fontSize: 'var(--text-ui-xs)',
-        lineHeight: 1.4,
+        lineHeight: 'var(--lh-tight)',
         padding: '1px 5px',
         borderRadius: 4,
         color: color ?? 'var(--sol-base01)',
@@ -102,7 +102,7 @@ export function TaskGraphTooltip({ target, graph, scale, containerRef }: {
         zIndex: 30,
       }}
     >
-      <div style={{ fontSize: 'var(--text-ui-md)', fontWeight: 600, color: 'var(--sol-text-dark)', lineHeight: 1.3 }}>
+      <div className="font-semibold" style={{ fontSize: 'var(--text-ui-md)', color: 'var(--sol-text-dark)', lineHeight: 'var(--lh-tight)' }}>
         {title}
       </div>
       {description && (
@@ -114,13 +114,13 @@ export function TaskGraphTooltip({ target, graph, scale, containerRef }: {
           display: '-webkit-box',
           WebkitLineClamp: 2,
           WebkitBoxOrient: 'vertical',
-          lineHeight: 1.4,
+          lineHeight: 'var(--lh-tight)',
         }}>
           {description}
         </div>
       )}
       {progress && (
-        <div style={{ fontSize: 'var(--text-ui-xs)', color: 'var(--sol-text-faint)', marginTop: 3, fontWeight: 500 }}>
+        <div className="font-medium" style={{ fontSize: 'var(--text-ui-xs)', color: 'var(--sol-text-faint)', marginTop: 3 }}>
           {progress}
         </div>
       )}

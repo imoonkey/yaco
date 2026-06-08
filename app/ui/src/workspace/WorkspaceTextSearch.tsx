@@ -436,7 +436,7 @@ function MatchLine({ match, focused, dataIdx, onClick }: {
       <span className="shrink-0 text-ui-xs w-7 text-right" style={{ color: 'var(--sol-text-faint)' }}>{match.line}</span>
       <span className="truncate">
         {before}
-        <span style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 19%, transparent)', color: 'var(--sol-base02)', fontWeight: 600 }}>{highlighted}</span>
+        <span className="font-semibold" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 19%, transparent)', color: 'var(--sol-base02)' }}>{highlighted}</span>
         {after}
       </span>
     </div>

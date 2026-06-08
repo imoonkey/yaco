@@ -9,7 +9,12 @@
 :root {
   /* Typography */
   --font-ui: 'Instrument Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Line-height rhythm — applied only to multi-line / wrapping text.
+     Single-line fixed-height rows intentionally set no line-height. */
+  --lh-tight: 1.3;
+  --lh-normal: 1.5;
 
   /* Elevation (light) */
   --elevation-0: none;

@@ -133,7 +133,7 @@ function HighlightedText({ text, positions, color, highlightColor }: {
       if (run) {
         chars.push(
           inMatch
-            ? <span key={runStart} style={{ color: highlightColor, fontWeight: 600 }}>{run}</span>
+            ? <span key={runStart} className="font-semibold" style={{ color: highlightColor }}>{run}</span>
             : <span key={runStart}>{run}</span>
         )
       }

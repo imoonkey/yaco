@@ -215,11 +215,10 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
             <button
               key={tab.id}
               onClick={() => { setActiveTab(tab.id); setFocusIdx(0) }}
-              className="px-1.5 py-0.5 rounded text-ui-xs cursor-pointer"
+              className={`px-1.5 py-0.5 rounded text-ui-xs cursor-pointer ${isActive ? 'font-semibold' : 'font-normal'}`}
               style={{
                 color: isActive ? 'var(--sol-accent)' : 'var(--sol-text)',
                 backgroundColor: isActive ? 'color-mix(in srgb, var(--sol-accent) 10%, transparent)' : 'transparent',
-                fontWeight: isActive ? 600 : 400,
                 transition: 'all 100ms',
               }}
             >
@@ -289,8 +288,8 @@ function CommitRow({ item }: { item: RefItem }) {
   return (
     <div className="flex items-center gap-1.5 w-full min-w-0">
       <span
-        className="shrink-0 text-ui-sm"
-        style={{ fontFamily: 'var(--font-mono)', color: 'var(--sol-accent)', fontWeight: 600 }}
+        className="shrink-0 text-ui-sm font-semibold"
+        style={{ fontFamily: 'var(--font-mono)', color: 'var(--sol-accent)' }}
       >{item.hash}</span>
       <span className="truncate flex-1 min-w-0">{item.label.slice((item.hash?.length ?? 0) + 1)}</span>
       <span
