@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Session search snippets in place
+
+**What changed:**
+- Summary/worktree/title/branch/id match snippets now replace the existing inline field instead of rendering a second labeled row.
+- Extra labeled snippets are reserved for fields that are not otherwise shown inline, such as provider, status, project, parent, or live-session handle.
+- The E2E search spec now asserts summary and branch matches do not duplicate as `summary:` / `branch:` rows.
+
+**Why:**
+- Showing `SUMMARY:` below a row duplicated the already-visible summary and made the result explanation inconsistent. In-place replacement keeps the row compact while still surfacing clipped match context.
+
+**Key files:** `app/ui/src/workspace/{WorkspaceSessionList.tsx,WorkspaceHistoryList.tsx,sessionSearch.ts}`, `app/ui/tests/e2e/session-search.spec.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/sessionSearch.test.ts` passed; `cd app/ui && npx playwright test tests/e2e/session-search.spec.ts` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Session search substring matching restored
 
 **What changed:**

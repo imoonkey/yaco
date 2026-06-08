@@ -31,6 +31,13 @@ function HistoryItem({
   const secondaryMatch = fieldMatch(searchMatch, secondaryKey)
   const branchMatch = fieldMatch(searchMatch, 'gitBranch')
   const snippet = searchMatch?.snippet
+  const primarySnippet = snippet?.key === primaryKey ? snippet : null
+  const secondarySnippet = snippet?.key === secondaryKey ? snippet : null
+  const branchSnippet = snippet?.key === 'gitBranch' ? snippet : null
+  const extraSnippet = snippet && !primarySnippet && !secondarySnippet && !branchSnippet ? snippet : null
+  const primaryText = primarySnippet?.text ?? primary
+  const secondaryText = secondarySnippet?.text ?? secondary
+  const branchText = branchSnippet?.text ?? entry.gitBranch
 
   const showBranch = !!(entry.gitBranch && entry.gitBranch !== 'main' && entry.gitBranch !== 'master')
 
@@ -49,22 +56,22 @@ function HistoryItem({
       )}
       <div className="min-w-0 flex-1">
         <div className="line-clamp-2">
-          <SearchHighlightedText text={primary} positions={primaryMatch?.positions} className="font-medium" />
+          <SearchHighlightedText text={primaryText} positions={primarySnippet?.positions ?? primaryMatch?.positions} className="font-medium" />
           <span className="text-ui-xs ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
-            <SearchHighlightedText text={secondary} positions={secondaryMatch?.positions} />
+            <SearchHighlightedText text={secondaryText} positions={secondarySnippet?.positions ?? secondaryMatch?.positions} />
             {showBranch && (
               <>
                 {' · '}
-                <SearchHighlightedText text={entry.gitBranch!} positions={branchMatch?.positions} />
+                <SearchHighlightedText text={branchText!} positions={branchSnippet?.positions ?? branchMatch?.positions} />
               </>
             )}
             {entry.messageCount != null && ` · ${entry.messageCount} msgs`}
           </span>
         </div>
-        {snippet && (
+        {extraSnippet && (
           <div className="text-ui-xs mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
-            <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{snippet.label}:</span>
-            <SearchHighlightedText text={snippet.text} positions={snippet.positions} />
+            <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{extraSnippet.label}:</span>
+            <SearchHighlightedText text={extraSnippet.text} positions={extraSnippet.positions} />
           </div>
         )}
       </div>

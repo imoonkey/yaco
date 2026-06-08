@@ -96,7 +96,7 @@ test.describe('Session search', () => {
     const liveSearch = page.getByRole('searchbox', { name: 'Search live sessions...' })
     await liveSearch.fill('frontend')
     await expect(page.getByText('codex-ui')).toBeVisible()
-    await expect(page.getByText('summary:')).toBeVisible()
+    await expect(page.getByText('summary:')).not.toBeVisible()
     await expect(page.getByText(/frontend panel rendering/).last()).toBeVisible()
 
     await liveSearch.fill('codex ui')
@@ -117,7 +117,7 @@ test.describe('Session search', () => {
     await historySearch.fill('task branch')
     await expect(page.getByText('Session history branch polish')).toBeVisible()
     await expect(page.getByText('Voice formatter')).not.toBeVisible()
-    await expect(page.getByText('branch:')).toBeVisible()
+    await expect(page.getByText('branch:')).not.toBeVisible()
     await expect(page.getByText('task/branch-polish').first()).toBeVisible()
 
     await historySearch.fill('qqqqqq')

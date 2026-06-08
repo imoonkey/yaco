@@ -93,6 +93,12 @@ export function SessionItem({
   const summaryMatch = fieldMatch(searchMatch, 'summary')
   const worktreeMatch = fieldMatch(searchMatch, 'worktree')
   const snippet = searchMatch?.snippet
+  const summarySnippet = snippet?.key === 'summary' ? snippet : null
+  const worktreeSnippet = snippet?.key === 'worktree' ? snippet : null
+  const extraSnippet = snippet && !summarySnippet && !worktreeSnippet ? snippet : null
+  const summaryText = summarySnippet?.text ?? summary
+  const summaryPositions = summarySnippet?.positions ?? summaryMatch?.positions
+  const worktreeText = worktreeSnippet?.text ?? session.worktree ?? ''
 
   return (
     <div ref={itemRef} onClick={renaming ? undefined : onClick}
@@ -153,22 +159,22 @@ export function SessionItem({
                 style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
               >
                 <FolderGit2 size={9} />
-                <SearchHighlightedText text={session.worktree} positions={worktreeMatch?.positions} />
+                <SearchHighlightedText text={worktreeText} positions={worktreeSnippet?.positions ?? worktreeMatch?.positions} />
               </span>
             )}
             {summary && (
               <SearchHighlightedText
-                text={summary}
-                positions={summaryMatch?.positions}
+                text={summaryText}
+                positions={summaryPositions}
                 className="text-ui-xs ml-1.5"
                 style={{ color: 'var(--sol-text-faint)' }}
               />
             )}
           </div>
-          {snippet && (
+          {extraSnippet && (
             <div className="text-ui-xs mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
-              <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{snippet.label}:</span>
-              <SearchHighlightedText text={snippet.text} positions={snippet.positions} />
+              <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{extraSnippet.label}:</span>
+              <SearchHighlightedText text={extraSnippet.text} positions={extraSnippet.positions} />
             </div>
           )}
         </div>

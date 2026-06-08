@@ -71,7 +71,7 @@ The Sessions panel has one local search box shared by the Live and History tabs.
 
 - Live search filters the already-loaded session rows by name, provider, status, project, summary, worktree, and lineage metadata. Lineage grouping then runs over the filtered visible set, so a child whose parent is filtered out renders as a root through the normal lineage fallback.
 - History search filters the already-loaded history rows by title, summary, provider, id, branch, and live-session handle. Timestamps and message counts are intentionally excluded from matching because they create noisy hits for handle-like queries such as `live-7`. Sorting and the 200-row cap remain CLI/server-owned.
-- Matched characters are highlighted inside visible fields. When a match lands in a non-primary field (for example summary, branch, provider, status, worktree, or live handle), the row also renders a labeled one-line snippet so the user can see why it matched even when the normal row text is clipped.
+- Matched characters are highlighted inside visible fields. If a visible field such as summary, worktree, title, branch, or id needs a shortened match context, that context replaces the field in place. A labeled one-line snippet is reserved for matched fields that are not otherwise rendered inline, such as provider, status, project, parent, or live-session handle.
 
 ### Actions
 

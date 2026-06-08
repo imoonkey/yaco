@@ -34,6 +34,7 @@ export type SearchFieldMatch = {
 }
 
 export type SearchSnippet = {
+  key: SearchFieldKey
   label: string
   text: string
   positions: Set<number>
@@ -96,7 +97,7 @@ function buildSnippet(field: SearchFieldMatch): SearchSnippet {
       .map(position => position + offset),
   )
 
-  return { label: field.label, text, positions: snippetPositions }
+  return { key: field.key, label: field.label, text, positions: snippetPositions }
 }
 
 function buildMatch(
