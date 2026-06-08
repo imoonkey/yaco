@@ -17,7 +17,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/SearchHighlightedText.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
+`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/SearchHighlightedText.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`, `ui/src/lib/codexInputPromptFrame.ts`
 
 ## Session List
 

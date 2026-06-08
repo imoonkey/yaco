@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-08: Codex prompt frame logic split out
+
+**What changed:**
+- Moved Codex-specific input prompt frame detection from `Terminal.tsx` into `ui/src/lib/codexInputPromptFrame.ts`.
+- `Terminal.tsx` now owns xterm lifecycle and overlay rendering, while the provider-specific module owns prompt start, background, reply-boundary, and status-boundary rules.
+
+**Why:**
+- The boundary logic is Codex-specific and should not clutter the generic terminal component.
+
+**Key files:** `app/ui/src/lib/codexInputPromptFrame.ts`, `app/ui/src/components/Terminal.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed; `cd app/ui && npm run build` passed with existing eval/chunk-size warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Search panels consolidated into header toggles
 
 **What changed:**
