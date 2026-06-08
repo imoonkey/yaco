@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-08: Unify nav-chrome icon buttons and hovers
+
+**What changed:**
+- Collapsed all section-header icon buttons (Explorer/Changes/Projects/Sessions, incl. session spawn buttons) into one `.section-header-icon-btn` definition: box/icon size as CSS vars, hover lift to `base2`, selected state via `aria-pressed` lifting to `base3`. Removed the per-button `.spawn-btn` and the explorer icon-wrapper components.
+- Added hover feedback to the session live/history toggle (`.session-tab-seg`, `data-active`-driven) and to the top-bar notification/channels icons (`.chrome-icon-btn`, lifts to `base3` since the top bar sits on `base2`); the theme toggle's inactive half brightens on hover.
+- Removed the desktop bottom margin bar (it only duplicated project name + clock).
+- Anchored the notifications dropdown to its icon (`absolute right-0`) so it opens leftward like the channels dropdown instead of pinning to the viewport edge.
+
+**Why:**
+- The header icons had inconsistent box sizes, icon sizes, and hover styles; centralizing makes them tweakable from one place. The bottom bar was redundant chrome, and the two dropdowns opened in opposite directions.
+
+**Key files:** `app/ui/src/index.css`, `app/ui/src/workspace/WorkspaceScreen.tsx`, `app/ui/src/workspace/SectionHeader.tsx`, `app/ui/src/workspace/useWorkspaceSessionSection.tsx`, `app/ui/src/components/{FileExplorer,fileExplorerIcons,NotificationBell,NotificationPanel,WeChatLoginDialog}.tsx`, `app/ui/src/App.tsx`
+**Verification:** `cd app/ui && npm run lint` passed (0 errors, 10 pre-existing hook-dep warnings); verified live via hot reload.
+**Commit:** `2a9477e..fe2c529`
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Codex command suggestions stay outside prompt frames
 
 **What changed:**

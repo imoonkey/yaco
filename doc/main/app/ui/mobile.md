@@ -25,7 +25,7 @@ Mobile layout activates when either condition is true:
 1. Viewport width ≤ 768px (portrait phones, small tablets) — configurable via `useIsMobile(maxWidth)`
 2. Viewport height ≤ 500px **and** touch device (`pointer: coarse`) — catches landscape phones
 
-This prevents modern phones in landscape (width 780–932px, height 375–430px) from crossing the 768px width threshold and getting the desktop multi-panel layout. The 500px height threshold cleanly separates phones (max landscape height ~480px) from tablets (min landscape height ~744px). App.tsx top/bottom banners use the same `useIsMobile()` hook for conditional rendering.
+This prevents modern phones in landscape (width 780–932px, height 375–430px) from crossing the 768px width threshold and getting the desktop multi-panel layout. The 500px height threshold cleanly separates phones (max landscape height ~480px) from tablets (min landscape height ~744px). The App.tsx top bar uses the same `useIsMobile()` hook for conditional rendering.
 
 `useIsLandscape()` detects `(orientation: landscape)` to select between portrait and landscape mobile layouts.
 

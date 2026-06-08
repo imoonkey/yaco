@@ -1,10 +1,10 @@
 # App Shell
 
-Top-level application chrome: margin bars, clock, project selection, rhythm pulse, and single-workspace host.
+Top-level application chrome: top bar, clock, project selection, rhythm pulse, and single-workspace host.
 
 ## Owns
 
-- Top/bottom margin bars (desktop only) — project name + clock
+- Top bar (desktop only) — project name + clock
 - Clock with dark pill styling and rhythm pulse trigger
 - Project selection and ordering
 - Single Workspace rendering keyed by active project
@@ -23,17 +23,17 @@ Top-level application chrome: margin bars, clock, project selection, rhythm puls
 
 The app is a single-workspace shell — no view switcher, no Monitor tab, no separate Tasks view. App.tsx renders one `<Workspace>` component keyed by the active project. The project list with unread badges lives inside the workspace sidebar.
 
-### Margin Bars
+### Top Bar
 
-Top and bottom margin bars (hidden on mobile via `useIsMobile()` conditional rendering, 40px height each):
+Top bar (hidden on mobile via `useIsMobile()` conditional rendering, 40px height):
 - Left: active project name or "Workflow"
-- Right: Clock component (dark pill style)
+- Right: notification bell, channels button, theme toggle, Clock component (dark pill style)
 
 ### Clock
 
 Styled as a dark pill badge (`base02` background, `base2` text, `rounded-md`) for visual anchoring in the Solarized Light UI. Interval aligned to minute boundaries to prevent skipping quarter-hour marks.
 
-The top Clock triggers rhythm pulse at quarter-hour marks (bottom Clock is display-only):
+The Clock triggers rhythm pulse at quarter-hour marks:
 - `:15`, `:45` → light pulse (3s, 50% opacity)
 - `:00`, `:30` → strong pulse (4s, full opacity)
 
