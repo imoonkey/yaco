@@ -28,7 +28,7 @@ export const PanelSearchBox = forwardRef<HTMLInputElement, {
         <Search size={13} className="shrink-0" style={{ color: 'var(--sol-text-faint)' }} />
         <input
           ref={ref}
-          type="search"
+          type="text"
           value={value}
           onChange={event => onChange(event.target.value)}
           placeholder={placeholder}
