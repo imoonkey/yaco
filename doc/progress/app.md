@@ -1,3 +1,18 @@
+## 2026-06-07: Merge messaging-channel header buttons into one logo dropdown
+
+**What changed:**
+- Collapsed the separate `WeChatHeaderButton` + `WhatsAppHeaderButton` into a single `ChannelsHeaderButton` (in `WeChatLoginDialog.tsx`): a bare lucide `MessagesSquare` trigger (cloned from the `NotificationBell` styling) that opens a `DialogShell` panel-mode dropdown listing each `*_ENABLED=1` channel. Picking a row opens that channel's unchanged `ChannelLoginDialog`. Per-row + trigger green/dim dot preserves the at-a-glance login signal. Env-gate behavior unchanged (renders nothing until ≥1 channel enabled).
+- Added `BrandIcons.tsx` — real WeChat/WhatsApp brand glyphs (inlined single-path Simple Icons, CC0, `fill="currentColor"`), replacing the generic lucide `MessageCircle`/`MessageSquare` bubbles in the channel rows. No new dependency.
+- Unified idle header-icon color on `--sol-text-dim` (bell, channel trigger, date now match) and dropped the per-button border boxes; theme-toggle accent colors preserved.
+
+**Why:**
+- The two bordered chat buttons used `--sol-text` (a darker tier than the adjacent bell's `--sol-text-dim`) and the generic bubbles weren't the real brand marks, so the header row read as inconsistent. One dropdown + real logos + a single idle color tier fixes both.
+
+**Key files:** `app/ui/src/components/{WeChatLoginDialog,BrandIcons}.tsx`, `app/ui/src/App.tsx`.
+**Verification:** `cd app/ui && npx tsc --noEmit` → clean; `npm run lint` → 0 errors (pre-existing warnings only).
+**Commit:** 3bb2689 (+ this docs commit)
+**Blockers:** None.
+
 ## 2026-06-07: UI text-color scale collapse + contrast-audit AA pass
 
 **What changed:**
