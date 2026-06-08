@@ -93,6 +93,8 @@ test.describe('Session search', () => {
     await expect(page.getByText('claude-main')).toBeVisible()
     await expect(page.getByText('codex-ui')).toBeVisible()
 
+    await expect(page.getByRole('searchbox', { name: 'Search live sessions...' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Search sessions' }).click()
     const liveSearch = page.getByRole('searchbox', { name: 'Search live sessions...' })
     await liveSearch.fill('frontend')
     await expect(page.getByText('codex-ui')).toBeVisible()
@@ -108,6 +110,9 @@ test.describe('Session search', () => {
 
     await page.getByRole('button', { name: 'Clear session search' }).click()
     await expect(page.getByText('claude-main')).toBeVisible()
+    await page.getByRole('button', { name: 'Hide session search' }).click()
+    await expect(page.getByRole('searchbox', { name: 'Search live sessions...' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Search sessions' }).click()
     await page.locator('[title="Show history"]').click()
 
     const historySearch = page.getByRole('searchbox', { name: 'Search session history...' })
@@ -122,5 +127,23 @@ test.describe('Session search', () => {
 
     await historySearch.fill('qqqqqq')
     await expect(page.getByText('No matching past sessions')).toBeVisible()
+  })
+})
+
+test.describe('Explorer search panel', () => {
+  test('opens file content search from the Explorer header button', async ({ page }) => {
+    await page.addInitScript(() => localStorage.clear())
+    await mockApi(page)
+
+    await page.goto('/')
+    await page.getByRole('button', { name: project.name }).first().click()
+    await expect(page.getByRole('button', { name: 'Search in files' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Search in files' }).click()
+    await expect(page.getByRole('button', { name: 'Search section' })).toBeVisible()
+    await expect(page.getByRole('searchbox', { name: 'Search in files...' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Quick file search' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Full text search' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: 'Back to explorer' })).toBeVisible()
   })
 })

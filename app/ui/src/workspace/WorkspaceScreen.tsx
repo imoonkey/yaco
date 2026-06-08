@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
-import { Plus, GitCompareArrows, X } from 'lucide-react'
+import { FileSearch as FileSearchIcon, GitCompareArrows, Plus, Search, SearchCode, Undo2, X } from 'lucide-react'
 import { useFileTree, useSessions, useGitStatus, useHistory, fetchGitCompare } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, useWorkspaceState } from '../hooks/useWorkspaceState'
@@ -237,7 +237,7 @@ export function Workspace({
 
   const resize = useWorkspaceSidebarResize({
     layout, sidebarRef,
-    showProjects, showExplorer, showChanges, showTextSearch, showTasks, showSessions,
+    showProjects, showExplorer, showChanges, showTasks, showSessions,
     updateLayout: actions.updateLayout,
   })
 
@@ -275,8 +275,16 @@ export function Workspace({
   }, [closeActiveTab, sessionsMgr.detachActiveSession, focusTarget, showSearch, activeTasksTab, actions])
 
   const handleToggleTextSearch = useCallback(() => {
-    actions.updateLayout({ showTextSearch: !showTextSearch, showSidebar: true })
+    actions.updateLayout({ showTextSearch: !showTextSearch, showSidebar: true, showExplorer: true })
   }, [actions, showTextSearch])
+
+  const handleOpenQuickSearch = useCallback(() => {
+    setShowSearch(true)
+  }, [])
+
+  const handleShowExplorerTree = useCallback(() => {
+    actions.updateLayout({ showTextSearch: false, showSidebar: true, showExplorer: true })
+  }, [actions])
 
   const handleOpenFileAtLine = useCallback((path: string, line: number, _column: number) => {
     nav.openFileAtLine(path, line, _column)
@@ -287,7 +295,6 @@ export function Workspace({
     actions, activeSession, orderedSessions: sessionsMgr.orderedSessions,
     openTabs, activeTab,
     isMobile, showSidebar, showRightPanel, showSearch,
-    showTextSearch,
     setShowSearch: (fn) => setShowSearch(fn),
     focusTarget, setFocusTarget,
     selectedFilePath, explorerFocusedPath, canTogglePreview: !!activeFilePath && isPreviewableFile(activeFilePath),
@@ -377,11 +384,55 @@ export function Workspace({
   }, [refreshTree])
 
   const explorerActions = (
-    <div className="flex gap-0.5">
-      <button onClick={handleCollapseAll} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="Collapse All"><CollapseAllIcon /></button>
-      <button onClick={handleNewFile} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
-      <button onClick={handleNewFolder} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
-      <SectionRefreshButton onClick={handleRefreshExplorer} title="Refresh explorer" />
+    <div className="flex gap-0.5 items-center">
+      {showTextSearch ? (
+        <>
+          <button
+            type="button"
+            onClick={handleOpenQuickSearch}
+            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            title="Quick file search"
+            aria-label="Quick file search"
+          >
+            <FileSearchIcon size={12} />
+          </button>
+          <button
+            type="button"
+            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            title="Full text search"
+            aria-label="Full text search"
+            aria-pressed="true"
+            style={{ color: 'var(--sol-accent)', backgroundColor: 'color-mix(in srgb, var(--sol-accent) 12%, transparent)' }}
+          >
+            <SearchCode size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={handleShowExplorerTree}
+            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            title="Back to explorer"
+            aria-label="Back to explorer"
+          >
+            <Undo2 size={12} />
+          </button>
+        </>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={handleToggleTextSearch}
+            className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+            title="Search in files"
+            aria-label="Search in files"
+          >
+            <Search size={12} />
+          </button>
+          <button onClick={handleCollapseAll} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="Collapse All"><CollapseAllIcon /></button>
+          <button onClick={handleNewFile} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
+          <button onClick={handleNewFolder} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
+          <SectionRefreshButton onClick={handleRefreshExplorer} title="Refresh explorer" />
+        </>
+      )}
     </div>
   )
 
@@ -458,7 +509,7 @@ export function Workspace({
     </button>
   )
 
-  const explorerBody = (
+  const fileExplorerBody = (
     <FileExplorer
       ref={explorerRef}
       projectName={projectName}
@@ -490,6 +541,8 @@ export function Workspace({
       />
     </Suspense>
   )
+
+  const explorerBody = showTextSearch ? searchBody : fileExplorerBody
 
   const changesBody = compareMode ? (
     <>
@@ -687,7 +740,6 @@ export function Workspace({
       projectActions={projectActions}
       explorerActions={explorerActions}
       explorerBody={explorerBody}
-      searchBody={searchBody}
       gitStale={gitStale}
       changesBadge={compareMode ? (compareFiles.length || undefined) : (changes.length || undefined)}
       changesTitle={changesTitle}
@@ -704,8 +756,6 @@ export function Workspace({
       sidebarRef={sidebarRef}
       left={resize.left}
       right={resize.right}
-      searchSplit={resize.searchSplit}
-      searchHeight={resize.searchHeight}
       changesSplit={resize.changesSplit}
       changesHeight={resize.changesHeight}
       projectSplit={resize.projectSplit}

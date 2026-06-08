@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, memo } from 'react'
 import { ChevronRight, ChevronDown } from 'lucide-react'
+import { PanelSearchBox } from './PanelSearchBox'
 
 // --- Types ---
 
@@ -187,10 +188,9 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
     debounceRef.current = setTimeout(() => executeSearch(q, opts), DEBOUNCE_MS)
   }, [executeSearch])
 
-  const handleQueryChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value
-    setQuery(v)
-    scheduleSearch(v, options)
+  const handleQueryChange = useCallback((value: string) => {
+    setQuery(value)
+    scheduleSearch(value, options)
   }, [options, scheduleSearch])
 
   const handleSubmit = useCallback(() => {
@@ -283,28 +283,20 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
     clearTimeout(debounceRef.current)
   }, [])
 
+  useEffect(() => {
+    inputRef.current?.focus({ preventScroll: true })
+  }, [])
+
   return (
     <div className="flex flex-col h-full text-ui-sm" onKeyDown={handleKeyDown}>
-      {/* Search input */}
-      <div className="px-2 pt-1.5 pb-1">
-        <div className="flex items-center gap-1 rounded px-1.5 py-0.5" style={{ backgroundColor: 'var(--sol-input-bg)', border: '1px solid var(--sol-border)' }}>
-          <input
-            ref={inputRef}
-            type="text"
-            value={query}
-            onChange={handleQueryChange}
-            placeholder="Search..."
-            className="flex-1 min-w-0 bg-transparent border-none outline-none text-ui-sm"
-            style={{ color: 'var(--sol-input-fg)' }}
-            spellCheck={false}
-          />
-          {query && (
-            <button onClick={handleClear} className="text-ui-xs px-0.5 cursor-pointer opacity-60 hover:opacity-100 leading-none" style={{ color: 'var(--sol-text)' }}>
-              x
-            </button>
-          )}
-        </div>
-      </div>
+      <PanelSearchBox
+        ref={inputRef}
+        value={query}
+        placeholder="Search in files..."
+        className="px-2 pt-1.5 pb-1"
+        onChange={handleQueryChange}
+        onClear={handleClear}
+      />
 
       {/* Option toggles */}
       <div className="flex items-center gap-1 px-2 pb-1">

@@ -8,7 +8,6 @@ interface UseWorkspaceSidebarResizeOpts {
   showProjects: boolean
   showExplorer: boolean
   showChanges: boolean
-  showTextSearch: boolean
   showTasks: boolean
   showSessions: boolean
   updateLayout: (patch: Partial<WorkspaceLayout>) => void
@@ -17,7 +16,7 @@ interface UseWorkspaceSidebarResizeOpts {
 export function useWorkspaceSidebarResize(opts: UseWorkspaceSidebarResizeOpts) {
   const {
     layout, sidebarRef,
-    showProjects, showExplorer, showChanges, showTextSearch, showTasks,
+    showProjects, showExplorer, showChanges, showTasks,
     updateLayout,
   } = opts
 
@@ -41,26 +40,17 @@ export function useWorkspaceSidebarResize(opts: UseWorkspaceSidebarResizeOpts) {
     const el = sidebarRef.current
     if (!el) return 400
     const sidebarH = el.clientHeight
-    const headers = 5 * 22 // Projects, Explorer, Changes, Search, Tasks
+    const headers = 4 * 22 // Projects, Explorer, Changes, Tasks
     const projectsH = showProjects ? projectSplit.size : 0
     const explorerMinH = showExplorer ? 80 : 0
     const tasksH = showTasks ? 50 : 0
-    const handles = 6 // ~2 resize handles × 3px
+    const handles = 4 // ~2 resize handles × 2px
     return Math.max(100, sidebarH - headers - projectsH - explorerMinH - tasksH - handles)
   }, [showProjects, showExplorer, showTasks, projectSplit.size, sidebarRef])
 
-  const searchMax = useCallback(() => {
-    const changesMinH = showChanges ? 50 : 0
-    return Math.max(50, bottomAvailable() - changesMinH)
-  }, [bottomAvailable, showChanges])
-
-  const searchSplit = useResize(layout.searchSize, 50, searchMax, 'up')
-  const searchHeight = showTextSearch ? searchSplit.size : 0
-
   const changesMax = useCallback(() => {
-    const searchMinH = showTextSearch ? 50 : 0
-    return Math.max(50, bottomAvailable() - searchMinH)
-  }, [bottomAvailable, showTextSearch])
+    return Math.max(50, bottomAvailable())
+  }, [bottomAvailable])
 
   const changesSplit = useResize(layout.changesSize, 50, changesMax, 'up')
   const changesHeight = showChanges ? changesSplit.size : 0
@@ -71,12 +61,10 @@ export function useWorkspaceSidebarResize(opts: UseWorkspaceSidebarResizeOpts) {
   // Re-clamp when available space shrinks
   useEffect(() => {
     const maxC = changesMax()
-    const maxS = searchMax()
     const maxR = rightMax()
     if (changesSplit.size > maxC) changesSplit.setSize(maxC)
-    if (searchSplit.size > maxS) searchSplit.setSize(maxS)
     if (right.size > maxR) right.setSize(maxR)
-  }, [changesMax, searchMax, rightMax, changesSplit, searchSplit, right])
+  }, [changesMax, rightMax, changesSplit, right])
 
   // React to viewport resize so rightMax stays correct
   useEffect(() => {
@@ -93,17 +81,15 @@ export function useWorkspaceSidebarResize(opts: UseWorkspaceSidebarResizeOpts) {
     updateLayout({
       leftSize: left.size,
       rightSize: right.size,
-      searchSize: searchSplit.size,
       changesSize: changesSplit.size,
       sessionSize: sessionSplit.size,
       projectSize: projectSplit.size,
     })
-  }, [left.size, right.size, searchSplit.size, changesSplit.size, sessionSplit.size, projectSplit.size, updateLayout])
+  }, [left.size, right.size, changesSplit.size, sessionSplit.size, projectSplit.size, updateLayout])
 
   return {
     left, right,
     projectSplit, projectHeight,
-    searchSplit, searchHeight,
     changesSplit, changesHeight,
     sessionSplit, sessionHeight,
   }

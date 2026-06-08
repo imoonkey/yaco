@@ -127,6 +127,7 @@ Per-project (or per-worktree) workspace layout state persisted by `useWorkspaceS
 - `layout.showSidebar` — boolean
 - `layout.showRightPanel` — boolean
 - `layout.showExplorer` / `layout.showChanges` / `layout.showSessions` — section visibility
+- `layout.showTextSearch` — Explorer body mode (`false` = file tree, `true` = cross-file text search)
 - `layout.previewMode` — boolean (legacy, migrated to `mdMode` on load)
 - `layout.mdMode` — `'edit' | 'preview' | 'split'`
 - `layout.splitDirection` — `'horizontal' | 'vertical'` (default `'horizontal'`, migrated on load)

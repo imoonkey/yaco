@@ -26,7 +26,6 @@ interface UseWorkspaceKeyboardOpts {
   showSidebar: boolean
   showRightPanel: boolean
   showSearch: boolean
-  showTextSearch: boolean
   setShowSearch: (fn: (v: boolean) => boolean) => void
   focusTarget: FocusTarget
   setFocusTarget: (t: FocusTarget) => void
@@ -170,7 +169,13 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         actions.updateLayout({ showSidebar: !showSidebar })
         return
       }
-      if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'p') { e.preventDefault(); setShowSearch(v => !v) }
+      if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && key === 'p') {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        e.stopPropagation()
+        setShowSearch(v => !v)
+        return
+      }
       if (!showSearch && e.metaKey && !e.ctrlKey && !e.altKey && key === 'c' && focusTarget === 'explorer' && explorerFocusedPath) {
         e.preventDefault()
         e.stopPropagation()
@@ -212,8 +217,8 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         }
       }
     }
-    document.addEventListener('keydown', handler, true)
-    return () => document.removeEventListener('keydown', handler, true)
+    window.addEventListener('keydown', handler, true)
+    return () => window.removeEventListener('keydown', handler, true)
   }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change

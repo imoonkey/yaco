@@ -16,6 +16,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
 }) {
   const [query, setQuery] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   const [selectedIdx, setSelectedIdx] = useState(0)
   const [files, setFiles] = useState(() => getCached(projectName, false, worktree) ?? [])
   const [loading, setLoading] = useState(() => !getCached(projectName, false, worktree))
@@ -66,10 +67,33 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
   )
 
   const handleKey = (e: React.KeyboardEvent) => {
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && displayItems.length === 0) {
+      e.preventDefault()
+      return
+    }
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, displayItems.length - 1)); return }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
-    if (e.key === 'Enter' && displayItems[selectedIdx]) { onSelect(displayItems[selectedIdx].entry); onClose() }
+    const isInput = e.target === inputRef.current
+    if (e.key === 'Enter' && isInput && displayItems[selectedIdx]) { onSelect(displayItems[selectedIdx].entry); onClose(); return }
+    if (!isInput && e.key === ' ') return
+    if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1 && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      setQuery(prev => prev + e.key)
+      setSelectedIdx(0)
+      requestAnimationFrame(() => {
+        const input = inputRef.current
+        if (!input) return
+        input.focus()
+        input.setSelectionRange(input.value.length, input.value.length)
+      })
+    }
   }
+
+  useEffect(() => {
+    if (selectedIdx < 0 || !listRef.current) return
+    const row = listRef.current.querySelector(`[data-search-result-idx="${selectedIdx}"]`)
+    row?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIdx, displayItems.length])
 
   return (
     <DialogShell
@@ -80,21 +104,23 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
       className="w-[500px] rounded-xl overflow-hidden"
       style={{ backgroundColor: 'var(--sol-glass-bg)' }}
     >
-      <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
-        <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-          placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-ui-lg bg-transparent outline-none focus-visible:outline-none" style={{ color: 'var(--sol-text-dark)' }} />
-        <button
-          onClick={toggleIgnored}
-          title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
-          className="px-2 py-1 mr-1.5 rounded text-ui-xs font-medium"
-          style={{
-            backgroundColor: includeIgnored ? 'var(--sol-blue)' : 'transparent',
-            color: includeIgnored ? 'var(--sol-base3)' : 'var(--sol-text)',
-            border: includeIgnored ? '1px solid var(--sol-blue)' : '1px solid var(--sol-border)',
-          }}
-        >.gitignore</button>
+      <div className="quick-search-header">
+        <div className="panel-search-box quick-search-box flex items-center" onKeyDown={handleKey}>
+          <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }}
+            placeholder={loading ? 'Loading files...' : 'Search files...'} className="panel-search-input flex-1 px-2.5 py-1.5 text-ui-lg bg-transparent outline-none focus-visible:outline-none" style={{ color: 'var(--sol-input-fg)' }} />
+          <button
+            onClick={toggleIgnored}
+            title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
+            className="quick-search-ignore-button px-2 py-1 mr-1 rounded text-ui-xs font-medium"
+            style={{
+              backgroundColor: includeIgnored ? 'var(--sol-blue)' : undefined,
+              color: includeIgnored ? 'var(--sol-base3)' : 'var(--sol-text)',
+              borderColor: includeIgnored ? 'var(--sol-blue)' : undefined,
+            }}
+          >.gitignore</button>
+        </div>
       </div>
-      <div className="max-h-[300px] overflow-y-auto">
+      <div ref={listRef} className="max-h-[300px] overflow-y-auto">
         {isEmptyQuery && displayItems.length > 0 && (
           <div className="px-3 pt-2 pb-1 text-ui-xs font-medium uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>Recent</div>
         )}
@@ -103,6 +129,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
             key={r.entry.path}
             result={r}
             selected={i === selectedIdx}
+            index={i}
             hasQuery={query.trim().length > 0}
             onClick={() => { onSelect(r.entry); onClose() }}
             onHover={() => setSelectedIdx(i)}
@@ -148,9 +175,10 @@ function HighlightedText({ text, positions, color, highlightColor }: {
   return <span style={{ color }}>{chars}</span>
 }
 
-function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
+function SearchResultRow({ result, selected, index, hasQuery, onClick, onHover }: {
   result: FuzzyResult
   selected: boolean
+  index: number
   hasQuery: boolean
   onClick: () => void
   onHover: () => void
@@ -159,6 +187,7 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
 
   return (
     <div onClick={onClick}
+      data-search-result-idx={index}
       className={`flex items-center gap-1.5 px-3 py-0.5 text-ui-md cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
       style={!selected ? { color: 'var(--sol-text)' } : undefined}
       onMouseEnter={onHover}>

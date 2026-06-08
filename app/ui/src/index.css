@@ -712,6 +712,39 @@ body {
   opacity: 0.72;
 }
 
+.panel-search-box {
+  border: 1px solid var(--sol-border);
+  background-color: var(--sol-subtle-bg);
+  transition: border-color 120ms cubic-bezier(0.2, 0, 0, 1), box-shadow 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+.panel-search-box:focus-within {
+  border-color: var(--sol-blue);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--sol-blue) 65%, transparent);
+}
+.panel-search-box input:focus,
+.panel-search-box input:focus-visible,
+.panel-search-input:focus,
+.panel-search-input:focus-visible {
+  outline: none;
+}
+.quick-search-header {
+  padding: 8px 8px 6px;
+  border-bottom: 1px solid var(--sol-border);
+}
+.quick-search-box {
+  border-radius: 6px;
+  background-color: color-mix(in srgb, var(--sol-glass-bg) 88%, var(--sol-base3));
+}
+.quick-search-ignore-button {
+  border: 1px solid color-mix(in srgb, var(--sol-text) 24%, var(--sol-border));
+  background-color: color-mix(in srgb, var(--sol-glass-bg) 65%, transparent);
+  transition: border-color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms cubic-bezier(0.2, 0, 0, 1), color 120ms cubic-bezier(0.2, 0, 0, 1);
+}
+.quick-search-ignore-button:hover {
+  border-color: color-mix(in srgb, var(--sol-blue) 55%, var(--sol-border));
+  background-color: color-mix(in srgb, var(--sol-blue) 8%, transparent);
+}
+
 /* Session-spawn action buttons — the app's primary creative act. Quiet neutral
    icons at rest (full opacity, not the old 80% ghost), lifting to an accent tint
    on hover so they read as "create" without a loud persistent fill. */

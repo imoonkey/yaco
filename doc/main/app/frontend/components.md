@@ -223,21 +223,22 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
-**Desktop**: `Sidebar(Projects + Explorer + Changes + Search + [Tasks toggle]) | Center(File / Diff / TaskPanel) | ActivityColumn(Terminal + Sessions)`
+**Desktop**: `Sidebar(Projects + Explorer/Search + Changes + [Tasks toggle]) | Center(File / Diff / TaskPanel) | ActivityColumn(Terminal + Sessions)`
 **Mobile**: `PaneSwitch(Browse | Editor | Tasks | Terminal)` — 4-pane navigation, Tasks renders `TaskScreen` directly in its own pane
 
 ### Extracted modules in `ui/src/workspace/`
 
 | Module | Lines | Purpose |
 |--------|-------|---------|
-| `WorkspaceScreen.tsx` | 499 | Controller (state, callbacks, keyboard, Tasks toggle routing) |
-| `WorkspaceLayout.tsx` | 238 | Layout composition (desktop/mobile) with ARIA landmarks |
+| `WorkspaceScreen.tsx` | 789 | Controller (state, callbacks, keyboard, Tasks toggle routing) |
+| `WorkspaceLayout.tsx` | 264 | Layout composition (desktop/mobile) with ARIA landmarks |
 | `WorkspaceEditorColumn.tsx` | 179 | Editor pane: tab bar + breadcrumbs + editor area |
 | `WorkspaceEditorArea.tsx` | 534 | Editor, split view, preview, diff, conflict banner, skeleton loaders |
 | `markdown.ts` | 157 | Markdown rendering, syntax highlighting, lazy mermaid loader |
 | `WorkspaceTabBar.tsx` | 191 | Tab strip with scroll fade, preview label, dirty close on hover |
-| `WorkspaceSearch.tsx` | 174 | File search modal, recent files section |
-| `WorkspaceTextSearch.tsx` | 487 | Full-text search with result cap banner |
+| `WorkspaceSearch.tsx` | 220 | File search modal, recent files section |
+| `WorkspaceTextSearch.tsx` | 489 | Full-text search with result cap banner |
+| `PanelSearchBox.tsx` | 59 | Shared panel search input used by text search and Sessions search |
 | `ShortcutSheet.tsx` | ~80 | Keyboard shortcut cheatsheet (? key) |
 | `WorkspaceSessionList.tsx` | 139 | SessionItem with status dots (processing/idle/error/completed) |
 | `WorkspaceHistoryList.tsx` | 114 | History tab items |

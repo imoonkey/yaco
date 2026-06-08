@@ -37,7 +37,6 @@ function renderResize(viewportWidth: number, layout: WorkspaceLayout = baseLayou
       showProjects: layout.showProjects,
       showExplorer: layout.showExplorer,
       showChanges: layout.showChanges,
-      showTextSearch: layout.showTextSearch,
       showTasks: layout.showTasks,
       showSessions: layout.showSessions,
       updateLayout: () => {},

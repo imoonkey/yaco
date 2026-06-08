@@ -43,8 +43,6 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 │  │          ││  │                  ││  │ Sessions      ││
 │  ├──────────┤│  │                  ││  │ (unread pills)││
 │  │ Changes  ││  │                  ││  │               ││
-│  ├──────────┤│  │                  ││  │               ││
-│  │ Search   ││  └──────────────────┘│  └───────────────┘│
 │  ├──────────┤│                      │                   │
 │  │ Tasks    ││                      │                   │
 │  └──────────┘│                      │                   │
@@ -57,9 +55,8 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 |-------|--------|---------|-----------|
 | Left sidebar | `Cmd+B` | Visible | Yes (horizontal drag) |
 | Activity column | `Cmd+Shift+B` | Visible | Yes (horizontal drag) |
-| Explorer section | Click header | Open | Yes (vertical drag) |
+| Explorer/Search section | Click header; search icon switches body; search mode offers quick file search, full text search, and back actions | Open | Yes (vertical drag) |
 | Changes section | Click header | Open | Yes (vertical drag, dynamic max) |
-| Search section | Click header | Closed | Yes (vertical drag, dynamic max) |
 | Tasks section | Click header | Open | No (doorway body only) |
 | Sessions tray | Click header | Open | No (fixed max-height 180px, scrollable) |
 

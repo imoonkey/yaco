@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
-import { History, Radio } from 'lucide-react'
+import { History, Radio, Search } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 import { getProviderUi, startableProviders } from '../lib/providerUi'
 import { SessionItem } from './WorkspaceSessionList'
@@ -54,6 +54,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const [resumingId, setResumingId] = useState<string | null>(null)
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
   const [cmdCtrlHeld, setCmdCtrlHeld] = useState(false)
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false)
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
 
   useEffect(() => {
@@ -93,6 +94,15 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     return refreshSessions()
   }, [history, refreshSessions, sessionTab])
 
+  const handleToggleSessionSearch = useCallback(() => {
+    if (sessionSearchOpen) {
+      setSessionSearchQuery('')
+      setSessionSearchOpen(false)
+      return
+    }
+    setSessionSearchOpen(true)
+  }, [sessionSearchOpen])
+
   // --- Actions bar ---
   const sessionsActions: ReactNode = (
     <div className="flex items-center gap-1">
@@ -105,6 +115,20 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
           ))}
         </div>
       )}
+      <button
+        type="button"
+        onClick={handleToggleSessionSearch}
+        className="section-header-icon-btn flex items-center justify-center w-[18px] h-[18px] rounded cursor-pointer"
+        title={sessionSearchOpen ? 'Hide session search' : 'Search sessions'}
+        aria-label={sessionSearchOpen ? 'Hide session search' : 'Search sessions'}
+        aria-pressed={sessionSearchOpen}
+        style={sessionSearchOpen
+          ? { color: 'var(--sol-accent)', backgroundColor: 'color-mix(in srgb, var(--sol-accent) 12%, transparent)' }
+          : undefined
+        }
+      >
+        <Search size={12} />
+      </button>
       <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div
         className="flex rounded overflow-hidden cursor-pointer"
@@ -136,10 +160,11 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   )
 
   // --- Body ---
-  const searchActive = sessionSearchQuery.trim().length > 0
+  const effectiveSessionSearchQuery = sessionSearchOpen ? sessionSearchQuery : ''
+  const searchActive = effectiveSessionSearchQuery.trim().length > 0
   const liveSearchResults = useMemo(
-    () => matchAgentSessions(sessionsMgr.orderedSessions, sessionSearchQuery),
-    [sessionsMgr.orderedSessions, sessionSearchQuery],
+    () => matchAgentSessions(sessionsMgr.orderedSessions, effectiveSessionSearchQuery),
+    [sessionsMgr.orderedSessions, effectiveSessionSearchQuery],
   )
   const filteredLiveSessions = useMemo(
     () => liveSearchResults.map(result => result.item),
@@ -150,8 +175,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     [liveSearchResults],
   )
   const historySearchResults = useMemo(
-    () => history.data ? matchHistorySessions(history.data, sessionSearchQuery) : null,
-    [history.data, sessionSearchQuery],
+    () => history.data ? matchHistorySessions(history.data, effectiveSessionSearchQuery) : null,
+    [history.data, effectiveSessionSearchQuery],
   )
   const filteredHistory = useMemo(
     () => historySearchResults?.map(result => result.item) ?? null,
@@ -218,7 +243,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   // Keep all rows in one keyed sibling array so React preserves SessionItem state
   // when status changes move a session between buckets.
   const liveSessionChildren: ReactNode[] = [
-    searchBox,
+    ...(sessionSearchOpen ? [searchBox] : []),
     ...renderRows(pinnedRows),
   ]
   if (pinnedRows.length > 0 && (processingRows.length > 0 || idleRows.length > 0)) {
@@ -245,7 +270,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
 
   const sessionsBody: ReactNode = sessionTab === 'live' ? liveSessionsBody : (
     <>
-      {searchBox}
+      {sessionSearchOpen && searchBox}
       <WorkspaceHistoryList
         history={filteredHistory}
         loading={history.loading}

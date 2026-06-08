@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-08: Search panels consolidated into header toggles
+
+**What changed:**
+- Removed the standalone left-sidebar Search section; the Explorer header now has a search button that switches the Explorer body between file tree and cross-file text search.
+- Search mode exposes three header actions: quick file search, full text search, and back to Explorer.
+- Added a shared `PanelSearchBox` so cross-file search and Sessions search use the same compact input styling.
+- Quick file search keeps `Cmd+P` as the desktop shortcut, gives mobile a header entry point, preserves `.gitignore` button keyboard toggling, and keeps keyboard-selected results scrolled into view.
+- Sessions search is now hidden by default behind a header search button; closing it clears the query so hidden search never filters rows.
+
+**Why:**
+- Cross-file search is rarely used, so it no longer consumes a permanent sidebar section. Search controls now read as one product surface across Explorer and Sessions.
+
+**Key files:** `app/ui/src/index.css`, `app/ui/src/workspace/{WorkspaceScreen.tsx,WorkspaceLayout.tsx,WorkspaceSearch.tsx,WorkspaceTextSearch.tsx,PanelSearchBox.tsx,SessionSearchBox.tsx,useWorkspaceKeyboard.ts,useWorkspaceSessionSection.tsx,useWorkspaceSidebarResize.ts}`, `app/ui/tests/e2e/session-search.spec.ts`, `doc/main/app/{README.md,frontend/components.md,ui/workspace/overview.md,ui/workspace/sessions-and-terminal.md,data-model/persistence.md}`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/useWorkspaceSidebarResize.test.ts src/workspace/__tests__/useWorkspaceSessionSection.test.tsx src/workspace/__tests__/sessionSearch.test.ts` passed; `cd app/ui && npx playwright test tests/e2e/session-search.spec.ts` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings; Playwright smoke on `https://desktop.tailnet-example.ts.net/` verified `Meta+P` opens quick search, search results render, and no runtime error fires.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Session rename draft survives status moves
 
 **What changed:**
