@@ -6,6 +6,7 @@ import {
   hasProvider,
 } from "../src/lib/core/agent/providers/index.ts";
 import { isIdle } from "../src/lib/core/agent/providers/idle.ts";
+import { isInputEmpty } from "../src/lib/core/agent/providers/idle.ts";
 import { PROVIDERS, getProvider as getLegacyProvider } from "../src/lib/core/agent/providers.ts";
 import { PENDING_SESSION_ID } from "../src/lib/core/agent/model.ts";
 
@@ -76,6 +77,51 @@ describe("isIdle", () => {
     ].join("\n");
 
     expect(isIdle(output)).toBe(false);
+  });
+});
+
+describe("isInputEmpty", () => {
+  it("treats an empty Claude prompt as empty", () => {
+    expect(isInputEmpty("some output\n❯ \nstatus", "claude")).toBe(true);
+  });
+
+  it("treats Claude placeholder text as empty", () => {
+    const nbsp = String.fromCharCode(0xa0);
+    expect(isInputEmpty(`❯${nbsp}Try "edit <filepath> to..."`, "claude")).toBe(true);
+  });
+
+  it("treats user-typed Claude input as occupied", () => {
+    expect(isInputEmpty("some output\n❯ my message", "claude")).toBe(false);
+  });
+
+  it("treats an empty Codex prompt as empty", () => {
+    expect(isInputEmpty("some output\n› ", "codex")).toBe(true);
+  });
+
+  it("treats Codex placeholder text as empty", () => {
+    expect(isInputEmpty("› Write tests for @filename", "codex")).toBe(true);
+  });
+
+  it("treats styled Codex placeholder text as empty regardless of wording", () => {
+    const raw = "\x1b[1m›\x1b[0m \x1b[2mExplain this codebase\x1b[0m";
+    expect(isInputEmpty("› Explain this codebase", "codex", raw)).toBe(true);
+  });
+
+  it("treats unstyled Codex text after the prompt as occupied", () => {
+    expect(isInputEmpty("› Explain this codebase", "codex")).toBe(false);
+  });
+
+  it("treats user-typed Codex input as occupied", () => {
+    expect(isInputEmpty("some output\n› my message", "codex")).toBe(false);
+  });
+
+  it("uses the last prompt line instead of historical prompt lines", () => {
+    const output = [
+      "› ",
+      "old output",
+      "› current draft",
+    ].join("\n");
+    expect(isInputEmpty(output, "codex")).toBe(false);
   });
 });
 

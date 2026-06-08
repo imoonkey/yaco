@@ -1,6 +1,6 @@
 # Lifecycle
 
-> Last updated: 2026-06-06 (astl-session-rename-link-integrity: rename rewrites task `agents` + child `parentSession` best-effort with warnings; Codex post-start `/rename` settles before start returns. Prior: astl-session-lineage-start — wrapper exports YACO_AGENT_HANDLE, lineage capture at start, chain-safe rename breadcrumbs)
+> Last updated: 2026-06-08 (rename input guard: handle/tmux rename is immediate, provider `/rename` is input-empty gated and queues when the user is typing. Prior: astl-session-rename-link-integrity — rename rewrites task `agents` + child `parentSession` best-effort with warnings)
 
 Visual state diagrams and sequence flows for session lifecycle. For the text-based state machine summary, see [architecture.md](architecture.md#state-machine). For provider-specific hooks and assumptions, see [providers.md](providers.md).
 
@@ -165,7 +165,7 @@ sequenceDiagram
 
 ## Sequence Diagram 2: Codex Start Flow
 
-All Codex starts (with or without `--name`) send `/rename` post-start. P6 confirmed: Codex accepts `/rename` during processing.
+All Codex starts (with or without `--name`) sync the provider title with `/rename` post-start. P6 confirmed: Codex accepts `/rename` during processing, so YACO gates only on whether the input prompt is empty.
 
 ```mermaid
 sequenceDiagram
@@ -192,8 +192,14 @@ sequenceDiagram
 
     Note over M: waitForReady: idle or processing both accepted<br/>auto-handles Codex "Hooks need review" trust prompt
 
-    M->>T: sendKeys("/rename <handle>")
-    Note over X: start waits for the /rename to settle back to a stable idle prompt (waitForPostInputSettle) before returning, so a follow-up rename can't race the in-flight slash command
+    M->>T: sendKeysWhenInputEmpty("/rename <handle>")
+    alt input prompt empty
+        Note over X: slash command is submitted immediately
+        Note over M: start waits for /rename to settle before returning
+    else user text already in input prompt
+        Note over M: detached helper waits for empty input and submits later
+        Note over M: start returns without merging /rename into user text
+    end
 
     M->>M: sessionId = hook-written value or pending sentinel
     M->>S: syncStateAfterStart
@@ -229,8 +235,8 @@ sequenceDiagram
     M->>M: waitForReady
 
     opt Codex
-        M->>T: sendKeys("/rename <handle>")
-        Note over M: waits for the /rename to settle to a stable idle prompt before returning
+        M->>T: sendKeysWhenInputEmpty("/rename <handle>")
+        Note over M: immediate send waits for settle; occupied input queues a detached helper
     end
 
     Note over M: skip waitForSessionId (sessionId already known)
@@ -287,10 +293,13 @@ Handles are stored in two places outside the renamed session's own state file:
 child sessions' `parentSession` lineage and tasks' `agents` links. `yaco agent
 rename` re-points both so a rename never orphans a reference.
 
-The session-state/tmux rename (`renameState` + tmux rename + provider in-TUI
-`/rename`) is **authoritative**. The two reference rewrites run **after** it and
-are **best-effort**: a failure is collected as a warning, never aborting the
-session rename.
+The session-state/tmux rename (`renameState` + tmux rename) is
+**authoritative** and is allowed while the agent is `processing`. Provider
+in-TUI `/rename` is best-effort and input-empty gated: it sends immediately only
+when the prompt is empty, otherwise a detached helper waits for the input to
+clear. The two reference rewrites run **after** the authoritative rename and are
+**best-effort**: a failure is collected as a warning, never aborting the session
+rename.
 
 - **Child lineage** — `rewriteChildParentSessions(old, new)` scans live state
   files and rewrites any `parentSession === old` to `new`. Idempotent.

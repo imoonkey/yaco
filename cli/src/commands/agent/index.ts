@@ -21,6 +21,8 @@ import { ok, type Result } from "../../lib/core/result.ts";
 import { dual } from "../../lib/core/render.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
 import { PROVIDERS } from "../../lib/core/agent/providers.ts";
+import { validateName } from "../../lib/core/agent/model.ts";
+import { waitForInputEmptyThenSend } from "../../lib/core/agent/tmux.ts";
 import { start, extractResume } from "./start.ts";
 import { send } from "./send.ts";
 import { capture } from "./capture.ts";
@@ -288,6 +290,29 @@ export async function handleAgent(
   }
 
   switch (sub) {
+    case "_send-when-input-empty": {
+      const parsed = parseSubArgs(rest);
+      const name = parsed.positional[0];
+      const provider = parsed.positional[1];
+      const input = parsed.positional.slice(2).join(" ");
+      if (!name || !provider || !input) {
+        throw new CliError(
+          ErrCode.USAGE,
+          "yaco agent _send-when-input-empty <name> <provider> <input>",
+        );
+      }
+      validateName(name);
+      if (!(provider in PROVIDERS)) {
+        throw new CliError(ErrCode.USAGE, `unknown provider: ${provider}`);
+      }
+      const result = waitForInputEmptyThenSend(name, provider, input, parsed.options.timeoutMs);
+      return dual(
+        parsed.options.json || opts.json,
+        { result },
+        () => `${result}\n`,
+      );
+    }
+
     case "start":
       return runStart(rest, opts);
 

@@ -1,4 +1,4 @@
-import { hasSession, renameSession, sendKeys } from "../../lib/core/agent/tmux.ts";
+import { hasSession, renameSession, sendKeysWhenInputEmpty } from "../../lib/core/agent/tmux.ts";
 import { getProvider, hasProvider } from "../../lib/core/agent/providers/index.ts";
 import {
   readState,
@@ -33,11 +33,6 @@ export async function rename(oldName: string, newName: string): Promise<RenameOu
     throw new Error(`Session "${oldName}" not found`);
   }
 
-  // Require idle or starting status (starting = hook hasn't fired yet, safe to rename)
-  if (state.status === "processing") {
-    throw new Error(`Session "${oldName}" is processing — rename is only allowed when idle`);
-  }
-
   // Validate new handle doesn't collide
   if (readState(newName)) {
     throw new Error(`Session "${newName}" already exists`);
@@ -56,9 +51,7 @@ export async function rename(oldName: string, newName: string): Promise<RenameOu
   // its internal title. Providers without native rename return no inputs.
   if (hasSession(newName) && hasProvider(state.provider)) {
     for (const input of getProvider(state.provider).command.renameInputs(newName)) {
-      try {
-        sendKeys(newName, input);
-      } catch { /* best-effort */ }
+      sendKeysWhenInputEmpty(newName, state.provider, input);
     }
   }
 

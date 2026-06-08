@@ -80,6 +80,16 @@ export const codexProvider: TuiProvider = {
     idlePatterns: [
       /^\s*›/m, // codex prompt (Unicode ›, U+203A)
     ],
+    inputPromptPatterns: [
+      /^\s*›/,
+    ],
+    inputEmptyPatterns: [
+      /^\s*›\s*$/,
+      /^\s*›\s*Write tests for @filename\s*$/,
+    ],
+    inputPlaceholderStylePatterns: [
+      /\x1b\[2m/,
+    ],
   },
 
   terminal: {

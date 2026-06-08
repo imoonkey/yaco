@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-08: Rename input guard for agent sessions
+
+**What changed:**
+- `yaco agent rename` no longer rejects `processing` sessions. The state-file/tmux handle rename happens immediately; task `agents` and child `parentSession` rewrites still run after the authoritative rename.
+- Provider-native title sync (`/rename <handle>`) now checks the rendered TUI input prompt instead of agent status. Empty prompts send immediately; Codex placeholders are detected by dim ANSI style instead of brittle placeholder text; occupied prompts queue a detached `_send-when-input-empty` helper that waits until the input clears, preventing hidden `/rename` text from merging with a user's draft.
+- Codex post-start `/rename` uses the same input-empty sender. Immediate sends still wait for settle; queued sends let startup return without disturbing user input.
+- The web session hook no longer stores processing renames in localStorage waiting for idle; it calls the rename API immediately and delegates safety to the CLI.
+
+**Why:**
+- Claude/Codex can accept `/rename` while processing, so status was the wrong safety gate. The real race was input composition: if the user had already started typing, YACO could paste `/rename` into that draft and submit `user text /rename name`.
+
+**Key files:** `cli/src/lib/core/agent/{tmux.ts,providers/{idle,types,claude,codex}.ts}`, `cli/src/commands/agent/{start,rename,index}.ts`, `app/ui/src/workspace/{useWorkspaceSessions.ts,useWorkspaceSessionSection.tsx,WorkspaceSessionList.tsx}`, `doc/main/app/ui/workspace/sessions-and-terminal.md`, `doc/main/cli/{architecture,lifecycle,providers,state-contract}.md`.
+
+**Verification:** `cd cli && bun run test:unit` → 801 pass / 0 fail; `cd cli && bun build src/main.ts --compile --outfile /tmp/yaco-rename-guard-build` passed; `cd app/ui && npx vitest run src/workspace/__tests__/useWorkspaceSessions.test.ts` → 6 pass; `cd app/ui && npm run lint` passed with 10 pre-existing hook-dependency warnings; `cd app/ui && npm run build` passed.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-07: yaco CLI read surface + text-first output
 
 **What changed:**

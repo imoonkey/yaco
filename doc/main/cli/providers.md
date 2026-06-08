@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-06 (tui-provider-docs)
+> Last updated: 2026-06-08 (rename input guard)
 
 ## Supported Providers
 
@@ -36,7 +36,7 @@ Adapter responsibilities, by capability:
 | Capability | Required? | Owns |
 |---|---|---|
 | `command` | yes | launch command (`build`), resume canonicalization (`normalizeResumeArgs`), name-flag policy (`normalizeStartArgs`/`postStartInputs`), live rename (`renameInputs`), trust/review prompts (`startupInterstitials`) |
-| `detection` | yes | `idlePatterns` / `busyPatterns` for screen-scrape status fallback |
+| `detection` | yes | `idlePatterns` / `busyPatterns` for screen-scrape status fallback; `inputPromptPatterns` / `inputEmptyPatterns` / `inputPlaceholderStylePatterns` for safe internal slash-command delivery |
 | `sessionId` | yes | pending sentinel, session-id env keys, start-resolution strategy, `resolve` from provider storage |
 | `hooks` | optional | hook events, install/merge, config path, install probe (drives `install` + `doctor`) |
 | `terminal` | optional | provider-runtime / headless-PTY terminal compatibility (see below) |
@@ -122,9 +122,9 @@ needed.
 
 An empty prompt opens an idle session (no initial task).
 
-For Codex, the runtime always sends `/rename <handle>` after the agent is ready (both explicit and default names). This works even during active processing, so all args pass through to Codex verbatim — no prompt deferral or arg parsing needed. For Claude, the runtime injects `--name <handle>` into the launch command when no explicit name is provided, so default word-based names are persisted natively.
+For Codex, the runtime always syncs the provider title with `/rename <handle>` after the agent is ready (both explicit and default names). `/rename` works during active processing, but YACO checks the rendered input prompt first: empty prompt sends immediately; Codex placeholder prompts are recognized by their dim ANSI style rather than by placeholder wording; occupied prompt queues a detached helper that waits until the input clears. For Claude, the runtime injects `--name <handle>` into the launch command when no explicit name is provided, so default word-based names are persisted natively.
 
-Codex slash commands are delivered through tmux bracketed paste followed by `Enter`. Raw character-by-character `send-keys` can race Codex's slash-command autocomplete, causing partial commands such as `/rename` to be interpreted as another command while the remainder stays in the composer.
+Slash commands are delivered through tmux bracketed paste followed by `Enter`. Raw character-by-character `send-keys` can race slash-command autocomplete, causing partial commands such as `/rename` to be interpreted as another command while the remainder stays in the composer.
 
 For Codex, an unnamed empty start can stay `pending:awaiting-first-prompt` until a real prompt creates a thread. The `/rename` may resolve the thread earlier, but that timing is not guaranteed.
 
@@ -137,7 +137,7 @@ Both flag form (`--resume <id>`) and positional form (`resume <id>` as leading a
 | Claude | `yaco claude --resume <id>` or `yaco claude resume <id>` | `claude --resume <id>` (flag) |
 | Codex | `yaco codex --resume <id>` or `yaco codex resume <id>` | `codex resume <id>` (subcommand) |
 
-When resuming with `--name`, Codex submits `/rename <handle>` after ready (same as fresh starts) as best-effort provider-title sync. Startup does not wait for the slash command to finish. The `sessionId` is written to the state file immediately (no polling needed).
+When resuming with `--name`, Codex submits `/rename <handle>` after ready (same as fresh starts) as best-effort provider-title sync. If the slash command is sent immediately, startup waits for it to settle; if user input already occupies the prompt, startup queues the input-gated helper and returns. The `sessionId` is written to the state file immediately (no polling needed).
 
 Real-agent integration tests verify that the stored UUID `sessionId` works with both `claude --resume <id>` and `codex resume <id>`.
 
@@ -278,7 +278,7 @@ apply displays apply counts (matching the historical plan-vs-apply split).
 |---|-----------|--------|---------------|------------|-------------|
 | X1 | idle prompt is `›` (U+203A) | TUI observation | `src/lib/core/agent/providers/codex.ts` | agent-lifecycle: start→idle | waitForReady timeout |
 | X2 | does not accept `--name` flag | tested | `src/lib/core/agent/providers/codex.ts` | codex name sync: /rename verification | stripNameFlag harmless but redundant |
-| X3 | accepts `/rename <name>` when delivered via bracketed paste + Enter | tested | `src/commands/agent/start.ts`, `src/lib/core/agent/tmux.ts` | explicit rename integration verifies "Thread renamed"; `tmux.test.ts` enforces bracketed paste | provider title may lag or remain unsynced; YACO handle remains authoritative |
+| X3 | accepts `/rename <name>` when delivered via input-gated bracketed paste + Enter | tested | `src/commands/agent/start.ts`, `src/commands/agent/rename.ts`, `src/lib/core/agent/tmux.ts` | explicit rename integration verifies "Thread renamed"; `providers.test.ts` covers empty-input detection; `tmux.test.ts` enforces bracketed paste | provider title may lag or remain unsynced; YACO handle remains authoritative |
 | X4 | hooks in `~/.codex/hooks.json` | Codex docs + source (codex-rs/hooks) | `src/lib/core/agent/lifecycle.ts#ensureCodexHooks` | agent-lifecycle: processing transition | hooks inactive |
 | X5 | 8 hook events (SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/PermissionRequest/PreCompact/PostCompact/Stop); PreCompact/PostCompact present in source but not yet in public docs | Codex source (`codex-rs/hooks/src/schema.rs`) confirmed via codex-hooks-research session 2026-05-10 | `src/lib/core/agent/lifecycle.ts` (CODEX_HOOK_EVENTS) | hook-event.test.ts: applyHookEvent transitions | fewer → reduced status updates |
 | X6 | hooks synchronous (async=false) | Codex limitation | `src/lib/core/agent/lifecycle.ts#yacoHookGroup(event, false)` | hooks-install.test.ts: async flag verification | could switch to async |

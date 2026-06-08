@@ -25,7 +25,7 @@ src/
       start.ts                         # start an agent session (returns SessionState)
       send.ts                          # send a message (or stdin) to a running session
       capture.ts                       # capture terminal output (with idle wait)
-      rename.ts                        # rename a session handle (idle-only)
+      rename.ts                        # rename a session handle (input-gated provider title sync)
       kill.ts                          # kill one session or all current-project sessions
       status.ts                        # list sessions and their idle/busy state (supports --json)
       whoami.ts                        # resolve current process to its YACO session handle
@@ -69,7 +69,7 @@ mid-layer `yaco agent claude ...` is rejected with USAGE (canonical is
 2. Provider CLI launches immediately inside the detached tmux session (`claude`, `codex`)
 3. Managed sessions apply tmux runtime options (`status off`, `focus-events on`, `allow-passthrough on`) and append RGB terminal features
 4. `waitForReady()` is **hook-first**: it polls the state file and returns immediately when status reaches `idle` or `processing` (whichever the hook writes first). The pane is only inspected as a fallback — to auto-accept the trust dialog, to handle Codex's "Hooks need review" re-trust prompt when the hook command changes, and to detect a stable idle prompt for hook-less or hook-broken sessions. On success, `start()` syncs the latest state file: only `starting→idle` transitions are applied; a hook-written `processing` is never downgraded. PID and sessionId are persisted (`resolved` > `pending` > `empty`) so status does not depend on hook timing. If the session dies during bootstrap, `start()` throws instead of returning phantom state.
-5. For named Codex starts, the agent runtime sends `/rename <handle>` after the agent is ready. This works even during active processing (P6 verified), so all args pass through to Codex verbatim — no prompt deferral or arg parsing needed. Both fresh starts and resume+name follow the same `/rename` path.
+5. For Codex starts, the agent runtime syncs the provider title with `/rename <handle>` after the agent is ready. Slash commands work during active processing (P6 verified), but they are sent only when the rendered input prompt is empty; if the user is already typing, a detached helper waits for the input prompt to clear before submitting. Both fresh starts and resume+name follow the same `/rename` path.
 6. `yaco agent wait` (and the `start --wait` / `send --wait` wrappers) follows the provider JSONL log to the final-answer line to know when the agent is done
 7. `kill` uses three-state liveness (`checkSessionAlive`): kills live sessions, cleans up dead state, and refuses on uncertainty (preserves state file). `kill --all` skips uncertain sessions.
 
@@ -80,6 +80,14 @@ mid-layer `yaco agent claude ...` is rejected with USAGE (canonical is
 **Send optimistic hint:** `send()` writes `status=processing` to the state file before `sendKeys`, so `agent list` / `status` don't show a stale pre-send idle buffer. The hook remains authority and will overwrite. On sendKeys failure, the hint is reverted only if the session is still alive and the state file hasn't been replaced.
 
 **Input delivery:** `sendKeys()` loads message text into a tmux buffer, pastes it with bracketed paste (`paste-buffer -p`), then sends a real `Enter` key. Text newlines stay part of the message; submission is always the final `Enter`. This avoids Codex slash-command autocomplete consuming partial input before the submit key arrives.
+
+**Internal slash commands:** provider-title sync (`/rename <handle>`) uses
+`sendKeysWhenInputEmpty()`, which first inspects the last provider prompt line
+from `capturePane`. If the input line is empty the slash command is sent
+immediately; Codex placeholders are detected from their dim ANSI style so the
+logic does not depend on prompt wording. If user text is present, YACO queues a
+detached `_send-when-input-empty` helper so the caller can return while the
+command waits for a safe prompt.
 
 ### Status Detection
 

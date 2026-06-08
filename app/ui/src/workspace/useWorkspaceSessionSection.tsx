@@ -15,7 +15,6 @@ interface SessionsMgr {
   projectSessions: AgentSession[]
   pinnedSet: Set<string>
   getSessionUnread: (name: string) => number
-  pendingRenames: Record<string, string>
   killSession: (name: string) => Promise<void>
   handleNewSession: (provider: string) => Promise<void>
   handleRenameSession: (old: string, next: string) => Promise<void>
@@ -148,7 +147,6 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     return (
     <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
       unreadCount={sessionsMgr.getSessionUnread(s.name)}
-      pendingName={sessionsMgr.pendingRenames[s.name]}
       shortcutIndex={shortcutIndex}
       onKill={() => { void sessionsMgr.killSession(s.name) }}
       onClick={() => handleSessionClick(s.name)}

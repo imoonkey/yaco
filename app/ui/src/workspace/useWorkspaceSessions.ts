@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useEffect, useState } from 'react'
+import { useCallback, useMemo, useRef, useEffect } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { usePinnedSessions } from '../hooks/usePinnedSessions'
 import type { AgentSession, SessionProvider } from '../types'
@@ -102,22 +102,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       console.error('Failed to close session:', err)
       if (shouldDetach) actions.setActiveSession(sessionName)
     }
-  }, [activeSession, refreshSessions, actions])
-
-  const pendingKey = `yaco-pending-renames:${projectName}`
-  const [pendingRenames, setPendingRenamesRaw] = useState<Record<string, string>>(() => {
-    try {
-      const raw = localStorage.getItem(pendingKey)
-      return raw ? JSON.parse(raw) as Record<string, string> : {}
-    } catch { return {} }
-  })
-  const setPendingRenames = useCallback((fn: (prev: Record<string, string>) => Record<string, string>) => {
-    setPendingRenamesRaw(prev => {
-      const next = fn(prev)
-      try { localStorage.setItem(pendingKey, JSON.stringify(next)) } catch { /* noop */ }
-      return next
-    })
-  }, [pendingKey])
+  }, [activeSession, refreshSessions, actions, onSessionChange])
 
   const executeRename = useCallback(async (oldName: string, newName: string) => {
     try {
@@ -132,33 +117,8 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   }, [activeSession, actions, refreshSessions, setPinnedSessions, onSessionChange])
 
   const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
-    const session = projectSessions.find(s => s.name === oldName)
-    if (session?.status === 'processing') {
-      setPendingRenames(prev => ({ ...prev, [oldName]: newName }))
-    } else {
-      await executeRename(oldName, newName)
-    }
-  }, [projectSessions, executeRename])
-
-  // Auto-fire pending renames when session becomes idle. This reconciles
-  // pendingRenames against live session state and triggers the rename side effect.
-  /* eslint-disable react-hooks/set-state-in-effect */
-  useEffect(() => {
-    if (!sessions) return // sessions not loaded yet — don't clean up
-    const entries = Object.entries(pendingRenames)
-    if (entries.length === 0) return
-    for (const [oldName, newName] of entries) {
-      const session = projectSessions.find(s => s.name === oldName)
-      if (!session) {
-        // Session gone — clean up
-        setPendingRenames(prev => { const rest = { ...prev }; delete rest[oldName]; return rest })
-      } else if (session.status === 'idle') {
-        setPendingRenames(prev => { const rest = { ...prev }; delete rest[oldName]; return rest })
-        void executeRename(oldName, newName)
-      }
-    }
-  }, [sessions, projectSessions, pendingRenames, executeRename])
-  /* eslint-enable react-hooks/set-state-in-effect */
+    await executeRename(oldName, newName)
+  }, [executeRename])
 
   const detachActiveSession = useCallback(() => {
     if (!activeSession) return false
@@ -193,7 +153,6 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     handleNewSession,
     killSession,
     handleRenameSession,
-    pendingRenames,
     detachActiveSession,
     refreshSessions,
     togglePin,

@@ -72,8 +72,7 @@ The History tab calls `GET /api/sessions/history?project=<name>` and renders the
 | Start Shell | Click Shell button | `POST /api/sessions/start { provider: 'shell' }` |
 | Select session | Click session row | Attaches terminal to selected session |
 | Kill session | Click Kill button on row | `POST /api/sessions/:handle/close` |
-| Rename session | Right-click → Rename (inline edit) | `POST /api/sessions/:handle/rename { name, cwd }` |
-| Pending rename | Rename while session is processing | Queued in `pendingRenames` state (persisted to `localStorage`), shown as `name → newName` in session list. Auto-fires rename API when session becomes idle. Re-renaming overwrites the pending value. |
+| Rename session | Right-click → Rename (inline edit) | `POST /api/sessions/:handle/rename { name, cwd }`; the CLI renames state/tmux immediately and input-gates provider-native `/rename` so it never merges into a user's draft |
 | Reorder session | Drag pinned session row vertically | Reorders within pinned section (client-side only, not persisted) |
 
 ### Session Scoping

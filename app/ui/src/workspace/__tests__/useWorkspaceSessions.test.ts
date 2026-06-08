@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { renderHook, cleanup } from '@testing-library/react'
+import { renderHook, cleanup, act } from '@testing-library/react'
 import { useWorkspaceSessions } from '../useWorkspaceSessions'
+import { renameSession } from '../../hooks/useApi'
 import type { AgentSession } from '../../types'
 
 vi.mock('../../hooks/useApi', () => ({
@@ -35,7 +36,10 @@ function makeOpts(overrides: Partial<Parameters<typeof useWorkspaceSessions>[0]>
 }
 
 describe('useWorkspaceSessions auto-detach', () => {
-  afterEach(cleanup)
+  afterEach(() => {
+    cleanup()
+    vi.clearAllMocks()
+  })
 
   it('does not detach on first miss (single transient miss tolerated)', () => {
     const sessions = [makeSession('s1')]
@@ -97,5 +101,20 @@ describe('useWorkspaceSessions auto-detach', () => {
     // Sessions becomes null (re-fetch in progress)
     rerender({ ...opts, sessions: null as unknown as AgentSession[] })
     expect(opts.actions.setActiveSession).not.toHaveBeenCalled()
+  })
+
+  it('renames processing sessions immediately', async () => {
+    vi.mocked(renameSession).mockResolvedValue(undefined)
+    const opts = makeOpts({
+      activeSession: 's1',
+      sessions: [makeSession('s1', 'processing')],
+    })
+    const { result } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
+
+    await act(async () => {
+      await result.current.handleRenameSession('s1', 's2')
+    })
+
+    expect(renameSession).toHaveBeenCalledWith('s1', 's2')
   })
 })

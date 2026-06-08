@@ -1,9 +1,14 @@
-import { execFileSync, execSync } from "child_process";
-import { readFileSync } from "fs";
+import { execFileSync, execSync, spawn } from "child_process";
+import { existsSync, readFileSync } from "fs";
+import { resolve } from "path";
 import { listProviders } from "./providers/index.ts";
+import { isInputEmpty } from "./providers/idle.ts";
+import { stripAnsi } from "./model.ts";
 
 const EXEC_TIMEOUT_MS = 5000;
 const SEND_SUBMIT_DELAY_MS = 300;
+const INPUT_EMPTY_POLL_MS = 500;
+export const SEND_WHEN_INPUT_EMPTY_TIMEOUT_MS = 5 * 60 * 1000;
 const RGB_TERMINAL_FEATURES = [
   "xterm-256color:RGB",
   "tmux-256color:RGB",
@@ -68,6 +73,32 @@ function execTmux(args: string[], input?: string): void {
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+function selfInvocation(): { command: string; args: string[] } {
+  const explicit = process.env["YACO_PATH"];
+  if (explicit) return { command: explicit, args: [] };
+
+  const envBin = process.env["YACO_BIN_DIR"];
+  if (envBin && envBin.length > 0) {
+    const candidate = resolve(envBin, "yaco");
+    if (existsSync(candidate)) return { command: candidate, args: [] };
+  }
+
+  const arg0 = process.argv[0];
+  if (arg0?.endsWith("/yaco")) return { command: arg0, args: [] };
+
+  const script = process.argv[1];
+  if (script?.endsWith("src/main.ts") || script?.endsWith("/main.ts")) {
+    return { command: process.execPath, args: [script] };
+  }
+
+  try {
+    const pathYaco = execSync("which yaco", { encoding: "utf-8" }).trim();
+    if (pathYaco) return { command: pathYaco, args: [] };
+  } catch { /* fall through */ }
+
+  return { command: "yaco", args: [] };
 }
 
 export function isTmuxAvailable(): boolean {
@@ -379,6 +410,76 @@ export function sendKeys(handle: string, text: string): void {
   // Let the TUI drain the bracketed paste before the submit key.
   Bun.sleepSync(SEND_SUBMIT_DELAY_MS);
   execTmux(["send-keys", "-t", paneTargetValue(handle), "Enter"]);
+}
+
+export type InputGatedSendResult = "sent" | "queued" | "timeout" | "missing";
+
+export function isPaneInputEmpty(handle: string, providerId: string): boolean {
+  try {
+    const raw = capturePane(handle, 80, true);
+    return isInputEmpty(stripAnsi(raw), providerId, raw);
+  } catch {
+    return false;
+  }
+}
+
+export function waitForInputEmptyThenSend(
+  handle: string,
+  providerId: string,
+  text: string,
+  timeoutMs: number = SEND_WHEN_INPUT_EMPTY_TIMEOUT_MS,
+): InputGatedSendResult {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!hasSession(handle)) return "missing";
+    if (isPaneInputEmpty(handle, providerId)) {
+      sendKeys(handle, text);
+      return "sent";
+    }
+    Bun.sleepSync(INPUT_EMPTY_POLL_MS);
+  }
+  return "timeout";
+}
+
+function queueInputEmptySend(handle: string, providerId: string, text: string): InputGatedSendResult {
+  const invocation = selfInvocation();
+  try {
+    const child = spawn(
+      invocation.command,
+      [
+        ...invocation.args,
+        "agent",
+        "_send-when-input-empty",
+        handle,
+        providerId,
+        text,
+      ],
+      {
+        detached: true,
+        stdio: "ignore",
+        env: process.env,
+      },
+    );
+    child.on("error", () => {});
+    child.unref();
+    return "queued";
+  } catch {
+    return "timeout";
+  }
+}
+
+/** Submit an internal slash command only when it cannot merge into user input. */
+export function sendKeysWhenInputEmpty(
+  handle: string,
+  providerId: string,
+  text: string,
+): InputGatedSendResult {
+  if (!hasSession(handle)) return "missing";
+  if (isPaneInputEmpty(handle, providerId)) {
+    sendKeys(handle, text);
+    return "sent";
+  }
+  return queueInputEmptySend(handle, providerId, text);
 }
 
 const VALID_RAW_KEYS = /^[a-zA-Z0-9_-]+$/;

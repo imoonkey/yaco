@@ -98,6 +98,20 @@ describe("rename link integrity", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("renames processing sessions immediately", async () => {
+    const root = projectRoot();
+    writeTasks(root, { t1: task(["old"]) });
+    writeState(session({ handle: "old", sessionPath: root, status: "processing" }));
+
+    const outcome = await rename("old", "new");
+
+    expect(outcome.warnings).toEqual([]);
+    expect(readState("old")).toBeNull();
+    expect(readState("new")?.status).toBe("processing");
+
+    rmSync(root, { recursive: true, force: true });
+  });
+
   it("resolves the task store from a worktree subdirectory sessionPath", async () => {
     const root = projectRoot();
     const tasksPath = writeTasks(root, { t1: task(["old"]) });

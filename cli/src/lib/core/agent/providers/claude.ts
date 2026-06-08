@@ -67,6 +67,12 @@ export const claudeProvider: TuiProvider = {
     idlePatterns: [
       /^❯\s/m, // Claude Code idle prompt (\s matches U+00A0 NBSP that follows ❯)
     ],
+    inputPromptPatterns: [
+      /^❯/,
+    ],
+    inputEmptyPatterns: [
+      /^❯(?:\s|\u00a0)*(?:Try ".*)?$/,
+    ],
   },
 
   sessionId: {

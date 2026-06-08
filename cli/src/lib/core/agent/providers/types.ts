@@ -55,6 +55,12 @@ export interface ProviderCommand {
 export interface ProviderDetection {
   /** Patterns whose presence in the trailing pane means the TUI is idle. */
   idlePatterns: readonly RegExp[];
+  /** Patterns identifying a live input prompt line in rendered pane output. */
+  inputPromptPatterns?: readonly RegExp[];
+  /** Patterns identifying an empty input prompt line, including placeholders. */
+  inputEmptyPatterns?: readonly RegExp[];
+  /** Raw ANSI/style markers identifying a provider placeholder prompt line. */
+  inputPlaceholderStylePatterns?: readonly RegExp[];
   /** Patterns whose presence means the agent is actively processing. */
   busyPatterns?: readonly RegExp[];
 }

@@ -103,7 +103,7 @@ The authoritative runtime view. This is the **single source of runtime truth**. 
 - Mutation APIs, handle-global
 - Do not require workflow to resolve project path
 - `send --stdin` reads the message from process.stdin (mutually exclusive with an inline message)
-- `rename` is authoritative for the session state/tmux rename, then best-effort rewrites handle references (child `parentSession`, task `agents`); failures return in `data.warnings`. -> See: [lifecycle.md](lifecycle.md#rename-link-integrity)
+- `rename` is authoritative for the session state/tmux rename, including while the agent status is `processing`, then best-effort rewrites handle references (child `parentSession`, task `agents`); failures return in `data.warnings`. Provider-native `/rename` title sync is input-empty gated and may be queued by a detached helper when user text already occupies the input prompt. -> See: [lifecycle.md](lifecycle.md#rename-link-integrity)
 
 ### `yaco agent hooks install`
 

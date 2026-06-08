@@ -1,4 +1,14 @@
-import { capturePane, createSession, getAgentPid, hasSession, checkSessionAlive, sendRawKeys, sendKeys, startOscColorQueryResponder } from "../../lib/core/agent/tmux.ts";
+import {
+  capturePane,
+  createSession,
+  getAgentPid,
+  hasSession,
+  checkSessionAlive,
+  sendRawKeys,
+  sendKeysWhenInputEmpty,
+  startOscColorQueryResponder,
+  type InputGatedSendResult,
+} from "../../lib/core/agent/tmux.ts";
 import { getProvider } from "../../lib/core/agent/providers/index.ts";
 import { isIdle } from "../../lib/core/agent/providers/idle.ts";
 import type { StartupInterstitial, TuiProvider } from "../../lib/core/agent/providers/types.ts";
@@ -223,16 +233,17 @@ export function stripResume(args: string[]): string[] {
 }
 
 
-function submitPostStartInputs(handle: string, inputs: readonly string[]): boolean {
-  let submitted = true;
+function submitPostStartInputs(
+  handle: string,
+  provider: string,
+  inputs: readonly string[],
+): InputGatedSendResult {
+  let result: InputGatedSendResult = "sent";
   for (const input of inputs) {
-    try {
-      sendKeys(handle, input);
-    } catch {
-      submitted = false;
-    }
+    result = sendKeysWhenInputEmpty(handle, provider, input);
+    if (result !== "sent") return result;
   }
-  return submitted;
+  return result;
 }
 
 /** Wait for a just-submitted post-start input (e.g. Codex's `/rename <handle>`)
@@ -363,10 +374,11 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   let ready = waitForReady(resolvedName, prov.command.startupInterstitials ?? []);
 
   if (ready && postStartInputs.length > 0 && hasSession(resolvedName)) {
-    ready = submitPostStartInputs(resolvedName, postStartInputs) && ready;
+    const postStartResult = submitPostStartInputs(resolvedName, provider, postStartInputs);
+    ready = postStartResult !== "missing" && postStartResult !== "timeout" && ready;
     // Let the post-start command (Codex `/rename`) settle so a follow-up rename
     // doesn't race it. Only runs for providers that declare post-start inputs.
-    if (ready) waitForPostInputSettle(resolvedName);
+    if (ready && postStartResult === "sent") waitForPostInputSettle(resolvedName);
   }
 
   // Resolve sessionId — skip polling if already known from --resume

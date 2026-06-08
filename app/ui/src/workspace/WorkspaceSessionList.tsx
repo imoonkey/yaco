@@ -26,7 +26,6 @@ export function SessionItem({
   dragging,
   depth = 0,
   unreadCount,
-  pendingName,
   shortcutIndex,
   onClick,
   onKill,
@@ -43,7 +42,6 @@ export function SessionItem({
   dragging?: boolean
   depth?: number
   unreadCount?: number
-  pendingName?: string
   shortcutIndex?: number | null
   onClick: () => void
   onKill: () => void
@@ -140,7 +138,6 @@ export function SessionItem({
               {shortcutIndex}
             </span>
           )}
-          {pendingName && <span style={{ color: 'var(--sol-text-faint)' }}>{` → ${pendingName}`}</span>}
           {session.worktree && (
             <span
               className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[9px] font-medium ml-1.5 align-middle"
