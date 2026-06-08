@@ -33,7 +33,7 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
       <span className="shrink-0 flex items-center" style={{ opacity: isActive ? 1 : 0.8 }}>
         {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}
       </span>
-      <span className="truncate font-medium" style={{ color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
+      <span className="truncate" style={{ color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
       {dir && <span
         className="truncate text-[10px] hover:underline shrink min-w-0"
         style={{ color: 'var(--sol-text-faint)' }}
