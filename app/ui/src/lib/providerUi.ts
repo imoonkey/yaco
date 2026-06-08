@@ -47,7 +47,7 @@ const PROVIDER_UI = {
     terminal: {
       minimumContrastRatio: 5,
       suppressOscColorReportQuery: false,
-      inputPromptFrame: { promptPattern: /^\s*›/, continuationPattern: /^\s{2,}/, maxRows: 24, lineWidth: 2, topPadding: 19, bottomPadding: 19 },
+      inputPromptFrame: { promptPattern: /^›/, continuationPattern: /^\s{2,}/, maxRows: 24, lineWidth: 2, topPadding: 19, bottomPadding: 19 },
     },
     canStart: true,
   },

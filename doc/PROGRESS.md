@@ -18,6 +18,24 @@
 **Next:** None.
 **Blockers:** None.
 
+## 2026-06-08: Codex prompt frame follows prompt background
+
+**What changed:**
+- Codex prompt frame detection now follows the non-default xterm background used by the rendered prompt block.
+- Explicit user-authored newlines, including blank lines and unindented paragraph starts, remain inside the frame while assistant output after the prompt stays outside.
+- Prompt start detection now requires a line-start `›`, so quoted prompt glyphs inside agent replies are ignored.
+- The no-background fallback now extends until a structural Codex boundary: a line-start `•` reply row, a line-start `■` interruption row, or a viewport-tail Codex status line (`tab to queue message` or dot-separated status text).
+- Added terminal regression tests for multi-paragraph Codex prompts with internal blank lines, with and without prompt background attributes.
+
+**Why:**
+- The old text-only continuation scan stopped at blank or non-indented rows, so multi-paragraph user prompts drew the lower rule too high.
+
+**Key files:** `app/ui/src/components/Terminal.tsx`, `app/ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk-size warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Session rename draft survives status moves
 
 **What changed:**

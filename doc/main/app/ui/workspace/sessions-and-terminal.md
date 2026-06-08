@@ -190,7 +190,7 @@ Fallback: `document.execCommand('copy')` when async Clipboard API is unavailable
 
 ### Codex Input Prompt Frame
 
-Codex terminal panes draw a browser-side overlay around visible `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). Wrapped rows and consecutive non-empty continuation rows are included in the frame; blank rows stop the frame so post-message whitespace does not inflate the prompt height. It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
+Codex terminal panes draw a browser-side overlay around visible line-start `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). When xterm exposes Codex's prompt background, the frame follows rows with that same background so explicit user newlines and blank lines stay inside the prompt. Without prompt background, it extends until a structural Codex boundary: a line-start `•` reply row, a line-start `■` interruption row, or a Codex status line at the viewport tail (`tab to queue message` or dot-separated status text). It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
 
 ## Terminal Fit
 

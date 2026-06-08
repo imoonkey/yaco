@@ -14,10 +14,18 @@ const wsSends: string[] = []
 
 interface FakeBufferLine {
   isWrapped: boolean
+  length: number
+  getCell(x: number): FakeBufferCell | undefined
   translateToString(trimRight?: boolean): string
 }
 
-type FakeBufferRow = string | { text: string; isWrapped?: boolean }
+interface FakeBufferCell {
+  getBgColorMode(): number
+  getBgColor(): number
+  isBgDefault(): boolean
+}
+
+type FakeBufferRow = string | { text: string; isWrapped?: boolean; bg?: number }
 
 let fakeLines: FakeBufferLine[] = []
 const fakeBuffer = {
@@ -33,8 +41,18 @@ const fakeBuffer = {
 
 function makeFakeLine(row: FakeBufferRow | undefined): FakeBufferLine {
   const text = typeof row === 'string' ? row : row?.text ?? ''
+  const bg = typeof row === 'string' ? undefined : row?.bg
   return {
     isWrapped: typeof row === 'string' ? false : row?.isWrapped ?? false,
+    length: 80,
+    getCell: (x: number) => {
+      if (x < 0 || x >= 80) return undefined
+      return {
+        getBgColorMode: () => bg == null ? 0 : 3,
+        getBgColor: () => bg ?? 0,
+        isBgDefault: () => bg == null,
+      }
+    },
     translateToString: (trimRight?: boolean) => trimRight ? text.trimEnd() : text,
   }
 }
@@ -282,7 +300,26 @@ describe('Terminal focus handoff', () => {
     resetFakeBuffer([
       { text: '› write a fix that wraps onto the next line' },
       { text: '  continued input', isWrapped: true },
+      '  yaco · main · custom status · Full Access',
     ], 1)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('frames explicit multiline Codex input rows', async () => {
+    resetFakeBuffer([
+      { text: '› first line' },
+      { text: '  second line' },
+      { text: '  third line' },
+      '  yaco · main · custom status · Full Access',
+    ], 2)
     const Terminal = await loadTerminal()
     const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
 
@@ -294,12 +331,15 @@ describe('Terminal focus handoff', () => {
     })
   })
 
-  it('frames explicit multiline Codex input rows', async () => {
+  it('keeps Codex prompt frames across user-authored blank and unindented lines', async () => {
+    const promptBg = 0xf2ecd9
     resetFakeBuffer([
-      { text: '› first line' },
-      { text: '  second line' },
-      { text: '  third line' },
-    ], 2)
+      { text: '› first paragraph', bg: promptBg },
+      { text: 'second paragraph is not indented', bg: promptBg },
+      { text: '', bg: promptBg },
+      { text: 'third paragraph after an explicit blank line', bg: promptBg },
+      '• assistant output',
+    ], 3)
     const Terminal = await loadTerminal()
     const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
 
@@ -309,6 +349,20 @@ describe('Terminal focus handoff', () => {
       expect(frame?.style.top).toBe('0px')
       expect(frame?.style.height).toBe('79px')
     })
+  })
+
+  it('does not treat indented quote glyphs as Codex prompt starts', async () => {
+    resetFakeBuffer([
+      { text: '  › quoted user prompt in assistant output' },
+      { text: '  still assistant output' },
+    ], 1)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      expect(resizeSpy).toHaveBeenCalled()
+    })
+    expect(container.querySelector('[data-terminal-input-frame="true"]')).toBeNull()
   })
 
   it('frames explicit multiline historical Codex prompt rows', async () => {
@@ -317,9 +371,28 @@ describe('Terminal focus handoff', () => {
       { text: '  second prompt line' },
       { text: '  third prompt line' },
       '',
-      { text: '  indented output after submit' },
-      'assistant output',
+      '• assistant output after submit',
+      { text: '  indented output detail' },
     ], 5)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
+  it('stops no-background Codex prompt frames at line-start reply bullets', async () => {
+    resetFakeBuffer([
+      { text: '› previous prompt' },
+      { text: '  second prompt line' },
+      { text: '' },
+      { text: 'unindented markdown after a blank line' },
+      '• later output',
+    ], 4)
     const Terminal = await loadTerminal()
     const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
 
@@ -331,12 +404,30 @@ describe('Terminal focus handoff', () => {
     })
   })
 
-  it('does not count blank rows after a Codex prompt', async () => {
+  it('stops no-background Codex prompt frames at conversation-interrupted rows', async () => {
     resetFakeBuffer([
       { text: '› previous prompt' },
-      { text: '  second prompt line' },
-      { text: '', isWrapped: true },
-      { text: '  later indented output' },
+      { text: 'retry with simpler steps' },
+      { text: '' },
+      '■ Conversation interrupted - tell the model what to do differently.',
+    ], 3)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('stops no-background Codex prompt frames at dot-separated status lines', async () => {
+    resetFakeBuffer([
+      { text: '› Improve documentation in @filename' },
+      { text: '' },
+      { text: 'Run from the monorepo root unless noted:' },
+      { text: '  yaco · main · custom status · Full Access' },
     ], 3)
     const Terminal = await loadTerminal()
     const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
@@ -349,13 +440,67 @@ describe('Terminal focus handoff', () => {
     })
   })
 
+  it('stops no-background Codex prompt frames at bottom queue-message status lines', async () => {
+    resetFakeBuffer([
+      { text: '› dfdsa' },
+      'tab to queue message                         100% context left',
+    ], 0)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('does not treat queue-message text before nonblank content as a status line', async () => {
+    resetFakeBuffer([
+      { text: '› mention status text' },
+      'tab to queue message',
+      'still part of the prompt',
+      '• later output',
+    ], 2)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
+  it('does not treat dot-separated rows before nonblank content as status lines', async () => {
+    resetFakeBuffer([
+      { text: '› compare alpha · beta · gamma' },
+      { text: '' },
+      { text: '  yaco · main · custom status · Full Access' },
+      { text: 'more input after dot-separated row' },
+      '• later output',
+    ], 4)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('79px')
+    })
+  })
+
   it('frames visible historical Codex user prompts too', async () => {
     resetFakeBuffer([
       'assistant output',
       { text: '› older prompt' },
       { text: '  wrapped older prompt', isWrapped: true },
-      'more assistant output',
+      '• more assistant output',
       { text: '› current prompt' },
+      '  yaco · main · custom status · Full Access',
     ], 4)
     const Terminal = await loadTerminal()
     const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
@@ -364,7 +509,7 @@ describe('Terminal focus handoff', () => {
       const frames = Array.from(container.querySelectorAll<HTMLElement>('[data-terminal-input-frame="true"]'))
       expect(frames).toHaveLength(2)
       expect(frames.map(frame => frame.style.top)).toEqual(['1px', '61px'])
-      expect(frames.map(frame => frame.style.height)).toEqual(['78px', '58px'])
+      expect(frames.map(frame => frame.style.height)).toEqual(['58px', '58px'])
     })
   })
 
