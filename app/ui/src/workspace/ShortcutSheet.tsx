@@ -47,7 +47,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
   return (
     <DialogShell onClose={onClose} className="rounded-lg p-6 w-full max-w-lg">
       <h2
-        className="text-base font-semibold mb-4"
+        className="text-[16px] font-semibold mb-4"
         style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-ui)' }}
       >
         Keyboard Shortcuts
@@ -56,7 +56,7 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
         {GROUPS.map((group) => (
           <section key={group.title}>
             <h3
-              className="text-xs font-semibold uppercase tracking-wide mb-2"
+              className="text-[12px] font-semibold uppercase tracking-wide mb-2"
               style={{ color: 'var(--sol-text)' }}
             >
               {group.title}
@@ -64,11 +64,11 @@ export function ShortcutSheet({ onClose }: { onClose: () => void }) {
             <div className="grid grid-cols-2 gap-x-6 gap-y-1">
               {group.shortcuts.map((s) => (
                 <div key={s.label} className="flex items-center justify-between gap-2 py-0.5">
-                  <span className="text-sm" style={{ color: 'var(--sol-text)' }}>
+                  <span className="text-[14px]" style={{ color: 'var(--sol-text)' }}>
                     {s.label}
                   </span>
                   <kbd
-                    className="text-xs px-1.5 py-0.5 rounded shrink-0"
+                    className="text-[12px] px-1.5 py-0.5 rounded shrink-0"
                     style={{
                       fontFamily: 'var(--font-mono)',
                       color: 'var(--sol-text)',

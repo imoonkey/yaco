@@ -306,7 +306,7 @@ const TIMER_STYLE: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 8,
-  fontFamily: 'monospace',
+  fontFamily: 'var(--font-mono)',
   fontSize: 14,
   fontVariantNumeric: 'tabular-nums',
   color: 'var(--sol-red)',
@@ -352,7 +352,7 @@ const SPINNER_STYLE: React.CSSProperties = {
 
 const TEXTAREA_STYLE: React.CSSProperties = {
   width: '100%',
-  fontFamily: 'monospace',
+  fontFamily: 'var(--font-mono)',
   fontSize: 13,
   color: 'var(--sol-editor-fg)',
   background: 'var(--sol-input-bg)',
@@ -441,7 +441,7 @@ const DISCLOSURE_STYLE: React.CSSProperties = {
 }
 
 const RAW_TEXT_STYLE: React.CSSProperties = {
-  fontFamily: 'monospace',
+  fontFamily: 'var(--font-mono)',
   fontSize: 11,
   color: 'var(--sol-text)',
   background: 'var(--sol-subtle-bg)',
