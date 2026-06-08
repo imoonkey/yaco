@@ -1,3 +1,22 @@
+## 2026-06-08: Typography font-size token scale (`--text-ui-*`)
+
+**What changed:**
+- Added a single font-size token scale to `index.css` as `@theme static { --text-ui-2xs..2xl }` (9/10/11/12/13/14/16px). `static` forces all seven to emit to `:root` so the inline `var()` path works regardless of whether a matching utility class exists.
+- Migrated every raw font size onto it: ~190 `text-[Npx]` Tailwind classes → `text-ui-*` (31 files); ~49 inline `fontSize` / CSS `font-size` / CodeMirror theme (`editorTheme.ts`) / DOM `.style.fontSize` (`diffGutter.ts`) / Mermaid-error HTML string → `var(--text-ui-*)`.
+- Routed the task-graph SVG/canvas typography through a new `tasks/graphType.ts` constants module — a deliberate second source, because canvas `ctx.font` parses a string itself and can't read CSS `var()`. `RAIL_CHAR_W` is now derived from `RAIL_FONT_SIZE` so a font edit can't desync rail width math.
+- Kept documented literals: xterm (canvas), the 24px empty-state emoji glyph, the 8px ASCII-QR `<pre>` (geometry), `fontSize:inherit`, and relative-`em` sizes (markdown, `useNotifications` `0.875em`).
+- Added a Playwright runtime proof (`tests/e2e/typography-tokens.spec.ts`): all 7 tokens resolve to exact px in light **and** dark; body computes to 13px (not the 16px UA default → vars resolve). Added a `--text-ui-*` guardrail rule to `app/CLAUDE.md`.
+
+**Why:**
+- Typography was the one design dimension with no tokens (colors/elevation/transitions all had them): 9 ad-hoc sizes expressed two ways (`text-[Npx]` classes + inline `fontSize`), with no single lever. Exact-value tokenization first (zero-pixel) makes future *visual* consolidation (e.g. merging 11/12/13) a one-line token edit instead of a ~190-site hunt. Consolidation, `tabular-nums`, and line-height systematization are deferred follow-ups.
+- Mechanism chosen (custom-namespaced `@theme static`, not arbitrary `text-(length:…)` and not default `text-sm`): default names inject a paired line-height that would shift dense fixed-height rows; a custom token compiles to font-size only while still giving short class names and inline `var()` from one declaration.
+
+**Key files:** `app/ui/src/index.css`, `app/ui/src/tasks/graphType.ts`, `app/ui/src/lib/{editorTheme,diffGutter}.ts`, ~40 `.tsx` across `components/workspace/tasks/`, `app/ui/tests/e2e/typography-tokens.spec.ts`, `app/CLAUDE.md`.
+**Verification:** `npm run lint` → 0 errors (pre-existing warnings only); `npx vite build` → success; Playwright token test → 2 passed (re-run independently). Final grep: no raw px `text-[Npx]` / inline `fontSize` / CSS `font-size` outside documented exclusions.
+**Commit:** `a46e861..5b4c921` (+ `070486b` CLAUDE.md, + this docs commit). Design + 2 Codex review rounds: `1113012`; task graph: `def8a96`.
+**Next:** Deferred — `tabular-nums` alignment pass; visual consolidation to a tighter 5–6 step scale; line-height tokens.
+**Blockers:** None.
+
 ## 2026-06-07: Merge messaging-channel header buttons into one logo dropdown
 
 **What changed:**

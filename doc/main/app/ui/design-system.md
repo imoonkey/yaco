@@ -16,7 +16,7 @@ Visual design language: colors, typography, iconography, and spacing.
 
 ## Related Code
 
-`ui/src/index.css`, `ui/src/lib/theme.ts`, `ui/src/lib/editorTheme.ts`
+`ui/src/index.css`, `ui/src/lib/theme.ts`, `ui/src/lib/editorTheme.ts`, `ui/src/tasks/graphType.ts`
 
 ## Color Palette
 
@@ -83,6 +83,27 @@ Text uses **theme-split semantic tokens** (resolved per `[data-theme]`), not the
 - **Body text**: `#586E75` (base01) — deliberately darker than raw Solarized `#93A1A1` for readability
 - **Editor**: CodeMirror 6 with Solarized Light syntax theme
 - **Terminal**: xterm.js with Solarized Light terminal colors
+
+### Font-Size Token Scale
+
+All UI font sizes flow from one named scale, declared as `@theme static` in `index.css` so every token emits to `:root` (the `static` keyword is load-bearing — a plain `@theme` tree-shakes any token Tailwind sees no class candidate for, which would break the inline `var()` path).
+
+| Token | px | Role |
+|-------|----|------|
+| `--text-ui-2xs` | 9 | badges, counts, micro-labels, kbd hints |
+| `--text-ui-xs` | 10 | dense meta, secondary counts |
+| `--text-ui-sm` | 11 | secondary chrome, section headers |
+| `--text-ui-md` | 12 | default UI text, list rows |
+| `--text-ui-lg` | 13 | body, editor-adjacent, compose |
+| `--text-ui-xl` | 14 | emphasis, dialog titles |
+| `--text-ui-2xl` | 16 | screen / section titles |
+
+**Applying:** Tailwind class `text-ui-sm` (the `@theme` token auto-generates a font-size-only utility — no injected line-height) **or** inline/CSS `var(--text-ui-sm)`. Both resolve from the same token. **Do not** hardcode `text-[Npx]` or numeric `fontSize` — that was the pre-token sprawl (9 ad-hoc sizes across `text-[Npx]` classes + inline `fontSize`) this scale replaced. Consolidating the scale further (e.g. merging 11/12/13) is now a one-line token edit.
+
+**Exceptions (intentionally not tokenized):**
+- **xterm** (`Terminal.tsx`) — its `fontSize` is a canvas option; CSS `var()` can't resolve in canvas text.
+- **Task graph** (`tasks/graphType.ts`) — a deliberate second source of numeric sizes because canvas `ctx.font` measurement (title width, rail width) parses a string itself and can't read `var()`. SVG `<text>` and the canvas measurement share these constants so render and measurement stay in sync; `RAIL_CHAR_W` is derived from `RAIL_FONT_SIZE` so a font edit can't desync them.
+- **Decorative / relative-`em`** — the ASCII-QR `<pre>` (geometry, not type), the empty-state emoji glyph, markdown heading `em` sizes, and the notification toast's `0.875em` body.
 
 ## Iconography
 
