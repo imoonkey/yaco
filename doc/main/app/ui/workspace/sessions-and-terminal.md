@@ -17,7 +17,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
+`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
 
 ## Session List
 
@@ -64,6 +64,13 @@ Full summary strings are returned (no server-side truncation). The UI truncates 
 ### History Tab
 
 The History tab calls `GET /api/sessions/history?project=<name>` and renders the list returned by the server. The server fetches rows from `yaco agent history --path <p> --json` (sorting and the 200-row cap are CLI-owned), maps the CLI shape to the UI shape (`sessionId` → `id`, `updatedAt` → `modified`), and tags `liveSessionName` by matching CLI `sessionId` against the live YACO session list. Provider-native reads and timestamp logic (Claude embedded JSONL timestamps, Codex thread timestamps) live in the CLI provider adapters. The row meta line shows `gitBranch` only when it is not the default branch (`main`/`master`), so feature/worktree branches stand out and `main` is not repeated on every row. → See: `doc/main/cli/providers.md`.
+
+### Search
+
+The Sessions panel has one local search box shared by the Live and History tabs. The query is kept in memory and filters only the active tab; switching tabs keeps the text so the same phrase can be reused. Matching is case-insensitive and AND-based across whitespace-separated terms.
+
+- Live search filters the already-loaded session rows by name, provider, status, project, summary, worktree, and lineage metadata. Lineage grouping then runs over the filtered visible set, so a child whose parent is filtered out renders as a root through the normal lineage fallback.
+- History search filters the already-loaded history rows by title, summary, provider, id, branch, live-session handle, timestamps, and message count. Sorting and the 200-row cap remain CLI/server-owned.
 
 ### Actions
 

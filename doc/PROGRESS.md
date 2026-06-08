@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-08: Session panel search
+
+**What changed:**
+- Added a local search box to the Workspace Sessions panel, shared by Live and History tabs.
+- Live sessions filter by session metadata after the API response is loaded, then reuse the existing lineage/tier grouping over the filtered visible set.
+- Session history filters by loaded history row metadata without changing the server/CLI history contract.
+- Added focused Vitest coverage for filter semantics and a Playwright E2E covering live/history search and no-match empty states.
+
+**Why:**
+- Long live-session lists and history lists were hard to scan. Client-side filtering keeps the feature simple because both lists are already loaded in the UI.
+
+**Key files:** `app/ui/src/workspace/{SessionSearchBox.tsx,sessionSearch.ts,useWorkspaceSessionSection.tsx,WorkspaceHistoryList.tsx}`, `app/ui/src/workspace/__tests__/sessionSearch.test.ts`, `app/ui/tests/e2e/session-search.spec.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/sessionSearch.test.ts` passed; `cd app/ui && npx playwright test tests/e2e/session-search.spec.ts` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Workspace section refresh controls
 
 **What changed:**

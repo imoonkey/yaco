@@ -61,6 +61,7 @@ export function WorkspaceHistoryList({
   setResumingId,
   onResumed,
   onGoLive,
+  emptyMessage = 'No past sessions',
 }: {
   history: HistorySession[] | null
   loading: boolean
@@ -69,6 +70,7 @@ export function WorkspaceHistoryList({
   setResumingId: (id: string | null) => void
   onResumed: (sessionName: string) => void
   onGoLive: (liveSessionName: string) => void
+  emptyMessage?: string
 }) {
   const [error, setError] = useState<string | null>(null)
 
@@ -90,7 +92,7 @@ export function WorkspaceHistoryList({
   }
 
   if (!history || history.length === 0) {
-    return <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>No past sessions</div>
+    return <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>{emptyMessage}</div>
   }
 
   return (

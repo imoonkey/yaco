@@ -1,9 +1,11 @@
-import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { History, Radio } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 import { getProviderUi, startableProviders } from '../lib/providerUi'
 import { SessionItem } from './WorkspaceSessionList'
+import { SessionSearchBox } from './SessionSearchBox'
 import { groupSessionLineage, type SessionLineageRow } from './sessionLineage'
+import { filterAgentSessions, filterHistorySessions } from './sessionSearch'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { SectionRefreshButton } from './SectionHeader'
 import type { AgentSession, HistorySession } from '../types'
@@ -52,6 +54,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const [resumingId, setResumingId] = useState<string | null>(null)
   const [draggedSession, setDraggedSession] = useState<string | null>(null)
   const [cmdCtrlHeld, setCmdCtrlHeld] = useState(false)
+  const [sessionSearchQuery, setSessionSearchQuery] = useState('')
 
   useEffect(() => {
     const update = (e: KeyboardEvent) => setCmdCtrlHeld(e.metaKey && e.ctrlKey)
@@ -133,12 +136,39 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   )
 
   // --- Body ---
-  // Lineage is built over the FULL visible list (not per status/pin bucket) so a
+  const searchActive = sessionSearchQuery.trim().length > 0
+  const filteredLiveSessions = useMemo(
+    () => filterAgentSessions(sessionsMgr.orderedSessions, sessionSearchQuery),
+    [sessionsMgr.orderedSessions, sessionSearchQuery],
+  )
+  const filteredHistory = useMemo(
+    () => history.data ? filterHistorySessions(history.data, sessionSearchQuery) : null,
+    [history.data, sessionSearchQuery],
+  )
+
+  const searchBox = (
+    <SessionSearchBox
+      value={sessionSearchQuery}
+      placeholder={sessionTab === 'live' ? 'Search live sessions...' : 'Search session history...'}
+      resultCount={sessionTab === 'live' ? filteredLiveSessions.length : filteredHistory?.length ?? 0}
+      totalCount={sessionTab === 'live' ? sessionsMgr.orderedSessions.length : history.data?.length ?? 0}
+      onChange={setSessionSearchQuery}
+      onClear={() => setSessionSearchQuery('')}
+    />
+  )
+  const liveEmptyMessage = sessionsMgr.projectSessions.length === 0 || !searchActive
+    ? 'No live sessions'
+    : 'No matching live sessions'
+  const historyEmptyMessage = searchActive && (history.data?.length ?? 0) > 0
+    ? 'No matching past sessions'
+    : 'No past sessions'
+
+  // Lineage is built over the visible list (after search, not per status/pin bucket) so a
   // parent is always immediately followed by its visible descendants, indented
   // by depth. Subtrees are then assigned to the pinned/active/idle dividers by
   // their root, keeping a parent and its differently-statused children together.
   const { pinned: pinnedRows, processing: processingRows, idle: idleRows } =
-    groupSessionLineage(sessionsMgr.orderedSessions, name => sessionsMgr.pinnedSet.has(name))
+    groupSessionLineage(filteredLiveSessions, name => sessionsMgr.pinnedSet.has(name))
 
   const renderSessionItem = (s: AgentSession, isPinned?: boolean, depth = 0) => {
     const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
@@ -169,36 +199,45 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
 
   const liveSessionsBody = (
     <>
+      {searchBox}
       {renderRows(pinnedRows)}
       {pinnedRows.length > 0 && (processingRows.length > 0 || idleRows.length > 0) && divider}
       {renderRows(processingRows)}
       {processingRows.length > 0 && idleRows.length > 0 && divider}
       {renderRows(idleRows)}
-      {sessionsMgr.projectSessions.length === 0 && <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>No live sessions</div>}
+      {filteredLiveSessions.length === 0 && (
+        <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>
+          {liveEmptyMessage}
+        </div>
+      )}
     </>
   )
 
   const sessionsBody: ReactNode = sessionTab === 'live' ? liveSessionsBody : (
-    <WorkspaceHistoryList
-      history={history.data}
-      loading={history.loading}
-      resumingId={resumingId}
-      projectPath={opts.projectPath}
-      setResumingId={setResumingId}
-      onResumed={(handle) => {
-        setResumingId(null)
-        setSessionTab('live')
-        actions.setActiveSession(handle)
-        if (isMobile) actions.setMobilePane('terminal')
-        void refreshSessions()
-        void history.refresh()
-      }}
-      onGoLive={(liveSessionName) => {
-        setSessionTab('live')
-        actions.setActiveSession(liveSessionName)
-        if (isMobile) actions.setMobilePane('terminal')
-      }}
-    />
+    <>
+      {searchBox}
+      <WorkspaceHistoryList
+        history={filteredHistory}
+        loading={history.loading}
+        resumingId={resumingId}
+        projectPath={opts.projectPath}
+        setResumingId={setResumingId}
+        emptyMessage={historyEmptyMessage}
+        onResumed={(handle) => {
+          setResumingId(null)
+          setSessionTab('live')
+          actions.setActiveSession(handle)
+          if (isMobile) actions.setMobilePane('terminal')
+          void refreshSessions()
+          void history.refresh()
+        }}
+        onGoLive={(liveSessionName) => {
+          setSessionTab('live')
+          actions.setActiveSession(liveSessionName)
+          if (isMobile) actions.setMobilePane('terminal')
+        }}
+      />
+    </>
   )
 
   return { sessionsActions, sessionsBody }
