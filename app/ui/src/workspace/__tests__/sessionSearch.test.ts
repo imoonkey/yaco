@@ -44,6 +44,17 @@ describe('filterAgentSessions', () => {
     expect(filterAgentSessions(sessions, 'SESSION-search')).toEqual([sessions[1]])
   })
 
+  it('matches live sessions fuzzily while preserving source order', () => {
+    const sessions = [
+      liveSession({ name: 'codex-search', provider: 'codex', summary: 'Search sessions' }),
+      liveSession({ name: 'claude-main', provider: 'claude', summary: 'Planning task graph cleanup' }),
+      liveSession({ name: 'codex-ui', provider: 'codex', summary: 'Implement search UI' }),
+    ]
+
+    expect(filterAgentSessions(sessions, 'cdx ui')).toEqual([sessions[2]])
+    expect(filterAgentSessions(sessions, 'codxe')).toEqual([sessions[0], sessions[2]])
+  })
+
   it('requires all search terms to match one session', () => {
     const sessions = [
       liveSession({ name: 'codex-ui', provider: 'codex', status: 'idle', summary: 'Search sessions' }),
@@ -72,10 +83,19 @@ describe('filterHistorySessions', () => {
 
   it('matches live session handles for resumed history rows', () => {
     const history = [
-      historySession({ id: 'old', liveSessionName: null }),
+      historySession({ id: 'old', liveSessionName: null, messageCount: 7 }),
       historySession({ id: 'active', liveSessionName: 'codex-live-7' }),
     ]
 
     expect(filterHistorySessions(history, 'live-7')).toEqual([history[1]])
+  })
+
+  it('matches history fuzzily without fzf score reordering', () => {
+    const history = [
+      historySession({ id: 'older', provider: 'codex', title: 'Codex search followup' }),
+      historySession({ id: 'newer', provider: 'codex', title: 'Codex session search UI' }),
+    ]
+
+    expect(filterHistorySessions(history, 'cdx srch')).toEqual(history)
   })
 })

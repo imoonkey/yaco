@@ -1,28 +1,32 @@
+import { Fzf, extendedMatch } from 'fzf'
 import type { AgentSession, HistorySession } from '../types'
 
 type SearchField = string | number | null | undefined
+type SearchableItem<T> = { item: T; text: string }
 
-function searchTerms(query: string): string[] {
-  return query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
-}
-
-function matchesTerms(terms: string[], fields: SearchField[]): boolean {
-  const haystack = fields
+function searchableText(fields: SearchField[]): string {
+  return fields
     .filter((field): field is string | number => field != null && field !== '')
     .join(' ')
     .toLocaleLowerCase()
-
-  return terms.every(term => haystack.includes(term))
 }
 
-function filterByFields<T>(
+function filterByFields<T extends object>(
   items: T[],
   query: string,
   fieldsFor: (item: T) => SearchField[],
 ): T[] {
-  const terms = searchTerms(query)
-  if (terms.length === 0) return items
-  return items.filter(item => matchesTerms(terms, fieldsFor(item)))
+  const trimmed = query.trim().toLocaleLowerCase()
+  if (!trimmed) return items
+
+  const searchable = items.map(item => ({ item, text: searchableText(fieldsFor(item)) }))
+  const fzf = new Fzf(searchable, {
+    selector: (entry: SearchableItem<T>) => entry.text,
+    match: extendedMatch,
+    limit: items.length,
+    sort: false,
+  })
+  return fzf.find(trimmed).map(result => result.item.item)
 }
 
 export function filterAgentSessions(sessions: AgentSession[], query: string): AgentSession[] {
@@ -44,9 +48,6 @@ export function filterHistorySessions(history: HistorySession[], query: string):
     entry.provider,
     entry.title,
     entry.summary,
-    entry.created,
-    entry.modified,
-    entry.messageCount,
     entry.gitBranch,
     entry.liveSessionName,
   ])

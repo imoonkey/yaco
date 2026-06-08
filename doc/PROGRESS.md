@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Session search fuzzy matching
+
+**What changed:**
+- Session panel search now uses `fzf` extended matching, so skipped-letter queries and small typos can match live sessions and history rows.
+- The filter preserves existing live/history ordering with `sort:false`, so pinned/processing/idle grouping, lineage rendering, and history recency order are not score-sorted.
+- History search excludes timestamps and message counts from the fuzzy text to avoid noisy handle-like matches.
+
+**Why:**
+- Users may search sessions with abbreviations or typos, but the session list's existing order carries product meaning and should remain stable.
+
+**Key files:** `app/ui/src/workspace/sessionSearch.ts`, `app/ui/src/workspace/__tests__/sessionSearch.test.ts`, `app/ui/tests/e2e/session-search.spec.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/sessionSearch.test.ts` passed; `cd app/ui && npx playwright test tests/e2e/session-search.spec.ts` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Session panel search
 
 **What changed:**

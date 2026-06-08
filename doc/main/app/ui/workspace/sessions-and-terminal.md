@@ -67,10 +67,10 @@ The History tab calls `GET /api/sessions/history?project=<name>` and renders the
 
 ### Search
 
-The Sessions panel has one local search box shared by the Live and History tabs. The query is kept in memory and filters only the active tab; switching tabs keeps the text so the same phrase can be reused. Matching is case-insensitive and AND-based across whitespace-separated terms.
+The Sessions panel has one local search box shared by the Live and History tabs. The query is kept in memory and filters only the active tab; switching tabs keeps the text so the same phrase can be reused. Matching uses `fzf` in case-insensitive extended-match mode so skipped letters and small typos can still match, but `sort: false` preserves the original list order instead of ranking by fuzzy score.
 
 - Live search filters the already-loaded session rows by name, provider, status, project, summary, worktree, and lineage metadata. Lineage grouping then runs over the filtered visible set, so a child whose parent is filtered out renders as a root through the normal lineage fallback.
-- History search filters the already-loaded history rows by title, summary, provider, id, branch, live-session handle, timestamps, and message count. Sorting and the 200-row cap remain CLI/server-owned.
+- History search filters the already-loaded history rows by title, summary, provider, id, branch, and live-session handle. Timestamps and message counts are intentionally excluded from fuzzy matching because they create noisy matches for handle-like queries such as `live-7`. Sorting and the 200-row cap remain CLI/server-owned.
 
 ### Actions
 
