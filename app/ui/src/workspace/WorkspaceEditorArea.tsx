@@ -143,7 +143,7 @@ export function MarkdownPreview({
           div.innerHTML = svg
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : 'Diagram render failed'
-          div.innerHTML = `<pre style="color:var(--sol-red);font-size:12px;white-space:pre-wrap">${escapeHtml(msg)}</pre>`
+          div.innerHTML = `<pre style="color:var(--sol-red);font-size:var(--text-ui-md);white-space:pre-wrap">${escapeHtml(msg)}</pre>`
         }
         div.setAttribute('data-processed', 'true')
       }

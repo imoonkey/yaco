@@ -101,7 +101,7 @@ function LineNum({ num, style }: { num: number | null; style?: React.CSSProperti
         color: 'var(--sol-text-faint)',
         userSelect: 'none',
         flexShrink: 0,
-        fontSize: 11,
+        fontSize: 'var(--text-ui-sm)',
         ...style,
       }}
     >
@@ -273,7 +273,7 @@ function HunkHeader({ hunk, isActive }: { hunk: DiffHunk; isActive: boolean }) {
         backgroundColor: COLORS.hunkBg,
         color: isActive ? 'var(--sol-blue)' : 'var(--sol-text-faint)',
         padding: '3px 12px',
-        fontSize: 11,
+        fontSize: 'var(--text-ui-sm)',
         fontFamily: 'var(--font-mono)',
         borderTop: isActive ? '2px solid var(--sol-blue)' : '1px solid var(--sol-border)',
         borderBottom: '1px solid var(--sol-border)',
@@ -478,7 +478,7 @@ function DiffToolbar({
   const navBtnStyle: React.CSSProperties = {
     padding: '0 5px',
     height: 20,
-    fontSize: 11,
+    fontSize: 'var(--text-ui-sm)',
     border: '1px solid var(--sol-border)',
     borderRadius: 3,
     cursor: 'pointer',
@@ -493,7 +493,7 @@ function DiffToolbar({
   const viewBtnBase: React.CSSProperties = {
     padding: '0 8px',
     height: 20,
-    fontSize: 10,
+    fontSize: 'var(--text-ui-xs)',
     border: '1px solid var(--sol-border)',
     cursor: 'pointer',
     color: 'var(--sol-text)',
@@ -519,7 +519,7 @@ function DiffToolbar({
         padding: '0 10px',
         backgroundColor: 'var(--sol-header-bg)',
         borderBottom: '1px solid var(--sol-border)',
-        fontSize: 12,
+        fontSize: 'var(--text-ui-md)',
         color: 'var(--sol-text)',
         flexShrink: 0,
       }}
@@ -527,18 +527,18 @@ function DiffToolbar({
       {/* Compare context */}
       {compareContext && (
         <>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--sol-text-dim)', marginRight: 10 }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-ui-sm)', color: 'var(--sol-text-dim)', marginRight: 10 }}>
             <GitBranch size={10} style={{ color: 'var(--sol-accent)' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.base}</span>
-            <span style={{ color: 'var(--sol-text-faint)', fontSize: 10 }}>&rarr;</span>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.compare}</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-ui-xs)', fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.base}</span>
+            <span style={{ color: 'var(--sol-text-faint)', fontSize: 'var(--text-ui-xs)' }}>&rarr;</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--text-ui-xs)', fontWeight: 600, color: 'var(--sol-text)' }}>{compareContext.compare}</span>
           </span>
           <div className="toolbar-sep" />
         </>
       )}
 
       {/* Stats */}
-      <span style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 10px', fontSize: 11, fontWeight: 600 }}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 10px', fontSize: 'var(--text-ui-sm)', fontWeight: 600 }}>
         <span style={{ color: 'var(--sol-green)' }}>+{parsed.stats.added}</span>
         <span style={{ color: 'var(--sol-red)' }}>-{parsed.stats.deleted}</span>
       </span>
@@ -576,7 +576,7 @@ function DiffToolbar({
               ref={fileCountRef}
               onClick={() => setShowFileDropdown(v => !v)}
               style={{
-                fontSize: 10,
+                fontSize: 'var(--text-ui-xs)',
                 fontWeight: 600,
                 color: 'var(--sol-text-dim)',
                 cursor: 'pointer',
@@ -604,7 +604,7 @@ function DiffToolbar({
         <button style={navBtnStyle} onClick={onPrev} disabled={hunkCount === 0} aria-label="Previous change">&#8593;</button>
         <button style={navBtnStyle} onClick={onNext} disabled={hunkCount === 0} aria-label="Next change">&#8595;</button>
         {hunkCount > 0 && (
-          <span style={{ fontSize: 10, color: 'var(--sol-text-dim)', marginLeft: 4, fontWeight: 500, whiteSpace: 'nowrap' }}>
+          <span style={{ fontSize: 'var(--text-ui-xs)', color: 'var(--sol-text-dim)', marginLeft: 4, fontWeight: 500, whiteSpace: 'nowrap' }}>
             {activeIndex + 1}<span style={{ color: 'var(--sol-text-faint)', fontWeight: 400 }}> / </span>{hunkCount}
           </span>
         )}
@@ -772,7 +772,7 @@ export function DiffTab({
           flex: 1,
           overflow: 'auto',
           fontFamily: 'var(--font-mono)',
-          fontSize: 12,
+          fontSize: 'var(--text-ui-md)',
           lineHeight: '1.6',
           backgroundColor: 'var(--sol-editor-bg)',
         }}

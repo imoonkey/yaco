@@ -253,13 +253,13 @@ const HEADER_STYLE: React.CSSProperties = {
   alignItems: 'center',
   justifyContent: 'space-between',
   marginBottom: 10,
-  fontSize: 12,
+  fontSize: 'var(--text-ui-md)',
   color: 'var(--sol-text)',
 }
 
 const SURFACE_LABEL_STYLE: React.CSSProperties = {
   fontWeight: 500,
-  fontSize: 12,
+  fontSize: 'var(--text-ui-md)',
   color: 'var(--sol-text)',
   padding: '2px 4px',
 }
@@ -268,7 +268,7 @@ const CLOSE_BTN_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   color: 'var(--sol-text)',
-  fontSize: 14,
+  fontSize: 'var(--text-ui-xl)',
   cursor: 'pointer',
   padding: '2px 6px',
   lineHeight: 1,
@@ -281,7 +281,7 @@ const ACTIVE_STYLE: React.CSSProperties = {
 }
 
 const TRANSCRIPT_STYLE: React.CSSProperties = {
-  fontSize: 14,
+  fontSize: 'var(--text-ui-xl)',
   lineHeight: 1.5,
   color: 'var(--sol-editor-fg)',
   background: 'var(--sol-input-bg)',
@@ -307,7 +307,7 @@ const TIMER_STYLE: React.CSSProperties = {
   alignItems: 'center',
   gap: 8,
   fontFamily: 'var(--font-mono)',
-  fontSize: 14,
+  fontSize: 'var(--text-ui-xl)',
   fontVariantNumeric: 'tabular-nums',
   color: 'var(--sol-red)',
 }
@@ -316,7 +316,7 @@ const PENDING_STYLE: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 4,
-  fontSize: 11,
+  fontSize: 'var(--text-ui-sm)',
   color: 'var(--sol-text-faint)',
 }
 
@@ -331,7 +331,7 @@ const PULSE_DOT_STYLE: React.CSSProperties = {
 
 const STOP_BTN_STYLE: React.CSSProperties = {
   height: 32,
-  fontSize: 13,
+  fontSize: 'var(--text-ui-lg)',
   borderRadius: 4,
   border: '1px solid color-mix(in srgb, var(--sol-red) 30%, transparent)',
   background: 'color-mix(in srgb, var(--sol-red) 8%, transparent)',
@@ -353,7 +353,7 @@ const SPINNER_STYLE: React.CSSProperties = {
 const TEXTAREA_STYLE: React.CSSProperties = {
   width: '100%',
   fontFamily: 'var(--font-mono)',
-  fontSize: 13,
+  fontSize: 'var(--text-ui-lg)',
   color: 'var(--sol-editor-fg)',
   background: 'var(--sol-input-bg)',
   border: '1px solid var(--sol-border)',
@@ -370,7 +370,7 @@ const WARNING_STYLE: React.CSSProperties = {
   background: 'color-mix(in srgb, var(--sol-yellow) 8%, transparent)',
   border: '1px solid color-mix(in srgb, var(--sol-yellow) 20%, transparent)',
   color: 'var(--sol-yellow)',
-  fontSize: 11,
+  fontSize: 'var(--text-ui-sm)',
   padding: '4px 8px',
   borderRadius: 4,
   marginBottom: 6,
@@ -380,7 +380,7 @@ const ERROR_ROW_STYLE: React.CSSProperties = {
   background: 'color-mix(in srgb, var(--sol-red) 8%, transparent)',
   border: '1px solid color-mix(in srgb, var(--sol-red) 20%, transparent)',
   color: 'var(--sol-red)',
-  fontSize: 11,
+  fontSize: 'var(--text-ui-sm)',
   padding: '4px 8px',
   borderRadius: 4,
   display: 'flex',
@@ -393,7 +393,7 @@ const ERROR_ACTION_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   color: 'var(--sol-red)',
-  fontSize: 11,
+  fontSize: 'var(--text-ui-sm)',
   fontWeight: 500,
   cursor: 'pointer',
   padding: '2px 4px',
@@ -402,7 +402,7 @@ const ERROR_ACTION_STYLE: React.CSSProperties = {
 
 const BTN_BASE: React.CSSProperties = {
   height: 28,
-  fontSize: 12,
+  fontSize: 'var(--text-ui-md)',
   borderRadius: 4,
   border: 'none',
   cursor: 'pointer',
@@ -435,14 +435,14 @@ const DISCLOSURE_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   color: 'var(--sol-text)',
-  fontSize: 11,
+  fontSize: 'var(--text-ui-sm)',
   cursor: 'pointer',
   padding: 0,
 }
 
 const RAW_TEXT_STYLE: React.CSSProperties = {
   fontFamily: 'var(--font-mono)',
-  fontSize: 11,
+  fontSize: 'var(--text-ui-sm)',
   color: 'var(--sol-text)',
   background: 'var(--sol-subtle-bg)',
   padding: '4px 8px',
@@ -458,7 +458,7 @@ const COPY_RAW_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   color: 'var(--sol-text)',
-  fontSize: 10,
+  fontSize: 'var(--text-ui-xs)',
   cursor: 'pointer',
   padding: '0 2px',
   textDecoration: 'underline',

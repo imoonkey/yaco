@@ -328,7 +328,7 @@ body {
   background: var(--sol-editor-bg);
   color: var(--sol-base00);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--text-ui-lg);
 }
 
 #root {
@@ -342,7 +342,7 @@ body {
   color: var(--sol-preview-text);
   background: var(--sol-editor-bg);
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: var(--text-ui-xl);
   line-height: 22px;
   word-wrap: break-word;
   overflow-y: auto;
@@ -849,7 +849,7 @@ body {
   padding: 1px 0;
   cursor: pointer;
   user-select: none;
-  font-size: 11px;
+  font-size: var(--text-ui-sm);
   color: var(--sol-base1);
   border-top: 1px dashed color-mix(in srgb, var(--sol-border) 60%, transparent);
   border-bottom: 1px dashed color-mix(in srgb, var(--sol-border) 60%, transparent);

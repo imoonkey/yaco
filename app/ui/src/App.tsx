@@ -448,7 +448,7 @@ function App() {
             color: 'var(--sol-text)',
             border: '1px solid var(--sol-border)',
             borderRadius: 8,
-            fontSize: '12px',
+            fontSize: 'var(--text-ui-md)',
             cursor: 'pointer',
           },
         }}

@@ -167,7 +167,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
             title={autocompleteEnabled ? 'Disable autocomplete' : 'Enable autocomplete'}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-              fontSize: 11, border: 'none', borderRadius: 3, cursor: 'pointer',
+              fontSize: 'var(--text-ui-sm)', border: 'none', borderRadius: 3, cursor: 'pointer',
               background: autocompleteEnabled ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'transparent',
               color: autocompleteEnabled ? 'var(--sol-text)' : 'var(--sol-text-dim)',
               opacity: autocompleteEnabled ? 1 : 0.6,

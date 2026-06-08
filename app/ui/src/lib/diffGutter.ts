@@ -266,7 +266,7 @@ class DiffPopupWidget extends WidgetType {
     badge.textContent = BADGE_LABELS[this.hunk.type]
     badge.style.color = accentColor
     badge.style.fontWeight = '600'
-    badge.style.fontSize = '11px'
+    badge.style.fontSize = 'var(--text-ui-sm)'
     header.appendChild(badge)
 
     // Hunk header text (with deletion context for deleted-only hunks)
@@ -319,7 +319,7 @@ class DiffPopupWidget extends WidgetType {
 
       // Hunk counter
       const counter = document.createElement('span')
-      counter.style.fontSize = '10px'
+      counter.style.fontSize = 'var(--text-ui-xs)'
       counter.style.opacity = '0.6'
       counter.textContent = `${this.hunkIndex + 1}/${this.totalHunks}`
       controls.appendChild(counter)

@@ -18,7 +18,7 @@ export function WorkspaceBreadcrumbs({
   return (
     <div
       className="flex items-center px-3 shrink-0 overflow-x-auto"
-      style={{ height: 28, fontSize: 12, color: 'var(--sol-text)', backgroundColor: 'var(--sol-editor-bg)', borderBottom: '1px solid var(--sol-border)' }}
+      style={{ height: 28, fontSize: 'var(--text-ui-md)', color: 'var(--sol-text)', backgroundColor: 'var(--sol-editor-bg)', borderBottom: '1px solid var(--sol-border)' }}
     >
       {dirSegments.map((seg, i) => {
         const dirPath = segments.slice(0, i + 1).join('/')

@@ -63,7 +63,7 @@ const BASE_STYLE: React.CSSProperties = {
   alignItems: 'center',
   gap: 4,
   padding: '3px 10px',
-  fontSize: 11,
+  fontSize: 'var(--text-ui-sm)',
   borderRadius: 6,
   border: 'none',
   cursor: 'pointer',
