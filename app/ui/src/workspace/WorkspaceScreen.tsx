@@ -41,7 +41,7 @@ const LazyWorkspaceTextSearch = lazy(() =>
 )
 
 const TerminalFallback = (
-  <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-text)' }}>
+  <div className="flex items-center justify-center h-full text-ui-md" style={{ color: 'var(--sol-text)' }}>
     Connecting terminal…
   </div>
 )
@@ -378,9 +378,9 @@ export function Workspace({
 
   const explorerActions = (
     <div className="flex gap-0.5">
-      <button onClick={handleCollapseAll} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="Collapse All"><CollapseAllIcon /></button>
-      <button onClick={handleNewFile} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
-      <button onClick={handleNewFolder} className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
+      <button onClick={handleCollapseAll} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="Collapse All"><CollapseAllIcon /></button>
+      <button onClick={handleNewFile} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New File"><NewFileIcon /></button>
+      <button onClick={handleNewFolder} className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer opacity-70 hover:opacity-100" title="New Folder"><NewFolderIcon /></button>
       <SectionRefreshButton onClick={handleRefreshExplorer} title="Refresh explorer" />
     </div>
   )
@@ -389,7 +389,7 @@ export function Workspace({
 
   const rawStats = compareMode ? compareResult?.stats : gitData?.stats
   const changesStatsEl = rawStats && (rawStats.added > 0 || rawStats.deleted > 0) ? (
-    <span className="flex items-center gap-1 text-[10px] font-semibold mr-1" style={{ letterSpacing: '-0.01em' }}>
+    <span className="flex items-center gap-1 text-ui-xs font-semibold mr-1" style={{ letterSpacing: '-0.01em' }}>
       {rawStats.added > 0 && <span style={{ color: 'var(--sol-green)' }}>+{rawStats.added}</span>}
       {rawStats.deleted > 0 && <span style={{ color: 'var(--sol-red)' }}>-{rawStats.deleted}</span>}
     </span>
@@ -406,7 +406,7 @@ export function Workspace({
     <div className="flex gap-0.5 items-center">
       <button
         onClick={() => setCompareMode(m => !m)}
-        className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer"
+        className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer"
         title={compareMode ? 'Exit compare mode' : 'Compare refs'}
         style={compareMode
           ? { color: 'var(--sol-accent)', backgroundColor: 'color-mix(in srgb, var(--sol-accent) 12%, transparent)', padding: '1px 3px', borderRadius: 3, transition: 'all 120ms' }
@@ -418,7 +418,7 @@ export function Workspace({
       {compareMode && (
         <button
           onClick={() => setCompareMode(false)}
-          className="flex items-center text-[10px] px-0.5 py-0 rounded cursor-pointer"
+          className="flex items-center text-ui-xs px-0.5 py-0 rounded cursor-pointer"
           title="Exit compare mode"
           style={{ color: 'var(--sol-text)', transition: 'color 120ms' }}
           onMouseEnter={e => (e.currentTarget.style.color = 'var(--sol-text)')}
@@ -523,8 +523,8 @@ export function Workspace({
       })}
       {!compareLoading && compareFiles.length === 0 && (
         <div className="flex flex-col items-center py-4 gap-1">
-          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-text)' }}>No differences</span>
-          <span className="text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>These refs are identical</span>
+          <span className="text-ui-sm font-medium" style={{ color: 'var(--sol-text)' }}>No differences</span>
+          <span className="text-ui-xs" style={{ color: 'var(--sol-text-faint)' }}>These refs are identical</span>
         </div>
       )}
     </>
@@ -542,8 +542,8 @@ export function Workspace({
       })}
       {changes.length === 0 && (
         <div className="flex flex-col items-center py-4 gap-1">
-          <span className="text-[11px] font-medium" style={{ color: 'var(--sol-text)' }}>No changes</span>
-          <span className="text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>Working tree is clean</span>
+          <span className="text-ui-sm font-medium" style={{ color: 'var(--sol-text)' }}>No changes</span>
+          <span className="text-ui-xs" style={{ color: 'var(--sol-text-faint)' }}>Working tree is clean</span>
         </div>
       )}
     </>
@@ -632,7 +632,7 @@ export function Workspace({
 
   const terminalContent = attachedSession ? (
     <>
-      <div className="h-7 flex items-center gap-2 px-2 text-[12px] shrink-0" style={{ backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)', color: 'var(--sol-text-brown)' }}>
+      <div className="h-7 flex items-center gap-2 px-2 text-ui-md shrink-0" style={{ backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)', color: 'var(--sol-text-brown)' }}>
         {activeSessionInfo && <ProviderIcon provider={activeSessionInfo.provider} className="w-4 h-4 shrink-0" />}
         <span className="truncate flex-1 font-semibold">{attachedSession}</span>
         {voiceBridge.terminalVoiceEligible && (
@@ -669,7 +669,7 @@ export function Workspace({
       </div>
     </>
   ) : (
-    <div className="flex items-center justify-center h-full text-[12px]" style={{ color: 'var(--sol-text)' }}>Select a session to attach terminal</div>
+    <div className="flex items-center justify-center h-full text-ui-md" style={{ color: 'var(--sol-text)' }}>Select a session to attach terminal</div>
   )
 
   return (

@@ -118,7 +118,7 @@ export function MenuItem({ label, danger, onClick }: {
     <div
       role="menuitem"
       tabIndex={-1}
-      className="px-3 py-1 text-[12px] cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg"
+      className="px-3 py-1 text-ui-md cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg"
       style={{
         color: danger ? 'var(--sol-red)' : 'var(--sol-text)',
         borderRadius: 4,

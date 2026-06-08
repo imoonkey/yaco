@@ -45,7 +45,7 @@ function EditingRow({ node, style, dragHandle, data, pendingNewId, cancelCreate 
         <input
           ref={inputRef}
           autoFocus
-          className="flex-1 text-[12px] bg-transparent outline-none border-b min-w-0"
+          className="flex-1 text-ui-md bg-transparent outline-none border-b min-w-0"
           style={INPUT_STYLE}
           defaultValue={isNew ? '' : data.name}
           onBlur={() => { node.reset(); if (isNew) cancelCreate() }}
@@ -119,7 +119,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
   return (
     <div style={style} ref={dragHandle}>
       <div
-        className={`flex w-full items-center gap-1 h-full px-1 rounded cursor-pointer text-[12px] ${isSelected ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
+        className={`flex w-full items-center gap-1 h-full px-1 rounded cursor-pointer text-ui-md ${isSelected ? 'bg-[var(--sol-blue)]/15' : 'hover:bg-sol-hover-bg'}`}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         {...bindContextMenu(d.path, d.type)}
@@ -128,7 +128,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
           ? <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FolderIcon open={node.isOpen} /></span>
           : <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FileTypeIcon name={d.name} /></span>}
         <span className="flex-1 truncate" style={{ color: nameColor }}>{d.name}</span>
-        {!isGitignored && gitStatus && <span className="text-[10px] font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }} title={GIT_STATUS_LABELS[gitStatus]}>{gitStatus}</span>}
+        {!isGitignored && gitStatus && <span className="text-ui-xs font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }} title={GIT_STATUS_LABELS[gitStatus]}>{gitStatus}</span>}
         {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={CHANGE_DOT_STYLE} title="Contains changes" />}
       </div>
     </div>

@@ -230,7 +230,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
       />
 
       {warnings.length > 0 && (
-        <div className="px-3 py-1 text-[11px]" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 13%, transparent)', color: 'var(--sol-yellow)' }}>
+        <div className="px-3 py-1 text-ui-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 13%, transparent)', color: 'var(--sol-yellow)' }}>
           {warnings.length} warning{warnings.length > 1 ? 's' : ''}: {warnings[0]}
           {warnings.length > 1 && ` (+${warnings.length - 1} more)`}
         </div>

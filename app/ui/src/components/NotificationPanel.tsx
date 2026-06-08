@@ -58,7 +58,7 @@ export function NotificationPanel({
         className="flex items-center justify-between px-3 h-10 shrink-0"
         style={{ borderBottom: '1px solid var(--sol-border)' }}
       >
-        <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+        <span className="text-ui-lg font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
           Notifications
         </span>
         <div className="flex items-center gap-2">
@@ -66,14 +66,14 @@ export function NotificationPanel({
             <>
               <button
                 onClick={onMarkAllRead}
-                className="text-[11px] cursor-pointer hover:underline"
+                className="text-ui-sm cursor-pointer hover:underline"
                 style={{ color: 'var(--sol-text)' }}
               >
                 Mark all read
               </button>
               <button
                 onClick={onClearAll}
-                className="text-[11px] cursor-pointer hover:underline"
+                className="text-ui-sm cursor-pointer hover:underline"
                 style={{ color: 'var(--sol-text)' }}
               >
                 Clear
@@ -86,7 +86,7 @@ export function NotificationPanel({
 
       <div className="flex-1 overflow-y-auto">
         {notifications.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[12px]" style={{ color: 'var(--sol-text)' }}>
+          <div className="px-3 py-6 text-center text-ui-md" style={{ color: 'var(--sol-text)' }}>
             No notifications
           </div>
         ) : (
@@ -104,18 +104,18 @@ export function NotificationPanel({
             >
               <div className="flex items-center justify-between gap-2">
                 <span
-                  className="text-[12px] font-medium truncate flex-1"
+                  className="text-ui-md font-medium truncate flex-1"
                   style={{ color: n.read ? 'var(--sol-text)' : 'var(--sol-text-dark)' }}
                 >
                   {n.title}
                 </span>
-                <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
+                <span className="text-ui-xs shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
                   {timeAgo(n.timestamp)}
                 </span>
               </div>
               {n.message && (
                 <div
-                  className="text-[11px] truncate mt-0.5"
+                  className="text-ui-sm truncate mt-0.5"
                   style={{ color: 'var(--sol-text)' }}
                 >
                   {n.message}

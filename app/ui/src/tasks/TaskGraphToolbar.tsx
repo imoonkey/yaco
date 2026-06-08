@@ -54,7 +54,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
     <div className="flex items-center gap-0.5" role="group" aria-label="Layout mode">
       <button
         onClick={() => onSetLayout('stacked')}
-        className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
+        className="px-2 py-0.5 rounded text-ui-sm font-medium cursor-pointer transition-colors"
         aria-pressed={layout === 'stacked'}
         style={{
           backgroundColor: layout === 'stacked' ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
@@ -66,7 +66,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
       </button>
       <button
         onClick={() => onSetLayout('gantt')}
-        className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
+        className="px-2 py-0.5 rounded text-ui-sm font-medium cursor-pointer transition-colors"
         aria-pressed={layout === 'gantt'}
         style={{
           backgroundColor: layout === 'gantt' ? 'color-mix(in srgb, var(--sol-accent) 15%, transparent)' : 'transparent',
@@ -87,7 +87,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
           <button
             key={ws}
             onClick={() => onToggleWorkset(ws)}
-            className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
+            className="px-2 py-0.5 rounded text-ui-sm font-medium cursor-pointer transition-colors"
             aria-label={`Workset: ${ws}`}
             aria-pressed={active}
             style={{
@@ -112,7 +112,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
           <button
             key={state}
             onClick={() => onToggleState(state)}
-            className="px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors"
+            className="px-2 py-0.5 rounded text-ui-sm font-medium cursor-pointer transition-colors"
             aria-label={`Filter: ${STATE_LABELS[state]}`}
             aria-pressed={active}
             style={{
@@ -172,7 +172,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
         <div className="relative">
           <button
             onClick={() => setFiltersOpen(!filtersOpen)}
-            className="px-2 py-1 rounded text-[11px] cursor-pointer"
+            className="px-2 py-1 rounded text-ui-sm cursor-pointer"
             style={{ color: 'var(--sol-text)', border: '1px solid var(--sol-border)' }}
           >
             Filter
@@ -182,10 +182,10 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
               className="absolute top-full left-0 mt-1 p-2.5 rounded-md shadow-md z-10 flex flex-col gap-1.5"
               style={{ backgroundColor: 'var(--sol-bg)', border: '1px solid var(--sol-border)' }}
             >
-              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>Workset</span>
+              <span className="text-ui-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>Workset</span>
               {worksetChips}
               <div className="my-1" style={{ height: 1, backgroundColor: 'var(--sol-border)' }} />
-              <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>State</span>
+              <span className="text-ui-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>State</span>
               {filterChips}
             </div>
           )}
@@ -209,7 +209,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
           value={searchQuery}
           onChange={e => onSearchChange(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') onSearchSubmit(); if (e.key === 'Escape') searchRef.current?.blur() }}
-          className="h-6 px-2 rounded text-[11px] outline-none focus:border-[var(--sol-focus-border)]"
+          className="h-6 px-2 rounded text-ui-sm outline-none focus:border-[var(--sol-focus-border)]"
           style={{
             width: isMobile ? 100 : 160,
             backgroundColor: 'var(--sol-input-bg)',
@@ -218,7 +218,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
           }}
         />
         {searchQuery.trim() && (
-          <span className="text-[11px] tabular-nums whitespace-nowrap" style={{ color: searchMatchCount > 0 ? 'var(--sol-accent)' : 'var(--sol-text-faint)' }}>
+          <span className="text-ui-sm tabular-nums whitespace-nowrap" style={{ color: searchMatchCount > 0 ? 'var(--sol-accent)' : 'var(--sol-text-faint)' }}>
             {searchMatchCount} match{searchMatchCount !== 1 ? 'es' : ''}
           </span>
         )}

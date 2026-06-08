@@ -94,7 +94,7 @@ export function SessionItem({
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-[12px] ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
+      className={`flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
       style={{ ...(isActive ? undefined : INACTIVE_COLOR), opacity: dragging ? 0.55 : 1, ...(depth > 0 ? { paddingLeft: 8 + depth * 14 } : null), ...SESSION_TRANSITION }}>
       {onPin && (
         <button
@@ -119,7 +119,7 @@ export function SessionItem({
             if (e.key === 'Escape') setRenaming(false)
           }}
           onClick={e => e.stopPropagation()}
-          className="min-w-0 flex-1 bg-transparent border-b outline-none text-[12px]"
+          className="min-w-0 flex-1 bg-transparent border-b outline-none text-ui-md"
           style={RENAME_INPUT_STYLE}
         />
       ) : (
@@ -127,7 +127,7 @@ export function SessionItem({
           <span className="font-medium">{session.name}</span>
           {shortcutIndex != null && (
             <span
-              className="text-[10px] tabular-nums px-1 rounded ml-1.5 align-middle"
+              className="text-ui-xs tabular-nums px-1 rounded ml-1.5 align-middle"
               style={{
                 color: 'var(--sol-text-faint)',
                 border: '1px solid var(--sol-border)',
@@ -140,7 +140,7 @@ export function SessionItem({
           )}
           {session.worktree && (
             <span
-              className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[9px] font-medium ml-1.5 align-middle"
+              className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
               style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
             >
               <FolderGit2 size={9} />
@@ -148,7 +148,7 @@ export function SessionItem({
             </span>
           )}
           {summary && (
-            <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>{summary}</span>
+            <span className="text-ui-xs ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>{summary}</span>
           )}
         </div>
       )}
@@ -159,7 +159,7 @@ export function SessionItem({
             e.stopPropagation()
             onKill()
           }}
-          className="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] cursor-pointer text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-ui-xs cursor-pointer text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
           style={{ border: '1px solid color-mix(in srgb, var(--sol-red) 20%, transparent)' }}
           title={`Kill ${session.name}`}
           aria-label={`Kill session ${session.name}`}

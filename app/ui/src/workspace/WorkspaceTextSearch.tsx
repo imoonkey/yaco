@@ -284,7 +284,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
   }, [])
 
   return (
-    <div className="flex flex-col h-full text-[11px]" onKeyDown={handleKeyDown}>
+    <div className="flex flex-col h-full text-ui-sm" onKeyDown={handleKeyDown}>
       {/* Search input */}
       <div className="px-2 pt-1.5 pb-1">
         <div className="flex items-center gap-1 rounded px-1.5 py-0.5" style={{ backgroundColor: 'var(--sol-input-bg)', border: '1px solid var(--sol-border)' }}>
@@ -294,12 +294,12 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
             value={query}
             onChange={handleQueryChange}
             placeholder="Search..."
-            className="flex-1 min-w-0 bg-transparent border-none outline-none text-[11px]"
+            className="flex-1 min-w-0 bg-transparent border-none outline-none text-ui-sm"
             style={{ color: 'var(--sol-input-fg)' }}
             spellCheck={false}
           />
           {query && (
-            <button onClick={handleClear} className="text-[10px] px-0.5 cursor-pointer opacity-60 hover:opacity-100 leading-none" style={{ color: 'var(--sol-text)' }}>
+            <button onClick={handleClear} className="text-ui-xs px-0.5 cursor-pointer opacity-60 hover:opacity-100 leading-none" style={{ color: 'var(--sol-text)' }}>
               x
             </button>
           )}
@@ -316,7 +316,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
           value={options.glob}
           onChange={handleGlobChange}
           placeholder="*.ts"
-          className="flex-1 min-w-0 rounded px-1 py-0 text-[10px] bg-transparent border outline-none"
+          className="flex-1 min-w-0 rounded px-1 py-0 text-ui-xs bg-transparent border outline-none"
           style={{ color: 'var(--sol-input-fg)', borderColor: 'var(--sol-border)' }}
           spellCheck={false}
         />
@@ -339,7 +339,7 @@ export const WorkspaceTextSearch = memo(function WorkspaceTextSearch({
 
       {/* Cap banner */}
       {status.state === 'results' && status.capped && (
-        <div className="shrink-0 px-2 py-1 text-[10px] text-center" style={{ color: 'var(--sol-warning)', backgroundColor: 'color-mix(in srgb, var(--sol-warning) 8%, transparent)', borderTop: '1px solid var(--sol-border)' }}>
+        <div className="shrink-0 px-2 py-1 text-ui-xs text-center" style={{ color: 'var(--sol-warning)', backgroundColor: 'color-mix(in srgb, var(--sol-warning) 8%, transparent)', borderTop: '1px solid var(--sol-border)' }}>
           Results capped at {MAX_FILES} files / {MAX_MATCHES_PER_FILE} matches per file
         </div>
       )}
@@ -357,7 +357,7 @@ function ToggleBtn({ label, active, title, onClick }: { label: string; active: b
     <button
       onClick={onClick}
       title={title}
-      className="px-1 py-0 rounded text-[10px] font-mono cursor-pointer transition-colors"
+      className="px-1 py-0 rounded text-ui-xs font-mono cursor-pointer transition-colors"
       style={{
         backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 15%, transparent)' : 'transparent',
         color: active ? 'var(--sol-blue)' : 'var(--sol-muted)',
@@ -393,7 +393,7 @@ function FileGroupView({ group, expanded, onToggle, onMatchClick, focusIndex, fl
       >
         <span className="w-3 flex items-center justify-center shrink-0">{expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
         <span className="truncate flex-1 font-medium">{group.file}</span>
-        <span className="shrink-0 text-[9px] px-1 rounded" style={{ color: 'var(--sol-text-faint)' }}>{group.matches.length}</span>
+        <span className="shrink-0 text-ui-2xs px-1 rounded" style={{ color: 'var(--sol-text-faint)' }}>{group.matches.length}</span>
       </div>
       {expanded && group.matches.map((m, mi) => {
         const matchIdx = flatItems.findIndex(i => i.kind === 'match' && i.file === group.file && i.line === m.line)
@@ -433,7 +433,7 @@ function MatchLine({ match, focused, dataIdx, onClick }: {
       }}
       onClick={onClick}
     >
-      <span className="shrink-0 text-[10px] w-7 text-right" style={{ color: 'var(--sol-text-faint)' }}>{match.line}</span>
+      <span className="shrink-0 text-ui-xs w-7 text-right" style={{ color: 'var(--sol-text-faint)' }}>{match.line}</span>
       <span className="truncate">
         {before}
         <span style={{ backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 19%, transparent)', color: 'var(--sol-base02)', fontWeight: 600 }}>{highlighted}</span>
@@ -467,7 +467,7 @@ function StatusBar({ status }: { status: SearchStatus }) {
   }
 
   return (
-    <div className="shrink-0 px-2 py-1 text-[10px] truncate" style={{ color, borderTop: '1px solid var(--sol-border)' }}>
+    <div className="shrink-0 px-2 py-1 text-ui-xs truncate" style={{ color, borderTop: '1px solid var(--sol-border)' }}>
       {text}
     </div>
   )

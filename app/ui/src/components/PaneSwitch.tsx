@@ -23,7 +23,7 @@ export function PaneSwitch({
           <button
             key={option.id}
             onClick={() => onChange(option.id)}
-            className={`flex-1 flex items-center justify-center gap-1 rounded px-2 py-0.5 text-[12px] font-medium cursor-pointer ${
+            className={`flex-1 flex items-center justify-center gap-1 rounded px-2 py-0.5 text-ui-md font-medium cursor-pointer ${
               active
                 ? 'bg-[var(--sol-editor-bg)] text-[var(--sol-blue)]'
                 : 'text-[var(--sol-text-dim)] hover:text-[var(--sol-text)]'

@@ -82,11 +82,11 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
     >
       <div className="flex items-center" style={{ borderBottom: '1px solid var(--sol-border)' }}>
         <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setSelectedIdx(0) }} onKeyDown={handleKey}
-          placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-[13px] bg-transparent outline-none focus-visible:outline-none" style={{ color: 'var(--sol-text-dark)' }} />
+          placeholder={loading ? 'Loading files...' : 'Search files...'} className="flex-1 px-3 py-2 text-ui-lg bg-transparent outline-none focus-visible:outline-none" style={{ color: 'var(--sol-text-dark)' }} />
         <button
           onClick={toggleIgnored}
           title={includeIgnored ? 'Showing all files (incl. gitignored)' : 'Showing tracked files only'}
-          className="px-2 py-1 mr-1.5 rounded text-[10px] font-medium"
+          className="px-2 py-1 mr-1.5 rounded text-ui-xs font-medium"
           style={{
             backgroundColor: includeIgnored ? 'var(--sol-blue)' : 'transparent',
             color: includeIgnored ? 'var(--sol-base3)' : 'var(--sol-text)',
@@ -96,7 +96,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
       </div>
       <div className="max-h-[300px] overflow-y-auto">
         {isEmptyQuery && displayItems.length > 0 && (
-          <div className="px-3 pt-2 pb-1 text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>Recent</div>
+          <div className="px-3 pt-2 pb-1 text-ui-xs font-medium uppercase tracking-wide" style={{ color: 'var(--sol-text)' }}>Recent</div>
         )}
         {displayItems.map((r, i) => (
           <SearchResultRow
@@ -108,7 +108,7 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
             onHover={() => setSelectedIdx(i)}
           />
         ))}
-        {!loading && displayItems.length === 0 && <div className="px-3 py-3 text-[12px] text-center" style={{ color: 'var(--sol-text)' }}>{isEmptyQuery ? 'No recent files' : 'No files found'}</div>}
+        {!loading && displayItems.length === 0 && <div className="px-3 py-3 text-ui-md text-center" style={{ color: 'var(--sol-text)' }}>{isEmptyQuery ? 'No recent files' : 'No files found'}</div>}
       </div>
     </DialogShell>
   )
@@ -159,7 +159,7 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
 
   return (
     <div onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-0.5 text-[12px] cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
+      className={`flex items-center gap-1.5 px-3 py-0.5 text-ui-md cursor-pointer ${selected ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
       style={!selected ? { color: 'var(--sol-text)' } : undefined}
       onMouseEnter={onHover}>
       <FileTypeIcon name={entry.name} />
@@ -171,7 +171,7 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
             color={selected ? '' : 'var(--sol-text-dark)'}
             highlightColor={'var(--sol-blue)'}
           />
-          <span className="text-[10px]">
+          <span className="text-ui-xs">
             <HighlightedText
               text={entry.path}
               positions={positions}
@@ -183,7 +183,7 @@ function SearchResultRow({ result, selected, hasQuery, onClick, onHover }: {
       ) : (
         <>
           <span style={{ color: selected ? undefined : 'var(--sol-text-dark)' }}>{entry.name}</span>
-          <span className="text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>{entry.path}</span>
+          <span className="text-ui-xs" style={{ color: 'var(--sol-text-faint)' }}>{entry.path}</span>
         </>
       )}
     </div>

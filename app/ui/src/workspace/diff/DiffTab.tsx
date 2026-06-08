@@ -410,7 +410,7 @@ function FileListDropdown({
         padding: '4px 0',
       }}
     >
-      <div className="px-2 pb-1 mb-1 text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--sol-text)', borderBottom: '1px solid var(--sol-border)' }}>
+      <div className="px-2 pb-1 mb-1 text-ui-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--sol-text)', borderBottom: '1px solid var(--sol-border)' }}>
         Files in comparison
       </div>
       {files.map((file, idx) => {
@@ -424,7 +424,7 @@ function FileListDropdown({
             data-idx={idx}
             onClick={() => { onNavigate(file.path); onClose() }}
             onMouseEnter={() => setFocusedIdx(idx)}
-            className="flex items-center h-[26px] px-2 text-[12px] cursor-pointer"
+            className="flex items-center h-[26px] px-2 text-ui-md cursor-pointer"
             style={{
               backgroundColor: isCurrent
                 ? 'color-mix(in srgb, var(--sol-blue) 12%, transparent)'
@@ -436,9 +436,9 @@ function FileListDropdown({
           >
             <FileTypeIcon name={name} />
             <span className="truncate font-medium" style={{ color: isCurrent ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
-            {dir && <span className="truncate text-[10px] min-w-0 shrink" style={{ color: 'var(--sol-text-faint)' }}>{dir}</span>}
+            {dir && <span className="truncate text-ui-xs min-w-0 shrink" style={{ color: 'var(--sol-text-faint)' }}>{dir}</span>}
             <span
-              className="ml-auto shrink-0 rounded text-[9px] font-bold leading-none"
+              className="ml-auto shrink-0 rounded text-ui-2xs font-bold leading-none"
               style={{ color: GIT_COLORS[file.status], backgroundColor: STATUS_BG[file.status], padding: '2px 4px' }}
             >{file.status}</span>
           </div>
@@ -734,8 +734,8 @@ export function DiffTab({
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text)' }}>
         <div style={{ fontSize: 24, opacity: 0.3 }}>&#x1F4E6;</div>
-        <span className="text-[12px] font-medium">Binary file changed</span>
-        <span className="text-[10px]">Preview not available for binary files</span>
+        <span className="text-ui-md font-medium">Binary file changed</span>
+        <span className="text-ui-xs">Preview not available for binary files</span>
       </div>
     )
   }
@@ -745,8 +745,8 @@ export function DiffTab({
     return (
       <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text)' }}>
         <GitCompare size={20} style={{ opacity: 0.3 }} />
-        <span className="text-[12px] font-medium">No changes detected</span>
-        <span className="text-[10px]">The files are identical</span>
+        <span className="text-ui-md font-medium">No changes detected</span>
+        <span className="text-ui-xs">The files are identical</span>
       </div>
     )
   }

@@ -38,11 +38,11 @@ export function CompareRefPicker({ base, compare, onChange, projectName }: Compa
         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       >
         <span
-          className="w-[50px] shrink-0 text-[9px] uppercase tracking-wider font-semibold px-1.5"
+          className="w-[50px] shrink-0 text-ui-2xs uppercase tracking-wider font-semibold px-1.5"
           style={{ color: 'var(--sol-text)' }}
         >base</span>
         <span
-          className="flex-1 text-[12px] truncate font-medium"
+          className="flex-1 text-ui-md truncate font-medium"
           style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}
         >{base}</span>
         <ChevronDown
@@ -85,11 +85,11 @@ export function CompareRefPicker({ base, compare, onChange, projectName }: Compa
         onMouseLeave={e => (e.currentTarget.style.backgroundColor = '')}
       >
         <span
-          className="w-[50px] shrink-0 text-[9px] uppercase tracking-wider font-semibold px-1.5"
+          className="w-[50px] shrink-0 text-ui-2xs uppercase tracking-wider font-semibold px-1.5"
           style={{ color: 'var(--sol-text)' }}
         >head</span>
         <span
-          className="flex-1 text-[12px] truncate font-medium"
+          className="flex-1 text-ui-md truncate font-medium"
           style={{ color: 'var(--sol-text-dark)', fontFamily: 'var(--font-mono)', letterSpacing: '-0.01em' }}
         >{compare}</span>
         <ChevronDown

@@ -29,7 +29,7 @@ function HistoryItem({
   return (
     <div
       onClick={isResuming ? undefined : isLive ? onGoLive : onResume}
-      className="flex items-start gap-2 px-2 py-0.5 rounded cursor-pointer text-[12px] hover:bg-sol-hover-bg"
+      className="flex items-start gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md hover:bg-sol-hover-bg"
       style={{ color: 'var(--sol-text)', opacity: isResuming ? 0.6 : 1, transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }}
     >
       <ProviderIcon provider={entry.provider} className="w-4 h-4 shrink-0 mt-0.5" />
@@ -41,12 +41,12 @@ function HistoryItem({
       )}
       <div className="min-w-0 flex-1 line-clamp-2">
         <span className="font-medium">{primary}</span>
-        <span className="text-[10px] ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
+        <span className="text-ui-xs ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
           {secondary}
           {meta.length > 0 && ` · ${meta.join(' · ')}`}
         </span>
       </div>
-      <span className="shrink-0 text-[10px] mt-0.5" style={{ color: 'var(--sol-text-faint)' }}>
+      <span className="shrink-0 text-ui-xs mt-0.5" style={{ color: 'var(--sol-text-faint)' }}>
         {formatRelativeTime(entry.modified)}
       </span>
     </div>
@@ -86,17 +86,17 @@ export function WorkspaceHistoryList({
   }
 
   if (loading && !history) {
-    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>Loading…</div>
+    return <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>Loading…</div>
   }
 
   if (!history || history.length === 0) {
-    return <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>No past sessions</div>
+    return <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>No past sessions</div>
   }
 
   return (
     <>
       {error && (
-        <div className="px-2 py-1 text-[10px] rounded mx-1 mb-1" style={{ color: 'var(--sol-red)', backgroundColor: 'var(--sol-red-bg, rgba(220,50,47,0.08))' }}>
+        <div className="px-2 py-1 text-ui-xs rounded mx-1 mb-1" style={{ color: 'var(--sol-red)', backgroundColor: 'var(--sol-red-bg, rgba(220,50,47,0.08))' }}>
           {error}
         </div>
       )}

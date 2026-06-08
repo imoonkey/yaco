@@ -199,7 +199,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
         onChange={e => { setQuery(e.target.value); setFocusIdx(0) }}
         onKeyDown={handleKey}
         placeholder="Search refs..."
-        className="w-full px-2 py-1.5 text-[12px] bg-transparent outline-none"
+        className="w-full px-2 py-1.5 text-ui-md bg-transparent outline-none"
         style={{ color: 'var(--sol-text-dark)', borderBottom: '1px solid var(--sol-border)' }}
       />
 
@@ -215,7 +215,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
             <button
               key={tab.id}
               onClick={() => { setActiveTab(tab.id); setFocusIdx(0) }}
-              className="px-1.5 py-0.5 rounded text-[10px] cursor-pointer"
+              className="px-1.5 py-0.5 rounded text-ui-xs cursor-pointer"
               style={{
                 color: isActive ? 'var(--sol-accent)' : 'var(--sol-text)',
                 backgroundColor: isActive ? 'color-mix(in srgb, var(--sol-accent) 10%, transparent)' : 'transparent',
@@ -226,7 +226,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
               {tab.label}
               {count != null && count > 0 && (
                 <span
-                  className="ml-0.5 text-[9px]"
+                  className="ml-0.5 text-ui-2xs"
                   style={{ opacity: 0.6 }}
                 >{count}</span>
               )}
@@ -242,7 +242,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
             {/* Only show group headers in "all" tab */}
             {activeTab === 'all' && (
               <div
-                className="sticky top-0 px-2 py-0.5 text-[9px] uppercase tracking-wider font-semibold"
+                className="sticky top-0 px-2 py-0.5 text-ui-2xs uppercase tracking-wider font-semibold"
                 style={{ color: 'var(--sol-text)', backgroundColor: 'var(--sol-glass-bg)' }}
               >
                 {group.label}
@@ -255,7 +255,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
                 <div
                   key={item.hash ? `${item.group}-${item.hash}` : `${item.group}-${item.label}`}
                   data-ref-item
-                  className="flex items-center px-2 h-[24px] text-[12px] cursor-pointer"
+                  className="flex items-center px-2 h-[24px] text-ui-md cursor-pointer"
                   style={{
                     backgroundColor: isFocused ? 'color-mix(in srgb, var(--sol-blue) 12%, transparent)' : undefined,
                     color: isFocused ? 'var(--sol-blue)' : 'var(--sol-text)',
@@ -275,7 +275,7 @@ function RefSearchDropdownInner({ onSelect, onClose, projectName, posStyle }: {
           </div>
         ))}
         {filtered.length === 0 && (
-          <div className="px-2 py-3 text-[12px] text-center" style={{ color: 'var(--sol-text)' }}>
+          <div className="px-2 py-3 text-ui-md text-center" style={{ color: 'var(--sol-text)' }}>
             No matches
           </div>
         )}
@@ -289,12 +289,12 @@ function CommitRow({ item }: { item: RefItem }) {
   return (
     <div className="flex items-center gap-1.5 w-full min-w-0">
       <span
-        className="shrink-0 text-[11px]"
+        className="shrink-0 text-ui-sm"
         style={{ fontFamily: 'var(--font-mono)', color: 'var(--sol-accent)', fontWeight: 600 }}
       >{item.hash}</span>
       <span className="truncate flex-1 min-w-0">{item.label.slice((item.hash?.length ?? 0) + 1)}</span>
       <span
-        className="shrink-0 text-[9px]"
+        className="shrink-0 text-ui-2xs"
         style={{ color: 'var(--sol-text-faint)', whiteSpace: 'nowrap' }}
       >
         {item.author && <span>{item.author}</span>}

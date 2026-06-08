@@ -175,12 +175,12 @@ export function AddProjectDialog({
         className="flex items-center justify-between px-4 h-10"
         style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
       >
-        <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+        <span className="text-ui-lg font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
           Add Project
         </span>
         <button
           onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
+          className="w-6 h-6 flex items-center justify-center rounded text-ui-2xl cursor-pointer"
           style={{ color: 'var(--sol-text)' }}
           aria-label="Close"
         >
@@ -190,7 +190,7 @@ export function AddProjectDialog({
 
       {/* Body */}
       <div className="px-4 py-3">
-        <label className="block text-[11px] font-medium mb-1" style={{ color: 'var(--sol-text)' }}>
+        <label className="block text-ui-sm font-medium mb-1" style={{ color: 'var(--sol-text)' }}>
           Path
         </label>
         <input
@@ -199,7 +199,7 @@ export function AddProjectDialog({
           value={path}
           onChange={(e) => { setPath(e.target.value); setError(null) }}
           onKeyDown={handleKeyDown}
-          className="w-full h-9 px-2 rounded-md text-[12px] outline-none"
+          className="w-full h-9 px-2 rounded-md text-ui-md outline-none"
           style={{
             backgroundColor: 'var(--sol-bg)',
             border: '1px solid var(--sol-tab-bg)',
@@ -228,7 +228,7 @@ export function AddProjectDialog({
             {entries.map((entry, i) => (
               <div
                 key={entry.path}
-                className="flex items-center gap-2 px-2 h-8 cursor-pointer text-[12px]"
+                className="flex items-center gap-2 px-2 h-8 cursor-pointer text-ui-md"
                 style={{
                   backgroundColor: i === highlighted ? 'var(--sol-search-match-bg)' : undefined,
                   color: 'var(--sol-text-dark)',
@@ -245,7 +245,7 @@ export function AddProjectDialog({
                 </span>
                 <span className="flex-1 truncate">{entry.name}</span>
                 {entry.isGit && (
-                  <span className="text-[10px] shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
+                  <span className="text-ui-xs shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
                     git
                   </span>
                 )}
@@ -256,26 +256,26 @@ export function AddProjectDialog({
 
         {/* Empty state */}
         {!loading && entries.length === 0 && path.endsWith('/') && path.length > 1 && (
-          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-text)' }}>
+          <div className="mt-1 text-ui-sm px-1" style={{ color: 'var(--sol-text)' }}>
             No subdirectories
           </div>
         )}
         {!loading && entries.length === 0 && suffix && allEntries.length > 0 && (
-          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-text)' }}>
+          <div className="mt-1 text-ui-sm px-1" style={{ color: 'var(--sol-text)' }}>
             No matches
           </div>
         )}
 
         {/* Loading */}
         {loading && (
-          <div className="mt-1 text-[11px] px-1" style={{ color: 'var(--sol-text)' }}>
+          <div className="mt-1 text-ui-sm px-1" style={{ color: 'var(--sol-text)' }}>
             Loading…
           </div>
         )}
 
         {/* Error */}
         {error && (
-          <div className="mt-2 text-[11px] px-1" style={{ color: 'var(--sol-red)' }}>
+          <div className="mt-2 text-ui-sm px-1" style={{ color: 'var(--sol-red)' }}>
             {error}
           </div>
         )}
@@ -288,14 +288,14 @@ export function AddProjectDialog({
       >
         <button
           onClick={onClose}
-          className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]"
+          className="px-3 h-7 rounded-md text-ui-md font-medium cursor-pointer transition-colors text-[var(--sol-base01)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]"
         >
           Cancel
         </button>
         <button
           onClick={handleSubmit}
           disabled={submitting || !path.replace(/\/+$/, '')}
-          className="px-3 h-7 rounded-md text-[12px] font-medium cursor-pointer transition-colors"
+          className="px-3 h-7 rounded-md text-ui-md font-medium cursor-pointer transition-colors"
           style={{
             backgroundColor: 'var(--sol-accent)',
             color: 'var(--sol-editor-bg)',

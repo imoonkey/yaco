@@ -93,7 +93,7 @@ export function ProjectList({
               onDrop={e => handleDrop(e, project.name)}
               onClick={() => handleProjectClick(project.name)}
               {...menu.bind(() => setMenuProject(project))}
-              className={`relative w-full text-left px-2 py-0.5 rounded text-[12px] font-medium cursor-pointer flex items-center gap-1 ${
+              className={`relative w-full text-left px-2 py-0.5 rounded text-ui-md font-medium cursor-pointer flex items-center gap-1 ${
                 isMainActive
                   ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]'
                   : isActive
@@ -109,7 +109,7 @@ export function ProjectList({
               <span className="truncate flex-shrink min-w-0">{project.name}</span>
               {metaHeld && shortcutIndex !== null && (
                 <span
-                  className="text-[10px] tabular-nums px-1 rounded shrink-0"
+                  className="text-ui-xs tabular-nums px-1 rounded shrink-0"
                   style={{
                     color: 'var(--sol-text-faint)',
                     border: '1px solid var(--sol-border)',
@@ -124,7 +124,7 @@ export function ProjectList({
                 <BadgeCount count={unreadCount} />
                 {sc && sc.total > 0 && (
                   <span
-                    className="text-[12px] tabular-nums"
+                    className="text-ui-md tabular-nums"
                     style={{ color: 'var(--sol-text-faint)' }}
                     title={`${sc.active} active / ${sc.total} total sessions`}
                   >
@@ -143,7 +143,7 @@ export function ProjectList({
                     <button
                       key={wt.slug}
                       onClick={() => onWorktreeSelect(wt.slug)}
-                      className={`w-full text-left pl-5 pr-2 py-0.5 rounded text-[11px] cursor-pointer flex items-center gap-1.5 ${
+                      className={`w-full text-left pl-5 pr-2 py-0.5 rounded text-ui-sm cursor-pointer flex items-center gap-1.5 ${
                         isWtActive
                           ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)] font-medium'
                           : 'text-[var(--sol-text)] hover:text-[var(--sol-text-dark)] hover:bg-[var(--sol-hover-bg)]'
@@ -168,7 +168,7 @@ export function ProjectList({
         )
       })}
       {projects.length === 0 && (
-        <div className="px-2 py-3 text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>
+        <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>
           No projects
         </div>
       )}

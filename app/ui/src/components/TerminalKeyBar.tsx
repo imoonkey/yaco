@@ -59,9 +59,9 @@ const SECONDARY_KEYS: KeyDef[] = [
 const ALL_KEYS = [...PRIMARY_KEYS, ...SECONDARY_KEYS]
 
 const BTN =
-  'flex-1 h-7 px-1.5 rounded bg-(--sol-subtle-bg) active:bg-(--sol-subtle-bg-active) text-(--sol-base01) font-mono text-[12px] select-none touch-manipulation'
+  'flex-1 h-7 px-1.5 rounded bg-(--sol-subtle-bg) active:bg-(--sol-subtle-bg-active) text-(--sol-base01) font-mono text-ui-md select-none touch-manipulation'
 const BTN_MOD_ON =
-  'flex-1 h-7 px-1.5 rounded bg-[var(--sol-blue)] text-[var(--sol-base3)] font-mono text-[12px] select-none touch-manipulation'
+  'flex-1 h-7 px-1.5 rounded bg-[var(--sol-blue)] text-[var(--sol-base3)] font-mono text-ui-md select-none touch-manipulation'
 
 export function TerminalKeyBar({
   sendInput,
@@ -232,7 +232,7 @@ export function TerminalKeyBar({
           rows={1}
           tabIndex={pasteOpen ? 0 : -1}
           placeholder="Paste or type… Enter to send"
-          className="w-full max-h-[30vh] rounded bg-(--sol-subtle-bg) text-(--sol-editor-fg) font-mono text-[12px] px-2 py-1.5 resize-none outline-none"
+          className="w-full max-h-[30vh] rounded bg-(--sol-subtle-bg) text-(--sol-editor-fg) font-mono text-ui-md px-2 py-1.5 resize-none outline-none"
           style={{ fieldSizing: 'content' } as React.CSSProperties}
         />
       </div>
@@ -257,7 +257,7 @@ export function TerminalKeyBar({
           <button
             type="button"
             className={pasteText
-              ? 'flex-1 h-7 px-1.5 rounded bg-(--sol-accent) text-white font-mono text-[12px] select-none touch-manipulation'
+              ? 'flex-1 h-7 px-1.5 rounded bg-(--sol-accent) text-white font-mono text-ui-md select-none touch-manipulation'
               : BTN_MOD_ON}
             onClick={pasteText ? handlePasteSend : () => setPasteOpen(false)}
             aria-label={pasteText ? 'Send text to terminal' : 'Close text input'}

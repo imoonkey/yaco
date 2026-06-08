@@ -63,7 +63,7 @@ function DropdownPopover({ options, value, onSelect, onClose }: {
             key={opt.value}
             onClick={() => onSelect(opt.value)}
             onMouseEnter={() => setFocusedIdx(i)}
-            className="flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-left cursor-pointer transition-colors"
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-ui-sm text-left cursor-pointer transition-colors"
             style={{
               color: opt.color ?? 'var(--sol-text)',
               backgroundColor: isFocused
@@ -185,7 +185,7 @@ export function InlineEdit({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         rows={4}
-        className={`w-full rounded px-2 py-1.5 outline-none resize-y text-[12px] ${className}`}
+        className={`w-full rounded px-2 py-1.5 outline-none resize-y text-ui-md ${className}`}
         style={{
           border: '1.5px solid var(--sol-accent)',
           backgroundColor: 'var(--sol-editor-bg)',

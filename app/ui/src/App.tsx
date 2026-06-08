@@ -96,9 +96,9 @@ function Clock({ onPulse }: { onPulse?: (type: 'light' | 'strong') => void }) {
 
   return (
     <span className="flex items-center gap-1.5">
-      <span className="text-[13px] tracking-tight" style={{ color: 'var(--sol-text-dim)' }}>{dateStr}</span>
+      <span className="text-ui-lg tracking-tight" style={{ color: 'var(--sol-text-dim)' }}>{dateStr}</span>
       <span
-        className="text-[13px] tabular-nums rounded-lg px-2.5 py-0.5"
+        className="text-ui-lg tabular-nums rounded-lg px-2.5 py-0.5"
         style={CLOCK_PILL}
       >
         {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -356,7 +356,7 @@ function App() {
     <div className="flex flex-col h-full bg-[var(--sol-bg)]">
       {!isMobile && (
         <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
-          <span className="text-[13px] font-semibold">{activeProject || 'YACO'}</span>
+          <span className="text-ui-lg font-semibold">{activeProject || 'YACO'}</span>
           <span className="flex items-center gap-2">
             <NotificationBell {...notificationBellProps} />
             <ChannelsHeaderButton />
@@ -396,7 +396,7 @@ function App() {
           />
         )}
         {!activeProject && (
-          <div className="flex items-center justify-center h-full text-[13px]" style={{ color: 'var(--sol-muted)' }}>
+          <div className="flex items-center justify-center h-full text-ui-lg" style={{ color: 'var(--sol-muted)' }}>
             <button onClick={handleAddProject} className="px-4 py-2 rounded-md bg-[var(--sol-blue)]/10 hover:bg-[var(--sol-blue)]/20 text-[var(--sol-blue)] cursor-pointer">
               Add a project to get started
             </button>
@@ -405,7 +405,7 @@ function App() {
       </main>
       {!isMobile && (
         <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
-          <span className="text-[13px] font-semibold">{activeProject || 'YACO'}</span>
+          <span className="text-ui-lg font-semibold">{activeProject || 'YACO'}</span>
           <Clock />
         </div>
       )}

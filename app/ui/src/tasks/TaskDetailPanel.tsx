@@ -35,7 +35,7 @@ function SectionHeader({ children, divider = true }: { children: React.ReactNode
   return (
     <div className={divider ? 'mb-1' : ''}>
       <div
-        className="text-[10px] font-semibold uppercase tracking-[0.06em]"
+        className="text-ui-xs font-semibold uppercase tracking-[0.06em]"
         style={{ color: 'var(--sol-text)' }}
       >
         {children}
@@ -63,7 +63,7 @@ function Breadcrumb({ task, allTasks, onSelectTask }: {
   if (ancestors.length === 0) return null
 
   return (
-    <div className="flex items-center gap-1 flex-wrap text-[11px]" style={{ color: 'var(--sol-text-faint)' }}>
+    <div className="flex items-center gap-1 flex-wrap text-ui-sm" style={{ color: 'var(--sol-text-faint)' }}>
       {ancestors.map((a, i) => (
         <span key={a.id} className="flex items-center gap-1">
           {i > 0 && <ChevronRight size={10} />}
@@ -87,8 +87,8 @@ function DepRow({ task, onSelect }: { task: TaskV2; onSelect: (id: string) => vo
       className="flex items-center gap-2 w-full text-left px-2 py-1 rounded cursor-pointer transition-colors hover:bg-sol-hover-bg"
     >
       <StateDot state={task.state} />
-      <span className="flex-1 truncate text-[12px]">{task.title}</span>
-      <span className="text-[10px] font-medium shrink-0" style={{ color: STATE_COLORS[task.state] }}>
+      <span className="flex-1 truncate text-ui-md">{task.title}</span>
+      <span className="text-ui-xs font-medium shrink-0" style={{ color: STATE_COLORS[task.state] }}>
         {task.state}
       </span>
     </button>
@@ -109,7 +109,7 @@ function AcceptCriteriaItem({ text, checked, onToggle }: {
         className="mt-0.5 accent-[var(--sol-green)]"
       />
       <span
-        className="text-[12px]"
+        className="text-ui-md"
         style={{
           color: checked ? 'var(--sol-base1)' : 'var(--sol-base01)',
           textDecoration: checked ? 'line-through' : 'none',
@@ -163,7 +163,7 @@ function ChildrenProgressBar({ leaves }: { leaves: TaskV2[] }) {
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
         {segments.map(seg => (
-          <span key={seg.state} className="inline-flex items-center gap-1 text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>
+          <span key={seg.state} className="inline-flex items-center gap-1 text-ui-xs" style={{ color: 'var(--sol-text-faint)' }}>
             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: STATE_COLORS[seg.state] }} />
             {counts[seg.state]} {seg.state}
           </span>
@@ -253,12 +253,12 @@ export function TaskDetailPanel({
   }))
 
   const content = (
-    <div className="flex flex-col gap-4 p-4 text-[12px]" style={{ color: 'var(--sol-text)' }}>
+    <div className="flex flex-col gap-4 p-4 text-ui-md" style={{ color: 'var(--sol-text)' }}>
       {/* Breadcrumb + ID */}
       <div className="flex items-center justify-between gap-2">
         <Breadcrumb task={task} allTasks={allTasks} onSelectTask={onSelectTask} />
         <span
-          className="shrink-0 text-[11px] px-1.5 py-0.5 rounded"
+          className="shrink-0 text-ui-sm px-1.5 py-0.5 rounded"
           style={{
             fontFamily: 'var(--font-mono)',
             color: 'var(--sol-text-dim)',
@@ -274,8 +274,8 @@ export function TaskDetailPanel({
         value={task.title}
         onSave={v => patch('title', v)}
         readOnly={readOnly}
-        displayClassName="text-[16px] font-bold tracking-[-0.02em] leading-tight"
-        className="text-[16px] font-bold tracking-[-0.02em]"
+        displayClassName="text-ui-2xl font-bold tracking-[-0.02em] leading-tight"
+        className="text-ui-2xl font-bold tracking-[-0.02em]"
       />
 
       {/* State / Priority / Estimate row */}
@@ -288,7 +288,7 @@ export function TaskDetailPanel({
             type="dropdown"
             options={stateOptions}
             readOnly={readOnly}
-            displayClassName="text-[11px] font-semibold"
+            displayClassName="text-ui-sm font-semibold"
           />
         </div>
         <div className="flex items-center gap-1.5">
@@ -299,7 +299,7 @@ export function TaskDetailPanel({
             type="dropdown"
             options={ALL_PRIORITIES}
             readOnly={readOnly}
-            displayClassName="text-[11px] font-semibold"
+            displayClassName="text-ui-sm font-semibold"
           />
         </div>
         <div className="flex items-center gap-1.5">
@@ -310,12 +310,12 @@ export function TaskDetailPanel({
             type="dropdown"
             options={ESTIMATE_OPTIONS}
             readOnly={readOnly}
-            displayClassName="text-[11px] font-semibold"
+            displayClassName="text-ui-sm font-semibold"
           />
         </div>
         <div className="flex items-center gap-1.5">
           <SectionHeader divider={false}>Workset</SectionHeader>
-          <span className="text-[11px] font-semibold capitalize" style={{ color: 'var(--sol-text)' }}>
+          <span className="text-ui-sm font-semibold capitalize" style={{ color: 'var(--sol-text)' }}>
             {task.workset}
           </span>
         </div>
@@ -344,7 +344,7 @@ export function TaskDetailPanel({
                 </span>
                 {isActive && (
                   <span
-                    className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+                    className="text-ui-2xs font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
                     style={{ color: 'var(--sol-green)', backgroundColor: 'color-mix(in srgb, var(--sol-green) 10%, transparent)' }}
                   >
                     Attached
@@ -353,7 +353,7 @@ export function TaskDetailPanel({
                 {isLive && onOpenTerminal && (
                   <button
                     onClick={() => onOpenTerminal(agent)}
-                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors hover:bg-sol-hover-bg"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-ui-sm cursor-pointer transition-colors hover:bg-sol-hover-bg"
                     style={{ border: '1px solid var(--sol-border)' }}
                   >
                     <Terminal size={12} />
@@ -373,10 +373,10 @@ export function TaskDetailPanel({
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2">
               <FolderGit2 size={12} style={{ color: task.worktreeStatus?.active ? 'var(--sol-green)' : 'var(--sol-text)' }} />
-              <span className="font-mono text-[12px]" style={{ color: 'var(--sol-text)' }}>{task.worktree}</span>
+              <span className="font-mono text-ui-md" style={{ color: 'var(--sol-text)' }}>{task.worktree}</span>
               {task.worktreeStatus?.active && (
                 <span
-                  className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+                  className="text-ui-2xs font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
                   style={{ color: 'var(--sol-green)', backgroundColor: 'color-mix(in srgb, var(--sol-green) 10%, transparent)' }}
                 >
                   Active
@@ -385,12 +385,12 @@ export function TaskDetailPanel({
             </div>
             {task.worktreeStatus?.active && (
               <>
-                <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--sol-text)' }}>
+                <div className="flex items-center gap-2 text-ui-sm" style={{ color: 'var(--sol-text)' }}>
                   <GitBranch size={11} style={{ color: 'var(--sol-text)' }} />
                   <span className="font-mono">{task.worktreeStatus.branch}</span>
                   {task.worktreeStatus.dirty && (
                     <span
-                      className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1 py-px rounded"
+                      className="text-ui-2xs font-semibold uppercase tracking-[0.04em] px-1 py-px rounded"
                       style={{ color: 'var(--sol-warning)', backgroundColor: 'color-mix(in srgb, var(--sol-warning) 10%, transparent)' }}
                     >
                       Modified
@@ -398,7 +398,7 @@ export function TaskDetailPanel({
                   )}
                 </div>
                 {(task.worktreeStatus.ahead > 0 || task.worktreeStatus.behind > 0) && (
-                  <div className="flex items-center gap-3 text-[10px]" style={{ color: 'var(--sol-text-faint)' }}>
+                  <div className="flex items-center gap-3 text-ui-xs" style={{ color: 'var(--sol-text-faint)' }}>
                     {task.worktreeStatus.ahead > 0 && (
                       <span className="tabular-nums">&uarr;{task.worktreeStatus.ahead} ahead</span>
                     )}
@@ -421,7 +421,7 @@ export function TaskDetailPanel({
             {task.tags.map(tag => (
               <span
                 key={tag}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px]"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-ui-sm"
                 style={{
                   backgroundColor: 'var(--sol-subtle-bg)',
                   color: 'var(--sol-base01)',
@@ -473,7 +473,7 @@ export function TaskDetailPanel({
           <SectionHeader>Children ({children.length})</SectionHeader>
           {leafDescendants.length > 0 && (
             <div className="mb-1">
-              <div className="text-[11px] mb-1" style={{ color: 'var(--sol-text)' }}>
+              <div className="text-ui-sm mb-1" style={{ color: 'var(--sol-text)' }}>
                 {leafDescendants.filter(t => t.state === 'done').length}/{leafDescendants.length} done
               </div>
               <ChildrenProgressBar leaves={leafDescendants} />
@@ -512,7 +512,7 @@ export function TaskDetailPanel({
           {task.scope.map((s, i) => (
             <div
               key={i}
-              className="flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono"
+              className="flex items-center gap-1.5 px-2 py-0.5 rounded text-ui-sm font-mono"
               style={{ backgroundColor: 'var(--sol-header-bg)', color: 'var(--sol-base01)' }}
             >
               <FileCode size={12} />
@@ -531,7 +531,7 @@ export function TaskDetailPanel({
               href={task.design}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[12px] transition-colors hover:underline"
+              className="inline-flex items-center gap-1.5 text-ui-md transition-colors hover:underline"
               style={{ color: 'var(--sol-blue)' }}
             >
               <Link2 size={12} />
@@ -541,7 +541,7 @@ export function TaskDetailPanel({
           ) : (
             <button
               onClick={() => onOpenFile?.(task.design!)}
-              className="inline-flex items-center gap-1.5 text-[12px] cursor-pointer transition-colors hover:underline text-left"
+              className="inline-flex items-center gap-1.5 text-ui-md cursor-pointer transition-colors hover:underline text-left"
               style={{ color: 'var(--sol-blue)' }}
             >
               <FileText size={12} />
@@ -599,12 +599,12 @@ export function TaskDetailPanel({
               style={{ borderBottom: '1px solid var(--sol-border)' }}
             >
               <span className="flex items-center gap-2">
-                <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-text)' }}>
+                <span className="text-ui-xs font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-text)' }}>
                   Task Details
                 </span>
                 {readOnly && (
                   <span
-                    className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+                    className="text-ui-2xs font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
                     style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
                   >
                     Archived
@@ -667,12 +667,12 @@ export function TaskDetailPanel({
         style={{ height: 36, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       >
         <span className="flex items-center gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-text)' }}>
+          <span className="text-ui-xs font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--sol-text)' }}>
             Task Details
           </span>
           {readOnly && (
             <span
-              className="text-[9px] font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
+              className="text-ui-2xs font-semibold uppercase tracking-[0.04em] px-1.5 py-0.5 rounded"
               style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
             >
               Archived

@@ -130,12 +130,12 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
         className="flex items-center justify-between px-4 h-10"
         style={{ borderBottom: '1px solid var(--sol-tab-bg)' }}
       >
-        <span className="text-[13px] font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
+        <span className="text-ui-lg font-semibold" style={{ color: 'var(--sol-text-dark)' }}>
           {channel.label} Login
         </span>
         <button
           onClick={onClose}
-          className="w-6 h-6 flex items-center justify-center rounded text-[16px] cursor-pointer"
+          className="w-6 h-6 flex items-center justify-center rounded text-ui-2xl cursor-pointer"
           style={{ color: 'var(--sol-text)' }}
           aria-label="Close"
         >
@@ -144,10 +144,10 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
       </div>
 
       <div className="px-4 py-4 space-y-3">
-        {!status && <div className="text-[12px]" style={{ color: 'var(--sol-text)' }}>Loading status…</div>}
+        {!status && <div className="text-ui-md" style={{ color: 'var(--sol-text)' }}>Loading status…</div>}
 
         {status && !status.enabled && (
-          <div className="text-[12px]" style={{ color: 'var(--sol-warning)' }}>
+          <div className="text-ui-md" style={{ color: 'var(--sol-warning)' }}>
             {channel.envVar}=1 not set on the server. Restart with that env to use this dialog.
           </div>
         )}
@@ -179,32 +179,32 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
                     margin: 0,
                   }}
                 >{status.login.qrAscii}</pre>
-                <div className="text-[11px] text-center" style={{ color: 'var(--sol-text)' }}>
+                <div className="text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>
                   {channel.qrHint}
                 </div>
               </div>
             )}
 
             {isQrLive && !status.login.qrAscii && (
-              <div className="text-[12px]" style={{ color: 'var(--sol-text)' }}>
+              <div className="text-ui-md" style={{ color: 'var(--sol-text)' }}>
                 Waiting for QR…
               </div>
             )}
 
             {status.loggedIn && (
-              <div className="text-[12px]" style={{ color: 'var(--sol-green, #859900)' }}>
+              <div className="text-ui-md" style={{ color: 'var(--sol-green, #859900)' }}>
                 ✓ Logged in{status.login.accountId ? `: ${status.login.accountId}` : ''}
               </div>
             )}
 
             {status.login.error && (
-              <div className="text-[12px]" style={{ color: 'var(--sol-red)' }}>
+              <div className="text-ui-md" style={{ color: 'var(--sol-red)' }}>
                 {status.login.error}
               </div>
             )}
 
             {error && (
-              <div className="text-[11px]" style={{ color: 'var(--sol-red)' }}>
+              <div className="text-ui-sm" style={{ color: 'var(--sol-red)' }}>
                 {error}
               </div>
             )}
@@ -221,7 +221,7 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
             <button
               onClick={handleLogout}
               disabled={busy}
-              className="text-[12px] px-3 h-8 rounded border cursor-pointer disabled:opacity-50"
+              className="text-ui-md px-3 h-8 rounded border cursor-pointer disabled:opacity-50"
               style={{ borderColor: 'var(--sol-border)', color: 'var(--sol-text)' }}
             >
               Logout
@@ -230,7 +230,7 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
           <button
             onClick={handleStart}
             disabled={busy || isQrLive}
-            className="text-[12px] px-3 h-8 rounded border cursor-pointer flex items-center gap-1 disabled:opacity-50"
+            className="text-ui-md px-3 h-8 rounded border cursor-pointer flex items-center gap-1 disabled:opacity-50"
             style={{ borderColor: 'var(--sol-border)', color: 'var(--sol-text)' }}
           >
             <RefreshCw size={12} />
@@ -244,7 +244,7 @@ function ChannelLoginDialog({ channel, onClose }: { channel: ChannelConfig, onCl
 
 function StatusRow({ label, value }: { label: string, value: string }) {
   return (
-    <div className="flex items-center justify-between text-[12px]">
+    <div className="flex items-center justify-between text-ui-md">
       <span style={{ color: 'var(--sol-text-faint)' }}>{label}</span>
       <span style={{ color: 'var(--sol-text)' }}>{value}</span>
     </div>
@@ -308,7 +308,7 @@ export function ChannelsHeaderButton() {
             <button
               key={c.id}
               onClick={() => { setActive(c); setOpen(false) }}
-              className="flex items-center gap-2 w-full px-3 py-1.5 text-[12px] cursor-pointer hover:bg-[var(--sol-hover-bg)]"
+              className="flex items-center gap-2 w-full px-3 py-1.5 text-ui-md cursor-pointer hover:bg-[var(--sol-hover-bg)]"
             >
               <span
                 className="w-1.5 h-1.5 rounded-full shrink-0"

@@ -20,8 +20,8 @@ class PreviewErrorBoundary extends Component<{ children: ReactNode; fileName: st
     if (this.state.error) {
       return (
         <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text)' }}>
-          <span className="text-[12px]">Unable to preview {this.props.fileName}</span>
-          <span className="text-[11px]" style={{ opacity: 0.7 }}>{this.state.error.message}</span>
+          <span className="text-ui-md">Unable to preview {this.props.fileName}</span>
+          <span className="text-ui-sm" style={{ opacity: 0.7 }}>{this.state.error.message}</span>
         </div>
       )
     }
@@ -570,18 +570,18 @@ export function WorkspaceEditorArea({
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {activeFilePath && hasConflict && (
-        <div className="flex items-center gap-3 px-3 py-2 text-[12px] shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-warning) 9%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', animation: 'panel-slide-in 200ms cubic-bezier(0.2, 0, 0, 1) both' }}>
+        <div className="flex items-center gap-3 px-3 py-2 text-ui-md shrink-0" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-warning) 9%, transparent)', borderBottom: '1px solid color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', animation: 'panel-slide-in 200ms cubic-bezier(0.2, 0, 0, 1) both' }}>
           <span>&#9888; File changed on disk.</span>
           <button
             onClick={onAcceptDisk}
-            className="conflict-btn px-2 py-0.5 rounded text-[11px] cursor-pointer border"
+            className="conflict-btn px-2 py-0.5 rounded text-ui-sm cursor-pointer border"
             style={{ borderColor: 'color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', transition: 'background-color 120ms' }}
           >
             Accept Disk Version
           </button>
           <button
             onClick={onForceSave}
-            className="conflict-btn px-2 py-0.5 rounded text-[11px] cursor-pointer border"
+            className="conflict-btn px-2 py-0.5 rounded text-ui-sm cursor-pointer border"
             style={{ borderColor: 'color-mix(in srgb, var(--sol-warning) 25%, transparent)', color: 'var(--sol-warning)', transition: 'background-color 120ms' }}
           >
             Keep Mine &amp; Save
@@ -627,9 +627,9 @@ export function WorkspaceEditorArea({
           )
         ) : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text)' }}>Unable to load file</div>
       ) : <div className="flex flex-col items-center justify-center h-full gap-2" style={{ color: 'var(--sol-text)' }}>
-          <span className="text-[12px]">No file open</span>
-          <span className="text-[11px]">
-            Press <kbd className="inline-block px-1.5 py-0.5 rounded text-[10px] font-mono" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-muted) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--sol-muted) 20%, transparent)' }}>{navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl'}+P</kbd> to open a file
+          <span className="text-ui-md">No file open</span>
+          <span className="text-ui-sm">
+            Press <kbd className="inline-block px-1.5 py-0.5 rounded text-ui-xs font-mono" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-muted) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--sol-muted) 20%, transparent)' }}>{navigator.platform.startsWith('Mac') ? '⌘' : 'Ctrl'}+P</kbd> to open a file
           </span>
         </div>}
       </div>

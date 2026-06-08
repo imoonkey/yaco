@@ -73,7 +73,7 @@ export function ImagePreview({ src }: { src: string }) {
       style={{ backgroundColor: 'var(--sol-editor-bg)' }}
     >
       <div
-        className="flex items-center gap-2 px-3 py-1.5 text-[12px] shrink-0"
+        className="flex items-center gap-2 px-3 py-1.5 text-ui-md shrink-0"
         style={{
           backgroundColor: 'var(--sol-header-bg)',
           borderBottom: '1px solid var(--sol-border)',
