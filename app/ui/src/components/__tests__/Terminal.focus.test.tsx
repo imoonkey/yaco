@@ -440,6 +440,64 @@ describe('Terminal focus handoff', () => {
     })
   })
 
+  it('leaves slash command suggestions below active Codex prompt frames', async () => {
+    resetFakeBuffer([
+      { text: '› /' },
+      { text: '' },
+      '/model          choose what model and reasoning effort to use',
+      '/fast           1.5x speed, increased usage',
+      '/ide            include current selection, open files, and other context from your IDE',
+    ], 0)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('leaves shell command suggestions below active Codex prompt frames', async () => {
+    resetFakeBuffer([
+      { text: '› abc $' },
+      { text: '' },
+      'GitHub          [Plugin] Triage PRs, issues, CI, and publish flows',
+      'Gmail           [Plugin] Read and manage Gmail',
+      'CI Debug        [Skill] Debug failing GitHub Actions checks',
+      'OpenAI Docs     [Skill] Reference OpenAI docs, Codex self-knowledge, and model migration guidance',
+    ], 0)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('leaves shell command suggestions below active multiline Codex prompt frames', async () => {
+    resetFakeBuffer([
+      { text: '› ask about available tools' },
+      { text: '  abc $' },
+      { text: '' },
+      'GitHub          [Plugin] Triage PRs, issues, CI, and publish flows',
+      'CI Debug        [Skill] Debug failing GitHub Actions checks',
+    ], 1)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
   it('stops no-background Codex prompt frames at dot-separated status lines', async () => {
     resetFakeBuffer([
       { text: '› Improve documentation in @filename' },

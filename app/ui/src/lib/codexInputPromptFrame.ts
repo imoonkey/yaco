@@ -6,7 +6,7 @@ export interface InputPromptFrame {
   height: number
 }
 
-type PromptFrameBoundary = 'reply' | 'status'
+type PromptFrameBoundary = 'prompt-menu' | 'reply' | 'status'
 type TerminalBuffer = XTerm['buffer']['active']
 
 type TerminalWithRenderMetrics = XTerm & {
@@ -66,12 +66,58 @@ function readLineBackgroundKey(line: TerminalBufferLine, cols: number): string |
   return null
 }
 
+function readLineText(buffer: TerminalBuffer, row: number): string {
+  return buffer.getLine(row)?.translateToString(true) ?? ''
+}
+
 function isViewportTailBlank(buffer: TerminalBuffer, fromRow: number, lastRow: number): boolean {
   for (let row = fromRow + 1; row <= lastRow; row++) {
     const line = buffer.getLine(row)
     if (line?.translateToString(true).trim()) return false
   }
   return true
+}
+
+function stripPromptGlyph(text: string): string {
+  return text.replace(/^› ?/, '')
+}
+
+function readLastNonblankPromptText(buffer: TerminalBuffer, firstRow: number, lastPromptRow: number): string | null {
+  for (let row = lastPromptRow; row >= firstRow; row--) {
+    const text = readLineText(buffer, row)
+    if (text.trim() !== '') return text
+  }
+  return null
+}
+
+function hasSlashCommandTrigger(promptStartText: string): boolean {
+  return stripPromptGlyph(promptStartText).startsWith('/')
+}
+
+function hasShellCommandTrigger(text: string): boolean {
+  return /(^|\s)\$/.test(stripPromptGlyph(text))
+}
+
+function isCommandSuggestionRow(text: string, shellCommandActive: boolean): boolean {
+  const trimmed = text.trim()
+  if (trimmed === '') return false
+  if (/^\/\S*(?:\s{2,}|\t+)\S/.test(trimmed)) return true
+  return shellCommandActive && /^.+?(?:\s{2,}|\t+)\[(?:Plugin|Skill)\]\s+\S/.test(trimmed)
+}
+
+function readPromptMenuBoundary(
+  text: string,
+  buffer: TerminalBuffer,
+  promptStartRow: number,
+  lastPromptRow: number,
+): PromptFrameBoundary | null {
+  const promptStartText = readLineText(buffer, promptStartRow)
+  const lastPromptText = readLastNonblankPromptText(buffer, promptStartRow, lastPromptRow)
+  const slashCommandActive = hasSlashCommandTrigger(promptStartText)
+  const shellCommandActive = lastPromptText !== null && hasShellCommandTrigger(lastPromptText)
+
+  if (!slashCommandActive && !shellCommandActive) return null
+  return isCommandSuggestionRow(text, shellCommandActive) ? 'prompt-menu' : null
 }
 
 function readPromptFrameBoundary(
@@ -82,7 +128,7 @@ function readPromptFrameBoundary(
 ): PromptFrameBoundary | null {
   const trimmed = text.trim()
   if (trimmed === '') return null
-  if (trimmed.startsWith('•') || trimmed.startsWith('■') || trimmed.startsWith('$')) return 'reply'
+  if (text.startsWith('•') || text.startsWith('■') || text.startsWith('$')) return 'reply'
   if (/^tab to queue message\b/i.test(trimmed) && isViewportTailBlank(buffer, row, lastRow)) return 'status'
   if (!trimmed.includes(' · ')) return null
   return trimmed.split(/\s·\s/).filter(Boolean).length >= 3 && isViewportTailBlank(buffer, row, lastRow)
@@ -119,14 +165,16 @@ export function readCodexInputPromptFrames(term: XTerm, config?: TerminalInputPr
       if (promptBackgroundKey) {
         if (readLineBackgroundKey(nextLine, term.cols) !== promptBackgroundKey) {
           boundaryRow = nextRow
-          boundaryType = readPromptFrameBoundary(nextText, buffer, nextRow, lastRow)
+          boundaryType = readPromptMenuBoundary(nextText, buffer, row, bottomRow)
+            ?? readPromptFrameBoundary(nextText, buffer, nextRow, lastRow)
           break
         }
         bottomRow++
         continue
       }
 
-      const nextBoundaryType = readPromptFrameBoundary(nextText, buffer, nextRow, lastRow)
+      const nextBoundaryType = readPromptMenuBoundary(nextText, buffer, row, bottomRow)
+        ?? readPromptFrameBoundary(nextText, buffer, nextRow, lastRow)
       if (nextBoundaryType !== null) {
         boundaryRow = nextRow
         boundaryType = nextBoundaryType
@@ -136,11 +184,13 @@ export function readCodexInputPromptFrames(term: XTerm, config?: TerminalInputPr
     }
 
     const bottomText = buffer.getLine(bottomRow)?.translateToString(true).trim() ?? ''
-    const boundaryTrimRows = boundaryType === 'reply'
-      ? (bottomText === '' ? 2 : 1)
-      : boundaryType === 'status'
-        ? 1
-        : 0
+    const boundaryTrimRows = boundaryType === 'prompt-menu'
+      ? (bottomText === '' ? 1 : 0)
+      : boundaryType === 'reply'
+        ? (bottomText === '' ? 2 : 1)
+        : boundaryType === 'status'
+          ? 1
+          : 0
     const adjustedBottomRow = boundaryRow === null
       ? bottomRow
       : Math.max(row, bottomRow - boundaryTrimRows)
