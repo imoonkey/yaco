@@ -164,6 +164,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
 
   const searchBox = (
     <SessionSearchBox
+      key="session-search"
       value={sessionSearchQuery}
       placeholder={sessionTab === 'live' ? 'Search live sessions...' : 'Search session history...'}
       resultCount={sessionTab === 'live' ? filteredLiveSessions.length : filteredHistory?.length ?? 0}
@@ -190,43 +191,55 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
     const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
     return (
-    <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
-      unreadCount={sessionsMgr.getSessionUnread(s.name)}
-      shortcutIndex={shortcutIndex}
-      searchMatch={liveSearchMatches.get(s.name)}
-      onKill={() => { void sessionsMgr.killSession(s.name) }}
-      onClick={() => handleSessionClick(s.name)}
-      onPin={() => sessionsMgr.togglePin(s.name)}
-      onRename={s.provider !== 'shell' ? (newName) => { void sessionsMgr.handleRenameSession(s.name, newName) } : undefined}
-      {...(isPinned ? {
-        onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', s.name); e.dataTransfer.effectAllowed = 'move'; setDraggedSession(s.name) },
-        onDragEnd: () => setDraggedSession(null),
-        onDragOver: (e: React.DragEvent) => e.preventDefault(),
-        onDrop: (e: React.DragEvent) => { e.preventDefault(); if (draggedSession && sessionsMgr.pinnedSet.has(draggedSession)) sessionsMgr.handlePinnedReorder(draggedSession, s.name) },
-        dragging: draggedSession === s.name,
-      } : {})}
-    />
+      <SessionItem key={`session:${s.name}`} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
+        unreadCount={sessionsMgr.getSessionUnread(s.name)}
+        shortcutIndex={shortcutIndex}
+        searchMatch={liveSearchMatches.get(s.name)}
+        onKill={() => { void sessionsMgr.killSession(s.name) }}
+        onClick={() => handleSessionClick(s.name)}
+        onPin={() => sessionsMgr.togglePin(s.name)}
+        onRename={s.provider !== 'shell' ? (newName) => { void sessionsMgr.handleRenameSession(s.name, newName) } : undefined}
+        {...(isPinned ? {
+          onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', s.name); e.dataTransfer.effectAllowed = 'move'; setDraggedSession(s.name) },
+          onDragEnd: () => setDraggedSession(null),
+          onDragOver: (e: React.DragEvent) => e.preventDefault(),
+          onDrop: (e: React.DragEvent) => { e.preventDefault(); if (draggedSession && sessionsMgr.pinnedSet.has(draggedSession)) sessionsMgr.handlePinnedReorder(draggedSession, s.name) },
+          dragging: draggedSession === s.name,
+        } : {})}
+      />
     )
   }
 
-  const divider = <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
+  const divider = (key: string) => <div key={key} className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
   // Pin state is per-item (a subtree can mix pinned/unpinned), so derive it per row.
   const renderRows = (rows: SessionLineageRow[]) =>
     rows.map(({ session, depth }) => renderSessionItem(session, sessionsMgr.pinnedSet.has(session.name), depth))
 
+  // Keep all rows in one keyed sibling array so React preserves SessionItem state
+  // when status changes move a session between buckets.
+  const liveSessionChildren: ReactNode[] = [
+    searchBox,
+    ...renderRows(pinnedRows),
+  ]
+  if (pinnedRows.length > 0 && (processingRows.length > 0 || idleRows.length > 0)) {
+    liveSessionChildren.push(divider('divider:after-pinned'))
+  }
+  liveSessionChildren.push(...renderRows(processingRows))
+  if (processingRows.length > 0 && idleRows.length > 0) {
+    liveSessionChildren.push(divider('divider:after-processing'))
+  }
+  liveSessionChildren.push(...renderRows(idleRows))
+  if (filteredLiveSessions.length === 0) {
+    liveSessionChildren.push(
+      <div key="empty" className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>
+        {liveEmptyMessage}
+      </div>,
+    )
+  }
+
   const liveSessionsBody = (
     <>
-      {searchBox}
-      {renderRows(pinnedRows)}
-      {pinnedRows.length > 0 && (processingRows.length > 0 || idleRows.length > 0) && divider}
-      {renderRows(processingRows)}
-      {processingRows.length > 0 && idleRows.length > 0 && divider}
-      {renderRows(idleRows)}
-      {filteredLiveSessions.length === 0 && (
-        <div className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>
-          {liveEmptyMessage}
-        </div>
-      )}
+      {liveSessionChildren}
     </>
   )
 

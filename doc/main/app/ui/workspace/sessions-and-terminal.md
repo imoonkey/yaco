@@ -39,6 +39,9 @@ Sessions display in three tiers with dividers between non-empty tiers:
 3. **Idle** — waiting sessions (not pinned)
 
 Pin state and order are client-side only (not persisted across page reloads).
+The visual tiers are rendered as one keyed row list, so local row state such as
+an inline rename draft survives refreshes that move a session between
+`starting`/processing and idle.
 
 **Parent/child lineage.** Within this ordering, the live list renders agent spawn lineage as indentation, derived from each session's `parentSession` handle (no `childSessions` is persisted or required). `sessionLineage.ts` is the pure, tested core:
 - `buildSessionLineage(sessions)` flattens the ordered list into `{ session, depth }` rows — each parent immediately followed by its visible descendants, depth-first, preserving input order for roots and siblings. A session is a **root** when it has no `parentSession`, its parent is not in the visible list, or it self-references. Cycles are broken with a visited set; a session reachable only through a cycle is rendered as a root, so nothing loops or drops.

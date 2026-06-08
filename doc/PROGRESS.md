@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Session rename draft survives status moves
+
+**What changed:**
+- Live session rows now render as one keyed sibling list across pinned, processing, and idle visual tiers.
+- Inline rename state is preserved when a `starting` session refreshes to `idle` and moves tiers.
+- Added a jsdom regression test that starts rename, edits the draft, rerenders the session as idle, and asserts the draft remains.
+
+**Why:**
+- React remounted rows when the same keyed session moved between separate bucket arrays, so an in-progress rename closed and lost the user's typed draft.
+
+**Key files:** `app/ui/src/workspace/useWorkspaceSessionSection.tsx`, `app/ui/src/workspace/__tests__/useWorkspaceSessionSection.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/useWorkspaceSessionSection.test.tsx src/workspace/__tests__/useWorkspaceSessions.test.ts src/workspace/__tests__/sessionLineage.test.ts` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings; `git diff --check -- app/ui/src/workspace/useWorkspaceSessionSection.tsx app/ui/src/workspace/__tests__/useWorkspaceSessionSection.test.tsx doc/main/app/ui/workspace/sessions-and-terminal.md doc/PROGRESS.md` passed.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Session search snippets in place
 
 **What changed:**
