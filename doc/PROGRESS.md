@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Session search match evidence
+
+**What changed:**
+- Session search now maps `fzf` positions back to searchable fields and highlights matched characters in live-session and history rows.
+- Rows render a labeled snippet when the match lands in a non-primary field such as summary, branch, provider/status, worktree, or live handle.
+- Long summary matches now show the matched context even if the normal inline summary is clipped.
+
+**Why:**
+- Fuzzy matching can make it unclear why a session survived filtering. Highlighting and snippets expose the exact field/characters that matched without changing the matching looseness.
+
+**Key files:** `app/ui/src/workspace/{sessionSearch.ts,SearchHighlightedText.tsx,WorkspaceSessionList.tsx,WorkspaceHistoryList.tsx,useWorkspaceSessionSection.tsx}`, `app/ui/src/workspace/__tests__/sessionSearch.test.ts`, `app/ui/tests/e2e/session-search.spec.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/sessionSearch.test.ts` passed; `cd app/ui && npx playwright test tests/e2e/session-search.spec.ts` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk warnings.
+**Commit:** this commit
+**Next:** Revisit fuzzy-match strictness if real usage shows too many unrelated hits.
+**Blockers:** None.
+
 ## 2026-06-08: Session search fuzzy matching
 
 **What changed:**

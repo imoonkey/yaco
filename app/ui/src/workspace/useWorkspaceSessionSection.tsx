@@ -5,7 +5,7 @@ import { getProviderUi, startableProviders } from '../lib/providerUi'
 import { SessionItem } from './WorkspaceSessionList'
 import { SessionSearchBox } from './SessionSearchBox'
 import { groupSessionLineage, type SessionLineageRow } from './sessionLineage'
-import { filterAgentSessions, filterHistorySessions } from './sessionSearch'
+import { matchAgentSessions, matchHistorySessions } from './sessionSearch'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { SectionRefreshButton } from './SectionHeader'
 import type { AgentSession, HistorySession } from '../types'
@@ -137,13 +137,29 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
 
   // --- Body ---
   const searchActive = sessionSearchQuery.trim().length > 0
-  const filteredLiveSessions = useMemo(
-    () => filterAgentSessions(sessionsMgr.orderedSessions, sessionSearchQuery),
+  const liveSearchResults = useMemo(
+    () => matchAgentSessions(sessionsMgr.orderedSessions, sessionSearchQuery),
     [sessionsMgr.orderedSessions, sessionSearchQuery],
   )
-  const filteredHistory = useMemo(
-    () => history.data ? filterHistorySessions(history.data, sessionSearchQuery) : null,
+  const filteredLiveSessions = useMemo(
+    () => liveSearchResults.map(result => result.item),
+    [liveSearchResults],
+  )
+  const liveSearchMatches = useMemo(
+    () => new Map(liveSearchResults.map(result => [result.item.name, result.match])),
+    [liveSearchResults],
+  )
+  const historySearchResults = useMemo(
+    () => history.data ? matchHistorySessions(history.data, sessionSearchQuery) : null,
     [history.data, sessionSearchQuery],
+  )
+  const filteredHistory = useMemo(
+    () => historySearchResults?.map(result => result.item) ?? null,
+    [historySearchResults],
+  )
+  const historySearchMatches = useMemo(
+    () => new Map((historySearchResults ?? []).map(result => [result.item.id, result.match])),
+    [historySearchResults],
   )
 
   const searchBox = (
@@ -177,6 +193,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     <SessionItem key={s.name} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
       unreadCount={sessionsMgr.getSessionUnread(s.name)}
       shortcutIndex={shortcutIndex}
+      searchMatch={liveSearchMatches.get(s.name)}
       onKill={() => { void sessionsMgr.killSession(s.name) }}
       onClick={() => handleSessionClick(s.name)}
       onPin={() => sessionsMgr.togglePin(s.name)}
@@ -222,6 +239,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         resumingId={resumingId}
         projectPath={opts.projectPath}
         setResumingId={setResumingId}
+        searchMatches={historySearchMatches}
         emptyMessage={historyEmptyMessage}
         onResumed={(handle) => {
           setResumingId(null)

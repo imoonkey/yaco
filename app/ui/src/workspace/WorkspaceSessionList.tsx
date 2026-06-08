@@ -6,6 +6,8 @@ import { Menu, MenuItem } from '../components/Menu'
 import { useContextMenu } from '../components/useContextMenu'
 import { BadgeCount } from '../components/BadgeCount'
 import { sanitizeSummary } from './sanitizeSummary'
+import { SearchHighlightedText } from './SearchHighlightedText'
+import { fieldMatch, type SearchMatch } from './sessionSearch'
 import type { AgentSession, SessionStatus } from '../types'
 
 // Static style constants extracted from render
@@ -27,6 +29,7 @@ export function SessionItem({
   depth = 0,
   unreadCount,
   shortcutIndex,
+  searchMatch,
   onClick,
   onKill,
   onPin,
@@ -43,6 +46,7 @@ export function SessionItem({
   depth?: number
   unreadCount?: number
   shortcutIndex?: number | null
+  searchMatch?: SearchMatch | null
   onClick: () => void
   onKill: () => void
   onPin?: () => void
@@ -85,6 +89,10 @@ export function SessionItem({
   }
 
   const summary = sanitizeSummary(session.summary, session.name)
+  const nameMatch = fieldMatch(searchMatch, 'name')
+  const summaryMatch = fieldMatch(searchMatch, 'summary')
+  const worktreeMatch = fieldMatch(searchMatch, 'worktree')
+  const snippet = searchMatch?.snippet
 
   return (
     <div ref={itemRef} onClick={renaming ? undefined : onClick}
@@ -123,32 +131,45 @@ export function SessionItem({
           style={RENAME_INPUT_STYLE}
         />
       ) : (
-        <div className="min-w-0 flex-1 line-clamp-2">
-          <span className="font-medium">{session.name}</span>
-          {shortcutIndex != null && (
-            <span
-              className="text-ui-xs tabular-nums px-1 rounded ml-1.5 align-middle"
-              style={{
-                color: 'var(--sol-text-faint)',
-                border: '1px solid var(--sol-border)',
-                background: 'var(--sol-subtle-bg)',
-              }}
-              title={`Cmd+Ctrl+${shortcutIndex}`}
-            >
-              {shortcutIndex}
-            </span>
-          )}
-          {session.worktree && (
-            <span
-              className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
-              style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
-            >
-              <FolderGit2 size={9} />
-              {session.worktree}
-            </span>
-          )}
-          {summary && (
-            <span className="text-ui-xs ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>{summary}</span>
+        <div className="min-w-0 flex-1">
+          <div className="line-clamp-2">
+            <SearchHighlightedText text={session.name} positions={nameMatch?.positions} className="font-medium" />
+            {shortcutIndex != null && (
+              <span
+                className="text-ui-xs tabular-nums px-1 rounded ml-1.5 align-middle"
+                style={{
+                  color: 'var(--sol-text-faint)',
+                  border: '1px solid var(--sol-border)',
+                  background: 'var(--sol-subtle-bg)',
+                }}
+                title={`Cmd+Ctrl+${shortcutIndex}`}
+              >
+                {shortcutIndex}
+              </span>
+            )}
+            {session.worktree && (
+              <span
+                className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
+              >
+                <FolderGit2 size={9} />
+                <SearchHighlightedText text={session.worktree} positions={worktreeMatch?.positions} />
+              </span>
+            )}
+            {summary && (
+              <SearchHighlightedText
+                text={summary}
+                positions={summaryMatch?.positions}
+                className="text-ui-xs ml-1.5"
+                style={{ color: 'var(--sol-text-faint)' }}
+              />
+            )}
+          </div>
+          {snippet && (
+            <div className="text-ui-xs mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
+              <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{snippet.label}:</span>
+              <SearchHighlightedText text={snippet.text} positions={snippet.positions} />
+            </div>
           )}
         </div>
       )}

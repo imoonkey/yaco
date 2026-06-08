@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterAgentSessions, filterHistorySessions } from '../sessionSearch'
+import { fieldMatch, filterAgentSessions, filterHistorySessions, matchAgentSessions, matchHistorySessions } from '../sessionSearch'
 import type { AgentSession, HistorySession } from '../../types'
 
 function liveSession(overrides: Partial<AgentSession>): AgentSession {
@@ -63,6 +63,23 @@ describe('filterAgentSessions', () => {
 
     expect(filterAgentSessions(sessions, 'codex search idle')).toEqual([sessions[0]])
   })
+
+  it('returns match positions and a summary snippet for fuzzy live session matches', () => {
+    const session = liveSession({
+      name: 'worker',
+      summary: 'Investigating clipped session summaries before the frontend panel renders matching text near the end',
+    })
+
+    const result = matchAgentSessions([session], 'frntnd')[0]
+    expect(result?.item).toBe(session)
+
+    const summary = fieldMatch(result?.match, 'summary')
+    expect(summary?.text).toContain('frontend panel')
+    expect([...summary?.positions ?? []].length).toBeGreaterThan(0)
+    expect(result?.match?.snippet?.label).toBe('summary')
+    expect(result?.match?.snippet?.text).toContain('frontend panel')
+    expect([...result?.match?.snippet?.positions ?? []].length).toBeGreaterThan(0)
+  })
 })
 
 describe('filterHistorySessions', () => {
@@ -97,5 +114,20 @@ describe('filterHistorySessions', () => {
     ]
 
     expect(filterHistorySessions(history, 'cdx srch')).toEqual(history)
+  })
+
+  it('returns match positions and a live handle snippet for history matches', () => {
+    const history = [
+      historySession({ id: 'old', liveSessionName: null, messageCount: 7 }),
+      historySession({ id: 'active', liveSessionName: 'codex-live-7' }),
+    ]
+
+    const result = matchHistorySessions(history, 'live-7')[0]
+    expect(result?.item).toBe(history[1])
+
+    const liveHandle = fieldMatch(result?.match, 'liveSessionName')
+    expect(liveHandle?.text).toBe('codex-live-7')
+    expect(result?.match?.snippet?.label).toBe('live')
+    expect(result?.match?.snippet?.text).toBe('codex-live-7')
   })
 })

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { ProviderIcon } from '../components/SessionIcons'
 import { formatRelativeTime } from '../lib/formatTime'
 import { startSession } from '../hooks/useApi'
+import { SearchHighlightedText } from './SearchHighlightedText'
+import { fieldMatch, type SearchMatch } from './sessionSearch'
 import type { HistorySession } from '../types'
 
 let resumeCounter = 0
@@ -9,11 +11,13 @@ let resumeCounter = 0
 function HistoryItem({
   entry,
   isResuming,
+  searchMatch,
   onResume,
   onGoLive,
 }: {
   entry: HistorySession
   isResuming: boolean
+  searchMatch?: SearchMatch | null
   onResume: () => void
   onGoLive: () => void
 }) {
@@ -21,10 +25,14 @@ function HistoryItem({
   const primary = entry.title ?? entry.summary
   const secondary = entry.title && entry.title !== entry.summary
     ? entry.summary : entry.id.slice(0, 8)
+  const primaryKey = entry.title ? 'title' : 'summary'
+  const secondaryKey = entry.title && entry.title !== entry.summary ? 'summary' : 'id'
+  const primaryMatch = fieldMatch(searchMatch, primaryKey)
+  const secondaryMatch = fieldMatch(searchMatch, secondaryKey)
+  const branchMatch = fieldMatch(searchMatch, 'gitBranch')
+  const snippet = searchMatch?.snippet
 
-  const meta: string[] = []
-  if (entry.gitBranch && entry.gitBranch !== 'main' && entry.gitBranch !== 'master') meta.push(entry.gitBranch)
-  if (entry.messageCount != null) meta.push(`${entry.messageCount} msgs`)
+  const showBranch = !!(entry.gitBranch && entry.gitBranch !== 'main' && entry.gitBranch !== 'master')
 
   return (
     <div
@@ -39,12 +47,26 @@ function HistoryItem({
       {isResuming && (
         <span className="w-3 h-3 shrink-0 mt-0.5 border-2 border-current border-t-transparent rounded-full animate-spin" style={{ color: 'var(--sol-muted)' }} />
       )}
-      <div className="min-w-0 flex-1 line-clamp-2">
-        <span className="font-medium">{primary}</span>
-        <span className="text-ui-xs ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
-          {secondary}
-          {meta.length > 0 && ` · ${meta.join(' · ')}`}
-        </span>
+      <div className="min-w-0 flex-1">
+        <div className="line-clamp-2">
+          <SearchHighlightedText text={primary} positions={primaryMatch?.positions} className="font-medium" />
+          <span className="text-ui-xs ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
+            <SearchHighlightedText text={secondary} positions={secondaryMatch?.positions} />
+            {showBranch && (
+              <>
+                {' · '}
+                <SearchHighlightedText text={entry.gitBranch!} positions={branchMatch?.positions} />
+              </>
+            )}
+            {entry.messageCount != null && ` · ${entry.messageCount} msgs`}
+          </span>
+        </div>
+        {snippet && (
+          <div className="text-ui-xs mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
+            <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{snippet.label}:</span>
+            <SearchHighlightedText text={snippet.text} positions={snippet.positions} />
+          </div>
+        )}
       </div>
       <span className="shrink-0 text-ui-xs mt-0.5" style={{ color: 'var(--sol-text-faint)' }}>
         {formatRelativeTime(entry.modified)}
@@ -61,6 +83,7 @@ export function WorkspaceHistoryList({
   setResumingId,
   onResumed,
   onGoLive,
+  searchMatches,
   emptyMessage = 'No past sessions',
 }: {
   history: HistorySession[] | null
@@ -70,6 +93,7 @@ export function WorkspaceHistoryList({
   setResumingId: (id: string | null) => void
   onResumed: (sessionName: string) => void
   onGoLive: (liveSessionName: string) => void
+  searchMatches?: Map<string, SearchMatch | null>
   emptyMessage?: string
 }) {
   const [error, setError] = useState<string | null>(null)
@@ -107,6 +131,7 @@ export function WorkspaceHistoryList({
           key={entry.id}
           entry={entry}
           isResuming={resumingId === entry.id}
+          searchMatch={searchMatches?.get(entry.id)}
           onResume={() => { void handleResume(entry) }}
           onGoLive={() => entry.liveSessionName && onGoLive(entry.liveSessionName)}
         />

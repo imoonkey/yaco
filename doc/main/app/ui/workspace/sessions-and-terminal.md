@@ -17,7 +17,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
+`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/SearchHighlightedText.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`
 
 ## Session List
 
@@ -71,6 +71,7 @@ The Sessions panel has one local search box shared by the Live and History tabs.
 
 - Live search filters the already-loaded session rows by name, provider, status, project, summary, worktree, and lineage metadata. Lineage grouping then runs over the filtered visible set, so a child whose parent is filtered out renders as a root through the normal lineage fallback.
 - History search filters the already-loaded history rows by title, summary, provider, id, branch, and live-session handle. Timestamps and message counts are intentionally excluded from fuzzy matching because they create noisy matches for handle-like queries such as `live-7`. Sorting and the 200-row cap remain CLI/server-owned.
+- Matched characters are highlighted inside visible fields. When a match lands in a non-primary field (for example summary, branch, provider, status, worktree, or live handle), the row also renders a labeled one-line snippet so the user can see why it matched even when the normal row text is clipped.
 
 ### Actions
 

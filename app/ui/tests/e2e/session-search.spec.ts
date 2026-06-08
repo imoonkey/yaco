@@ -15,7 +15,7 @@ const liveSessions = [
     provider: 'codex',
     status: 'processing',
     project: project.name,
-    summary: 'Implement session search',
+    summary: 'Implement session search after reviewing clipped summaries and frontend panel rendering diagnostics near the end',
     worktree: 'session-search',
   },
 ]
@@ -94,11 +94,16 @@ test.describe('Session search', () => {
     await expect(page.getByText('codex-ui')).toBeVisible()
 
     const liveSearch = page.getByRole('searchbox', { name: 'Search live sessions...' })
+    await liveSearch.fill('frontend')
+    await expect(page.getByText('codex-ui')).toBeVisible()
+    await expect(page.getByText('summary:')).toBeVisible()
+    await expect(page.getByText(/frontend panel rendering/).last()).toBeVisible()
+
     await liveSearch.fill('cdx ui')
     await expect(page.getByText('codex-ui')).toBeVisible()
     await expect(page.getByText('claude-main')).not.toBeVisible()
 
-    await liveSearch.fill('missing')
+    await liveSearch.fill('qqqqqq')
     await expect(page.getByText('No matching live sessions')).toBeVisible()
 
     await page.getByRole('button', { name: 'Clear session search' }).click()
@@ -109,11 +114,13 @@ test.describe('Session search', () => {
     await expect(page.getByText('Session history branch polish')).toBeVisible()
     await expect(page.getByText('Voice formatter')).toBeVisible()
 
-    await historySearch.fill('brn plsh')
+    await historySearch.fill('task brn')
     await expect(page.getByText('Session history branch polish')).toBeVisible()
     await expect(page.getByText('Voice formatter')).not.toBeVisible()
+    await expect(page.getByText('branch:')).toBeVisible()
+    await expect(page.getByText('task/branch-polish').first()).toBeVisible()
 
-    await historySearch.fill('does-not-exist')
+    await historySearch.fill('qqqqqq')
     await expect(page.getByText('No matching past sessions')).toBeVisible()
   })
 })
