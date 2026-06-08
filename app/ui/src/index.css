@@ -253,6 +253,18 @@
   --font-family-mono: var(--font-mono);
 }
 
+/* UI font-size scale — `static` emits all tokens unconditionally so inline
+   var() usage works regardless of whether a matching utility class exists. */
+@theme static {
+  --text-ui-2xs: 9px;
+  --text-ui-xs:  10px;
+  --text-ui-sm:  11px;
+  --text-ui-md:  12px;
+  --text-ui-lg:  13px;
+  --text-ui-xl:  14px;
+  --text-ui-2xl: 16px;
+}
+
 /* Session status pulse — solid dot with expanding glow ring */
 @keyframes status-glow {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sol-cyan) 50%, transparent); }
