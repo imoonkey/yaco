@@ -80,7 +80,7 @@ Text uses **theme-split semantic tokens** (resolved per `[data-theme]`), not the
 ## Typography
 
 - **UI font**: `Instrument Sans` (loaded via Google Fonts), `--font-ui`.
-- **Mono font**: `--font-mono` = `'SF Mono', 'JetBrains Mono', ui-monospace, monospace`. JetBrains Mono is **self-hosted** (`@fontsource/jetbrains-mono`, imported in `main.tsx`, woff2 bundled — local-first, no CDN). Mac resolves SF Mono first (unchanged); other platforms, which used to fall back to a bare generic mono (e.g. DejaVu), now get JetBrains Mono. xterm keeps a literal copy of the same stack (`Terminal.tsx`) since it can't read CSS vars.
+- **Mono font**: platform-split via `--font-mono`. **Apple platforms** keep native **SF Mono** (reached through `ui-monospace` — SF Mono is system-restricted and can't be self-hosted or name-matched on the web); an early inline script in `index.html` sets `--font-mono: ui-monospace, 'SF Mono', monospace` when `navigator.platform`/UA is Mac/iOS. **Everywhere else** the CSS default is self-hosted **JetBrains Mono** (`@fontsource/jetbrains-mono`, woff2 bundled, local-first/no CDN) — fixing the old bare-`monospace`/DejaVu fallback. xterm can't read CSS vars, so `Terminal.tsx` reads the *resolved* `--font-mono` at init to match.
 - **Body text**: `#586E75` (base01) — deliberately darker than raw Solarized `#93A1A1` for readability
 - **Editor**: CodeMirror 6 with Solarized Light syntax theme (its own line-height metrics — not the `--lh-*` tokens below)
 - **Terminal**: xterm.js with Solarized Light terminal colors

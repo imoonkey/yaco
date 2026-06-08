@@ -9,7 +9,11 @@
 :root {
   /* Typography */
   --font-ui: 'Instrument Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+  /* Non-Mac default: self-hosted JetBrains Mono. On Apple platforms an early
+     inline script (index.html) overrides this to `ui-monospace, 'SF Mono', …`
+     so Mac keeps its native SF Mono (system-restricted: can't be self-hosted or
+     matched by name on the web — only `ui-monospace` reaches it). */
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   /* Line-height rhythm — applied only to multi-line / wrapping text.
      Single-line fixed-height rows intentionally set no line-height. */

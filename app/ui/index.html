@@ -24,6 +24,11 @@
         document.documentElement.dataset.theme = 'dark';
         document.querySelector('meta[name="theme-color"]').content = '#00212b';
       }
+      // Apple platforms: prefer native SF Mono via ui-monospace (it can't be
+      // self-hosted). Everywhere else keeps the CSS default (JetBrains Mono).
+      if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '')) {
+        document.documentElement.style.setProperty('--font-mono', "ui-monospace, 'SF Mono', monospace");
+      }
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
