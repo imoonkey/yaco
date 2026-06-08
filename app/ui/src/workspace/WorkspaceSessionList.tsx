@@ -121,7 +121,7 @@ export function SessionItem({
           key={level}
           aria-hidden
           className="absolute top-0 bottom-0 pointer-events-none"
-          style={{ left: INDENT_BASE + level * INDENT_STEP + GUIDE_OFFSET, borderLeft: '1px dashed var(--sol-text-dim)', opacity: 0.6 }}
+          style={{ left: INDENT_BASE + level * INDENT_STEP + GUIDE_OFFSET, borderLeft: '1px dashed var(--sol-muted)', opacity: 0.6 }}
         />
       ))}
       {onPin && (
