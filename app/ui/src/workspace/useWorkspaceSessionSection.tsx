@@ -127,27 +127,14 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
       </button>
       <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div
-        className="flex rounded overflow-hidden cursor-pointer"
-        style={{ padding: 2 }}
+        className="session-tab-toggle flex rounded overflow-hidden cursor-pointer"
         onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
         title={sessionTab === 'live' ? 'Show history' : 'Show live sessions'}
       >
-        <span
-          className="px-1.5 py-0.5 flex items-center rounded transition-colors"
-          style={{
-            backgroundColor: sessionTab === 'live' ? 'var(--sol-accent)' : 'transparent',
-            color: sessionTab === 'live' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
-          }}
-        >
+        <span className="session-tab-seg" data-active={sessionTab === 'live'}>
           <Radio size={14} />
         </span>
-        <span
-          className="px-1.5 py-0.5 flex items-center rounded transition-colors"
-          style={{
-            backgroundColor: sessionTab === 'history' ? 'var(--sol-accent)' : 'transparent',
-            color: sessionTab === 'history' ? 'var(--sol-editor-bg)' : 'var(--sol-text-dim)',
-          }}
-        >
+        <span className="session-tab-seg" data-active={sessionTab === 'history'}>
           <History size={14} />
         </span>
       </div>

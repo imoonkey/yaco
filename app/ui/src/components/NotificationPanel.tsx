@@ -51,8 +51,8 @@ export function NotificationPanel({
       onClose={onClose}
       overlay={false}
       animation="panel"
-      className="fixed right-3 z-50 rounded-xl w-[320px] max-w-[calc(100vw-24px)] max-h-[400px] flex flex-col overflow-hidden"
-      style={{ top: 44, backgroundColor: 'var(--sol-glass-bg)' }}
+      className="absolute right-0 top-8 z-50 rounded-xl w-[320px] max-w-[calc(100vw-24px)] max-h-[400px] flex flex-col overflow-hidden"
+      style={{ backgroundColor: 'var(--sol-glass-bg)' }}
     >
       <div
         className="flex items-center justify-between px-3 h-10 shrink-0"

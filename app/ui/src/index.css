@@ -311,6 +311,12 @@
 .theme-toggle .icon-moon {
   color: var(--sol-text-dim);
 }
+.theme-toggle .icon-moon:hover {
+  color: var(--sol-text);
+}
+[data-theme="dark"] .theme-toggle .icon-sun:hover {
+  color: var(--sol-text);
+}
 [data-theme="dark"] .theme-toggle .icon-sun {
   background: transparent;
   color: var(--sol-text-dim);
@@ -733,6 +739,45 @@ body {
 .section-header-icon-btn:disabled {
   cursor: default;
   opacity: 0.72;
+}
+
+/* Sessions live/history segmented toggle — shares the icon-button hover lift on
+   non-selected segments; the selected segment reads as an accent tab. */
+.session-tab-toggle {
+  padding: 2px;
+}
+.session-tab-seg {
+  display: flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--sol-text-dim);
+  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
+}
+.session-tab-seg:hover {
+  color: var(--sol-text);
+  background: var(--sol-base2);
+}
+[data-theme="dark"] .session-tab-seg:hover {
+  background: color-mix(in srgb, #fff 12%, transparent);
+}
+.session-tab-seg[data-active="true"] {
+  color: var(--sol-editor-bg);
+  background: var(--sol-accent);
+}
+
+/* Top-bar / app-chrome icon buttons (notifications, channels). The top bar sits
+   on --sol-bg (= base2 in light), so the hover lifts brighter to base3. */
+.chrome-icon-btn {
+  color: var(--sol-text-dim);
+  transition: color 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
+}
+.chrome-icon-btn:hover {
+  color: var(--sol-text);
+  background: var(--sol-base3);
+}
+[data-theme="dark"] .chrome-icon-btn:hover {
+  background: color-mix(in srgb, #fff 12%, transparent);
 }
 
 .panel-search-box {

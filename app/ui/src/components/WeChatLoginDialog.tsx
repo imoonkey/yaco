@@ -286,8 +286,7 @@ export function ChannelsHeaderButton() {
         onClick={() => setOpen(v => !v)}
         title="Messaging channels"
         aria-label="Messaging channels"
-        className="flex items-center justify-center cursor-pointer hover:opacity-80 w-7 h-7 rounded"
-        style={{ color: 'var(--sol-text-dim)', transition: 'color 120ms' }}
+        className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded"
       >
         <MessagesSquare size={15} />
       </button>

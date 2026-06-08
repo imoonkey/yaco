@@ -403,12 +403,6 @@ function App() {
           </div>
         )}
       </main>
-      {!isMobile && (
-        <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
-          <span className="text-ui-lg font-semibold">{activeProject || 'YACO'}</span>
-          <Clock />
-        </div>
-      )}
 
       {showAddDialog && (
         <AddProjectDialog
