@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-08: Codex prompt frame ignores background rows
+
+**What changed:**
+- Browser-side Codex prompt frame detection no longer uses xterm background-color continuity to decide where the overlay ends.
+- Prompt frames now use only structural text boundaries (`›` prompt starts, reply/interruption/shell marker rows, viewport-tail status rows, and slash/shell suggestion tables), so Codex's OSC 11-driven prompt/user-message background can remain enabled without moving the overlay's bottom rule.
+- No-boundary prompts trim trailing blank viewport rows back to the last nonblank prompt row, preserving multi-line prompt content while avoiding frames that balloon to the viewport bottom.
+- Added regression coverage for background-painted trailing blanks before `• Working`, bg/no-bg frame invariance, and no-boundary blank trimming.
+
+**Why:**
+- Codex paints its own padding rows when terminal background reports are available. The overlay lines should identify the prompt by characters/structure, not by whether adjacent rows share the same background.
+
+**Key files:** `app/ui/src/lib/codexInputPromptFrame.ts`, `app/ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (29 tests); `cd app/ui && npm run lint` passed with 0 errors and 10 existing hook-dependency warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Dashed guide lines for nested sessions
 
 **What changed:**

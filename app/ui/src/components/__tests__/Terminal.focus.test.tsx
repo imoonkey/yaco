@@ -351,6 +351,95 @@ describe('Terminal focus handoff', () => {
     })
   })
 
+  it('ignores Codex prompt background when trimming trailing blank rows before replies', async () => {
+    const promptBg = 0xf2ecd9
+    resetFakeBuffer([
+      { text: '› [Image #1] 这两条线，在我刚启动 codex,有 input box background color 的时候，', bg: promptBg },
+      { text: '显示是错的，bottom line 多往下了一行，现在没背景色了，反而对了。', bg: promptBg },
+      { text: '', bg: promptBg },
+      { text: '' },
+      '• Working (5s • esc to interrupt)',
+    ], 4)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
+  it('frames multiline Codex prompts identically with and without prompt backgrounds', async () => {
+    const Terminal = await loadTerminal()
+    const promptBg = 0xf2ecd9
+    const baseRows = [
+      { text: '› first line' },
+      { text: '  second line' },
+      { text: '  third line' },
+      '  yaco · main · custom status · Full Access',
+    ] satisfies FakeBufferRow[]
+    async function readFrameHeight(rows: FakeBufferRow[]): Promise<string> {
+      resetFakeBuffer(rows, 2)
+      const { container, unmount } = render(<Terminal sessionName="codex-session" provider="codex" />)
+      try {
+        await waitFor(() => {
+          expect(container.querySelector('[data-terminal-input-frame="true"]')).not.toBeNull()
+        })
+        return container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')?.style.height ?? ''
+      } finally {
+        unmount()
+      }
+    }
+
+    const withoutBg = await readFrameHeight(baseRows)
+    const withBg = await readFrameHeight(baseRows.map(row => typeof row === 'string' ? row : { ...row, bg: promptBg }))
+
+    expect(withoutBg).toBe('59px')
+    expect(withBg).toBe(withoutBg)
+  })
+
+  it('trims trailing blank rows when a Codex prompt has no visible boundary below it', async () => {
+    const promptBg = 0xf2ecd9
+    resetFakeBuffer([
+      { text: '› first line', bg: promptBg },
+      { text: '  second line', bg: promptBg },
+      { text: '', bg: promptBg },
+      '',
+      '',
+    ], 1)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('keeps the final content row when trimming no-boundary Codex prompt blanks', async () => {
+    const promptBg = 0xf2ecd9
+    resetFakeBuffer([
+      { text: '› first line', bg: promptBg },
+      { text: '  second line', bg: promptBg },
+      { text: '  third line', bg: promptBg },
+      { text: '', bg: promptBg },
+      '',
+    ], 2)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
   it('does not treat indented quote glyphs as Codex prompt starts', async () => {
     resetFakeBuffer([
       { text: '  › quoted user prompt in assistant output' },
