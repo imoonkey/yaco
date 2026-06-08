@@ -29,7 +29,7 @@ Each session row shows:
 - Pin toggle (diamond icon) — pins session to top of list
 - Provider icon (Claude symbol, ChatGPT logo, or terminal SVG)
 - Session name + status indicator (green pulse = processing, gray = idle)
-- Summary line (dimmed, below name) — first user message from Claude/Codex conversation logs. Empty if session just started, JSONL not yet flushed, or provider is shell.
+- Summary line (dimmed, below name) — the first *meaningful* user message from Claude/Codex conversation logs (slash commands restored to their original `/name args` input). Empty if session just started, JSONL not yet flushed, or provider is shell.
 
 ### Ordering
 
@@ -51,7 +51,9 @@ Indentation is `paddingLeft = 8 + depth*14` px on the row. Renaming a parent doe
 Server resolves summaries on `GET /api/sessions`, but not by reading provider homes:
 1. Read the fast session list from `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (`sessionId`, `sessionPath`, `provider`).
 2. Serve summaries from an in-process cache keyed by `(provider, sessionId, sessionPath)`. Cache misses are grouped by project path and resolved with one `yaco agent summaries --path <p> --json` call per path; sentinel `pending:awaiting-first-prompt` ids are never resolved.
-3. The CLI provider adapters own all provider-native reconstruction (Claude JSONL first user message, Codex `state_5.sqlite` title / `first_user_message`, rollout-file fallback). app/server no longer opens `~/.claude` or `~/.codex`. → See: `doc/main/cli/providers.md`.
+3. The CLI provider adapters own all provider-native reconstruction. A summary is the **first meaningful** user message, not the literal first JSONL entry: harness `<system-reminder>` blocks and command stdout are dropped, slash commands are restored to `/name args`, and session-management commands (`/rename`, `/clear`, `/compact`) plus handle echoes are skipped. Claude scans its project JSONL; Codex prefers `state_5.sqlite` `first_user_message` over the `title` column (Codex auto-renames the title to the YACO handle on every start, so the title is a name echo), with a rollout-file fallback. app/server no longer opens `~/.claude` or `~/.codex`. → See: `doc/main/cli/providers.md`.
+
+> Summaries are cached in-process by `(provider, sessionId, sessionPath)` and only re-resolve on a `processing → idle` transition or session mutation. A bare CLI rebuild does **not** refresh already-cached labels — restart the server (it runs under `tsx watch`, so touching `app/server/src/**` triggers a reload).
 
 Full summary strings are returned (no server-side truncation). The UI truncates with CSS `text-overflow: ellipsis`.
 
@@ -61,7 +63,7 @@ Full summary strings are returned (no server-side truncation). The UI truncates 
 
 ### History Tab
 
-The History tab calls `GET /api/sessions/history?project=<name>` and renders the list returned by the server. The server fetches rows from `yaco agent history --path <p> --json` (sorting and the 200-row cap are CLI-owned), maps the CLI shape to the UI shape (`sessionId` → `id`, `updatedAt` → `modified`), and tags `liveSessionName` by matching CLI `sessionId` against the live YACO session list. Provider-native reads and timestamp logic (Claude embedded JSONL timestamps, Codex thread timestamps) live in the CLI provider adapters. → See: `doc/main/cli/providers.md`.
+The History tab calls `GET /api/sessions/history?project=<name>` and renders the list returned by the server. The server fetches rows from `yaco agent history --path <p> --json` (sorting and the 200-row cap are CLI-owned), maps the CLI shape to the UI shape (`sessionId` → `id`, `updatedAt` → `modified`), and tags `liveSessionName` by matching CLI `sessionId` against the live YACO session list. Provider-native reads and timestamp logic (Claude embedded JSONL timestamps, Codex thread timestamps) live in the CLI provider adapters. The row meta line shows `gitBranch` only when it is not the default branch (`main`/`master`), so feature/worktree branches stand out and `main` is not repeated on every row. → See: `doc/main/cli/providers.md`.
 
 ### Actions
 

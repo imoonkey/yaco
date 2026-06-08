@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Session summaries from the first meaningful prompt
+
+**What changed:**
+- Claude and Codex summary labels are now the first *meaningful* user message instead of the literal first record. A shared `collapseUserMessage` / `firstMeaningfulMessage` pass in `history.ts` drops `<system-reminder>` and command-stdout noise, restores slash commands to their original `/name args` input, and skips `/rename`·`/clear`·`/compact` and handle echoes.
+- Codex `codexSummarize` now prefers `threads.first_user_message` over the `title` column (Codex auto-renames the title to the YACO handle on every start, so the title was a name echo that the UI sanitizer dropped to blank). The rollout fallback returns the first real message.
+- History list hides the default git branch (`main`/`master`) from the row meta; `sanitizeSummary` also strips `<local-command-stdout>` as defense-in-depth.
+
+**Why:**
+- The first JSONL/thread record is almost always non-content (a rename reminder, a slash-command wrapper, or the handle-echo title), so summaries frequently rendered blank in the session list. Measured live: 4/18 sessions blank → 0 after the fix.
+
+**Key files:** `cli/src/lib/core/agent/providers/history.ts`, `cli/test/summary.test.ts`, `app/ui/src/workspace/sanitizeSummary.ts`, `app/ui/src/workspace/WorkspaceHistoryList.tsx`, `doc/main/cli/providers.md`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd cli && bun test` (820 pass, summary suite extended to 16); `app/ui` lint clean; rebuilt CLI via `tools/install.sh --cli-only` and bounced the `tsx watch` server — live `/api/sessions` confirms previously-blank sessions now carry real labels.
+**Commit:** b20a370 (code) + this docs commit
+**Next:** None.
+**Blockers:** None — note that the server caches summaries in-process, so a CLI rebuild alone won't refresh existing labels; the server must restart.
+
 ## 2026-06-08: Codex terminal input prompt frame
 
 **What changed:**
