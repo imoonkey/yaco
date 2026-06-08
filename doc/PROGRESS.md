@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-08: Dashed guide lines for nested sessions
+
+**What changed:**
+- The live session list now draws a dashed vertical guide line per ancestor level in the indent gutter of nested (`parentSession`) rows, so parent→child relationships read at a glance like the task-graph tree connectors.
+- Each `SessionItem` row is `position: relative` and renders `depth` absolutely-positioned `aria-hidden` / `pointer-events-none` dashed spans (`var(--sol-text-dim)` @ 0.6 opacity, centred in each indent step). Indent geometry pulled into named constants (`INDENT_BASE`, `INDENT_STEP`, `GUIDE_OFFSET`).
+
+**Why:**
+- Indentation alone made parent/child sessions hard to distinguish; a visible dashed connector (color/opacity tuned with the user — `--sol-border` @ 0.5 was too faint, solid was too heavy) matches the existing task-graph aesthetic.
+
+**Key files:** `app/ui/src/workspace/WorkspaceSessionList.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npm run lint` passed (0 errors, pre-existing hook-dep warnings only); confirmed live via hot reload.
+**Commit:** `b25083a`
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Unify nav-chrome icon buttons and hovers
 
 **What changed:**
