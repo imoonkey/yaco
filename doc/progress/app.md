@@ -1,18 +1,19 @@
 ## 2026-06-08: Self-host JetBrains Mono + line-height/weight tokens
 
 **What changed:**
-- **Mono delivered, not just named.** `--font-mono` was a wishlist stack (`'SF Mono','Fira Code','JetBrains Mono',…`) that hit nothing on most non-Mac machines → fell back to bare `monospace` (DejaVu). Self-hosted JetBrains Mono via `@fontsource/jetbrains-mono` (weights 400/500/600/700 imported in `main.tsx`, woff2 bundled by Vite — local-first, no CDN). New stack `'SF Mono', 'JetBrains Mono', ui-monospace, monospace`: Mac unchanged, others upgrade DejaVu→JBM. xterm literal stack (`Terminal.tsx`) reordered to match.
+- **Mono delivered, not just named.** `--font-mono` was a wishlist stack (`'SF Mono','Fira Code','JetBrains Mono',…`) that hit nothing on most non-Mac machines → fell back to bare `monospace` (DejaVu). Self-hosted JetBrains Mono via `@fontsource/jetbrains-mono` (weights 400/500/600/700 imported in `main.tsx`, woff2 bundled by Vite — local-first, no CDN).
+- **Mono is platform-split (follow-up fix).** Putting the now-loaded `'JetBrains Mono'` ahead of `ui-monospace` stole SF Mono from Mac (SF Mono only resolves via `ui-monospace` on the web — system-restricted, unmatchable by name, can't be self-hosted). Final: CSS default `'JetBrains Mono', ui-monospace, monospace` (non-Mac); an early `index.html` inline script overrides `--font-mono` to `ui-monospace, 'SF Mono', monospace` on Apple platforms. **All mono now flows through `var(--font-mono)`** — incl. the CodeMirror editor (`editorTheme.ts` had hardcoded its own stack, the biggest miss) and xterm (`Terminal.tsx` reads the resolved value at init). No hardcoded mono stack remains.
 - **Line-height rhythm tokens.** Added `--lh-tight: 1.3` / `--lh-normal: 1.5`, applied only to the ~6 genuinely multi-line spots (compose transcript/textarea, diff content, graph tooltip). `lineHeight: 1` geometry, xterm, and CodeMirror editor metrics left alone (no blanket apply).
 - **Weight vocabulary unified.** All inline `fontWeight: <number>` → Tailwind `font-*` classes (search highlights, diff toolbar, tooltip, compose tray). SVG `<text>` weight attrs left (presentation attribute).
 
 **Why:**
 - Holistic typography critique: the size scale was already coherent, but (a) mono wasn't actually being delivered off-Mac, and (b) line-height and weight were the remaining "dual-track / no-system" gaps. These were the highest-value polish after the token migration.
-- Delivered via 3 parallel subagents on disjoint scopes (mono / components+hooks / workspace+tasks).
+- Delivered via 3 parallel subagents on disjoint scopes (mono / components+hooks / workspace+tasks); the platform-split + editor-token issues were caught in follow-up review.
 
-**Key files:** `app/ui/src/index.css`, `app/ui/src/main.tsx`, `app/ui/package.json`, `app/ui/src/components/{ComposeTray,Terminal}.tsx`, `app/ui/src/workspace/{diff/DiffTab,RefSearchDropdown,WorkspaceSearch,WorkspaceTextSearch}.tsx`, `app/ui/src/tasks/{TaskGraphTooltip,shared/InlineEdit}.tsx`, `app/ui/src/hooks/useNotifications.ts`.
-**Verification:** vite build clean; lint 0 errors; token e2e + a JetBrains-Mono-load e2e probe both pass (font resolves via `document.fonts.check`).
-**Commit:** `9f73d92` (+ this docs commit).
-**Next:** Optional — collapse the size scale to a tighter 5–6 steps (now a one-line token edit); `tabular-nums` pass.
+**Key files:** `app/ui/src/index.css`, `app/ui/index.html`, `app/ui/src/main.tsx`, `app/ui/package.json`, `app/ui/src/lib/editorTheme.ts`, `app/ui/src/components/{ComposeTray,Terminal}.tsx`, `app/ui/src/workspace/{diff/DiffTab,RefSearchDropdown,WorkspaceSearch,WorkspaceTextSearch}.tsx`, `app/ui/src/tasks/{TaskGraphTooltip,shared/InlineEdit}.tsx`, `app/ui/src/hooks/useNotifications.ts`.
+**Verification:** vite build clean; lint 0 errors; token e2e + JetBrains-Mono-load + platform-split (Mac/non-Mac `--font-mono`) e2e probes all pass.
+**Commit:** `9f73d92`, docs `e609948`, Mac platform-split `303e7ed`, editor-token `4d6e540` (+ this docs commit).
+**Next:** Optional — collapse the size scale to a tighter 5–6 steps (now a one-line token edit); `tabular-nums` pass; optionally self-host Instrument Sans (still on Google Fonts CDN).
 **Blockers:** None.
 
 ## 2026-06-08: Typography font-size token scale (`--text-ui-*`)
