@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Codex command suggestions stay outside prompt frames
+
+**What changed:**
+- Codex prompt frame detection now treats active slash-command and dollar-triggered plugin/skill suggestion tables as prompt-menu boundaries.
+- `/` suggestions count only when the first prompt row starts with `/`; `$` suggestions count from the prompt's last nonblank row only when `$` is at text start or follows whitespace and the next rows have the `Name  [Plugin|Skill] ...` table shape.
+- Line-start `$` output/shell markers remain a separate reply boundary, so indented prompt input like `  $` is not confused with output.
+
+**Why:**
+- Codex command suggestion rows are rendered below the input composer and should not be enclosed by the browser-side prompt frame.
+
+**Key files:** `app/ui/src/lib/codexInputPromptFrame.ts`, `app/ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed; `cd app/ui && npm run lint` passed with 10 existing hook-dependency warnings; `cd app/ui && npm run build` passed with existing eval/chunk-size warnings; `git diff --check -- app/ui/src/lib/codexInputPromptFrame.ts app/ui/src/components/__tests__/Terminal.focus.test.tsx` passed.
+**Commit:** `6dbcac5`
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Codex prompt frame logic split out
 
 **What changed:**
