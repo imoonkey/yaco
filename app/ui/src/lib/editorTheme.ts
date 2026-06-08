@@ -11,7 +11,7 @@ export const editorTheme = EditorView.theme({
   '&': {
     backgroundColor: 'var(--sol-editor-bg)',
     color: 'var(--sol-editor-fg)',
-    fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: 'var(--text-ui-lg)',
     height: '100%',
   },
@@ -19,7 +19,7 @@ export const editorTheme = EditorView.theme({
     outline: 'none',
   },
   '.cm-scroller': {
-    fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     lineHeight: '1.6',
   },
   '.cm-content': {
@@ -125,7 +125,7 @@ export const editorTheme = EditorView.theme({
     border: '1px solid var(--sol-border)',
     borderLeft: '3px solid',
     boxShadow: 'var(--elevation-1)',
-    fontFamily: "'SF Mono', 'Fira Code', 'JetBrains Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     fontSize: 'var(--text-ui-md)',
     lineHeight: '1.5',
     maxHeight: '300px',
