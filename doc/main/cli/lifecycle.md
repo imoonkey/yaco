@@ -1,6 +1,6 @@
 # Lifecycle
 
-> Last updated: 2026-06-08 (rename input guard: handle/tmux rename is immediate, provider `/rename` is input-empty gated and queues when the user is typing. Prior: astl-session-rename-link-integrity — rename rewrites task `agents` + child `parentSession` best-effort with warnings)
+> Last updated: 2026-06-09 (Codex async title sync: start enqueues `/rename` after ready and never waits for settle. Prior: rename input guard — handle/tmux rename is immediate, provider `/rename` is input-empty gated and queues when the user is typing)
 
 Visual state diagrams and sequence flows for session lifecycle. For the text-based state machine summary, see [architecture.md](architecture.md#state-machine). For provider-specific hooks and assumptions, see [providers.md](providers.md).
 
@@ -165,7 +165,7 @@ sequenceDiagram
 
 ## Sequence Diagram 2: Codex Start Flow
 
-All Codex starts (with or without `--name`) sync the provider title with `/rename` post-start. P6 confirmed: Codex accepts `/rename` during processing, so YACO gates only on whether the input prompt is empty.
+All Codex starts (with or without `--name`) sync the provider title with `/rename`. P6 confirmed: Codex accepts `/rename` during processing, so YACO gates only on whether the input prompt is empty.
 
 ```mermaid
 sequenceDiagram
@@ -191,15 +191,8 @@ sequenceDiagram
     end
 
     Note over M: waitForReady: idle or processing both accepted<br/>auto-handles Codex "Hooks need review" trust prompt
-
     M->>T: sendKeysWhenInputEmpty("/rename <handle>")
-    alt input prompt empty
-        Note over X: slash command is submitted immediately
-        Note over M: start waits for /rename to settle before returning
-    else user text already in input prompt
-        Note over M: detached helper waits for empty input and submits later
-        Note over M: start returns without merging /rename into user text
-    end
+    Note over M: title sync is best-effort async<br/>no settle wait before start returns
 
     M->>M: sessionId = hook-written value or pending sentinel
     M->>S: syncStateAfterStart
@@ -226,7 +219,7 @@ sequenceDiagram
         Note over M: Claude natively supports --resume + --name [verified P1]
     else Codex
         Note over M: canonicalize: codex resume <id> (--name stripped)
-        Note over M: if name requested, still sends /rename <handle> after resume
+        Note over M: if name requested, provider title sync queues like fresh Codex starts
     end
 
     M->>S: write {status: starting, sessionId: resumeId}
@@ -236,7 +229,7 @@ sequenceDiagram
 
     opt Codex
         M->>T: sendKeysWhenInputEmpty("/rename <handle>")
-        Note over M: immediate send waits for settle; occupied input queues a detached helper
+        Note over M: best-effort async title sync; no settle wait
     end
 
     Note over M: skip waitForSessionId (sessionId already known)

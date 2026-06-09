@@ -7,7 +7,6 @@ import {
   sendRawKeys,
   sendKeysWhenInputEmpty,
   startOscColorQueryResponder,
-  type InputGatedSendResult,
 } from "../../lib/core/agent/tmux.ts";
 import { getProvider } from "../../lib/core/agent/providers/index.ts";
 import { isIdle } from "../../lib/core/agent/providers/idle.ts";
@@ -29,7 +28,6 @@ import { deleteState, readState, writeState, listStateHandles, resolveRenamedHan
 const READY_TIMEOUT_MS = 30000;
 const POLL_MS = 500;
 const STABLE_IDLE_MS = 1000;
-const POST_INPUT_SETTLE_TIMEOUT_MS = 8000;
 const SID_POLL_TIMEOUT_MS = 3000;
 const SID_POLL_MS = 200;
 
@@ -237,44 +235,10 @@ function submitPostStartInputs(
   handle: string,
   provider: string,
   inputs: readonly string[],
-): InputGatedSendResult {
-  let result: InputGatedSendResult = "sent";
-  for (const input of inputs) {
-    result = sendKeysWhenInputEmpty(handle, provider, input);
-    if (result !== "sent") return result;
-  }
-  return result;
-}
-
-/** Wait for a just-submitted post-start input (e.g. Codex's `/rename <handle>`)
- *  to drain back to a stable idle prompt before start() returns.
- *
- *  The post-start `/rename` is a slash command the TUI applies asynchronously.
- *  Without waiting, start() can return mid-command, and a caller that issues a
- *  second command immediately — notably `yaco agent rename`, which sends its own
- *  `/rename <newHandle>` — races the in-flight one and loses it. Re-using the
- *  same stable-idle signal as waitForReady (fresh window, no hook short-circuit)
- *  serializes the two. Bounded; best-effort if the session dies or stays busy. */
-function waitForPostInputSettle(
-  handle: string,
-  timeoutMs: number = POST_INPUT_SETTLE_TIMEOUT_MS,
 ): void {
-  const start = Date.now();
-  let idleSince: number | null = null;
-  while (Date.now() - start < timeoutMs) {
-    if (!hasSession(handle)) return;
-    try {
-      const output = stripAnsi(capturePane(handle, 80));
-      if (isIdle(output)) {
-        idleSince ??= Date.now();
-        if (Date.now() - idleSince >= STABLE_IDLE_MS) return;
-      } else {
-        idleSince = null;
-      }
-    } catch {
-      idleSince = null;
-    }
-    Bun.sleepSync(POLL_MS);
+  for (const input of inputs) {
+    const result = sendKeysWhenInputEmpty(handle, provider, input);
+    if (result !== "sent") return;
   }
 }
 
@@ -342,7 +306,8 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   // strips --name and learns its handle via post-start inputs (/rename).
   const startCtx = { handle: resolvedName, args: effectiveArgs, resumeId };
   const commandArgs = prov.command.normalizeStartArgs(startCtx);
-  const postStartInputs = [...prov.command.postStartInputs(startCtx)];
+  const postStartCtx = { ...startCtx, args: commandArgs };
+  const postStartInputs = [...prov.command.postStartInputs(postStartCtx)];
 
   const wrappedCommand = buildWrappedCommand(resolvedName, state.createdAt, prov.command.build(commandArgs));
   try {
@@ -374,11 +339,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   let ready = waitForReady(resolvedName, prov.command.startupInterstitials ?? []);
 
   if (ready && postStartInputs.length > 0 && hasSession(resolvedName)) {
-    const postStartResult = submitPostStartInputs(resolvedName, provider, postStartInputs);
-    ready = postStartResult !== "missing" && postStartResult !== "timeout" && ready;
-    // Let the post-start command (Codex `/rename`) settle so a follow-up rename
-    // doesn't race it. Only runs for providers that declare post-start inputs.
-    if (ready && postStartResult === "sent") waitForPostInputSettle(resolvedName);
+    submitPostStartInputs(resolvedName, provider, postStartInputs);
   }
 
   // Resolve sessionId — skip polling if already known from --resume

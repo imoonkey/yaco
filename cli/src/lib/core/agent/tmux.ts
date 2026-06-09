@@ -6,7 +6,6 @@ import { isInputEmpty } from "./providers/idle.ts";
 import { stripAnsi } from "./model.ts";
 
 const EXEC_TIMEOUT_MS = 5000;
-const SEND_SUBMIT_DELAY_MS = 300;
 const INPUT_EMPTY_POLL_MS = 500;
 export const SEND_WHEN_INPUT_EMPTY_TIMEOUT_MS = 5 * 60 * 1000;
 const RGB_TERMINAL_FEATURES = [
@@ -407,8 +406,6 @@ export function sendKeys(handle: string, text: string): void {
     } catch { /* best-effort cleanup */ }
   }
 
-  // Let the TUI drain the bracketed paste before the submit key.
-  Bun.sleepSync(SEND_SUBMIT_DELAY_MS);
   execTmux(["send-keys", "-t", paneTargetValue(handle), "Enter"]);
 }
 

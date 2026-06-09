@@ -44,7 +44,7 @@ export interface ProviderCommand {
   normalizeResumeArgs(args: string[]): string[];
   /** Own all name-flag behavior (inject, strip, or leave) for the final args. */
   normalizeStartArgs(ctx: StartContext): string[];
-  /** Inputs sent into the live TUI right after it becomes ready. */
+  /** Inputs submitted into the live TUI after the tmux session is created. */
   postStartInputs(ctx: StartContext): readonly string[];
   /** Inputs that rename a live session in-TUI; empty when unsupported. */
   renameInputs(newHandle: string): readonly string[];

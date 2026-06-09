@@ -588,7 +588,7 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
 // ===========================================================================
 
 describe("start --json contract guarantees", () => {
-  it("starts Codex OSC responder (gated by adapter terminal flag) before publishing pid", () => {
+  it("starts Codex OSC responder before pid and queues title sync after ready", () => {
     const handle = `${TEST_PREFIX}-codex-responder`;
     trackHandle(handle);
 
@@ -602,8 +602,9 @@ describe("start --json contract guarantees", () => {
 
     const state = start("codex", ["--name", handle]);
 
-    // Codex declares terminal.respondToColorQuery, so the responder is started
-    // right after createSession — before the pid is captured into state.
+    // Codex declares terminal.respondToColorQuery, so the responder starts
+    // right after createSession. Provider-title /rename waits for bootstrap
+    // readiness but no longer waits for provider-title settle.
     expect(responderCaptures).toHaveLength(1);
     expect((responderCaptures[0]!.stateAtCallTime as SessionState).pid).toBe(0);
     expect(sendKeysCaptures).toHaveLength(1);

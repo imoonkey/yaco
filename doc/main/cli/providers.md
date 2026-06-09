@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-08 (summary labels: first meaningful message)
+> Last updated: 2026-06-09 (codex-async-title-sync)
 
 ## Supported Providers
 
@@ -122,9 +122,9 @@ needed.
 
 An empty prompt opens an idle session (no initial task).
 
-For Codex, the runtime always syncs the provider title with `/rename <handle>` after the agent is ready (both explicit and default names). `/rename` works during active processing, but YACO checks the rendered input prompt first: empty prompt sends immediately; Codex placeholder prompts are recognized by their dim ANSI style rather than by placeholder wording; occupied prompt queues a detached helper that waits until the input clears. For Claude, the runtime injects `--name <handle>` into the launch command when no explicit name is provided, so default word-based names are persisted natively.
+For Codex, the runtime syncs the provider title with `/rename <handle>` for both explicit and default names by enqueueing the slash command after bootstrap readiness. The title sync is best-effort and does not wait for settle before `start()` returns. Codex placeholder prompts are recognized by their dim ANSI style rather than by placeholder wording; busy turns or occupied composers queue a detached helper that waits until the input clears. For Claude, the runtime injects `--name <handle>` into the launch command when no explicit name is provided, so default word-based names are persisted natively.
 
-Slash commands are delivered through tmux bracketed paste followed by `Enter`. Raw character-by-character `send-keys` can race slash-command autocomplete, causing partial commands such as `/rename` to be interpreted as another command while the remainder stays in the composer.
+Slash commands are delivered through tmux bracketed paste followed immediately by `Enter`. Raw character-by-character `send-keys` can race slash-command autocomplete, causing partial commands such as `/rename` to be interpreted as another command while the remainder stays in the composer.
 
 For Codex, an unnamed empty start can stay `pending:awaiting-first-prompt` until a real prompt creates a thread. The `/rename` may resolve the thread earlier, but that timing is not guaranteed.
 

@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-09: Codex start rename is async title sync
+
+**What changed:**
+- Codex provider title sync now uses one path for every start: after bootstrap readiness, YACO enqueues `/rename <handle>` through `sendKeysWhenInputEmpty` and never waits for provider-title settle.
+- Removed `postStartInputTiming`, Codex prompt detection, and the start-path `waitForPostInputSettle` screen-capture wait. `waitForReady()` remains for bootstrap readiness and trust/hooks-review prompts, not for rename sequencing.
+- Kept internal slash-command delivery on tmux bracketed paste + immediate `Enter`; raw literal `send-keys` was tested and rejected because Codex treated the submit key as a newline in the composer.
+
+**Why:**
+- The Codex thread title is best-effort metadata; YACO's authoritative identity is the tmux session/state/task handle. A single async input-empty gated `/rename` path keeps empty starts, prompt starts, and later provider-title sync behavior simple while avoiding the too-early start-time paste path that Codex can treat as a queued follow-up input.
+
+**Key files:** `cli/src/commands/agent/start.ts`, `cli/src/lib/core/agent/providers/{codex.ts,types.ts}`, `cli/src/lib/core/agent/tmux.ts`, `cli/test/providers.test.ts`, `doc/main/cli/{architecture.md,lifecycle.md,providers.md}`
+**Verification:** `cd cli && bun test test/providers.test.ts test/start.test.ts test/tmux.test.ts test/lifecycle-guards.test.ts` passed (120 tests); `cd cli && bun build src/main.ts --target=bun --outfile /tmp/yaco-cli-build-check` passed; `tools/install.sh --cli-only` passed with doctor 12/12. `cd cli && bun run test:unit` still fails on the pre-existing `claude history list > collapses a leading slash command to its args` expectation (`payment flow` vs `/design payment flow`). Subagent code review of the earlier settle-guard version passed; this follow-up simplification removes that branch entirely.
+**Commit:** this commit.
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Attached-session Codex OSC color responder
 
 **What changed:**
