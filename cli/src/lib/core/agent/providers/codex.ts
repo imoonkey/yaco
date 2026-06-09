@@ -7,6 +7,7 @@ import { codexHooks } from "./hooks.ts";
 import { codexHistory } from "./history.ts";
 import { codexOutput } from "./output.ts";
 import { codexProjectMove } from "./project-move.ts";
+import { codexHooksAllYacoOwned } from "../lifecycle.ts";
 import type { TuiProvider } from "./types.ts";
 
 // If any of these flags is present, don't add the default permission flag.
@@ -70,10 +71,15 @@ export const codexProvider: TuiProvider = {
     },
 
     startupInterstitials: [
+      // Trust-FOLDER is a separate per-path trust mechanism with no foreign-content
+      // notion — opening the folder is itself the trust decision. Stays unguarded.
       { pattern: TRUST_PATTERN, keys: ["Enter"], skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
+      // Hooks-review screens are gated by a fail-closed trust predicate: auto-press
+      // ONLY when every effective Codex hook is YACO's own canonical command;
+      // otherwise the session goes blocked(trust) and waits for a human.
       // Cursor starts on "Review hooks"; Down + Enter picks "Trust all and continue".
-      { pattern: HOOK_REVIEW_PATTERN, keys: ["Down", "Enter"], settleMs: 100, skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
-      { pattern: HOOK_TRUST_OVERLAY_PATTERN, keys: ["t"], skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
+      { pattern: HOOK_REVIEW_PATTERN, keys: ["Down", "Enter"], settleMs: 100, skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN, guard: codexHooksAllYacoOwned, blockReason: "trust" },
+      { pattern: HOOK_TRUST_OVERLAY_PATTERN, keys: ["t"], skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN, guard: codexHooksAllYacoOwned, blockReason: "trust" },
     ],
   },
 

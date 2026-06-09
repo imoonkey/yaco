@@ -16,6 +16,7 @@ import {
   extractName,
   isValidSessionHandle,
   resolveName,
+  setStatus,
   stripAnsi,
   validateName,
   PENDING_SESSION_ID,
@@ -82,15 +83,26 @@ function syncStateAfterStart(
   return current;
 }
 
+/** Outcome of one interstitial-handling poll:
+ *   - "none":    nothing matched/handled; caller continues idle detection.
+ *   - "handled": keys were sent; caller resets idle tracking and keeps polling.
+ *   - "blocked": a guarded dialog failed its trust gate; the session was written
+ *                blocked(trust) with NO keys sent, and waitForReady must bail. */
+type InterstitialOutcome = "none" | "handled" | "blocked";
+
 /** Auto-answer a startup TUI dialog (trust folder, hook review, ...) declared by
  *  the provider adapter. Sends the first matching interstitial's keys in order,
- *  pausing `settleMs` between them. Returns true when a dialog was handled. */
-function handleStartupInterstitial(
+ *  pausing `settleMs` between them. A matched, current dialog whose `guard`
+ *  returns false is NOT auto-answered: the session is blocked with the
+ *  interstitial's `blockReason` (fail-closed startup trust gate) and "blocked"
+ *  is returned so the caller stops waiting. */
+export function handleStartupInterstitial(
   handle: string,
   output: string,
   interstitials: readonly StartupInterstitial[],
   handled: Set<string>,
-): boolean {
+  sessionPath: string,
+): InterstitialOutcome {
   for (let i = 0; i < interstitials.length; i++) {
     const interstitial = interstitials[i]!;
     const key = interstitialKey(interstitial, i);
@@ -100,14 +112,27 @@ function handleStartupInterstitial(
     const afterMatch = output.slice(match.index + match[0].length);
     if (interstitial.skipWhenPattern && findPatternMatch(interstitial.skipWhenPattern, afterMatch)) continue;
 
+    // Fail-closed trust gate: a genuinely-current guarded dialog YACO cannot
+    // vouch for must not be auto-dismissed. Mark handled (don't re-write every
+    // poll), block the session, send no keys.
+    if (interstitial.guard && !interstitial.guard(sessionPath)) {
+      handled.add(key);
+      const state = readState(handle);
+      if (state) {
+        setStatus(state, "blocked", interstitial.blockReason);
+        writeState(state);
+      }
+      return "blocked";
+    }
+
     handled.add(key);
     interstitial.keys.forEach((key, i) => {
       if (i > 0 && interstitial.settleMs) Bun.sleepSync(interstitial.settleMs);
       sendRawKeys(handle, key);
     });
-    return true;
+    return "handled";
   }
-  return false;
+  return "none";
 }
 
 /** Hook-first ready detection. Hook is the source of truth for status; screen is fallback
@@ -115,6 +140,7 @@ function handleStartupInterstitial(
 function waitForReady(
   handle: string,
   interstitials: readonly StartupInterstitial[],
+  sessionPath: string,
   timeoutMs: number = READY_TIMEOUT_MS,
 ): boolean {
   const start = Date.now();
@@ -130,7 +156,11 @@ function waitForReady(
     try {
       const raw = capturePane(handle, 80);
       const output = stripAnsi(raw);
-      if (handleStartupInterstitial(handle, output, interstitials, handledInterstitials)) {
+      const outcome = handleStartupInterstitial(handle, output, interstitials, handledInterstitials, sessionPath);
+      // A failed trust gate already wrote blocked(trust); bail so the session
+      // stays paused on the dialog instead of spinning to the ready timeout.
+      if (outcome === "blocked") return false;
+      if (outcome === "handled") {
         idleSince = null;
         Bun.sleepSync(POLL_MS);
         continue;
@@ -357,7 +387,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     syncStateAfterStart(resolvedName, pid, false, resumeId ?? "");
   }
 
-  let ready = waitForReady(resolvedName, prov.command.startupInterstitials ?? []);
+  let ready = waitForReady(resolvedName, prov.command.startupInterstitials ?? [], cwd);
 
   if (ready && postStartInputs.length > 0 && hasSession(resolvedName)) {
     submitPostStartInputs(resolvedName, provider, postStartInputs);

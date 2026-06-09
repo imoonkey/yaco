@@ -9,7 +9,7 @@
  *  Optional capabilities may be omitted: a provider can start as a usable
  *  tmux-backed TUI and gain richer reconstruction later. */
 
-import type { SessionState } from "../model.ts";
+import type { BlockReason, SessionState } from "../model.ts";
 import type { SessionIdResult } from "../session-id.ts";
 
 /** Provider hook event name (e.g. "SessionStart"). Open-ended so future
@@ -30,12 +30,19 @@ export interface StartContext {
  *  (trust folder, hook review, ...). `keys` are sent in order; `settleMs` is
  *  the pause between keys. `skipWhenPattern` suppresses stale scrollback matches
  *  when it appears after the matched interstitial text, such as a later prompt
- *  proving the captured dialog is already historical. */
+ *  proving the captured dialog is already historical.
+ *
+ *  `guard` is a fail-closed security predicate evaluated AFTER `skipWhenPattern`
+ *  (so only a genuinely-current dialog is gated): when it returns false the
+ *  runtime sends NO keys and instead blocks the session with `blockReason`,
+ *  leaving the dialog for a human. Absent `guard` ⇒ always auto-answer. */
 export interface StartupInterstitial {
   pattern: RegExp;
   keys: readonly string[];
   settleMs?: number;
   skipWhenPattern?: RegExp;
+  guard?: (sessionPath: string) => boolean;
+  blockReason?: BlockReason;
 }
 
 export interface ProviderCommand {

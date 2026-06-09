@@ -172,6 +172,25 @@ function trackHandle(handle: string): void {
   if (!createdHandles.includes(handle)) createdHandles.push(handle);
 }
 
+/** Run `fn` with HOME pointed at a fresh dir that has NO `.codex`, so the Codex
+ *  startup trust gate (`codexHooksAllYacoOwned`) finds no foreign hooks and is
+ *  vacuously true. Keeps these interstitial tests hermetic regardless of the
+ *  real `~/.codex` or a process-global `hookBinary()` cache poisoned by an
+ *  earlier install/doctor test (the gate builds its canonical prefix from it).
+ *  cwd (the sessionPath `start` passes) has no `.codex`, so it is already clean. */
+function withCleanCodexHome<T>(fn: () => T): T {
+  const prevHome = process.env.HOME;
+  const tmpHome = mkdtempSync(join(tmpdir(), "multmux-clean-home-"));
+  process.env.HOME = tmpHome;
+  try {
+    return fn();
+  } finally {
+    if (prevHome === undefined) delete process.env.HOME;
+    else process.env.HOME = prevHome;
+    rmSync(tmpHome, { recursive: true, force: true });
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Setup / Teardown
 // ---------------------------------------------------------------------------
@@ -319,6 +338,55 @@ describe("G10: send optimistic processing hint", () => {
 
     // State reverted to idle
     expect(readState(handle)?.status).toBe("idle");
+  });
+
+  it("answers blocked(question) → flips to processing and clears blockReason", () => {
+    const handle = `${TEST_PREFIX}-g10-question`;
+    trackHandle(handle);
+    writeState(makeState({ handle, status: "blocked", blockReason: "question" }));
+
+    send(handle, "the answer");
+
+    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    expect(captured.status).toBe("processing");
+    expect(captured.blockReason).toBeUndefined();
+
+    const persisted = readState(handle);
+    expect(persisted?.status).toBe("processing");
+    expect(persisted?.blockReason).toBeUndefined();
+  });
+
+  it("leaves blocked(trust) untouched on send", () => {
+    const handle = `${TEST_PREFIX}-g10-trust`;
+    trackHandle(handle);
+    writeState(makeState({ handle, status: "blocked", blockReason: "trust" }));
+
+    send(handle, "text");
+
+    // No optimistic flip — the trust screen still needs the user.
+    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    expect(captured.status).toBe("blocked");
+    expect(captured.blockReason).toBe("trust");
+
+    const persisted = readState(handle);
+    expect(persisted?.status).toBe("blocked");
+    expect(persisted?.blockReason).toBe("trust");
+  });
+
+  it("leaves blocked(permission) untouched on send", () => {
+    const handle = `${TEST_PREFIX}-g10-permission`;
+    trackHandle(handle);
+    writeState(makeState({ handle, status: "blocked", blockReason: "permission" }));
+
+    send(handle, "text");
+
+    const captured = sendKeysCaptures[0]!.stateAtCallTime as SessionState;
+    expect(captured.status).toBe("blocked");
+    expect(captured.blockReason).toBe("permission");
+
+    const persisted = readState(handle);
+    expect(persisted?.status).toBe("blocked");
+    expect(persisted?.blockReason).toBe("permission");
   });
 });
 
@@ -585,6 +653,63 @@ describe("list/status command surface — read vs --reconcile mutation", () => {
     expect(text).toContain(`idle`);
     expect(text).toContain(handle);
   });
+
+  // blocked-state: a fresh blocked session renders its status verbatim.
+  it("`status` text mode renders a blocked status", () => {
+    // Neutral handle (no "blocked" substring) so the assertion can't pass on
+    // the handle line alone — it must match the status line itself.
+    const handle = `${TEST_PREFIX}-needs-review`;
+    trackHandle(handle);
+    writeState(makeState({ handle, status: "blocked", blockReason: "permission" }));
+    mockConfig.checkSessionAlive = [true];
+
+    const text = status(handle);
+    expect(text).toMatch(/^status:\s+blocked$/m);
+  });
+
+  // blocked-state: the capture fallback can only derive idle|processing — it
+  // must never emit blocked, and a stale blockReason must not survive the
+  // correction to a non-blocked status.
+  it("capture-correction drops a stale blockReason and never derives blocked", () => {
+    const handle = `${TEST_PREFIX}-status-stale-blocked`;
+    trackHandle(handle);
+    // Defensive: a stale processing state still carrying a blockReason.
+    writeState(makeState({ handle, status: "processing", blockReason: "question" }));
+    const past = new Date(Date.now() - 35 * 60 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "❯ "; // idle prompt
+
+    const resolved = reconcileSession(handle);
+    expect(resolved!.status).toBe("idle");
+    expect(resolved!.blockReason).toBeUndefined();
+
+    const persisted = readState(handle);
+    expect(persisted?.status).toBe("idle");
+    expect(persisted?.blockReason).toBeUndefined();
+  });
+
+  // blocked-state (Medium regression): even when the captured status MATCHES the
+  // persisted status (no status drift), a stale blockReason must be persisted as
+  // dropped — the blockReason drift alone has to trigger the write-back.
+  it("reconcile clears a stale blockReason on disk when status is unchanged", () => {
+    const handle = `${TEST_PREFIX}-status-reason-drift`;
+    trackHandle(handle);
+    // Stale processing state carrying a stray reason; capture also reads busy,
+    // so capturedStatus === "processing" and the status value never changes.
+    writeState(makeState({ handle, status: "processing", blockReason: "question" }));
+    const past = new Date(Date.now() - 35 * 60 * 1000);
+    utimesSync(statePath(handle), past, past);
+    mockConfig.captureOutput = "Thinking..."; // busy → capturedStatus "processing"
+
+    const resolved = reconcileSession(handle);
+    expect(resolved!.status).toBe("processing");
+    expect(resolved!.blockReason).toBeUndefined();
+
+    // The stale reason must be cleared on disk, not just on the runtime view.
+    const persisted = readState(handle);
+    expect(persisted?.status).toBe("processing");
+    expect(persisted?.blockReason).toBeUndefined();
+  });
 });
 
 // ===========================================================================
@@ -635,7 +760,7 @@ describe("start --json contract guarantees", () => {
     ].join("\n");
     mockConfig.agentPid = 42003;
 
-    const state = start("codex", ["--name", handle]);
+    const state = withCleanCodexHome(() => start("codex", ["--name", handle]));
 
     expect(state.handle).toBe(handle);
     expect(rawKeyCaptures).toEqual([]);
@@ -655,7 +780,7 @@ describe("start --json contract guarantees", () => {
     ].join("\n");
     mockConfig.agentPid = 42004;
 
-    const state = start("codex", ["--name", handle]);
+    const state = withCleanCodexHome(() => start("codex", ["--name", handle]));
 
     expect(state.handle).toBe(handle);
     expect(rawKeyCaptures).toEqual([
