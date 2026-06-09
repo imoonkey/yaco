@@ -50,7 +50,7 @@ App (384 lines)
         ├── Menu (154 lines) — keyboard nav (Arrow/Enter/Home/End), long-press (350ms)
         ├── Terminal (528 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
-        ├── SessionItem — status dots (processing/idle/error/completed)
+        ├── SessionItem — status dots (processing/starting/idle/blocked) + blocked reason badge
         ├── WorkspaceHistoryList (114 lines)
         ├── WorkspaceSessionList (139 lines) — SessionItem with worktree badge
         ├── GitChangeItem
@@ -240,7 +240,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceTextSearch.tsx` | 489 | Full-text search with result cap banner |
 | `PanelSearchBox.tsx` | 59 | Shared panel search input used by text search and Sessions search |
 | `ShortcutSheet.tsx` | ~80 | Keyboard shortcut cheatsheet (? key) |
-| `WorkspaceSessionList.tsx` | 139 | SessionItem with status dots (processing/idle/error/completed) |
+| `WorkspaceSessionList.tsx` | 139 | SessionItem with status dots (processing/starting/idle/blocked) + blocked reason badge |
 | `WorkspaceHistoryList.tsx` | 114 | History tab items |
 | `useWorkspaceSidebarResize.ts` | 88 | Sidebar resize state + max computation |
 | `useWorkspaceSessionSection.tsx` | 177 | Session tab, drag, resume, history JSX |

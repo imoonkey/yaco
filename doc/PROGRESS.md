@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-09: UI blocked dot, reason badge, subtree-max ordering (session-blocked-state 5/6)
+
+**What changed:**
+- `app/ui/src/types.ts` — added `'blocked'` to `SessionStatus`, a `BlockReason = 'permission' | 'question' | 'trust'` union, and `AgentSession.blockReason?` (present only when `status === 'blocked'`).
+- `WorkspaceSessionList.tsx` — `STATUS_DOT_CLASS.blocked` is an orange `animate-pulse` dot (deliberately distinct from processing's cyan glow — reads as *needs-you*, not activity). A small orange reason badge next to the name maps `permission → "needs approval"`, `question → "has a question"`, `trust → "needs trust review"` (also on `title`/`aria-label`; the status dot's `aria-label` becomes `"blocked: <reason>"`).
+- `sessionLineage.ts` — `groupSessionLineage` now buckets each root-anchored subtree by a **subtree-max priority** (`blocked > processing > idle`) instead of by the root's status alone: any blocked/processing member promotes the whole (still-contiguous) subtree to the active bucket, and a subtree rooted at a `blocked` session sorts to the top of that bucket. Pinned roots still take precedence.
+- `useWorkspaceSessions.ts` — display order is now `pinned → blocked → processing → idle`.
+- `App.tsx` + new `lib/sessionCounts.ts` — extracted the per-project active/total count into a pure `computeProjectSessionCounts` helper; `blocked` now counts toward `active` alongside `processing`/`starting`.
+- Tests: updated the lineage processing-child-under-idle case (now promotes to active) and added blocked-descendant-promotes, blocked-root-sorts-to-top, and standalone-blocked-counts-active cases; new `lib/__tests__/sessionCounts.test.ts` directly asserts blocked counts as active (AC3).
+
+**Why:**
+- Closes the session-blocked-state feature end-to-end: a CLI hook-driven `blocked` status now surfaces in the UI as a distinct dot + reason so a session waiting on the user (permission/question/trust) is visible at a glance instead of looking idle. Subtree-max bucketing is the minimal change that prevents a blocked child under an idle parent from being buried at the bottom of the list.
+
+**Key files:** `app/ui/src/types.ts`, `app/ui/src/workspace/{WorkspaceSessionList,sessionLineage,useWorkspaceSessions}.tsx?`, `app/ui/src/App.tsx`, `app/ui/src/lib/sessionCounts.ts`, `app/ui/src/workspace/__tests__/sessionLineage.test.ts`, `app/ui/src/lib/__tests__/sessionCounts.test.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`, `doc/main/app/data-model/types.md`, `doc/main/app/frontend/components.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/sessionLineage.test.ts` → 16 pass; `npx vitest run src/lib/__tests__/sessionCounts.test.ts` → 4 pass; `npx tsc --noEmit` → 0 errors; `npm run lint` → 0 errors (pre-existing warnings only).
+**Commit:** pending (orchestrator commits centrally).
+**Next:** session-blocked-state task graph complete (all 6 tasks landed end-to-end: CLI status model + hook state machine + send/status + trust gate, app-server, UI).
+**Blockers:** None.
+
 ## 2026-06-09: Startup trust gating — Codex hooks-review → blocked(trust) (session-blocked-state 6/6)
 
 **What changed:**

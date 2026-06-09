@@ -51,7 +51,8 @@ interface ProgressEntry {
 ### Session
 
 ```typescript
-type SessionStatus = 'processing' | 'idle' | 'error' | 'completed'
+type SessionStatus = 'starting' | 'processing' | 'idle' | 'blocked'
+type BlockReason = 'permission' | 'question' | 'trust'
 // Agent providers are open catalog ids (e.g. 'claude', 'codex') validated
 // against the CLI provider catalog; 'shell' is the non-agent session type.
 // The server no longer constrains this to a closed union or infers it by name.
@@ -61,6 +62,7 @@ interface AgentSession {
   name: string           // e.g. "1-claude", "shell-1"
   provider: SessionProvider
   status: SessionStatus
+  blockReason?: BlockReason  // present only when status === 'blocked'
   project: string
   summary: string
   worktree?: string      // slug extracted from sessionPath (e.g. "my-feature")

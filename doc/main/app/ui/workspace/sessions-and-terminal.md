@@ -28,24 +28,27 @@ On desktop, located in the activity column (right panel) below the terminal. On 
 Each session row shows:
 - Pin toggle (diamond icon) — pins session to top of list
 - Provider icon (Claude symbol, ChatGPT logo, or terminal SVG)
-- Session name + status indicator (green pulse = processing, gray = idle)
+- Session name + status indicator (cyan pulse = processing, yellow pulse = starting, gray = idle, **orange pulse = blocked**)
+- For a `blocked` session, a small orange reason badge next to the name reads what it is waiting on: `permission` → "needs approval", `question` → "has a question", `trust` → "needs trust review" (also surfaced via `title`/`aria-label`). The orange `animate-pulse` dot reads as *needs-you* attention, deliberately distinct from processing's cyan glow.
 - Summary line (dimmed, below name) — the first *meaningful* user message from Claude/Codex conversation logs (slash commands restored to their original `/name args` input). Empty if session just started, JSONL not yet flushed, or provider is shell.
 
 ### Ordering
 
 Sessions display in three tiers with dividers between non-empty tiers:
 1. **Pinned** — user-pinned sessions, drag-reorderable among themselves
-2. **Processing** — currently active sessions (not pinned)
+2. **Active** — `blocked` then `processing`/`starting` sessions (not pinned). `blocked` sorts above `processing` so sessions waiting on the user surface first.
 3. **Idle** — waiting sessions (not pinned)
+
+`blocked` counts toward the per-project active session count (`computeProjectSessionCounts` in `lib/sessionCounts.ts`, a pure helper consumed by `App.tsx`).
 
 Pin state and order are client-side only (not persisted across page reloads).
 The visual tiers are rendered as one keyed row list, so local row state such as
 an inline rename draft survives refreshes that move a session between
-`starting`/processing and idle.
+`starting`/processing/blocked and idle.
 
 **Parent/child lineage.** Within this ordering, the live list renders agent spawn lineage as indentation, derived from each session's `parentSession` handle (no `childSessions` is persisted or required). `sessionLineage.ts` is the pure, tested core:
 - `buildSessionLineage(sessions)` flattens the ordered list into `{ session, depth }` rows — each parent immediately followed by its visible descendants, depth-first, preserving input order for roots and siblings. A session is a **root** when it has no `parentSession`, its parent is not in the visible list, or it self-references. Cycles are broken with a visited set; a session reachable only through a cycle is rendered as a root, so nothing loops or drops.
-- `groupSessionLineage(sessions, isPinned)` builds lineage over the **full** visible list (not per tier), then assigns each root-anchored subtree to the pinned/processing/idle tier **by its root**. This keeps a parent and all its visible descendants contiguous and indented even when a child's status or pin state differs (e.g. a processing child of an idle parent renders indented under that parent, not split off as a stray root). Pin state for drag/star affordances is still derived per row.
+- `groupSessionLineage(sessions, isPinned)` builds lineage over the **full** visible list (not per tier), then assigns each root-anchored subtree to the pinned/active/idle tier by a **subtree-max priority** (`blocked > processing > idle`): a subtree lands in the active tier if *any* member is blocked or processing, so a blocked/processing child under an idle parent is not buried in the idle tier. Within the active tier, subtrees rooted at a `blocked` session sort to the top. Pinned roots still take precedence over status. This keeps a parent and all its visible descendants contiguous and indented even when a child's status or pin state differs. Pin state for drag/star affordances is still derived per row.
 
 Indentation is `paddingLeft = 8 + depth*14` px on the row, with one dashed vertical guide line per ancestor level (`var(--sol-muted)` @ 0.6 opacity) drawn in the indent gutter so the parent→child relationship reads at a glance, mirroring the task-graph tree connectors. Renaming a parent does not rewrite a live child's `parentSession` here — that reference rewrite is owned by the CLI `yaco agent rename` path, not the UI. → See: `doc/main/cli/lifecycle.md` (rename).
 
