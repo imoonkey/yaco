@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { createBinaryFixture, selectProject, layoutKey, type BinaryFixtureProject } from './helpers/workspace'
+import { createBinaryFixture, selectProject, openFileViaSearch, layoutKey, type BinaryFixtureProject } from './helpers/workspace'
 
 // Collect all browser errors for diagnosis
 function collectErrors(page: Page) {
@@ -97,20 +97,23 @@ test.describe('Binary file preview', () => {
     expect(result.contentType).toBe('image/png')
   })
 
-  test('image file renders in editor without crash', async ({ page }) => {
+  test('image file renders in editor preview', async ({ page }) => {
     const errors = collectErrors(page)
 
     await page.goto('/')
     await selectProject(page, fixture.name)
     await page.waitForTimeout(1000)
 
-    const result = await page.evaluate(async ({ project, path }) => {
-      const res = await fetch(`/api/files/${encodeURIComponent(project)}/raw?path=${encodeURIComponent(path)}`)
-      return { status: res.status, type: res.headers.get('content-type') }
-    }, { project: fixture.name, path: fixture.imagePath })
+    // Open the PNG through quick-open and assert the editor actually renders the
+    // image preview surface — fetching the raw endpoint alone would pass even if
+    // the in-editor renderer were broken.
+    await openFileViaSearch(page, 'icon-192')
 
-    expect(result.status).toBe(200)
-    expect(result.type).toBe('image/png')
+    const img = page.locator('img[alt="Image preview"]')
+    await expect(img).toBeVisible({ timeout: 10_000 })
+    const src = await img.getAttribute('src')
+    expect(src).toContain('/raw')
+    expect(src).toContain('icon-192')
 
     if (errors.length > 0) {
       console.log('=== BROWSER ERRORS ===')

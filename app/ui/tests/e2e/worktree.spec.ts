@@ -92,16 +92,20 @@ test.describe('Worktree features', () => {
     await authWorktree.click()
     await page.waitForTimeout(2000)
 
-    // File explorer should show the worktree's src/ directory
+    // File explorer now shows the auth-v2 WORKTREE tree, which contains a file
+    // (`wip.txt`, untracked at its root) that exists ONLY in the worktree, not in
+    // the main checkout. Asserting on it proves the click actually re-rooted the
+    // explorer — a `src/` check would pass even if nothing switched.
     const fileTree = page.locator('[role="tree"]')
     await expect(fileTree).toBeVisible({ timeout: 5_000 })
-    await expect(fileTree.locator('text=src')).toBeVisible({ timeout: 5_000 })
+    await expect(fileTree.getByText('wip.txt', { exact: true })).toBeVisible({ timeout: 5_000 })
 
-    // Click the project name again to switch back to main checkout
+    // Switch back to the main checkout
     await page.locator('button', { hasText: fixture.name }).first().click()
     await page.waitForTimeout(1500)
 
-    // File explorer should be back at the main project — src/ should still be visible
+    // The worktree-only file is gone; the main tree (still has src/) is back.
+    await expect(fileTree.getByText('wip.txt', { exact: true })).toHaveCount(0)
     await expect(fileTree.locator('text=src')).toBeVisible({ timeout: 5_000 })
   })
 })

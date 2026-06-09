@@ -1,6 +1,8 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import {
-  openWorkspace,
+  provisionWorkspace,
+  selectProject,
+  createFixtureProject,
   waitForAppReady,
   getWorkspaceState,
   createTestFile,
@@ -9,13 +11,53 @@ import {
   waitForSSERefresh,
   uniqueFileName,
   layoutKey,
-  createFixtureProject,
   sidebar,
   activityPanel,
   projectsSectionBody,
   sectionHeader,
   expectApproxSize,
+  type FixtureProject,
 } from './helpers/workspace'
+
+// Every test provisions the isolated project(s) it needs (unique per run) and
+// disposes them after, so nothing depends on whatever already exists in the
+// registry — which is critical under a per-worktree YACO_HOME where the registry
+// starts empty.
+let provisioned: FixtureProject[] = []
+
+test.afterEach(async () => {
+  const all = provisioned
+  provisioned = []
+  await Promise.all(all.map((f) => f.dispose().catch(() => undefined)))
+})
+
+/** Provision an isolated workspace and track it for teardown. */
+async function ws(page: Page, request: Parameters<typeof createFixtureProject>[0]): Promise<FixtureProject> {
+  const project = await provisionWorkspace(page, request)
+  provisioned.push(project)
+  return project
+}
+
+/** Provision an extra isolated project (registered, not selected) for teardown. */
+async function extraProject(request: Parameters<typeof createFixtureProject>[0]): Promise<FixtureProject> {
+  const project = await createFixtureProject(request)
+  provisioned.push(project)
+  return project
+}
+
+function fetchProjectsList(page: Page) {
+  return page.evaluate(async () => {
+    const res = await fetch('/api/projects')
+    return res.json() as Promise<{ name: string; path: string }[]>
+  })
+}
+
+function readUiState(page: Page) {
+  return page.evaluate(() => {
+    const raw = localStorage.getItem('yaco-ui-state')
+    return raw ? JSON.parse(raw) : null
+  })
+}
 
 // --- Tests ---
 
@@ -24,8 +66,8 @@ import {
 // with a DOM/geometry assertion against the live app, so a green run proves the
 // app actually applied the persisted state — not just that a key round-tripped.
 test.describe('Layout persistence characterization', () => {
-  test('Cmd+B toggles sidebar visibility and persists across reload', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('Cmd+B toggles sidebar visibility and persists across reload', async ({ page, request }) => {
+    const project = await ws(page, request)
 
     // Default: sidebar visible at its persisted width.
     await expect(sidebar(page)).toBeVisible()
@@ -56,8 +98,8 @@ test.describe('Layout persistence characterization', () => {
     expectApproxSize((await sidebar(page).boundingBox())?.width, 220)
   })
 
-  test('Cmd+Shift+B toggles right panel and persists', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('Cmd+Shift+B toggles right panel and persists', async ({ page, request }) => {
+    const project = await ws(page, request)
 
     // Default: activity (right) panel visible.
     await expect(activityPanel(page)).toBeVisible()
@@ -77,8 +119,8 @@ test.describe('Layout persistence characterization', () => {
     await expect(activityPanel(page)).toBeVisible()
   })
 
-  test('open tabs and active tab persist across reload', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('open tabs and active tab persist across reload', async ({ page, request }) => {
+    const project = await ws(page, request)
     const testFile = uniqueFileName('persist_tab.txt')
 
     await createTestFile(page, project.name, testFile, 'persistence test\n')
@@ -109,131 +151,113 @@ test.describe('Layout persistence characterization', () => {
     // Pinned-session order is now durable server state (`/api/ui-state`), not a
     // workspace-localStorage field. Provision an isolated project so the pin set
     // is not shared with other runs, seed an order, reload, and assert it survives.
-    const fixture = await createFixtureProject(request)
-    try {
-      const pinnedOrder = ['session-z', 'session-a', 'session-m']
-      const putRes = await request.put(
-        `/api/ui-state/pinned-sessions?project=${encodeURIComponent(fixture.name)}`,
-        { data: { sessions: pinnedOrder } },
-      )
-      expect(putRes.ok()).toBe(true)
+    const project = await extraProject(request)
+    const pinnedOrder = ['session-z', 'session-a', 'session-m']
+    const putRes = await request.put(
+      `/api/ui-state/pinned-sessions?project=${encodeURIComponent(project.name)}`,
+      { data: { sessions: pinnedOrder } },
+    )
+    expect(putRes.ok()).toBe(true)
 
-      // Mount the workspace for the fixture (the app reads pins through usePinnedSessions).
-      await page.goto('/')
-      await expect(page.locator('button', { hasText: fixture.name }).first()).toBeVisible({ timeout: 10_000 })
-      await page.locator('button', { hasText: fixture.name }).first().click()
-      await page.waitForTimeout(1000)
-
-      // Reload, then read the durable order back.
-      await page.reload()
-      await waitForAppReady(page)
-      await page.waitForTimeout(1000)
-
-      const getRes = await request.get(`/api/ui-state/pinned-sessions?project=${encodeURIComponent(fixture.name)}`)
-      expect(await getRes.json()).toEqual(pinnedOrder)
-    } finally {
-      await fixture.dispose()
-    }
-  })
-
-  test('per-project layout is independent', async ({ page }) => {
+    // Mount the workspace for the fixture (the app reads pins through usePinnedSessions).
     await page.goto('/')
     await waitForAppReady(page)
-
-    const projects = await page.evaluate(async () => {
-      const res = await fetch('/api/projects')
-      return res.json() as Promise<{ name: string; path: string }[]>
-    })
-
-    if (projects.length < 2) {
-      test.skip()
-      return
-    }
-
-    const p1 = projects[0]
-    const p2 = projects[1]
-
-    // Select project 1, toggle sidebar off
-    await page.locator('button', { hasText: p1.name }).first().click()
-    await page.waitForTimeout(1000)
-    await page.keyboard.press('Meta+b')
-    await page.waitForTimeout(500)
-    // Project 1 sidebar gone from the DOM
-    await expect(sidebar(page)).toBeHidden()
-
-    // Switch to project 2 via Cmd+2 (sidebar is hidden, can't click)
-    await page.keyboard.press('Meta+2')
+    await selectProject(page, project.name)
     await page.waitForTimeout(1000)
 
-    // Project 2 sidebar should still be on (default) — visible in the DOM
-    await expect(sidebar(page)).toBeVisible()
-    const p2State = await getWorkspaceState(page, p2.name)
-    expect(p2State?.layout?.showSidebar ?? true).toBe(true)
+    // Reload, then read the durable order back.
+    await page.reload()
+    await waitForAppReady(page)
+    await page.waitForTimeout(1000)
 
-    // Project 1 sidebar should be off
-    const p1State = await getWorkspaceState(page, p1.name)
-    expect(p1State?.layout?.showSidebar).toBe(false)
+    const getRes = await request.get(`/api/ui-state/pinned-sessions?project=${encodeURIComponent(project.name)}`)
+    expect(await getRes.json()).toEqual(pinnedOrder)
+  })
 
-    // Restore project 1
-    await page.locator('button', { hasText: p1.name }).first().click()
+  test('per-project layout is independent', async ({ page, request }) => {
+    // Two isolated projects: toggling one project's layout must not leak to the
+    // other. Both are registered BEFORE the first load so both sidebar buttons
+    // exist without relying on a live project-registration SSE refresh. Uses the
+    // right panel + click-to-switch (the left sidebar stays visible) so the
+    // assertion never depends on registry ordering.
+    const a = await extraProject(request)
+    const b = await extraProject(request)
+    await page.goto('/')
+    await waitForAppReady(page)
+    await selectProject(page, a.name)
+    await expect(sectionHeader(page, a.name)).toBeVisible({ timeout: 10_000 })
+
+    // Project A: activity panel visible by default, then toggle it off.
+    await expect(activityPanel(page)).toBeVisible()
+    await page.keyboard.press('Meta+Shift+b')
     await page.waitForTimeout(500)
-    await page.keyboard.press('Meta+b')
+    await expect(activityPanel(page)).toBeHidden()
+    expect((await getWorkspaceState(page, a.name))?.layout?.showRightPanel).toBe(false)
+
+    // Switch to project B (left sidebar is still shown, so we can click).
+    await selectProject(page, b.name)
+    await expect(sectionHeader(page, b.name)).toBeVisible({ timeout: 10_000 })
     await page.waitForTimeout(500)
+
+    // Project B is unaffected — activity panel still on (default).
+    await expect(activityPanel(page)).toBeVisible()
+    expect((await getWorkspaceState(page, b.name))?.layout?.showRightPanel ?? true).toBe(true)
+
+    // Back to A — its toggle persisted independently.
+    await selectProject(page, a.name)
+    await expect(sectionHeader(page, a.name)).toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(500)
+    await expect(activityPanel(page)).toBeHidden()
+    expect((await getWorkspaceState(page, a.name))?.layout?.showRightPanel).toBe(false)
   })
 
   test('showProjects and projectSize persist across reload', async ({ page, request }) => {
-    const resp = await request.get('/api/projects')
-    const projects = await resp.json() as { name: string; path: string }[]
-    expect(projects.length).toBeGreaterThan(0)
-    const project = projects[0]
+    const project = await extraProject(request)
 
-    // Seed non-default values before mount: Projects section collapsed, sized 200.
-    await page.addInitScript(({ key }) => {
-      const raw = localStorage.getItem(key)
-      const state = raw ? JSON.parse(raw) : {}
-      state.layout = { ...(state.layout ?? {}), showProjects: false, projectSize: 200 }
-      localStorage.setItem(key, JSON.stringify(state))
-    }, { key: layoutKey(project.name) })
+    // Seed ONCE before mount: select this project via ui-state, and set
+    // projectSize=200 with Projects visible (so its body is measurable). The
+    // layout key is only seeded when absent, so the collapse we do below survives
+    // the reload instead of being re-seeded.
+    await page.addInitScript(({ key, name }) => {
+      localStorage.setItem('yaco-ui-state', JSON.stringify({ project: name }))
+      if (!localStorage.getItem(key)) {
+        localStorage.setItem(key, JSON.stringify({ layout: { showProjects: true, projectSize: 200 } }))
+      }
+    }, { key: layoutKey(project.name), name: project.name })
 
-    // Mount — workspace reads seeded values
+    // Mount — workspace selects the seeded project and applies projectSize.
     await page.goto('/')
     await waitForAppReady(page)
-    await page.waitForTimeout(2000)
+    await expect(sectionHeader(page, project.name)).toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(1500)
 
-    // Persisted AND the Projects section actually renders collapsed
-    let state = await getWorkspaceState(page, project.name)
+    // projectSize applied: the Projects body renders at the persisted ≈200px.
+    await expect(sectionHeader(page, 'Projects')).toHaveAttribute('aria-expanded', 'true')
+    expectApproxSize((await projectsSectionBody(page).boundingBox())?.height, 200)
+    expect((await getWorkspaceState(page, project.name))?.layout?.projectSize).toBe(200)
+
+    // Collapse the Projects section (its body is visible, so the header click is
+    // unambiguous) → persisted AND actually renders collapsed.
+    await sectionHeader(page, 'Projects').click()
+    await page.waitForTimeout(500)
+    await expect(sectionHeader(page, 'Projects')).toHaveAttribute('aria-expanded', 'false')
+    await expect(projectsSectionBody(page)).toBeHidden()
+    expect((await getWorkspaceState(page, project.name))?.layout?.showProjects).toBe(false)
+
+    // Reload — both the collapse and projectSize survive.
+    await page.reload()
+    await waitForAppReady(page)
+    await expect(sectionHeader(page, project.name)).toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(1500)
+
+    const state = await getWorkspaceState(page, project.name)
     expect(state?.layout?.showProjects).toBe(false)
     expect(state?.layout?.projectSize).toBe(200)
     await expect(sectionHeader(page, 'Projects')).toHaveAttribute('aria-expanded', 'false')
-    await expect(projectsSectionBody(page)).toBeHidden()
-
-    // Reload — verify persistence again
-    await page.reload()
-    await waitForAppReady(page)
-    await page.waitForTimeout(2000)
-
-    state = await getWorkspaceState(page, project.name)
-    expect(state?.layout?.showProjects).toBe(false)
-    expect(state?.layout?.projectSize).toBe(200)
-
-    // Expand the section → the body renders at the persisted projectSize (≈200px).
-    await sectionHeader(page, 'Projects').click()
-    await expect(projectsSectionBody(page)).toBeVisible()
-    expectApproxSize((await projectsSectionBody(page).boundingBox())?.height, 200)
-
-    // Restore defaults so a reused profile starts clean
-    await page.evaluate((key) => {
-      const raw = localStorage.getItem(key)
-      if (raw) {
-        const s = JSON.parse(raw)
-        s.layout = { ...(s.layout ?? {}), showProjects: true, projectSize: 120 }
-        localStorage.setItem(key, JSON.stringify(s))
-      }
-    }, layoutKey(project.name))
   })
 
-  test('section collapse state persists and renders collapsed', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('section collapse state persists and renders collapsed', async ({ page, request }) => {
+    const project = await ws(page, request)
 
     // Sidebar sections start expanded.
     let state = await getWorkspaceState(page, project.name)
@@ -267,49 +291,46 @@ test.describe('Layout persistence characterization', () => {
 })
 
 test.describe('Keyboard shortcut characterization', () => {
-  test('Cmd+1-9 switches projects in workspace view', async ({ page }) => {
+  test('Cmd+1-9 switches projects in workspace view', async ({ page, request }) => {
+    // Guarantee >= 2 projects exist in whatever registry this run uses.
+    const a = await extraProject(request)
+    const b = await extraProject(request)
     await page.goto('/')
     await waitForAppReady(page)
 
-    const projects = await page.evaluate(async () => {
-      const res = await fetch('/api/projects')
-      return res.json() as Promise<{ name: string; path: string }[]>
-    })
+    const projects = await fetchProjectsList(page)
+    expect(projects.length).toBeGreaterThanOrEqual(2)
 
-    if (projects.length < 2) {
-      test.skip()
-      return
-    }
+    // Cmd+1..9 only addresses the first nine positions. In an isolated worktree
+    // home our two fixtures sit there; in a populated ~/.yaco they don't, so fall
+    // back to the first two existing projects (always within range).
+    const ia = projects.findIndex((p) => p.name === a.name)
+    const ib = projects.findIndex((p) => p.name === b.name)
+    const useFixtures = ia >= 0 && ia < 9 && ib >= 0 && ib < 9
+    const [first, second] = useFixtures
+      ? (ia < ib ? [a.name, b.name] : [b.name, a.name])
+      : [projects[0].name, projects[1].name]
 
-    await page.locator('button', { hasText: projects[0].name }).first().click()
+    const idxOf = async (name: string) => (await fetchProjectsList(page)).findIndex((p) => p.name === name)
+
+    await selectProject(page, first)
+    await page.waitForTimeout(800)
+
+    // Switch to `second` via its keyboard position (re-read to tolerate churn).
+    await page.keyboard.press(`Meta+${(await idxOf(second)) + 1}`)
     await page.waitForTimeout(1000)
+    await expect(sectionHeader(page, second)).toBeVisible()
+    expect((await readUiState(page))?.project).toBe(second)
 
-    // Cmd+2 should switch to second project — workspace re-mounts for it
-    // (the Explorer section header title is the active project name).
-    await page.keyboard.press('Meta+2')
+    // Switch back to `first`.
+    await page.keyboard.press(`Meta+${(await idxOf(first)) + 1}`)
     await page.waitForTimeout(1000)
-    await expect(sectionHeader(page, projects[1].name)).toBeVisible()
-
-    const state = await page.evaluate(() => {
-      const raw = localStorage.getItem('yaco-ui-state')
-      return raw ? JSON.parse(raw) : null
-    })
-    expect(state?.project).toBe(projects[1].name)
-
-    // Cmd+1 should switch back
-    await page.keyboard.press('Meta+1')
-    await page.waitForTimeout(1000)
-    await expect(sectionHeader(page, projects[0].name)).toBeVisible()
-
-    const state2 = await page.evaluate(() => {
-      const raw = localStorage.getItem('yaco-ui-state')
-      return raw ? JSON.parse(raw) : null
-    })
-    expect(state2?.project).toBe(projects[0].name)
+    await expect(sectionHeader(page, first)).toBeVisible()
+    expect((await readUiState(page))?.project).toBe(first)
   })
 
-  test('Cmd+P opens file search, Escape closes it', async ({ page }) => {
-    await openWorkspace(page)
+  test('Cmd+P opens file search, Escape closes it', async ({ page, request }) => {
+    await ws(page, request)
 
     // Should not be visible initially
     const searchInput = page.locator('input[placeholder="Search files..."], input[placeholder="Loading files..."]')
@@ -324,8 +345,8 @@ test.describe('Keyboard shortcut characterization', () => {
     await expect(searchInput).not.toBeVisible()
   })
 
-  test('Cmd+W closes the active tab', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('Cmd+W closes the active tab', async ({ page, request }) => {
+    const project = await ws(page, request)
     const testFile = uniqueFileName('shortcut_close.txt')
 
     await createTestFile(page, project.name, testFile, 'close me\n')
@@ -348,8 +369,8 @@ test.describe('Keyboard shortcut characterization', () => {
     await deleteTestFile(page, project.name, testFile)
   })
 
-  test('Cmd+Shift+V cycles markdown preview mode for .md files', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('Cmd+Shift+V cycles markdown preview mode for .md files', async ({ page, request }) => {
+    const project = await ws(page, request)
     const mdFile = uniqueFileName('md_cycle.md')
 
     await createTestFile(page, project.name, mdFile, '# Test\n\nHello markdown\n')
@@ -366,7 +387,7 @@ test.describe('Keyboard shortcut characterization', () => {
     await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible()
 
     // Cmd+Shift+V should cycle: edit -> split -> preview -> edit
-    const getMode = () => getWorkspaceState(page, project.name).then(s => s?.layout?.previewMode ?? null)
+    const getMode = () => getWorkspaceState(page, project.name).then((s) => s?.layout?.previewMode ?? null)
 
     await page.keyboard.press('Meta+Shift+v')
     await page.waitForTimeout(500)
@@ -388,8 +409,8 @@ test.describe('Keyboard shortcut characterization', () => {
 test.describe('Mobile pane flow characterization', () => {
   test.use({ viewport: { width: 375, height: 812 }, hasTouch: true })
 
-  test('mobile layout shows Browse/Editor/Terminal pane switcher', async ({ page }) => {
-    await openWorkspace(page)
+  test('mobile layout shows Browse/Editor/Terminal pane switcher', async ({ page, request }) => {
+    await ws(page, request)
 
     // Should see the pane switcher with three options
     await expect(page.getByRole('button', { name: 'Browse', exact: true })).toBeVisible()
@@ -397,8 +418,8 @@ test.describe('Mobile pane flow characterization', () => {
     await expect(page.getByRole('button', { name: 'Terminal', exact: true })).toBeVisible()
   })
 
-  test('opening a file switches to editor pane', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('opening a file switches to editor pane', async ({ page, request }) => {
+    const project = await ws(page, request)
     const testFile = uniqueFileName('mobile_open.txt')
 
     await createTestFile(page, project.name, testFile, 'mobile test content\n')
@@ -421,8 +442,8 @@ test.describe('Mobile pane flow characterization', () => {
     await deleteTestFile(page, project.name, testFile)
   })
 
-  test('mobile files pane shows Explorer, Changes, and Sessions sections', async ({ page }) => {
-    await openWorkspace(page)
+  test('mobile files pane shows Explorer, Changes, and Sessions sections', async ({ page, request }) => {
+    await ws(page, request)
 
     // Click Browse pane
     await page.locator('button', { hasText: 'Browse' }).click()
@@ -433,8 +454,8 @@ test.describe('Mobile pane flow characterization', () => {
     await expect(page.getByText('Sessions', { exact: true }).first()).toBeVisible()
   })
 
-  test('mobile pane state persists in localStorage', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('mobile pane state persists in localStorage', async ({ page, request }) => {
+    const project = await ws(page, request)
 
     // Switch to terminal pane
     await page.locator('button', { hasText: 'Terminal' }).click()

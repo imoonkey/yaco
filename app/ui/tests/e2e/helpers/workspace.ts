@@ -91,6 +91,18 @@ export async function selectProject(page: Page, name: string): Promise<void> {
   await page.locator('button', { hasText: name }).first().click()
 }
 
+/** Provision a fresh isolated project, load the app, and select it. The standard
+ *  entry point for layout/persistence specs: it depends on nothing already in the
+ *  registry, so it works against an empty per-worktree YACO_HOME. Dispose the
+ *  returned fixture when done. */
+export async function provisionWorkspace(page: Page, request: APIRequestContext): Promise<FixtureProject> {
+  const project = await createFixtureProject(request)
+  await page.goto('/')
+  await waitForAppReady(page)
+  await selectProject(page, project.name)
+  return project
+}
+
 // --- File API helpers (run through the proxied /api routes from the page) ---
 
 /** Create an empty file, then write its content via a revisioned PUT. */
