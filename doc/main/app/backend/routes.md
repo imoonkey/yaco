@@ -84,7 +84,7 @@ All git routes support `?worktree=<slug>` query param via `withProject` middlewa
 
 | Protocol | Path | Description |
 |----------|------|-------------|
-| WS | `/ws/terminal/:name?cols=N&rows=N&project=P` | Terminal PTY attached to tmux; `project` scopes session selection in the UI |
+| WS | `/ws/terminal/:name?cols=N&rows=N&fg=%23rrggbb&bg=%23rrggbb&cursor=%23rrggbb&project=P` | Terminal PTY attached to tmux; palette params let app/server answer Codex OSC color probes at the PTY bridge; `project` scopes session selection in the UI |
 
 ### Voice
 

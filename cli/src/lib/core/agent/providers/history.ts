@@ -135,7 +135,7 @@ function parseLastTimestamp(text: string): string | null {
 }
 
 /** Parse the first meaningful user message from the head of a Claude JSONL file.
- *  Slash commands collapse to their args; reminders and stdout are skipped. */
+ *  Slash commands are restored to `/command args`; reminders and stdout are skipped. */
 function parseFirstUserMessage(head: string): string | null {
   const texts: string[] = [];
   for (const line of head.split("\n")) {

@@ -61,6 +61,11 @@ describe("Codex OSC color response handling", () => {
     expect(src).toContain("      buf=''");
     expect(src).not.toContain("      exit 0");
   });
+
+  it("uses the app editor light background for startup replies", () => {
+    expect(src).toContain('"fdfd/f6f6/e3e3"');
+    expect(src).not.toContain('"eeee/e8e8/d5d5"');
+  });
 });
 
 describe("terminal appearance detection", () => {

@@ -11,6 +11,7 @@ const clearSpy = vi.fn()
 type OscHandler = (data: string) => boolean | Promise<boolean>
 const oscHandlers = new Map<number, OscHandler[]>()
 const wsSends: string[] = []
+const wsUrls: string[] = []
 
 interface FakeBufferLine {
   isWrapped: boolean
@@ -97,13 +98,18 @@ vi.mock('@xterm/xterm', () => {
         }
       },
     }
-    options: Record<string, unknown> = {}
+    options: Record<string, unknown>
     buffer = { active: fakeBuffer }
     focus = focusSpy
-    constructor() {
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = { ...options }
       this.element = document.createElement('div')
       const screen = document.createElement('div')
       screen.className = 'xterm-screen'
+      Object.defineProperty(screen, 'clientWidth', {
+        configurable: true,
+        get: () => 786,
+      })
       const viewport = document.createElement('div')
       viewport.className = 'xterm-viewport'
       const scrollable = document.createElement('div')
@@ -177,7 +183,8 @@ beforeEach(() => {
     onmessage: ((e: MessageEvent) => void) | null = null
     onerror: ((e: Event) => void) | null = null
     onclose: ((e: CloseEvent) => void) | null = null
-    constructor() {
+    constructor(url?: string) {
+      wsUrls.push(String(url ?? ''))
       setTimeout(() => this.onopen?.(new Event('open')), 0)
     }
     send(data: string) { wsSends.push(data) }
@@ -206,7 +213,12 @@ beforeEach(() => {
   resizeSpy.mockClear()
   clearSpy.mockClear()
   wsSends.length = 0
+  wsUrls.length = 0
   oscHandlers.clear()
+  document.documentElement.style.setProperty('--sol-editor-bg', '#fdf6e3')
+  document.documentElement.style.setProperty('--sol-editor-fg', '#657b83')
+  document.documentElement.style.setProperty('--sol-text', '#657b83')
+  document.documentElement.style.setProperty('--sol-blue', '#268bd2')
   resetFakeBuffer()
 })
 
@@ -308,6 +320,7 @@ describe('Terminal focus handoff', () => {
     await waitFor(() => {
       const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
       expect(frame).not.toBeNull()
+      expect(frame?.style.width).toBe('786px')
       expect(frame?.style.top).toBe('0px')
       expect(frame?.style.height).toBe('39px')
     })
@@ -348,6 +361,95 @@ describe('Terminal focus handoff', () => {
       expect(frame).not.toBeNull()
       expect(frame?.style.top).toBe('0px')
       expect(frame?.style.height).toBe('79px')
+    })
+  })
+
+  it('ignores Codex prompt background when trimming trailing blank rows before replies', async () => {
+    const promptBg = 0xf2ecd9
+    resetFakeBuffer([
+      { text: '› [Image #1] 这两条线，在我刚启动 codex,有 input box background color 的时候，', bg: promptBg },
+      { text: '显示是错的，bottom line 多往下了一行，现在没背景色了，反而对了。', bg: promptBg },
+      { text: '', bg: promptBg },
+      { text: '' },
+      '• Working (5s • esc to interrupt)',
+    ], 4)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
+    })
+  })
+
+  it('frames multiline Codex prompts identically with and without prompt backgrounds', async () => {
+    const Terminal = await loadTerminal()
+    const promptBg = 0xf2ecd9
+    const baseRows = [
+      { text: '› first line' },
+      { text: '  second line' },
+      { text: '  third line' },
+      '  yaco · main · custom status · Full Access',
+    ] satisfies FakeBufferRow[]
+    async function readFrameHeight(rows: FakeBufferRow[]): Promise<string> {
+      resetFakeBuffer(rows, 2)
+      const { container, unmount } = render(<Terminal sessionName="codex-session" provider="codex" />)
+      try {
+        await waitFor(() => {
+          expect(container.querySelector('[data-terminal-input-frame="true"]')).not.toBeNull()
+        })
+        return container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')?.style.height ?? ''
+      } finally {
+        unmount()
+      }
+    }
+
+    const withoutBg = await readFrameHeight(baseRows)
+    const withBg = await readFrameHeight(baseRows.map(row => typeof row === 'string' ? row : { ...row, bg: promptBg }))
+
+    expect(withoutBg).toBe('59px')
+    expect(withBg).toBe(withoutBg)
+  })
+
+  it('trims trailing blank rows when a Codex prompt has no visible boundary below it', async () => {
+    const promptBg = 0xf2ecd9
+    resetFakeBuffer([
+      { text: '› first line', bg: promptBg },
+      { text: '  second line', bg: promptBg },
+      { text: '', bg: promptBg },
+      '',
+      '',
+    ], 1)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('keeps the final content row when trimming no-boundary Codex prompt blanks', async () => {
+    const promptBg = 0xf2ecd9
+    resetFakeBuffer([
+      { text: '› first line', bg: promptBg },
+      { text: '  second line', bg: promptBg },
+      { text: '  third line', bg: promptBg },
+      { text: '', bg: promptBg },
+      '',
+    ], 2)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('59px')
     })
   })
 
@@ -428,6 +530,24 @@ describe('Terminal focus handoff', () => {
       { text: 'run this command' },
       { text: '' },
       '$ npm test',
+    ], 3)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
+  it('stops no-background Codex prompt frames at line-start MCP warning rows', async () => {
+    resetFakeBuffer([
+      { text: '› previous prompt' },
+      { text: 'check available mcp servers' },
+      { text: '' },
+      '⚠ MCP startup interrupted. The following servers were not initialized: codex_apps',
     ], 3)
     const Terminal = await loadTerminal()
     const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
@@ -600,13 +720,27 @@ describe('Terminal focus handoff', () => {
     expect(container.querySelector('[data-terminal-input-frame="true"]')).toBeNull()
   })
 
-  it('reserves xterm internal scrollbar width when fitting columns', async () => {
+  it('reserves one cell as a right clip cushion without counting hidden xterm scrollbars', async () => {
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="session-a" />)
+
+    await waitFor(() => {
+      expect(resizeSpy).toHaveBeenCalledWith(79, 20)
+    })
+    expect(container.querySelector<HTMLElement>('.yaco-terminal-xterm')?.style.getPropertyValue('--yaco-terminal-right-clip-cushion')).toBe('10px')
+  })
+
+  it('passes the resolved terminal palette to the terminal websocket', async () => {
     const Terminal = await loadTerminal()
     render(<Terminal sessionName="session-a" />)
 
     await waitFor(() => {
-      expect(resizeSpy).toHaveBeenCalledWith(78, 20)
+      expect(wsUrls.length).toBeGreaterThan(0)
     })
+    const url = decodeURIComponent(wsUrls[0]!)
+    expect(url).toContain('fg=#657b83')
+    expect(url).toContain('bg=#fdf6e3')
+    expect(url).toContain('cursor=#657b83')
   })
 
   it('sends external terminal text as text-paste instead of raw input', async () => {

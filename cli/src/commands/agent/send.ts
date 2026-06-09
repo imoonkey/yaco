@@ -1,6 +1,6 @@
 import { sendKeys, hasSession } from "../../lib/core/agent/tmux.ts";
 import { readState, writeState } from "../../lib/core/agent/session-state.ts";
-import { validateName } from "../../lib/core/agent/model.ts";
+import { validateName, setStatus } from "../../lib/core/agent/model.ts";
 
 export function send(name: string, message: string): void {
   validateName(name);
@@ -9,13 +9,20 @@ export function send(name: string, message: string): void {
   }
 
   // Write optimistic processing hint so list/status don't show a pre-send idle
-  // buffer. Hook is still the authority and will overwrite.
+  // buffer. Hook is still the authority and will overwrite. Sending text also
+  // *answers* a pending question, so blocked(question) flips to processing and
+  // its blockReason clears. It must NOT touch blocked(permission) or
+  // blocked(trust): sending text neither grants a permission nor approves a
+  // trust screen, so flipping those would hide a real "needs you" state — they
+  // clear only via a real hook / startup transition.
   const state = readState(name);
   const previousStatus = state?.status;
+  const previousReason = state?.blockReason;
   const createdAt = state?.createdAt;
   let didWriteOptimisticHint = false;
-  if (state && state.status === "idle") {
-    state.status = "processing";
+  const answersQuestion = state?.status === "blocked" && state.blockReason === "question";
+  if (state && (state.status === "idle" || answersQuestion)) {
+    setStatus(state, "processing");
     writeState(state);
     didWriteOptimisticHint = true;
   }
@@ -30,7 +37,7 @@ export function send(name: string, message: string): void {
     if (didWriteOptimisticHint && previousStatus) {
       const current = readState(name);
       if (current && current.createdAt === createdAt && hasSession(name)) {
-        current.status = previousStatus;
+        setStatus(current, previousStatus, previousReason);
         writeState(current);
       }
     }

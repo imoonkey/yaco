@@ -287,6 +287,174 @@ function hasYacoHook(hookGroups: unknown[]): boolean {
   return hookGroups.some((g) => isYacoOwnedGroup(g));
 }
 
+// ---------------------------------------------------------------------------
+// Startup trust gate: codexHooksAllYacoOwned
+//
+// Codex shows its hooks-review screen whenever an enabled, unmanaged hook is
+// new or changed. YACO may auto-dismiss that screen ONLY when it can account
+// for the ENTIRE effective hook set as its own. This is a fail-closed security
+// predicate (NOT the substring-based isYacoOwnedGroup migration helper): every
+// enabled command-hook handler, across every source, must be the *canonical*
+// `<yaco-binary> agent hook-event <Event>` invocation — exactly, not as a
+// substring of a larger shell command. Any foreign handler, any unparseable
+// source, or any inline hook construct it cannot enumerate ⇒ false (block).
+// ---------------------------------------------------------------------------
+
+/** Strict per-handler ownership: the command is EXACTLY the canonical YACO
+ *  hook invocation `<yaco-binary> agent hook-event <Event>` for a single event
+ *  token. Unlike {@link isYacoHookCommand} (a substring test a foreign command
+ *  could embed, e.g. `evil && yaco agent hook-event Stop`), this anchors the
+ *  whole command, so nothing extra can ride along. */
+function isCanonicalYacoHookCommand(command: unknown): boolean {
+  if (typeof command !== "string") return false;
+  const prefix = `${hookBinary()} agent hook-event `;
+  if (!command.startsWith(prefix)) return false;
+  return /^[A-Za-z]+$/.test(command.slice(prefix.length));
+}
+
+/** Validate a single hook handler. A DISABLED handler never runs, so it is
+ *  trusted; any ENABLED handler MUST be a `command` handler whose command is the
+ *  exact canonical YACO invocation. Non-command types (e.g. inline JS) ⇒ false. */
+function isYacoHandler(h: any): boolean {
+  if (h?.enabled === false) return true;
+  if (h?.type !== "command") return false;
+  return isCanonicalYacoHookCommand(h?.command);
+}
+
+/** Validate one hook group's handler list. The group MUST expose a `hooks`
+ *  array; any other shape (missing/non-array `hooks`) ⇒ false (fail-closed). */
+function groupAllYaco(group: any): boolean {
+  if (!Array.isArray(group?.hooks)) return false;
+  return group.hooks.every(isYacoHandler);
+}
+
+/** Source-specific shape of a Codex hook map. Each source accepts ONLY its own
+ *  per-event shape — a value in the wrong shape ⇒ false, never trusted. */
+type HookShape = "json" | "toml";
+
+/** Validate one per-event value against its SOURCE shape:
+ *   - json: MUST be an array of groups (`Event: group[]`, from hooks.json).
+ *   - toml: MUST be the single-group object `{ hooks: handler[] }` that
+ *           `Bun.TOML.parse` produces from `[[hooks.<Event>.hooks]]`.
+ *  A value in the other (or any unexpected) shape ⇒ false. */
+function eventValueAllYaco(value: unknown, shape: HookShape): boolean {
+  if (shape === "json") {
+    if (!Array.isArray(value)) return false;
+    return value.every(groupAllYaco);
+  }
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return groupAllYaco(value);
+}
+
+/** Recursively true if any object in the subtree declares an executable-handler
+ *  key (`command` or `hooks`). Proves that Codex's `[hooks.state]` bookkeeping
+ *  smuggles no handler. */
+function containsHandlerKeys(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsHandlerKeys);
+  if (value !== null && typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    if ("command" in o || "hooks" in o) return true;
+    return Object.values(o).some(containsHandlerKeys);
+  }
+  return false;
+}
+
+/** Validate Codex's `[hooks.state]` trusted-hash bookkeeping (config.toml only):
+ *  a plain object of trust records (`{"<path>:<event>:n:n": { trusted_hash }}`)
+ *  with NO executable-handler structure anywhere. A foreign handler hidden under
+ *  `state` (any `command`/`hooks` key) ⇒ false. */
+function isTrustStateMap(value: unknown): boolean {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return !containsHandlerKeys(value);
+}
+
+/** Codex hook events YACO installs — the canonical allowlist of event keys a
+ *  trusted Codex hook map may carry. A handler under any other event name is one
+ *  YACO never installs ⇒ foreign by definition. */
+const CODEX_HOOK_EVENT_SET: ReadonlySet<string> = new Set(CODEX_HOOK_EVENTS);
+
+/** Validate a Codex `hooks` map keyed by event name, against its source shape.
+ *  Keys are allowlisted to {@link CODEX_HOOK_EVENTS}: any unknown event name ⇒
+ *  false (a hook under an event YACO never installs is foreign). For config.toml
+ *  the reserved `state` key is also allowed but VALIDATED as Codex's
+ *  trusted-hash bookkeeping (not blindly skipped); hooks.json has no `state`
+ *  subtree. Any deviation ⇒ false. */
+function hooksMapAllYaco(map: unknown, shape: HookShape): boolean {
+  if (map === null || typeof map !== "object" || Array.isArray(map)) return false;
+  for (const [key, value] of Object.entries(map as Record<string, unknown>)) {
+    if (shape === "toml" && key === "state") {
+      if (!isTrustStateMap(value)) return false;
+      continue;
+    }
+    if (!CODEX_HOOK_EVENT_SET.has(key)) return false; // unknown event ⇒ foreign
+    if (!eventValueAllYaco(value, shape)) return false;
+  }
+  return true;
+}
+
+/** Fail-closed enumeration of one `.codex/hooks.json` source. Missing file ⇒
+ *  contributes nothing (true). Unparseable JSON ⇒ false (block). */
+function codexHooksJsonAllYaco(path: string): boolean {
+  if (!existsSync(path)) return true;
+  let parsed: any;
+  try {
+    parsed = JSON.parse(readFileSync(path, "utf-8"));
+  } catch {
+    return false;
+  }
+  if (parsed?.hooks === undefined) return true; // present, but declares no hooks
+  return hooksMapAllYaco(parsed.hooks, "json");
+}
+
+/** Fail-closed enumeration of inline `[hooks]` tables in one `.codex/config.toml`.
+ *  YACO never installs hooks inline (it writes hooks.json), so any inline hook
+ *  DEFINITION is operator-authored — the gate applies the SAME strict per-handler
+ *  canonical match as hooks.json.
+ *
+ *  Parses with Bun's TOML parser (a Bun built-in): a malformed file THROWS ⇒
+ *  false (block), satisfying "any unparseable source ⇒ block". The `[hooks.state]`
+ *  trusted-hash subtree is validated (must hold only trust records). The
+ *  `[features] hooks = true` flag lives under the top-level `features` table, so
+ *  it never reaches the `hooks` map. Missing file, or no inline `[hooks]` at all
+ *  ⇒ true. Any foreign handler, non-command type, or unexpected shape ⇒ false. */
+function codexConfigTomlAllYaco(path: string): boolean {
+  if (!existsSync(path)) return true;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf-8");
+  } catch {
+    return false;
+  }
+  let parsed: any;
+  try {
+    parsed = Bun.TOML.parse(raw);
+  } catch {
+    return false; // malformed TOML ⇒ cannot enumerate ⇒ block
+  }
+  if (parsed?.hooks === undefined) return true; // no inline hook definitions
+  return hooksMapAllYaco(parsed.hooks, "toml");
+}
+
+/** Fail-closed startup trust gate for Codex's hooks-review screen.
+ *
+ *  Enumerates EVERY effective Codex hook source — global + project
+ *  `.codex/hooks.json` and inline `[hooks]` in global + project
+ *  `.codex/config.toml` — and returns true only when every enabled command-hook
+ *  handler across all of them is the canonical YACO invocation. Any foreign
+ *  handler, any unparseable/unreadable source, or any inline construct it cannot
+ *  enumerate ⇒ false, so the caller writes `blocked(trust)` and leaves the
+ *  screen for a human. Plugin-bundled hooks are not modeled here; YACO never
+ *  installs them, and the conservative default already errs toward block. */
+export function codexHooksAllYacoOwned(sessionPath: string): boolean {
+  const home = userHome();
+  return (
+    codexHooksJsonAllYaco(join(home, ".codex", "hooks.json")) &&
+    codexHooksJsonAllYaco(join(sessionPath, ".codex", "hooks.json")) &&
+    codexConfigTomlAllYaco(join(home, ".codex", "config.toml")) &&
+    codexConfigTomlAllYaco(join(sessionPath, ".codex", "config.toml"))
+  );
+}
+
 /** Deep-equal a yaco hook group against the target shape so install can
  *  detect drift (stale command from a prior version) and overwrite in place
  *  without disturbing the entry's array position. */

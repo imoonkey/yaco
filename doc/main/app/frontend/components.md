@@ -50,7 +50,7 @@ App (384 lines)
         ├── Menu (154 lines) — keyboard nav (Arrow/Enter/Home/End), long-press (350ms)
         ├── Terminal (528 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
-        ├── SessionItem — status dots (processing/idle/error/completed)
+        ├── SessionItem — status dots (processing/starting/idle/blocked) + blocked reason badge
         ├── WorkspaceHistoryList (114 lines)
         ├── WorkspaceSessionList (139 lines) — SessionItem with worktree badge
         ├── GitChangeItem
@@ -240,7 +240,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceTextSearch.tsx` | 489 | Full-text search with result cap banner |
 | `PanelSearchBox.tsx` | 59 | Shared panel search input used by text search and Sessions search |
 | `ShortcutSheet.tsx` | ~80 | Keyboard shortcut cheatsheet (? key) |
-| `WorkspaceSessionList.tsx` | 139 | SessionItem with status dots (processing/idle/error/completed) |
+| `WorkspaceSessionList.tsx` | 139 | SessionItem with status dots (processing/starting/idle/blocked) + blocked reason badge |
 | `WorkspaceHistoryList.tsx` | 114 | History tab items |
 | `useWorkspaceSidebarResize.ts` | 88 | Sidebar resize state + max computation |
 | `useWorkspaceSessionSection.tsx` | 177 | Session tab, drag, resume, history JSX |
@@ -295,7 +295,7 @@ xterm.js wrapper with WebSocket PTY connection.
 **Responsibilities**:
 - WebSocket connection management
 - Solarized Light terminal theme
-- OSC 10/11/12 color report handling: Codex color probes pass through to xterm.js; Claude/shell pure query replays are suppressed
+- Terminal palette reporting: sends resolved foreground/background/cursor colors to app/server in the WebSocket URL so the server can answer Codex OSC 10/11/12 probes at the PTY bridge; Claude/shell pure query replays are still suppressed browser-side
 - OSC 52 clipboard bridge
 - External text insertion via `text-paste` WebSocket messages for tmux bracketed paste without auto-submit
 - Touch-to-WheelEvent bridge for mobile scroll

@@ -2,7 +2,8 @@
 
 export type ProgressType = 'info' | 'human_review' | 'blocked' | 'session_idle'
 export type ProgressStatus = 'active' | 'dismissed'
-export type SessionStatus = 'starting' | 'processing' | 'idle'
+export type SessionStatus = 'starting' | 'processing' | 'idle' | 'blocked'
+export type BlockReason = 'permission' | 'question' | 'trust'
 // Provider ids are open strings: live and history sessions may carry providers
 // the UI has no config for yet. The startable set comes from lib/providerUi.
 export type SessionProvider = string
@@ -18,6 +19,9 @@ export interface AgentSession {
   name: string
   provider: string
   status: SessionStatus
+  // Present only when `status === 'blocked'`; identifies what the session is
+  // waiting on so the UI can render the right reason badge.
+  blockReason?: BlockReason
   project: string
   summary: string
   worktree?: string

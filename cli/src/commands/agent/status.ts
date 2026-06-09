@@ -2,7 +2,7 @@ import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid, isProcess
 import { isIdle } from "../../lib/core/agent/providers/idle.ts";
 import { getProvider, hasProvider, listProviders } from "../../lib/core/agent/providers/index.ts";
 import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath } from "../../lib/core/agent/session-state.ts";
-import { validateName, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
+import { validateName, setStatus, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
 import { resolveProjectForPath, toSessionRow, type AgentSessionRow, type ProjectRef } from "../../lib/core/agent/index.ts";
 import { readProjects } from "../../lib/core/paths/index.ts";
 import { CliError, ErrCode } from "../../lib/core/errors.ts";
@@ -11,7 +11,7 @@ import { execSync } from "child_process";
 
 export type { RuntimeSessionState } from "../../lib/core/agent/model.ts";
 
-type SessionStatusValue = "idle" | "processing" | "starting" | "stopped" | "not found";
+type SessionStatusValue = "idle" | "processing" | "starting" | "stopped" | "not found" | "blocked";
 
 /** Outcome of a pure metadata backfill: the (in-place mutated) state plus a
  *  flag telling the mutating caller whether a field changed and is worth
@@ -136,10 +136,18 @@ function resolveDetail(handle: string, cachedAlive?: boolean | null): ResolveDet
     const capturedStatus = isIdle(output) ? "idle" : "processing";
     if (state) {
       const { state: backfilled, changed } = backfillStateMetadata(state, handle);
-      const corrected: SessionState = { ...backfilled, status: capturedStatus };
+      // Capture can only derive idle|processing (never blocked), so any stale
+      // blockReason must not survive the correction — setStatus drops it when
+      // writing a non-blocked status.
+      const corrected: SessionState = { ...backfilled };
+      setStatus(corrected, capturedStatus);
       // State file is stale — hooks stopped updating. A mutating caller persists
       // the capture-derived status (and any backfill) so all readers converge.
-      const drift = changed || backfilled.status !== capturedStatus;
+      // A stale blockReason that setStatus just dropped is its own drift, even
+      // when the status value itself is unchanged.
+      const drift = changed
+        || backfilled.status !== capturedStatus
+        || backfilled.blockReason !== corrected.blockReason;
       return { dead: false, state: corrected, persist: drift ? corrected : null };
     }
     return { dead: false, state: { ...synthesizeState(handle), status: capturedStatus }, persist: null };

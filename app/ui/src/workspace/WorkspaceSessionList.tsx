@@ -8,7 +8,7 @@ import { BadgeCount } from '../components/BadgeCount'
 import { sanitizeSummary } from './sanitizeSummary'
 import { SearchHighlightedText } from './SearchHighlightedText'
 import { fieldMatch, type SearchMatch } from './sessionSearch'
-import type { AgentSession, SessionStatus } from '../types'
+import type { AgentSession, BlockReason, SessionStatus } from '../types'
 
 // Indentation geometry for nested (parent → child) sessions.
 const INDENT_BASE = 8
@@ -25,6 +25,16 @@ const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   processing: 'bg-[var(--sol-cyan)] status-pulse',
   idle: 'bg-[var(--sol-base1)]',
   starting: 'bg-[var(--sol-yellow)] status-pulse',
+  // Distinct from processing's cyan glow: orange "needs you" dot with an
+  // opacity pulse so a waiting session reads as attention, not activity.
+  blocked: 'bg-[var(--sol-orange)] animate-pulse',
+}
+
+// Reason a blocked session is waiting → human-readable badge / a11y text.
+const BLOCK_REASON_LABEL: Record<BlockReason, string> = {
+  permission: 'needs approval',
+  question: 'has a question',
+  trust: 'needs trust review',
 }
 
 export function SessionItem({
@@ -95,6 +105,9 @@ export function SessionItem({
   }
 
   const summary = sanitizeSummary(session.summary, session.name)
+  const blockLabel = session.status === 'blocked' && session.blockReason
+    ? BLOCK_REASON_LABEL[session.blockReason]
+    : null
   const nameMatch = fieldMatch(searchMatch, 'name')
   const summaryMatch = fieldMatch(searchMatch, 'summary')
   const worktreeMatch = fieldMatch(searchMatch, 'worktree')
@@ -135,7 +148,7 @@ export function SessionItem({
         </button>
       )}
       <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
-      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={session.status} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={blockLabel ? `blocked: ${blockLabel}` : session.status} />
       {renaming ? (
         <input
           ref={inputRef}
@@ -174,6 +187,16 @@ export function SessionItem({
               >
                 <FolderGit2 size={9} />
                 <SearchHighlightedText text={worktreeText} positions={worktreeSnippet?.positions ?? worktreeMatch?.positions} />
+              </span>
+            )}
+            {blockLabel && (
+              <span
+                className="inline-flex items-center px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                style={{ color: 'var(--sol-orange)', backgroundColor: 'color-mix(in srgb, var(--sol-orange) 14%, transparent)' }}
+                title={blockLabel}
+                aria-label={blockLabel}
+              >
+                {blockLabel}
               </span>
             )}
             {summary && (

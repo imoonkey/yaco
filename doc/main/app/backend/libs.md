@@ -113,8 +113,8 @@ Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.jso
 - `fetchAllSessionsFromCli(projects)` calls `yaco agent list --all --json`, which returns already-projected `AgentSessionRow`s (project resolved CLI-side via the shared registry); rows whose project isn't in this server's loaded set are dropped. Used by the reconciler for correctness-sensitive operations.
 - `queryAgentStatus(cwd)` calls `yaco agent list --path <cwd> --json` for resume preflight checks
 - Primary session source: reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (written by the yaco agent runtime via hook events)
-- Status passthrough: `starting | idle | processing` — no normalization (CLI states used as-is)
-- State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt, spawnedBy?, parentSession? }` — file deletion = session ended. `provider` is an open string (the YACO-owned catalog id, e.g. `claude`/`codex`), trusted verbatim — there is no app-side name inference (`inferAgentProvider` was removed); a state file with no `provider` string is skipped. Optional `spawnedBy` (`user:web`/`user:terminal`/`agent`) and `parentSession` lineage are passed through best-effort (validated, dropped when unknown/absent).
+- Status passthrough: `starting | idle | processing | blocked` — no normalization (CLI states used as-is). `blocked` (agent paused waiting on the user) carries an optional `blockReason` (`permission | question | trust`), set iff status is `blocked` and sanitized by the shared `toSessionRow`.
+- State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt, spawnedBy?, parentSession?, blockReason? }` — file deletion = session ended. `provider` is an open string (the YACO-owned catalog id, e.g. `claude`/`codex`), trusted verbatim — there is no app-side name inference (`inferAgentProvider` was removed); a state file with no `provider` string is skipped. Optional `spawnedBy` (`user:web`/`user:terminal`/`agent`) and `parentSession` lineage are passed through best-effort (validated, dropped when unknown/absent).
 - `fetchProviderCatalog()` → `yaco agent providers --json`, returning `ProviderCatalogEntry[]` (`{ id, label, executable }`). This is the authoritative list of startable agent providers; `shell` is an app-owned session type and never appears here.
 - `fetchHistory(projectPath)` → `yaco agent history --path <p> --json`, returning raw `CliHistorySession[]` (`sessionId`/`updatedAt` shape). Consumed by `history.ts`. Provider-home reads live in the CLI.
 - `fetchSessionSummaries(projectPath)` → `yaco agent summaries --path <p> --json`, returning `CliSessionSummary[]` (`{ handle, sessionId, provider, label }`) for every live session under the path. Consumed (and cached) by `session-summary.ts`.
@@ -153,7 +153,7 @@ Low-frequency background reconciler for session health and idle detection.
 - Runs every 60 seconds as a safety net (not primary session source). First reconcile runs immediately on startup.
 - Calls `fetchAllSessionsFromCli(projects)` which runs `yaco agent list --all --json` — the authoritative reconciled snapshot. The yaco agent runtime owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, sessionId backfill, and **stale state file correction** (writes capture-derived status to disk when mtime > 5min).
 - Emits `refresh:sessions` if drift detected (missed watcher events)
-- Idle detection for all providers: 15s minimum processing duration + 2× debounce, writes `session_idle` entries with `sessionName`
+- Idle detection for all providers: 15s minimum active duration + 2× debounce, writes `session_idle` entries with `sessionName`. `blocked` counts as **active** (the agent is paused waiting on the user — the opposite of idle): it resets the idle streak exactly like `processing`, so a `processing → blocked` transition never fires `session_idle`.
 
 ### project-watcher.ts (~180 lines)
 
@@ -214,6 +214,16 @@ PTY management for terminal sessions.
 - `pasteTextToSession(name, text)` is the server-side path for external terminal text insertion. It rejects payloads over `MAX_TERMINAL_TEXT_PASTE_BYTES`, writes the text to a uniquely named tmux buffer via stdin, runs `paste-buffer -p` against `=<name>:` without sending Enter, and best-effort deletes the buffer. WebSocket `text-paste` uses this for voice terminal Insert so Claude/Codex receive one bracketed paste instead of a raw input stream.
 - `releaseSession(name, attached)` centralizes detach cleanup by destroying non-persistent tmux attach PTYs immediately
 
+### terminal-osc.ts (~130 lines)
+
+Pure OSC color-query responder used by the WebSocket terminal bridge.
+
+**Exports**: `TerminalOscColorResponder`, `parseTerminalPalette()`, `terminalPaletteFromSearchParams()`, `shouldAnswerTerminalOscColor()`, `TerminalPalette`
+
+- `TerminalOscColorResponder` consumes Codex OSC 10/11/12 pure color report queries from PTY output, supports ST (`ESC \`) and BEL terminators, carries partial query bytes across chunks, and returns `{ output, responses }` so `index.ts` can forward normal output to the browser while writing OSC RGB responses directly back to the PTY.
+- `terminalPaletteFromSearchParams()` validates `#rrggbb` foreground/background/cursor colors from the terminal WebSocket URL and falls back per channel to the app's light terminal palette when params are missing or malformed.
+- `shouldAnswerTerminalOscColor(handle)` reads `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` and enables server-side answering only when the trusted provider field is `codex`; shell/Claude panes continue through the browser-side replay guard.
+
 ### pty-capacity.ts (~120 lines)
 
 Process-level PTY pressure guard for darwin.
@@ -267,7 +277,7 @@ Resolves conversation summaries (`handle -> summary`) for session list display v
 - In-process cache keyed by `(provider, sessionId, sessionPath)` (JSON-tuple key). A fully cached session list resolves with no subprocess; only positive labels are cached.
 - Skips sentinel sessionId (`pending:awaiting-first-prompt`) and empty ids — never cached, never sent to the CLI.
 - Misses are grouped by `sessionPath`; one `yaco agent summaries --path <p> --json` call (via `agent.ts` `fetchSessionSummaries`) runs per path with a miss, and its `{handle -> label}` rows fill the cache. Provider-home reads (Claude JSONL, Codex SQLite + rollout scan) live in the CLI provider adapters. -> See: `doc/main/cli/providers.md`.
-- A session settling from `processing` → `idle` drops its cached label so a turn that changed it (e.g. a generated title) re-resolves.
+- A session settling from active (`processing` **or** `blocked`) → `idle` drops its cached label so a turn that changed it (e.g. a generated title) re-resolves. Covering `blocked` keeps `processing → blocked → idle` from skipping the refresh.
 - `invalidateSummaryCache()` clears the cache; the sessions route calls it from `invalidateSessionsCache()` (rename/close/start/manual refresh).
 - `encodeProjectPath()` is a pure `/`→`-` path encoder used by this module's Claude summary resolution. (`channels/agent-output.ts` no longer imports it — that file migrated to the CLI `output-cursor`/`output-follow` surfaces in `app-output-boundary`.)
 

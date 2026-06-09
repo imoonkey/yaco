@@ -1,5 +1,125 @@
 # Progress
 
+## 2026-06-09: UI blocked dot, reason badge, subtree-max ordering (session-blocked-state 5/6)
+
+**What changed:**
+- `app/ui/src/types.ts` — added `'blocked'` to `SessionStatus`, a `BlockReason = 'permission' | 'question' | 'trust'` union, and `AgentSession.blockReason?` (present only when `status === 'blocked'`).
+- `WorkspaceSessionList.tsx` — `STATUS_DOT_CLASS.blocked` is an orange `animate-pulse` dot (deliberately distinct from processing's cyan glow — reads as *needs-you*, not activity). A small orange reason badge next to the name maps `permission → "needs approval"`, `question → "has a question"`, `trust → "needs trust review"` (also on `title`/`aria-label`; the status dot's `aria-label` becomes `"blocked: <reason>"`).
+- `sessionLineage.ts` — `groupSessionLineage` now buckets each root-anchored subtree by a **subtree-max priority** (`blocked > processing > idle`) instead of by the root's status alone: any blocked/processing member promotes the whole (still-contiguous) subtree to the active bucket, and a subtree rooted at a `blocked` session sorts to the top of that bucket. Pinned roots still take precedence.
+- `useWorkspaceSessions.ts` — display order is now `pinned → blocked → processing → idle`.
+- `App.tsx` + new `lib/sessionCounts.ts` — extracted the per-project active/total count into a pure `computeProjectSessionCounts` helper; `blocked` now counts toward `active` alongside `processing`/`starting`.
+- Tests: updated the lineage processing-child-under-idle case (now promotes to active) and added blocked-descendant-promotes, blocked-root-sorts-to-top, and standalone-blocked-counts-active cases; new `lib/__tests__/sessionCounts.test.ts` directly asserts blocked counts as active (AC3).
+
+**Why:**
+- Closes the session-blocked-state feature end-to-end: a CLI hook-driven `blocked` status now surfaces in the UI as a distinct dot + reason so a session waiting on the user (permission/question/trust) is visible at a glance instead of looking idle. Subtree-max bucketing is the minimal change that prevents a blocked child under an idle parent from being buried at the bottom of the list.
+
+**Key files:** `app/ui/src/types.ts`, `app/ui/src/workspace/{WorkspaceSessionList,sessionLineage,useWorkspaceSessions}.tsx?`, `app/ui/src/App.tsx`, `app/ui/src/lib/sessionCounts.ts`, `app/ui/src/workspace/__tests__/sessionLineage.test.ts`, `app/ui/src/lib/__tests__/sessionCounts.test.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`, `doc/main/app/data-model/types.md`, `doc/main/app/frontend/components.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/__tests__/sessionLineage.test.ts` → 16 pass; `npx vitest run src/lib/__tests__/sessionCounts.test.ts` → 4 pass; `npx tsc --noEmit` → 0 errors; `npm run lint` → 0 errors (pre-existing warnings only).
+**Commit:** pending (orchestrator commits centrally).
+**Next:** session-blocked-state task graph complete (all 6 tasks landed end-to-end: CLI status model + hook state machine + send/status + trust gate, app-server, UI).
+**Blockers:** None.
+
+## 2026-06-09: Startup trust gating — Codex hooks-review → blocked(trust) (session-blocked-state 6/6)
+
+**What changed:**
+- `yaco agent start` now gates Codex's two hooks-review interstitials (`Hooks need review … Trust all and continue`, `Press t to trust all`) behind a fail-closed predicate `codexHooksAllYacoOwned(sessionPath)`, declared on the interstitial as `guard` + `blockReason: "trust"`. The trust-FOLDER interstitial stays unguarded (pure auto-Enter).
+- `StartupInterstitial` gained optional `guard?: (sessionPath) => boolean` and `blockReason?: BlockReason`. `handleStartupInterstitial` now returns `"none" | "handled" | "blocked"`; on guard-fail it writes `setStatus(state, "blocked", "trust")`, sends no keys, marks the interstitial handled, and `waitForReady` bails early (so a `blocked(trust)` session doesn't spin to the 30s timeout). The existing `starting`-only `syncStateAfterStart` guard keeps `blocked(trust)` intact; Codex's widened `SessionStart` hook clears it → idle once the user trusts manually.
+- The predicate enumerates all four effective Codex hook sources — global+project `hooks.json` (JSON) and inline `[hooks]` in global+project `config.toml` (`Bun.TOML.parse`; malformed → block) — and requires, per source: an event-key allowlist (`CODEX_HOOK_EVENTS`, plus a validated `[hooks.state]` trusted-hash subtree for TOML), the correct per-source shape (json array-of-groups vs toml `{hooks:handler[]}` object), and every enabled handler being `type:"command"` with the exact canonical `<yaco-binary> agent hook-event <Event>` command (whole-string anchored, not the substring `isYacoOwnedGroup` helper). Returns false on any foreign handler, unknown event key, wrong shape, non-command type, unparseable/unreadable source, or unexpected shape.
+- Added `test/trust-gate.test.ts` and **registered it in `package.json` `test:unit`** (it was previously unregistered, so `bun run test` silently skipped it). Made the two Codex interstitial tests in `lifecycle-guards.test.ts` hermetic (`withCleanCodexHome`) so the gate isn't poisoned by the real `~/.codex` or a cross-test `hookBinary()` cache.
+
+**Why:**
+- The two hooks-review screens previously auto-trusted whatever was in the effective hooks config — a foreign hook injected into any source would be silently dismissed. The gate is a security predicate: it auto-dismisses only when YACO can account for the *entire* effective hook set as its own canonical command, and otherwise pauses the session for a human (`blocked(trust)`). Fails closed on every uncertainty (foreign/unknown/wrong-shape/unparseable).
+
+**Key files:** `cli/src/lib/core/agent/lifecycle.ts` (`codexHooksAllYacoOwned` + helpers), `cli/src/commands/agent/start.ts` (guard path, early bail), `cli/src/lib/core/agent/providers/{types,codex}.ts`, `cli/test/{trust-gate,lifecycle-guards}.test.ts`, `cli/package.json`, `doc/main/cli/{lifecycle,providers}.md`
+**Verification:** `cd cli && bun test test/trust-gate.test.ts` → 28 pass; `cd cli && bun run test` (full) → 868 pass, 0 fail.
+**Commit:** pending (orchestrator commits centrally).
+**Next:** session-blocked-state task graph complete (6/6).
+**Blockers:** None.
+
+## 2026-06-09: Hook state machine — blocked transitions (session-blocked-state 2/6)
+
+**What changed:**
+- `applyHookEvent` rewritten to write all status via `setStatus` and drive the new `blocked` status. Added `QUESTION_TOOLS = {AskUserQuestion, request_user_input}` (Claude + Codex question tools) and a 6th `toolName` parameter threaded from the hook payload's snake_case `tool_name`.
+- Transitions: `PreToolUse(q-tool)` → `blocked(question)`, non-q-tool → processing; `PostToolUse`/`PostToolUseFailure(q-tool)` → processing (answer received, cancelled, or failed — covers the failure edge so a cancelled question never strands); `PermissionRequest` and `Notification(permission_prompt)` → `blocked(permission)`; `Notification(idle_prompt)` → idle, other → no-op.
+- Widened the `SessionStart` guard: clears `starting`/`idle`/`blocked(trust)` → idle, but never clobbers a mid-session-active state (`processing` or `blocked(permission|question)`). `blocked` is cleared implicitly by the next processing/idle event (last-event-wins; no explicit unblock).
+- `commands/agent/hook-event.ts` reads `tool_name` from stdin via the extended `HookInput` type.
+
+**Why:**
+- A question previously read as `processing` (busy) and a permission prompt as `idle`, so "agent needs you" was invisible. `blocked(reason)` makes the waiting-on-user state explicit and distinct from idle.
+
+**Key files:** `cli/src/lib/core/agent/hook-event.ts`, `cli/src/commands/agent/hook-event.ts`, `cli/test/{hook-event,hook-update}.test.ts`, `doc/main/cli/state-contract.md`
+**Verification:** `cd cli && bun test test/hook-event.test.ts test/hook-update.test.ts` → 50 pass, 0 fail.
+**Commit:** pending (orchestrator commits centrally).
+**Next:** remaining session-blocked-state tasks (send/status flip, app-server reconciler, UI blocked dot, trust gate).
+**Blockers:** None.
+
+## 2026-06-09: Startup interstitial replay guard
+
+**What changed:**
+- `waitForReady()` now treats startup interstitial auto-answers as one-shot per start and lets provider adapters suppress stale matches when a later prompt appears after the matched dialog text in captured output.
+- Codex and Claude startup trust/review interstitials use provider prompt glyphs only for that stale-scrollback suppression; Codex placeholder wording is not part of the match.
+- Added regression coverage for the stale Codex `Hooks need review` text followed by a live `› /` composer, plus a positive test that an active hook-review menu still receives `Down` + `Enter`.
+- Aligned the Claude history slash-command contract so history rows keep `/command args`, matching live summary labels.
+
+**Why:**
+- Codex hook-review text can remain in tmux scrollback after the real prompt is active. The old wide screen-capture match could send `Down` + `Enter` into a slash-command menu.
+- Slash-command summaries should preserve the command name for both history and live labels so the source of the request stays visible.
+
+**Key files:** `cli/src/commands/agent/start.ts`, `cli/src/lib/core/agent/providers/{claude,codex,history,types}.ts`, `cli/test/{lifecycle-guards,history}.test.ts`, `doc/main/cli/{architecture,providers}.md`
+**Verification:** `cd cli && bun run test:unit` passed (813 tests); `yaco agent start claude ... --wait` review of commit `02ec0db` reported no required code fixes and no file changes.
+**Commit:** `02ec0db` (code); docs update follows.
+**Next:** If a real Codex trust-folder or `Press t` overlay screen is observed with provider prompt glyphs below the matched phrase, make that adapter pattern engulf the whole active screen like the hook-review matcher.
+**Blockers:** None.
+
+## 2026-06-09: Codex start rename is async title sync
+
+**What changed:**
+- Codex provider title sync now uses one path for every start: after bootstrap readiness, YACO enqueues `/rename <handle>` through `sendKeysWhenInputEmpty` and never waits for provider-title settle.
+- Removed `postStartInputTiming`, Codex prompt detection, and the start-path `waitForPostInputSettle` screen-capture wait. `waitForReady()` remains for bootstrap readiness and trust/hooks-review prompts, not for rename sequencing.
+- Kept internal slash-command delivery on tmux bracketed paste + immediate `Enter`; raw literal `send-keys` was tested and rejected because Codex treated the submit key as a newline in the composer.
+
+**Why:**
+- The Codex thread title is best-effort metadata; YACO's authoritative identity is the tmux session/state/task handle. A single async input-empty gated `/rename` path keeps empty starts, prompt starts, and later provider-title sync behavior simple while avoiding the too-early start-time paste path that Codex can treat as a queued follow-up input.
+
+**Key files:** `cli/src/commands/agent/start.ts`, `cli/src/lib/core/agent/providers/{codex.ts,types.ts}`, `cli/src/lib/core/agent/tmux.ts`, `cli/test/providers.test.ts`, `doc/main/cli/{architecture.md,lifecycle.md,providers.md}`
+**Verification:** `cd cli && bun test test/providers.test.ts test/start.test.ts test/tmux.test.ts test/lifecycle-guards.test.ts` passed (120 tests); `cd cli && bun build src/main.ts --target=bun --outfile /tmp/yaco-cli-build-check` passed; `tools/install.sh --cli-only` passed with doctor 12/12. `cd cli && bun run test:unit` still fails on the pre-existing `claude history list > collapses a leading slash command to its args` expectation (`payment flow` vs `/design payment flow`). Subagent code review of the earlier settle-guard version passed; this follow-up simplification removes that branch entirely.
+**Commit:** this commit.
+**Next:** None.
+**Blockers:** None.
+
+## 2026-06-08: Attached-session Codex OSC color responder
+
+**What changed:**
+- Added `app/server/src/lib/terminal-osc.ts`, a pure OSC 10/11/12 color-query responder that consumes Codex color probes from PTY output, supports split chunks and ST/BEL terminators, and returns normal output separately from OSC responses.
+- The terminal WebSocket now passes the resolved xterm foreground/background/cursor colors in the URL. app/server answers Codex color probes directly at the PTY bridge instead of relying on browser xterm `onData` timing.
+- CLI detached-startup color handling is intentionally left on the existing provider-runtime path; this change only adds the attached-session responder.
+
+**Why:**
+- Mid-session Codex focus/requery events could time out or receive a different color than startup, causing the input box background to fade back toward the surrounding editor background. The server bridge is the stable place to answer attached-session queries because it already owns the tmux attach PTY stream.
+
+**Key files:** `app/server/src/lib/terminal-osc.ts`, `app/server/src/index.ts`, `app/ui/src/components/Terminal.tsx`, `app/ui/src/lib/providerUi.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/server && npx vitest run src/lib/__tests__/terminal-osc.test.ts src/lib/__tests__/terminal.test.ts` passed (29 tests); `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (30 tests); `cd app/ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx src/lib/providerUi.ts` passed. `cd app/server && npx tsc --noEmit` still fails on pre-existing unrelated type errors in server/cli workspace imports, node-pty typing, OpenAI response casts, WhatsApp, routes/files, and worktree tests.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
+## 2026-06-08: Codex prompt frame ignores background rows
+
+**What changed:**
+- Browser-side Codex prompt frame detection no longer uses xterm background-color continuity to decide where the overlay ends.
+- Prompt frames now use only structural text boundaries (`›` prompt starts, reply/interruption/shell marker rows, viewport-tail status rows, and slash/shell suggestion tables), so Codex's OSC 11-driven prompt/user-message background can remain enabled without moving the overlay's bottom rule.
+- No-boundary prompts trim trailing blank viewport rows back to the last nonblank prompt row, preserving multi-line prompt content while avoiding frames that balloon to the viewport bottom.
+- Added regression coverage for background-painted trailing blanks before `• Working`, bg/no-bg frame invariance, and no-boundary blank trimming.
+
+**Why:**
+- Codex paints its own padding rows when terminal background reports are available. The overlay lines should identify the prompt by characters/structure, not by whether adjacent rows share the same background.
+
+**Key files:** `app/ui/src/lib/codexInputPromptFrame.ts`, `app/ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (29 tests); `cd app/ui && npm run lint` passed with 0 errors and 10 existing hook-dependency warnings.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Markdown-first inline suggestions (reworked, default-off)
 
 **What changed:**
@@ -14,7 +134,6 @@
 **Design doc:** `plan/all/markdown-inline-suggestions/final/design.md`
 **Commits:** `8404c9c` (server), `53d1874` (codemirror), `6fc4746` (telemetry)
 **Next:** Dogfood opted-in, then evaluate the delete gate.
-**Blockers:** None.
 
 ## 2026-06-08: Dashed guide lines for nested sessions
 

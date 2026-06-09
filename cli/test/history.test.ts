@@ -104,7 +104,7 @@ describe("claude history list", () => {
     expect(row.updatedAt).toBe("2026-06-04T10:05:00.000Z");
   });
 
-  it("collapses a leading slash command to its args", async () => {
+  it("restores a leading slash command to /command args", async () => {
     writeClaudeSession("claude-2", [
       userLine(
         "<command-message>design</command-message><command-name>/design</command-name><command-args>payment flow</command-args>",
@@ -112,7 +112,7 @@ describe("claude history list", () => {
       ),
     ]);
     const rows = await claudeHistory().list(PROJECT, []);
-    expect(rows[0]!.summary).toBe("payment flow");
+    expect(rows[0]!.summary).toBe("/design payment flow");
   });
 
   it("returns an empty list when the project dir is absent", async () => {

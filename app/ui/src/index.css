@@ -654,6 +654,14 @@ body {
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 
+/* xterm v6 DOM renderer clips each row with inline `overflow:hidden`.
+   Keep that vertical clipping, but extend the right padding box by one cell so
+   the final glyph is not clipped by subpixel font/DPR rounding at the edge. */
+.yaco-terminal-xterm .xterm-rows > div {
+  box-sizing: content-box;
+  padding-right: var(--yaco-terminal-right-clip-cushion, 0px);
+}
+
 /* Elevation utilities */
 .elevation-1 { box-shadow: var(--elevation-1); }
 .elevation-2 { box-shadow: var(--elevation-2); }

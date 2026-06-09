@@ -41,6 +41,13 @@ import { writeImageToClipboard, ClipboardWriteError } from './lib/clipboard-writ
 import { PtyCapacityError, sweep, PTY_SWEEP_INTERVAL_MS } from './lib/pty-capacity.js'
 import { SESSION_NAME_RE } from './lib/session-names.js'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS, MAX_TERMINAL_COLS, MAX_TERMINAL_ROWS, WS_PING_INTERVAL_MS } from './lib/constants.js'
+import {
+  TerminalOscColorResponder,
+  parseTerminalPalette,
+  shouldAnswerTerminalOscColor,
+  terminalPaletteFromSearchParams,
+  type TerminalPalette,
+} from './lib/terminal-osc.js'
 import type { IPty } from 'node-pty'
 
 const EXPLICIT_ALLOWED_ORIGINS = (process.env.WORKFLOW_CORS_ORIGINS ?? '')
@@ -366,11 +373,11 @@ server.on('upgrade', (req: IncomingMessage, socket, head) => {
   const rows = Math.max(1, Math.min(MAX_TERMINAL_ROWS, Number(url.searchParams.get('rows')) || DEFAULT_TERMINAL_ROWS))
 
   wss.handleUpgrade(req, socket, head, (ws) => {
-    wss.emit('connection', ws, req, sessionName, cols, rows)
+    wss.emit('connection', ws, req, sessionName, cols, rows, terminalPaletteFromSearchParams(url.searchParams))
   })
 })
 
-wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number) => {
+wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string, cols: number, rows: number, initialPalette: TerminalPalette) => {
   let attached: ReturnType<typeof attachSession>
   try {
     attached = attachSession(sessionName, cols, rows)
@@ -386,9 +393,15 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
   }
 
   const { proc } = attached
+  const oscResponder = new TerminalOscColorResponder(
+    shouldAnswerTerminalOscColor(sessionName),
+    initialPalette,
+  )
 
   const dataSub = proc.onData((data: string) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(data)
+    const result = oscResponder.handle(data)
+    for (const response of result.responses) proc.write(response)
+    if (result.output && ws.readyState === WebSocket.OPEN) ws.send(result.output)
   })
 
   const exitSub = proc.onExit(() => {
@@ -431,6 +444,11 @@ wss.on('connection', (ws: WebSocket, _req: IncomingMessage, sessionName: string,
         const msg = JSON.parse(str)
         if (msg.type === 'resize') {
           proc.resize(msg.cols, msg.rows)
+          return
+        }
+        if (msg.type === 'terminal-theme') {
+          const palette = parseTerminalPalette(msg)
+          if (palette) oscResponder.updatePalette(palette)
           return
         }
         if (msg.type === 'input') {

@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-06-08: blocked session status — model + projection foundation
+
+**What changed:**
+- `SessionStatus` widened to `"starting" | "idle" | "processing" | "blocked"`;
+  new `BlockReason = "permission" | "question" | "trust"` and optional
+  `blockReason?` on `SessionState` (present iff status === "blocked")
+  (`agent/model.ts`).
+- New `setStatus(state, status, reason?)` in-place mutator in `model.ts` (not
+  `hook-event.ts`, so non-hook writers import it without hook/tmux deps). Writes
+  status and blockReason atomically — sets `blockReason` only for
+  `blocked` + a reason, otherwise `delete`s it. Generic over a `{status,
+  blockReason?}` shape so both `SessionState` and `RuntimeSessionState` pass.
+- `projection.ts`: `"blocked"` added to `VALID_STATUSES`; new
+  `VALID_BLOCK_REASONS` sanitize set; `toSessionRow` emits `row.blockReason`
+  only when `status === "blocked"` AND the reason is allowed — dropped for
+  idle+stray reason, blocked+missing, and blocked+invalid.
+
+**Why:**
+- The session list collapses "agent blocked on me" (permission/question) into
+  `idle`, or mis-shows a question as `processing`. This is task 1/6 of the
+  `session-blocked-state` project — the foundational contract the hook state
+  machine, send/status writers, app server, and UI dot build on. The atomic
+  `setStatus` + projection sanitize together enforce the one invariant
+  (`blockReason` iff blocked) across every writer.
+- No writer produces `blocked` on disk yet (hook state machine is task 2/6), so
+  the persisted-schema doc (`state-contract.md`) stays as-is until that lands.
+
+**Key files:** `cli/src/lib/core/agent/model.ts`,
+`cli/src/lib/core/agent/projection.ts`,
+`cli/test/unit/core/agent/projection.test.ts`
+**Verification:** `cd cli && bun run test` — 817 pass, 0 fail (4 new
+`toSessionRow` cases: blocked+valid reason, blocked+no reason, blocked+invalid
+reason, idle+stray reason)
+**Design:** `plan/all/session-blocked-state/initial/design_claude.md`
+**Next:** `cli-hook-statemachine` (task 2/6) — parse `tool_name`, `QUESTION_TOOLS`,
+transition table via `setStatus`, widened `SessionStart` guard.
+**Blockers:** None
+
 ## 2026-06-06: stop false idle while an agent is thinking
 
 **What changed:**

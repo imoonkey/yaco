@@ -28,24 +28,27 @@ On desktop, located in the activity column (right panel) below the terminal. On 
 Each session row shows:
 - Pin toggle (diamond icon) — pins session to top of list
 - Provider icon (Claude symbol, ChatGPT logo, or terminal SVG)
-- Session name + status indicator (green pulse = processing, gray = idle)
+- Session name + status indicator (cyan pulse = processing, yellow pulse = starting, gray = idle, **orange pulse = blocked**)
+- For a `blocked` session, a small orange reason badge next to the name reads what it is waiting on: `permission` → "needs approval", `question` → "has a question", `trust` → "needs trust review" (also surfaced via `title`/`aria-label`). The orange `animate-pulse` dot reads as *needs-you* attention, deliberately distinct from processing's cyan glow.
 - Summary line (dimmed, below name) — the first *meaningful* user message from Claude/Codex conversation logs (slash commands restored to their original `/name args` input). Empty if session just started, JSONL not yet flushed, or provider is shell.
 
 ### Ordering
 
 Sessions display in three tiers with dividers between non-empty tiers:
 1. **Pinned** — user-pinned sessions, drag-reorderable among themselves
-2. **Processing** — currently active sessions (not pinned)
+2. **Active** — `blocked` then `processing`/`starting` sessions (not pinned). `blocked` sorts above `processing` so sessions waiting on the user surface first.
 3. **Idle** — waiting sessions (not pinned)
+
+`blocked` counts toward the per-project active session count (`computeProjectSessionCounts` in `lib/sessionCounts.ts`, a pure helper consumed by `App.tsx`).
 
 Pin state and order are client-side only (not persisted across page reloads).
 The visual tiers are rendered as one keyed row list, so local row state such as
 an inline rename draft survives refreshes that move a session between
-`starting`/processing and idle.
+`starting`/processing/blocked and idle.
 
 **Parent/child lineage.** Within this ordering, the live list renders agent spawn lineage as indentation, derived from each session's `parentSession` handle (no `childSessions` is persisted or required). `sessionLineage.ts` is the pure, tested core:
 - `buildSessionLineage(sessions)` flattens the ordered list into `{ session, depth }` rows — each parent immediately followed by its visible descendants, depth-first, preserving input order for roots and siblings. A session is a **root** when it has no `parentSession`, its parent is not in the visible list, or it self-references. Cycles are broken with a visited set; a session reachable only through a cycle is rendered as a root, so nothing loops or drops.
-- `groupSessionLineage(sessions, isPinned)` builds lineage over the **full** visible list (not per tier), then assigns each root-anchored subtree to the pinned/processing/idle tier **by its root**. This keeps a parent and all its visible descendants contiguous and indented even when a child's status or pin state differs (e.g. a processing child of an idle parent renders indented under that parent, not split off as a stray root). Pin state for drag/star affordances is still derived per row.
+- `groupSessionLineage(sessions, isPinned)` builds lineage over the **full** visible list (not per tier), then assigns each root-anchored subtree to the pinned/active/idle tier by a **subtree-max priority** (`blocked > processing > idle`): a subtree lands in the active tier if *any* member is blocked or processing, so a blocked/processing child under an idle parent is not buried in the idle tier. Within the active tier, subtrees rooted at a `blocked` session sort to the top. Pinned roots still take precedence over status. This keeps a parent and all its visible descendants contiguous and indented even when a child's status or pin state differs. Pin state for drag/star affordances is still derived per row.
 
 Indentation is `paddingLeft = 8 + depth*14` px on the row, with one dashed vertical guide line per ancestor level (`var(--sol-muted)` @ 0.6 opacity) drawn in the indent gutter so the parent→child relationship reads at a glance, mirroring the task-graph tree connectors. Renaming a parent does not rewrite a live child's `parentSession` here — that reference rewrite is owned by the CLI `yaco agent rename` path, not the UI. → See: `doc/main/cli/lifecycle.md` (rename).
 
@@ -168,7 +171,7 @@ Before the server creates a tmux shell or starts a new yaco agent child process,
 
 ### OSC Color Reports
 
-Terminal registers OSC 10/11/12 handlers for pure color report queries (`?` / `?;?`). Codex sessions pass these queries through to xterm.js so Codex's terminal probe can receive foreground/background/cursor colors and keep its TUI input background stable after redraws, focus changes, and attach cycles. Claude and shell sessions still consume pure queries before xterm.js emits automatic responses through `onData`; this preserves the replay guard against old color queries injecting `ESC]10;rgb...ST` / `ESC]11;rgb...ST` text into panes that do not need the probe. Normal color setter sequences are always passed through.
+The terminal WebSocket sends the resolved xterm palette (`fg`, `bg`, `cursor`) in the attach URL. For Codex sessions, app/server consumes OSC 10/11/12 pure color report queries (`?` / `?;?`) at the PTY bridge and writes matching OSC RGB replies directly back to the tmux attach client, so Codex's crossterm probe does not depend on browser `onData` timing during focus changes, attach cycles, or redraws. Claude and shell sessions still rely on the browser-side OSC handlers to suppress pure query replays before xterm.js emits automatic responses through `onData`; this preserves the replay guard against old color queries injecting `ESC]10;rgb...ST` / `ESC]11;rgb...ST` text into panes that do not need the probe. Normal color setter sequences are always passed through.
 
 ### OSC 52 Bridge
 
@@ -190,22 +193,22 @@ Fallback: `document.execCommand('copy')` when async Clipboard API is unavailable
 
 ### Codex Input Prompt Frame
 
-Codex terminal panes draw a browser-side overlay around visible line-start `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). When xterm exposes Codex's prompt background, the frame follows rows with that same background so explicit user newlines and blank lines stay inside the prompt. Without prompt background, it extends until a structural Codex boundary: a line-start `•` reply row, a line-start `■` interruption row, a line-start `$` output/shell marker, a Codex status line at the viewport tail (`tab to queue message` or dot-separated status text), or an active command suggestion table. Suggestion tables stay below the frame: `/` completion only counts when the first prompt row starts with `/`, while `$` plugin/skill completion counts when `$` appears in the current prompt's last nonblank row at the start of text or after whitespace and the following rows have the `Name  [Plugin|Skill] ...` table shape. It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
+Codex terminal panes draw a browser-side overlay around visible line-start `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). Frame detection intentionally ignores xterm background attributes: Codex may paint prompt/user-message padding rows when OSC 11 background reports are available, but the overlay boundary is based only on prompt text and structural Codex rows. The horizontal rules are clipped to `.xterm-screen` width, not the outer terminal container, so they do not extend across the right-side clip cushion / cell-rounding remainder. The frame extends until a line-start `•` reply row, a line-start `■` interruption row, a line-start `$` output/shell marker, a Codex status line at the viewport tail (`tab to queue message` or dot-separated status text), or an active command suggestion table; when no boundary is visible, trailing blank viewport rows are trimmed back to the last nonblank prompt row. Suggestion tables stay below the frame: `/` completion only counts when the first prompt row starts with `/`, while `$` plugin/skill completion counts when `$` appears in the current prompt's last nonblank row at the start of text or after whitespace and the following rows have the `Name  [Plugin|Skill] ...` table shape. It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
 
 ## Terminal Fit
 
 Custom fit calculation:
-1. Measures real viewport scrollbar width
-2. Subtracts scrollbar + right gutter (2px inner + 2px outer) from available width
-3. Computes columns and rows from cell dimensions
-4. Initial dimensions sent in WebSocket URL query params
-5. `requestAnimationFrame` refit + `term.refresh()` after mount — ensures xterm canvas paints correctly on mobile where container dimensions may not be final in the first frame
+1. Disables browser-side xterm scrollback (`scrollback: 0`) because every embedded terminal attaches to tmux and tmux owns history.
+2. Computes columns and rows from the parent size and xterm cell dimensions without subtracting a hidden scrollbar gutter.
+3. Reserves one right-side cell as a DOM-renderer clip cushion. xterm v6 sets each row to `overflow:hidden`; the app keeps that vertical clipping but sets rows to `box-sizing: content-box` and adds matching right padding so the row clip box extends one cell beyond the terminal content width.
+4. Initial dimensions are sent in the WebSocket URL query params.
+5. `requestAnimationFrame` refit + `term.refresh()` after mount — ensures xterm canvas paints correctly on mobile where container dimensions may not be final in the first frame.
 
 ## Touch Scrolling
 
 See [../mobile.md](../mobile.md) for full touch handling details. Summary:
 
 - Touch events converted to synthetic WheelEvent on xterm's screen element
-- Goes through xterm's normal wheel pipeline (scrollback for shell, mouse escapes for tmux)
+- Goes through xterm's normal wheel pipeline into tmux mouse handling/copy-mode history
 - `stopPropagation()` prevents xterm v6's document-level gesture stealing
 - `touchcancel` handler for iOS interruptions

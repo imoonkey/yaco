@@ -92,6 +92,29 @@ describe('readSessionsFromStateFiles', () => {
     expect(sessions[0]!.status).toBe('starting')
   })
 
+  it('reads a blocked session with its blockReason', async () => {
+    writeStateFile(mockedSessionsDir, 'waiting', {
+      status: 'blocked',
+      blockReason: 'permission',
+      sessionPath: tmpDir,
+    })
+    const sessions = await readSessionsFromStateFiles(project())
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]).toMatchObject({ name: 'waiting', status: 'blocked', blockReason: 'permission' })
+  })
+
+  it('drops a stray blockReason when status is not blocked', async () => {
+    writeStateFile(mockedSessionsDir, 'idle-stray', {
+      status: 'idle',
+      blockReason: 'question',
+      sessionPath: tmpDir,
+    } as Partial<AgentSessionState>)
+    const sessions = await readSessionsFromStateFiles(project())
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0]!.status).toBe('idle')
+    expect(sessions[0]).not.toHaveProperty('blockReason')
+  })
+
   it('excludes sessions with unknown status', async () => {
     // Simulate a state file with an unrecognized status value
     const state = {

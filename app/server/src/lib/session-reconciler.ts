@@ -7,21 +7,36 @@ import { appendEvent } from './eventsLog'
 const RECONCILE_INTERVAL = 60_000
 /** Require N consecutive idle reconcile passes before firing notification. */
 const IDLE_DEBOUNCE_COUNT = 2
-/** Minimum time (ms) a session must be "processing" before an idle transition
- *  can trigger a notification. */
+/** Minimum time (ms) a session must have been active (processing OR blocked)
+ *  before an idle transition can trigger a notification. */
 const MIN_PROCESSING_MS = 15_000
 
 let reconcileTimer: ReturnType<typeof setTimeout> | null = null
 let reconcileInFlight = false
 
-const lastStatusBySession = new Map<string, 'starting' | 'processing' | 'idle'>()
+const lastStatusBySession = new Map<string, AgentSession['status']>()
 const processingStartBySession = new Map<string, number>()
 const idleStreakBySession = new Map<string, number>()
+
+/** A session is "active" while the agent owns the turn — either working
+ *  (`processing`) or paused waiting on the user (`blocked`). Both reset the idle
+ *  streak: a `blocked` session is the opposite of idle, so it must never fire a
+ *  `session_idle` notification. */
+function isActiveStatus(status: AgentSession['status'] | undefined): boolean {
+  return status === 'processing' || status === 'blocked'
+}
 
 let lastSessionSnapshot = ''
 
 function sessionKey(project: string, name: string): string {
   return `${project}:${name}`
+}
+
+/** Test-only: clear in-memory transition tracking between cases. */
+export function __resetReconcilerStateForTest(): void {
+  lastStatusBySession.clear()
+  processingStartBySession.clear()
+  idleStreakBySession.clear()
 }
 
 export function startSessionReconciler(): void {
@@ -74,8 +89,10 @@ async function reconcile(): Promise<void> {
   }
 }
 
-/** Detect processing→idle transitions and write session_idle progress entries. */
-async function detectIdleTransitions(sessions: AgentSession[], project: Project): Promise<void> {
+/** Detect active→idle transitions and write session_idle progress entries.
+ *  `blocked` counts as active here, so a session waiting on the user never
+ *  fires `session_idle`. Exported for unit tests. */
+export async function detectIdleTransitions(sessions: AgentSession[], project: Project): Promise<void> {
   const now = Date.now()
   const currentKeys = new Set<string>()
 
@@ -85,8 +102,8 @@ async function detectIdleTransitions(sessions: AgentSession[], project: Project)
     const prev = lastStatusBySession.get(key)
     lastStatusBySession.set(key, session.status)
 
-    if (session.status === 'processing') {
-      if (prev !== 'processing') {
+    if (isActiveStatus(session.status)) {
+      if (!isActiveStatus(prev)) {
         processingStartBySession.set(key, now)
       }
       idleStreakBySession.set(key, 0)
@@ -96,7 +113,7 @@ async function detectIdleTransitions(sessions: AgentSession[], project: Project)
       const wasRealWork = processingDuration >= MIN_PROCESSING_MS
 
       const prevStreak = idleStreakBySession.get(key) ?? 0
-      const streak = (prev === 'processing' && wasRealWork) ? 1
+      const streak = (isActiveStatus(prev) && wasRealWork) ? 1
         : (prevStreak > 0 ? prevStreak + 1 : 0)
       idleStreakBySession.set(key, streak)
 

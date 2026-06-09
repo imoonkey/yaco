@@ -13,8 +13,9 @@ export interface ProviderUiConfig {
     // Codex renders prose in a light gray that washes out against the editor
     // background, so it gets a high contrast floor; others render fine at 1.
     minimumContrastRatio: number
-    // Codex needs the real OSC 10/11/12 color report to theme itself; Claude and
-    // shell never read it, so we swallow the query to avoid a visible echo.
+    // app/server answers Codex OSC 10/11/12 color queries at the PTY bridge.
+    // Keep Codex pass-through as a fallback; Claude/shell queries are swallowed
+    // browser-side to avoid visible echoed color reports.
     suppressOscColorReportQuery: boolean
     inputPromptFrame?: TerminalInputPromptFrame
   }

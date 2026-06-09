@@ -85,17 +85,46 @@ describe('groupSessionLineage', () => {
   const namesAt = (rows: Array<{ session: AgentSession; depth: number }>) =>
     rows.map(r => [r.session.name, r.depth] as [string, number])
 
-  it('keeps a processing child indented under its idle parent (not split off as a root)', () => {
-    // Reviewer scenario: visible idle parent, processing child. The child must
-    // follow the parent with indentation, in the parent root's (idle) bucket.
+  it('promotes an idle parent to active when its child is processing (subtree-max)', () => {
+    // Subtree-max bucketing: a processing child pulls the whole subtree into the
+    // active bucket, but the parent still anchors it (child stays indented).
     const sessions = [
       makeSession('child', 'parent', 'processing'),
       makeSession('parent', undefined, 'idle'),
     ]
     const { pinned, processing, idle } = groupSessionLineage(sessions, noPins)
     expect(pinned).toEqual([])
-    expect(processing).toEqual([])
-    expect(namesAt(idle)).toEqual([['parent', 0], ['child', 1]])
+    expect(idle).toEqual([])
+    expect(namesAt(processing)).toEqual([['parent', 0], ['child', 1]])
+  })
+
+  it('promotes an idle parent to active when its child is blocked', () => {
+    const sessions = [
+      makeSession('child', 'parent', 'blocked'),
+      makeSession('parent', undefined, 'idle'),
+    ]
+    const { processing, idle } = groupSessionLineage(sessions, noPins)
+    expect(idle).toEqual([])
+    expect(namesAt(processing)).toEqual([['parent', 0], ['child', 1]])
+  })
+
+  it('places a standalone blocked root in the active bucket (counts as active)', () => {
+    const sessions = [makeSession('b', undefined, 'blocked')]
+    const { processing, idle } = groupSessionLineage(sessions, noPins)
+    expect(idle).toEqual([])
+    expect(namesAt(processing)).toEqual([['b', 0]])
+  })
+
+  it('sorts a blocked root above processing roots within the active bucket', () => {
+    // Input order is processing-then-blocked; blocked must surface to the top.
+    const sessions = [
+      makeSession('proc', undefined, 'processing'),
+      makeSession('blkd', undefined, 'blocked'),
+      makeSession('blkc', 'blkd', 'idle'),
+    ]
+    const { processing, idle } = groupSessionLineage(sessions, noPins)
+    expect(idle).toEqual([])
+    expect(namesAt(processing)).toEqual([['blkd', 0], ['blkc', 1], ['proc', 0]])
   })
 
   it('keeps an idle child indented under its processing parent', () => {

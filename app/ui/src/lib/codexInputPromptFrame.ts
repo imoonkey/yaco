@@ -4,10 +4,12 @@ import type { TerminalInputPromptFrame } from './providerUi'
 export interface InputPromptFrame {
   top: number
   height: number
+  width: number
 }
 
 type PromptFrameBoundary = 'prompt-menu' | 'reply' | 'status'
 type TerminalBuffer = XTerm['buffer']['active']
+const REPLY_BOUNDARY_PREFIXES = ['•', '■', '$', '⚠'] as const
 
 type TerminalWithRenderMetrics = XTerm & {
   _core?: {
@@ -15,6 +17,7 @@ type TerminalWithRenderMetrics = XTerm & {
       dimensions?: {
         css?: {
           cell?: {
+            width: number
             height: number
           }
         }
@@ -23,21 +26,9 @@ type TerminalWithRenderMetrics = XTerm & {
   }
 }
 
-interface TerminalBufferCell {
-  getBgColorMode: () => number
-  getBgColor: () => number
-  isBgDefault: () => boolean
-}
-
-interface TerminalBufferLine {
-  readonly length?: number
-  getCell?: (x: number) => TerminalBufferCell | undefined
-  translateToString: (trimRight?: boolean) => string
-}
-
 function sameInputPromptFrame(a: InputPromptFrame | null, b: InputPromptFrame | null): boolean {
   if (a === null || b === null) return a === b
-  return a.top === b.top && a.height === b.height
+  return a.top === b.top && a.height === b.height && a.width === b.width
 }
 
 export function sameInputPromptFrames(a: readonly InputPromptFrame[], b: readonly InputPromptFrame[]): boolean {
@@ -53,19 +44,6 @@ function patternMatches(pattern: RegExp | undefined, text: string): boolean {
   return matches
 }
 
-function readLineBackgroundKey(line: TerminalBufferLine, cols: number): string | null {
-  if (!line.getCell) return null
-
-  const limit = Math.min(line.length ?? cols, cols)
-  for (let col = 0; col < limit; col++) {
-    const cell = line.getCell(col)
-    if (!cell || cell.isBgDefault()) continue
-    return `${cell.getBgColorMode()}:${cell.getBgColor()}`
-  }
-
-  return null
-}
-
 function readLineText(buffer: TerminalBuffer, row: number): string {
   return buffer.getLine(row)?.translateToString(true) ?? ''
 }
@@ -76,6 +54,13 @@ function isViewportTailBlank(buffer: TerminalBuffer, fromRow: number, lastRow: n
     if (line?.translateToString(true).trim()) return false
   }
   return true
+}
+
+function readLastNonblankRow(buffer: TerminalBuffer, firstRow: number, lastRow: number): number {
+  for (let row = lastRow; row >= firstRow; row--) {
+    if (readLineText(buffer, row).trim() !== '') return row
+  }
+  return firstRow
 }
 
 function stripPromptGlyph(text: string): string {
@@ -128,7 +113,7 @@ function readPromptFrameBoundary(
 ): PromptFrameBoundary | null {
   const trimmed = text.trim()
   if (trimmed === '') return null
-  if (text.startsWith('•') || text.startsWith('■') || text.startsWith('$')) return 'reply'
+  if (REPLY_BOUNDARY_PREFIXES.some(prefix => text.startsWith(prefix))) return 'reply'
   if (/^tab to queue message\b/i.test(trimmed) && isViewportTailBlank(buffer, row, lastRow)) return 'status'
   if (!trimmed.includes(' · ')) return null
   return trimmed.split(/\s·\s/).filter(Boolean).length >= 3 && isViewportTailBlank(buffer, row, lastRow)
@@ -136,23 +121,31 @@ function readPromptFrameBoundary(
     : null
 }
 
+function readScreenWidth(term: XTerm, cellWidth: number): number {
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen')
+  const rectWidth = screen?.getBoundingClientRect().width ?? 0
+  if (rectWidth > 0) return rectWidth
+  if (screen?.clientWidth) return screen.clientWidth
+  return term.cols * cellWidth
+}
+
 export function readCodexInputPromptFrames(term: XTerm, config?: TerminalInputPromptFrame): InputPromptFrame[] {
   if (!config) return []
 
-  const cellHeight = (term as TerminalWithRenderMetrics)._core?._renderService?.dimensions?.css?.cell?.height
-  if (!cellHeight) return []
+  const cell = (term as TerminalWithRenderMetrics)._core?._renderService?.dimensions?.css?.cell
+  if (!cell?.height || !cell.width) return []
+  const frameWidth = readScreenWidth(term, cell.width)
 
   const buffer = term.buffer.active
   const firstRow = buffer.viewportY
   const lastRow = Math.min(buffer.viewportY + term.rows - 1, buffer.length - 1)
-  const fullHeight = term.rows * cellHeight
+  const fullHeight = term.rows * cell.height
   const frames: InputPromptFrame[] = []
 
   for (let row = firstRow; row <= lastRow; row++) {
     const line = buffer.getLine(row)
     if (!line || !patternMatches(config.promptPattern, line.translateToString(true))) continue
 
-    const promptBackgroundKey = readLineBackgroundKey(line, term.cols)
     let bottomRow = row
     let boundaryRow: number | null = null
     let boundaryType: PromptFrameBoundary | null = null
@@ -161,17 +154,6 @@ export function readCodexInputPromptFrames(term: XTerm, config?: TerminalInputPr
       const nextLine = buffer.getLine(nextRow)
       if (!nextLine) break
       const nextText = nextLine.translateToString(true)
-
-      if (promptBackgroundKey) {
-        if (readLineBackgroundKey(nextLine, term.cols) !== promptBackgroundKey) {
-          boundaryRow = nextRow
-          boundaryType = readPromptMenuBoundary(nextText, buffer, row, bottomRow)
-            ?? readPromptFrameBoundary(nextText, buffer, nextRow, lastRow)
-          break
-        }
-        bottomRow++
-        continue
-      }
 
       const nextBoundaryType = readPromptMenuBoundary(nextText, buffer, row, bottomRow)
         ?? readPromptFrameBoundary(nextText, buffer, nextRow, lastRow)
@@ -191,12 +173,15 @@ export function readCodexInputPromptFrames(term: XTerm, config?: TerminalInputPr
         : boundaryType === 'status'
           ? 1
           : 0
+    // The configured bottom padding spans roughly one terminal row, so ending
+    // one buffer row before the last content row places the border after that
+    // content row while excluding following blank viewport rows.
     const adjustedBottomRow = boundaryRow === null
-      ? bottomRow
+      ? Math.max(row, readLastNonblankRow(buffer, row, bottomRow) - 1)
       : Math.max(row, bottomRow - boundaryTrimRows)
-    const top = Math.max(0, (row - buffer.viewportY) * cellHeight - config.topPadding)
-    const bottom = Math.min(fullHeight, (adjustedBottomRow - buffer.viewportY + 1) * cellHeight + config.bottomPadding)
-    frames.push({ top, height: bottom - top })
+    const top = Math.max(0, (row - buffer.viewportY) * cell.height - config.topPadding)
+    const bottom = Math.min(fullHeight, (adjustedBottomRow - buffer.viewportY + 1) * cell.height + config.bottomPadding)
+    frames.push({ top, height: bottom - top, width: frameWidth })
     row = bottomRow
   }
 

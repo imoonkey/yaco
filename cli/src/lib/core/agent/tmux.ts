@@ -6,7 +6,6 @@ import { isInputEmpty } from "./providers/idle.ts";
 import { stripAnsi } from "./model.ts";
 
 const EXEC_TIMEOUT_MS = 5000;
-const SEND_SUBMIT_DELAY_MS = 300;
 const INPUT_EMPTY_POLL_MS = 500;
 export const SEND_WHEN_INPUT_EMPTY_TIMEOUT_MS = 5 * 60 * 1000;
 const RGB_TERMINAL_FEATURES = [
@@ -281,7 +280,7 @@ export function detectDarkMode(
 function oscColorResponseHex(): string {
   const dark = detectDarkMode();
   const fg = dark ? "8383/9494/9696" : "6565/7b7b/8383";
-  const bg = dark ? "0000/2b2b/3636" : "eeee/e8e8/d5d5";
+  const bg = dark ? "0000/2b2b/3636" : "fdfd/f6f6/e3e3";
   return `${oscHex("10", fg)} ${oscHex("11", bg)}`;
 }
 
@@ -407,8 +406,6 @@ export function sendKeys(handle: string, text: string): void {
     } catch { /* best-effort cleanup */ }
   }
 
-  // Let the TUI drain the bracketed paste before the submit key.
-  Bun.sleepSync(SEND_SUBMIT_DELAY_MS);
   execTmux(["send-keys", "-t", paneTargetValue(handle), "Enter"]);
 }
 

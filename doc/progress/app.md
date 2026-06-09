@@ -1,3 +1,38 @@
+## 2026-06-09: App server accepts `blocked` status, treats it as active (session-blocked-state 4/6)
+
+**What changed:**
+- `agent.ts`: `AgentSession.status` and `AgentSessionState.status` unions widened to include `blocked`; added optional `blockReason` (`permission | question | trust`, new exported `BlockReason` type) to both, and `blocked` added to `VALID_STATUSES`. `blockReason` threads through the shared `toSessionRow` projection, which only emits it when `status === 'blocked'` with a valid reason (a stray reason on a non-blocked status is dropped).
+- `session-reconciler.ts`: `lastStatusBySession` retyped to `AgentSession['status']`. New `isActiveStatus()` (`processing || blocked`) gates idle detection — `blocked` now resets the idle streak exactly like `processing`, so `processing → blocked` never fires `session_idle`. Stale `MIN_PROCESSING_MS` comment corrected to say the timer covers active time (processing OR blocked).
+- `session-summary.ts`: cached-label drop now fires on any active (`processing` or `blocked`) → `idle` transition, so `processing → blocked → idle` still refreshes the label instead of skipping it.
+
+**Why:**
+- The CLI now emits `blocked` (agent paused waiting on the user). For the app's "can I ignore this session?" question, `blocked` is the *opposite* of idle — without these changes a `processing → blocked` transition would start an idle streak and notify "session idle" for a session that actually needs the user, and a `blocked` interlude would swallow a stale-label refresh.
+
+**Key files:** `app/server/src/lib/agent.ts`, `app/server/src/lib/session-reconciler.ts`, `app/server/src/lib/session-summary.ts`, plus tests in `app/server/src/lib/__tests__/{agent,session-reconciler,session-summary}.test.ts`; doc `doc/main/app/backend/libs.md`.
+**Verification:** `cd app/server && npm test` passed (32 files, 439 tests; +12 new — blocked row read + stray-reason drop, reconciler `processing→blocked` emits no idle / blocked resets streak with a positive `processing→idle→idle` control, summary `processing→blocked→idle` refresh).
+**Commit:** pending (central commit by orchestrator).
+**Next:** UI `blocked` dot + reason badge + subtree-max bucketing (`ui-blocked-dot`, task 5/6).
+**Blockers:** None.
+
+## 2026-06-08: Terminal disables browser scrollback gutter for tmux sessions
+
+**What changed:**
+- `Terminal.tsx` now initializes xterm with `scrollback: 0` and skips internal scrollbar-width subtraction when scrollback is disabled.
+- `fitTerminal()` now reserves one right-side cell as a DOM-renderer clip cushion and `index.css` sets xterm rows to `box-sizing: content-box` with matching right padding. This keeps xterm's inline row `overflow:hidden` while moving the horizontal clip edge one cell to the right.
+- Codex prompt-frame overlays now use `.xterm-screen` width instead of `inset-x-0`, so the cyan rules stop at the terminal column area instead of extending across the right-side rounding remainder.
+- Updated the terminal component test so an 800px / 10px-cell pane reports 79 columns: one cell is the explicit right clip cushion, and the hidden 14px xterm scrollbar is no longer counted.
+- SOTA docs now state that embedded terminals attach to tmux and tmux owns scrollback/history.
+
+**Why:**
+- Workflow terminals are tmux attach clients, so xterm's browser-side scrollback gutter was permanently consuming ~14px, which is 1-2 columns at the current terminal font size. That made right-edge Codex/tmux content appear to drift into the blank gutter even though the visible scrollbar was not useful in normal use.
+- The remaining right-edge clipping came from xterm v6's DOM renderer: each row has inline `overflow:hidden`, and the renderer's font/DPR rounding can clip the final glyph at the row edge. A one-cell cushion is the conservative trade-off: fewer right-edge columns, no final-glyph clipping.
+
+**Key files:** `app/ui/src/components/Terminal.tsx`, `app/ui/src/index.css`, `app/ui/src/lib/codexInputPromptFrame.ts`, `app/ui/src/components/__tests__/Terminal.focus.test.tsx`, `doc/main/app/ui/workspace/sessions-and-terminal.md`, `doc/main/app/ui/mobile.md`.
+**Verification:** `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (29/29); `npx eslint src/components/Terminal.tsx src/lib/codexInputPromptFrame.ts src/components/__tests__/Terminal.focus.test.tsx` passed; `npx tsc --noEmit` passed; `npm run build` passed (existing Vite direct-eval / large-chunk warnings only); Playwright runtime probe against a temporary shell session measured parent width 1051px, screen width 1040px, row border-box width 1048px, row padding 8px, row `box-sizing: content-box`, and 3px right-side unused space after the expanded clip box.
+**Commit:** pending.
+**Next:** Manually check an attached Codex/tmux pane after reload to confirm the right edge uses the recovered columns without visible clipping.
+**Blockers:** None.
+
 ## 2026-06-08: Self-host JetBrains Mono + line-height/weight tokens
 
 **What changed:**
