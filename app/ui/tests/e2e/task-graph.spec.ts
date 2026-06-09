@@ -31,6 +31,10 @@ const taskNodes = (page: Page) => page.locator('[data-layer="nodes"] g[role="but
 const nodeByTitle = (page: Page, title: string) =>
   page.locator(`g[role="button"][aria-label^="Task: ${title}, status:"]`)
 
+const cssString = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+const nodeById = (page: Page, id: string) =>
+  page.locator(`[data-layer="nodes"] g[role="button"][data-task-id="${cssString(id)}"]`)
+
 /**
  * Discover a root task in each of the active + archive worksets, with a unique,
  * selector-safe title, so the test can assert node presence/absence by title.
@@ -50,6 +54,35 @@ async function discoverWorksetRoots(page: Page, project: string) {
     const archive = pick('archive')
     const active = pick('active')
     return { archiveTitle: archive?.title ?? null, activeTitle: active?.title ?? null }
+  }, project)
+}
+
+/** Pick a default-visible group whose chevron can hide/show at least one row. */
+async function discoverVisibleGroup(page: Page, project: string) {
+  return page.evaluate(async (name: string) => {
+    type Task = { parent: string | null; workset?: string }
+    const res = await fetch(`/api/tasks/${encodeURIComponent(name)}`)
+    const { tasks } = await res.json() as { tasks: Record<string, Task> }
+    const childrenByTask = new Map<string, string[]>()
+    for (const [id, task] of Object.entries(tasks)) {
+      if (!task.parent) continue
+      childrenByTask.set(task.parent, [...(childrenByTask.get(task.parent) ?? []), id])
+    }
+    const defaultWorksets = new Set(['active', 'backlog'])
+    const isDefaultVisible = (id: string) => {
+      let current: string | null = id
+      const visited = new Set<string>()
+      while (current && !visited.has(current)) {
+        visited.add(current)
+        const task = tasks[current]
+        if (!task || !defaultWorksets.has(task.workset ?? 'active')) return false
+        current = task.parent
+      }
+      return true
+    }
+    return Object.keys(tasks).find(id =>
+      isDefaultVisible(id) && (childrenByTask.get(id) ?? []).some(isDefaultVisible)
+    ) ?? null
   }, project)
 }
 
@@ -337,7 +370,7 @@ test.describe('Task workspace (Pseudo-Gantt mode)', () => {
 
     const divider = page.locator('[data-testid="gantt-divider"]')
     await expect(divider).toBeVisible()
-    const leftCol = page.locator('[data-layer="nodes"]').first()
+    const leftCol = page.locator('[data-layer="nodes"]').first().locator('xpath=ancestor::*[name()="svg"][1]')
     const startWidth = (await leftCol.boundingBox())!.width
 
     // Drag the divider handle right by ~160px → the left column widens by ~that much.
@@ -358,7 +391,8 @@ test.describe('Task workspace (Pseudo-Gantt mode)', () => {
 
     await reopenWorkspace(page, project)
     await switchToGantt(page)
-    await expect.poll(async () => (await page.locator('[data-layer="nodes"]').first().boundingBox())!.width).toBeGreaterThan(widened - 5)
+    const restoredLeftCol = page.locator('[data-layer="nodes"]').first().locator('xpath=ancestor::*[name()="svg"][1]')
+    await expect.poll(async () => (await restoredLeftCol.boundingBox())!.width).toBeGreaterThan(widened - 5)
   })
 })
 
@@ -478,6 +512,32 @@ test.describe('Task workspace (V1 stacked graph)', () => {
 
     await node.dblclick({ position: { x: 24, y: 18 } })
     await expect(panel).toBeVisible({ timeout: 3_000 })
+  })
+
+  test('group chevron toggles collapse without selecting or opening task details', async ({ page }) => {
+    const project = await openTaskGraph(page)
+    const groupId = await discoverVisibleGroup(page, project.name)
+    expect(groupId, 'default-visible group task with visible children').toBeTruthy()
+
+    const node = nodeById(page, groupId!)
+    const panel = page.getByRole('complementary', { name: 'Task details' })
+    const expandedCount = await taskNodes(page).count()
+
+    await expect(node).toHaveAttribute('data-selected', 'false')
+    await node.click({ position: { x: 8, y: 18 } })
+    await expect.poll(() => taskNodes(page).count()).toBeLessThan(expandedCount)
+    await expect(node).toHaveAttribute('data-selected', 'false')
+    await expect(panel).toHaveCount(0)
+
+    await node.click({ position: { x: 8, y: 18 } })
+    await expect.poll(() => taskNodes(page).count()).toBe(expandedCount)
+    await expect(node).toHaveAttribute('data-selected', 'false')
+    await expect(panel).toHaveCount(0)
+
+    await node.dblclick({ position: { x: 8, y: 18 } })
+    await expect.poll(() => taskNodes(page).count()).toBe(expandedCount)
+    await expect(node).toHaveAttribute('data-selected', 'false')
+    await expect(panel).toHaveCount(0)
   })
 
   test('detail panel overlays the graph and resizes from its left border', async ({ page }) => {

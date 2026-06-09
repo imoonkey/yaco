@@ -240,7 +240,8 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
       {/* Collapse chevron for group tasks */}
       {hasGroupAffordances && (
         <g
-          onClick={(e) => { e.stopPropagation(); onToggleCollapse(node.id); onClick(node.id) }}
+          onClick={(e) => { e.stopPropagation(); onToggleCollapse(node.id) }}
+          onDoubleClick={(e) => { e.stopPropagation() }}
           style={{ cursor: 'pointer' }}
         >
           <rect x={node.x} y={node.y} width={18} height={NODE_HEIGHT} fill="transparent" rx={6} />
