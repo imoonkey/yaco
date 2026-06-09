@@ -141,6 +141,33 @@ describe("applyHookEvent — blocked transitions", () => {
     expect(next?.blockReason).toBeUndefined();
   });
 
+  it("PermissionRequest on a question tool enters blocked(question), not permission", () => {
+    // Claude fires PermissionRequest for AskUserQuestion (auto-approved) — it
+    // must classify as a question, not a permission prompt.
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PermissionRequest", "", true, undefined, "AskUserQuestion",
+    );
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("question");
+  });
+
+  it("Notification(permission_prompt) does not downgrade an active blocked(question)", () => {
+    // Claude fires permission_prompt while waiting on a question too; it must
+    // not overwrite the question block with a permission block (last-event-wins).
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }), "Notification", "", true, "permission_prompt",
+    );
+    expect(next).toBeNull();
+  });
+
+  it("Notification(permission_prompt) still blocks(permission) from a non-question state", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "permission" }), "Notification", "", true, "permission_prompt",
+    );
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("permission");
+  });
+
   it("PostToolUse on a question tool exits blocked(question) → processing", () => {
     const next = applyHookEvent(
       makeState({ status: "blocked", blockReason: "question" }),

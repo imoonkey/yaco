@@ -107,12 +107,20 @@ export function applyHookEvent(
       setStatus(next, "processing");
       return next;
     case "PermissionRequest":
-      setStatus(next, "blocked", "permission");
+      // Claude fires PermissionRequest for a question tool too (auto-approved,
+      // so PreToolUse follows immediately). Classify by tool: a question tool is
+      // a question block, anything else is a real permission block.
+      if (isQuestionTool) setStatus(next, "blocked", "question");
+      else setStatus(next, "blocked", "permission");
       return next;
     case "Notification":
       // permission_prompt → blocked(permission); idle_prompt → idle; any other
       // notification type carries no status change.
       if (notificationType === "permission_prompt") {
+        // Claude also fires permission_prompt while *waiting on a question*
+        // (the notification has no tool_name to disambiguate). Don't downgrade
+        // an active question block to a permission block.
+        if (next.status === "blocked" && next.blockReason === "question") return null;
         setStatus(next, "blocked", "permission");
         return next;
       }

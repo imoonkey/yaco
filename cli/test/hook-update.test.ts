@@ -217,4 +217,23 @@ describe("applyHookEvent — blocked transitions", () => {
     expect(next?.blockReason).toBeUndefined();
     expect(next?.sessionId).toBe("boot-id");
   });
+
+  it("real Claude AskUserQuestion sequence ends at blocked(question), not permission", () => {
+    // Observed live: Claude fires PermissionRequest(AskUserQuestion) + PreToolUse
+    // (AskUserQuestion) ~together, then a Notification(permission_prompt) ~6s
+    // later while the question waits. Last-event-wins must NOT land on permission.
+    const events: Array<[string, string | undefined, string | undefined]> = [
+      ["UserPromptSubmit", undefined, undefined],
+      ["PermissionRequest", undefined, "AskUserQuestion"],
+      ["PreToolUse", undefined, "AskUserQuestion"],
+      ["Notification", "permission_prompt", undefined],
+    ];
+    let state = makeState({ status: "idle" });
+    for (const [event, notif, tool] of events) {
+      const next = applyHookEvent(state, event as never, "", true, notif, tool);
+      if (next) state = next; // null = no-op, keep prior state
+    }
+    expect(state.status).toBe("blocked");
+    expect(state.blockReason).toBe("question");
+  });
 });
