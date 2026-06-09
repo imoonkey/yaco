@@ -357,13 +357,17 @@ export async function startAgentSession(
   }
 
   // Spawn yaco — it handles waitForReady / /rename / sessionId in background.
-  // Mark the spawn source so the CLI records spawnedBy=user:web. The wrapper
-  // clears this marker before launching the provider, so it never leaks into
-  // long-lived child sessions started from inside the agent.
+  // A web-created session is by definition spawnedBy=user:web. Scrub any
+  // inherited YACO_AGENT_HANDLE so lineage derivation can't mis-parent it under
+  // whatever launched this daemon (deriveSessionLineage checks YACO_AGENT_HANDLE
+  // before the user:web marker; the var leaks in when the server itself was
+  // started from inside an agent session).
+  const childEnv = { ...buildChildProcessEnv(), YACO_AGENT_SPAWNED_BY: 'user:web' }
+  delete childEnv.YACO_AGENT_HANDLE
   const proc = spawn(YACO_PATH, args, {
     stdio: ['ignore', 'ignore', 'pipe'],
     cwd,
-    env: { ...buildChildProcessEnv(), YACO_AGENT_SPAWNED_BY: 'user:web' },
+    env: childEnv,
   })
   proc.unref()
 
