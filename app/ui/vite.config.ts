@@ -5,6 +5,10 @@ import { viteStaticCopy, type Target } from 'vite-plugin-static-copy'
 import compression from 'compression'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
+import { resolveDevPorts } from './e2ePorts'
+
+// Worktree-isolated dev ports (main checkout → 5173 / 3001 unchanged).
+const { ui: UI_PORT, api: API_PORT } = resolveDevPorts()
 
 // Self-hosted VAD assets. The voice path (vs-vad-module, src/hooks/voiceVad.ts)
 // lazy-`import()`s @ricky0123/vad-web, which at init fetches its worklet + Silero
@@ -73,6 +77,7 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    port: UI_PORT,
     allowedHosts: ['laptop', 'desktop', '.tailnet-example.ts.net'],
     warmup: {
       clientFiles: [
@@ -82,9 +87,9 @@ export default defineConfig({
       ],
     },
     proxy: {
-      '/api': 'http://localhost:3001',
+      '/api': `http://localhost:${API_PORT}`,
       '/ws': {
-        target: 'ws://localhost:3001',
+        target: `ws://localhost:${API_PORT}`,
         ws: true,
       },
     },

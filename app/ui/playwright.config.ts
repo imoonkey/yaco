@@ -1,7 +1,10 @@
 import { defineConfig } from '@playwright/test'
+import { resolveDevPorts } from './e2ePorts'
 
-const UI_PORT = 5173
-const API_PORT = 3001
+// In a worktree, run the worktree's OWN vite + API server on isolated ports so
+// e2e tests the worktree's code (not the main checkout) and parallel worktrees
+// don't collide. Main checkout → 5173 / 3001 with server reuse, unchanged.
+const { ui: UI_PORT, api: API_PORT, isWorktree } = resolveDevPorts()
 const BASE_URL = `http://127.0.0.1:${UI_PORT}`
 
 export default defineConfig({
@@ -25,14 +28,15 @@ export default defineConfig({
   webServer: [
     {
       command: 'npx tsx ../server/src/index.ts',
+      env: { WORKFLOW_PORT: String(API_PORT) },
       url: `http://127.0.0.1:${API_PORT}/api/health`,
-      reuseExistingServer: true,
+      reuseExistingServer: !isWorktree,
       timeout: 30_000,
     },
     {
-      command: 'npx vite --port 5173',
+      command: `npx vite --port ${UI_PORT}`,
       url: BASE_URL,
-      reuseExistingServer: true,
+      reuseExistingServer: !isWorktree,
       timeout: 30_000,
     },
   ],
