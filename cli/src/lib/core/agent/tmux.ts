@@ -281,7 +281,7 @@ export function detectDarkMode(
 function oscColorResponseHex(): string {
   const dark = detectDarkMode();
   const fg = dark ? "8383/9494/9696" : "6565/7b7b/8383";
-  const bg = dark ? "0000/2b2b/3636" : "eeee/e8e8/d5d5";
+  const bg = dark ? "0000/2b2b/3636" : "fdfd/f6f6/e3e3";
   return `${oscHex("10", fg)} ${oscHex("11", bg)}`;
 }
 

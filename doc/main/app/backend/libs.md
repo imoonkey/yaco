@@ -214,6 +214,16 @@ PTY management for terminal sessions.
 - `pasteTextToSession(name, text)` is the server-side path for external terminal text insertion. It rejects payloads over `MAX_TERMINAL_TEXT_PASTE_BYTES`, writes the text to a uniquely named tmux buffer via stdin, runs `paste-buffer -p` against `=<name>:` without sending Enter, and best-effort deletes the buffer. WebSocket `text-paste` uses this for voice terminal Insert so Claude/Codex receive one bracketed paste instead of a raw input stream.
 - `releaseSession(name, attached)` centralizes detach cleanup by destroying non-persistent tmux attach PTYs immediately
 
+### terminal-osc.ts (~130 lines)
+
+Pure OSC color-query responder used by the WebSocket terminal bridge.
+
+**Exports**: `TerminalOscColorResponder`, `parseTerminalPalette()`, `terminalPaletteFromSearchParams()`, `shouldAnswerTerminalOscColor()`, `TerminalPalette`
+
+- `TerminalOscColorResponder` consumes Codex OSC 10/11/12 pure color report queries from PTY output, supports ST (`ESC \`) and BEL terminators, carries partial query bytes across chunks, and returns `{ output, responses }` so `index.ts` can forward normal output to the browser while writing OSC RGB responses directly back to the PTY.
+- `terminalPaletteFromSearchParams()` validates `#rrggbb` foreground/background/cursor colors from the terminal WebSocket URL and falls back per channel to the app's light terminal palette when params are missing or malformed.
+- `shouldAnswerTerminalOscColor(handle)` reads `${YACO_HOME:-~/.yaco}/sessions/<handle>.json` and enables server-side answering only when the trusted provider field is `codex`; shell/Claude panes continue through the browser-side replay guard.
+
 ### pty-capacity.ts (~120 lines)
 
 Process-level PTY pressure guard for darwin.

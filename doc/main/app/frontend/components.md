@@ -295,7 +295,7 @@ xterm.js wrapper with WebSocket PTY connection.
 **Responsibilities**:
 - WebSocket connection management
 - Solarized Light terminal theme
-- OSC 10/11/12 color report handling: Codex color probes pass through to xterm.js; Claude/shell pure query replays are suppressed
+- Terminal palette reporting: sends resolved foreground/background/cursor colors to app/server in the WebSocket URL so the server can answer Codex OSC 10/11/12 probes at the PTY bridge; Claude/shell pure query replays are still suppressed browser-side
 - OSC 52 clipboard bridge
 - External text insertion via `text-paste` WebSocket messages for tmux bracketed paste without auto-submit
 - Touch-to-WheelEvent bridge for mobile scroll

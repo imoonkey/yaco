@@ -57,6 +57,21 @@ function buildXtermTheme() {
   }
 }
 
+interface TerminalPalettePayload {
+  foreground: string
+  background: string
+  cursor: string
+}
+
+function readTerminalPalette(): TerminalPalettePayload {
+  const theme = buildXtermTheme()
+  return {
+    foreground: theme.foreground,
+    background: theme.background,
+    cursor: theme.cursor,
+  }
+}
+
 const ARROW_KEY_SUFFIX: Partial<Record<TerminalKeyBarKey, 'A' | 'B' | 'C' | 'D'>> = {
   'arrow-left': 'D',
   'arrow-down': 'B',
@@ -167,10 +182,18 @@ function applyModifiers(data: string, mods: Modifiers): string | null {
   return data
 }
 
-function buildWsUrl(sessionName: string, cols: number, rows: number, projectName?: string): string {
+function buildWsUrl(sessionName: string, cols: number, rows: number, palette: TerminalPalettePayload, projectName?: string): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = window.location.host
-  return `${proto}//${host}/ws/terminal/${encodeURIComponent(sessionName)}?cols=${cols}&rows=${rows}${projectName ? `&project=${encodeURIComponent(projectName)}` : ''}`
+  const params = new URLSearchParams({
+    cols: String(cols),
+    rows: String(rows),
+    fg: palette.foreground,
+    bg: palette.background,
+    cursor: palette.cursor,
+  })
+  if (projectName) params.set('project', projectName)
+  return `${proto}//${host}/ws/terminal/${encodeURIComponent(sessionName)}?${params.toString()}`
 }
 
 export function Terminal({ sessionName, projectName, provider, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey }: TerminalProps) {
@@ -565,7 +588,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
     const STABLE_MS = 5000
 
     function createWs() {
-      const url = buildWsUrl(sessionName, term!.cols, term!.rows, projectName)
+      const url = buildWsUrl(sessionName, term!.cols, term!.rows, readTerminalPalette(), projectName)
       const ws = new WebSocket(url)
       ws.binaryType = 'arraybuffer'
       wsRef.current = ws

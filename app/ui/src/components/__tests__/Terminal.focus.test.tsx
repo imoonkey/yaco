@@ -11,6 +11,7 @@ const clearSpy = vi.fn()
 type OscHandler = (data: string) => boolean | Promise<boolean>
 const oscHandlers = new Map<number, OscHandler[]>()
 const wsSends: string[] = []
+const wsUrls: string[] = []
 
 interface FakeBufferLine {
   isWrapped: boolean
@@ -182,7 +183,8 @@ beforeEach(() => {
     onmessage: ((e: MessageEvent) => void) | null = null
     onerror: ((e: Event) => void) | null = null
     onclose: ((e: CloseEvent) => void) | null = null
-    constructor() {
+    constructor(url?: string) {
+      wsUrls.push(String(url ?? ''))
       setTimeout(() => this.onopen?.(new Event('open')), 0)
     }
     send(data: string) { wsSends.push(data) }
@@ -211,7 +213,12 @@ beforeEach(() => {
   resizeSpy.mockClear()
   clearSpy.mockClear()
   wsSends.length = 0
+  wsUrls.length = 0
   oscHandlers.clear()
+  document.documentElement.style.setProperty('--sol-editor-bg', '#fdf6e3')
+  document.documentElement.style.setProperty('--sol-editor-fg', '#657b83')
+  document.documentElement.style.setProperty('--sol-text', '#657b83')
+  document.documentElement.style.setProperty('--sol-blue', '#268bd2')
   resetFakeBuffer()
 })
 
@@ -703,6 +710,19 @@ describe('Terminal focus handoff', () => {
       expect(resizeSpy).toHaveBeenCalledWith(79, 20)
     })
     expect(container.querySelector<HTMLElement>('.yaco-terminal-xterm')?.style.getPropertyValue('--yaco-terminal-right-clip-cushion')).toBe('10px')
+  })
+
+  it('passes the resolved terminal palette to the terminal websocket', async () => {
+    const Terminal = await loadTerminal()
+    render(<Terminal sessionName="session-a" />)
+
+    await waitFor(() => {
+      expect(wsUrls.length).toBeGreaterThan(0)
+    })
+    const url = decodeURIComponent(wsUrls[0]!)
+    expect(url).toContain('fg=#657b83')
+    expect(url).toContain('bg=#fdf6e3')
+    expect(url).toContain('cursor=#657b83')
   })
 
   it('sends external terminal text as text-paste instead of raw input', async () => {

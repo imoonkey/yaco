@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-08: Attached-session Codex OSC color responder
+
+**What changed:**
+- Added `app/server/src/lib/terminal-osc.ts`, a pure OSC 10/11/12 color-query responder that consumes Codex color probes from PTY output, supports split chunks and ST/BEL terminators, and returns normal output separately from OSC responses.
+- The terminal WebSocket now passes the resolved xterm foreground/background/cursor colors in the URL. app/server answers Codex color probes directly at the PTY bridge instead of relying on browser xterm `onData` timing.
+- CLI detached-startup color handling is intentionally left on the existing provider-runtime path; this change only adds the attached-session responder.
+
+**Why:**
+- Mid-session Codex focus/requery events could time out or receive a different color than startup, causing the input box background to fade back toward the surrounding editor background. The server bridge is the stable place to answer attached-session queries because it already owns the tmux attach PTY stream.
+
+**Key files:** `app/server/src/lib/terminal-osc.ts`, `app/server/src/index.ts`, `app/ui/src/components/Terminal.tsx`, `app/ui/src/lib/providerUi.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`
+**Verification:** `cd app/server && npx vitest run src/lib/__tests__/terminal-osc.test.ts src/lib/__tests__/terminal.test.ts` passed (29 tests); `cd app/ui && npx vitest run src/components/__tests__/Terminal.focus.test.tsx` passed (30 tests); `cd app/ui && npx eslint src/components/Terminal.tsx src/components/__tests__/Terminal.focus.test.tsx src/lib/providerUi.ts` passed. `cd app/server && npx tsc --noEmit` still fails on pre-existing unrelated type errors in server/cli workspace imports, node-pty typing, OpenAI response casts, WhatsApp, routes/files, and worktree tests.
+**Commit:** pending.
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-08: Codex prompt frame ignores background rows
 
 **What changed:**

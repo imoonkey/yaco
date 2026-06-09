@@ -51,14 +51,16 @@ The WebSocket server handles upgrade requests at `/ws/terminal/:name`.
 Flow:
 1. Validate origin against allowlist
 2. Validate session name against `[a-zA-Z0-9_.-]+`
-3. Parse `cols` and `rows` from query params
+3. Parse `cols`, `rows`, and validated attach-time terminal palette params (`fg`, `bg`, `cursor`)
 4. Call `attachSession(name, cols, rows)` to get a PTY handle. `attachSession` calls `assertCanSpawn()` from `pty-capacity.ts` and spawns a new `tmux attach-session` client for shell and agent sessions alike
 5. Each socket owns one `TerminalConnection` record; `cleanupConnection()` is the single path that disposes subs, calls `releaseSession()`, and removes the record — `proc.onExit`, `ws.on('close')`, `ws.on('error')`, and shutdown all route through it
 6. Send scrollback buffer (`initialData`) if present. Shell and agent scrollback is tmux-managed; the server does not keep an in-process shell buffer
-7. Pipe PTY output to WebSocket, WebSocket `{ type: 'input', data }` keystrokes to PTY
-8. Handle resize messages (`{ type: 'resize', cols, rows }`)
-9. Handle text-paste messages (`{ type: 'text-paste', data }`) via `terminal.ts#pasteTextToSession()`: validate the payload, load it into a tmux buffer, and run `paste-buffer -p` against the exact target pane without sending Enter. Used by voice terminal Insert and other external text injection so agent TUIs receive one bracketed paste instead of a slow ordinary input stream.
-10. Handle image-paste messages (`{ type: 'image-paste', mime, base64 }`) by writing the bytes into the X11 CLIPBOARD via `clipboard-write.ts` and forwarding `\x16` (Ctrl+V) to the PTY so the focused TUI agent (Claude Code, Codex) triggers its native paste handler. Used to forward laptop-clipboard images into a remote desktop's TUI agent — see `lib/clipboard-write.ts` and `lib/clipboard-env.ts` in [libs.md](./libs.md).
+7. For Codex sessions, build a server-side OSC color responder from the trusted agent state file (`provider === 'codex'`) and attach-time palette
+8. Pipe PTY output through the OSC responder before WebSocket; Codex OSC 10/11/12 pure color queries are consumed and answered directly with `proc.write()`, while normal output continues to the browser
+9. Pipe WebSocket `{ type: 'input', data }` keystrokes to PTY
+10. Handle resize messages (`{ type: 'resize', cols, rows }`)
+11. Handle text-paste messages (`{ type: 'text-paste', data }`) via `terminal.ts#pasteTextToSession()`: validate the payload, load it into a tmux buffer, and run `paste-buffer -p` against the exact target pane without sending Enter. Used by voice terminal Insert and other external text injection so agent TUIs receive one bracketed paste instead of a slow ordinary input stream.
+12. Handle image-paste messages (`{ type: 'image-paste', mime, base64 }`) by writing the bytes into the X11 CLIPBOARD via `clipboard-write.ts` and forwarding `\x16` (Ctrl+V) to the PTY so the focused TUI agent (Claude Code, Codex) triggers its native paste handler. Used to forward laptop-clipboard images into a remote desktop's TUI agent — see `lib/clipboard-write.ts` and `lib/clipboard-env.ts` in [libs.md](./libs.md).
 
 Close codes:
 - `4001 session_ended` — PTY exited (tmux `/exit`, shell logout). Client detaches immediately, no reconnect.

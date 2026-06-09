@@ -168,7 +168,7 @@ Before the server creates a tmux shell or starts a new yaco agent child process,
 
 ### OSC Color Reports
 
-Terminal registers OSC 10/11/12 handlers for pure color report queries (`?` / `?;?`). Codex sessions pass these queries through to xterm.js so Codex's terminal probe can receive foreground/background/cursor colors and keep its TUI input background stable after redraws, focus changes, and attach cycles. Claude and shell sessions still consume pure queries before xterm.js emits automatic responses through `onData`; this preserves the replay guard against old color queries injecting `ESC]10;rgb...ST` / `ESC]11;rgb...ST` text into panes that do not need the probe. Normal color setter sequences are always passed through.
+The terminal WebSocket sends the resolved xterm palette (`fg`, `bg`, `cursor`) in the attach URL. For Codex sessions, app/server consumes OSC 10/11/12 pure color report queries (`?` / `?;?`) at the PTY bridge and writes matching OSC RGB replies directly back to the tmux attach client, so Codex's crossterm probe does not depend on browser `onData` timing during focus changes, attach cycles, or redraws. Claude and shell sessions still rely on the browser-side OSC handlers to suppress pure query replays before xterm.js emits automatic responses through `onData`; this preserves the replay guard against old color queries injecting `ESC]10;rgb...ST` / `ESC]11;rgb...ST` text into panes that do not need the probe. Normal color setter sequences are always passed through.
 
 ### OSC 52 Bridge
 
