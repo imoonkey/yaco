@@ -7,9 +7,14 @@
 import { execSync } from "child_process";
 import { readState, writeState } from "./session-state.ts";
 import { hasSession } from "./tmux.ts";
-import { PENDING_SESSION_ID, type HookEvent, type SessionState } from "./model.ts";
+import { PENDING_SESSION_ID, setStatus, type HookEvent, type SessionState } from "./model.ts";
 
 export type { HookEvent } from "./model.ts";
+
+/** Tools that pause the agent on a user question. Claude fires `AskUserQuestion`,
+ *  Codex fires `request_user_input`; a `PreToolUse` on either → blocked(question),
+ *  its `Post(Failure)` → processing (answer received or question cancelled). */
+export const QUESTION_TOOLS = new Set(["AskUserQuestion", "request_user_input"]);
 
 /** Re-check window for Stop/StopFailure debounce. The provider event loop
  *  can re-emit Stop for turn N concurrently with UserPromptSubmit for
@@ -28,6 +33,8 @@ export interface HookInput {
   hook_event_name?: string;
   session_id?: string;
   notification_type?: string;
+  /** Tool name from the hook payload (snake_case, kept verbatim per provider). */
+  tool_name?: string;
 }
 
 /** Derive handle from live tmux session name. */
@@ -45,59 +52,93 @@ export function deriveHandle(): string | null {
 }
 
 /** Apply a hook event to a session state. Returns the next state, or null when
- *  no write is required (guard hit, or terminal end on a dead session). */
+ *  no write is required (guard hit, or terminal end on a dead session).
+ *
+ *  Last-event-wins: there is no explicit "unblock" event — the next
+ *  processing/idle transition implicitly clears a `blocked` state. */
 export function applyHookEvent(
   state: SessionState,
   event: HookEvent,
   sessionId: string,
   sessionAlive: boolean,
   notificationType?: string,
+  toolName?: string,
 ): SessionState | null {
   const next: SessionState = { ...state };
+  const isQuestionTool = toolName !== undefined && QUESTION_TOOLS.has(toolName);
 
   switch (event) {
     case "SessionStart":
-      if (next.status === "processing") return null;
-      next.status = "idle";
+      // Guard: never clobber a mid-session-active state — `processing` or a
+      // mid-session block (`permission`/`question`). A late/duplicate
+      // SessionStart only clears `starting`, `idle`, and `blocked(trust)`
+      // (boot finished after the user granted trust).
+      if (isMidSessionActive(next)) return null;
+      setStatus(next, "idle");
       if (sessionId) next.sessionId = sessionId;
       return next;
     case "UserPromptSubmit":
-      next.status = "processing";
+      setStatus(next, "processing");
       if ((!next.sessionId || next.sessionId === PENDING_SESSION_ID) && sessionId) {
         next.sessionId = sessionId;
       }
       return next;
     case "Stop":
     case "StopFailure":
-      next.status = "idle";
+      setStatus(next, "idle");
       return next;
     case "PreToolUse":
+      // A question tool pauses the agent on the user; any other tool means work
+      // is in progress.
+      if (isQuestionTool) setStatus(next, "blocked", "question");
+      else setStatus(next, "processing");
+      return next;
     case "PostToolUse":
     case "PostToolUseFailure":
+      // Question answered, cancelled, or failed → unblock; any other tool's
+      // completion means work continues. Covering the failure edge keeps a
+      // cancelled question from stranding blocked(question).
+      setStatus(next, "processing");
+      return next;
     case "PreCompact":
     case "PostCompact":
-      // Tool call or compaction in progress — agent is still processing. Also
-      // serves as error correction if Stop fired prematurely.
-      next.status = "processing";
+      // Compaction in progress — agent is still processing. Also serves as
+      // error correction if Stop fired prematurely.
+      setStatus(next, "processing");
       return next;
     case "PermissionRequest":
-      next.status = "idle";
+      setStatus(next, "blocked", "permission");
       return next;
     case "Notification":
-      // Notification carries semantic state. idle_prompt and permission_prompt
-      // both mean the agent is waiting (idle); other types don't change status.
-      if (notificationType === "idle_prompt" || notificationType === "permission_prompt") {
-        next.status = "idle";
+      // permission_prompt → blocked(permission); idle_prompt → idle; any other
+      // notification type carries no status change.
+      if (notificationType === "permission_prompt") {
+        setStatus(next, "blocked", "permission");
+        return next;
+      }
+      if (notificationType === "idle_prompt") {
+        setStatus(next, "idle");
         return next;
       }
       return null;
     case "SessionEnd":
       if (!sessionAlive) return null;
-      next.status = "idle";
+      setStatus(next, "idle");
       return next;
     default:
       return null;
   }
+}
+
+/** mid-session-active = `processing` OR a mid-session block
+ *  (`blocked(permission)` / `blocked(question)`). A SessionStart must not
+ *  overwrite these; `blocked(trust)` is a startup block and is *not* active. */
+function isMidSessionActive(state: SessionState): boolean {
+  if (state.status === "processing") return true;
+  return (
+    state.status === "blocked" &&
+    (state.blockReason === "permission" || state.blockReason === "question")
+  );
 }
 
 /** Apply an event given its name (validated against the union) and an input
@@ -115,6 +156,7 @@ export function processHookEvent(
     input.session_id ?? "",
     hasSession(handle),
     input.notification_type,
+    input.tool_name,
   );
 }
 

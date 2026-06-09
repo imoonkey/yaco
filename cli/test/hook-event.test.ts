@@ -83,9 +83,10 @@ describe("applyHookEvent", () => {
     expect(next?.status).toBe("processing");
   });
 
-  it("PermissionRequest sets status to idle", () => {
+  it("PermissionRequest sets status to blocked(permission)", () => {
     const next = applyHookEvent(makeState({ status: "processing" }), "PermissionRequest", "", true);
-    expect(next?.status).toBe("idle");
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("permission");
   });
 
   it("Notification with idle_prompt sets status to idle", () => {
@@ -93,9 +94,10 @@ describe("applyHookEvent", () => {
     expect(next?.status).toBe("idle");
   });
 
-  it("Notification with permission_prompt sets status to idle", () => {
+  it("Notification with permission_prompt sets status to blocked(permission)", () => {
     const next = applyHookEvent(makeState({ status: "processing" }), "Notification", "", true, "permission_prompt");
-    expect(next?.status).toBe("idle");
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("permission");
   });
 
   it("Notification with unknown type is no-op", () => {
@@ -111,6 +113,90 @@ describe("applyHookEvent", () => {
   it("SessionEnd writes idle when tmux session is alive", () => {
     const next = applyHookEvent(makeState({ status: "processing" }), "SessionEnd", "", true);
     expect(next?.status).toBe("idle");
+  });
+});
+
+describe("applyHookEvent — blocked transitions", () => {
+  it("PreToolUse with a question tool enters blocked(question)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PreToolUse", "", true, undefined, "AskUserQuestion",
+    );
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("question");
+  });
+
+  it("PreToolUse with Codex request_user_input enters blocked(question)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }), "PreToolUse", "", true, undefined, "request_user_input",
+    );
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("question");
+  });
+
+  it("PreToolUse with a non-question tool stays processing (no reason)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "idle" }), "PreToolUse", "", true, undefined, "Bash",
+    );
+    expect(next?.status).toBe("processing");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("PostToolUse on a question tool exits blocked(question) → processing", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }),
+      "PostToolUse", "", true, undefined, "AskUserQuestion",
+    );
+    expect(next?.status).toBe("processing");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("PostToolUseFailure on a question tool exits blocked(question) → processing", () => {
+    // A cancelled/failed AskUserQuestion must not strand blocked(question).
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }),
+      "PostToolUseFailure", "", true, undefined, "AskUserQuestion",
+    );
+    expect(next?.status).toBe("processing");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("implicit clear: a Stop after blocked(question) → idle (no reason)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }), "Stop", "", true,
+    );
+    expect(next?.status).toBe("idle");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("implicit clear: UserPromptSubmit after blocked(permission) → processing (no reason)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "permission" }), "UserPromptSubmit", "", true,
+    );
+    expect(next?.status).toBe("processing");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("SessionStart does NOT clear blocked(permission)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "permission" }), "SessionStart", "x", true,
+    );
+    expect(next).toBeNull();
+  });
+
+  it("SessionStart does NOT clear blocked(question)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }), "SessionStart", "x", true,
+    );
+    expect(next).toBeNull();
+  });
+
+  it("SessionStart DOES clear blocked(trust) → idle", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "trust" }), "SessionStart", "boot-id", true,
+    );
+    expect(next?.status).toBe("idle");
+    expect(next?.blockReason).toBeUndefined();
+    expect(next?.sessionId).toBe("boot-id");
   });
 });
 

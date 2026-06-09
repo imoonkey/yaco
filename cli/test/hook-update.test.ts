@@ -81,14 +81,15 @@ describe("applyHookEvent", () => {
     expect(next?.status).toBe("processing");
   });
 
-  it("PermissionRequest sets status to idle", () => {
+  it("PermissionRequest sets status to blocked(permission)", () => {
     const next = applyHookEvent(
       makeState({ status: "processing" }),
       "PermissionRequest",
       "",
       true,
     );
-    expect(next?.status).toBe("idle");
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("permission");
   });
 
   it("Stop sets status to idle", () => {
@@ -130,5 +131,90 @@ describe("applyHookEvent", () => {
     );
     expect(next?.status).toBe("idle");
     expect(next?.sessionId).toBe("session-abc");
+  });
+});
+
+describe("applyHookEvent — blocked transitions", () => {
+  it("PreToolUse with a question tool enters blocked(question)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "processing" }),
+      "PreToolUse",
+      "",
+      true,
+      undefined,
+      "AskUserQuestion",
+    );
+    expect(next?.status).toBe("blocked");
+    expect(next?.blockReason).toBe("question");
+  });
+
+  it("PostToolUse on a question tool exits blocked(question) → processing", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }),
+      "PostToolUse",
+      "",
+      true,
+      undefined,
+      "AskUserQuestion",
+    );
+    expect(next?.status).toBe("processing");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("PostToolUseFailure on a question tool exits blocked(question) → processing", () => {
+    // Cancelled/failed AskUserQuestion must not strand blocked(question).
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }),
+      "PostToolUseFailure",
+      "",
+      true,
+      undefined,
+      "request_user_input",
+    );
+    expect(next?.status).toBe("processing");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("implicit clear: next processing event clears blocked(permission)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "permission" }),
+      "UserPromptSubmit",
+      "",
+      true,
+    );
+    expect(next?.status).toBe("processing");
+    expect(next?.blockReason).toBeUndefined();
+  });
+
+  it("SessionStart does not clear blocked(permission)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "permission" }),
+      "SessionStart",
+      "x",
+      true,
+    );
+    expect(next).toBeNull();
+  });
+
+  it("SessionStart does not clear blocked(question)", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "question" }),
+      "SessionStart",
+      "x",
+      true,
+    );
+    expect(next).toBeNull();
+  });
+
+  it("SessionStart clears blocked(trust) → idle", () => {
+    const next = applyHookEvent(
+      makeState({ status: "blocked", blockReason: "trust" }),
+      "SessionStart",
+      "boot-id",
+      true,
+    );
+    expect(next?.status).toBe("idle");
+    expect(next?.blockReason).toBeUndefined();
+    expect(next?.sessionId).toBe("boot-id");
   });
 });
