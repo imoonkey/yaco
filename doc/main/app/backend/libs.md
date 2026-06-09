@@ -314,6 +314,20 @@ Multi-model LLM formatter with fallback chain via `openai` SDK.
 - Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
 - 5s timeout per model attempt
 
+### autocomplete.ts (~570 lines)
+
+Markdown continuation engine behind the inline-suggestion editor feature (see [routes.md § Inline Suggestions](routes.md#inline-suggestions-autocomplete)). Builds a deterministic prose prompt from the active editor draft only — **no disk reads, no project awareness** in v1.
+
+**Exports**: `complete()`, `isAutocompleteEnabled()`, `getAutocompleteModel()`, `resolveAutocompleteModels()`, `isMarkdownPath()`, `isLikelySecretPath()`, `isInsideFence()`, `extractHeadingPath()`, `clearCompletionCache()`
+
+- `complete(prefix, suffix, filePath?, signal?)` — returns `{ prediction, model }`. Returns an **empty prediction without calling the model** for non-markdown paths, likely-secret paths, and a cursor inside an open fenced code block. Otherwise builds the prose context, tries each model in fallback order, postprocesses, and returns the first acceptable single-line insert.
+- **Context builder** — `extractHeadingPath(prefix)` walks prefix lines bottom-up for the nearest H1>…>Hn chain (ignoring headings inside fences); `before`/`after` are byte-budgeted local windows (`PREFIX_MAX_BYTES` 3 KB / `SUFFIX_MAX_BYTES` 1.5 KB, trimmed by whole lines); `currentBlock` is the nearest markdown paragraph/list/table-row/heading around the cursor with a `<CURSOR>` marker. Heading text and `filePath` are control-char-stripped before entering the prompt.
+- **Prompt** — chat-style **exact-insert** (not code FIM): a system prompt instructing "return only the text to insert, keep it short, one line, no new paragraph/section, don't invent facts, return empty if no high-confidence continuation" with the heading path appended; a JSON user message `{ file, headingPath, currentBlock, before, after }`. Static instructions stay first for provider-side prompt caching.
+- **Postprocess** (`postprocess`) — normalize (strip `<think>`, strip wrapping fences/quotes/labels, cut at first newline, cap at `MAX_SUGGESTION_CHARS` 280, dedupe overlap with suffix) then **reject → empty** when the output is blank/punctuation-only, repeats the line above or local prefix, contains explanation phrasing, introduces a new raw URL, starts a heading/list out of context, breaks a table's column count, or matches secret-looking patterns. No repair — a wrong ghost is worse than none.
+- **Guards** — `isMarkdownPath` (`.md`/`.mdx`/`.markdown`), `isLikelySecretPath` (`.env*`, `*.pem|key|crt`, `id_rsa*`, `.ssh/`, `secrets/`), `isInsideFence` (open ` ``` `/`~~~` before the cursor line).
+- **Completion cache** — module-level LRU, `CACHE_MAX_ENTRIES` 64, `CACHE_TTL_MS` 5 min (empty results 60 s). Key includes model + `CONTEXT_VERSION` + a hash of `(headingPath + prefixTail + suffixHead)`, so a model/prompt change can't pin stale output.
+- **Models** — `resolveAutocompleteModels()`: `AUTOCOMPLETE_MODELS` (comma-separated) > `AUTOCOMPLETE_MODEL` (single) > defaults (`qwen/qwen3-32b` → `moonshotai/kimi-k2-instruct` → `llama-3.1-8b-instant`), all via the Groq OpenAI-compatible API. `reasoning_effort: 'none'` for reasoning-capable models; 3 s timeout per attempt.
+
 ### channels/ (shared messaging-channel infrastructure)
 
 Channel-agnostic core that powers both `wechat/` and `whatsapp/`. Each per-channel module instantiates these factories with its own scope name; storage paths and env keys are namespaced so channels don't collide.

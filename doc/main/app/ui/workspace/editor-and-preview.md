@@ -190,6 +190,49 @@ Clicking links in the preview intercepts navigation to keep the SPA intact:
 - **Code folding**: fold gutter with clickable markers + keyboard shortcuts (`foldGutter` + `foldKeymap`)
 - **Read-only mode**: used for diff view
 
+## Inline Suggestions
+
+Single-line, markdown-only ghost-text suggestions that continue the sentence, list item, or table row the user is writing. **Off by default** — the user opts in per `(project, worktree)`.
+
+-> See: `ui/src/lib/editor/inlineAutocomplete.ts`, `ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceEditorColumn.tsx`
+
+### Eligibility
+
+The extension only mounts, and only requests a suggestion, when **all** guards pass:
+
+- File is `.md` or `.markdown` (no other extension is eligible — not code, `.html`, `.txt`, or binary).
+- Editor is editable (not read-only, not a diff tab).
+- Cursor is **not inside a fenced code block** (` ``` ` / `~~~`).
+- Cursor is **not mid-word** (skipped when word chars sit on both sides).
+- Selection is empty and the transaction is genuine user typing (not paste, programmatic sync, accept, save, or jump).
+- The current paragraph / list item / table cell has at least `MIN_CONTEXT_CHARS` (8) non-whitespace chars — **except** when the user has just started a list/heading marker (`- `, `* `, `1. `, `## `), which is eligible immediately.
+- File path does not match the secret-glob exclusion (`.env*`, `*.pem`, `*.key`, `*.crt`, `id_rsa*`, `.ssh/**`, `secrets/**`).
+
+Typing is debounced by `SUGGESTION_DEBOUNCE_MS` (1000ms). Any cursor move, edit, blur, paste, mode toggle, or disable cancels pending/in-flight work and clears the ghost.
+
+### Keyboard Actions
+
+When a ghost suggestion is visible:
+
+| Key | Action |
+|-----|--------|
+| `Tab` | Accept the full suggestion |
+| `Mod-→` (accept next word) | Insert up to the next word boundary, re-anchor the remaining suggestion locally — **no** server call |
+| `Esc` | Dismiss |
+| `Alt-\` | Manual trigger — request a suggestion at the cursor even below the length threshold (still respects file-scope, fenced-code, secret, and availability guards) |
+
+Continuing to type clears the current ghost.
+
+### Toggle
+
+The tab-bar AI toggle is relabeled **"inline suggestions"**, defaults to off, and persists per `(project, worktree)`. Its tooltip states plainly that enabling it sends nearby markdown text to the model provider. A server env switch (missing `GROQ_API_KEY`) reports the feature unavailable.
+
+### Privacy
+
+- **Content leaves the machine only when enabled.** Default-off means nothing is sent until the user opts in; when on, nearby markdown text + heading path go to the configured model provider.
+- **Secret-glob exclusion** applies even to markdown files — checked client-side before the request and defensively server-side.
+- **Content-free local metrics** only: per `(project, worktree)` counters in `localStorage` with no document, prompt, suggestion text, or absolute paths. See [the README evaluation gate](../../README.md#inline-suggestions--evaluation-gate).
+
 ## Git Diff Gutter Indicators
 
 VS Code-style gutter markers in the CodeMirror editor showing line-level change status against HEAD.

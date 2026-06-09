@@ -164,7 +164,9 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
           )}
           <button
             onClick={() => onLayoutUpdate({ autocompleteEnabled: !autocompleteEnabled })}
-            title={autocompleteEnabled ? 'Disable autocomplete' : 'Enable autocomplete'}
+            title={autocompleteEnabled
+              ? 'Disable inline suggestions'
+              : 'Enable inline suggestions — sends nearby markdown text to the model provider'}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
               fontSize: 'var(--text-ui-sm)', border: 'none', borderRadius: 3, cursor: 'pointer',
@@ -176,7 +178,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M8 1v2M8 13v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1 8h2M13 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4" />
             </svg>
-            AI
+            Suggestions
           </button>
         </>}
       />

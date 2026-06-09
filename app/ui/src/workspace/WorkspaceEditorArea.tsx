@@ -547,6 +547,8 @@ export function WorkspaceEditorArea({
       insertText={insertText}
       insertRequestKey={insertRequestKey}
       autocompleteEnabled={autocompleteEnabled}
+      projectName={projectName}
+      worktree={worktree}
     />
   )
 

@@ -71,7 +71,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showChanges: true,
   showTasks: true,
   showTextSearch: false,
-  autocompleteEnabled: true,
+  autocompleteEnabled: false,
   previewMode: 'edit',
   splitDirection: 'horizontal',
   splitSize: 50,

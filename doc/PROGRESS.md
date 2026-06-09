@@ -120,6 +120,21 @@
 **Next:** None.
 **Blockers:** None.
 
+## 2026-06-08: Markdown-first inline suggestions (reworked, default-off)
+
+**What changed:**
+- Reworked the editor inline-suggestion feature from a generic code-completion engine into a small **markdown continuation engine**. Server now builds a heading-path + current-block + byte-budgeted local-context prose prompt (chat-style exact-insert, not code FIM), runs a postprocess rejection set, and guards non-markdown/secret/fenced inputs (`complete()` returns empty without calling the model). Added a per-model completion LRU with TTL + model-in-key.
+- UI is markdown-only (`.md`/`.markdown`), **default OFF**, single-line ghost only (multi-line `BlockGhostWidget` removed). Guards: non-markdown, fenced-code, mid-word, read-only/diff, secret-glob, min-context (with a fresh list/heading-marker exemption). Debounce raised to a named `SUGGESTION_DEBOUNCE_MS` (1000ms). `Tab` accepts full; `Mod-→` accepts next word (local re-anchor, no server call); `Alt-\` manual trigger; `Esc` dismisses; typing clears. Every cancellation path drops pending/in-flight work. Tab-bar toggle relabeled "inline suggestions".
+- Added content-free local metrics at `localStorage["yaco-inline-suggestions:<project>:<worktree>"]` (`shown`, `accepted_full`, `accepted_word`, `dismissed_escape`, `dismissed_typing`, `disabled_after_shown`, `error`) with accept-rate derivation. No document/prompt/suggestion text or absolute paths stored.
+
+**Why:**
+- The old feature shipped on-by-default as a code-FIM engine emitting multi-line ghost paragraphs after a 1.5s pause into markdown docs — it annoyed before it helped, so the user kept disabling it. Disuse was explained by a fixable mismatch (code prompt + paragraph ghosts + on-by-default), not by "inline suggestion is worthless for prose," so the infrastructure was reworked rather than deleted. Default-off respects the user's revealed preference and keeps the privacy story clean (nothing leaves the machine until opt-in). The local metrics exist to drive an objective **delete gate** after ~2 weeks / ~200 shown: keep ≥~25% accept rate, tune ~10–25%, delete <~10% (or delete immediately on any secret-glob/ineligible-file leak). The removal task is pre-scoped so "delete" stays a clean operation. Files/route/env are intentionally NOT renamed in v1 to reduce churn on a possibly-deleted feature.
+
+**Key files:** `app/server/src/lib/autocomplete.ts`, `app/server/src/routes/autocomplete.ts`, `app/ui/src/lib/editor/inlineAutocomplete.ts`, `app/ui/src/components/Editor.tsx`, `app/ui/src/hooks/workspaceTypes.ts`, `app/ui/src/workspace/WorkspaceEditorColumn.tsx`, `doc/main/app/README.md`, `doc/main/app/ui/workspace/editor-and-preview.md`, `doc/main/app/backend/{routes,libs}.md`
+**Design doc:** `plan/all/markdown-inline-suggestions/final/design.md`
+**Commits:** `8404c9c` (server), `53d1874` (codemirror), `6fc4746` (telemetry)
+**Next:** Dogfood opted-in, then evaluate the delete gate.
+
 ## 2026-06-08: Dashed guide lines for nested sessions
 
 **What changed:**
