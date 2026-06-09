@@ -3,6 +3,7 @@ import type { AgentSession } from '../types'
 export interface SessionLineageRow {
   session: AgentSession
   depth: number
+  hasChildren: boolean
 }
 
 /**
@@ -37,7 +38,7 @@ export function buildSessionLineage(sessions: AgentSession[]): SessionLineageRow
   const walk = (session: AgentSession, depth: number): void => {
     if (visited.has(session.name)) return
     visited.add(session.name)
-    rows.push({ session, depth })
+    rows.push({ session, depth, hasChildren: childrenByParent.has(session.name) })
     for (const child of childrenByParent.get(session.name) ?? []) {
       walk(child, depth + 1)
     }
@@ -57,6 +58,26 @@ export function buildSessionLineage(sessions: AgentSession[]): SessionLineageRow
   }
 
   return rows
+}
+
+/**
+ * Drop the descendants of any collapsed session, keeping the collapsed parent
+ * itself visible. Relies on lineage order: rows are depth-first and a subtree is
+ * contiguous, so a single depth threshold tracks "inside a collapsed ancestor".
+ * Pure and bucket-safe — apply per render bucket (each holds whole subtrees).
+ */
+export function filterCollapsedRows(
+  rows: SessionLineageRow[],
+  collapsed: Set<string>,
+): SessionLineageRow[] {
+  const out: SessionLineageRow[] = []
+  let hiddenBelow = Infinity // hide rows deeper than the nearest collapsed ancestor
+  for (const row of rows) {
+    if (row.depth > hiddenBelow) continue
+    hiddenBelow = collapsed.has(row.session.name) ? row.depth : Infinity
+    out.push(row)
+  }
+  return out
 }
 
 export interface SessionLineageBuckets {

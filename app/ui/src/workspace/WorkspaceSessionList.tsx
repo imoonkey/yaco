@@ -10,7 +10,10 @@ import { SearchHighlightedText } from './SearchHighlightedText'
 import { fieldMatch, type SearchMatch } from './sessionSearch'
 import type { AgentSession, BlockReason, SessionStatus } from '../types'
 
-// Indentation geometry for nested (parent → child) sessions.
+// Indentation geometry for nested (parent → child) sessions. Each child level is
+// indented one step so the dashed guide columns read as a hierarchy. The provider
+// icon leads the row; a parent's icon doubles as the collapse toggle, with a small
+// triangle badge in its corner.
 const INDENT_BASE = 8
 const INDENT_STEP = 14
 // Dashed guide column sits centred in the indent step, left of the child icon.
@@ -43,12 +46,15 @@ export function SessionItem({
   pinned,
   dragging,
   depth = 0,
+  hasChildren,
+  collapsed,
   unreadCount,
   shortcutIndex,
   searchMatch,
   onClick,
   onKill,
   onPin,
+  onToggleCollapse,
   onRename,
   onDragStart,
   onDragEnd,
@@ -60,12 +66,15 @@ export function SessionItem({
   pinned?: boolean
   dragging?: boolean
   depth?: number
+  hasChildren?: boolean
+  collapsed?: boolean
   unreadCount?: number
   shortcutIndex?: number | null
   searchMatch?: SearchMatch | null
   onClick: () => void
   onKill: () => void
   onPin?: () => void
+  onToggleCollapse?: () => void
   onRename?: (newName: string) => void
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void
@@ -147,7 +156,28 @@ export function SessionItem({
           <Pin size={12} />
         </button>
       )}
-      <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
+      {hasChildren ? (
+        <button
+          onClick={e => { e.stopPropagation(); onToggleCollapse?.() }}
+          className="relative shrink-0 cursor-pointer hover:opacity-80"
+          title={collapsed ? 'Expand' : 'Collapse'}
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${session.name}`}
+          aria-expanded={!collapsed}
+        >
+          <ProviderIcon provider={session.provider} className="w-4 h-4" />
+          <span
+            aria-hidden
+            className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center w-3 h-3 rounded-full"
+            style={{ background: 'var(--sol-blue)', color: 'var(--sol-bg)', boxShadow: '0 0 0 1.5px var(--sol-sidebar-bg)' }}
+          >
+            <svg width="8" height="8" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+              <path d={collapsed ? 'M3.5 2 L8 5 L3.5 8 Z' : 'M2 3.5 L8 3.5 L5 8 Z'} />
+            </svg>
+          </span>
+        </button>
+      ) : (
+        <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
+      )}
       <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={blockLabel ? `blocked: ${blockLabel}` : session.status} />
       {renaming ? (
         <input

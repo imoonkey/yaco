@@ -7,13 +7,14 @@ import type { MobilePane } from '../../hooks/workspaceTypes'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
-function makeSession(name: string, status: AgentSession['status']): AgentSession {
+function makeSession(name: string, status: AgentSession['status'], parentSession?: string): AgentSession {
   return {
     name,
     provider: 'codex',
     status,
     project: 'test',
     summary: '',
+    parentSession,
   }
 }
 
@@ -53,6 +54,7 @@ function Harness({ sessions }: { sessions: AgentSession[] }) {
 
 describe('useWorkspaceSessionSection', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)
       return 0
@@ -77,5 +79,21 @@ describe('useWorkspaceSessionSection', () => {
     rerender(<Harness sessions={[{ ...initialSession, status: 'idle' }]} />)
 
     expect(screen.getByDisplayValue('draft-name')).toBeTruthy()
+  })
+
+  it('collapses and expands a parent session to hide/show its children', () => {
+    const sessions = [
+      makeSession('parent', 'idle'),
+      makeSession('child', 'idle', 'parent'),
+    ]
+    render(<Harness sessions={sessions} />)
+
+    expect(screen.getByText('child')).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse parent' }))
+    expect(screen.queryByText('child')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand parent' }))
+    expect(screen.getByText('child')).toBeTruthy()
   })
 })

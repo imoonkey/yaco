@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSessionLineage, groupSessionLineage } from '../sessionLineage'
+import { buildSessionLineage, groupSessionLineage, filterCollapsedRows } from '../sessionLineage'
 import type { AgentSession, SessionStatus } from '../../types'
 
 function makeSession(name: string, parentSession?: string, status: SessionStatus = 'idle'): AgentSession {
@@ -77,6 +77,42 @@ describe('buildSessionLineage', () => {
     expect(flat(sessions)).toEqual([
       ['r1', 0], ['r1c', 1], ['r2', 0], ['r2c', 1],
     ])
+  })
+
+  it('flags hasChildren only on sessions that have a visible child', () => {
+    const sessions = [makeSession('parent'), makeSession('child', 'parent')]
+    expect(buildSessionLineage(sessions).map(r => [r.session.name, r.hasChildren]))
+      .toEqual([['parent', true], ['child', false]])
+  })
+
+  it('does not flag hasChildren when the only child is not visible', () => {
+    const sessions = [makeSession('parent')]
+    expect(buildSessionLineage(sessions).map(r => r.hasChildren)).toEqual([false])
+  })
+})
+
+describe('filterCollapsedRows', () => {
+  const names = (rows: ReturnType<typeof buildSessionLineage>) => rows.map(r => r.session.name)
+  const lineage = () => buildSessionLineage([
+    makeSession('root'),
+    makeSession('child', 'root'),
+    makeSession('grandchild', 'child'),
+    makeSession('sibling'),
+  ])
+
+  it('is a no-op when nothing is collapsed', () => {
+    const rows = lineage()
+    expect(names(filterCollapsedRows(rows, new Set()))).toEqual(['root', 'child', 'grandchild', 'sibling'])
+  })
+
+  it('hides the whole subtree under a collapsed root, keeping the root and siblings', () => {
+    const rows = lineage()
+    expect(names(filterCollapsedRows(rows, new Set(['root'])))).toEqual(['root', 'sibling'])
+  })
+
+  it('hides only descendants below a collapsed middle node', () => {
+    const rows = lineage()
+    expect(names(filterCollapsedRows(rows, new Set(['child'])))).toEqual(['root', 'child', 'sibling'])
   })
 })
 

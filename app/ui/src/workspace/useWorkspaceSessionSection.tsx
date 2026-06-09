@@ -4,7 +4,7 @@ import { ProviderIcon } from '../components/SessionIcons'
 import { getProviderUi, startableProviders } from '../lib/providerUi'
 import { SessionItem } from './WorkspaceSessionList'
 import { SessionSearchBox } from './SessionSearchBox'
-import { groupSessionLineage, type SessionLineageRow } from './sessionLineage'
+import { groupSessionLineage, filterCollapsedRows, type SessionLineageRow } from './sessionLineage'
 import { matchAgentSessions, matchHistorySessions } from './sessionSearch'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { SectionRefreshButton } from './SectionHeader'
@@ -41,6 +41,18 @@ interface UseWorkspaceSessionSectionOpts {
   setFocusTarget: (t: FocusTarget) => void
 }
 
+/** Per-project persisted set of collapsed parent session names. */
+function loadCollapsedSessions(project: string): Set<string> {
+  try {
+    const stored = localStorage.getItem(`yaco-sessions:${project}`)
+    if (!stored) return new Set()
+    const parsed = JSON.parse(stored)
+    return Array.isArray(parsed.collapsedSessions) ? new Set<string>(parsed.collapsedSessions) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
 export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts): {
   sessionsActions: ReactNode
   sessionsBody: ReactNode
@@ -56,6 +68,25 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const [cmdCtrlHeld, setCmdCtrlHeld] = useState(false)
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false)
   const [sessionSearchQuery, setSessionSearchQuery] = useState('')
+  const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(() => loadCollapsedSessions(opts.projectName))
+
+  const toggleCollapse = useCallback((name: string) => {
+    setCollapsedSessions(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }, [])
+
+  // Persist collapse state per project, pruning names of sessions that are gone.
+  // The empty-list guard avoids clobbering state during a transient empty refresh.
+  useEffect(() => {
+    const present = new Set(sessionsMgr.orderedSessions.map(s => s.name))
+    if (present.size === 0) return
+    const live = [...collapsedSessions].filter(name => present.has(name))
+    localStorage.setItem(`yaco-sessions:${opts.projectName}`, JSON.stringify({ collapsedSessions: live }))
+  }, [opts.projectName, collapsedSessions, sessionsMgr.orderedSessions])
 
   useEffect(() => {
     const update = (e: KeyboardEvent) => setCmdCtrlHeld(e.metaKey && e.ctrlKey)
@@ -195,11 +226,19 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const { pinned: pinnedRows, processing: processingRows, idle: idleRows } =
     groupSessionLineage(filteredLiveSessions, name => sessionsMgr.pinnedSet.has(name))
 
-  const renderSessionItem = (s: AgentSession, isPinned?: boolean, depth = 0) => {
+  // Collapse hides descendants per bucket; a parent keeps its chevron, leaves render none.
+  const visiblePinnedRows = filterCollapsedRows(pinnedRows, collapsedSessions)
+  const visibleProcessingRows = filterCollapsedRows(processingRows, collapsedSessions)
+  const visibleIdleRows = filterCollapsedRows(idleRows, collapsedSessions)
+
+  const renderSessionItem = (s: AgentSession, isPinned?: boolean, depth = 0, hasChildren = false) => {
     const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
     const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
     return (
       <SessionItem key={`session:${s.name}`} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
+        hasChildren={hasChildren}
+        collapsed={collapsedSessions.has(s.name)}
+        onToggleCollapse={() => toggleCollapse(s.name)}
         unreadCount={sessionsMgr.getSessionUnread(s.name)}
         shortcutIndex={shortcutIndex}
         searchMatch={liveSearchMatches.get(s.name)}
@@ -221,22 +260,22 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const divider = (key: string) => <div key={key} className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
   // Pin state is per-item (a subtree can mix pinned/unpinned), so derive it per row.
   const renderRows = (rows: SessionLineageRow[]) =>
-    rows.map(({ session, depth }) => renderSessionItem(session, sessionsMgr.pinnedSet.has(session.name), depth))
+    rows.map(({ session, depth, hasChildren }) => renderSessionItem(session, sessionsMgr.pinnedSet.has(session.name), depth, hasChildren))
 
   // Keep all rows in one keyed sibling array so React preserves SessionItem state
   // when status changes move a session between buckets.
   const liveSessionChildren: ReactNode[] = [
     ...(sessionSearchOpen ? [searchBox] : []),
-    ...renderRows(pinnedRows),
+    ...renderRows(visiblePinnedRows),
   ]
-  if (pinnedRows.length > 0 && (processingRows.length > 0 || idleRows.length > 0)) {
+  if (visiblePinnedRows.length > 0 && (visibleProcessingRows.length > 0 || visibleIdleRows.length > 0)) {
     liveSessionChildren.push(divider('divider:after-pinned'))
   }
-  liveSessionChildren.push(...renderRows(processingRows))
-  if (processingRows.length > 0 && idleRows.length > 0) {
+  liveSessionChildren.push(...renderRows(visibleProcessingRows))
+  if (visibleProcessingRows.length > 0 && visibleIdleRows.length > 0) {
     liveSessionChildren.push(divider('divider:after-processing'))
   }
-  liveSessionChildren.push(...renderRows(idleRows))
+  liveSessionChildren.push(...renderRows(visibleIdleRows))
   if (filteredLiveSessions.length === 0) {
     liveSessionChildren.push(
       <div key="empty" className="px-2 py-3 text-ui-sm text-center" style={{ color: 'var(--sol-text)' }}>
