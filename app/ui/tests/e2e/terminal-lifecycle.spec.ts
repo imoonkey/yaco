@@ -175,12 +175,19 @@ test.describe('Terminal lifecycle: no remount on unrelated re-render', () => {
       await expect(xtermRows(page), `${label}: prior output lost`).toContainText(lastMarker)
       const fresh = nextMarker()
       await typeMarker(fresh)
-      await expect(xtermRows(page), `${label}: PTY not live after re-render`).toContainText(fresh)
-      const text = await xtermRows(page).innerText()
-      const iPrev = text.indexOf(lastMarker)
-      const iFresh = text.indexOf(fresh)
-      expect(iPrev, `${label}: prior output vanished`).toBeGreaterThanOrEqual(0)
-      expect(iFresh, `${label}: new output not appended after prior`).toBeGreaterThan(iPrev)
+      // Poll one CONSISTENT capture until prior + fresh are both present and
+      // ordered. xterm rewrites its reused row nodes per animation frame, so a
+      // single innerText() snapshot can miss freshly-rendered output — never
+      // assert ordering on one stale read; wait for it to actually round-trip.
+      const prior = lastMarker
+      await expect
+        .poll(async () => {
+          const text = await xtermRows(page).innerText()
+          const iPrev = text.indexOf(prior)
+          const iFresh = text.indexOf(fresh)
+          return iPrev >= 0 && iFresh > iPrev
+        }, { timeout: 15_000, message: `${label}: fresh output did not round-trip after prior output` })
+        .toBe(true)
       lastMarker = fresh
 
       // Exactly one PTY socket for the whole lifetime; never closed/reopened. The
