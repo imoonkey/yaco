@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-09: Collapsible parent sessions in the live session list
+
+**What changed:**
+- `sessionLineage.ts` — `SessionLineageRow` gains `hasChildren`; new pure `filterCollapsedRows(rows, collapsed)` drops a collapsed parent's descendants per render bucket (single depth-threshold sweep over the contiguous, depth-first subtree, keeping the collapsed parent visible).
+- `WorkspaceSessionList.tsx` (`SessionItem`) — a parent's provider icon doubles as the collapse/expand toggle: wrapped in a button with `aria-expanded`, overlaid by a small Solarized-blue triangle badge (▾ expanded / ▸ collapsed, white caret + halo ring). Leaf rows render the plain icon, so the pin/icon/status columns never shift between parents and leaves. `INDENT_STEP` stays 14.
+- `useWorkspaceSessionSection.tsx` — `collapsedSessions` set loaded from / persisted to `localStorage['yaco-sessions:<project>']` (pruned to live session names, with an empty-list guard so a transient empty refresh doesn't clobber it); `groupSessionLineage` still buckets the full lineage, then each tier passes through `filterCollapsedRows` before render.
+- Tests: `hasChildren` flagging + `filterCollapsedRows` cases in `sessionLineage.test.ts`; click-to-collapse/expand in `useWorkspaceSessionSection.test.tsx`.
+
+**Why:**
+- Brings the task-graph's collapse/expand affordance to the session list so a parent (orchestrator) session can fold away its spawned children. Putting the toggle *on the icon* (rather than an inline chevron column) keeps every row's left cluster aligned — a collapsed parent no longer looks indented — and avoids the wasted empty column an always-present chevron slot would add to every leaf row.
+
+**Key files:** `app/ui/src/workspace/{sessionLineage.ts,WorkspaceSessionList.tsx,useWorkspaceSessionSection.tsx}` + their `__tests__`, `doc/main/app/ui/workspace/sessions-and-terminal.md`, `doc/main/app/frontend/components.md`
+**Verification:** `cd app/ui && npx vitest run src/workspace/` → all pass (incl. new collapse cases); `npx tsc -b` → 0 errors; `eslint` → clean. Verified live via Playwright: collapse hides the subtree, the badge flips ▾/▸, state persists across reload, and the pin/icon/status columns stay aligned in both states.
+**Commit:** aa67f7f (feat) + docs (this change)
+**Next:** None — feature complete. The badge accent is a single token (`--sol-blue`) if a different color is wanted later.
+**Blockers:** None.
+
 ## 2026-06-09: UI blocked dot, reason badge, subtree-max ordering (session-blocked-state 5/6)
 
 **What changed:**
