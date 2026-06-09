@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-09: Phase-0 e2e baseline repair + per-worktree isolation
+
+**What changed:**
+- New shared helper `app/ui/tests/e2e/helpers/workspace.ts`: corrected `yaco-workspace:` (+ `:wt:`) localStorage key, `openWorkspace`/`provisionWorkspace`/`getWorkspaceState`/`createTestFile`/`writeFileViaAPI`/`waitForSSERefresh`, geometry probes, and per-run namespacing (`runTag`/`uniqueFileName` + `createFixtureProject`/`createWorktreeFixture`/`createBinaryFixture` register temp git projects under unique names and self-dispose).
+- `workspace-persistence.spec.ts`: repaired stale `workflow-workspace:`/`workflow-ui-state` keys and a non-existent `<header>` wait (the suite never reached an assertion before); each localStorage read now pairs with a DOM/geometry assertion (sidebar ≈220px hidden/visible, projects section ≈projectSize, section renders collapsed). Pinned-session test rewritten to the real `/api/ui-state` contract (pins moved off workspace localStorage). Every test self-provisions its project(s).
+- `worktree.spec.ts`: replaced the phantom `worktree-qa` fixture (never registered) with a per-run git fixture (auth-v2 dirty+ahead, perf-cache clean, ui-cleanup no worktree); context-switch test now asserts a worktree-only file (`wip.txt`) appears/disappears.
+- `binary-preview.spec.ts`: per-run fixture (text/PDF/PNG); image test opens the PNG and asserts the `<img alt="Image preview">` editor surface.
+- `e2ePorts.ts` + `playwright.config.ts`: worktree runs get an isolated `YACO_HOME` (`<tmpdir>/yaco-e2e-home/<slug>`) so parallel runs never clobber the shared registry/ui-state; main checkout unchanged.
+
+**Why:**
+- The named characterization net (design Phase 0 gate) was hollow — stale rebrand keys + a missing `<header>` element meant zero assertions ran, and worktree/binary specs depended on projects absent from `~/.yaco`. The refactor needs a real regression net first. Per-worktree `YACO_HOME` + self-provisioning lets the orchestrator run ~10 phase tasks in parallel worktrees without registry collisions.
+
+**Key files:** `app/ui/tests/e2e/{helpers/workspace.ts,workspace-persistence.spec.ts,worktree.spec.ts,binary-preview.spec.ts}`, `app/ui/{e2ePorts.ts,playwright.config.ts}`, `doc/dev/app/workflow.md`
+**Verification:** `cd app/ui && npx playwright test workspace-persistence worktree binary-preview` → 22 passed (main checkout). Verified in an isolated git worktree (empty `YACO_HOME`) under 4 parallel workers → 22 passed, twice; `~/.yaco` left untouched; eslint clean.
+**Commit:** a67d6ea (baseline repair) + c9de611 (isolation + review fixes) + docs (this change)
+**Next:** Phase 1 (workspace-contexts) — the tripwire spec is now meaningful.
+**Blockers:** None.
+
 ## 2026-06-09: Collapsible parent sessions in the live session list
 
 **What changed:**

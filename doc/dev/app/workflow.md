@@ -139,6 +139,34 @@ cd app/ui && npx playwright test tests/e2e/foo.spec.ts   # Single test file
 cd app/ui && npm run lint                                # ESLint
 ```
 
+### E2E isolation (worktrees + shared `~/.yaco`)
+
+E2E specs run against a live API server that reads/writes one shared runtime root
+(`${YACO_HOME:-~/.yaco}`: project registry, ui-state, sessions). The orchestrator
+runs many phase tasks in parallel git worktrees, so specs must not collide on that
+shared state. Two layers handle it, both in `app/ui`:
+
+- **Per-worktree server + `YACO_HOME`.** `e2ePorts.ts` derives, from a
+  `.worktrees/<slug>/` cwd, an isolated UI/API port pair **and**
+  `yacoHome: <tmpdir>/yaco-e2e-home/<slug>`. `playwright.config.ts` runs the
+  worktree's own vite + API server (no `reuseExistingServer`) and sets
+  `YACO_HOME` in the API webServer env. The main checkout (no `.worktrees/`
+  segment) keeps `5173/3001`, real `~/.yaco`, and server reuse — unchanged.
+- **Per-run project/fixture namespacing.** `tests/e2e/helpers/workspace.ts` is the
+  shared helper. `runTag()`/`uniqueFileName()` stamp a unique-per-run id (worktree
+  slug + pid + counter) onto every created file; `createFixtureProject` /
+  `createWorktreeFixture` / `createBinaryFixture` register temp git projects under
+  unique names and `dispose()` them (deregister + `rm`) in `afterEach`.
+
+**Rule: a spec must provision the project(s) it needs via the helper — never rely
+on a project already in the registry.** A worktree's `YACO_HOME` starts empty, so
+`projects[0]` does not exist there. Use `provisionWorkspace(page, request)` (or
+`createFixtureProject`) and select by name. Note an empty home has no
+`projects.json` at server boot, so the project-watcher emits no live-registration
+SSE: a multi-project spec must register **all** its projects before the first
+`page.goto('/')` so they are in the initial `/api/projects` load. The workspace
+localStorage key is `yaco-workspace:<project>` (`:wt:<slug>` when worktree-scoped).
+
 ### Local Browser Automation Env
 
 This Ubuntu 26.04 desktop uses `~/.bash_env` for browser automation variables that
