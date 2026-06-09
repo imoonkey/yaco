@@ -210,6 +210,36 @@ All task routes spawn `yaco task <sub> --json` (canonical CLI surface) and parse
 
 Hard-cap: 5000 matches (kills `rg` when reached, `capped: true` in done message). Hard-ignored: `.git`, `node_modules`, `dist`, `build`. Requires `rg` on PATH (returns 503 if missing).
 
+### Inline Suggestions (Autocomplete)
+
+Backs the markdown-only inline-suggestion editor feature. Non-project-aware in v1 (active-draft context only — no disk reads), so these routes are mounted under the bare `/api/autocomplete` prefix without `withProject`. Files/route/env are **not** renamed in v1 (the legacy `autocomplete` names are kept).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/autocomplete/status` | Feature availability — returns `{ enabled, model }`. `enabled` is false when `GROQ_API_KEY` is unset; the client gates requests on it (60s backoff). |
+| POST | `/api/autocomplete/complete` | Markdown continuation. Body `{ prefix, suffix, filePath? }` → returns `{ prediction }` (single-line insert string, possibly empty). |
+
+**`POST /api/autocomplete/complete`**
+
+- `prefix` / `suffix` (string, required) — text before/after the cursor from the active editor draft.
+- `filePath` (string, optional) — repo-relative path, validated by `normalizeSafeFilePath` (rejects absolute paths, `..`, URL/drive prefixes, control chars, and injection chars `< > \` " …`; blank → dropped). Used only as a prompt hint and to gate markdown/secret eligibility.
+
+Guards: body capped at 32 KB (413), JSON-validated (400), `prefix`/`suffix` must be strings (400), invalid `filePath` (400). The server returns an **empty** prediction (no model call) for non-markdown paths, likely-secret paths, and a cursor inside a fenced code block. A client `AbortError` returns `{ prediction: "" }`.
+
+**Error responses** — `{ "error": "<message>" }`:
+
+| Condition | HTTP | `error` message |
+|-----------|------|-----------------|
+| Missing `GROQ_API_KEY` | 503 | Autocomplete is unavailable. Set GROQ_API_KEY. |
+| Body > 32 KB | 413 | Request body too large. |
+| Invalid JSON | 400 | Invalid JSON. |
+| `prefix`/`suffix` not strings | 400 | prefix and suffix must be strings. |
+| Invalid `filePath` | 400 | filePath must be a safe relative path. |
+| Upstream rate limit | 429 | Rate limit reached. Try again shortly. |
+| Upstream failure | 502 | Completion failed. Try again. |
+
+Config: `GROQ_API_KEY` + optional `AUTOCOMPLETE_MODELS` (comma-separated) / `AUTOCOMPLETE_MODEL` in `server/.env`. Business logic: [libs.md § autocomplete.ts](libs.md). Behavior spec: [../ui/workspace/editor-and-preview.md](../ui/workspace/editor-and-preview.md#inline-suggestions).
+
 ### Health
 
 | Method | Path | Description |
