@@ -1,229 +1,205 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page, type APIRequestContext } from '@playwright/test'
+import {
+  provisionWorkspace,
+  waitForAppReady,
+  createTestFile,
+  deleteTestFile,
+  openFileViaSearch,
+  writeFileViaAPI,
+  waitForSSERefresh,
+  getWorkspaceState,
+  uniqueFileName,
+  type FixtureProject,
+} from './helpers/workspace'
 
-// --- Helpers ---
+// Characterization of the workspace assembly layer against the CURRENT renderer:
+// SSE-driven content refetch, on-disk conflict detection, and draft persistence.
+// Every test provisions its own isolated per-run project (empty per-worktree
+// YACO_HOME) and disposes it, so nothing depends on the shared registry.
 
-/** Wait for the app to load and switch to workspace view with a project selected */
-async function openWorkspace(page: Page) {
-  await page.goto('/')
-  // Wait for the app shell to render
-  await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+let provisioned: FixtureProject[] = []
 
-  // Get first project from API
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const project = projects[0]
+test.afterEach(async () => {
+  const all = provisioned
+  provisioned = []
+  await Promise.all(all.map((f) => f.dispose().catch(() => undefined)))
+})
 
-  // Click the project in sidebar
-  await page.locator('button', { hasText: project.name }).click()
-
+/** Provision an isolated workspace and track it for teardown. */
+async function ws(page: Page, request: APIRequestContext): Promise<FixtureProject> {
+  const project = await provisionWorkspace(page, request)
+  provisioned.push(project)
   return project
 }
 
-/** Wait for SSE refresh to propagate (SSE watcher fires events, UI refetches) */
-async function waitForSSERefresh(page: Page, timeoutMs = 8000) {
-  // Wait for network activity to settle after SSE event
-  await page.waitForTimeout(timeoutMs)
+/** A tab in the editor tab bar, addressed by its full-path title. */
+function tab(page: Page, title: string) {
+  return page.locator(`[data-testid="tab"][title="${title}"]`)
 }
 
-/** Write content to a file via the API */
-async function writeFileViaAPI(page: Page, projectName: string, filePath: string, content: string) {
-  // First get current revision
-  const getRes = await page.evaluate(async ({ projectName, filePath }) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
-    return res.json() as Promise<{ content: string; revision: number }>
-  }, { projectName, filePath })
-
-  // Write with revision
-  await page.evaluate(async ({ projectName, filePath, content, revision }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, baseRevision: revision }),
-    })
-  }, { projectName, filePath, content, revision: getRes.revision })
+/** Open a file via quick-open and pin it (double-click) so a later preview open
+ *  does not drop it. Waits on the `(preview)` marker clearing — the real "pinned"
+ *  signal — instead of a fixed sleep. */
+async function openPinnedTab(page: Page, fileName: string): Promise<void> {
+  await openFileViaSearch(page, fileName)
+  const t = tab(page, fileName)
+  await expect(t).toBeVisible({ timeout: 10_000 })
+  await expect(t).toContainText('(preview)') // opened as a preview tab
+  await t.dblclick()
+  await expect(t).not.toContainText('(preview)') // pinned — safe to open the next file
 }
 
-// --- Tests ---
+/**
+ * Drive the SSE refetch path (`useFileState.refetchOpenFiles`).
+ *
+ * In production a filesystem watcher emits a `filetree`/`git` SSE event on an
+ * external file change, which fans out to `refetchOpenFiles`. That watcher only
+ * covers projects that existed at server boot, and a per-worktree `YACO_HOME`
+ * starts empty, so a fixture registered mid-test gets no watcher and no event.
+ *
+ * The SSE layer (`useSSE`) reconnects and "fires all refresh callbacks (state
+ * may have changed while disconnected)" on every (re)connect — including
+ * `refetchOpenFiles`. A real `visibilitychange` (tab refocus / screen unlock)
+ * triggers exactly that reconnect, so dispatching it invokes the identical
+ * `openTabsRef` code path the watcher-driven event would, with no dependency on
+ * the unwatched fixture. Callers assert the result with auto-waiting matchers.
+ */
+async function forceSseRefetch(page: Page): Promise<void> {
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+}
 
 test.describe('Workspace regression', () => {
-  test('clean tab refresh via SSE', async ({ page }) => {
-    const project = await openWorkspace(page)
+  // The openTabsRef hazard: `refetchOpenFiles` reads the dep-less `openTabsRef`
+  // mirror and refetches EVERY open file tab — not just the active one. With a
+  // single open tab the original test could not observe a stale ref silently
+  // skipping a backgrounded tab. Switching tabs never refetches (handleSelectTab
+  // -> setActiveTab only), so a non-active tab showing new content can only come
+  // from the refetch — exactly what this asserts.
+  test('SSE refetch updates active AND non-active tabs with >=2 open', async ({ page, request }) => {
+    const project = await ws(page, request)
 
-    // Create a test file via API
-    const testPath = '__e2e_test_sse.txt'
-    const initialContent = 'initial content\n'
-    await page.evaluate(async ({ projectName, path }) => {
-      await fetch(`/api/files/${encodeURIComponent(projectName)}/create-file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-    }, { projectName: project.name, path: testPath })
-    await writeFileViaAPI(page, project.name, testPath, initialContent)
+    const fileA = uniqueFileName('sse_active.txt')
+    const fileB = uniqueFileName('sse_background.txt')
+    await createTestFile(page, project.name, fileA, 'ALPHA original content\n')
+    await createTestFile(page, project.name, fileB, 'BRAVO original content\n')
+    await waitForSSERefresh(page, 3000) // let the quick-open index settle
 
-    // Wait for file tree to update
-    await waitForSSERefresh(page, 3000)
+    // Open both files as PINNED tabs so neither is dropped as a stale preview.
+    await openPinnedTab(page, fileA)
+    await openPinnedTab(page, fileB)
 
-    // Open file in editor via file search
-    await page.keyboard.press('Meta+p')
-    await page.locator('input[placeholder="Search files..."]').fill('__e2e_test_sse')
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(1000)
+    // Two tabs are genuinely open — the precondition the single-file test lacked.
+    await expect(page.locator('[data-testid="tab"]')).toHaveCount(2)
+    await expect(tab(page, fileA)).toBeVisible()
+    await expect(tab(page, fileB)).toBeVisible()
 
-    // Verify initial content is visible in editor
-    // CodeMirror renders content in .cm-content
-    const editorContent = page.locator('.cm-content')
-    await expect(editorContent).toContainText('initial content')
+    const editor = page.locator('.cm-content')
 
-    // Modify file externally via API
-    const updatedContent = 'initial content\nupdated via API\n'
-    await writeFileViaAPI(page, project.name, testPath, updatedContent)
+    // B is active right after opening: PROVE its initial open-fetch resolved to the
+    // original content BEFORE any external write. This isolates the later refetch
+    // assertion from a slow initial fetch landing after the write.
+    await expect(editor).toContainText('BRAVO original content')
 
-    // Wait for SSE refresh to propagate
-    await waitForSSERefresh(page)
+    // Activate A, so B is the NON-active open tab. The editor shows A's cached
+    // content; B is offscreen and updates only if the refetch reaches it.
+    await tab(page, fileA).click()
+    await expect(editor).toContainText('ALPHA original content')
+    await expect(editor).not.toContainText('BRAVO')
 
-    // Verify editor shows updated content
-    // Note: CodeMirror virtualizes offscreen lines, so we check the content element
-    await expect(editorContent).toContainText('updated via API', { timeout: 10_000 })
+    // Externally change BOTH the active (A) and the non-active (B) open files.
+    await writeFileViaAPI(page, project.name, fileA, 'ALPHA updated externally\n')
+    await writeFileViaAPI(page, project.name, fileB, 'BRAVO updated externally\n')
+    await forceSseRefetch(page)
 
-    // Cleanup: delete test file
-    await page.evaluate(async ({ projectName, path }) => {
-      await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-    }, { projectName: project.name, path: testPath })
+    // Active tab refetched (the original single-file guarantee).
+    await expect(editor).toContainText('ALPHA updated externally', { timeout: 10_000 })
+
+    // Non-active tab refetched: switching to B never triggers a fetch, and B had
+    // already rendered 'BRAVO original content', so the new content can only come
+    // from refetchOpenFiles updating the backgrounded tab via openTabsRef. A stale
+    // ref would leave 'BRAVO original content' here and fail these assertions.
+    await tab(page, fileB).click()
+    await expect(editor).toContainText('BRAVO updated externally', { timeout: 10_000 })
+    await expect(editor).not.toContainText('BRAVO original content')
+
+    await deleteTestFile(page, project.name, fileA)
+    await deleteTestFile(page, project.name, fileB)
   })
 
-  test('conflict detection: dirty tab + external change shows banner', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('conflict detection: dirty tab + external change shows banner', async ({ page, request }) => {
+    const project = await ws(page, request)
 
-    // Create a test file
-    const testPath = '__e2e_test_conflict.txt'
-    const initialContent = 'line one\nline two\nline three\n'
-    await page.evaluate(async ({ projectName, path }) => {
-      await fetch(`/api/files/${encodeURIComponent(projectName)}/create-file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-    }, { projectName: project.name, path: testPath })
-    await writeFileViaAPI(page, project.name, testPath, initialContent)
+    const filePath = uniqueFileName('conflict.txt')
+    await createTestFile(page, project.name, filePath, 'line one\nline two\nline three\n')
     await waitForSSERefresh(page, 3000)
 
-    // Open file
-    await page.keyboard.press('Meta+p')
-    await page.locator('input[placeholder="Search files..."]').fill('__e2e_test_conflict')
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(1000)
+    await openFileViaSearch(page, filePath)
 
-    // Type to make it dirty
+    // Type to make the tab dirty, then wait on the dirty-dot indicator (not a sleep).
     const editor = page.locator('.cm-content')
     await editor.click()
     await page.keyboard.type('DIRTY EDIT ')
+    await expect(tab(page, filePath).locator('.rounded-full')).toBeVisible()
 
-    // Verify dirty indicator appears (dot in tab)
-    await page.waitForTimeout(500)
+    // External change to a dirty file resolves to a conflict (not a silent refetch).
+    await writeFileViaAPI(page, project.name, filePath, 'externally modified content\n')
+    await forceSseRefetch(page)
 
-    // Modify file externally to trigger conflict
-    const externalContent = 'externally modified content\n'
-    await writeFileViaAPI(page, project.name, testPath, externalContent)
-
-    // Wait for SSE to detect conflict
-    await waitForSSERefresh(page)
-
-    // Verify conflict banner appears
     const banner = page.locator('text=File changed on disk')
     await expect(banner).toBeVisible({ timeout: 15_000 })
-
-    // Verify both resolution buttons are present
     await expect(page.locator('button', { hasText: 'Accept Disk Version' })).toBeVisible()
     await expect(page.locator('button', { hasText: 'Keep Mine' })).toBeVisible()
 
-    // Click "Accept Disk Version" to resolve
+    // Resolving with the disk version clears the banner and loads disk content.
     await page.locator('button', { hasText: 'Accept Disk Version' }).click()
-
-    // Verify banner disappears and content is the external version
     await expect(banner).not.toBeVisible({ timeout: 5000 })
     await expect(editor).toContainText('externally modified content')
 
-    // Cleanup
-    await page.evaluate(async ({ projectName, path }) => {
-      await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-    }, { projectName: project.name, path: testPath })
+    await deleteTestFile(page, project.name, filePath)
   })
 
-  test('draft persistence across browser refresh', async ({ page }) => {
-    const project = await openWorkspace(page)
+  test('draft persistence across browser refresh', async ({ page, request }) => {
+    const project = await ws(page, request)
 
-    // Create a test file
-    const testPath = '__e2e_test_draft.txt'
-    const initialContent = 'original content\n'
-    await page.evaluate(async ({ projectName, path }) => {
-      await fetch(`/api/files/${encodeURIComponent(projectName)}/create-file`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-    }, { projectName: project.name, path: testPath })
-    await writeFileViaAPI(page, project.name, testPath, initialContent)
+    const filePath = uniqueFileName('draft.txt')
+    await createTestFile(page, project.name, filePath, 'original content\n')
     await waitForSSERefresh(page, 3000)
 
-    // Open file
-    await page.keyboard.press('Meta+p')
-    await page.locator('input[placeholder="Search files..."]').fill('__e2e_test_draft')
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(1000)
+    await openFileViaSearch(page, filePath)
 
-    // Type unsaved edits
+    // Unsaved edits auto-pin the tab and persist as a draft.
     const editor = page.locator('.cm-content')
     await editor.click()
     await page.keyboard.type('DRAFT CONTENT ')
 
-    // Wait for draft to be captured
-    await page.waitForTimeout(1000)
+    // Gate the reload on persistence actually flushing to localStorage: the tab is
+    // in the persisted layout AND the draft body is in the persisted drafts blob.
+    // (layout 300ms / drafts 500ms debounce — polling beats a fixed sleep.)
+    await expect
+      .poll(async () => {
+        const layout = await getWorkspaceState(page, project.name)
+        const drafts = await page.evaluate(
+          (key) => {
+            const raw = localStorage.getItem(key)
+            return raw ? (JSON.parse(raw) as { files?: Record<string, { draft?: string | null }> }) : null
+          },
+          `yaco-drafts:${project.name}`,
+        )
+        const tabPersisted = Array.isArray(layout?.openTabs) && layout.openTabs.includes(filePath)
+        const draftBody = drafts?.files?.[filePath]?.draft ?? ''
+        return tabPersisted && draftBody.includes('DRAFT CONTENT')
+      }, { timeout: 10_000 })
+      .toBe(true)
 
-    // Verify dirty indicator (tab should show dot)
-    // The tab with the file should exist — scope to tab bar to avoid matching git changes row
-    const tabBar = page.locator('.overflow-x-auto')
-    const tab = tabBar.locator('[title="__e2e_test_draft.txt"]')
-    await expect(tab).toBeVisible()
-
-    // Refresh the page — localStorage is flushed on beforeunload
+    // Reload: project selection + open tabs + drafts restore from localStorage.
     await page.reload()
-    await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+    await waitForAppReady(page)
 
-    // Switch to workspace if needed
-    await page.waitForTimeout(2000)
-
-    // Tab should survive the refresh
-    const restoredTabBar = page.locator('.overflow-x-auto')
-    const restoredTab = restoredTabBar.locator('[title="__e2e_test_draft.txt"]')
+    const restoredTab = tab(page, filePath)
     await expect(restoredTab).toBeVisible({ timeout: 10_000 })
-
-    // Click the tab to make it active
     await restoredTab.click()
-    await page.waitForTimeout(1000)
+    await expect(page.locator('.cm-content')).toContainText('DRAFT CONTENT', { timeout: 5000 })
 
-    // Verify draft content was restored
-    const restoredEditor = page.locator('.cm-content')
-    await expect(restoredEditor).toContainText('DRAFT CONTENT', { timeout: 5000 })
-
-    // Cleanup
-    await page.evaluate(async ({ projectName, path }) => {
-      await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-    }, { projectName: project.name, path: testPath })
+    await deleteTestFile(page, project.name, filePath)
   })
 })
