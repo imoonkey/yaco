@@ -8,7 +8,6 @@ import {
   isSecretPath,
   isInsideFence,
   isMidWord,
-  nextWordLength,
   type CompletionProvider,
   type SuggestionSink,
 } from '../../lib/editor/inlineAutocomplete'
@@ -65,14 +64,6 @@ describe('isMidWord', () => {
     expect(isMidWord(d, 2)).toBe(true)
     expect(isMidWord(d, 4)).toBe(false) // end of word
     expect(isMidWord(d, 0)).toBe(false) // start
-  })
-})
-
-describe('nextWordLength', () => {
-  it('takes leading whitespace plus one token', () => {
-    expect(nextWordLength(' more text')).toBe(5) // " more"
-    expect(nextWordLength('rest of it')).toBe(4) // "rest"
-    expect(nextWordLength('solo')).toBe(4)
   })
 })
 
@@ -167,6 +158,17 @@ describe('inlineAutocomplete request gating', () => {
     expect(ghost(view)).toBe(' in the morning')
   })
 
+  it('renders a next-line suggestion with its newline, clamped to two content lines', async () => {
+    const provider = vi.fn<CompletionProvider>().mockResolvedValue('\n- second\n- third\n- fourth')
+    const view = await enabledView('plan/design.md', provider, '- first')
+
+    typeEnd(view, ' bullet')
+    await vi.advanceTimersByTimeAsync(SUGGESTION_DEBOUNCE_MS)
+    await tick()
+    // The newline is preserved (old behavior dropped it); only two content lines survive.
+    expect(ghost(view)).toBe('\n- second\n- third')
+  })
+
   it('makes no request for a non-markdown file', async () => {
     const provider = vi.fn<CompletionProvider>().mockResolvedValue('x')
     const view = await enabledView('src/index.ts', provider)
@@ -203,43 +205,6 @@ describe('inlineAutocomplete request gating', () => {
     expect(provider).not.toHaveBeenCalled()
   })
 
-  it('makes no request below the length threshold', async () => {
-    const provider = vi.fn<CompletionProvider>().mockResolvedValue('x')
-    const view = await enabledView('plan/design.md', provider)
-
-    typeEnd(view, 'hi')
-    await vi.advanceTimersByTimeAsync(SUGGESTION_DEBOUNCE_MS)
-    expect(provider).not.toHaveBeenCalled()
-  })
-
-  it('requests immediately after a fresh list marker despite the threshold', async () => {
-    const provider = vi.fn<CompletionProvider>().mockResolvedValue('first item')
-    const view = await enabledView('plan/design.md', provider)
-
-    typeEnd(view, '- ')
-    await vi.advanceTimersByTimeAsync(SUGGESTION_DEBOUNCE_MS)
-    await tick()
-    expect(provider).toHaveBeenCalledTimes(1)
-  })
-
-  it('does not bypass the threshold once content follows the marker', async () => {
-    const provider = vi.fn<CompletionProvider>().mockResolvedValue('x')
-    const view = await enabledView('plan/design.md', provider)
-
-    typeEnd(view, '- a') // a started list item with one char — below threshold
-    await vi.advanceTimersByTimeAsync(SUGGESTION_DEBOUNCE_MS)
-    expect(provider).not.toHaveBeenCalled()
-  })
-
-  it('does not bypass the threshold for a mid-line marker with content after the cursor', async () => {
-    const provider = vi.fn<CompletionProvider>().mockResolvedValue('x')
-    const view = await enabledView('plan/design.md', provider, '-a')
-
-    typeAt(view, 1, ' ') // -> "- a" with the cursor between "- " and "a"
-    await vi.advanceTimersByTimeAsync(SUGGESTION_DEBOUNCE_MS)
-    expect(provider).not.toHaveBeenCalled()
-  })
-
   it('makes no request for a paste (not genuine typing)', async () => {
     const provider = vi.fn<CompletionProvider>().mockResolvedValue('x')
     const view = await enabledView('plan/design.md', provider)
@@ -268,7 +233,7 @@ describe('inlineAutocomplete request gating', () => {
     const view = await enabledView('plan/design.md', provider, 'hello world')
 
     // Manual invoke fires a request immediately (no debounce).
-    expect(press(view, '\\', { altKey: true })).toBe(true)
+    expect(press(view, 'Tab', { altKey: true })).toBe(true)
     await tick()
     expect(provider).toHaveBeenCalledTimes(1)
 
@@ -297,7 +262,7 @@ describe('inlineAutocomplete request gating', () => {
     views.push(view)
     await tick() // status resolves
 
-    expect(press(view, '\\', { altKey: true })).toBe(true) // manual request in flight
+    expect(press(view, 'Tab', { altKey: true })).toBe(true) // manual request in flight
     await tick()
     expect(provider).toHaveBeenCalledTimes(1)
 
@@ -346,16 +311,6 @@ describe('inlineAutocomplete accept / dismiss', () => {
     expect(press(view, 'Tab')).toBe(true)
     expect(view.state.doc.toString()).toBe('hello world more text')
     expect(ghost(view)).toBeNull()
-  })
-
-  it('accept-word inserts one word and keeps the remainder anchored without a new request', async () => {
-    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' more text here')
-    const view = await showing(provider)
-
-    expect(press(view, 'ArrowRight', { ctrlKey: true })).toBe(true)
-    expect(view.state.doc.toString()).toBe('hello world more')
-    expect(ghost(view)).toBe(' text here')
-    expect(provider).toHaveBeenCalledTimes(1) // no follow-up server call
   })
 
   it('Escape dismisses without changing the document', async () => {
@@ -408,14 +363,6 @@ describe('inlineAutocomplete telemetry events (content-free)', () => {
     const view = await showingWith(provider, onEvent)
     press(view, 'Tab')
     expect(events).toContain('accepted_full')
-  })
-
-  it('emits "accepted_word" on accept-next-word', async () => {
-    const { events, onEvent } = spyView()
-    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' more text here')
-    const view = await showingWith(provider, onEvent)
-    press(view, 'ArrowRight', { ctrlKey: true })
-    expect(events).toContain('accepted_word')
   })
 
   it('emits "dismissed_escape" only when a ghost was visible', async () => {
