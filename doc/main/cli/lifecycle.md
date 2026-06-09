@@ -1,6 +1,6 @@
 # Lifecycle
 
-> Last updated: 2026-06-09 (Codex async title sync: start enqueues `/rename` after ready and never waits for settle. Prior: rename input guard — handle/tmux rename is immediate, provider `/rename` is input-empty gated and queues when the user is typing)
+> Last updated: 2026-06-09 (Startup trust gating: Codex hooks-review interstitials are gated by the fail-closed `codexHooksAllYacoOwned` predicate → `blocked(trust)` on a foreign/unverifiable hook set. Prior: Codex async title sync — start enqueues `/rename` after ready and never waits for settle)
 
 Visual state diagrams and sequence flows for session lifecycle. For the text-based state machine summary, see [architecture.md](architecture.md#state-machine). For provider-specific hooks and assumptions, see [providers.md](providers.md).
 
@@ -190,7 +190,7 @@ sequenceDiagram
         Note over X: Codex shows › prompt
     end
 
-    Note over M: waitForReady: idle or processing both accepted<br/>auto-handles Codex "Hooks need review" trust prompt
+    Note over M: waitForReady: idle or processing both accepted<br/>Codex "Hooks need review" → trust-gated (see Startup Trust Gating):<br/>guard pass → auto-dismiss; guard fail → blocked(trust), bail early, no /rename
     M->>T: sendKeysWhenInputEmpty("/rename <handle>")
     Note over M: title sync is best-effort async<br/>no settle wait before start returns
 
@@ -198,6 +198,66 @@ sequenceDiagram
     M->>S: syncStateAfterStart
     Note over M: can return during processing phase on bootstrap success; later hooks/status backfill sessionId
 ```
+
+## Startup Trust Gating (Codex hooks review)
+
+`waitForReady` auto-answers provider `startupInterstitials` by sending their
+declared keys. Codex's two **hooks-review** screens (`Hooks need review … Trust
+all and continue` and the `Press t to trust all` overlay) are gated behind a
+fail-closed predicate `codexHooksAllYacoOwned(sessionPath)` (`lifecycle.ts`),
+attached to the interstitial as `guard` + `blockReason: "trust"`
+(`providers/codex.ts`). The guard runs **after** the interstitial's
+`skipWhenPattern` skip, so only a genuinely-current dialog is gated.
+
+- **guard passes** → YACO accounts for the entire effective hook set as its own
+  → auto-press the keys; the session boots to `idle` as before.
+- **guard fails** → `handleStartupInterstitial` writes `setStatus(state,
+  "blocked", "trust")`, sends **no keys**, marks the interstitial handled, and
+  `waitForReady` **bails early** (returns `false` — its hook-first check only
+  returns ready for `idle`/`processing`, so without the bail a `blocked(trust)`
+  session would spin to the 30s timeout). `start` returns without `/rename`; the
+  `starting`-only guard in `syncStateAfterStart` leaves `blocked(trust)` intact.
+  The user attaches, reviews, presses the key themselves, and Codex's
+  `SessionStart` hook clears `blocked(trust)` → `idle` (the widened SessionStart
+  guard — see [state-contract.md](state-contract.md)).
+
+The **trust-FOLDER** interstitial (`trust this folder / Yes, I trust`) is a
+separate per-path mechanism with no foreign-content notion and stays
+**unguarded** (pure auto-Enter).
+
+### `codexHooksAllYacoOwned` — fail-closed security predicate
+
+Returns `true` only when it can positively verify the whole effective hook set
+is YACO's own; on **any** uncertainty it returns `false` (block). It enumerates
+**all four** effective Codex hook sources and ANDs them:
+
+- global + project `hooks.json` (`~/.codex/hooks.json`,
+  `<sessionPath>/.codex/hooks.json`, JSON), and inline `[hooks]` tables in global
+  + project `config.toml` (parsed with `Bun.TOML.parse` — a malformed file throws
+  → block).
+
+Across every source it requires, in order:
+
+1. **Event-key allowlist** — every map key must be in `CODEX_HOOK_EVENTS` (a hook
+   under an event YACO never installs is foreign). config.toml additionally
+   allows the reserved `state` key, **validated** as Codex's trusted-hash
+   bookkeeping (`[hooks.state]`: a record map with no `command`/`hooks` structure
+   anywhere) — never blindly skipped, so a handler smuggled under `state` blocks.
+2. **Per-source shape** — hooks.json events are `Event: group[]` (array of
+   groups); config.toml inline events are the object form `{ hooks: handler[] }`
+   (from `[[hooks.<Event>.hooks]]`). A value in the wrong shape → block.
+3. **Strict per-handler ownership** — every enabled handler must be
+   `type: "command"` whose command is the **exact canonical** invocation
+   `<yaco-binary> agent hook-event <Event>` (whole-string anchored, not a
+   substring — unlike the `isYacoOwnedGroup` migration helper, so a mixed group
+   with one foreign command blocks).
+
+Returns `false` on any foreign handler, unknown event key, wrong per-source
+shape, non-command type, unparseable/unreadable source, or unexpected shape.
+`bypass_hook_trust` is out of scope (YACO never sets it); plugin-bundled hooks
+are not modeled (YACO never installs them) → the conservative default blocks.
+
+-> Tests: `test/trust-gate.test.ts` (registered in `package.json` `test:unit`).
 
 ## Sequence Diagram 3: Resume Flow
 

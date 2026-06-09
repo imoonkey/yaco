@@ -1,5 +1,39 @@
 # Progress
 
+## 2026-06-09: Startup trust gating — Codex hooks-review → blocked(trust) (session-blocked-state 6/6)
+
+**What changed:**
+- `yaco agent start` now gates Codex's two hooks-review interstitials (`Hooks need review … Trust all and continue`, `Press t to trust all`) behind a fail-closed predicate `codexHooksAllYacoOwned(sessionPath)`, declared on the interstitial as `guard` + `blockReason: "trust"`. The trust-FOLDER interstitial stays unguarded (pure auto-Enter).
+- `StartupInterstitial` gained optional `guard?: (sessionPath) => boolean` and `blockReason?: BlockReason`. `handleStartupInterstitial` now returns `"none" | "handled" | "blocked"`; on guard-fail it writes `setStatus(state, "blocked", "trust")`, sends no keys, marks the interstitial handled, and `waitForReady` bails early (so a `blocked(trust)` session doesn't spin to the 30s timeout). The existing `starting`-only `syncStateAfterStart` guard keeps `blocked(trust)` intact; Codex's widened `SessionStart` hook clears it → idle once the user trusts manually.
+- The predicate enumerates all four effective Codex hook sources — global+project `hooks.json` (JSON) and inline `[hooks]` in global+project `config.toml` (`Bun.TOML.parse`; malformed → block) — and requires, per source: an event-key allowlist (`CODEX_HOOK_EVENTS`, plus a validated `[hooks.state]` trusted-hash subtree for TOML), the correct per-source shape (json array-of-groups vs toml `{hooks:handler[]}` object), and every enabled handler being `type:"command"` with the exact canonical `<yaco-binary> agent hook-event <Event>` command (whole-string anchored, not the substring `isYacoOwnedGroup` helper). Returns false on any foreign handler, unknown event key, wrong shape, non-command type, unparseable/unreadable source, or unexpected shape.
+- Added `test/trust-gate.test.ts` and **registered it in `package.json` `test:unit`** (it was previously unregistered, so `bun run test` silently skipped it). Made the two Codex interstitial tests in `lifecycle-guards.test.ts` hermetic (`withCleanCodexHome`) so the gate isn't poisoned by the real `~/.codex` or a cross-test `hookBinary()` cache.
+
+**Why:**
+- The two hooks-review screens previously auto-trusted whatever was in the effective hooks config — a foreign hook injected into any source would be silently dismissed. The gate is a security predicate: it auto-dismisses only when YACO can account for the *entire* effective hook set as its own canonical command, and otherwise pauses the session for a human (`blocked(trust)`). Fails closed on every uncertainty (foreign/unknown/wrong-shape/unparseable).
+
+**Key files:** `cli/src/lib/core/agent/lifecycle.ts` (`codexHooksAllYacoOwned` + helpers), `cli/src/commands/agent/start.ts` (guard path, early bail), `cli/src/lib/core/agent/providers/{types,codex}.ts`, `cli/test/{trust-gate,lifecycle-guards}.test.ts`, `cli/package.json`, `doc/main/cli/{lifecycle,providers}.md`
+**Verification:** `cd cli && bun test test/trust-gate.test.ts` → 28 pass; `cd cli && bun run test` (full) → 868 pass, 0 fail.
+**Commit:** pending (orchestrator commits centrally).
+**Next:** session-blocked-state task graph complete (6/6).
+**Blockers:** None.
+
+## 2026-06-09: Hook state machine — blocked transitions (session-blocked-state 2/6)
+
+**What changed:**
+- `applyHookEvent` rewritten to write all status via `setStatus` and drive the new `blocked` status. Added `QUESTION_TOOLS = {AskUserQuestion, request_user_input}` (Claude + Codex question tools) and a 6th `toolName` parameter threaded from the hook payload's snake_case `tool_name`.
+- Transitions: `PreToolUse(q-tool)` → `blocked(question)`, non-q-tool → processing; `PostToolUse`/`PostToolUseFailure(q-tool)` → processing (answer received, cancelled, or failed — covers the failure edge so a cancelled question never strands); `PermissionRequest` and `Notification(permission_prompt)` → `blocked(permission)`; `Notification(idle_prompt)` → idle, other → no-op.
+- Widened the `SessionStart` guard: clears `starting`/`idle`/`blocked(trust)` → idle, but never clobbers a mid-session-active state (`processing` or `blocked(permission|question)`). `blocked` is cleared implicitly by the next processing/idle event (last-event-wins; no explicit unblock).
+- `commands/agent/hook-event.ts` reads `tool_name` from stdin via the extended `HookInput` type.
+
+**Why:**
+- A question previously read as `processing` (busy) and a permission prompt as `idle`, so "agent needs you" was invisible. `blocked(reason)` makes the waiting-on-user state explicit and distinct from idle.
+
+**Key files:** `cli/src/lib/core/agent/hook-event.ts`, `cli/src/commands/agent/hook-event.ts`, `cli/test/{hook-event,hook-update}.test.ts`, `doc/main/cli/state-contract.md`
+**Verification:** `cd cli && bun test test/hook-event.test.ts test/hook-update.test.ts` → 50 pass, 0 fail.
+**Commit:** pending (orchestrator commits centrally).
+**Next:** remaining session-blocked-state tasks (send/status flip, app-server reconciler, UI blocked dot, trust gate).
+**Blockers:** None.
+
 ## 2026-06-09: Startup interstitial replay guard
 
 **What changed:**

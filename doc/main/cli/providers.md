@@ -1,6 +1,6 @@
 # Providers
 
-> Last updated: 2026-06-09 (codex-async-title-sync)
+> Last updated: 2026-06-09 (Codex hooks-review interstitials carry a fail-closed `guard`+`blockReason` trust gate → `blocked(trust)`; prior: codex-async-title-sync)
 
 ## Supported Providers
 
@@ -35,7 +35,7 @@ Adapter responsibilities, by capability:
 
 | Capability | Required? | Owns |
 |---|---|---|
-| `command` | yes | launch command (`build`), resume canonicalization (`normalizeResumeArgs`), name-flag policy (`normalizeStartArgs`/`postStartInputs`), live rename (`renameInputs`), trust/review prompts (`startupInterstitials`) |
+| `command` | yes | launch command (`build`), resume canonicalization (`normalizeResumeArgs`), name-flag policy (`normalizeStartArgs`/`postStartInputs`), live rename (`renameInputs`), trust/review prompts (`startupInterstitials` — each may carry a fail-closed `guard`+`blockReason`; see [lifecycle.md](lifecycle.md#startup-trust-gating-codex-hooks-review)) |
 | `detection` | yes | `idlePatterns` / `busyPatterns` for screen-scrape status fallback; `inputPromptPatterns` / `inputEmptyPatterns` / `inputPlaceholderStylePatterns` for safe internal slash-command delivery |
 | `sessionId` | yes | pending sentinel, session-id env keys, start-resolution strategy, `resolve` from provider storage |
 | `hooks` | optional | hook events, install/merge, config path, install probe (drives `install` + `doctor`) |
@@ -71,7 +71,7 @@ flag would be wrong. See [architecture.md](architecture.md#cli--app-boundary).
 
 ## Hook Availability
 
-Hook is the **primary** status signal; screen scraping is fallback only (trust dialog auto-accept, hook-less providers).
+Hook is the **primary** status signal; screen scraping is fallback only (trust dialog auto-accept, hook-less providers). Codex's **hooks-review** trust prompts are not blindly auto-accepted — they are gated by the fail-closed `codexHooksAllYacoOwned` predicate → `blocked(trust)` when the effective hook set is foreign/unverifiable. See [lifecycle.md](lifecycle.md#startup-trust-gating-codex-hooks-review).
 
 | Hook Event | Claude | Codex | Status Effect |
 |---|---|---|---|
@@ -283,6 +283,7 @@ apply displays apply counts (matching the historical plan-vs-apply split).
 | X5 | 8 hook events (SessionStart/UserPromptSubmit/PreToolUse/PostToolUse/PermissionRequest/PreCompact/PostCompact/Stop); PreCompact/PostCompact present in source but not yet in public docs | Codex source (`codex-rs/hooks/src/schema.rs`) confirmed via codex-hooks-research session 2026-05-10 | `src/lib/core/agent/lifecycle.ts` (CODEX_HOOK_EVENTS) | hook-event.test.ts: applyHookEvent transitions | fewer → reduced status updates |
 | X6 | hooks synchronous (async=false) | Codex limitation | `src/lib/core/agent/lifecycle.ts#yacoHookGroup(event, false)` | hooks-install.test.ts: async flag verification | could switch to async |
 | X7 | Stop hook reliable in single test (P5, 2026-04-10) | R1 tested → P5 retested | capture fallback | G4 guard test ongoing monitoring | capture handles correctly |
+| X8 | hooks-review screen is change-sensitive (shows only when an enabled unmanaged hook is new/changed; trust keyed per-hook hash under `[hooks.state]`) | Codex source (`startup_hooks_review.rs`, `hooks/src/engine/discovery.rs`) | `src/commands/agent/start.ts` (guard path), `src/lib/core/agent/lifecycle.ts#codexHooksAllYacoOwned`, `src/lib/core/agent/providers/codex.ts` | `test/trust-gate.test.ts` (gate + guard path) | foreign/unverifiable hook set → `blocked(trust)`, user reviews manually |
 | X8 | requires `-c features.hooks=true` | Codex CLI feature list | `src/lib/core/agent/providers/codex.ts` | all Codex tests implicitly depend | hooks inactive |
 | X9 | `suppress_unstable_features_warning` in config.toml | Codex docs | `src/lib/core/agent/lifecycle.ts#ensureCodexHooks` | **none** | warning text disrupts idle detection |
 | X10 | session data in `~/.codex/state_5.sqlite` | reverse engineering | `src/lib/core/agent/session-id.ts` | agent-sync: sessionId recovered after repair | SQLite fails, rollout scan already succeeded or stays PENDING |

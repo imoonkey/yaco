@@ -1,3 +1,19 @@
+## 2026-06-09: App server accepts `blocked` status, treats it as active (session-blocked-state 4/6)
+
+**What changed:**
+- `agent.ts`: `AgentSession.status` and `AgentSessionState.status` unions widened to include `blocked`; added optional `blockReason` (`permission | question | trust`, new exported `BlockReason` type) to both, and `blocked` added to `VALID_STATUSES`. `blockReason` threads through the shared `toSessionRow` projection, which only emits it when `status === 'blocked'` with a valid reason (a stray reason on a non-blocked status is dropped).
+- `session-reconciler.ts`: `lastStatusBySession` retyped to `AgentSession['status']`. New `isActiveStatus()` (`processing || blocked`) gates idle detection — `blocked` now resets the idle streak exactly like `processing`, so `processing → blocked` never fires `session_idle`. Stale `MIN_PROCESSING_MS` comment corrected to say the timer covers active time (processing OR blocked).
+- `session-summary.ts`: cached-label drop now fires on any active (`processing` or `blocked`) → `idle` transition, so `processing → blocked → idle` still refreshes the label instead of skipping it.
+
+**Why:**
+- The CLI now emits `blocked` (agent paused waiting on the user). For the app's "can I ignore this session?" question, `blocked` is the *opposite* of idle — without these changes a `processing → blocked` transition would start an idle streak and notify "session idle" for a session that actually needs the user, and a `blocked` interlude would swallow a stale-label refresh.
+
+**Key files:** `app/server/src/lib/agent.ts`, `app/server/src/lib/session-reconciler.ts`, `app/server/src/lib/session-summary.ts`, plus tests in `app/server/src/lib/__tests__/{agent,session-reconciler,session-summary}.test.ts`; doc `doc/main/app/backend/libs.md`.
+**Verification:** `cd app/server && npm test` passed (32 files, 439 tests; +12 new — blocked row read + stray-reason drop, reconciler `processing→blocked` emits no idle / blocked resets streak with a positive `processing→idle→idle` control, summary `processing→blocked→idle` refresh).
+**Commit:** pending (central commit by orchestrator).
+**Next:** UI `blocked` dot + reason badge + subtree-max bucketing (`ui-blocked-dot`, task 5/6).
+**Blockers:** None.
+
 ## 2026-06-08: Terminal disables browser scrollback gutter for tmux sessions
 
 **What changed:**

@@ -103,6 +103,7 @@ The authoritative runtime view. This is the **single source of runtime truth**. 
 - Mutation APIs, handle-global
 - Do not require workflow to resolve project path
 - `send --stdin` reads the message from process.stdin (mutually exclusive with an inline message)
+- `send` writes an **optimistic `processing` hint** (via `setStatus`) before keystrokes reach the pane, so `list`/`status` don't flash a pre-send `idle`/blocked buffer; the hook remains authoritative and overwrites it. The flip applies **only** to `idle` and `blocked(question)` — sending text *is* answering the question, so its `blockReason` clears. It deliberately leaves `blocked(permission)` and `blocked(trust)` untouched (text neither grants a permission nor approves a trust screen — flipping them would hide a real "needs you" state; they clear only via a real hook / startup transition). On `sendKeys` failure the hint is reverted to the prior status **and** `blockReason` (same-session `createdAt` + liveness guarded).
 - `rename` is authoritative for the session state/tmux rename, including while the agent status is `processing`, then best-effort rewrites handle references (child `parentSession`, task `agents`); failures return in `data.warnings`. Provider-native `/rename` title sync is input-empty gated and may be queued by a detached helper when user text already occupies the input prompt. -> See: [lifecycle.md](lifecycle.md#rename-link-integrity)
 
 ### `yaco agent hooks install`
@@ -117,7 +118,7 @@ The authoritative runtime view. This is the **single source of runtime truth**. 
 
 State files are kept in sync with runtime status through two mechanisms:
 
-1. **Hooks (real-time)** — Claude Code hooks fire on `UserPromptSubmit` (→processing), `Stop`/`StopFailure` (→idle), `SessionStart` (→idle). Updates are near-instant.
+1. **Hooks (real-time)** — provider hooks fire on `UserPromptSubmit` (→processing), `Stop`/`StopFailure` (→idle), `SessionStart` (→idle, guarded). The hook handler (`applyHookEvent`) also drives the `blocked` status via `setStatus`: a `PreToolUse` on a question tool (`QUESTION_TOOLS = {AskUserQuestion, request_user_input}`) → `blocked(question)`, its `PostToolUse`/`PostToolUseFailure` → processing (answer received, cancelled, or failed); `PermissionRequest` and `Notification(permission_prompt)` → `blocked(permission)`. `blocked` is cleared implicitly by the next processing/idle event (last-event-wins). The `SessionStart` guard is widened: it clears `starting`/`idle`/`blocked(trust)` → idle but never clobbers a mid-session-active state (`processing` or `blocked(permission|question)`). Updates are near-instant.
 2. **Reconcile correction (background)** — the app server's 60s loop runs `yaco agent list --reconcile --all --json`. When the reconcile pass detects a stale state file (mtime > 5min) and capture-based detection returns a different status, it writes the correction to disk and GCs confirmed-dead tombstones. This is the **only** place corrections and GC happen — read commands never write.
 
 Resolution splits into a pure read and a mutating wrapper:
@@ -126,8 +127,8 @@ Resolution splits into a pure read and a mutating wrapper:
   1. **Liveness check** — is the tmux session alive? A session counts as confirmed-dead only when `confirmedDead()` holds (tmux says gone **and** the recorded PID is not running); a wrong-socket tmux reading alone never marks a live session dead. Confirmed-dead sessions resolve to `null` (filtered from views) but their files are **not** touched.
   2. **State file read** — get persisted status.
   3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 5min)
-  4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators (display only).
+  4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators (display only). The capture path can derive **only `idle`/`processing`** — it can never produce `blocked` — so the correction also strips any stale `blockReason` carried by the old state file.
   5. **Metadata backfill** — resolve PID and sessionId from the process tree, in memory only.
-- **`reconcileSession` (mutating)** — backs `list --reconcile` / `status --reconcile`. It runs the pure resolver, then **persists** any stale-status / backfill correction and **deletes** a confirmed-dead tombstone.
+- **`reconcileSession` (mutating)** — backs `list --reconcile` / `status --reconcile`. It runs the pure resolver, then **persists** any stale-status / backfill correction and **deletes** a confirmed-dead tombstone. The persist trigger fires on **status drift OR `blockReason` drift**, so a stale `blockReason` is dropped on disk even when the corrected status value is unchanged (e.g. stale `processing` + stray reason + busy capture → still `processing`, reason cleared).
 
 Consumers can read state files directly for both speed and correctness — files are kept accurate by hooks and the background reconcile loop. The pure CLI read commands (`list`, `status`) are equally safe and never mutate; reach for `--reconcile` only when you intend to drive GC + correction.
