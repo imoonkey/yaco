@@ -23,6 +23,7 @@ const GUIDE_OFFSET = 7
 const INACTIVE_COLOR: React.CSSProperties = { color: 'var(--sol-text)' }
 const SESSION_TRANSITION: React.CSSProperties = { transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }
 const RENAME_INPUT_STYLE: React.CSSProperties = { borderColor: 'var(--sol-accent)', color: 'inherit' }
+const PIN_ICON_STYLE: React.CSSProperties = { transform: 'rotate(45deg)', transformOrigin: 'center' }
 
 const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   processing: 'bg-[var(--sol-cyan)] status-pulse',
@@ -153,7 +154,7 @@ export function SessionItem({
           title={pinned ? 'Unpin' : 'Pin to top'}
           style={{ color: pinned ? 'var(--sol-blue)' : 'var(--sol-muted)' }}
         >
-          <Pin size={12} />
+          <Pin size={12} style={PIN_ICON_STYLE} />
         </button>
       )}
       {hasChildren ? (
