@@ -542,6 +542,24 @@ describe('Terminal focus handoff', () => {
     })
   })
 
+  it('stops no-background Codex prompt frames at line-start MCP warning rows', async () => {
+    resetFakeBuffer([
+      { text: '› previous prompt' },
+      { text: 'check available mcp servers' },
+      { text: '' },
+      '⚠ MCP startup interrupted. The following servers were not initialized: codex_apps',
+    ], 3)
+    const Terminal = await loadTerminal()
+    const { container } = render(<Terminal sessionName="codex-session" provider="codex" />)
+
+    await waitFor(() => {
+      const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
+      expect(frame).not.toBeNull()
+      expect(frame?.style.top).toBe('0px')
+      expect(frame?.style.height).toBe('39px')
+    })
+  })
+
   it('leaves slash command suggestions below active Codex prompt frames', async () => {
     resetFakeBuffer([
       { text: '› /' },

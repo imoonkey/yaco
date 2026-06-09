@@ -9,6 +9,7 @@ export interface InputPromptFrame {
 
 type PromptFrameBoundary = 'prompt-menu' | 'reply' | 'status'
 type TerminalBuffer = XTerm['buffer']['active']
+const REPLY_BOUNDARY_PREFIXES = ['•', '■', '$', '⚠'] as const
 
 type TerminalWithRenderMetrics = XTerm & {
   _core?: {
@@ -112,7 +113,7 @@ function readPromptFrameBoundary(
 ): PromptFrameBoundary | null {
   const trimmed = text.trim()
   if (trimmed === '') return null
-  if (text.startsWith('•') || text.startsWith('■') || text.startsWith('$')) return 'reply'
+  if (REPLY_BOUNDARY_PREFIXES.some(prefix => text.startsWith(prefix))) return 'reply'
   if (/^tab to queue message\b/i.test(trimmed) && isViewportTailBlank(buffer, row, lastRow)) return 'status'
   if (!trimmed.includes(' · ')) return null
   return trimmed.split(/\s·\s/).filter(Boolean).length >= 3 && isViewportTailBlank(buffer, row, lastRow)
