@@ -103,6 +103,26 @@ describe("toSessionRow", () => {
     expect(toSessionRow(state({ status: "stopped" }), proj)).toBeNull();
   });
 
+  it("emits blockReason for a blocked status with a valid reason", () => {
+    const row = toSessionRow(state({ status: "blocked", blockReason: "permission" }), proj);
+    expect(row?.blockReason).toBe("permission");
+  });
+
+  it("drops blockReason for a blocked status with no reason", () => {
+    const row = toSessionRow(state({ status: "blocked" }), proj);
+    expect(row).not.toHaveProperty("blockReason");
+  });
+
+  it("drops an invalid blockReason on a blocked status", () => {
+    const row = toSessionRow(state({ status: "blocked", blockReason: "banana" }), proj);
+    expect(row).not.toHaveProperty("blockReason");
+  });
+
+  it("drops a stray blockReason when status is not blocked", () => {
+    const row = toSessionRow(state({ status: "idle", blockReason: "permission" }), proj);
+    expect(row).not.toHaveProperty("blockReason");
+  });
+
   it("defaults a missing sessionId to empty string", () => {
     const row = toSessionRow(state({ sessionId: undefined as unknown as string }), proj);
     expect(row?.sessionId).toBe("");

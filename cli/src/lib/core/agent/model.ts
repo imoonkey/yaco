@@ -8,7 +8,10 @@
 import { randomBytes } from "node:crypto";
 import { ADJECTIVES, NOUNS } from "./words.ts";
 
-export type SessionStatus = "starting" | "idle" | "processing";
+export type SessionStatus = "starting" | "idle" | "processing" | "blocked";
+
+/** Sub-reason for a `blocked` status. Presentation-only tag for the UI badge. */
+export type BlockReason = "permission" | "question" | "trust";
 
 /** How a session was spawned. Captured once at start; never mutated after. */
 export type SpawnedBy = "user:web" | "user:terminal" | "agent";
@@ -21,6 +24,8 @@ export interface SessionState {
   sessionId: string;
   status: SessionStatus;
   createdAt: string;
+  /** Block sub-reason. Present iff status === "blocked". */
+  blockReason?: BlockReason;
   /** Spawn source. New starts always write it; legacy files may omit it. */
   spawnedBy?: SpawnedBy;
   /** Parent session handle. Present only when spawnedBy === "agent". */
@@ -31,6 +36,26 @@ export interface SessionState {
 export type RuntimeSessionState = Omit<SessionState, "status"> & {
   status: SessionStatus | "stopped";
 };
+
+/** Mutable status-bearing shape: both SessionState and RuntimeSessionState satisfy it. */
+type StatusWritable = { status: string; blockReason?: BlockReason };
+
+/** Write status and blockReason atomically, preserving the invariant
+ *  `blockReason` is set iff status === "blocked". A non-blocked status (or a
+ *  blocked status with no reason) clears blockReason. In-place mutator: callers
+ *  (send.ts, status.ts, hook-event.ts) own a mutable session-state object. */
+export function setStatus<T extends StatusWritable>(
+  state: T,
+  status: T["status"],
+  reason?: BlockReason,
+): void {
+  state.status = status;
+  if (status === "blocked" && reason) {
+    state.blockReason = reason;
+  } else {
+    delete state.blockReason;
+  }
+}
 
 /** Sentinel sessionId written before the hook reports the real one. */
 export const PENDING_SESSION_ID = "pending:awaiting-first-prompt";

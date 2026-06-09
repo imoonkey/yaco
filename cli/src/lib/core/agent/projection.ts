@@ -7,7 +7,7 @@
  *  pull them into its hot read path.
  */
 import { isAbsolute, normalize, relative, sep } from "node:path";
-import type { SessionStatus, SpawnedBy } from "./model.ts";
+import type { BlockReason, SessionStatus, SpawnedBy } from "./model.ts";
 
 /** A minimal project reference (name + absolute path). */
 export interface ProjectRef {
@@ -20,6 +20,8 @@ export interface AgentSessionRow {
   name: string;
   provider: string;
   status: SessionStatus;
+  /** Block sub-reason. Present iff status === "blocked". */
+  blockReason?: BlockReason;
   project: string;
   projectPath: string;
   sessionPath: string;
@@ -38,11 +40,13 @@ export interface ProjectableSessionState {
   pid: number;
   sessionId: string;
   status: string;
+  blockReason?: string;
   spawnedBy?: string;
   parentSession?: string;
 }
 
-const VALID_STATUSES = new Set<string>(["starting", "idle", "processing"]);
+const VALID_STATUSES = new Set<string>(["starting", "idle", "processing", "blocked"]);
+const VALID_BLOCK_REASONS = new Set<string>(["permission", "question", "trust"]);
 const VALID_SPAWNED_BY = new Set<string>(["user:web", "user:terminal", "agent"]);
 
 /** Drop trailing separators so prefix comparisons are stable. Root stays root. */
@@ -101,6 +105,13 @@ export function toSessionRow(
   };
   if (typeof state.spawnedBy === "string" && VALID_SPAWNED_BY.has(state.spawnedBy)) {
     row.spawnedBy = state.spawnedBy as SpawnedBy;
+  }
+  if (
+    state.status === "blocked" &&
+    typeof state.blockReason === "string" &&
+    VALID_BLOCK_REASONS.has(state.blockReason)
+  ) {
+    row.blockReason = state.blockReason as BlockReason;
   }
   if (typeof state.parentSession === "string" && state.parentSession) {
     row.parentSession = state.parentSession;
