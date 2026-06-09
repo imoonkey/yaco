@@ -16,6 +16,7 @@ import { diffGutterExtension, setDiffData } from '../lib/diffGutter'
 import type { DiffHunk } from '../lib/parseDiff'
 import { inlineAutocomplete, autocompleteCompartment } from '../lib/editor/inlineAutocomplete.js'
 import type { CompletionProvider } from '../lib/editor/inlineAutocomplete.js'
+import { recordSuggestionEvent, type SuggestionEvent } from '../lib/editor/suggestionMetrics'
 import { isMarkdownFile } from '../lib/binaryFiles'
 
 // Inline suggestions are markdown-only and never run in read-only editors.
@@ -76,6 +77,8 @@ interface EditorProps {
   insertText?: string | null
   insertRequestKey?: number
   autocompleteEnabled?: boolean
+  projectName?: string
+  worktree?: string | null
 }
 
 function readViewportLine(view: EditorView): number {
@@ -116,6 +119,8 @@ export function Editor({
   insertText = null,
   insertRequestKey,
   autocompleteEnabled = false,
+  projectName,
+  worktree,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -131,6 +136,16 @@ export function Editor({
   const lastSelfReportedLineRef = useRef(viewportLine)
   const jumpRequestKeyRef = useRef<number | undefined>(undefined)
   const insertRequestKeyRef = useRef<number | undefined>(undefined)
+
+  // Content-free suggestion metrics. The ref carries the latest (project,
+  // worktree) so the stable sink — captured once by the editor extension —
+  // always records under the active key without re-creating the extension.
+  const metricsCtxRef = useRef<{ project?: string; worktree?: string | null }>({ project: projectName, worktree })
+  const recordSuggestionRef = useRef((event: SuggestionEvent) => {
+    const { project, worktree } = metricsCtxRef.current
+    if (project) recordSuggestionEvent(project, worktree, event)
+  })
+  const prevAutocompleteRef = useRef(autocompleteEnabled)
 
   useEffect(() => {
     onSaveRef.current = onSave
@@ -155,6 +170,10 @@ export function Editor({
   useEffect(() => {
     onCloseRequestRef.current = onCloseRequest
   }, [onCloseRequest])
+
+  useEffect(() => {
+    metricsCtxRef.current = { project: projectName, worktree }
+  }, [projectName, worktree])
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -196,7 +215,7 @@ export function Editor({
         EditorView.lineWrapping,
         EditorState.readOnly.of(readOnly),
         suggestionsEligible(filePath, readOnly, autocompleteEnabled)
-          ? autocompleteCompartment.of(inlineAutocomplete(autocompleteProvider, filePath))
+          ? autocompleteCompartment.of(inlineAutocomplete(autocompleteProvider, filePath, recordSuggestionRef.current))
           : autocompleteCompartment.of([]),
         EditorView.domEventHandlers({
           focus: () => {
@@ -358,8 +377,13 @@ export function Editor({
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
+    // disabled_after_shown: the toggle went off while a ghost was visible.
+    if (prevAutocompleteRef.current && !autocompleteEnabled && view.dom.querySelector('.cm-inline-ghost')) {
+      recordSuggestionRef.current('disabled_after_shown')
+    }
+    prevAutocompleteRef.current = autocompleteEnabled
     const ext = suggestionsEligible(filePath, readOnly, autocompleteEnabled)
-      ? inlineAutocomplete(autocompleteProvider, filePath)
+      ? inlineAutocomplete(autocompleteProvider, filePath, recordSuggestionRef.current)
       : []
     view.dispatch({ effects: autocompleteCompartment.reconfigure(ext) })
   }, [autocompleteEnabled, readOnly, filePath])

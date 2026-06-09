@@ -10,6 +10,7 @@ import {
   isMidWord,
   nextWordLength,
   type CompletionProvider,
+  type SuggestionSink,
 } from '../../lib/editor/inlineAutocomplete'
 
 // --- Pure helper tests ---
@@ -79,13 +80,13 @@ describe('nextWordLength', () => {
 
 const views: EditorView[] = []
 
-function makeView(filePath: string, provider: CompletionProvider, docText = '') {
+function makeView(filePath: string, provider: CompletionProvider, docText = '', onEvent?: SuggestionSink) {
   const parent = document.createElement('div')
   document.body.appendChild(parent)
   const state = EditorState.create({
     doc: docText,
     selection: EditorSelection.cursor(docText.length),
-    extensions: [inlineAutocomplete(provider, filePath)],
+    extensions: [inlineAutocomplete(provider, filePath, onEvent)],
   })
   const view = new EditorView({ state, parent })
   views.push(view)
@@ -145,8 +146,8 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-async function enabledView(filePath: string, provider: CompletionProvider, docText = '') {
-  const view = makeView(filePath, provider, docText)
+async function enabledView(filePath: string, provider: CompletionProvider, docText = '', onEvent?: SuggestionSink) {
+  const view = makeView(filePath, provider, docText, onEvent)
   await tick() // let the status check resolve so `enabled` flips true
   return view
 }
@@ -372,5 +373,94 @@ describe('inlineAutocomplete accept / dismiss', () => {
 
     typeEnd(view, '!')
     expect(ghost(view)).toBeNull()
+  })
+})
+
+describe('inlineAutocomplete telemetry events (content-free)', () => {
+  // The sink only ever receives event-name strings — never document, prefix,
+  // suffix, or suggestion text. These tests assert both the event points and
+  // that no content reaches the sink.
+  function spyView() {
+    const events: string[] = []
+    const onEvent: SuggestionSink = (e) => { events.push(e) }
+    return { events, onEvent }
+  }
+
+  async function showingWith(provider: CompletionProvider, onEvent: SuggestionSink) {
+    const view = await enabledView('plan/design.md', provider, '', onEvent)
+    typeEnd(view, 'hello world')
+    await vi.advanceTimersByTimeAsync(SUGGESTION_DEBOUNCE_MS)
+    await tick()
+    return view
+  }
+
+  it('emits "shown" when a ghost becomes visible', async () => {
+    const { events, onEvent } = spyView()
+    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' more text')
+    await showingWith(provider, onEvent)
+    expect(events).toContain('shown')
+    expect(events.filter(e => e === 'shown')).toHaveLength(1)
+  })
+
+  it('emits "accepted_full" on Tab', async () => {
+    const { events, onEvent } = spyView()
+    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' more text')
+    const view = await showingWith(provider, onEvent)
+    press(view, 'Tab')
+    expect(events).toContain('accepted_full')
+  })
+
+  it('emits "accepted_word" on accept-next-word', async () => {
+    const { events, onEvent } = spyView()
+    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' more text here')
+    const view = await showingWith(provider, onEvent)
+    press(view, 'ArrowRight', { ctrlKey: true })
+    expect(events).toContain('accepted_word')
+  })
+
+  it('emits "dismissed_escape" only when a ghost was visible', async () => {
+    const { events, onEvent } = spyView()
+    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' more text')
+    const view = await showingWith(provider, onEvent)
+    press(view, 'Escape')
+    expect(events).toContain('dismissed_escape')
+
+    // A second Escape with nothing visible must not record another dismissal.
+    const before = events.filter(e => e === 'dismissed_escape').length
+    press(view, 'Escape')
+    expect(events.filter(e => e === 'dismissed_escape').length).toBe(before)
+  })
+
+  it('emits "dismissed_typing" when typing clears a visible ghost', async () => {
+    const { events, onEvent } = spyView()
+    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' more text')
+    const view = await showingWith(provider, onEvent)
+    typeEnd(view, '!')
+    expect(events).toContain('dismissed_typing')
+  })
+
+  it('emits "error" on a provider rejection (not on user-cancel)', async () => {
+    const { events, onEvent } = spyView()
+    const provider = vi.fn<CompletionProvider>().mockRejectedValue(new Error('network down'))
+    const view = await enabledView('plan/design.md', provider, '', onEvent)
+    typeEnd(view, 'hello world')
+    await vi.advanceTimersByTimeAsync(SUGGESTION_DEBOUNCE_MS)
+    await tick()
+    expect(events).toContain('error')
+    expect(events).not.toContain('shown')
+  })
+
+  it('never passes document or suggestion text to the sink', async () => {
+    const { events, onEvent } = spyView()
+    const provider = vi.fn<CompletionProvider>().mockResolvedValue(' SECRET_SUGGESTION_TEXT')
+    const view = await showingWith(provider, onEvent)
+    press(view, 'Tab')
+    // Every payload is one of the known event names — no prose leaks through.
+    for (const e of events) {
+      expect(e).not.toContain('hello world')
+      expect(e).not.toContain('SECRET_SUGGESTION_TEXT')
+      expect(typeof e).toBe('string')
+    }
+    expect(new Set(events).size).toBeGreaterThan(0)
   })
 })

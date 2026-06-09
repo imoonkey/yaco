@@ -15,6 +15,7 @@ import {
 } from '@codemirror/view'
 import type { DecorationSet, ViewUpdate } from '@codemirror/view'
 import { isolateHistory } from '@codemirror/commands'
+import type { SuggestionEvent } from './suggestionMetrics'
 
 // --- Provider contract ---
 
@@ -24,6 +25,12 @@ export type CompletionProvider = (
   filePath: string,
   signal: AbortSignal,
 ) => Promise<string>
+
+// Content-free lifecycle sink. The extension only emits event names; storage and
+// per-(project, worktree) keying live in suggestionMetrics, kept out of the
+// editor so no document/suggestion text can reach the metrics layer.
+export type SuggestionSink = (event: SuggestionEvent) => void
+const noopSink: SuggestionSink = () => {}
 
 // --- Tunable constants ---
 
@@ -202,7 +209,7 @@ async function checkEnabled(): Promise<boolean> {
 
 // --- Fetch plugin ---
 
-function createFetchPlugin(provider: CompletionProvider, filePath: string) {
+function createFetchPlugin(provider: CompletionProvider, filePath: string, onEvent: SuggestionSink) {
   const eligibleFile = isEligibleFile(filePath)
 
   return ViewPlugin.define(view => {
@@ -268,12 +275,17 @@ function createFetchPlugin(provider: CompletionProvider, filePath: string) {
 
         const text = trimToSingleLine(raw)
         if (text) {
+          // shown: a server-produced ghost becomes visible.
+          onEvent('shown')
           view.dispatch({
             effects: setSuggestion.of({ text, pos, docVersion: myVersion }),
           })
         }
       } catch {
+        // A genuine provider/network rejection — not a user-cancel or timeout
+        // abort (those set signal.aborted and are expected, not errors).
         if (signal.aborted) return
+        onEvent('error')
       } finally {
         clearTimeout(timeout)
       }
@@ -329,6 +341,10 @@ function createFetchPlugin(provider: CompletionProvider, filePath: string) {
           return
         }
 
+        // Genuine typing onto a visible ghost dismisses it (the state field's
+        // reducer already cleared it); record that before scheduling the next.
+        if (update.startState.field(suggestionField)) onEvent('dismissed_typing')
+
         // Skip replace-selection (non-empty selection before the change).
         if (!update.startState.selection.main.empty) return
 
@@ -344,7 +360,8 @@ function createFetchPlugin(provider: CompletionProvider, filePath: string) {
 
 // --- Keymap (high-precedence) ---
 
-const ghostKeymap = Prec.highest(keymap.of([
+function createGhostKeymap(onEvent: SuggestionSink) {
+  return Prec.highest(keymap.of([
   {
     // Accept the full suggestion.
     key: 'Tab',
@@ -352,6 +369,7 @@ const ghostKeymap = Prec.highest(keymap.of([
       const suggestion = view.state.field(suggestionField)
       if (!suggestion) return false
 
+      onEvent('accepted_full')
       view.dispatch({
         changes: { from: suggestion.pos, insert: suggestion.text },
         selection: EditorSelection.cursor(suggestion.pos + suggestion.text.length),
@@ -375,6 +393,7 @@ const ghostKeymap = Prec.highest(keymap.of([
       const remainder = suggestion.text.slice(len)
       const newPos = suggestion.pos + insert.length
 
+      onEvent('accepted_word')
       view.dispatch({
         changes: { from: suggestion.pos, insert },
         selection: EditorSelection.cursor(newPos),
@@ -394,6 +413,7 @@ const ghostKeymap = Prec.highest(keymap.of([
     key: 'Escape',
     run(view) {
       const had = view.state.field(suggestionField) != null
+      if (had) onEvent('dismissed_escape')
       view.dispatch({ effects: cancelSuggestion.of(null) })
       return had
     },
@@ -406,7 +426,8 @@ const ghostKeymap = Prec.highest(keymap.of([
       return true
     },
   },
-]))
+  ]))
+}
 
 // --- Blur/paste handler (also cancels pending work) ---
 
@@ -432,12 +453,13 @@ export const autocompleteCompartment = new Compartment()
 export function inlineAutocomplete(
   provider: CompletionProvider,
   filePath: string,
+  onEvent: SuggestionSink = noopSink,
 ): Extension {
   return [
     suggestionField,
     ghostDecorations,
-    createFetchPlugin(provider, filePath),
-    ghostKeymap,
+    createFetchPlugin(provider, filePath, onEvent),
+    createGhostKeymap(onEvent),
     eventHandlers,
   ]
 }
