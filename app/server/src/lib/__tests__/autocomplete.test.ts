@@ -238,11 +238,12 @@ describe('postprocess', () => {
     expect(postprocess('<|fim_middle|>hello world', ctx)).toBe('hello world')
   })
 
-  it('collapses to a single line and caps length (HIGH-2)', () => {
-    expect(postprocess('first line\nsecond line', ctx)).toBe('first line')
-    const long = 'lorem ipsum dolor sit amet '.repeat(20) // 540 chars, no long token
+  it('keeps up to two lines and caps length', () => {
+    expect(postprocess('first line\nsecond line', ctx)).toBe('first line\nsecond line')
+    expect(postprocess('one\ntwo\nthree', ctx)).toBe('one\ntwo')
+    const long = 'lorem ipsum dolor sit amet '.repeat(40) // >500 chars, no long token
     const result = postprocess(long, ctx)
-    expect(result.length).toBe(280)
+    expect(result.length).toBe(500)
     expect(long.startsWith(result)).toBe(true)
   })
 
@@ -275,16 +276,25 @@ describe('postprocess', () => {
     expect(postprocess('the lazy dog sleeps', c)).toBe('')
   })
 
-  it('rejects explanations', () => {
-    expect(postprocess('Here is the continuation you asked for.', ctx)).toBe('')
-    expect(postprocess('Sure, here you go.', ctx)).toBe('')
-  })
-
-  it('rejects new structural blocks (heading/list/table/quote)', () => {
+  it('rejects a new structural block on the current line', () => {
     expect(postprocess('# New heading', ctx)).toBe('')
     expect(postprocess('- a list item', ctx)).toBe('')
     expect(postprocess('| col | col |', ctx)).toBe('')
     expect(postprocess('> a quote', ctx)).toBe('')
+  })
+
+  it('allows a structural start on a NEW line (next bullet / heading / paragraph)', () => {
+    expect(postprocess('\n- next item', ctx)).toBe('\n- next item')
+    expect(postprocess('\n## Next section', ctx)).toBe('\n## Next section')
+    expect(postprocess('\n\nA new paragraph.', ctx)).toBe('\n\nA new paragraph.')
+  })
+
+  it('converts the model\'s <NL> token into real line breaks', () => {
+    // The model emits a visible token because it will not start output with a
+    // real newline; postprocess turns it into the actual break.
+    expect(postprocess('<NL><NL>The next paragraph.', ctx)).toBe('\n\nThe next paragraph.')
+    expect(postprocess('<NL>- next item', ctx)).toBe('\n- next item')
+    expect(postprocess('inline continuation', ctx)).toBe('inline continuation')
   })
 
   it('rejects a URL not already in context', () => {
@@ -403,8 +413,10 @@ describe('complete', () => {
     process.env.AUTOCOMPLETE_MODEL = 'test-model'
     mockCreate.mockResolvedValueOnce(chatResponse('text.'))
     await complete('# Topic\n\nThe point ', ' is clear.', 'doc.md')
-    const [sys, user] = mockCreate.mock.calls[0][0].messages
-    expect(sys.content).toContain('Markdown prose')
+    const messages = mockCreate.mock.calls[0][0].messages
+    const sys = messages[0]
+    const user = messages[messages.length - 1] // real prompt is last, after the few-shot turns
+    expect(sys.content).toContain('inline writing assistant')
     expect(user.content).toContain('Section: Topic')
     expect(user.content).toContain('<CURSOR>')
     expect(() => JSON.parse(user.content)).toThrow() // not a JSON FIM payload
@@ -415,11 +427,13 @@ describe('complete', () => {
     mockCreate.mockResolvedValue(chatResponse('text.'))
 
     await complete('# <CURSOR>\n\nThe point ', '', 'doc.md')
-    const withLiteral = mockCreate.mock.calls[0][0].messages[1].content.split('<CURSOR>').length - 1
+    let msgs = mockCreate.mock.calls[0][0].messages
+    const withLiteral = msgs[msgs.length - 1].content.split('<CURSOR>').length - 1
 
     mockCreate.mockClear()
     await complete('# Topic\n\nThe point ', '', 'doc.md')
-    const benign = mockCreate.mock.calls[0][0].messages[1].content.split('<CURSOR>').length - 1
+    msgs = mockCreate.mock.calls[0][0].messages
+    const benign = msgs[msgs.length - 1].content.split('<CURSOR>').length - 1
 
     // The literal heading marker must be stripped: same count as a clean heading.
     expect(withLiteral).toBe(benign)

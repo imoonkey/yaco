@@ -3,7 +3,7 @@ import { API, appendWorktree } from '../hooks/useApi'
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.ico', '.bmp'])
 const PDF_EXTS = new Set(['.pdf'])
 const HTML_EXTS = new Set(['.html', '.htm'])
-const MARKDOWN_EXTS = new Set(['.md', '.markdown'])
+const MARKDOWN_EXTS = new Set(['.md', '.markdown', '.mdx'])
 
 function getExt(path: string): string {
   const dot = path.lastIndexOf('.')

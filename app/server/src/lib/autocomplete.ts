@@ -11,8 +11,9 @@ const DEFAULT_BASE_URL = 'https://api.groq.com/openai/v1'
 const TIMEOUT_MS = 3000
 const MAX_TOKENS = 128
 
-// A single inline suggestion: one line, bounded length.
-const MAX_SUGGESTION_CHARS = 280
+// An inline suggestion: at most two lines (current line + next line/block), bounded length.
+const MAX_SUGGESTION_CHARS = 500
+const MAX_SUGGESTION_LINES = 2
 
 // Byte budgets for the prose context window (trimmed by whole lines).
 const PREFIX_MAX_BYTES = 3 * 1024
@@ -262,18 +263,32 @@ export function buildProseContext(prefix: string, suffix: string): ProseContext 
 function buildSystemPrompt(filePath?: string): string {
   const safePath = filePath ? sanitizeFilePath(filePath) : undefined
   return [
-    'You are an inline writing assistant that continues Markdown prose.',
-    `Insert text exactly at the ${CURSOR} marker to continue the current sentence or paragraph.`,
-    'Return only the text to insert — no explanations, labels, quotes, or code fences.',
-    'Match the surrounding tone, voice, and formatting.',
-    'Do not repeat text that already appears before or after the cursor.',
-    'Do not begin a new heading, list item, table, or block quote.',
-    'If a natural continuation is unclear, return an empty string.',
-    safePath ? `File: ${safePath}` : '',
+    'You are an inline writing assistant for Markdown documents.',
+    `Output ONLY the raw text to insert at the ${CURSOR} marker — no explanations, labels, quotes, or code fences.`,
+    '',
+    'Choose where the continuation goes:',
+    '- Cursor mid-line or mid-sentence: continue it inline.',
+    '- The current line is already complete (a finished heading, a finished list item, or a finished sentence that should be followed by something new): the continuation belongs on the NEXT line. Put it there by BEGINNING your output with the token <NL> (use <NL><NL> to start a new paragraph). Do not begin with an actual line break — always use the <NL> token for line breaks.',
+    '',
+    'Keep it short — at most two lines. Match the surrounding tone, voice, and Markdown style; reuse the list marker when continuing a list. Do not repeat nearby text or invent facts, links, or citations. If no confident continuation exists, output an empty string.',
+    safePath ? `\nFile: ${safePath}` : '',
   ]
-    .filter(Boolean)
+    .filter((line, i, arr) => line !== '' || (i > 0 && arr[i - 1] !== '')) // collapse blank runs
     .join('\n')
 }
+
+// Few-shot turns teaching the <NL> token. Models refuse to start output with a
+// real newline, so the model emits a visible <NL> token that postprocess turns
+// into a line break: inline mid-sentence, <NL><NL> for a new paragraph after a
+// complete heading, <NL> for the next list item.
+const FEW_SHOT: { role: 'user' | 'assistant'; content: string }[] = [
+  { role: 'user', content: `Current block (continue at ${CURSOR}):\nThe quick brown ${CURSOR}` },
+  { role: 'assistant', content: 'fox jumps over the lazy dog.' },
+  { role: 'user', content: `Current block (continue at ${CURSOR}):\n## Dispatch${CURSOR}` },
+  { role: 'assistant', content: '<NL><NL>The dispatch step selects every ready task and starts a worker for each.' },
+  { role: 'user', content: `Current block (continue at ${CURSOR}):\n- Read the task graph${CURSOR}` },
+  { role: 'assistant', content: '<NL>- Resolve the worktree for the task' },
+]
 
 function buildUserPrompt(ctx: ProseContext): string {
   const heading = ctx.headingPath.length ? ctx.headingPath.join(' > ') : '(document root)'
@@ -294,9 +309,6 @@ const SECRET_PATTERNS = [
   /\b(?:api[_-]?key|secret|password|passwd|token|access[_-]?key)\b\s*[:=]\s*\S{6,}/i,
   /[A-Za-z0-9+/=_-]{40,}/, // long high-entropy token, unnatural in prose
 ]
-
-const EXPLANATION_RE =
-  /^(here(?:'?s| is)\b|sure[,!. ]|certainly\b|of course\b|as an?\b|i (?:can|will|cannot|can't|'?ll|'?m)\b|note:|okay\b|sorry\b)/i
 
 /** Starts a new structural block (heading / list / table / block quote). */
 const STRUCTURAL_START_RE = /^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|\||>\s)/
@@ -365,20 +377,34 @@ function trimSuffixOverlap(candidate: string, suffix: string): string {
   return candidate
 }
 
+/** Keep at most `maxLines` non-empty lines; blank lines before/between them are preserved. */
+function clampLines(text: string, maxLines: number): string {
+  const kept: string[] = []
+  let content = 0
+  for (const line of text.split('\n')) {
+    if (line.trim()) {
+      if (content === maxLines) break
+      content++
+    }
+    kept.push(line)
+  }
+  return kept.join('\n').replace(/\s+$/, '')
+}
+
 /**
- * Normalize raw model output into a single bounded line and reject anything that
- * is not a clean prose continuation: blank, an echo of the line above or the
- * suffix, an explanation, a new URL, a new structural block, or secret-looking
- * text. Suffix overlap is trimmed before rejection.
+ * Normalize raw model output into at most two bounded lines and reject anything
+ * that is not a clean prose continuation: blank, an echo of the line above or the
+ * suffix, an explanation, a new URL, a structural block on the current line, or
+ * secret-looking text. Suffix overlap is trimmed before rejection.
  */
 export function postprocess(raw: string, ctx: PostprocessContext): string {
   let out = stripWrappers(raw)
-    .replace(/^\n+/, '') // drop leading blank lines, keep a leading space
-    .replace(/\s+$/, '') // trimEnd
+    .replace(/<NL>/gi, '\n') // the model's explicit next-line token
+    .replace(/\s+$/, '') // trimEnd; a leading newline is meaningful (continue on the next line)
+    .replace(/\n{3,}/g, '\n\n') // at most one blank line between the two lines
 
-  // Single line, bounded length.
-  const nl = out.indexOf('\n')
-  if (nl !== -1) out = out.slice(0, nl).replace(/\s+$/, '')
+  // Keep at most MAX_SUGGESTION_LINES non-empty lines (current line + next line/block).
+  out = clampLines(out, MAX_SUGGESTION_LINES)
   if (out.length > MAX_SUGGESTION_CHARS) out = out.slice(0, MAX_SUGGESTION_CHARS)
   if (!out.trim()) return ''
 
@@ -386,13 +412,14 @@ export function postprocess(raw: string, ctx: PostprocessContext): string {
   out = trimSuffixOverlap(out, ctx.afterText)
   if (!out.trim()) return ''
 
-  const firstLine = out
+  const head = out.split('\n', 1)[0]
   const trimmed = out.trim()
 
-  if (EXPLANATION_RE.test(trimmed)) return ''
-  if (STRUCTURAL_START_RE.test(firstLine)) return ''
+  // A structural marker is only wrong on the current line; on a new line it is a
+  // valid continuation (next bullet, next heading) — which is the point of this feature.
+  if (head.trim() && STRUCTURAL_START_RE.test(head)) return ''
 
-  if (ctx.lineAbove && (trimmed === ctx.lineAbove || firstLine.trim() === ctx.lineAbove)) return ''
+  if (ctx.lineAbove && (trimmed === ctx.lineAbove || head.trim() === ctx.lineAbove)) return ''
 
   const afterTrim = ctx.afterText.trim()
   if (afterTrim) {
@@ -536,6 +563,7 @@ export async function complete(
         model,
         messages: [
           { role: 'system', content: systemPrompt },
+          ...FEW_SHOT,
           { role: 'user', content: userPrompt },
         ],
         temperature: 0,

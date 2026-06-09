@@ -37,17 +37,10 @@ const noopSink: SuggestionSink = () => {}
 // Debounce before an auto-triggered request fires. Cautious on purpose: prose
 // writing should not flicker. Manual trigger bypasses the debounce.
 export const SUGGESTION_DEBOUNCE_MS = 1000
-// Minimum non-whitespace chars on the current line before auto-suggesting,
-// unless a fresh list/heading marker makes the position eligible immediately.
-export const MIN_CONTEXT_CHARS = 8
 const REQUEST_TIMEOUT_MS = 3000
 
 // Markdown is the only in-scope file type (mirrors binaryFiles MARKDOWN_EXTS).
-const MARKDOWN_EXTS = ['.md', '.markdown']
-// A freshly started list/heading marker — a marker followed by whitespace only,
-// with nothing typed after it yet. These are eligible before MIN_CONTEXT_CHARS;
-// `- a` / `## t` are NOT (content has begun, so the threshold applies).
-const FRESH_MARKER_RE = /^\s*([-*+]|\d+\.|#{1,6})\s+$/
+const MARKDOWN_EXTS = ['.md', '.markdown', '.mdx']
 
 // --- File eligibility (defensive; Editor also mounts only for markdown) ---
 
@@ -103,15 +96,20 @@ export function isMidWord(doc: Text, pos: number): boolean {
   return /\w/.test(charBefore) && /\w/.test(charAfter)
 }
 
-// Single insert string only — never feed a newline into the ghost.
-function trimToSingleLine(text: string): string {
-  return text.split('\n')[0]
-}
-
-// Length of the leading whitespace + next word token. Used by accept-word.
-export function nextWordLength(text: string): number {
-  const match = text.match(/^\s*\S+/)
-  return match ? match[0].length : text.length
+// The ghost may span the current line plus one next line/block. The server already
+// caps this; clamp defensively to MAX_GHOST_LINES non-empty lines.
+const MAX_GHOST_LINES = 2
+function clampGhostLines(text: string): string {
+  const kept: string[] = []
+  let content = 0
+  for (const line of text.split('\n')) {
+    if (line.trim()) {
+      if (content === MAX_GHOST_LINES) break
+      content++
+    }
+    kept.push(line)
+  }
+  return kept.join('\n').replace(/\s+$/, '')
 }
 
 // --- Suggestion state ---
@@ -145,7 +143,7 @@ const suggestionField = StateField.define<SuggestionState>({
   },
 })
 
-// --- Ghost text widget (single line only) ---
+// --- Ghost text widget (current line + an optional next line/block) ---
 
 const GHOST_STYLE = {
   color: 'var(--sol-base1)',
@@ -163,6 +161,7 @@ class InlineGhostWidget extends WidgetType {
     span.style.color = GHOST_STYLE.color
     span.style.opacity = GHOST_STYLE.opacity
     span.style.fontStyle = GHOST_STYLE.fontStyle
+    span.style.whiteSpace = 'pre-wrap' // honor newlines so a next-line suggestion wraps below the cursor
     span.className = 'cm-inline-ghost'
     return span
   }
@@ -232,25 +231,14 @@ function createFetchPlugin(provider: CompletionProvider, filePath: string, onEve
       fetchVersion++
     }
 
-    // Context guards evaluated against the current state. `manual` skips the
-    // length threshold but every other guard still applies.
-    function contextEligible(state: EditorState, manual: boolean): boolean {
+    // Context guards: only an empty selection, not mid-IME, not inside a fenced
+    // code block, and not mid-word. Triggering itself is gated on genuine typing.
+    function contextEligible(state: EditorState): boolean {
       const sel = state.selection.main
       if (!sel.empty) return false
       if (view.composing) return false
-
-      const pos = sel.head
-      const doc = state.doc
-      const line = doc.lineAt(pos)
-      const before = doc.sliceString(line.from, pos)
-      const after = doc.sliceString(pos, line.to)
-      if (before.trim().length === 0) return false // whitespace-only line
-      if (isInsideFence(doc, pos)) return false
-      if (isMidWord(doc, pos)) return false
-      // The fresh-marker exemption applies only when the WHOLE line is a bare
-      // marker — nothing typed after the cursor either, else content has begun.
-      const freshMarker = FRESH_MARKER_RE.test(before) && after.trim().length === 0
-      if (!manual && !freshMarker && before.trim().length < MIN_CONTEXT_CHARS) return false
+      if (isInsideFence(state.doc, sel.head)) return false
+      if (isMidWord(state.doc, sel.head)) return false
       return true
     }
 
@@ -273,7 +261,7 @@ function createFetchPlugin(provider: CompletionProvider, filePath: string, onEve
         if (view.state.selection.main.head !== pos) return
         if (view.state.doc.length !== docLen) return
 
-        const text = trimToSingleLine(raw)
+        const text = clampGhostLines(raw)
         if (text) {
           // shown: a server-produced ghost becomes visible.
           onEvent('shown')
@@ -293,7 +281,7 @@ function createFetchPlugin(provider: CompletionProvider, filePath: string, onEve
 
     function schedule(manual: boolean) {
       if (!enabled) return
-      if (!contextEligible(view.state, manual)) return
+      if (!contextEligible(view.state)) return
       // Auto-trigger never replaces a visible suggestion; manual may.
       if (!manual && view.state.field(suggestionField)) return
 
@@ -381,32 +369,6 @@ function createGhostKeymap(onEvent: SuggestionSink) {
     },
   },
   {
-    // Accept up to the next word boundary; keep the remainder anchored locally
-    // (no server round-trip) via the setSuggestion effect.
-    key: 'Mod-ArrowRight',
-    run(view) {
-      const suggestion = view.state.field(suggestionField)
-      if (!suggestion) return false
-
-      const len = nextWordLength(suggestion.text)
-      const insert = suggestion.text.slice(0, len)
-      const remainder = suggestion.text.slice(len)
-      const newPos = suggestion.pos + insert.length
-
-      onEvent('accepted_word')
-      view.dispatch({
-        changes: { from: suggestion.pos, insert },
-        selection: EditorSelection.cursor(newPos),
-        effects: setSuggestion.of(
-          remainder ? { text: remainder, pos: newPos, docVersion: suggestion.docVersion } : null,
-        ),
-        annotations: isolateHistory.of('full'),
-        userEvent: 'input.complete',
-      })
-      return true
-    },
-  },
-  {
     // Dismiss: cancel pending/in-flight work and clear the ghost. Consume the
     // key only when a ghost was visible, so Esc still reaches other handlers
     // (e.g. search panel) when there is nothing to dismiss.
@@ -419,8 +381,9 @@ function createGhostKeymap(onEvent: SuggestionSink) {
     },
   },
   {
-    // Manual invoke at the cursor (ignores the length threshold).
-    key: 'Alt-\\',
+    // Manual invoke at the cursor (ignores the length threshold). Alt-Tab keeps
+    // the suggestion keys clustered around Tab; on macOS this is Option-Tab.
+    key: 'Alt-Tab',
     run(view) {
       view.dispatch({ effects: requestSuggestion.of(null) })
       return true
