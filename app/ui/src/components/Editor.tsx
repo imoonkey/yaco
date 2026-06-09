@@ -16,6 +16,12 @@ import { diffGutterExtension, setDiffData } from '../lib/diffGutter'
 import type { DiffHunk } from '../lib/parseDiff'
 import { inlineAutocomplete, autocompleteCompartment } from '../lib/editor/inlineAutocomplete.js'
 import type { CompletionProvider } from '../lib/editor/inlineAutocomplete.js'
+import { isMarkdownFile } from '../lib/binaryFiles'
+
+// Inline suggestions are markdown-only and never run in read-only editors.
+function suggestionsEligible(filePath: string, readOnly: boolean, enabled: boolean): boolean {
+  return enabled && !readOnly && isMarkdownFile(filePath)
+}
 
 // Marks transactions dispatched programmatically (server-driven content refreshes)
 // so the change listener can skip them instead of echoing them back as user edits.
@@ -109,7 +115,7 @@ export function Editor({
   diffHunks,
   insertText = null,
   insertRequestKey,
-  autocompleteEnabled = true,
+  autocompleteEnabled = false,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -189,7 +195,9 @@ export function Editor({
         langCompartment.of(staticLang ?? []),
         EditorView.lineWrapping,
         EditorState.readOnly.of(readOnly),
-        readOnly || !autocompleteEnabled ? [] : autocompleteCompartment.of(inlineAutocomplete(autocompleteProvider, filePath)),
+        suggestionsEligible(filePath, readOnly, autocompleteEnabled)
+          ? autocompleteCompartment.of(inlineAutocomplete(autocompleteProvider, filePath))
+          : autocompleteCompartment.of([]),
         EditorView.domEventHandlers({
           focus: () => {
             onFocusRef.current?.()
@@ -350,7 +358,9 @@ export function Editor({
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
-    const ext = readOnly || !autocompleteEnabled ? [] : inlineAutocomplete(autocompleteProvider, filePath)
+    const ext = suggestionsEligible(filePath, readOnly, autocompleteEnabled)
+      ? inlineAutocomplete(autocompleteProvider, filePath)
+      : []
     view.dispatch({ effects: autocompleteCompartment.reconfigure(ext) })
   }, [autocompleteEnabled, readOnly, filePath])
 
