@@ -40,7 +40,7 @@ Adapter responsibilities, by capability:
 | `sessionId` | yes | pending sentinel, session-id env keys, start-resolution strategy, `resolve` from provider storage |
 | `hooks` | optional | hook events, install/merge, config path, install probe (drives `install` + `doctor`) |
 | `terminal` | optional | provider-runtime / headless-PTY terminal compatibility (see below) |
-| `history` | optional | History-tab rows + per-session summary labels; absent ⇒ provider omitted from history. Labels are the **first meaningful** user message — `<system-reminder>`/command-stdout dropped, slash commands restored to `/name args`, `/rename`·`/clear`·`/compact` and handle echoes skipped. Codex prefers `first_user_message` over the handle-echo `title`. → See: `src/lib/core/agent/providers/history.ts` |
+| `history` | optional | History-tab rows + per-session summary labels; absent ⇒ provider omitted from history. Labels are the **first meaningful** user message — `<system-reminder>`/command-stdout dropped, slash commands restored to `/name args` in both history rows and live labels, `/rename`·`/clear`·`/compact` and handle echoes skipped. Codex prefers `first_user_message` over the handle-echo `title`. → See: `src/lib/core/agent/providers/history.ts` |
 | `output` | optional | output cursor + line classification for reply streaming; absent ⇒ callers fall back to `capture` |
 | `projectMove` | optional | provider-native cwd-keyed rewrites (see [Project Move](#project-move)) |
 

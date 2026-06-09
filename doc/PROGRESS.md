@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-09: Startup interstitial replay guard
+
+**What changed:**
+- `waitForReady()` now treats startup interstitial auto-answers as one-shot per start and lets provider adapters suppress stale matches when a later prompt appears after the matched dialog text in captured output.
+- Codex and Claude startup trust/review interstitials use provider prompt glyphs only for that stale-scrollback suppression; Codex placeholder wording is not part of the match.
+- Added regression coverage for the stale Codex `Hooks need review` text followed by a live `› /` composer, plus a positive test that an active hook-review menu still receives `Down` + `Enter`.
+- Aligned the Claude history slash-command contract so history rows keep `/command args`, matching live summary labels.
+
+**Why:**
+- Codex hook-review text can remain in tmux scrollback after the real prompt is active. The old wide screen-capture match could send `Down` + `Enter` into a slash-command menu.
+- Slash-command summaries should preserve the command name for both history and live labels so the source of the request stays visible.
+
+**Key files:** `cli/src/commands/agent/start.ts`, `cli/src/lib/core/agent/providers/{claude,codex,history,types}.ts`, `cli/test/{lifecycle-guards,history}.test.ts`, `doc/main/cli/{architecture,providers}.md`
+**Verification:** `cd cli && bun run test:unit` passed (813 tests); `yaco agent start claude ... --wait` review of commit `02ec0db` reported no required code fixes and no file changes.
+**Commit:** `02ec0db` (code); docs update follows.
+**Next:** If a real Codex trust-folder or `Press t` overlay screen is observed with provider prompt glyphs below the matched phrase, make that adapter pattern engulf the whole active screen like the hook-review matcher.
+**Blockers:** None.
+
 ## 2026-06-09: Codex start rename is async title sync
 
 **What changed:**
