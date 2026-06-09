@@ -16,13 +16,15 @@ import {
 // (App.tsx keys it on `${project}:${worktree}`), so the leaving scope is flushed
 // and the entering scope is reloaded from ITS OWN key. These specs pin that the
 // four scope-bearing surfaces — layout, drafts, the quick-open index, and git
-// changes — do NOT bleed across a switch. Every assertion can fail if the `:wt:`
-// scoping regresses (state would leak between main and the worktree).
+// changes — do NOT bleed across a switch, in BOTH directions. Every assertion can
+// fail if the `:wt:` scoping regresses (state would leak between main and worktree).
 //
 // The fixture (createWorktreeFixture) registers an isolated per-run project with
 // an active `auth-v2` worktree that, relative to the main checkout, has an extra
 // untracked file `wip.txt` and an extra committed file `src/v2.js`. `README.md`
 // and `src/index.js` predate the worktree branch, so they exist in both scopes.
+// The main checkout additionally carries the `.worktrees/` dir (the linked
+// worktree checkouts) which is absent from the worktree's own tree.
 
 const AUTH = 'auth-v2'
 // The Projects-section list body where project + worktree sub-items render.
@@ -64,11 +66,13 @@ async function switchToWorktree(page: Page, slug: string): Promise<void> {
   await expect(fileTree(page).getByText('wip.txt', { exact: true })).toBeVisible({ timeout: 10_000 })
 }
 
-/** Click the project header to return to the main checkout; confirm the
- *  worktree-only file is gone. */
+/** Click the project header to return to the main checkout; confirm the tree
+ *  re-rooted to main — its main-only `.worktrees/` dir is present (proving the
+ *  tree actually rendered, not just empty) AND the worktree-only file is gone. */
 async function switchToMain(page: Page, name: string): Promise<void> {
   await page.locator('button', { hasText: name }).first().click()
-  await expect(fileTree(page).getByText('wip.txt', { exact: true })).toHaveCount(0, { timeout: 10_000 })
+  await expect(fileTree(page).getByText('.worktrees', { exact: true })).toBeVisible({ timeout: 10_000 })
+  await expect(fileTree(page).getByText('wip.txt', { exact: true })).toHaveCount(0)
 }
 
 test.describe('Worktree-scoped persistence isolation', () => {
@@ -85,40 +89,43 @@ test.describe('Worktree-scoped persistence isolation', () => {
   test('layout state is scoped per worktree and does not bleed across a switch', async ({ page }) => {
     await openFixture(page, fixture.name)
 
-    // Main scope: right panel visible by default → hide it (Cmd+Shift+B).
+    // Poll the PERSISTED value (debounced save) instead of sleeping for the debounce.
+    const persistedRightPanel = (worktree: string | null) =>
+      expect.poll(
+        async () => (await getWorkspaceState(page, fixture.name, worktree))?.layout?.showRightPanel,
+        { timeout: 8_000 },
+      )
+
+    // Main scope: right panel visible by default → hide it (Cmd+Shift+B). DOM and
+    // the main key both flip; the worktree key is untouched.
     await expect(activityPanel(page)).toBeVisible()
     await page.keyboard.press('Meta+Shift+b')
-    await page.waitForTimeout(600)
     await expect(activityPanel(page)).toBeHidden()
-    expect((await getWorkspaceState(page, fixture.name, null))?.layout?.showRightPanel).toBe(false)
+    await persistedRightPanel(null).toBe(false)
 
     // Switch to the worktree: its layout is independent, so the panel is back at
     // the default (visible) — main's hide did NOT bleed in.
     await switchToWorktree(page, AUTH)
     await expect(activityPanel(page)).toBeVisible()
 
-    // Materialize a distinct end-state in the worktree scope (toggle off, then on)
-    // so its key holds showRightPanel=true while main holds false.
+    // Materialize a distinct end-state in the worktree scope (toggle off, then on —
+    // the toBeHidden between presses paces them without a fixed sleep) so its key
+    // holds showRightPanel=true while main holds false.
     await page.keyboard.press('Meta+Shift+b')
-    await page.waitForTimeout(400)
     await expect(activityPanel(page)).toBeHidden()
     await page.keyboard.press('Meta+Shift+b')
-    await page.waitForTimeout(600)
     await expect(activityPanel(page)).toBeVisible()
 
     // The two scopes are persisted under distinct keys (the `:wt:` suffix).
-    const mainState = await getWorkspaceState(page, fixture.name, null)
-    const wtState = await getWorkspaceState(page, fixture.name, AUTH)
-    expect(wtState).toBeTruthy()
-    expect(mainState?.layout?.showRightPanel).toBe(false)
-    expect(wtState?.layout?.showRightPanel).toBe(true)
+    await persistedRightPanel(AUTH).toBe(true)
+    await persistedRightPanel(null).toBe(false)
 
     // Back to main: its hidden panel survived; the worktree's visible did NOT
     // bleed back.
     await switchToMain(page, fixture.name)
     await expect(activityPanel(page)).toBeHidden()
-    expect((await getWorkspaceState(page, fixture.name, null))?.layout?.showRightPanel).toBe(false)
-    expect((await getWorkspaceState(page, fixture.name, AUTH))?.layout?.showRightPanel).toBe(true)
+    await persistedRightPanel(null).toBe(false)
+    await persistedRightPanel(AUTH).toBe(true)
   })
 
   test('git changes are scoped to the active worktree', async ({ page }) => {
@@ -168,10 +175,28 @@ test.describe('Worktree-scoped persistence isolation', () => {
     await expect(searchRows(page).filter({ hasText: 'wip.txt' })).toHaveCount(1, { timeout: 5_000 })
     await page.keyboard.press('Escape')
     await expect(searchInput(page)).toHaveCount(0)
+
+    // Round-trip back to main: the worktree-only wip.txt is absent from main's
+    // index again (the worktree search did not pollute main's `:wt:`-keyed cache).
+    await switchToMain(page, fixture.name)
+    await page.keyboard.press('Meta+p')
+    await expect(searchInput(page)).toBeVisible({ timeout: 10_000 })
+    await searchInput(page).fill('wip')
+    await expect(searchRows(page).filter({ hasText: 'wip.txt' })).toHaveCount(0)
+    await expect(page.getByText('No files found')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(searchInput(page)).toHaveCount(0)
   })
 
   test('unsaved drafts do not bleed across a worktree switch', async ({ page }) => {
     await openFixture(page, fixture.name)
+
+    // Poll the PERSISTED draft instead of sleeping for the drafts debounce (500ms).
+    const persistedDraft = (worktree: string | null) =>
+      expect.poll(
+        async () => (await getDraftsState(page, fixture.name, worktree))?.files?.[SHARED_FILE]?.draft ?? '',
+        { timeout: 8_000 },
+      )
 
     // Main scope: open the shared file and type an unsaved edit → a draft keyed to
     // the main scope.
@@ -180,11 +205,8 @@ test.describe('Worktree-scoped persistence isolation', () => {
     await expect(editor).toContainText('export const main', { timeout: 10_000 })
     await editor.click()
     await page.keyboard.type(`${MAIN_DRAFT_MARKER} `)
-    await page.waitForTimeout(1200) // drafts debounce (500ms) + capture
-
     await expect(editor).toContainText(MAIN_DRAFT_MARKER)
-    const mainDrafts = await getDraftsState(page, fixture.name, null)
-    expect(mainDrafts?.files?.[SHARED_FILE]?.draft).toContain(MAIN_DRAFT_MARKER)
+    await persistedDraft(null).toContain(MAIN_DRAFT_MARKER)
 
     // Switch to the worktree (unmount flushes main's draft to its own key), then
     // open the SAME shared file there.
@@ -196,11 +218,14 @@ test.describe('Worktree-scoped persistence isolation', () => {
     // The worktree editor shows committed content — the main draft did NOT bleed
     // in, and the worktree drafts key holds no draft for this file.
     await expect(wtEditor).not.toContainText(MAIN_DRAFT_MARKER)
-    const wtDrafts = await getDraftsState(page, fixture.name, AUTH)
-    expect(wtDrafts?.files?.[SHARED_FILE]?.draft ?? null).toBeNull()
+    expect((await getDraftsState(page, fixture.name, AUTH))?.files?.[SHARED_FILE]?.draft ?? null).toBeNull()
 
-    // Main's draft is still intact under its own key.
-    expect((await getDraftsState(page, fixture.name, null))?.files?.[SHARED_FILE]?.draft)
-      .toContain(MAIN_DRAFT_MARKER)
+    // Round-trip: back in main, reopen the file — its draft renders again from
+    // main's own key (proving the worktree visit neither dropped nor overwrote it).
+    await switchToMain(page, fixture.name)
+    await openFileViaSearch(page, 'index.js')
+    const mainEditor = page.locator('.cm-content')
+    await expect(mainEditor).toContainText(MAIN_DRAFT_MARKER, { timeout: 10_000 })
+    await persistedDraft(null).toContain(MAIN_DRAFT_MARKER)
   })
 })
