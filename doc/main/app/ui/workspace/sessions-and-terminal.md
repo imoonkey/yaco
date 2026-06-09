@@ -190,22 +190,22 @@ Fallback: `document.execCommand('copy')` when async Clipboard API is unavailable
 
 ### Codex Input Prompt Frame
 
-Codex terminal panes draw a browser-side overlay around visible line-start `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). Frame detection intentionally ignores xterm background attributes: Codex may paint prompt/user-message padding rows when OSC 11 background reports are available, but the overlay boundary is based only on prompt text and structural Codex rows. It extends until a line-start `•` reply row, a line-start `■` interruption row, a line-start `$` output/shell marker, a Codex status line at the viewport tail (`tab to queue message` or dot-separated status text), or an active command suggestion table; when no boundary is visible, trailing blank viewport rows are trimmed back to the last nonblank prompt row. Suggestion tables stay below the frame: `/` completion only counts when the first prompt row starts with `/`, while `$` plugin/skill completion counts when `$` appears in the current prompt's last nonblank row at the start of text or after whitespace and the following rows have the `Name  [Plugin|Skill] ...` table shape. It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
+Codex terminal panes draw a browser-side overlay around visible line-start `›` input prompt rows. The overlay is presentation-only: it scans the current xterm viewport after cursor, write, scroll, and resize events, coalesced through `requestAnimationFrame`, and renders cyan horizontal rules above and below each visible Codex prompt (including historical user prompts). Frame detection intentionally ignores xterm background attributes: Codex may paint prompt/user-message padding rows when OSC 11 background reports are available, but the overlay boundary is based only on prompt text and structural Codex rows. The horizontal rules are clipped to `.xterm-screen` width, not the outer terminal container, so they do not extend across the right-side clip cushion / cell-rounding remainder. The frame extends until a line-start `•` reply row, a line-start `■` interruption row, a line-start `$` output/shell marker, a Codex status line at the viewport tail (`tab to queue message` or dot-separated status text), or an active command suggestion table; when no boundary is visible, trailing blank viewport rows are trimmed back to the last nonblank prompt row. Suggestion tables stay below the frame: `/` completion only counts when the first prompt row starts with `/`, while `$` plugin/skill completion counts when `$` appears in the current prompt's last nonblank row at the start of text or after whitespace and the following rows have the `Name  [Plugin|Skill] ...` table shape. It does not write to tmux, alter provider output, or replace the OSC color-query compatibility path.
 
 ## Terminal Fit
 
 Custom fit calculation:
-1. Measures real viewport scrollbar width
-2. Subtracts scrollbar + right gutter (2px inner + 2px outer) from available width
-3. Computes columns and rows from cell dimensions
-4. Initial dimensions sent in WebSocket URL query params
-5. `requestAnimationFrame` refit + `term.refresh()` after mount — ensures xterm canvas paints correctly on mobile where container dimensions may not be final in the first frame
+1. Disables browser-side xterm scrollback (`scrollback: 0`) because every embedded terminal attaches to tmux and tmux owns history.
+2. Computes columns and rows from the parent size and xterm cell dimensions without subtracting a hidden scrollbar gutter.
+3. Reserves one right-side cell as a DOM-renderer clip cushion. xterm v6 sets each row to `overflow:hidden`; the app keeps that vertical clipping but sets rows to `box-sizing: content-box` and adds matching right padding so the row clip box extends one cell beyond the terminal content width.
+4. Initial dimensions are sent in the WebSocket URL query params.
+5. `requestAnimationFrame` refit + `term.refresh()` after mount — ensures xterm canvas paints correctly on mobile where container dimensions may not be final in the first frame.
 
 ## Touch Scrolling
 
 See [../mobile.md](../mobile.md) for full touch handling details. Summary:
 
 - Touch events converted to synthetic WheelEvent on xterm's screen element
-- Goes through xterm's normal wheel pipeline (scrollback for shell, mouse escapes for tmux)
+- Goes through xterm's normal wheel pipeline into tmux mouse handling/copy-mode history
 - `stopPropagation()` prevents xterm v6's document-level gesture stealing
 - `touchcancel` handler for iOS interruptions

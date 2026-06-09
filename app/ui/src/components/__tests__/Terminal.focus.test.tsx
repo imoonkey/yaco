@@ -97,13 +97,18 @@ vi.mock('@xterm/xterm', () => {
         }
       },
     }
-    options: Record<string, unknown> = {}
+    options: Record<string, unknown>
     buffer = { active: fakeBuffer }
     focus = focusSpy
-    constructor() {
+    constructor(options: Record<string, unknown> = {}) {
+      this.options = { ...options }
       this.element = document.createElement('div')
       const screen = document.createElement('div')
       screen.className = 'xterm-screen'
+      Object.defineProperty(screen, 'clientWidth', {
+        configurable: true,
+        get: () => 786,
+      })
       const viewport = document.createElement('div')
       viewport.className = 'xterm-viewport'
       const scrollable = document.createElement('div')
@@ -308,6 +313,7 @@ describe('Terminal focus handoff', () => {
     await waitFor(() => {
       const frame = container.querySelector<HTMLElement>('[data-terminal-input-frame="true"]')
       expect(frame).not.toBeNull()
+      expect(frame?.style.width).toBe('786px')
       expect(frame?.style.top).toBe('0px')
       expect(frame?.style.height).toBe('39px')
     })
@@ -689,13 +695,14 @@ describe('Terminal focus handoff', () => {
     expect(container.querySelector('[data-terminal-input-frame="true"]')).toBeNull()
   })
 
-  it('reserves xterm internal scrollbar width when fitting columns', async () => {
+  it('reserves one cell as a right clip cushion without counting hidden xterm scrollbars', async () => {
     const Terminal = await loadTerminal()
-    render(<Terminal sessionName="session-a" />)
+    const { container } = render(<Terminal sessionName="session-a" />)
 
     await waitFor(() => {
-      expect(resizeSpy).toHaveBeenCalledWith(78, 20)
+      expect(resizeSpy).toHaveBeenCalledWith(79, 20)
     })
+    expect(container.querySelector<HTMLElement>('.yaco-terminal-xterm')?.style.getPropertyValue('--yaco-terminal-right-clip-cushion')).toBe('10px')
   })
 
   it('sends external terminal text as text-paste instead of raw input', async () => {

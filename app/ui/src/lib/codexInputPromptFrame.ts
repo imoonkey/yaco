@@ -4,6 +4,7 @@ import type { TerminalInputPromptFrame } from './providerUi'
 export interface InputPromptFrame {
   top: number
   height: number
+  width: number
 }
 
 type PromptFrameBoundary = 'prompt-menu' | 'reply' | 'status'
@@ -15,6 +16,7 @@ type TerminalWithRenderMetrics = XTerm & {
       dimensions?: {
         css?: {
           cell?: {
+            width: number
             height: number
           }
         }
@@ -25,7 +27,7 @@ type TerminalWithRenderMetrics = XTerm & {
 
 function sameInputPromptFrame(a: InputPromptFrame | null, b: InputPromptFrame | null): boolean {
   if (a === null || b === null) return a === b
-  return a.top === b.top && a.height === b.height
+  return a.top === b.top && a.height === b.height && a.width === b.width
 }
 
 export function sameInputPromptFrames(a: readonly InputPromptFrame[], b: readonly InputPromptFrame[]): boolean {
@@ -118,16 +120,25 @@ function readPromptFrameBoundary(
     : null
 }
 
+function readScreenWidth(term: XTerm, cellWidth: number): number {
+  const screen = term.element?.querySelector<HTMLElement>('.xterm-screen')
+  const rectWidth = screen?.getBoundingClientRect().width ?? 0
+  if (rectWidth > 0) return rectWidth
+  if (screen?.clientWidth) return screen.clientWidth
+  return term.cols * cellWidth
+}
+
 export function readCodexInputPromptFrames(term: XTerm, config?: TerminalInputPromptFrame): InputPromptFrame[] {
   if (!config) return []
 
-  const cellHeight = (term as TerminalWithRenderMetrics)._core?._renderService?.dimensions?.css?.cell?.height
-  if (!cellHeight) return []
+  const cell = (term as TerminalWithRenderMetrics)._core?._renderService?.dimensions?.css?.cell
+  if (!cell?.height || !cell.width) return []
+  const frameWidth = readScreenWidth(term, cell.width)
 
   const buffer = term.buffer.active
   const firstRow = buffer.viewportY
   const lastRow = Math.min(buffer.viewportY + term.rows - 1, buffer.length - 1)
-  const fullHeight = term.rows * cellHeight
+  const fullHeight = term.rows * cell.height
   const frames: InputPromptFrame[] = []
 
   for (let row = firstRow; row <= lastRow; row++) {
@@ -167,9 +178,9 @@ export function readCodexInputPromptFrames(term: XTerm, config?: TerminalInputPr
     const adjustedBottomRow = boundaryRow === null
       ? Math.max(row, readLastNonblankRow(buffer, row, bottomRow) - 1)
       : Math.max(row, bottomRow - boundaryTrimRows)
-    const top = Math.max(0, (row - buffer.viewportY) * cellHeight - config.topPadding)
-    const bottom = Math.min(fullHeight, (adjustedBottomRow - buffer.viewportY + 1) * cellHeight + config.bottomPadding)
-    frames.push({ top, height: bottom - top })
+    const top = Math.max(0, (row - buffer.viewportY) * cell.height - config.topPadding)
+    const bottom = Math.min(fullHeight, (adjustedBottomRow - buffer.viewportY + 1) * cell.height + config.bottomPadding)
+    frames.push({ top, height: bottom - top, width: frameWidth })
     row = bottomRow
   }
 

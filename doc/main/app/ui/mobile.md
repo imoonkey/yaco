@@ -110,9 +110,7 @@ On desktop, right-click opens context menus (file explorer, project list, sessio
 
 1. Terminal captures `touchstart`, `touchmove`, `touchend` events
 2. Touch deltas are converted to synthetic `WheelEvent` on xterm's screen element
-3. Events go through xterm's normal wheel pipeline:
-   - Shell sessions: scrollback navigation
-   - tmux sessions: mouse escape sequences
+3. Events go through xterm's normal wheel pipeline into tmux mouse handling/copy-mode history
 4. `stopPropagation()` on touch handlers prevents xterm v6's document-level gesture system from stealing events via `preventDefault()`
 5. `touchcancel` handler for iOS Safari system interruptions (e.g. swipe to switch apps)
 

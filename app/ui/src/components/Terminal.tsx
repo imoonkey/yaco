@@ -71,6 +71,8 @@ const WS_RECONNECT_MAX_MS = 15000
 const WS_PRESSURE_INITIAL_MS = 5000
 const WS_PRESSURE_MAX_MS = 60000
 const WS_PRESSURE_CLOSE_CODE = 4002
+const TERMINAL_SCROLLBACK_ROWS = 0
+const TERMINAL_RIGHT_CLIP_CUSHION_CELLS = 1
 const INPUT_PROMPT_FRAME_COLOR = 'color-mix(in srgb, var(--sol-cyan) 62%, var(--sol-editor-bg))'
 
 type TerminalWithCore = XTerm & {
@@ -102,8 +104,11 @@ function fitTerminal(term: XTerm): void {
   const viewport = element.querySelector<HTMLElement>('.xterm-viewport')
   const nativeScrollbarWidth = viewport ? Math.max(0, viewport.offsetWidth - viewport.clientWidth) : 0
   const xtermScrollbar = element.querySelector<HTMLElement>('.xterm-scrollable-element > .scrollbar.vertical')
-  const scrollbarWidth = Math.max(nativeScrollbarWidth, xtermScrollbar?.offsetWidth ?? 0)
-  const cols = Math.max(2, Math.floor((parent.clientWidth - paddingX - scrollbarWidth) / cell.width))
+  const scrollbarWidth = term.options.scrollback === 0 ? 0 : Math.max(nativeScrollbarWidth, xtermScrollbar?.offsetWidth ?? 0)
+  const rightClipCushion = Math.ceil(cell.width * TERMINAL_RIGHT_CLIP_CUSHION_CELLS)
+  element.style.setProperty('--yaco-terminal-right-clip-cushion', `${rightClipCushion}px`)
+  const availableWidth = parent.clientWidth - paddingX - scrollbarWidth - rightClipCushion
+  const cols = Math.max(2, Math.floor(availableWidth / cell.width))
   const rows = Math.max(1, Math.floor((parent.clientHeight - paddingY) / cell.height))
   if (term.cols === cols && term.rows === rows) return
 
@@ -278,6 +283,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
       fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim() || "ui-monospace, monospace",
       fontSize: 12,
       lineHeight: 1.4,
+      // Workflow attaches to tmux sessions; tmux owns scrollback/history. Keeping
+      // browser-side xterm scrollback reserves a permanent ~14px right gutter,
+      // which costs 1-2 usable terminal columns in the embedded pane.
+      scrollback: TERMINAL_SCROLLBACK_ROWS,
       // Real value is applied by the provider effect below (keeps the xterm
       // instance from being recreated on session switch). 1 = no adjustment.
       minimumContrastRatio: 1,
@@ -290,6 +299,8 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
     term.loadAddon(new WebLinksAddon())
     term.open(container)
     if (term.element) {
+      term.element.classList.add('yaco-terminal-xterm')
+      term.element.style.setProperty('--yaco-terminal-right-clip-cushion', '0px')
       term.element.style.boxSizing = 'border-box'
       term.element.style.height = '100%'
       term.element.style.backgroundColor = 'var(--sol-editor-bg)'
@@ -687,8 +698,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
             key={`${frame.top}:${frame.height}:${index}`}
             aria-hidden="true"
             data-terminal-input-frame="true"
-            className="pointer-events-none absolute inset-x-0 z-[4]"
+            className="pointer-events-none absolute z-[4]"
             style={{
+              left: 0,
+              width: frame.width,
               top: frame.top,
               height: frame.height,
               borderTop: `${getProviderUi(resolvedProvider).terminal.inputPromptFrame?.lineWidth ?? 1}px solid ${INPUT_PROMPT_FRAME_COLOR}`,
