@@ -18,6 +18,7 @@ const PERMISSION_FLAGS = [
 
 // Trust-folder dialog shown on first launch in an untrusted directory.
 const TRUST_PATTERN = /trust this folder|Yes, I trust/i;
+const INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN = /^❯/m;
 
 export const claudeProvider: TuiProvider = {
   id: "claude",
@@ -59,7 +60,7 @@ export const claudeProvider: TuiProvider = {
     },
 
     startupInterstitials: [
-      { pattern: TRUST_PATTERN, keys: ["Enter"] },
+      { pattern: TRUST_PATTERN, keys: ["Enter"], skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
     ],
   },
 

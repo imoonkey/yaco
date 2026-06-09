@@ -27,6 +27,7 @@ const LAUNCH_ENV: Record<string, string> = { COLORTERM: "truecolor" };
 const TRUST_PATTERN = /trust this folder|Yes, I trust/i;
 const HOOK_REVIEW_PATTERN = /Hooks need review[\s\S]*Trust all and continue/i;
 const HOOK_TRUST_OVERLAY_PATTERN = /Press t to trust all/i;
+const INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN = /^\s*›/m;
 
 function envPrefix(env: Record<string, string>): string[] {
   return Object.entries(env).map(([k, v]) => `${k}=${v}`);
@@ -69,10 +70,10 @@ export const codexProvider: TuiProvider = {
     },
 
     startupInterstitials: [
-      { pattern: TRUST_PATTERN, keys: ["Enter"] },
+      { pattern: TRUST_PATTERN, keys: ["Enter"], skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
       // Cursor starts on "Review hooks"; Down + Enter picks "Trust all and continue".
-      { pattern: HOOK_REVIEW_PATTERN, keys: ["Down", "Enter"], settleMs: 100 },
-      { pattern: HOOK_TRUST_OVERLAY_PATTERN, keys: ["t"] },
+      { pattern: HOOK_REVIEW_PATTERN, keys: ["Down", "Enter"], settleMs: 100, skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
+      { pattern: HOOK_TRUST_OVERLAY_PATTERN, keys: ["t"], skipWhenPattern: INPUT_PROMPT_AFTER_INTERSTITIAL_PATTERN },
     ],
   },
 

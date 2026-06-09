@@ -28,11 +28,14 @@ export interface StartContext {
 
 /** A startup TUI dialog the runtime auto-answers while waiting for ready
  *  (trust folder, hook review, ...). `keys` are sent in order; `settleMs` is
- *  the pause between keys. */
+ *  the pause between keys. `skipWhenPattern` suppresses stale scrollback matches
+ *  when it appears after the matched interstitial text, such as a later prompt
+ *  proving the captured dialog is already historical. */
 export interface StartupInterstitial {
   pattern: RegExp;
   keys: readonly string[];
   settleMs?: number;
+  skipWhenPattern?: RegExp;
 }
 
 export interface ProviderCommand {

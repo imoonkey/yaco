@@ -48,6 +48,7 @@ let checkAliveIdx: number;
 let hasSessionIdx: number;
 let resolveSessionIdCalls: number;
 let sendKeysCaptures: Array<{ handle: string; stateAtCallTime: unknown }>;
+let rawKeyCaptures: Array<{ handle: string; key: string }>;
 let responderCaptures: Array<{ handle: string; stateAtCallTime: unknown }>;
 
 function resetMocks(): void {
@@ -63,6 +64,7 @@ function resetMocks(): void {
   hasSessionIdx = 0;
   resolveSessionIdCalls = 0;
   sendKeysCaptures = [];
+  rawKeyCaptures = [];
   responderCaptures = [];
 }
 
@@ -95,7 +97,9 @@ mock.module("../src/lib/core/agent/tmux.ts", () => ({
   capturePane: () => mockConfig.captureOutput,
   createSession: () => {},
   getAgentPid: () => mockConfig.agentPid,
-  sendRawKeys: () => {},
+  sendRawKeys: (handle: string, key: string) => {
+    rawKeyCaptures.push({ handle, key });
+  },
   startOscColorQueryResponder: (handle: string) => {
     const path = join(stateDir(), `${handle}.json`);
     let state = null;
@@ -613,6 +617,51 @@ describe("start --json contract guarantees", () => {
     expect(state.pid).toBe(42002);
     expect(state.sessionId).toBe("pending:awaiting-first-prompt");
     expect(resolveSessionIdCalls).toBe(0);
+  });
+
+  it("does not replay Codex hook-review keys when the slash prompt is already active", () => {
+    const handle = `${TEST_PREFIX}-codex-slash-prompt`;
+    trackHandle(handle);
+
+    mockConfig.checkSessionAlive = [true];
+    mockConfig.hasSession = [false, false, true, true, true];
+    mockConfig.captureOutput = [
+      "Hooks need review",
+      "",
+      "Review hooks",
+      "Trust all and continue",
+      "",
+      "› /",
+    ].join("\n");
+    mockConfig.agentPid = 42003;
+
+    const state = start("codex", ["--name", handle]);
+
+    expect(state.handle).toBe(handle);
+    expect(rawKeyCaptures).toEqual([]);
+  });
+
+  it("still answers the active Codex hook-review menu", () => {
+    const handle = `${TEST_PREFIX}-codex-hook-review`;
+    trackHandle(handle);
+
+    mockConfig.checkSessionAlive = [true];
+    mockConfig.hasSession = [false, false, true, false];
+    mockConfig.captureOutput = [
+      "Hooks need review",
+      "",
+      "› Review hooks",
+      "  Trust all and continue",
+    ].join("\n");
+    mockConfig.agentPid = 42004;
+
+    const state = start("codex", ["--name", handle]);
+
+    expect(state.handle).toBe(handle);
+    expect(rawKeyCaptures).toEqual([
+      { handle, key: "Down" },
+      { handle, key: "Enter" },
+    ]);
   });
 
   it("returns state with pid > 0 and non-empty sessionId", () => {

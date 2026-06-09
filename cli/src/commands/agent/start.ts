@@ -31,6 +31,17 @@ const STABLE_IDLE_MS = 1000;
 const SID_POLL_TIMEOUT_MS = 3000;
 const SID_POLL_MS = 200;
 
+function findPatternMatch(pattern: RegExp, output: string): RegExpExecArray | null {
+  pattern.lastIndex = 0;
+  const match = pattern.exec(output);
+  pattern.lastIndex = 0;
+  return match;
+}
+
+function interstitialKey(interstitial: StartupInterstitial, index: number): string {
+  return `${index}:${interstitial.pattern.source}:${interstitial.pattern.flags}`;
+}
+
 function sessionIdPriority(sessionId: string): number {
   if (!sessionId) return 0;
   if (sessionId === PENDING_SESSION_ID) return 1;
@@ -78,9 +89,18 @@ function handleStartupInterstitial(
   handle: string,
   output: string,
   interstitials: readonly StartupInterstitial[],
+  handled: Set<string>,
 ): boolean {
-  for (const interstitial of interstitials) {
-    if (!interstitial.pattern.test(output)) continue;
+  for (let i = 0; i < interstitials.length; i++) {
+    const interstitial = interstitials[i]!;
+    const key = interstitialKey(interstitial, i);
+    if (handled.has(key)) continue;
+    const match = findPatternMatch(interstitial.pattern, output);
+    if (!match) continue;
+    const afterMatch = output.slice(match.index + match[0].length);
+    if (interstitial.skipWhenPattern && findPatternMatch(interstitial.skipWhenPattern, afterMatch)) continue;
+
+    handled.add(key);
     interstitial.keys.forEach((key, i) => {
       if (i > 0 && interstitial.settleMs) Bun.sleepSync(interstitial.settleMs);
       sendRawKeys(handle, key);
@@ -99,6 +119,7 @@ function waitForReady(
 ): boolean {
   const start = Date.now();
   let idleSince: number | null = null;
+  const handledInterstitials = new Set<string>();
   while (Date.now() - start < timeoutMs) {
     if (!hasSession(handle)) return false;
 
@@ -109,7 +130,7 @@ function waitForReady(
     try {
       const raw = capturePane(handle, 80);
       const output = stripAnsi(raw);
-      if (handleStartupInterstitial(handle, output, interstitials)) {
+      if (handleStartupInterstitial(handle, output, interstitials, handledInterstitials)) {
         idleSince = null;
         Bun.sleepSync(POLL_MS);
         continue;
