@@ -1,15 +1,13 @@
-import { test, expect, type APIRequestContext } from '@playwright/test'
+import { test, expect, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import {
   provisionWorkspace,
   createFixtureProject,
   createWorktreeFixture,
   selectProject,
   waitForAppReady,
-  createTestFile,
   openFileViaSearch,
-  waitForSSERefresh,
-  uniqueFileName,
   runTag,
+  sidebar,
   activityPanel,
   sectionHeader,
   getWorkspaceState,
@@ -20,14 +18,23 @@ import {
 // state machine behind Cmd+W — against the CURRENT renderer, so the flexible-layout
 // refactor can migrate it field-by-field without regressing close routing:
 //   1. search-open      -> close the quick-open overlay
-//   2. editor focus     -> close the active editor tab
+//   2. editor focus     -> close the active editor tab (session stays attached)
 //   3. tasks tab focus  -> close the tab AND sync the sidebar Tasks toggle off
-//   4. session focus    -> detach the active session
-//   5. terminal focus   -> detach the active session
-// Each test asserts the surface was actually open/attached first, then that Cmd+W
-// changed exactly that surface — no branch passes vacuously.
+//   4. session focus    -> detach the session (editor tab stays open)
+//   5. terminal focus   -> detach the session (editor tab stays open)
+//
+// The session/terminal/editor branches are characterized with BOTH an editor tab
+// and an attached session present, then asserting the precise outcome of each
+// focus target. This defeats the generic fallback `closeActiveTab() ||
+// detachActiveSession()`: if the session branch were broken, the fallback would
+// close the tab instead of detaching (and vice-versa), so "tab survived + session
+// detached" / "tab closed + session attached" can only hold if the right branch ran.
 
 const TERMINAL_PLACEHOLDER = 'Select a session to attach terminal'
+const README_TAB = 'README.md'
+
+let fixture: FixtureProject | null = null
+const openedSessions: string[] = []
 
 /** Start a real shell session (live tmux PTY) in the given cwd, under a unique
  *  per-run name so parallel runs never collide on the global `shell-N` namespace.
@@ -38,23 +45,54 @@ async function startShell(request: APIRequestContext, cwd: string): Promise<stri
   const res = await request.post('/api/sessions/start', { data: { provider: 'shell', cwd, name } })
   expect(res.ok(), `start shell session failed: ${res.status()} ${await res.text()}`).toBeTruthy()
   const body = await res.json() as { name: string }
+  openedSessions.push(body.name)
   return body.name
 }
 
-async function closeShell(request: APIRequestContext, name: string): Promise<void> {
-  await request.post(`/api/sessions/${encodeURIComponent(name)}/close`).catch(() => undefined)
+/** The persisted active session — the exact state `detachActiveSession` clears. */
+async function persistedActiveSession(page: Page): Promise<string | undefined> {
+  return (await getWorkspaceState(page, fixture!.name))?.activeSession as string | undefined
+}
+
+/** Provision an isolated project + a live shell session, then open the committed
+ *  README as an editor tab. README ships in the fixture commit, so it is in the
+ *  file tree at load — no created-file SSE propagation to wait on. */
+async function openProjectWithSessionAndTab(
+  page: Page,
+  request: APIRequestContext,
+): Promise<{ sessionName: string; readmeTab: Locator }> {
+  fixture = await createFixtureProject(request)
+  const sessionName = await startShell(request, fixture.path)
+
+  await page.goto('/')
+  await waitForAppReady(page)
+  await selectProject(page, fixture.name)
+
+  // Wait for the tree to render README (locator auto-wait) so quick-open's index
+  // is populated, then open it as an editor tab.
+  await expect(sidebar(page).getByText(README_TAB)).toBeVisible({ timeout: 10_000 })
+  await openFileViaSearch(page, README_TAB)
+  const readmeTab = page.locator('.overflow-x-auto').locator(`[title="${README_TAB}"]`)
+  await expect(readmeTab).toBeVisible({ timeout: 10_000 })
+
+  // The session surfaced in the Sessions list; nothing attached yet.
+  await expect(activityPanel(page).getByText(sessionName)).toBeVisible({ timeout: 15_000 })
+  return { sessionName, readmeTab }
 }
 
 test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
-  let fixture: FixtureProject | null = null
-  const openedSessions: string[] = []
-
   test.afterEach(async ({ request }) => {
-    for (const name of openedSessions.splice(0)) await closeShell(request, name)
+    const failures: string[] = []
+    for (const name of openedSessions.splice(0)) {
+      const res = await request.post(`/api/sessions/${encodeURIComponent(name)}/close`)
+      if (!res.ok()) failures.push(`${name}: ${res.status()} ${await res.text()}`)
+    }
     if (fixture) {
       await fixture.dispose()
       fixture = null
     }
+    // Surface leaked tmux sessions loudly rather than silently swallowing them.
+    if (failures.length) throw new Error(`shell session cleanup failed: ${failures.join('; ')}`)
   })
 
   test('search-open branch: Cmd+W closes the quick-open search', async ({ page, request }) => {
@@ -68,21 +106,22 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
     await expect(searchInput).toHaveCount(0)
   })
 
-  test('editor branch: Cmd+W closes the focused editor tab', async ({ page, request }) => {
-    fixture = await provisionWorkspace(page, request)
-    const file = uniqueFileName('close_editor.txt')
-    await createTestFile(page, fixture.name, file, 'editor branch fixture\n')
-    await waitForSSERefresh(page, 3000)
+  test('editor branch: Cmd+W closes the focused tab and leaves the session attached', async ({ page, request }) => {
+    const { sessionName, readmeTab } = await openProjectWithSessionAndTab(page, request)
+    const placeholder = activityPanel(page).getByText(TERMINAL_PLACEHOLDER)
 
-    await openFileViaSearch(page, file)
-    const tab = page.locator('.overflow-x-auto').locator(`[title="${file}"]`)
-    await expect(tab).toBeVisible({ timeout: 10_000 })
+    // Attach the session, then move focus back to the editor (Cmd+Ctrl+Right
+    // re-selects the only tab and sets focusTarget='editor').
+    await page.keyboard.press('Control+Meta+Digit1')
+    await expect(placeholder).toHaveCount(0)
+    await page.keyboard.press('Control+Meta+ArrowRight')
 
-    // Focus the editor (focusTarget -> 'editor'), then close via Cmd+W.
-    await page.locator('.cm-content').click()
     await page.keyboard.press('Meta+w')
 
-    await expect(tab).toHaveCount(0)
+    // Editor branch closed the TAB — it did NOT detach the session.
+    await expect(readmeTab).toHaveCount(0)
+    await expect(placeholder).toHaveCount(0)
+    await expect.poll(() => persistedActiveSession(page)).toBe(sessionName)
   })
 
   test('tasks branch: Cmd+W closes the Tasks tab and syncs the sidebar toggle off', async ({ page, request }) => {
@@ -113,62 +152,38 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
       .toBe(false)
   })
 
-  test('session-focus branch: Cmd+W detaches the active session', async ({ page, request }) => {
-    fixture = await createFixtureProject(request)
-    const sessionName = await startShell(request, fixture.path)
-    openedSessions.push(sessionName)
-
-    await page.goto('/')
-    await waitForAppReady(page)
-    await selectProject(page, fixture.name)
-
-    const panel = activityPanel(page)
-    const placeholder = panel.getByText(TERMINAL_PLACEHOLDER)
-    // Session surfaced in the Sessions list; nothing attached yet.
-    await expect(panel.getByText(sessionName)).toBeVisible({ timeout: 15_000 })
-    await expect(placeholder).toBeVisible()
+  test('session-focus branch: Cmd+W detaches the session and leaves the editor tab open', async ({ page, request }) => {
+    const { sessionName, readmeTab } = await openProjectWithSessionAndTab(page, request)
+    const placeholder = activityPanel(page).getByText(TERMINAL_PLACEHOLDER)
 
     // Cmd+Ctrl+1 attaches + sets focusTarget='session'.
     await page.keyboard.press('Control+Meta+Digit1')
     await expect(placeholder).toHaveCount(0)
-    await expect
-      .poll(async () => (await getWorkspaceState(page, fixture!.name))?.activeSession)
-      .toBe(sessionName)
+    await expect.poll(() => persistedActiveSession(page)).toBe(sessionName)
 
-    // Cmd+W routes through the session branch -> detach.
     await page.keyboard.press('Meta+w')
+
+    // Session branch detached the session — the editor tab is UNTOUCHED. (If this
+    // branch were broken, the fallback would close the tab instead.)
     await expect(placeholder).toBeVisible()
-    await expect
-      .poll(async () => (await getWorkspaceState(page, fixture!.name))?.activeSession)
-      .toBe('')
+    await expect.poll(() => persistedActiveSession(page)).toBe('')
+    await expect(readmeTab).toBeVisible()
   })
 
-  test('terminal-focus branch: Cmd+W detaches the active session', async ({ page, request }) => {
-    fixture = await createFixtureProject(request)
-    const sessionName = await startShell(request, fixture.path)
-    openedSessions.push(sessionName)
-
-    await page.goto('/')
-    await waitForAppReady(page)
-    await selectProject(page, fixture.name)
-
-    const panel = activityPanel(page)
-    const placeholder = panel.getByText(TERMINAL_PLACEHOLDER)
-    await expect(panel.getByText(sessionName)).toBeVisible({ timeout: 15_000 })
-    await expect(placeholder).toBeVisible()
+  test('terminal-focus branch: Cmd+W detaches the session and leaves the editor tab open', async ({ page, request }) => {
+    const { sessionName, readmeTab } = await openProjectWithSessionAndTab(page, request)
+    const placeholder = activityPanel(page).getByText(TERMINAL_PLACEHOLDER)
 
     // Cmd+Ctrl+ArrowDown attaches + sets focusTarget='terminal'.
     await page.keyboard.press('Control+Meta+ArrowDown')
     await expect(placeholder).toHaveCount(0)
-    await expect
-      .poll(async () => (await getWorkspaceState(page, fixture!.name))?.activeSession)
-      .toBe(sessionName)
+    await expect.poll(() => persistedActiveSession(page)).toBe(sessionName)
 
-    // Cmd+W routes through the terminal branch -> detach.
     await page.keyboard.press('Meta+w')
+
+    // Terminal branch detached the session — the editor tab is UNTOUCHED.
     await expect(placeholder).toBeVisible()
-    await expect
-      .poll(async () => (await getWorkspaceState(page, fixture!.name))?.activeSession)
-      .toBe('')
+    await expect.poll(() => persistedActiveSession(page)).toBe('')
+    await expect(readmeTab).toBeVisible()
   })
 })
