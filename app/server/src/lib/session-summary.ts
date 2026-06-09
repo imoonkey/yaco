@@ -42,8 +42,12 @@ export async function resolveSessionSummaries(
     const key = cacheKey(s)
 
     // A completed turn may have changed the label (e.g. a generated title), so
-    // drop the cached value when a session settles from processing to idle.
-    if (lastStatus.get(key) === 'processing' && s.status === 'idle') summaryCache.delete(key)
+    // drop the cached value when a session settles from active (processing or
+    // blocked) back to idle. Covering `blocked` keeps processing→blocked→idle
+    // from skipping the refresh.
+    const prevStatus = lastStatus.get(key)
+    const wasActive = prevStatus === 'processing' || prevStatus === 'blocked'
+    if (wasActive && s.status === 'idle') summaryCache.delete(key)
     lastStatus.set(key, s.status)
 
     const cached = summaryCache.get(key)

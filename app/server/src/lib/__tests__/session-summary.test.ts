@@ -130,6 +130,29 @@ describe('resolveSessionSummaries', () => {
     expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
   })
 
+  it('re-resolves a label across processing→blocked→idle (blocked counts as active)', async () => {
+    fetchSessionSummaries
+      .mockResolvedValueOnce([summary({ label: 'first title' })])
+      .mockResolvedValueOnce([summary({ label: 'updated title' })])
+
+    const processing = makeSession({ status: 'processing' })
+    const first = await resolveSessionSummaries([processing])
+    expect(first.get('test-session')).toBe('first title')
+
+    // Pass through blocked: must NOT re-query (still active) but must keep the
+    // active marker so the later idle still drops the cached label.
+    const blocked = makeSession({ status: 'blocked', blockReason: 'question' })
+    const blockedRun = await resolveSessionSummaries([blocked])
+    expect(blockedRun.get('test-session')).toBe('first title')
+    expect(fetchSessionSummaries).toHaveBeenCalledTimes(1)
+
+    // Settles to idle — cached label dropped and re-fetched.
+    const idle = makeSession({ status: 'idle' })
+    const idleRun = await resolveSessionSummaries([idle])
+    expect(idleRun.get('test-session')).toBe('updated title')
+    expect(fetchSessionSummaries).toHaveBeenCalledTimes(2)
+  })
+
   it('invalidateSummaryCache forces a fresh CLI call', async () => {
     fetchSessionSummaries.mockResolvedValue([summary({ label: 'label' })])
     const session = makeSession()

@@ -23,10 +23,16 @@ import {
 /** Re-exported for route code (sessions.ts) that filters by project subtree. */
 export { isPathDescendantOrEqual } from '@yaco/cli/core/agent'
 
+/** Why a session is `blocked` (waiting on the user). Present iff status is
+ *  `blocked`; written together with status by the CLI projection. */
+export type BlockReason = 'permission' | 'question' | 'trust'
+
 export interface AgentSession {
   name: string
   provider: string
-  status: 'starting' | 'idle' | 'processing'
+  status: 'starting' | 'idle' | 'processing' | 'blocked'
+  /** Set iff status is `blocked`. Sanitized by the shared projection. */
+  blockReason?: BlockReason
   project: string
   /** Absolute path of the owning project. Always set by the shared projection;
    *  optional only so legacy in-test fixtures need not supply it. */
@@ -83,13 +89,15 @@ export interface AgentSessionState {
   sessionPath: string
   pid: number
   sessionId: string
-  status: 'starting' | 'idle' | 'processing'
+  status: 'starting' | 'idle' | 'processing' | 'blocked'
+  /** Set iff status is `blocked`. */
+  blockReason?: BlockReason
   createdAt: string
   spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
   parentSession?: string
 }
 
-const VALID_STATUSES = new Set(['starting', 'idle', 'processing'])
+const VALID_STATUSES = new Set(['starting', 'idle', 'processing', 'blocked'])
 
 function getStateSessionPath(state: AgentSessionState): string | null {
   if (typeof state.sessionPath !== 'string' || !state.sessionPath) return null
