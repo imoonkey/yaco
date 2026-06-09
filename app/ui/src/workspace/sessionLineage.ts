@@ -67,28 +67,47 @@ export interface SessionLineageBuckets {
 
 /**
  * Build lineage over the whole visible list, then assign each root-anchored
- * subtree to the existing pinned/active/idle render bucket by its ROOT's
- * pin/status. A parent and all of its visible descendants stay contiguous in
- * one bucket even when a child's status or pin state differs — so a processing
- * child of an idle parent renders indented under that parent, not split off as
- * a stray root. Order within each bucket follows the input order.
+ * subtree to the pinned/active/idle render bucket. A parent and all of its
+ * visible descendants stay contiguous in one bucket.
+ *
+ * Bucket key is a SUBTREE-MAX priority `blocked > processing > idle`: a subtree
+ * goes to the active bucket if *any* member is blocked or processing, so a
+ * blocked/processing child under an idle parent isn't buried in the idle
+ * bucket. Within the active bucket, subtrees rooted at a `blocked` session sort
+ * to the top (they need the user). Pinned roots still take precedence over
+ * status. Order is otherwise input order.
  */
 export function groupSessionLineage(
   sessions: AgentSession[],
   isPinned: (name: string) => boolean,
 ): SessionLineageBuckets {
   const buckets: SessionLineageBuckets = { pinned: [], processing: [], idle: [] }
-  let current = buckets.idle
+
+  // Split the flat lineage into root-anchored subtrees (each depth-0 row opens one).
+  const subtrees: SessionLineageRow[][] = []
   for (const row of buildSessionLineage(sessions)) {
-    if (row.depth === 0) {
-      const root = row.session
-      current = isPinned(root.name)
-        ? buckets.pinned
-        : root.status === 'idle'
-          ? buckets.idle
-          : buckets.processing
-    }
-    current.push(row)
+    if (row.depth === 0) subtrees.push([])
+    subtrees[subtrees.length - 1].push(row)
   }
+
+  // idle < processing/starting < blocked
+  const priority = (s: AgentSession): number =>
+    s.status === 'blocked' ? 2 : s.status === 'idle' ? 0 : 1
+
+  const activeBlocked: SessionLineageRow[] = []
+  const activeRest: SessionLineageRow[] = []
+  for (const subtree of subtrees) {
+    const root = subtree[0].session
+    if (isPinned(root.name)) {
+      buckets.pinned.push(...subtree)
+    } else if (Math.max(...subtree.map(r => priority(r.session))) === 0) {
+      buckets.idle.push(...subtree)
+    } else if (root.status === 'blocked') {
+      activeBlocked.push(...subtree)
+    } else {
+      activeRest.push(...subtree)
+    }
+  }
+  buckets.processing.push(...activeBlocked, ...activeRest)
   return buckets
 }

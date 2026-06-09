@@ -11,6 +11,7 @@ import { useKeyboardViewport } from './hooks/useKeyboardViewport'
 import { useSessionUnreadState } from './hooks/useSessionUnreadState'
 import { useIsMobile } from './hooks/useIsMobile'
 import { toggleTheme } from './lib/theme'
+import { computeProjectSessionCounts } from './lib/sessionCounts'
 import { Sun, Moon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
 import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
@@ -197,16 +198,10 @@ function App() {
   }, [activeProject, activeWorktree])
 
   // Per-project session counts: { active, total }
-  const projectSessionCounts = useMemo(() => {
-    const counts: Record<string, { active: number; total: number }> = {}
-    if (!allSessions) return counts
-    for (const s of allSessions) {
-      const c = counts[s.project] ??= { active: 0, total: 0 }
-      c.total++
-      if (s.status === 'processing' || s.status === 'starting') c.active++
-    }
-    return counts
-  }, [allSessions])
+  const projectSessionCounts = useMemo(
+    () => allSessions ? computeProjectSessionCounts(allSessions) : {},
+    [allSessions],
+  )
 
   const currentProjectPath = orderedProjects.find(p => p.name === activeProject)?.path ?? ''
 
