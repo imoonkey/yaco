@@ -23,6 +23,7 @@ import {
   movePanel,
   splitPanel,
   resetLayout,
+  leafPanelsInOrder,
 } from '../panelLayoutModel'
 import { getPanelMeta } from '../panelMeta'
 import type { LayoutNode, SplitNode, TabsNode, LeafNode, SplitChild } from '../../hooks/workspaceTypes'
@@ -473,17 +474,36 @@ describe('movePanel', () => {
     expect(movePanel(base(), 'changes', { kind: 'tabs', tabsId: 'ghost' })).toEqual(base())
   })
 
-  it('returns a moved panel to its default home', () => {
-    // Move sessions away, then back to default (beside terminal, below).
+  it('returns a moved panel to its default home, rebuilding the canonical activity column', () => {
+    // Move sessions out (the activity split collapses to a bare terminal leaf),
+    // then back to default (beside terminal, below).
     const moved = movePanel(base(), 'sessions', { kind: 'split', target: 'projects', side: 'above' })
     expect(tryFindChild(moved.desktop, 'sessions')?.parent.id).not.toBe('activity')
+    expect(tryFindSplit(moved.desktop, 'activity')).toBeNull() // activity dismantled
 
     const restored = movePanel(moved, 'sessions', { kind: 'default' })
     const { parent } = findChild(restored.desktop, 'sessions')
-    // sessions sits in a col split next to terminal again (slot order: terminal, sessions)
+    // sessions sits in the canonical 'activity' col split next to terminal again —
+    // NOT a generic split:sessions — so the renderer's "Activity panel" landmark
+    // (keyed on the 'activity' node id) is restored.
+    expect(parent.id).toBe('activity')
     expect(parent.axis).toBe('col')
     expect(panelsOf(parent).sort()).toEqual(['sessions', 'terminal'])
     expectAllPanelsOnce(restored.desktop)
+    // The reset reproduces the exact default tree shape (H1 regression guard).
+    expect(restored.desktop).toEqual(defaultWorkspacePanelLayout().desktop)
+    expect(normalizeLayout(restored)).toEqual(restored)
+  })
+
+  it('uses a generic split id (not the canonical column id) when that column still exists', () => {
+    // dock still holds files+changes, so returning projects to default must NOT
+    // mint a second 'dock' node (id collision) — it falls back to a generic split.
+    const moved = movePanel(base(), 'projects', { kind: 'split', target: 'terminal', side: 'below' })
+    expect(tryFindSplit(moved.desktop, 'dock')).not.toBeNull() // dock survives (files+changes)
+    const restored = movePanel(moved, 'projects', { kind: 'default' })
+    expect(tryFindChild(restored.desktop, 'projects')?.parent.id).not.toBe('activity')
+    expectAllPanelsOnce(restored.desktop)
+    expect(normalizeLayout(restored)).toEqual(restored)
   })
 
   it('recreates the dismantled main tabs node when restoring editor/tasks to default', () => {
@@ -535,7 +555,33 @@ describe('resetLayout', () => {
   })
 })
 
-// --- Stored v1 editor splitSize salvage -------------------------------------
+// --- leafPanelsInOrder (the panel menu's relocation-target source) ----------
+
+describe('leafPanelsInOrder', () => {
+  it('lists visible standalone leaf panels left-to-right, excluding tabs panels', () => {
+    // Default tree: dock [projects, files, changes], main tabs [editor, tasks],
+    // activity [terminal, sessions]. editor/tasks live in the tabs node, so they
+    // are NOT standalone leaves and must be absent.
+    expect(leafPanelsInOrder(base().desktop)).toEqual(
+      ['projects', 'files', 'changes', 'terminal', 'sessions'],
+    )
+  })
+
+  it('skips leaves inside a hidden subtree (not a valid move target)', () => {
+    const hidden = toggleDock(base()) // hides the dock column
+    expect(leafPanelsInOrder(hidden.desktop)).toEqual(['terminal', 'sessions'])
+  })
+
+  it('reflects a relocation: a moved panel lists in its new position', () => {
+    // Move sessions above projects (into the dock) → it leads the order.
+    const moved = splitPanel(base(), 'projects', 'sessions', 'above')
+    expect(leafPanelsInOrder(moved.desktop)).toEqual(
+      ['sessions', 'projects', 'files', 'changes', 'terminal'],
+    )
+  })
+})
+
+
 
 describe('normalizeLayout salvages a stored v1 editor splitSize to range', () => {
   const withSplitSize = (splitSize: unknown) =>

@@ -499,6 +499,21 @@ export function mainTabsActivePanel(node: LayoutNode): PanelId | null {
 
 // --- Move / split (design: flexible-operations) -----------------------------
 
+/** Visible standalone leaf panels in left-to-right document order. These are
+ *  exactly the panels a `splitPanel`/`movePanel` split can target — a panel inside
+ *  a tabs node has no standalone leaf to split beside, and a hidden subtree is not
+ *  a valid relocation target. The panel header menu reads this to pick the
+ *  leftmost/rightmost relocation target. */
+export function leafPanelsInOrder(node: LayoutNode, out: PanelId[] = []): PanelId[] {
+  if (node.kind === 'leaf') out.push(node.panel)
+  else if (node.kind === 'split') {
+    for (const child of node.children) {
+      if (child.hidden !== true) leafPanelsInOrder(child.node, out)
+    }
+  }
+  return out
+}
+
 /** Does `panel` render as a standalone leaf anywhere in the tree? (Panels inside
  *  a tabs node do not count — you cannot split beside a single tab.) */
 function hasLeafPanel(node: LayoutNode, panel: PanelId): boolean {
@@ -511,6 +526,14 @@ function hasTabsNode(node: LayoutNode, tabsId: string): boolean {
   if (node.kind === 'tabs') return node.id === tabsId
   if (node.kind === 'split') return node.children.some((c) => hasTabsNode(c.node, tabsId))
   return false
+}
+
+/** Does a split node with id `splitId` exist anywhere in the tree? Used by
+ *  return-to-default to decide whether a canonical structural column (dock /
+ *  activity) is still present or must be rebuilt with its stable id. */
+function hasSplitNode(node: LayoutNode, splitId: string): boolean {
+  if (node.kind !== 'split') return false
+  return node.id === splitId || node.children.some((c) => hasSplitNode(c.node, splitId))
 }
 
 /** Result of pruning a panel from the tree: the pruned tree (null if the panel
@@ -564,11 +587,12 @@ export const DEFAULT_SPLIT_BASIS: { row: number; col: number } = { row: 240, col
 
 /** Place `panel` beside `target`'s leaf inside a new split: `target` keeps
  *  growing and the inserted panel takes a fixed basis. The new split's id is
- *  derived from the (single-occurrence) inserted panel, so it is unique and an
+ *  `splitId` when given (return-to-default reuses a canonical column id), else
+ *  derived from the (single-occurrence) inserted panel so it is unique and an
  *  inverse move collapses it cleanly. No-op if `target` is not a standalone leaf
  *  or `panel === target`. */
 export function splitPanel(
-  layout: WorkspacePanelLayout, target: PanelId, panel: PanelId, side: SplitSide,
+  layout: WorkspacePanelLayout, target: PanelId, panel: PanelId, side: SplitSide, splitId?: string,
 ): WorkspacePanelLayout {
   if (panel === target || !hasLeafPanel(layout.desktop, target)) return layout
   const { tree, leaf: removed } = detachPanel(layout.desktop, panel)
@@ -582,7 +606,7 @@ export function splitPanel(
     const kept: SplitChild = { grow: true, node: targetLeaf }
     return {
       kind: 'split',
-      id: `split:${panel}`,
+      id: splitId ?? `split:${panel}`,
       axis,
       children: before ? [inserted, kept] : [kept, inserted],
     }
@@ -644,6 +668,16 @@ const DEFAULT_PLACEMENT: Record<PanelId, PanelPlacement> = {
   tasks: { kind: 'tabs', tabsId: MAIN_TABS_ID },
 }
 
+/** The canonical structural column each dock/activity panel returns into on
+ *  `movePanel(_, { kind: 'default' })`. When that column has been dismantled (its
+ *  last sibling collapsed it away), return-to-default rebuilds it under this
+ *  stable id so the renderer's region landmark — keyed on `dock`/`activity` — and
+ *  the default tree shape are restored, not a generic `split:<panel>`. */
+const DEFAULT_COLUMN_ID: Partial<Record<PanelId, string>> = {
+  projects: 'dock', files: 'dock', changes: 'dock',
+  terminal: 'activity', sessions: 'activity',
+}
+
 /** Relocate `panel` to a placement: split beside a target, drop into a tabs
  *  node, or return to its default home. */
 export function movePanel(
@@ -654,8 +688,15 @@ export function movePanel(
       return splitPanel(layout, placement.target, panel, placement.side)
     case 'tabs':
       return movePanelToTabs(layout, panel, placement.tabsId, placement.index)
-    case 'default':
-      return movePanel(layout, panel, DEFAULT_PLACEMENT[panel])
+    case 'default': {
+      const home = DEFAULT_PLACEMENT[panel]
+      if (home.kind !== 'split') return movePanel(layout, panel, home)
+      // Rebuild the canonical column with its stable id when it is gone; keep a
+      // generic split id when the column still exists (so ids stay unique).
+      const columnId = DEFAULT_COLUMN_ID[panel]
+      const id = columnId && !hasSplitNode(layout.desktop, columnId) ? columnId : undefined
+      return splitPanel(layout, home.target, panel, home.side, id)
+    }
   }
 }
 

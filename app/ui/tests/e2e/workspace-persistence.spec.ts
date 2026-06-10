@@ -10,10 +10,8 @@ import {
   openFileViaSearch,
   waitForSSERefresh,
   uniqueFileName,
-  layoutKey,
   sidebar,
   activityPanel,
-  projectsSectionBody,
   sectionHeader,
   expectApproxSize,
   type FixtureProject,
@@ -272,91 +270,6 @@ test.describe('Layout persistence characterization', () => {
     await page.waitForTimeout(500)
     await expect(activityPanel(page)).toBeHidden()
     expectPanelTree(await getWorkspaceState(page, a.name))
-  })
-
-  test('showProjects and projectSize persist across reload', async ({ page, request }) => {
-    const project = await extraProject(request)
-
-    // Seed ONCE before mount: select this project via ui-state, and set
-    // projectSize=200 with Projects visible (so its body is measurable). The
-    // layout key is only seeded when absent, so the collapse we do below survives
-    // the reload instead of being re-seeded. This characterizes the LEGACY flat
-    // `projectSize` (a body-height field the tree model intentionally does not
-    // migrate), so it runs on the legacy engine; the tree section-size persistence
-    // equivalent is panel-tree-desktop.spec.ts.
-    await page.addInitScript(({ key, name }) => {
-      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
-      localStorage.setItem('yaco-ui-state', JSON.stringify({ project: name }))
-      if (!localStorage.getItem(key)) {
-        localStorage.setItem(key, JSON.stringify({ layout: { showProjects: true, projectSize: 200 } }))
-      }
-    }, { key: layoutKey(project.name), name: project.name })
-
-    // Mount — workspace selects the seeded project and applies projectSize.
-    await page.goto('/')
-    await waitForAppReady(page)
-    await expect(sectionHeader(page, project.name)).toBeVisible({ timeout: 10_000 })
-    await page.waitForTimeout(1500)
-
-    // projectSize applied: the Projects body renders at the persisted ≈200px.
-    await expect(sectionHeader(page, 'Projects')).toHaveAttribute('aria-expanded', 'true')
-    expectApproxSize((await projectsSectionBody(page).boundingBox())?.height, 200)
-    expectPanelTree(await getWorkspaceState(page, project.name))
-
-    // Collapse the Projects section (its body is visible, so the header click is
-    // unambiguous) → new shape persisted AND actually renders collapsed.
-    await sectionHeader(page, 'Projects').click()
-    await page.waitForTimeout(500)
-    await expect(sectionHeader(page, 'Projects')).toHaveAttribute('aria-expanded', 'false')
-    await expect(projectsSectionBody(page)).toBeHidden()
-    expectPanelTree(await getWorkspaceState(page, project.name))
-
-    // Reload — both the collapse and projectSize survive.
-    await page.reload()
-    await waitForAppReady(page)
-    await expect(sectionHeader(page, project.name)).toBeVisible({ timeout: 10_000 })
-    await page.waitForTimeout(1500)
-
-    expectPanelTree(await getWorkspaceState(page, project.name))
-    await expect(sectionHeader(page, 'Projects')).toHaveAttribute('aria-expanded', 'false')
-  })
-
-  test('section collapse state persists and renders collapsed', async ({ page, request }) => {
-    // Characterizes the LEGACY section-body geometry (projectsSectionBody carries
-    // the size; ≈120px default). The tree sizes the leaf, not the body, so this
-    // runs on the legacy engine; tree section collapse render is covered by
-    // panel-tree-desktop.spec.ts ("the framed Projects header collapses its section").
-    await page.addInitScript(() => {
-      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
-    })
-    const project = await ws(page, request)
-
-    // Sidebar sections start expanded; new shape persisted well-formed.
-    let state = await getWorkspaceState(page, project.name)
-    expectPanelTree(state)
-
-    // Projects section renders at its default persisted size (≈120px).
-    await expect(sectionHeader(page, 'Projects')).toHaveAttribute('aria-expanded', 'true')
-    expectApproxSize((await projectsSectionBody(page).boundingBox())?.height, 120)
-
-    // Collapse the Explorer section (its header title is the project name) and prove
-    // it actually renders collapsed — header aria-expanded flips, file tree hidden,
-    // and the new shape persists.
-    const explorerHeader = sectionHeader(page, project.name)
-    await expect(explorerHeader).toHaveAttribute('aria-expanded', 'true')
-    await expect(page.locator('[role="tree"]')).toBeVisible()
-    await explorerHeader.click()
-    await page.waitForTimeout(500)
-
-    await expect(explorerHeader).toHaveAttribute('aria-expanded', 'false')
-    await expect(page.locator('[role="tree"]')).toBeHidden()
-    state = await getWorkspaceState(page, project.name)
-    expectPanelTree(state)
-
-    // Restore
-    await explorerHeader.click()
-    await page.waitForTimeout(300)
-    await expect(page.locator('[role="tree"]')).toBeVisible()
   })
 })
 

@@ -19,10 +19,9 @@ export function useLayoutState(
   const [mobilePane, setMobilePane] = useState(initialLayout.mobilePane)
   const [layout, setLayout] = useState<WorkspaceLayout>(initialLayout.layout)
   const [recentFiles, setRecentFiles] = useState<string[]>(initialLayout.recentFiles)
-  // Panel-layout tree, seeded from the migrated persisted state. The tree
-  // renderer (engine: 'tree') reads it and the layout commands mutate it via
-  // `setPanelLayout` (the provider funnels every model edit through this setter);
-  // the legacy renderer ignores it. Persistence already carries it on every save.
+  // Panel-layout tree, seeded from the migrated persisted state. The renderer
+  // reads it and the layout commands mutate it via `setPanelLayout` (the provider
+  // funnels every model edit through this setter). Persistence carries it on every save.
   const [panelLayout, setPanelLayout] = useState<WorkspacePanelLayout>(initialLayout.panelLayout)
 
   const openTabsRef = useRef(openTabs)

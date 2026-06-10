@@ -13,13 +13,11 @@ import {
   type FixtureProject,
 } from './helpers/workspace'
 
-// Drives the NEW mobile flexible-panel renderer (engine: 'tree' →
-// MobilePanelProjection) and asserts it is behavior-equivalent to the legacy
-// mobile branch the portrait "Mobile pane flow" (workspace-persistence.spec.ts)
-// and "Landscape mobile pane flow" (landscape-mobile.spec.ts) specs pin. The
-// legacy renderer stays the default everywhere else, so these tests opt in by
-// seeding the `yaco-panel-tree` flag before the app mounts (same mechanism as
-// panel-tree-desktop.spec.ts).
+// Drives the mobile flexible-panel renderer (MobilePanelProjection) — the sole
+// mobile renderer since the T8 legacy-deletion (the `engine` flag and the flat
+// mobile branch are gone). Asserts it is behavior-equivalent to what the portrait
+// "Mobile pane flow" (workspace-persistence.spec.ts) and "Landscape mobile pane
+// flow" (landscape-mobile.spec.ts) specs pin.
 //
 // What this pins (design: phase 6 / mobile-panel-projection):
 //   - the four panes (browse/editor/tasks/terminal) project through PanelHost +
@@ -27,14 +25,7 @@ import {
 //   - opening a file switches to the editor pane,
 //   - `panelLayout.mobile.activeDock` (the model field the projection reads) AND
 //     the legacy `mobilePane` both persist the active pane per project,
-//   - the landscape safe-area shell chrome — all under the tree engine.
-
-/** Opt this page into the tree engine before any app script runs. */
-async function seedTreeEngine(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    try { localStorage.setItem('yaco-panel-tree', 'tree') } catch { /* blocked storage */ }
-  })
-}
+//   - the landscape safe-area shell chrome.
 
 let provisioned: FixtureProject[] = []
 
@@ -44,17 +35,15 @@ test.afterEach(async () => {
   await Promise.all(all.map((f) => f.dispose().catch(() => undefined)))
 })
 
-/** Tree-engine isolated workspace (provisioned + selected). */
+/** Isolated mobile workspace (provisioned + selected). */
 async function treeWorkspace(page: Page, request: APIRequestContext): Promise<FixtureProject> {
-  await seedTreeEngine(page)
   const project = await provisionWorkspace(page, request)
   provisioned.push(project)
   return project
 }
 
-/** Tree-engine workspace whose task graph has real nodes, for the Tasks pane. */
+/** Workspace whose task graph has real nodes, for the Tasks pane. */
 async function treeWorkspaceWithTasks(page: Page, request: APIRequestContext): Promise<FixtureProject> {
-  await seedTreeEngine(page)
   const project = await createWorktreeFixture(request)
   provisioned.push(project)
   await page.goto('/')

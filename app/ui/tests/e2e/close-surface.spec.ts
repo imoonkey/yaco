@@ -9,7 +9,6 @@ import {
   runTag,
   sidebar,
   activityPanel,
-  sectionHeader,
   getWorkspaceState,
   type FixtureProject,
 } from './helpers/workspace'
@@ -124,14 +123,13 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
     await expect.poll(() => persistedActiveSession(page)).toBe(sessionName)
   })
 
-  test('tasks branch: Cmd+W closes the Tasks tab and syncs the sidebar toggle off', async ({ page, request }) => {
-    // The "sidebar Tasks toggle" + `state.layout.showTasks` this asserts are LEGACY
-    // structure: the tree makes Tasks a main-tabs panel with no sidebar section, so
-    // this close+sync branch runs on the legacy engine. The tree's tasks open/close
-    // (Cmd+Shift+T / Cmd+W) is covered by workspace-tasks-tab.spec.ts.
-    await page.addInitScript(() => {
-      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
-    })
+  test('tasks branch: Cmd+W closes the open Tasks workspace (returns to the editor)', async ({ page, request }) => {
+    // The legacy half of this branch — a sidebar Tasks section + `state.layout.showTasks`
+    // — was deleted with the legacy renderer (T8): the tree makes Tasks a main-tabs
+    // panel with no sidebar section. The behavioral half (Cmd+W while Tasks shows
+    // closes it) lives in workspace-tasks-tab.spec.ts ("Cmd+W closes the open Tasks
+    // workspace"); this case characterizes that branch alongside the other Cmd+W
+    // routes here, under the tree renderer.
     // A task-bearing fixture: the Tasks workspace only renders its toolbar/search
     // once the graph has nodes (an empty graph shows a bare status pane).
     fixture = await createWorktreeFixture(request)
@@ -140,51 +138,16 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
     await selectProject(page, fixture.name)
 
     const tasksSearch = page.locator('input[placeholder="Search tasks..."]')
-    const tasksSection = sectionHeader(page, 'Tasks')
 
-    // Sidebar Tasks section starts expanded (showTasks default true).
-    await expect(tasksSection).toHaveAttribute('aria-expanded', 'true')
-
-    // Cmd+Shift+T opens the Tasks tab (focusTarget -> 'editor').
+    // Cmd+Shift+T opens the Tasks panel (focusTarget -> 'editor').
     await page.keyboard.press('Meta+Shift+t')
     await expect(tasksSearch).toBeVisible({ timeout: 15_000 })
 
     await page.keyboard.press('Meta+w')
 
-    // Tab closed AND the sidebar Tasks toggle synced off (the "close+sync" branch).
+    // The tasks branch closed the surface — back to the editor.
     await expect(tasksSearch).toHaveCount(0)
-    await expect(tasksSection).toHaveAttribute('aria-expanded', 'false')
-    await expect
-      .poll(async () => (await getWorkspaceState(page, fixture!.name))?.layout?.showTasks)
-      .toBe(false)
-  })
-
-  test('tasks-active with no open tabs keeps the activity column at its docked width', async ({ page, request }) => {
-    // Regression (T7 H2): the legacy activity/right column must size off "has a
-    // main surface" (open tabs OR tasks active), not bare open-tabs. The old fake
-    // tasks tab made openTabs.length > 0 → fixed right width; tasks-as-panel adds
-    // no tab, so without the fix the column flex-expands over the editor's docked
-    // width whenever Tasks is shown with no real tabs. Pinned to the legacy engine
-    // (the tree renderer keeps the activity basis fixed via the same rule).
-    await page.addInitScript(() => {
-      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
-    })
-    fixture = await createWorktreeFixture(request)
-    await page.goto('/')
-    await waitForAppReady(page)
-    await selectProject(page, fixture.name)
-
-    // No file opened → zero editor tabs. Open Tasks into the main region.
-    await page.keyboard.press('Meta+Shift+t')
-    await expect(page.locator('input[placeholder="Search tasks..."]')).toBeVisible({ timeout: 15_000 })
-    await expect(page.locator('[data-testid="tab"]')).toHaveCount(0)
-
-    // The activity column keeps its fixed docked width (~420 default); it does NOT
-    // flex-expand toward ~half the main region (~530 on a 1280-wide viewport).
-    const box = await activityPanel(page).boundingBox()
-    expect(box, 'activity panel present').toBeTruthy()
-    expect(box!.width).toBeGreaterThan(360)
-    expect(box!.width).toBeLessThan(480)
+    await expect(page.locator('[data-layer="nodes"]')).toHaveCount(0)
   })
 
   test('session-focus branch: Cmd+W detaches the session and leaves the editor tab open', async ({ page, request }) => {

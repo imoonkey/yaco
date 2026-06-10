@@ -1,35 +1,24 @@
-// WorkspaceLayoutShell — the engine switch (design: phase 5 / WorkspaceLayoutShell).
+// WorkspaceLayoutShell — picks the panel-tree renderer for the viewport.
 //
-// It chooses the renderer off the SAME workspace contexts: `engine: 'tree'`
-// mounts the new panel-tree renderers (`DesktopPanelTreeLayout` on desktop,
-// `MobilePanelProjection` on mobile), `engine: 'legacy'` keeps the existing
-// `WorkspaceLayout` skeleton for both. Since the T6.5 cutover the DEFAULT is tree
-// (see `resolveLayoutEngine`), so everyone renders through the panel tree and
-// `legacy` is the explicit opt-out fallback for instant rollback.
-//
-// Both renderers consume the identical `WorkspaceLayoutProps` from
-// `WorkspaceScreen`; the tree renderers read layout/commands/selection/env from
-// context and need only the cross-cutting shell bits (root ref, the quick-open
-// overlay, and the interaction-capture that arms the close shortcut).
-import { useState } from 'react'
-import { WorkspaceLayout, type WorkspaceLayoutProps } from './WorkspaceLayout'
+// The panel tree is the sole workspace renderer: the legacy flat skeleton
+// (`WorkspaceLayout`) and the `engine` migration flag were removed in T8, so this
+// shell simply mounts `DesktopPanelTreeLayout` on desktop and
+// `MobilePanelProjection` on mobile. Both read layout/commands/selection/env from
+// context and need only the cross-cutting shell bits: the root ref, the quick-open
+// overlay, and the interaction-capture that arms the close shortcut.
+import type { ReactNode, RefObject } from 'react'
 import { DesktopPanelTreeLayout } from './DesktopPanelTreeLayout'
 import { MobilePanelProjection } from './MobilePanelProjection'
-import { resolveLayoutEngine } from './layoutEngine'
 
-export function WorkspaceLayoutShell(props: WorkspaceLayoutProps) {
-  // Resolve once per mount: the flag is a session-stable URL/localStorage read.
-  const [engine] = useState(resolveLayoutEngine)
+export type WorkspaceLayoutShellProps = {
+  isMobile: boolean
+  rootRef: RefObject<HTMLDivElement | null>
+  searchOverlay: ReactNode | null
+  onInteractionCapture: () => void
+}
 
-  if (engine === 'tree') {
-    const shell = {
-      rootRef: props.rootRef,
-      searchOverlay: props.searchOverlay,
-      onInteractionCapture: props.onInteractionCapture,
-    }
-    return props.isMobile
-      ? <MobilePanelProjection {...shell} />
-      : <DesktopPanelTreeLayout {...shell} />
-  }
-  return <WorkspaceLayout {...props} />
+export function WorkspaceLayoutShell({ isMobile, ...shell }: WorkspaceLayoutShellProps) {
+  return isMobile
+    ? <MobilePanelProjection {...shell} />
+    : <DesktopPanelTreeLayout {...shell} />
 }

@@ -76,9 +76,9 @@ export type PersistedState = {
   // New panel-layout model (design: Persistence Shape). The loader always
   // derives it — migrating the old flat blob or normalizing a stored tree — and
   // every write path carries it, so it is required: the type makes dropping it
-  // from a save snapshot a compile error. The legacy flat `layout`/`mobilePane`
-  // remain for the still-live old renderer until the tree renderer is the only
-  // renderer, at which point they are dropped.
+  // from a save snapshot a compile error. The flat `layout`/`mobilePane` remain
+  // the source of truth for dock/activity visibility + the mobile pane, mirrored
+  // onto the tree by the provider.
   panelLayout: WorkspacePanelLayout
 }
 

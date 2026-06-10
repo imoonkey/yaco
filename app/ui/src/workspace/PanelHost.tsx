@@ -39,6 +39,7 @@ function HostedPanel({ def }: { def: PanelDefinition }) {
       title={resolvePanelTitle(def.title, env)}
       useHeader={def.useHeader}
       slot={slot}
+      panelId={def.id}
     >
       <Body />
     </PanelFrame>

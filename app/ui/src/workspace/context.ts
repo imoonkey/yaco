@@ -94,9 +94,10 @@ export type WorkspaceSelection = {
 export type WorkspaceLayoutContextValue = {
   layout: WorkspaceLayout
   mobilePane: MobilePane
-  // The panel-layout tree (design: Layout Model). The desktop tree renderer
-  // (engine: 'tree') reads `panelLayout.desktop`; the legacy renderer reads the
-  // flat `layout` above. Layout mutations go through the commands surface.
+  // The panel-layout tree (design: Layout Model) — the sole renderer reads
+  // `panelLayout.desktop`/`mobile`. The flat `layout`/`mobilePane` above stay the
+  // source of truth for dock/activity visibility + the mobile pane, mirrored onto
+  // the tree by the provider. Layout mutations go through the commands surface.
   panelLayout: WorkspacePanelLayout
 }
 

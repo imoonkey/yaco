@@ -17,7 +17,9 @@ import type { ReactNode } from 'react'
 import type { PanelHeaderHook } from './panelRegistry'
 import type { PanelChrome } from './panelMeta'
 import type { PanelChromeSlot } from './panelChrome'
+import type { PanelId } from './context'
 import { SectionHeader } from './SectionHeader'
+import { PanelMenu } from './PanelMenu'
 
 export type PanelFrameProps = {
   chrome: PanelChrome
@@ -27,6 +29,10 @@ export type PanelFrameProps = {
   useHeader?: PanelHeaderHook
   /** Renderer-supplied collapse + body sizing. Omitted ⇒ expanded, default fill. */
   slot?: PanelChromeSlot
+  /** The hosted panel's id. Supplied by `PanelHost` so the framed header can
+   *  surface the flexible-layout `PanelMenu`; omitted by isolation tests that
+   *  mount a frame directly, which then render no menu. */
+  panelId?: PanelId
   children: ReactNode
 }
 
@@ -36,7 +42,7 @@ const EMPTY_HEADER: PanelHeaderHook = () => ({})
 
 const NOOP = () => {}
 
-export function PanelFrame({ chrome, title, useHeader, slot, children }: PanelFrameProps) {
+export function PanelFrame({ chrome, title, useHeader, slot, panelId, children }: PanelFrameProps) {
   if (chrome === 'unframed') return <>{children}</>
 
   const collapsed = slot?.collapsed ?? false
@@ -47,6 +53,7 @@ export function PanelFrame({ chrome, title, useHeader, slot, children }: PanelFr
         useHeader={useHeader ?? EMPTY_HEADER}
         collapsed={collapsed}
         onToggle={slot?.onToggle ?? NOOP}
+        panelId={panelId}
       />
       {!collapsed && (
         <div className={slot?.bodyClassName ?? 'flex-1 min-h-0 overflow-auto'} style={slot?.bodyStyle}>
@@ -57,16 +64,25 @@ export function PanelFrame({ chrome, title, useHeader, slot, children }: PanelFr
   )
 }
 
-function FramedHeader({ title, useHeader, collapsed, onToggle }: {
-  title: string; useHeader: PanelHeaderHook; collapsed: boolean; onToggle: () => void
+function FramedHeader({ title, useHeader, collapsed, onToggle, panelId }: {
+  title: string; useHeader: PanelHeaderHook; collapsed: boolean; onToggle: () => void; panelId?: PanelId
 }) {
   const { title: dynamicTitle, actions, badge, stats } = useHeader()
+  // The flexible-layout menu sits after the panel's own actions (rightmost), in a
+  // single flex row so a panel that publishes its actions as a block element does
+  // not push the kebab onto a second line (which would grow the fixed-height header
+  // and shove the action row under the adjacent resize handle). Only present when
+  // PanelHost supplies the id; SectionHeader hides actions (and so the menu) while
+  // collapsed.
+  const headerActions = panelId
+    ? <div className="flex items-center gap-0.5">{actions}<PanelMenu panel={panelId} /></div>
+    : actions
   return (
     <SectionHeader
       title={dynamicTitle ?? title}
       collapsed={collapsed}
       onToggle={onToggle}
-      actions={actions}
+      actions={headerActions}
       badge={badge}
       stats={stats}
     />

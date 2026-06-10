@@ -6,7 +6,6 @@ import { ComposeTray } from '../components/ComposeTray'
 import { FileSearch } from './WorkspaceSearch'
 import type { SearchEntry } from './WorkspaceSearch'
 import { WorkspaceLayoutShell } from './WorkspaceLayoutShell'
-import { useWorkspaceSidebarResize } from './useWorkspaceSidebarResize'
 import { ShortcutSheet } from './ShortcutSheet'
 import type { Project } from '../types'
 import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts } from '../hooks/useSessionUnreadState'
@@ -57,12 +56,11 @@ export function Workspace(props: WorkspaceProps) {
 
 // ============================================================
 // The renderer shell. The 7 module panels render themselves through
-// `<PanelHost/>` inside `WorkspaceLayout`; this screen owns only the
+// `<PanelHost/>` inside the panel-tree renderer; this screen owns only the
 // cross-panel concerns that are NOT a single panel's job:
 //   - the ONE voice surface (one `useVoice` + one `ComposeTray`), routed by the
 //     run's frozen target into the editor/terminal panels via WorkspaceVoiceContext
 //   - global keyboard shortcuts (incl. F5 / Ctrl+Shift+V voice toggle)
-//   - sidebar/section resize + dock geometry handed to `WorkspaceLayout`
 //   - the quick-open overlay and the shortcut sheet
 function WorkspaceScreen() {
   const env = useWorkspaceEnv()
@@ -72,12 +70,11 @@ function WorkspaceScreen() {
   const actions = commands.actions
 
   const { name: projectName, worktree } = env.project
-  const { isMobile, isLandscape, isTouch } = env.viewport
-  const { openTabs, activeTab, activeSession, recentFiles, showSearch } = selection
-  const { showProjects, showExplorer, showChanges, showSessions, showTasks, previewMode } = layout
+  const { isMobile } = env.viewport
+  const { activeTab, activeSession, recentFiles, showSearch } = selection
+  const { previewMode } = layout
 
   const rootRef = useRef<HTMLDivElement>(null)
-  const sidebarRef = useRef<HTMLDivElement>(null)
 
   const [showShortcutSheet, setShowShortcutSheet] = useState(false)
   // The single voice surface's insertion targets. The voice bridge writes the
@@ -86,14 +83,13 @@ function WorkspaceScreen() {
   const [editorInsert, setEditorInsert] = useState<InsertRequest | null>(null)
   const [terminalSend, setTerminalSend] = useState<InsertRequest | null>(null)
 
-  // The active main panel (editor/tasks): the legacy renderer shows it in its
-  // editor region; the tree renderer reads it from the layout tree directly.
-  const mainPanel = mainTabsActivePanel(panelLayout.desktop) ?? 'editor'
   // Is the tasks panel the surface currently shown in the main region? When it
   // is, the editor (and its active file tab) is hidden behind tasks, so editor-
   // only shortcuts — preview-mode toggle (Cmd+Shift+V) and editor voice — must be
   // inert (the old fake tasks tab made `activeTab` non-file, achieving the same).
-  const showingTasks = isMobile ? mobilePane === 'tasks' : mainPanel === 'tasks'
+  const showingTasks = isMobile
+    ? mobilePane === 'tasks'
+    : mainTabsActivePanel(panelLayout.desktop) === 'tasks'
 
   // Derived tab state the voice routing keys off — null while tasks is showing.
   const activeFilePath = !showingTasks && isFileTab(activeTab) ? activeTab : null
@@ -141,47 +137,19 @@ function WorkspaceScreen() {
     onToggleShortcutSheet: () => setShowShortcutSheet(v => !v),
   })
 
-  const resize = useWorkspaceSidebarResize({
-    layout, sidebarRef,
-    showProjects, showExplorer, showChanges, showTasks, showSessions,
-    updateLayout: actions.updateLayout,
-  })
-
   // Quick-open: reveal the chosen file's parents in the explorer, open it as a
   // preview tab, and focus the editor (previewFile does all three).
   const handleSearchSelect = useCallback((entry: SearchEntry) => {
     commands.previewFile(entry.path)
   }, [commands])
 
-  const hasOpenTabs = openTabs.length > 0
-
   return (
     <WorkspaceVoiceContext.Provider value={voiceSurface}>
       <WorkspaceLayoutShell
         isMobile={isMobile}
-        isLandscape={isLandscape}
-        isTouch={isTouch}
-        layout={layout}
-        mobilePane={mobilePane}
-        onLayoutUpdate={actions.updateLayout}
-        onMobilePaneChange={actions.setMobilePane}
-        onToggleTasks={commands.toggleTasks}
-        mainPanel={mainPanel}
         rootRef={rootRef}
-        sidebarRef={sidebarRef}
-        left={resize.left}
-        right={resize.right}
-        changesSplit={resize.changesSplit}
-        changesHeight={resize.changesHeight}
-        projectSplit={resize.projectSplit}
-        projectHeight={resize.projectHeight}
-        sessionSplit={resize.sessionSplit}
-        sessionHeight={resize.sessionHeight}
-        hasOpenTabs={hasOpenTabs}
-        onInteractionCapture={() => { void lockCloseShortcut() }}
-        onFilesPaneFocus={() => commands.setFocusTarget('explorer')}
         searchOverlay={showSearch ? <FileSearch projectName={projectName} worktree={worktree} recentFiles={recentFiles} onSelect={handleSearchSelect} onClose={() => actions.setShowSearch(false)} /> : null}
-        notificationBell={env.notificationBell}
+        onInteractionCapture={() => { void lockCloseShortcut() }}
       />
       <ComposeTray
         surface={voiceBridge.voiceSurface}
