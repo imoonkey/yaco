@@ -7,7 +7,6 @@ import {
   isPanelId,
   MOBILE_DOCKS,
   isMobileDock,
-  DEFAULT_MIN_SIZE,
   MAIN_TABS_ID,
   DEFAULT_MOBILE_DOCK,
   defaultDesktopTree,
@@ -16,6 +15,7 @@ import {
   normalizeDesktopTree,
   normalizeLayout,
 } from '../panelLayoutModel'
+import { getPanelDefinition } from '../panelRegistry'
 import type { LayoutNode, SplitNode, TabsNode, LeafNode } from '../../hooks/workspaceTypes'
 
 // --- Narrowing helpers (keep assertions readable + type-safe) ---------------
@@ -300,7 +300,7 @@ describe('registry min-size clamping', () => {
         { grow: true, node: leaf('files') },
       ],
     }))
-    expect(root.children[0].basis).toBe(DEFAULT_MIN_SIZE.width)
+    expect(root.children[0].basis).toBe(getPanelDefinition('projects')!.minSize.width)
   })
 
   it('clamps against the height min on a column split', () => {
@@ -311,7 +311,7 @@ describe('registry min-size clamping', () => {
         { grow: true, node: leaf('terminal') },
       ],
     }))
-    expect(root.children[0].basis).toBe(DEFAULT_MIN_SIZE.height)
+    expect(root.children[0].basis).toBe(getPanelDefinition('sessions')!.minSize.height)
   })
 
   it('preserves a basis already above the min', () => {

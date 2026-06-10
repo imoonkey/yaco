@@ -13,21 +13,20 @@
 //   - commands.detachSession     — close/disconnect behavior
 //   - commands.setFocusTarget    — focus routing on interaction
 //   - env.project.name           — terminal WebSocket project scope
+//   - voice (screen surface)      — terminal voice control slot + `terminalSend`
 //
-// Voice deliberately stays out of the T1b contexts (it remains a screen-level
-// concern in WorkspaceProvider), so the panel owns its terminal voice end-to-end
-// — useVoice + a terminal voice bridge + the compose tray — matching the design's
-// "TerminalPanel owns: terminal voice control". The tray renders nothing at rest,
-// so the section's resting DOM is identical to today's inline `terminalContent`.
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { useVoice } from '../../hooks/useVoice'
+// Voice is the SINGLE screen-level surface (one `useVoice` + one `ComposeTray`),
+// not a panel-private machine. The panel renders the terminal voice button from
+// the surface's terminal control slot and feeds the screen-routed `terminalSend`
+// into the terminal; start/confirm/target-loss all live at the screen. The tray
+// lives at the screen too, so it survives a mid-compose detach (the panel can
+// unmount without taking the tray with it).
+import { lazy, Suspense } from 'react'
 import { VoiceControl } from '../../components/VoiceControl'
-import { ComposeTray } from '../../components/ComposeTray'
 import { ProviderIcon } from '../../components/SessionIcons'
 import {
   useWorkspaceEnv, useWorkspaceSelection,
-  useWorkspaceDataContext, useWorkspaceCommands,
-  type InsertRequest,
+  useWorkspaceDataContext, useWorkspaceCommands, useWorkspaceVoiceSurface,
 } from '../context'
 import type { PanelDefinition } from '../panelRegistry'
 
@@ -48,43 +47,18 @@ export function TerminalPanel() {
   const selection = useWorkspaceSelection()
   const data = useWorkspaceDataContext()
   const commands = useWorkspaceCommands()
+  const voice = useWorkspaceVoiceSurface()
 
   const { name: projectName } = env.project
   const attachedSession = selection.activeSession
   const activeSessionInfo =
     data.sessions.projectSessions.find(s => s.name === attachedSession) ?? null
 
-  const voice = useVoice()
-  const [terminalSend, setTerminalSend] = useState<InsertRequest | null>(null)
-
   // The header only renders with a session, so terminal voice is always eligible
-  // there — kept explicit to mirror the inline body.
+  // there — kept explicit to mirror the inline body. The control primitives come
+  // from the single screen surface (start/stop wired by the screen).
   const terminalVoiceEligible = !!attachedSession
-
-  const handleTerminalVoiceStart = useCallback(() => {
-    if (!attachedSession) return
-    voice.start({ surface: 'terminal', sessionName: attachedSession })
-  }, [voice, attachedSession])
-
-  // Route a confirmed transcript to the terminal only when it still matches the
-  // run's frozen target — audio captured for one session never lands in another.
-  const handleVoiceConfirm = useCallback((text: string) => {
-    const target = voice.target
-    if (!target || target.surface !== 'terminal') return
-    if (!attachedSession || attachedSession !== target.sessionName) return
-    setTerminalSend({ text, key: Date.now() })
-    commands.setFocusTarget('terminal')
-    voice.confirm(text)
-  }, [voice, attachedSession, commands])
-
-  // Invalidate an in-flight compose if the session changed/detached mid-run.
-  useEffect(() => {
-    if (voice.state !== 'composing' || !voice.target) return
-    const t = voice.target
-    if (t.surface === 'terminal' && (!attachedSession || attachedSession !== t.sessionName)) {
-      voice.markTargetLost()
-    }
-  }, [voice, attachedSession])
+  const terminalSend = voice.terminalSend
 
   if (!attachedSession) {
     return (
@@ -101,11 +75,11 @@ export function TerminalPanel() {
         <span className="truncate flex-1 font-semibold">{attachedSession}</span>
         {terminalVoiceEligible && (
           <VoiceControl
-            capability={voice.capability}
-            state={voice.state}
-            elapsedMs={voice.elapsedMs}
-            onStart={handleTerminalVoiceStart}
-            onStop={voice.stop}
+            capability={voice.terminal.capability}
+            state={voice.terminal.state}
+            elapsedMs={voice.terminal.elapsedMs}
+            onStart={voice.terminal.onStart}
+            onStop={voice.terminal.onStop}
           />
         )}
       </div>
@@ -131,21 +105,6 @@ export function TerminalPanel() {
           />
         </Suspense>
       </div>
-      <ComposeTray
-        surface="terminal"
-        compose={voice.compose}
-        state={voice.state}
-        elapsedMs={voice.elapsedMs}
-        liveTranscript={voice.liveTranscript}
-        pendingCount={voice.pendingCount}
-        errorMessage={voice.errorMessage}
-        onConfirm={handleVoiceConfirm}
-        onDiscard={voice.discard}
-        onCopy={voice.copy}
-        onRetry={voice.retry}
-        onDismiss={voice.dismiss}
-        onStop={voice.stop}
-      />
     </>
   )
 }

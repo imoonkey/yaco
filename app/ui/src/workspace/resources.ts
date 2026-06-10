@@ -6,7 +6,8 @@
 // the existing polling hooks behind EXPLICIT public interfaces — no hook
 // return type leaks into the context surface — and host the single-poller
 // composition: each underlying poller (`useGitStatus`, `useSessions`) is owned
-// here exactly once.
+// here exactly once. The always-on file-tree + history owners live in
+// `WorkspaceProvider` (see WorkspacePanelResourcesContext), not here.
 import { useMemo } from 'react'
 import { useGitStatus, useSessions } from '../hooks/useApi'
 import { useWorkspaceSessions } from './useWorkspaceSessions'

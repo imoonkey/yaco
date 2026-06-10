@@ -13,7 +13,7 @@ import {
 import { useHistory } from '../../hooks/useApi'
 import {
   useWorkspaceEnv, useWorkspaceDataContext,
-  useWorkspaceSelection, useWorkspaceCommands,
+  useWorkspaceSelection, useWorkspaceCommands, useOptionalWorkspacePanelResources,
 } from '../context'
 import { useWorkspaceSessionSection } from '../useWorkspaceSessionSection'
 import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
@@ -53,7 +53,15 @@ export function SessionsPanel() {
 
   const { name: projectName, effectivePath } = env.project
   const { isMobile } = env.viewport
-  const history = useHistory(projectName)
+
+  // Consume the provider-owned, ALWAYS-ON history (it survives section collapse +
+  // dock hide, and the provider refreshes it after a session kill/rename via the
+  // sessions resource's onSessionChange). The local hook is a fallback for
+  // rendering outside the provider (isolation tests); inert when the provider
+  // supplies history (null project → no fetch).
+  const resources = useOptionalWorkspacePanelResources()
+  const ownHistory = useHistory(resources ? null : projectName)
+  const history = resources?.history ?? ownHistory
 
   // Adapt the shared sessions resource to the SessionsMgr shape the (unchanged)
   // session section consumes; detach belongs to the command surface.
@@ -89,8 +97,10 @@ export function SessionsPanel() {
   }, [sessionsActions])
 
   // Mirror today's body container: padded, polite live region for list updates.
-  // PanelFrame owns the surrounding section header + scroll chrome.
-  return <div className="py-1" aria-live="polite">{sessionsBody}</div>
+  // `h-full` so the body fills the renderer-sized section box (the framed body
+  // wrapper carries the persisted `sessionSize` height); the e2e measures THIS
+  // aria-live element's height. PanelFrame owns the surrounding section header.
+  return <div className="h-full overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>
 }
 
 /** Framed-header hook: surfaces the section actions the body publishes. */

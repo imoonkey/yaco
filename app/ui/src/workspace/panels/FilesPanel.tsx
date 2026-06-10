@@ -21,14 +21,13 @@ import {
   Search, SearchCode, Undo2,
 } from 'lucide-react'
 import { useFileTree } from '../../hooks/useApi'
-import { useSSERefresh } from '../../hooks/useSSE'
 import { FileExplorer, type FileExplorerHandle } from '../../components/FileExplorer'
-import { markStale as markSearchIndexStale } from '../quickOpenIndex'
 import { SectionRefreshButton } from '../SectionHeader'
 import { useWorkspaceNavigation } from '../useWorkspaceNavigation'
 import {
   useWorkspaceEnv, useWorkspaceDataContext, useWorkspaceSelection,
   useWorkspaceLayout, useWorkspaceCommands, useWorkspaceControllers,
+  useOptionalWorkspacePanelResources,
 } from '../context'
 import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
 
@@ -89,15 +88,14 @@ export function FilesPanel() {
   const explorerRef = useRef<FileExplorerHandle>(null)
   const [contextFolder, setContextFolder] = useState('')
 
+  // Consume the provider-owned, ALWAYS-ON file tree (it survives section collapse
+  // and dock hide, so loaded dirs + the quick-open staleness SSE never reset). The
+  // local hook is a fallback for rendering outside the provider (isolation tests);
+  // when the provider supplies the tree, it stays inert (null project → no fetch).
+  const resources = useOptionalWorkspacePanelResources()
+  const ownTree = useFileTree(resources ? null : projectName, resources ? null : worktree)
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } =
-    useFileTree(projectName, worktree)
-
-  // The quick-open index goes stale whenever the tree changes on disk.
-  const markStaleForProject = useCallback(
-    () => markSearchIndexStale(projectName, worktree),
-    [projectName, worktree],
-  )
-  useSSERefresh('filetree', markStaleForProject)
+    resources?.fileTree ?? ownTree
 
   const nav = useWorkspaceNavigation({ expandDir, explorerRef })
 

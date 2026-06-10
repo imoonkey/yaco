@@ -14,7 +14,10 @@ import {
 import { useWorkspaceState, isFileTab } from '../hooks/useWorkspaceState'
 import { isTasksTab } from '../hooks/workspaceTypes'
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
+import { useFileTree, useHistory } from '../hooks/useApi'
+import { useSSERefresh } from '../hooks/useSSE'
 import { useWorkspaceData } from './resources'
+import { markStale as markSearchIndexStale } from './quickOpenIndex'
 import type { Project } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import type {
@@ -23,9 +26,10 @@ import type {
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
   WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceControllersContext,
+  WorkspacePanelResourcesContext,
   type WorkspaceEnv, type WorkspaceSelection, type WorkspaceLayoutContextValue,
   type WorkspaceCommands, type WorkspaceControllers, type WorkspaceRawActions,
-  type WorkspaceControllerRegistry, type FileRevealIntent,
+  type WorkspaceControllerRegistry, type FileRevealIntent, type WorkspacePanelResources,
   type FocusTarget, type JumpRequest, type PanelId, type EditorPrefs,
 } from './context'
 
@@ -109,7 +113,24 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const registry = useMemo<WorkspaceControllerRegistry>(
     () => ({ controllers: controllersRef, revealBuffer: revealBufferRef }), [],
   )
-  const onSessionChange = useCallback(() => controllersRef.current.onSessionChange(), [])
+
+  // Always-on data owners (single instance; survive section collapse + dock hide,
+  // because the PROVIDER is always mounted — the panel bodies may unmount). The
+  // old screen kept these alive at screen level; the panels now CONSUME them via
+  // WorkspacePanelResourcesContext (with an own-hook fallback for isolation tests).
+  const fileTreeHook = useFileTree(projectName, worktree)
+  const markStaleForProject = useCallback(
+    () => markSearchIndexStale(projectName, worktree),
+    [projectName, worktree],
+  )
+  useSSERefresh('filetree', markStaleForProject)
+  const history = useHistory(projectName)
+
+  // After a session kill/rename the sessions resource refreshes history. Stable
+  // callback over a ref so the sessions dep stays calm.
+  const historyRefreshRef = useRef(history.refresh)
+  useEffect(() => { historyRefreshRef.current = history.refresh })
+  const onSessionChange = useCallback(() => { void historyRefreshRef.current() }, [])
 
   // Single shared resources: one git poller, one sessions poller + manager.
   const data = useWorkspaceData({
@@ -118,6 +139,34 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   })
   const { liveSessionHandles } = data.sessions
   const sessionsLoaded = data.sessionsLoaded
+
+  // The always-on resources the Files/Sessions panels consume.
+  const panelResources = useMemo<WorkspacePanelResources>(() => ({
+    fileTree: {
+      data: fileTreeHook.data,
+      expandDir: fileTreeHook.expandDir,
+      patchTree: fileTreeHook.patchTree,
+      refresh: fileTreeHook.refresh,
+      clearLoadedDirs: fileTreeHook.clearLoadedDirs,
+    },
+    history: { data: history.data, loading: history.loading, refresh: history.refresh },
+  }), [
+    fileTreeHook.data, fileTreeHook.expandDir, fileTreeHook.patchTree,
+    fileTreeHook.refresh, fileTreeHook.clearLoadedDirs,
+    history.data, history.loading, history.refresh,
+  ])
+
+  // Reveal a path's parent directories in the (provider-owned, always-on) file
+  // tree so an opened/previewed file appears in the explorer. Provider-owned —
+  // not the unmount-prone FilesPanel controller — so reveal works even when the
+  // Explorer is collapsed or the dock is hidden.
+  const expandDir = fileTreeHook.expandDir
+  const revealParents = useCallback(async (path: string) => {
+    const parts = path.split('/')
+    for (let i = 1; i < parts.length; i++) {
+      await expandDir(parts.slice(0, i).join('/'))
+    }
+  }, [expandDir])
 
   // Latest hot state, mirrored into a ref so command callbacks can read current
   // values without listing them as deps — keeping the commands object stable.
@@ -185,22 +234,27 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     actions.setMobilePane('editor')
   }, [actions])
 
+  // previewFile is the quick-open select path: reveal the file's parents in the
+  // explorer, then open it as a preview tab and focus the editor (behavior-
+  // equivalent to the old nav.handleSearchSelect: reveal-then-preview).
   const previewFile = useCallback((path: string) => {
-    actions.openPreviewTab(path)
-    setSelectedFilePath(path)
-    setFocusTarget('explorer')
-    actions.setMobilePane('editor')
-  }, [actions])
+    void revealParents(path).then(() => {
+      actions.openPreviewTab(path)
+      setSelectedFilePath(path)
+      setFocusTarget('editor')
+      actions.setMobilePane('editor')
+    })
+  }, [actions, revealParents])
 
   const openFileAtLine = useCallback((path: string, line: number) => {
-    void controllersRef.current.revealParents(path).then(() => {
+    void revealParents(path).then(() => {
       actions.openFileTab(path)
       setSelectedFilePath(path)
       setFocusTarget('editor')
       actions.setMobilePane('editor')
     })
     setJumpRequest({ key: Date.now(), path, line })
-  }, [actions])
+  }, [actions, revealParents])
 
   // openDiff mirrors the old activateChange handler: a re-clicked active diff
   // toggles back to its file; otherwise reveal parents, open the (preview) diff,
@@ -213,7 +267,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     }
     const refs = !!(opts?.base && opts?.compare)
     const pinned = opts?.preview === false
-    void controllersRef.current.revealParents(path).then(() => {
+    void revealParents(path).then(() => {
       if (refs) actions.openPreviewDiffTabById(id)
       else if (pinned) actions.openDiffTab(path)
       else actions.openPreviewDiffTab(path)
@@ -221,7 +275,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       setFocusTarget('editor')
       actions.setMobilePane('editor')
     })
-  }, [actions, openFile])
+  }, [actions, openFile, revealParents])
 
   const openDiffTabId = useCallback((tabId: string, opts?: { preview?: boolean }) => {
     if (opts?.preview === false) actions.openDiffTab(tabId.slice(5))
@@ -381,15 +435,17 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   return (
     <WorkspaceEnvContext.Provider value={env}>
       <WorkspaceDataContext.Provider value={data}>
-        <WorkspaceControllersContext.Provider value={registry}>
-          <WorkspaceCommandsContext.Provider value={commands}>
-            <WorkspaceLayoutContext.Provider value={layoutValue}>
-              <WorkspaceSelectionContext.Provider value={selection}>
-                {children}
-              </WorkspaceSelectionContext.Provider>
-            </WorkspaceLayoutContext.Provider>
-          </WorkspaceCommandsContext.Provider>
-        </WorkspaceControllersContext.Provider>
+        <WorkspacePanelResourcesContext.Provider value={panelResources}>
+          <WorkspaceControllersContext.Provider value={registry}>
+            <WorkspaceCommandsContext.Provider value={commands}>
+              <WorkspaceLayoutContext.Provider value={layoutValue}>
+                <WorkspaceSelectionContext.Provider value={selection}>
+                  {children}
+                </WorkspaceSelectionContext.Provider>
+              </WorkspaceLayoutContext.Provider>
+            </WorkspaceCommandsContext.Provider>
+          </WorkspaceControllersContext.Provider>
+        </WorkspacePanelResourcesContext.Provider>
       </WorkspaceDataContext.Provider>
     </WorkspaceEnvContext.Provider>
   )

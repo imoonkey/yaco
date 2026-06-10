@@ -14,46 +14,26 @@
 //   selection — openTabs/activeTab/previewTab/activeSession + editor file state
 //   layout    — editor prefs (previewMode/splitDirection/splitSize/autocomplete)
 //   commands  — tab/file/session commands + raw layout/tab actions
+//   voice     — the single screen-level voice surface (editor control + insert)
 //
-// Voice + insertion are NOT owned here. The workspace has a single screen-level
-// voice surface (one `useVoice` + one `ComposeTray`) shared by the editor and
-// terminal; a panel-private machine would be dead (it could never confirm into a
-// tray it does not render). So this panel renders without its voice button until
-// fl-panel-integrate exposes the screen-level voice + `editorInsert` to panels.
+// Voice is NOT owned here. The workspace has one screen-level voice surface (one
+// `useVoice` + one `ComposeTray`); this panel consumes its editor control slot
+// (eligibility/handlers decided by the screen) and the `editorInsert` the screen
+// routes to it on confirm. Outside the screen (isolation tests) the inert default
+// surface renders no voice button and never inserts.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiffTab, isFileTab, parseDiffTab } from '../../hooks/useWorkspaceState'
 import { TASKS_FILE_PATH } from '../../hooks/useTaskGraph'
 import { fetchGitCompare } from '../../hooks/useApi'
-import type { CapabilityState, InteractionState } from '../../hooks/useVoice'
 import type { GitChange } from '../../types'
 import type { CompareContext } from '../diff/DiffTab'
 import {
   useWorkspaceEnv, useWorkspaceDataContext, useWorkspaceSelection,
-  useWorkspaceLayout, useWorkspaceCommands,
+  useWorkspaceLayout, useWorkspaceCommands, useWorkspaceVoiceSurface,
 } from '../context'
 import { useWorkspaceDiff } from '../useWorkspaceDiff'
 import { WorkspaceEditorColumn } from '../WorkspaceEditorColumn'
 import type { PanelDefinition } from '../panelRegistry'
-
-// Inert voice: `eligible: false` keeps the column from rendering its voice button
-// (the capability/state fields are only read when eligible). fl-panel-integrate
-// replaces this with the screen-level voice surface.
-// TODO(fl-panel-integrate): consume the single screen-level voice surface here.
-const INERT_EDITOR_VOICE: {
-  eligible: boolean
-  capability: CapabilityState
-  state: InteractionState
-  elapsedMs: number
-  onStart: () => void
-  onStop: () => void
-} = {
-  eligible: false,
-  capability: { status: 'checking' },
-  state: 'idle',
-  elapsedMs: 0,
-  onStart: () => {},
-  onStop: () => {},
-}
 
 export function EditorPanel() {
   const env = useWorkspaceEnv()
@@ -61,6 +41,7 @@ export function EditorPanel() {
   const selection = useWorkspaceSelection()
   const { layout } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
+  const voice = useWorkspaceVoiceSurface()
   const actions = commands.actions
 
   const { name: projectName, worktree } = env.project
@@ -161,12 +142,10 @@ export function EditorPanel() {
       activeDiff={activeDiff}
       editorDiffHunks={editorDiffHunks}
       jumpRequest={jumpRequest}
-      // TODO(fl-panel-integrate): consume editorInsert from the single
-      // screen-level voice surface (not exposed by the T1b contexts yet).
-      editorInsert={null}
+      editorInsert={voice.editorInsert}
       projectName={projectName}
       worktree={worktree}
-      voice={INERT_EDITOR_VOICE}
+      voice={voice.editor}
       onSelectTab={commands.selectTab}
       onDoubleClickTab={handleDoubleClickTab}
       onCloseTab={handleCloseTab}

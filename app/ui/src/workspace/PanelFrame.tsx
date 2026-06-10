@@ -4,11 +4,19 @@
 // derived from `SectionHeader`; unframed panels (editor/terminal/tasks) already
 // own their chrome, so the frame is a passthrough. A framed panel publishes its
 // dynamic title/actions/badge/stats through a panel-local `useHeader` hook (see
-// panelRegistry) that this frame lays out. Collapse wiring (the `collapsePanel`
-// command + layout state) lands in a later phase — this header is the static
-// seam panels render into now.
+// panelRegistry) that this frame lays out.
+//
+// Collapse + body sizing come from a renderer-supplied `PanelChromeSlot` (see
+// panelChrome): the framed header IS a `SectionHeader` (role="button",
+// aria-expanded, "<title> section" label, chevron, actions hidden while
+// collapsed) wired to the slot's collapse state, and the body hides when
+// collapsed and adopts the slot's height/flex so it measures like the old
+// per-section body wrapper. No slot ⇒ expanded, default fill (isolation tests
+// and renderers that do not size sections both rely on this).
 import type { ReactNode } from 'react'
 import type { PanelChrome, PanelHeaderHook } from './panelRegistry'
+import type { PanelChromeSlot } from './panelChrome'
+import { SectionHeader } from './SectionHeader'
 
 export type PanelFrameProps = {
   chrome: PanelChrome
@@ -16,6 +24,8 @@ export type PanelFrameProps = {
   /** Panel-local hook publishing the header's dynamic title/actions/badge/stats.
    *  Omitted for headers with none, and ignored for unframed chrome. */
   useHeader?: PanelHeaderHook
+  /** Renderer-supplied collapse + body sizing. Omitted ⇒ expanded, default fill. */
+  slot?: PanelChromeSlot
   children: ReactNode
 }
 
@@ -23,41 +33,41 @@ export type PanelFrameProps = {
 // without a `useHeader` always calls one consistent hook in `FramedHeader`.
 const EMPTY_HEADER: PanelHeaderHook = () => ({})
 
-export function PanelFrame({ chrome, title, useHeader, children }: PanelFrameProps) {
+const NOOP = () => {}
+
+export function PanelFrame({ chrome, title, useHeader, slot, children }: PanelFrameProps) {
   if (chrome === 'unframed') return <>{children}</>
 
+  const collapsed = slot?.collapsed ?? false
   return (
-    <div className="flex flex-col h-full min-h-0">
-      <FramedHeader title={title} useHeader={useHeader ?? EMPTY_HEADER} />
-      <div className="flex-1 min-h-0 overflow-auto">{children}</div>
+    <div className={slot?.containerClassName ?? 'flex flex-col h-full min-h-0'} style={slot?.containerStyle}>
+      <FramedHeader
+        title={title}
+        useHeader={useHeader ?? EMPTY_HEADER}
+        collapsed={collapsed}
+        onToggle={slot?.onToggle ?? NOOP}
+      />
+      {!collapsed && (
+        <div className={slot?.bodyClassName ?? 'flex-1 min-h-0 overflow-auto'} style={slot?.bodyStyle}>
+          {children}
+        </div>
+      )}
     </div>
   )
 }
 
-function FramedHeader({ title, useHeader }: { title: string; useHeader: PanelHeaderHook }) {
+function FramedHeader({ title, useHeader, collapsed, onToggle }: {
+  title: string; useHeader: PanelHeaderHook; collapsed: boolean; onToggle: () => void
+}) {
   const { title: dynamicTitle, actions, badge, stats } = useHeader()
   return (
-    <div
-      className="section-header-bar flex items-center h-7 px-2 text-ui-sm font-semibold uppercase tracking-wider select-none shrink-0"
-      style={{
-        color: 'var(--sol-text-brown)',
-        borderBottom: '1px solid color-mix(in srgb, var(--sol-border) 50%, transparent)',
-      }}
-    >
-      <span className="flex-1 truncate">{dynamicTitle ?? title}</span>
-      {stats && <div className="flex items-center" onClick={(e) => e.stopPropagation()}>{stats}</div>}
-      {badge != null && badge > 0 && (
-        <span
-          className="w-[18px] h-[14px] rounded-full text-ui-2xs flex items-center justify-center font-bold"
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--sol-warning) 19%, transparent)',
-            color: 'var(--sol-warning)',
-          }}
-        >
-          {badge}
-        </span>
-      )}
-      {actions && <div className="flex items-center">{actions}</div>}
-    </div>
+    <SectionHeader
+      title={dynamicTitle ?? title}
+      collapsed={collapsed}
+      onToggle={onToggle}
+      actions={actions}
+      badge={badge}
+      stats={stats}
+    />
   )
 }

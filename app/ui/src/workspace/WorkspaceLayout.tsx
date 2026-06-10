@@ -5,6 +5,8 @@ import { toggleTheme } from '../lib/theme'
 import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal } from 'lucide-react'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import { SectionHeader } from './SectionHeader'
+import { PanelHost } from './PanelHost'
+import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
 import type { MobilePane } from '../hooks/workspaceTypes'
 
@@ -23,26 +25,8 @@ export type WorkspaceLayoutProps = {
   onLayoutUpdate: (partial: Partial<LayoutState>) => void
   onMobilePaneChange: (pane: MobilePane) => void
 
-  // Section content
-  projectName: string
-  projectListBody: ReactNode
-  projectActions: ReactNode
-  explorerActions: ReactNode
-  explorerBody: ReactNode
-  gitStale: boolean
-  changesBadge?: number
-  changesTitle?: string
-  changesActions?: ReactNode
-  changesStats?: ReactNode
-  changesBody: ReactNode
+  // Tasks toggle (sidebar header on desktop / pane switch on mobile)
   onToggleTasks?: () => void
-  sessionsActions: ReactNode
-  sessionsBody: ReactNode
-
-  // Main panes
-  editorPane: ReactNode
-  tasksPane: ReactNode
-  terminalContent: ReactNode
 
   // Resize
   rootRef: RefObject<HTMLDivElement | null>
@@ -66,28 +50,94 @@ export type WorkspaceLayoutProps = {
   notificationBell?: ReactNode
 }
 
+// Each framed panel (projects/files/changes/sessions) renders its own
+// SectionHeader-equivalent header + body via PanelHost → PanelFrame. The renderer
+// supplies the per-section collapse state and body sizing through a chrome slot,
+// so the body measures exactly like the old inline section wrapper and the
+// collapse toggle drives the same `show*` layout flags. Desktop and mobile size
+// the same panels differently, so the slots are built per render mode.
 export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const {
     isMobile, isLandscape, isTouch,
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
-    projectName, projectListBody, projectActions, explorerActions, explorerBody,
-    gitStale, changesBadge, changesTitle, changesActions, changesStats, changesBody, onToggleTasks,
-    sessionsActions, sessionsBody,
-    editorPane, tasksPane, terminalContent,
-    rootRef, sidebarRef, left, right, changesSplit, changesHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
+    onToggleTasks,
+    rootRef, sidebarRef, left, right,
+    changesSplit, changesHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
     hasOpenTabs,
     onInteractionCapture, onFilesPaneFocus, searchOverlay, notificationBell,
   } = props
 
-  const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTasks, showTextSearch } = layout
-  // When Explorer is collapsed, first expanded bottom section gets flex:1
+  const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTasks } = layout
+  // When Explorer is collapsed, the first expanded bottom section grows to fill.
   const flexFallback = !showExplorer
     ? (showChanges ? 'changes' : showTasks ? 'tasks' : null)
     : null
   const shouldShowEditorPane = hasOpenTabs || !showRightPanel
-  const explorerTitle = showTextSearch ? 'Search' : projectName || 'Explorer'
+  const changesGrows = flexFallback === 'changes'
+
+  // Chrome slots: collapse + body sizing the framed PanelHosts read. Rebuilt each
+  // render so live resize sizes (projectHeight/changesHeight/sessionHeight) and
+  // collapse flags flow straight through to the section bodies.
+  const chromeSlots: Record<string, PanelChromeSlot> = isMobile ? {
+    projects: {
+      collapsed: !showProjects,
+      onToggle: () => onLayoutUpdate({ showProjects: !showProjects }),
+      containerClassName: 'shrink-0 flex flex-col',
+      bodyClassName: 'shrink-0',
+    },
+    files: {
+      collapsed: !showExplorer,
+      onToggle: () => onLayoutUpdate({ showExplorer: !showExplorer }),
+      containerClassName: showExplorer ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0 flex flex-col',
+      bodyClassName: 'flex-1 min-h-0 flex flex-col',
+    },
+    changes: {
+      collapsed: !showChanges,
+      onToggle: () => onLayoutUpdate({ showChanges: !showChanges }),
+      containerClassName: showChanges ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0 flex flex-col',
+      bodyClassName: 'flex-1 min-h-0 overflow-y-auto py-1',
+    },
+    sessions: {
+      collapsed: !showSessions,
+      onToggle: () => onLayoutUpdate({ showSessions: !showSessions }),
+      containerClassName: showSessions ? 'flex-1 min-h-0 flex flex-col' : 'shrink-0 flex flex-col',
+      bodyClassName: 'flex-1 min-h-0 overflow-hidden',
+    },
+  } : {
+    projects: {
+      collapsed: !showProjects,
+      onToggle: () => onLayoutUpdate({ showProjects: !showProjects }),
+      containerClassName: 'shrink-0 flex flex-col',
+      bodyClassName: 'shrink-0 overflow-y-auto',
+      bodyStyle: { height: projectHeight },
+    },
+    files: {
+      collapsed: !showExplorer,
+      onToggle: () => onLayoutUpdate({ showExplorer: !showExplorer }),
+      containerClassName: showExplorer ? 'min-h-0 flex flex-col' : 'shrink-0 flex flex-col',
+      containerStyle: showExplorer ? { flex: 1 } : undefined,
+      bodyClassName: 'min-h-0 flex flex-col',
+      bodyStyle: { flex: 1, minHeight: 80 },
+    },
+    changes: {
+      collapsed: !showChanges,
+      onToggle: () => onLayoutUpdate({ showChanges: !showChanges }),
+      containerClassName: changesGrows ? 'min-h-0 flex flex-col' : 'shrink-0 flex flex-col',
+      containerStyle: changesGrows ? { flex: 1 } : undefined,
+      bodyClassName: 'min-h-0 py-1 overflow-y-auto',
+      bodyStyle: changesGrows ? { flex: 1 } : { height: changesHeight, minHeight: 50 },
+    },
+    sessions: {
+      collapsed: !showSessions,
+      onToggle: () => onLayoutUpdate({ showSessions: !showSessions }),
+      containerClassName: 'shrink-0 flex flex-col',
+      bodyClassName: 'shrink-0 overflow-hidden',
+      bodyStyle: { height: sessionHeight },
+    },
+  }
 
   return (
+    <PanelChromeContext.Provider value={chromeSlots}>
     <div
       ref={rootRef}
       className={`flex h-full ${isTouch ? '' : 'select-none'}`}
@@ -158,28 +208,17 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           <div className="flex-1 min-h-0 flex flex-col">
             {mobilePane === 'files' && (
               <div className="h-full flex flex-col overflow-y-auto" style={{ backgroundColor: 'var(--sol-bg)' }} onMouseDown={onFilesPaneFocus}>
-                <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
-                {showProjects && <div className="shrink-0">{projectListBody}</div>}
-
-                <SectionHeader title={explorerTitle} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
-                {showExplorer && <div className="flex-1 min-h-0 flex flex-col">{explorerBody}</div>}
-
-                <SectionHeader title={changesTitle ?? (gitStale ? 'Changes (stale)' : 'Changes')} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} stats={changesStats} actions={changesActions} />
-                {showChanges && <div className="flex-1 min-h-0 overflow-y-auto py-1">{changesBody}</div>}
-
-                <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
-                {showSessions && <div className="flex-1 min-h-0 overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>}
+                <PanelHost id="projects" />
+                <PanelHost id="files" />
+                <PanelHost id="changes" />
+                <PanelHost id="sessions" />
               </div>
             )}
-            {mobilePane === 'editor' && editorPane}
-            {mobilePane === 'tasks' && (
-              <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
-                {tasksPane}
-              </div>
-            )}
+            {mobilePane === 'editor' && <PanelHost id="editor" />}
+            {mobilePane === 'tasks' && <PanelHost id="tasks" />}
             {mobilePane === 'terminal' && (
               <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-bg)' }}>
-                {terminalContent}
+                <PanelHost id="terminal" />
               </div>
             )}
           </div>
@@ -190,29 +229,15 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {showSidebar && (
             <>
               <div ref={sidebarRef} role="navigation" aria-label="Sidebar" className="flex flex-col overflow-hidden" style={{ width: left.size, backgroundColor: 'var(--sol-bg)' }}>
-                <SectionHeader title="Projects" collapsed={!showProjects} onToggle={() => onLayoutUpdate({ showProjects: !showProjects })} actions={projectActions} />
-                {showProjects && <div className="shrink-0 overflow-y-auto" style={{ height: projectHeight }}>{projectListBody}</div>}
+                <PanelHost id="projects" />
 
                 {showProjects && showExplorer && <HResizeHandle onMouseDown={projectSplit.onMouseDown} isDragging={projectSplit.isDragging} />}
 
-                <SectionHeader title={explorerTitle} collapsed={!showExplorer} onToggle={() => onLayoutUpdate({ showExplorer: !showExplorer })} actions={explorerActions} />
-                {showExplorer && (
-                  <div className="min-h-0 flex flex-col" style={{ flex: 1, minHeight: 80 }}>
-                    {explorerBody}
-                  </div>
-                )}
+                <PanelHost id="files" />
 
                 {showExplorer && showChanges && <HResizeHandle onMouseDown={changesSplit.onMouseDown} isDragging={changesSplit.isDragging} />}
 
-                <SectionHeader title={changesTitle ?? (gitStale ? 'Changes (stale)' : 'Changes')} collapsed={!showChanges} onToggle={() => onLayoutUpdate({ showChanges: !showChanges })} badge={changesBadge} stats={changesStats} actions={changesActions} />
-                {showChanges && (
-                  <div
-                    className="min-h-0 shrink-0 py-1"
-                    style={flexFallback === 'changes' ? { flex: 1, overflowY: 'auto' } : { height: changesHeight, minHeight: 50, overflowY: 'auto' }}
-                  >
-                    {changesBody}
-                  </div>
-                )}
+                <PanelHost id="changes" />
 
                 {/* Tasks toggle — pinned at bottom */}
                 <div className="mt-auto shrink-0">
@@ -227,7 +252,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {shouldShowEditorPane && (
             <>
               <div role="main" className="flex-1 min-w-0 flex flex-col">
-                {editorPane}
+                <PanelHost id="editor" />
               </div>
               {showRightPanel && <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />}
             </>
@@ -246,19 +271,15 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               }}
             >
               <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-                {terminalContent}
+                <PanelHost id="terminal" />
               </div>
               {showSessions && <HResizeHandle onMouseDown={sessionSplit.onMouseDown} isDragging={sessionSplit.isDragging} />}
-              <SectionHeader title="Sessions" collapsed={!showSessions} onToggle={() => onLayoutUpdate({ showSessions: !showSessions })} actions={sessionsActions} />
-              {showSessions && (
-                <div className="shrink-0 overflow-y-auto py-1" style={{ height: sessionHeight }} aria-live="polite">
-                  {sessionsBody}
-                </div>
-              )}
+              <PanelHost id="sessions" />
             </div>
           )}
         </>
       )}
     </div>
+    </PanelChromeContext.Provider>
   )
 }

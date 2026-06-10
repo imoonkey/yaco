@@ -17,6 +17,13 @@
 // file and never conflict with each other.
 import type { ComponentType, ReactNode } from 'react'
 import type { PanelId, WorkspaceEnv } from './context'
+import { projectsPanelDef } from './panels/ProjectsPanel'
+import { filesPanelDef } from './panels/FilesPanel'
+import { changesPanelDef } from './panels/ChangesPanel'
+import { sessionsPanelDef } from './panels/SessionsPanel'
+import { editorPanelDef } from './panels/EditorPanel'
+import { terminalPanelDef } from './panels/TerminalPanel'
+import { taskGraphPanelDef } from './panels/TaskGraphPanel'
 
 // Mobile docks the four-pane projection renders into (design: Mobile rendering).
 export type MobileDock = 'browse' | 'editor' | 'tasks' | 'terminal'
@@ -64,10 +71,18 @@ export type PanelDefinition = {
   useHeader?: PanelHeaderHook
 }
 
-// Assembled in phase 3h from the per-panel exported defs (e.g. `filesPanelDef`).
-// Empty in phase 2: the shell, types, and lookup exist so phase-3 panels can
-// register without touching PanelHost/PanelFrame.
-const PANEL_DEFINITIONS: readonly PanelDefinition[] = []
+// Assembled (phase 3h) from the per-panel exported defs. Registration order is
+// the mobile projection / tree-renderer read order; dock/min-size metadata lives
+// on each def. The merge hotspot is exactly this one array, edited only here.
+const PANEL_DEFINITIONS: readonly PanelDefinition[] = [
+  projectsPanelDef,
+  filesPanelDef,
+  changesPanelDef,
+  sessionsPanelDef,
+  editorPanelDef,
+  terminalPanelDef,
+  taskGraphPanelDef,
+]
 
 // Keyed by string (not PanelId) so a corrupt/stale id from a persisted layout
 // tree looks up safely and misses, instead of forcing callers to cast.

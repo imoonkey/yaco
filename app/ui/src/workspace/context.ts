@@ -14,12 +14,13 @@
 // commands need but cannot own while the file tree lives outside the provider.
 // It is not part of the public five and dissolves when FilesPanel/SessionsPanel
 // take ownership in phase 3.
-import { createContext, useContext, type ReactNode, type MutableRefObject } from 'react'
-import type { Project, GitChange, AgentSession, SessionProvider } from '../types'
+import { createContext, useContext, type ReactNode, type MutableRefObject, type Dispatch, type SetStateAction } from 'react'
+import type { Project, GitChange, AgentSession, SessionProvider, FileNode, HistorySession } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import type {
   FileState, PreviewMode, SplitDirection, MobilePane, WorkspaceLayout,
 } from '../hooks/workspaceTypes'
+import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import type { WorkspaceData } from './resources'
 
 export type { WorkspaceData, WorkspaceGitResource, WorkspaceSessionsResource } from './resources'
@@ -185,8 +186,80 @@ export type WorkspaceCommands = {
   actions: WorkspaceRawActions
 }
 
-// --- Internal: renderer-registered controllers ----------------------------
+// --- Voice ----------------------------------------------------------------
 
+/** What a panel needs to render its voice control button. Eligibility is decided
+ *  by the single screen-level voice surface (editor) or by the panel's own
+ *  attached state (terminal); the primitives come from the one shared `useVoice`. */
+export type VoiceControlState = {
+  eligible: boolean
+  capability: CapabilityState
+  state: InteractionState
+  elapsedMs: number
+  onStart: () => void
+  onStop: () => void
+}
+
+/** The single screen-level voice surface, exposed to the editor and terminal
+ *  panels. There is ONE `useVoice` + ONE `ComposeTray` at the screen; the screen
+ *  routes a confirmed transcript by the run's frozen target into `editorInsert`
+ *  or `terminalSend`, which the panels consume. Panels never own a private voice. */
+export type WorkspaceVoiceSurface = {
+  editor: VoiceControlState
+  terminal: VoiceControlState
+  editorInsert: InsertRequest | null
+  terminalSend: InsertRequest | null
+}
+
+// Inert default: no voice control renders (eligible:false) and nothing inserts.
+// Used by panel isolation tests (no screen voice in scope) and any render where
+// the screen surface is absent, so a panel never crashes for lack of a provider.
+const INERT_VOICE_CONTROL: VoiceControlState = {
+  eligible: false,
+  capability: { status: 'checking' },
+  state: 'idle',
+  elapsedMs: 0,
+  onStart: () => {},
+  onStop: () => {},
+}
+
+export const DEFAULT_WORKSPACE_VOICE: WorkspaceVoiceSurface = {
+  editor: INERT_VOICE_CONTROL,
+  terminal: INERT_VOICE_CONTROL,
+  editorInsert: null,
+  terminalSend: null,
+}
+
+// --- Panel resources (always-on owners) -----------------------------------
+
+/** Always-on file-tree owner. Owned by the provider (always mounted) so loaded
+ *  dirs + the quick-open staleness SSE survive collapsing the Explorer / hiding
+ *  the dock; FilesPanel's BODY may unmount, this does not. */
+export type WorkspaceFileTreeResource = {
+  data: FileNode[] | null
+  expandDir: (dirPath: string) => Promise<void>
+  patchTree: Dispatch<SetStateAction<FileNode[] | null>>
+  refresh: () => Promise<void>
+  clearLoadedDirs: () => void
+}
+
+/** Always-on session-history owner (refreshed after kill/rename). Same lifetime
+ *  rationale as the file tree. */
+export type WorkspaceHistoryResource = {
+  data: HistorySession[] | null
+  loading: boolean
+  refresh: () => Promise<void>
+}
+
+/** Provider-owned, always-on panel data the Files/Sessions panels consume. Kept
+ *  off the cold `WorkspaceData` (git/sessions) so it can be absent in panel
+ *  isolation tests — the panels fall back to their own hook then. */
+export type WorkspacePanelResources = {
+  fileTree: WorkspaceFileTreeResource
+  history: WorkspaceHistoryResource
+}
+
+// --- Internal: renderer-registered controllers ----------------------------
 /** Latest unconsumed cross-panel reveal request (design: File Reveal
  *  Controller). Buffered in the provider so a reveal issued before the Files
  *  renderer is mounted/visible is drained on registration instead of lost. */
@@ -194,8 +267,12 @@ export type FileRevealIntent =
   | { kind: 'file'; path: string; key: number }
   | { kind: 'folder'; path: string; key: number }
 
-/** Callbacks owned by the file-tree renderer that provider commands invoke.
- *  Registered by `WorkspaceScreen` while it owns `useFileTree` / `useHistory`. */
+/** The FilesPanel-registered reveal callbacks the provider's reveal buffer drains.
+ *  `drainReveal` is the live one (it needs the FileExplorer ref to expand/focus a
+ *  node). `revealParents` and `onSessionChange` are now provider-owned (parent
+ *  loading uses the always-on file tree's `expandDir`; history refresh is wired in
+ *  the provider) — they remain on the registry only as the reveal-controller
+ *  registration contract FilesPanel patches without clobbering its neighbours. */
 export type WorkspaceControllers = {
   /** Load every parent directory of a path so it appears in the tree. */
   revealParents: (path: string) => Promise<void>
@@ -221,6 +298,14 @@ export const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue 
 export const WorkspaceCommandsContext = createContext<WorkspaceCommands | null>(null)
 export const WorkspaceControllersContext =
   createContext<WorkspaceControllerRegistry | null>(null)
+// Provider-owned always-on Files/Sessions data. `null` outside the provider
+// (panel isolation tests) → the panel falls back to its own hook.
+export const WorkspacePanelResourcesContext =
+  createContext<WorkspacePanelResources | null>(null)
+// The screen-level voice surface. A non-null default (inert) so editor/terminal
+// panels read it safely even when rendered outside the screen (isolation tests).
+export const WorkspaceVoiceContext =
+  createContext<WorkspaceVoiceSurface>(DEFAULT_WORKSPACE_VOICE)
 
 function useRequired<T>(ctx: React.Context<T | null>, name: string): T {
   const value = useContext(ctx)
@@ -240,6 +325,15 @@ export const useWorkspaceCommands = (): WorkspaceCommands =>
   useRequired(WorkspaceCommandsContext, 'useWorkspaceCommands')
 export const useWorkspaceControllers = (): WorkspaceControllerRegistry =>
   useRequired(WorkspaceControllersContext, 'useWorkspaceControllers')
+
+/** Provider-owned always-on Files/Sessions resources, or null outside the
+ *  provider (panel isolation tests fall back to their own hook). */
+export const useOptionalWorkspacePanelResources = (): WorkspacePanelResources | null =>
+  useContext(WorkspacePanelResourcesContext)
+
+/** The single screen-level voice surface (inert default outside the screen). */
+export const useWorkspaceVoiceSurface = (): WorkspaceVoiceSurface =>
+  useContext(WorkspaceVoiceContext)
 
 // Re-exported for the data-resource consumers.
 export type { GitChange, AgentSession, SessionProvider }

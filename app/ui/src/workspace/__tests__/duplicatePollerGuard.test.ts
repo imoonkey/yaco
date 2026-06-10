@@ -5,33 +5,35 @@
 // and shares a single process-wide SSE EventSource ("one SSE path").
 //
 // This pins the phase-0 invariant the panel-extraction refactor must preserve.
-// Today the owners live directly in `WorkspaceScreen`'s `Workspace` body:
-//   useFileTree(projectName, worktree)   // WorkspaceScreen.tsx:140  (filetree owner)
-//   useSessions(projectName)             // WorkspaceScreen.tsx:141  (sessions poller)
-//   useGitStatus(projectName, worktree)  // WorkspaceScreen.tsx:142  (git poller)
-//   useSSERefresh('filetree', …)         // WorkspaceScreen.tsx:147  (one SSE consumer)
-// When phase 3 splits these into panels, two panels each owning a hook would
-// double the poll load (or open a second SSE stream). The guard renders the REAL
-// `Workspace` (heavy children mocked) and counts requests from that render, so a
-// duplicate owner added to the composition fails the test. Duplicate-owner
-// control tests prove the counters are non-vacuous for all three routes.
+// After phase 3h the owners are provider-level (always mounted; they survive
+// section collapse + dock hide):
+//   sessions/git pollers    → WorkspaceProvider (`useWorkspaceData`)
+//   filetree owner + the    → WorkspaceProvider (`useFileTree` + `useSSERefresh('filetree')`)
+//   'filetree' SSE consumer
+// The guard renders the REAL `WorkspaceLayout` (every panel mounts through it),
+// stubbing only the heavy LEAVES (FileExplorer, xterm Terminal, the lazy text
+// search). So a genuine double-mount in a real layout branch — or a panel that
+// re-owns a poller/SSE — fails the counts. Duplicate-owner control tests prove
+// the counters are non-vacuous for all three routes.
 //
 // `.ts` (not `.tsx`) per task scope, so elements use `createElement`/`renderHook`
 // callbacks rather than JSX.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createElement } from 'react'
+import { createElement, forwardRef } from 'react'
 import { render, renderHook, cleanup, waitFor, act } from '@testing-library/react'
 import { useFileTree, useSessions, useGitStatus } from '../../hooks/useApi'
 import { useSSERefresh } from '../../hooks/useSSE'
 import { Workspace } from '../WorkspaceScreen'
 import type { WorktreeInfo } from '../../hooks/useProjectWorktrees'
 
-// Mock only the heavy children the real `Workspace` renders directly, so the
-// render exercises the top-level poller/SSE composition (the real useFileTree /
-// useSessions / useGitStatus / useSSERefresh) without mounting xterm, the editor,
-// or the voice/VAD stack. The poller hooks live in `Workspace`'s own body, so
-// they still run for real with `WorkspaceLayout` short-circuited to null.
-vi.mock('../WorkspaceLayout', () => ({ WorkspaceLayout: () => null }))
+// Stub only the heavy leaves the real WorkspaceLayout mounts; everything else
+// (the provider's pollers/SSE, the panels, the chrome) runs for real so a real
+// double-mount is observable. No tab/session is open, so the editor sits on its
+// empty state and the terminal on its placeholder — neither leaf mounts here, but
+// they are stubbed defensively against future default state.
+vi.mock('../../components/FileExplorer', () => ({ FileExplorer: forwardRef(() => null) }))
+vi.mock('../../components/Terminal', () => ({ Terminal: () => null }))
+vi.mock('../WorkspaceTextSearch', () => ({ WorkspaceTextSearch: () => null }))
 vi.mock('../../components/ComposeTray', () => ({ ComposeTray: () => null }))
 vi.mock('../../hooks/useVoice', () => ({
   useVoice: () => ({
@@ -119,6 +121,12 @@ describe('duplicate-poller / single-SSE guard', () => {
   beforeEach(() => {
     esInstances.length = 0
     vi.stubGlobal('EventSource', FakeEventSource)
+    // The real editor tab bar observes its scroll container; jsdom has none.
+    vi.stubGlobal('ResizeObserver', class {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    })
     installFetch()
     stubMatchMedia()
   })

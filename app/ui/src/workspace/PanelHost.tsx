@@ -10,6 +10,7 @@ import {
   getPanelDefinition, resolvePanelTitle, type PanelDefinition,
 } from './panelRegistry'
 import { PanelFrame } from './PanelFrame'
+import { usePanelChromeSlot } from './panelChrome'
 
 // Loose by design: persisted layout trees feed ids in, so the host tolerates
 // any value and falls back to the placeholder rather than forcing unsafe casts
@@ -28,12 +29,17 @@ export function PanelHost({ id }: PanelHostProps) {
 
 function HostedPanel({ def }: { def: PanelDefinition }) {
   const env = useWorkspaceEnv()
+  // Renderer-supplied collapse + body sizing for this panel id (undefined when no
+  // renderer is sizing sections, e.g. isolation tests — the frame then defaults
+  // to expanded + fill).
+  const slot = usePanelChromeSlot(def.id)
   const Body = def.Component
   return (
     <PanelFrame
       chrome={def.chrome}
       title={resolvePanelTitle(def.title, env)}
       useHeader={def.useHeader}
+      slot={slot}
     >
       <Body />
     </PanelFrame>

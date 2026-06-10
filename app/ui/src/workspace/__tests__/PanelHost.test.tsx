@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { PanelHost } from '../PanelHost'
@@ -131,15 +131,73 @@ describe('PanelFrame — chrome + header slots', () => {
   })
 })
 
+describe('PanelFrame — collapse contract (renderer chrome slot)', () => {
+  const headerOf = (title: string) => screen.getByRole('button', { name: `${title} section` })
+
+  it('expanded slot renders aria-expanded=true, the actions, and the body', () => {
+    render(
+      <PanelFrame
+        chrome="framed"
+        title="Files"
+        useHeader={() => ({ actions: <button type="button">act</button> })}
+        slot={{ collapsed: false, onToggle: () => {} }}
+      >
+        <div>body</div>
+      </PanelFrame>,
+    )
+    expect(headerOf('Files').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('button', { name: 'act' })).toBeTruthy()
+    expect(screen.getByText('body')).toBeTruthy()
+  })
+
+  it('collapsed slot flips aria-expanded=false, hides the actions, and suppresses the body', () => {
+    render(
+      <PanelFrame
+        chrome="framed"
+        title="Files"
+        useHeader={() => ({ actions: <button type="button">act</button> })}
+        slot={{ collapsed: true, onToggle: () => {} }}
+      >
+        <div>body</div>
+      </PanelFrame>,
+    )
+    expect(headerOf('Files').getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByRole('button', { name: 'act' })).toBeNull() // actions hidden while collapsed
+    expect(screen.queryByText('body')).toBeNull() // body suppressed (drives the data-owner lifetime rules)
+  })
+
+  it('clicking the header invokes the slot onToggle', () => {
+    const onToggle = vi.fn()
+    render(
+      <PanelFrame chrome="framed" title="Files" slot={{ collapsed: false, onToggle }}>
+        <div>body</div>
+      </PanelFrame>,
+    )
+    fireEvent.click(headerOf('Files'))
+    expect(onToggle).toHaveBeenCalledTimes(1)
+  })
+
+  it('without a slot the framed header defaults to expanded with body shown', () => {
+    render(
+      <PanelFrame chrome="framed" title="Files">
+        <div>body</div>
+      </PanelFrame>,
+    )
+    expect(headerOf('Files').getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('body')).toBeTruthy()
+  })
+})
+
 describe('registry helpers (real implementations)', () => {
-  it('getPanelDefinition returns undefined for non-string / unknown ids', async () => {
+  it('getPanelDefinition resolves registered ids and returns undefined for unknown / non-string ids', async () => {
     const actual = await vi.importActual<typeof import('../panelRegistry')>('../panelRegistry')
-    expect(actual.getPanelDefinition('files')).toBeUndefined() // unregistered in phase 2
+    expect(actual.getPanelDefinition('files')?.id).toBe('files') // registered in phase 3h
+    expect(actual.getPanelDefinition('not-a-panel')).toBeUndefined() // unknown id
     expect(actual.getPanelDefinition(null)).toBeUndefined()
     expect(actual.getPanelDefinition(undefined)).toBeUndefined()
     expect(actual.getPanelDefinition(123)).toBeUndefined()
     expect(actual.getPanelDefinition({ panel: 'x' })).toBeUndefined()
-    expect(actual.allPanelDefinitions()).toHaveLength(0) // registry stays empty/assembling
+    expect(actual.allPanelDefinitions()).toHaveLength(7) // the 7 panels assembled in phase 3h
   })
 
   it('resolvePanelTitle handles string and env-function titles', async () => {
