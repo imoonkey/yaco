@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
+import { waitForAppReady } from './helpers/workspace'
 
 // --- Helpers ---
 
 async function openWorkspace(page: Page) {
   await page.goto('/')
-  await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+  await waitForAppReady(page)
   const projects = await page.evaluate(async () => {
     const res = await fetch('/api/projects')
     return res.json() as Promise<{ name: string; path: string }[]>
@@ -47,10 +48,13 @@ async function deleteTestFile(page: Page, projectName: string, path: string) {
 /** Open a file as preview via file search (Cmd+P) */
 async function openFileViaSearch(page: Page, fileName: string) {
   await page.keyboard.press('Meta+p')
-  await expect(page.locator('input[placeholder="Search files..."]')).toBeVisible({ timeout: 10_000 })
-  await page.locator('input[placeholder="Search files..."]').fill(fileName)
+  const input = page.locator('input[placeholder="Search files..."]')
+  await expect(input).toBeVisible({ timeout: 10_000 })
+  await input.fill(fileName)
   await page.waitForTimeout(500)
-  await page.keyboard.press('Enter')
+  // Click the top result rather than pressing Enter: after a CodeMirror edit the
+  // editor swallows the search input's Enter keydown, so selection never fires.
+  await page.locator('[data-search-result-idx="0"]').click()
   await page.waitForTimeout(1000)
 }
 

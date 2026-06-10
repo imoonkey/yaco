@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
+import { waitForAppReady } from './helpers/workspace'
 
 // --- Helpers ---
 
 async function openWorkspace(page: Page) {
   await page.goto('/')
-  await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+  await waitForAppReady(page)
   const projects = await page.evaluate(async () => {
     const res = await fetch('/api/projects')
     return res.json() as Promise<{ name: string; path: string }[]>
@@ -63,8 +64,10 @@ test.describe('File search (Cmd+P)', () => {
     const results = page.locator('.max-h-\\[300px\\] > div')
     await expect(results.first()).toBeVisible({ timeout: 3000 })
 
-    // Verify results contain path with directory separators (i.e. nested file)
-    const firstResultPath = await results.first().locator('span').last().textContent()
+    // Verify results contain path with directory separators (i.e. nested file).
+    // The path renders in the row's `.text-ui-xs` wrapper; match highlighting
+    // splits it into multiple inner spans, so read the wrapper's full text.
+    const firstResultPath = await results.first().locator('.text-ui-xs').textContent()
     expect(firstResultPath).toContain('/')
 
     await page.keyboard.press('Escape')

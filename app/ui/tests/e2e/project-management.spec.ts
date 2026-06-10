@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
+import { waitForAppReady } from './helpers/workspace'
 
 // --- Helpers ---
 
 async function waitForApp(page: Page) {
   await page.goto('/')
-  await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+  await waitForAppReady(page)
 }
 
 /** Get project button by name in the sidebar project list */
@@ -259,10 +260,11 @@ test.describe('Workspace sidebar', () => {
   }
 
   test('explorer/changes resize handle is visible and draggable', async ({ page }) => {
-    await openWorkspace(page)
+    const project = await openWorkspace(page)
 
-    // Both Explorer and Changes sections should be visible
-    await expect(page.locator('text=Explorer').first()).toBeVisible({ timeout: 5000 })
+    // Both the Explorer (its header is titled by the project name) and Changes
+    // sections should be visible — the resize handle lives between them.
+    await expect(page.locator(`[aria-label="${project.name} section"]`)).toBeVisible({ timeout: 5000 })
     await expect(page.locator('text=Changes').first()).toBeVisible({ timeout: 5000 })
 
     // The horizontal resize handle between them (cursor-row-resize)

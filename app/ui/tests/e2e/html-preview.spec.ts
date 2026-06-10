@@ -1,8 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
+import { waitForAppReady } from './helpers/workspace'
 
 async function openWorkspace(page: Page) {
   await page.goto('/')
-  await expect(page.locator('header')).toBeVisible({ timeout: 10_000 })
+  await waitForAppReady(page)
   const projects = await page.evaluate(async () => {
     const res = await fetch('/api/projects')
     return res.json() as Promise<{ name: string; path: string }[]>
