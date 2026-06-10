@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   type PersistedState,
   type PersistedDrafts,
+  type WorkspaceLayout,
+  type WorkspacePanelLayout,
   DEFAULT_LAYOUT,
   isFileTab,
   isTasksTab,
@@ -10,11 +12,12 @@ import {
   loadStoredSize,
   dedupeTabs,
 } from './workspaceTypes'
+import { defaultWorkspacePanelLayout, normalizeLayout } from '../workspace/panelLayoutModel'
 
 // --- Load helpers ---
 
-function loadPersistedState(project: string, worktree?: string | null): PersistedState {
-  const defaults: PersistedState = {
+function defaultPersistedState(): PersistedState {
+  return {
     openTabs: [],
     activeTab: null,
     previewTab: null,
@@ -22,11 +25,71 @@ function loadPersistedState(project: string, worktree?: string | null): Persiste
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
     recentFiles: [],
+    panelLayout: defaultWorkspacePanelLayout(),
   }
+}
 
+/** Parse the flat `WorkspaceLayout` bag, salvaging every field independently to
+ *  its default. `pl` is `parsed.layout` (or `parsed` itself for very old blobs
+ *  that stored the fields at the top level). */
+function parseFlatLayout(pl: Record<string, unknown>): WorkspaceLayout {
+  return {
+    showSidebar: typeof pl.showSidebar === 'boolean' ? pl.showSidebar : DEFAULT_LAYOUT.showSidebar,
+    showRightPanel: typeof pl.showRightPanel === 'boolean' ? pl.showRightPanel : DEFAULT_LAYOUT.showRightPanel,
+    showProjects: typeof pl.showProjects === 'boolean' ? pl.showProjects : DEFAULT_LAYOUT.showProjects,
+    showExplorer: typeof pl.showExplorer === 'boolean' ? pl.showExplorer : DEFAULT_LAYOUT.showExplorer,
+    showSessions: typeof pl.showSessions === 'boolean' ? pl.showSessions : DEFAULT_LAYOUT.showSessions,
+    showChanges: typeof pl.showChanges === 'boolean' ? pl.showChanges : DEFAULT_LAYOUT.showChanges,
+    showTasks: typeof pl.showTasks === 'boolean' ? pl.showTasks : DEFAULT_LAYOUT.showTasks,
+    showTextSearch: typeof pl.showTextSearch === 'boolean' ? pl.showTextSearch : DEFAULT_LAYOUT.showTextSearch,
+    autocompleteEnabled: typeof pl.autocompleteEnabled === 'boolean' ? pl.autocompleteEnabled : DEFAULT_LAYOUT.autocompleteEnabled,
+    previewMode: pl.previewMode === 'edit' || pl.previewMode === 'preview' || pl.previewMode === 'split' ? pl.previewMode
+      : DEFAULT_LAYOUT.previewMode,
+    splitDirection: pl.splitDirection === 'horizontal' || pl.splitDirection === 'vertical' ? pl.splitDirection : DEFAULT_LAYOUT.splitDirection,
+    splitSize: typeof pl.splitSize === 'number' && pl.splitSize >= 20 && pl.splitSize <= 80 ? pl.splitSize : DEFAULT_LAYOUT.splitSize,
+    leftSize: loadStoredSize(pl.leftSize, DEFAULT_LAYOUT.leftSize),
+    rightSize: loadStoredSize(pl.rightSize, DEFAULT_LAYOUT.rightSize),
+    explorerSize: loadStoredSize(pl.explorerSize, DEFAULT_LAYOUT.explorerSize),
+    searchSize: loadStoredSize(pl.searchSize, DEFAULT_LAYOUT.searchSize),
+    changesSize: loadStoredSize(pl.changesSize, DEFAULT_LAYOUT.changesSize),
+    sessionSize: loadStoredSize(pl.sessionSize, DEFAULT_LAYOUT.sessionSize),
+    projectSize: loadStoredSize(pl.projectSize, DEFAULT_LAYOUT.projectSize),
+  }
+}
+
+/** Derive the panel-layout tree (design: Persistence Shape / Load behavior).
+ *
+ *  - A stored `version: 1` tree is validated + normalized; `normalizeLayout`
+ *    salvages every field independently (tree → default subtree, mobile dock,
+ *    panel state), so a malformed tree is repaired, never wholesale discarded.
+ *  - Any other input is an old flat blob: use the default desktop/mobile
+ *    arrangement and lift only the four editor preference fields into
+ *    `panelState.editor`. They are read from the already-salvaged `flat` layout,
+ *    so an invalid pref falls back to its default per field. */
+function migratePanelLayout(parsed: Record<string, unknown>, flat: WorkspaceLayout): WorkspacePanelLayout {
+  const stored = parsed.panelLayout
+  if (stored && typeof stored === 'object' && (stored as Record<string, unknown>).version === 1) {
+    return normalizeLayout(stored)
+  }
+  const base = defaultWorkspacePanelLayout()
+  return {
+    ...base,
+    panelState: {
+      ...base.panelState,
+      editor: {
+        previewMode: flat.previewMode,
+        splitDirection: flat.splitDirection,
+        splitSize: flat.splitSize,
+        autocompleteEnabled: flat.autocompleteEnabled,
+      },
+    },
+  }
+}
+
+export function loadPersistedState(project: string, worktree?: string | null): PersistedState {
   try {
     const raw = localStorage.getItem(layoutKey(project, worktree))
-    if (!raw) return defaults
+    if (!raw) return defaultPersistedState()
     const parsed = JSON.parse(raw) as Record<string, unknown>
 
     const openTabs = dedupeTabs(Array.isArray(parsed.openTabs)
@@ -37,6 +100,7 @@ function loadPersistedState(project: string, worktree?: string | null): Persiste
       : openTabs[0] ?? null
 
     const pl = (parsed.layout ?? parsed) as Record<string, unknown>
+    const layout = parseFlatLayout(pl)
 
     return {
       openTabs,
@@ -47,38 +111,18 @@ function loadPersistedState(project: string, worktree?: string | null): Persiste
       activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
       mobilePane: parsed.mobilePane === 'files' || parsed.mobilePane === 'editor' || parsed.mobilePane === 'tasks' || parsed.mobilePane === 'terminal'
         ? parsed.mobilePane as PersistedState['mobilePane'] : 'files',
-      layout: {
-        showSidebar: typeof pl.showSidebar === 'boolean' ? pl.showSidebar : DEFAULT_LAYOUT.showSidebar,
-        showRightPanel: typeof pl.showRightPanel === 'boolean' ? pl.showRightPanel : DEFAULT_LAYOUT.showRightPanel,
-        showProjects: typeof pl.showProjects === 'boolean' ? pl.showProjects : DEFAULT_LAYOUT.showProjects,
-        showExplorer: typeof pl.showExplorer === 'boolean' ? pl.showExplorer : DEFAULT_LAYOUT.showExplorer,
-        showSessions: typeof pl.showSessions === 'boolean' ? pl.showSessions : DEFAULT_LAYOUT.showSessions,
-        showChanges: typeof pl.showChanges === 'boolean' ? pl.showChanges : DEFAULT_LAYOUT.showChanges,
-        showTasks: typeof pl.showTasks === 'boolean' ? pl.showTasks : DEFAULT_LAYOUT.showTasks,
-        showTextSearch: typeof pl.showTextSearch === 'boolean' ? pl.showTextSearch : DEFAULT_LAYOUT.showTextSearch,
-        autocompleteEnabled: typeof pl.autocompleteEnabled === 'boolean' ? pl.autocompleteEnabled : DEFAULT_LAYOUT.autocompleteEnabled,
-        previewMode: pl.previewMode === 'edit' || pl.previewMode === 'preview' || pl.previewMode === 'split' ? pl.previewMode
-          : DEFAULT_LAYOUT.previewMode,
-        splitDirection: pl.splitDirection === 'horizontal' || pl.splitDirection === 'vertical' ? pl.splitDirection : DEFAULT_LAYOUT.splitDirection,
-        splitSize: typeof pl.splitSize === 'number' && pl.splitSize >= 20 && pl.splitSize <= 80 ? pl.splitSize : DEFAULT_LAYOUT.splitSize,
-        leftSize: loadStoredSize(pl.leftSize, DEFAULT_LAYOUT.leftSize),
-        rightSize: loadStoredSize(pl.rightSize, DEFAULT_LAYOUT.rightSize),
-        explorerSize: loadStoredSize(pl.explorerSize, DEFAULT_LAYOUT.explorerSize),
-        searchSize: loadStoredSize(pl.searchSize, DEFAULT_LAYOUT.searchSize),
-        changesSize: loadStoredSize(pl.changesSize, DEFAULT_LAYOUT.changesSize),
-        sessionSize: loadStoredSize(pl.sessionSize, DEFAULT_LAYOUT.sessionSize),
-        projectSize: loadStoredSize(pl.projectSize, DEFAULT_LAYOUT.projectSize),
-      },
+      layout,
       recentFiles: Array.isArray(parsed.recentFiles)
         ? (parsed.recentFiles as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 50)
         : [],
+      panelLayout: migratePanelLayout(parsed, layout),
     }
   } catch {
-    return defaults
+    return defaultPersistedState()
   }
 }
 
-function loadPersistedDrafts(project: string, worktree?: string | null): PersistedDrafts {
+export function loadPersistedDrafts(project: string, worktree?: string | null): PersistedDrafts {
   try {
     const raw = localStorage.getItem(draftsKey(project, worktree))
     if (!raw) return { files: {} }
@@ -95,7 +139,7 @@ function loadPersistedDrafts(project: string, worktree?: string | null): Persist
 
 // --- Save helpers ---
 
-function saveLayout(project: string, worktree: string | null | undefined, state: PersistedState): void {
+export function saveLayout(project: string, worktree: string | null | undefined, state: PersistedState): void {
   try {
     localStorage.setItem(layoutKey(project, worktree), JSON.stringify(state))
   } catch { /* layout is tiny — quota should never be an issue */ }

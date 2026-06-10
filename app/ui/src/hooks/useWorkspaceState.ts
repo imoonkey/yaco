@@ -27,7 +27,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   const ls = useLayoutState(initialLayout, previewLifecycle)
 
   // Latest layout snapshot for SSE refetch + persistence getters.
-  const layoutValue = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, recentFiles: ls.recentFiles }
+  const layoutValue = { openTabs: ls.openTabs, activeTab: ls.activeTab, previewTab: ls.previewTab, activeSession: ls.activeSession, mobilePane: ls.mobilePane, layout: ls.layout, panelLayout: ls.panelLayout, recentFiles: ls.recentFiles }
   const layoutRef = useRef(layoutValue)
   useEffect(() => {
     openTabsRef.current = ls.openTabs
@@ -60,7 +60,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   // Schedule persistence on state changes
   useEffect(() => {
     scheduleLayoutSave()
-  }, [ls.openTabs, ls.activeTab, ls.previewTab, ls.activeSession, ls.mobilePane, ls.layout, ls.recentFiles, scheduleLayoutSave])
+  }, [ls.openTabs, ls.activeTab, ls.previewTab, ls.activeSession, ls.mobilePane, ls.layout, ls.panelLayout, ls.recentFiles, scheduleLayoutSave])
 
   useEffect(() => {
     scheduleDraftsSave()

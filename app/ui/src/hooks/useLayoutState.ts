@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import {
   type WorkspaceLayout,
+  type WorkspacePanelLayout,
   type PersistedState,
   isFileTab,
   isDiffTab,
@@ -19,6 +20,10 @@ export function useLayoutState(
   const [mobilePane, setMobilePane] = useState(initialLayout.mobilePane)
   const [layout, setLayout] = useState<WorkspaceLayout>(initialLayout.layout)
   const [recentFiles, setRecentFiles] = useState<string[]>(initialLayout.recentFiles)
+  // Panel-layout tree, seeded from the migrated persisted state. Layout
+  // commands (mutators) land in the concurrent model-commands task; this hook
+  // owns the load → live-state seam.
+  const [panelLayout] = useState<WorkspacePanelLayout>(initialLayout.panelLayout)
 
   const openTabsRef = useRef(openTabs)
   const activeTabRef = useRef(activeTab)
@@ -200,6 +205,7 @@ export function useLayoutState(
     activeSession,
     mobilePane,
     layout,
+    panelLayout,
     recentFiles,
     openFileTab,
     openPreviewTab,
