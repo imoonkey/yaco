@@ -1,3 +1,6 @@
+import type { PanelId } from '../workspace/context'
+import type { MobileDock } from '../workspace/panelRegistry'
+
 // --- Types ---
 
 export type FileStatus = 'clean' | 'dirty' | 'saving' | 'conflict' | 'missing'
@@ -135,4 +138,73 @@ export function dedupeTabs(tabs: string[]): string[] {
     next.push(tab)
   }
   return next
+}
+
+// --- Panel layout model (design: Layout Model) ---
+//
+// The desktop layout is an n-ary tree of split/tabs/leaf nodes. It maps directly
+// to today's fixed-pixel docks plus one growing child per split. The model is
+// pure structure; `workspace/panelLayoutModel.ts` owns the defaults and the
+// normalization that repairs any loaded/edited tree to the renderer's invariants.
+
+/** A single registered panel placed in the tree. `id` is stable across resize /
+ *  move commands; `panel` selects which registered panel renders here.
+ *  `collapsed` lives on the leaf so the state travels with the panel. */
+export type LeafNode = {
+  kind: 'leaf'
+  id: string
+  panel: PanelId
+  collapsed?: boolean
+}
+
+/** One slot in a split. `basis` is a fixed pixel size along the split axis;
+ *  `grow` marks the child that absorbs leftover space; `hidden` keeps a subtree
+ *  in state (its sizes and collapse flags preserved) while the renderer skips it
+ *  for both layout and sizing — this is how the dock/activity toggles work. */
+export type SplitChild = {
+  node: LayoutNode
+  basis?: number
+  grow?: boolean
+  hidden?: boolean
+}
+
+export type SplitAxis = 'row' | 'col'
+
+export type SplitNode = {
+  kind: 'split'
+  id: string
+  axis: SplitAxis
+  children: SplitChild[]
+}
+
+/** `chrome: 'none'` is the v1 editor/tasks main tabs node (chrome owned by its
+ *  panels); `chrome: 'tabs'` is reserved for future desktop tab groups. */
+export type TabsChrome = 'none' | 'tabs'
+
+export type TabsNode = {
+  kind: 'tabs'
+  id: string
+  active: PanelId
+  panels: PanelId[]
+  chrome: TabsChrome
+}
+
+export type LayoutNode = LeafNode | SplitNode | TabsNode
+
+/** Persisted panel-local state that is not tree structure. */
+export type PanelState = {
+  files: { mode: 'tree' | 'search' }
+  editor: {
+    previewMode: PreviewMode
+    splitDirection: SplitDirection
+    splitSize: number
+    autocompleteEnabled: boolean
+  }
+}
+
+export type WorkspacePanelLayout = {
+  version: 1
+  desktop: LayoutNode
+  mobile: { activeDock: MobileDock }
+  panelState: PanelState
 }
