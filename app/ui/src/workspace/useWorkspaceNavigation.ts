@@ -1,39 +1,25 @@
 import { useCallback } from 'react'
 import { isDiffTab, isFileTab } from '../hooks/workspaceTypes'
-import type { MobilePane } from '../hooks/workspaceTypes'
 import type { SearchEntry } from './WorkspaceSearch'
 import type { FileExplorerHandle } from '../components/FileExplorer'
 import { TASKS_FILE_PATH } from '../hooks/useTaskGraph'
-
-type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
+import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, type FocusTarget } from './context'
 
 interface UseWorkspaceNavigationOpts {
-  actions: {
-    openFileTab: (path: string) => void
-    openPreviewTab: (path: string) => void
-    openPreviewDiffTab: (path: string) => void
-    openDiffTab: (path: string) => void
-    openTasksTab: () => void
-    setActiveTab: (tab: string) => void
-    setMobilePane: (pane: MobilePane) => void
-    updateLayout: (patch: Record<string, unknown>) => void
-  }
-  activeTab: string | null
-  previewTab: string | null
-  showSidebar: boolean
-  showExplorer: boolean
+  // File-tree primitives stay screen-owned until FilesPanel takes them (phase 3).
   expandDir: (path: string) => Promise<void>
   explorerRef: React.RefObject<FileExplorerHandle | null>
-  setSelectedFilePath: (path: string | null) => void
-  setFocusTarget: (t: FocusTarget) => void
 }
 
 export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
-  const {
-    actions, activeTab, previewTab,
-    showSidebar, showExplorer, expandDir, explorerRef,
-    setSelectedFilePath, setFocusTarget,
-  } = opts
+  const { expandDir, explorerRef } = opts
+  const commands = useWorkspaceCommands()
+  const { activeTab, previewTab } = useWorkspaceSelection()
+  const { layout } = useWorkspaceLayout()
+  const { showSidebar, showExplorer } = layout
+  const actions = commands.actions
+  const setSelectedFilePath = commands.setSelectedFilePath
+  const setFocusTarget = commands.setFocusTarget
 
   const openFile = useCallback((path: string, focus: FocusTarget = 'editor') => {
     actions.openFileTab(path)

@@ -1,39 +1,15 @@
 import { useEffect, useCallback } from 'react'
-import type { PreviewMode, MobilePane } from '../hooks/workspaceTypes'
 import type { UseVoiceReturn } from '../hooks/useVoice'
-import type { AgentSession } from '../types'
 import { writeTextToClipboard } from '../lib/clipboard'
+import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceDataContext, useWorkspaceEnv } from './context'
 
-type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
   unlock?: () => void
 }
 
 interface UseWorkspaceKeyboardOpts {
-  actions: {
-    setActiveSession: (name: string) => void
-    setActiveTab: (tab: string) => void
-    setMobilePane: (pane: MobilePane) => void
-    updateLayout: (patch: Record<string, unknown>) => void
-    toggleTasksTab: () => void
-  }
-  activeSession: string
-  orderedSessions: AgentSession[]
-  openTabs: string[]
-  activeTab: string | null
-  isMobile: boolean
-  showSidebar: boolean
-  showRightPanel: boolean
-  showSearch: boolean
-  setShowSearch: (fn: (v: boolean) => boolean) => void
-  focusTarget: FocusTarget
-  setFocusTarget: (t: FocusTarget) => void
-  selectedFilePath: string | null
-  explorerFocusedPath: string | null
   canTogglePreview: boolean
-  previewMode: PreviewMode
-  closeFocusedSurface: () => boolean
   editorVoiceEligible: boolean
   terminalVoiceEligible: boolean
   handleEditorVoiceStart: () => void
@@ -45,23 +21,7 @@ interface UseWorkspaceKeyboardOpts {
 
 export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
   const {
-    actions,
-    activeSession,
-    orderedSessions,
-    openTabs,
-    activeTab,
-    isMobile,
-    showSidebar,
-    showRightPanel,
-    showSearch,
-    setShowSearch,
-    focusTarget,
-    setFocusTarget,
-    selectedFilePath,
-    explorerFocusedPath,
     canTogglePreview,
-    previewMode,
-    closeFocusedSurface,
     editorVoiceEligible,
     terminalVoiceEligible,
     handleEditorVoiceStart,
@@ -70,6 +30,17 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     onToggleTextSearch,
     onToggleShortcutSheet,
   } = opts
+
+  const commands = useWorkspaceCommands()
+  const actions = commands.actions
+  const setFocusTarget = commands.setFocusTarget
+  const closeFocusedSurface = commands.closeFocusedSurface
+  const setShowSearch = commands.actions.setShowSearch
+  const { activeSession, openTabs, activeTab, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
+  const { orderedSessions } = useWorkspaceDataContext().sessions
+  const { layout } = useWorkspaceLayout()
+  const { showSidebar, showRightPanel, previewMode } = layout
+  const { isMobile } = useWorkspaceEnv().viewport
 
   const getKeyboardLock = useCallback((): KeyboardLockHandle | null => {
     if (!window.isSecureContext) return null
@@ -219,7 +190,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, selectedFilePath, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

@@ -1,9 +1,8 @@
 import { lazy, Suspense, useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { ChevronsDownUp, FilePlus, FileSearch as FileSearchIcon, FolderPlus, GitCompareArrows, Plus, Search, SearchCode, Undo2, X } from 'lucide-react'
-import { useFileTree, useSessions, useGitStatus, useHistory, fetchGitCompare } from '../hooks/useApi'
+import { useFileTree, useHistory, fetchGitCompare } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
-import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, useWorkspaceState } from '../hooks/useWorkspaceState'
-import { useIsMobile, useIsTouch, useIsLandscape } from '../hooks/useIsMobile'
+import { isDiffTab, isFileTab, isTasksTab, parseDiffTab } from '../hooks/useWorkspaceState'
 import { useVoice } from '../hooks/useVoice'
 import { isPreviewableFile } from '../lib/binaryFiles'
 import { VoiceControl } from '../components/VoiceControl'
@@ -23,13 +22,18 @@ import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCount
 import { ProjectList } from '../components/ProjectList'
 import { useWorkspaceKeyboard } from './useWorkspaceKeyboard'
 import { useWorkspaceNavigation } from './useWorkspaceNavigation'
-import { useWorkspaceSessions } from './useWorkspaceSessions'
 import { useWorkspaceDiff } from './useWorkspaceDiff'
 import { useWorkspaceVoice } from './useWorkspaceVoice'
 import { CompareRefPicker } from './CompareRefPicker'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
 import { SectionRefreshButton } from './SectionHeader'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
+import { WorkspaceProvider } from './WorkspaceProvider'
+import {
+  useWorkspaceEnv, useWorkspaceDataContext, useWorkspaceSelection,
+  useWorkspaceLayout, useWorkspaceCommands, useWorkspaceControllers,
+  type WorkspaceControllers,
+} from './context'
 
 // Lazy-load heavy panels that are only rendered conditionally.
 // Terminal pulls xterm (~250KB); WorkspaceTextSearch pulls ripgrep stream UI.
@@ -56,33 +60,7 @@ const TaskScreenFallback = (
   </div>
 )
 
-type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
-type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
-
-// ============================================================
-export function Workspace({
-  projectName,
-  projectPath,
-  worktree,
-  worktrees,
-  activeWorktree,
-  onWorktreeSelect,
-  projects,
-  activeProject,
-  projectUnreadCounts,
-  projectSessionCounts,
-  onProjectSelect,
-  onProjectReorder,
-  onProjectRemove,
-  onAddProject,
-  onMarkAllRead,
-  sessionUnreadCounts,
-  markSessionRead,
-  onVisibilityReport,
-  attachIntent,
-  clearAttachIntent,
-  notificationBell,
-}: {
+type WorkspaceProps = {
   projectName: string
   projectPath: string
   worktree?: string | null
@@ -104,42 +82,61 @@ export function Workspace({
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void
   notificationBell?: ReactNode
-}) {
+}
+
+// ============================================================
+// Public entry: wire the workspace contexts, then render the screen that
+// consumes them. The old `WorkspaceLayout` still renders the current UI.
+export function Workspace(props: WorkspaceProps) {
+  return (
+    <WorkspaceProvider {...props}>
+      <WorkspaceScreen />
+    </WorkspaceProvider>
+  )
+}
+
+// ============================================================
+// The renderer. Consumes the workspace contexts and owns the rendering-only
+// concerns that have not yet been split into panels (file tree, diff cache,
+// voice, history, compare mode). It drives every action through commands.
+function WorkspaceScreen() {
+  const env = useWorkspaceEnv()
+  const data = useWorkspaceDataContext()
+  const selection = useWorkspaceSelection()
+  const { layout, mobilePane } = useWorkspaceLayout()
+  const commands = useWorkspaceCommands()
+  const controllersRef = useWorkspaceControllers()
+
+  const { name: projectName, path: projectPath, worktree, effectivePath } = env.project
+  const { isMobile, isLandscape, isTouch } = env.viewport
+  const actions = commands.actions
+  const {
+    openTabs, activeTab, previewTab, activeSession,
+    selectedFilePath, recentFiles, showSearch,
+  } = selection
+  const { files, dirtyTabs, conflictTabs, jumpRequest } = selection.editor
+  const changes = data.git.changes
+  const gitStale = data.git.stale
+
   const rootRef = useRef<HTMLDivElement>(null)
   const sidebarRef = useRef<HTMLDivElement>(null)
   const explorerRef = useRef<FileExplorerHandle>(null)
-  const isMobile = useIsMobile()
-  const isLandscape = useIsLandscape()
-  const isTouch = useIsTouch()
   const voice = useVoice()
-  // Effective path for new sessions and cwd-sensitive operations
-  const effectivePath = worktree ? `${projectPath}/.worktrees/${worktree}` : projectPath
-  // Centralized workspace state
-  const ws = useWorkspaceState(projectName, worktree)
-  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, recentFiles, actions } = ws
 
-  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
-    isFileTab(activeTab) ? activeTab : null
-  ))
-  const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
-  const [showSearch, setShowSearch] = useState(false)
-  const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
+  // Rendering-only state that phase-3 panels will own.
+  const [showShortcutSheet, setShowShortcutSheet] = useState(false)
   const [contextFolder, setContextFolder] = useState('')
-  const [explorerFocusedPath, setExplorerFocusedPath] = useState<string | null>(null)
   const [editorInsert, setEditorInsert] = useState<{ text: string; key: number } | null>(null)
   const [terminalSend, setTerminalSend] = useState<{ text: string; key: number } | null>(null)
-  const [showShortcutSheet, setShowShortcutSheet] = useState(false)
 
-  // Compare mode state
+  // Compare mode state (ChangesPanel territory in phase 3).
   const [compareMode, setCompareMode] = useState(false)
   const [compareBase, setCompareBase] = useState('main')
   const [compareHead, setCompareHead] = useState('HEAD')
   const [compareResult, setCompareResult] = useState<{ files: GitChange[]; stats: { added: number; deleted: number }; key: string } | null>(null)
 
-  const { showSidebar, showRightPanel, showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, previewMode } = layout
+  const { showProjects, showExplorer, showChanges, showSessions, showTextSearch, showTasks, previewMode } = layout
   const { data: fileTree, expandDir, patchTree, refresh: refreshTree, clearLoadedDirs } = useFileTree(projectName, worktree)
-  const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
-  const { data: gitData, refresh: refreshGitStatus } = useGitStatus(projectName, worktree)
   const history = useHistory(projectName)
 
   // Mark quick-open search index stale on filetree changes
@@ -153,8 +150,8 @@ export function Workspace({
     if (!projectName) return
     const key = `${compareBase}:${compareHead}`
     try {
-      const data = await fetchGitCompare(projectName, compareBase, compareHead, worktree)
-      if (!signal?.aborted) setCompareResult({ files: data.files, stats: data.stats, key })
+      const result = await fetchGitCompare(projectName, compareBase, compareHead, worktree)
+      if (!signal?.aborted) setCompareResult({ files: result.files, stats: result.stats, key })
     } catch {
       if (!signal?.aborted) setCompareResult({ files: [], stats: { added: 0, deleted: 0 }, key })
     }
@@ -170,69 +167,45 @@ export function Workspace({
     return () => controller.abort()
   }, [compareMode, loadCompareResult, projectName])
 
-  useEffect(() => {
-    if (!onVisibilityReport) return
-    const terminalVisible = isMobile ? mobilePane === 'terminal' : showRightPanel
-    onVisibilityReport({ projectName, attachedSession: activeSession, terminalVisible })
-  }, [onVisibilityReport, projectName, activeSession, isMobile, mobilePane, showRightPanel])
-
-  useEffect(() => {
-    if (!attachIntent || !clearAttachIntent) return
-    if (attachIntent.projectName !== projectName) return
-    if (!sessions) return
-    const found = sessions.some(s => s.name === attachIntent.sessionName)
-    if (found) {
-      actions.setActiveSession(attachIntent.sessionName)
-      if (isMobile) actions.setMobilePane('terminal')
-      if (!isMobile) actions.updateLayout({ showRightPanel: true })
-    }
-    clearAttachIntent()
-  }, [attachIntent, clearAttachIntent, projectName, sessions, actions, isMobile])
-
-  useEffect(() => {
-    if (!activeSession || !markSessionRead) return
-    const terminalVisible = isMobile ? mobilePane === 'terminal' : showRightPanel
-    if (!terminalVisible) return
-    markSessionRead(projectName, activeSession)
-  }, [activeSession, projectName, markSessionRead, isMobile, mobilePane, showRightPanel])
-
   // Derived tab state
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
   const activeDiffTab = isDiffTab(activeTab)
-  const activeTasksTab = isTasksTab(activeTab)
   const parsedDiff = activeDiffTab && activeTab ? parseDiffTab(activeTab) : null
   const activeDiffPath = parsedDiff?.path ?? null
-  const changes = useMemo(() => gitData?.changes ?? [], [gitData])
-  const gitStale = gitData?.stale ?? false
   const attachedSession = activeSession
 
-  // --- Extracted hooks ---
-  const sessionsMgr = useWorkspaceSessions({
-    actions, projectPath: effectivePath, activeSession, sessions,
-    refreshSessions, setFocusTarget, sessionUnreadCounts, projectName,
-    onSessionChange: history.refresh,
-  })
-
-  const { activeDiff, editorDiffHunks, clearDiff } = useWorkspaceDiff({
-    activeDiffPath, activeFilePath, projectName, worktree, changes, gitData,
+  const { activeDiff, editorDiffHunks } = useWorkspaceDiff({
+    activeDiffPath, activeFilePath, projectName, worktree, changes, gitData: data.git,
     compareBase: parsedDiff?.base, compareHead: parsedDiff?.compare,
   })
 
-  const nav = useWorkspaceNavigation({
-    actions, activeTab, previewTab,
-    showSidebar, showExplorer, expandDir, explorerRef,
-    setSelectedFilePath, setFocusTarget,
-  })
+  const nav = useWorkspaceNavigation({ expandDir, explorerRef })
 
   const voiceBridge = useWorkspaceVoice({
     voice, activeFilePath, attachedSession,
     activeDiffTab, isPreviewable: !!activeFilePath && isPreviewableFile(activeFilePath), previewMode,
-    setEditorInsert, setTerminalSend, setFocusTarget,
+    setEditorInsert, setTerminalSend, setFocusTarget: commands.setFocusTarget,
   })
+
+  // Adapt the shared sessions resource to the SessionsMgr shape the (unchanged)
+  // session section consumes; detach belongs to the command surface.
+  const sessionsMgr = useMemo(() => ({
+    orderedSessions: data.sessions.orderedSessions,
+    projectSessions: data.sessions.projectSessions,
+    pinnedSet: data.sessions.pinnedSet,
+    getSessionUnread: data.sessions.getSessionUnread,
+    killSession: data.sessions.killSession,
+    handleNewSession: data.sessions.startSession,
+    handleRenameSession: data.sessions.renameSession,
+    togglePin: data.sessions.togglePin,
+    handlePinnedReorder: data.sessions.reorderPinned,
+    detachActiveSession: commands.detachSession,
+  }), [data.sessions, commands.detachSession])
 
   const sessionSection = useWorkspaceSessionSection({
     sessionsMgr, attachedSession, isMobile, history,
-    projectPath: effectivePath, projectName, actions, refreshSessions, setFocusTarget,
+    projectPath: effectivePath, projectName, actions, refreshSessions: data.sessions.refresh,
+    setFocusTarget: commands.setFocusTarget,
   })
 
   const resize = useWorkspaceSidebarResize({
@@ -241,64 +214,27 @@ export function Workspace({
     updateLayout: actions.updateLayout,
   })
 
-  // --- closeTab with diff cleanup ---
+  // Close a tab; the diff cache self-cleans as the closed key leaves the active set.
   const closeTab = useCallback((tab: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    actions.closeTab(tab)
-    if (isDiffTab(tab)) {
-      const parsed = parseDiffTab(tab)
-      if (parsed) {
-        const key = parsed.base && parsed.compare
-          ? `${parsed.base}:${parsed.compare}:${parsed.path}`
-          : parsed.path
-        clearDiff(key)
-      }
-    }
-  }, [actions, clearDiff])
-
-  const closeActiveTab = useCallback((): boolean => {
-    if (!activeTab) return false
-    closeTab(activeTab)
-    return true
-  }, [activeTab, closeTab])
-
-  const closeFocusedSurface = useCallback((): boolean => {
-    if (showSearch) { setShowSearch(false); return true }
-    if ((focusTarget === 'terminal' || focusTarget === 'session') && sessionsMgr.detachActiveSession()) return true
-    if (focusTarget === 'editor') {
-      // Closing tasks panel syncs sidebar toggle
-      if (activeTasksTab) { actions.updateLayout({ showTasks: false }) }
-      if (closeActiveTab()) return true
-    }
-    if (closeActiveTab() || sessionsMgr.detachActiveSession()) return true
-    return true
-  }, [closeActiveTab, sessionsMgr.detachActiveSession, focusTarget, showSearch, activeTasksTab, actions])
+    commands.closeTab(tab)
+  }, [commands])
 
   const handleToggleTextSearch = useCallback(() => {
     actions.updateLayout({ showTextSearch: !showTextSearch, showSidebar: true, showExplorer: true })
   }, [actions, showTextSearch])
-
-  const handleOpenQuickSearch = useCallback(() => {
-    setShowSearch(true)
-  }, [])
 
   const handleShowExplorerTree = useCallback(() => {
     actions.updateLayout({ showTextSearch: false, showSidebar: true, showExplorer: true })
   }, [actions])
 
   const handleOpenFileAtLine = useCallback((path: string, line: number, _column: number) => {
-    nav.openFileAtLine(path, line, _column)
-    setJumpRequest({ key: Date.now(), path, line })
-  }, [nav])
+    void nav.openFileAtLine(path, line, _column)
+    actions.setJumpRequest({ key: Date.now(), path, line })
+  }, [nav, actions])
 
   const { lockCloseShortcut } = useWorkspaceKeyboard({
-    actions, activeSession, orderedSessions: sessionsMgr.orderedSessions,
-    openTabs, activeTab,
-    isMobile, showSidebar, showRightPanel, showSearch,
-    setShowSearch: (fn) => setShowSearch(fn),
-    focusTarget, setFocusTarget,
-    selectedFilePath, explorerFocusedPath, canTogglePreview: !!activeFilePath && isPreviewableFile(activeFilePath),
-    previewMode, closeFocusedSurface,
+    canTogglePreview: !!activeFilePath && isPreviewableFile(activeFilePath),
     editorVoiceEligible: voiceBridge.editorVoiceEligible,
     terminalVoiceEligible: voiceBridge.terminalVoiceEligible,
     handleEditorVoiceStart: voiceBridge.handleEditorVoiceStart,
@@ -308,12 +244,22 @@ export function Workspace({
     onToggleShortcutSheet: () => setShowShortcutSheet(v => !v),
   })
 
-  // Track the active file tab as the selected explorer path (adjust state during render).
-  const [prevActiveTab, setPrevActiveTab] = useState(activeTab)
-  if (activeTab !== prevActiveTab) {
-    setPrevActiveTab(activeTab)
-    if (isFileTab(activeTab)) setSelectedFilePath(activeTab)
-  }
+  // Register the file-tree-owned controllers the provider commands call into.
+  const { revealInExplorer, handleExpandFolder } = nav
+  const refreshHistory = history.refresh
+  useEffect(() => {
+    const ctl: WorkspaceControllers = {
+      revealParents: revealInExplorer,
+      revealPath: (path: string) => {
+        void revealInExplorer(path)
+        actions.updateLayout({ showSidebar: true, showExplorer: true })
+        requestAnimationFrame(() => explorerRef.current?.expandToPath(path))
+      },
+      expandFolder: handleExpandFolder,
+      onSessionChange: refreshHistory,
+    }
+    controllersRef.current = ctl
+  }, [controllersRef, revealInExplorer, handleExpandFolder, refreshHistory, actions])
 
   // Git status maps for file tree
   const gitMap = useMemo(() => {
@@ -332,22 +278,9 @@ export function Workspace({
   }, [changes])
 
   const hasOpenTabs = openTabs.length > 0
-  const activeSessionInfo = sessionsMgr.projectSessions.find(s => s.name === attachedSession) ?? null
-
-  // Live session handles for this project — drives task→session linking: a linked
-  // handle is clickable only when live, and the task graph highlights tasks linked
-  // to the attached session. Opening a live handle reuses the attach flow (set
-  // active session, reveal the terminal surface).
-  const liveSessionHandles = useMemo(
-    () => new Set((sessions ?? []).map(s => s.name)),
-    [sessions],
-  )
-  const handleOpenSessionTerminal = useCallback((handle: string) => {
-    if (!liveSessionHandles.has(handle)) return
-    actions.setActiveSession(handle)
-    if (isMobile) actions.setMobilePane('terminal')
-    else actions.updateLayout({ showRightPanel: true })
-  }, [liveSessionHandles, actions, isMobile])
+  const activeSessionInfo = data.sessions.projectSessions.find(s => s.name === attachedSession) ?? null
+  const liveSessionHandles = data.sessions.liveSessionHandles
+  const handleOpenSessionTerminal = commands.openTerminalForSession
 
   const handleNewFile = useCallback(() => {
     explorerRef.current?.createFile(contextFolder || undefined)
@@ -356,23 +289,6 @@ export function Workspace({
   const handleNewFolder = useCallback(() => {
     explorerRef.current?.createFolder(contextFolder || undefined)
   }, [contextFolder])
-
-  const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
-    actions.retargetPaths(oldPath, newPath)
-    setSelectedFilePath(prev => {
-      if (prev === oldPath) return newPath
-      if (prev && prev.startsWith(oldPath + '/')) return newPath + prev.slice(oldPath.length)
-      return prev
-    })
-  }, [actions])
-
-  const handleFileDeleted = useCallback((path: string) => {
-    actions.onDeletePath(path)
-    setSelectedFilePath(prev => {
-      if (prev === path || (prev && prev.startsWith(path + '/'))) return null
-      return prev
-    })
-  }, [actions])
 
   const handleCollapseAll = useCallback(() => {
     explorerRef.current?.collapseAll()
@@ -389,7 +305,7 @@ export function Workspace({
         <>
           <button
             type="button"
-            onClick={handleOpenQuickSearch}
+            onClick={commands.showQuickOpen}
             className="section-header-icon-btn"
             title="Quick file search"
             aria-label="Quick file search"
@@ -461,7 +377,7 @@ export function Workspace({
 
   const changesTitle = compareMode ? 'Compare' : (gitStale ? 'Changes (stale)' : undefined)
 
-  const rawStats = compareMode ? compareResult?.stats : gitData?.stats
+  const rawStats = compareMode ? compareResult?.stats : data.git.stats
   const changesStatsEl = rawStats && (rawStats.added > 0 || rawStats.deleted > 0) ? (
     <span className="flex items-center gap-1 text-ui-xs font-semibold mr-1" style={{ letterSpacing: '-0.01em' }}>
       {rawStats.added > 0 && <span style={{ color: 'var(--sol-green)' }}>+{rawStats.added}</span>}
@@ -473,8 +389,8 @@ export function Workspace({
     if (compareMode) {
       return loadCompareResult()
     }
-    return refreshGitStatus()
-  }, [compareMode, loadCompareResult, refreshGitStatus])
+    return data.git.refresh()
+  }, [compareMode, loadCompareResult, data.git])
 
   const changesActions = (
     <div className="flex gap-0.5 items-center">
@@ -505,24 +421,24 @@ export function Workspace({
 
   const projectListBody = (
     <ProjectList
-      projects={projects}
-      activeProject={activeProject}
-      activeWorktree={activeWorktree}
-      worktrees={worktrees}
-      projectUnreadCounts={projectUnreadCounts}
-      projectSessionCounts={projectSessionCounts}
-      onSelect={onProjectSelect}
-      onWorktreeSelect={onWorktreeSelect}
-      onReorder={onProjectReorder}
-      onRemove={onProjectRemove}
-      onMarkAllRead={onMarkAllRead}
+      projects={env.projects}
+      activeProject={env.activeProject}
+      activeWorktree={env.activeWorktree}
+      worktrees={env.worktrees}
+      projectUnreadCounts={env.projectUnreadCounts}
+      projectSessionCounts={env.projectSessionCounts}
+      onSelect={env.selectProject}
+      onWorktreeSelect={env.selectWorktree}
+      onReorder={env.reorderProjects}
+      onRemove={env.removeProject}
+      onMarkAllRead={env.markAllRead}
     />
   )
 
   const projectActions = (
     <button
       type="button"
-      onClick={onAddProject}
+      onClick={env.addProject}
       aria-label="Add project"
       title="Add project"
       className="section-header-icon-btn"
@@ -544,11 +460,11 @@ export function Workspace({
       onSelectFile={nav.openFileFromExplorer}
       onPreviewFile={nav.openPreviewFromExplorer}
       onExpandDir={expandDir}
-      onFocusExplorer={() => setFocusTarget('explorer')}
+      onFocusExplorer={() => commands.setFocusTarget('explorer')}
       onContextFolder={setContextFolder}
-      onNodeFocused={setExplorerFocusedPath}
-      onFileRenamed={handleFileRenamed}
-      onFileDeleted={handleFileDeleted}
+      onNodeFocused={commands.setExplorerFocusedPath}
+      onFileRenamed={commands.retargetPaths}
+      onFileDeleted={commands.deletePath}
       patchTree={patchTree}
       refreshTree={refreshTree}
     />
@@ -589,7 +505,7 @@ export function Workspace({
             isActive={activeTab === tabId}
             onActivate={() => {
               actions.openPreviewDiffTabById(tabId)
-              setFocusTarget('editor')
+              commands.setFocusTarget('editor')
               actions.setMobilePane('editor')
             }}
             onFolderClick={nav.handleExpandFolder}
@@ -629,14 +545,14 @@ export function Workspace({
     if (isMobile) {
       // Mobile: tasks is its own pane — just switch to it (or back to editor)
       actions.setMobilePane(mobilePane === 'tasks' ? 'editor' : 'tasks')
-    } else if (activeTasksTab) {
+    } else if (isTasksTab(activeTab)) {
       actions.updateLayout({ showTasks: false })
       closeTab(activeTab!)
     } else {
       actions.updateLayout({ showTasks: true })
       nav.handleOpenTasks()
     }
-  }, [isMobile, mobilePane, activeTasksTab, actions, closeTab, activeTab, nav])
+  }, [isMobile, mobilePane, activeTab, actions, closeTab, nav])
 
   const tasksPane = (
     <Suspense fallback={TaskScreenFallback}>
@@ -648,8 +564,8 @@ export function Workspace({
   const navigateCompareFile = useCallback((path: string) => {
     const tabId = `diff:${path}?base=${encodeURIComponent(compareBase)}&compare=${encodeURIComponent(compareHead)}`
     actions.openPreviewDiffTabById(tabId)
-    setFocusTarget('editor')
-  }, [compareBase, compareHead, actions])
+    commands.setFocusTarget('editor')
+  }, [compareBase, compareHead, actions, commands])
 
   const editorCompareContext = useMemo(() => {
     if (!compareMode || !activeDiffTab || !parsedDiff?.base || !parsedDiff?.compare) return undefined
@@ -688,15 +604,15 @@ export function Workspace({
       onDoubleClickTab={nav.handleDoubleClickTab}
       onCloseTab={closeTab}
       onLayoutUpdate={actions.updateLayout}
-      onSaveFile={actions.saveFile}
-      onForceSave={actions.forceSave}
-      onAcceptDisk={actions.acceptDisk}
-      onUpdateDraft={actions.updateFileDraft}
-      onUpdateViewport={actions.updateFileViewport}
-      onSetJumpRequest={setJumpRequest}
+      onSaveFile={commands.saveFile}
+      onForceSave={commands.forceSave}
+      onAcceptDisk={commands.acceptDisk}
+      onUpdateDraft={commands.updateDraft}
+      onUpdateViewport={commands.updateViewport}
+      onSetJumpRequest={actions.setJumpRequest}
       onNavigateToFile={nav.openFile}
       onNavigateDir={nav.handleExpandFolder}
-      onFocusEditor={() => setFocusTarget('editor')}
+      onFocusEditor={() => commands.setFocusTarget('editor')}
       onOpenTasksFile={nav.handleOpenTasksFile}
       compareContext={editorCompareContext}
       activeSession={activeSession}
@@ -723,19 +639,19 @@ export function Workspace({
       <div
         className="flex-1 overflow-hidden p-[3px] select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text', backgroundColor: 'var(--sol-editor-bg)' }}
-        onMouseDown={() => setFocusTarget('terminal')}
+        onMouseDown={() => commands.setFocusTarget('terminal')}
       >
         <Suspense fallback={TerminalFallback}>
           <LazyTerminal
             sessionName={attachedSession}
             projectName={projectName}
             provider={activeSessionInfo?.provider}
-            onInteract={() => setFocusTarget('terminal')}
+            onInteract={() => commands.setFocusTarget('terminal')}
             onCloseRequest={() => {
-              sessionsMgr.detachActiveSession()
+              commands.detachSession()
             }}
             onDisconnect={() => {
-              sessionsMgr.detachActiveSession()
+              commands.detachSession()
             }}
             sendText={terminalSend?.text}
             sendTextKey={terminalSend?.key}
@@ -786,9 +702,9 @@ export function Workspace({
       sessionHeight={resize.sessionHeight}
       hasOpenTabs={hasOpenTabs}
       onInteractionCapture={() => { void lockCloseShortcut() }}
-      onFilesPaneFocus={() => setFocusTarget('explorer')}
-      searchOverlay={showSearch ? <FileSearch projectName={projectName!} worktree={worktree} recentFiles={recentFiles} onSelect={nav.handleSearchSelect} onClose={() => setShowSearch(false)} /> : null}
-      notificationBell={notificationBell}
+      onFilesPaneFocus={() => commands.setFocusTarget('explorer')}
+      searchOverlay={showSearch ? <FileSearch projectName={projectName!} worktree={worktree} recentFiles={recentFiles} onSelect={nav.handleSearchSelect} onClose={() => actions.setShowSearch(false)} /> : null}
+      notificationBell={env.notificationBell}
     />
     <ComposeTray
       surface={voiceBridge.voiceSurface}
