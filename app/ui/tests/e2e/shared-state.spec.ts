@@ -1,15 +1,21 @@
 import { test, expect, type Page, type BrowserContext, type Browser } from '@playwright/test'
 import { promises as fs } from 'fs'
-import { existsSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
+import { resolveDevPorts } from '../../e2ePorts'
+import { createFixtureProject } from './helpers/workspace'
 
 // --- Paths & constants ---
 
-const UI_STATE_DIR = join(homedir(), '.workflow', 'ui-state')
+// The server resolves its runtime root from YACO_HOME — a per-worktree isolated
+// dir in worktree e2e runs, else ~/.yaco. The test runner does NOT inherit that
+// env, so derive it exactly as playwright.config.ts does for the API server.
+const YACO_HOME = resolveDevPorts().yacoHome ?? join(homedir(), '.yaco')
+const UI_STATE_DIR = join(YACO_HOME, 'ui-state')
 const NOTIFICATIONS_FILE = join(UI_STATE_DIR, 'notifications.json')
 const PINNED_FILE = join(UI_STATE_DIR, 'pinned-sessions.json')
-const MULTMUX_DIR = join(homedir(), '.multmux', 'sessions')
+const SESSIONS_DIR = join(YACO_HOME, 'sessions')
 
 // Use a clearly-test-prefixed handle so cleanup never trashes real sessions.
 const TEST_SESSION_PREFIX = 'e2etest-ss-'
@@ -32,14 +38,14 @@ function removeIfExists(path: string): void {
 }
 
 function removeTestStateFiles(): void {
-  if (!existsSync(MULTMUX_DIR)) return
-  for (const file of readdirSync(MULTMUX_DIR)) {
-    if (file.startsWith(TEST_SESSION_PREFIX)) removeIfExists(join(MULTMUX_DIR, file))
+  if (!existsSync(SESSIONS_DIR)) return
+  for (const file of readdirSync(SESSIONS_DIR)) {
+    if (file.startsWith(TEST_SESSION_PREFIX)) removeIfExists(join(SESSIONS_DIR, file))
   }
 }
 
-function writeFakeMultmuxSession(handle: string, projectPath: string): void {
-  if (!existsSync(MULTMUX_DIR)) return
+function writeFakeSession(handle: string, projectPath: string): void {
+  mkdirSync(SESSIONS_DIR, { recursive: true })
   const state = {
     handle,
     provider: 'claude',
@@ -49,7 +55,7 @@ function writeFakeMultmuxSession(handle: string, projectPath: string): void {
     status: 'idle',
     createdAt: new Date().toISOString(),
   }
-  writeFileSync(join(MULTMUX_DIR, `${handle}.json`), JSON.stringify(state, null, 2))
+  writeFileSync(join(SESSIONS_DIR, `${handle}.json`), JSON.stringify(state, null, 2))
 }
 
 test.beforeAll(async () => {
@@ -83,15 +89,6 @@ async function newPage(browser: Browser): Promise<{ ctx: BrowserContext; page: P
 async function gotoApp(page: Page): Promise<void> {
   await page.goto('/')
   await expect(page.locator('button[aria-label="Notifications"]')).toBeVisible({ timeout: 10_000 })
-}
-
-async function pickProject(page: Page): Promise<{ name: string; path: string }> {
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  return projects[0]
 }
 
 async function openWorkspace(page: Page, projectName: string): Promise<void> {
@@ -196,24 +193,15 @@ test.describe('Shared state: notifications', () => {
 // --- Test 2: pinned sessions cross-tab sync ---
 
 test.describe('Shared state: pinned sessions', () => {
-  test('PUT /api/ui-state/pinned-sessions propagates to other tab via SSE', async ({ browser }) => {
-    if (!existsSync(MULTMUX_DIR)) {
-      test.skip(true, 'multmux sessions dir not present — test environment cannot fake sessions')
-      return
-    }
+  test('PUT /api/ui-state/pinned-sessions propagates to other tab via SSE', async ({ browser, request }) => {
+    // The isolated per-worktree YACO_HOME starts empty, so provision our own
+    // project to pin under instead of assuming one is already registered.
+    const project = await createFixtureProject(request)
 
-    const probe = await newPage(browser)
-    let project: { name: string; path: string }
-    try {
-      await gotoApp(probe.page)
-      project = await pickProject(probe.page)
-    } finally {
-      await probe.ctx.close()
-    }
-
-    // Seed two fake idle multmux sessions for the chosen project.
-    writeFakeMultmuxSession(SESSION_A, project.path)
-    writeFakeMultmuxSession(SESSION_B, project.path)
+    // Seed two fake idle agent sessions rooted at the fixture project; the
+    // server lists them for that project via its on-disk state files.
+    writeFakeSession(SESSION_A, project.path)
+    writeFakeSession(SESSION_B, project.path)
 
     const a = await newPage(browser)
     const b = await newPage(browser)
@@ -260,6 +248,7 @@ test.describe('Shared state: pinned sessions', () => {
     } finally {
       await a.ctx.close()
       await b.ctx.close()
+      await project.dispose()
     }
   })
 })
