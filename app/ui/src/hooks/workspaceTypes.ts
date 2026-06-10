@@ -18,6 +18,20 @@ export type PreviewMode = 'edit' | 'preview' | 'split'
 export type SplitDirection = 'horizontal' | 'vertical'
 export type MobilePane = 'files' | 'editor' | 'tasks' | 'terminal'
 
+// The legacy `MobilePane` and the panel-model `MobileDock` are the same four
+// panes under two names: the browse dock is `'files'` to the legacy renderer and
+// `'browse'` to the model; editor/tasks/terminal are shared verbatim. These pure
+// maps are the single conversion boundary between the two — the provider mirrors
+// `mobilePane` onto `panelLayout.mobile.activeDock`, and `MobilePanelProjection`
+// reads the dock back while still driving the app's `setMobilePane` write path.
+export function mobilePaneToDock(pane: MobilePane): MobileDock {
+  return pane === 'files' ? 'browse' : pane
+}
+
+export function mobileDockToPane(dock: MobileDock): MobilePane {
+  return dock === 'browse' ? 'files' : dock
+}
+
 export type WorkspaceLayout = {
   showSidebar: boolean
   showRightPanel: boolean

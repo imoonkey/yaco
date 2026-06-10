@@ -18,6 +18,7 @@ import {
   toggleActivity,
   setDockVisible,
   setActivityVisible,
+  setActiveDock,
   activateTabsPanel,
   movePanel,
   splitPanel,
@@ -309,6 +310,26 @@ describe('setDockVisible / setActivityVisible', () => {
     layout = movePanel(layout, 'terminal', { kind: 'tabs', tabsId: MAIN_TABS_ID })
     expect(setActivityVisible(layout, false)).toBe(layout) // no activity column
     expect(asSplit(setDockVisible(layout, false).desktop).children[0].hidden).toBe(true)
+  })
+})
+
+// --- setActiveDock (mobile projection's active pane) ------------------------
+
+describe('setActiveDock', () => {
+  it('sets the active mobile dock without touching the desktop tree', () => {
+    const layout = base()
+    const next = setActiveDock(layout, 'terminal')
+    expect(next.mobile.activeDock).toBe('terminal')
+    // Desktop arrangement + panel state pass through by reference (structure-free edit).
+    expect(next.desktop).toBe(layout.desktop)
+    expect(next.panelState).toBe(layout.panelState)
+  })
+
+  it('returns the same layout (state-update bail) when already on that dock', () => {
+    const layout = base() // default dock is 'browse'
+    expect(setActiveDock(layout, 'browse')).toBe(layout)
+    const onEditor = setActiveDock(layout, 'editor')
+    expect(setActiveDock(onEditor, 'editor')).toBe(onEditor)
   })
 })
 

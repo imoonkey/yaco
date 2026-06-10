@@ -12,7 +12,7 @@ import {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 import { useWorkspaceState, isFileTab } from '../hooks/useWorkspaceState'
-import { isTasksTab } from '../hooks/workspaceTypes'
+import { isTasksTab, mobilePaneToDock } from '../hooks/workspaceTypes'
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
 import { useFileTree, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
@@ -24,6 +24,7 @@ import {
   activateTabsPanel as modelActivateTabsPanel,
   setDockVisible as modelSetDockVisible,
   setActivityVisible as modelSetActivityVisible,
+  setActiveDock as modelSetActiveDock,
   movePanel as modelMovePanel,
   splitPanel as modelSplitPanel,
   resetLayout as modelResetLayout,
@@ -206,6 +207,18 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   useLayoutEffect(() => {
     setPanelLayout((prev) => modelSetActivityVisible(prev, layout.showRightPanel))
   }, [layout.showRightPanel, setPanelLayout])
+
+  // Mirror the legacy mobile pane onto the panel-layout tree's `mobile.activeDock`
+  // (design: Persistence Shape). The flat `mobilePane` is the single source — every
+  // pane switch (PaneSwitch/LandscapeNav, open-file → editor, attach → terminal,
+  // reveal → browse) already writes it through `setMobilePane`, so syncing the dock
+  // from that one source here means `MobilePanelProjection` (engine: 'tree') and the
+  // persisted `activeDock` track it without touching any call site, exactly like the
+  // dock/activity visibility mirrors above. `setActiveDock` returns the same layout
+  // when already on that dock, so an unchanged pane commits nothing.
+  useLayoutEffect(() => {
+    setPanelLayout((prev) => modelSetActiveDock(prev, mobilePaneToDock(mobilePane)))
+  }, [mobilePane, setPanelLayout])
 
   // --- Cross-component effects (moved verbatim from WorkspaceScreen) ---
   useEffect(() => {

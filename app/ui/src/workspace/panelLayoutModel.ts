@@ -462,6 +462,16 @@ export const setDockVisible = (layout: WorkspacePanelLayout, visible: boolean): 
 export const setActivityVisible = (layout: WorkspacePanelLayout, visible: boolean): WorkspacePanelLayout =>
   setRootEdgeVisible(layout, 'activity', visible)
 
+/** Set the active mobile dock — the pane `MobilePanelProjection` projects. The
+ *  provider mirrors the legacy `mobilePane` onto this field (so every existing
+ *  `setMobilePane` write keeps the dock in lockstep without touching the call
+ *  sites), exactly as `setDockVisible` mirrors `showSidebar`. Returns the SAME
+ *  layout when already on that dock so the provider's state update bails. */
+export function setActiveDock(layout: WorkspacePanelLayout, dock: MobileDock): WorkspacePanelLayout {
+  if (layout.mobile.activeDock === dock) return layout
+  return { ...layout, mobile: { activeDock: dock } }
+}
+
 /** Activate `panel` in the tabs node `tabsId`. No-op if the panel is not one of
  *  that node's tabs, or the node id is unknown. */
 export function activateTabsPanel(

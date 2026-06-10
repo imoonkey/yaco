@@ -65,6 +65,18 @@ export function getPanelMeta(id: unknown): PanelMeta | undefined {
   return typeof id === 'string' ? META_BY_ID.get(id) : undefined
 }
 
+/** The panel ids docked into one mobile dock, in `mobileOrder`. This is the SOLE
+ *  source for the mobile projection's pane membership: the browse dock returns
+ *  [projects, files, changes, sessions] in order, and each of editor/tasks/
+ *  terminal returns its single panel. Driving the projection off the registry
+ *  (not a hardcoded list) keeps mobile dock membership in one place. */
+export function mobileDockPanels(dock: MobileDock): PanelId[] {
+  return Object.values(PANEL_META)
+    .filter((meta) => meta.mobileDock === dock)
+    .sort((a, b) => a.mobileOrder - b.mobileOrder)
+    .map((meta) => meta.id)
+}
+
 /** Resolve a panel title to a string for the frame header. */
 export function resolvePanelTitle(title: PanelTitle, env: WorkspaceEnv): string {
   return typeof title === 'function' ? title({ env }) : title
