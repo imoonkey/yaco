@@ -33,6 +33,16 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
   // never repainted in time. Mirrors usePolling's seq guard in useApi.
   const seqRef = useRef(0)
   const committedRef = useRef(0)
+  // True once a good graph has painted for the CURRENT project (reset on project
+  // change). The seq guard above orders GOOD results; this extends the same
+  // "refreshes only move data forward" invariant to failures: a transient
+  // error/missing from a later refetch must NOT roll the painted graph back to an
+  // error pane. On the tree engine the task view mounts amid an always-on
+  // `filetree` SSE burst, so the graph is refetched repeatedly right after it
+  // paints; a single hiccup (`yaco task list` failing, or a 404 while the project
+  // registry is mid-rewrite) would otherwise blank the panel — and the e2e's 4s
+  // auto-restore probe then fails, its fallback Meta+Shift+t closing the tab.
+  const committedGoodRef = useRef(false)
 
   const load = useCallback(async () => {
     const seq = ++seqRef.current
@@ -41,7 +51,9 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
       if (seq <= committedRef.current) return
       if (!res.ok) {
         if (res.status === 403 || res.status === 404) {
-          committedRef.current = seq
+          // 'missing' is a real state on the initial load, but a transient 404
+          // during churn must not unpaint an already-good graph.
+          if (committedGoodRef.current) return
           setGraph(null)
           setWarnings([])
           setError(null)
@@ -55,13 +67,16 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
 
       const { model, warnings: w } = buildTaskGraphModel(data.tasks)
       committedRef.current = seq
+      committedGoodRef.current = true
       setGraph(model)
       setWarnings(w)
       setError(null)
       setStatus('ready')
     } catch (e) {
-      if (seq <= committedRef.current) return
-      committedRef.current = seq
+      // A failed fetch is not data: never roll back a painted graph, and never
+      // advance committedRef (doing so would also block a good in-flight fetch
+      // with a lower seq from committing). Surface the error only on initial load.
+      if (committedGoodRef.current || seq <= committedRef.current) return
       setGraph(null)
       setWarnings([])
       setError(e as Error)
@@ -75,9 +90,10 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
 
   useEffect(() => {
     // New project (or mount): supersede any prior in-flight fetch so its late result
-    // cannot overwrite this project's data. `status` starts 'loading'; the prior
-    // project's graph stays visible until the new one's first response commits.
+    // cannot overwrite this project's data, and clear the good-graph latch so the
+    // first failure for this project still surfaces an error/missing pane.
     committedRef.current = seqRef.current
+    committedGoodRef.current = false
     // load() sets state only after its await — no synchronous cascading render.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load()

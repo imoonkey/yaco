@@ -31,7 +31,7 @@ test.describe('Project tab context menu', () => {
     await projectTab(page, project.name).click({ button: 'right' })
 
     // Context menu should appear with both items
-    const menu = page.locator('.fixed.z-50')
+    const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()
     await expect(menu.locator('text=Copy Path')).toBeVisible()
     await expect(menu.locator('text=Remove')).toBeVisible()
@@ -48,7 +48,7 @@ test.describe('Project tab context menu', () => {
 
     await projectTab(page, project.name).click({ button: 'right' })
 
-    const menu = page.locator('.fixed.z-50')
+    const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()
 
     // Menu should be fully visible (bottom edge above viewport bottom)
@@ -67,7 +67,7 @@ test.describe('Project tab context menu', () => {
     })
     await projectTab(page, projects[0].name).click({ button: 'right' })
 
-    const menu = page.locator('.fixed.z-50')
+    const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()
 
     await page.keyboard.press('Escape')
@@ -83,7 +83,7 @@ test.describe('Project tab context menu', () => {
     })
     await projectTab(page, projects[0].name).click({ button: 'right' })
 
-    const menu = page.locator('.fixed.z-50')
+    const menu = page.getByRole('menu')
     await expect(menu).toBeVisible()
 
     // Click on the main content area
