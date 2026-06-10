@@ -41,6 +41,10 @@ export interface WorkspaceSessionsResource {
 export interface WorkspaceData {
   git: WorkspaceGitResource
   sessions: WorkspaceSessionsResource
+  /** True once the sessions poller has produced data (raw payload !== null).
+   *  Lets the attach-intent flow wait for the first poll instead of treating an
+   *  unloaded poller as "no sessions". Not part of the Equal-guarded resource. */
+  sessionsLoaded: boolean
 }
 
 interface SessionActions {
@@ -78,12 +82,13 @@ export function useWorkspaceGitResource(
   }), [data, loading, error, refresh])
 }
 
-/** Single sessions poller + the session manager, behind the explicit shape. */
+/** Single sessions poller + the session manager, behind the explicit shape.
+ *  Returns the resource plus a `loaded` flag (raw payload seen at least once). */
 export function useWorkspaceSessionsResource(
   opts: WorkspaceSessionsResourceOptions,
-): WorkspaceSessionsResource {
+): { sessions: WorkspaceSessionsResource; loaded: boolean } {
   const { projectName } = opts
-  const { data: sessions, refresh: refreshSessions } = useSessions(projectName)
+  const { data: rawSessions, refresh: refreshSessions } = useSessions(projectName)
   const {
     projectSessions, orderedSessions, pinnedSet, getSessionUnread,
     handleNewSession, killSession, handleRenameSession, togglePin,
@@ -92,7 +97,7 @@ export function useWorkspaceSessionsResource(
     actions: opts.actions,
     projectPath: opts.projectPath,
     activeSession: opts.activeSession,
-    sessions,
+    sessions: rawSessions,
     refreshSessions,
     setFocusTarget: opts.setFocusTarget,
     sessionUnreadCounts: opts.sessionUnreadCounts,
@@ -101,11 +106,11 @@ export function useWorkspaceSessionsResource(
   })
 
   const liveSessionHandles = useMemo(
-    () => new Set((sessions ?? []).map(s => s.name)),
-    [sessions],
+    () => new Set((rawSessions ?? []).map(s => s.name)),
+    [rawSessions],
   )
 
-  return useMemo<WorkspaceSessionsResource>(() => ({
+  const sessions = useMemo<WorkspaceSessionsResource>(() => ({
     projectSessions,
     orderedSessions,
     pinnedSet,
@@ -122,11 +127,13 @@ export function useWorkspaceSessionsResource(
     getSessionUnread, handleNewSession, killSession, handleRenameSession,
     togglePin, handlePinnedReorder, refresh,
   ])
+
+  return useMemo(() => ({ sessions, loaded: rawSessions != null }), [sessions, rawSessions])
 }
 
 /** The Data Context value: composes the two single-owner resources. */
 export function useWorkspaceData(opts: WorkspaceDataOptions): WorkspaceData {
   const git = useWorkspaceGitResource(opts.projectName, opts.worktree)
-  const sessions = useWorkspaceSessionsResource(opts)
-  return useMemo<WorkspaceData>(() => ({ git, sessions }), [git, sessions])
+  const { sessions, loaded: sessionsLoaded } = useWorkspaceSessionsResource(opts)
+  return useMemo<WorkspaceData>(() => ({ git, sessions, sessionsLoaded }), [git, sessions, sessionsLoaded])
 }

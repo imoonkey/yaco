@@ -25,6 +25,7 @@ import {
   WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceControllersContext,
   type WorkspaceEnv, type WorkspaceSelection, type WorkspaceLayoutContextValue,
   type WorkspaceCommands, type WorkspaceControllers, type WorkspaceRawActions,
+  type WorkspaceControllerRegistry, type FileRevealIntent,
   type FocusTarget, type JumpRequest, type PanelId, type EditorPrefs,
 } from './context'
 
@@ -55,8 +56,7 @@ export type WorkspaceProviderProps = {
 
 const NOOP_CONTROLLERS: WorkspaceControllers = {
   revealParents: async () => {},
-  revealPath: () => {},
-  expandFolder: () => {},
+  drainReveal: () => {},
   onSessionChange: () => {},
 }
 
@@ -101,8 +101,14 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     if (isFileTab(activeTab)) setSelectedFilePath(activeTab)
   }
 
-  // Renderer-registered callbacks (file reveal + post-session refresh).
+  // Renderer-registered callbacks (file reveal + post-session refresh) and the
+  // deferred reveal-intent buffer (drained by the Files renderer on registration).
   const controllersRef = useRef<WorkspaceControllers>(NOOP_CONTROLLERS)
+  const revealBufferRef = useRef<FileRevealIntent | null>(null)
+  const revealKeyRef = useRef(0)
+  const registry = useMemo<WorkspaceControllerRegistry>(
+    () => ({ controllers: controllersRef, revealBuffer: revealBufferRef }), [],
+  )
   const onSessionChange = useCallback(() => controllersRef.current.onSessionChange(), [])
 
   // Single shared resources: one git poller, one sessions poller + manager.
@@ -111,6 +117,20 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     activeSession, actions, setFocusTarget, sessionUnreadCounts, onSessionChange,
   })
   const { liveSessionHandles } = data.sessions
+  const sessionsLoaded = data.sessionsLoaded
+
+  // Latest hot state, mirrored into a ref so command callbacks can read current
+  // values without listing them as deps — keeping the commands object stable.
+  const latestRef = useRef({
+    activeSession, activeTab, focusTarget, showSearch, isMobile,
+    liveSessionHandles, layout,
+  })
+  useEffect(() => {
+    latestRef.current = {
+      activeSession, activeTab, focusTarget, showSearch, isMobile,
+      liveSessionHandles, layout,
+    }
+  })
 
   // --- Cross-component effects (moved verbatim from WorkspaceScreen) ---
   useEffect(() => {
@@ -122,13 +142,16 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   useEffect(() => {
     if (!attachIntent || !clearAttachIntent) return
     if (attachIntent.projectName !== projectName) return
+    // Wait for the first sessions poll before deciding — clearing the intent
+    // against an unloaded poller would drop the attach request entirely.
+    if (!sessionsLoaded) return
     if (liveSessionHandles.has(attachIntent.sessionName)) {
       actions.setActiveSession(attachIntent.sessionName)
       if (isMobile) actions.setMobilePane('terminal')
       else actions.updateLayout({ showRightPanel: true })
     }
     clearAttachIntent()
-  }, [attachIntent, clearAttachIntent, projectName, liveSessionHandles, actions, isMobile])
+  }, [attachIntent, clearAttachIntent, projectName, sessionsLoaded, liveSessionHandles, actions, isMobile])
 
   useEffect(() => {
     if (!activeSession || !markSessionRead) return
@@ -179,14 +202,26 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setJumpRequest({ key: Date.now(), path, line })
   }, [actions])
 
+  // openDiff mirrors the old activateChange handler: a re-clicked active diff
+  // toggles back to its file; otherwise reveal parents, open the (preview) diff,
+  // select the path, and focus the editor — now also carrying compare refs.
   const openDiff = useCallback((path: string, opts?: { preview?: boolean; base?: string; compare?: string }) => {
     const id = diffTabId(path, opts?.base, opts?.compare)
-    if (opts?.base && opts?.compare) actions.openPreviewDiffTabById(id)
-    else if (opts?.preview === false) actions.openDiffTab(path)
-    else actions.openPreviewDiffTab(path)
-    setFocusTarget('editor')
-    actions.setMobilePane('editor')
-  }, [actions])
+    if (latestRef.current.activeTab === id) {
+      openFile(path)
+      return
+    }
+    const refs = !!(opts?.base && opts?.compare)
+    const pinned = opts?.preview === false
+    void controllersRef.current.revealParents(path).then(() => {
+      if (refs) actions.openPreviewDiffTabById(id)
+      else if (pinned) actions.openDiffTab(path)
+      else actions.openPreviewDiffTab(path)
+      setSelectedFilePath(path)
+      setFocusTarget('editor')
+      actions.setMobilePane('editor')
+    })
+  }, [actions, openFile])
 
   const openDiffTabId = useCallback((tabId: string, opts?: { preview?: boolean }) => {
     if (opts?.preview === false) actions.openDiffTab(tabId.slice(5))
@@ -225,24 +260,34 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const attachSession = useCallback((name: string, opts?: { focusTerminal?: boolean }) => {
     actions.setActiveSession(name)
     setFocusTarget(opts?.focusTerminal ? 'terminal' : 'session')
-    if (isMobile) actions.setMobilePane('terminal')
-  }, [actions, isMobile])
+    if (latestRef.current.isMobile) actions.setMobilePane('terminal')
+  }, [actions])
 
   const detachSession = useCallback((): boolean => {
-    if (!activeSession) return false
+    if (!latestRef.current.activeSession) return false
     actions.setActiveSession('')
     return true
-  }, [activeSession, actions])
+  }, [actions])
 
   const openTerminalForSession = useCallback((name: string) => {
-    if (!liveSessionHandles.has(name)) return
+    if (!latestRef.current.liveSessionHandles.has(name)) return
     actions.setActiveSession(name)
-    if (isMobile) actions.setMobilePane('terminal')
+    if (latestRef.current.isMobile) actions.setMobilePane('terminal')
     else actions.updateLayout({ showRightPanel: true })
-  }, [liveSessionHandles, actions, isMobile])
+  }, [actions])
 
-  const revealPathInFiles = useCallback((path: string) => { controllersRef.current.revealPath(path) }, [])
-  const expandFolderInFiles = useCallback((path: string) => { controllersRef.current.expandFolder(path) }, [])
+  // Deferred reveal: record the latest intent, reveal the Files surface, and ask
+  // the registered controller to drain it. A controller that mounts/becomes
+  // visible later drains the buffered intent on registration instead of losing it.
+  const recordReveal = useCallback((kind: 'file' | 'folder', path: string) => {
+    revealKeyRef.current += 1
+    revealBufferRef.current = { kind, path, key: revealKeyRef.current }
+    if (latestRef.current.isMobile) actions.setMobilePane('files')
+    else actions.updateLayout({ showSidebar: true, showExplorer: true })
+    controllersRef.current.drainReveal()
+  }, [actions])
+  const revealPathInFiles = useCallback((path: string) => { recordReveal('file', path) }, [recordReveal])
+  const expandFolderInFiles = useCallback((path: string) => { recordReveal('folder', path) }, [recordReveal])
 
   const setFilesMode = useCallback((mode: 'tree' | 'search') => {
     actions.updateLayout({ showTextSearch: mode === 'search', showSidebar: true, showExplorer: true })
@@ -251,26 +296,27 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const showQuickOpen = useCallback(() => { setShowSearch(true) }, [])
 
   const closeFocusedSurface = useCallback((): boolean => {
-    if (showSearch) { setShowSearch(false); return true }
-    if ((focusTarget === 'terminal' || focusTarget === 'session') && detachSession()) return true
-    if (focusTarget === 'editor') {
-      // Closing the tasks tab syncs the sidebar Tasks toggle off.
-      if (isTasksTab(activeTab)) actions.updateLayout({ showTasks: false })
-      if (activeTab) { actions.closeTab(activeTab); return true }
+    const { showSearch: search, focusTarget: focus, activeTab: tab } = latestRef.current
+    if (search) { setShowSearch(false); return true }
+    if ((focus === 'terminal' || focus === 'session') && detachSession()) return true
+    if (focus === 'editor' || focus === 'tasks') {
+      // Closing the tasks surface syncs the sidebar Tasks toggle off first.
+      if (isTasksTab(tab)) actions.updateLayout({ showTasks: false })
+      if (tab) { actions.closeTab(tab); return true }
     }
-    if (activeTab) { actions.closeTab(activeTab); return true }
+    if (tab) { actions.closeTab(tab); return true }
     if (detachSession()) return true
     return true
-  }, [showSearch, focusTarget, detachSession, activeTab, actions])
+  }, [detachSession, actions])
 
   // Layout commands. Phase-1 maps the design's tree ops onto the flat layout for
   // the cases the current UI exercises; flexible split/move land in phase 8.
   const toggleDock = useCallback(() => {
-    actions.updateLayout({ showSidebar: !ws.layout.showSidebar })
-  }, [actions, ws.layout.showSidebar])
+    actions.updateLayout({ showSidebar: !latestRef.current.layout.showSidebar })
+  }, [actions])
   const toggleActivity = useCallback(() => {
-    actions.updateLayout({ showRightPanel: !ws.layout.showRightPanel })
-  }, [actions, ws.layout.showRightPanel])
+    actions.updateLayout({ showRightPanel: !latestRef.current.layout.showRightPanel })
+  }, [actions])
   const resetLayout = useCallback(() => {}, [])
   const collapsePanel = useCallback((_panel: PanelId, _collapsed: boolean) => {}, [])
   const resizeSplitChild = useCallback((_splitId: string, _childId: string, _basis: number) => {}, [])
@@ -335,7 +381,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   return (
     <WorkspaceEnvContext.Provider value={env}>
       <WorkspaceDataContext.Provider value={data}>
-        <WorkspaceControllersContext.Provider value={controllersRef}>
+        <WorkspaceControllersContext.Provider value={registry}>
           <WorkspaceCommandsContext.Provider value={commands}>
             <WorkspaceLayoutContext.Provider value={layoutValue}>
               <WorkspaceSelectionContext.Provider value={selection}>

@@ -187,17 +187,29 @@ export type WorkspaceCommands = {
 
 // --- Internal: renderer-registered controllers ----------------------------
 
+/** Latest unconsumed cross-panel reveal request (design: File Reveal
+ *  Controller). Buffered in the provider so a reveal issued before the Files
+ *  renderer is mounted/visible is drained on registration instead of lost. */
+export type FileRevealIntent =
+  | { kind: 'file'; path: string; key: number }
+  | { kind: 'folder'; path: string; key: number }
+
 /** Callbacks owned by the file-tree renderer that provider commands invoke.
  *  Registered by `WorkspaceScreen` while it owns `useFileTree` / `useHistory`. */
 export type WorkspaceControllers = {
   /** Load every parent directory of a path so it appears in the tree. */
   revealParents: (path: string) => Promise<void>
-  /** Reveal the Files panel and select a file path in the explorer. */
-  revealPath: (path: string) => void
-  /** Expand a folder in the explorer, revealing the Files panel if hidden. */
-  expandFolder: (path: string) => void
+  /** Drain the latest unconsumed reveal intent from the provider buffer. */
+  drainReveal: () => void
   /** Refresh history-derived state after a session is killed/renamed. */
   onSessionChange: () => void
+}
+
+/** Provider → renderer wiring: the controllers the renderer registers into, and
+ *  the reveal-intent buffer the renderer drains. */
+export type WorkspaceControllerRegistry = {
+  controllers: MutableRefObject<WorkspaceControllers>
+  revealBuffer: MutableRefObject<FileRevealIntent | null>
 }
 
 // --- Context objects ------------------------------------------------------
@@ -208,7 +220,7 @@ export const WorkspaceSelectionContext = createContext<WorkspaceSelection | null
 export const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | null>(null)
 export const WorkspaceCommandsContext = createContext<WorkspaceCommands | null>(null)
 export const WorkspaceControllersContext =
-  createContext<MutableRefObject<WorkspaceControllers> | null>(null)
+  createContext<WorkspaceControllerRegistry | null>(null)
 
 function useRequired<T>(ctx: React.Context<T | null>, name: string): T {
   const value = useContext(ctx)
@@ -226,7 +238,7 @@ export const useWorkspaceLayout = (): WorkspaceLayoutContextValue =>
   useRequired(WorkspaceLayoutContext, 'useWorkspaceLayout')
 export const useWorkspaceCommands = (): WorkspaceCommands =>
   useRequired(WorkspaceCommandsContext, 'useWorkspaceCommands')
-export const useWorkspaceControllers = (): MutableRefObject<WorkspaceControllers> =>
+export const useWorkspaceControllers = (): WorkspaceControllerRegistry =>
   useRequired(WorkspaceControllersContext, 'useWorkspaceControllers')
 
 // Re-exported for the data-resource consumers.

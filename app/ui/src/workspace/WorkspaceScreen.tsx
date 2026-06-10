@@ -105,7 +105,7 @@ function WorkspaceScreen() {
   const selection = useWorkspaceSelection()
   const { layout, mobilePane } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
-  const controllersRef = useWorkspaceControllers()
+  const { controllers: controllersRef, revealBuffer: revealBufferRef } = useWorkspaceControllers()
 
   const { name: projectName, path: projectPath, worktree, effectivePath } = env.project
   const { isMobile, isLandscape, isTouch } = env.viewport
@@ -244,22 +244,35 @@ function WorkspaceScreen() {
     onToggleShortcutSheet: () => setShowShortcutSheet(v => !v),
   })
 
-  // Register the file-tree-owned controllers the provider commands call into.
+  // Drain the provider's deferred reveal buffer using the file-tree primitives.
   const { revealInExplorer, handleExpandFolder } = nav
   const refreshHistory = history.refresh
+  const drainedRevealKeyRef = useRef(0)
+  const drainReveal = useCallback(() => {
+    const intent = revealBufferRef.current
+    if (!intent || intent.key === drainedRevealKeyRef.current) return
+    drainedRevealKeyRef.current = intent.key
+    if (intent.kind === 'folder') {
+      void handleExpandFolder(intent.path)
+    } else {
+      void revealInExplorer(intent.path)
+      actions.updateLayout({ showSidebar: true, showExplorer: true })
+      requestAnimationFrame(() => explorerRef.current?.expandToPath(intent.path))
+    }
+  }, [revealBufferRef, revealInExplorer, handleExpandFolder, actions])
+
+  // Register the file-tree-owned controllers, draining any intent buffered before
+  // registration; drain again once the tree is available to act on it.
   useEffect(() => {
     const ctl: WorkspaceControllers = {
       revealParents: revealInExplorer,
-      revealPath: (path: string) => {
-        void revealInExplorer(path)
-        actions.updateLayout({ showSidebar: true, showExplorer: true })
-        requestAnimationFrame(() => explorerRef.current?.expandToPath(path))
-      },
-      expandFolder: handleExpandFolder,
+      drainReveal,
       onSessionChange: refreshHistory,
     }
     controllersRef.current = ctl
-  }, [controllersRef, revealInExplorer, handleExpandFolder, refreshHistory, actions])
+    drainReveal()
+  }, [controllersRef, revealInExplorer, drainReveal, refreshHistory])
+  useEffect(() => { drainReveal() }, [drainReveal, fileTree])
 
   // Git status maps for file tree
   const gitMap = useMemo(() => {
