@@ -16,6 +16,8 @@ import {
   resizeSplitChild,
   toggleDock,
   toggleActivity,
+  setDockVisible,
+  setActivityVisible,
   activateTabsPanel,
   movePanel,
   splitPanel,
@@ -264,6 +266,49 @@ describe('toggleDock / toggleActivity', () => {
     const dockHidden = toggleDock(layout)
     expect(asSplit(dockHidden.desktop).children[0].hidden).toBe(true)
     expect(asSplit(dockHidden.desktop).children[1].hidden).toBeUndefined() // main untouched
+  })
+})
+
+// --- setDockVisible / setActivityVisible ------------------------------------
+
+describe('setDockVisible / setActivityVisible', () => {
+  it('drive the dock/activity column to an explicit target (not a blind flip)', () => {
+    const hiddenDock = setDockVisible(base(), false)
+    expect(asSplit(hiddenDock.desktop).children[0].hidden).toBe(true)
+    // Setting the SAME target again is a no-op (same reference), so a repeated
+    // reveal/hide never thrashes the tree out of step with the flat store.
+    expect(setDockVisible(hiddenDock, false)).toBe(hiddenDock)
+
+    const shownDock = setDockVisible(hiddenDock, true)
+    expect(asSplit(shownDock.desktop).children[0].hidden).toBeUndefined()
+    expect(shownDock).toEqual(base())
+
+    const children = asSplit(setActivityVisible(base(), false).desktop).children
+    expect(children[children.length - 1].hidden).toBe(true)
+    expect(children[0].hidden).toBeUndefined() // dock untouched
+  })
+
+  it('return the same layout (state-update bail) when already in the desired state', () => {
+    const layout = base()
+    expect(setDockVisible(layout, true)).toBe(layout) // already visible
+    expect(setActivityVisible(layout, true)).toBe(layout)
+  })
+
+  it('preserve the hidden subtree (basis + inner collapse) across hide → show', () => {
+    let layout = collapsePanel(base(), 'projects', true)
+    layout = resizeSplitChild(layout, 'root', 'dock', 300)
+    const cycled = setDockVisible(setDockVisible(layout, false), true)
+    expect(cycled).toEqual(layout)
+    expect(asSplit(cycled.desktop).children[0].basis).toBe(300)
+    expect(asLeaf(findChild(cycled.desktop, 'projects').child.node).collapsed).toBe(true)
+  })
+
+  it('anchor on the main slot, no-op when the targeted column is absent', () => {
+    // Park both activity panels into main → root = [dock, main]; no activity slot.
+    let layout = movePanel(base(), 'sessions', { kind: 'tabs', tabsId: MAIN_TABS_ID })
+    layout = movePanel(layout, 'terminal', { kind: 'tabs', tabsId: MAIN_TABS_ID })
+    expect(setActivityVisible(layout, false)).toBe(layout) // no activity column
+    expect(asSplit(setDockVisible(layout, false).desktop).children[0].hidden).toBe(true)
   })
 })
 

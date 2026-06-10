@@ -19,6 +19,7 @@ import type { Project, GitChange, AgentSession, SessionProvider, FileNode, Histo
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import type {
   FileState, PreviewMode, SplitDirection, MobilePane, WorkspaceLayout,
+  WorkspacePanelLayout,
 } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import type { WorkspaceData } from './resources'
@@ -93,6 +94,10 @@ export type WorkspaceSelection = {
 export type WorkspaceLayoutContextValue = {
   layout: WorkspaceLayout
   mobilePane: MobilePane
+  // The panel-layout tree (design: Layout Model). The desktop tree renderer
+  // (engine: 'tree') reads `panelLayout.desktop`; the legacy renderer reads the
+  // flat `layout` above. Layout mutations go through the commands surface.
+  panelLayout: WorkspacePanelLayout
 }
 
 // --- Commands -------------------------------------------------------------

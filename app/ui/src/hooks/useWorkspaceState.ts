@@ -153,6 +153,8 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     activeSession: ls.activeSession,
     mobilePane: ls.mobilePane,
     layout: ls.layout,
+    panelLayout: ls.panelLayout,
+    setPanelLayout: ls.setPanelLayout,
     files,
     dirtyTabs,
     conflictTabs,

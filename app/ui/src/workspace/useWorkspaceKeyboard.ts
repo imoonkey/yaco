@@ -35,11 +35,13 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
   const actions = commands.actions
   const setFocusTarget = commands.setFocusTarget
   const closeFocusedSurface = commands.closeFocusedSurface
+  const toggleDock = commands.toggleDock
+  const toggleActivity = commands.toggleActivity
   const setShowSearch = commands.actions.setShowSearch
   const { activeSession, openTabs, activeTab, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
   const { orderedSessions } = useWorkspaceDataContext().sessions
   const { layout } = useWorkspaceLayout()
-  const { showSidebar, showRightPanel, previewMode } = layout
+  const { previewMode } = layout
   const { isMobile } = useWorkspaceEnv().viewport
 
   const getKeyboardLock = useCallback((): KeyboardLockHandle | null => {
@@ -117,7 +119,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
         e.preventDefault()
         e.stopPropagation()
-        actions.updateLayout({ showRightPanel: !showRightPanel })
+        toggleActivity()
         return
       }
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 't') {
@@ -137,7 +139,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
       if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
         e.preventDefault()
         e.stopPropagation()
-        actions.updateLayout({ showSidebar: !showSidebar })
+        toggleDock()
         return
       }
       if (e.metaKey && !e.shiftKey && !e.ctrlKey && !e.altKey && key === 'p') {
@@ -190,7 +192,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showRightPanel, showSearch, showSidebar, terminalVoiceEligible, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, terminalVoiceEligible, toggleActivity, toggleDock, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

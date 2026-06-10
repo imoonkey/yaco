@@ -5,7 +5,7 @@ import { isPreviewableFile } from '../lib/binaryFiles'
 import { ComposeTray } from '../components/ComposeTray'
 import { FileSearch } from './WorkspaceSearch'
 import type { SearchEntry } from './WorkspaceSearch'
-import { WorkspaceLayout } from './WorkspaceLayout'
+import { WorkspaceLayoutShell } from './WorkspaceLayoutShell'
 import { useWorkspaceSidebarResize } from './useWorkspaceSidebarResize'
 import { ShortcutSheet } from './ShortcutSheet'
 import type { Project } from '../types'
@@ -163,7 +163,7 @@ function WorkspaceScreen() {
 
   return (
     <WorkspaceVoiceContext.Provider value={voiceSurface}>
-      <WorkspaceLayout
+      <WorkspaceLayoutShell
         isMobile={isMobile}
         isLandscape={isLandscape}
         isTouch={isTouch}

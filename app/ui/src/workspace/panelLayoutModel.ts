@@ -426,6 +426,42 @@ export const toggleDock = (layout: WorkspacePanelLayout): WorkspacePanelLayout =
 export const toggleActivity = (layout: WorkspacePanelLayout): WorkspacePanelLayout =>
   toggleRootEdge(layout, 'activity')
 
+/** Set/clear a child's `hidden` flag, keeping the normalized form (the flag is
+ *  omitted when visible rather than stored as `false`). */
+function withChildHidden(child: SplitChild, hidden: boolean): SplitChild {
+  if (hidden) return { ...child, hidden: true }
+  if (child.hidden === undefined) return child
+  const { hidden: _hidden, ...rest } = child
+  return rest
+}
+
+/** Drive the dock / activity column to an EXPLICIT visibility (vs the blind flip
+ *  of toggleRootEdge). The engine flag keeps the legacy flat `showSidebar` /
+ *  `showRightPanel` as the single source of truth for column visibility; the
+ *  provider syncs the tree to that target through these setters, so toggle AND
+ *  reveal paths (Cmd+B, Cmd+Shift+F, terminal reveal, attach intent) can never
+ *  drift the two stores apart. Returns the SAME layout (so the provider's state
+ *  update bails) when the column is already in the desired state or absent. */
+function setRootEdgeVisible(
+  layout: WorkspacePanelLayout, side: 'dock' | 'activity', visible: boolean,
+): WorkspacePanelLayout {
+  const root = layout.desktop
+  if (root.kind !== 'split') return layout
+  const mainIndex = root.children.findIndex((c) => hasTabsNode(c.node, MAIN_TABS_ID))
+  if (mainIndex === -1) return layout
+  const target = side === 'dock' ? mainIndex - 1 : mainIndex + 1
+  if (target < 0 || target >= root.children.length) return layout
+  if ((root.children[target].hidden === true) === !visible) return layout
+  const children = root.children.map((c, i) => (i === target ? withChildHidden(c, !visible) : c))
+  return withDesktop(layout, { ...root, children })
+}
+
+export const setDockVisible = (layout: WorkspacePanelLayout, visible: boolean): WorkspacePanelLayout =>
+  setRootEdgeVisible(layout, 'dock', visible)
+
+export const setActivityVisible = (layout: WorkspacePanelLayout, visible: boolean): WorkspacePanelLayout =>
+  setRootEdgeVisible(layout, 'activity', visible)
+
 /** Activate `panel` in the tabs node `tabsId`. No-op if the panel is not one of
  *  that node's tabs, or the node id is unknown. */
 export function activateTabsPanel(

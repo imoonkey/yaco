@@ -9,7 +9,7 @@
 // renderer; the few commands that need file-tree primitives or a post-session
 // refresh call through the renderer-registered `controllers` ref.
 import {
-  useCallback, useEffect, useMemo, useRef, useState, type ReactNode,
+  useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 import { useWorkspaceState, isFileTab } from '../hooks/useWorkspaceState'
 import { isTasksTab } from '../hooks/workspaceTypes'
@@ -18,6 +18,16 @@ import { useFileTree, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { useWorkspaceData } from './resources'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
+import {
+  collapsePanel as modelCollapsePanel,
+  resizeSplitChild as modelResizeSplitChild,
+  activateTabsPanel as modelActivateTabsPanel,
+  setDockVisible as modelSetDockVisible,
+  setActivityVisible as modelSetActivityVisible,
+  movePanel as modelMovePanel,
+  splitPanel as modelSplitPanel,
+  resetLayout as modelResetLayout,
+} from './panelLayoutModel'
 import type { Project } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import type {
@@ -31,6 +41,7 @@ import {
   type WorkspaceCommands, type WorkspaceControllers, type WorkspaceRawActions,
   type WorkspaceControllerRegistry, type FileRevealIntent, type WorkspacePanelResources,
   type FocusTarget, type JumpRequest, type PanelId, type EditorPrefs,
+  type PanelPlacement, type SplitSide,
 } from './context'
 
 export type WorkspaceProviderProps = {
@@ -87,7 +98,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
 
   // Centralized tab/layout/file state.
   const ws = useWorkspaceState(projectName, worktree)
-  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, recentFiles, actions } = ws
+  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, panelLayout, setPanelLayout, files, dirtyTabs, conflictTabs, recentFiles, actions } = ws
 
   // Hot selection state owned here (read everywhere, mutated through commands).
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
@@ -180,6 +191,21 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       liveSessionHandles, layout,
     }
   })
+
+  // Mirror the legacy flat dock/activity visibility onto the panel-layout tree so
+  // the tree renderer (engine: 'tree') can never drift out of step with it. The
+  // flat store is the single source of truth, written by EVERY visibility path
+  // (toggle, file reveal, text-search reveal, terminal reveal, external attach
+  // intent); syncing the tree from that one source here means none of those paths
+  // has to know about the tree. useLayoutEffect applies the sync before paint, so
+  // the tree never shows a stale frame, and the setters return the same layout
+  // when already in the desired state, so an unchanged flag commits nothing.
+  useLayoutEffect(() => {
+    setPanelLayout((prev) => modelSetDockVisible(prev, layout.showSidebar))
+  }, [layout.showSidebar, setPanelLayout])
+  useLayoutEffect(() => {
+    setPanelLayout((prev) => modelSetActivityVisible(prev, layout.showRightPanel))
+  }, [layout.showRightPanel, setPanelLayout])
 
   // --- Cross-component effects (moved verbatim from WorkspaceScreen) ---
   useEffect(() => {
@@ -363,20 +389,39 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     return true
   }, [detachSession, actions])
 
-  // Layout commands. Phase-1 maps the design's tree ops onto the flat layout for
-  // the cases the current UI exercises; flexible split/move land in phase 8.
+  // Layout commands. These mutate the panel-layout tree through the pure
+  // `panelLayoutModel` edits (the tree renderer reads the result). Dock/activity
+  // VISIBILITY is special: the legacy flat `showSidebar`/`showRightPanel` stays
+  // the single source of truth, and a layout effect below mirrors it onto the
+  // tree — so `toggleDock`/`toggleActivity` only flip the flat store, and every
+  // reveal path (Cmd+Shift+F, file/terminal reveal, attach intent) that already
+  // writes the flat store keeps the tree in lockstep for free. Every other
+  // command is tree-only — the legacy renderer never calls it — so it is purely
+  // additive.
   const toggleDock = useCallback(() => {
     actions.updateLayout({ showSidebar: !latestRef.current.layout.showSidebar })
   }, [actions])
   const toggleActivity = useCallback(() => {
     actions.updateLayout({ showRightPanel: !latestRef.current.layout.showRightPanel })
   }, [actions])
-  const resetLayout = useCallback(() => {}, [])
-  const collapsePanel = useCallback((_panel: PanelId, _collapsed: boolean) => {}, [])
-  const resizeSplitChild = useCallback((_splitId: string, _childId: string, _basis: number) => {}, [])
-  const activateTabsPanel = useCallback((_tabsId: string, _panel: PanelId) => {}, [])
-  const movePanel = useCallback(() => {}, [])
-  const splitPanel = useCallback(() => {}, [])
+  const collapsePanel = useCallback((panel: PanelId, collapsed: boolean) => {
+    setPanelLayout((prev) => modelCollapsePanel(prev, panel, collapsed))
+  }, [setPanelLayout])
+  const resizeSplitChild = useCallback((splitId: string, childId: string, basis: number) => {
+    setPanelLayout((prev) => modelResizeSplitChild(prev, splitId, childId, basis))
+  }, [setPanelLayout])
+  const activateTabsPanel = useCallback((tabsId: string, panel: PanelId) => {
+    setPanelLayout((prev) => modelActivateTabsPanel(prev, tabsId, panel))
+  }, [setPanelLayout])
+  const movePanel = useCallback((panel: PanelId, placement: PanelPlacement) => {
+    setPanelLayout((prev) => modelMovePanel(prev, panel, placement))
+  }, [setPanelLayout])
+  const splitPanel = useCallback((target: PanelId, panel: PanelId, side: SplitSide) => {
+    setPanelLayout((prev) => modelSplitPanel(prev, target, panel, side))
+  }, [setPanelLayout])
+  const resetLayout = useCallback(() => {
+    setPanelLayout((prev) => modelResetLayout(prev))
+  }, [setPanelLayout])
   const setEditorPrefs = useCallback((patch: Partial<EditorPrefs>) => {
     actions.updateLayout(patch)
   }, [actions])
@@ -429,8 +474,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   ])
 
   const layoutValue = useMemo<WorkspaceLayoutContextValue>(() => ({
-    layout, mobilePane,
-  }), [layout, mobilePane])
+    layout, mobilePane, panelLayout,
+  }), [layout, mobilePane, panelLayout])
 
   return (
     <WorkspaceEnvContext.Provider value={env}>
