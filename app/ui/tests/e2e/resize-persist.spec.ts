@@ -26,6 +26,20 @@ import {
 
 let provisioned: FixtureProject[] = []
 
+// This file characterizes the LEGACY flat-layout renderer's pixel sizing +
+// flat-field persistence (leftSize/rightSize/projectSize live in `state.layout`,
+// and the projects section body carries the size). Since the T6.5 cutover the
+// default engine is `tree`, whose sizes live on the panel-tree leaves (different
+// node, different field). Pin these characterizations to the legacy engine they
+// describe; the tree-engine equivalents (resize → split-child basis, persisted in
+// `panelLayout`) are covered by panel-tree-desktop.spec.ts. The whole file +
+// legacy renderer are removed together in phase 8.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
+  })
+})
+
 test.afterEach(async () => {
   const all = provisioned
   provisioned = []

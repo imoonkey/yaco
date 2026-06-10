@@ -125,6 +125,13 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
   })
 
   test('tasks branch: Cmd+W closes the Tasks tab and syncs the sidebar toggle off', async ({ page, request }) => {
+    // The "sidebar Tasks toggle" + `state.layout.showTasks` this asserts are LEGACY
+    // structure: the tree makes Tasks a main-tabs panel with no sidebar section, so
+    // this close+sync branch runs on the legacy engine. The tree's tasks open/close
+    // (Cmd+Shift+T / Cmd+W) is covered by workspace-tasks-tab.spec.ts.
+    await page.addInitScript(() => {
+      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
+    })
     // A task-bearing fixture: the Tasks workspace only renders its toolbar/search
     // once the graph has nodes (an empty graph shows a bare status pane).
     fixture = await createWorktreeFixture(request)

@@ -30,11 +30,25 @@ import {
   HANDLE_PX, FRAMED_BODY_CLASS, minBasisPx, canonicalizeSplit, planSplitChildren,
   withEmptyEditorRule, collectFramedLeaves,
 } from './desktopTreeSizing'
+import { MAIN_TABS_ID } from './panelLayoutModel'
 import type { LayoutNode, SplitNode } from '../hooks/workspaceTypes'
 
 type ResizeSplitChild = (splitId: string, childId: string, basis: number) => void
 
 const ROOT_SIZING: CSSProperties = { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 0 }
+
+// Structural ARIA landmarks. The three canonical regions of the default tree —
+// the left dock, the editor/tasks main node, and the right activity column —
+// expose the SAME landmarks the legacy skeleton did (`role="navigation"`
+// "Sidebar", `role="main"`, `role="complementary"` "Activity panel"), so assistive
+// tech and the workspace specs see one set of regions under either engine. Keyed
+// by the stable structural node ids (`dock` / `main` / `activity`); any other node
+// renders without a landmark.
+const NODE_LANDMARK: Record<string, { role: string; label?: string }> = {
+  dock: { role: 'navigation', label: 'Sidebar' },
+  [MAIN_TABS_ID]: { role: 'main' },
+  activity: { role: 'complementary', label: 'Activity panel' },
+}
 
 export type DesktopPanelTreeLayoutProps = {
   rootRef: RefObject<HTMLDivElement | null>
@@ -101,11 +115,14 @@ function TreeNode({ node, sizing, resizeSplitChild }: {
   // leaf or tabs → a sized flex column hosting the panel. A tabs node renders its
   // active panel (v1: the main node's editor, which owns the editor/tasks tab bar).
   const panel = node.kind === 'leaf' ? node.panel : node.active
+  const landmark = NODE_LANDMARK[node.id]
   return (
     <div
       data-node-id={node.id}
       data-panel-leaf={node.kind === 'leaf' ? node.panel : undefined}
       data-tabs-active={node.kind === 'tabs' ? node.active : undefined}
+      role={landmark?.role}
+      aria-label={landmark?.label}
       style={sizing}
       className="flex flex-col min-w-0 min-h-0"
     >
@@ -121,6 +138,7 @@ function SplitView({ node, sizing, resizeSplitChild }: {
   const canonical = canonicalizeSplit(node)
   const items = planSplitChildren(canonical)
   const flexDir = node.axis === 'row' ? 'flex-row' : 'flex-col'
+  const landmark = NODE_LANDMARK[node.id]
 
   // Max basis for a fixed child: keep every OTHER visible child at or above its
   // min along the axis given the live container size, mirroring the legacy
@@ -166,6 +184,8 @@ function SplitView({ node, sizing, resizeSplitChild }: {
       ref={containerRef}
       data-node-id={node.id}
       data-split-axis={node.axis}
+      role={landmark?.role}
+      aria-label={landmark?.label}
       style={sizing}
       className={`flex ${flexDir} min-w-0 min-h-0`}
     >

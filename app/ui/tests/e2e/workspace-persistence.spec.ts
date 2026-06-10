@@ -280,8 +280,12 @@ test.describe('Layout persistence characterization', () => {
     // Seed ONCE before mount: select this project via ui-state, and set
     // projectSize=200 with Projects visible (so its body is measurable). The
     // layout key is only seeded when absent, so the collapse we do below survives
-    // the reload instead of being re-seeded.
+    // the reload instead of being re-seeded. This characterizes the LEGACY flat
+    // `projectSize` (a body-height field the tree model intentionally does not
+    // migrate), so it runs on the legacy engine; the tree section-size persistence
+    // equivalent is panel-tree-desktop.spec.ts.
     await page.addInitScript(({ key, name }) => {
+      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
       localStorage.setItem('yaco-ui-state', JSON.stringify({ project: name }))
       if (!localStorage.getItem(key)) {
         localStorage.setItem(key, JSON.stringify({ layout: { showProjects: true, projectSize: 200 } }))
@@ -318,6 +322,13 @@ test.describe('Layout persistence characterization', () => {
   })
 
   test('section collapse state persists and renders collapsed', async ({ page, request }) => {
+    // Characterizes the LEGACY section-body geometry (projectsSectionBody carries
+    // the size; ≈120px default). The tree sizes the leaf, not the body, so this
+    // runs on the legacy engine; tree section collapse render is covered by
+    // panel-tree-desktop.spec.ts ("the framed Projects header collapses its section").
+    await page.addInitScript(() => {
+      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
+    })
     const project = await ws(page, request)
 
     // Sidebar sections start expanded; new shape persisted well-formed.

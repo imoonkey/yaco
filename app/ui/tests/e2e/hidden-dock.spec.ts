@@ -27,6 +27,19 @@ import {
 
 let provisioned: FixtureProject[] = []
 
+// This file characterizes the LEGACY flat-layout renderer's hide/restore of pixel
+// sizes + section collapse, asserting flat fields (`state.layout.leftSize`,
+// `showExplorer`, ...) and the legacy section-body heights. Since the T6.5 cutover
+// the default engine is `tree`, whose sizes/collapse live on the panel-tree leaves
+// (different node + field). Pin these characterizations to the legacy engine they
+// describe; the tree-engine hide/restore + collapse equivalents are covered by
+// panel-tree-desktop.spec.ts. File + legacy renderer are removed together in phase 8.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
+  })
+})
+
 test.afterEach(async () => {
   const all = provisioned
   provisioned = []

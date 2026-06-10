@@ -2,11 +2,12 @@
 // renders through the legacy fixed skeleton (`WorkspaceLayout`) or the new
 // panel-tree renderer (`DesktopPanelTreeLayout`).
 //
-// Design (phase 5 / desktop-tree-renderer): the tree renderer ships behind a
-// migration-window flag, not a hard cutover. The DEFAULT is `legacy` so existing
-// behavior is untouched; flipping to `tree` is opt-in per the URL query
-// (`?panelTree=1`) or a localStorage key (`yaco-panel-tree`), so a single user can
-// flip back instantly on any subtle breakage. This valve is deleted in phase 8.
+// Design (phase 5/6 → T6.5 cutover): the tree renderer shipped behind a
+// migration-window flag, and T6.5 flips the DEFAULT to `tree` once parity is
+// proven — so everyone renders through the panel tree by default and `legacy`
+// becomes the explicit opt-out fallback for instant rollback on any subtle
+// breakage, per the URL query (`?panelTree=0`) or the `yaco-panel-tree=legacy`
+// localStorage key. This valve is deleted in phase 8.
 //
 // It is intentionally NOT persisted in the panel-layout model — keeping it out of
 // the stored shape means the flag is purely additive and never migrates.
@@ -17,17 +18,18 @@ const STORAGE_KEY = 'yaco-panel-tree'
 
 /** Resolve the active layout engine. Precedence: an explicit `?panelTree=0|1`
  *  query wins (so a URL can force either engine for a session), then the
- *  `yaco-panel-tree` localStorage key (`'tree'` opts in), else `legacy`. Any
- *  access failure (no window, blocked storage) falls back to `legacy`. */
+ *  `yaco-panel-tree` localStorage key (`'legacy'` opts out), else `tree` — the
+ *  post-cutover default. Any access failure (no window, blocked storage) falls
+ *  back to `tree`. */
 export function resolveLayoutEngine(): LayoutEngine {
-  if (typeof window === 'undefined') return 'legacy'
+  if (typeof window === 'undefined') return 'tree'
   try {
     const param = new URLSearchParams(window.location.search).get('panelTree')
     if (param === '1') return 'tree'
     if (param === '0') return 'legacy'
-    if (window.localStorage.getItem(STORAGE_KEY) === 'tree') return 'tree'
+    if (window.localStorage.getItem(STORAGE_KEY) === 'legacy') return 'legacy'
   } catch {
     // Unavailable/blocked storage or a malformed URL — keep the safe default.
   }
-  return 'legacy'
+  return 'tree'
 }

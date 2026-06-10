@@ -3,9 +3,9 @@
 // It chooses the renderer off the SAME workspace contexts: `engine: 'tree'`
 // mounts the new panel-tree renderers (`DesktopPanelTreeLayout` on desktop,
 // `MobilePanelProjection` on mobile), `engine: 'legacy'` keeps the existing
-// `WorkspaceLayout` skeleton for both. The DEFAULT is legacy (see
-// `resolveLayoutEngine`), so existing behavior is untouched until the flag is
-// flipped, and either renderer can roll back instantly on a subtle breakage.
+// `WorkspaceLayout` skeleton for both. Since the T6.5 cutover the DEFAULT is tree
+// (see `resolveLayoutEngine`), so everyone renders through the panel tree and
+// `legacy` is the explicit opt-out fallback for instant rollback.
 //
 // Both renderers consume the identical `WorkspaceLayoutProps` from
 // `WorkspaceScreen`; the tree renderers read layout/commands/selection/env from
