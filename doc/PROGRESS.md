@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-09: Flexible-layout T1a — data-resource adapters (git + sessions)
+
+**What changed:**
+- New `app/ui/src/workspace/resources.ts`: explicit `WorkspaceGitResource` / `WorkspaceSessionsResource` interfaces + `WorkspaceData`, and the single-poller composition hooks `useWorkspaceGitResource` (wraps `useGitStatus`), `useWorkspaceSessionsResource` (wraps `useSessions` + `useWorkspaceSessions`, derives `liveSessionHandles`), and `useWorkspaceData`.
+- Characterization test `__tests__/resources.test.ts`: pins one git poller + one sessions poller + exactly one sessions manager per render (call-through spy on `useWorkspaceSessions` + single pinned-sessions load), and a compile-time `Equal<>` guard that fails `tsc` if either public interface stops being an explicit field map.
+- Doc note added to `doc/main/app/frontend/state.md` (Workspace Data Resources).
+
+**Why:**
+- The flexible-layout Data Context must expose only the genuinely-shared cold resources (`git`, `sessions`) behind stable, explicit types — no `ReturnType<typeof hook>` leaking a hook's return shape into the context surface — while preserving the single-owner-per-poller invariant the whole refactor depends on. Not yet wired into `WorkspaceScreen`; consumed by the provider in a later phase.
+
+**Key files:** `app/ui/src/workspace/resources.ts`, `app/ui/src/workspace/__tests__/resources.test.ts`, `doc/main/app/frontend/state.md`
+**Verification:** `cd app/ui && npx vitest run src` → 26 files / 321 passed; duplicate-poller guard 5/5; `npx tsc -b` clean; eslint clean. Both test guards verified non-vacuous (double-mount → fail; type drift → tsc error).
+**Commit:** 183db46 (code) + docs (this change). Worktree `task/fl-data-resources`; not pushed/merged.
+**Next:** wire `useWorkspaceData` into the Data Context during phase 1 (workspace-contexts).
+
 ## 2026-06-09: Phase-0 e2e baseline repair + per-worktree isolation
 
 **What changed:**

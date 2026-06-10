@@ -15,7 +15,7 @@ State management patterns across the frontend.
 
 ## Related Code
 
-`ui/src/App.tsx`, `ui/src/components/Workspace.tsx`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/*.ts`
+`ui/src/App.tsx`, `ui/src/components/Workspace.tsx`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/*.ts`, `ui/src/workspace/resources.ts`
 
 ## Architecture
 
@@ -48,6 +48,16 @@ Component mounts → usePolling(fetcher, interval, sseChannel)
 ```
 
 A monotonic sequence counter (`seqRef`) ensures only the most recent fetch updates state. SSE callbacks call `load()` directly (no effect restart), preventing fetch starvation during rapid file changes. Polling is suppressed when `document.hidden` to avoid wasted fetches in background tabs — the SSE `visibilitychange` reconnect triggers a full refresh when the tab becomes visible.
+
+## Workspace Data Resources (emerging)
+
+Early layer of the in-progress flexible-layout refactor. `ui/src/workspace/resources.ts` wraps the shared pollers behind explicit, context-facing interfaces:
+
+- `WorkspaceGitResource` (wraps `useGitStatus`) and `WorkspaceSessionsResource` (wraps `useSessions` + `useWorkspaceSessions`), composed by `useWorkspaceData()`. Only `git` and `sessions` are shared resources; file tree and history stay panel-local.
+- **Single-poller invariant**: the composition owns exactly one git poller and one sessions poller/manager. Pinned by `__tests__/duplicatePollerGuard.test.ts` and `__tests__/resources.test.ts`.
+- **Explicit public types**: the interfaces enumerate named fields — no `ReturnType<typeof hook>` in the public surface, so the Data Context never leaks a hook's return shape. A compile-time `Equal<>` guard in the test fails `tsc` on drift.
+
+Not yet wired into `WorkspaceScreen`; consumed by the Data Context in a later phase. -> See: `plan/all/20260609_flexible-layout/final/design.md` (Data Context).
 
 ## Workspace State (useWorkspaceState)
 
