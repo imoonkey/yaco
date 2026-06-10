@@ -24,6 +24,7 @@ import type { GitChange } from '../../types'
 import {
   useWorkspaceEnv, useWorkspaceDataContext, useWorkspaceSelection, useWorkspaceCommands,
 } from '../context'
+import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
 
 // --- Panel-local compare store -------------------------------------------
@@ -238,12 +239,7 @@ function useChangesHeader(): PanelHeaderSlots {
 // --- Definition ----------------------------------------------------------
 
 export const changesPanelDef: PanelDefinition = {
-  id: 'changes',
-  title: 'Changes',
-  chrome: 'framed',
-  mobileDock: 'browse',
-  mobileOrder: 2,
-  minSize: { width: 140, height: 50 },
+  ...PANEL_META.changes,
   Component: ChangesPanelBody,
   useHeader: useChangesHeader,
 }

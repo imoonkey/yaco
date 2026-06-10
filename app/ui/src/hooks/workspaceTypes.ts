@@ -1,5 +1,5 @@
 import type { PanelId } from '../workspace/context'
-import type { MobileDock } from '../workspace/panelRegistry'
+import type { MobileDock } from '../workspace/panelMeta'
 
 // --- Types ---
 

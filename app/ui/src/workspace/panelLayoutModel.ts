@@ -23,9 +23,9 @@
 //
 // `normalizeDesktopTree` and `normalizeLayout` are idempotent: normalizing an
 // already-normal value returns a deeply-equal value.
-import { getPanelDefinition } from './panelRegistry'
+import { getPanelMeta } from './panelMeta'
 import type { PanelId, SplitSide, PanelPlacement } from './context'
-import type { MobileDock } from './panelRegistry'
+import type { MobileDock } from './panelMeta'
 import type {
   LayoutNode, LeafNode, SplitChild, TabsNode, TabsChrome,
   SplitAxis, PanelState, WorkspacePanelLayout, PreviewMode,
@@ -33,10 +33,10 @@ import type {
 
 // --- Canonical sets ---------------------------------------------------------
 
-/** Existence is validated against this canonical set rather than the runtime
- *  registry, which is intentionally empty until phase 3 populates it. The seven
- *  ids match the registry's eventual keys, so the check stays forward-compatible
- *  while the registry is only used here for min sizes. */
+/** Existence is validated against this canonical set rather than the panel
+ *  metadata map, keeping the check independent of which panels are assembled.
+ *  The seven ids match `panelMeta`'s keys, which this module reads only for the
+ *  per-panel min sizes used to clamp split bases. */
 export const PANEL_IDS: readonly PanelId[] = [
   'projects', 'files', 'changes', 'sessions', 'editor', 'terminal', 'tasks',
 ]
@@ -172,7 +172,7 @@ function idOf(raw: unknown, ctx: NormCtx, kind: string): string {
 function minForChild(node: LayoutNode, axis: SplitAxis): number {
   const fallback = axis === 'row' ? DEFAULT_MIN_SIZE.width : DEFAULT_MIN_SIZE.height
   if (node.kind !== 'leaf') return fallback
-  const min = getPanelDefinition(node.panel)?.minSize
+  const min = getPanelMeta(node.panel)?.minSize
   if (!min) return fallback
   return axis === 'row' ? min.width : min.height
 }

@@ -33,6 +33,7 @@ import {
 } from '../context'
 import { useWorkspaceDiff } from '../useWorkspaceDiff'
 import { WorkspaceEditorColumn } from '../WorkspaceEditorColumn'
+import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition } from '../panelRegistry'
 
 export function EditorPanel() {
@@ -172,11 +173,6 @@ export function EditorPanel() {
 // integrator (fl-panel-integrate) assembles these defs into the registry.
 // eslint-disable-next-line react-refresh/only-export-components
 export const editorPanelDef: PanelDefinition = {
-  id: 'editor',
-  title: 'Editor',
-  chrome: 'unframed',
-  mobileDock: 'editor',
-  mobileOrder: 0,
-  minSize: { width: 320, height: 200 },
+  ...PANEL_META.editor,
   Component: EditorPanel,
 }

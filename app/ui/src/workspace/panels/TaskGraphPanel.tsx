@@ -27,6 +27,7 @@ import {
   useWorkspaceEnv,
   useWorkspaceSelection,
 } from '../context'
+import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition } from '../panelRegistry'
 
 // Own the lazy boundary so the panel is self-contained. The dynamic import path
@@ -88,11 +89,6 @@ export function TaskGraphPanel() {
 // panelRegistry); the def is the panel's single registration point.
 // eslint-disable-next-line react-refresh/only-export-components
 export const taskGraphPanelDef: PanelDefinition = {
-  id: 'tasks',
-  title: 'Tasks',
-  chrome: 'unframed',
-  mobileDock: 'tasks',
-  mobileOrder: 0,
-  minSize: { width: 360, height: 240 },
+  ...PANEL_META.tasks,
   Component: TaskGraphPanel,
 }

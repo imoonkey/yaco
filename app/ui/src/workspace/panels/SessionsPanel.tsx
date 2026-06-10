@@ -16,6 +16,7 @@ import {
   useWorkspaceSelection, useWorkspaceCommands, useOptionalWorkspacePanelResources,
 } from '../context'
 import { useWorkspaceSessionSection } from '../useWorkspaceSessionSection'
+import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
 
 // --- Framed-header bridge ---------------------------------------------------
@@ -112,15 +113,7 @@ export function useSessionsHeader(): PanelHeaderSlots {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const sessionsPanelDef: PanelDefinition = {
-  id: 'sessions',
-  title: 'Sessions',
-  chrome: 'framed',
-  // Browse dock order: projects, files, changes, sessions (design: Mobile).
-  mobileDock: 'browse',
-  mobileOrder: 3,
-  // Grounded in today's clamps: activity column min width (250) and the
-  // sessions section min height (50) from useWorkspaceSidebarResize.
-  minSize: { width: 250, height: 50 },
+  ...PANEL_META.sessions,
   Component: SessionsPanel,
   useHeader: useSessionsHeader,
 }

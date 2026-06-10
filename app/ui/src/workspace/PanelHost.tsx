@@ -6,9 +6,8 @@
 // registry does not resolve — a phase-2 scaffold id, a stale/garbage id from a
 // corrupt persisted layout tree, or a non-string value. It never crashes.
 import { useWorkspaceEnv } from './context'
-import {
-  getPanelDefinition, resolvePanelTitle, type PanelDefinition,
-} from './panelRegistry'
+import { getPanelDefinition, type PanelDefinition } from './panelRegistry'
+import { resolvePanelTitle } from './panelMeta'
 import { PanelFrame } from './PanelFrame'
 import { usePanelChromeSlot } from './panelChrome'
 

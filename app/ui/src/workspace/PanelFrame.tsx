@@ -14,7 +14,8 @@
 // per-section body wrapper. No slot ⇒ expanded, default fill (isolation tests
 // and renderers that do not size sections both rely on this).
 import type { ReactNode } from 'react'
-import type { PanelChrome, PanelHeaderHook } from './panelRegistry'
+import type { PanelHeaderHook } from './panelRegistry'
+import type { PanelChrome } from './panelMeta'
 import type { PanelChromeSlot } from './panelChrome'
 import { SectionHeader } from './SectionHeader'
 

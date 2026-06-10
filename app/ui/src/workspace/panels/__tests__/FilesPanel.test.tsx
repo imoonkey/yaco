@@ -15,7 +15,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PanelFrame } from '../../PanelFrame'
-import { resolvePanelTitle } from '../../panelRegistry'
+import { resolvePanelTitle } from '../../panelMeta'
 import { filesPanelDef } from '../FilesPanel'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,

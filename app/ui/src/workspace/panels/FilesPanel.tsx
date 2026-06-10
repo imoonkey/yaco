@@ -29,6 +29,7 @@ import {
   useWorkspaceLayout, useWorkspaceCommands, useWorkspaceControllers,
   useOptionalWorkspacePanelResources,
 } from '../context'
+import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
 
 // Text search pulls the ripgrep stream UI; it stays lazy inside the panel.
@@ -299,12 +300,7 @@ function useFilesHeader(): PanelHeaderSlots {
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const filesPanelDef: PanelDefinition = {
-  id: 'files',
-  title: ({ env }) => env.project.name || 'Explorer',
-  chrome: 'framed',
-  mobileDock: 'browse',
-  mobileOrder: 1,
-  minSize: { width: 180, height: 80 },
+  ...PANEL_META.files,
   Component: FilesPanel,
   useHeader: useFilesHeader,
 }

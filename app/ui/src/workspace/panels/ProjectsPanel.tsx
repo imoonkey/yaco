@@ -10,6 +10,7 @@
 import { Plus } from 'lucide-react'
 import { ProjectList } from '../../components/ProjectList'
 import { useWorkspaceEnv } from '../context'
+import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
 
 // Body: render `ProjectList` from env inputs + project-management callbacks.
@@ -60,12 +61,7 @@ function useProjectsHeader(): PanelHeaderSlots {
 
 // Registration object the integrator (phase 3h) assembles into the registry.
 export const projectsPanelDef: PanelDefinition = {
-  id: 'projects',
-  title: 'Projects',
-  chrome: 'framed',
-  mobileDock: 'browse',
-  mobileOrder: 0,
-  minSize: { width: 160, height: 60 },
+  ...PANEL_META.projects,
   Component: ProjectsPanelBody,
   useHeader: useProjectsHeader,
 }

@@ -201,8 +201,8 @@ describe('registry helpers (real implementations)', () => {
   })
 
   it('resolvePanelTitle handles string and env-function titles', async () => {
-    const actual = await vi.importActual<typeof import('../panelRegistry')>('../panelRegistry')
-    expect(actual.resolvePanelTitle('Changes', fakeEnv)).toBe('Changes')
-    expect(actual.resolvePanelTitle((ctx) => ctx.env.project.name, fakeEnv)).toBe('demo')
+    const meta = await vi.importActual<typeof import('../panelMeta')>('../panelMeta')
+    expect(meta.resolvePanelTitle('Changes', fakeEnv)).toBe('Changes')
+    expect(meta.resolvePanelTitle((ctx) => ctx.env.project.name, fakeEnv)).toBe('demo')
   })
 })

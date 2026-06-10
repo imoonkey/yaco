@@ -20,7 +20,7 @@
 //     max resolver is supplied the child is also re-clamped on window resize, so
 //     a shrinking viewport pulls an over-wide panel back in (today's behavior).
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getPanelDefinition } from './panelRegistry'
+import { getPanelMeta } from './panelMeta'
 import { DEFAULT_MIN_SIZE } from './panelLayoutModel'
 import type { SplitAxis, SplitChild, SplitNode } from '../hooks/workspaceTypes'
 
@@ -92,13 +92,13 @@ function basisOf(child: SplitChild, fallback: number): number {
   return typeof child.basis === 'number' && Number.isFinite(child.basis) ? child.basis : fallback
 }
 
-/** Default min: the registry min size along the axis, falling back to
+/** Default min: the panel's metadata min size along the axis, falling back to
  *  DEFAULT_MIN_SIZE for non-leaf nodes and unregistered panels. */
 const registryMin: BasisResolver = (child, axis) => {
   const fallback = axis === 'row' ? DEFAULT_MIN_SIZE.width : DEFAULT_MIN_SIZE.height
   const node = child.node
   if (node.kind !== 'leaf') return fallback
-  const min = getPanelDefinition(node.panel)?.minSize
+  const min = getPanelMeta(node.panel)?.minSize
   if (!min) return fallback
   return axis === 'row' ? min.width : min.height
 }

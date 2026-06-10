@@ -219,7 +219,9 @@ describe('usePanelResize — nearest fixed neighbor', () => {
 
   it('skips hidden children when resolving the adjacent pair', () => {
     const tree = split('row', [fixed('a', 120), { hidden: true, node: leaf('ghost') }, grow('c')])
-    const { result } = renderResize(tree, { handleIndex: 0 })
+    // Explicit min so the drag math is asserted against a KNOWN bound, not
+    // whichever min the production registry assembles for the leaves' panel.
+    const { result } = renderResize(tree, { handleIndex: 0, minBasis: () => 100 })
     // visible pair is [a, c] → resize the fixed a, not the hidden ghost
     expect(result.current.handle.target?.childId).toBe('a')
     drag(result.current.handle, 'row', 0, 30)

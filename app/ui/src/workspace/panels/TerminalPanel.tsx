@@ -28,6 +28,7 @@ import {
   useWorkspaceEnv, useWorkspaceSelection,
   useWorkspaceDataContext, useWorkspaceCommands, useWorkspaceVoiceSurface,
 } from '../context'
+import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition } from '../panelRegistry'
 
 // Terminal pulls xterm (~250KB); keep it off the critical path like the inline
@@ -113,11 +114,6 @@ export function TerminalPanel() {
 // component; the registry assembles these in a later integration phase.
 // eslint-disable-next-line react-refresh/only-export-components
 export const terminalPanelDef: PanelDefinition = {
-  id: 'terminal',
-  title: 'Terminal',
-  chrome: 'unframed',
-  mobileDock: 'terminal',
-  mobileOrder: 0,
-  minSize: { width: 280, height: 120 },
+  ...PANEL_META.terminal,
   Component: TerminalPanel,
 }

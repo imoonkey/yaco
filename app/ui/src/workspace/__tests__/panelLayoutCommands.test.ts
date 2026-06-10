@@ -4,7 +4,7 @@
 // re-normalized desktop tree, so tests assert both the intended edit and that
 // the tree invariants (single-occurrence, one grow child, min clamp, idempotency)
 // survive the edit.
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   MAIN_TABS_ID,
   DEFAULT_MIN_SIZE,
@@ -21,8 +21,26 @@ import {
   splitPanel,
   resetLayout,
 } from '../panelLayoutModel'
+import { getPanelMeta } from '../panelMeta'
 import type { LayoutNode, SplitNode, TabsNode, LeafNode, SplitChild } from '../../hooks/workspaceTypes'
 import type { PanelId } from '../context'
+
+// The clamp/normalize math reads each panel's min size from the metadata lookup.
+// Stub it with controlled mins so these tests assert the LOGIC with KNOWN inputs,
+// independent of which panels the production registry assembles. The mins are
+// small (≤ every default/split basis) so normalization leaves the default tree
+// untouched; only the explicit clamp assertions observe them.
+vi.mock('../panelMeta', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../panelMeta')>()
+  const TEST_MIN_SIZE = { width: 40, height: 30 }
+  return {
+    ...actual,
+    getPanelMeta: (id: unknown) => {
+      const meta = actual.getPanelMeta(id)
+      return meta ? { ...meta, minSize: TEST_MIN_SIZE } : undefined
+    },
+  }
+})
 
 // --- Narrowing + lookup helpers ---------------------------------------------
 
@@ -155,10 +173,12 @@ describe('resizeSplitChild', () => {
   })
 
   it('clamps an undersized basis up to the child min along the axis', () => {
-    // The dock is a col split, so a projects-row height is clamped to the height
-    // min (registry empty pre-phase-3 → the default min).
+    // The dock is a col split, so the projects child's height is clamped to its
+    // HEIGHT min from the (stubbed) metadata — asserting the clamp + correct axis
+    // (width ≠ height in the stub) with a known input.
+    const minHeight = getPanelMeta('projects')!.minSize.height
     const next = resizeSplitChild(base(), 'dock', 'projects', 5)
-    expect(findChild(next.desktop, 'projects').child.basis).toBe(DEFAULT_MIN_SIZE.height)
+    expect(findChild(next.desktop, 'projects').child.basis).toBe(minHeight)
   })
 
   it('clamps a non-leaf child (the dock column) to the default axis min', () => {
