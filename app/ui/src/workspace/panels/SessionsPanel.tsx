@@ -1,0 +1,116 @@
+// SessionsPanel — the framed panel that owns the workspace sessions section.
+//
+// Design (SessionsPanel): consumes the shared `sessions` resource for live
+// sessions and OWNS its own `useHistory(projectName)`, live/history tab state,
+// session search, collapsed lineage, drag state, and resume loading. This is a
+// pure consumer of the workspace contexts/commands — it never reaches into
+// another panel or `WorkspaceScreen`. The list rendering + interaction logic is
+// reused verbatim from `useWorkspaceSessionSection` (relocated, not rewritten),
+// so behavior matches the current inline section exactly.
+import {
+  useEffect, useMemo, useSyncExternalStore, type ReactNode,
+} from 'react'
+import { useHistory } from '../../hooks/useApi'
+import {
+  useWorkspaceEnv, useWorkspaceDataContext,
+  useWorkspaceSelection, useWorkspaceCommands,
+} from '../context'
+import { useWorkspaceSessionSection } from '../useWorkspaceSessionSection'
+import type { PanelDefinition, PanelHeaderSlots } from '../panelRegistry'
+
+// --- Framed-header bridge ---------------------------------------------------
+//
+// Sessions is FRAMED: its body and its section-header actions (new-session
+// buttons, search toggle, live/history toggle, refresh) are driven by ONE
+// `useWorkspaceSessionSection` instance. PanelFrame renders the framed header
+// and the body as siblings, so the single hook instance — owned by the body,
+// the natural owner of all the list state — publishes its actions node through
+// this tiny store, and the header hook reads it back. The app mounts exactly
+// one Sessions panel (design invariant: a visible panel id appears once;
+// desktop XOR mobile renders), so a module-level store is that one shared seam.
+let publishedActions: ReactNode = null
+const actionListeners = new Set<() => void>()
+
+function publishActions(node: ReactNode): void {
+  publishedActions = node
+  actionListeners.forEach((listener) => listener())
+}
+
+function subscribeActions(listener: () => void): () => void {
+  actionListeners.add(listener)
+  return () => { actionListeners.delete(listener) }
+}
+
+function readActions(): ReactNode {
+  return publishedActions
+}
+
+export function SessionsPanel() {
+  const env = useWorkspaceEnv()
+  const data = useWorkspaceDataContext()
+  const selection = useWorkspaceSelection()
+  const commands = useWorkspaceCommands()
+
+  const { name: projectName, effectivePath } = env.project
+  const { isMobile } = env.viewport
+  const history = useHistory(projectName)
+
+  // Adapt the shared sessions resource to the SessionsMgr shape the (unchanged)
+  // session section consumes; detach belongs to the command surface.
+  const sessionsMgr = useMemo(() => ({
+    orderedSessions: data.sessions.orderedSessions,
+    projectSessions: data.sessions.projectSessions,
+    pinnedSet: data.sessions.pinnedSet,
+    getSessionUnread: data.sessions.getSessionUnread,
+    killSession: data.sessions.killSession,
+    handleNewSession: data.sessions.startSession,
+    handleRenameSession: data.sessions.renameSession,
+    togglePin: data.sessions.togglePin,
+    handlePinnedReorder: data.sessions.reorderPinned,
+    detachActiveSession: commands.detachSession,
+  }), [data.sessions, commands.detachSession])
+
+  const { sessionsActions, sessionsBody } = useWorkspaceSessionSection({
+    sessionsMgr,
+    attachedSession: selection.activeSession,
+    isMobile,
+    history,
+    projectPath: effectivePath,
+    projectName,
+    actions: commands.actions,
+    refreshSessions: data.sessions.refresh,
+    setFocusTarget: commands.setFocusTarget,
+  })
+
+  // Publish the section actions to the framed header (see bridge above).
+  useEffect(() => {
+    publishActions(sessionsActions)
+    return () => publishActions(null)
+  }, [sessionsActions])
+
+  // Mirror today's body container: padded, polite live region for list updates.
+  // PanelFrame owns the surrounding section header + scroll chrome.
+  return <div className="py-1" aria-live="polite">{sessionsBody}</div>
+}
+
+/** Framed-header hook: surfaces the section actions the body publishes. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useSessionsHeader(): PanelHeaderSlots {
+  const actions = useSyncExternalStore(subscribeActions, readActions, readActions)
+  return { actions }
+}
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const sessionsPanelDef: PanelDefinition = {
+  id: 'sessions',
+  title: 'Sessions',
+  chrome: 'framed',
+  // Browse dock order: projects, files, changes, sessions (design: Mobile).
+  mobileDock: 'browse',
+  mobileOrder: 3,
+  // Grounded in today's clamps: activity column min width (250) and the
+  // sessions section min height (50) from useWorkspaceSidebarResize.
+  minSize: { width: 250, height: 50 },
+  Component: SessionsPanel,
+  useHeader: useSessionsHeader,
+}
