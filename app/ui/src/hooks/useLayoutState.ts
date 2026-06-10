@@ -5,7 +5,6 @@ import {
   type PersistedState,
   isFileTab,
   isDiffTab,
-  TASKS_TAB_ID,
 } from './workspaceTypes'
 import type { PreviewLifecycle } from './useFileState'
 
@@ -110,12 +109,6 @@ export function useLayoutState(
     setPreviewTab(tabId)
   }, [closeOldPreview])
 
-  const openTasksTab = useCallback(() => {
-    setPreviewTab(prev => prev === TASKS_TAB_ID ? null : prev)
-    setOpenTabs(tabs => tabs.includes(TASKS_TAB_ID) ? tabs : [...tabs, TASKS_TAB_ID])
-    setActiveTab(TASKS_TAB_ID)
-  }, [])
-
   const closeTab = useCallback((tab: string) => {
     setPreviewTab(prev => prev === tab ? null : prev)
     setOpenTabs(tabs => {
@@ -126,20 +119,6 @@ export function useLayoutState(
       return next
     })
   }, [])
-
-  const toggleTasksTab = useCallback(() => {
-    const isOpen = openTabsRef.current.includes(TASKS_TAB_ID)
-    if (!isOpen) {
-      openTasksTab()
-      return
-    }
-    if (activeTabRef.current === TASKS_TAB_ID) {
-      closeTab(TASKS_TAB_ID)
-      return
-    }
-    setPreviewTab(prev => prev === TASKS_TAB_ID ? null : prev)
-    setActiveTab(TASKS_TAB_ID)
-  }, [closeTab, openTasksTab])
 
   /** Clear preview pointer for a tab (auto-pin on edit) */
   const pinTab = useCallback((path: string) => {
@@ -214,8 +193,6 @@ export function useLayoutState(
     openDiffTab,
     openPreviewDiffTab,
     openPreviewDiffTabById,
-    openTasksTab,
-    toggleTasksTab,
     closeTab,
     pinTab,
     setActiveTab,

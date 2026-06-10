@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
 import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
 
-import { isDiffTab, isFileTab, isTasksTab, parseDiffTab, type PreviewMode, type SplitDirection } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab, parseDiffTab, type PreviewMode, type SplitDirection } from '../hooks/useWorkspaceState'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { Menu, MenuItem } from '../components/Menu'
 import { useContextMenu } from '../components/useContextMenu'
@@ -11,7 +11,6 @@ function truncateRef(ref: string, max = 12): string {
 }
 
 function tabName(tab: string): string {
-  if (isTasksTab(tab)) return 'Tasks'
   if (isDiffTab(tab)) {
     const parsed = parseDiffTab(tab)
     if (!parsed) return tab
@@ -65,7 +64,7 @@ function computeDisambigSuffixes(tabs: string[]): Map<string, string> {
 }
 
 function tabTitle(tab: string): string {
-  return isTasksTab(tab) ? 'Tasks' : tab
+  return tab
 }
 
 // Static style constants extracted from render loops
@@ -193,8 +192,6 @@ export function WorkspaceTabBar({
         const isDirty = dirtyTabs.has(tab)
         const isConflict = conflictTabs.has(tab)
         const isDiff = isDiffTab(tab)
-        const isTasks = isTasksTab(tab)
-        if (isTasks) return null  // Tasks is toggled from sidebar, not a tab
         const isPreview = tab === previewTab
         const tabCtx = ctxMenu.bind(() => { setCtxTab(tab) })
         return (
@@ -206,11 +203,11 @@ export function WorkspaceTabBar({
             style={{
               ...TAB_STYLE_BASE,
               backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)', color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)',
-              borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : isTasks ? 'var(--sol-accent)' : 'var(--sol-text)'}` : '2px solid transparent',
+              borderTop: isActive ? `2px solid ${isConflict ? 'var(--sol-warning)' : isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
               borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
               fontStyle: isPreview ? 'italic' : undefined,
             }} title={tabTitle(tab)}>
-            {!isTasks && !isDiff && <FileTypeIcon name={tab} />}
+            {!isDiff && <FileTypeIcon name={tab} />}
             <span className="truncate max-w-[120px]" style={isPreview ? { paddingRight: 2 } : undefined}>{tabName(tab)}</span>
             {isPreview && <span className="text-ui-2xs shrink-0" style={{ color: 'var(--sol-text-faint)', fontStyle: 'italic' }}>(preview)</span>}
             {parentDirSuffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{parentDirSuffix}</span>}

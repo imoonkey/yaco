@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback } from 'react'
-import { isDiffTab, isFileTab, isTasksTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
+import { useCallback } from 'react'
+import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
@@ -11,19 +11,6 @@ import { isBinaryPreviewFile, isHtmlFile, isMarkdownFile, isPreviewableFile } fr
 import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
-
-// Shared lazy reference — both this file and WorkspaceScreen render the task
-// pane; sharing one lazy() call keeps the Suspense boundary coherent across
-// callers and ensures a single chunk is loaded.
-export const LazyTaskScreen = lazy(() =>
-  import('../tasks/TaskScreen').then(m => ({ default: m.TaskScreen })),
-)
-
-const TaskScreenFallback = (
-  <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-muted)' }}>
-    <div className="loading-spinner" />
-  </div>
-)
 
 type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
 
@@ -67,12 +54,6 @@ export interface WorkspaceEditorColumnProps {
   onNavigateToFile: (path: string) => void
   onNavigateDir: (dir: string) => Promise<void>
   onFocusEditor: () => void
-  onOpenTasksFile: () => void
-  // Task workspace ↔ terminal-session links: highlight tasks linked to the attached
-  // session and open the existing terminal surface for a live linked handle.
-  activeSession?: string | null
-  liveSessionHandles?: Set<string>
-  onOpenTerminal?: (handle: string) => void
 }
 
 export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
@@ -83,8 +64,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     projectName, worktree, voice, compareContext,
     onSelectTab, onDoubleClickTab, onCloseTab, onLayoutUpdate,
     onSaveFile, onForceSave, onAcceptDisk, onUpdateDraft, onUpdateViewport,
-    onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onOpenTasksFile,
-    activeSession, liveSessionHandles, onOpenTerminal,
+    onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor,
   } = props
 
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
@@ -92,7 +72,6 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   // Derive from activeTab
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
   const activeDiffTab = isDiffTab(activeTab)
-  const activeTasksTab = isTasksTab(activeTab)
   const isMd = !!activeFilePath && isMarkdownFile(activeFilePath)
   const isHtml = !!activeFilePath && isHtmlFile(activeFilePath)
   const canTogglePreview = !!activeFilePath && isPreviewableFile(activeFilePath) && !isBinaryPreviewFile(activeFilePath)
@@ -118,21 +97,6 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     if (previewMode !== 'split') onLayoutUpdate({ previewMode: 'edit' })
     onFocusEditor()
   }, [activeFilePath, previewMode, onSetJumpRequest, onLayoutUpdate, onFocusEditor])
-
-  // Tasks panel takes the full column — no tab bar, no breadcrumbs
-  if (activeTasksTab) {
-    const handleCloseTasks = () => {
-      onLayoutUpdate({ showTasks: false })
-      if (activeTab) onCloseTab(activeTab)
-    }
-    return (
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
-        <Suspense fallback={TaskScreenFallback}>
-          <LazyTaskScreen projectName={projectName} onClose={handleCloseTasks} onOpenTasksFile={onOpenTasksFile} onOpenFile={onNavigateToFile} activeSession={activeSession} liveSessionHandles={liveSessionHandles} onOpenTerminal={onOpenTerminal} />
-        </Suspense>
-      </div>
-    )
-  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
@@ -192,7 +156,6 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         activeFileLoading={activeFileLoading}
         activeViewportLine={activeViewportLine}
         isDiffTab={activeDiffTab}
-        isTasksTab={false}
         activeDiff={activeDiff}
         isMd={isMd}
         isHtml={isHtml}
@@ -213,7 +176,6 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         onDraftChange={(content) => activeFilePath && onUpdateDraft(activeFilePath, content)}
         onSave={async (content) => { if (activeFilePath) await onSaveFile(activeFilePath, content) }}
         diffHunks={editorDiffHunks}
-        tasksPane={null}
         insertText={editorInsert?.text}
         insertRequestKey={editorInsert?.key}
         autocompleteEnabled={autocompleteEnabled}

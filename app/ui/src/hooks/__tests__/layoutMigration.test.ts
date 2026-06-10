@@ -37,6 +37,7 @@ import {
   defaultWorkspacePanelLayout,
   defaultDesktopTree,
   normalizeLayout,
+  mainTabsActivePanel,
 } from '../../workspace/panelLayoutModel'
 
 const PROJECT = 'proj'
@@ -322,7 +323,52 @@ describe('migration: per-key isolation', () => {
   })
 })
 
-// --- worktree scoping ------------------------------------------------------
+// --- T7: migrate pre-T7 "Tasks active" (fake tab) → real tasks panel ---------
+
+describe('migration: pre-T7 fake tasks tab → tasks panel active', () => {
+  // Pre-T7 modeled an open Tasks workspace as a fake editor tab whose id was the
+  // NUL sentinel ('\0tasks'); the only "tasks is showing" signal lived in
+  // activeTab. T7 makes tasks a real main-tabs panel, so that intent must migrate
+  // to the panel layout — otherwise reopening after T7 silently loses Tasks.
+  const TASKS_SENTINEL = String.fromCharCode(0) + 'tasks' // legacy fake tasks-tab id (NUL sentinel)
+
+  it('migrates an old flat blob with the active tasks sentinel to tasks-active', () => {
+    seedLayout({
+      openTabs: ['src/a.ts', TASKS_SENTINEL],
+      activeTab: TASKS_SENTINEL,
+      layout: { ...DEFAULT_LAYOUT },
+    })
+
+    const state = loadPersistedState(PROJECT)
+
+    // The sentinel is stripped from the tab set, and the intent moves to the tree.
+    expect(state.openTabs).toEqual(['src/a.ts'])
+    expect(state.activeTab).toBe('src/a.ts')
+    expect(mainTabsActivePanel(state.panelLayout.desktop)).toBe('tasks')
+  })
+
+  it('overrides a stored v1 tree (active editor) when the old activeTab was tasks', () => {
+    // The realistic pre-T7 shape: panelLayout existed (T4) but nothing ever set
+    // its main-tabs active to tasks, so it persisted as 'editor' while the fake
+    // tab carried the real "tasks open" state.
+    seedLayout({
+      activeTab: TASKS_SENTINEL,
+      panelLayout: defaultWorkspacePanelLayout(),
+    })
+
+    const { panelLayout } = loadPersistedState(PROJECT)
+    expect(mainTabsActivePanel(panelLayout.desktop)).toBe('tasks')
+  })
+
+  it('leaves the editor active when no tasks sentinel was persisted', () => {
+    seedLayout({ openTabs: ['src/a.ts'], activeTab: 'src/a.ts' })
+
+    const { panelLayout } = loadPersistedState(PROJECT)
+    expect(mainTabsActivePanel(panelLayout.desktop)).toBe('editor')
+  })
+})
+
+
 
 describe('migration: per (project, worktree) scoping', () => {
   it('migrates each worktree slot independently', () => {

@@ -23,7 +23,6 @@
 // surface renders no voice button and never inserts.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiffTab, isFileTab, parseDiffTab } from '../../hooks/useWorkspaceState'
-import { TASKS_FILE_PATH } from '../../hooks/useTaskGraph'
 import { fetchGitCompare } from '../../hooks/useApi'
 import type { GitChange } from '../../types'
 import type { CompareContext } from '../diff/DiffTab'
@@ -47,11 +46,10 @@ export function EditorPanel() {
 
   const { name: projectName, worktree } = env.project
   const { isMobile, isTouch } = env.viewport
-  const { openTabs, activeTab, previewTab, activeSession } = selection
+  const { openTabs, activeTab, previewTab } = selection
   const { files, dirtyTabs, conflictTabs, jumpRequest } = selection.editor
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
   const changes = data.git.changes
-  const liveSessionHandles = data.sessions.liveSessionHandles
 
   // Derived tab state (mirrors the inline editor body).
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
@@ -122,7 +120,6 @@ export function EditorPanel() {
   }, [commands])
 
   const handleFocusEditor = useCallback(() => commands.setFocusTarget('editor'), [commands])
-  const handleOpenTasksFile = useCallback(() => commands.openFile(TASKS_FILE_PATH), [commands])
   // Breadcrumb directory navigation awaits the result; the command is fire-and-
   // forget, so adapt it to the async prop shape.
   const handleNavigateDir = useCallback(async (dir: string) => {
@@ -160,11 +157,7 @@ export function EditorPanel() {
       onNavigateToFile={commands.openFile}
       onNavigateDir={handleNavigateDir}
       onFocusEditor={handleFocusEditor}
-      onOpenTasksFile={handleOpenTasksFile}
       compareContext={compareContext}
-      activeSession={activeSession}
-      liveSessionHandles={liveSessionHandles}
-      onOpenTerminal={commands.openTerminalForSession}
     />
   )
 }

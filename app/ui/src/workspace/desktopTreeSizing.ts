@@ -16,7 +16,7 @@
 //     the main tabs node is excluded (render-only) so the activity column absorbs
 //     the freed width, reproducing today's behavior.
 import { getPanelMeta } from './panelMeta'
-import { DEFAULT_MIN_SIZE, MAIN_TABS_ID } from './panelLayoutModel'
+import { DEFAULT_MIN_SIZE, MAIN_TABS_ID, mainTabsActivePanel } from './panelLayoutModel'
 import type { PanelId } from './context'
 import type { LayoutNode, SplitNode, SplitChild, SplitAxis } from '../hooks/workspaceTypes'
 import type { CSSProperties } from 'react'
@@ -118,10 +118,13 @@ function containsMainTabs(node: LayoutNode): boolean {
 /** Empty-editor yields space (design): with no open tabs and a visible activity
  *  column, exclude the main tabs node from width allocation (render-only hide) so
  *  the activity column absorbs the freed width. Returns the tree unchanged when
- *  the main node should keep its width (a tab is open, or no visible activity
- *  column exists to absorb the space). */
+ *  the main node should keep its width (a tab is open, the tasks panel is the
+ *  active main panel, or no visible activity column exists to absorb the space). */
 export function withEmptyEditorRule(tree: LayoutNode, hasOpenTabs: boolean): LayoutNode {
   if (tree.kind !== 'split') return tree
+  // Tasks active → the main node renders the task panel (no editor tabs needed),
+  // so it always occupies its width.
+  if (mainTabsActivePanel(tree) === 'tasks') return tree
   const mainIndex = tree.children.findIndex((c) => containsMainTabs(c.node))
   if (mainIndex === -1) return tree
   const activity = tree.children[mainIndex + 1]

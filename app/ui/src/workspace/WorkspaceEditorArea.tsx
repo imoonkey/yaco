@@ -364,7 +364,6 @@ export function WorkspaceEditorArea({
   activeFileLoading,
   activeViewportLine,
   isDiffTab,
-  isTasksTab,
   activeDiff,
   isMd,
   isHtml,
@@ -385,7 +384,6 @@ export function WorkspaceEditorArea({
   onDraftChange,
   onSave,
   diffHunks,
-  tasksPane,
   composeTray,
   insertText,
   insertRequestKey,
@@ -401,7 +399,6 @@ export function WorkspaceEditorArea({
   activeFileLoading: boolean
   activeViewportLine: number
   isDiffTab: boolean | undefined
-  isTasksTab: boolean
   activeDiff: { raw: string | null; parsed: ParsedFileDiff | null; loading: boolean } | null
   isMd: boolean | undefined
   isHtml: boolean | undefined
@@ -422,7 +419,6 @@ export function WorkspaceEditorArea({
   onDraftChange: (content: string) => void
   onSave: (content: string) => Promise<void>
   diffHunks?: DiffHunk[]
-  tasksPane?: React.ReactNode
   composeTray?: React.ReactNode
   insertText?: string | null
   insertRequestKey?: number
@@ -592,9 +588,7 @@ export function WorkspaceEditorArea({
       )}
       {composeTray}
       <div className="flex-1 min-h-0">
-      {isTasksTab ? (
-        tasksPane
-      ) : isDiffTab ? (
+      {isDiffTab ? (
         !activeDiff || (activeDiff.loading && activeDiff.raw == null) ? <div className="flex items-center justify-center h-full"><div className="loading-spinner" /></div>
         : activeDiff?.parsed != null ? <DiffTab parsed={activeDiff.parsed} isMobile={!!isMobile} compareContext={compareContext} />
         : <div className="flex items-center justify-center h-full" style={{ color: 'var(--sol-text)' }}>Unable to load diff</div>

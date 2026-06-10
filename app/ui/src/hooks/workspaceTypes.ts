@@ -84,8 +84,6 @@ export type PersistedState = {
 
 // --- Constants ---
 
-export const TASKS_TAB_ID = '\0tasks'
-
 export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showSidebar: true,
   showRightPanel: true,
@@ -114,12 +112,8 @@ export function isDiffTab(tab: string | null): boolean {
   return typeof tab === 'string' && tab.startsWith('diff:')
 }
 
-export function isTasksTab(tab: string | null): boolean {
-  return tab === TASKS_TAB_ID
-}
-
 export function isFileTab(tab: string | null): tab is string {
-  return typeof tab === 'string' && tab.length > 0 && !isDiffTab(tab) && !isTasksTab(tab)
+  return typeof tab === 'string' && tab.length > 0 && !isDiffTab(tab)
 }
 
 export function parseDiffTab(tab: string): { path: string; base?: string; compare?: string } | null {

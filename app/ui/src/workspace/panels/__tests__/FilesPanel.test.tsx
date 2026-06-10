@@ -120,7 +120,6 @@ function renderFilesPanel(opts: RenderOpts = {}) {
       setActiveTab: vi.fn(),
       openDiffTab: vi.fn(),
       openPreviewDiffTab: vi.fn(),
-      openTasksTab: vi.fn(),
     },
   } as unknown as WorkspaceCommands
 

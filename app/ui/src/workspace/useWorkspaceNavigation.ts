@@ -90,12 +90,6 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
     actions.setMobilePane('editor')
   }, [activeTab, actions, openFile, revealInExplorer, setSelectedFilePath, setFocusTarget])
 
-  const handleOpenTasks = useCallback(() => {
-    actions.openTasksTab()
-    setFocusTarget('editor')
-    actions.setMobilePane('editor')
-  }, [actions, setFocusTarget])
-
   const handleOpenTasksFile = useCallback(() => {
     openFile(TASKS_FILE_PATH)
   }, [openFile])
@@ -123,7 +117,6 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
     revealInExplorer,
     handleSearchSelect,
     activateChange,
-    handleOpenTasks,
     handleOpenTasksFile,
     handleSelectTab,
     handleDoubleClickTab,

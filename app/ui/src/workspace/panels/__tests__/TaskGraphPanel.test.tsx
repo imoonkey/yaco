@@ -51,7 +51,7 @@ vi.mock('../../../tasks/TaskScreen', () => ({
 const taskGraphPanelOpenFile = vi.fn<(path: string) => void>()
 const taskGraphPanelOpenTerminal = vi.fn<(handle: string) => void>()
 const taskGraphPanelSetFocusTarget = vi.fn<(target: string) => void>()
-const taskGraphPanelCloseFocusedSurface = vi.fn<() => boolean>()
+const taskGraphPanelCloseTasks = vi.fn<() => void>()
 const taskGraphPanelLiveHandles = new Set(['handle-live'])
 
 const taskGraphPanelEnv = {
@@ -70,7 +70,7 @@ const taskGraphPanelCommands = {
   openFile: taskGraphPanelOpenFile,
   openTerminalForSession: taskGraphPanelOpenTerminal,
   setFocusTarget: taskGraphPanelSetFocusTarget,
-  closeFocusedSurface: taskGraphPanelCloseFocusedSurface,
+  closeTasks: taskGraphPanelCloseTasks,
 } as unknown as WorkspaceCommands
 
 function renderTaskGraphPanel(ui: ReactNode) {
@@ -93,7 +93,7 @@ afterEach(() => {
   taskGraphPanelOpenFile.mockReset()
   taskGraphPanelOpenTerminal.mockReset()
   taskGraphPanelSetFocusTarget.mockReset()
-  taskGraphPanelCloseFocusedSurface.mockReset()
+  taskGraphPanelCloseTasks.mockReset()
 })
 beforeEach(() => {
   taskGraphPanelCapturedProps = null
@@ -145,13 +145,13 @@ describe('TaskGraphPanel — prop wiring into the lazy TaskScreen', () => {
     expect(taskGraphPanelOpenTerminal).toHaveBeenCalledWith('handle-live')
   })
 
-  it('passes onClose wired to the migrated close state machine (closeFocusedSurface)', async () => {
+  it('passes onClose wired to closeTasks (returns the main region to the editor)', async () => {
     renderTaskGraphPanel(<TaskGraphPanel />)
     await screen.findByTestId('task-graph-panel-screen')
 
     expect(typeof taskGraphPanelCapturedProps?.onClose).toBe('function')
     taskGraphPanelCapturedProps?.onClose?.()
-    expect(taskGraphPanelCloseFocusedSurface).toHaveBeenCalledTimes(1)
+    expect(taskGraphPanelCloseTasks).toHaveBeenCalledTimes(1)
   })
 
   it('derives onOpenTasksFile as openFile(TASKS_FILE_PATH)', async () => {

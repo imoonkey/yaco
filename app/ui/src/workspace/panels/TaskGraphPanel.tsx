@@ -10,15 +10,13 @@
 //   - openFile                  (commands)        → onOpenFile + onOpenTasksFile
 //   - openTerminalForSession    (commands)        → onOpenTerminal
 //   - setFocusTarget            (commands)        → onMouseDown task-surface focus
-//   - closeFocusedSurface       (commands)        → onClose
+//   - closeTasks                (commands)        → onClose
 //
 // Chrome is `unframed`: the task graph owns its own toolbar/detail chrome, so
-// there is no shared section header. The DOM reproduces today's desktop tasks
-// pane exactly (WorkspaceEditorColumn tasks branch): an editor-bg flex column,
-// focused on mouse-down (`setFocusTarget('editor')`, matching the column's
-// `onFocusEditor`), holding the suspended task screen whose `onClose` runs the
-// migrated close state machine (`closeFocusedSurface` reproduces the old
-// `handleCloseTasks`: sync the Tasks toggle off, then close the tasks tab).
+// there is no shared section header. It is the active panel of the main tabs
+// node (Cmd+Shift+T activates it); an editor-bg flex column focused on mouse-down
+// (`setFocusTarget('editor')`), holding the suspended task screen whose `onClose`
+// returns the main region to the editor (`closeTasks`).
 import { lazy, Suspense, useCallback } from 'react'
 import { TASKS_FILE_PATH } from '../../hooks/useTaskGraph'
 import {
@@ -52,7 +50,7 @@ export function TaskGraphPanel() {
   const activeSession = selection.activeSession
   const liveSessionHandles = data.sessions.liveSessionHandles
   const openFile = commands.openFile
-  const { setFocusTarget, closeFocusedSurface } = commands
+  const { setFocusTarget, closeTasks } = commands
 
   // Tasks → file: opening the task file is just `openFile` of the fixed path,
   // matching today's `nav.handleOpenTasksFile`.
@@ -60,9 +58,9 @@ export function TaskGraphPanel() {
   // Mouse-down focuses the surface, matching the old editor column's
   // `onFocusEditor` so close/keyboard routing stays equivalent.
   const handleFocus = useCallback(() => setFocusTarget('editor'), [setFocusTarget])
-  // Preserve the old `onClose` contract: the migrated close state machine closes
-  // the tasks tab (and syncs the Tasks toggle) under the surface's focus.
-  const handleClose = useCallback(() => { closeFocusedSurface() }, [closeFocusedSurface])
+  // Closing the tasks workspace returns the main region to the editor (design:
+  // TaskScreen.onClose returns to editor).
+  const handleClose = useCallback(() => { closeTasks() }, [closeTasks])
 
   return (
     <div

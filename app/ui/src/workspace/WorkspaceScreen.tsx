@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, type ReactNode } from 'react'
-import { isDiffTab, isFileTab, isTasksTab } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
 import { useVoice } from '../hooks/useVoice'
 import { isPreviewableFile } from '../lib/binaryFiles'
 import { ComposeTray } from '../components/ComposeTray'
@@ -14,6 +14,7 @@ import { useWorkspaceKeyboard } from './useWorkspaceKeyboard'
 import { useWorkspaceVoice } from './useWorkspaceVoice'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import { WorkspaceProvider } from './WorkspaceProvider'
+import { mainTabsActivePanel } from './panelLayoutModel'
 import {
   useWorkspaceEnv, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceCommands,
   WorkspaceVoiceContext, type WorkspaceVoiceSurface, type InsertRequest,
@@ -66,7 +67,7 @@ export function Workspace(props: WorkspaceProps) {
 function WorkspaceScreen() {
   const env = useWorkspaceEnv()
   const selection = useWorkspaceSelection()
-  const { layout, mobilePane } = useWorkspaceLayout()
+  const { layout, mobilePane, panelLayout } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
   const actions = commands.actions
 
@@ -85,9 +86,18 @@ function WorkspaceScreen() {
   const [editorInsert, setEditorInsert] = useState<InsertRequest | null>(null)
   const [terminalSend, setTerminalSend] = useState<InsertRequest | null>(null)
 
-  // Derived tab state the voice routing keys off.
-  const activeFilePath = isFileTab(activeTab) ? activeTab : null
-  const activeDiffTab = isDiffTab(activeTab)
+  // The active main panel (editor/tasks): the legacy renderer shows it in its
+  // editor region; the tree renderer reads it from the layout tree directly.
+  const mainPanel = mainTabsActivePanel(panelLayout.desktop) ?? 'editor'
+  // Is the tasks panel the surface currently shown in the main region? When it
+  // is, the editor (and its active file tab) is hidden behind tasks, so editor-
+  // only shortcuts — preview-mode toggle (Cmd+Shift+V) and editor voice — must be
+  // inert (the old fake tasks tab made `activeTab` non-file, achieving the same).
+  const showingTasks = isMobile ? mobilePane === 'tasks' : mainPanel === 'tasks'
+
+  // Derived tab state the voice routing keys off — null while tasks is showing.
+  const activeFilePath = !showingTasks && isFileTab(activeTab) ? activeTab : null
+  const activeDiffTab = !showingTasks && isDiffTab(activeTab)
   const isPreviewable = !!activeFilePath && isPreviewableFile(activeFilePath)
 
   // The single workspace voice (one useVoice + one ComposeTray below).
@@ -137,22 +147,6 @@ function WorkspaceScreen() {
     updateLayout: actions.updateLayout,
   })
 
-  // Tasks toggle (sidebar header on desktop / pane switch on mobile), mirroring
-  // the old screen handler now that tasks render through their panel.
-  const handleToggleTasks = useCallback(() => {
-    if (isMobile) {
-      actions.setMobilePane(mobilePane === 'tasks' ? 'editor' : 'tasks')
-    } else if (isTasksTab(activeTab)) {
-      actions.updateLayout({ showTasks: false })
-      if (activeTab) commands.closeTab(activeTab)
-    } else {
-      actions.updateLayout({ showTasks: true })
-      actions.openTasksTab()
-      commands.setFocusTarget('editor')
-      actions.setMobilePane('editor')
-    }
-  }, [isMobile, mobilePane, activeTab, actions, commands])
-
   // Quick-open: reveal the chosen file's parents in the explorer, open it as a
   // preview tab, and focus the editor (previewFile does all three).
   const handleSearchSelect = useCallback((entry: SearchEntry) => {
@@ -171,7 +165,8 @@ function WorkspaceScreen() {
         mobilePane={mobilePane}
         onLayoutUpdate={actions.updateLayout}
         onMobilePaneChange={actions.setMobilePane}
-        onToggleTasks={handleToggleTasks}
+        onToggleTasks={commands.toggleTasks}
+        mainPanel={mainPanel}
         rootRef={rootRef}
         sidebarRef={sidebarRef}
         left={resize.left}

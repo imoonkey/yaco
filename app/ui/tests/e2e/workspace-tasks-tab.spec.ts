@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { openFileViaSearch } from './helpers/workspace'
 
 // The Tasks area is a single task workspace (one stacked graph + toolbar), opened
 // as an overlay via Cmd/Ctrl+Shift+T. There is no Board/List/Graph/Archive pane
@@ -33,6 +34,30 @@ test.describe('Workspace Tasks', () => {
     await page.keyboard.press('Meta+Shift+t')
     await expect(search(page)).toHaveCount(0)
     await expect(page.locator('[data-layer="nodes"]')).toHaveCount(0)
+  })
+
+  // Regression (T7 H1): opening a file from Tasks must ALWAYS return the main
+  // surface to the editor — even when the file is already the active tab (so
+  // `activeTab` does not change). The old fake tasks tab made any file-open
+  // switch `activeTab` away from Tasks; the real panel needs an explicit switch.
+  test('opening the already-active file from Tasks returns to the editor', async ({ page }) => {
+    await openWorkspace(page)
+
+    // A real file as the active editor tab.
+    await openFileViaSearch(page, 'package.json')
+    await expect(page.locator('[data-testid="tab"]')).toHaveCount(1)
+
+    // Open Tasks over the editor.
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(search(page)).toBeVisible({ timeout: 10_000 })
+
+    // Re-open the SAME (already-active) file from quick-open while Tasks shows.
+    await openFileViaSearch(page, 'package.json')
+
+    // The editor returns: the tasks workspace is gone and the file tab is shown.
+    await expect(search(page)).toHaveCount(0)
+    await expect(page.locator('[data-layer="nodes"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="tab"]')).toHaveCount(1)
   })
 
   test('is one workspace surface — no Board/List/Archive panels, workset is a filter', async ({ page }) => {

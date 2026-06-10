@@ -482,6 +482,21 @@ export function activateTabsPanel(
   return withDesktop(layout, desktop)
 }
 
+/** The active panel of the reserved main tabs node, or null if it is absent.
+ *  The desktop renderer shows this panel in the main region, and the legacy
+ *  renderer reads it to decide editor-vs-tasks; it is the single source of truth
+ *  for which main panel is showing (replacing the removed fake tasks tab). */
+export function mainTabsActivePanel(node: LayoutNode): PanelId | null {
+  if (node.kind === 'tabs') return node.id === MAIN_TABS_ID ? node.active : null
+  if (node.kind === 'split') {
+    for (const child of node.children) {
+      const hit = mainTabsActivePanel(child.node)
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
 // --- Move / split (design: flexible-operations) -----------------------------
 
 /** Does `panel` render as a standalone leaf anywhere in the tree? (Panels inside

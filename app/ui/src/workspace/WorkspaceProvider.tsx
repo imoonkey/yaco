@@ -11,8 +11,8 @@
 import {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
-import { useWorkspaceState, isFileTab } from '../hooks/useWorkspaceState'
-import { isTasksTab, mobilePaneToDock } from '../hooks/workspaceTypes'
+import { useWorkspaceState, isFileTab, isDiffTab } from '../hooks/useWorkspaceState'
+import { mobilePaneToDock } from '../hooks/workspaceTypes'
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
 import { useFileTree, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
@@ -22,6 +22,8 @@ import {
   collapsePanel as modelCollapsePanel,
   resizeSplitChild as modelResizeSplitChild,
   activateTabsPanel as modelActivateTabsPanel,
+  mainTabsActivePanel,
+  MAIN_TABS_ID,
   setDockVisible as modelSetDockVisible,
   setActivityVisible as modelSetActivityVisible,
   setActiveDock as modelSetActiveDock,
@@ -115,6 +117,13 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   if (activeTab !== prevActiveTab) {
     setPrevActiveTab(activeTab)
     if (isFileTab(activeTab)) setSelectedFilePath(activeTab)
+    // Opening/activating a file or diff tab while the tasks panel is the active
+    // main panel returns the desktop main region to the editor — the role the
+    // removed fake tasks tab played implicitly by being replaced in `activeTab`.
+    if (activeTab && (isFileTab(activeTab) || isDiffTab(activeTab))
+        && mainTabsActivePanel(panelLayout.desktop) === 'tasks') {
+      setPanelLayout(prev => modelActivateTabsPanel(prev, MAIN_TABS_ID, 'editor'))
+    }
   }
 
   // Renderer-registered callbacks (file reveal + post-session refresh) and the
@@ -184,12 +193,12 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // values without listing them as deps — keeping the commands object stable.
   const latestRef = useRef({
     activeSession, activeTab, focusTarget, showSearch, isMobile,
-    liveSessionHandles, layout,
+    liveSessionHandles, layout, mobilePane, panelLayout,
   })
   useEffect(() => {
     latestRef.current = {
       activeSession, activeTab, focusTarget, showSearch, isMobile,
-      liveSessionHandles, layout,
+      liveSessionHandles, layout, mobilePane, panelLayout,
     }
   })
 
@@ -254,24 +263,35 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setActiveSession: actions.setActiveSession,
     setMobilePane: actions.setMobilePane,
     updateLayout: actions.updateLayout,
-    toggleTasksTab: actions.toggleTasksTab,
     openFileTab: actions.openFileTab,
     openPreviewTab: actions.openPreviewTab,
     openDiffTab: actions.openDiffTab,
     openPreviewDiffTab: actions.openPreviewDiffTab,
     openPreviewDiffTabById: actions.openPreviewDiffTabById,
-    openTasksTab: actions.openTasksTab,
     setJumpRequest,
     setShowSearch,
   }), [actions])
 
   // --- Commands ---
+
+  // Return the desktop main region to the editor surface. Every deliberate
+  // "open this file/diff" command calls this so opening a file from Tasks always
+  // shows the editor — even when the target is ALREADY the active tab (so
+  // `activeTab` does not change and the render-phase mirror above never fires).
+  // Guarded so it never churns the layout when the editor is already active.
+  const showEditorSurface = useCallback(() => {
+    setPanelLayout((prev) => mainTabsActivePanel(prev.desktop) === 'tasks'
+      ? modelActivateTabsPanel(prev, MAIN_TABS_ID, 'editor')
+      : prev)
+  }, [setPanelLayout])
+
   const openFile = useCallback((path: string) => {
     actions.openFileTab(path)
     setSelectedFilePath(path)
     setFocusTarget('editor')
     actions.setMobilePane('editor')
-  }, [actions])
+    showEditorSurface()
+  }, [actions, showEditorSurface])
 
   // previewFile is the quick-open select path: reveal the file's parents in the
   // explorer, then open it as a preview tab and focus the editor (behavior-
@@ -282,8 +302,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       setSelectedFilePath(path)
       setFocusTarget('editor')
       actions.setMobilePane('editor')
+      showEditorSurface()
     })
-  }, [actions, revealParents])
+  }, [actions, revealParents, showEditorSurface])
 
   const openFileAtLine = useCallback((path: string, line: number) => {
     void revealParents(path).then(() => {
@@ -291,9 +312,10 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       setSelectedFilePath(path)
       setFocusTarget('editor')
       actions.setMobilePane('editor')
+      showEditorSurface()
     })
     setJumpRequest({ key: Date.now(), path, line })
-  }, [actions, revealParents])
+  }, [actions, revealParents, showEditorSurface])
 
   // openDiff mirrors the old activateChange handler: a re-clicked active diff
   // toggles back to its file; otherwise reveal parents, open the (preview) diff,
@@ -313,15 +335,17 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       setSelectedFilePath(path)
       setFocusTarget('editor')
       actions.setMobilePane('editor')
+      showEditorSurface()
     })
-  }, [actions, openFile, revealParents])
+  }, [actions, openFile, revealParents, showEditorSurface])
 
   const openDiffTabId = useCallback((tabId: string, opts?: { preview?: boolean }) => {
     if (opts?.preview === false) actions.openDiffTab(tabId.slice(5))
     else actions.openPreviewDiffTabById(tabId)
     setFocusTarget('editor')
     actions.setMobilePane('editor')
-  }, [actions])
+    showEditorSurface()
+  }, [actions, showEditorSurface])
 
   // closeTab: the diff cache self-cleans when the closed tab leaves the active /
   // editor key set, so no explicit clear is needed here.
@@ -388,19 +412,43 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
 
   const showQuickOpen = useCallback(() => { setShowSearch(true) }, [])
 
+  // Tasks is a real panel in the main tabs node. Desktop toggles that node's
+  // active panel between `editor` and `tasks`; mobile toggles the tasks dock. The
+  // legacy flat `showTasks` stays the legacy sidebar Tasks section's reflection of
+  // the open/closed state (the tree renderer ignores it). This replaces the old
+  // fake tasks tab, which modeled the same toggle as a synthetic `activeTab`.
+  const mainShowsTasks = useCallback((): boolean => {
+    const { isMobile: mobile, mobilePane: pane, panelLayout: pl } = latestRef.current
+    return mobile ? pane === 'tasks' : mainTabsActivePanel(pl.desktop) === 'tasks'
+  }, [])
+
+  const closeTasks = useCallback(() => {
+    if (latestRef.current.isMobile) { actions.setMobilePane('editor'); return }
+    actions.updateLayout({ showTasks: false })
+    setPanelLayout((prev) => modelActivateTabsPanel(prev, MAIN_TABS_ID, 'editor'))
+  }, [actions, setPanelLayout])
+
+  const toggleTasks = useCallback(() => {
+    if (mainShowsTasks()) { closeTasks(); return }
+    if (latestRef.current.isMobile) { actions.setMobilePane('tasks'); return }
+    actions.updateLayout({ showTasks: true })
+    setPanelLayout((prev) => modelActivateTabsPanel(prev, MAIN_TABS_ID, 'tasks'))
+    setFocusTarget('editor')
+  }, [actions, setPanelLayout, mainShowsTasks, closeTasks])
+
   const closeFocusedSurface = useCallback((): boolean => {
     const { showSearch: search, focusTarget: focus, activeTab: tab } = latestRef.current
     if (search) { setShowSearch(false); return true }
     if ((focus === 'terminal' || focus === 'session') && detachSession()) return true
     if (focus === 'editor' || focus === 'tasks') {
-      // Closing the tasks surface syncs the sidebar Tasks toggle off first.
-      if (isTasksTab(tab)) actions.updateLayout({ showTasks: false })
+      // Tasks showing → return to the editor (syncs the legacy sidebar toggle off).
+      if (mainShowsTasks()) { closeTasks(); return true }
       if (tab) { actions.closeTab(tab); return true }
     }
     if (tab) { actions.closeTab(tab); return true }
     if (detachSession()) return true
     return true
-  }, [detachSession, actions])
+  }, [detachSession, actions, mainShowsTasks, closeTasks])
 
   // Layout commands. These mutate the panel-layout tree through the pure
   // `panelLayoutModel` edits (the tree renderer reads the result). Dock/activity
@@ -447,6 +495,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     attachSession, detachSession, openTerminalForSession,
     setSelectedFilePath, setExplorerFocusedPath, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
+    toggleTasks, closeTasks,
     collapsePanel, resizeSplitChild, toggleDock, toggleActivity, activateTabsPanel,
     movePanel, splitPanel, resetLayout, setEditorPrefs,
     actions: rawActions,
@@ -454,6 +503,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
     actions, retargetPaths, deletePath, attachSession, detachSession, openTerminalForSession,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
+    toggleTasks, closeTasks,
     collapsePanel, resizeSplitChild, toggleDock, toggleActivity, activateTabsPanel,
     movePanel, splitPanel, resetLayout, setEditorPrefs, rawActions,
   ])

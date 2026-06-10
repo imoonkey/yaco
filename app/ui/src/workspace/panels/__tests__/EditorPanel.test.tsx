@@ -75,9 +75,9 @@ type EditorPanelHarnessInput = {
 function makeEditorPanelCommands() {
   const actions = {
     setActiveTab: vi.fn(), setActiveSession: vi.fn(), setMobilePane: vi.fn(),
-    updateLayout: vi.fn(), toggleTasksTab: vi.fn(),
+    updateLayout: vi.fn(),
     openFileTab: vi.fn(), openPreviewTab: vi.fn(), openDiffTab: vi.fn(),
-    openPreviewDiffTab: vi.fn(), openPreviewDiffTabById: vi.fn(), openTasksTab: vi.fn(),
+    openPreviewDiffTab: vi.fn(), openPreviewDiffTabById: vi.fn(),
     setJumpRequest: vi.fn(), setShowSearch: vi.fn(),
   } as unknown as WorkspaceRawActions
 

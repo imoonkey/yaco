@@ -159,6 +159,34 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
       .toBe(false)
   })
 
+  test('tasks-active with no open tabs keeps the activity column at its docked width', async ({ page, request }) => {
+    // Regression (T7 H2): the legacy activity/right column must size off "has a
+    // main surface" (open tabs OR tasks active), not bare open-tabs. The old fake
+    // tasks tab made openTabs.length > 0 → fixed right width; tasks-as-panel adds
+    // no tab, so without the fix the column flex-expands over the editor's docked
+    // width whenever Tasks is shown with no real tabs. Pinned to the legacy engine
+    // (the tree renderer keeps the activity basis fixed via the same rule).
+    await page.addInitScript(() => {
+      try { localStorage.setItem('yaco-panel-tree', 'legacy') } catch { /* blocked storage */ }
+    })
+    fixture = await createWorktreeFixture(request)
+    await page.goto('/')
+    await waitForAppReady(page)
+    await selectProject(page, fixture.name)
+
+    // No file opened → zero editor tabs. Open Tasks into the main region.
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(page.locator('input[placeholder="Search tasks..."]')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('[data-testid="tab"]')).toHaveCount(0)
+
+    // The activity column keeps its fixed docked width (~420 default); it does NOT
+    // flex-expand toward ~half the main region (~530 on a 1280-wide viewport).
+    const box = await activityPanel(page).boundingBox()
+    expect(box, 'activity panel present').toBeTruthy()
+    expect(box!.width).toBeGreaterThan(360)
+    expect(box!.width).toBeLessThan(480)
+  })
+
   test('session-focus branch: Cmd+W detaches the session and leaves the editor tab open', async ({ page, request }) => {
     const { sessionName, readmeTab } = await openProjectWithSessionAndTab(page, request)
     const placeholder = activityPanel(page).getByText(TERMINAL_PLACEHOLDER)

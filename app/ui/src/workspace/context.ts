@@ -129,13 +129,11 @@ export type WorkspaceRawActions = {
   setActiveSession: (name: string) => void
   setMobilePane: (pane: MobilePane) => void
   updateLayout: (patch: Partial<WorkspaceLayout>) => void
-  toggleTasksTab: () => void
   openFileTab: (path: string) => void
   openPreviewTab: (path: string) => void
   openDiffTab: (path: string) => void
   openPreviewDiffTab: (path: string) => void
   openPreviewDiffTabById: (tabId: string) => void
-  openTasksTab: () => void
   setJumpRequest: (req: JumpRequest | null) => void
   setShowSearch: (value: boolean | ((prev: boolean) => boolean)) => void
 }
@@ -175,6 +173,11 @@ export type WorkspaceCommands = {
   setFilesMode: (mode: 'tree' | 'search') => void
   showQuickOpen: () => void
   closeFocusedSurface: () => boolean
+
+  // Tasks (real main-tabs panel): toggle activates the tasks panel or returns to
+  // the editor; close always returns to the editor.
+  toggleTasks: () => void
+  closeTasks: () => void
 
   // Layout (phase-1 maps to the flat layout; flexible ops land in phase 8)
   collapsePanel: (panel: PanelId, collapsed: boolean) => void

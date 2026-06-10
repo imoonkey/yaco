@@ -9,6 +9,7 @@ import { PanelHost } from './PanelHost'
 import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import type { WorkspaceLayout as LayoutState } from '../hooks/useWorkspaceState'
 import type { MobilePane } from '../hooks/workspaceTypes'
+import type { PanelId } from './context'
 
 type ResizeState = {
   size: number
@@ -27,6 +28,11 @@ export type WorkspaceLayoutProps = {
 
   // Tasks toggle (sidebar header on desktop / pane switch on mobile)
   onToggleTasks?: () => void
+
+  // The active main panel (editor/tasks) shown in the desktop editor region. The
+  // tree renderer reads this from the layout tree; the legacy renderer takes it as
+  // a prop so it can render the real tasks panel instead of the removed fake tab.
+  mainPanel: PanelId
 
   // Resize
   rootRef: RefObject<HTMLDivElement | null>
@@ -61,6 +67,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
     isMobile, isLandscape, isTouch,
     layout, mobilePane, onLayoutUpdate, onMobilePaneChange,
     onToggleTasks,
+    mainPanel,
     rootRef, sidebarRef, left, right,
     changesSplit, changesHeight, projectSplit, projectHeight, sessionSplit, sessionHeight,
     hasOpenTabs,
@@ -72,7 +79,12 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
   const flexFallback = !showExplorer
     ? (showChanges ? 'changes' : showTasks ? 'tasks' : null)
     : null
-  const shouldShowEditorPane = hasOpenTabs || !showRightPanel
+  // The main region is occupied when there are open editor tabs OR the tasks
+  // panel is the active main panel. Tasks no longer adds a fake editor tab, so
+  // the activity column must size off this (not bare `hasOpenTabs`) or it would
+  // flex-expand over the editor's docked width while Tasks fills the main region.
+  const hasMainSurface = hasOpenTabs || mainPanel === 'tasks'
+  const shouldShowEditorPane = hasMainSurface || !showRightPanel
   const changesGrows = flexFallback === 'changes'
 
   // Chrome slots: collapse + body sizing the framed PanelHosts read. Rebuilt each
@@ -252,7 +264,7 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
           {shouldShowEditorPane && (
             <>
               <div role="main" className="flex-1 min-w-0 flex flex-col">
-                <PanelHost id="editor" />
+                <PanelHost id={mainPanel} />
               </div>
               {showRightPanel && <VResizeHandle onMouseDown={right.onMouseDown} isDragging={right.isDragging} />}
             </>
@@ -265,8 +277,8 @@ export function WorkspaceLayout(props: WorkspaceLayoutProps) {
               aria-label="Activity panel"
               className="flex flex-col overflow-hidden min-w-0"
               style={{
-                flex: !hasOpenTabs ? 1 : undefined,
-                width: hasOpenTabs ? right.size : undefined,
+                flex: !hasMainSurface ? 1 : undefined,
+                width: hasMainSurface ? right.size : undefined,
                 backgroundColor: 'var(--sol-bg)',
               }}
             >

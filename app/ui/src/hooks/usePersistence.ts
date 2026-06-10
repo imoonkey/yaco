@@ -6,13 +6,12 @@ import {
   type WorkspacePanelLayout,
   DEFAULT_LAYOUT,
   isFileTab,
-  isTasksTab,
   layoutKey,
   draftsKey,
   loadStoredSize,
   dedupeTabs,
 } from './workspaceTypes'
-import { defaultWorkspacePanelLayout, normalizeLayout } from '../workspace/panelLayoutModel'
+import { defaultWorkspacePanelLayout, normalizeLayout, activateTabsPanel, MAIN_TABS_ID } from '../workspace/panelLayoutModel'
 
 // --- Load helpers ---
 
@@ -93,7 +92,7 @@ export function loadPersistedState(project: string, worktree?: string | null): P
     const parsed = JSON.parse(raw) as Record<string, unknown>
 
     const openTabs = dedupeTabs(Array.isArray(parsed.openTabs)
-      ? (parsed.openTabs as unknown[]).filter((t): t is string => typeof t === 'string')
+      ? (parsed.openTabs as unknown[]).filter((t): t is string => typeof t === 'string' && !t.startsWith('\0'))
       : [])
     const activeTab = typeof parsed.activeTab === 'string' && openTabs.includes(parsed.activeTab)
       ? parsed.activeTab
@@ -102,10 +101,22 @@ export function loadPersistedState(project: string, worktree?: string | null): P
     const pl = (parsed.layout ?? parsed) as Record<string, unknown>
     const layout = parseFlatLayout(pl)
 
+    // Pre-T7 persisted "Tasks open" as a fake editor tab whose id was the NUL
+    // sentinel (`activeTab` = '\0tasks'). The sentinel is filtered out of
+    // openTabs/activeTab above, so migrate that intent to the real-panel state:
+    // the tasks panel active in the main tabs node. (Post-T7 state already
+    // carries tasks-active in `panelLayout`, and `activeTab` is never the
+    // sentinel, so this only fires for one-time pre-T7 loads.)
+    const tasksWasActive = typeof parsed.activeTab === 'string' && parsed.activeTab.startsWith('\0')
+    const basePanelLayout = migratePanelLayout(parsed, layout)
+    const panelLayout = tasksWasActive
+      ? activateTabsPanel(basePanelLayout, MAIN_TABS_ID, 'tasks')
+      : basePanelLayout
+
     return {
       openTabs,
       activeTab,
-      previewTab: typeof parsed.previewTab === 'string' && openTabs.includes(parsed.previewTab) && !isTasksTab(parsed.previewTab)
+      previewTab: typeof parsed.previewTab === 'string' && openTabs.includes(parsed.previewTab)
         ? parsed.previewTab
         : null,
       activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
@@ -115,7 +126,7 @@ export function loadPersistedState(project: string, worktree?: string | null): P
       recentFiles: Array.isArray(parsed.recentFiles)
         ? (parsed.recentFiles as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 50)
         : [],
-      panelLayout: migratePanelLayout(parsed, layout),
+      panelLayout,
     }
   } catch {
     return defaultPersistedState()
