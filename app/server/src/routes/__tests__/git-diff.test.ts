@@ -198,4 +198,19 @@ describe('GET /:project/baseline — HEAD content', () => {
     const json = await res.json() as { content: string; exists: boolean }
     expect(json).toEqual({ content: '', exists: false })
   })
+
+  it('rejects unsafe baseline paths', async () => {
+    const res = await baselineRequest('../secret.txt')
+    expect(res.status).toBe(400)
+    expect(mockExecFile).not.toHaveBeenCalled()
+  })
+
+  it('does not treat transient git failures as missing files', async () => {
+    spawnExitCodes.set('show', 1)
+
+    const res = await baselineRequest('src/file.ts')
+    expect(res.status).toBe(500)
+    const json = await res.json() as { error: string }
+    expect(json.error).toBe('git baseline failed')
+  })
 })

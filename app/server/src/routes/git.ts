@@ -9,7 +9,7 @@ export interface GitChange {
   status: 'M' | 'A' | 'D' | 'U'
 }
 
-interface GitOutput { stdout: string; ok: boolean }
+interface GitOutput { stdout: string; ok: boolean; code?: number | string }
 
 function git(cwd: string, args: string[]): Promise<GitOutput> {
   return new Promise((resolve) => {
@@ -22,7 +22,8 @@ function git(cwd: string, args: string[]): Promise<GitOutput> {
       // Always return whatever stdout was captured. Some commands (e.g.
       // `git diff --no-index`) exit with code 1 to signal "differences
       // found" — that is success, not failure, and stdout is the diff.
-      resolve({ stdout: (stdout as unknown as string) ?? '', ok: !err })
+      const code = err && 'code' in err ? err.code : undefined
+      resolve({ stdout: (stdout as unknown as string) ?? '', ok: !err, code })
     })
   })
 }
@@ -142,7 +143,10 @@ app.get('/:project/baseline', withProject, async (c) => {
   }
 
   const result = await git(proj.path, ['show', `HEAD:${filePath}`])
-  if (!result.ok) return c.json({ content: '', exists: false })
+  if (!result.ok) {
+    if (result.code === 128) return c.json({ content: '', exists: false })
+    return fail(c, 500, 'git baseline failed')
+  }
   return c.json({ content: result.stdout, exists: true })
 })
 

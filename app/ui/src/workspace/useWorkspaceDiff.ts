@@ -24,6 +24,7 @@ interface UseWorkspaceDiffOpts {
 type BaselineState = {
   content: string
   exists: boolean
+  loaded: boolean
   loading: boolean
   error: boolean
 }
@@ -133,10 +134,10 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
       const current = prev[editorBaselineKey]
       if (current?.loading) return prev
       return {
-        ...prev,
         [editorBaselineKey]: {
           content: current?.content ?? '',
           exists: current?.exists ?? false,
+          loaded: current?.loaded ?? false,
           loading: true,
           error: false,
         },
@@ -146,23 +147,23 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
     fetchGitBaseline(projectName, activeFilePath, worktree)
       .then(result => {
         if (controller.signal.aborted) return
-        setBaselineCache(prev => ({
-          ...prev,
+        setBaselineCache({
           [editorBaselineKey]: {
             content: result.content,
             exists: result.exists,
+            loaded: true,
             loading: false,
             error: false,
           },
-        }))
+        })
       })
       .catch(() => {
         if (controller.signal.aborted) return
         setBaselineCache(prev => ({
-          ...prev,
           [editorBaselineKey]: {
             content: prev[editorBaselineKey]?.content ?? '',
             exists: prev[editorBaselineKey]?.exists ?? false,
+            loaded: prev[editorBaselineKey]?.loaded ?? false,
             loading: false,
             error: true,
           },
@@ -193,7 +194,7 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
   const editorDiffHunks = useMemo<DiffHunk[]>(() => {
     if (!activeFilePath || !editorBaselineKey || activeFileContent == null) return []
     const baseline = baselineCache[editorBaselineKey]
-    if (!baseline || baseline.loading || baseline.error) return []
+    if (!baseline?.loaded) return []
     return buildEditorBufferDiff(activeFilePath, baseline.content, activeFileContent, baseline.exists).hunks
   }, [activeFilePath, activeFileContent, editorBaselineKey, baselineCache])
 

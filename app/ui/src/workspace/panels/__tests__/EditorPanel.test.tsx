@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { EditorPanel, editorPanelDef } from '../EditorPanel'
 import { DEFAULT_LAYOUT, type WorkspaceLayout } from '../../../hooks/workspaceTypes'
-import { fetchGitCompare, fetchGitDiff } from '../../../hooks/useApi'
+import { fetchGitBaseline, fetchGitCompare, fetchGitDiff } from '../../../hooks/useApi'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
   WorkspaceLayoutContext, WorkspaceCommandsContext,
@@ -21,18 +21,20 @@ import {
   type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceRawActions,
 } from '../../context'
 
-// Stub the two network reads the panel drives: the diff content (useWorkspaceDiff)
-// and the on-demand compare file list. Everything else (API base for useVoice) is
+// Stub the network reads the panel drives: editor baseline, diff content, and
+// the on-demand compare file list. Everything else (API base for useVoice) is
 // kept real so the voice machine initializes exactly as in the app.
 vi.mock('../../../hooks/useApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../hooks/useApi')>()
   return {
     ...actual,
+    fetchGitBaseline: vi.fn().mockResolvedValue({ content: '', exists: false }),
     fetchGitDiff: vi.fn().mockResolvedValue(''),
     fetchGitCompare: vi.fn().mockResolvedValue({ files: [], stats: { added: 0, deleted: 0 } }),
   }
 })
 
+const mockFetchGitBaseline = vi.mocked(fetchGitBaseline)
 const mockFetchGitDiff = vi.mocked(fetchGitDiff)
 const mockFetchGitCompare = vi.mocked(fetchGitCompare)
 
@@ -45,6 +47,7 @@ vi.stubGlobal('ResizeObserver', class {
 
 afterEach(cleanup)
 beforeEach(() => {
+  mockFetchGitBaseline.mockReset().mockResolvedValue({ content: '', exists: false })
   mockFetchGitDiff.mockReset().mockResolvedValue('')
   mockFetchGitCompare.mockReset().mockResolvedValue({ files: [], stats: { added: 0, deleted: 0 } })
 })
