@@ -34,6 +34,10 @@ function parseStatus(xy: string): GitChange['status'] {
   return 'M'
 }
 
+function unsafeFilePath(filePath: string): boolean {
+  return filePath.includes('..') || filePath.startsWith('/')
+}
+
 /** Parse `git diff --shortstat` output → { added, deleted } */
 function parseShortstat(output: string): { added: number; deleted: number } {
   const added = output.match(/(\d+) insertion/)
@@ -129,12 +133,25 @@ app.get('/:project/status', withProject, async (c) => {
   return c.json(await pending)
 })
 
+// GET /:project/baseline?path=... — file content from HEAD for editor-buffer diffing
+app.get('/:project/baseline', withProject, async (c) => {
+  const proj = c.var.project
+  const filePath = c.req.query('path')
+  if (!filePath || unsafeFilePath(filePath)) {
+    return c.json({ error: 'invalid path' }, 400)
+  }
+
+  const result = await git(proj.path, ['show', `HEAD:${filePath}`])
+  if (!result.ok) return c.json({ content: '', exists: false })
+  return c.json({ content: result.stdout, exists: true })
+})
+
 // GET /:project/diff?path=...&base=REF&compare=REF — git diff for a specific file
 app.get('/:project/diff', withProject, async (c) => {
   const proj = c.var.project
 
   const filePath = c.req.query('path')
-  if (!filePath || filePath.includes('..') || filePath.startsWith('/')) {
+  if (!filePath || unsafeFilePath(filePath)) {
     return c.json({ error: 'invalid path' }, 400)
   }
 

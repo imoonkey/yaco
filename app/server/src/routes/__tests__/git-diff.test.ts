@@ -8,6 +8,7 @@ const mockExecFile = vi.fn(
   (_cmd: string, args: string[], _opts: unknown, cb: (err: Error | null, stdout: string, stderr: string) => void) => {
     let key = 'unknown'
     if (args[0] === 'status') key = 'status'
+    else if (args[0] === 'show') key = 'show'
     else if (args.includes('--no-index')) key = 'no-index'
     else if (args.includes('--cached')) key = 'cached'
     else if (args[0] === 'diff' && args.includes('--shortstat')) key = 'shortstat'
@@ -34,6 +35,10 @@ function diffRequest(filePath: string) {
 
 function statusRequest() {
   return gitRoutes.request('/test-project/status')
+}
+
+function baselineRequest(filePath: string) {
+  return gitRoutes.request(`/test-project/baseline?path=${encodeURIComponent(filePath)}`)
 }
 
 describe('GET /:project/diff — 3-step fallback', () => {
@@ -159,5 +164,38 @@ describe('GET /:project/status — null-terminated parsing', () => {
     expect(json.changes).toEqual([
       { path: 'path with spaces/file name.ts', status: 'M' },
     ])
+  })
+})
+
+describe('GET /:project/baseline — HEAD content', () => {
+  beforeEach(() => {
+    testProjectPath = '/tmp/fake-repo'
+    spawnResults = new Map()
+    spawnExitCodes = new Map()
+    mockExecFile.mockClear()
+  })
+
+  it('returns file content from HEAD', async () => {
+    spawnResults.set('show', 'committed content\n')
+
+    const res = await baselineRequest('src/file.ts')
+    expect(res.status).toBe(200)
+    const json = await res.json() as { content: string; exists: boolean }
+    expect(json).toEqual({ content: 'committed content\n', exists: true })
+    expect(mockExecFile).toHaveBeenCalledWith(
+      'git',
+      ['show', 'HEAD:src/file.ts'],
+      expect.objectContaining({ cwd: testProjectPath }),
+      expect.any(Function),
+    )
+  })
+
+  it('returns an empty missing baseline for untracked files', async () => {
+    spawnExitCodes.set('show', 128)
+
+    const res = await baselineRequest('new-file.ts')
+    expect(res.status).toBe(200)
+    const json = await res.json() as { content: string; exists: boolean }
+    expect(json).toEqual({ content: '', exists: false })
   })
 })

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { fetchGitDiff } from '../hooks/useApi'
+import { fetchGitBaseline, fetchGitDiff } from '../hooks/useApi'
+import { buildEditorBufferDiff } from '../lib/editorBufferDiff'
 import { parseDiff, type DiffHunk, type ParsedFileDiff } from '../lib/parseDiff'
-import type { GitChange } from '../types'
 
 export type DiffState = {
   raw: string | null
@@ -13,35 +13,46 @@ export type DiffState = {
 interface UseWorkspaceDiffOpts {
   activeDiffPath: string | null
   activeFilePath: string | null
+  activeFileContent: string | null
   projectName: string
   worktree?: string | null
-  changes: GitChange[]
   gitData: unknown // used as dependency trigger for re-fetch
   compareBase?: string | null
   compareHead?: string | null
 }
 
+type BaselineState = {
+  content: string
+  exists: boolean
+  loading: boolean
+  error: boolean
+}
+
 export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
-  const { activeDiffPath, activeFilePath, projectName, worktree, changes, gitData, compareBase, compareHead } = opts
+  const {
+    activeDiffPath, activeFilePath, activeFileContent,
+    projectName, worktree, gitData, compareBase, compareHead,
+  } = opts
 
   const [cache, setCache] = useState<Record<string, DiffState>>({})
+  const [baselineCache, setBaselineCache] = useState<Record<string, BaselineState>>({})
 
   // Cache key: include refs when present so switching refs triggers re-fetch
   const activeDiffCacheKey = activeDiffPath
     ? (compareBase && compareHead ? `${compareBase}:${compareHead}:${activeDiffPath}` : activeDiffPath)
     : null
 
-  // Paths that need fetching: diff tab + editor gutter (if file is changed)
-  const activeFileIsChanged = !!activeFilePath && changes.some(c => c.path === activeFilePath)
-  const editorDiffPath = activeFileIsChanged ? activeFilePath : null
+  const editorBaselineKey = activeFilePath
+    ? `${projectName}:${worktree ?? ''}:${activeFilePath}`
+    : null
+  const activeFileContentReady = activeFileContent != null
 
   // Deduplicated set of cache keys to keep
   const keysToFetch = useMemo(() => {
     const keys = new Set<string>()
     if (activeDiffCacheKey) keys.add(activeDiffCacheKey)
-    if (editorDiffPath) keys.add(editorDiffPath)
     return keys
-  }, [activeDiffCacheKey, editorDiffPath])
+  }, [activeDiffCacheKey])
 
   // Fetch diffs for active paths. Re-runs on gitData change to pick up
   // new git state, but keeps stale data visible until the fetch completes
@@ -58,9 +69,6 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
         base: compareBase ?? undefined,
         compare: compareHead ?? undefined,
       })
-    }
-    if (editorDiffPath && editorDiffPath !== activeDiffCacheKey) {
-      fetchEntries.push({ key: editorDiffPath, path: editorDiffPath })
     }
 
     for (const entry of fetchEntries) {
@@ -111,7 +119,58 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
 
     return () => { controllers.forEach(c => c.abort()) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDiffCacheKey, editorDiffPath, projectName, worktree, gitData, compareBase, compareHead])
+  }, [activeDiffCacheKey, projectName, worktree, gitData, compareBase, compareHead])
+
+  // Fetch the HEAD baseline for the active editor file. The editor gutter is
+  // computed from current buffer content vs this baseline, so unsaved edits and
+  // saved working-tree edits use the same visible coordinate system.
+  useEffect(() => {
+    if (!activeFilePath || !editorBaselineKey || !activeFileContentReady) return
+    const controller = new AbortController()
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBaselineCache(prev => {
+      const current = prev[editorBaselineKey]
+      if (current?.loading) return prev
+      return {
+        ...prev,
+        [editorBaselineKey]: {
+          content: current?.content ?? '',
+          exists: current?.exists ?? false,
+          loading: true,
+          error: false,
+        },
+      }
+    })
+
+    fetchGitBaseline(projectName, activeFilePath, worktree)
+      .then(result => {
+        if (controller.signal.aborted) return
+        setBaselineCache(prev => ({
+          ...prev,
+          [editorBaselineKey]: {
+            content: result.content,
+            exists: result.exists,
+            loading: false,
+            error: false,
+          },
+        }))
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return
+        setBaselineCache(prev => ({
+          ...prev,
+          [editorBaselineKey]: {
+            content: prev[editorBaselineKey]?.content ?? '',
+            exists: prev[editorBaselineKey]?.exists ?? false,
+            loading: false,
+            error: true,
+          },
+        }))
+      })
+
+    return () => controller.abort()
+  }, [activeFilePath, activeFileContentReady, editorBaselineKey, projectName, worktree, gitData])
 
   // Clean up cache entries when keys are no longer needed
   const prevKeysRef = useRef(keysToFetch)
@@ -131,9 +190,12 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
   const activeDiff = activeDiffCacheKey ? cache[activeDiffCacheKey] ?? null : null
 
   // Editor gutter consumes this
-  const editorDiffHunks: DiffHunk[] = editorDiffPath
-    ? cache[editorDiffPath]?.parsed?.hunks ?? []
-    : []
+  const editorDiffHunks = useMemo<DiffHunk[]>(() => {
+    if (!activeFilePath || !editorBaselineKey || activeFileContent == null) return []
+    const baseline = baselineCache[editorBaselineKey]
+    if (!baseline || baseline.loading || baseline.error) return []
+    return buildEditorBufferDiff(activeFilePath, baseline.content, activeFileContent, baseline.exists).hunks
+  }, [activeFilePath, activeFileContent, editorBaselineKey, baselineCache])
 
   const clearDiff = (key: string) => {
     setCache(prev => {

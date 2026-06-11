@@ -49,19 +49,19 @@ export function EditorPanel() {
   const { openTabs, activeTab, previewTab } = selection
   const { files, dirtyTabs, conflictTabs, jumpRequest } = selection.editor
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
-  const changes = data.git.changes
-
   // Derived tab state (mirrors the inline editor body).
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
+  const activeFileState = activeFilePath ? files[activeFilePath] : null
+  const activeFileContent = activeFileState?.draft ?? activeFileState?.serverContent ?? null
   const activeDiffTab = isDiffTab(activeTab)
   const parsedDiff = activeDiffTab && activeTab ? parseDiffTab(activeTab) : null
   const activeDiffPath = parsedDiff?.path ?? null
 
-  // Panel-private diff cache: the active diff tab + the editor gutter for a
-  // changed open file. Compare refs (when present) key the fetch.
+  // Panel-private diff cache: the active diff tab + the editor gutter for the
+  // current open buffer. Compare refs (when present) key the diff-tab fetch.
   const { activeDiff, editorDiffHunks } = useWorkspaceDiff({
     activeDiffPath, activeFilePath, projectName, worktree,
-    changes, gitData: data.git,
+    activeFileContent, gitData: data.git,
     compareBase: parsedDiff?.base, compareHead: parsedDiff?.compare,
   })
 

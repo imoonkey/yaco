@@ -386,6 +386,10 @@ export async function fetchGitDiff(projectName: string, filePath: string, base?:
   return r.diff
 }
 
+export async function fetchGitBaseline(projectName: string, filePath: string, worktree?: string | null): Promise<{ content: string; exists: boolean }> {
+  return fetchJson(appendWorktree(`/git/${encodeURIComponent(projectName)}/baseline?path=${encodeURIComponent(filePath)}`, worktree))
+}
+
 export interface GitRefsResult {
   branches: string[]
   tags: string[]
