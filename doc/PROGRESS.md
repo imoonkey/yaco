@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-11: Mobile keyboard viewport shrink scoped to the terminal
+
+**What changed:**
+- `useKeyboardViewport` no longer overrides `#root` height for every focused input. New `isTerminalContext()` (focused element inside `[data-terminal-surface]`) gates `apply()`: it sets `--kb-viewport` only when the terminal owns the keyboard, otherwise clears the override.
+- `Terminal.tsx` root tagged with `data-terminal-surface`, covering both keyboard triggers in the terminal — the xterm helper textarea and the key-bar paste textarea.
+
+**Why:**
+- The hook ran globally, forcing `#root` to a JS-measured `visualViewport.height` on every page. On non-terminal pages this fought native keyboard handling (Android `interactive-widget=resizes-content` reshapes `dvh`; iOS scrolls the focused field into view), and the mismatch left a blank band above the keyboard. Only xterm genuinely needs the manual shrink — its fixed canvas + offscreen helper textarea are never scrolled into view, and iOS PWA delays its viewport update. The 40% estimate was already terminal-scoped; this scopes the real-value shrink too.
+
+**Key files:** `app/ui/src/hooks/useKeyboardViewport.ts`, `app/ui/src/components/Terminal.tsx`, `doc/main/app/ui/mobile.md`, `doc/main/app/frontend/hooks.md`
+**Verification:** `cd app/ui && npx tsc --noEmit` clean; `npm run lint` (0 errors, 9 pre-existing hook warnings); `npx vitest run src/components/__tests__/Terminal.focus.test.tsx` → 31 passed. On-device keyboard behavior not exercisable in CI — needs phone verification (terminal: content/key-bar flush above keyboard; editor/browse/tasks/search: blank band gone).
+**Commit:** b83b99a (code) + this commit (docs)
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-11: Sessions search polish and pattern matching
 
 **What changed:**

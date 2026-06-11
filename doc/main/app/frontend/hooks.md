@@ -241,7 +241,7 @@ Device and viewport detection hooks.
 
 ## useKeyboardViewport.ts
 
-Sets `--kb-viewport` CSS variable on `<html>` when virtual keyboard is detected. `#root` uses `var(--kb-viewport, 100dvh)`. Also sets `--kb-safe-bottom` to `0px` when keyboard is open (TerminalKeyBar uses this to drop home indicator padding). Includes iOS PWA workaround with tap-based estimation fallback, scoped to the `.xterm` terminal (other inputs use the real Visual Viewport value). Module-level cache for keyboard height per orientation.
+Sets `--kb-viewport` CSS variable on `<html>` when the virtual keyboard is detected. `#root` uses `var(--kb-viewport, 100dvh)`. Also sets `--kb-safe-bottom` to `0px` when keyboard is open (TerminalKeyBar uses this to drop home indicator padding). Scoped to the **terminal**: `apply()` only overrides `#root` when the focused element is inside `[data-terminal-surface]` (`isTerminalContext()`), otherwise it clears and lets the browser handle the keyboard natively — other inputs don't need the shrink and forcing it leaves a blank band above the keyboard. Includes an iOS PWA tap-based estimation fallback (xterm's offscreen textarea delays the Visual Viewport) and a module-level cache for keyboard height per orientation.
 
 **Export**: `useKeyboardViewport()` — called once in `App.tsx`.
 
