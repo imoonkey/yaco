@@ -149,7 +149,7 @@ test('plain Enter inserts a newline; only Cmd/Ctrl+Enter sends', async ({ page }
   await expect(input).toBeHidden({ timeout: 5_000 })
 })
 
-test('Format replaces the draft; Undo (toast) restores it', async ({ page }) => {
+test('Format replaces the draft; the inline Undo button restores it', async ({ page }) => {
   await stubVoice(page, 'original transcript')
   // The Format button (and the take pipeline) post to /voice/format; return a
   // distinct polished string so the replace is observable.
@@ -168,7 +168,7 @@ test('Format replaces the draft; Undo (toast) restores it', async ({ page }) => 
   await page.getByRole('button', { name: 'Format' }).click()
   await expect(input).toHaveValue('Polished text.', { timeout: 5_000 })
 
-  // The toast's Undo action restores the pre-format draft.
+  // The inline Undo button (next to Format) restores the pre-format draft.
   await page.getByRole('button', { name: 'Undo' }).click()
   await expect(input).toHaveValue('some unformatted draft')
 })

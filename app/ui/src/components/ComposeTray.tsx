@@ -46,6 +46,8 @@ export function ComposeTray({
   const isOpen = state !== 'idle'
   const [editText, setEditText] = useState('')
   const [formatting, setFormatting] = useState(false)
+  // Pre-format draft, kept while an Undo for the last Format is still offered.
+  const [preFormat, setPreFormat] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // Last known caret/selection in the draft — recorded text is spliced here.
   const caretRef = useRef<{ start: number; end: number } | null>(null)
@@ -57,6 +59,7 @@ export function ComposeTray({
   const [prevAppendKey, setPrevAppendKey] = useState<number | null>(null)
   if (appendText && appendText.key !== prevAppendKey) {
     setPrevAppendKey(appendText.key)
+    setPreFormat(null) // a new take supersedes the prior format's Undo
     setEditText(prev => {
       const start = Math.min(caretRef.current?.start ?? prev.length, prev.length)
       const end = Math.min(caretRef.current?.end ?? prev.length, prev.length)
@@ -76,7 +79,7 @@ export function ComposeTray({
   const [prevOpen, setPrevOpen] = useState(isOpen)
   if (isOpen !== prevOpen) {
     setPrevOpen(isOpen)
-    if (!isOpen) setEditText('')
+    if (!isOpen) { setEditText(''); setPreFormat(null) }
   }
 
   // Auto-size: min ~50px, max 50vh.
@@ -133,9 +136,8 @@ export function ComposeTray({
     onClose()
   }, [backupDraft, onClose])
 
-  // Format the whole draft via the LLM formatter; replace in place and offer an
-  // Undo (the toast action — a programmatic replace doesn't feed the textarea's
-  // native undo stack).
+  // Format the whole draft via the LLM formatter; replace in place and keep the
+  // pre-format text so a flat Undo button (next to Format) can restore it.
   const handleFormat = useCallback(async () => {
     const before = editText
     if (!before.trim() || formatting) return
@@ -144,10 +146,7 @@ export function ComposeTray({
       const result = await onFormat(before)
       if (result && result !== before) {
         setEditText(result)
-        toast('Formatted', {
-          duration: 6000,
-          action: { label: 'Undo', onClick: () => setEditText(before) },
-        })
+        setPreFormat(before)
       } else {
         toast('No formatting changes', { duration: 1500 })
       }
@@ -155,6 +154,12 @@ export function ComposeTray({
       setFormatting(false)
     }
   }, [editText, formatting, onFormat])
+
+  const handleUndoFormat = useCallback(() => {
+    if (preFormat == null) return
+    setEditText(preFormat)
+    setPreFormat(null)
+  }, [preFormat])
 
   if (!isOpen) return null
 
@@ -189,7 +194,7 @@ export function ComposeTray({
         <textarea
           ref={textareaRef}
           value={editText}
-          onChange={(e) => setEditText(e.target.value)}
+          onChange={(e) => { setEditText(e.target.value); if (preFormat !== null) setPreFormat(null) }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault()
@@ -259,6 +264,11 @@ export function ComposeTray({
                     ? <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
                     : <Wand size={14} />} Format
                 </button>
+                {preFormat !== null && (
+                  <button style={UNDO_BTN_STYLE} onClick={handleUndoFormat} title="Revert the last format">
+                    Undo
+                  </button>
+                )}
               </>
             )}
           </div>
@@ -398,6 +408,21 @@ const FORMAT_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
   background: 'var(--sol-subtle-bg)',
   color: 'var(--sol-text)',
+}
+
+// Flat, subordinate to Format — quiet underlined link, no fill.
+const UNDO_BTN_STYLE: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  height: 30,
+  padding: '0 4px',
+  fontSize: 'var(--text-ui-sm)',
+  background: 'none',
+  border: 'none',
+  color: 'var(--sol-text-faint)',
+  cursor: 'pointer',
+  textDecoration: 'underline',
+  touchAction: 'manipulation',
 }
 
 const STOP_BTN_STYLE: React.CSSProperties = {
