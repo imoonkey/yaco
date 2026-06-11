@@ -47,6 +47,14 @@ export function broadcastChange(channel: ChangeChannel): void {
   send(channel, '')
 }
 
+/** Push the projected attention snapshot to all SSE clients (hidden-safe — the
+ *  client handles `attention` directly, not via the document-hidden polling
+ *  path). Parallels `dispatch`'s `notification` push; the `/stream` endpoint
+ *  passes any (event, data) through, so no endpoint change is needed. */
+export function broadcastAttention(payload: unknown): void {
+  send('attention', JSON.stringify(payload))
+}
+
 /** Push a lightweight refresh signal to all SSE clients (no osascript) */
 export function emitRefresh(channel: string): void {
   send('refresh', channel)

@@ -26,6 +26,7 @@ import { ensureYacoHome, loadProjects } from './lib/projects.js'
 import { pickEncoding, appendVary } from './lib/static-encoding.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
+import { startAttentionEngine, stopAttentionEngine } from './lib/attention-runtime.js'
 import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
@@ -250,6 +251,9 @@ async function startRuntime(): Promise<void> {
   const projects = await loadProjects()
   startSessionReconciler()
   await startProjectWatchers(projects)
+  // Attention engine (Facet B): boot reconciliation + change-driven edges.
+  // Started after the watchers so their notify hooks reach a live engine.
+  await startAttentionEngine()
   setShellSessionChangeCallback(() => emitRefresh('sessions'))
 
   if (process.env.WECHAT_ENABLED === '1') {
@@ -505,6 +509,7 @@ function cleanupTerminalResources(): void {
   if (pingInterval) clearInterval(pingInterval)
   if (sweepInterval) clearInterval(sweepInterval)
   stopSessionReconciler()
+  stopAttentionEngine()
   stopProjectWatchers()
   shutdownWeChat()
   for (const ws of [...connections.keys()]) {

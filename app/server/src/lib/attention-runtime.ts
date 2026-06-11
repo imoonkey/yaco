@@ -1,0 +1,119 @@
+/** Wires the pure `AttentionEngine` to real filesystem readers + the SSE push.
+ *
+ *  Keeps the engine class free of fs/CLI concerns (so its unit tests inject
+ *  fakes) while this module owns the concrete readers:
+ *   - sessions: `readAllSessionsFromStateFiles` — direct state-file HOT read
+ *     (carries crashed/statusEnteredAt/exitCode/spawnedBy), NOT the CLI-spawning
+ *     reconcile path.
+ *   - tasks: per loaded project, `loadTaskStore(resolve(path, paths.tasks))`.
+ *   - pins: `getPinnedSessions(project)`.
+ *   - watermarks: `getUnreadWatermarks()` (defensively widened for T5 fields).
+ */
+
+import { resolve } from 'path'
+import { readYacoProjectPaths } from '@yaco/cli/core/paths'
+import { loadTaskStore } from '@yaco/cli/core/task'
+import { loadProjects } from './projects'
+import { readAllSessionsFromStateFiles } from './agent'
+import { getPinnedSessions, getUnreadWatermarks } from './ui-state'
+import { broadcastAttention } from './notify'
+import { AttentionEngine } from './attention-engine'
+import type { LiveSession, LiveTask, Watermarks } from './attention-projection'
+
+/** Normalize a task's bound agents to the canonical `string[]` (spec §8). */
+function normalizeAgents(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.filter((a): a is string => typeof a === 'string')
+  if (typeof raw === 'string' && raw) return [raw]
+  return []
+}
+
+async function readTasks(): Promise<LiveTask[]> {
+  const projects = await loadProjects()
+  const out: LiveTask[] = []
+  for (const project of projects) {
+    let tasksPath: string
+    try {
+      tasksPath = resolve(project.path, readYacoProjectPaths(project.path).tasks)
+    } catch {
+      continue
+    }
+    let store: ReturnType<typeof loadTaskStore>
+    try {
+      store = loadTaskStore(tasksPath)
+    } catch {
+      continue // missing/invalid task store — skip this project
+    }
+    for (const [id, task] of Object.entries(store.tasks)) {
+      // Carry every task; the projector decides which states become ACT/REVIEW
+      // (only `blocked` → ACT, `done` → REVIEW). `ready`/`running`/`cancelled`
+      // are inert there but cheap to pass through.
+      out.push({
+        project: project.name,
+        id,
+        state: task.state,
+        stateEnteredAt: typeof task.stateEnteredAt === 'string' ? task.stateEnteredAt : undefined,
+        agents: normalizeAgents(task.agents ?? (task as { agent?: unknown }).agent),
+      })
+    }
+  }
+  return out
+}
+
+async function readSessions(): Promise<LiveSession[]> {
+  const projects = await loadProjects()
+  const rows = await readAllSessionsFromStateFiles(projects)
+  return rows.map((r) => ({
+    project: r.project,
+    name: r.name,
+    status: r.status,
+    statusEnteredAt: r.statusEnteredAt,
+    exitCode: r.exitCode,
+    blockReason: r.blockReason,
+    spawnedBy: r.spawnedBy,
+    parentSession: r.parentSession,
+  }))
+}
+
+async function readPins(): Promise<Record<string, Set<string>>> {
+  const projects = await loadProjects()
+  const out: Record<string, Set<string>> = {}
+  for (const project of projects) {
+    const pinned = await getPinnedSessions(project.name)
+    if (pinned.length > 0) out[project.name] = new Set(pinned)
+  }
+  return out
+}
+
+async function readWatermarks(): Promise<Watermarks> {
+  // getUnreadWatermarks returns { projectReadAt, sessionReadAt } today; T5 adds
+  // taskReadAt + recentClearedAt. Spread through whatever is present so this
+  // works before and after T5 without a change here.
+  const wm = (await getUnreadWatermarks()) as Watermarks
+  return wm
+}
+
+let engine: AttentionEngine | null = null
+
+/** Construct + boot the singleton attention engine (called from startRuntime). */
+export async function startAttentionEngine(): Promise<void> {
+  if (engine) return
+  engine = new AttentionEngine({
+    readSessions,
+    readTasks,
+    readPins,
+    readWatermarks,
+    listProjects: async () => (await loadProjects()).map((p) => p.name),
+    broadcast: broadcastAttention,
+  })
+  await engine.start()
+}
+
+export function stopAttentionEngine(): void {
+  engine?.stop()
+  engine = null
+}
+
+/** Triggers from the watchers / ui-state. No-op before the engine boots. */
+export function notifyAttentionSessionChange(): void { engine?.notifySessionChange() }
+export function notifyAttentionTaskChange(): void { engine?.notifyTaskChange() }
+export function notifyAttentionPinChange(): void { engine?.notifyPinChange() }

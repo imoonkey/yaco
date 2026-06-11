@@ -38,6 +38,13 @@ vi.mock('../agent', () => ({
   },
 }))
 
+// The watcher notifies the attention engine on session/task changes; stub the
+// triggers so the watcher tests don't construct the real fs-backed engine.
+vi.mock('../attention-runtime', () => ({
+  notifyAttentionSessionChange: vi.fn(),
+  notifyAttentionTaskChange: vi.fn(),
+}))
+
 import { startProjectWatchers, stopProjectWatchers } from '../project-watcher'
 
 function writeSession(handle: string, sessionPath: string): void {
@@ -89,5 +96,20 @@ describe('project-watcher agent session refreshes', () => {
     await vi.waitFor(() => {
       expect(mock.emitCalls).toContain('sessions')
     }, { timeout: 2000 })
+  })
+
+  it('arms the sessions watcher even when the dir is absent at startup (R3 re-arm)', async () => {
+    // Start with NO sessions dir — the watcher must poll-until-exists then arm,
+    // otherwise the change-driven engine has a cold-start blind spot.
+    rmSync(mock.sessionsDir, { recursive: true, force: true })
+    await startProjectWatchers(mock.projects)
+
+    // Dir created late (as the agent runtime would on first session).
+    mkdirSync(mock.sessionsDir, { recursive: true })
+    writeSession('late-session', projectDir)
+
+    await vi.waitFor(() => {
+      expect(mock.emitCalls).toContain('sessions')
+    }, { timeout: 3000 })
   })
 })
