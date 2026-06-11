@@ -203,33 +203,39 @@ Behavior:
 
 App.tsx wires `projectUnreadCounts` into both the sidebar (per-project badges) and the bell badge (sum), and overrides each inbox item's `read` flag using the same watermark check so the notification panel styling matches.
 
-## useVoice.ts (~340 lines)
+## useVoice.ts (~290 lines)
 
-Orchestrates the streaming voice-input flow on top of three pieces:
-`voiceVad.ts` (in-browser VAD capture → coalesced WAV chunks),
+Orchestrates the single-take voice-input flow on top of three pieces:
+`voiceCapture.ts` (native `MediaRecorder` capture → one whole-take blob),
 `voiceStateMachine.ts` (the `voiceReducer` + selectors), and the split
 [`/api/voice/transcribe` + `/api/voice/format`](../backend/routes.md#voice) routes.
 
-**Export**: `useVoice()` → `{ capability, state, elapsedMs, liveTranscript, pendingCount, compose, target, errorMessage, noSpeechMessage, start, stop, confirm, discard, copy, dismiss, retry, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md).
+**Export**: `useVoice()` → `{ capability, state, elapsedMs, appendText, target, errorMessage, notice, open, record, stop, retry, confirm, copy, discard, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md).
 
 ### Flow
 
-- **Capability** — on mount: `checkBrowserCapability()` (secure context + `getUserMedia` + `AudioWorklet`), then `GET /api/voice/status` for `maxUploadBytes`. Result gates `start()`.
-- **`start(ctx)`** — computes `runId` up front (mirrors the reducer's `counter + 1`), dispatches `START`, then `startVadSession(maxUploadBytes, { onElapsed, onChunk, onError })`. The session promise resolves to `PERMISSION_GRANTED` **only if** the live phase is still `requesting_permission` with the same `runId` and the hook is mounted — otherwise the orphaned session is `release()`d. Rejection → `PERMISSION_DENIED` (same guard).
-- **Per chunk** (`onChunk` → `transcribeChunk`) — dispatch `SEGMENT_PENDING`, `POST /transcribe`, then `SEGMENT_RESOLVED` carrying `index` + `text` + `runId`. A timeout / failure resolves the segment to `''` (drops only that chunk; all-dropped → reducer `failed` branch).
-- **Stop → finalize** — `stop()` dispatches `STOP`, `await session.stop()` (flushes the tail chunk), dispatches `VAD_STOPPED`, then `release()`s. A finalize **effect** watches the live `active` phase, reads `selectFinalization`, and fires exactly one of `NO_SPEECH` / `FAIL` / (`START_FORMAT` + a single `POST /format`). The gate is an effect, not inline in `stop()`, because the last chunk can resolve *after* `VAD_STOPPED`; `formattingRunRef` guards `/format` to once per run. A second effect calls `stop()` once `elapsedMs` crosses `MAX_RECORDING_SECONDS`.
+There is no mid-recording segmentation: a take is one continuous recording the
+user ends manually, transcribed once, then **appended** to the compose draft
+(the tray owns the editable text and consumes `appendText: {text, key}` on key
+change). Multiple takes append in sequence; the tray also opens empty for
+type/paste with no recording at all.
 
-### Rate limiting & timeouts
+- **Capability** — on mount: `checkBrowserCapability()` (secure context + `getUserMedia` + `MediaRecorder`), then `GET /api/voice/status` for `maxUploadBytes`. Result gates `record()` (not `open()` — type/paste works without a mic).
+- **`open(ctx)`** — opens the tray idle (`composing`) for type/paste.
+- **`record(ctx?)`** — computes `runId` up front (mirrors the reducer's `counter + 1`), dispatches `START_RECORD`, then `startCaptureSession({ onElapsed, onError })`. The session resolves to `PERMISSION_GRANTED` **only if** the live phase is still `requesting_permission` with the same `runId` and the hook is mounted — otherwise the orphaned session is `release()`d. Rejection → `PERMISSION_DENIED`. From `composing`/`error` it reuses the frozen target and appends.
+- **`stop()` → take pipeline** — dispatches `STOP` (→ `transcribing`), `await session.stop()` (one blob) + `release()`. An empty/oversized blob → `NO_SPEECH` / `FAIL`; otherwise the blob is cached in `audioRef` and `processTake` runs: `POST /transcribe` → on transient failure `FAIL` (retryable), else `POST /format` → `TRANSCRIBED` + `appendText`. A **`/format` network failure falls back to appending the raw transcript** so words are never lost. A second effect calls `stop()` once `elapsedMs` crosses `MAX_RECORDING_SECONDS`.
+- **`retry()`** — re-runs `processTake` from the cached `audioRef` blob (no re-record), which is why a failed transcription now actually recovers.
 
-- **Client throttle** (`waitForTranscribeSlot`) — a rolling `REQUEST_WINDOW_MS = 60_000` window caps `/transcribe` at `MAX_TRANSCRIBE_REQUESTS_PER_WINDOW = 20` (belt-and-suspenders over `voiceVad.ts`'s ~6/min coalescer floor). A shared `retryAfterUntilRef` deadline holds **all** pending chunks back.
-- **`retry-after` honoring** — on a 429, `postTranscribe` reads the upstream `retry-after` header the route now forwards (`parseRetryAfterMs` handles seconds or HTTP-date), sets the deadline, waits, and retries **once**; a second 429 / any non-OK → `''`.
-- **Timeouts** (`fetchWithTimeout`) — `/transcribe` and `/format` abort after 30 s via `AbortController`.
+### Timeouts
+
+- **`retry-after` honoring** — on a 429, `postTranscribe` reads the upstream `retry-after` header (`parseRetryAfterMs` handles seconds or HTTP-date), waits, and retries **once**; a second 429 / any non-OK → transient failure (`{ ok: false }`).
+- **Timeouts** (`fetchWithTimeout`) — `/transcribe` aborts after 60 s, `/format` after 30 s, via `AbortController`.
 
 ### Cleanup
 
-An unmount effect flips `mountedRef` and `release()`s the live session; the `runId` + live-phase guards drop every stale-run resolution, so a chunk that lands after a new run started never mutates the new run.
+An unmount effect flips `mountedRef` and `release()`s the live session; the `runId` + live-phase guards drop every stale-run resolution.
 
-Tested in `__tests__/useVoice.test.tsx` (fake VAD session + mocked `fetch`): happy path, 429 + `retry-after` retry, all-chunks-dropped → `failed`, unmount cleanup.
+Tested in `__tests__/useVoice.test.tsx` (fake capture session + mocked `fetch`): record→transcribe→format→append, retry-from-cache after a transcribe failure, `/format` failure → raw append, no-speech, unmount cleanup.
 
 ## useIsMobile.ts (39 lines)
 

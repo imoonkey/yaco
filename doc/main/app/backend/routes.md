@@ -92,7 +92,7 @@ All git routes support `?worktree=<slug>` query param via `withProject` middlewa
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/voice/status` | Voice pipeline availability and config |
-| POST | `/api/voice/transcribe` | Transcribe one audio chunk (Whisper only) |
+| POST | `/api/voice/transcribe` | Transcribe one recording (Whisper only) |
 | POST | `/api/voice/format` | Format a whole transcript (formatter only) |
 
 **`GET /api/voice/status`**
@@ -109,18 +109,16 @@ Disabled (key missing):
 { "enabled": false, "reason": "missing_api_key" }
 ```
 
-The pipeline is **split** into two single-responsibility endpoints: the client
-streams each captured chunk to `/transcribe` as it is produced, then calls
-`/format` once over the joined transcript at Stop. The formatter therefore runs
-exactly once at the end. A "chunk" is a VAD-coalesced ~10s WAV (the client's
-`voiceVad.ts` buffers utterances and flushes on a ~10s target or an
-end-of-thought pause, never more than ~6×/min) — the coalescing is what keeps
-`/transcribe` under Groq's free-tier rate wall.
+The pipeline is **split** into two single-responsibility endpoints. The client
+records one continuous take (native `MediaRecorder`, ended by the user via
+Stop/F5 — no mid-recording chunking, no VAD), uploads it **once** to
+`/transcribe`, then calls `/format` once over that transcript. The formatter
+runs exactly once per take.
 
 **`POST /api/voice/transcribe`** (`multipart/form-data`) — Whisper STT only.
 
 Request fields:
-- `audio` (file, required) — one audio chunk. MIME-allowlisted (`audio/wav`, `webm`, `ogg`, `mpeg`, `mp4`, `m4a`, `flac`); when the part is typeless / `application/octet-stream`, the file extension is used instead.
+- `audio` (file, required) — one whole-take recording (typically `audio/webm;codecs=opus`, or `audio/mp4` on Safari). MIME-allowlisted (`audio/wav`, `webm`, `ogg`, `mpeg`, `mp4`, `m4a`, `flac`); when the part is typeless / `application/octet-stream`, the file extension is used instead.
 - `language` (string, optional) — ISO-639-1 hint for Whisper
 - `context` (string, optional) — tiny vocabulary-bias snippet; `buildWhisperPrompt` keeps only a capped tail (Groq 224-token `initial_prompt` limit)
 
@@ -167,12 +165,14 @@ Empty/blank transcript (`formattingStatus: "empty"`, 200, no model call):
 | Upstream timeout/network | 502 | Transcription failed. Try again. | transcribe |
 
 On a 429, `/transcribe` forwards the upstream Groq `retry-after` header so the
-client backs off precisely — `useVoice.ts` parses it (seconds or HTTP date) and
-holds all pending chunks until the deadline before retrying once.
+client backs off precisely — `useVoice.ts` parses it (seconds or HTTP date),
+waits, and retries the upload once.
 
 Audio is never persisted to disk. API key is never exposed to the browser.
 
--> Design doc: `plan/all/20260605_voice-streaming/design_claude.md`
+-> History: `plan/archive/20260605_voice-streaming/` (the original streaming
+design; the mid-recording chunking it describes was reverted to this single-take
+flow).
 
 ### Tasks
 

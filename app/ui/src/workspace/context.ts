@@ -197,15 +197,15 @@ export type WorkspaceCommands = {
 
 // --- Voice ----------------------------------------------------------------
 
-/** What a panel needs to render its voice control button. Eligibility is decided
- *  by the single screen-level voice surface (editor) or by the panel's own
- *  attached state (terminal); the primitives come from the one shared `useVoice`. */
+/** What a panel needs to render its voice/compose launcher button. Eligibility
+ *  is decided by the single screen-level voice surface (editor) or by the panel's
+ *  own attached state (terminal). The launcher opens the one shared compose tray;
+ *  recording/stop live inside the tray. */
 export type VoiceControlState = {
   eligible: boolean
   capability: CapabilityState
   state: InteractionState
-  onStart: () => void
-  onStop: () => void
+  onOpen: () => void
 }
 
 /** The single screen-level voice surface, exposed to the editor and terminal
@@ -226,8 +226,7 @@ const INERT_VOICE_CONTROL: VoiceControlState = {
   eligible: false,
   capability: { status: 'checking' },
   state: 'idle',
-  onStart: () => {},
-  onStop: () => {},
+  onOpen: () => {},
 }
 
 export const DEFAULT_WORKSPACE_VOICE: WorkspaceVoiceSurface = {

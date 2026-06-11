@@ -78,8 +78,7 @@ export function TerminalPanel() {
           <VoiceControl
             capability={voice.terminal.capability}
             state={voice.terminal.state}
-            onStart={voice.terminal.onStart}
-            onStop={voice.terminal.onStop}
+            onOpen={voice.terminal.onOpen}
           />
         )}
       </div>
@@ -102,6 +101,7 @@ export function TerminalPanel() {
             }}
             sendText={terminalSend?.text}
             sendTextKey={terminalSend?.key}
+            onOpenCompose={voice.terminal.onOpen}
           />
         </Suspense>
       </div>

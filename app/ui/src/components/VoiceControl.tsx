@@ -1,30 +1,27 @@
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import { LoaderCircle, Mic, Square } from 'lucide-react'
 
-type VisualState = 'disabled' | 'ready' | 'recording' | 'processing'
+type VisualState = 'ready' | 'recording' | 'processing'
 
-function resolveVisualState(
-  capability: CapabilityState,
-  interaction: InteractionState,
-): VisualState {
-  if (capability.status !== 'ready') return 'disabled'
+// The header launcher for the unified compose tray. Clicking always opens the
+// tray (type / paste / record work regardless of mic availability); recording
+// and stop live inside the tray. The icon mirrors the shared voice state so the
+// header still shows ambient recording/processing feedback.
+function resolveVisualState(interaction: InteractionState): VisualState {
   switch (interaction) {
-    case 'active': return 'recording'
+    case 'recording': return 'recording'
     case 'requesting_permission':
+    case 'transcribing':
       return 'processing'
     default: return 'ready'
   }
 }
 
-function getAriaLabel(visual: VisualState, capability: CapabilityState): string {
-  if (visual === 'disabled' && capability.status === 'unavailable') {
-    return `Voice: ${capability.message}`
-  }
+function getAriaLabel(visual: VisualState): string {
   switch (visual) {
-    case 'disabled': return 'Voice unavailable'
-    case 'ready': return 'Start voice recording'
-    case 'recording': return 'Stop recording'
-    case 'processing': return 'Processing voice input'
+    case 'recording': return 'Recording — open compose'
+    case 'processing': return 'Voice processing — open compose'
+    case 'ready': return 'Open compose (type, paste, or record)'
   }
 }
 
@@ -46,11 +43,6 @@ const BASE_STYLE: React.CSSProperties = {
 }
 
 const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
-  disabled: {
-    background: 'transparent',
-    color: 'var(--sol-text-disabled)',
-    cursor: 'default',
-  },
   ready: {
     background: 'var(--sol-subtle-bg)',
     color: 'var(--sol-base01)',
@@ -66,51 +58,36 @@ const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
     background: 'var(--sol-subtle-bg)',
     color: 'var(--sol-text)',
     opacity: 1,
-    cursor: 'default',
   },
 }
 
 export function VoiceControl({
   capability,
   state,
-  onStart,
-  onStop,
+  onOpen,
 }: {
   capability: CapabilityState
   state: InteractionState
-  onStart: () => void
-  onStop: () => void
+  onOpen: () => void
 }) {
-  const visual = resolveVisualState(capability, state)
-
-  const handleClick = () => {
-    if (visual === 'recording') {
-      onStop()
-    } else if (visual === 'ready') {
-      onStart()
-    }
-  }
+  const visual = resolveVisualState(state)
+  const unavailable = capability.status === 'unavailable' ? capability.message : undefined
 
   return (
     <button
       style={{ ...BASE_STYLE, ...VISUAL_STYLES[visual] }}
-      onClick={handleClick}
-      disabled={visual === 'disabled'}
-      aria-label={getAriaLabel(visual, capability)}
+      onClick={onOpen}
+      aria-label={getAriaLabel(visual)}
+      title={unavailable}
       aria-busy={visual === 'processing'}
     >
       {visual === 'processing' ? (
-        <LoaderCircle size={14} aria-hidden="true" style={{ animation: 'spin 0.8s linear infinite' }} />
+        <LoaderCircle size={14} aria-hidden="true" style={{ animation: 'voice-spin 0.8s linear infinite' }} />
       ) : visual === 'recording' ? (
         <Square size={12} aria-hidden="true" fill="currentColor" />
       ) : (
         <Mic size={14} aria-hidden="true" />
       )}
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </button>
   )
 }

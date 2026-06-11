@@ -140,6 +140,7 @@ interface TerminalProps {
   onDisconnect?: () => void
   sendText?: string | null
   sendTextKey?: number
+  onOpenCompose?: () => void
 }
 
 function decodeOsc52Payload(payload: string): string | null {
@@ -196,7 +197,7 @@ function buildWsUrl(sessionName: string, cols: number, rows: number, palette: Te
   return `${proto}//${host}/ws/terminal/${encodeURIComponent(sessionName)}?${params.toString()}`
 }
 
-export function Terminal({ sessionName, projectName, provider, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey }: TerminalProps) {
+export function Terminal({ sessionName, projectName, provider, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey, onOpenCompose }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -736,7 +737,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
           />
         ))}
       </div>
-      {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} modifiers={modifiers} onModifierChange={setModifiers} />}
+      {isTouch && <TerminalKeyBar sendInput={sendInput} resolveInput={resolveKeyBarInput} modifiers={modifiers} onModifierChange={setModifiers} onOpenCompose={onOpenCompose} />}
     </div>
   )
 }

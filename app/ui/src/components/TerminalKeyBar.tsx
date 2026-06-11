@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Ellipsis, ClipboardPaste } from 'lucide-react'
+import { Ellipsis, SquarePen } from 'lucide-react'
 import type { MouseEvent, SyntheticEvent, TouchEvent } from 'react'
 
 type KeyDef = {
@@ -68,16 +68,15 @@ export function TerminalKeyBar({
   resolveInput,
   modifiers,
   onModifierChange,
+  onOpenCompose,
 }: {
   sendInput: (data: string) => void
   resolveInput?: (key: TerminalKeyBarKey, fallback: string) => string
   modifiers: Modifiers
   onModifierChange: (m: Modifiers) => void
+  onOpenCompose?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [pasteOpen, setPasteOpen] = useState(false)
-  const [pasteText, setPasteText] = useState('')
-  const pasteRef = useRef<HTMLTextAreaElement>(null)
   const repeatTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const repeatInterval = useRef<ReturnType<typeof setInterval> | null>(null)
   const suppressClick = useRef(false)
@@ -170,21 +169,11 @@ export function TerminalKeyBar({
     setExpanded(value => !value)
   }, [])
 
-  const handlePasteToggle = useCallback((e: React.PointerEvent) => {
+  const handleComposePointer = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setPasteOpen(v => {
-      if (!v) pasteRef.current?.focus({ preventScroll: true })
-      return !v
-    })
-  }, [])
-
-  const handlePasteSend = useCallback(() => {
-    if (!pasteText) return
-    sendInput(pasteText)
-    setPasteText('')
-    setPasteOpen(false)
-  }, [pasteText, sendInput])
+    onOpenCompose?.()
+  }, [onOpenCompose])
 
   const handleCtrlPointer = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
@@ -214,28 +203,6 @@ export function TerminalKeyBar({
 
   return (
     <div className="bg-(--sol-editor-bg) border-t border-(--sol-border)" style={{ paddingBottom: 'calc(var(--kb-safe-bottom, env(safe-area-inset-bottom)) / 2)' }} role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
-      <div className={pasteOpen ? 'px-2 py-1' : 'h-0 overflow-hidden'}>
-        <textarea
-          ref={pasteRef}
-          value={pasteText}
-          onChange={(e) => setPasteText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              handlePasteSend()
-            }
-            if (e.key === 'Escape') {
-              setPasteText('')
-              setPasteOpen(false)
-            }
-          }}
-          rows={1}
-          tabIndex={pasteOpen ? 0 : -1}
-          placeholder="Paste or type… Enter to send"
-          className="w-full max-h-[30vh] rounded bg-(--sol-subtle-bg) text-(--sol-editor-fg) font-mono text-ui-md px-2 py-1.5 resize-none outline-none"
-          style={{ fieldSizing: 'content' } as React.CSSProperties}
-        />
-      </div>
       <div className="flex gap-1 px-2 py-1">
         {PRIMARY_KEYS.map(key => (
           <button
@@ -253,30 +220,17 @@ export function TerminalKeyBar({
             {key.label}
           </button>
         ))}
-        {pasteOpen ? (
-          <button
-            type="button"
-            className={pasteText
-              ? 'flex-1 h-7 px-1.5 rounded bg-(--sol-accent) text-white font-mono text-ui-md select-none touch-manipulation'
-              : BTN_MOD_ON}
-            onClick={pasteText ? handlePasteSend : () => setPasteOpen(false)}
-            aria-label={pasteText ? 'Send text to terminal' : 'Close text input'}
-          >
-            {pasteText ? 'Send' : 'Close'}
-          </button>
-        ) : (
-          <button
-            type="button"
-            className={BTN}
-            aria-label="Open text input for paste"
-            onPointerDown={handlePasteToggle}
-            onContextMenu={preventContext}
-          >
-            <span className="inline-flex items-center justify-center">
-              <ClipboardPaste size={14} />
-            </span>
-          </button>
-        )}
+        <button
+          type="button"
+          className={BTN}
+          aria-label="Open compose (type, paste, or record)"
+          onPointerDown={handleComposePointer}
+          onContextMenu={preventContext}
+        >
+          <span className="inline-flex items-center justify-center">
+            <SquarePen size={14} />
+          </span>
+        </button>
         <button
           type="button"
           className={BTN}

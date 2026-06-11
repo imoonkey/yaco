@@ -111,16 +111,16 @@ function WorkspaceScreen() {
     editor: {
       eligible: voiceBridge.editorVoiceEligible,
       capability: voice.capability, state: voice.state,
-      onStart: voiceBridge.handleEditorVoiceStart, onStop: voice.stop,
+      onOpen: voiceBridge.openEditorCompose,
     },
     terminal: {
       eligible: voiceBridge.terminalVoiceEligible,
       capability: voice.capability, state: voice.state,
-      onStart: voiceBridge.handleTerminalVoiceStart, onStop: voice.stop,
+      onOpen: voiceBridge.openTerminalCompose,
     },
     editorInsert,
     terminalSend,
-  }), [voiceBridge, voice.capability, voice.state, voice.stop, editorInsert, terminalSend])
+  }), [voiceBridge, voice.capability, voice.state, editorInsert, terminalSend])
 
   const handleToggleTextSearch = useCallback(() => {
     actions.updateLayout({ showTextSearch: !layout.showTextSearch, showSidebar: true, showExplorer: true })
@@ -130,8 +130,8 @@ function WorkspaceScreen() {
     canTogglePreview: isPreviewable,
     editorVoiceEligible: voiceBridge.editorVoiceEligible,
     terminalVoiceEligible: voiceBridge.terminalVoiceEligible,
-    handleEditorVoiceStart: voiceBridge.handleEditorVoiceStart,
-    handleTerminalVoiceStart: voiceBridge.handleTerminalVoiceStart,
+    recordEditor: voiceBridge.recordEditor,
+    recordTerminal: voiceBridge.recordTerminal,
     voice,
     onToggleTextSearch: handleToggleTextSearch,
     onToggleShortcutSheet: () => setShowShortcutSheet(v => !v),
@@ -153,18 +153,18 @@ function WorkspaceScreen() {
       />
       <ComposeTray
         surface={voiceBridge.voiceSurface}
-        compose={voice.compose}
         state={voice.state}
         elapsedMs={voice.elapsedMs}
-        liveTranscript={voice.liveTranscript}
-        pendingCount={voice.pendingCount}
+        appendText={voice.appendText}
+        capability={voice.capability}
         errorMessage={voice.errorMessage}
-        onConfirm={voiceBridge.handleVoiceConfirm}
-        onDiscard={voice.discard}
-        onCopy={voice.copy}
-        onRetry={voice.retry}
-        onDismiss={voice.dismiss}
+        notice={voice.notice}
+        onRecord={voice.record}
         onStop={voice.stop}
+        onConfirm={voiceBridge.handleVoiceConfirm}
+        onCopy={voice.copy}
+        onClose={voice.discard}
+        onRetry={voice.retry}
       />
       {showShortcutSheet && <ShortcutSheet onClose={() => setShowShortcutSheet(false)} />}
     </WorkspaceVoiceContext.Provider>

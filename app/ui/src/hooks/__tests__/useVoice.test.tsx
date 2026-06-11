@@ -2,24 +2,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 
-type FakeVadCallbacks = {
-  onChunk: (wav: Blob, index: number) => void
-  onElapsed?: (ms: number) => void
-  onError?: (message: string) => void
-}
-
 const checkBrowserCapabilityMock = vi.fn()
-const startVadSessionMock = vi.fn()
+const startCaptureSessionMock = vi.fn()
 
-vi.mock('../voiceVad', () => ({
+vi.mock('../voiceCapture', () => ({
   checkBrowserCapability: () => checkBrowserCapabilityMock(),
-  startVadSession: (...args: unknown[]) => startVadSessionMock(...args),
+  startCaptureSession: (...args: unknown[]) => startCaptureSessionMock(...args),
+  filenameForMime: () => 'take.webm',
   MAX_RECORDING_SECONDS: 300,
 }))
 
 const { useVoice } = await import('../useVoice')
 
-let callbacks: FakeVadCallbacks
 let fakeSession: { stop: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> }
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
@@ -30,12 +24,7 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 function okStatus() {
-  return jsonResponse({
-    enabled: true,
-    sttModel: 'whisper-large-v3-turbo',
-    formatterModel: 'llama',
-    maxUploadBytes: 20_000_000,
-  })
+  return jsonResponse({ enabled: true, sttModel: 'whisper-large-v3-turbo', maxUploadBytes: 20_000_000 })
 }
 
 async function renderReadyVoice() {
@@ -44,26 +33,23 @@ async function renderReadyVoice() {
   return hook
 }
 
-async function startReady(hook: ReturnType<typeof renderHook<ReturnType<typeof useVoice>, unknown>>) {
-  act(() => hook.result.current.start({ surface: 'editor', filePath: 'src/app.ts' }))
-  await waitFor(() => expect(hook.result.current.state).toBe('active'))
+async function recordThenStop(hook: ReturnType<typeof renderHook<ReturnType<typeof useVoice>, unknown>>) {
+  act(() => hook.result.current.record({ surface: 'editor', filePath: 'src/app.ts' }))
+  await waitFor(() => expect(hook.result.current.state).toBe('recording'))
+  act(() => hook.result.current.stop())
 }
 
-function setupVadSession() {
-  callbacks = undefined as unknown as FakeVadCallbacks
+function setupCapture(stopBlob: Blob | null = new Blob(['audio'], { type: 'audio/webm' })) {
   fakeSession = {
-    stop: vi.fn(async () => {}),
+    stop: vi.fn(async () => stopBlob),
     release: vi.fn(async () => {}),
   }
-  startVadSessionMock.mockImplementation(async (_maxBytes: number, cbs: FakeVadCallbacks) => {
-    callbacks = cbs
-    return fakeSession
-  })
+  startCaptureSessionMock.mockImplementation(async () => fakeSession)
 }
 
 beforeEach(() => {
   checkBrowserCapabilityMock.mockReturnValue({ ok: true })
-  setupVadSession()
+  setupCapture()
 })
 
 afterEach(() => {
@@ -73,152 +59,88 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('useVoice streaming flow', () => {
-  it('transcribes chunks live, stops VAD, then formats once', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+describe('useVoice single-take flow', () => {
+  it('records one take, transcribes once, formats, and appends', async () => {
+    let transcribeCalls = 0
+    let formatCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/voice/status')) return okStatus()
-      if (url.endsWith('/voice/transcribe')) return jsonResponse({ text: 'hello world' })
-      if (url.endsWith('/voice/format')) return jsonResponse({
-        displayText: 'Hello world.',
-        formattingStatus: 'formatted',
-      })
+      if (url.endsWith('/voice/transcribe')) { transcribeCalls++; return jsonResponse({ text: 'hello world' }) }
+      if (url.endsWith('/voice/format')) { formatCalls++; return jsonResponse({ displayText: 'Hello world.', formattingStatus: 'formatted' }) }
       throw new Error(`unexpected fetch ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    }))
 
     const hook = await renderReadyVoice()
-    await startReady(hook)
+    await recordThenStop(hook)
 
-    act(() => callbacks.onChunk(new Blob(['wav'], { type: 'audio/wav' }), 0))
-    await waitFor(() => expect(hook.result.current.liveTranscript).toBe('hello world'))
-    expect(hook.result.current.pendingCount).toBe(0)
-
-    act(() => hook.result.current.stop())
-    await waitFor(() => expect(fakeSession.stop).toHaveBeenCalledTimes(1))
     await waitFor(() => expect(hook.result.current.state).toBe('composing'))
-
     expect(fakeSession.release).toHaveBeenCalledTimes(1)
-    expect(hook.result.current.compose).toEqual({
-      rawText: 'hello world',
-      displayText: 'Hello world.',
-      formattingStatus: 'formatted',
-    })
-    expect(fetchMock.mock.calls.filter(call => String(call[0]).endsWith('/voice/format'))).toHaveLength(1)
+    expect(hook.result.current.appendText?.text).toBe('Hello world.')
+    expect(transcribeCalls).toBe(1)
+    expect(formatCalls).toBe(1)
   })
 
-  it('drops a chunk on /transcribe timeout and fails only after finalization sees all chunks failed', async () => {
-    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input)
-      if (url.endsWith('/voice/status')) return Promise.resolve(okStatus())
-      if (url.endsWith('/voice/transcribe')) {
-        return new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
-        })
-      }
-      throw new Error(`unexpected fetch ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    const hook = await renderReadyVoice()
-    await startReady(hook)
-
-    vi.useFakeTimers()
-    act(() => callbacks.onChunk(new Blob(['wav'], { type: 'audio/wav' }), 0))
-    expect(hook.result.current.pendingCount).toBe(1)
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000)
-    })
-    expect(hook.result.current.pendingCount).toBe(0)
-
-    act(() => hook.result.current.stop())
-    await act(async () => {
-      await Promise.resolve()
-    })
-    expect(hook.result.current.state).toBe('error')
-    expect(hook.result.current.errorMessage).toBe('Transcription failed. Try again.')
-  })
-
-  it('honors retry-after on 429 before retrying a chunk', async () => {
+  it('keeps the cached take and re-sends it on Retry after a transcribe failure', async () => {
     let transcribeCalls = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/voice/status')) return okStatus()
       if (url.endsWith('/voice/transcribe')) {
-        transcribeCalls += 1
-        if (transcribeCalls === 1) {
-          return jsonResponse({ error: 'rate limit' }, { status: 429, headers: { 'retry-after': '1' } })
-        }
-        return jsonResponse({ text: 'after retry' })
+        transcribeCalls++
+        return transcribeCalls === 1
+          ? jsonResponse({ error: 'boom' }, { status: 500 })
+          : jsonResponse({ text: 'recovered' })
       }
+      if (url.endsWith('/voice/format')) return jsonResponse({ displayText: 'Recovered.', formattingStatus: 'formatted' })
       throw new Error(`unexpected fetch ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    }))
 
     const hook = await renderReadyVoice()
-    await startReady(hook)
+    await recordThenStop(hook)
+    await waitFor(() => expect(hook.result.current.state).toBe('error'))
 
-    vi.useFakeTimers()
-    act(() => callbacks.onChunk(new Blob(['wav'], { type: 'audio/wav' }), 0))
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(transcribeCalls).toBe(1)
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(999)
-    })
-    expect(transcribeCalls).toBe(1)
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1)
-    })
-    vi.useRealTimers()
-    await waitFor(() => expect(hook.result.current.liveTranscript).toBe('after retry'))
+    act(() => hook.result.current.retry())
+    await waitFor(() => expect(hook.result.current.state).toBe('composing'))
+    expect(hook.result.current.appendText?.text).toBe('Recovered.')
+    expect(transcribeCalls).toBe(2)
   })
 
-  it('throttles /transcribe to 20 requests per rolling minute', async () => {
-    let transcribeCalls = 0
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  it('falls back to the raw transcript when /format fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/voice/status')) return okStatus()
-      if (url.endsWith('/voice/transcribe')) {
-        transcribeCalls += 1
-        return jsonResponse({ text: `chunk ${transcribeCalls}` })
-      }
+      if (url.endsWith('/voice/transcribe')) return jsonResponse({ text: 'raw words here' })
+      if (url.endsWith('/voice/format')) return jsonResponse({ error: 'down' }, { status: 500 })
       throw new Error(`unexpected fetch ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchMock)
+    }))
 
     const hook = await renderReadyVoice()
-    await startReady(hook)
-
-    vi.useFakeTimers()
-    act(() => {
-      for (let i = 0; i < 21; i++) {
-        callbacks.onChunk(new Blob(['wav'], { type: 'audio/wav' }), i)
-      }
-    })
-    await act(async () => {
-      await Promise.resolve()
-      await Promise.resolve()
-    })
-    expect(transcribeCalls).toBe(20)
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_001)
-    })
-    expect(transcribeCalls).toBe(21)
+    await recordThenStop(hook)
+    await waitFor(() => expect(hook.result.current.state).toBe('composing'))
+    expect(hook.result.current.appendText?.text).toBe('raw words here')
   })
 
-  it('releases a VAD session that resolves after unmount', async () => {
+  it('shows a no-speech notice for an empty take without calling /transcribe', async () => {
+    setupCapture(null) // stop() yields nothing recorded
+    let transcribeCalls = 0
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/voice/status')) return okStatus()
+      if (url.endsWith('/voice/transcribe')) { transcribeCalls++; return jsonResponse({ text: '' }) }
+      throw new Error(`unexpected fetch ${url}`)
+    }))
+
+    const hook = await renderReadyVoice()
+    await recordThenStop(hook)
+    await waitFor(() => expect(hook.result.current.state).toBe('composing'))
+    expect(hook.result.current.notice).toBe('No speech detected.')
+    expect(transcribeCalls).toBe(0)
+  })
+
+  it('releases a capture session that resolves after unmount', async () => {
     let resolveSession: (session: typeof fakeSession) => void = () => {}
-    startVadSessionMock.mockImplementation((_maxBytes: number, cbs: FakeVadCallbacks) => {
-      callbacks = cbs
-      return new Promise(resolve => { resolveSession = resolve })
-    })
+    startCaptureSessionMock.mockImplementation(() => new Promise(resolve => { resolveSession = resolve }))
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url.endsWith('/voice/status')) return okStatus()
@@ -226,7 +148,7 @@ describe('useVoice streaming flow', () => {
     }))
 
     const hook = await renderReadyVoice()
-    act(() => hook.result.current.start({ surface: 'terminal' }))
+    act(() => hook.result.current.record({ surface: 'terminal', sessionName: 's1' }))
     await waitFor(() => expect(hook.result.current.state).toBe('requesting_permission'))
 
     hook.unmount()
@@ -234,7 +156,6 @@ describe('useVoice streaming flow', () => {
       resolveSession(fakeSession)
       await Promise.resolve()
     })
-
     await waitFor(() => expect(fakeSession.release).toHaveBeenCalledTimes(1))
   })
 })

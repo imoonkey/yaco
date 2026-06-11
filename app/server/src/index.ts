@@ -75,13 +75,9 @@ const MIME_TYPES = new Map([
   ['.js', 'text/javascript; charset=utf-8'],
   ['.json', 'application/json; charset=utf-8'],
   ['.mjs', 'text/javascript; charset=utf-8'],
-  ['.onnx', 'application/octet-stream'],
   ['.png', 'image/png'],
   ['.svg', 'image/svg+xml'],
   ['.txt', 'text/plain; charset=utf-8'],
-  // application/wasm is mandatory for WebAssembly.instantiateStreaming — the
-  // self-hosted VAD onnxruntime SIMD runtime under /assets/vad/ relies on it.
-  ['.wasm', 'application/wasm'],
   ['.webmanifest', 'application/manifest+json; charset=utf-8'],
   ['.woff', 'font/woff'],
   ['.woff2', 'font/woff2'],

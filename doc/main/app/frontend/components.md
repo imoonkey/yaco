@@ -314,15 +314,15 @@ xterm.js wrapper with WebSocket PTY connection.
 
 Touch-only key bar for terminal special keys missing from virtual keyboards.
 
-**Props**: `{ sendInput, resolveInput?, modifiers: Modifiers, onModifierChange: (m: Modifiers) => void }`
+**Props**: `{ sendInput, resolveInput?, modifiers: Modifiers, onModifierChange: (m: Modifiers) => void, onOpenCompose? }`
 
 **Responsibilities**:
-- Primary row: Esc, Tab, PgU, PgD, ↵, arrows, paste toggle (ClipboardPaste icon), expand toggle (···)
+- Primary row: Esc, Tab, PgU, PgD, ↵, arrows, compose launcher (SquarePen icon), expand toggle (···)
 - Secondary row (expandable): Ctrl, ⇧, ⌘ sticky modifier toggles (blue highlight, one-shot auto-clear), ^C, ^D, ^B, ^O, ^A, ^E, ^U, ^K, ^W
 - Hold-to-repeat on arrow keys (400ms delay, 80ms interval)
 - Dynamic arrow key resolution (CSI vs SS3 via resolveInput)
 - Modifier state managed by parent Terminal component (shared with `onData` interception)
-- Paste/type input: always-mounted textarea (h-0 when closed) for pasting text into terminal, bypassing xterm's broken mobile paste. Sync `focus({ preventScroll: true })` for mobile keyboard activation. Paste button becomes Send/Close contextually.
+- Compose launcher: `onOpenCompose()` opens the shared `ComposeTray` (type / paste / record → Insert), replacing the old inline paste textarea — paste/type now lives in the one unified tray for both terminal and editor.
 - All buttons use `flex-1` for adaptive full-width layout
 
 ## Supporting Components
@@ -333,10 +333,10 @@ Touch-only key bar for terminal special keys missing from virtual keyboards.
 
 Reusable dialog/panel chrome that extracts shared overlay, glass card, animation, accessibility, and dismissal behavior. Used by ConfirmDialog, AddProjectDialog, WorkspaceSearch (FileSearch), ComposeTray, and NotificationPanel.
 
-**Props**: `{ onClose, children, overlay?, overlayBg?, overlayClassName?, className?, style?, animation?, autoFocusRef?, restoreFocus?, ariaLabelledBy?, ariaDescribedBy? }`
+**Props**: `{ onClose, children, overlay?, overlayBg?, overlayClassName?, className?, style?, animation?, autoFocusRef?, restoreFocus?, dismissOnOverlayClick?, ariaLabelledBy?, ariaDescribedBy? }`
 
 **Responsibilities**:
-- Full-screen overlay with click-outside dismissal (overlay mode) or document-level click-outside (panel mode)
+- Full-screen overlay with click-outside dismissal (overlay mode) or document-level click-outside (panel mode). `dismissOnOverlayClick` (default `true`) disables the overlay click-to-close — `ComposeTray` sets it `false` so a stray tap can't drop a draft (X / Esc only).
 - Glass card styling: `--sol-glass-bg` background, border, elevation-3 shadow, backdrop blur
 - Animations: no enter animation for dialogs (instant, IDE-first), exit animation (`dialog-exit`). Panels use `panel-slide-in`/`panel-slide-out`.
 - Stack-safe keyboard handling: module-level `shellStack` array ensures only the topmost shell handles Escape/Tab (stacked dialogs close front-to-back)

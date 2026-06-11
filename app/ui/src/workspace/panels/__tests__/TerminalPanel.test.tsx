@@ -99,9 +99,9 @@ describe('TerminalPanel — attached session', () => {
     expect(screen.getByText('claude-1')).toBeTruthy()
     // claude provider → the claude symbol img (see ProviderIcon / providerUi).
     expect(container.querySelector('img[src="/claude-code-symbol.svg"]')).toBeTruthy()
-    // Voice control renders; jsdom has no mic capability, so it is disabled. The
-    // exact label is the capability message, so match the stable "Voice" prefix.
-    expect(screen.getByRole('button', { name: /^Voice/ })).toBeTruthy()
+    // The compose launcher renders whenever a session is attached; clicking it
+    // opens the shared ComposeTray (type / paste / record).
+    expect(screen.getByRole('button', { name: /Open compose/ })).toBeTruthy()
   })
 
   it('lazy-loads the terminal wired to the session/project/provider', async () => {

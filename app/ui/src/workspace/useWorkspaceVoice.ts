@@ -27,25 +27,38 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
 
   const [voiceSurface, setVoiceSurface] = useState<'editor' | 'terminal'>('terminal')
 
-  // Mirror the run's frozen target surface for display. Synced from voice.target;
-  // never toggled mid-run — the insertion target is frozen when the run starts.
+  // Mirror the run's frozen target surface for the tray header. Synced from
+  // voice.target; never toggled mid-run.
   const [prevSurface, setPrevSurface] = useState(voice.target?.surface)
   if (voice.target?.surface && voice.target.surface !== prevSurface) {
     setPrevSurface(voice.target.surface)
     setVoiceSurface(voice.target.surface)
   }
 
-  const handleEditorVoiceStart = useCallback(() => {
+  // Open the compose tray (idle: type / paste, with the in-tray Record button).
+  const openEditorCompose = useCallback(() => {
     if (!activeFilePath) return
-    voice.start({ surface: 'editor', filePath: activeFilePath })
+    voice.open({ surface: 'editor', filePath: activeFilePath })
   }, [voice, activeFilePath])
 
-  const handleTerminalVoiceStart = useCallback(() => {
+  const openTerminalCompose = useCallback(() => {
     if (!attachedSession) return
-    voice.start({ surface: 'terminal', sessionName: attachedSession })
+    voice.open({ surface: 'terminal', sessionName: attachedSession })
   }, [voice, attachedSession])
 
-  // Route confirm by the run's FROZEN target, not a mutable surface — audio
+  // Start a take directly into a surface (opens the tray + records). Used by the
+  // F5 / Ctrl+Shift+V quick-record path from idle.
+  const recordEditor = useCallback(() => {
+    if (!activeFilePath) return
+    voice.record({ surface: 'editor', filePath: activeFilePath })
+  }, [voice, activeFilePath])
+
+  const recordTerminal = useCallback(() => {
+    if (!attachedSession) return
+    voice.record({ surface: 'terminal', sessionName: attachedSession })
+  }, [voice, attachedSession])
+
+  // Route Insert by the run's FROZEN target, not a mutable surface — text
   // captured for the editor can never land in the terminal.
   const handleVoiceConfirm = useCallback((text: string) => {
     const target = voice.target
@@ -61,9 +74,10 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     voice.confirm(text)
   }, [voice, activeFilePath, attachedSession, setEditorInsert, setTerminalSend, setFocusTarget])
 
-  // Detect target loss while composing
+  // Detect target loss while the tray is open with a target.
   useEffect(() => {
-    if (voice.state !== 'composing' || !voice.target) return
+    if (!voice.target) return
+    if (voice.state === 'idle') return
     const t = voice.target
     if (t.surface === 'editor' && (!activeFilePath || activeFilePath !== t.filePath)) {
       voice.markTargetLost()
@@ -77,8 +91,10 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     voiceSurface,
     editorVoiceEligible,
     terminalVoiceEligible,
-    handleEditorVoiceStart,
-    handleTerminalVoiceStart,
+    openEditorCompose,
+    openTerminalCompose,
+    recordEditor,
+    recordTerminal,
     handleVoiceConfirm,
   }
 }

@@ -2,15 +2,6 @@
 
 export type VoiceSurface = 'editor' | 'terminal'
 
-export type FormattingStatus = 'formatted' | 'fallback_raw' | 'empty'
-
-export interface ComposeData {
-  rawText: string
-  displayText: string
-  formattingStatus: FormattingStatus
-  warning?: string
-}
-
 export interface VoiceTargetContext {
   surface: VoiceSurface
   filePath?: string
@@ -20,67 +11,47 @@ export interface VoiceTargetContext {
 export type InteractionState =
   | 'idle'
   | 'requesting_permission'
-  | 'active'
+  | 'recording'
+  | 'transcribing'
   | 'composing'
   | 'recoverable'
   | 'error'
 
-// --- Segment: one coalesced ~10s transcription slot ---
-// text === null  -> /transcribe in flight
-// text === ''    -> chunk dropped / timed out / failed
-// text === '...' -> resolved transcript
-export interface Segment {
-  index: number
-  text: string | null
-}
-
 // --- Phase (discriminated union state) ---
 //
-// The whole capture lifecycle — listening, finishing, formatting — lives in a
-// single `active` phase. A final utterance VAD flushes *after* Stop is just one
-// more segment event, never a cross-state race.
+// Single take, no segmentation. A take is one continuous recording the user
+// ends (Stop / F5 / the session cap); it is transcribed once, then its text is
+// appended to the compose draft. The tray is open for every phase except `idle`,
+// so the draft (owned by the tray) survives recording → transcribing → composing
+// → error without unmounting. `targetLost` rides along so a mid-run detach is
+// still known once we reach `composing` (where Insert is gated).
 export type VoicePhase =
   | { phase: 'idle'; notice: string | null }
-  | { phase: 'requesting_permission'; target: VoiceTargetContext; runId: number }
-  | {
-      phase: 'active'
-      target: VoiceTargetContext
-      runId: number
-      startedAt: number
-      segments: Segment[]
-      nextIndex: number
-      closedForInput: boolean // Stop pressed — no more user speech accepted
-      vadStopped: boolean // vad.stop() resolved — every final chunk registered
-      pendingCount: number // chunks still in flight (null slots)
-      formatting: boolean // /format request in flight (gate already fired)
-      targetLost: boolean // insertion target vanished mid-run
-    }
-  | { phase: 'composing'; target: VoiceTargetContext; compose: ComposeData; targetLost: boolean }
-  | { phase: 'error'; message: string; retryTarget: VoiceTargetContext | null }
+  | { phase: 'requesting_permission'; target: VoiceTargetContext; runId: number; targetLost: boolean }
+  | { phase: 'recording'; target: VoiceTargetContext; runId: number; startedAt: number; targetLost: boolean }
+  | { phase: 'transcribing'; target: VoiceTargetContext; runId: number; targetLost: boolean }
+  | { phase: 'composing'; target: VoiceTargetContext; targetLost: boolean; notice: string | null }
+  | { phase: 'error'; target: VoiceTargetContext; message: string; targetLost: boolean }
 
 // --- Events ---
 // Every event born from an async operation carries `runId` and is dropped on
-// mismatch (stale transcription, late flush, aborted run, doubled permission).
-// TARGET_LOST has no runId on purpose: it is dispatched synchronously from a
-// React effect observing the live phase, so it has no async boundary that could
-// carry a stale run — it only ever flags the current active/composing run.
+// mismatch (stale transcription, aborted run, doubled permission). TARGET_LOST
+// has no runId: it is dispatched synchronously from a React effect observing the
+// live phase, so it can only flag the current run.
 export type VoiceEvent =
-  | { type: 'START'; target: VoiceTargetContext }
+  | { type: 'OPEN'; target: VoiceTargetContext } // open the tray idle (type / paste)
+  | { type: 'START_RECORD'; target: VoiceTargetContext; runId: number } // begin a take
   | { type: 'PERMISSION_GRANTED'; startedAt: number; runId: number }
   | { type: 'PERMISSION_DENIED'; message: string; runId: number }
-  | { type: 'SEGMENT_PENDING'; index: number; runId: number }
-  | { type: 'SEGMENT_RESOLVED'; index: number; text: string; runId: number }
-  | { type: 'STOP' }
-  | { type: 'VAD_STOPPED'; runId: number }
-  | { type: 'START_FORMAT' }
-  | { type: 'COMPOSE_READY'; compose: ComposeData; runId: number }
-  | { type: 'NO_SPEECH'; message: string; runId: number }
+  | { type: 'STOP'; runId: number } // user ended the take → transcribe
+  | { type: 'TRANSCRIBED'; runId: number } // take's text appended → back to composing
+  | { type: 'NO_SPEECH'; message: string; runId: number } // empty take → composing notice
   | { type: 'FAIL'; message: string; runId: number }
+  | { type: 'RETRY'; runId: number } // re-run from the cached blob → transcribing
   | { type: 'TARGET_LOST' }
   | { type: 'CONFIRM' }
-  | { type: 'DISCARD' }
   | { type: 'COPY' }
-  | { type: 'DISMISS' }
+  | { type: 'DISCARD' } // also the close (X / Esc) path from any open phase
 
 // --- Reducer state wraps phase + monotonic run counter ---
 
@@ -94,38 +65,15 @@ export const INITIAL_STATE: VoiceReducerState = {
   runCounter: 0,
 }
 
-// --- Finalize gate (derived, not awaited) ---
-//
-// The hook does not "await stop then drain." It dispatches STOP, calls
-// vad.stop() (whose flush synchronously registers a SEGMENT_PENDING before the
-// promise resolves), then dispatches VAD_STOPPED. Finalization is derived: a
-// late chunk can never slip past the snapshot because it bumped pendingCount
-// before VAD_STOPPED, so the gate simply has not opened yet.
-//
-// The reducer treats this as the single source of truth: START_FORMAT,
-// NO_SPEECH and COMPOSE_READY are accepted only when the gate (or, for
-// COMPOSE_READY, the formatting stage the gate opens) agrees — no event can
-// bypass it.
-export type Finalization =
-  | { kind: 'pending' } // gate not open (or already formatting)
-  | { kind: 'no_speech' } // zero chunks ever detected
-  | { kind: 'failed' } // >=1 chunk but all dropped/failed
-  | { kind: 'format'; text: string } // assemble joined transcript
-
-export function selectFinalization(p: VoicePhase): Finalization {
-  if (p.phase !== 'active' || p.formatting) return { kind: 'pending' }
-  if (!p.closedForInput || !p.vadStopped || p.pendingCount !== 0) return { kind: 'pending' }
-  if (p.segments.length === 0) return { kind: 'no_speech' }
-  const text = joinSegments(p.segments)
-  return text.length === 0 ? { kind: 'failed' } : { kind: 'format', text }
-}
-
-function joinSegments(segments: Segment[]): string {
-  return segments
-    .map(s => s.text ?? '')
-    .filter(t => t.length > 0)
-    .join(' ')
-    .trim()
+// A take or retry opens a new run. The hook is the sole run-id generator and
+// passes the id in the event, so the reducer just stores it — they can never
+// desync even if a duplicate START_RECORD is dropped on the wrong phase.
+function beginRun(
+  target: VoiceTargetContext,
+  targetLost: boolean,
+  runId: number,
+): VoiceReducerState {
+  return { runCounter: runId, phase: { phase: 'requesting_permission', target, runId, targetLost } }
 }
 
 // --- Reducer ---
@@ -134,123 +82,87 @@ export function voiceReducer(state: VoiceReducerState, event: VoiceEvent): Voice
   const { phase } = state
 
   switch (event.type) {
-    case 'START': {
+    case 'OPEN':
       if (phase.phase !== 'idle') return state
-      const runId = state.runCounter + 1
-      return {
-        runCounter: runId,
-        phase: { phase: 'requesting_permission', target: event.target, runId },
+      return { ...state, phase: { phase: 'composing', target: event.target, targetLost: false, notice: null } }
+
+    case 'START_RECORD':
+      if (phase.phase === 'idle') return beginRun(event.target, false, event.runId)
+      if (phase.phase === 'composing' || phase.phase === 'error') {
+        // Target is frozen for the compose session; ignore the event's target.
+        return beginRun(phase.target, phase.targetLost, event.runId)
       }
-    }
+      return state
 
     case 'PERMISSION_GRANTED':
       if (phase.phase !== 'requesting_permission' || event.runId !== phase.runId) return state
       return {
         ...state,
         phase: {
-          phase: 'active',
+          phase: 'recording',
           target: phase.target,
           runId: phase.runId,
           startedAt: event.startedAt,
-          segments: [],
-          nextIndex: 0,
-          closedForInput: false,
-          vadStopped: false,
-          pendingCount: 0,
-          formatting: false,
-          targetLost: false,
+          targetLost: phase.targetLost,
         },
       }
 
     case 'PERMISSION_DENIED':
       if (phase.phase !== 'requesting_permission' || event.runId !== phase.runId) return state
-      return { ...state, phase: { phase: 'error', message: event.message, retryTarget: phase.target } }
-
-    case 'SEGMENT_PENDING': {
-      // Accepted even after Stop (closedForInput): the flushed remainder is a
-      // canonical segment. Rejected only once we have committed to formatting.
-      if (phase.phase !== 'active' || phase.formatting || event.runId !== phase.runId) return state
-      if (phase.segments.some(s => s.index === event.index)) return state
-      return {
-        ...state,
-        phase: {
-          ...phase,
-          segments: [...phase.segments, { index: event.index, text: null }],
-          nextIndex: Math.max(phase.nextIndex, event.index + 1),
-          pendingCount: phase.pendingCount + 1,
-        },
-      }
-    }
-
-    case 'SEGMENT_RESOLVED': {
-      if (phase.phase !== 'active' || event.runId !== phase.runId) return state
-      const slot = phase.segments.find(s => s.index === event.index)
-      if (!slot || slot.text !== null) return state // unknown or already filled
-      return {
-        ...state,
-        phase: {
-          ...phase,
-          segments: phase.segments.map(s => (s.index === event.index ? { ...s, text: event.text } : s)),
-          pendingCount: phase.pendingCount - 1,
-        },
-      }
-    }
+      return { ...state, phase: { phase: 'error', target: phase.target, message: event.message, targetLost: phase.targetLost } }
 
     case 'STOP':
-      if (phase.phase !== 'active' || phase.closedForInput) return state
-      return { ...state, phase: { ...phase, closedForInput: true } }
+      if (phase.phase !== 'recording' || event.runId !== phase.runId) return state
+      return { ...state, phase: { phase: 'transcribing', target: phase.target, runId: phase.runId, targetLost: phase.targetLost } }
 
-    case 'VAD_STOPPED':
-      if (phase.phase !== 'active' || phase.vadStopped || event.runId !== phase.runId) return state
-      return { ...state, phase: { ...phase, vadStopped: true } }
-
-    case 'START_FORMAT':
-      // Cannot bypass the gate: only valid when finalization derives `format`.
-      if (phase.phase !== 'active' || selectFinalization(phase).kind !== 'format') return state
-      return { ...state, phase: { ...phase, formatting: true } }
-
-    case 'COMPOSE_READY':
-      // The /format result only lands while formatting is in flight, which is
-      // reachable solely through the gate via START_FORMAT.
-      if (phase.phase !== 'active' || event.runId !== phase.runId || !phase.formatting) return state
-      return {
-        ...state,
-        phase: { phase: 'composing', target: phase.target, compose: event.compose, targetLost: phase.targetLost },
-      }
+    case 'TRANSCRIBED':
+      if (phase.phase !== 'transcribing' || event.runId !== phase.runId) return state
+      return { ...state, phase: { phase: 'composing', target: phase.target, targetLost: phase.targetLost, notice: null } }
 
     case 'NO_SPEECH':
-      // Cannot bypass the gate: only valid when finalization derives `no_speech`.
-      if (phase.phase !== 'active' || event.runId !== phase.runId) return state
-      if (selectFinalization(phase).kind !== 'no_speech') return state
-      return { ...state, phase: { phase: 'idle', notice: event.message } }
+      if (phase.phase !== 'transcribing' || event.runId !== phase.runId) return state
+      return { ...state, phase: { phase: 'composing', target: phase.target, targetLost: phase.targetLost, notice: event.message } }
 
     case 'FAIL':
-      // FAIL has several legitimate sources (permission, mid-run network/abort,
-      // the `failed` finalization branch, /format failure), so it is not tied
-      // to the gate — only run-isolated.
-      if (phase.phase !== 'active' && phase.phase !== 'requesting_permission') return state
+      if (
+        phase.phase !== 'requesting_permission' &&
+        phase.phase !== 'recording' &&
+        phase.phase !== 'transcribing'
+      ) return state
       if (event.runId !== phase.runId) return state
-      return { ...state, phase: { phase: 'error', message: event.message, retryTarget: phase.target } }
+      return { ...state, phase: { phase: 'error', target: phase.target, message: event.message, targetLost: phase.targetLost } }
+
+    case 'RETRY':
+      if (phase.phase !== 'error') return state
+      return {
+        runCounter: event.runId,
+        phase: { phase: 'transcribing', target: phase.target, runId: event.runId, targetLost: phase.targetLost },
+      }
 
     case 'TARGET_LOST':
-      if (phase.phase === 'active' || phase.phase === 'composing') {
-        return { ...state, phase: { ...phase, targetLost: true } }
-      }
-      return state
+      // Idempotent: re-flagging an already-lost run must return the SAME state,
+      // else the detection effect (which re-runs every render) loops forever.
+      if (phase.phase === 'idle') return state
+      if (phase.targetLost) return state
+      return { ...state, phase: { ...phase, targetLost: true } }
 
     case 'CONFIRM':
-    case 'DISCARD':
-      if (phase.phase !== 'composing') return state
+      // Insert the draft from composing, or from error (a failed take must not
+      // block inserting the text already gathered).
+      if (phase.phase !== 'composing' && phase.phase !== 'error') return state
       return { ...state, phase: { phase: 'idle', notice: null } }
 
     case 'COPY':
+      // Copy is a side action; it only closes the tray when the target is gone
+      // (Insert is impossible, so Copy is the rescue).
       if (phase.phase === 'composing' && phase.targetLost) {
         return { ...state, phase: { phase: 'idle', notice: null } }
       }
       return state
 
-    case 'DISMISS':
-      if (phase.phase !== 'error') return state
+    case 'DISCARD':
+      // The close (X / Esc / Discard) path from any open phase.
+      if (phase.phase === 'idle') return state
       return { ...state, phase: { phase: 'idle', notice: null } }
 
     default:
@@ -265,10 +177,6 @@ export function selectInteractionState(p: VoicePhase): InteractionState {
   return p.phase
 }
 
-export function selectCompose(p: VoicePhase): ComposeData | null {
-  return p.phase === 'composing' ? p.compose : null
-}
-
 export function selectTarget(p: VoicePhase): VoiceTargetContext | null {
   return 'target' in p ? p.target : null
 }
@@ -278,17 +186,7 @@ export function selectErrorMessage(p: VoicePhase): string | null {
 }
 
 export function selectNotice(p: VoicePhase): string | null {
-  return p.phase === 'idle' ? p.notice : null
-}
-
-export function selectSegments(p: VoicePhase): Segment[] {
-  return p.phase === 'active' ? p.segments : []
-}
-
-export function selectLiveTranscript(p: VoicePhase): string {
-  return p.phase === 'active' ? joinSegments(p.segments) : ''
-}
-
-export function selectPendingCount(p: VoicePhase): number {
-  return p.phase === 'active' ? p.pendingCount : 0
+  if (p.phase === 'idle') return p.notice
+  if (p.phase === 'composing') return p.notice
+  return null
 }

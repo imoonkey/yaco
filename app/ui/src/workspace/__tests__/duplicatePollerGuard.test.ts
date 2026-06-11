@@ -38,10 +38,9 @@ vi.mock('../../components/ComposeTray', () => ({ ComposeTray: () => null }))
 vi.mock('../../hooks/useVoice', () => ({
   useVoice: () => ({
     capability: { status: 'unavailable' }, state: 'idle', elapsedMs: 0,
-    liveTranscript: '', pendingCount: 0, compose: null, target: null,
-    errorMessage: null, noSpeechMessage: null,
-    start: () => {}, stop: () => {}, confirm: () => {}, discard: () => {},
-    copy: () => {}, dismiss: () => {}, retry: () => {}, markTargetLost: () => {},
+    appendText: null, target: null, errorMessage: null, notice: null,
+    open: () => {}, record: () => {}, stop: () => {}, retry: () => {},
+    confirm: () => {}, copy: () => {}, discard: () => {}, markTargetLost: () => {},
   }),
 }))
 

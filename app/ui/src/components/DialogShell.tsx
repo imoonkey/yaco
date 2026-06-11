@@ -43,6 +43,7 @@ export function DialogShell({
   animation = 'dialog',
   autoFocusRef,
   restoreFocus = true,
+  dismissOnOverlayClick = true,
   ariaLabelledBy,
   ariaDescribedBy,
 }: {
@@ -56,6 +57,7 @@ export function DialogShell({
   animation?: 'dialog' | 'panel'
   autoFocusRef?: RefObject<HTMLElement | null>
   restoreFocus?: boolean
+  dismissOnOverlayClick?: boolean
   ariaLabelledBy?: string
   ariaDescribedBy?: string
 }) {
@@ -173,7 +175,7 @@ export function DialogShell({
         backgroundColor: overlayBg,
         animation: exiting ? 'overlay-exit 200ms ease-in both' : 'overlay-enter 200ms ease-out',
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) requestClose() }}
+      onClick={(e) => { if (dismissOnOverlayClick && e.target === e.currentTarget) requestClose() }}
     >
       {card}
     </div>

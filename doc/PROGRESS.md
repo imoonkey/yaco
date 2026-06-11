@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-11: Voice — revert streaming segmentation to a single-take unified compose tray
+
+**What changed:**
+- **Single take, no segmentation.** Replaced the mid-recording VAD chunker (`voiceVad.ts` + `VadCoalescer` + the `segments[]`/`pendingCount`/finalization-gate machinery in `voiceStateMachine.ts`) with `voiceCapture.ts`: one continuous take via the native `MediaRecorder`, ended by the user (Stop / F5 / the 300s cap), transcribed once → formatted once → appended to the compose draft. Multiple takes append in sequence; the reducer is now `idle → requesting_permission → recording → transcribing → composing/error`.
+- **Dropped the neural VAD.** Removed `@ricky0123/vad-web` + `onnxruntime-web` and their self-hosted assets (~13 MB, 11 MB of it the uncompressed onnxruntime wasm — the ~10s first-load) — the `viteStaticCopy` block + `__VAD_ASSET_BASE__` define in `vite.config.ts` and the `.wasm`/`.onnx` MIME entries in the server. Recording now starts instantly. Capture sits behind a `startCaptureSession()` seam so a silence auto-stop (an `AnalyserNode` RMS watcher calling the same `stop()`) can be added later without touching the state machine/hook/tray.
+- **Unified compose tray.** `ComposeTray` is now one surface for type / paste / record → Insert, shared by desktop headers (`VoiceControl` → `onOpen`) and the mobile key bar (`TerminalKeyBar`'s inline paste textarea replaced by a compose launcher → `onOpenCompose`). The draft lives in the tray; the hook emits `appendText:{text,key}`.
+- **IME-safe send + sticky close.** Send is **⌘/Ctrl+Enter** (plain Enter is a newline, so Chinese-IME candidate Enter can't mis-send). The tray no longer dismisses on an outside click — X / Esc only (`DialogShell` gained `dismissOnOverlayClick`), with the existing clipboard backup on every close.
+- **Cached-audio Retry.** The take's blob is cached; `retry()` re-sends it (the old `retry` was a no-op `dismiss` that discarded the audio). `/format` network failures fall back to appending the raw transcript so words are never lost.
+
+**Why:**
+- The streaming chunker was bug-prone (a chunk that never returned stalled or failed the whole run) and felt worse than not segmenting. VAD's only real job here is end-of-speech detection, which doesn't justify shipping a 13 MB neural runtime; manual Stop/F5 is simpler and more robust. Merging voice with the mobile paste bar makes one universal compose surface (voice / keyboard / paste) on desktop and mobile, and the IME-safe send + no-outside-click close fix frequent accidental sends/dismissals.
+
+**Key files:** `app/ui/src/hooks/{voiceCapture.ts (new, replaces voiceVad.ts),voiceStateMachine.ts,useVoice.ts}`, `app/ui/src/components/{ComposeTray.tsx,VoiceControl.tsx,DialogShell.tsx,TerminalKeyBar.tsx,Terminal.tsx}`, `app/ui/src/workspace/{useWorkspaceVoice.ts,WorkspaceScreen.tsx,useWorkspaceKeyboard.ts,WorkspaceEditorColumn.tsx,context.ts,panels/TerminalPanel.tsx}`, `app/ui/{vite.config.ts,package.json}`, `app/server/src/index.ts`; tests `app/ui/src/hooks/__tests__/{voiceStateMachine,voiceCapture,useVoice}.test.*` + `tests/e2e/voice-compose-backup.spec.ts`; docs `doc/main/app/{README,frontend/hooks,frontend/components,backend/routes,backend/server}.md`.
+**Verification:** `app/ui` lint clean (0 errors, 9 pre-existing warnings); `vitest run src/` → 519 passed (incl. 20 voice unit tests); `npm run build` clean (no dangling `__VAD_ASSET_BASE__`/vad-web/onnx refs); `app/server` tests → 504 passed. The dev-only `voice-compose-backup` e2e parses + lists 3 tests but was not executed here (a main-checkout dev server occupies the `E2E_REUSE` ports; isolated mode self-skips by design) — run under `E2E_REUSE=1` against a worktree dev server for manual QA.
+**Commit:** pending.
+**Next:** Optional silence auto-stop (energy-based, behind the existing `startCaptureSession`/`onAutoStop` seam) if reaching for Stop proves tedious.
+**Blockers:** None.
+
 ## 2026-06-11: Mobile keyboard viewport shrink scoped to the terminal
 
 **What changed:**

@@ -12,9 +12,9 @@ interface UseWorkspaceKeyboardOpts {
   canTogglePreview: boolean
   editorVoiceEligible: boolean
   terminalVoiceEligible: boolean
-  handleEditorVoiceStart: () => void
-  handleTerminalVoiceStart: () => void
-  voice: Pick<UseVoiceReturn, 'state' | 'stop' | 'capability'>
+  recordEditor: () => void
+  recordTerminal: () => void
+  voice: Pick<UseVoiceReturn, 'state' | 'stop' | 'record' | 'capability'>
   onToggleTextSearch: () => void
   onToggleShortcutSheet: () => void
 }
@@ -24,8 +24,8 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     canTogglePreview,
     editorVoiceEligible,
     terminalVoiceEligible,
-    handleEditorVoiceStart,
-    handleTerminalVoiceStart,
+    recordEditor,
+    recordTerminal,
     voice,
     onToggleTextSearch,
     onToggleShortcutSheet,
@@ -175,23 +175,29 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
           return
         }
       }
-      // Ctrl+Shift+V or F5: toggle voice recording
+      // Ctrl+Shift+V or F5: voice take — stop while recording, append another
+      // take while the tray is open, or open+record from idle.
       if ((key === 'v' && !e.metaKey && e.ctrlKey && !e.altKey && e.shiftKey) || e.key === 'F5') {
         e.preventDefault()
-        if (voice.state === 'active') {
+        const vs = voice.state
+        if (vs === 'recording') {
           voice.stop()
-        } else if (voice.state === 'idle' && voice.capability.status === 'ready') {
+        } else if (vs === 'requesting_permission' || vs === 'transcribing') {
+          // a take is already in flight — ignore
+        } else if (vs === 'composing' || vs === 'recoverable' || vs === 'error') {
+          voice.record() // append into the open tray (frozen target)
+        } else if (vs === 'idle' && voice.capability.status === 'ready') {
           if (editorVoiceEligible && focusTarget === 'editor') {
-            handleEditorVoiceStart()
+            recordEditor()
           } else if (terminalVoiceEligible) {
-            handleTerminalVoiceStart()
+            recordTerminal()
           }
         }
       }
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, handleEditorVoiceStart, handleTerminalVoiceStart, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, recordEditor, recordTerminal, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

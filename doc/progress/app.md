@@ -1,3 +1,13 @@
+## 2026-06-11: Voice single-take + unified compose tray
+
+Reverted the bug-prone mid-recording VAD segmentation to a single-take flow
+(native `MediaRecorder`, ended by Stop/F5; transcribe once → format → append),
+dropped the ~13 MB neural VAD (`@ricky0123/vad-web` + `onnxruntime-web` + their
+self-hosted assets), unified voice with the mobile paste bar into one
+type/paste/record `ComposeTray`, switched send to ⌘/Ctrl+Enter (plain Enter =
+newline; X/Esc-only close), and made Retry re-send cached audio. Full detail +
+verification in `doc/PROGRESS.md` (2026-06-11).
+
 ## 2026-06-11: Hermetic, fast app/ui e2e — isolated static-build server
 
 **What changed:**
