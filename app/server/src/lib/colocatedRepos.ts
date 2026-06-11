@@ -107,16 +107,29 @@ async function childRepoDirs(projectPath: string): Promise<string[]> {
     return []
   }
 
+  let projectReal: string | null = null
+  try {
+    projectReal = await realpath(projectPath)
+  } catch {
+    projectReal = null
+  }
+
   const names: string[] = []
   for (const entry of entries) {
     if (entry.name === '.git') continue
     let isDir = entry.isDirectory()
     if (entry.isSymbolicLink()) {
+      let real: string
       try {
-        isDir = (await stat(join(projectPath, entry.name))).isDirectory()
+        real = await realpath(join(projectPath, entry.name))
+        isDir = (await stat(real)).isDirectory()
       } catch {
         continue // broken symlink
       }
+      if (!isDir) continue
+      // Skip self/ancestor links (loop -> ., link -> ..) that resolve back into
+      // the host tree — otherwise the host repo aliases itself as a colocated one.
+      if (projectReal && (real === projectReal || projectReal.startsWith(`${real}/`))) continue
     }
     if (!isDir) continue
     // `.git` as a dir (normal repo) or a file (linked worktree) both qualify.

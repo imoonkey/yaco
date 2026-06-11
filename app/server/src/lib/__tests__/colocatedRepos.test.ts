@@ -87,6 +87,12 @@ describe('getColocatedRepos', () => {
     }
   })
 
+  it('does NOT detect a self/ancestor symlink (loop -> .) as a colocated repo', async () => {
+    // loop -> . resolves to the host (whose .git exists); must not alias itself.
+    await symlink('.', join(host, 'loop'))
+    expect(await getColocatedRepos(host)).toEqual([])
+  })
+
   describe('colocatedRepos policy', () => {
     it('"off" detects nothing', async () => {
       await makeChildRepo(host, 'plan')
