@@ -1,5 +1,8 @@
 import { Hono } from 'hono'
 import { execFile } from 'child_process'
+import { existsSync } from 'fs'
+import { realpath } from 'fs/promises'
+import { join, dirname, basename } from 'path'
 import { GIT_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
@@ -37,6 +40,19 @@ function parseStatus(xy: string): GitChange['status'] {
 
 function unsafeFilePath(filePath: string): boolean {
   return filePath.includes('..') || filePath.startsWith('/')
+}
+
+/** Resolve the git location + ref for a file's HEAD baseline.
+ *  The /files content endpoint serves a symlink's real target, so the gutter must
+ *  diff the buffer against that target's HEAD blob. `git show HEAD:<symlink>` returns
+ *  only the link text, which paints the whole file blue. Running git from the resolved
+ *  file's own directory yields the real content — and works even when the target lives
+ *  in another repo. Paths absent on disk fall back to the literal lookup. */
+async function resolveBaseline(projectPath: string, filePath: string): Promise<{ cwd: string; ref: string }> {
+  const absPath = join(projectPath, filePath)
+  if (!existsSync(absPath)) return { cwd: projectPath, ref: `HEAD:${filePath}` }
+  const real = await realpath(absPath)
+  return { cwd: dirname(real), ref: `HEAD:./${basename(real)}` }
 }
 
 /** Parse `git diff --shortstat` output → { added, deleted } */
@@ -142,7 +158,8 @@ app.get('/:project/baseline', withProject, async (c) => {
     return c.json({ error: 'invalid path' }, 400)
   }
 
-  const result = await git(proj.path, ['show', `HEAD:${filePath}`])
+  const { cwd, ref } = await resolveBaseline(proj.path, filePath)
+  const result = await git(cwd, ['show', ref])
   if (!result.ok) {
     if (result.code === 128) return c.json({ content: '', exists: false })
     return fail(c, 500, 'git baseline failed')

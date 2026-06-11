@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, realpathSync } from 'fs'
+import { tmpdir } from 'os'
+import { join, dirname } from 'path'
 
 // Track calls and return configurable output per git command
 let spawnResults: Map<string, string>
@@ -212,5 +215,31 @@ describe('GET /:project/baseline — HEAD content', () => {
     expect(res.status).toBe(500)
     const json = await res.json() as { error: string }
     expect(json.error).toBe('git baseline failed')
+  })
+
+  // Regression: the content endpoint serves a symlink's real target, so the
+  // baseline must read that target's HEAD blob. `git show HEAD:<symlink>` returns
+  // only the link text — diffing the real buffer against it paints the whole file
+  // as changed. Resolve the symlink and run git from the target's own directory.
+  it('resolves symlinks to the real target for the baseline', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'baseline-symlink-'))
+    testProjectPath = repo
+    mkdirSync(join(repo, 'src'))
+    writeFileSync(join(repo, 'src', 'real.txt'), 'real content\n')
+    symlinkSync(join('src', 'real.txt'), join(repo, 'link.txt'))
+    const realTarget = realpathSync(join(repo, 'link.txt'))
+
+    spawnResults.set('show', 'real content\n')
+
+    const res = await baselineRequest('link.txt')
+    expect(res.status).toBe(200)
+    const json = await res.json() as { content: string; exists: boolean }
+    expect(json).toEqual({ content: 'real content\n', exists: true })
+    expect(mockExecFile).toHaveBeenCalledWith(
+      'git',
+      ['show', 'HEAD:./real.txt'],
+      expect.objectContaining({ cwd: dirname(realTarget) }),
+      expect.any(Function),
+    )
   })
 })
