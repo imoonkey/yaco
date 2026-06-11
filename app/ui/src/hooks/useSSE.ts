@@ -78,6 +78,14 @@ function getSource(): EventSource {
     if (set) for (const fn of set) fn(e as MessageEvent)
   })
 
+  // Server-projected attention snapshot (Facet B). Handled directly here, not via
+  // the document-hidden-gated polling path, so a backgrounded tab still receives
+  // it and can fire OS interrupts (eng-design §2.1, §5.4).
+  es.addEventListener('attention', (e) => {
+    const set = listeners.get('attention')
+    if (set) for (const fn of set) fn(e as MessageEvent)
+  })
+
   es.addEventListener('notifications:changed', (e) => {
     const set = listeners.get('notifications:changed')
     if (set) for (const fn of set) fn(e as MessageEvent)
