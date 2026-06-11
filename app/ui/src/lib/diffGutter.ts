@@ -13,7 +13,7 @@ import type { DiffHunk, ChangeType, DiffRow } from './parseDiff'
 // --- State Effects ---
 
 export const setDiffData = StateEffect.define<DiffHunk[]>()
-const toggleHunkPopup = StateEffect.define<string>() // hunk id
+const toggleHunkPopup = StateEffect.define<{ id: string; anchorLine: number }>()
 const closePopup = StateEffect.define<null>()
 
 // --- State Field ---
@@ -21,10 +21,11 @@ const closePopup = StateEffect.define<null>()
 type DiffGutterState = {
   hunks: DiffHunk[]
   openHunkId: string | null
+  popupAnchorLine: number | null
 }
 
 const diffState = StateField.define<DiffGutterState>({
-  create: () => ({ hunks: [], openHunkId: null }),
+  create: () => ({ hunks: [], openHunkId: null, popupAnchorLine: null }),
   update(value, tr) {
     for (const e of tr.effects) {
       if (e.is(setDiffData)) {
@@ -32,14 +33,17 @@ const diffState = StateField.define<DiffGutterState>({
         const openHunkId = value.openHunkId && hunks.some(h => h.id === value.openHunkId)
           ? value.openHunkId
           : null
-        return { hunks, openHunkId }
+        return { hunks, openHunkId, popupAnchorLine: openHunkId ? value.popupAnchorLine : null }
       }
       if (e.is(toggleHunkPopup)) {
-        const id = e.value
-        return { ...value, openHunkId: value.openHunkId === id ? null : id }
+        const { id, anchorLine } = e.value
+        if (value.openHunkId === id && value.popupAnchorLine === anchorLine) {
+          return { ...value, openHunkId: null, popupAnchorLine: null }
+        }
+        return { ...value, openHunkId: id, popupAnchorLine: anchorLine }
       }
       if (e.is(closePopup)) {
-        return value.openHunkId ? { ...value, openHunkId: null } : value
+        return value.openHunkId ? { ...value, openHunkId: null, popupAnchorLine: null } : value
       }
     }
     return value
@@ -82,6 +86,25 @@ function markerForType(type: ChangeType): GutterMarker {
   return deletedMarker
 }
 
+function primaryLineForHunk(hunk: DiffHunk): number {
+  return hunk.type === 'deleted' ? hunk.anchorLine : hunk.markedLines[0] ?? hunk.anchorLine
+}
+
+function clampedLine(view: EditorView, lineNumber: number) {
+  return view.state.doc.line(Math.max(1, Math.min(lineNumber, view.state.doc.lines)))
+}
+
+function openHunkAndScroll(view: EditorView, hunk: DiffHunk) {
+  const anchorLine = primaryLineForHunk(hunk)
+  const line = clampedLine(view, anchorLine)
+  view.dispatch({
+    effects: [
+      toggleHunkPopup.of({ id: hunk.id, anchorLine: line.number }),
+      EditorView.scrollIntoView(line.from, { y: 'center' }),
+    ],
+  })
+}
+
 // --- Diff Gutter ---
 
 const diffGutter = gutter({
@@ -122,7 +145,7 @@ const diffGutter = gutter({
         return h.markedLines.includes(lineNumber)
       })
       if (hunk) {
-        view.dispatch({ effects: toggleHunkPopup.of(hunk.id) })
+        view.dispatch({ effects: toggleHunkPopup.of({ id: hunk.id, anchorLine: lineNumber }) })
         return true
       }
       return false
@@ -299,7 +322,7 @@ class DiffPopupWidget extends WidgetType {
         e.stopPropagation()
         const { hunks } = view.state.field(diffState)
         const prevHunk = hunks[this.hunkIndex - 1]
-        if (prevHunk) view.dispatch({ effects: toggleHunkPopup.of(prevHunk.id) })
+        if (prevHunk) openHunkAndScroll(view, prevHunk)
       }
       controls.appendChild(prevBtn)
 
@@ -313,7 +336,7 @@ class DiffPopupWidget extends WidgetType {
         e.stopPropagation()
         const { hunks } = view.state.field(diffState)
         const nextHunk = hunks[this.hunkIndex + 1]
-        if (nextHunk) view.dispatch({ effects: toggleHunkPopup.of(nextHunk.id) })
+        if (nextHunk) openHunkAndScroll(view, nextHunk)
       }
       controls.appendChild(nextBtn)
 
@@ -377,7 +400,7 @@ const popupDecoration = StateField.define<DecorationSet>({
     const popupChanged = tr.effects.some(e => e.is(setDiffData) || e.is(toggleHunkPopup) || e.is(closePopup))
     if (!popupChanged && !tr.docChanged) return value
 
-    const { hunks, openHunkId } = tr.state.field(diffState)
+    const { hunks, openHunkId, popupAnchorLine } = tr.state.field(diffState)
     if (!openHunkId) return Decoration.none
 
     const hunkIndex = hunks.findIndex(h => h.id === openHunkId)
@@ -385,7 +408,7 @@ const popupDecoration = StateField.define<DecorationSet>({
     const hunk = hunks[hunkIndex]
 
     const doc = tr.state.doc
-    const anchorLine = Math.max(1, Math.min(hunk.anchorLine, doc.lines))
+    const anchorLine = Math.max(1, Math.min(popupAnchorLine ?? hunk.anchorLine, doc.lines))
     const line = doc.line(anchorLine)
 
     return Decoration.set([

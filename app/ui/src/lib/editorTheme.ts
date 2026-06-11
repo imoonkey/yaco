@@ -124,12 +124,16 @@ export const editorTheme = EditorView.theme({
     backgroundColor: 'var(--sol-editor-widget-bg)',
     border: '1px solid var(--sol-border)',
     borderLeft: '3px solid',
+    boxSizing: 'border-box',
     boxShadow: 'var(--elevation-1)',
     fontFamily: 'var(--font-mono)',
     fontSize: 'var(--text-ui-md)',
     lineHeight: '1.5',
+    width: '100%',
+    maxWidth: '100%',
     maxHeight: '300px',
     overflowY: 'auto',
+    overflowX: 'hidden',
     margin: '2px 0',
   },
   '.cm-diff-popup-header': {
@@ -159,7 +163,8 @@ export const editorTheme = EditorView.theme({
   },
   '.cm-diff-popup-line': {
     padding: '0 8px',
-    whiteSpace: 'pre',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'anywhere',
     minHeight: '18px',
   },
   '.cm-diff-popup-add': {
