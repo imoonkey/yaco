@@ -704,7 +704,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   }, [resolvedProvider, containerReady])
 
   return (
-    <div className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
+    // data-terminal-surface marks the keyboard-owning region (xterm helper
+    // textarea + key-bar paste textarea) so useKeyboardViewport only shrinks
+    // #root when the terminal — not a normal input — opened the keyboard.
+    <div data-terminal-surface className="h-full w-full flex flex-col" style={{ backgroundColor: 'var(--sol-editor-bg)' }}>
       <div
         className="relative flex-1 min-h-0 w-full select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text' }}

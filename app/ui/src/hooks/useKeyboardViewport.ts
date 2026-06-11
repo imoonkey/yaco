@@ -1,10 +1,18 @@
 import { useEffect } from 'react'
 
 /**
- * Adjusts app height when the virtual keyboard is visible.
+ * Adjusts app height when the virtual keyboard is visible — for the TERMINAL only.
  *
- * Sets --kb-viewport CSS variable on <html> when keyboard is detected
+ * Sets --kb-viewport CSS variable on <html> when the keyboard is detected
  * via the Visual Viewport API. #root uses var(--kb-viewport, 100dvh).
+ *
+ * Scope: only the terminal needs a manual layout shrink. xterm renders into a
+ * fixed canvas with an offscreen helper textarea the browser never scrolls into
+ * view, so without this its rows + key bar slide under the keyboard. Every other
+ * input is handled natively — Android's interactive-widget=resizes-content
+ * reshapes dvh, and iOS scrolls the focused field into view — so forcing #root to
+ * a JS-measured height there only fights that and leaves a blank band above the
+ * keyboard. apply() gates on isTerminalContext() and otherwise clears.
  *
  * iOS standalone PWA: WebKit may delay visualViewport.height updates.
  * Workaround: on user TAP (not scroll), apply cached keyboard height
@@ -40,6 +48,12 @@ function isKbInput(el: Element | null): boolean {
 
 function getOrientation(): 'portrait' | 'landscape' {
   return window.innerWidth > window.innerHeight ? 'landscape' : 'portrait'
+}
+
+// True when the focused element is inside the terminal surface (xterm helper
+// textarea or key-bar paste textarea), i.e. the terminal opened the keyboard.
+function isTerminalContext(): boolean {
+  return !!document.activeElement?.closest('[data-terminal-surface]')
 }
 
 export function useKeyboardViewport(): void {
@@ -81,15 +95,18 @@ export function useKeyboardViewport(): void {
     const apply = () => {
       if (vv.height > fullHeight) fullHeight = vv.height
       const diff = fullHeight - vv.height
-      if (diff > 50) {
+      const terminal = isTerminalContext()
+      if (diff > 50 && terminal) {
         setReal(vv.height)
         if (isIOSLike) {
           cachedKbHeight = diff
           cachedOrientation = getOrientation()
         }
-      } else if (isEstimated) {
+      } else if (isEstimated && terminal) {
         // Keep estimate — iOS hasn't updated visualViewport yet.
       } else {
+        // Keyboard closed, or a non-terminal input owns it — let the browser
+        // handle the layout natively (no #root override).
         clear()
       }
     }

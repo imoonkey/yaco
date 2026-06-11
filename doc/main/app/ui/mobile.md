@@ -129,14 +129,14 @@ On desktop, right-click opens context menus (file explorer, project list, sessio
 
 ### Virtual Keyboard
 
-When the virtual keyboard opens on mobile, the layout must shrink so content (terminal cursor, TerminalKeyBar) stays visible above the keyboard.
+When the virtual keyboard opens on mobile, the **terminal** layout must shrink so its content (cursor, TerminalKeyBar) stays visible above the keyboard. Other pages do not shrink — see scoping below.
 
-Two complementary mechanisms:
+Two mechanisms:
 
-1. **`interactive-widget=resizes-content`** (viewport meta): Makes `dvh` shrink to exclude the keyboard. Chrome 108+, not iOS Safari.
+1. **`interactive-widget=resizes-content`** (viewport meta): Makes `dvh` shrink to exclude the keyboard, for every page. Chrome 108+, not iOS Safari.
 2. **`useKeyboardViewport` hook** (Visual Viewport API + tap estimation): Detects keyboard via `fullHeight - visualViewport.height > 50px`, sets `--kb-viewport` CSS variable on `<html>`. `#root` uses `var(--kb-viewport, 100dvh)`. App root uses `h-full` (not `h-dvh`) so it inherits the constrained height. Safari 13+.
 
-When mechanism 1 is active, mechanism 2 is a no-op (both heights match → diff ≈ 0).
+**Scope — terminal only.** Mechanism 2 only overrides `#root` when the focused element is inside the terminal surface (`[data-terminal-surface]`, set on the `Terminal` root, covering the xterm helper textarea and the key-bar paste textarea). `apply()` gates `setReal`/estimate on `isTerminalContext()` and otherwise `clear()`s the override. The terminal needs it because xterm renders into a fixed canvas with an offscreen helper textarea the browser never scrolls into view. Every other input is handled natively — Android's mechanism 1 reshapes `dvh`, and iOS scrolls the focused field into view — so forcing `#root` to a JS-measured `visualViewport.height` there only fights that and leaves a blank band above the keyboard.
 
 The resize propagates through the existing pipeline: `#root` shrinks → App `h-full` follows → flex layout reflows → terminal container shrinks → `ResizeObserver` fires → `fitTerminal()` → `sendResize()` → PTY gets new dimensions.
 
@@ -144,7 +144,7 @@ The resize propagates through the existing pipeline: `#root` shrinks → App `h-
 
 **iOS keyboard viewport workaround**: iOS standalone PWA may delay `visualViewport.height` updates when the keyboard opens (WebKit limitation). The hook works around this with a deferred estimation fallback:
 
-1. **Tap detection** (touchstart/touchmove/touchend): Distinguishes taps from scrolls. Only taps inside the terminal (`.xterm`) trigger the estimate — other inputs (e.g. the CodeMirror editor) update `visualViewport` reliably and use the real value, so they are excluded to avoid over-shrinking `#root`. Scrolling is excluded — `touchmove` cancels the pending estimate.
+1. **Tap detection** (touchstart/touchmove/touchend): Distinguishes taps from scrolls. Only taps inside the terminal (`.xterm`) trigger the estimate — the offscreen xterm textarea is the only input that delays the Visual Viewport on iOS PWA. Other inputs are left to native handling (no `#root` override; see scoping above). Scrolling is excluded — `touchmove` cancels the pending estimate.
 2. **Deferred estimate** (300ms after tap): If `visualViewport` hasn't updated within 300ms, apply cached keyboard height (or 40% of viewport as first-open estimate). The delay avoids jitter when `visualViewport` updates quickly (estimate→real double-shift).
 3. **Real value correction**: When `visualViewport` reports real height, `apply()` replaces the estimate and caches the keyboard height for future instant estimates.
 4. **`--kb-safe-bottom`**: Set to `0px` when keyboard is open. TerminalKeyBar uses `calc(var(--kb-safe-bottom, env(safe-area-inset-bottom)) / 2)` — halved to redistribute vertical space to the portrait top bar.
