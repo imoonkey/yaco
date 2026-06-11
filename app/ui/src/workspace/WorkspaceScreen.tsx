@@ -111,16 +111,16 @@ function WorkspaceScreen() {
     editor: {
       eligible: voiceBridge.editorVoiceEligible,
       capability: voice.capability, state: voice.state,
-      onOpen: voiceBridge.openEditorCompose,
+      onRecord: voiceBridge.recordEditor, onStop: voice.stop, onOpen: voiceBridge.openEditorCompose,
     },
     terminal: {
       eligible: voiceBridge.terminalVoiceEligible,
       capability: voice.capability, state: voice.state,
-      onOpen: voiceBridge.openTerminalCompose,
+      onRecord: voiceBridge.recordTerminal, onStop: voice.stop, onOpen: voiceBridge.openTerminalCompose,
     },
     editorInsert,
     terminalSend,
-  }), [voiceBridge, voice.capability, voice.state, editorInsert, terminalSend])
+  }), [voiceBridge, voice.capability, voice.state, voice.stop, editorInsert, terminalSend])
 
   const handleToggleTextSearch = useCallback(() => {
     actions.updateLayout({ showTextSearch: !layout.showTextSearch, showSidebar: true, showExplorer: true })

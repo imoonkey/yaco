@@ -78,7 +78,8 @@ export function TerminalPanel() {
           <VoiceControl
             capability={voice.terminal.capability}
             state={voice.terminal.state}
-            onOpen={voice.terminal.onOpen}
+            onRecord={voice.terminal.onRecord}
+            onStop={voice.terminal.onStop}
           />
         )}
       </div>

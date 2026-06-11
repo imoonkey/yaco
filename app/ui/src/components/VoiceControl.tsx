@@ -3,10 +3,10 @@ import { LoaderCircle, Mic, Square } from 'lucide-react'
 
 type VisualState = 'ready' | 'recording' | 'processing'
 
-// The header launcher for the unified compose tray. Clicking always opens the
-// tray (type / paste / record work regardless of mic availability); recording
-// and stop live inside the tray. The icon mirrors the shared voice state so the
-// header still shows ambient recording/processing feedback.
+// The header mic. Clicking starts a take immediately (same as F5) — opening the
+// empty compose tray for typing/pasting is the separate launcher (mobile key
+// bar). Clicking while recording stops the take; while a take is in flight the
+// button is inert. The icon mirrors the shared voice state.
 function resolveVisualState(interaction: InteractionState): VisualState {
   switch (interaction) {
     case 'recording': return 'recording'
@@ -19,9 +19,9 @@ function resolveVisualState(interaction: InteractionState): VisualState {
 
 function getAriaLabel(visual: VisualState): string {
   switch (visual) {
-    case 'recording': return 'Recording — open compose'
-    case 'processing': return 'Voice processing — open compose'
-    case 'ready': return 'Open compose (type, paste, or record)'
+    case 'recording': return 'Stop recording'
+    case 'processing': return 'Voice processing'
+    case 'ready': return 'Start voice recording'
   }
 }
 
@@ -58,25 +58,34 @@ const VISUAL_STYLES: Record<VisualState, React.CSSProperties> = {
     background: 'var(--sol-subtle-bg)',
     color: 'var(--sol-text)',
     opacity: 1,
+    cursor: 'default',
   },
 }
 
 export function VoiceControl({
   capability,
   state,
-  onOpen,
+  onRecord,
+  onStop,
 }: {
   capability: CapabilityState
   state: InteractionState
-  onOpen: () => void
+  onRecord: () => void
+  onStop: () => void
 }) {
   const visual = resolveVisualState(state)
   const unavailable = capability.status === 'unavailable' ? capability.message : undefined
 
+  const handleClick = () => {
+    if (visual === 'recording') onStop()
+    else if (visual === 'ready') onRecord()
+    // 'processing' (requesting permission / transcribing): a take is in flight — ignore.
+  }
+
   return (
     <button
       style={{ ...BASE_STYLE, ...VISUAL_STYLES[visual] }}
-      onClick={onOpen}
+      onClick={handleClick}
       aria-label={getAriaLabel(visual)}
       title={unavailable}
       aria-busy={visual === 'processing'}

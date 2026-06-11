@@ -19,7 +19,8 @@ interface EditorColumnVoice {
   eligible: boolean
   capability: CapabilityState
   state: InteractionState
-  onOpen: () => void
+  onRecord: () => void
+  onStop: () => void
 }
 
 export interface WorkspaceEditorColumnProps {
@@ -127,7 +128,8 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
             <VoiceControl
               capability={voice.capability}
               state={voice.state}
-              onOpen={voice.onOpen}
+              onRecord={voice.onRecord}
+              onStop={voice.onStop}
             />
           )}
           {showSuggestionsToggle && (

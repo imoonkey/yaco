@@ -84,18 +84,16 @@ async function openFileForVoice(page: Page): Promise<void> {
   // Open a file via Cmd+P search so a file is the active editor tab.
   await openFileViaSearch(page, 'package.json')
 
-  // The editor compose launcher only renders once a file is the active tab.
-  await expect(page.getByRole('button', { name: /Open compose/ })).toBeVisible({
+  // The editor mic only renders once a file is the active tab.
+  await expect(page.getByRole('button', { name: 'Start voice recording' })).toBeVisible({
     timeout: 10_000,
   })
 }
 
-/** Open the tray, record a take, stop, and land in compose with the transcript. */
+/** Click the mic (records immediately), stop, and land in compose with the
+ *  transcript appended. */
 async function recordToCompose(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /Open compose/ }).click()
-  const record = page.getByRole('button', { name: 'Record', exact: true })
-  await expect(record).toBeVisible({ timeout: 5_000 })
-  await record.click()
+  await page.getByRole('button', { name: 'Start voice recording' }).click()
   const stop = page.getByRole('button', { name: 'Stop', exact: true })
   await expect(stop).toBeVisible({ timeout: 5_000 })
   await stop.click()
@@ -119,14 +117,14 @@ test('Insert copies the edited draft to the clipboard as a backup', async ({ pag
   expect(clip).toBe(edited)
 })
 
-test('Discard still preserves the draft on the clipboard', async ({ page }) => {
+test('Close (X) still preserves the draft on the clipboard', async ({ page }) => {
   await stubVoice(page, 'original transcript')
   await openFileForVoice(page)
   await recordToCompose(page)
 
   const edited = 'discarded but recoverable text'
   await page.getByLabel('Compose input').fill(edited)
-  await page.getByRole('button', { name: 'Discard' }).click()
+  await page.getByRole('button', { name: 'Close' }).click()
 
   await expect(page.getByLabel('Compose input')).toBeHidden({ timeout: 5_000 })
   const clip = await page.evaluate(() => navigator.clipboard.readText())
@@ -136,10 +134,9 @@ test('Discard still preserves the draft on the clipboard', async ({ page }) => {
 test('plain Enter inserts a newline; only Cmd/Ctrl+Enter sends', async ({ page }) => {
   await stubVoice(page, 'original transcript')
   await openFileForVoice(page)
-  await page.getByRole('button', { name: /Open compose/ }).click()
+  await recordToCompose(page)
 
   const input = page.getByLabel('Compose input')
-  await expect(input).toBeVisible({ timeout: 5_000 })
   await input.fill('line one')
   // Plain Enter must NOT send — it inserts a newline and the tray stays open.
   await input.press('Enter')

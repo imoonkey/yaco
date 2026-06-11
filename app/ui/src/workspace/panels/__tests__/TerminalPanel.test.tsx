@@ -99,9 +99,9 @@ describe('TerminalPanel — attached session', () => {
     expect(screen.getByText('claude-1')).toBeTruthy()
     // claude provider → the claude symbol img (see ProviderIcon / providerUi).
     expect(container.querySelector('img[src="/claude-code-symbol.svg"]')).toBeTruthy()
-    // The compose launcher renders whenever a session is attached; clicking it
-    // opens the shared ComposeTray (type / paste / record).
-    expect(screen.getByRole('button', { name: /Open compose/ })).toBeTruthy()
+    // The header mic renders whenever a session is attached; clicking it starts
+    // a voice take (the empty-tray launcher lives on the mobile key bar).
+    expect(screen.getByRole('button', { name: 'Start voice recording' })).toBeTruthy()
   })
 
   it('lazy-loads the terminal wired to the session/project/provider', async () => {

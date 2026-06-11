@@ -154,37 +154,6 @@ export function ComposeTray({
           placeholder="Type, paste, or record. ⌘/Ctrl+Enter to send, Esc to close."
         />
 
-        {/* Record / Stop / progress control */}
-        <div style={CONTROL_ROW_STYLE}>
-          {state === 'recording' ? (
-            <>
-              <button className="font-medium" style={STOP_BTN_STYLE} onClick={onStop}>
-                <Square size={12} fill="currentColor" /> Stop
-              </button>
-              <span style={{ flex: 1 }} />
-              <span style={TIMER_STYLE}>
-                <span style={PULSE_DOT_STYLE} />
-                <span>{mm}:{ss}</span>
-              </span>
-            </>
-          ) : takeInFlight ? (
-            <span style={PROGRESS_STYLE} aria-live="polite">
-              <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
-              {state === 'transcribing' ? 'Transcribing…' : 'Starting mic…'}
-            </span>
-          ) : (
-            <button
-              className="font-medium"
-              style={{ ...RECORD_BTN_STYLE, ...(recordDisabled ? DISABLED_STYLE : {}) }}
-              onClick={onRecord}
-              disabled={recordDisabled}
-              title={recordDisabled && capability.status === 'unavailable' ? capability.message : undefined}
-            >
-              <Mic size={14} /> Record
-            </button>
-          )}
-        </div>
-
         {/* No-speech / soft notice */}
         {notice && !errorMessage && (
           <div style={NOTICE_STYLE} role="status" aria-live="polite">{notice}</div>
@@ -198,8 +167,36 @@ export function ComposeTray({
           </div>
         )}
 
-        {/* Actions */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center' }}>
+        {/* One action row: record/stop on the left, Insert/Copy on the right.
+            Close is the header X (which also backs the draft up to the clipboard). */}
+        <div style={ACTION_ROW_STYLE}>
+          {state === 'recording' ? (
+            <>
+              <button className="font-medium" style={STOP_BTN_STYLE} onClick={onStop}>
+                <Square size={12} fill="currentColor" /> Stop
+              </button>
+              <span style={TIMER_STYLE}>
+                <span style={PULSE_DOT_STYLE} />
+                <span>{mm}:{ss}</span>
+              </span>
+            </>
+          ) : takeInFlight ? (
+            <span style={PROGRESS_STYLE} aria-live="polite">
+              <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
+              {state === 'transcribing' ? 'Transcribing…' : 'Starting…'}
+            </span>
+          ) : (
+            <button
+              className="font-medium"
+              style={{ ...RECORD_BTN_STYLE, ...(recordDisabled ? DISABLED_STYLE : {}) }}
+              onClick={onRecord}
+              disabled={recordDisabled}
+              title={recordDisabled && capability.status === 'unavailable' ? capability.message : undefined}
+            >
+              <Mic size={14} /> Record
+            </button>
+          )}
+          <span style={{ flex: 1 }} />
           <button
             className="font-medium"
             style={{ ...CONFIRM_BTN_STYLE, ...(canInsert ? {} : DISABLED_STYLE) }}
@@ -217,8 +214,6 @@ export function ComposeTray({
           >
             Copy
           </button>
-          <span style={{ flex: 1 }} />
-          <button className="font-medium" style={DISCARD_BTN_STYLE} onClick={handleClose}>Discard</button>
         </div>
       </div>
     </DialogShell>
@@ -268,20 +263,20 @@ const TEXTAREA_STYLE: React.CSSProperties = {
   minHeight: 50,
 }
 
-const CONTROL_ROW_STYLE: React.CSSProperties = {
+const ACTION_ROW_STYLE: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
-  gap: 10,
-  marginTop: 10,
+  gap: 8,
+  marginTop: 12,
   minHeight: 32,
 }
 
 const TIMER_STYLE: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
-  gap: 8,
+  gap: 6,
   fontFamily: 'var(--font-mono)',
-  fontSize: 'var(--text-ui-xl)',
+  fontSize: 'var(--text-ui-lg)',
   fontVariantNumeric: 'tabular-nums',
   color: 'var(--sol-red)',
 }
@@ -307,12 +302,12 @@ const BTN_BASE: React.CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: 6,
-  height: 32,
+  height: 30,
   fontSize: 'var(--text-ui-md)',
   borderRadius: 4,
   border: 'none',
   cursor: 'pointer',
-  padding: '0 14px',
+  padding: '0 12px',
   touchAction: 'manipulation',
   lineHeight: 1,
   transition: 'all 120ms cubic-bezier(0.2, 0, 0, 1)',
@@ -333,25 +328,13 @@ const STOP_BTN_STYLE: React.CSSProperties = {
 
 const CONFIRM_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
-  height: 28,
-  padding: '0 12px',
   background: 'var(--sol-accent)',
   color: '#fff',
 }
 
 const COPY_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
-  height: 28,
-  padding: '0 12px',
   background: 'var(--sol-subtle-bg)',
-  color: 'var(--sol-text)',
-}
-
-const DISCARD_BTN_STYLE: React.CSSProperties = {
-  ...BTN_BASE,
-  height: 28,
-  padding: '0 12px',
-  background: 'none',
   color: 'var(--sol-text)',
 }
 

@@ -197,14 +197,17 @@ export type WorkspaceCommands = {
 
 // --- Voice ----------------------------------------------------------------
 
-/** What a panel needs to render its voice/compose launcher button. Eligibility
- *  is decided by the single screen-level voice surface (editor) or by the panel's
- *  own attached state (terminal). The launcher opens the one shared compose tray;
- *  recording/stop live inside the tray. */
+/** What a panel needs for its voice/compose controls. Eligibility is decided by
+ *  the single screen-level voice surface (editor) or the panel's own attached
+ *  state (terminal). The header mic records immediately (`onRecord`/`onStop`,
+ *  same as F5); `onOpen` opens the empty compose tray for typing/pasting (the
+ *  mobile key-bar launcher). Both feed the one shared `ComposeTray`. */
 export type VoiceControlState = {
   eligible: boolean
   capability: CapabilityState
   state: InteractionState
+  onRecord: () => void
+  onStop: () => void
   onOpen: () => void
 }
 
@@ -226,6 +229,8 @@ const INERT_VOICE_CONTROL: VoiceControlState = {
   eligible: false,
   capability: { status: 'checking' },
   state: 'idle',
+  onRecord: () => {},
+  onStop: () => {},
   onOpen: () => {},
 }
 
