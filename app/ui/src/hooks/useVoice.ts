@@ -43,6 +43,9 @@ export interface UseVoiceReturn {
   stop: () => void
   /** Re-send the cached take after a transcription failure. */
   retry: () => void
+  /** Run the LLM formatter over arbitrary draft text (the Format button).
+   *  Returns the polished text, or the input unchanged if formatting failed. */
+  format: (text: string) => Promise<string>
   confirm: (text: string) => void
   copy: (text: string) => void
   discard: () => void
@@ -318,6 +321,16 @@ export function useVoice(): UseVoiceReturn {
   }, [])
   const markTargetLost = useCallback(() => { dispatch({ type: 'TARGET_LOST' }) }, [])
 
+  // Format arbitrary draft text (the tray's Format button) using the run's
+  // frozen target for surface/file context. Returns the input unchanged on
+  // failure (formatTranscript's raw fallback), so the caller can no-op safely.
+  const format = useCallback(async (text: string): Promise<string> => {
+    const p = phaseRef.current
+    const target = 'target' in p ? p.target : null
+    if (!target || !text.trim()) return text
+    return formatTranscript(text, target)
+  }, [formatTranscript])
+
   const { phase } = voiceState
   return {
     capability,
@@ -327,6 +340,6 @@ export function useVoice(): UseVoiceReturn {
     target: selectTarget(phase),
     errorMessage: selectErrorMessage(phase),
     notice: selectNotice(phase),
-    open, record, stop, retry, confirm, copy, discard, markTargetLost,
+    open, record, stop, retry, format, confirm, copy, discard, markTargetLost,
   }
 }

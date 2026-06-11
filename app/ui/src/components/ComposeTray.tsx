@@ -1,16 +1,17 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Mic, Square, LoaderCircle } from 'lucide-react'
+import { X, Mic, Square, LoaderCircle, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { DialogShell } from './DialogShell'
 import { writeTextToClipboard } from '../lib/clipboard'
 import type { VoiceSurface, InteractionState, CapabilityState, AppendText } from '../hooks/useVoice'
 
 // The one compose surface for terminal/editor text entry: type, paste, or
-// record (one take at a time, appended to the draft). Insert sends the draft to
+// record (one take at a time, inserted at the caret). Insert sends the draft to
 // the run's frozen target; ⌘/Ctrl+Enter is the send key (plain Enter is a
-// newline, so IME candidate-selection Enter never mis-fires). The tray only
-// closes via the X / Esc / Discard — never an outside click — and stashes the
-// draft on the clipboard on any close so a glitched insert can't lose it.
+// newline, so IME candidate-selection Enter never mis-fires). Format polishes
+// the whole draft via the LLM formatter (Undo via the toast action). The tray
+// only closes via the X / Esc — never an outside click — and stashes the draft
+// on the clipboard on any close so a glitched insert can't lose it.
 export function ComposeTray({
   surface,
   state,
@@ -25,6 +26,7 @@ export function ComposeTray({
   onCopy,
   onClose,
   onRetry,
+  onFormat,
 }: {
   surface: VoiceSurface
   state: InteractionState
@@ -39,19 +41,31 @@ export function ComposeTray({
   onCopy: (text: string) => void
   onClose: () => void
   onRetry: () => void
+  onFormat: (text: string) => Promise<string>
 }) {
   const isOpen = state !== 'idle'
   const [editText, setEditText] = useState('')
+  const [formatting, setFormatting] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Last known caret/selection in the draft — recorded text is spliced here.
+  const caretRef = useRef<{ start: number; end: number } | null>(null)
+  // Caret to apply after the next value change lands in the DOM (post-append).
+  const pendingSelRef = useRef<number | null>(null)
 
-  // Append a finished take's text to the draft when its key changes (adjust
+  // Insert a finished take's text at the caret when its key changes (adjust
   // state during render — the canonical React derived-state pattern).
   const [prevAppendKey, setPrevAppendKey] = useState<number | null>(null)
   if (appendText && appendText.key !== prevAppendKey) {
     setPrevAppendKey(appendText.key)
     setEditText(prev => {
-      const sep = prev && !/\s$/.test(prev) ? ' ' : ''
-      return prev + sep + appendText.text
+      const start = Math.min(caretRef.current?.start ?? prev.length, prev.length)
+      const end = Math.min(caretRef.current?.end ?? prev.length, prev.length)
+      const before = prev.slice(0, start)
+      const after = prev.slice(end)
+      const lead = before && !/\s$/.test(before) ? ' ' : ''
+      const trail = after && !/^\s/.test(after) ? ' ' : ''
+      pendingSelRef.current = start + lead.length + appendText.text.length
+      return before + lead + appendText.text + trail + after
     })
   }
 
@@ -75,14 +89,25 @@ export function ComposeTray({
   }, [])
   useEffect(() => { autoSize() }, [editText, autoSize])
 
-  // Focus + cursor-to-end when settled into compose (incl. after each append).
+  // Focus and place the caret when settling into compose: after a take, just
+  // past the inserted text (pendingSelRef); on first open, at the end. DOM-only
+  // (no setState), and keyed on prevAppendKey so it never fights live typing.
   useEffect(() => {
-    if ((state === 'composing' || state === 'recoverable') && textareaRef.current) {
-      const el = textareaRef.current
-      el.focus()
-      el.setSelectionRange(el.value.length, el.value.length)
-    }
+    if (state !== 'composing' && state !== 'recoverable') return
+    const el = textareaRef.current
+    if (!el) return
+    el.focus()
+    const pos = pendingSelRef.current ?? el.value.length
+    el.setSelectionRange(pos, pos)
+    caretRef.current = { start: pos, end: pos }
+    pendingSelRef.current = null
   }, [state, prevAppendKey])
+
+  // Track the caret/selection so a recorded take splices in at the right spot.
+  const syncCaret = useCallback((e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+    const el = e.currentTarget
+    caretRef.current = { start: el.selectionStart, end: el.selectionEnd }
+  }, [])
 
   // Stash the draft on the clipboard whenever the tray closes with content, so a
   // glitched insert (WS dropped, session detached) never silently loses it.
@@ -107,6 +132,29 @@ export function ComposeTray({
     backupDraft()
     onClose()
   }, [backupDraft, onClose])
+
+  // Format the whole draft via the LLM formatter; replace in place and offer an
+  // Undo (the toast action — a programmatic replace doesn't feed the textarea's
+  // native undo stack).
+  const handleFormat = useCallback(async () => {
+    const before = editText
+    if (!before.trim() || formatting) return
+    setFormatting(true)
+    try {
+      const result = await onFormat(before)
+      if (result && result !== before) {
+        setEditText(result)
+        toast('Formatted', {
+          duration: 6000,
+          action: { label: 'Undo', onClick: () => setEditText(before) },
+        })
+      } else {
+        toast('No formatting changes', { duration: 1500 })
+      }
+    } finally {
+      setFormatting(false)
+    }
+  }, [editText, formatting, onFormat])
 
   if (!isOpen) return null
 
@@ -148,6 +196,9 @@ export function ComposeTray({
               handleConfirm()
             }
           }}
+          onKeyUp={syncCaret}
+          onClick={syncCaret}
+          onSelect={syncCaret}
           rows={1}
           style={TEXTAREA_STYLE}
           aria-label="Compose input"
@@ -167,53 +218,69 @@ export function ComposeTray({
           </div>
         )}
 
-        {/* One action row: record/stop on the left, Insert/Copy on the right.
-            Close is the header X (which also backs the draft up to the clipboard). */}
+        {/* One action row: input/transform on the left (Record, Format), output
+            on the right (Insert, Copy). Close is the header X (also backs up). */}
         <div style={ACTION_ROW_STYLE}>
-          {state === 'recording' ? (
-            <>
-              <button className="font-medium" style={STOP_BTN_STYLE} onClick={onStop}>
-                <Square size={12} fill="currentColor" /> Stop
-              </button>
-              <span style={TIMER_STYLE}>
-                <span style={PULSE_DOT_STYLE} />
-                <span>{mm}:{ss}</span>
+          <div style={GROUP_STYLE}>
+            {state === 'recording' ? (
+              <>
+                <button className="font-medium" style={STOP_BTN_STYLE} onClick={onStop}>
+                  <Square size={12} fill="currentColor" /> Stop
+                </button>
+                <span style={TIMER_STYLE}>
+                  <span style={PULSE_DOT_STYLE} />
+                  <span>{mm}:{ss}</span>
+                </span>
+              </>
+            ) : takeInFlight ? (
+              <span style={PROGRESS_STYLE} aria-live="polite">
+                <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
+                {state === 'transcribing' ? 'Transcribing…' : 'Starting…'}
               </span>
-            </>
-          ) : takeInFlight ? (
-            <span style={PROGRESS_STYLE} aria-live="polite">
-              <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
-              {state === 'transcribing' ? 'Transcribing…' : 'Starting…'}
-            </span>
-          ) : (
+            ) : (
+              <>
+                <button
+                  className="font-medium"
+                  style={{ ...RECORD_BTN_STYLE, ...(recordDisabled ? DISABLED_STYLE : {}) }}
+                  onClick={onRecord}
+                  disabled={recordDisabled}
+                  title={recordDisabled && capability.status === 'unavailable' ? capability.message : undefined}
+                >
+                  <Mic size={14} /> Record
+                </button>
+                <button
+                  className="font-medium"
+                  style={{ ...FORMAT_BTN_STYLE, ...(editText.trim() && !formatting ? {} : DISABLED_STYLE) }}
+                  disabled={!editText.trim() || formatting}
+                  onClick={handleFormat}
+                  title="Polish the whole draft with the formatter"
+                >
+                  {formatting
+                    ? <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
+                    : <Sparkles size={14} />} Format
+                </button>
+              </>
+            )}
+          </div>
+          <div style={{ ...GROUP_STYLE, marginLeft: 'auto' }}>
             <button
               className="font-medium"
-              style={{ ...RECORD_BTN_STYLE, ...(recordDisabled ? DISABLED_STYLE : {}) }}
-              onClick={onRecord}
-              disabled={recordDisabled}
-              title={recordDisabled && capability.status === 'unavailable' ? capability.message : undefined}
+              style={{ ...CONFIRM_BTN_STYLE, ...(canInsert ? {} : DISABLED_STYLE) }}
+              disabled={!canInsert}
+              onClick={handleConfirm}
+              title={isRecoverable ? 'Target no longer available' : undefined}
             >
-              <Mic size={14} /> Record
+              Insert
             </button>
-          )}
-          <span style={{ flex: 1 }} />
-          <button
-            className="font-medium"
-            style={{ ...CONFIRM_BTN_STYLE, ...(canInsert ? {} : DISABLED_STYLE) }}
-            disabled={!canInsert}
-            onClick={handleConfirm}
-            title={isRecoverable ? 'Target no longer available' : undefined}
-          >
-            Insert
-          </button>
-          <button
-            className="font-medium"
-            style={{ ...COPY_BTN_STYLE, ...(editText.trim() ? {} : DISABLED_STYLE) }}
-            disabled={!editText.trim()}
-            onClick={() => onCopy(editText)}
-          >
-            Copy
-          </button>
+            <button
+              className="font-medium"
+              style={{ ...COPY_BTN_STYLE, ...(editText.trim() ? {} : DISABLED_STYLE) }}
+              disabled={!editText.trim()}
+              onClick={() => onCopy(editText)}
+            >
+              Copy
+            </button>
+          </div>
         </div>
       </div>
     </DialogShell>
@@ -267,8 +334,16 @@ const ACTION_ROW_STYLE: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: 8,
+  rowGap: 8,
   marginTop: 12,
   minHeight: 32,
+  flexWrap: 'wrap',
+}
+
+const GROUP_STYLE: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 8,
 }
 
 const TIMER_STYLE: React.CSSProperties = {
@@ -317,6 +392,12 @@ const RECORD_BTN_STYLE: React.CSSProperties = {
   ...BTN_BASE,
   background: 'var(--sol-subtle-bg)',
   color: 'var(--sol-base01)',
+}
+
+const FORMAT_BTN_STYLE: React.CSSProperties = {
+  ...BTN_BASE,
+  background: 'var(--sol-subtle-bg)',
+  color: 'var(--sol-text)',
 }
 
 const STOP_BTN_STYLE: React.CSSProperties = {

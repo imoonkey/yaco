@@ -148,3 +148,27 @@ test('plain Enter inserts a newline; only Cmd/Ctrl+Enter sends', async ({ page }
   await input.press('ControlOrMeta+Enter')
   await expect(input).toBeHidden({ timeout: 5_000 })
 })
+
+test('Format replaces the draft; Undo (toast) restores it', async ({ page }) => {
+  await stubVoice(page, 'original transcript')
+  // The Format button (and the take pipeline) post to /voice/format; return a
+  // distinct polished string so the replace is observable.
+  await page.route('**/api/voice/format', (route) =>
+    route.fulfill({ json: { displayText: 'Polished text.', formattingStatus: 'formatted' } }),
+  )
+  await openFileForVoice(page)
+
+  // A take lands the formatted text; then type raw text so Format produces a change.
+  await page.getByRole('button', { name: 'Start voice recording' }).click()
+  await page.getByRole('button', { name: 'Stop', exact: true }).click()
+  const input = page.getByLabel('Compose input')
+  await expect(input).toHaveValue('Polished text.', { timeout: 10_000 })
+
+  await input.fill('some unformatted draft')
+  await page.getByRole('button', { name: 'Format' }).click()
+  await expect(input).toHaveValue('Polished text.', { timeout: 5_000 })
+
+  // The toast's Undo action restores the pre-format draft.
+  await page.getByRole('button', { name: 'Undo' }).click()
+  await expect(input).toHaveValue('some unformatted draft')
+})

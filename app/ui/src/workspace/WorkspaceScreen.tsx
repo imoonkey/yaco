@@ -165,6 +165,7 @@ function WorkspaceScreen() {
         onCopy={voice.copy}
         onClose={voice.discard}
         onRetry={voice.retry}
+        onFormat={voice.format}
       />
       {showShortcutSheet && <ShortcutSheet onClose={() => setShowShortcutSheet(false)} />}
     </WorkspaceVoiceContext.Provider>

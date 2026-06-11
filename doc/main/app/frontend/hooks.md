@@ -210,7 +210,7 @@ Orchestrates the single-take voice-input flow on top of three pieces:
 `voiceStateMachine.ts` (the `voiceReducer` + selectors), and the split
 [`/api/voice/transcribe` + `/api/voice/format`](../backend/routes.md#voice) routes.
 
-**Export**: `useVoice()` → `{ capability, state, elapsedMs, appendText, target, errorMessage, notice, open, record, stop, retry, confirm, copy, discard, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md).
+**Export**: `useVoice()` → `{ capability, state, elapsedMs, appendText, target, errorMessage, notice, open, record, stop, retry, format, confirm, copy, discard, markTargetLost }`. The shape is the tray-facing contract `ComposeTray`/`VoiceControl` consume — see [components.md](components.md). `format(text)` runs the formatter over arbitrary draft text (the tray's **Format** button), returning the polished text (or the input unchanged on failure).
 
 ### Flow
 
