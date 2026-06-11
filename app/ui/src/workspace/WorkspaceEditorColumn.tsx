@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
+import { Sparkles } from 'lucide-react'
 import { WorkspaceTabBar } from './WorkspaceTabBar'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
@@ -18,7 +19,6 @@ interface EditorColumnVoice {
   eligible: boolean
   capability: CapabilityState
   state: InteractionState
-  elapsedMs: number
   onStart: () => void
   onStop: () => void
 }
@@ -80,6 +80,13 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const activeFileLoading = activeFilePath != null && activeFileContent === null && activeFileState?.status !== 'missing'
   const activeViewportLine = activeFileState?.viewportLine ?? 1
   const hasConflict = !!activeFilePath && conflictTabs.has(activeFilePath)
+  const showSuggestionsToggle = !activeDiffTab
+  const suggestionsLabel = autocompleteEnabled
+    ? 'Suggestions: disable inline suggestions'
+    : 'Suggestions: enable inline suggestions'
+  const suggestionsTitle = autocompleteEnabled
+    ? 'Disable inline suggestions'
+    : 'Enable inline suggestions - sends nearby markdown text to the model provider'
 
   const handleSaveTab = useCallback((tab: string) => {
     const f = files[tab]
@@ -121,29 +128,28 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
             <VoiceControl
               capability={voice.capability}
               state={voice.state}
-              elapsedMs={voice.elapsedMs}
               onStart={voice.onStart}
               onStop={voice.onStop}
             />
           )}
-          <button
-            onClick={() => onLayoutUpdate({ autocompleteEnabled: !autocompleteEnabled })}
-            title={autocompleteEnabled
-              ? 'Disable inline suggestions'
-              : 'Enable inline suggestions — sends nearby markdown text to the model provider'}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px',
-              fontSize: 'var(--text-ui-sm)', border: 'none', borderRadius: 3, cursor: 'pointer',
-              background: autocompleteEnabled ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'transparent',
-              color: autocompleteEnabled ? 'var(--sol-text)' : 'var(--sol-text-dim)',
-              opacity: autocompleteEnabled ? 1 : 0.6,
-            }}
-          >
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M8 1v2M8 13v2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M1 8h2M13 8h2M3.5 12.5l1.4-1.4M11.1 4.9l1.4-1.4" />
-            </svg>
-            Suggestions
-          </button>
+          {showSuggestionsToggle && (
+            <button
+              onClick={() => onLayoutUpdate({ autocompleteEnabled: !autocompleteEnabled })}
+              title={suggestionsTitle}
+              aria-label={suggestionsLabel}
+              aria-pressed={autocompleteEnabled}
+              style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 24, height: 22, padding: 0,
+                fontSize: 'var(--text-ui-sm)', border: 'none', borderRadius: 3, cursor: 'pointer',
+                background: autocompleteEnabled ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'transparent',
+                color: autocompleteEnabled ? 'var(--sol-text)' : 'var(--sol-text-dim)',
+                opacity: autocompleteEnabled ? 1 : 0.6,
+              }}
+            >
+              <Sparkles size={13} aria-hidden="true" />
+            </button>
+          )}
         </>}
       />
 

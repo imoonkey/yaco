@@ -204,7 +204,6 @@ export type VoiceControlState = {
   eligible: boolean
   capability: CapabilityState
   state: InteractionState
-  elapsedMs: number
   onStart: () => void
   onStop: () => void
 }
@@ -227,7 +226,6 @@ const INERT_VOICE_CONTROL: VoiceControlState = {
   eligible: false,
   capability: { status: 'checking' },
   state: 'idle',
-  elapsedMs: 0,
   onStart: () => {},
   onStop: () => {},
 }

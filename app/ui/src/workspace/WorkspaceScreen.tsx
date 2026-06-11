@@ -110,17 +110,17 @@ function WorkspaceScreen() {
   const voiceSurface = useMemo<WorkspaceVoiceSurface>(() => ({
     editor: {
       eligible: voiceBridge.editorVoiceEligible,
-      capability: voice.capability, state: voice.state, elapsedMs: voice.elapsedMs,
+      capability: voice.capability, state: voice.state,
       onStart: voiceBridge.handleEditorVoiceStart, onStop: voice.stop,
     },
     terminal: {
       eligible: voiceBridge.terminalVoiceEligible,
-      capability: voice.capability, state: voice.state, elapsedMs: voice.elapsedMs,
+      capability: voice.capability, state: voice.state,
       onStart: voiceBridge.handleTerminalVoiceStart, onStop: voice.stop,
     },
     editorInsert,
     terminalSend,
-  }), [voiceBridge, voice.capability, voice.state, voice.elapsedMs, voice.stop, editorInsert, terminalSend])
+  }), [voiceBridge, voice.capability, voice.state, voice.stop, editorInsert, terminalSend])
 
   const handleToggleTextSearch = useCallback(() => {
     actions.updateLayout({ showTextSearch: !layout.showTextSearch, showSidebar: true, showExplorer: true })

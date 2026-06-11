@@ -172,6 +172,7 @@ describe('EditorPanel — behavior-equivalent to the inline editor body', () => 
     expect(screen.getByText('No files open')).toBeTruthy()
     // The always-present editor-pref toggle in the tab bar's right actions.
     expect(screen.getByRole('button', { name: /Suggestions/ })).toBeTruthy()
+    expect(screen.queryByText('Suggestions')).toBeNull()
     // No compare tab is active, so no compare list is fetched.
     expect(mockFetchGitCompare).not.toHaveBeenCalled()
   })
@@ -243,5 +244,6 @@ describe('EditorPanel — behavior-equivalent to the inline editor body', () => 
     renderEditorPanel({ activeTab: 'diff:src/foo.ts' })
     await waitFor(() => expect(mockFetchGitDiff).toHaveBeenCalled())
     expect(mockFetchGitCompare).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /Suggestions/ })).toBeNull()
   })
 })

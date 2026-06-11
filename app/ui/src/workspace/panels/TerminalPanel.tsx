@@ -78,7 +78,6 @@ export function TerminalPanel() {
           <VoiceControl
             capability={voice.terminal.capability}
             state={voice.terminal.state}
-            elapsedMs={voice.terminal.elapsedMs}
             onStart={voice.terminal.onStart}
             onStop={voice.terminal.onStop}
           />
