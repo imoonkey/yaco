@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { CliError, ErrCode } from "../errors.ts";
 import { ADJECTIVES, NOUNS } from "./words.ts";
 
-export type SessionStatus = "starting" | "idle" | "processing" | "blocked";
+export type SessionStatus = "starting" | "idle" | "processing" | "blocked" | "crashed";
 
 /** Sub-reason for a `blocked` status. Presentation-only tag for the UI badge. */
 export type BlockReason = "permission" | "question" | "trust";
@@ -25,6 +25,12 @@ export interface SessionState {
   sessionId: string;
   status: SessionStatus;
   createdAt: string;
+  /** ISO time the current status was entered. Stamped on every status
+   *  transition; the durable status-edge generation identity is derived from it
+   *  (`<kind>:<subjectKey>:<statusEnteredAt>`). Legacy files may omit it. */
+  statusEnteredAt?: string;
+  /** Agent process exit code. Present iff status === "crashed". */
+  exitCode?: number;
   /** Block sub-reason. Present iff status === "blocked". */
   blockReason?: BlockReason;
   /** Spawn source. New starts always write it; legacy files may omit it. */

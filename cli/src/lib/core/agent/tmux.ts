@@ -195,11 +195,17 @@ export function createSession(handle: string, command: string, cwd?: string): vo
   // multi-root setups) is ignored and the session's state lands in ~/.yaco.
   const yacoHome = process.env["YACO_HOME"];
   const envArg = yacoHome && yacoHome.length > 0 ? `-e "YACO_HOME=${yacoHome}" ` : "";
+  // Propagate the absolute yaco invocation as YACO_BIN so the wrapper's EXIT-trap
+  // crash path can run `yaco agent mark-crashed` without depending on the dying
+  // shell's PATH. Delivered via tmux -e (not a command prefix): a leading
+  // `VAR=val` token would be exec'd by tmux as a program and the pane would die.
+  const yacoBin = [selfInvocation().command, ...selfInvocation().args].join(" ");
+  const yacoBinArg = yacoBin.length > 0 ? `-e "YACO_BIN=${yacoBin}" ` : "";
   // -x/-y is the initial detached size; window-size=latest sizes the window
   // to whatever client most recently became active — so the device you're
   // currently using always sees content fit to its own screen.
   execSync(
-    `${cgroupEscapePrefix()}tmux new-session -d -s "${handle}" ${cwdArg} ${envArg}-x 333 -y 100 ${command}`,
+    `${cgroupEscapePrefix()}tmux new-session -d -s "${handle}" ${cwdArg} ${envArg}${yacoBinArg}-x 333 -y 100 ${command}`,
     { stdio: "pipe", cwd: projectPath, timeout: EXEC_TIMEOUT_MS },
   );
   ensureTrueColorSupport();

@@ -20,6 +20,10 @@ export interface AgentSessionRow {
   name: string;
   provider: string;
   status: SessionStatus;
+  /** ISO time the current status was entered — the status-edge generation key. */
+  statusEnteredAt?: string;
+  /** Agent process exit code. Present iff status === "crashed". */
+  exitCode?: number;
   /** Block sub-reason. Present iff status === "blocked". */
   blockReason?: BlockReason;
   project: string;
@@ -40,12 +44,14 @@ export interface ProjectableSessionState {
   pid: number;
   sessionId: string;
   status: string;
+  statusEnteredAt?: string;
+  exitCode?: number;
   blockReason?: string;
   spawnedBy?: string;
   parentSession?: string;
 }
 
-const VALID_STATUSES = new Set<string>(["starting", "idle", "processing", "blocked"]);
+const VALID_STATUSES = new Set<string>(["starting", "idle", "processing", "blocked", "crashed"]);
 const VALID_BLOCK_REASONS = new Set<string>(["permission", "question", "trust"]);
 const VALID_SPAWNED_BY = new Set<string>(["user:web", "user:terminal", "agent"]);
 
@@ -105,6 +111,12 @@ export function toSessionRow(
   };
   if (typeof state.spawnedBy === "string" && VALID_SPAWNED_BY.has(state.spawnedBy)) {
     row.spawnedBy = state.spawnedBy as SpawnedBy;
+  }
+  if (typeof state.statusEnteredAt === "string" && state.statusEnteredAt) {
+    row.statusEnteredAt = state.statusEnteredAt;
+  }
+  if (state.status === "crashed" && typeof state.exitCode === "number") {
+    row.exitCode = state.exitCode;
   }
   if (
     state.status === "blocked" &&
