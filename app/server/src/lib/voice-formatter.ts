@@ -106,6 +106,20 @@ export interface FormatResult {
   warning?: string
 }
 
+/** Concise reason for a failed formatter attempt, so the cause (rate limit vs
+ *  timeout vs empty) is visible in the server log instead of silently swallowed.
+ *  Duck-typed on the error shape (the OpenAI error classes aren't always present,
+ *  e.g. under test mocks). */
+function describeFormatError(err: unknown): string {
+  const status = (err as { status?: unknown })?.status
+  if (typeof status === 'number') {
+    const code = (err as { code?: unknown }).code
+    return `HTTP ${status}${typeof code === 'string' ? ` ${code}` : ''}` // e.g. "HTTP 429 rate_limit_exceeded"
+  }
+  if (err instanceof Error) return err.constructor?.name || err.name || 'Error' // e.g. APITimeoutError
+  return String(err)
+}
+
 /**
  * Try each model in order until one succeeds. All use the same API key + base URL.
  * Returns formatted text on success, or raw input text if all models fail.
@@ -148,11 +162,13 @@ export async function formatWithFallback(
       if (formatted) {
         return { text: formatted, model, status: 'formatted' }
       }
-    } catch {
-      // Try next model
+      console.warn(`[voice-format] model ${model} returned empty output; trying next`)
+    } catch (err) {
+      console.warn(`[voice-format] model ${model} failed: ${describeFormatError(err)}; trying next`)
     }
   }
 
+  console.warn(`[voice-format] all ${models.length} model(s) failed; returning raw transcript`)
   return {
     text,
     model: '',
