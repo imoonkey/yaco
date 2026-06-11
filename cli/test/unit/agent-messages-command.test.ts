@@ -57,6 +57,13 @@ describe("parseMessagesArgs", () => {
       expect(() => parseMessagesArgs(["h", "--index", "1", ...extra])).toThrow(CliError);
     }
   });
+
+  it("parses summary mode and rejects combining it with other flags", () => {
+    expect(parseMessagesArgs(["h", "--summary"])).toEqual({ handle: "h", mode: { kind: "summary" } });
+    for (const extra of [["--index", "1"], ["--meta"], ["--role", "user"], ["--range", "0..1"], ["--preview"], ["--ts"]]) {
+      expect(() => parseMessagesArgs(["h", "--summary", ...extra])).toThrow(CliError);
+    }
+  });
 });
 
 describe("renderMetaTable", () => {

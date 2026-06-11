@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-06-11: `yaco agent messages --summary` — session orientation
+
+**What changed:**
+- New `--summary` mode on `agent messages` (`commands/agent/messages.ts`,
+  `MessagesSummary` in `providers/types.ts`): constant-size whole-session
+  orientation — total / total chars / empty-row count, role + primary-kind
+  histograms, `tool_use`-by-name counts, and the **prompt landmark indices**
+  (real user messages = `role:user` minus tool_results). Standalone mode
+  (rejects other flags); JSON returns the `MessagesSummary`, text is a compact
+  5-line block.
+
+**Why:**
+- `--meta` over a long session is hundreds of flat rows (~6k tokens for ~500),
+  ~80% of it tool plumbing + empty `thinking`. The efficient entry point is the
+  handful of user-prompt landmarks + the shape, not the full dump. `--summary`
+  gives that in constant size, so an orchestrator orients first
+  (summary → `--range`/`--index`) instead of paging the whole log. Chosen over a
+  default `chars==0` drop in `--meta`, which would silently hide rows (violating
+  no-silent-truncation) — `--summary` surfaces the noise count (`empty`)
+  explicitly instead.
+
+**Key files:** `cli/src/commands/agent/messages.ts`, `cli/src/lib/core/agent/providers/types.ts`, `cli/src/commands/agent/index.ts`, `doc/main/cli/providers.md`, `agent-config/global/skills/yaco-agent/SKILL.md`
+**Verification:** `bun run test:unit` green (parser exclusivity + spawned summary envelope/text tests) except the pre-existing `move.test.ts` mtime flake. Live: `--summary` on a 576-message session → 5-line block with 15 prompt landmarks + tool histogram.
+**Commit:** this commit.
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-11: `yaco agent messages` — structured history navigation
 
 **What changed:**

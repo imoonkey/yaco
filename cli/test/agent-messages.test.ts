@@ -165,6 +165,30 @@ describe("agent messages — filters preserve absolute indices", () => {
   });
 });
 
+describe("agent messages — summary", () => {
+  it("--summary JSON reports shape + prompt landmarks", () => {
+    const { status, envelope } = runJson(["agent", "messages", "msg", "--summary", "--json"]);
+    expect(status).toBe(0);
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data).toMatchObject({
+      total: 5,
+      roles: { assistant: 3, user: 2 },
+      toolResults: 1,
+      prompts: [0], // the one real user text prompt; index 3 is a tool_result
+    });
+    expect(envelope.data.kinds).toMatchObject({ text: 2, thinking: 1, tool_use: 1, tool_result: 1 });
+    expect(envelope.data.tools).toMatchObject({ Bash: 1 });
+  });
+
+  it("--summary text mode is a compact constant-size block", () => {
+    const { status, stdout } = run(["agent", "messages", "msg", "--summary"]);
+    expect(status).toBe(0);
+    expect(stdout).toContain("5 messages");
+    expect(stdout).toContain("prompts: 0");
+    expect(stdout).toContain("Bash 1");
+  });
+});
+
 describe("agent messages — index mode", () => {
   it("--index returns one full message with text + ts", () => {
     const { envelope } = runJson(["agent", "messages", "msg", "--index", "4", "--json"]);

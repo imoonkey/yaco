@@ -220,8 +220,14 @@ comes from `wait` / `--wait`.
 ```text
 yaco agent messages <name> [--meta] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
 yaco agent messages <name>  --index <i>          # full message; i may be negative (-1 = last)
+yaco agent messages <name>  --summary            # constant-size session shape + prompt landmarks
 ```
 
+- **`--summary`** is the orientation entry for a large session: total, role/kind
+  histograms, `tool_use`-by-name counts, the empty-row count, total chars, and
+  the **prompt landmark indices** (real user messages — `role:user` minus
+  tool_results). Constant size regardless of session length — read it first,
+  then `--range`/`--index` into the part you want.
 - **`--meta`** (default) lists lean rows `{index, role, types, chars}` — a
   token-cheap table of contents. `chars` is the budget signal. `--preview[=N]`
   (default 100) and `--ts` are opt-in. Filters `--role` / `--type` (prefix-matches

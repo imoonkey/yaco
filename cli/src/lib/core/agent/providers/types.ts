@@ -224,6 +224,26 @@ export interface MessageFull {
   text: string;
 }
 
+/** Constant-size orientation over a whole session (`--summary`): shape +
+ *  landmarks, independent of length. `prompts` are the indices of real user
+ *  messages (role user, not a tool_result) — the conversation's table of
+ *  contents. */
+export interface MessagesSummary {
+  total: number;
+  roles: { assistant: number; user: number };
+  /** user rows that are tool_results (role user but environment-authored). */
+  toolResults: number;
+  /** count by primary kind bucket (text/thinking/tool_use/tool_result/...). */
+  kinds: Record<string, number>;
+  /** tool_use rows by tool name (e.g. Bash, Edit). */
+  tools: Record<string, number>;
+  /** rows with empty text (chars === 0) — the navigational noise floor. */
+  empty: number;
+  /** total textual characters across all messages. */
+  chars: number;
+  prompts: number[];
+}
+
 /** Full-inventory reader over a session's provider log. Parallel to
  *  `ProviderOutput` (turn-completion only): this exposes every message with
  *  stable indices. Inclusion is keyed on a coarse, frozen discriminator so

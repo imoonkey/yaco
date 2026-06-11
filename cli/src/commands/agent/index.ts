@@ -62,7 +62,7 @@ Usage:
   yaco agent providers [--json]
   yaco agent output-cursor <name> [--json]
   yaco agent output-follow <name> [--cursor <token>] [--offset <bytes>] [--json]
-  yaco agent messages <name> [--meta|--index <i>] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
+  yaco agent messages <name> [--meta|--index <i>|--summary] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
   yaco agent kill <name> | --all
   yaco agent rename <old> <new>
   yaco agent hooks install

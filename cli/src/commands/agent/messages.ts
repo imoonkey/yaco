@@ -17,6 +17,7 @@ import type {
   MessageFull,
   MessageMeta,
   MessageRole,
+  MessagesSummary,
   ParsedMessage,
   ProviderMessages,
 } from "../../lib/core/agent/providers/types.ts";
@@ -24,7 +25,8 @@ import type {
 export const MESSAGES_USAGE =
   "yaco agent messages <name> [--meta] [--role user|assistant] [--type <t>] " +
   "[--range a..b] [--preview[=N]] [--ts] [--json]\n" +
-  "  or: yaco agent messages <name> --index <i>   (i may be negative; -1 = last)";
+  "  or: yaco agent messages <name> --index <i>   (i may be negative; -1 = last)\n" +
+  "  or: yaco agent messages <name> --summary     (session shape + prompt landmarks)";
 
 const PREVIEW_DEFAULT = 100;
 const PREVIEW_MAX = 1000;
@@ -36,7 +38,8 @@ export interface MessagesRange {
 
 export type MessagesMode =
   | { kind: "meta"; role?: MessageRole; type?: string; range?: MessagesRange; preview?: number; ts: boolean }
-  | { kind: "index"; index: number };
+  | { kind: "index"; index: number }
+  | { kind: "summary" };
 
 export interface MessagesArgs {
   handle: string;
@@ -87,6 +90,7 @@ function parsePreviewValue(v: string): number {
 export function parseMessagesArgs(args: string[]): MessagesArgs {
   let handle: string | undefined;
   let metaSeen = false;
+  let summarySeen = false;
   let index: number | undefined;
   let role: MessageRole | undefined;
   let type: string | undefined;
@@ -98,6 +102,7 @@ export function parseMessagesArgs(args: string[]): MessagesArgs {
     const arg = args[i]!;
     if (arg === "--json") continue; // envelope mode is the dispatcher's concern
     if (arg === "--meta") { metaSeen = true; continue; }
+    if (arg === "--summary") { summarySeen = true; continue; }
     if (arg === "--ts") { ts = true; continue; }
     if (arg === "--index") { index = parseIndexValue(args[++i]); continue; }
     if (arg.startsWith("--index=")) { index = parseIndexValue(arg.slice("--index=".length)); continue; }
@@ -116,10 +121,14 @@ export function parseMessagesArgs(args: string[]): MessagesArgs {
 
   if (handle === undefined) throw new CliError(ErrCode.USAGE, MESSAGES_USAGE);
 
+  const hasMetaFlags = metaSeen || role !== undefined || type !== undefined || range !== undefined || preview !== undefined || ts;
+
+  if (summarySeen) {
+    if (index !== undefined || hasMetaFlags) throw usage("--summary takes no other flags");
+    return { handle, mode: { kind: "summary" } };
+  }
   if (index !== undefined) {
-    if (metaSeen || role !== undefined || type !== undefined || range !== undefined || preview !== undefined || ts) {
-      throw usage("--index cannot be combined with meta filters");
-    }
+    if (hasMetaFlags) throw usage("--index cannot be combined with meta filters");
     return { handle, mode: { kind: "index", index } };
   }
   return { handle, mode: { kind: "meta", role, type, range, preview, ts } };
@@ -185,7 +194,7 @@ function matchesType(types: string[], t: string): boolean {
   return types.some((x) => x === t || x.startsWith(`${t}:`));
 }
 
-export async function runMessages(args: MessagesArgs): Promise<MessageMeta[] | MessageFull> {
+export async function runMessages(args: MessagesArgs): Promise<MessageMeta[] | MessageFull | MessagesSummary> {
   const { state, messages } = resolveMessages(args.handle);
   const path = await messages.resolveLogPath(state);
   if (!path) throw new CliError(ErrCode.NOT_FOUND, `no message log yet for "${args.handle}"`);
@@ -206,6 +215,8 @@ export async function runMessages(args: MessagesArgs): Promise<MessageMeta[] | M
     if (msg) rows.push({ index: rows.length, msg });
   }
 
+  if (args.mode.kind === "summary") return summarize(rows);
+
   if (args.mode.kind === "index") {
     const n = rows.length;
     const i = args.mode.index < 0 ? args.mode.index + n : args.mode.index;
@@ -221,6 +232,41 @@ export async function runMessages(args: MessagesArgs): Promise<MessageMeta[] | M
   if (m.role) selected = selected.filter((r) => r.msg.role === m.role);
   if (m.type) selected = selected.filter((r) => matchesType(r.msg.types, m.type!));
   return selected.map((r) => toMeta(r, m.preview, m.ts));
+}
+
+/** Constant-size session orientation: role/kind/tool histograms, the empty-row
+ *  noise floor, and the prompt-landmark indices (real user messages — role
+ *  user, not a tool_result). */
+function summarize(rows: IndexedMessage[]): MessagesSummary {
+  const roles = { assistant: 0, user: 0 };
+  const kinds: Record<string, number> = {};
+  const tools: Record<string, number> = {};
+  const prompts: number[] = [];
+  let empty = 0;
+  let chars = 0;
+  let toolResults = 0;
+
+  for (const { index, msg } of rows) {
+    roles[msg.role]++;
+    chars += msg.text.length;
+    if (msg.text.length === 0) empty++;
+
+    const bucket = (msg.types[0] ?? "empty").split(":")[0]!;
+    kinds[bucket] = (kinds[bucket] ?? 0) + 1;
+    for (const t of msg.types) {
+      if (t.startsWith("tool_use:")) {
+        const name = t.slice("tool_use:".length);
+        tools[name] = (tools[name] ?? 0) + 1;
+      }
+    }
+
+    if (msg.role === "user") {
+      if (msg.types.includes("tool_result")) toolResults++;
+      else prompts.push(index);
+    }
+  }
+
+  return { total: rows.length, roles, toolResults, kinds, tools, empty, chars, prompts };
 }
 
 // -- Text rendering (compact; --json stays exact) --
@@ -292,8 +338,26 @@ export function renderMetaTable(rows: MessageMeta[], opts: { ts: boolean; previe
   return `${lines.join("\n")}\n`;
 }
 
-/** Render either mode's result for text output. */
-export function renderMessages(args: MessagesArgs, result: MessageMeta[] | MessageFull): string {
+/** `name N · name N` histogram, descending by count. */
+function histogram(m: Record<string, number>): string {
+  const entries = Object.entries(m).sort((a, b) => b[1] - a[1]);
+  return entries.length ? entries.map(([n, c]) => `${n} ${c}`).join(" · ") : "(none)";
+}
+
+export function renderSummary(s: MessagesSummary): string {
+  const prompts = s.prompts.length ? s.prompts.join(" ") : "(none)";
+  return [
+    `${s.total} messages · ${humanChars(s.chars)} chars · ${s.empty} empty`,
+    `roles:   assistant ${s.roles.assistant} · user ${s.roles.user} (${s.toolResults} tool results, ${s.prompts.length} prompts)`,
+    `kinds:   ${histogram(s.kinds)}`,
+    `tools:   ${histogram(s.tools)}`,
+    `prompts: ${prompts}`,
+  ].join("\n") + "\n";
+}
+
+/** Render each mode's result for text output. */
+export function renderMessages(args: MessagesArgs, result: MessageMeta[] | MessageFull | MessagesSummary): string {
+  if (args.mode.kind === "summary") return renderSummary(result as MessagesSummary);
   if (args.mode.kind === "index") return (result as MessageFull).text;
   return renderMetaTable(result as MessageMeta[], {
     ts: args.mode.ts,

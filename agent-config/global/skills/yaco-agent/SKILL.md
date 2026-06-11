@@ -156,6 +156,9 @@ already comes from `wait` / `--wait`; reach for `messages` to navigate *earlier*
 turns by a stable index. `capture` stays debug-only.
 
 ```bash
+# Orient first on a long session: shape + prompt-landmark indices, constant size
+yaco agent messages <handle> --summary --json
+
 # Token-cheap table of contents: one lean row per message {index, role, types, chars}
 yaco agent messages <handle> --json
 
@@ -168,17 +171,20 @@ yaco agent messages <handle> --index 47 --json
 yaco agent messages <handle> --index -1                         # last message, text raw
 ```
 
-Two-step navigation keeps token cost proportional to the window you care about,
-not session length: **scan `--meta`** (default) → **narrow** with
-`--role` / `--type` (prefix-matches, so `--type tool_use` hits `tool_use:Bash`) /
-`--range a..b` (inclusive; open ends and negative bounds) → optionally
-`--preview[=N]` / `--ts` on the narrowed set → **pull** the full message with
-`--index <i>`. `chars` is the budget signal (length of the text `--index`
-returns). Indices are stable: a row's `index` is frozen for the session's log,
-so a `--meta` index is safe to pass straight to `--index`.
+For a large session, **start with `--summary`** — it returns the role/kind/tool
+histograms and the `prompts` landmark indices (real user messages) at constant
+size, so you don't dump hundreds of rows to get oriented. Then two-step from
+there: **scan `--meta`** (default) → **narrow** with `--role` / `--type`
+(prefix-matches, so `--type tool_use` hits `tool_use:Bash`) / `--range a..b`
+(inclusive; open ends and negative bounds) → optionally `--preview[=N]` / `--ts`
+on the narrowed set → **pull** the full message with `--index <i>`. `chars` is
+the budget signal (length of the text `--index` returns). Indices are stable: a
+row's `index` is frozen for the session's log, so a `--meta` index is safe to
+pass straight to `--index`.
 
-- `--meta` JSON returns a `MessageMeta[]`; `--index` JSON returns one
-  `MessageFull` (`{index, role, types, chars, ts, text}`).
+- `--summary` JSON returns a `MessagesSummary`; `--meta` JSON returns a
+  `MessageMeta[]`; `--index` JSON returns one `MessageFull`
+  (`{index, role, types, chars, ts, text}`).
 - Errors: invalid handle → `USAGE`; no session / pending (no log yet) / index
   out of range → `NOT_FOUND`; provider without the capability → `INVALID`.
 
