@@ -194,6 +194,16 @@ Per-project `.gitignore` parser and cache.
 - Used by both `project-watcher.ts` (SSE filtering) and `files.ts` (tree building)
 - `clearGitignoreCache()` called when `.gitignore` changes on disk
 
+### colocatedRepos.ts (~150 lines)
+
+Detects **colocated repos** — depth-1 child directories that are their own git repo but kept out of the host repo (motivating case: `plan/` excluded via `.git/info/exclude`).
+
+**Exports**: `getColocatedRepos(projectPath)`, `clearColocatedReposCache()`
+
+- Detection signal: a depth-1 child whose `.git` exists (dir **or** worktree file), is **not in the host index** (one `git ls-files -z` read → top-level tracked names), and is **not matched by the root working-tree `.gitignore`** (reuses `gitignore.ts` — the same source the tree's dimming uses, so detection and dimming never disagree). Self/ancestor symlinks (`loop -> .`) are skipped.
+- `colocatedRepos` policy from `yaco.toml` `[colocated] repos` (via the re-exported `parseScopedToml`): `"auto"` (default), `"off"`, or a comma-separated allow-list re-validated by the same signal. Malformed config degrades to `"auto"` (a `/status` poll must not crash).
+- Result cached by `realpath(projectPath)` for a short TTL; no watchers. Consumed by the `/status`, `/diff`, `/files` search-index surfaces. -> See: [routes.md#colocated-repos](routes.md#colocated-repos)
+
 ### terminal.ts (~430 lines)
 
 PTY management for terminal sessions.

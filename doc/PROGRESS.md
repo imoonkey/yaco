@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-11: Colocated repos — `plan/` as a private repo, first-class in the app
+
+**What changed:**
+- **General colocated-repo mechanism.** A depth-1 child that is its own git repo but kept out of the host repo (motivating case: `plan/`) is now first-class in the app — searchable, changes/diffs shown, tree undimmed — without entering host git. The app never hardcodes `plan`; `app/server/src/lib/colocatedRepos.ts` (`getColocatedRepos`) detects the set by signal: `.git` exists (dir or worktree file), **not in host index** (one `git ls-files -z`), **not matched by the root working-tree `.gitignore`** (reuses `gitignore.ts`, so detection ≡ dimming). Policy from `yaco.toml [colocated] repos` = `auto`|`off`|comma allow-list; realpath-keyed short-TTL cache.
+- **Multi-repo read-only git surfaces.** `/status` (`git.ts`) aggregates host + each colocated repo with a `<repo>/` prefix, deterministic order, one `seen` set; snapshots re-keyed by `<effectivePath>\0<repoPrefix>` (fixes the prior by-projectName worktree-sharing bug) with a partial-failure state table. `/files` search-index (`files.ts`) merges per-repo `git ls-files` (the v1 blocker — host `--exclude-standard` can't see an `info/exclude`d nested repo). `resolveFileRepo` routes `/diff` (`deny`) and `/baseline` (`preserve`) to the owning repo, handling deleted colocated files and never running git outside the project.
+- **Explicit `[paths] plan` root.** `yaco-paths.ts` gains `plan` (default `plan`) + `backlog`; `tasks/active/archive/backlog` are plan-relative internally but `readYacoProjectPaths()` returns repo-relative effective paths (default layout byte-identical, callers unchanged). `parseScopedToml` re-exported from the barrel.
+- **`yaco plan init`** (new `plan` CLI area). In-place `git init`, `/<plan>/` in the git-resolved `info/exclude` (never committed → public repo clean + app doesn't dim it), default `<plan>/.gitignore` (never overwritten), idempotent, `--remote` adds origin but **never pushes**. Refuses if the root `.gitignore` matches plan or if run from inside the plan repo.
+
+**Why:**
+- `plan/` shouldn't ship in the open-sourced repo, but physically moving it out is undesirable. Splitting the two conflated meanings of "git-ignored by the host" — real-git exclusion (`info/exclude`) vs YACO surfacing (mirror read-only git per repo) — keeps it colocated, private, and first-class. A general signal (not hardcoding `plan`) is IDE-like and makes the "plan tracked in the host repo just works" case fall out for free. Pushing the separate plan repo is a personal preference, so the tool only ever adds a remote.
+
+**Key files:** `app/server/src/lib/colocatedRepos.ts` (new), `app/server/src/routes/{git,files}.ts`, `cli/src/lib/core/paths/{yaco-paths,index}.ts`, `cli/src/commands/plan/{index,init}.ts` (new), `cli/src/main.ts`; tests under `app/server/src/{lib,routes}/__tests__/` + `cli/test/unit/{core/paths,commands/plan}/`; docs `doc/main/app/backend/{routes,libs}.md`, `doc/main/cli/{paths,plan,README,command-surface}.md`.
+**Verification:** app/server `vitest run src/` → 523 passed (35 files); `cli bun run test` → 939 passed, 1 pre-existing unrelated failure (`project/move.test.ts` jsonl mtime, also red on `main`). Each phase independently code-reviewed + committed.
+**Commit:** `3ef3e7c`..`fa88124` (+ this docs commit) on branch `task/colocated-repo`.
+**Next:** optional `colocated-tree-badge` (backlog); the one-time OSS migration (`plan-repo-migration` milestone — history scrub + separate private repos) is human-driven and out of scope here.
+**Blockers:** None.
+
 ## 2026-06-11: Voice — revert streaming segmentation to a single-take unified compose tray
 
 **What changed:**

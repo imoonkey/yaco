@@ -65,8 +65,8 @@ compact JSON blob — the old behavior the read-surface pass removed.
 
 ## Area inventory (today)
 
-Nine top-level areas: `agent` · `task` · `worktree` · `project` · `align` ·
-`init` · `install` · `doctor` · `paths`. A follow-up `surface-hygiene` design
+Ten top-level areas: `agent` · `task` · `worktree` · `project` · `align` ·
+`init` · `install` · `doctor` · `paths` · `plan`. A follow-up `surface-hygiene` design
 proposes consolidating these to six (folding `init links` + `agent hooks
 install` into `install`, relocating `align poll` under `agent`, and merging
 `doctor` + `paths` into a read-only `env` area) — **not shipped**; tracked
