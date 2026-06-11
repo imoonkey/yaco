@@ -3,7 +3,7 @@ import { X, Mic, Square, LoaderCircle, Wand } from 'lucide-react'
 import { toast } from 'sonner'
 import { DialogShell } from './DialogShell'
 import { writeTextToClipboard } from '../lib/clipboard'
-import type { VoiceSurface, InteractionState, CapabilityState, AppendText } from '../hooks/useVoice'
+import type { VoiceSurface, InteractionState, CapabilityState, AppendText, FormatResult } from '../hooks/useVoice'
 
 // The one compose surface for terminal/editor text entry: type, paste, or
 // record (one take at a time, inserted at the caret). Insert sends the draft to
@@ -41,13 +41,16 @@ export function ComposeTray({
   onCopy: (text: string) => void
   onClose: () => void
   onRetry: () => void
-  onFormat: (text: string) => Promise<string>
+  onFormat: (text: string) => Promise<FormatResult>
 }) {
   const isOpen = state !== 'idle'
   const [editText, setEditText] = useState('')
   const [formatting, setFormatting] = useState(false)
   // Pre-format draft, kept while an Undo for the last Format is still offered.
   const [preFormat, setPreFormat] = useState<string | null>(null)
+  // Inline Format feedback (shown in the tray, not a toast — toasts can land far
+  // from the tray). { error:true } for failure, false for a benign "no change".
+  const [formatNote, setFormatNote] = useState<{ text: string; error: boolean } | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   // Last known caret/selection in the draft — recorded text is spliced here.
   const caretRef = useRef<{ start: number; end: number } | null>(null)
@@ -60,6 +63,7 @@ export function ComposeTray({
   if (appendText && appendText.key !== prevAppendKey) {
     setPrevAppendKey(appendText.key)
     setPreFormat(null) // a new take supersedes the prior format's Undo
+    setFormatNote(null)
     setEditText(prev => {
       const start = Math.min(caretRef.current?.start ?? prev.length, prev.length)
       const end = Math.min(caretRef.current?.end ?? prev.length, prev.length)
@@ -79,7 +83,7 @@ export function ComposeTray({
   const [prevOpen, setPrevOpen] = useState(isOpen)
   if (isOpen !== prevOpen) {
     setPrevOpen(isOpen)
-    if (!isOpen) { setEditText(''); setPreFormat(null) }
+    if (!isOpen) { setEditText(''); setPreFormat(null); setFormatNote(null) }
   }
 
   // Auto-size: min ~50px, max 50vh.
@@ -138,17 +142,21 @@ export function ComposeTray({
 
   // Format the whole draft via the LLM formatter; replace in place and keep the
   // pre-format text so a flat Undo button (next to Format) can restore it.
+  // Outcome is reported inline (formatNote), never via a toast.
   const handleFormat = useCallback(async () => {
     const before = editText
     if (!before.trim() || formatting) return
     setFormatting(true)
+    setFormatNote(null)
     try {
-      const result = await onFormat(before)
-      if (result && result !== before) {
-        setEditText(result)
-        setPreFormat(before)
+      const { text, ok } = await onFormat(before)
+      if (!ok) {
+        setFormatNote({ text: 'Formatting failed — try again.', error: true })
+      } else if (text === before) {
+        setFormatNote({ text: 'Already clean — no changes.', error: false })
       } else {
-        toast('No formatting changes', { duration: 1500 })
+        setEditText(text)
+        setPreFormat(before)
       }
     } finally {
       setFormatting(false)
@@ -194,7 +202,11 @@ export function ComposeTray({
         <textarea
           ref={textareaRef}
           value={editText}
-          onChange={(e) => { setEditText(e.target.value); if (preFormat !== null) setPreFormat(null) }}
+          onChange={(e) => {
+            setEditText(e.target.value)
+            if (preFormat !== null) setPreFormat(null)
+            if (formatNote !== null) setFormatNote(null)
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
               e.preventDefault()
@@ -220,6 +232,17 @@ export function ComposeTray({
           <div style={ERROR_ROW_STYLE} role="alert">
             <span>{errorMessage}</span>
             <button className="font-medium" style={ERROR_ACTION_STYLE} onClick={onRetry}>Retry</button>
+          </div>
+        )}
+
+        {/* Inline Format feedback (in the tray, not a toast) */}
+        {formatNote && (
+          <div
+            style={{ ...NOTICE_STYLE, color: formatNote.error ? 'var(--sol-red)' : 'var(--sol-text-faint)' }}
+            role="status"
+            aria-live="polite"
+          >
+            {formatNote.text}
           </div>
         )}
 

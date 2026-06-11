@@ -118,6 +118,10 @@ export async function formatWithFallback(
   const client = new OpenAI({
     apiKey: process.env.GROQ_API_KEY,
     baseURL: process.env.VOICE_FORMATTER_BASE_URL || 'https://api.groq.com/openai/v1',
+    // No SDK-level retries: the sequential model fallback below IS our retry, and
+    // the default maxRetries (2) would multiply each model's 5s timeout up to 3×,
+    // blowing past the client's 30s budget and forcing a raw-transcript fallback.
+    maxRetries: 0,
   })
 
   for (const model of models) {

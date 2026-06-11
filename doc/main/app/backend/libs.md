@@ -312,7 +312,7 @@ Multi-model LLM formatter with fallback chain via `openai` SDK.
 - Sends the raw transcript through `buildFormatterUserMessage()` so the model sees a bounded `<raw_transcript>` source block.
 - Sets current Groq reasoning params for reasoning-capable formatter models (Qwen3: `reasoning_effort=none`; GPT-OSS: low-effort hidden reasoning), strips legacy `<think>...</think>` blocks, and removes common model boilerplate wrappers (`Here is the cleaned text:`, `整理如下：`, outer markdown fences, surrounding whole-output quotes).
 - Config: `VOICE_FORMATTER_MODELS` (comma-separated), `VOICE_FORMATTER_BASE_URL`, falls back to `GROQ_API_KEY` + `GROQ_FORMATTER_MODEL`
-- 5s timeout per model attempt
+- 5s timeout per model attempt, **with `maxRetries: 0`** on the OpenAI client — the sequential model fallback IS the retry, and the SDK's default 2 retries would multiply each model's 5s up to 3×, blowing past the UI's 30s `/format` budget and forcing a raw-transcript fallback (which the tray then mislabels). One attempt per model keeps the whole chain ≤ ~models×5s.
 
 ### autocomplete.ts (~570 lines)
 

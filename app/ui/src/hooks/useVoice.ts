@@ -26,6 +26,15 @@ export interface AppendText {
   key: number
 }
 
+/** Outcome of a /voice/format call. `ok` is true only when the formatter
+ *  actually polished the text (server `formattingStatus: 'formatted'`); a
+ *  timeout / server-fallback / network failure is `ok: false` with `text` left
+ *  as the best available (the input, or the server's raw fallback). */
+export interface FormatResult {
+  text: string
+  ok: boolean
+}
+
 export interface UseVoiceReturn {
   capability: CapabilityState
   state: InteractionState
@@ -44,8 +53,8 @@ export interface UseVoiceReturn {
   /** Re-send the cached take after a transcription failure. */
   retry: () => void
   /** Run the LLM formatter over arbitrary draft text (the Format button).
-   *  Returns the polished text, or the input unchanged if formatting failed. */
-  format: (text: string) => Promise<string>
+   *  Resolves the polished text + whether formatting actually succeeded. */
+  format: (text: string) => Promise<FormatResult>
   confirm: (text: string) => void
   copy: (text: string) => void
   discard: () => void
@@ -168,21 +177,23 @@ export function useVoice(): UseVoiceReturn {
     return { ok: false }
   }, [fetchWithTimeout])
 
-  // Whole transcript → polished text. Never throws: a failed /format falls back
-  // to the raw transcript so the user's words are never lost.
-  const formatTranscript = useCallback(async (text: string, target: VoiceTargetContext): Promise<string> => {
+  // Whole transcript → polished text. Never throws: on any failure it returns
+  // the best available text (server raw fallback, or the input) with ok:false so
+  // callers can both keep the words AND report that formatting didn't run.
+  const requestFormat = useCallback(async (text: string, target: VoiceTargetContext): Promise<FormatResult> => {
     try {
       const res = await fetchWithTimeout(`${API}/voice/format`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, surface: target.surface, filePath: target.filePath }),
       }, FORMAT_TIMEOUT_MS)
-      if (!res.ok) return text
-      const data = await res.json() as { displayText?: string }
+      if (!res.ok) return { text, ok: false }
+      const data = await res.json() as { displayText?: string; formattingStatus?: string }
       const out = (data.displayText ?? '').trim()
-      return out || text
+      if (!out) return { text, ok: false }
+      return { text: out, ok: data.formattingStatus === 'formatted' }
     } catch {
-      return text
+      return { text, ok: false }
     }
   }, [fetchWithTimeout])
 
@@ -204,13 +215,13 @@ export function useVoice(): UseVoiceReturn {
       return
     }
 
-    const displayText = await formatTranscript(text, target)
+    const formatted = await requestFormat(text, target)
     if (!mountedRef.current) return
     if (phaseRef.current.phase !== 'transcribing' || phaseRef.current.runId !== runId) return
     audioRef.current = null
     dispatch({ type: 'TRANSCRIBED', runId })
-    setAppendText({ text: displayText, key: runId })
-  }, [postTranscribe, formatTranscript])
+    setAppendText({ text: formatted.text, key: runId })
+  }, [postTranscribe, requestFormat])
 
   const open = useCallback((ctx: VoiceTargetContext) => {
     if (phaseRef.current.phase !== 'idle') return
@@ -322,14 +333,13 @@ export function useVoice(): UseVoiceReturn {
   const markTargetLost = useCallback(() => { dispatch({ type: 'TARGET_LOST' }) }, [])
 
   // Format arbitrary draft text (the tray's Format button) using the run's
-  // frozen target for surface/file context. Returns the input unchanged on
-  // failure (formatTranscript's raw fallback), so the caller can no-op safely.
-  const format = useCallback(async (text: string): Promise<string> => {
+  // frozen target for surface/file context.
+  const format = useCallback(async (text: string): Promise<FormatResult> => {
     const p = phaseRef.current
     const target = 'target' in p ? p.target : null
-    if (!target || !text.trim()) return text
-    return formatTranscript(text, target)
-  }, [formatTranscript])
+    if (!target || !text.trim()) return { text, ok: false }
+    return requestFormat(text, target)
+  }, [requestFormat])
 
   const { phase } = voiceState
   return {
