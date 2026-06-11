@@ -30,9 +30,13 @@ export type BlockReason = 'permission' | 'question' | 'trust'
 export interface AgentSession {
   name: string
   provider: string
-  status: 'starting' | 'idle' | 'processing' | 'blocked'
+  status: 'starting' | 'idle' | 'processing' | 'blocked' | 'crashed'
   /** Set iff status is `blocked`. Sanitized by the shared projection. */
   blockReason?: BlockReason
+  /** ISO time the current status was entered — the status-edge generation key. */
+  statusEnteredAt?: string
+  /** Agent process exit code. Present iff status is `crashed`. */
+  exitCode?: number
   project: string
   /** Absolute path of the owning project. Always set by the shared projection;
    *  optional only so legacy in-test fixtures need not supply it. */
@@ -89,15 +93,19 @@ export interface AgentSessionState {
   sessionPath: string
   pid: number
   sessionId: string
-  status: 'starting' | 'idle' | 'processing' | 'blocked'
+  status: 'starting' | 'idle' | 'processing' | 'blocked' | 'crashed'
   /** Set iff status is `blocked`. */
   blockReason?: BlockReason
+  /** ISO time the current status was entered — the status-edge generation key. */
+  statusEnteredAt?: string
+  /** Agent process exit code. Present iff status is `crashed`. */
+  exitCode?: number
   createdAt: string
   spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
   parentSession?: string
 }
 
-const VALID_STATUSES = new Set(['starting', 'idle', 'processing', 'blocked'])
+const VALID_STATUSES = new Set(['starting', 'idle', 'processing', 'blocked', 'crashed'])
 
 function getStateSessionPath(state: AgentSessionState): string | null {
   if (typeof state.sessionPath !== 'string' || !state.sessionPath) return null

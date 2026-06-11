@@ -32,6 +32,8 @@ const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   // Distinct from processing's cyan glow: orange "needs you" dot with an
   // opacity pulse so a waiting session reads as attention, not activity.
   blocked: 'bg-[var(--sol-orange)] animate-pulse',
+  // Terminal: a crash is a dead session. Solid red, no pulse (not activity).
+  crashed: 'bg-[var(--sol-red)]',
 }
 
 // Reason a blocked session is waiting → human-readable badge / a11y text.
@@ -118,6 +120,9 @@ export function SessionItem({
   const blockLabel = session.status === 'blocked' && session.blockReason
     ? BLOCK_REASON_LABEL[session.blockReason]
     : null
+  const crashLabel = session.status === 'crashed'
+    ? `Crashed (exit ${session.exitCode ?? '?'})`
+    : null
   const nameMatch = fieldMatch(searchMatch, 'name')
   const summaryMatch = fieldMatch(searchMatch, 'summary')
   const worktreeMatch = fieldMatch(searchMatch, 'worktree')
@@ -179,7 +184,7 @@ export function SessionItem({
       ) : (
         <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
       )}
-      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={blockLabel ? `blocked: ${blockLabel}` : session.status} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={crashLabel ?? (blockLabel ? `blocked: ${blockLabel}` : session.status)} />
       {renaming ? (
         <input
           ref={inputRef}
@@ -228,6 +233,16 @@ export function SessionItem({
                 aria-label={blockLabel}
               >
                 {blockLabel}
+              </span>
+            )}
+            {crashLabel && (
+              <span
+                className="inline-flex items-center px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                style={{ color: 'var(--sol-red)', backgroundColor: 'color-mix(in srgb, var(--sol-red) 14%, transparent)' }}
+                title={crashLabel}
+                aria-label={crashLabel}
+              >
+                {crashLabel}
               </span>
             )}
             {summary && (

@@ -128,6 +128,17 @@ describe('SessionsPanel', () => {
     expect(screen.getByText('beta')).toBeTruthy()
   })
 
+  it('renders a crashed session with a red status dot and "Crashed (exit N)" chip', () => {
+    const crashed: AgentSession = {
+      name: 'boom', provider: 'codex', status: 'crashed', exitCode: 139, project: 'test', summary: '',
+    }
+    const { container } = renderBody([crashed])
+    expect(screen.getByText('Crashed (exit 139)')).toBeTruthy()
+    // The status dot is the only element whose class carries --sol-red (the dot
+    // is never recolored; the chip uses an inline style, not this class).
+    expect(container.querySelector('[class*="--sol-red"]')).toBeTruthy()
+  })
+
   it('shows the empty message when there are no live sessions', () => {
     renderBody([])
     expect(screen.getByText('No live sessions')).toBeTruthy()
