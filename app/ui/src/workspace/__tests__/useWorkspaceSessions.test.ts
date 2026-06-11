@@ -118,3 +118,20 @@ describe('useWorkspaceSessions auto-detach', () => {
     expect(renameSession).toHaveBeenCalledWith('s1', 's2')
   })
 })
+
+describe('useWorkspaceSessions orderedSessions', () => {
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('includes an unpinned crashed session and surfaces it ahead of idle', () => {
+    const crashed: AgentSession = {
+      name: 'boom', provider: 'codex', status: 'crashed', exitCode: 1, project: 'test', summary: '',
+    }
+    const opts = makeOpts({ sessions: [makeSession('calm', 'idle'), crashed] })
+    const { result } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
+    const names = result.current.orderedSessions.map((s) => s.name)
+    expect(names).toContain('boom') // regression: crashed must not be dropped from the list
+    expect(names.indexOf('boom')).toBeLessThan(names.indexOf('calm')) // crashed leads idle
+  })
+})

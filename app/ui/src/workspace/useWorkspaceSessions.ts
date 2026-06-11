@@ -37,11 +37,14 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     return sessionUnreadCounts[`${projectName}::${sessionName}`] ?? 0
   }, [sessionUnreadCounts, projectName])
 
-  // Display order: pinned (custom order) -> blocked -> processing -> idle
+  // Display order: pinned (custom order) -> crashed -> blocked -> processing -> idle.
+  // crashed leads the unpinned set — a dead session is the most urgent to surface
+  // (red outranks orange in the attention precedence) and must never be dropped.
   const orderedSessions = useMemo(() => {
     const byName = new Map(projectSessions.map(s => [s.name, s]))
     const pinned = pinnedSessions.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
     const unpinned = projectSessions.filter(s => !pinnedSet.has(s.name))
+    const crashed = unpinned.filter(s => s.status === 'crashed')
     const blocked = unpinned.filter(s => s.status === 'blocked')
     const processing = unpinned.filter(s => s.status === 'processing' || s.status === 'starting')
     const idle = unpinned.filter(s => s.status === 'idle')
@@ -50,10 +53,11 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       const ub = getSessionUnread(b.name) > 0 ? 0 : 1
       return ua - ub
     }
+    crashed.sort(byUnread)
     blocked.sort(byUnread)
     processing.sort(byUnread)
     idle.sort(byUnread)
-    return [...pinned, ...blocked, ...processing, ...idle]
+    return [...pinned, ...crashed, ...blocked, ...processing, ...idle]
   }, [projectSessions, pinnedSessions, pinnedSet, getSessionUnread])
 
   // Auto-detach when a previously-known session disappears from 2 consecutive polls.
