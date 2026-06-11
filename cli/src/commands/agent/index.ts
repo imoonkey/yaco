@@ -34,6 +34,7 @@ import { runHistory, renderHistory } from "./history.ts";
 import { runSummaries, renderSummaries } from "./summaries.ts";
 import { runProviders, renderProviders } from "./providers.ts";
 import { runOutputCursor, runOutputFollow, parseOutputFollowArgs, OUTPUT_FOLLOW_USAGE } from "./output.ts";
+import { parseMessagesArgs, runMessages, renderMessages, MESSAGES_USAGE } from "./messages.ts";
 import {
   parseTimeoutMs,
   resolveResumeCursor,
@@ -61,6 +62,7 @@ Usage:
   yaco agent providers [--json]
   yaco agent output-cursor <name> [--json]
   yaco agent output-follow <name> [--cursor <token>] [--offset <bytes>] [--json]
+  yaco agent messages <name> [--meta|--index <i>] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
   yaco agent kill <name> | --all
   yaco agent rename <old> <new>
   yaco agent hooks install
@@ -482,6 +484,19 @@ export async function handleAgent(
       const projectPath = parsed.options.path ?? process.cwd();
       const summaries = await runSummaries(projectPath);
       return dual(parsed.options.json || opts.json, summaries, () => renderSummaries(summaries));
+    }
+
+    case "messages": {
+      // Standalone help only (the global --json aside); a --help appearing as a
+      // flag value falls through to strict parsing → USAGE, like output-follow.
+      const nonGlobal = rest.filter((a) => a !== "--json");
+      if (nonGlobal.length === 1 && (nonGlobal[0] === "--help" || nonGlobal[0] === "-h")) {
+        return ok({ help: `${MESSAGES_USAGE}\n` });
+      }
+      const parsed = parseMessagesArgs(rest);
+      const json = rest.includes("--json") || opts.json;
+      const result = await runMessages(parsed);
+      return dual(json, result, () => renderMessages(parsed, result));
     }
 
     case "providers": {

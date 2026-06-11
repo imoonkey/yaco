@@ -175,4 +175,9 @@ describe("codex parseLine", () => {
     const r = codex(cl({ type: "response_item", payload: { type: "mystery_event" } }));
     expect(r).toMatchObject({ role: "assistant", types: ["mystery_event"], text: "" });
   });
+
+  it("honors an explicit role on an unknown response_item kind", () => {
+    const r = codex(cl({ type: "response_item", payload: { type: "mystery_event", role: "user" } }));
+    expect(r).toMatchObject({ role: "user", types: ["mystery_event"] });
+  });
 });

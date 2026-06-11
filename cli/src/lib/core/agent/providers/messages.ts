@@ -213,8 +213,10 @@ function parseCodexLine(line: string): ParsedMessage | null {
   if (pt.endsWith("_output")) {
     return { role: "user", types: ["tool_result"], text: safeStringify(p.output), ts };
   }
-  // Unknown response_item kind: keep as a row (placeholder) so indices stay frozen.
-  return { role: "assistant", types: [pt || "unknown"], text: "", ts };
+  // Unknown response_item kind: keep as a row (placeholder) so indices stay
+  // frozen. Honor an explicit role when present, else default to assistant.
+  const role: MessageRole = p.role === "user" ? "user" : "assistant";
+  return { role, types: [pt || "unknown"], text: "", ts };
 }
 
 export function codexMessages(): ProviderMessages {
