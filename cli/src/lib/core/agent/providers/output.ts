@@ -256,6 +256,21 @@ export function codexOutput(): ProviderOutput {
   };
 }
 
+// -- Message-log path resolution (shared with `yaco agent messages`) --
+
+/** Resolve the Claude message-log path for a session, or null until its id
+ *  resolves. The same file the output cursor reads — exposed so the message
+ *  inventory reader reuses one provider-path source and the pending guard. */
+export function resolveClaudeLogPath(session: SessionState): string | null {
+  return hasResolvedId(session) ? claudeLogPath(session) : null;
+}
+
+/** Resolve the Codex rollout path for a session, or null until its id resolves
+ *  and a rollout file exists. */
+export async function resolveCodexLogPath(session: SessionState): Promise<string | null> {
+  return hasResolvedId(session) ? codexLogPath(session.sessionId) : null;
+}
+
 // -- Shared output follower --
 
 /** Why a follow stream stopped. `timeout` is intentionally NOT a value here:

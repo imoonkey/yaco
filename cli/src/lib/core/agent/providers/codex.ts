@@ -6,6 +6,7 @@ import { hasPermissionFlag, stripNameFlag, extractResume, stripResume } from "./
 import { codexHooks } from "./hooks.ts";
 import { codexHistory } from "./history.ts";
 import { codexOutput } from "./output.ts";
+import { codexMessages } from "./messages.ts";
 import { codexProjectMove } from "./project-move.ts";
 import { codexHooksAllYacoOwned } from "../lifecycle.ts";
 import type { TuiProvider } from "./types.ts";
@@ -116,6 +117,8 @@ export const codexProvider: TuiProvider = {
   history: codexHistory(),
 
   output: codexOutput(),
+
+  messages: codexMessages(),
 
   projectMove: codexProjectMove(),
 };
