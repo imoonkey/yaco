@@ -54,10 +54,10 @@ describe("resolveTasksPathForSessionPath", () => {
     expect(resolveTasksPathForSessionPath(sub)).toBe(join(worktree, "plan", "tasks"));
   });
 
-  it("honors a yaco.toml [paths].tasks override", () => {
+  it("honors a yaco.toml [paths].tasks override (plan-relative)", () => {
     const root = mkdtempSync(join(tmpdir(), "rename-toml-"));
-    writeFileSync(join(root, "yaco.toml"), '[paths]\ntasks = "work/items"\n');
-    expect(resolveTasksPathForSessionPath(root)).toBe(join(root, "work", "items"));
+    writeFileSync(join(root, "yaco.toml"), '[paths]\ntasks = "items"\n');
+    expect(resolveTasksPathForSessionPath(root)).toBe(join(root, "plan", "items"));
   });
 
   it("returns null when no project root is found", () => {

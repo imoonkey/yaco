@@ -24,6 +24,12 @@ export {
 } from "./yaco-paths.ts";
 
 export {
+  parseScopedToml,
+  TomlParseError,
+  type ParsedTomlSections,
+} from "./toml.ts";
+
+export {
   ensureYacoHome,
   projectsRegistryPath,
   readProjects,

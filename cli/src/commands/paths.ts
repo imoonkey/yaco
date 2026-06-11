@@ -90,9 +90,11 @@ export async function handlePaths(
       const repo = resolveRepoFlag(parsed.flags["repo"]);
       const relative = readYacoProjectPaths(repo);
       const data = {
+        plan: resolve(repo, relative.plan),
         tasks: resolve(repo, relative.tasks),
         active: resolve(repo, relative.active),
         archive: resolve(repo, relative.archive),
+        backlog: resolve(repo, relative.backlog),
         worktrees: resolve(repo, relative.worktrees),
       };
       return dual(opts.json, data, () => renderPaths(data));
