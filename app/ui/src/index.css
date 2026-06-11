@@ -301,8 +301,10 @@
   [data-rhythm-pulse] { animation: none !important; }
 }
 
-/* Theme toggle: show sun in light, moon in dark */
-/* Theme toggle — pill with ☼ left / ☾ right, active side highlighted */
+/* Theme toggle — original flat pill with a clearer outer edge. */
+.theme-toggle {
+  border-color: color-mix(in srgb, var(--sol-text-dim) 45%, transparent);
+}
 .theme-toggle .icon-sun {
   background: var(--sol-editor-bg);
   color: var(--sol-yellow);
@@ -313,6 +315,9 @@
 }
 .theme-toggle .icon-moon:hover {
   color: var(--sol-text);
+}
+[data-theme="dark"] .theme-toggle {
+  border-color: color-mix(in srgb, var(--sol-text-dim) 58%, transparent);
 }
 [data-theme="dark"] .theme-toggle .icon-sun:hover {
   color: var(--sol-text);
@@ -749,10 +754,11 @@ body {
   opacity: 0.72;
 }
 
-/* Sessions live/history segmented toggle — shares the icon-button hover lift on
-   non-selected segments; the selected segment reads as an accent tab. */
+/* Sessions live/history segmented toggle — original flat segments with a clearer
+   outer edge so the two icons read as one toggle. */
 .session-tab-toggle {
   padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--sol-text-dim) 45%, transparent);
 }
 .session-tab-seg {
   display: flex;
@@ -766,12 +772,19 @@ body {
   color: var(--sol-text);
   background: var(--sol-base2);
 }
+[data-theme="dark"] .session-tab-toggle {
+  border-color: color-mix(in srgb, var(--sol-text-dim) 58%, transparent);
+}
 [data-theme="dark"] .session-tab-seg:hover {
   background: color-mix(in srgb, #fff 12%, transparent);
 }
 .session-tab-seg[data-active="true"] {
   color: var(--sol-editor-bg);
   background: var(--sol-accent);
+}
+.session-search-row {
+  background: var(--sol-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--sol-border) 70%, transparent);
 }
 
 /* Top-bar / app-chrome icon buttons (notifications, channels). The top bar sits

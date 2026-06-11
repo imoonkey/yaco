@@ -18,6 +18,13 @@ const liveSessions = [
     summary: 'Implement session search after reviewing clipped summaries and frontend panel rendering diagnostics near the end',
     worktree: 'session-search',
   },
+  ...Array.from({ length: 24 }, (_, index) => ({
+    name: `codex-filler-${index + 1}`,
+    provider: 'codex',
+    status: 'idle',
+    project: project.name,
+    summary: `Scrollable session filler ${index + 1}`,
+  })),
 ]
 
 const history = [
@@ -96,6 +103,22 @@ test.describe('Session search', () => {
     await expect(page.getByRole('textbox', { name: 'Search live sessions...' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Search sessions' }).click()
     const liveSearch = page.getByRole('textbox', { name: 'Search live sessions...' })
+    const sessionsBody = page.locator('[aria-live="polite"]').first()
+    const scrollTop = await sessionsBody.evaluate((node) => {
+      node.scrollTop = node.scrollHeight
+      return node.scrollTop
+    })
+    expect(scrollTop).toBeGreaterThan(0)
+    await expect(liveSearch).toBeVisible()
+    const [bodyBox, searchRowBox] = await Promise.all([
+      sessionsBody.boundingBox(),
+      page.locator('.session-search-row').boundingBox(),
+    ])
+    expect(bodyBox).not.toBeNull()
+    expect(searchRowBox).not.toBeNull()
+    expect(searchRowBox!.y).toBeLessThan(bodyBox!.y)
+    expect(searchRowBox!.y + searchRowBox!.height).toBeLessThanOrEqual(bodyBox!.y + 1)
+
     await liveSearch.fill('frontend')
     await expect(page.getByText('codex-ui')).toBeVisible()
     await expect(page.getByText('summary:')).not.toBeVisible()
@@ -104,6 +127,14 @@ test.describe('Session search', () => {
     await liveSearch.fill('codex ui')
     await expect(page.getByText('codex-ui')).toBeVisible()
     await expect(page.getByText('claude-main')).not.toBeVisible()
+
+    await liveSearch.fill('codex-*')
+    await expect(page.getByText('codex-ui')).toBeVisible()
+    await expect(page.getByText('claude-main')).not.toBeVisible()
+
+    await liveSearch.fill('/claude-.+idle/')
+    await expect(page.getByText('claude-main')).toBeVisible()
+    await expect(page.getByText('codex-ui')).not.toBeVisible()
 
     await liveSearch.fill('qqqqqq')
     await expect(page.getByText('No matching live sessions')).toBeVisible()
@@ -124,6 +155,10 @@ test.describe('Session search', () => {
     await expect(page.getByText('Voice formatter')).not.toBeVisible()
     await expect(page.getByText('branch:')).not.toBeVisible()
     await expect(page.getByText('task/branch-polish').first()).toBeVisible()
+
+    await historySearch.fill('/voice\\s+formatter/')
+    await expect(page.getByText('Voice formatter')).toBeVisible()
+    await expect(page.getByText('Session history branch polish')).not.toBeVisible()
 
     await historySearch.fill('qqqqqq')
     await expect(page.getByText('No matching past sessions')).toBeVisible()

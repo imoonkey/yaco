@@ -243,7 +243,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceSessionList.tsx` | 271 | SessionItem with status dots (processing/starting/idle/blocked) + blocked reason badge + parent collapse toggle |
 | `WorkspaceHistoryList.tsx` | 114 | History tab items |
 | `useWorkspaceSidebarResize.ts` | 88 | Sidebar resize state + max computation |
-| `useWorkspaceSessionSection.tsx` | 177 | Session tab, drag, resume, history JSX |
+| `useWorkspaceSessionSection.tsx` | 326 | Session tab/search state, list rendering, drag, resume, history JSX |
 | `useResize.ts` | 37 | Drag-to-resize hook |
 | `ResizeHandle.tsx` | 18 | VResizeHandle + HResizeHandle (solid 3px sash) |
 | `WorkspaceSidebar.tsx` | 26 | GitChangeItem component — status pill badges, active left accent border |

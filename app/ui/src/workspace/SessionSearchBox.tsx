@@ -5,6 +5,7 @@ export function SessionSearchBox({
   placeholder,
   resultCount,
   totalCount,
+  className,
   onChange,
   onClear,
 }: {
@@ -12,6 +13,7 @@ export function SessionSearchBox({
   placeholder: string
   resultCount: number
   totalCount: number
+  className?: string
   onChange: (value: string) => void
   onClear: () => void
 }) {
@@ -23,6 +25,7 @@ export function SessionSearchBox({
       placeholder={placeholder}
       countLabel={hasQuery ? `${resultCount}/${totalCount}` : undefined}
       clearLabel="Clear session search"
+      className={className}
       onChange={onChange}
       onClear={onClear}
     />

@@ -55,6 +55,7 @@ function loadCollapsedSessions(project: string): Set<string> {
 
 export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts): {
   sessionsActions: ReactNode
+  sessionsSearch: ReactNode
   sessionsBody: ReactNode
 } {
   const {
@@ -146,6 +147,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
           ))}
         </div>
       )}
+      <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <button
         type="button"
         onClick={handleToggleSessionSearch}
@@ -156,7 +158,6 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
       >
         <Search />
       </button>
-      <span className="mx-0.5 inline-block w-px h-3.5" style={{ backgroundColor: 'var(--sol-text-dim)', opacity: 0.4 }} />
       <div
         className="session-tab-toggle flex rounded overflow-hidden cursor-pointer"
         onClick={() => setSessionTab(sessionTab === 'live' ? 'history' : 'live')}
@@ -208,6 +209,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
       placeholder={sessionTab === 'live' ? 'Search live sessions...' : 'Search session history...'}
       resultCount={sessionTab === 'live' ? filteredLiveSessions.length : filteredHistory?.length ?? 0}
       totalCount={sessionTab === 'live' ? sessionsMgr.orderedSessions.length : history.data?.length ?? 0}
+      className="session-search-row shrink-0 px-1 pt-1.5 pb-1"
       onChange={setSessionSearchQuery}
       onClear={() => setSessionSearchQuery('')}
     />
@@ -265,7 +267,6 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   // Keep all rows in one keyed sibling array so React preserves SessionItem state
   // when status changes move a session between buckets.
   const liveSessionChildren: ReactNode[] = [
-    ...(sessionSearchOpen ? [searchBox] : []),
     ...renderRows(visiblePinnedRows),
   ]
   if (visiblePinnedRows.length > 0 && (visibleProcessingRows.length > 0 || visibleIdleRows.length > 0)) {
@@ -292,7 +293,6 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
 
   const sessionsBody: ReactNode = sessionTab === 'live' ? liveSessionsBody : (
     <>
-      {sessionSearchOpen && searchBox}
       <WorkspaceHistoryList
         history={filteredHistory}
         loading={history.loading}
@@ -318,5 +318,9 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     </>
   )
 
-  return { sessionsActions, sessionsBody }
+  return {
+    sessionsActions,
+    sessionsSearch: sessionSearchOpen ? searchBox : null,
+    sessionsBody,
+  }
 }

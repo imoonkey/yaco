@@ -79,7 +79,7 @@ export function SessionsPanel() {
     detachActiveSession: commands.detachSession,
   }), [data.sessions, commands.detachSession])
 
-  const { sessionsActions, sessionsBody } = useWorkspaceSessionSection({
+  const { sessionsActions, sessionsSearch, sessionsBody } = useWorkspaceSessionSection({
     sessionsMgr,
     attachedSession: selection.activeSession,
     isMobile,
@@ -97,11 +97,16 @@ export function SessionsPanel() {
     return () => publishActions(null)
   }, [sessionsActions])
 
-  // Mirror today's body container: padded, polite live region for list updates.
-  // `h-full` so the body fills the renderer-sized section box (the framed body
-  // wrapper carries the persisted `sessionSize` height); the e2e measures THIS
-  // aria-live element's height. PanelFrame owns the surrounding section header.
-  return <div className="h-full overflow-y-auto py-1" aria-live="polite">{sessionsBody}</div>
+  // Search is a sibling above the scrollable list, matching the file-search
+  // panel shape: controls stay fixed while only results scroll.
+  return (
+    <div className="h-full min-h-0 flex flex-col">
+      {sessionsSearch}
+      <div className="flex-1 min-h-0 overflow-y-auto py-1" aria-live="polite">
+        {sessionsBody}
+      </div>
+    </div>
+  )
 }
 
 /** Framed-header hook: surfaces the section actions the body publishes. */

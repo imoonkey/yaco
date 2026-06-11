@@ -25,6 +25,13 @@ type NormalizedSearchField = {
   end: number
 }
 type SearchableItem<T> = { item: T; text: string; fields: NormalizedSearchField[] }
+type SearchTerm =
+  | { kind: 'literal'; value: string }
+  | { kind: 'pattern'; regex: RegExp | null }
+type ParsedSearchQuery =
+  | { kind: 'empty' }
+  | { kind: 'regex'; regex: RegExp | null }
+  | { kind: 'terms'; terms: SearchTerm[] }
 
 export type SearchFieldMatch = {
   key: SearchFieldKey
@@ -133,6 +140,82 @@ function queryTerms(query: string): string[] {
   return query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
 }
 
+function hasWildcard(term: string): boolean {
+  return term.includes('*') || term.includes('?')
+}
+
+function wildcardToRegex(term: string): RegExp | null {
+  let pattern = ''
+  for (const char of term) {
+    if (char === '*') {
+      pattern += '\\S*'
+    } else if (char === '?') {
+      pattern += '\\S'
+    } else {
+      pattern += char.replace(/[\\^$+?.()|[\]{}]/g, '\\$&')
+    }
+  }
+  return compileSearchRegex(pattern)
+}
+
+function isEscapedSlash(value: string, index: number): boolean {
+  let backslashCount = 0
+  for (let i = index - 1; i >= 0 && value[i] === '\\'; i--) backslashCount += 1
+  return backslashCount % 2 === 1
+}
+
+function closingSlashIndex(value: string): number {
+  for (let index = value.length - 1; index > 0; index--) {
+    if (value[index] === '/' && !isEscapedSlash(value, index)) return index
+  }
+  return -1
+}
+
+function compileSearchRegex(pattern: string, flags = ''): RegExp | null {
+  const supportedFlags = new Set(['d', 'g', 'i', 'm', 's', 'u', 'v'])
+  if ([...flags].some(flag => !supportedFlags.has(flag))) return null
+
+  const effectiveFlags = new Set(flags)
+  effectiveFlags.add('g')
+  effectiveFlags.add('i')
+
+  try {
+    return new RegExp(pattern, [...effectiveFlags].join(''))
+  } catch {
+    return null
+  }
+}
+
+function parseRegexQuery(query: string): { regex: RegExp | null } | null {
+  if (query.startsWith('re:')) {
+    return { regex: query.length > 3 ? compileSearchRegex(query.slice(3)) : null }
+  }
+  if (!query.startsWith('/')) return null
+
+  const end = closingSlashIndex(query)
+  if (end <= 0) return { regex: null }
+  return {
+    regex: compileSearchRegex(query.slice(1, end), query.slice(end + 1)),
+  }
+}
+
+function parseSearchQuery(query: string): ParsedSearchQuery {
+  const trimmed = query.trim()
+  if (!trimmed) return { kind: 'empty' }
+
+  const regexQuery = parseRegexQuery(trimmed)
+  if (regexQuery) return { kind: 'regex', regex: regexQuery.regex }
+
+  return {
+    kind: 'terms',
+    terms: queryTerms(trimmed).map(term => (
+      hasWildcard(term)
+        ? { kind: 'pattern', regex: wildcardToRegex(term) }
+        : { kind: 'literal', value: term }
+    )),
+  }
+}
+
 function termPositions(text: string, term: string): Set<number> | null {
   const positions = new Set<number>()
   let start = 0
@@ -149,11 +232,35 @@ function termPositions(text: string, term: string): Set<number> | null {
   return positions.size > 0 ? positions : null
 }
 
-function substringMatchPositions(text: string, terms: string[]): Set<number> | null {
+function regexPositions(text: string, regex: RegExp): Set<number> | null {
+  const positions = new Set<number>()
+  regex.lastIndex = 0
+
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(text)) !== null) {
+    const value = match[0]
+    for (let offset = 0; offset < value.length; offset++) {
+      positions.add(match.index + offset)
+    }
+    if (value.length === 0) regex.lastIndex += 1
+  }
+
+  return positions.size > 0 ? positions : null
+}
+
+function termMatchPositions(text: string, term: SearchTerm): Set<number> | null {
+  if (term.kind === 'literal') return termPositions(text, term.value)
+  return term.regex ? regexPositions(text, term.regex) : null
+}
+
+function queryMatchPositions(text: string, query: ParsedSearchQuery): Set<number> | null {
+  if (query.kind === 'regex') return query.regex ? regexPositions(text, query.regex) : null
+  if (query.kind === 'empty') return new Set()
+
   const positions = new Set<number>()
 
-  for (const term of terms) {
-    const termMatch = termPositions(text, term)
+  for (const term of query.terms) {
+    const termMatch = termMatchPositions(text, term)
     if (!termMatch) return null
     for (const position of termMatch) positions.add(position)
   }
@@ -167,15 +274,15 @@ function matchByFields<T extends object>(
   fieldsFor: (item: T) => SearchFieldInput[],
   snippetKeys: SearchFieldKey[],
 ): SearchResult<T>[] {
-  const terms = queryTerms(query)
-  if (terms.length === 0) return items.map(item => ({ item, match: null }))
+  const parsedQuery = parseSearchQuery(query)
+  if (parsedQuery.kind === 'empty') return items.map(item => ({ item, match: null }))
 
   const searchable = items.map(item => toSearchableItem(item, fieldsFor(item)))
   const snippetKeySet = new Set(snippetKeys)
   const results: SearchResult<T>[] = []
 
   for (const entry of searchable) {
-    const positions = substringMatchPositions(entry.text, terms)
+    const positions = queryMatchPositions(entry.text, parsedQuery)
     if (!positions) continue
     results.push({
       item: entry.item,

@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-11: Sessions search polish and pattern matching
+
+**What changed:**
+- Sessions search now renders as a fixed control above an independently scrollable live/history list, matching the Explorer full-text search layout instead of relying on a sticky first row.
+- Live/History and desktop theme toggles keep their original flat visual styling while using clearer outer borders.
+- Session search keeps plain substring AND semantics, and adds wildcard terms (`*`, `?`) plus whole-query regex forms (`/pattern/flags`, `re:pattern`) with invalid regexes failing closed.
+- Session-search unit and Playwright coverage now assert wildcard/regex behavior and that the search control stays outside the scrolling list.
+
+**Why:**
+- The sticky search-row approach left edge cases where list content could peek between the section header and search control. Separating controls from the results list is simpler and matches the existing file-search architecture.
+
+**Key files:** `app/ui/src/workspace/{useWorkspaceSessionSection.tsx,panels/SessionsPanel.tsx,SessionSearchBox.tsx,sessionSearch.ts}`, `app/ui/src/index.css`, `app/ui/tests/e2e/session-search.spec.ts`, `doc/main/app/ui/workspace/sessions-and-terminal.md`, `doc/main/app/frontend/components.md`
+**Verification:** `cd app/ui && npx tsc -b`; `npx vitest run src/workspace/__tests__/useWorkspaceSessionSection.test.tsx src/workspace/panels/__tests__/SessionsPanel.test.tsx src/workspace/__tests__/sessionSearch.test.ts`; `npx playwright test tests/e2e/session-search.spec.ts`; `npm run lint` (0 errors, 9 existing hook warnings).
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-09: Flexible-layout T1a — data-resource adapters (git + sessions)
 
 **What changed:**

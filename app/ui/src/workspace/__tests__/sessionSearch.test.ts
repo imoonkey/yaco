@@ -65,6 +65,36 @@ describe('filterAgentSessions', () => {
     expect(filterAgentSessions(sessions, 'codex search idle')).toEqual([sessions[0]])
   })
 
+  it('supports wildcard terms while preserving multi-term AND matching', () => {
+    const sessions = [
+      liveSession({ name: 'codex-ui', provider: 'codex', status: 'idle', summary: 'Search sessions' }),
+      liveSession({ name: 'codex-worker', provider: 'codex', status: 'processing', summary: 'Build docs' }),
+      liveSession({ name: 'claude-main', provider: 'claude', status: 'idle', summary: 'Search planning' }),
+    ]
+
+    expect(filterAgentSessions(sessions, 'codex-* idle')).toEqual([sessions[0]])
+    expect(filterAgentSessions(sessions, 'codex-w?rker')).toEqual([sessions[1]])
+  })
+
+  it('supports slash-delimited and re-prefixed regex queries', () => {
+    const sessions = [
+      liveSession({ name: 'codex-ui', provider: 'codex', status: 'idle', summary: 'Search sessions' }),
+      liveSession({ name: 'codex-worker', provider: 'codex', status: 'processing', summary: 'Build docs' }),
+      liveSession({ name: 'claude-main', provider: 'claude', status: 'idle', summary: 'Search planning' }),
+    ]
+
+    expect(filterAgentSessions(sessions, '/codex-(ui|worker)/')).toEqual([sessions[0], sessions[1]])
+    expect(filterAgentSessions(sessions, 're:claude.+idle')).toEqual([sessions[2]])
+  })
+
+  it('returns no matches for invalid regex queries without throwing', () => {
+    const sessions = [
+      liveSession({ name: 'codex-ui', provider: 'codex', status: 'idle', summary: 'Search sessions' }),
+    ]
+
+    expect(filterAgentSessions(sessions, '/codex-(/')).toEqual([])
+  })
+
   it('returns match positions and a summary snippet for live session substring matches', () => {
     const session = liveSession({
       name: 'worker',
@@ -116,6 +146,16 @@ describe('filterHistorySessions', () => {
 
     expect(filterHistorySessions(history, 'codex search')).toEqual(history)
     expect(filterHistorySessions(history, 'cdx srch')).toEqual([])
+  })
+
+  it('supports wildcard and regex queries for history rows', () => {
+    const history = [
+      historySession({ id: 'hist-claude-main', provider: 'claude', gitBranch: 'main', title: 'Voice formatter' }),
+      historySession({ id: 'hist-codex-one', provider: 'codex', gitBranch: 'task/session-search', title: 'Session history polish' }),
+    ]
+
+    expect(filterHistorySessions(history, 'hist-codex-* session-*')).toEqual([history[1]])
+    expect(filterHistorySessions(history, '/voice\\s+formatter/')).toEqual([history[0]])
   })
 
   it('returns match positions and a live handle snippet for history matches', () => {

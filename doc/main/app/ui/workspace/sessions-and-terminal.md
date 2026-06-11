@@ -74,7 +74,9 @@ The History tab calls `GET /api/sessions/history?project=<name>` and renders the
 
 ### Search
 
-The Sessions header has a local search button. Clicking it reveals one search box shared by the Live and History tabs; hiding the search box clears the query so the hidden state never filters rows. While the search box is open, switching tabs keeps the text so the same phrase can be reused. Matching is case-insensitive substring matching with AND semantics across whitespace-separated terms; it intentionally does not use fuzzy matching because long summaries create noisy matches.
+The Sessions header has a local search button. Clicking it reveals one search box shared by the Live and History tabs; hiding the search box clears the query so the hidden state never filters rows. While the search box is open, switching tabs keeps the text so the same phrase can be reused. The search box is rendered above the scrollable list as a fixed sibling, matching the Explorer full-text search shape: controls stay put while only results scroll.
+
+Plain terms use case-insensitive substring matching with AND semantics across whitespace-separated terms; this intentionally does not use fuzzy matching because long summaries create noisy matches. A term containing `*` or `?` is treated as a wildcard (`*` = zero or more non-space characters, `?` = one non-space character). A whole query written as `/pattern/flags` or `re:pattern` is treated as a regular expression. Invalid regular expressions fail closed with no matches rather than throwing in the UI.
 
 - Live search filters the already-loaded session rows by name, provider, status, project, summary, worktree, and lineage metadata. Lineage grouping then runs over the filtered visible set, so a child whose parent is filtered out renders as a root through the normal lineage fallback.
 - History search filters the already-loaded history rows by title, summary, provider, id, branch, and live-session handle. Timestamps and message counts are intentionally excluded from matching because they create noisy hits for handle-like queries such as `live-7`. Sorting and the 200-row cap remain CLI/server-owned.
