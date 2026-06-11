@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-06-11: `yaco agent messages` — structured history navigation
+
+**What changed:**
+- New optional `ProviderMessages` capability on `TuiProvider` (`providers/types.ts`):
+  `resolveLogPath` + a pure `parseLine` that reconstructs a provider log line
+  into a normalized `{role, types, text, ts}` row. Claude and Codex both declare
+  it (`providers/messages.ts`); wired in `providers/claude.ts` / `codex.ts`.
+- New `yaco agent messages <name>` command (`commands/agent/messages.ts`):
+  `--meta` (default) lists lean `{index, role, types, chars}` rows; `--index <i>`
+  (negative counts from end) returns one `MessageFull`. `--role` / `--type`
+  (prefix-matches `tool_use:Bash`) / `--range a..b` (inclusive, open ends,
+  negative bounds) filter shown rows without changing absolute indices;
+  `--preview[=N]` and `--ts` are opt-in. Text rendering is compact (single-letter
+  role, human-readable `chars`, first-absolute-then-relative timestamps with a
+  multi-day date prefix); `--json` stays exact.
+- `resolveClaudeLogPath` / `resolveCodexLogPath` exported from `providers/output.ts`
+  (guard-baked) so `messages` reuses one provider-path source + the pending guard.
+- `validateName` now throws `CliError(USAGE)` instead of a plain `Error`
+  (`agent/model.ts`), so traversal/invalid handles surface as `USAGE`.
+
+**Why:**
+- The orchestrator already gets the structured **final** message from
+  `wait` / `--wait`, and `capture` (PTY) is lossy and debug-only. There was no
+  way to navigate *earlier* turns. `messages` adds a token-cheap table of
+  contents → narrow → pull-by-index flow so an agent inspects arbitrary history
+  without capture.
+- Inclusion is keyed on a **coarse, frozen discriminator** (Claude
+  user/assistant non-sidechain; Codex non-developer `response_item`) with a
+  generic `[<type>]` placeholder for unknown kinds — never on the fine-grained
+  block/payload kind. This both covers every observed schema shape and freezes
+  historical indices: enriching reconstruction later can never insert or drop a
+  row. The retyped `validateName` also corrects a latent `USAGE`-vs-`INTERNAL`
+  mis-mapping shared by `resolveOutput`/`status`/`rename`/`kill`.
+
+**Key files:** `cli/src/lib/core/agent/providers/{types,messages,output,claude,codex}.ts`, `cli/src/lib/core/agent/model.ts`, `cli/src/commands/agent/{messages,index}.ts`, `doc/main/cli/{command-surface,providers}.md`, `agent-config/global/skills/yaco-agent/SKILL.md`
+**Verification:** `bun run test:unit` green (49 new message tests: readers, parser, renderer, spawned envelope/stability) except the pre-existing unrelated `move.test.ts` mtime flake. Real end-to-end QA against this live Claude session's log (meta/filters/`--index`/relative `--ts`) confirmed correct reconstruction at full scale. Design twice-reviewed by Codex `/eng-plan-review`; P3 independent code review — all findings resolved. Plan: `plan/all/20260611_agent-messages/`.
+**Commit:** 7a5f1c9 (types) · 53c36c3 (readers) · 6118d8e (command) · a31afc9 (docs) + this entry
+**Next:** Optional follow-ups — historical inspection by raw `sessionId`, `--include-sidechain`.
+**Blockers:** None.
+
 ## 2026-06-08: blocked session status — model + projection foundation
 
 **What changed:**
