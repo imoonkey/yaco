@@ -180,6 +180,64 @@ export interface ProviderOutput {
   classifyLine(line: string): AgentOutputEvent | null;
 }
 
+// -- Message inventory (`yaco agent messages`) --
+
+/** Role of a normalized message row. Tool calls live in assistant rows, tool
+ *  results in user rows; `types` disambiguates. */
+export type MessageRole = "user" | "assistant";
+
+/** One normalized message parsed from a provider log line. Pure function of the
+ *  line — see `ProviderMessages.parseLine`. */
+export interface ParsedMessage {
+  role: MessageRole;
+  /** Ordered, first-seen-deduped block/item kinds; tool calls carry the name
+   *  (e.g. `tool_use:Bash`). Unknown kinds pass through verbatim. */
+  types: string[];
+  /** Full reconstructed textual content — what `messages --index` returns. */
+  text: string;
+  /** ISO timestamp from the line, or null when the line carries none. */
+  ts: string | null;
+}
+
+/** Default `--meta` row: a token-cheap structural skeleton. `index` is a stable
+ *  0-based ordinal in the kept-row sequence. */
+export interface MessageMeta {
+  index: number;
+  role: MessageRole;
+  types: string[];
+  /** `text.length` — budget signal for the cost of pulling this row. */
+  chars: number;
+  /** Present only with `--ts` (absolute ISO). */
+  ts?: string;
+  /** Present only with `--preview[=N]`. */
+  preview?: string;
+}
+
+/** A single full message (`--index`). `ts` is always present (may be null),
+ *  unlike the opt-in meta field. */
+export interface MessageFull {
+  index: number;
+  role: MessageRole;
+  types: string[];
+  chars: number;
+  ts: string | null;
+  text: string;
+}
+
+/** Full-inventory reader over a session's provider log. Parallel to
+ *  `ProviderOutput` (turn-completion only): this exposes every message with
+ *  stable indices. Inclusion is keyed on a coarse, frozen discriminator so
+ *  enriching reconstruction never shifts historical indices. */
+export interface ProviderMessages {
+  /** Resolve the session's message-log path, or null when no log exists yet
+   *  (e.g. a pending session). Shares the provider log-path + pending guard. */
+  resolveLogPath(session: SessionState): Promise<string | null>;
+  /** Parse one COMPLETE log line into a normalized message, or null to skip it
+   *  (header/meta, sidechain, UI-event, blank, malformed). Pure: same line →
+   *  same result, independent of position. */
+  parseLine(line: string): ParsedMessage | null;
+}
+
 /** How a project-move path comparison is performed. */
 export type MatchMode = "exact" | "prefix";
 
@@ -234,6 +292,7 @@ export interface TuiProvider {
   terminal?: ProviderTerminal;
   history?: ProviderHistory;
   output?: ProviderOutput;
+  messages?: ProviderMessages;
   projectMove?: ProviderProjectMove;
 }
 

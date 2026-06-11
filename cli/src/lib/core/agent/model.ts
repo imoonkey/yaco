@@ -6,6 +6,7 @@
  *  Heavier surfaces live in their own files (providers, lifecycle, etc.).
  */
 import { randomBytes } from "node:crypto";
+import { CliError, ErrCode } from "../errors.ts";
 import { ADJECTIVES, NOUNS } from "./words.ts";
 
 export type SessionStatus = "starting" | "idle" | "processing" | "blocked";
@@ -84,7 +85,8 @@ export function isValidSessionHandle(name: string): boolean {
 
 export function validateName(name: string): void {
   if (!VALID_NAME.test(name)) {
-    throw new Error(
+    throw new CliError(
+      ErrCode.USAGE,
       `Invalid session name: "${name}". Only alphanumeric, hyphens, and underscores allowed.`,
     );
   }
