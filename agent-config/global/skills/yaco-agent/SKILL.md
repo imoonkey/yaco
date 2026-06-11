@@ -148,6 +148,40 @@ session is currently showing, not to wait for or read a result. Text mode
 returns clean text (ANSI stripped by default); `--json` wraps it as
 `{ok:true, data:{text:"..."}}`.
 
+## Navigating message history
+
+`messages` reads a session's **full** message history from the provider's
+structured log (never PTY). The orchestrator's structured **final** message
+already comes from `wait` / `--wait`; reach for `messages` to navigate *earlier*
+turns by a stable index. `capture` stays debug-only.
+
+```bash
+# Token-cheap table of contents: one lean row per message {index, role, types, chars}
+yaco agent messages <handle> --json
+
+# Narrow first (filters never change a row's absolute index), then preview the window
+yaco agent messages <handle> --role assistant --type tool_use --json
+yaco agent messages <handle> --range -20.. --preview --json     # last 20, with snippets
+
+# Pull one full message by index (negative counts from the end)
+yaco agent messages <handle> --index 47 --json
+yaco agent messages <handle> --index -1                         # last message, text raw
+```
+
+Two-step navigation keeps token cost proportional to the window you care about,
+not session length: **scan `--meta`** (default) → **narrow** with
+`--role` / `--type` (prefix-matches, so `--type tool_use` hits `tool_use:Bash`) /
+`--range a..b` (inclusive; open ends and negative bounds) → optionally
+`--preview[=N]` / `--ts` on the narrowed set → **pull** the full message with
+`--index <i>`. `chars` is the budget signal (length of the text `--index`
+returns). Indices are stable: a row's `index` is frozen for the session's log,
+so a `--meta` index is safe to pass straight to `--index`.
+
+- `--meta` JSON returns a `MessageMeta[]`; `--index` JSON returns one
+  `MessageFull` (`{index, role, types, chars, ts, text}`).
+- Errors: invalid handle → `USAGE`; no session / pending (no log yet) / index
+  out of range → `NOT_FOUND`; provider without the capability → `INVALID`.
+
 ## Session lineage
 
 `list` and `status` return lineage as fields on each session — you read them,

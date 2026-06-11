@@ -42,6 +42,7 @@ Adapter responsibilities, by capability:
 | `terminal` | optional | provider-runtime / headless-PTY terminal compatibility (see below) |
 | `history` | optional | History-tab rows + per-session summary labels; absent ⇒ provider omitted from history. Labels are the **first meaningful** user message — `<system-reminder>`/command-stdout dropped, slash commands restored to `/name args` in both history rows and live labels, `/rename`·`/clear`·`/compact` and handle echoes skipped. Codex prefers `first_user_message` over the handle-echo `title`. → See: `src/lib/core/agent/providers/history.ts` |
 | `output` | optional | output cursor + line classification for reply streaming; absent ⇒ callers fall back to `capture` |
+| `messages` | optional | full-inventory message reader: log-path resolution + per-line reconstruction into normalized `{role,types,text,ts}` rows for `agent messages`; absent ⇒ `INVALID`. → See [Message Inventory](#message-inventory) |
 | `projectMove` | optional | provider-native cwd-keyed rewrites (see [Project Move](#project-move)) |
 
 The shared runtime owns tmux, YACO state files, wrapper installation, name
@@ -203,6 +204,55 @@ Contract details:
   help request.
 
 -> See: [src/lib/core/agent/providers/output.ts](../../../cli/src/lib/core/agent/providers/output.ts), [src/commands/agent/output.ts](../../../cli/src/commands/agent/output.ts)
+
+## Message Inventory
+
+Where `output` is turn-completion only (final/question text, dropping
+thinking/tool_use/tool_result), the optional `messages` capability
+(`ProviderMessages` in `src/lib/core/agent/providers/types.ts`) is a **full
+inventory**: every message in the session log as a normalized row with a stable
+index. Claude and Codex both declare it
+(`src/lib/core/agent/providers/messages.ts`); a provider without it → `INVALID`.
+It serves `agent messages` so an orchestrator can navigate a session's history
+without PTY `capture` (debug-only) — the structured **final** message still
+comes from `wait` / `--wait`.
+
+```text
+yaco agent messages <name> [--meta] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
+yaco agent messages <name>  --index <i>          # full message; i may be negative (-1 = last)
+```
+
+- **`--meta`** (default) lists lean rows `{index, role, types, chars}` — a
+  token-cheap table of contents. `chars` is the budget signal. `--preview[=N]`
+  (default 100) and `--ts` are opt-in. Filters `--role` / `--type` (prefix-matches
+  `tool_use` → `tool_use:Bash`) / `--range a..b` (inclusive, open ends and
+  negative bounds; `-20..` = last 20) select which rows are **shown without
+  changing an index**.
+- **`--index <i>`** returns one `MessageFull` `{index, role, types, chars, ts,
+  text}`; text mode prints `text` raw.
+
+Contract details:
+
+- **Frozen index.** A row's `index` is its 0-based ordinal in the kept-row
+  sequence. Inclusion is keyed only on a coarse discriminator — Claude
+  `user`/`assistant` non-sidechain lines, Codex non-developer `response_item`s —
+  never on the fine-grained block/payload kind. Unknown kinds reconstruct to a
+  generic `[<type>]` placeholder row, so enriching reconstruction never shifts
+  historical indices. Stability is for the **resolved physical log file** under
+  this frozen policy.
+- **Reconstruction** joins block segments with `\n`; `chars = text.length`;
+  `preview = collapseWhitespace(text).slice(0, N)`. Path resolution reuses the
+  `output` log-path helpers (`resolveClaudeLogPath` / `resolveCodexLogPath`)
+  and the pending-session guard.
+- **Text rendering** is compact (single-letter role, human-readable `chars`,
+  first-absolute-then-relative `--ts` deltas with a multi-day date prefix);
+  `--json` stays exact (absolute ISO `ts`).
+- **Errors:** invalid/traversal handle → `USAGE`; no live session → `NOT_FOUND`;
+  unknown provider / no `messages` capability → `INVALID`; pending session or
+  deleted log → `NOT_FOUND`; other read failure → `IO`. `--index` out of range →
+  `NOT_FOUND`.
+
+-> See: [src/lib/core/agent/providers/messages.ts](../../../cli/src/lib/core/agent/providers/messages.ts), [src/commands/agent/messages.ts](../../../cli/src/commands/agent/messages.ts)
 
 ## Project Move
 

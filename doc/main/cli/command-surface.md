@@ -1,6 +1,6 @@
 # Command Surface Matrix
 
-> Last updated: 2026-06-07 (yaco-read-surface: read primitives + text-first output)
+> Last updated: 2026-06-11 (agent-messages: `agent messages` history-inventory read)
 
 The canonical map of the `yaco` command surface. The CLI is consumed by AI
 agents as much as by humans, so the surface is organized into CRUD-shaped
@@ -9,11 +9,11 @@ inspect one**, every collection read in **list**, every cwd/identity read in
 **resolve current**.
 
 Legend: ✅ existing · 🆕 added in the read-surface pass · ✏️ improved in the
-read-surface pass (text/contract).
+read-surface pass (text/contract) · 📜 added in the agent-messages pass.
 
 | area | get / inspect one | list | resolve current | create / start | update / send | delete / teardown |
 |---|---|---|---|---|---|---|
-| agent | `status` ✏️ · `wait` ✏️ · `capture` ✅ · `output-follow` ✅ | `list` ✅ · `history` ✅ · `summaries` ✅ | `whoami` ✅ | `start` ✅ | `send` ✅ · `rename` ✅ | `kill` ✅ |
+| agent | `status` ✏️ · `wait` ✏️ · `capture` ✅ · `output-follow` ✅ · `messages` 📜 | `list` ✅ · `history` ✅ · `summaries` ✅ | `whoami` ✅ | `start` ✅ | `send` ✅ · `rename` ✅ | `kill` ✅ |
 | task | `get` 🆕 | `list` ✅ (+`--state` 🆕) | — | `set` ✅ (upsert) | `set` ✅ · `attach` ✅ · `detach` ✅ | `rm` ✅ · `archive` ✅ |
 | worktree | — (use `git`) | — (`git worktree list`) | — | `create` ✅ | `merge` ✅ | `cleanup` ✅ |
 | project | — | `list` ✅ | `current` 🆕 | `add` ✅ | `move` ✅ | `remove` ✅ |
