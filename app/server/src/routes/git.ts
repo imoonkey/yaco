@@ -5,6 +5,7 @@ import { realpath } from 'fs/promises'
 import { join, dirname, basename } from 'path'
 import { GIT_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { fail } from '../lib/response'
+import { getColocatedRepos } from '../lib/colocatedRepos'
 import { withProject, type ProjectEnv } from '../middleware/project'
 
 export interface GitChange {
@@ -62,7 +63,9 @@ function parseShortstat(output: string): { added: number; deleted: number } {
   return { added: added ? Number(added[1]) : 0, deleted: deleted ? Number(deleted[1]) : 0 }
 }
 
-/** Last-known-good git snapshots per project */
+/** Last-known-good git snapshots, keyed by `<effectivePath>\0<repoPrefix>` so a
+ *  worktree never shares the primary's snapshot and each colocated repo is
+ *  tracked independently. */
 const gitSnapshots = new Map<string, GitChange[]>()
 
 /** Cached refs per project (5s TTL) */
@@ -108,16 +111,27 @@ app.get('/:project/refs', withProject, async (c) => {
   return c.json(data)
 })
 
-async function resolveStatus(projectName: string, projectPath: string) {
+interface RepoStatus {
+  prefix: string
+  changes: GitChange[]
+  fresh: boolean
+  stats?: { added: number; deleted: number }
+}
+
+/** Status for one repo (host when prefix is "", else a "<repo>/" colocated repo).
+ *  On transient git failure, returns that repo's last-known-good snapshot marked
+ *  stale; on success, stores a fresh snapshot keyed by effective path + prefix. */
+async function resolveRepoStatus(projectPath: string, prefix: string): Promise<RepoStatus> {
+  const cwd = prefix === '' ? projectPath : join(projectPath, prefix.slice(0, -1))
+  const key = `${projectPath}\0${prefix}`
+
   const [result, statResult] = await Promise.all([
-    git(projectPath, ['status', '--porcelain', '-z']),
-    git(projectPath, ['diff', '--shortstat']),
+    git(cwd, ['status', '--porcelain', '-z']),
+    git(cwd, ['diff', '--shortstat']),
   ])
 
   if (!result.ok) {
-    // Transient failure — return last-known-good snapshot with stale marker
-    const snapshot = gitSnapshots.get(projectName)
-    return { changes: snapshot ?? [], stale: true }
+    return { prefix, changes: gitSnapshots.get(key) ?? [], fresh: false }
   }
 
   const entries = result.stdout.split('\0').filter(Boolean)
@@ -125,25 +139,55 @@ async function resolveStatus(projectName: string, projectPath: string) {
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]
     const xy = entry.substring(0, 2)
-    const path = entry.substring(3)
+    const path = prefix + entry.substring(3)
     changes.push({ path, status: parseStatus(xy) })
     // Renames/copies have an extra entry for the old path — skip it
     if (xy[0] === 'R' || xy[0] === 'C') i++
   }
 
-  const stats = parseShortstat(statResult.stdout)
-  gitSnapshots.set(projectName, changes)
+  gitSnapshots.set(key, changes)
+  const stats = statResult.ok ? parseShortstat(statResult.stdout) : { added: 0, deleted: 0 }
+  return { prefix, changes, fresh: true, stats }
+}
+
+/** Aggregate status across the host plus every colocated repo. Order is
+ *  deterministic — host first, then colocated repos sorted by prefix
+ *  (getColocatedRepos returns them sorted) — and a single seen-set prevents any
+ *  path from being listed twice. If any repo is stale the response is stale and
+ *  stats are suppressed; otherwise stats are summed across all repos. */
+async function resolveStatus(projectPath: string) {
+  const repos = await getColocatedRepos(projectPath)
+  const prefixes = ['', ...repos.map((r) => `${r}/`)]
+  const results = await Promise.all(prefixes.map((p) => resolveRepoStatus(projectPath, p)))
+
+  const seen = new Set<string>()
+  const changes: GitChange[] = []
+  for (const repo of results) {
+    for (const change of repo.changes) {
+      if (seen.has(change.path)) continue
+      seen.add(change.path)
+      changes.push(change)
+    }
+  }
+
+  if (results.some((r) => !r.fresh)) {
+    return { changes, stale: true }
+  }
+  const stats = results.reduce(
+    (acc, r) => ({ added: acc.added + (r.stats?.added ?? 0), deleted: acc.deleted + (r.stats?.deleted ?? 0) }),
+    { added: 0, deleted: 0 },
+  )
   return { changes, stale: false, stats }
 }
 
-// GET /:project/status — git status for a project
+// GET /:project/status — aggregated git status (host + colocated repos)
 app.get('/:project/status', withProject, async (c) => {
   const proj = c.var.project
   // Key by effective path so worktree variants don't share the main repo's promise
   const key = proj.path
   let pending = statusInflight.get(key)
   if (!pending) {
-    pending = resolveStatus(proj.name, proj.path)
+    pending = resolveStatus(proj.path)
       .finally(() => statusInflight.delete(key))
     statusInflight.set(key, pending)
   }
