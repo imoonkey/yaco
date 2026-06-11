@@ -1,32 +1,39 @@
 import { test, expect, type Page } from '@playwright/test'
-import { openFileViaSearch } from './helpers/workspace'
+import {
+  provisionWorkspace,
+  openFileViaSearch,
+  type FixtureProject,
+} from './helpers/workspace'
 
 // The Tasks area is a single task workspace (one stacked graph + toolbar), opened
 // as an overlay via Cmd/Ctrl+Shift+T. There is no Board/List/Graph/Archive pane
 // switching — workset is a filter on one workspace, not a separate surface.
 
-async function loadProjects(page: Page) {
-  return page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-}
-
-async function openWorkspace(page: Page) {
-  await page.goto('/')
-  const projects = await loadProjects(page)
-  expect(projects.length).toBeGreaterThan(0)
-  await page.locator('button', { hasText: projects[0].name }).first().click()
-  await page.evaluate((name: string) => localStorage.removeItem(`yaco-task-workspace:${name}`), projects[0].name)
-  return projects
+// Seed a task graph with one active root and one archived root so the archive
+// chip has something to reveal, plus a package.json the quick-open spec opens.
+const FIXTURE_OPTS = {
+  files: { 'package.json': '{"name":"fixture","private":true}\n' },
+  tasks: {
+    'active-root': { parent: null, depends: [], state: 'ready', workset: 'active', title: 'Active Root', description: 'active', acceptCriteria: ['ships'], worktree: null },
+    'archived-root': { parent: null, depends: [], state: 'done', workset: 'archive', title: 'Archived Root', description: 'archived', acceptCriteria: ['ships'], worktree: null },
+  },
 }
 
 const search = (page: Page) => page.locator('input[placeholder="Search tasks..."]')
 
 test.describe('Workspace Tasks', () => {
-  test('Cmd+Shift+T toggles the single task workspace open and closed', async ({ page }) => {
-    await openWorkspace(page)
+  let fixture: FixtureProject
 
+  test.beforeEach(async ({ page, request }) => {
+    fixture = await provisionWorkspace(page, request, FIXTURE_OPTS)
+    await page.evaluate((name: string) => localStorage.removeItem(`yaco-task-workspace:${name}`), fixture.name)
+  })
+
+  test.afterEach(async () => {
+    await fixture.dispose()
+  })
+
+  test('Cmd+Shift+T toggles the single task workspace open and closed', async ({ page }) => {
     await page.keyboard.press('Meta+Shift+t')
     await expect(search(page)).toBeVisible({ timeout: 10_000 })
     await expect(page.locator('[data-layer="nodes"]')).toBeVisible()
@@ -41,8 +48,6 @@ test.describe('Workspace Tasks', () => {
   // `activeTab` does not change). The old fake tasks tab made any file-open
   // switch `activeTab` away from Tasks; the real panel needs an explicit switch.
   test('opening the already-active file from Tasks returns to the editor', async ({ page }) => {
-    await openWorkspace(page)
-
     // A real file as the active editor tab.
     await openFileViaSearch(page, 'package.json')
     await expect(page.locator('[data-testid="tab"]')).toHaveCount(1)
@@ -61,7 +66,6 @@ test.describe('Workspace Tasks', () => {
   })
 
   test('is one workspace surface — no Board/List/Archive panels, workset is a filter', async ({ page }) => {
-    await openWorkspace(page)
     await page.keyboard.press('Meta+Shift+t')
     await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first())
       .toBeVisible({ timeout: 15_000 })
@@ -81,7 +85,6 @@ test.describe('Workspace Tasks', () => {
   })
 
   test('archive node is hidden by default and rendered after enabling the archive chip', async ({ page }) => {
-    const projects = await openWorkspace(page)
     await page.keyboard.press('Meta+Shift+t')
     await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first())
       .toBeVisible({ timeout: 15_000 })
@@ -98,8 +101,8 @@ test.describe('Workspace Tasks', () => {
       const hit = entries.find(t => t.workset === 'archive' && t.parent === null
         && !/["\\]/.test(t.title) && count.get(t.title) === 1)
       return hit?.title ?? null
-    }, projects[0].name)
-    // There ARE archived tasks in this repo's data; fail loudly if not.
+    }, fixture.name)
+    // There IS an archived task in this fixture's data; fail loudly if not.
     expect(archiveTitle, 'an archived root task with a unique title').toBeTruthy()
 
     const archiveNode = page.locator(`g[role="button"][aria-label^="Task: ${archiveTitle}, status:"]`)

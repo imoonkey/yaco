@@ -1,56 +1,31 @@
-import { test, expect, type Page } from '@playwright/test'
-import { waitForAppReady } from './helpers/workspace'
+import { test, expect } from '@playwright/test'
+import {
+  provisionWorkspace,
+  createTestFile,
+  fileExistsOnServer,
+  openFileViaSearch,
+  uniqueFileName,
+  type FixtureProject,
+} from './helpers/workspace'
 
-// --- Helpers ---
-
-async function openWorkspace(page: Page) {
-  await page.goto('/')
-  await waitForAppReady(page)
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const project = projects[0]
-  await page.locator('button', { hasText: project.name }).click()
-  return project
+// A nested source tree so the "subdirectory results" test finds matches.
+const FIXTURE_FILES = {
+  'src/index.ts': 'export const value = 1\n',
+  'src/util/helper.ts': 'export function helper() { return 1 }\n',
 }
-
-async function createTestFile(page: Page, projectName: string, filePath: string, content: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/create-file`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path: filePath })
-  await page.evaluate(async ({ projectName, filePath, content }) => {
-    const getRes = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
-    const { revision } = await getRes.json() as { revision: number }
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, baseRevision: revision }),
-    })
-  }, { projectName, filePath, content })
-}
-
-async function deleteTestFile(page: Page, projectName: string, filePath: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path: filePath })
-}
-
-// --- Tests ---
 
 test.describe('File search (Cmd+P)', () => {
-  test('lists files from subdirectories, not just root', async ({ page }) => {
-    await openWorkspace(page)
+  let fixture: FixtureProject
 
+  test.beforeEach(async ({ page, request }) => {
+    fixture = await provisionWorkspace(page, request, { files: FIXTURE_FILES })
+  })
+
+  test.afterEach(async () => {
+    await fixture.dispose()
+  })
+
+  test('lists files from subdirectories, not just root', async ({ page }) => {
     // Open search
     await page.keyboard.press('Meta+p')
     const searchInput = page.locator('input[placeholder="Search files..."], input[placeholder="Loading files..."]')
@@ -59,8 +34,8 @@ test.describe('File search (Cmd+P)', () => {
     // Wait for loading to finish
     await expect(page.locator('input[placeholder="Search files..."]')).toBeVisible({ timeout: 10_000 })
 
-    // Search for a file we know exists in a subdirectory (e.g. a source file)
-    await searchInput.fill('useApi')
+    // Search for a term present only in a subdirectory file (src/util/helper.ts).
+    await searchInput.fill('helper')
     const results = page.locator('.max-h-\\[300px\\] > div')
     await expect(results.first()).toBeVisible({ timeout: 3000 })
 
@@ -74,21 +49,14 @@ test.describe('File search (Cmd+P)', () => {
   })
 
   test('selecting a file opens it and reveals in explorer', async ({ page }) => {
-    const project = await openWorkspace(page)
-
     // Create a nested test file
-    const testDir = '__e2e_search_test'
+    const testDir = uniqueFileName('search_test')
     const testPath = `${testDir}/nested_file.txt`
-    await createTestFile(page, project.name, testPath, 'search test content\n')
-    await page.waitForTimeout(3000) // wait for SSE
+    await createTestFile(page, fixture.name, testPath, 'search test content\n')
+    await expect.poll(() => fileExistsOnServer(page, fixture.name, testPath), { timeout: 10_000 }).toBe(true)
 
     // Search and select the file
-    await page.keyboard.press('Meta+p')
-    await expect(page.locator('input[placeholder="Search files..."]')).toBeVisible({ timeout: 10_000 })
-    await page.locator('input[placeholder="Search files..."]').fill('nested_file')
-    await page.waitForTimeout(500) // filter delay
-    await page.keyboard.press('Enter')
-    await page.waitForTimeout(1000)
+    await openFileViaSearch(page, 'nested_file')
 
     // Verify file opened in editor
     const editorContent = page.locator('.cm-content')
@@ -97,21 +65,9 @@ test.describe('File search (Cmd+P)', () => {
     // Verify tab is visible
     const tab = page.locator('[data-testid="tab"]', { hasText: 'nested_file.txt' })
     await expect(tab).toBeVisible()
-
-    // Cleanup
-    await deleteTestFile(page, project.name, testPath)
-    await page.evaluate(async ({ projectName, path }) => {
-      await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-    }, { projectName: project.name, path: testDir })
   })
 
   test('gitignore toggle includes ignored files', async ({ page }) => {
-    await openWorkspace(page)
-
     await page.keyboard.press('Meta+p')
     await expect(page.locator('input[placeholder="Search files..."]')).toBeVisible({ timeout: 10_000 })
 
@@ -131,33 +87,34 @@ test.describe('File search (Cmd+P)', () => {
 })
 
 test.describe('Changes sidebar', () => {
+  let fixture: FixtureProject
+
+  test.beforeEach(async ({ page, request }) => {
+    fixture = await provisionWorkspace(page, request)
+  })
+
+  test.afterEach(async () => {
+    await fixture.dispose()
+  })
+
   test('clicking a changed file opens diff as preview tab', async ({ page }) => {
-    const project = await openWorkspace(page)
-
     // Create and modify a test file to generate a git change
-    const testPath = '__e2e_changes_test.txt'
-    await createTestFile(page, project.name, testPath, 'changes test\n')
-    await page.waitForTimeout(3000) // wait for SSE git refresh
+    const testPath = uniqueFileName('changes_test.txt')
+    await createTestFile(page, fixture.name, testPath, 'changes test\n')
+    await expect.poll(() => fileExistsOnServer(page, fixture.name, testPath), { timeout: 10_000 }).toBe(true)
 
-    // Look for the change in the sidebar
-    // Changes section should show the test file
+    // Untracked-file visibility in the Changes section is environment-dependent,
+    // so assert the diff-tab flow only when the change actually surfaces.
     const changeItem = page.locator(`.items-start[title="${testPath}"]`).first()
-
-    // If change is visible, click it
     if (await changeItem.isVisible({ timeout: 5000 }).catch(() => false)) {
       await changeItem.click()
-      await page.waitForTimeout(500)
 
-      // Verify a diff tab opened (tab text should contain the filename)
-      const diffTab = page.locator('[data-testid="tab"]', { hasText: '__e2e_changes_test.txt' })
+      const diffTab = page.locator('[data-testid="tab"]', { hasText: testPath })
       await expect(diffTab).toBeVisible({ timeout: 3000 })
 
       // Preview tabs have italic styling
       const tabStyle = await diffTab.evaluate(el => window.getComputedStyle(el).fontStyle)
       expect(tabStyle).toBe('italic')
     }
-
-    // Cleanup
-    await deleteTestFile(page, project.name, testPath)
   })
 })

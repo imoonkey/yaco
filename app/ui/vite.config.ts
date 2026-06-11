@@ -10,6 +10,13 @@ import { resolveDevPorts } from './e2ePorts'
 // Worktree-isolated dev ports (main checkout → 5173 / 3001 unchanged).
 const { ui: UI_PORT, api: API_PORT } = resolveDevPorts()
 
+// The /api + /ws proxy target. e2e runs an isolated API server on a different
+// port and injects VITE_PROXY_API_PORT so this dev server proxies to THAT server
+// (the isolated YACO_HOME) instead of the real dev server on 3001.
+const PROXY_API_PORT = process.env.VITE_PROXY_API_PORT
+  ? Number(process.env.VITE_PROXY_API_PORT)
+  : API_PORT
+
 // Self-hosted VAD assets. The voice path (vs-vad-module, src/hooks/voiceVad.ts)
 // lazy-`import()`s @ricky0123/vad-web, which at init fetches its worklet + Silero
 // model and the onnxruntime-web SIMD runtime from a base path — never from the JS
@@ -87,9 +94,9 @@ export default defineConfig({
       ],
     },
     proxy: {
-      '/api': `http://localhost:${API_PORT}`,
+      '/api': `http://localhost:${PROXY_API_PORT}`,
       '/ws': {
-        target: `ws://localhost:${API_PORT}`,
+        target: `ws://localhost:${PROXY_API_PORT}`,
         ws: true,
       },
     },

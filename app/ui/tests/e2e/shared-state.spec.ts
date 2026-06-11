@@ -6,12 +6,21 @@ import { homedir } from 'os'
 import { resolveDevPorts } from '../../e2ePorts'
 import { createFixtureProject } from './helpers/workspace'
 
+// This spec mutates singleton state in the shared YACO_HOME (ui-state
+// notifications/pinned files + session-state files), so under fullyParallel its
+// tests must not run concurrently with each other. Other spec files still run
+// in parallel — none of them touch these singletons.
+test.describe.configure({ mode: 'serial' })
+
 // --- Paths & constants ---
 
-// The server resolves its runtime root from YACO_HOME — a per-worktree isolated
-// dir in worktree e2e runs, else ~/.yaco. The test runner does NOT inherit that
-// env, so derive it exactly as playwright.config.ts does for the API server.
-const YACO_HOME = resolveDevPorts().yacoHome ?? join(homedir(), '.yaco')
+// The server resolves its runtime root from YACO_HOME — always an isolated,
+// ephemeral dir for e2e (never the real ~/.yaco). The test runner does NOT
+// inherit that env, so derive it exactly as playwright.config.ts does for the
+// API server. In E2E_REUSE mode (yacoHome null) mirror the server's resolver:
+// honor an explicit process.env.YACO_HOME before falling back to ~/.yaco.
+const YACO_HOME =
+  resolveDevPorts({ e2e: true }).yacoHome ?? process.env.YACO_HOME ?? join(homedir(), '.yaco')
 const UI_STATE_DIR = join(YACO_HOME, 'ui-state')
 const NOTIFICATIONS_FILE = join(UI_STATE_DIR, 'notifications.json')
 const PINNED_FILE = join(UI_STATE_DIR, 'pinned-sessions.json')

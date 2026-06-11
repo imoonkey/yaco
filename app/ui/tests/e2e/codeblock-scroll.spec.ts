@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { waitForAppReady } from './helpers/workspace'
+import { provisionWorkspace, createTestFile, openFileViaSearch, uniqueFileName, type FixtureProject } from './helpers/workspace'
 
 const LONG_CODE_LINE = 'const veryLongVariableName = "' + 'abcdefghij'.repeat(30) + '";'
 const MD_CONTENT = `# Test
@@ -14,72 +14,27 @@ const short = 1;
 More text after.
 `
 
-async function openWorkspace(page: Page) {
-  await page.goto('/')
-  await waitForAppReady(page)
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const project = projects[0]
-  await page.locator('button', { hasText: project.name }).click()
-  return project
-}
-
-async function createTestFile(page: Page, projectName: string, filePath: string, content: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/create-file`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path: filePath })
-  const getRes = await page.evaluate(async ({ projectName, filePath }) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
-    return res.json() as Promise<{ content: string; revision: number }>
-  }, { projectName, filePath })
-  await page.evaluate(async ({ projectName, filePath, content, revision }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, baseRevision: revision }),
-    })
-  }, { projectName, filePath, content, revision: getRes.revision })
-}
-
-async function deleteTestFile(page: Page, projectName: string, filePath: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path: filePath })
-}
-
-async function openMarkdownPreview(page: Page, testFile: string) {
-  await page.keyboard.press('Meta+p')
-  await page.locator('input[placeholder="Search files..."]').fill(testFile.replace(/^__e2e_/, ''))
-  await page.keyboard.press('Enter')
-  await page.waitForTimeout(1000)
+async function openMarkdownPreview(page: Page, fileName: string) {
+  await openFileViaSearch(page, fileName)
   await page.keyboard.press('Meta+Shift+v')
   await expect(page.locator('.markdown-preview')).toBeVisible({ timeout: 5000 })
 }
 
 test.describe('Code block horizontal scroll in markdown preview', () => {
-  const testFile = '__e2e_codeblock_scroll.md'
-  let projectName = ''
+  let fixture: FixtureProject
+  let testFile = ''
 
-  test.afterEach(async ({ page }) => {
-    if (projectName) await deleteTestFile(page, projectName, testFile).catch(() => {})
+  test.beforeEach(async ({ page, request }) => {
+    fixture = await provisionWorkspace(page, request)
+    testFile = uniqueFileName('codeblock_scroll.md')
+    await createTestFile(page, fixture.name, testFile, MD_CONTENT)
+  })
+
+  test.afterEach(async () => {
+    await fixture.dispose()
   })
 
   test('scrollLeft persists after set', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
-    await createTestFile(page, project.name, testFile, MD_CONTENT)
-    await page.waitForTimeout(3000)
     await openMarkdownPreview(page, testFile)
 
     const pre = page.locator('.markdown-preview pre').first()
@@ -106,10 +61,6 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
   })
 
   test('scrollLeft survives content re-render', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
-    await createTestFile(page, project.name, testFile, MD_CONTENT)
-    await page.waitForTimeout(3000)
     await openMarkdownPreview(page, testFile)
 
     const pre = page.locator('.markdown-preview pre').first()
@@ -124,7 +75,7 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
     const getRes = await page.evaluate(async ({ projectName, filePath }) => {
       const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`)
       return res.json() as Promise<{ content: string; revision: number }>
-    }, { projectName: project.name, filePath: testFile })
+    }, { projectName: fixture.name, filePath: testFile })
     const modifiedContent = MD_CONTENT.replace('Some text.', 'Some modified text.')
     await page.evaluate(async ({ projectName, filePath, content, revision }) => {
       await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(filePath)}`, {
@@ -132,7 +83,7 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, baseRevision: revision }),
       })
-    }, { projectName: project.name, filePath: testFile, content: modifiedContent, revision: getRes.revision })
+    }, { projectName: fixture.name, filePath: testFile, content: modifiedContent, revision: getRes.revision })
 
     // Wait for SSE to propagate and re-render — verify modified text appears
     await expect(page.locator('.markdown-preview')).toContainText('Some modified text', { timeout: 10_000 })
@@ -145,10 +96,6 @@ test.describe('Code block horizontal scroll in markdown preview', () => {
   })
 
   test('no DOM churn: innerHTML only set when html changes', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
-    await createTestFile(page, project.name, testFile, MD_CONTENT)
-    await page.waitForTimeout(3000)
     await openMarkdownPreview(page, testFile)
 
     const pre = page.locator('.markdown-preview pre').first()

@@ -70,7 +70,10 @@ test.describe('Flexible layout operations (panel header menu)', () => {
     // It now renders inside the left dock column.
     await expect.poll(() => sessionsInsideDock(page)).toBe(true)
     // Committed to the panel-layout tree (version 1), so a reload restores it.
-    expect((await getWorkspaceState(page, project.name))?.panelLayout?.version).toBe(1)
+    // Poll — the layout persist is debounced, so it may lag the relocation.
+    await expect
+      .poll(async () => (await getWorkspaceState(page, project.name))?.panelLayout?.version)
+      .toBe(1)
 
     // Reload — Sessions stays in the dock (the move persisted).
     await page.reload()
@@ -91,7 +94,9 @@ test.describe('Flexible layout operations (panel header menu)', () => {
     await runPanelMenu(page, 'Sessions', 'Move right')
     // It leaves the dock and renders in the right region again.
     await expect.poll(() => sessionsInsideDock(page)).toBe(false)
-    expect((await getWorkspaceState(page, project.name))?.panelLayout?.version).toBe(1)
+    await expect
+      .poll(async () => (await getWorkspaceState(page, project.name))?.panelLayout?.version)
+      .toBe(1)
 
     // Reload — Sessions stays out of the dock (the rightward move persisted).
     await page.reload()

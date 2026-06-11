@@ -1,15 +1,43 @@
 import { test, expect, type Page } from '@playwright/test'
+import {
+  createFixtureProject,
+  selectProject,
+  openFileViaSearch,
+  waitForAppReady,
+  type FixtureProject,
+} from './helpers/workspace'
+import { resolveDevPorts } from '../../e2ePorts'
 
 // Drives the real ComposeTray via a fake MicVAD + stubbed voice API, and
 // verifies the defensive clipboard backup: whenever the tray closes with edited
 // content (Insert / Discard), the draft lands on the clipboard so a glitched
 // insert can never silently lose carefully-edited text.
+//
+// The fake MicVAD hook is gated on import.meta.env.DEV (voiceVad.ts), so it only
+// works against the dev server — the default isolated suite serves a static
+// build, where real VAD can't run headless. Run this with E2E_REUSE=1.
+const skipOnBuild = resolveDevPorts({ e2e: true }).yacoHome !== null
 
 test.use({
   permissions: ['clipboard-read', 'clipboard-write'],
   launchOptions: {
     args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'],
   },
+})
+
+// Provision the fixture (with a package.json to open) WITHOUT navigating — the
+// voice stubs/init scripts must be installed before the first goto.
+let fixture: FixtureProject | undefined
+
+test.beforeEach(async ({ request }) => {
+  test.skip(skipOnBuild, 'voice fake-VAD hook is dev-only (import.meta.env.DEV); run with E2E_REUSE=1')
+  fixture = await createFixtureProject(request, {
+    files: { 'package.json': '{"name":"voice-fixture","private":true}\n' },
+  })
+})
+
+test.afterEach(async () => {
+  await fixture?.dispose()
 })
 
 /** Stub the voice endpoints so the tray works without a Groq key or real audio. */
@@ -54,23 +82,14 @@ async function stubVoice(page: Page, displayText: string) {
   )
 }
 
-/** Open the first project and an editor file so the editor voice button appears. */
+/** Open the fixture project and a file so the editor voice button appears. */
 async function openFileForVoice(page: Page): Promise<void> {
   await page.goto('/')
+  await waitForAppReady(page)
+  await selectProject(page, fixture!.name)
 
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const projectButton = page.locator('button', { hasText: projects[0].name }).first()
-  await expect(projectButton).toBeVisible({ timeout: 10_000 })
-  await projectButton.click()
-
-  // Open a file via Cmd+P search (most reliable across projects).
-  await page.keyboard.press('Meta+p')
-  await page.locator('input[placeholder="Search files..."]').fill('package.json')
-  await page.keyboard.press('Enter')
+  // Open a file via Cmd+P search so a file is the active editor tab.
+  await openFileViaSearch(page, 'package.json')
 
   // Editor voice button only renders once a file is the active editor tab.
   await expect(page.getByRole('button', { name: 'Start voice recording' })).toBeVisible({

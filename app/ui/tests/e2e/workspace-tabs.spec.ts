@@ -1,62 +1,13 @@
 import { test, expect, type Page } from '@playwright/test'
-import { waitForAppReady } from './helpers/workspace'
+import {
+  provisionWorkspace,
+  createTestFile,
+  openFileViaSearch,
+  uniqueFileName,
+  type FixtureProject,
+} from './helpers/workspace'
 
 // --- Helpers ---
-
-async function openWorkspace(page: Page) {
-  await page.goto('/')
-  await waitForAppReady(page)
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const project = projects[0]
-  await page.locator('button', { hasText: project.name }).click()
-  return project
-}
-
-async function createTestFile(page: Page, projectName: string, path: string, content: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/create-file`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path })
-  await page.evaluate(async ({ projectName, path, content }) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(path)}`)
-    const { revision } = await res.json() as { revision: number }
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(path)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, baseRevision: revision }),
-    })
-  }, { projectName, path, content })
-}
-
-async function deleteTestFile(page: Page, projectName: string, path: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path })
-}
-
-/** Open a file as preview via file search (Cmd+P) */
-async function openFileViaSearch(page: Page, fileName: string) {
-  await page.keyboard.press('Meta+p')
-  const input = page.locator('input[placeholder="Search files..."]')
-  await expect(input).toBeVisible({ timeout: 10_000 })
-  await input.fill(fileName)
-  await page.waitForTimeout(500)
-  // Click the top result rather than pressing Enter: after a CodeMirror edit the
-  // editor swallows the search input's Enter keydown, so selection never fires.
-  await page.locator('[data-search-result-idx="0"]').click()
-  await page.waitForTimeout(1000)
-}
 
 function tabBar(page: Page) {
   return page.locator('.overflow-x-auto')
@@ -73,23 +24,25 @@ function tabText(page: Page, title: string) {
 // --- Tests ---
 
 test.describe('Tab lifecycle characterization', () => {
-  const fileA = '__e2e_char_tab_a.txt'
-  const fileB = '__e2e_char_tab_b.txt'
-  const fileC = '__e2e_char_tab_c.txt'
-  let project: { name: string; path: string }
+  let fixture: FixtureProject
+  let fileA: string
+  let fileB: string
+  let fileC: string
 
-  test.beforeEach(async ({ page }) => {
-    project = await openWorkspace(page)
-    await createTestFile(page, project.name, fileA, 'content of file A\n')
-    await createTestFile(page, project.name, fileB, 'content of file B\n')
-    await createTestFile(page, project.name, fileC, 'content of file C\n')
-    await page.waitForTimeout(3000) // SSE propagation
+  test.beforeEach(async ({ page, request }) => {
+    fixture = await provisionWorkspace(page, request)
+    fileA = uniqueFileName('char_tab_a.txt')
+    fileB = uniqueFileName('char_tab_b.txt')
+    fileC = uniqueFileName('char_tab_c.txt')
+    await createTestFile(page, fixture.name, fileA, 'content of file A\n')
+    await createTestFile(page, fixture.name, fileB, 'content of file B\n')
+    await createTestFile(page, fixture.name, fileC, 'content of file C\n')
+    // Wait for the explorer to reflect the new files before exercising tabs.
+    await expect(page.locator('[role="treeitem"]', { hasText: fileA }).first()).toBeVisible({ timeout: 10_000 })
   })
 
-  test.afterEach(async ({ page }) => {
-    for (const f of [fileA, fileB, fileC]) {
-      await deleteTestFile(page, project.name, f)
-    }
+  test.afterEach(async () => {
+    await fixture.dispose()
   })
 
   test('preview tab has italic text', async ({ page }) => {
@@ -116,7 +69,6 @@ test.describe('Tab lifecycle characterization', () => {
     // Type to trigger auto-pin via updateFileDraft
     await page.locator('.cm-content').click()
     await page.keyboard.type('X')
-    await page.waitForTimeout(500)
 
     // No longer italic — auto-pinned
     await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
@@ -127,7 +79,7 @@ test.describe('Tab lifecycle characterization', () => {
     await openFileViaSearch(page, fileA)
     await page.locator('.cm-content').click()
     await page.keyboard.type('X')
-    await page.waitForTimeout(500)
+    await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
 
     // Open B as preview — A should survive since it was auto-pinned
     await openFileViaSearch(page, fileB)
@@ -141,7 +93,6 @@ test.describe('Tab lifecycle characterization', () => {
     // Edit to make dirty
     await page.locator('.cm-content').click()
     await page.keyboard.type('DIRTY')
-    await page.waitForTimeout(500)
 
     const t = tab(page, fileA)
     // Dot indicator visible
@@ -156,25 +107,21 @@ test.describe('Tab lifecycle characterization', () => {
     for (const f of [fileA, fileB, fileC]) {
       await openFileViaSearch(page, f)
       await tab(page, f).dblclick() // pin via double-click
-      await page.waitForTimeout(300)
+      await expect(tabText(page, f)).not.toHaveCSS('font-style', 'italic')
     }
 
     // Make B active
     await tab(page, fileB).click()
-    await page.waitForTimeout(200)
 
     // Close B with Cmd+W
     await page.keyboard.press('Meta+w')
-    await page.waitForTimeout(500)
 
     // B should be gone
     await expect(tab(page, fileB)).not.toBeVisible()
 
     // A neighbor should be active — editor shows its content
     const editor = page.locator('.cm-content')
-    const text = await editor.textContent()
-    const isNeighbor = text?.includes('content of file A') || text?.includes('content of file C')
-    expect(isNeighbor).toBe(true)
+    await expect(editor).toContainText(/content of file [AC]/, { timeout: 10_000 })
   })
 
   test('double-click preview tab pins it', async ({ page }) => {
@@ -183,7 +130,6 @@ test.describe('Tab lifecycle characterization', () => {
 
     // Double-click to pin
     await tab(page, fileA).dblclick()
-    await page.waitForTimeout(300)
 
     // No longer italic
     await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
@@ -193,7 +139,7 @@ test.describe('Tab lifecycle characterization', () => {
     // Open A as preview, pin via double-click
     await openFileViaSearch(page, fileA)
     await tab(page, fileA).dblclick()
-    await page.waitForTimeout(300)
+    await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
 
     // Open B as preview
     await openFileViaSearch(page, fileB)
@@ -207,17 +153,15 @@ test.describe('Tab lifecycle characterization', () => {
     // Open file A as a pinned file tab
     await openFileViaSearch(page, fileA)
     await tab(page, fileA).dblclick()
-    await page.waitForTimeout(300)
+    await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
 
     // Find the change item in the sidebar Changes section (not in the tab bar).
     // Change items use class `items-start`; tab bar items use `items-center`.
+    // Untracked-file visibility there is environment-dependent, so assert the
+    // diff-tab coexistence only when the change surfaces.
     const changeItem = page.locator(`.items-start[title="${fileA}"]`).first()
-    const hasChange = await changeItem.isVisible({ timeout: 5000 }).catch(() => false)
-
-    if (hasChange) {
-      // Click the change to open a diff preview tab
+    if (await changeItem.isVisible({ timeout: 5000 }).catch(() => false)) {
       await changeItem.click()
-      await page.waitForTimeout(500)
 
       // Both file tab and diff tab should be present
       await expect(tab(page, fileA)).toBeVisible()

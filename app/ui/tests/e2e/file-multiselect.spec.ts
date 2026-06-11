@@ -1,64 +1,36 @@
-import { test, expect, type Page } from '@playwright/test'
-
-async function openWorkspace(page: Page) {
-  await page.goto('/')
-  await expect(page.locator('main')).toBeVisible({ timeout: 10_000 })
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const project = projects[0]
-  await page.locator('button', { hasText: project.name }).click()
-  return project
-}
-
-async function createFile(page: Page, projectName: string, path: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/create-file`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path })
-}
-
-async function deleteFileIfExists(page: Page, projectName: string, path: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path })
-}
-
-async function fileExistsOnServer(page: Page, projectName: string, path: string): Promise<boolean> {
-  return page.evaluate(async ({ projectName, path }) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(path)}`)
-    return res.ok
-  }, { projectName, path })
-}
+import { test, expect } from '@playwright/test'
+import {
+  provisionWorkspace,
+  createTestFile,
+  fileExistsOnServer,
+  uniqueFileName,
+  type FixtureProject,
+} from './helpers/workspace'
 
 test.describe('File Explorer: multi-select', () => {
-  let projectName: string
-  const PATHS = ['__e2e_multi_a.txt', '__e2e_multi_b.txt', '__e2e_multi_c.txt']
+  let fixture: FixtureProject
+  let pathA: string
+  let pathB: string
+  let pathC: string
 
-  test.afterEach(async ({ page }) => {
-    if (!projectName) return
-    for (const p of PATHS) await deleteFileIfExists(page, projectName, p)
+  test.beforeEach(async ({ page, request }) => {
+    fixture = await provisionWorkspace(page, request)
+    pathA = uniqueFileName('multi_a.txt')
+    pathB = uniqueFileName('multi_b.txt')
+    pathC = uniqueFileName('multi_c.txt')
+  })
+
+  test.afterEach(async () => {
+    await fixture.dispose()
   })
 
   test('Ctrl+Click selects multiple files and right-click Delete batch-removes them', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
+    const paths = [pathA, pathB, pathC]
+    for (const p of paths) await createTestFile(page, fixture.name, p, '')
 
-    for (const p of PATHS) await createFile(page, projectName, p)
-    await page.waitForTimeout(2500) // SSE refresh
-
-    const items = PATHS.map(p => p.replace(/\.txt$/, ''))
+    const items = paths.map(p => p.replace(/\.txt$/, ''))
     for (const stem of items) {
-      await expect(page.locator('[role="treeitem"]', { hasText: stem }).first()).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('[role="treeitem"]', { hasText: stem }).first()).toBeVisible({ timeout: 10_000 })
     }
 
     // Single-click first, Ctrl+Click the others
@@ -74,22 +46,18 @@ test.describe('File Explorer: multi-select', () => {
     await expect(page.getByText(/Delete 3 items\?/)).toBeVisible({ timeout: 3000 })
     await page.getByRole('button', { name: 'Delete', exact: true }).click()
 
-    await page.waitForTimeout(2500)
-    for (const p of PATHS) {
-      expect(await fileExistsOnServer(page, projectName, p)).toBe(false)
+    for (const p of paths) {
+      await expect.poll(() => fileExistsOnServer(page, fixture.name, p), { timeout: 10_000 }).toBe(false)
     }
   })
 
   test('right-click Delete on a non-selected node deletes only that node (regression)', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
+    const paths = [pathA, pathB, pathC]
+    for (const p of paths) await createTestFile(page, fixture.name, p, '')
 
-    for (const p of PATHS) await createFile(page, projectName, p)
-    await page.waitForTimeout(2500)
-
-    const items = PATHS.map(p => p.replace(/\.txt$/, ''))
+    const items = paths.map(p => p.replace(/\.txt$/, ''))
     for (const stem of items) {
-      await expect(page.locator('[role="treeitem"]', { hasText: stem }).first()).toBeVisible({ timeout: 5000 })
+      await expect(page.locator('[role="treeitem"]', { hasText: stem }).first()).toBeVisible({ timeout: 10_000 })
     }
 
     // Multi-select a and b, but right-click on c (not in selection)
@@ -100,12 +68,11 @@ test.describe('File Explorer: multi-select', () => {
     await page.getByText('Delete', { exact: true }).first().click()
 
     // Single-item dialog title (uses original filename in quotes)
-    await expect(page.getByText(/Delete "__e2e_multi_c\.txt"\?/)).toBeVisible({ timeout: 3000 })
+    await expect(page.getByText(new RegExp(`Delete "${pathC.replace(/[.]/g, '\\.')}"\\?`))).toBeVisible({ timeout: 3000 })
     await page.getByRole('button', { name: 'Delete', exact: true }).click()
 
-    await page.waitForTimeout(2500)
-    expect(await fileExistsOnServer(page, projectName, PATHS[2])).toBe(false)
-    expect(await fileExistsOnServer(page, projectName, PATHS[0])).toBe(true)
-    expect(await fileExistsOnServer(page, projectName, PATHS[1])).toBe(true)
+    await expect.poll(() => fileExistsOnServer(page, fixture.name, pathC), { timeout: 10_000 }).toBe(false)
+    expect(await fileExistsOnServer(page, fixture.name, pathA)).toBe(true)
+    expect(await fileExistsOnServer(page, fixture.name, pathB)).toBe(true)
   })
 })

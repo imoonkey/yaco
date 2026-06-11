@@ -1,8 +1,9 @@
 import { expect, type Page, type APIRequestContext } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { FIXTURE_MARKER } from './cleanup'
 
 // Shared e2e helpers for the workspace persistence / worktree / binary specs.
 //
@@ -93,10 +94,14 @@ export async function selectProject(page: Page, name: string): Promise<void> {
 
 /** Provision a fresh isolated project, load the app, and select it. The standard
  *  entry point for layout/persistence specs: it depends on nothing already in the
- *  registry, so it works against an empty per-worktree YACO_HOME. Dispose the
- *  returned fixture when done. */
-export async function provisionWorkspace(page: Page, request: APIRequestContext): Promise<FixtureProject> {
-  const project = await createFixtureProject(request)
+ *  registry, so it works against an empty per-run YACO_HOME. Pass `opts` to seed
+ *  extra repo shape (files, a task graph). Dispose the returned fixture when done. */
+export async function provisionWorkspace(
+  page: Page,
+  request: APIRequestContext,
+  opts: FixtureOptions = {},
+): Promise<FixtureProject> {
+  const project = await createFixtureProject(request, opts)
   await page.goto('/')
   await waitForAppReady(page)
   await selectProject(page, project.name)
@@ -143,14 +148,35 @@ export async function deleteTestFile(page: Page, project: string, path: string):
   }, { project, path })
 }
 
-/** Open a file through the Cmd+P quick-open search. */
+/** True when the server can serve the file's content (i.e. it exists). */
+export function fileExistsOnServer(page: Page, project: string, path: string): Promise<boolean> {
+  return page.evaluate(async ({ project, path }) => {
+    const res = await fetch(`/api/files/${encodeURIComponent(project)}/content?path=${encodeURIComponent(path)}`)
+    return res.ok
+  }, { project, path })
+}
+
+/** True when the server can list the directory's children (i.e. it exists). */
+export function dirExistsOnServer(page: Page, project: string, path: string): Promise<boolean> {
+  return page.evaluate(async ({ project, path }) => {
+    const res = await fetch(`/api/files/${encodeURIComponent(project)}/children?dir=${encodeURIComponent(path)}`)
+    return res.ok
+  }, { project, path })
+}
+
+/** Open a file through the Cmd+P quick-open search. The palette does a live
+ *  `/api/files/<project>/search-index` fetch on open (reads disk), so a file
+ *  created via the API moments earlier is found — wait for its result row
+ *  rather than sleeping, then open the top match. */
 export async function openFileViaSearch(page: Page, query: string): Promise<void> {
   await page.keyboard.press('Meta+p')
-  await expect(page.locator('input[placeholder="Search files..."]')).toBeVisible({ timeout: 10_000 })
-  await page.locator('input[placeholder="Search files..."]').fill(query)
-  await page.waitForTimeout(500)
+  const input = page.locator('input[placeholder="Search files..."]')
+  await expect(input).toBeVisible({ timeout: 10_000 })
+  await input.fill(query)
+  await expect(page.locator('[data-search-result-idx]', { hasText: query }).first())
+    .toBeVisible({ timeout: 10_000 })
   await page.keyboard.press('Enter')
-  await page.waitForTimeout(1000)
+  await expect(input).toBeHidden({ timeout: 10_000 })
 }
 
 /** Wait for an SSE-driven refetch to settle. Time-based by design: SSE events
@@ -196,6 +222,8 @@ function git(cwd: string, args: string[]): void {
 
 function initRepo(prefix: string): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)))
+  // Marker so global cleanup only ever deletes helper-created fixtures.
+  writeFileSync(join(root, FIXTURE_MARKER), '')
   git(root, ['init', '-q', '-b', 'main'])
   git(root, ['config', 'user.email', 'e2e@yaco.test'])
   git(root, ['config', 'user.name', 'yaco-e2e'])
@@ -214,17 +242,62 @@ function disposer(request: APIRequestContext, name: string, root: string): () =>
   }
 }
 
+/** Optional extra shape to seed into a fixture repo before its initial commit. */
+export interface FixtureOptions {
+  /** Extra files to write (repo-relative path → content). Parent dirs created. */
+  files?: Record<string, string>
+  /** Task graph written to plan/tasks/tasks.json. */
+  tasks?: Record<string, unknown>
+}
+
 /** Provision a minimal isolated git project registered under a unique per-run
- *  name. Used by specs that need a project scope nobody else shares (e.g.
- *  server-side pinned-session state). */
-export async function createFixtureProject(request: APIRequestContext): Promise<FixtureProject> {
+ *  name. Pass `opts` to seed extra files / a task graph. Used by specs that need
+ *  a project scope nobody else shares (e.g. server-side pinned-session state). */
+export async function createFixtureProject(
+  request: APIRequestContext,
+  opts: FixtureOptions = {},
+): Promise<FixtureProject> {
   const name = `fixture-${runTag()}`
   const root = initRepo('yaco-e2e-proj-')
   writeFileSync(join(root, 'README.md'), '# fixture\n')
+  for (const [rel, content] of Object.entries(opts.files ?? {})) {
+    const abs = join(root, rel)
+    mkdirSync(dirname(abs), { recursive: true })
+    writeFileSync(abs, content)
+  }
+  if (opts.tasks) {
+    mkdirSync(join(root, 'plan/tasks'), { recursive: true })
+    writeFileSync(join(root, 'plan/tasks/tasks.json'), JSON.stringify(opts.tasks, null, 2) + '\n')
+  }
   git(root, ['add', '-A'])
   git(root, ['commit', '-q', '-m', 'init fixture'])
   await registerProject(request, name, root)
   return { name, path: root, dispose: disposer(request, name, root) }
+}
+
+/** A $HOME-rooted directory tree for the /api/browse spec. The browse endpoint
+ *  only serves paths under $HOME (server/src/routes/browse.ts), so this can't
+ *  live in the temp YACO_HOME. Holds one git subdir and one plain subdir so the
+ *  spec can assert the isGit flag deterministically. Not a registered project. */
+export interface BrowseFixture {
+  /** Absolute path under $HOME to pass as the /api/browse `prefix`. */
+  root: string
+  /** Subdir that IS a git repo (browse flags isGit: true). */
+  gitDir: string
+  /** Subdir that is NOT a git repo (isGit: false). */
+  plainDir: string
+  dispose: () => void
+}
+
+export function createBrowseFixture(): BrowseFixture {
+  const root = mkdtempSync(join(homedir(), '.yaco-e2e-browse-'))
+  writeFileSync(join(root, FIXTURE_MARKER), '')
+  const gitDir = 'with-git'
+  const plainDir = 'plain-dir'
+  mkdirSync(join(root, gitDir))
+  git(join(root, gitDir), ['init', '-q', '-b', 'main'])
+  mkdirSync(join(root, plainDir))
+  return { root, gitDir, plainDir, dispose: () => rmSync(root, { recursive: true, force: true }) }
 }
 
 /**

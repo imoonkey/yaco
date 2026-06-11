@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { createFixtureProject, type FixtureProject } from './helpers/workspace'
 
 // V1 task workspace: a single stacked graph workspace. No Board/List/Archive
 // panels, no milestone columns, no horizontal pan/zoom canvas — roots stack
@@ -6,24 +7,68 @@ import { test, expect, type Page } from '@playwright/test'
 
 type Project = { name: string; path: string }
 
-/** Open the single Tasks workspace (overlay) for the first project. */
+// A self-contained task graph exercising every shape these specs probe: ≥2
+// active roots that stack, a group with children + real depends edges, a
+// backlog group, an archive root (hidden by default), a leaf WITH an estimate
+// and several WITHOUT (assumed-hatch), and enough visible rows to overflow a
+// short viewport vertically.
+const t = (
+  parent: string | null,
+  workset: string,
+  title: string,
+  extra: Record<string, unknown> = {},
+) => ({
+  parent,
+  depends: [] as string[],
+  state: workset === 'archive' ? 'done' : 'ready',
+  workset,
+  title,
+  description: title.toLowerCase(),
+  acceptCriteria: ['ships'],
+  worktree: null,
+  ...extra,
+})
+
+const TASK_GRAPH: Record<string, ReturnType<typeof t>> = {
+  'alpha-root': t(null, 'active', 'Alpha Root'),
+  'alpha-design': t('alpha-root', 'active', 'Alpha Design'),
+  'alpha-build': t('alpha-root', 'active', 'Alpha Build', { depends: ['alpha-design'], estimate: '2d' }),
+  'alpha-verify': t('alpha-root', 'active', 'Alpha Verify', { depends: ['alpha-build'] }),
+  'beta-root': t(null, 'active', 'Beta Root'),
+  'beta-impl': t('beta-root', 'active', 'Beta Impl'),
+  'beta-docs': t('beta-root', 'active', 'Beta Docs', { depends: ['beta-impl'] }),
+  'epsilon-root': t(null, 'active', 'Epsilon Root'),
+  'zeta-task': t(null, 'active', 'Zeta Task'),
+  'eta-task': t(null, 'active', 'Eta Task'),
+  'gamma-backlog': t(null, 'backlog', 'Gamma Backlog'),
+  'gamma-research': t('gamma-backlog', 'backlog', 'Gamma Research'),
+  'theta-backlog': t(null, 'backlog', 'Theta Backlog'),
+  'delta-archived': t(null, 'archive', 'Delta Archived'),
+  'delta-cleanup': t('delta-archived', 'archive', 'Delta Cleanup'),
+  'iota-archived': t(null, 'archive', 'Iota Archived'),
+}
+
+let fixture: FixtureProject
+
+test.beforeEach(async ({ request }) => {
+  fixture = await createFixtureProject(request, { tasks: TASK_GRAPH })
+})
+
+test.afterEach(async () => {
+  await fixture.dispose()
+})
+
+/** Open the single Tasks workspace (overlay) for the provisioned fixture. */
 async function openTaskGraph(page: Page): Promise<Project> {
   await page.goto('/')
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<Project[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const project = projects[0]
-
-  await page.locator('button', { hasText: project.name }).first().click()
+  await page.locator('button', { hasText: fixture.name }).first().click()
   // Start from default workspace state (active+backlog, nothing collapsed).
-  await page.evaluate((name: string) => localStorage.removeItem(`yaco-task-workspace:${name}`), project.name)
+  await page.evaluate((name: string) => localStorage.removeItem(`yaco-task-workspace:${name}`), fixture.name)
 
   await page.keyboard.press('Meta+Shift+t')
   await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
   await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first()).toBeVisible({ timeout: 15_000 })
-  return project
+  return fixture
 }
 
 const taskNodes = (page: Page) => page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]')

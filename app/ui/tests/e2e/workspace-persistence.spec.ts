@@ -43,13 +43,6 @@ async function extraProject(request: Parameters<typeof createFixtureProject>[0])
   return project
 }
 
-function fetchProjectsList(page: Page) {
-  return page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-}
-
 function readUiState(page: Page) {
   return page.evaluate(() => {
     const raw = localStorage.getItem('yaco-ui-state')
@@ -275,41 +268,71 @@ test.describe('Layout persistence characterization', () => {
 
 test.describe('Keyboard shortcut characterization', () => {
   test('Cmd+1-9 switches projects in workspace view', async ({ page, request }) => {
-    // Guarantee >= 2 projects exist in whatever registry this run uses.
     const a = await extraProject(request)
     const b = await extraProject(request)
     await page.goto('/')
     await waitForAppReady(page)
 
-    const projects = await fetchProjectsList(page)
-    expect(projects.length).toBeGreaterThanOrEqual(2)
+    // Pin our two fixtures to positions 1 and 2 so Cmd+1/Cmd+2 address them
+    // deterministically no matter how many fixtures parallel workers have
+    // registered. Other workers only ever append (positions ≥3) or dispose
+    // (positions ≥3), so 1-2 stay put. Reorder needs the full current set; if a
+    // concurrent dispose changes it mid-call we retry, then report the status so
+    // genuine reorder regressions fail loudly instead of silently skipping.
+    const result = await page.evaluate(async ({ a, b }) => {
+      let lastStatus = 0
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const list = (await (await fetch('/api/projects')).json()) as { name: string }[]
+        const names = list.map((p) => p.name)
+        if (!names.includes(a) || !names.includes(b)) { lastStatus = -1; continue }
+        const order = [a, b, ...names.filter((n) => n !== a && n !== b)]
+        const res = await fetch('/api/projects/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order }),
+        })
+        if (res.ok) return { ok: true, status: res.status }
+        lastStatus = res.status
+      }
+      return { ok: false, status: lastStatus }
+    }, { a: a.name, b: b.name })
 
-    // Cmd+1..9 only addresses the first nine positions. In an isolated worktree
-    // home our two fixtures sit there; in a populated ~/.yaco they don't, so fall
-    // back to the first two existing projects (always within range).
-    const ia = projects.findIndex((p) => p.name === a.name)
-    const ib = projects.findIndex((p) => p.name === b.name)
-    const useFixtures = ia >= 0 && ia < 9 && ib >= 0 && ib < 9
-    const [first, second] = useFixtures
-      ? (ia < ib ? [a.name, b.name] : [b.name, a.name])
-      : [projects[0].name, projects[1].name]
+    // 400/409 (or our fixtures briefly absent, -1) = the set changed mid-reorder
+    // under registry churn — benign, skip. Any other status is a real
+    // /api/projects/reorder regression → fail loudly.
+    if (!result.ok) {
+      test.skip(
+        result.status === 400 || result.status === 409 || result.status === -1,
+        `reorder could not pin fixtures under registry churn (status ${result.status})`,
+      )
+      expect(result.ok, `/api/projects/reorder failed unexpectedly (status ${result.status})`).toBe(true)
+    }
 
-    const idxOf = async (name: string) => (await fetchProjectsList(page)).findIndex((p) => p.name === name)
+    // Reload so the app fetches the reordered list, then confirm it leads with
+    // [a, b] before exercising the shortcuts (avoids racing the SSE re-order).
+    await page.reload()
+    await waitForAppReady(page)
+    await expect
+      .poll(async () =>
+        page.evaluate(async () => {
+          const list = (await (await fetch('/api/projects')).json()) as { name: string }[]
+          return list.slice(0, 2).map((p) => p.name)
+        }),
+      { timeout: 10_000 })
+      .toEqual([a.name, b.name])
 
-    await selectProject(page, first)
-    await page.waitForTimeout(800)
+    // Cmd+2 → project B (position 2). Assert via the server-persisted active
+    // project — the churn-robust signal.
+    await selectProject(page, a.name)
+    await expect(sectionHeader(page, a.name)).toBeVisible({ timeout: 10_000 })
+    await page.keyboard.press('Meta+2')
+    await expect.poll(async () => (await readUiState(page))?.project, { timeout: 10_000 }).toBe(b.name)
+    await expect(sectionHeader(page, b.name)).toBeVisible({ timeout: 10_000 })
 
-    // Switch to `second` via its keyboard position (re-read to tolerate churn).
-    await page.keyboard.press(`Meta+${(await idxOf(second)) + 1}`)
-    await page.waitForTimeout(1000)
-    await expect(sectionHeader(page, second)).toBeVisible()
-    expect((await readUiState(page))?.project).toBe(second)
-
-    // Switch back to `first`.
-    await page.keyboard.press(`Meta+${(await idxOf(first)) + 1}`)
-    await page.waitForTimeout(1000)
-    await expect(sectionHeader(page, first)).toBeVisible()
-    expect((await readUiState(page))?.project).toBe(first)
+    // Cmd+1 → project A (position 1).
+    await page.keyboard.press('Meta+1')
+    await expect.poll(async () => (await readUiState(page))?.project, { timeout: 10_000 }).toBe(a.name)
+    await expect(sectionHeader(page, a.name)).toBeVisible({ timeout: 10_000 })
   })
 
   test('Cmd+P opens file search, Escape closes it', async ({ page, request }) => {

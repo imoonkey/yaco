@@ -1,43 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
-
-// --- Helpers ---
-
-async function openWorkspace(page: Page) {
-  await page.goto('/')
-  await expect(page.locator('main')).toBeVisible({ timeout: 10_000 })
-  const projects = await page.evaluate(async () => {
-    const res = await fetch('/api/projects')
-    return res.json() as Promise<{ name: string; path: string }[]>
-  })
-  expect(projects.length).toBeGreaterThan(0)
-  const project = projects[0]
-  await page.locator('button', { hasText: project.name }).click()
-  return project
-}
-
-async function deleteFileIfExists(page: Page, projectName: string, path: string) {
-  await page.evaluate(async ({ projectName, path }) => {
-    await fetch(`/api/files/${encodeURIComponent(projectName)}/delete`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path }),
-    })
-  }, { projectName, path })
-}
-
-async function fileExistsOnServer(page: Page, projectName: string, path: string): Promise<boolean> {
-  return page.evaluate(async ({ projectName, path }) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/content?path=${encodeURIComponent(path)}`)
-    return res.ok
-  }, { projectName, path })
-}
-
-async function dirExistsOnServer(page: Page, projectName: string, path: string): Promise<boolean> {
-  return page.evaluate(async ({ projectName, path }) => {
-    const res = await fetch(`/api/files/${encodeURIComponent(projectName)}/children?dir=${encodeURIComponent(path)}`)
-    return res.ok
-  }, { projectName, path })
-}
+import {
+  provisionWorkspace,
+  fileExistsOnServer,
+  dirExistsOnServer,
+  uniqueFileName,
+  type FixtureProject,
+} from './helpers/workspace'
 
 /** Wait for a tree item with given text to appear */
 async function waitForTreeItem(page: Page, text: string, timeoutMs = 8000): Promise<boolean> {
@@ -52,27 +20,23 @@ async function waitForTreeItem(page: Page, text: string, timeoutMs = 8000): Prom
 // --- Tests ---
 
 test.describe('File Explorer: create file and folder', () => {
-  let projectName: string
+  let fixture: FixtureProject
 
-  test.afterEach(async ({ page }) => {
-    if (!projectName) return
-    // Clean up all test files/dirs
-    for (const path of [
-      '__e2e_create_root.txt',
-      'doc/__e2e_create_subdir.txt',
-      '__e2e_create_rootdir',
-      'doc/__e2e_create_subdir_folder',
-      'doc/__e2e_create_with_selection.txt',
-    ]) {
-      await deleteFileIfExists(page, projectName, path)
-    }
+  test.beforeEach(async ({ page, request }) => {
+    // A `doc/` folder must exist on disk: several tests right-click its tree node.
+    fixture = await provisionWorkspace(page, request, { files: { 'doc/.gitkeep': '' } })
+  })
+
+  test.afterEach(async () => {
+    await fixture.dispose()
   })
 
   test('create file at root via header button', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
+    const fileBase = uniqueFileName('create_root')
+    const fileName = `${fileBase}.txt`
 
-    await page.waitForTimeout(3000)
+    // Wait for the explorer to render before using its header button.
+    await expect(page.locator('[role="treeitem"]', { hasText: 'doc' }).first()).toBeVisible({ timeout: 10_000 })
 
     // Click the "New File" header button
     await page.locator('button[title="New File"]').click()
@@ -82,22 +46,19 @@ test.describe('File Explorer: create file and folder', () => {
     await expect(input).toBeVisible({ timeout: 3000 })
 
     // Type and submit
-    await input.type('__e2e_create_root.txt')
+    await input.type(fileName)
     await input.press('Enter')
 
     // File should exist on server
-    await page.waitForTimeout(2000)
-    expect(await fileExistsOnServer(page, project.name, '__e2e_create_root.txt')).toBe(true)
+    await expect.poll(() => fileExistsOnServer(page, fixture.name, fileName), { timeout: 10_000 }).toBe(true)
 
     // File should appear in the tree after SSE refresh
-    expect(await waitForTreeItem(page, '__e2e_create_root')).toBe(true)
+    expect(await waitForTreeItem(page, fileBase)).toBe(true)
   })
 
   test('create file inside directory via context menu', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
-
-    await page.waitForTimeout(3000)
+    const fileBase = uniqueFileName('create_subdir')
+    const fileName = `${fileBase}.txt`
 
     // Right-click on the "doc" folder
     const docFolder = page.locator('[role="treeitem"]', { hasText: 'doc' }).first()
@@ -110,41 +71,37 @@ test.describe('File Explorer: create file and folder', () => {
     // Inline edit
     const input = page.locator('input.bg-transparent')
     await expect(input).toBeVisible({ timeout: 3000 })
-    await input.type('__e2e_create_subdir.txt')
+    await input.type(fileName)
     await input.press('Enter')
 
     // File should exist on server
-    await page.waitForTimeout(2000)
-    expect(await fileExistsOnServer(page, project.name, 'doc/__e2e_create_subdir.txt')).toBe(true)
+    await expect.poll(() => fileExistsOnServer(page, fixture.name, `doc/${fileName}`), { timeout: 10_000 }).toBe(true)
 
     // File should appear in the tree (regression: previously didn't because
     // parent dir wasn't registered for SSE refresh)
-    expect(await waitForTreeItem(page, '__e2e_create_subdir')).toBe(true)
+    expect(await waitForTreeItem(page, fileBase)).toBe(true)
   })
 
   test('create folder at root via header button', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
+    const dirName = uniqueFileName('create_rootdir')
 
-    await page.waitForTimeout(3000)
+    // Wait for the explorer to render before using its header button.
+    await expect(page.locator('[role="treeitem"]', { hasText: 'doc' }).first()).toBeVisible({ timeout: 10_000 })
 
     // Click "New Folder" header button
     await page.locator('button[title="New Folder"]').click()
 
     const input = page.locator('input.bg-transparent')
     await expect(input).toBeVisible({ timeout: 3000 })
-    await input.type('__e2e_create_rootdir')
+    await input.type(dirName)
     await input.press('Enter')
 
-    await page.waitForTimeout(2000)
-    expect(await dirExistsOnServer(page, project.name, '__e2e_create_rootdir')).toBe(true)
+    await expect.poll(() => dirExistsOnServer(page, fixture.name, dirName), { timeout: 10_000 }).toBe(true)
   })
 
   test('create file via header button while a subdirectory is selected', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
-
-    await page.waitForTimeout(3000)
+    const fileBase = uniqueFileName('create_with_selection')
+    const fileName = `${fileBase}.txt`
 
     // Select the "doc" folder first so contextFolder becomes "doc"
     const docFolder = page.locator('[role="treeitem"]', { hasText: 'doc' }).first()
@@ -156,19 +113,15 @@ test.describe('File Explorer: create file and folder', () => {
 
     const input = page.locator('input.bg-transparent')
     await expect(input).toBeVisible({ timeout: 3000 })
-    await input.type('__e2e_create_with_selection.txt')
+    await input.type(fileName)
     await input.press('Enter')
 
-    await page.waitForTimeout(2000)
-    expect(await fileExistsOnServer(page, project.name, 'doc/__e2e_create_with_selection.txt')).toBe(true)
-    expect(await waitForTreeItem(page, '__e2e_create_with_selection')).toBe(true)
+    await expect.poll(() => fileExistsOnServer(page, fixture.name, `doc/${fileName}`), { timeout: 10_000 }).toBe(true)
+    expect(await waitForTreeItem(page, fileBase)).toBe(true)
   })
 
   test('create folder inside directory via context menu', async ({ page }) => {
-    const project = await openWorkspace(page)
-    projectName = project.name
-
-    await page.waitForTimeout(3000)
+    const dirName = uniqueFileName('create_subdir_folder')
 
     const docFolder = page.locator('[role="treeitem"]', { hasText: 'doc' }).first()
     await expect(docFolder).toBeVisible({ timeout: 5000 })
@@ -178,13 +131,12 @@ test.describe('File Explorer: create file and folder', () => {
 
     const input = page.locator('input.bg-transparent')
     await expect(input).toBeVisible({ timeout: 3000 })
-    await input.type('__e2e_create_subdir_folder')
+    await input.type(dirName)
     await input.press('Enter')
 
-    await page.waitForTimeout(2000)
-    expect(await dirExistsOnServer(page, project.name, 'doc/__e2e_create_subdir_folder')).toBe(true)
+    await expect.poll(() => dirExistsOnServer(page, fixture.name, `doc/${dirName}`), { timeout: 10_000 }).toBe(true)
 
     // Folder should appear in tree (same regression as file case)
-    expect(await waitForTreeItem(page, '__e2e_create_subdir_folder')).toBe(true)
+    expect(await waitForTreeItem(page, dirName)).toBe(true)
   })
 })
