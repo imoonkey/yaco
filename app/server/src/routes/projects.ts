@@ -7,6 +7,7 @@ import {
   removeProject,
   type Project,
 } from '../lib/projects'
+import { watchProject, unwatchProject } from '../lib/project-watcher'
 
 const app = new Hono()
 
@@ -38,6 +39,9 @@ app.post('/', async (c) => {
   }
   try {
     const project = addProject({ name: body.name, path: body.path })
+    // Start watching immediately so a project registered at runtime gets live
+    // file-tree / git SSE without a server restart.
+    await watchProject(project)
     return c.json(project, 201)
   } catch (e) {
     return failFromError(c, e)
@@ -82,7 +86,8 @@ app.post('/reorder', async (c) => {
 app.delete('/:name', async (c) => {
   const name = c.req.param('name')
   try {
-    removeProject(name)
+    const removed = removeProject(name)
+    unwatchProject(removed.path)
     return c.json({})
   } catch (e) {
     return failFromError(c, e)

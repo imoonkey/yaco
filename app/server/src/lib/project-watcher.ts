@@ -11,7 +11,11 @@ import { projectsFile as yacoProjectsFile } from '@yaco/cli/core/paths'
 
 const DEBOUNCE_MS = 200
 
-const watchers: FSWatcher[] = []
+// Small, high-value global watchers (projects.json, agent sessions dir).
+const globalWatchers: FSWatcher[] = []
+// Per-project recursive watchers, keyed by project path so a project can be
+// watched/unwatched incrementally as it is registered/removed at runtime.
+const projectWatchers = new Map<string, FSWatcher>()
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const projectIgnores = new Map<string, Ignore | null>()
 const sessionPathCache = new Map<string, string>()
@@ -105,7 +109,7 @@ function watchProjectsFile(): void {
       watcher.on('error', (err) => {
         console.warn(`[project-watcher] projects.json watcher error:`, err)
       })
-      watchers.push(watcher)
+      globalWatchers.push(watcher)
     } catch (e) { console.warn(`[project-watcher] failed to watch projects.json:`, e) }
   }
 }
@@ -127,11 +131,71 @@ async function watchAgentSessionsDir(): Promise<void> {
       watcher.on('error', (err) => {
         console.warn(`[project-watcher] sessions watcher error:`, err)
       })
-      watchers.push(watcher)
+      globalWatchers.push(watcher)
     } catch (e) {
       console.warn(`[project-watcher] failed to watch ${AGENT_SESSIONS_DIR}:`, e)
     }
   }
+}
+
+/** Start a recursive fs.watch for a single project (idempotent per path). Lets
+ *  a project registered at runtime get live file-tree/git SSE without a server
+ *  restart. The watcher is installed SYNCHRONOUSLY (before any await) so a
+ *  concurrent unwatchProject / duplicate watchProject can't race the gitignore
+ *  load and leak a watcher. */
+export async function watchProject(project: Project): Promise<void> {
+  if (projectWatchers.has(project.path) || !existsSync(project.path)) return
+
+  // No ignore loaded yet → no filtering until the async load below resolves
+  // (a few extra refresh events at most, never missed ones).
+  projectIgnores.set(project.path, null)
+
+  let watcher: FSWatcher
+  try {
+    watcher = watch(project.path, { recursive: true }, (_event, filename) => {
+      if (!filename) return
+      const channel = routeChange(filename)
+      if (!channel) return
+
+      // Reload gitignore when .gitignore itself changes
+      if (filename === '.gitignore') {
+        clearGitignoreCache(project.path)
+        void getProjectGitignore(project.path).then(newIg => {
+          if (projectWatchers.has(project.path)) projectIgnores.set(project.path, newIg)
+        })
+      }
+
+      // Skip SSE for filetree changes inside gitignored paths
+      const currentIg = projectIgnores.get(project.path)
+      if (currentIg && channel === 'filetree' && currentIg.ignores(filename)) return
+
+      debouncedEmit(channel)
+      if (channel === 'filetree') debouncedEmit('git')
+    })
+  } catch (err) {
+    console.error(`[project-watcher] failed to watch ${project.path}:`, err)
+    projectIgnores.delete(project.path)
+    return
+  }
+  watcher.on('error', (err) => {
+    console.warn(`[project-watcher] watcher error for ${project.path}:`, err)
+  })
+  projectWatchers.set(project.path, watcher)
+
+  // Load the real gitignore after install; skip if unwatched meanwhile.
+  void getProjectGitignore(project.path)
+    .then((ig) => { if (projectWatchers.has(project.path)) projectIgnores.set(project.path, ig) })
+    .catch(() => undefined)
+}
+
+/** Stop watching a single project (e.g. when it is removed from the registry). */
+export function unwatchProject(path: string): void {
+  const watcher = projectWatchers.get(path)
+  if (watcher) {
+    watcher.close()
+    projectWatchers.delete(path)
+  }
+  projectIgnores.delete(path)
 }
 
 /** Start recursive fs.watch for each project */
@@ -144,45 +208,15 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
   await watchAgentSessionsDir()
 
   for (const project of projects) {
-    if (!existsSync(project.path)) continue
-
-    const ig = await getProjectGitignore(project.path)
-    projectIgnores.set(project.path, ig)
-
-    try {
-      const watcher = watch(project.path, { recursive: true }, (_event, filename) => {
-        if (!filename) return
-        const channel = routeChange(filename)
-        if (!channel) return
-
-        // Reload gitignore when .gitignore itself changes
-        if (filename === '.gitignore') {
-          clearGitignoreCache(project.path)
-          void getProjectGitignore(project.path).then(newIg => {
-            projectIgnores.set(project.path, newIg)
-          })
-        }
-
-        // Skip SSE for filetree changes inside gitignored paths
-        const currentIg = projectIgnores.get(project.path)
-        if (currentIg && channel === 'filetree' && currentIg.ignores(filename)) return
-
-        debouncedEmit(channel)
-        if (channel === 'filetree') debouncedEmit('git')
-      })
-      watcher.on('error', (err) => {
-        console.warn(`[project-watcher] watcher error for ${project.path}:`, err)
-      })
-      watchers.push(watcher)
-    } catch (err) {
-      console.error(`[project-watcher] failed to watch ${project.path}:`, err)
-    }
+    await watchProject(project)
   }
 }
 
 export function stopProjectWatchers(): void {
-  for (const w of watchers) w.close()
-  watchers.length = 0
+  for (const w of globalWatchers) w.close()
+  globalWatchers.length = 0
+  for (const w of projectWatchers.values()) w.close()
+  projectWatchers.clear()
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
   projectIgnores.clear()

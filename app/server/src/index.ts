@@ -64,7 +64,11 @@ const DEFAULT_ALLOWED_HOSTNAMES = new Set([
   'desktop.tailnet-example.ts.net',
 ])
 const SERVER_SRC_DIR = dirname(fileURLToPath(import.meta.url))
-const UI_DIST_DIR = resolve(SERVER_SRC_DIR, '../../ui/dist')
+// Built UI to serve. Defaults to the canonical app/ui/dist; e2e overrides it via
+// YACO_UI_DIST so an isolated run serves its own build without clobbering dist.
+const UI_DIST_DIR = process.env.YACO_UI_DIST
+  ? resolve(process.env.YACO_UI_DIST)
+  : resolve(SERVER_SRC_DIR, '../../ui/dist')
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
   ['.html', 'text/html; charset=utf-8'],
