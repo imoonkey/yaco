@@ -87,17 +87,14 @@ export function readYacoProjectPaths(repoRoot: string): YacoProjectPaths {
   const cfg = { ...RAW_DEFAULTS };
 
   if ("plan" in paths) {
-    validatePlanRoot(paths["plan"]!);
-    cfg.plan = paths["plan"]!;
+    cfg.plan = normalizeRepoRelative("plan", paths["plan"]!);
   }
   if ("worktrees" in paths) {
-    validateRepoRelative("worktrees", paths["worktrees"]!);
-    cfg.worktrees = paths["worktrees"]!;
+    cfg.worktrees = normalizeRepoRelative("worktrees", paths["worktrees"]!);
   }
   for (const key of PLAN_RELATIVE_KEYS) {
     if (!(key in paths)) continue;
-    validateRepoRelative(key, paths[key]!);
-    cfg[key] = paths[key]!;
+    cfg[key] = normalizeRepoRelative(key, paths[key]!);
   }
 
   return {
@@ -110,35 +107,42 @@ export function readYacoProjectPaths(repoRoot: string): YacoProjectPaths {
   };
 }
 
-function validateRepoRelative(key: string, value: string): void {
-  if (value.length === 0) {
-    throw new CliError(ErrCode.ENV, `yaco.toml: [paths].${key} must not be empty`);
-  }
+/** Validate a `[paths]` value and return its canonical repo-relative form.
+ *  Rejects absolute paths, `..` segments, empty/dot-only values, and any
+ *  segment starting with `-` (so a value can never be option-injected into a
+ *  git argv, e.g. `plan = "--bare"`). Strips `.` segments and redundant
+ *  separators so the stored value is canonical (`"./plan"` → `"plan"`), which
+ *  keeps the `info/exclude` entry and detection consistent. */
+function normalizeRepoRelative(key: string, value: string): string {
   if (isAbsolute(value)) {
     throw new CliError(
       ErrCode.ENV,
       `yaco.toml: [paths].${key} must be repo-relative, got absolute path "${value}"`,
     );
   }
-  const segments = value.split(/[/\\]/).filter((s) => s.length > 0);
+  const segments = value.split(/[/\\]/).filter((s) => s.length > 0 && s !== ".");
   if (segments.includes("..")) {
     throw new CliError(
       ErrCode.ENV,
       `yaco.toml: [paths].${key} must be repo-relative, got path with ".." segment "${value}"`,
     );
   }
-}
-
-/** The plan root must be a real repo-relative subdirectory: reject "." (the
- *  repo root itself) and degenerate dot-only forms like "././" so the host can
- *  never be mistaken for the plan repo. */
-function validatePlanRoot(value: string): void {
-  validateRepoRelative("plan", value);
-  const segments = value.split(/[/\\]/).filter((s) => s.length > 0);
-  if (segments.length === 0 || segments.every((s) => s === ".")) {
+  if (segments.length === 0) {
+    if (value === "") {
+      throw new CliError(ErrCode.ENV, `yaco.toml: [paths].${key} must not be empty`);
+    }
     throw new CliError(
       ErrCode.ENV,
-      `yaco.toml: [paths].plan must be a subdirectory, got "${value}"`,
+      `yaco.toml: [paths].${key} must resolve to a repo-relative subdirectory, got "${value}"`,
     );
   }
+  for (const seg of segments) {
+    if (seg.startsWith("-")) {
+      throw new CliError(
+        ErrCode.ENV,
+        `yaco.toml: [paths].${key} segment must not start with "-" (got "${value}")`,
+      );
+    }
+  }
+  return segments.join("/");
 }

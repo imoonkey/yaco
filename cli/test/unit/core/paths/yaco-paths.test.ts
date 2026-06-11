@@ -183,6 +183,30 @@ describe("readYacoProjectPaths", () => {
     }
   });
 
+  it("canonicalizes './plan' and trailing slashes", () => {
+    writeFileSync(join(repoRoot, "yaco.toml"), '[paths]\nplan = "./private-plan/"\n', "utf-8");
+    expect(readYacoProjectPaths(repoRoot)).toEqual({
+      plan: "private-plan",
+      tasks: "private-plan/tasks",
+      active: "private-plan/active",
+      archive: "private-plan/archive",
+      backlog: "private-plan/backlog",
+      worktrees: ".worktrees",
+    });
+  });
+
+  it("rejects a path segment starting with '-' (git option injection) with CliError(ENV)", () => {
+    writeFileSync(join(repoRoot, "yaco.toml"), '[paths]\nplan = "--bare"\n', "utf-8");
+    try {
+      readYacoProjectPaths(repoRoot);
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as Error).message).toMatch(/must not start with/);
+    }
+  });
+
   it("malformed yaco.toml surfaces as CliError(ENV)", () => {
     writeFileSync(
       join(repoRoot, "yaco.toml"),

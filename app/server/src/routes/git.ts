@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { execFile } from 'child_process'
 import { existsSync } from 'fs'
 import { realpath } from 'fs/promises'
-import { join, dirname, basename } from 'path'
+import { join, dirname, basename, sep } from 'path'
 import { GIT_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { fail } from '../lib/response'
 import { getColocatedRepos } from '../lib/colocatedRepos'
@@ -60,21 +60,43 @@ async function resolveFileRepo(
   projectPath: string,
   filePath: string,
   { externalSymlinks }: { externalSymlinks: 'preserve' | 'deny' },
-): Promise<{ cwd: string; relPath: string }> {
+): Promise<{ cwd: string; relPath: string; external?: boolean }> {
   const repos = await getColocatedRepos(projectPath)
   const repo = repos.find((r) => filePath.startsWith(`${r}/`))
-  const colocated = repo ? { cwd: join(projectPath, repo), relPath: filePath.slice(repo.length + 1) } : null
-
-  if (externalSymlinks === 'deny') {
-    return colocated ?? { cwd: projectPath, relPath: filePath }
-  }
+  if (repo) return { cwd: join(projectPath, repo), relPath: filePath.slice(repo.length + 1) }
 
   const absPath = join(projectPath, filePath)
-  if (existsSync(absPath)) {
-    const real = await realpath(absPath)
-    return { cwd: dirname(real), relPath: basename(real) }
+  if (externalSymlinks === 'preserve') {
+    if (existsSync(absPath)) {
+      const real = await realpath(absPath)
+      return { cwd: dirname(real), relPath: basename(real) }
+    }
+    return { cwd: projectPath, relPath: filePath }
   }
-  return colocated ?? { cwd: projectPath, relPath: filePath }
+  // deny: host-rooted, but flag a path that resolves outside the project tree
+  // (a symlink to an external file/dir) so the caller skips the content-reading
+  // `git diff --no-index` fallback — git never exposes content from outside.
+  return { cwd: projectPath, relPath: filePath, external: await escapesProjectTree(projectPath, absPath) }
+}
+
+/** True iff absPath's realpath — or its nearest existing ancestor, for a file
+ *  that does not exist on disk — lies outside the project tree. */
+async function escapesProjectTree(projectPath: string, absPath: string): Promise<boolean> {
+  let base: string
+  try {
+    base = await realpath(projectPath)
+  } catch {
+    return false
+  }
+  let target = absPath
+  while (!existsSync(target) && dirname(target) !== target) target = dirname(target)
+  let real: string
+  try {
+    real = await realpath(target)
+  } catch {
+    return false
+  }
+  return real !== base && !real.startsWith(base + sep)
 }
 
 /** Resolve the git location + ref for a file's HEAD baseline.
@@ -267,7 +289,7 @@ app.get('/:project/diff', withProject, async (c) => {
 
   // No refs — diff working tree vs HEAD, then check staged, then untracked fallback.
   // Resolve to the owning repo so a colocated file diffs against its own HEAD.
-  const { cwd, relPath } = await resolveFileRepo(proj.path, filePath, { externalSymlinks: 'deny' })
+  const { cwd, relPath, external } = await resolveFileRepo(proj.path, filePath, { externalSymlinks: 'deny' })
 
   let diff = (await git(cwd, ['diff', 'HEAD', '--', relPath])).stdout
 
@@ -276,8 +298,10 @@ app.get('/:project/diff', withProject, async (c) => {
     diff = (await git(cwd, ['diff', '--cached', 'HEAD', '--', relPath])).stdout
   }
 
-  // For untracked files, show full content as additions
-  if (!diff) {
+  // For untracked files, show full content as additions — but never for a path
+  // that resolves outside the project tree (an external symlink), so git does
+  // not expose content from outside the project.
+  if (!diff && !external) {
     diff = (await git(cwd, ['diff', '--no-index', '--', '/dev/null', relPath])).stdout
   }
 

@@ -127,6 +127,14 @@ describe('getColocatedRepos', () => {
       expect(await getColocatedRepos(host)).toEqual(['plan'])
     })
 
+    it('drops reserved tokens (auto/off) used in allow-list position', async () => {
+      await makeChildRepo(host, 'plan')
+      await makeChildRepo(host, 'auto') // a real dir literally named "auto"
+      await writeFile(join(host, 'yaco.toml'), '[colocated]\nrepos = "auto, plan"\n')
+      // "auto" is a reserved whole-string mode, so it is not honored as a name.
+      expect(await getColocatedRepos(host)).toEqual(['plan'])
+    })
+
     it('malformed yaco.toml degrades to "auto"', async () => {
       await makeChildRepo(host, 'plan')
       await writeFile(join(host, 'yaco.toml'), 'this is not = valid = toml [[[\n')

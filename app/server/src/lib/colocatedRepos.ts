@@ -182,11 +182,22 @@ async function readPolicy(projectPath: string): Promise<string> {
 }
 
 /** Parse a comma-separated allow-list into depth-1 names.
- *  Trims, drops empties, de-dupes, and rejects path separators / `.` / `..`. */
+ *  Trims, drops empties, de-dupes, rejects path separators / `.` / `..`, and
+ *  drops the reserved whole-string modes `auto`/`off` (they are not directory
+ *  names in allow-list position). */
 function parseAllowList(policy: string): string[] {
   const names = policy
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && s !== '.' && s !== '..' && !s.includes('/') && !s.includes('\\'))
+    .filter(
+      (s) =>
+        s.length > 0 &&
+        s !== '.' &&
+        s !== '..' &&
+        s !== 'auto' &&
+        s !== 'off' &&
+        !s.includes('/') &&
+        !s.includes('\\'),
+    )
   return [...new Set(names)]
 }

@@ -107,19 +107,19 @@ describe('GET /:project/diff + /baseline — colocated repos', () => {
     expect(out).toContain('+changed')
   })
 
-  it('deny: an external symlink stays host-rooted (never consults the external repo HEAD)', async () => {
+  it('deny: an external symlink yields an empty diff (no external content leaks)', async () => {
     const external = await mkdtemp(join(tmpdir(), 'git-diff-ext-'))
     try {
       gitInit(external)
       await writeFile(join(external, 'file.txt'), 'v1\n')
       commitAll(external)
-      await writeFile(join(external, 'file.txt'), 'v2\n') // external HEAD-vs-working diff would show -v1/+v2
+      await writeFile(join(external, 'file.txt'), 'v2\n')
       await symlink(join(external, 'file.txt'), join(testProjectPath, 'extlink.txt'))
 
       const out = await diff('extlink.txt')
-      // Host-rooted: the external repo's HEAD is never consulted, so its committed
-      // "v1" never appears as a deletion. (It would if /diff ran git in `external`.)
-      expect(out).not.toContain('-v1')
+      // Path resolves outside the project tree → the no-index fallback is skipped;
+      // neither the external repo's HEAD ("-v1") nor its working copy ("v2") leaks.
+      expect(out).toBe('')
     } finally {
       await rm(external, { recursive: true, force: true })
     }
@@ -134,17 +134,14 @@ describe('GET /:project/diff + /baseline — colocated repos', () => {
     expect(res).toEqual({ content: 'committed\n', exists: true })
   })
 
-  it('deny: a non-git external symlink target stays host-rooted (no crash, no external git)', async () => {
-    const external = await mkdtemp(join(tmpdir(), 'git-diff-nongit-')) // plain dir, NOT a repo
+  it('deny: a symlinked directory pointing outside never leaks file content (no-index skipped)', async () => {
+    const external = await mkdtemp(join(tmpdir(), 'git-diff-extdir-'))
     try {
-      await writeFile(join(external, 'plain.txt'), 'external body\n')
-      await symlink(join(external, 'plain.txt'), join(testProjectPath, 'nonlink.txt'))
-      // Host-rooted: git diff runs in the host and treats nonlink.txt as a symlink
-      // (mode 120000, link text), never dereferencing into the external dir — so
-      // the external file body is never read and no git runs outside the project.
-      const out = await diff('nonlink.txt')
-      expect(out).toContain('120000')
-      expect(out).not.toContain('external body')
+      await writeFile(join(external, 'secret.txt'), 'TOPSECRET\n')
+      await symlink(external, join(testProjectPath, 'extdir')) // top-level symlinked dir
+      const out = await diff('extdir/secret.txt')
+      expect(out).not.toContain('TOPSECRET')
+      expect(out).toBe('')
     } finally {
       await rm(external, { recursive: true, force: true })
     }

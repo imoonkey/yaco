@@ -68,7 +68,15 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
     );
   }
 
-  const plan = readYacoProjectPaths(repoRoot).plan; // validated: non-empty relative subdir
+  const plan = readYacoProjectPaths(repoRoot).plan; // validated + canonicalized
+  // Colocated-repo detection is depth-1 only, so the plan root must be a single
+  // directory; a nested root would be excluded but never surfaced in the app.
+  if (plan.includes("/")) {
+    throw new CliError(
+      ErrCode.ENV,
+      `[paths] plan must be a depth-1 directory for the colocated mechanism, got "${plan}"`,
+    );
+  }
   const planDir = join(repoRoot, plan);
 
   if (rootGitignoreMatches(repoRoot, plan)) {
@@ -81,7 +89,7 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
   // ── 1. in-place git init + plan .gitignore ────────────────────────────────
   const initialized = !existsSync(join(planDir, ".git"));
   if (initialized) {
-    const r = runGit(["init", plan], repoRoot);
+    const r = runGit(["init", "--", plan], repoRoot);
     if (r.status !== 0) {
       throw new CliError(ErrCode.IO, `git init ${plan} failed: ${r.stderr.trim()}`);
     }
@@ -110,7 +118,7 @@ export function runPlanInit(opts: PlanInitOptions = {}): PlanInitResult {
  *  count — only a real .gitignore match refuses. */
 function rootGitignoreMatches(repoRoot: string, plan: string): boolean {
   const r = runGit(
-    ["-c", "core.excludesFile=/dev/null", "check-ignore", "-v", plan],
+    ["-c", "core.excludesFile=/dev/null", "check-ignore", "-v", "--", plan],
     repoRoot,
   );
   if (r.status !== 0) return false; // status 1 = not ignored (errors: don't block)

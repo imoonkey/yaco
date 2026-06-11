@@ -140,6 +140,34 @@ describe("runPlanInit", () => {
     }
   });
 
+  it("refuses a git-option-injecting plan root (--bare) and creates no bare repo", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "--bare"\n');
+    try {
+      runPlanInit({ cwd: root });
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+    }
+    // `git init --bare` would have written bare-repo files at the host root.
+    expect(existsSync(join(root, "HEAD"))).toBe(false);
+    expect(existsSync(join(root, "objects"))).toBe(false);
+  });
+
+  it("refuses a non-depth-1 plan root", () => {
+    const root = makeHostRepo();
+    writeFileSync(join(root, "yaco.toml"), '[paths]\nplan = "nested/plan"\n');
+    try {
+      runPlanInit({ cwd: root });
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as Error).message).toMatch(/depth-1/);
+    }
+  });
+
   describe("--remote", () => {
     const URL_A = "git@github.com:me/plan.git";
     const URL_B = "git@github.com:me/other.git";
