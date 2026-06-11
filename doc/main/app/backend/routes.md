@@ -23,9 +23,9 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/projects` | List registered projects |
-| POST | `/api/projects` | Register a project (`{ name, path }`) — validates path is absolute and directory exists |
+| POST | `/api/projects` | Register a project (`{ name, path }`) — validates path is absolute and directory exists; starts a file-watcher so a runtime-registered project gets live tree/git SSE without a restart |
 | POST | `/api/projects/reorder` | Persist ordered project list (`{ order: string[] }`) |
-| DELETE | `/api/projects/:name` | Unregister a project |
+| DELETE | `/api/projects/:name` | Unregister a project (and stop its file-watcher) |
 
 ### Progress
 

@@ -1,3 +1,19 @@
+## 2026-06-11: Hermetic, fast app/ui e2e — isolated static-build server
+
+**What changed:**
+- **Isolation by default (main checkout too).** `e2ePorts.ts` `resolveDevPorts({ e2e: true })` always returns hashed ports + an ephemeral `YACO_HOME` (`<tmpdir>/yaco-e2e-home/<slug>`, `slug=main` off a worktree). `playwright.config.ts` builds the UI (`vite build --outDir dist-e2e`) and boots ONE Hono server that serves the static build + `/api` + `/ws` on the API port — no vite-dev. `E2E_REUSE=1` opts back into the live dev server (5173/3001, real `~/.yaco`); `E2E_WORKERS`/`E2E_SKIP_BUILD` tune parallelism/build. `tests/e2e/preclean.mjs` wipes the home pre-boot (env-read path, prefix-validated); server reads `YACO_UI_DIST=dist-e2e` (new override) so it never clobbers `dist/`; channels forced off (`WHATSAPP/WECHAT_ENABLED=0`).
+- **Every spec self-provisions.** Retired `openWorkspace`→`projects[0]`; migrated 12 specs to `provisionWorkspace`/`createFixtureProject` (+ `opts.files`/`opts.tasks`, new `createBrowseFixture`) selecting by name + `uniqueFileName`. `global-setup`/`global-teardown` + `helpers/cleanup.ts` sweep leftovers, gated on a `.yaco-e2e-fixture` marker so cleanup can never delete real data.
+- **Server: watch runtime-registered projects.** `POST /api/projects` now calls `watchProject()` (and `DELETE` `unwatchProject()`), so a project added after boot gets live file-tree/git SSE — fixed a real gap (was only watching boot-time projects). `watchProject` installs the fs.watch synchronously (no add/remove race).
+
+**Why:**
+- The suite was slow (14–20 min), flaky under parallelism, and polluted the real `~/.yaco`/`yaco` repo (leaked `fixture-main-*` registry rows + orphan Chromes). Root causes fixed: shared real home → ephemeral home; vite-dev per-request compile contention under machine load → static build server; runtime projects unwatched → watch on register; channel Chromes orphaning → channels off in e2e.
+
+**Key files:** `app/ui/{e2ePorts.ts,playwright.config.ts,vite.config.ts,.gitignore}`, `app/ui/tests/e2e/{helpers/workspace.ts,helpers/cleanup.ts,global-setup.ts,global-teardown.ts,preclean.mjs}` + 13 specs; `app/server/src/lib/project-watcher.ts`, `app/server/src/routes/projects.ts`, `app/server/src/index.ts`; docs `doc/dev/app/workflow.md`, `doc/main/app/backend/{server,routes}.md`.
+**Verification:** full suite `npx playwright test` → exit 0, 138 passed / 0 failed / 3 skipped (~60s, under machine load); real `~/.yaco` byte-stable, zero `/tmp`/`~` leftovers. Server unit tests 129 pass; `npm run lint` clean. Reviewed by Codex twice (build-server pivot + fixes).
+**Commit:** pending.
+**Next:** voice specs are dev-only (fake MicVAD is `import.meta.env.DEV`-gated) — run via `E2E_REUSE=1`; consider a dedicated reuse-mode job to cover them.
+**Blockers:** None.
+
 ## 2026-06-09: App server accepts `blocked` status, treats it as active (session-blocked-state 4/6)
 
 **What changed:**

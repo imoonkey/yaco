@@ -134,38 +134,53 @@ During `vite build`, `viteStaticCopy` also copies the self-hosted VAD runtime (v
 
 ```bash
 cd app/server && npm test                                # Server unit tests (vitest)
-cd app/ui && npx playwright test                         # All E2E tests
-cd app/ui && npx playwright test tests/e2e/foo.spec.ts   # Single test file
+cd app/ui && npx playwright test                         # Full E2E suite (isolated, static build)
+cd app/ui && npx playwright test tests/e2e/foo.spec.ts   # Single spec
 cd app/ui && npm run lint                                # ESLint
 ```
 
-### E2E isolation (worktrees + shared `~/.yaco`)
+E2E env knobs: `E2E_WORKERS=N` tunes parallelism (default 6; lower on a busy box);
+`E2E_SKIP_BUILD=1` reuses the existing `dist-e2e` instead of rebuilding (fast
+iteration); `E2E_REUSE=1` runs against the **live dev server** (`5173/3001`, real
+`~/.yaco`) for interactive debugging.
 
-E2E specs run against a live API server that reads/writes one shared runtime root
-(`${YACO_HOME:-~/.yaco}`: project registry, ui-state, sessions). The orchestrator
-runs many phase tasks in parallel git worktrees, so specs must not collide on that
-shared state. Two layers handle it, both in `app/ui`:
+### E2E isolation (hermetic, static build)
 
-- **Per-worktree server + `YACO_HOME`.** `e2ePorts.ts` derives, from a
-  `.worktrees/<slug>/` cwd, an isolated UI/API port pair **and**
-  `yacoHome: <tmpdir>/yaco-e2e-home/<slug>`. `playwright.config.ts` runs the
-  worktree's own vite + API server (no `reuseExistingServer`) and sets
-  `YACO_HOME` in the API webServer env. The main checkout (no `.worktrees/`
-  segment) keeps `5173/3001`, real `~/.yaco`, and server reuse — unchanged.
-- **Per-run project/fixture namespacing.** `tests/e2e/helpers/workspace.ts` is the
-  shared helper. `runTag()`/`uniqueFileName()` stamp a unique-per-run id (worktree
-  slug + pid + counter) onto every created file; `createFixtureProject` /
-  `createWorktreeFixture` / `createBinaryFixture` register temp git projects under
-  unique names and `dispose()` them (deregister + `rm`) in `afterEach`.
+Every E2E run is hermetic: its own ports + an ephemeral `YACO_HOME`, and each spec
+provisions the projects/fixtures it needs there — never the real `~/.yaco`. This
+holds for the **main checkout too**, not just worktrees.
 
-**Rule: a spec must provision the project(s) it needs via the helper — never rely
-on a project already in the registry.** A worktree's `YACO_HOME` starts empty, so
-`projects[0]` does not exist there. Use `provisionWorkspace(page, request)` (or
-`createFixtureProject`) and select by name. Note an empty home has no
-`projects.json` at server boot, so the project-watcher emits no live-registration
-SSE: a multi-project spec must register **all** its projects before the first
-`page.goto('/')` so they are in the initial `/api/projects` load. The workspace
-localStorage key is `yaco-workspace:<project>` (`:wt:<slug>` when worktree-scoped).
+- **Isolated server serves a static build.** `resolveDevPorts({ e2e: true })`
+  (`e2ePorts.ts`) derives, from the cwd slug (`main`, or `.worktrees/<slug>`), a
+  hashed UI/API port pair + `yacoHome: <tmpdir>/yaco-e2e-home/<slug>`.
+  `playwright.config.ts` builds the UI (`vite build --outDir dist-e2e`) and boots
+  ONE Hono server (`reuseExistingServer:false`) that serves the static build +
+  `/api` + `/ws` on the API port (`BASE_URL` targets it). Serving a build — not
+  vite-dev — removes per-request module compilation, so the suite stays reliable
+  under machine load. `tests/e2e/preclean.mjs` wipes the ephemeral home pre-boot
+  (web servers start before `globalSetup`); the server reads the build dir from
+  `YACO_UI_DIST` (= `dist-e2e`) so it never clobbers `app/ui/dist`. Channels are
+  disabled (`WHATSAPP_ENABLED/WECHAT_ENABLED=0`) so no orphan puppeteer Chromes.
+- **Self-provisioned fixtures.** `tests/e2e/helpers/workspace.ts`:
+  `provisionWorkspace(page, request, { files?, tasks? })` / `createFixtureProject`
+  / `createWorktreeFixture` / `createBinaryFixture` / `createBrowseFixture`
+  register temp git projects (each carrying a `.yaco-e2e-fixture` marker) and
+  `dispose()` them in `afterEach`; `uniqueFileName()` namespaces created artifacts.
+  `global-setup`/`global-teardown` (+ `helpers/cleanup.ts`) sweep leftovers and —
+  gated on the marker — never delete real data, even under `E2E_REUSE`.
+- **Runtime-registered projects are watched.** `POST /api/projects` now starts a
+  file-watcher for the new project (`watchProject`, `project-watcher.ts`), so a
+  fixture registered after boot gets live file-tree/git SSE — no need to register
+  before the first `goto('/')`.
+
+**Rule: a spec must provision the project(s) it needs via the helper and select by
+name** (`selectProject`) — never rely on `projects[0]` or anything already in the
+registry. The workspace localStorage key is `yaco-workspace:<project>`
+(`:wt:<slug>` when worktree-scoped).
+
+**Dev-only specs:** `voice-compose-backup` self-skips in the default build suite
+(its fake MicVAD is `import.meta.env.DEV`-gated, the only dev-gated UI behavior) —
+run it with `E2E_REUSE=1`.
 
 ### Local Browser Automation Env
 

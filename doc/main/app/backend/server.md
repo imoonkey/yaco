@@ -83,11 +83,13 @@ Signal handlers route through `shutdownGracefully()` which **awaits** `shutdownW
 
 ## UI Serving
 
-When the built UI exists at `ui/dist/`, the server serves it with:
+The served build directory is `ui/dist/` by default, overridable via the
+`YACO_UI_DIST` env var (e2e points it at its own `dist-e2e` build so an isolated
+run never clobbers `dist/` — see [doc/dev/app/workflow.md](../../../dev/app/workflow.md#e2e-isolation-hermetic-static-build)). When that dir exists, the server serves it with:
 - Content-type detection by **base** file extension (never `.br`/`.gz` — those are content-encoding markers, not media types)
 - Immutable cache headers for `/assets/` (hashed filenames)
 - SPA fallback: non-asset paths without extensions fall through to `index.html`
-- 503 response with instructions if `ui/dist/` is missing
+- 503 response with instructions if the build dir is missing
 
 The build pipeline writes precompressed `.br` (brotli q11) and `.gz` (gzip 9) siblings next to compressible assets ≥1KB — see [doc/dev/app/workflow.md](../../../dev/app/workflow.md#build). `serveUiFile` reads the request's `Accept-Encoding`, stats the `.br` and `.gz` siblings of the resolved path, and delegates the choice to [`lib/static-encoding.ts`](libs.md#static-encodingts-180-lines-47-tests)'s `pickEncoding` helper. On a compressed pick it reads `<path>.br` / `<path>.gz` and sets `Content-Encoding: br|gzip`; on `identity` it reads the base file and omits the header. Every response (compressed or not) calls `appendVary(headers, 'Accept-Encoding')` so caches key correctly. Content-Length is left for `@hono/node-server` 1.19.14 to derive from the Uint8Array body.
 
