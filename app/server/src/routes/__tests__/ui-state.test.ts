@@ -20,6 +20,7 @@ const uiState = await import('../../lib/ui-state')
 describe('ui-state routes', () => {
   beforeEach(async () => {
     await rm(join(homeDir.value, '.yaco', 'ui-state', 'pinned-sessions.json'), { force: true })
+    await rm(join(homeDir.value, '.yaco', 'ui-state', 'unread-watermarks.json'), { force: true })
   })
   afterAll(async () => {
     await rm(homeDir.value, { recursive: true, force: true })
@@ -83,6 +84,41 @@ describe('ui-state routes', () => {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ sessions: [] }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('PUT /unread-watermarks max-merges (a client PUTting an older value never lowers the store)', async () => {
+    const put = (body: unknown) =>
+      uiStateRoutes.request('/unread-watermarks', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+    expect((await put({ projectReadAt: { p: 200 }, sessionReadAt: {} })).status).toBe(204)
+    // Lower PUT must not lower the stored watermark.
+    expect((await put({ projectReadAt: { p: 100 }, sessionReadAt: {} })).status).toBe(204)
+    expect((await uiState.getUnreadWatermarks()).projectReadAt).toEqual({ p: 200 })
+  })
+
+  it('PUT /unread-watermarks accepts the new taskReadAt / recentClearedAt maps', async () => {
+    const res = await uiStateRoutes.request('/unread-watermarks', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ taskReadAt: { 'p::t': 5 }, recentClearedAt: { p: 9 } }),
+    })
+    expect(res.status).toBe(204)
+    const wm = await uiState.getUnreadWatermarks()
+    expect(wm.taskReadAt).toEqual({ 'p::t': 5 })
+    expect(wm.recentClearedAt).toEqual({ p: 9 })
+  })
+
+  it('PUT /unread-watermarks rejects a non-numeric watermark map', async () => {
+    const res = await uiStateRoutes.request('/unread-watermarks', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ projectReadAt: { p: 'nope' } }),
     })
     expect(res.status).toBe(400)
   })

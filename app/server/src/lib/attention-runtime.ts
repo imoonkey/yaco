@@ -17,8 +17,9 @@ import { loadProjects } from './projects'
 import { readAllSessionsFromStateFiles } from './agent'
 import { getPinnedSessions, getUnreadWatermarks } from './ui-state'
 import { broadcastAttention } from './notify'
+import { readEvents, type YacoEvent } from './eventsLog'
 import { AttentionEngine } from './attention-engine'
-import type { LiveSession, LiveTask, Watermarks } from './attention-projection'
+import { projectAttention, type AttentionSnapshot, type LiveSession, type LiveTask, type ProjectionInput, type Watermarks } from './attention-projection'
 
 /** Normalize a task's bound agents to the canonical `string[]` (spec §8). */
 function normalizeAgents(raw: unknown): string[] {
@@ -90,6 +91,35 @@ async function readWatermarks(): Promise<Watermarks> {
   // works before and after T5 without a change here.
   const wm = (await getUnreadWatermarks()) as Watermarks
   return wm
+}
+
+/** Gather the global projection inputs straight from the filesystem and project
+ *  the CURRENT attention snapshot (spec §4.1). Reuses the SAME readers the engine
+ *  is wired with (sessions/tasks/pins/watermarks) plus the durable per-project
+ *  event log, then calls the pure `projectAttention` — no engine state, no SSE,
+ *  no edge detection. The attention routes call this to serve a cold mount; the
+ *  engine's `attention` SSE push keeps the client fresh afterward (spec §2.1). */
+export async function currentAttentionSnapshot(): Promise<AttentionSnapshot> {
+  const projects = await loadProjects()
+  const [sessions, tasks, pins, watermarks] = await Promise.all([
+    readSessions(),
+    readTasks(),
+    readPins(),
+    readWatermarks(),
+  ])
+
+  // Read events for every known project plus any project surfaced by a live
+  // session/task (a project may carry events before it is in the registry).
+  const projectIds = new Set<string>(projects.map((p) => p.name))
+  for (const s of sessions) projectIds.add(s.project)
+  for (const t of tasks) projectIds.add(t.project)
+  const events: YacoEvent[] = []
+  for (const projectId of projectIds) {
+    for (const e of await readEvents(projectId)) events.push(e)
+  }
+
+  const input: ProjectionInput = { events, sessions, tasks, pins, watermarks }
+  return projectAttention(input)
 }
 
 let engine: AttentionEngine | null = null

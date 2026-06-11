@@ -87,12 +87,26 @@ export async function setPinnedSessions(project: string, sessions: string[]): Pr
 }
 
 const WATERMARKS_FILE = 'unread-watermarks.json'
+
+/** Monotonic ack/clear watermarks (spec §5.3). Every map is `key → server-time
+ *  ms`; a watermark only ever advances (`max`), never goes backwards.
+ *   - `projectReadAt`   — ack a whole project up to a server timestamp.
+ *   - `sessionReadAt`   — ack a session key (`<proj>::<name>`) up to a ts.
+ *   - `taskReadAt`      — ack a task key (`<proj>::<id>`) up to a ts.
+ *   - `recentClearedAt` — clear a project's read/resolved/FYI history up to a ts. */
 export type UnreadWatermarks = {
   projectReadAt: Record<string, number>
   sessionReadAt: Record<string, number>
+  taskReadAt: Record<string, number>
+  recentClearedAt: Record<string, number>
 }
 
-function validNumberMap(value: unknown): Record<string, number> {
+/** A partial set of watermark maps — what ack/clear/PUT hand to the max-merge. */
+export type UnreadWatermarksPatch = Partial<UnreadWatermarks>
+
+const WATERMARK_KEYS = ['projectReadAt', 'sessionReadAt', 'taskReadAt', 'recentClearedAt'] as const
+
+export function validNumberMap(value: unknown): Record<string, number> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const out: Record<string, number> = {}
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
@@ -101,21 +115,60 @@ function validNumberMap(value: unknown): Record<string, number> {
   return out
 }
 
+function emptyWatermarks(): UnreadWatermarks {
+  return { projectReadAt: {}, sessionReadAt: {}, taskReadAt: {}, recentClearedAt: {} }
+}
+
+/** Defensively widen whatever is on disk to the full shape. Files written before
+ *  T5 carry only `projectReadAt`/`sessionReadAt`; the new maps default to `{}`. */
 export async function getUnreadWatermarks(): Promise<UnreadWatermarks> {
   const raw = await readJson<unknown>(WATERMARKS_FILE, {})
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return { projectReadAt: {}, sessionReadAt: {} }
-  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyWatermarks()
   const obj = raw as Record<string, unknown>
   return {
     projectReadAt: validNumberMap(obj.projectReadAt),
     sessionReadAt: validNumberMap(obj.sessionReadAt),
+    taskReadAt: validNumberMap(obj.taskReadAt),
+    recentClearedAt: validNumberMap(obj.recentClearedAt),
   }
 }
 
-export async function setUnreadWatermarks(data: UnreadWatermarks): Promise<void> {
-  await writeJson(WATERMARKS_FILE, {
-    projectReadAt: validNumberMap(data.projectReadAt),
-    sessionReadAt: validNumberMap(data.sessionReadAt),
+/** Merge a watermark patch into the stored file MONOTONICALLY: for every key, the
+ *  stored value becomes `max(existing, incoming)` and non-finite / lower incoming
+ *  values are dropped. A watermark can never go backwards (spec §5.3, H8/H9), so
+ *  a client PUTting an older value — or a clock-skewed ack — cannot lower it.
+ *  Read-modify-write runs under the shared `writeJson` lock. Returns the merged
+ *  watermarks so callers can stamp the persisted values back to the client. */
+export async function mergeUnreadWatermarks(patch: UnreadWatermarksPatch): Promise<UnreadWatermarks> {
+  return withLock(async () => {
+    await mkdir(UI_STATE_DIR, { recursive: true })
+    const file = join(UI_STATE_DIR, WATERMARKS_FILE)
+    let current = emptyWatermarks()
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf-8')) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const obj = parsed as Record<string, unknown>
+        current = {
+          projectReadAt: validNumberMap(obj.projectReadAt),
+          sessionReadAt: validNumberMap(obj.sessionReadAt),
+          taskReadAt: validNumberMap(obj.taskReadAt),
+          recentClearedAt: validNumberMap(obj.recentClearedAt),
+        }
+      }
+    } catch {
+      current = emptyWatermarks()
+    }
+
+    for (const mapKey of WATERMARK_KEYS) {
+      const incoming = validNumberMap(patch[mapKey])
+      const target = current[mapKey]
+      for (const [k, v] of Object.entries(incoming)) {
+        const existing = target[k]
+        if (existing === undefined || v > existing) target[k] = v
+      }
+    }
+
+    await writeFile(file, JSON.stringify(current, null, 2), 'utf-8')
+    return current
   })
 }
