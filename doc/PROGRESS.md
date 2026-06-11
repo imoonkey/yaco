@@ -17,6 +17,20 @@
 **Next:** None.
 **Blockers:** None.
 
+## 2026-06-10: Editor diff gutter handles symlinks (baseline reads target's HEAD blob)
+
+**What changed:**
+- `GET /api/git/:project/baseline` resolves symlinks via a new `resolveBaseline()` helper and runs `git show HEAD:./<basename>` from the target's own directory, instead of `git show HEAD:<filePath>` from the project root. Paths absent on disk fall back to the literal lookup.
+
+**Why:**
+- The gutter diffs the live editor buffer against this baseline. For a symlink, `git show HEAD:<symlink>` returns the link *text* (target path string) while `/files/content` serves the realpath'd target's content, so every line read as changed and the whole file showed a blue (modified) bar. Reading the target's HEAD blob aligns both sides. Targets outside any repo correctly fall to `exists:false` (shown as a new file).
+
+**Key files:** `app/server/src/routes/git.ts`, `app/server/src/routes/__tests__/{git-diff,git-baseline-symlink}.test.ts`, `doc/main/app/backend/routes.md`, `doc/main/app/ui/workspace/editor-and-preview.md`
+**Verification:** `cd app/server && npx vitest run src/routes/__tests__/git-diff.test.ts src/routes/__tests__/git-baseline-symlink.test.ts` → 16 passed (incl. a real-temp-repo case: symlink→target content, plain file, target outside any repo→`exists:false`). Codex review: APPROVE, no blockers.
+**Commit:** ccbba04
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-09: Flexible-layout T1a — data-resource adapters (git + sessions)
 
 **What changed:**

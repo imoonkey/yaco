@@ -247,7 +247,7 @@ VS Code-style gutter markers in the CodeMirror editor showing line-level change 
 | Modified | 3px blue bar | Faint blue background |
 | Deleted | Red triangle at anchor line | None (no current line to tint) |
 
-Markers reflect **saved-file** git state, not the live unsaved buffer. They may drift while the user edits before saving.
+Markers reflect the **live editor buffer** diffed against the HEAD baseline, so unsaved edits update the gutter immediately (no save required).
 
 ### Inline Hunk Popup
 
@@ -263,12 +263,13 @@ Clicking a gutter marker opens a block widget below the anchor line showing the 
 ### Data Flow
 
 ```
-git status refresh → active file in changes list?
-  → yes: fetchGitDiff → parseDiff → ParsedFileDiff → .hunks → Editor prop → setDiffData StateEffect
-  → no: empty hunks → gutter clears
+active file → fetchGitBaseline (GET /api/git/:project/baseline → HEAD blob)
+  → buildEditorBufferDiff(baseline, live buffer) → ParsedFileDiff → .hunks → Editor prop → setDiffData StateEffect
 ```
 
-Diff data updates on save and git refresh. The extension is always installed; empty data is the no-op case.
+The baseline is the file's HEAD content; the gutter is `buildEditorBufferDiff` of that against the current buffer, so saved and unsaved edits share one coordinate system. For **symlinks**, the baseline endpoint resolves the link and reads the *target's* HEAD blob — `git show HEAD:<symlink>` would return the link text and paint the whole file as changed. Untracked files (and symlink targets outside any repo) get an empty baseline, so the whole file shows as added.
+
+The extension is always installed; empty hunks is the no-op case.
 
 ### Known Limitations (v1)
 

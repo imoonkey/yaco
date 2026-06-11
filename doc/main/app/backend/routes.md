@@ -72,6 +72,7 @@ All git routes support `?worktree=<slug>` query param via `withProject` middlewa
 | GET | `/api/git/:project/refs` | Branches, tags, recent commits (50) — returns `{ branches: string[], tags: string[], recentCommits: { hash, subject, date, author }[] }`. 5s in-memory cache per project. Log format: `%h\t%ci\t%an\t%s` |
 | GET | `/api/git/:project/status` | Git status — returns `{ changes: [{ path, status }], stale: boolean }` |
 | GET | `/api/git/:project/diff?path=...` | Unified diff for a file. Optional `&base=REF&compare=REF` for ref-to-ref diff; without them falls back through: `git diff HEAD` → `git diff --cached HEAD` (staged changes) → `--no-index /dev/null` (untracked) |
+| GET | `/api/git/:project/baseline?path=...` | File's HEAD content for editor-buffer diffing (gutter) — returns `{ content, exists }`. Resolves symlinks and reads the target's HEAD blob from the target's own dir (so the gutter diffs against real content, not the link text); `exists:false` when untracked or the target is outside any repo |
 | GET | `/api/git/:project/compare?base=REF&compare=REF` | File list changed between two refs — returns `{ files: GitChange[] }`. Status letters: M/A/D (renames mapped to M). 400 if base/compare missing, 500 on git error |
 
 ### Notifications
