@@ -45,17 +45,25 @@ export type RuntimeSessionState = Omit<SessionState, "status"> & {
 };
 
 /** Mutable status-bearing shape: both SessionState and RuntimeSessionState satisfy it. */
-type StatusWritable = { status: string; blockReason?: BlockReason };
+type StatusWritable = { status: string; blockReason?: BlockReason; statusEnteredAt?: string };
 
 /** Write status and blockReason atomically, preserving the invariant
  *  `blockReason` is set iff status === "blocked". A non-blocked status (or a
  *  blocked status with no reason) clears blockReason. In-place mutator: callers
- *  (send.ts, status.ts, hook-event.ts) own a mutable session-state object. */
+ *  (send.ts, status.ts, hook-event.ts) own a mutable session-state object.
+ *
+ *  Stamps `statusEnteredAt` (ISO now) only on a real status *transition* — the
+ *  durable status-edge generation key (`<kind>:<subject>:<statusEnteredAt>`).
+ *  Re-affirming the same status leaves it untouched, so re-seeing the same edge
+ *  never mints a new generation (the recurrence fix, spec §4). */
 export function setStatus<T extends StatusWritable>(
   state: T,
   status: T["status"],
   reason?: BlockReason,
 ): void {
+  if (state.status !== status) {
+    state.statusEnteredAt = new Date().toISOString();
+  }
   state.status = status;
   if (status === "blocked" && reason) {
     state.blockReason = reason;

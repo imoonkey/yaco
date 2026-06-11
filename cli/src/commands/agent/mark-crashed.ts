@@ -22,9 +22,8 @@ export function markCrashed(handle: string, exitCode: number, createdAt: string)
   if (state.createdAt !== createdAt) return false;
   if (killSentinelMatches(handle, createdAt)) return false;
 
-  setStatus(state, "crashed"); // also clears any stale blockReason
+  setStatus(state, "crashed"); // clears blockReason + stamps statusEnteredAt on the transition
   state.exitCode = exitCode;
-  state.statusEnteredAt = new Date().toISOString();
   writeState(state);
   return true;
 }

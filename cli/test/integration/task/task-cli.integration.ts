@@ -127,6 +127,31 @@ describe("yaco task set / rm / archive / list / validate", () => {
     expect(Object.keys(all.tasks).sort()).toEqual(["active-task", "archive-task", "backlog-task"]);
   });
 
+  it("stamps stateEnteredAt on the edited task and on a rollup-flipped parent (R5)", () => {
+    runYaco(repo, ["task", "set", "ms", "--data",
+      JSON.stringify({ title: "ms", description: "d", acceptCriteria: "x" }), "--json"]);
+    runYaco(repo, ["task", "set", "leaf", "--data",
+      JSON.stringify({ title: "leaf", description: "d", acceptCriteria: "x", parent: "ms", state: "ready" }), "--json"]);
+    const file = defaultTasksFile(repo, "ms");
+
+    // Completing the only child rolls the parent milestone to done.
+    const r = runYaco(repo, ["task", "set", "leaf", "--data", JSON.stringify({ state: "done" }), "--json"]);
+    expect(r.status).toBe(0);
+    const tasks = JSON.parse(readFileSync(file, "utf-8"));
+    expect(tasks.leaf.state).toBe("done");
+    expect(tasks.ms.state).toBe("done"); // rolled up
+    expect(typeof tasks.leaf.stateEnteredAt).toBe("string");
+    expect(typeof tasks.ms.stateEnteredAt).toBe("string"); // R5: rollup-flipped parent stamped too
+
+    // A non-state edit must NOT bump stateEnteredAt — the generation stays stable.
+    const leafGen = tasks.leaf.stateEnteredAt;
+    const parentGen = tasks.ms.stateEnteredAt;
+    runYaco(repo, ["task", "set", "leaf", "--data", JSON.stringify({ title: "leaf-renamed" }), "--json"]);
+    const after = JSON.parse(readFileSync(file, "utf-8"));
+    expect(after.leaf.stateEnteredAt).toBe(leafGen);
+    expect(after.ms.stateEnteredAt).toBe(parentGen);
+  });
+
   it("rejects a new task missing title/description", () => {
     const r = runYaco(repo, [
       "task",

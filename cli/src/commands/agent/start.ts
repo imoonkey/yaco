@@ -67,9 +67,10 @@ function syncStateAfterStart(
 
   // Status progression: starting→idle or starting→processing only.
   // Never downgrade processing→idle (hook is authority for processing state).
+  // setStatus stamps statusEnteredAt on the transition.
   if (current.status === "starting") {
     if (ready) {
-      current.status = "idle";
+      setStatus(current, "idle");
       changed = true;
     }
   }
@@ -350,6 +351,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
 
   // Write initial state file
   const lineage = deriveSessionLineage();
+  const createdAt = new Date().toISOString();
   const state: SessionState = {
     handle: resolvedName,
     provider,
@@ -357,7 +359,8 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     pid: 0,
     sessionId: resumeId ?? "",
     status: "starting",
-    createdAt: new Date().toISOString(),
+    createdAt,
+    statusEnteredAt: createdAt, // entered "starting" now; advances on each transition
     ...lineage,
   };
   writeState(state);
