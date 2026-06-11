@@ -11,9 +11,11 @@
 **Why:**
 - `plan/` shouldn't ship in the open-sourced repo, but physically moving it out is undesirable. Splitting the two conflated meanings of "git-ignored by the host" — real-git exclusion (`info/exclude`) vs YACO surfacing (mirror read-only git per repo) — keeps it colocated, private, and first-class. A general signal (not hardcoding `plan`) is IDE-like and makes the "plan tracked in the host repo just works" case fall out for free. Pushing the separate plan repo is a personal preference, so the tool only ever adds a remote.
 
+**Security/robustness pass (Codex review):** reject `[paths]` segments starting with `-` + pass paths after `--` to git (no git-option injection, e.g. `plan = "--bare"`); canonicalize plan roots (`./plan` → `/plan/` in `info/exclude`, not `/./plan/`) and require a depth-1 plan root in `yaco plan init`; `/diff` (deny policy) skips the `--no-index` content read for a path that realpaths outside the project tree (a symlinked-in external file/dir never leaks); drop reserved `auto`/`off` tokens in allow-list position. Codex final verdict: APPROVE (0 blockers/majors).
+
 **Key files:** `app/server/src/lib/colocatedRepos.ts` (new), `app/server/src/routes/{git,files}.ts`, `cli/src/lib/core/paths/{yaco-paths,index}.ts`, `cli/src/commands/plan/{index,init}.ts` (new), `cli/src/main.ts`; tests under `app/server/src/{lib,routes}/__tests__/` + `cli/test/unit/{core/paths,commands/plan}/`; docs `doc/main/app/backend/{routes,libs}.md`, `doc/main/cli/{paths,plan,README,command-surface}.md`.
-**Verification:** app/server `vitest run src/` → 523 passed (35 files); `cli bun run test` → 939 passed, 1 pre-existing unrelated failure (`project/move.test.ts` jsonl mtime, also red on `main`). Each phase independently code-reviewed + committed.
-**Commit:** `3ef3e7c`..`fa88124` (+ this docs commit) on branch `task/colocated-repo`.
+**Verification:** app/server `vitest run src/` → 526 passed (35 files); `cli bun run test` → 945 passed, 1 pre-existing unrelated failure (`project/move.test.ts` jsonl mtime, also red on `main`). Each phase independently code-reviewed + committed; final Codex review pass (2 rounds) → APPROVE.
+**Commit:** `3ef3e7c`..`e59901e` on branch `task/colocated-repo`, merged to `main`.
 **Next:** optional `colocated-tree-badge` (backlog); the one-time OSS migration (`plan-repo-migration` milestone — history scrub + separate private repos) is human-driven and out of scope here.
 **Blockers:** None.
 
