@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Mic, Square, LoaderCircle, Sparkles } from 'lucide-react'
+import { X, Mic, Square, LoaderCircle, Wand } from 'lucide-react'
 import { toast } from 'sonner'
 import { DialogShell } from './DialogShell'
 import { writeTextToClipboard } from '../lib/clipboard'
@@ -257,7 +257,7 @@ export function ComposeTray({
                 >
                   {formatting
                     ? <LoaderCircle size={14} style={{ animation: 'voice-spin 0.8s linear infinite' }} aria-hidden="true" />
-                    : <Sparkles size={14} />} Format
+                    : <Wand size={14} />} Format
                 </button>
               </>
             )}
