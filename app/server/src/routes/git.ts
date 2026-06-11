@@ -43,17 +43,48 @@ function unsafeFilePath(filePath: string): boolean {
   return filePath.includes('..') || filePath.startsWith('/')
 }
 
+/** Resolve the git working directory + repo-relative path for a file, choosing
+ *  the right repo when it lives in a colocated repo.
+ *
+ *  externalSymlinks:
+ *    "deny"     — /diff: route a colocated logical path (plan/foo.md) to its repo
+ *                 (works for deleted files too, since the match is on the logical
+ *                 path); everything else stays host-rooted. Never follows a symlink
+ *                 outside the project, so git never runs in an external location.
+ *    "preserve" — /baseline: for an existing file, follow its realpath (the /files
+ *                 endpoint serves a symlink's target, so the gutter must diff that
+ *                 target's HEAD blob); for a missing file, use the colocated prefix
+ *                 (a deleted colocated file) or fall back to the host root.
+ *  Path-boundary match: "plan2/x" does not match the "plan" repo. */
+async function resolveFileRepo(
+  projectPath: string,
+  filePath: string,
+  { externalSymlinks }: { externalSymlinks: 'preserve' | 'deny' },
+): Promise<{ cwd: string; relPath: string }> {
+  const repos = await getColocatedRepos(projectPath)
+  const repo = repos.find((r) => filePath.startsWith(`${r}/`))
+  const colocated = repo ? { cwd: join(projectPath, repo), relPath: filePath.slice(repo.length + 1) } : null
+
+  if (externalSymlinks === 'deny') {
+    return colocated ?? { cwd: projectPath, relPath: filePath }
+  }
+
+  const absPath = join(projectPath, filePath)
+  if (existsSync(absPath)) {
+    const real = await realpath(absPath)
+    return { cwd: dirname(real), relPath: basename(real) }
+  }
+  return colocated ?? { cwd: projectPath, relPath: filePath }
+}
+
 /** Resolve the git location + ref for a file's HEAD baseline.
  *  The /files content endpoint serves a symlink's real target, so the gutter must
  *  diff the buffer against that target's HEAD blob. `git show HEAD:<symlink>` returns
  *  only the link text, which paints the whole file blue. Running git from the resolved
- *  file's own directory yields the real content — and works even when the target lives
- *  in another repo. Paths absent on disk fall back to the literal lookup. */
+ *  file's own directory (or its colocated repo) yields the real content. */
 async function resolveBaseline(projectPath: string, filePath: string): Promise<{ cwd: string; ref: string }> {
-  const absPath = join(projectPath, filePath)
-  if (!existsSync(absPath)) return { cwd: projectPath, ref: `HEAD:${filePath}` }
-  const real = await realpath(absPath)
-  return { cwd: dirname(real), ref: `HEAD:./${basename(real)}` }
+  const { cwd, relPath } = await resolveFileRepo(projectPath, filePath, { externalSymlinks: 'preserve' })
+  return { cwd, ref: `HEAD:./${relPath}` }
 }
 
 /** Parse `git diff --shortstat` output → { added, deleted } */
@@ -234,17 +265,20 @@ app.get('/:project/diff', withProject, async (c) => {
     return c.json({ diff: result.stdout })
   }
 
-  // No refs — diff working tree vs HEAD, then check staged, then untracked fallback
-  let diff = (await git(proj.path, ['diff', 'HEAD', '--', filePath])).stdout
+  // No refs — diff working tree vs HEAD, then check staged, then untracked fallback.
+  // Resolve to the owning repo so a colocated file diffs against its own HEAD.
+  const { cwd, relPath } = await resolveFileRepo(proj.path, filePath, { externalSymlinks: 'deny' })
+
+  let diff = (await git(cwd, ['diff', 'HEAD', '--', relPath])).stdout
 
   // Working tree matches HEAD — check staged (index) changes
   if (!diff) {
-    diff = (await git(proj.path, ['diff', '--cached', 'HEAD', '--', filePath])).stdout
+    diff = (await git(cwd, ['diff', '--cached', 'HEAD', '--', relPath])).stdout
   }
 
   // For untracked files, show full content as additions
   if (!diff) {
-    diff = (await git(proj.path, ['diff', '--no-index', '--', '/dev/null', filePath])).stdout
+    diff = (await git(cwd, ['diff', '--no-index', '--', '/dev/null', relPath])).stdout
   }
 
   return c.json({ diff })
