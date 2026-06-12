@@ -1,5 +1,26 @@
 # Progress
 
+## 2026-06-11: Multi-instance panels — N editor + N terminal panes with per-instance state
+
+**What changed:**
+- **N editors + N terminals.** Relaxed the panel tree's `single-occurrence` rule for an `editor`/`terminal` whitelist (`MULTI_INSTANCE_PANELS` in `panelLayoutModel.ts`). The home editor keeps the constant id `'editor'` (a `main` tabs entry); secondary editors (`editor:2…`) and all terminals (`terminal`/`terminal:2…`) are leaves. Added id-addressed structural ops (`newInstanceId`/`splitBeside`/`closeLeaf`/`moveLeaf`) and the routing primitives (`editorInstancesInOrder`/`terminalInstancesInOrder`, `resolveActiveEditor`/`resolveActiveTerminal`).
+- **One reducer owns the hot state.** `useLayoutState.ts` now hosts `instanceReducer` (desktop tree + `editorViews` + `terminalBindings` + `editorMru` + `terminalMru` + `focusedPane`). Every structural transition seeds ids + GCs the maps/MRU against the tree atomically — the tree is authoritative, a read for a missing id defaults (`EMPTY_VIEW`/unbound). The hook derives the single-value globals (`openTabs`/`activeTab`/`previewTab`/`activeSession`) over the active instance for compat.
+- **File buffers stay global by path.** `useFileState` keeps `files`/`dirtyTabs`/`conflictTabs` keyed by path (shared document model — two editors on one file stay in sync) and adds a shared-buffer GC: keep iff referenced by an open view **or** dirty, so close/reset never silently loses unsaved work.
+- **Focus / active-instance routing.** Type-global commands act on the active instance (MRU head → first in order). `PanelHost` publishes each pane's `instanceId` + `data-instance-id`; the renderer marks the focused pane bright (`data-focused`) and the active-but-unfocused editor/terminal dim (`data-active`, suppressed when one-of-type). `jumpRequest` carries `instanceId`. Mobile projects the active instance.
+- **Instance-aware panels + chrome.** `EditorPanel`/`TerminalPanel` read their `instanceId` slice; Split/Move/Close chrome; `clickSession` (smart-focus-else-replace) + `openBeside` (1-per-session); per-session miss-count reconcile closes panes for dead sessions; rename rebinds all bound terminals; `visibleSessions` set drives unread (both tiled terminals mark read).
+- **Desktop global voice control.** New `GlobalVoiceControl` (mic + target indicator + dropdown) portaled from `WorkspaceScreen` into an App-owned top-bar slot; voice target carries a frozen `instanceId`. Per-pane mic kept on mobile.
+- **Keyboard chords.** `Cmd+\` (split focused pane, geometry axis), `Cmd+K Cmd+\` (orthogonal), `Cmd+Enter` (open file to side), instance-aware `Cmd+W`; session/tab cycling acts on the active instance.
+- **Persistence.** `PersistedState` drops the old global `openTabs/activeTab/previewTab/activeSession` for `editorViews`/`terminalBindings`/`editorMru`/`terminalMru` + the tree (which carries instance ids). One-time migration of the old flat blob + load-normalize (reconstitute `main`, GC maps, dedup one-per-session).
+
+**Why:**
+- "Watch two agents" and "compare two files" were a toggle dance. The editor/terminal hot state was global singletons; making it per-instance (in selection maps keyed by `instanceId`, GC'd by an authoritative tree) is the minimal model that supports N panes without a dual source of truth. Keeping buffers global by path means a shared document model with no per-instance buffer reconciliation. See `plan/all/20260611_panel-multi-instance/design.md`.
+
+**Key files:** `app/ui/src/workspace/{panelLayoutModel,panelInstance,context,WorkspaceProvider,WorkspaceScreen,useWorkspaceKeyboard,useWorkspaceSessions,useWorkspaceVoice,PanelHost,DesktopPanelTreeLayout,MobilePanelProjection}.{ts,tsx}`, `app/ui/src/workspace/panels/{EditorPanel,TerminalPanel,SessionsPanel}.tsx`, `app/ui/src/hooks/{useLayoutState,useFileState,usePersistence,useSessionUnreadState,workspaceTypes,voiceStateMachine}.ts`, `app/ui/src/components/GlobalVoiceControl.tsx`, `app/ui/src/App.tsx`; tests under `app/ui/src/**/__tests__/*` + `app/ui/tests/e2e/multi-instance-*.spec.ts`; docs `doc/main/app/{frontend/{state,hooks},data-model/{persistence,types},ui/{app-shell,keyboard,mobile,workspace/*},README}.md`, `doc/dev/app/workflow.md`.
+**Verification:** Feature shipped with unit coverage (`instanceReducer`, `panelLayoutModelMulti`, `panelInstance`, `sharedBufferGc`, `layoutMigration`) and e2e (`multi-instance-{editors,terminals,persistence,mobile}`, `close-surface`, `shared-state`, `voice-target`); characterization specs migrated to the new persisted shape. This entry is the docs sync — no code changed.
+**Commit:** `4e6a1a7..639e760` (17 commits on `task/panel-mi`) + this docs commit.
+**Next:** Group-focus shortcuts (`Cmd+1/2/3`) were deferred (binding clash with session shortcuts).
+**Blockers:** None.
+
 ## 2026-06-11: Voice — revert streaming segmentation to a single-take unified compose tray
 
 **What changed:**

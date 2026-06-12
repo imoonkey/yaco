@@ -15,18 +15,30 @@ Surface summary and desktop/mobile composition for the Workspace view.
 
 ## Related Code
 
-`ui/src/components/Workspace.tsx` (re-export), `ui/src/workspace/WorkspaceScreen.tsx` (controller), `ui/src/workspace/WorkspaceLayout.tsx` (layout composition)
+`ui/src/workspace/WorkspaceScreen.tsx` (controller), `ui/src/workspace/WorkspaceProvider.tsx` (contexts + commands), `ui/src/workspace/DesktopPanelTreeLayout.tsx` / `MobilePanelProjection.tsx` (renderers), `ui/src/workspace/PanelHost.tsx` (per-instance host)
 
 ## Surface
 
 The Workspace is a multi-pane code editing environment for a single project. It provides:
 
 - File explorer with git status
-- Multi-tab center pane for files, diffs, and the task graph
+- **N editor panes** (multi-tab) for files, diffs, and the task graph — split side-by-side, each with its own tab strip and view state
 - Git changes panel with diff viewer
 - Tasks doorway that opens the task graph; task records live across `plan/tasks/**/tasks.json`
-- Terminal with session management
+- **N terminal panes**, each bound to a session
 - File search
+
+The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes), not a fixed three-column grid. Panels are split, moved, collapsed, and resized; the tree is the authority on which panes exist. -> See: [state-machine.md](state-machine.md) and [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
+
+## Multi-Instance Panels
+
+The workspace holds **N editor + N terminal panes at once**, each keeping its own view state, persisted per (project, worktree) and restored on reload — so "watch two agents" and "compare two files" are first-class.
+
+- **Instance identity (`instanceId`).** The home editor's id is the constant `'editor'`; secondary editors are `editor:2`, `editor:3`; terminals are `terminal`, `terminal:2`, … Singleton dock panels keep `id === panel`.
+- **Per-instance view state.** Each editor instance owns its `{ openTabs, activeTab, previewTab }`; each terminal instance owns its session binding. File **buffers stay global by path** (shared document model) — two editors on one file show the same content and dirty dot; only the tab view is per-instance.
+- **Focus / active instance.** A type-global command (open file, voice insert, session cycle) targets the **active** instance of its type = most-recently-focused live instance, else first in document order. The focused pane gets a bright accent (`data-focused`); the active-but-unfocused editor/terminal gets a dim accent (`data-active`), suppressed when only one of that type exists.
+- **Split / open-to-side / close.** Split chrome on the editor/terminal headers, plus `Cmd+\` (split focused pane along its geometry axis), `Cmd+K Cmd+\` (orthogonal), `Cmd+Enter` (open file to the side), and instance-aware `Cmd+W`. -> See: [../keyboard.md](../keyboard.md).
+- **Voice** is a single desktop control in the App top bar that targets a chosen instance. -> See: [../app-shell.md](../app-shell.md#global-voice-control).
 
 ## Desktop Composition
 
@@ -69,23 +81,22 @@ When no center tabs are open, the activity column (terminal + sessions) expands 
 Single full-width pane with PaneSwitch: `Files` | `Editor` | `Terminal`
 
 - `Files`: shows explorer, changes, tasks, and sessions sections
-- `Editor`: shows file editor, preview, diff, or task graph for the active tab
-- `Terminal`: shows terminal for the active session
+- `Editor`: projects the **active editor instance** — its file editor, preview, diff, or task graph
+- `Terminal`: projects the **active terminal instance** — the terminal for its bound session
 
-Auto-switching:
+Mobile renders only the active instance of each type (no split/open-beside affordances). Auto-switching:
 - File select → `Editor` pane
 - Tasks doorway or `Cmd+Shift+T` → `Editor` pane
 - Session select or create → `Terminal` pane
 
 ## State Persistence
 
-Per-project state in localStorage (`workflow-workspace:<project>` and `workflow-drafts:<project>`):
-- Open tabs and active tab
-- Active session
-- Sidebar visibility (left/right)
-- Section visibility (explorer/changes/tasks/sessions)
-- Panel widths (left/right)
-- Section split heights (explorer/changes)
-- Task graph collapse state persists separately in `workflow-taskgraph:<project>`
+Per-(project, worktree) state in localStorage (`yaco-workspace:<project>[:wt:<slug>]` and `yaco-drafts:<project>[:wt:<slug>]`):
+- Panel tree (`panelLayout`) — carries the instance ids
+- Per-instance editor views (`editorViews`) and terminal bindings (`terminalBindings`)
+- Editor/terminal MRU (`editorMru` / `terminalMru`)
+- Mobile pane (`mobilePane`), recent files (`recentFiles`)
+- Flat dock/section visibility + panel/section sizes (`layout`)
+- Task graph collapse state persists separately in `yaco-task-workspace:<project>`
 
-See [../../data-model/persistence.md](../../data-model/persistence.md) for format details.
+See [../../data-model/persistence.md](../../data-model/persistence.md) for the full shape and the old-blob migration.

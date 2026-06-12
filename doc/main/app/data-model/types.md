@@ -14,7 +14,7 @@ Entity and payload shapes used across server and frontend.
 ## Related Code
 
 - `ui/src/types.ts` — frontend type definitions
-- `ui/src/hooks/useWorkspaceState.ts` — workspace state types
+- `ui/src/hooks/workspaceTypes.ts` — workspace state types + panel-layout tree model
 - `server/src/lib/scanner.ts` — server-side equivalents
 
 ## Domain Types
@@ -97,37 +97,96 @@ interface GitChange {
 
 ## Workspace State Types
 
-Defined in `ui/src/hooks/useWorkspaceState.ts`.
+Defined in `ui/src/hooks/workspaceTypes.ts`. The workspace holds **N editor + N terminal panes**; per-instance view state is keyed by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
 
-### File State
+### File State (keyed by path — shared document model)
 
 ```typescript
 type FileStatus = 'clean' | 'dirty' | 'saving' | 'conflict' | 'missing'
 
 type FileState = {
+  serverContent: string | null
   draft: string | null        // null = clean (editor shows disk content)
   baseRevision: number | null // server revision for conflict detection
   viewportLine: number        // source line for editor/preview sync
   status: FileStatus
+  editedAt: number
 }
 ```
 
-### Workspace Layout
+### Per-Instance View + Focus
 
 ```typescript
-type MdMode = 'edit' | 'preview' | 'split'
+// One editor instance's tab view; a read for a missing instanceId → EMPTY_VIEW.
+type EditorView = {
+  openTabs: string[]
+  activeTab: string | null
+  previewTab: string | null
+}
+
+type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal' | 'tasks'
+
+// The single focused pane. `instanceId` is meaningful for editor/terminal,
+// otherwise equals the kind.
+type FocusedPane = { kind: FocusTarget; instanceId: string }
+
+// Go-to-line carries instanceId so only the matching editor pane consumes it.
+type JumpRequest = { key: number; path: string; line: number; scroll?: boolean; instanceId?: string }
+```
+
+### Persisted Workspace State
+
+```typescript
+type PersistedState = {
+  editorViews: Record<string, EditorView>      // by instanceId
+  terminalBindings: Record<string, string>     // by instanceId → sessionName
+  editorMru: string[]                          // most-recent-first
+  terminalMru: string[]
+  mobilePane: MobilePane                       // 'files' | 'editor' | 'tasks' | 'terminal'
+  layout: WorkspaceLayout                      // flat visibility + sizes
+  recentFiles: string[]
+  panelLayout: WorkspacePanelLayout            // desktop tree (carries instance ids) + mobile dock + panel state
+}
+```
+
+### Panel-Layout Tree
+
+```typescript
+// The desktop layout is an n-ary tree of split / tabs / leaf nodes (pure structure).
+type LeafNode  = { kind: 'leaf';  id: string; panel: PanelId; collapsed?: boolean }
+type SplitNode = { kind: 'split'; id: string; axis: 'row' | 'col'; children: SplitChild[] }
+type TabsNode  = { kind: 'tabs';  id: string; active: PanelId; panels: PanelId[]; chrome: 'none' | 'tabs' }
+type LayoutNode = LeafNode | SplitNode | TabsNode
+
+type WorkspacePanelLayout = {
+  version: 1
+  desktop: LayoutNode
+  mobile: { activeDock: MobileDock }
+  panelState: PanelState                       // files mode + editor prefs (previewMode/splitDirection/splitSize/autocomplete)
+}
+```
+
+`editor`/`terminal` are the multi-instance whitelist (`MULTI_INSTANCE_PANELS`); the home editor's id is the constant `'editor'` and lives in the `main` tabs node, secondary editors and all terminals are leaves.
+
+### Workspace Layout (flat visibility + sizes)
+
+```typescript
+type PreviewMode = 'edit' | 'preview' | 'split'
 
 type WorkspaceLayout = {
   showSidebar: boolean
   showRightPanel: boolean
+  showProjects: boolean
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
-  mdMode: MdMode
-  splitSize: number           // percentage (20–80), split divider position
-  leftSize: number            // pixels
-  rightSize: number           // pixels
-  explorerSize: number        // pixels
-  changesSize: number         // pixels
+  showTasks: boolean
+  showTextSearch: boolean
+  autocompleteEnabled: boolean
+  previewMode: PreviewMode
+  splitDirection: 'horizontal' | 'vertical'
+  splitSize: number                            // percentage (20–80)
+  leftSize: number; rightSize: number          // pixels
+  explorerSize: number; searchSize: number; changesSize: number; sessionSize: number; projectSize: number
 }
 ```

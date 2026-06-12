@@ -14,7 +14,11 @@ Canonical workspace document and layout states and their transitions.
 
 ## Related Code
 
-`ui/src/components/Workspace.tsx`
+`ui/src/hooks/useLayoutState.ts` (the reducer), `ui/src/workspace/panelLayoutModel.ts` (tree model), `ui/src/workspace/WorkspaceProvider.tsx`
+
+## Per-Instance Document Surface
+
+The document-surface states below describe **one editor instance**. The workspace can hold **N editor panes**, each independently in its own state (one in Diff, another in FileEdit), driven by its own `editorViews[instanceId]`. The terminal surface is likewise per-instance (each pane bound to a session, or the empty "select a session" placeholder). -> See: [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
 
 ## Document Surface States
 
@@ -67,13 +71,19 @@ The main editor area is always in exactly one of these states:
 
 ### Desktop
 
+The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes) — not a fixed three-column grid. Panes are split, moved, collapsed, resized, and closed; the tree is the authority on which instances exist.
+
 ```
 ┌───────────────────────────┐
-│ Left Sidebar │ Editor │ Right Pane │
+│ Left Sidebar │ Editor(s) │ Terminal(s) / Sessions │
 └───────────────────────────┘
 ```
 
-Each panel independently visible/hidden. Resize handles between panels.
+Multiple editor and terminal leaves can tile at once. Each panel is independently visible/hidden, with resize handles between split children.
+
+### Focus / Active-Instance Model
+
+`focusedPane = { kind, instanceId }` names the one focused pane. For editor/terminal there is also an **active instance** per type = most-recently-focused live instance (MRU head), else first in document order. Type-global commands (open file, voice insert, session cycle) act on the active instance. Markers: focused pane → bright `data-focused`; active-but-unfocused editor/terminal → dim `data-active` (suppressed when only one of that type exists).
 
 ### Mobile: Files
 

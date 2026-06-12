@@ -14,7 +14,7 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`@yaco/cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
+`@yaco/cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/usePersistence.ts`, `ui/src/hooks/useLayoutState.ts`, `ui/src/hooks/useFileState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
 
@@ -116,28 +116,28 @@ App-level state persisted by `App.tsx`:
 }
 ```
 
-### localStorage: `workflow-workspace:<projectName>` (or `workflow-workspace:<projectName>:wt:<slug>`)
+### localStorage: `yaco-workspace:<projectName>` (or `yaco-workspace:<projectName>:wt:<slug>`)
 
-Per-project (or per-worktree) workspace layout state persisted by `useWorkspaceState`. When a worktree is active, state is keyed separately so tabs/sessions/layout are independent per worktree.
+Per-project (or per-worktree) workspace layout state persisted by `usePersistence` (`useLayoutState` snapshot). When a worktree is active, state is keyed separately so tabs/sessions/layout are independent per worktree. The workspace holds **N editor + N terminal panes**, so per-instance view state is keyed by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#localstorage-persistence).
 
-- `openTabs` — array of open file paths
-- `activeTab` — currently active file path
-- `activeSession` — attached session name
-- `mobilePane` — `'files' | 'editor' | 'terminal'`
-- `layout.showSidebar` — boolean
-- `layout.showRightPanel` — boolean
-- `layout.showExplorer` / `layout.showChanges` / `layout.showSessions` — section visibility
+- `panelLayout` — the desktop panel tree (`{ version, desktop, mobile, panelState }`); carries the instance ids the maps key on (home editor `'editor'`, secondaries `editor:2…`, terminals `terminal`/`terminal:2…`)
+- `editorViews` — `Record<instanceId, { openTabs, activeTab, previewTab }>`
+- `terminalBindings` — `Record<instanceId, sessionName>`
+- `editorMru` / `terminalMru` — `string[]`, most-recent-first (head = active instance)
+- `mobilePane` — `'files' | 'editor' | 'tasks' | 'terminal'`
+- `recentFiles` — `string[]`
+- `layout.showSidebar` / `layout.showRightPanel` — dock/activity visibility (mirrored onto the tree by the provider)
+- `layout.showProjects` / `showExplorer` / `showChanges` / `showSessions` / `showTasks` — section visibility
 - `layout.showTextSearch` — Explorer body mode (`false` = file tree, `true` = cross-file text search)
-- `layout.previewMode` — boolean (legacy, migrated to `mdMode` on load)
-- `layout.mdMode` — `'edit' | 'preview' | 'split'`
-- `layout.splitDirection` — `'horizontal' | 'vertical'` (default `'horizontal'`, migrated on load)
-- `layout.splitSize` — number (percentage, 20–80)
-- `layout.leftSize` / `layout.rightSize` — panel widths in pixels
-- `layout.explorerSize` / `layout.changesSize` — sidebar section heights
+- `layout.previewMode` — `'edit' | 'preview' | 'split'`; `layout.splitDirection` — `'horizontal' | 'vertical'`; `layout.splitSize` — number (20–80)
+- `layout.autocompleteEnabled` — inline-suggestions toggle
+- `layout.leftSize` / `rightSize` / `explorerSize` / `searchSize` / `changesSize` / `sessionSize` / `projectSize` — pixel sizes
 
-### localStorage: `workflow-drafts:<projectName>` (or `workflow-drafts:<projectName>:wt:<slug>`)
+**One-time migration on load**: an old flat blob `{openTabs,activeTab,previewTab}` → `editorViews.editor` + `editorMru:['editor']`, and `activeSession` → `terminalBindings.terminal`. The tree is normalized (reconstitute the `main` tabs node if a legacy tree dismantled it), the maps are GC'd against the tree's instance ids, and terminal bindings are deduped one-per-session. Invalid saved sizes are sanitized to visible defaults.
 
-Per-project (or per-worktree) dirty file drafts persisted by `useWorkspaceState`:
+### localStorage: `yaco-drafts:<projectName>` (or `yaco-drafts:<projectName>:wt:<slug>`)
+
+Per-project (or per-worktree) dirty file drafts persisted by `useFileState`. Buffers are keyed by **path** (shared across all editor instances showing that file):
 
 ```json
 {
@@ -169,9 +169,8 @@ State is split between server files (shared across devices via REST + SSE) and `
 - Pinned sessions and their order, keyed by project
 
 **Per-device (`localStorage`):**
-- Workspace layout (sidebar visibility, section sizes, split direction/size, panel widths)
-- Open tabs and active tab
-- Editor drafts (`workflow-drafts:<project>`)
+- Workspace panel tree + per-instance editor views / terminal bindings / MRU (`yaco-workspace:<project>`)
+- Editor drafts, keyed by path (`yaco-drafts:<project>`)
 - `mobilePane` selection
 - Theme
 
