@@ -17,3 +17,6 @@ test-results/
 plan/**/poll.log
 plan/**/poll.err
 plan/**/_monitor.log
+
+# Per-user machine config (USER.md.example is the shared template)
+USER.md
