@@ -79,16 +79,24 @@ export function SessionsPanel() {
     detachActiveSession: commands.detachSession,
   }), [data.sessions, commands.detachSession])
 
+  // A session reads as live when it is bound to a terminal pane. The bindings map
+  // (instanceId → sessionName) is the authority; project its VALUES into the set
+  // so two tiled terminals mark BOTH their sessions live, not just the active one.
+  const shownSessions = useMemo(
+    () => new Set(Object.values(selection.terminalBindings).filter(Boolean)),
+    [selection.terminalBindings],
+  )
+
   const { sessionsActions, sessionsSearch, sessionsBody } = useWorkspaceSessionSection({
     sessionsMgr,
-    attachedSession: selection.activeSession,
+    shownSessions,
     isMobile,
     history,
     projectPath: effectivePath,
     projectName,
-    actions: commands.actions,
+    clickSession: commands.clickSession,
+    openBeside: commands.openBeside,
     refreshSessions: data.sessions.refresh,
-    setFocusTarget: commands.setFocusTarget,
   })
 
   // Publish the section actions to the framed header (see bridge above).

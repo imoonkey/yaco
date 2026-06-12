@@ -3,9 +3,6 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWorkspaceSessionSection } from '../useWorkspaceSessionSection'
 import type { AgentSession, HistorySession } from '../../types'
-import type { MobilePane } from '../../hooks/workspaceTypes'
-
-type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
 function makeSession(name: string, status: AgentSession['status'], parentSession?: string): AgentSession {
   return {
@@ -36,17 +33,14 @@ function makeSessionsMgr(sessions: AgentSession[]) {
 function Harness({ sessions }: { sessions: AgentSession[] }) {
   const { sessionsBody } = useWorkspaceSessionSection({
     sessionsMgr: makeSessionsMgr(sessions),
-    attachedSession: '',
+    shownSessions: new Set<string>(),
     isMobile: false,
     history: { data: [] as HistorySession[], loading: false, refresh: vi.fn<() => Promise<void>>() },
     projectPath: '/test',
     projectName: 'test',
-    actions: {
-      setActiveSession: vi.fn<(name: string) => void>(),
-      setMobilePane: vi.fn<(pane: MobilePane) => void>(),
-    },
+    clickSession: vi.fn<(name: string) => void>(),
+    openBeside: vi.fn<(name: string) => void>(),
     refreshSessions: vi.fn<() => Promise<void>>(),
-    setFocusTarget: vi.fn<(target: FocusTarget) => void>(),
   })
 
   return <>{sessionsBody}</>

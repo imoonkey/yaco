@@ -9,9 +9,6 @@ import { matchAgentSessions, matchHistorySessions } from './sessionSearch'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { SectionRefreshButton } from './SectionHeader'
 import type { AgentSession, HistorySession } from '../types'
-import type { MobilePane } from '../hooks/workspaceTypes'
-
-type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
 interface SessionsMgr {
   orderedSessions: AgentSession[]
@@ -28,17 +25,17 @@ interface SessionsMgr {
 
 interface UseWorkspaceSessionSectionOpts {
   sessionsMgr: SessionsMgr
-  attachedSession: string
+  /** Session names currently bound to a terminal pane → these rows read as live. */
+  shownSessions: Set<string>
   isMobile: boolean
   history: { data: HistorySession[] | null; loading: boolean; refresh: () => Promise<void> }
   projectPath: string
   projectName: string
-  actions: {
-    setActiveSession: (name: string) => void
-    setMobilePane: (pane: MobilePane) => void
-  }
+  /** Primary gesture: smart-focus-else-replace the active terminal (§3.5). */
+  clickSession: (name: string) => void
+  /** "Open beside": focus if already shown, else a new bound terminal (1-per-session). */
+  openBeside: (name: string) => void
   refreshSessions: () => Promise<void>
-  setFocusTarget: (t: FocusTarget) => void
 }
 
 /** Per-project persisted set of collapsed parent session names. */
@@ -59,8 +56,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   sessionsBody: ReactNode
 } {
   const {
-    sessionsMgr, attachedSession, isMobile, history,
-    actions, refreshSessions, setFocusTarget,
+    sessionsMgr, shownSessions, isMobile, history,
+    clickSession, openBeside, refreshSessions,
   } = opts
 
   const [sessionTab, setSessionTab] = useState<'live' | 'history'>('live')
@@ -113,12 +110,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     }
   }, [sessionTab, history])
 
-  const handleSessionClick = useCallback((name: string) => {
-    actions.setActiveSession(name)
-    setFocusTarget('session')
-    if (isMobile) actions.setMobilePane('terminal')
-  }, [actions, setFocusTarget, isMobile])
-
+  // Primary click → clickSession owns focus/bind/create + the mobile reveal (§3.5),
+  // so the panel never sets active session or switches panes itself.
   const handleRefresh = useCallback(() => {
     if (sessionTab === 'history') {
       return history.refresh()
@@ -237,7 +230,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
     const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
     return (
-      <SessionItem key={`session:${s.name}`} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
+      <SessionItem key={`session:${s.name}`} session={s} isActive={shownSessions.has(s.name)} pinned={isPinned} depth={depth}
         hasChildren={hasChildren}
         collapsed={collapsedSessions.has(s.name)}
         onToggleCollapse={() => toggleCollapse(s.name)}
@@ -245,7 +238,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         shortcutIndex={shortcutIndex}
         searchMatch={liveSearchMatches.get(s.name)}
         onKill={() => { void sessionsMgr.killSession(s.name) }}
-        onClick={() => handleSessionClick(s.name)}
+        onClick={() => clickSession(s.name)}
+        onOpenBeside={isMobile ? undefined : () => openBeside(s.name)}
         onPin={() => sessionsMgr.togglePin(s.name)}
         onRename={s.provider !== 'shell' ? (newName) => { void sessionsMgr.handleRenameSession(s.name, newName) } : undefined}
         {...(isPinned ? {
@@ -304,15 +298,13 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         onResumed={(handle) => {
           setResumingId(null)
           setSessionTab('live')
-          actions.setActiveSession(handle)
-          if (isMobile) actions.setMobilePane('terminal')
+          clickSession(handle)
           void refreshSessions()
           void history.refresh()
         }}
         onGoLive={(liveSessionName) => {
           setSessionTab('live')
-          actions.setActiveSession(liveSessionName)
-          if (isMobile) actions.setMobilePane('terminal')
+          clickSession(liveSessionName)
         }}
       />
     </>

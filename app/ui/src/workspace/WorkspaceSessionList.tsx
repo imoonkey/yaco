@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Pin, FolderGit2 } from 'lucide-react'
+import { Pin, FolderGit2, Columns2 } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 
 import { Menu, MenuItem } from '../components/Menu'
@@ -57,6 +57,7 @@ export function SessionItem({
   onPin,
   onToggleCollapse,
   onRename,
+  onOpenBeside,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -77,6 +78,9 @@ export function SessionItem({
   onPin?: () => void
   onToggleCollapse?: () => void
   onRename?: (newName: string) => void
+  /** Open this session in a NEW terminal beside the active one (1-per-session
+   *  guarded in the command). Undefined → no affordance (e.g. mobile). */
+  onOpenBeside?: () => void
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void
   onDragOver?: (e: React.DragEvent) => void
@@ -131,13 +135,14 @@ export function SessionItem({
 
   return (
     <div ref={itemRef} onClick={renaming ? undefined : onClick}
+      data-active={isActive || undefined}
       draggable={!!onDragStart && !renaming}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`relative flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
+      className={`group relative flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
       style={{ ...(isActive ? undefined : INACTIVE_COLOR), opacity: dragging ? 0.55 : 1, ...(depth > 0 ? { paddingLeft: INDENT_BASE + depth * INDENT_STEP } : null), ...SESSION_TRANSITION }}>
       {depth > 0 && Array.from({ length: depth }, (_, level) => (
         <span
@@ -249,6 +254,20 @@ export function SessionItem({
       )}
       <span className="flex items-center gap-1 shrink-0">
         <BadgeCount count={unreadCount ?? 0} />
+        {onOpenBeside && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenBeside()
+            }}
+            className="shrink-0 rounded-md px-1 py-0.5 cursor-pointer opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-sol-hover-bg"
+            style={{ color: 'var(--sol-text-faint)' }}
+            title="Open beside"
+            aria-label={`Open ${session.name} beside`}
+          >
+            <Columns2 size={13} />
+          </button>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation()
@@ -262,9 +281,10 @@ export function SessionItem({
           Kill
         </button>
       </span>
-      {menu.position && onRename && (
+      {menu.position && (onRename || onOpenBeside) && (
         <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
-          <MenuItem label="Rename" onClick={startRename} />
+          {onOpenBeside && <MenuItem label="Open beside" onClick={() => { menu.close(); onOpenBeside() }} />}
+          {onRename && <MenuItem label="Rename" onClick={startRename} />}
         </Menu>
       )}
     </div>
