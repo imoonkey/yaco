@@ -21,12 +21,20 @@ interface StateFile {
   sessionPath: string                         // absolute cwd where session launched
   pid: number                                 // agent CLI PID (0 during early bootstrap)
   sessionId: string                           // resolved id, resume id, or "pending:awaiting-first-prompt"
-  status: "starting" | "idle" | "processing"  // lifecycle status
+  status: "starting" | "idle" | "processing" | "blocked" | "crashed"  // lifecycle status
+  statusEnteredAt?: string                    // ISO time the current status was entered (stamped on every transition)
+  exitCode?: number                           // agent process exit code; present iff status === "crashed"
+  blockReason?: "permission" | "question" | "trust"  // present iff status === "blocked"
   createdAt: string                           // ISO 8601
   spawnedBy?: "user:web" | "user:terminal" | "agent"  // spawn source, captured once at start
   parentSession?: string                      // parent handle; present only when spawnedBy === "agent"
 }
 ```
+
+`statusEnteredAt` is stamped by `setStatus` (`model.ts`) only on a real status
+*transition* — re-affirming the same status leaves it untouched. It is the
+durable **status-edge generation** key the app's attention engine derives its
+generation id from, so re-seeing the same edge never re-notifies.
 
 ### Session Lineage (`spawnedBy` / `parentSession`)
 
@@ -47,9 +55,44 @@ is persisted.
 - **Atomic writes** — temp file + rename; readers never see partial JSON
 - **File existence** = yaco-managed session record exists
 - **File absence** = session cleaned up (or never existed)
-- **Status transitions**: `starting→idle`, `starting→processing`, `idle↔processing`
+- **Status transitions**: `starting→idle`, `starting→processing`, `idle↔processing`, `→blocked`, `→crashed` (terminal tombstone)
 - **Handle consistency** — `handle` in file content always matches filename
 - **sessionId** is never `""` after a successful `yaco agent start --json` completes
+
+### Crash contract (fail-closed `crashed` tombstone)
+
+A non-zero **agent** exit must be observable and cannot be erased before the app
+sees it. The wrapper's `EXIT` trap captures `ec=$?` and branches:
+
+- exit 0, or a **generation-matching** kill sentinel present → delete state (clean
+  exit / intentional `yaco agent kill`).
+- non-zero, no matching sentinel → `"$YACO_BIN" agent mark-crashed <handle> --exit
+  <ec> --created-at <ts>`; if the binary can't run, an inline `crash_fallback`
+  shell rewrite writes the same crash invariant set (`status:"crashed"`,
+  `exitCode`, `statusEnteredAt`, drop `blockReason`, preserve `createdAt`) so it
+  derives the **same** generation as `mark-crashed`. `$YACO_BIN` is an absolute
+  path exported at start, so the crash path never depends on the dying shell's
+  `PATH`.
+
+`yaco agent mark-crashed` (`mark-crashed.ts`) is generation-guarded: it no-ops
+when the state file is gone, `createdAt` no longer matches (handle reused), or a
+generation-matching kill sentinel exists. Otherwise `setStatus(state,"crashed")`
++ `exitCode` + fresh `statusEnteredAt`.
+
+The **kill sentinel** (`kill-sentinel.ts`, mirrored by the wrapper's
+`kill_sentinel_matches` shell helper): `kill.ts` drops `.killing-<handle>` holding
+the generation's `createdAt` before `killSession`, in `try { … } finally { remove
+}`. Both the trap's clean-delete branch and `mark-crashed` honor it **only** on a
+`createdAt` match, so a stale sentinel from a crashed CLI cannot suppress a future
+same-handle crash.
+
+GC/restart never erase a crash tombstone: `resolveDetail` short-circuits
+`{ dead:false, persist:null }` for `status === "crashed"` (so `list --reconcile`
+does not delete it), and `reclaimRequestedHandleIfDead` skips a `crashed`
+tombstone (a same-handle `start` gets a collision-suffixed handle). Only an
+explicit `yaco agent kill` clears it. **SIGKILL of the wrapper itself** (power
+loss, OOM) skips the trap → state is later GC'd as today (the acknowledged
+unsolvable edge).
 
 ### Limitations (not bugs — understood trade-offs)
 
@@ -83,7 +126,7 @@ The authoritative runtime view. This is the **single source of runtime truth**. 
 
 - Collection view of live sessions. Default scope is the cwd subtree; `--all` spans every project; `--path <path>` scopes to an explicit subtree. `--all` and `--path` are mutually exclusive — passing both exits non-zero (`USAGE`).
 - **Default is a PURE READ.** It resolves each session read-only (`resolveSession`): liveness check (for the dead/visible verdict only), state read, capture-based status refinement **for display**, and in-memory metadata backfill. It **never** deletes a state file and **never** persists a status/backfill correction. Confirmed-dead sessions are filtered out of the returned rows, but their files are left untouched.
-- **`--reconcile` is the single mutation point.** Only this path performs side effects: it GCs confirmed-dead tombstones (`deleteState`), cleans orphan breadcrumbs, and persists stale-status / metadata corrections (`writeState`) via `reconcileSession`. The app server's 60s session-reconciler loop is the intended caller; everything else (UI display reads, polling) uses the pure default.
+- **`--reconcile` is the single mutation point.** Only this path performs side effects: it GCs confirmed-dead tombstones (`deleteState`), cleans orphan breadcrumbs, and persists stale-status / metadata corrections (`writeState`) via `reconcileSession`. A `crashed` tombstone is **never** GC'd here — `resolveDetail` short-circuits it as dead-but-retained so the app can observe the crash. The app server's 60s session-reconciler loop is the intended caller; everything else (UI display reads, polling) uses the pure default.
 - **GC is socket-safe.** `tmux has-session` is scoped to one tmux socket and yaco pins none, so a `list` whose `$TMUX` points at the wrong tmux server would see every live session as "dead". Even under `--reconcile`, deletion is gated on `confirmedDead()` = tmux reports gone **AND** the recorded PID is not running (`isProcessAlive`, a socket-independent `process.kill(pid, 0)` probe). A live process is never GC'd, regardless of which socket the caller can see. The pure default never deletes at all.
 - Returns an array of `AgentSessionRow` (not raw state): each row adds the resolved `project`/`projectPath` (longest-prefix match against the project registry; basename fallback for unregistered paths) to the session fields, and passes through valid `spawnedBy`/`parentSession`. Text mode renders a `name  status  project` table.
 - Projection is the pure `toSessionRow` helper exported from `@yaco/cli/core/agent` and shared with the app server's hot state-file reads. The resolvers (`resolveSession`/`reconcileSession`) are **not** exported from the core package — they stay CLI-only so the app never pulls liveness/GC into its hot read path.
@@ -129,6 +172,6 @@ Resolution splits into a pure read and a mutating wrapper:
   3. **Staleness check** — is persisted `processing`/`starting` status too old? (mtime > 5min)
   4. **Capture fallback** — if stale, capture pane output and detect idle/processing from prompt patterns and busy indicators (display only). The capture path can derive **only `idle`/`processing`** — it can never produce `blocked` — so the correction also strips any stale `blockReason` carried by the old state file.
   5. **Metadata backfill** — resolve PID and sessionId from the process tree, in memory only.
-- **`reconcileSession` (mutating)** — backs `list --reconcile` / `status --reconcile`. It runs the pure resolver, then **persists** any stale-status / backfill correction and **deletes** a confirmed-dead tombstone. The persist trigger fires on **status drift OR `blockReason` drift**, so a stale `blockReason` is dropped on disk even when the corrected status value is unchanged (e.g. stale `processing` + stray reason + busy capture → still `processing`, reason cleared).
+- **`reconcileSession` (mutating)** — backs `list --reconcile` / `status --reconcile`. It runs the pure resolver, then **persists** any stale-status / backfill correction and **deletes** a confirmed-dead tombstone — except a `crashed` tombstone, which is retained (see Crash contract). The persist trigger fires on **status drift OR `blockReason` drift**, so a stale `blockReason` is dropped on disk even when the corrected status value is unchanged (e.g. stale `processing` + stray reason + busy capture → still `processing`, reason cleared).
 
 Consumers can read state files directly for both speed and correctness — files are kept accurate by hooks and the background reconcile loop. The pure CLI read commands (`list`, `status`) are equally safe and never mutate; reach for `--reconcile` only when you intend to drive GC + correction.

@@ -77,7 +77,7 @@ End-to-end shape is locked in by `test/unit/core/paths/paths-cli.test.ts`.
   `addProject`, `removeProject`
 - `app/server/src/lib/constants.ts` — `sessionsDir`
 - `app/server/src/lib/terminal.ts` — `shellSessionsDir`
-- `app/server/src/lib/{notifications-store,ui-state}.ts` — `uiStateDir`
+- `app/server/src/lib/ui-state.ts` — `uiStateDir`
 - `app/server/src/lib/{eventsLog,project-watcher}.ts` — `projectEventsFile`, `projectsFile`
 - `app/server/src/lib/channels/{auth,state}.ts`, `app/server/src/lib/{whatsapp/index,wechat/login-flow}.ts` — `channelScopeDir`
 

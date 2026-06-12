@@ -21,6 +21,7 @@ read-surface pass (text/contract) · 📜 added in the agent-messages pass.
 Outside the grid — the only agent command that isn't CRUD-shaped:
 
 - **agent**: `providers` ✅ — the static provider catalog.
+- **agent**: `mark-crashed` — internal, called by the wrapper EXIT trap (not a user command): generation/sentinel-guarded rewrite of a session state file to `crashed` + `exitCode`. See [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
 
 A worktree is a git object, so YACO adds **no** worktree read command: `git
 worktree list` and `git -C .worktrees/<slug> status` are its canonical readers.

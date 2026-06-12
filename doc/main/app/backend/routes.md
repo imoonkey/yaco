@@ -75,11 +75,14 @@ All git routes support `?worktree=<slug>` query param via `withProject` middlewa
 | GET | `/api/git/:project/baseline?path=...` | File's HEAD content for editor-buffer diffing (gutter) — returns `{ content, exists }`. Resolves symlinks and reads the target's HEAD blob from the target's own dir (so the gutter diffs against real content, not the link text); `exists:false` when untracked or the target is outside any repo |
 | GET | `/api/git/:project/compare?base=REF&compare=REF` | File list changed between two refs — returns `{ files: GitChange[] }`. Status letters: M/A/D (renames mapped to M). 400 if base/compare missing, 500 on git error |
 
-### Notifications
+### Attention & SSE
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/notifications/stream` | SSE stream — events: `notification`, `refresh` (30s heartbeat) |
+| GET | `/api/notifications/stream` | SSE transport — events: `attention` (projected `AttentionSnapshot`), `refresh`, `ui-state:changed` (30s heartbeat). No per-item notification event |
+| GET | `/api/attention/feed?limit=&before=` | Live attention snapshot + bounded/paginated Recent history. `limit` default 50, max 200; `before` is the opaque composite cursor; response carries `nextBefore` |
+| POST | `/api/attention/ack` | `{ scope: 'project'\|'session'\|'task', project, key? }` — server-stamped, monotonic-max ack (rejects/clamps a future or lower value). 204 |
+| POST | `/api/attention/clear` | `{ project }` — set the project's monotonic `recentClearedAt`. 204 |
 
 ### WebSocket
 

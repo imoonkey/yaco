@@ -113,8 +113,8 @@ Reads yaco-agent session state from `${YACO_HOME:-~/.yaco}/sessions/<handle>.jso
 - `fetchAllSessionsFromCli(projects)` calls `yaco agent list --all --json`, which returns already-projected `AgentSessionRow`s (project resolved CLI-side via the shared registry); rows whose project isn't in this server's loaded set are dropped. Used by the reconciler for correctness-sensitive operations.
 - `queryAgentStatus(cwd)` calls `yaco agent list --path <cwd> --json` for resume preflight checks
 - Primary session source: reads `${YACO_HOME:-~/.yaco}/sessions/*.json` state files (written by the yaco agent runtime via hook events)
-- Status passthrough: `starting | idle | processing | blocked` — no normalization (CLI states used as-is). `blocked` (agent paused waiting on the user) carries an optional `blockReason` (`permission | question | trust`), set iff status is `blocked` and sanitized by the shared `toSessionRow`.
-- State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt, spawnedBy?, parentSession?, blockReason? }` — file deletion = session ended. `provider` is an open string (the YACO-owned catalog id, e.g. `claude`/`codex`), trusted verbatim — there is no app-side name inference (`inferAgentProvider` was removed); a state file with no `provider` string is skipped. Optional `spawnedBy` (`user:web`/`user:terminal`/`agent`) and `parentSession` lineage are passed through best-effort (validated, dropped when unknown/absent).
+- Status passthrough: `starting | idle | processing | blocked | crashed` — no normalization (CLI states used as-is). `blocked` (agent paused waiting on the user) carries an optional `blockReason` (`permission | question | trust`), set iff status is `blocked`. `crashed` (non-zero agent exit, fail-closed tombstone) carries `exitCode`. Every row carries `statusEnteredAt` (the durable status-edge generation timestamp). All sanitized by the shared `toSessionRow`; `VALID_STATUSES` includes `crashed` so `isUsableRow` keeps a crashed tombstone.
+- State file schema: `{ handle, provider, sessionPath, pid, sessionId, status, createdAt, statusEnteredAt?, exitCode?, blockReason?, spawnedBy?, parentSession? }` — file deletion = session ended. `provider` is an open string (the YACO-owned catalog id, e.g. `claude`/`codex`), trusted verbatim — there is no app-side name inference (`inferAgentProvider` was removed); a state file with no `provider` string is skipped. Optional `spawnedBy` (`user:web`/`user:terminal`/`agent`) and `parentSession` lineage are passed through best-effort (validated, dropped when unknown/absent).
 - `fetchProviderCatalog()` → `yaco agent providers --json`, returning `ProviderCatalogEntry[]` (`{ id, label, executable }`). This is the authoritative list of startable agent providers; `shell` is an app-owned session type and never appears here.
 - `fetchHistory(projectPath)` → `yaco agent history --path <p> --json`, returning raw `CliHistorySession[]` (`sessionId`/`updatedAt` shape). Consumed by `history.ts`. Provider-home reads live in the CLI.
 - `fetchSessionSummaries(projectPath)` → `yaco agent summaries --path <p> --json`, returning `CliSessionSummary[]` (`{ handle, sessionId, provider, label }`) for every live session under the path. Consumed (and cached) by `session-summary.ts`.
@@ -134,26 +134,54 @@ Returns session history for the History tab via the CLI, in the UI-facing shape.
 - Provider-home reads (`~/.claude` JSONL, `~/.codex` SQLite/`session_index.jsonl`) now live in the CLI provider adapters; app/server never opens them. -> See: `doc/main/cli/providers.md`.
 - `HistorySession` type: `{ id, provider, title, summary, created, modified, messageCount, gitBranch, liveSessionName }` — `provider` is `string` (no longer a `'claude' | 'codex'` union).
 
-### notify.ts (56 lines)
+### notify.ts (~40 lines)
 
-Notification dispatch to two sinks: macOS desktop and SSE broadcast.
+SSE broadcast registry + push helpers. The osascript desktop sink and the inbox `dispatch()` are gone.
 
-**Exports**: `emitNotification()`, `emitRefresh()`, `addSSEClient()`, `removeSSEClient()`
+**Exports**: `broadcastAttention()`, `broadcastChange()`, `emitRefresh()`, `addSSEClient()`, `removeSSEClient()`
 
-- `emitNotification()` — sends to osascript + all SSE clients (with sink isolation on errors)
-- `emitRefresh(channel)` — lightweight SSE-only signal for UI refresh (no osascript)
-- Manages SSE client registry for connected browsers
+- `broadcastAttention(snapshot)` — pushes the projected `AttentionSnapshot` as an `attention` SSE event (handled client-side directly, so hidden tabs still get it)
+- `broadcastChange('ui-state:changed')` — typed re-fetch signal for other devices (ack/clear/pin mutations)
+- `emitRefresh(channel)` — lightweight channel-only refresh signal
+- `addSSEClient` / `removeSSEClient` — registry for `/api/notifications/stream`
+- No `emitNotification`, no per-item `notification` event, no `notifications:changed` event
 
-### session-reconciler.ts (~100 lines)
+### attention-engine.ts (~430 lines)
 
-Low-frequency background reconciler for session health and idle detection.
+Change-driven Facet B **producer** (spec §5). Keeps an in-memory cache of last-seen session statuses + task states, detects status/state **edges** on each recompute, appends each edge to `events.jsonl` idempotently (by stable generation id), then projects via `attention-projection.ts` and pushes over the `attention` SSE.
+
+**Exports**: `AttentionEngine` (class), `BLOCKED_DEBOUNCE_MS`, `MIN_PROCESSING_MS`, `IDLE_CONFIRM_COUNT`, `SAFETY_TICK_MS`
+
+- Recompute triggers: session fs-watch, task fs-watch, pin change, 60s safety tick. Concurrent triggers coalesce into one trailing recompute.
+- Edges: `session_crashed`/`task_blocked`/`task_done` immediate; `session_blocked` debounced ~1.5s (re-confirm same generation); `session_idle` after 15s active + 2 idle observations, OWNED → REVIEW vs DELEGATED → FYI decided at projection.
+- Boot reconciliation: treats the current snapshot as truth for open ACT, id-scans `events.jsonl`, appends missing edges, and marks them known so a restart surfaces them **without** re-toasting (`interrupt=false`). Readers are injectable for unit tests.
+
+### attention-projection.ts (~680 lines)
+
+Pure, server-owned **projector** (spec §2.1, §4.1) — no fs/clock/SSE; never imports from `app/ui/src`. Maps the durable event log + live snapshot + pins + ack/clear watermarks → `AttentionSnapshot` (`needsYou`/`ready`/`recent` + `badgesByProject`/`badgesBySession`/`global`).
+
+**Exports**: `projectAttention()`, `openAndReviewGenerations()`, `ownerClass()`, `sessionGenerationId()`, `taskGenerationId()`, and the `AttentionItem`/`AttentionSnapshot`/`LiveSession`/`LiveTask`/`Watermarks` types
+
+- ACT (`needsYou`) derived live from current status (no stored open/resolved flag); REVIEW (`ready`) = unacked `handoff` vs the monotonic watermark, newest-idle-per-session superseded in the projector; Recent hides rows `tsMs ≤ recentClearedAt`.
+- `ownerClass`: `spawnedBy='user:*'` or pinned → OWNED; `agent` → DELEGATED; unknown → OWNED (fail-safe). Badge precedence red→orange→yellow.
+
+### attention-runtime.ts (~150 lines)
+
+Wires the pure `AttentionEngine` to real fs readers + the SSE push, and serves cold-mount snapshots.
+
+**Exports**: `currentAttentionSnapshot()`, `startAttentionEngine()`, `stopAttentionEngine()`, `notifyAttention{Session,Task,Pin}Change()`
+
+- Readers: `readAllSessionsFromStateFiles` (hot state-file read carrying `crashed`/`statusEnteredAt`/`exitCode`/`spawnedBy`, **not** the CLI reconcile path), per-project `loadTaskStore`, `getPinnedSessions`, `getUnreadWatermarks`.
+- `currentAttentionSnapshot()` reuses those readers + per-project `readEvents` and calls the pure `projectAttention` for `GET /attention/feed` cold mounts.
+
+### session-reconciler.ts (~60 lines)
+
+Low-frequency background **GC + safety** pass. Idle/blocked/crashed/task edge production moved out to `attention-engine.ts`; this loop no longer detects transitions or dispatches notifications.
 
 **Exports**: `startSessionReconciler()`, `stopSessionReconciler()`
 
-- Runs every 60 seconds as a safety net (not primary session source). First reconcile runs immediately on startup.
-- Calls `fetchAllSessionsFromCli(projects)` which runs `yaco agent list --all --json` — the authoritative reconciled snapshot. The yaco agent runtime owns GC (deletes state files for confirmed-dead sessions), liveness checks, staleness detection, sessionId backfill, and **stale state file correction** (writes capture-derived status to disk when mtime > 5min).
-- Emits `refresh:sessions` if drift detected (missed watcher events)
-- Idle detection for all providers: 15s minimum active duration + 2× debounce, writes `session_idle` entries with `sessionName`. `blocked` counts as **active** (the agent is paused waiting on the user — the opposite of idle): it resets the idle streak exactly like `processing`, so a `processing → blocked` transition never fires `session_idle`.
+- Runs every 60 seconds (first run immediately). Calls `fetchAllSessionsFromCli(projects)` (`yaco agent list --all --json`) — the authoritative reconciled snapshot; the yaco agent runtime owns GC (deletes confirmed-dead state files, **never** a `crashed` tombstone), liveness, staleness, sessionId backfill, and stale-status correction.
+- Emits `refresh:sessions` if drift detected (missed watcher events).
 
 ### project-watcher.ts (~180 lines)
 
@@ -166,6 +194,8 @@ Recursive filesystem watcher per project directory.
 - Routes project-local filename changes to SSE refresh channels: `worktrees`, `git`, `filetree`
 - `.worktrees/<slug>` top-level changes → `worktrees` channel; deeper `.worktrees/<slug>/**` changes → `filetree` channel (enables live refresh when viewing a worktree)
 - Global agent session watcher reads `sessionPath` from changed state files and only emits `sessions` refreshes for registered projects whose paths descendant-match
+- **Wakes the attention engine**: a session state-file write calls `notifyAttentionSessionChange()` and a task-graph file write calls `notifyAttentionTaskChange()`, so the change-driven `attention-engine` recomputes edges promptly (no 60s lag).
+- The sessions-dir watcher **re-arms** if `AGENT_SESSIONS_DIR` does not exist at startup (the agent runtime creates it on the first session): it polls until the dir appears, then arms the real watcher and kicks one refresh + engine recompute (a late-armed dir may already hold sessions written before `fs.watch` attached). Without this the change-driven engine has a cold-start blind spot.
 - Also watches `${YACO_HOME}/projects.json` for project list changes
 - 200ms debounce on all events to batch rapid changes
 - Per-project `.gitignore` filtering: loads patterns via `gitignore.ts`, skips SSE events for ignored paths (prevents watcher churn in large projects)

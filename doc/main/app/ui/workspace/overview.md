@@ -41,7 +41,7 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 │  ├──────────┤│  │ Diff /           ││  │               ││
 │  │ Explorer ││  │ Task Graph       ││  ├───────────────┤│
 │  │          ││  │                  ││  │ Sessions      ││
-│  ├──────────┤│  │                  ││  │ (unread pills)││
+│  ├──────────┤│  │                  ││  │ (status+badge)││
 │  │ Changes  ││  │                  ││  │               ││
 │  ├──────────┤│                      │                   │
 │  │ Tasks    ││                      │                   │

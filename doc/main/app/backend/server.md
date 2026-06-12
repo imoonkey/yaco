@@ -1,6 +1,6 @@
 # Server
 
-Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE notifications, and the built UI shell.
+Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE attention push, and the built UI shell.
 
 ## Owns
 
@@ -38,8 +38,9 @@ Hono-based Node.js backend serving HTTP API, WebSocket terminal, SSE notificatio
 5. After the HTTP server is listening, start runtime services:
    - `ensureYacoHome()` — create `${YACO_HOME:-~/.yaco}/` if missing
    - `loadProjects()` — read project registry
-   - `startSessionReconciler()` — low-frequency session health/drift reconciliation
-   - `startProjectWatchers()` — global session/project watchers, then recursive project watchers
+   - `startSessionReconciler()` — low-frequency session health/drift GC + safety pass
+   - `startProjectWatchers()` — global session/project watchers (which wake the attention engine on session/task writes), then recursive project watchers
+   - `startAttentionEngine()` — Facet B: boot reconciliation (id-scan `events.jsonl` for open ACT conditions) + change-driven edge detection + the 60s safety tick. Started **after** the watchers so their notify hooks reach a live engine
 6. Attach WebSocket server for terminal connections
 
 Runtime watchers intentionally start only after the port bind succeeds. A duplicate `tsx watch` child that loses the `:3001` race exits without installing recursive project watchers, so it cannot consume inotify slots or starve the critical `${YACO_HOME:-~/.yaco}/sessions` watcher.
