@@ -199,6 +199,15 @@ function freshInstanceId(used: ReadonlySet<string>, panel: PanelId): string {
   return `${panel}:${n}`
 }
 
+/** A fresh id for a leaf whose stored id collided (incl. the reserved home id): the
+ *  base id (the panel type) when free, else `${panel}:${n}`. `'editor'` is never
+ *  the base — it is reserved for the structural home editor — so an editor leaf
+ *  always re-ids to a secondary. */
+function freshLeafId(used: ReadonlySet<string>, panel: PanelId): string {
+  if (panel !== HOME_EDITOR_ID && !used.has(panel)) return panel
+  return freshInstanceId(used, panel)
+}
+
 function minForChild(node: LayoutNode, axis: SplitAxis): number {
   const fallback = axis === 'row' ? DEFAULT_MIN_SIZE.width : DEFAULT_MIN_SIZE.height
   if (node.kind !== 'leaf') return fallback
@@ -221,21 +230,21 @@ function clampBasis(raw: unknown, node: LayoutNode, axis: SplitAxis): number | u
  *    the reserved home id — is re-id'd to a fresh secondary (the pane survives;
  *    its per-instance view state resolves to default);
  *  - a singleton leaf whose id collides with an already-placed id → drop. */
+/** Normalize a leaf, enforcing the instance-id invariants (design: Layout Model):
+ *  - unknown panel → drop;
+ *  - a singleton (non-whitelisted) TYPE already placed → drop the duplicate;
+ *  - any leaf whose stored id collides with an already-used id (incl. the reserved
+ *    home id `'editor'`, pre-registered before traversal) is re-id'd to a fresh id
+ *    of its own type — the pane survives (its per-instance view resolves to
+ *    default), and `'editor'` can never be claimed by a non-home leaf. */
 function normalizeLeaf(raw: Record<string, unknown>, ctx: NormCtx): LeafNode | null {
   const panel = raw.panel
   if (!isPanelId(panel)) return null
+  if (!isMulti(panel) && ctx.seenSingletonTypes.has(panel)) return null
   let id = idOf(raw.id, ctx, 'leaf')
-  const claimsHomeId = panel === HOME_EDITOR_ID && id === HOME_EDITOR_ID
-  if (isMulti(panel)) {
-    if (claimsHomeId || ctx.seenIds.has(id)) id = freshInstanceId(ctx.seenIds, panel)
-  } else {
-    // Singleton: drop a type duplicate, or (corrupt input) an id that collides
-    // with an already-placed node. Mark the type only when the leaf is kept, so a
-    // dropped collision never blocks a later valid occurrence of the same type.
-    if (ctx.seenSingletonTypes.has(panel) || ctx.seenIds.has(id)) return null
-    ctx.seenSingletonTypes.add(panel)
-  }
+  if (ctx.seenIds.has(id)) id = freshLeafId(ctx.seenIds, panel)
   ctx.seenIds.add(id)
+  if (!isMulti(panel)) ctx.seenSingletonTypes.add(panel)
   const node: LeafNode = { kind: 'leaf', id, panel }
   if (raw.collapsed === true) node.collapsed = true
   return node
@@ -253,25 +262,26 @@ function normalizeTabs(raw: Record<string, unknown>, ctx: NormCtx): LayoutNode |
   const isMain = raw.id === MAIN_TABS_ID
   const rawPanels = Array.isArray(raw.panels) ? raw.panels : []
   const panels: PanelId[] = []
+  let homePlaced = false
   for (const p of rawPanels) {
     if (!isPanelId(p)) continue
-    // editor is allowed only as the main node's home; terminal / a second
-    // whitelisted entry never sits in a tabs node.
-    if (isMulti(p) && !(isMain && p === 'editor')) continue
-    if (ctx.seenIds.has(p)) continue
-    if (!isMulti(p)) {
-      if (ctx.seenSingletonTypes.has(p)) continue
-      ctx.seenSingletonTypes.add(p)
+    if (isMain && p === 'editor') {
+      // The main node OWNS the reserved home editor — place it once, at its
+      // position (its id is already reserved in seenIds, so don't re-add).
+      if (!homePlaced) { homePlaced = true; panels.push('editor') }
+      continue
     }
+    // editor in a non-main node, and a terminal / any other whitelisted entry,
+    // are dropped: no tabs node but main may hold a whitelisted instance.
+    if (isMulti(p)) continue
+    if (ctx.seenIds.has(p) || ctx.seenSingletonTypes.has(p)) continue
+    ctx.seenSingletonTypes.add(p)
     ctx.seenIds.add(p)
     panels.push(p)
   }
-  // The home editor is structural: the main node always contains it (prepended if
-  // a corrupt/edited tree dropped it), so editorViews.editor is never orphaned.
-  if (isMain && !panels.includes('editor') && !ctx.seenIds.has('editor')) {
-    ctx.seenIds.add('editor')
-    panels.unshift('editor')
-  }
+  // The home editor is structural: the main node always carries it (prepended if a
+  // corrupt/edited tree dropped it), so editorViews.editor is never orphaned.
+  if (isMain && !homePlaced) panels.unshift('editor')
   if (panels.length === 0) return null
   const id = idOf(raw.id, ctx, 'tabs')
   // A one-panel tabs node is redundant chrome, so it folds to a leaf — except
@@ -345,7 +355,9 @@ function normalizeNode(input: unknown, ctx: NormCtx): LayoutNode | null {
 export function normalizeDesktopTree(input: unknown): LayoutNode {
   let counter = 0
   const ctx: NormCtx = {
-    seenIds: new Set<string>(),
+    // Reserve the home editor id up front so NO non-home leaf (editor, terminal,
+    // or anything) can claim 'editor' — whoever does is re-id'd as a collision.
+    seenIds: new Set<string>([HOME_EDITOR_ID]),
     seenSingletonTypes: new Set<PanelId>(),
     nextId: (kind: string): string => `${kind}-${counter++}`,
   }

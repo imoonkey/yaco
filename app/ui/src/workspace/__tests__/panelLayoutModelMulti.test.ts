@@ -194,6 +194,26 @@ describe('home editor id reservation', () => {
     expect(tabs.active).toBe('tasks') // valid active preserved
   })
 
+  it("reserves the home id from ANY non-home leaf claiming id:'editor' before main", () => {
+    // A corrupt terminal leaf claims the reserved 'editor' id and is traversed
+    // BEFORE the main node. It must be re-id'd to a terminal id (never keep
+    // 'editor'); the home editor then survives in MAIN_TABS, so editorViews.editor
+    // is never orphaned on load.
+    const root = asSplit(normalizeDesktopTree({
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'leaf', id: 'editor', panel: 'terminal' } },
+        { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
+      ],
+    }))
+    expect(editorInstancesInOrder(root)).toEqual(['editor']) // home editor live
+    const termLeaf = leaves(root).find((l) => l.panel === 'terminal')!
+    expect(termLeaf.id).not.toBe('editor')
+    expect(terminalInstancesInOrder(root)).toContain(termLeaf.id)
+    const main = root.children.map((c) => c.node).find((n) => n.kind === 'tabs' && n.id === MAIN_TABS_ID)
+    expect(asTabs(main!).panels).toContain('editor')
+  })
+
   it('drops a second editor entry inside a single tabs node (dedup by type-as-id)', () => {
     const tabs = asTabs(normalizeDesktopTree({
       kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'editor', 'tasks'], chrome: 'none',

@@ -165,10 +165,13 @@ export function FilesPanel() {
   }, [controllersRef, revealInExplorer, drainReveal])
   useEffect(() => { drainReveal() }, [drainReveal, fileTree])
 
+  // Text-search go-to-line: route through the provider's instance-scoped
+  // openFileAtLine, which captures the target editor id once, reveals, opens, and
+  // stamps jumpRequest with that SAME id — so a focus change during the reveal
+  // can't split the open and the jump across two editors (no bare setJumpRequest).
   const handleOpenFileAtLine = useCallback((path: string, line: number, column: number) => {
-    void nav.openFileAtLine(path, line, column)
-    actions.setJumpRequest({ key: Date.now(), path, line })
-  }, [nav, actions])
+    commands.openFileAtLine(path, line, column)
+  }, [commands])
 
   // The body is a flex column (min-h-0) so FileExplorer's flex-1 root fills and
   // measures the pane, matching the old section-body wrapper
