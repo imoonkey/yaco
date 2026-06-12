@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X, AlertTriangle, CornerDownLeft, History } from 'lucide-react'
 import { DialogShell, useDialogClose } from './DialogShell'
-import { badgeColorVar } from '../lib/attentionColors'
+import { badgeColorVar, badgeTint } from '../lib/attentionColors'
 import type { AttentionItem, AttentionTier, BadgeColor } from '../hooks/useAttention'
 
 function timeAgo(ts: number): string {
@@ -39,21 +39,25 @@ function PanelCloseButton() {
   )
 }
 
-function Row({ item, onClick }: { item: AttentionItem; onClick: (item: AttentionItem) => void }) {
+function Row({ item, muted, onClick }: { item: AttentionItem; muted: boolean; onClick: (item: AttentionItem) => void }) {
   const accent = tierColor(item.tier)
   const accentVar = accent ? badgeColorVar(accent) : null
+  // Recent rows are muted: they keep their original tier (a seen handoff stays
+  // gold), so coloring by tier would make them indistinguishable from Ready.
+  // The group, not the tier, sets them apart — so we grey them out here.
   return (
     <div
-      className="px-3 py-2 cursor-pointer hover:bg-sol-hover-bg"
+      className="notif-row px-3 py-2 cursor-pointer"
       style={{
         borderBottom: '1px solid var(--sol-border)',
-        transition: 'background-color 120ms',
-        ...(accentVar ? { borderLeft: `2px solid ${accentVar}` } : {}),
-      }}
+        borderLeft: `4px solid ${muted ? 'transparent' : (accentVar ?? 'transparent')}`,
+        '--notif-tint': muted ? 'transparent' : badgeTint(accent, 14),
+        '--notif-tint-hover': muted || !accent ? 'var(--sol-hover-bg)' : badgeTint(accent, 24),
+      } as React.CSSProperties}
       onClick={() => onClick(item)}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-ui-md font-medium truncate flex-1" style={{ color: accentVar ?? 'var(--sol-text-dark)' }}>
+        <span className="text-ui-md font-medium truncate flex-1" style={{ color: muted ? 'var(--sol-text)' : 'var(--sol-text-dark)' }}>
           {item.title}
         </span>
         <span className="text-ui-xs shrink-0" style={{ color: 'var(--sol-text-faint)' }}>
@@ -72,32 +76,38 @@ function Row({ item, onClick }: { item: AttentionItem; onClick: (item: Attention
 function Section({
   label,
   Icon,
-  iconColor,
+  tone,
   items,
   action,
+  muted = false,
   onClickItem,
 }: {
   label: string
   Icon: typeof AlertTriangle
-  iconColor: string
+  tone: BadgeColor
   items: AttentionItem[]
   action?: React.ReactNode
+  muted?: boolean
   onClickItem: (item: AttentionItem) => void
 }) {
   if (items.length === 0) return null
+  const toneVar = tone ? badgeColorVar(tone) : null
   return (
     <div>
       <div
-        className="flex items-center justify-between px-3 py-1 sticky top-0 z-10"
-        style={{ backgroundColor: 'var(--sol-glass-bg)', borderBottom: '1px solid var(--sol-border)' }}
+        className="flex items-center justify-between px-3 py-1.5 sticky top-0 z-10"
+        style={{
+          backgroundColor: badgeTint(tone, 30, 'var(--sol-header-bg)'),
+          borderBottom: `1px solid ${badgeTint(tone, 32, 'var(--sol-border)')}`,
+        }}
       >
-        <span className="flex items-center gap-1.5 text-ui-xs font-semibold uppercase" style={{ color: 'var(--sol-text-faint)' }}>
-          <Icon size={12} style={{ color: iconColor }} />
+        <span className="flex items-center gap-1.5 text-ui-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--sol-text-brown)' }}>
+          <Icon size={12} style={{ color: toneVar ?? 'var(--sol-text-faint)' }} />
           {label}
         </span>
         {action}
       </div>
-      {items.map(item => <Row key={item.generation} item={item} onClick={onClickItem} />)}
+      {items.map(item => <Row key={item.generation} item={item} muted={muted} onClick={onClickItem} />)}
     </div>
   )
 }
@@ -150,11 +160,11 @@ export function NotificationPanel({
           </div>
         ) : (
           <>
-            <Section label="Needs you" Icon={AlertTriangle} iconColor="var(--sol-red)" items={needsYou} onClickItem={onClickItem} />
+            <Section label="Needs you" Icon={AlertTriangle} tone="red" items={needsYou} onClickItem={onClickItem} />
             <Section
               label="Ready"
               Icon={CornerDownLeft}
-              iconColor="var(--sol-yellow)"
+              tone="yellow"
               items={ready}
               onClickItem={onClickItem}
               action={ready.length > 0 ? (
@@ -170,8 +180,9 @@ export function NotificationPanel({
             <Section
               label="Recent"
               Icon={History}
-              iconColor="var(--sol-text-faint)"
+              tone={null}
               items={recent}
+              muted
               onClickItem={onClickItem}
               action={recent.length > 0 ? (
                 <button

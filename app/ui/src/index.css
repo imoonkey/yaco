@@ -706,6 +706,18 @@ body {
   background-color: color-mix(in srgb, var(--sol-warning) 12%, transparent);
 }
 
+/* Notification rows — per-row tier wash driven by custom props so the resting
+   and hover backgrounds echo the badge color. Inline bg would beat a Tailwind
+   hover class, so hover lives here. Neutral (fyi) rows fall back to the warm
+   list-hover tint. */
+.notif-row {
+  background-color: var(--notif-tint, transparent);
+  transition: background-color 120ms;
+}
+.notif-row:hover {
+  background-color: var(--notif-tint-hover, var(--sol-hover-bg));
+}
+
 /* Sidebar section-header bar — solid header surface with a faint NEUTRAL hover
    (a few % of black/white over the header tint), not the warm list-selection
    color, so the full-width bar doesn't flash a bright band on hover. */
@@ -992,6 +1004,7 @@ body {
 [data-yaco-native-context-menu='disabled'],
 [data-yaco-native-context-menu='disabled'] * {
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
 }

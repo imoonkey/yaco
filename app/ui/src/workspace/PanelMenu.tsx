@@ -54,7 +54,7 @@ export function PanelMenu({ panel }: { panel: PanelId }) {
         <MoreVertical />
       </button>
       {menu.position && (
-        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
+        <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
           {leftTarget && (
             <MenuItem label="Move left" onClick={run(() => commands.splitPanel(leftTarget, panel, 'above'))} />
           )}

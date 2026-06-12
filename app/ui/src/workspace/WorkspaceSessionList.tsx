@@ -319,7 +319,7 @@ export function SessionItem({
         </button>
       </span>
       {menu.position && (onRename || onOpenBeside || (hasChildren && onMarkSubtreeRead)) && (
-        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
+        <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
           {onOpenBeside && <MenuItem label="Open beside" onClick={() => { menu.close(); onOpenBeside() }} />}
           {onRename && <MenuItem label="Rename" onClick={startRename} />}
           {hasChildren && onMarkSubtreeRead && (
