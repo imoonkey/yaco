@@ -314,4 +314,36 @@ describe('useAttention', () => {
     await waitFor(() => expect(result.current.snapshot.ready).toHaveLength(1))
     expect(result.current.snapshot.global.color).toBe('yellow')
   })
+
+  it('normalizes a partial/malformed cold feed instead of crashing (missing arrays)', async () => {
+    installNotification('granted')
+    const calls = installFetchStub()
+    const { result } = renderHook(() => useAttention(null))
+    // A stale/empty server (or a route mock that doesn't know the endpoint) can
+    // return `{}` — ingest must not blow up spreading undefined needsYou/ready.
+    await waitFor(() => expect(calls.some(c => c.url.includes('/attention/feed'))).toBe(true))
+    const feed = calls.find(c => c.url.includes('/attention/feed'))!
+    await act(async () => { feed.resolve({}) })
+
+    expect(result.current.snapshot.needsYou).toEqual([])
+    expect(result.current.snapshot.ready).toEqual([])
+    expect(result.current.snapshot.recent).toEqual([])
+    expect(result.current.snapshot.global).toEqual({ count: 0, color: null })
+  })
+
+  it('normalizes a malformed SSE push (partial snapshot) without crashing', async () => {
+    installNotification('granted')
+    const calls = installFetchStub()
+    const { result } = renderHook(() => useAttention(null))
+    await settleInitialFeed(calls, makeSnapshot({ needsYou: [crashItem({ interrupt: false })] }))
+    await waitFor(() => expect(result.current.snapshot.needsYou).toHaveLength(1))
+
+    // Push a snapshot missing `ready`/`recent`/badges — must coerce to empties.
+    const cb = sseListeners.get('attention')!
+    act(() => { cb({ data: JSON.stringify({ needsYou: [] }) } as MessageEvent) })
+
+    expect(result.current.snapshot.needsYou).toEqual([])
+    expect(result.current.snapshot.ready).toEqual([])
+    expect(result.current.snapshot.global).toEqual({ count: 0, color: null })
+  })
 })

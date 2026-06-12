@@ -77,6 +77,21 @@ const EMPTY: AttentionSnapshot = {
   badgesByProject: {}, badgesBySession: {}, global: { count: 0, color: null },
 }
 
+/** Coerce a (possibly partial/malformed) payload into the full snapshot shape.
+ *  The cold feed and the SSE push are both external JSON; a missing array would
+ *  crash `ingest` (it spreads `needsYou`/`ready`). Normalizing at the boundary
+ *  keeps the app rendering even against a stale/empty server response. */
+function normalizeSnapshot(raw: Partial<AttentionSnapshot> | null | undefined): AttentionSnapshot {
+  return {
+    needsYou: Array.isArray(raw?.needsYou) ? raw.needsYou : [],
+    ready: Array.isArray(raw?.ready) ? raw.ready : [],
+    recent: Array.isArray(raw?.recent) ? raw.recent : [],
+    badgesByProject: raw?.badgesByProject ?? {},
+    badgesBySession: raw?.badgesBySession ?? {},
+    global: raw?.global ?? { count: 0, color: null },
+  }
+}
+
 // ── HTTP helpers ───────────────────────────────────────────────────────────────
 
 async function fetchFeed(limit?: number, before?: number, signal?: AbortSignal): Promise<AttentionFeed> {
@@ -247,8 +262,10 @@ export function useAttention(
   }, [])
 
   /** Replace the snapshot + process interrupts (the single ingest point for both
-   *  the cold feed and live SSE pushes). */
-  const ingest = useCallback((next: AttentionSnapshot) => {
+   *  the cold feed and live SSE pushes). Normalizes the payload so a partial /
+   *  malformed response can't crash the render. */
+  const ingest = useCallback((raw: Partial<AttentionSnapshot> | null | undefined) => {
+    const next = normalizeSnapshot(raw)
     setSnapshot(next)
 
     const fresh: AttentionItem[] = []
@@ -280,7 +297,8 @@ export function useAttention(
           setNextBefore(nb)
         } else {
           // Pagination: append older recent rows, advance the cursor.
-          setSnapshot((prev) => ({ ...prev, recent: [...prev.recent, ...snap.recent] }))
+          const older = Array.isArray(snap.recent) ? snap.recent : []
+          setSnapshot((prev) => ({ ...prev, recent: [...prev.recent, ...older] }))
           setNextBefore(nb)
         }
       })
