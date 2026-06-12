@@ -107,13 +107,15 @@ describe('single-occurrence invariant', () => {
     expect(asLeaf(root.children[1].node).panel).toBe('editor')
   })
 
-  it('counts a panel inside a tabs node as an occurrence', () => {
-    // editor appears in the tabs node first, so the later editor leaf is dropped.
+  it('counts a non-whitelisted panel inside a tabs node as an occurrence', () => {
+    // tasks appears in the main tabs node first, so a later tasks leaf is dropped
+    // (tasks is single-occurrence). editor/terminal are exempt — see the
+    // multi-instance suite.
     const root = asSplit(normalizeDesktopTree({
       kind: 'split', id: 'root', axis: 'row',
       children: [
         { node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
-        { node: leaf('editor') }, // duplicate of the tabs editor → dropped
+        { node: leaf('tasks') }, // duplicate of the tabs tasks → dropped
         { node: leaf('files') },
       ],
     }))

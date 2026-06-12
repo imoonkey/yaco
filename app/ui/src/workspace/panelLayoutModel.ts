@@ -2,10 +2,15 @@
 // the normalization that repairs any loaded or edited layout to the invariants
 // the renderer relies on. Pure data/logic: no React, no rendering.
 //
-// Invariants enforced (design: Layout Model / Invariants):
-//   - single-occurrence — a PanelId appears at most once across the whole tree
-//     (leaves and tabs panels both count); the first occurrence wins, later
-//     duplicates are dropped.
+// Invariants enforced (design: Multi-Instance Panels / Layout model):
+//   - unique ids — every leaf/tabs-entry id is unique across the tree. A
+//     whitelisted (editor/terminal) leaf whose id collides is re-id'd to a fresh
+//     secondary (the pane survives); a duplicate singleton leaf is dropped.
+//   - single-occurrence (non-whitelisted) — the five non-whitelisted panels
+//     appear at most once; editor/terminal may appear N times (multi-instance).
+//   - home editor id — `'editor'` is reserved for the structural home editor (the
+//     main-tabs editor entry); an `editor` leaf claiming it is re-id'd regardless
+//     of traversal order. A `terminal` (or second whitelisted) tabs entry is dropped.
 //   - known panels — every leaf.panel / tabs panel is a real PanelId; unknown
 //     ids and malformed nodes are dropped.
 //   - one grow child — a split has at most one *visible* grow child; extra grow
@@ -46,6 +51,19 @@ const PANEL_ID_SET: ReadonlySet<string> = new Set(PANEL_IDS)
 export function isPanelId(value: unknown): value is PanelId {
   return typeof value === 'string' && PANEL_ID_SET.has(value)
 }
+
+/** Panels that may exist as N independent instances at once (design:
+ *  Multi-Instance Panels). Each instance is a leaf (or, for the home editor, the
+ *  main-tabs entry) with a unique `id`; the other five panels stay single. */
+export const MULTI_INSTANCE_PANELS: ReadonlySet<PanelId> = new Set<PanelId>(['editor', 'terminal'])
+
+export const isMulti = (panel: PanelId): boolean => MULTI_INSTANCE_PANELS.has(panel)
+
+/** The id `'editor'` is reserved exclusively for the structural home editor — the
+ *  editor entry in the main tabs node. An `editor` *leaf* never keeps it (it is
+ *  re-id'd to a secondary), so the home editor is identifiable independent of
+ *  traversal order. */
+export const HOME_EDITOR_ID = 'editor'
 
 export const MOBILE_DOCKS: readonly MobileDock[] = ['browse', 'editor', 'tasks', 'terminal']
 
@@ -146,7 +164,10 @@ export function defaultWorkspacePanelLayout(): WorkspacePanelLayout {
 // --- Normalization ----------------------------------------------------------
 
 type NormCtx = {
-  seen: Set<PanelId>
+  // Every leaf/tabs-entry id must be unique across the whole tree.
+  seenIds: Set<string>
+  // A non-whitelisted (singleton) type may appear at most once.
+  seenSingletonTypes: Set<PanelId>
   nextId: (kind: string) => string
 }
 
@@ -169,6 +190,15 @@ function idOf(raw: unknown, ctx: NormCtx, kind: string): string {
   return typeof raw === 'string' && raw.length > 0 ? raw : ctx.nextId(kind)
 }
 
+/** Lowest free secondary id `${panel}:${n}` (n ≥ 2) not already used. Secondaries
+ *  start at 2 because the base id (`'editor'` = home, `'terminal'` = structural) is
+ *  index 1. Deterministic given `used`, so a re-id never re-fires on re-normalize. */
+function freshInstanceId(used: ReadonlySet<string>, panel: PanelId): string {
+  let n = 2
+  while (used.has(`${panel}:${n}`)) n++
+  return `${panel}:${n}`
+}
+
 function minForChild(node: LayoutNode, axis: SplitAxis): number {
   const fallback = axis === 'row' ? DEFAULT_MIN_SIZE.width : DEFAULT_MIN_SIZE.height
   if (node.kind !== 'leaf') return fallback
@@ -184,23 +214,51 @@ function clampBasis(raw: unknown, node: LayoutNode, axis: SplitAxis): number | u
   return Math.max(raw, minForChild(node, axis))
 }
 
+/** Normalize a leaf, enforcing the instance-id invariants (design: Layout Model):
+ *  - unknown panel → drop;
+ *  - a singleton (non-whitelisted) type already placed → drop the duplicate;
+ *  - a whitelisted (multi) leaf whose id collides — or an `editor` leaf claiming
+ *    the reserved home id — is re-id'd to a fresh secondary (the pane survives;
+ *    its per-instance view state resolves to default);
+ *  - a singleton leaf whose id collides with an already-placed id → drop. */
 function normalizeLeaf(raw: Record<string, unknown>, ctx: NormCtx): LeafNode | null {
   const panel = raw.panel
-  if (!isPanelId(panel) || ctx.seen.has(panel)) return null
-  ctx.seen.add(panel)
-  const node: LeafNode = { kind: 'leaf', id: idOf(raw.id, ctx, 'leaf'), panel }
+  if (!isPanelId(panel)) return null
+  if (!isMulti(panel)) {
+    if (ctx.seenSingletonTypes.has(panel)) return null
+    ctx.seenSingletonTypes.add(panel)
+  }
+  let id = idOf(raw.id, ctx, 'leaf')
+  const claimsHomeId = panel === HOME_EDITOR_ID && id === HOME_EDITOR_ID
+  if (isMulti(panel)) {
+    if (claimsHomeId || ctx.seenIds.has(id)) id = freshInstanceId(ctx.seenIds, panel)
+  } else if (ctx.seenIds.has(id)) {
+    return null
+  }
+  ctx.seenIds.add(id)
+  const node: LeafNode = { kind: 'leaf', id, panel }
   if (raw.collapsed === true) node.collapsed = true
   return node
 }
 
+/** Normalize a tabs node. The `panels` array has no id slot, so each entry's id
+ *  is its panel type; the array stays dedup-by-type. The whitelisted-in-tabs
+ *  invariant holds: at most one `editor` (the home, id `'editor'`) and zero
+ *  `terminal` — a `terminal` tab-entry or a second whitelisted entry is dropped. */
 function normalizeTabs(raw: Record<string, unknown>, ctx: NormCtx): LayoutNode | null {
   const rawPanels = Array.isArray(raw.panels) ? raw.panels : []
   const panels: PanelId[] = []
   for (const p of rawPanels) {
-    if (isPanelId(p) && !ctx.seen.has(p)) {
-      ctx.seen.add(p)
-      panels.push(p)
+    if (!isPanelId(p)) continue
+    // terminal never sits in a tabs node; a second instance of any type can't
+    // either (the array keys by type, so the type-as-id is already taken).
+    if (p === 'terminal' || ctx.seenIds.has(p)) continue
+    if (!isMulti(p)) {
+      if (ctx.seenSingletonTypes.has(p)) continue
+      ctx.seenSingletonTypes.add(p)
     }
+    ctx.seenIds.add(p)
+    panels.push(p)
   }
   if (panels.length === 0) return null
   const id = idOf(raw.id, ctx, 'tabs')
@@ -275,7 +333,8 @@ function normalizeNode(input: unknown, ctx: NormCtx): LayoutNode | null {
 export function normalizeDesktopTree(input: unknown): LayoutNode {
   let counter = 0
   const ctx: NormCtx = {
-    seen: new Set<PanelId>(),
+    seenIds: new Set<string>(),
+    seenSingletonTypes: new Set<PanelId>(),
     nextId: (kind: string): string => `${kind}-${counter++}`,
   }
   return normalizeNode(input, ctx) ?? defaultDesktopTree()
@@ -706,4 +765,169 @@ export function movePanel(
 export function resetLayout(layout?: WorkspacePanelLayout): WorkspacePanelLayout {
   const base = defaultWorkspacePanelLayout()
   return layout ? { ...base, panelState: layout.panelState } : base
+}
+
+// --- Id-addressed structural ops (design: Multi-Instance Panels / Layout model)
+//
+// The type-based `splitPanel`/`movePanel`/`collapsePanel` above stay for the
+// singleton dock panels (one of each, so the type identifies the pane). The ops
+// below address a pane by its instance `id`, which is the only unambiguous way to
+// act on one of N editor/terminal instances. All are pure layout → layout and
+// re-normalize, so an intermediate tree is always repaired to the invariants.
+
+/** Where to drop a moved leaf: beside the node `targetId`, on `side`. Id-addressed
+ *  (not panel-type addressed) because multiple editor/terminal instances make a
+ *  bare panel type ambiguous. */
+export type LeafPlacement = { targetId: string; side: SplitSide }
+
+/** Every leaf/tabs-entry id in document order. The home editor contributes
+ *  `'editor'` and tasks `'tasks'` (their tabs-entry ids). */
+function collectIds(node: LayoutNode, out: Set<string> = new Set()): Set<string> {
+  if (node.kind === 'leaf') out.add(node.id)
+  else if (node.kind === 'tabs') for (const p of node.panels) out.add(p)
+  else for (const c of node.children) collectIds(c.node, out)
+  return out
+}
+
+/** A fresh instance id for a new `panel` pane, unique within `tree`. The base id
+ *  (`'terminal'`) is used first when free; the home id `'editor'` is reserved, so
+ *  editors always get a `editor:n` secondary. */
+export function newInstanceId(tree: LayoutNode, panel: PanelId): string {
+  const ids = collectIds(tree)
+  if (panel !== HOME_EDITOR_ID && !ids.has(panel)) return panel
+  return freshInstanceId(ids, panel)
+}
+
+/** Replace the node whose id is `id` (at any depth, including the root) with
+ *  `fn(node)`, preserving its parent slot's basis/grow/hidden. */
+function replaceNodeById(
+  node: LayoutNode, id: string, fn: (n: LayoutNode) => LayoutNode,
+): LayoutNode {
+  if (node.id === id) return fn(node)
+  if (node.kind === 'split') {
+    return { ...node, children: node.children.map((c) => ({ ...c, node: replaceNodeById(c.node, id, fn) })) }
+  }
+  return node
+}
+
+/** Is there a node with id `id` anywhere in the tree (leaf/split/tabs)? */
+function hasNodeId(node: LayoutNode, id: string): boolean {
+  if (node.id === id) return true
+  if (node.kind === 'split') return node.children.some((c) => hasNodeId(c.node, id))
+  return false
+}
+
+/** Wrap the node `targetNodeId` in a new split, placing `inserted` on `side` and
+ *  letting the wrapped node keep growing. No-op when the target id is absent. */
+function insertBesideNodeById(
+  tree: LayoutNode, targetNodeId: string, inserted: SplitChild, side: SplitSide, splitId: string,
+): LayoutNode {
+  const axis: SplitAxis = side === 'left' || side === 'right' ? 'row' : 'col'
+  const before = side === 'left' || side === 'above'
+  return replaceNodeById(tree, targetNodeId, (target) => ({
+    kind: 'split',
+    id: splitId,
+    axis,
+    children: before ? [inserted, { grow: true, node: target }] : [{ grow: true, node: target }, inserted],
+  }))
+}
+
+/** Split a new `panel` instance (`newId`) beside the node `targetNodeId` — a leaf
+ *  id, or the `MAIN_TABS_ID` node when splitting the home editor. The caller picks
+ *  `side` from live geometry; the model stays pure. */
+export function splitBeside(
+  layout: WorkspacePanelLayout, targetNodeId: string, panel: PanelId, side: SplitSide, newId: string,
+): WorkspacePanelLayout {
+  if (!hasNodeId(layout.desktop, targetNodeId)) return layout
+  const axis: SplitAxis = side === 'left' || side === 'right' ? 'row' : 'col'
+  const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS[axis], node: { kind: 'leaf', id: newId, panel } }
+  return withDesktop(layout, insertBesideNodeById(layout.desktop, targetNodeId, inserted, side, `split:${newId}`))
+}
+
+/** Remove the node with id `id`; normalization collapses any emptied parent. */
+function detachNodeById(node: LayoutNode, id: string): LayoutNode | null {
+  if (node.id === id) return null
+  if (node.kind === 'split') {
+    const children: SplitChild[] = []
+    for (const c of node.children) {
+      const next = detachNodeById(c.node, id)
+      if (next) children.push({ ...c, node: next })
+    }
+    return children.length > 0 ? { ...node, children } : null
+  }
+  return node
+}
+
+/** Detach the leaf with id `id`, returning the pruned tree plus the removed leaf
+ *  (so a move can reuse its node — id + collapsed travel with it). */
+function detachLeafById(node: LayoutNode, id: string): { tree: LayoutNode | null; leaf: LeafNode | null } {
+  if (node.kind === 'leaf') {
+    return node.id === id ? { tree: null, leaf: node } : { tree: node, leaf: null }
+  }
+  if (node.kind === 'split') {
+    const children: SplitChild[] = []
+    let removed: LeafNode | null = null
+    for (const c of node.children) {
+      const res = detachLeafById(c.node, id)
+      if (res.leaf) removed = res.leaf
+      if (res.tree) children.push({ ...c, node: res.tree })
+    }
+    return { tree: children.length > 0 ? { ...node, children } : null, leaf: removed }
+  }
+  return { tree: node, leaf: null }
+}
+
+/** Detach the leaf `instanceId`; normalization collapses the hole. The home editor
+ *  is a tabs entry (not a leaf), so it is never closable this way. */
+export function closeLeaf(layout: WorkspacePanelLayout, instanceId: string): WorkspacePanelLayout {
+  return { ...layout, desktop: normalizeDesktopTree(detachNodeById(layout.desktop, instanceId)) }
+}
+
+/** Move the leaf `instanceId` beside another node, reusing the SAME leaf so its id
+ *  and collapsed flag travel. No-op if the leaf or the placement target is absent
+ *  (so a move never silently drops the pane). */
+export function moveLeaf(
+  layout: WorkspacePanelLayout, instanceId: string, placement: LeafPlacement,
+): WorkspacePanelLayout {
+  const { tree, leaf } = detachLeafById(layout.desktop, instanceId)
+  if (!leaf) return layout
+  const base = tree ?? layout.desktop
+  if (!hasNodeId(base, placement.targetId)) return layout
+  const axis: SplitAxis = placement.side === 'left' || placement.side === 'right' ? 'row' : 'col'
+  const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS[axis], node: leaf }
+  return withDesktop(layout, insertBesideNodeById(base, placement.targetId, inserted, placement.side, `split:${leaf.id}`))
+}
+
+/** Instance ids of a given multi-panel type in document order, including the home
+ *  editor (the main-tabs `'editor'` entry) for `'editor'`. */
+function instancesInOrder(node: LayoutNode, panel: PanelId, out: string[] = []): string[] {
+  if (node.kind === 'leaf') {
+    if (node.panel === panel) out.push(node.id)
+  } else if (node.kind === 'tabs') {
+    if (node.panels.includes(panel)) out.push(panel)
+  } else {
+    for (const c of node.children) instancesInOrder(c.node, panel, out)
+  }
+  return out
+}
+
+export const editorInstancesInOrder = (tree: LayoutNode): string[] => instancesInOrder(tree, 'editor')
+export const terminalInstancesInOrder = (tree: LayoutNode): string[] => instancesInOrder(tree, 'terminal')
+
+/** The active instance of a type = the most-recently-focused live id in `mru`,
+ *  else the first in document order (the one routing rule, design: Approach). */
+function resolveActive(order: string[], mru: readonly string[]): string | null {
+  const live = new Set(order)
+  for (const id of mru) if (live.has(id)) return id
+  return order[0] ?? null
+}
+
+/** There is always ≥1 editor (the structural home), so this never returns null. */
+export function resolveActiveEditor(tree: LayoutNode, mru: readonly string[]): string {
+  return resolveActive(editorInstancesInOrder(tree), mru) ?? HOME_EDITOR_ID
+}
+
+/** Terminals may be zero, so the active terminal can be null. */
+export function resolveActiveTerminal(tree: LayoutNode, mru: readonly string[]): string | null {
+  return resolveActive(terminalInstancesInOrder(tree), mru)
 }
