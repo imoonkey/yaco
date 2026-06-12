@@ -81,9 +81,9 @@ export function SessionsPanel() {
     detachActiveSession: commands.detachSession,
   }), [data.sessions, commands.detachSession])
 
-  // A session reads as live when it is bound to a terminal pane. The bindings map
-  // (instanceId → sessionName) is the authority; project its VALUES into the set
-  // so two tiled terminals mark BOTH their sessions live, not just the active one.
+  // A session reads as live when it is bound to a terminal tab. The provider's
+  // group-tab bindings map (instanceId → sessionName) is the authority; project
+  // its VALUES into the set so two open terminal tabs mark BOTH sessions live.
   const shownSessions = useMemo(
     () => new Set(Object.values(selection.terminalBindings).filter(Boolean)),
     [selection.terminalBindings],

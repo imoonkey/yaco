@@ -28,15 +28,15 @@ interface SessionsMgr {
 
 interface UseWorkspaceSessionSectionOpts {
   sessionsMgr: SessionsMgr
-  /** Session names currently bound to a terminal pane → these rows read as live. */
+  /** Session names currently bound to a terminal tab → these rows read as live. */
   shownSessions: Set<string>
   isMobile: boolean
   history: { data: HistorySession[] | null; loading: boolean; refresh: () => Promise<void> }
   projectPath: string
   projectName: string
-  /** Primary gesture: smart-focus-else-replace the active terminal (§3.5). */
+  /** Primary gesture: focus the shown terminal tab, else create a bound tab in the target group. */
   clickSession: (name: string) => void
-  /** "Open beside": focus if already shown, else a new bound terminal (1-per-session). */
+  /** "Open beside": focus if already shown, else split an empty group + a new bound tab (1-per-session). */
   openBeside: (name: string) => void
   refreshSessions: () => Promise<void>
 }
@@ -113,8 +113,8 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     }
   }, [sessionTab, history])
 
-  // Primary click → clickSession owns focus/bind/create + the mobile reveal (§3.5),
-  // so the panel never sets active session or switches panes itself.
+  // Primary click → clickSession owns focus-or-create + the mobile reveal, so the
+  // panel never sets active session or switches groups itself.
   const handleRefresh = useCallback(() => {
     if (sessionTab === 'history') {
       return history.refresh()
