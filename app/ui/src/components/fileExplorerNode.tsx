@@ -1,5 +1,6 @@
 import { useContext, useRef, useEffect } from 'react'
 import type { NodeRendererProps } from 'react-arborist'
+import { GitFork } from 'lucide-react'
 import { FileTypeIcon, FolderIcon } from './fileExplorerIcons'
 import { GIT_COLORS, GIT_STATUS_LABELS } from './fileGitColors'
 import { ExplorerContext } from './explorerContext'
@@ -9,6 +10,8 @@ import type { FileNode } from '../types'
 const GITIGNORED_STYLE: React.CSSProperties = { opacity: 0.5 }
 const INPUT_STYLE: React.CSSProperties = { color: 'var(--sol-text)', borderColor: 'var(--sol-accent)' }
 const CHANGE_DOT_STYLE: React.CSSProperties = { backgroundColor: 'var(--sol-warning)' }
+// Sub-repo (colocated git repo) marker — undimmed, subtle, sized via the UI token scale.
+const COLOCATED_STYLE: React.CSSProperties = { color: 'var(--sol-violet)', width: 'var(--text-ui-sm)', height: 'var(--text-ui-sm)' }
 
 // --- Context-menu state for the node renderer ---
 export type ContextMenuState = { x: number; y: number; path: string; type: 'file' | 'dir' } | null
@@ -128,6 +131,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
           ? <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FolderIcon open={node.isOpen} /></span>
           : <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FileTypeIcon name={d.name} /></span>}
         <span className="flex-1 truncate" style={{ color: nameColor }}>{d.name}</span>
+        {d.colocated && <GitFork className="shrink-0" style={COLOCATED_STYLE} title="Sub-repo (colocated git repository)" aria-label="Sub-repo" />}
         {!isGitignored && gitStatus && <span className="text-ui-xs font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }} title={GIT_STATUS_LABELS[gitStatus]}>{gitStatus}</span>}
         {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={CHANGE_DOT_STYLE} title="Contains changes" />}
       </div>

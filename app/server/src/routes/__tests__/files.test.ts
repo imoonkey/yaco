@@ -351,3 +351,72 @@ describe('GET /:project/search-index — colocated repos', () => {
     expect(paths.indexOf('host.md')).toBeLessThan(paths.indexOf('plan/foo.md'))
   })
 })
+
+describe('GET /:project — colocated-repo tree badge', () => {
+  beforeEach(async () => {
+    testProjectPath = await mkdtemp(join(tmpdir(), 'workflow-test-'))
+    execFileSync('git', ['init', '-q'], { cwd: testProjectPath })
+    execFileSync('git', ['config', 'user.email', 'test@test'], { cwd: testProjectPath })
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: testProjectPath })
+    execFileSync('git', ['config', 'core.excludesFile', ''], { cwd: testProjectPath })
+    clearColocatedReposCache()
+  })
+  afterEach(async () => {
+    clearColocatedReposCache()
+    await rm(testProjectPath, { recursive: true, force: true })
+  })
+
+  /** Create an in-place colocated repo under the host (own git repo). The caller is
+   *  responsible for excluding it from the host index via .git/info/exclude. */
+  function makeColocatedRepo(name: string) {
+    const dir = join(testProjectPath, name)
+    execFileSync('git', ['init', '-q', dir])
+    execFileSync('git', ['config', 'user.email', 'test@test'], { cwd: dir })
+    execFileSync('git', ['config', 'user.name', 'test'], { cwd: dir })
+    return dir
+  }
+
+  async function fetchRoot(): Promise<{ name: string; path: string; type: string; colocated?: true; gitignored?: true }[]> {
+    const res = await fileRoutes.request('/test-project')
+    expect(res.status).toBe(200)
+    return res.json()
+  }
+
+  it('flags a colocated repo root dir with colocated:true (and keeps it undimmed)', async () => {
+    makeColocatedRepo('plan')
+    await writeFile(join(testProjectPath, '.git', 'info', 'exclude'), '/plan/\n')
+
+    const nodes = await fetchRoot()
+    const plan = nodes.find(n => n.path === 'plan')
+    expect(plan).toBeDefined()
+    expect(plan?.colocated).toBe(true)
+    // Colocated repos must stay undimmed (not gitignored).
+    expect(plan?.gitignored).toBeUndefined()
+  })
+
+  it('does not flag a plain (non-repo) directory', async () => {
+    makeColocatedRepo('plan')
+    await mkdir(join(testProjectPath, 'src'))
+    await writeFile(join(testProjectPath, 'src', 'a.txt'), 'a')
+    await writeFile(join(testProjectPath, '.git', 'info', 'exclude'), '/plan/\n')
+
+    const nodes = await fetchRoot()
+    expect(nodes.find(n => n.path === 'plan')?.colocated).toBe(true)
+    expect(nodes.find(n => n.path === 'src')?.colocated).toBeUndefined()
+  })
+
+  it('does not flag a nested directory listed via /children', async () => {
+    makeColocatedRepo('plan')
+    // A normal nested dir that happens to share the colocated repo's name.
+    await mkdir(join(testProjectPath, 'src', 'plan'), { recursive: true })
+    await writeFile(join(testProjectPath, 'src', 'plan', 'a.txt'), 'a')
+    await writeFile(join(testProjectPath, '.git', 'info', 'exclude'), '/plan/\n')
+
+    const res = await fileRoutes.request('/test-project/children?dir=src')
+    expect(res.status).toBe(200)
+    const children: { path: string; colocated?: true }[] = await res.json()
+    const nested = children.find(n => n.path === 'src/plan')
+    expect(nested).toBeDefined()
+    expect(nested?.colocated).toBeUndefined()
+  })
+})
