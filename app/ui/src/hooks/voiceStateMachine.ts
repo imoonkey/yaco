@@ -6,6 +6,11 @@ export interface VoiceTargetContext {
   surface: VoiceSurface
   filePath?: string
   sessionName?: string
+  // Which editor/terminal instance the take is bound to. Frozen with the rest of
+  // the target at record start (the reducer never re-targets a live run), so a
+  // confirmed transcript routes back to the exact pane it was dictated into even
+  // when the active instance has since changed (design: §G).
+  instanceId?: string
 }
 
 export type InteractionState =

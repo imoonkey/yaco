@@ -131,6 +131,9 @@ function App() {
   // App/Workspace bridge state
   const [visibilityReport, setVisibilityReport] = useState<WorkspaceVisibilityReport | null>(null)
   const [attachIntent, setAttachIntent] = useState<AttachSessionIntent | null>(null)
+  // Stable, App-owned top-bar slot the workspace portals its desktop voice control
+  // into (the control lives inside the workspace provider; the slot is App chrome).
+  const [voiceSlot, setVoiceSlot] = useState<HTMLSpanElement | null>(null)
 
   // Reconcile saved project order with the live project list (adjust during render).
   const [prevProjects, setPrevProjects] = useState(projects)
@@ -353,6 +356,7 @@ function App() {
         <div className="flex h-10 shrink-0 items-center justify-between px-3" style={{ color: 'var(--sol-text-dim)' }}>
           <span className="text-ui-lg font-semibold">{activeProject || 'YACO'}</span>
           <span className="flex items-center gap-2">
+            <span ref={setVoiceSlot} className="flex items-center" />
             <NotificationBell {...notificationBellProps} />
             <ChannelsHeaderButton />
             <span className="theme-toggle inline-flex rounded border border-[var(--sol-border)] p-0.5 cursor-pointer" onClick={toggleTheme} title="Toggle theme" role="button" aria-label="Toggle theme">
@@ -388,6 +392,7 @@ function App() {
             attachIntent={attachIntent}
             clearAttachIntent={() => setAttachIntent(null)}
             notificationBell={<NotificationBell {...notificationBellProps} size={14} />}
+            voiceSlot={voiceSlot}
           />
         )}
         {!activeProject && (

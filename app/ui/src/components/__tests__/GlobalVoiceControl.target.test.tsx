@@ -1,0 +1,210 @@
+// @vitest-environment node
+//
+// Pure logic for the desktop global voice control (mi-voice-global, design §G):
+//   - which editor/terminal instances are eligible voice targets,
+//   - the default-from-focus target precedence (recentMultiKind → other → first),
+//   - the dropdown override, and
+//   - the frozen-target → display instance mapping.
+import { describe, it, expect } from 'vitest'
+import {
+  resolveVoiceTarget, instanceFromTarget, isEditorVoiceEligible, advanceFocusEpoch,
+  type ResolveVoiceTargetArgs,
+} from '../GlobalVoiceControl'
+import {
+  voiceReducer, INITIAL_STATE, selectTarget, type VoiceTargetContext,
+} from '../../hooks/voiceStateMachine'
+import { EMPTY_VIEW, type EditorView } from '../../hooks/workspaceTypes'
+
+const ev = (activeTab: string | null): EditorView => ({ ...EMPTY_VIEW, openTabs: activeTab ? [activeTab] : [], activeTab })
+
+// A baseline: two editors on plain code files, one bound terminal.
+function base(overrides: Partial<ResolveVoiceTargetArgs> = {}): ResolveVoiceTargetArgs {
+  return {
+    editorIds: ['editor', 'editor:2'],
+    terminalIds: ['terminal'],
+    editorViews: { editor: ev('a.ts'), 'editor:2': ev('b.ts') },
+    terminalBindings: { terminal: 's1' },
+    previewMode: 'edit',
+    showingTasks: false,
+    activeEditorId: 'editor:2',
+    activeTerminalId: 'terminal',
+    recentMultiKind: 'editor',
+    override: null,
+    ...overrides,
+  }
+}
+
+describe('resolveVoiceTarget — eligible instances', () => {
+  it('lists every editor with an editable file plus every bound terminal, editors first', () => {
+    const { instances } = resolveVoiceTarget(base())
+    expect(instances).toEqual([
+      { kind: 'editor', instanceId: 'editor', label: 'a.ts', filePath: 'a.ts' },
+      { kind: 'editor', instanceId: 'editor:2', label: 'b.ts', filePath: 'b.ts' },
+      { kind: 'terminal', instanceId: 'terminal', label: 's1', sessionName: 's1' },
+    ])
+  })
+
+  it('labels an editor by its file basename, a terminal by its session name', () => {
+    const { instances } = resolveVoiceTarget(base({
+      editorViews: { editor: ev('src/deep/Thing.tsx'), 'editor:2': ev(null) },
+    }))
+    expect(instances[0]).toMatchObject({ instanceId: 'editor', label: 'Thing.tsx' })
+  })
+
+  it('excludes an editor whose active tab is empty or a diff tab', () => {
+    const { instances } = resolveVoiceTarget(base({
+      editorViews: { editor: ev(null), 'editor:2': ev('diff:b.ts') },
+    }))
+    expect(instances.filter(i => i.kind === 'editor')).toEqual([])
+  })
+
+  it('excludes a previewable file shown in preview mode, keeps it in split mode', () => {
+    const md = base({ editorIds: ['editor'], editorViews: { editor: ev('README.md') }, activeEditorId: 'editor' })
+    expect(resolveVoiceTarget({ ...md, previewMode: 'preview' }).instances.some(i => i.kind === 'editor')).toBe(false)
+    expect(resolveVoiceTarget({ ...md, previewMode: 'split' }).instances.some(i => i.kind === 'editor')).toBe(true)
+  })
+
+  it('keeps a non-previewable file editable even in preview mode', () => {
+    const code = base({ editorIds: ['editor'], editorViews: { editor: ev('a.ts') }, activeEditorId: 'editor', previewMode: 'preview' })
+    expect(resolveVoiceTarget(code).instances.some(i => i.kind === 'editor')).toBe(true)
+  })
+
+  it('excludes the home editor while the main region shows tasks (it is hidden)', () => {
+    const { instances } = resolveVoiceTarget(base({ showingTasks: true }))
+    expect(instances.map(i => i.instanceId)).toEqual(['editor:2', 'terminal'])
+  })
+
+  it('excludes an unbound terminal', () => {
+    const { instances } = resolveVoiceTarget(base({ terminalBindings: { terminal: '' } }))
+    expect(instances.some(i => i.kind === 'terminal')).toBe(false)
+  })
+})
+
+describe('resolveVoiceTarget — default from focus', () => {
+  it('picks the active instance of the most-recently-focused kind when eligible', () => {
+    expect(resolveVoiceTarget(base({ recentMultiKind: 'editor' })).target)
+      .toMatchObject({ kind: 'editor', instanceId: 'editor:2' })
+    expect(resolveVoiceTarget(base({ recentMultiKind: 'terminal' })).target)
+      .toMatchObject({ kind: 'terminal', instanceId: 'terminal' })
+  })
+
+  it('falls back to the other type when the recent kind has no eligible active instance', () => {
+    // recent kind = editor, but the active editor shows a diff (ineligible) → terminal.
+    const args = base({ recentMultiKind: 'editor', editorViews: { editor: ev('diff:a.ts'), 'editor:2': ev('diff:b.ts') } })
+    expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'terminal', instanceId: 'terminal' })
+  })
+
+  it('falls back to the first eligible instance in order when neither active instance is eligible', () => {
+    // active editor + active terminal both ineligible; editor (home) is still eligible.
+    const args = base({
+      recentMultiKind: 'terminal',
+      activeEditorId: 'editor:2',
+      editorViews: { editor: ev('a.ts'), 'editor:2': ev('diff:b.ts') },
+      terminalBindings: { terminal: '' },
+    })
+    expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'editor', instanceId: 'editor' })
+  })
+
+  it('returns no target and no instances when nothing is eligible', () => {
+    const args = base({
+      editorViews: { editor: ev(null), 'editor:2': ev(null) },
+      terminalBindings: { terminal: '' },
+    })
+    const { instances, target } = resolveVoiceTarget(args)
+    expect(instances).toEqual([])
+    expect(target).toBeNull()
+  })
+})
+
+describe('resolveVoiceTarget — override', () => {
+  it('honours an override that points at an eligible instance, ignoring focus', () => {
+    const args = base({ recentMultiKind: 'terminal', override: { kind: 'editor', instanceId: 'editor' } })
+    expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'editor', instanceId: 'editor' })
+  })
+
+  it('ignores a stale override (instance closed / no longer eligible) and uses the focus default', () => {
+    const args = base({ recentMultiKind: 'editor', override: { kind: 'editor', instanceId: 'ghost' } })
+    expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'editor', instanceId: 'editor:2' })
+  })
+})
+
+describe('instanceFromTarget — frozen target → display instance', () => {
+  it('maps an editor target to a file-labelled instance', () => {
+    expect(instanceFromTarget({ surface: 'editor', filePath: 'src/a.ts', instanceId: 'editor:2' }))
+      .toEqual({ kind: 'editor', instanceId: 'editor:2', label: 'a.ts', filePath: 'src/a.ts' })
+  })
+
+  it('maps a terminal target to a session-labelled instance', () => {
+    expect(instanceFromTarget({ surface: 'terminal', sessionName: 's1', instanceId: 'terminal:2' }))
+      .toEqual({ kind: 'terminal', instanceId: 'terminal:2', label: 's1', sessionName: 's1' })
+  })
+
+  it('returns null for no target or a target without an instance id', () => {
+    expect(instanceFromTarget(null)).toBeNull()
+    expect(instanceFromTarget({ surface: 'editor', filePath: 'a.ts' })).toBeNull()
+  })
+})
+
+describe('isEditorVoiceEligible — shared editable-target predicate', () => {
+  it('accepts an editable file tab', () => {
+    expect(isEditorVoiceEligible(ev('a.ts'), 'editor', 'edit', false)).toBe(true)
+  })
+  it('rejects an empty pane and a diff tab', () => {
+    expect(isEditorVoiceEligible(ev(null), 'editor', 'edit', false)).toBe(false)
+    expect(isEditorVoiceEligible(ev('diff:a.ts'), 'editor', 'edit', false)).toBe(false)
+  })
+  it('rejects a previewable file rendered in preview mode, accepts it in split/edit', () => {
+    expect(isEditorVoiceEligible(ev('README.md'), 'editor', 'preview', false)).toBe(false)
+    expect(isEditorVoiceEligible(ev('README.md'), 'editor', 'split', false)).toBe(true)
+    expect(isEditorVoiceEligible(ev('README.md'), 'editor', 'edit', false)).toBe(true)
+  })
+  it('keeps a non-previewable file editable even in preview mode', () => {
+    expect(isEditorVoiceEligible(ev('a.ts'), 'editor', 'preview', false)).toBe(true)
+  })
+  it('rejects the home editor while tasks overlays it, but not a secondary editor', () => {
+    expect(isEditorVoiceEligible(ev('a.ts'), 'editor', 'edit', true)).toBe(false)
+    expect(isEditorVoiceEligible(ev('a.ts'), 'editor:2', 'edit', true)).toBe(true)
+  })
+})
+
+describe('advanceFocusEpoch — override-clear gate', () => {
+  it('does not tick while focus stays on the same pane', () => {
+    const s0 = { epoch: 0, lastFocusKey: 'editor:editor' }
+    expect(advanceFocusEpoch(s0, 'editor:editor', true)).toBe(s0)
+  })
+  it('ticks on a transition onto an eligible pane, not onto an ineligible one', () => {
+    const eligible = advanceFocusEpoch({ epoch: 0, lastFocusKey: 'explorer:explorer' }, 'editor:editor', true)
+    expect(eligible).toEqual({ epoch: 1, lastFocusKey: 'editor:editor' })
+    const ineligible = advanceFocusEpoch({ epoch: 1, lastFocusKey: 'editor:editor' }, 'explorer:explorer', false)
+    expect(ineligible).toEqual({ epoch: 1, lastFocusKey: 'explorer:explorer' })
+  })
+  it('advances past a captured epoch when focus leaves an eligible pane and RETURNS to it (the bug)', () => {
+    // Override picked while focused on editor A → captures epoch 1.
+    let s = advanceFocusEpoch({ epoch: 0, lastFocusKey: null }, 'editor:editor', true)
+    expect(s.epoch).toBe(1)
+    const overrideEpoch = s.epoch
+    // Blur to a non-eligible pane (no tick), then re-focus the SAME editor A (ticks).
+    s = advanceFocusEpoch(s, 'explorer:explorer', false)
+    s = advanceFocusEpoch(s, 'editor:editor', true)
+    expect(s.epoch).toBe(2)
+    expect(s.epoch > overrideEpoch).toBe(true) // → override clears
+  })
+})
+
+describe('voiceStateMachine — instanceId frozen at record start', () => {
+  const TARGET: VoiceTargetContext = { surface: 'editor', filePath: 'a.ts', instanceId: 'editor:2' }
+
+  it('keeps the bound instanceId through a take and across a re-record from composing', () => {
+    let state = voiceReducer(INITIAL_STATE, { type: 'START_RECORD', target: TARGET, runId: 1 })
+    state = voiceReducer(state, { type: 'PERMISSION_GRANTED', startedAt: 1, runId: 1 })
+    state = voiceReducer(state, { type: 'STOP', runId: 1 })
+    state = voiceReducer(state, { type: 'TRANSCRIBED', runId: 1 })
+    expect(selectTarget(state.phase)?.instanceId).toBe('editor:2')
+    // A second take from composing ignores the event's target — instanceId stays frozen.
+    const again = voiceReducer(state, {
+      type: 'START_RECORD', target: { surface: 'terminal', sessionName: 's9', instanceId: 'terminal:3' }, runId: 2,
+    })
+    expect(selectTarget(again.phase)?.instanceId).toBe('editor:2')
+  })
+})
+
