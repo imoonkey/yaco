@@ -12,9 +12,6 @@ import { useMemo } from 'react'
 import { useGitStatus, useSessions } from '../hooks/useApi'
 import { useWorkspaceSessions } from './useWorkspaceSessions'
 import type { AgentSession, GitChange, SessionProvider } from '../types'
-import type { MobilePane } from '../hooks/workspaceTypes'
-
-type SessionFocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
 export interface WorkspaceGitResource {
   changes: GitChange[]
@@ -48,18 +45,12 @@ export interface WorkspaceData {
   sessionsLoaded: boolean
 }
 
-interface SessionActions {
-  setActiveSession: (name: string) => void
-  setMobilePane: (pane: MobilePane) => void
-}
-
 export interface WorkspaceSessionsResourceOptions {
   projectName: string
   projectPath: string
-  actions: SessionActions
-  setFocusTarget: (target: SessionFocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   onSessionChange?: () => void
+  onAttachSession: (name: string) => void
   onRenameBoundTerminals?: (oldName: string, newName: string) => void
 }
 
@@ -95,14 +86,13 @@ export function useWorkspaceSessionsResource(
     handleNewSession, killSession, handleRenameSession, togglePin,
     handlePinnedReorder, refreshSessions: refresh,
   } = useWorkspaceSessions({
-    actions: opts.actions,
     projectPath: opts.projectPath,
     sessions: rawSessions,
     refreshSessions,
-    setFocusTarget: opts.setFocusTarget,
     sessionUnreadCounts: opts.sessionUnreadCounts,
     projectName,
     onSessionChange: opts.onSessionChange,
+    onAttachSession: opts.onAttachSession,
     onRenameBoundTerminals: opts.onRenameBoundTerminals,
   })
 

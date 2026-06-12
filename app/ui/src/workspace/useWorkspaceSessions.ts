@@ -2,9 +2,6 @@ import { useCallback, useMemo } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { usePinnedSessions } from '../hooks/usePinnedSessions'
 import type { AgentSession, SessionProvider } from '../types'
-import type { MobilePane } from '../hooks/workspaceTypes'
-
-type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
 // --- Pure session routing (design: Multi-Instance Panels §C/§3.5) -----------
 //
@@ -64,17 +61,16 @@ export function stepSessionMisses(
 // --- Hook -------------------------------------------------------------------
 
 interface UseWorkspaceSessionsOpts {
-  actions: {
-    setActiveSession: (name: string) => void
-    setMobilePane: (pane: MobilePane) => void
-  }
   projectPath: string
   sessions: AgentSession[] | null
   refreshSessions: () => Promise<void>
-  setFocusTarget: (t: FocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   projectName: string
   onSessionChange?: () => void
+  /** Show a session in a terminal — the create-or-focus-or-bind path (clickSession).
+   *  A new session routes through this so it always lands in a (possibly new) live
+   *  terminal pane, never a no-op bind against zero panes. */
+  onAttachSession: (name: string) => void
   /** Rebind every terminal bound to `oldName` → `newName` on rename (the binding
    *  outlives the old name; reconcile must not mistake the rename for a death). */
   onRenameBoundTerminals?: (oldName: string, newName: string) => void
@@ -82,9 +78,9 @@ interface UseWorkspaceSessionsOpts {
 
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
-    actions, projectPath, sessions,
-    refreshSessions, setFocusTarget, sessionUnreadCounts, projectName, onSessionChange,
-    onRenameBoundTerminals,
+    projectPath, sessions,
+    refreshSessions, sessionUnreadCounts, projectName, onSessionChange,
+    onAttachSession, onRenameBoundTerminals,
   } = opts
 
   const { pinnedSessions, setPinnedSessions } = usePinnedSessions(projectName)
@@ -119,14 +115,15 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const handleNewSession = useCallback(async (provider: SessionProvider) => {
     try {
       const name = await startSession(provider, projectPath)
-      actions.setActiveSession(name)
-      setFocusTarget(provider === 'shell' ? 'terminal' : 'session')
-      actions.setMobilePane('terminal')
+      // Show the new session through the create-or-focus-or-bind path so it always
+      // lands in a live terminal pane (creating one if none exist), never a no-op
+      // bind that would then focus a dead terminal id.
+      onAttachSession(name)
       void refreshSessions()
     } catch (err) {
       console.error('Failed to start session:', err)
     }
-  }, [actions, projectPath, setFocusTarget, refreshSessions])
+  }, [projectPath, onAttachSession, refreshSessions])
 
   // Killing a session ends it remotely; its terminal pane(s) close via the
   // provider's reconcile when the session leaves the live set (design: §3.7) — no

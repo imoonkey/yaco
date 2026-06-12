@@ -25,12 +25,11 @@ function makeSession(name: string, status: 'idle' | 'processing' = 'idle'): Agen
 
 function makeOpts(overrides: Partial<Parameters<typeof useWorkspaceSessions>[0]> = {}) {
   return {
-    actions: { setActiveSession: vi.fn(), setMobilePane: vi.fn() },
     projectPath: '/test',
     sessions: [] as AgentSession[],
     refreshSessions: vi.fn(),
-    setFocusTarget: vi.fn(),
     projectName: 'test',
+    onAttachSession: vi.fn(),
     ...overrides,
   }
 }

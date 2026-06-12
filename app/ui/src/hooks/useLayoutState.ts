@@ -417,6 +417,25 @@ export function useLayoutState(
     dispatch({ type: 'OPEN_FILE_TAB', id, path })
   }, [])
 
+  const openPreviewTabIn = useCallback((id: string, path: string): boolean => {
+    const view = stateRef.current.editorViews[id] ?? EMPTY_VIEW
+    const shouldFetch = !(view.openTabs.includes(path) && view.previewTab !== path)
+    dispatch({ type: 'OPEN_PREVIEW_TAB', id, path, protectedPaths: dirtyPathsRef.current })
+    return shouldFetch
+  }, [dirtyPathsRef])
+
+  const openDiffTabIn = useCallback((id: string, path: string) => {
+    dispatch({ type: 'OPEN_DIFF_TAB', id, path })
+  }, [])
+
+  const openPreviewDiffTabIn = useCallback((id: string, path: string) => {
+    dispatch({ type: 'OPEN_PREVIEW_DIFF_TAB', id, path, protectedPaths: dirtyPathsRef.current })
+  }, [dirtyPathsRef])
+
+  const openPreviewDiffTabByIdIn = useCallback((id: string, tabId: string) => {
+    dispatch({ type: 'OPEN_PREVIEW_DIFF_TAB_BY_ID', id, tabId, protectedPaths: dirtyPathsRef.current })
+  }, [dirtyPathsRef])
+
   const pinTabIn = useCallback((id: string, path: string) => {
     dispatch({ type: 'PIN_TAB', id, path })
   }, [])
@@ -489,6 +508,10 @@ export function useLayoutState(
     selectTabIn,
     closeTabIn,
     openFileTabIn,
+    openPreviewTabIn,
+    openDiffTabIn,
+    openPreviewDiffTabIn,
+    openPreviewDiffTabByIdIn,
     pinTabIn,
     splitPane,
     closePane,

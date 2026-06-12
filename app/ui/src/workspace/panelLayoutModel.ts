@@ -243,22 +243,34 @@ function normalizeLeaf(raw: Record<string, unknown>, ctx: NormCtx): LeafNode | n
 
 /** Normalize a tabs node. The `panels` array has no id slot, so each entry's id
  *  is its panel type; the array stays dedup-by-type. The whitelisted-in-tabs
- *  invariant holds: at most one `editor` (the home, id `'editor'`) and zero
- *  `terminal` — a `terminal` tab-entry or a second whitelisted entry is dropped. */
+ *  invariant is enforced from the node id (computed up front, so it holds
+ *  regardless of traversal order): only the MAIN_TABS node may hold an `editor`
+ *  (the structural home, and it ALWAYS does), and no tabs node holds a `terminal`
+ *  or any other whitelisted instance — those entries are dropped. */
 function normalizeTabs(raw: Record<string, unknown>, ctx: NormCtx): LayoutNode | null {
+  // The main node always carries the explicit id 'main' (never synthesized), so
+  // testing the raw id up front is safe and reserves 'editor' for it order-independently.
+  const isMain = raw.id === MAIN_TABS_ID
   const rawPanels = Array.isArray(raw.panels) ? raw.panels : []
   const panels: PanelId[] = []
   for (const p of rawPanels) {
     if (!isPanelId(p)) continue
-    // terminal never sits in a tabs node; a second instance of any type can't
-    // either (the array keys by type, so the type-as-id is already taken).
-    if (p === 'terminal' || ctx.seenIds.has(p)) continue
+    // editor is allowed only as the main node's home; terminal / a second
+    // whitelisted entry never sits in a tabs node.
+    if (isMulti(p) && !(isMain && p === 'editor')) continue
+    if (ctx.seenIds.has(p)) continue
     if (!isMulti(p)) {
       if (ctx.seenSingletonTypes.has(p)) continue
       ctx.seenSingletonTypes.add(p)
     }
     ctx.seenIds.add(p)
     panels.push(p)
+  }
+  // The home editor is structural: the main node always contains it (prepended if
+  // a corrupt/edited tree dropped it), so editorViews.editor is never orphaned.
+  if (isMain && !panels.includes('editor') && !ctx.seenIds.has('editor')) {
+    ctx.seenIds.add('editor')
+    panels.unshift('editor')
   }
   if (panels.length === 0) return null
   const id = idOf(raw.id, ctx, 'tabs')

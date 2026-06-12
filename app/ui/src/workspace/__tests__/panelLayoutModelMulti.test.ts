@@ -160,13 +160,38 @@ describe('home editor id reservation', () => {
     expect(asLeaf(root.children[0].node).id).not.toBe('editor')
   })
 
-  it('drops a stray terminal entry from a tabs node', () => {
+  it('drops a stray editor entry from a tabs node', () => {
     // terminal has no id slot in a tabs array → dropped; editor (home) stays.
     const tabs = asTabs(normalizeDesktopTree({
       kind: 'tabs', id: MAIN_TABS_ID, active: 'terminal', panels: ['editor', 'terminal', 'tasks'], chrome: 'none',
     }))
     expect(tabs.panels).toEqual(['editor', 'tasks'])
     expect(tabs.active).toBe('editor') // invalid active (dropped terminal) → first panel
+  })
+
+  it("strips an `editor` tabs entry from a NON-main node, before or after main", () => {
+    // A stray editor tabs node ordered BEFORE main must not steal the 'editor' id;
+    // the home editor survives in MAIN_TABS regardless of traversal order.
+    const root = asSplit(normalizeDesktopTree({
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'tabs', id: 'stray', active: 'editor', panels: ['editor', 'changes'], chrome: 'none' } },
+        { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
+      ],
+    }))
+    // editor stripped from the stray node (it folds to a `changes` leaf); the home
+    // editor survives in main; there is exactly one editor instance (the home).
+    expect(editorInstancesInOrder(root)).toEqual(['editor'])
+    const main = root.children.map((c) => c.node).find((n) => n.kind === 'tabs' && n.id === MAIN_TABS_ID)
+    expect(asTabs(main!).panels).toContain('editor')
+  })
+
+  it('prepends the home editor to a main node that lost it (always contains the home)', () => {
+    const tabs = asTabs(normalizeDesktopTree({
+      kind: 'tabs', id: MAIN_TABS_ID, active: 'tasks', panels: ['tasks'], chrome: 'none',
+    }))
+    expect(tabs.panels).toEqual(['editor', 'tasks'])
+    expect(tabs.active).toBe('tasks') // valid active preserved
   })
 
   it('drops a second editor entry inside a single tabs node (dedup by type-as-id)', () => {
