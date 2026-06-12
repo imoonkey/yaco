@@ -16,6 +16,12 @@ const STATE_LABELS: Record<TaskState, string> = {
 const ALL_STATES: TaskState[] = ['ready', 'running', 'done', 'blocked', 'cancelled']
 const ALL_WORKSETS: Workset[] = ['active', 'backlog', 'archive']
 
+function isTextEntryElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tag = target.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable
+}
+
 export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, searchMatchCount, allCollapsed, allExpanded, onSetLayout, onToggleState, onToggleWorkset, onSearchChange, onSearchSubmit, onCollapseAll, onExpandAll }: {
   layout: TaskWorkspaceLayout
   stateFilters: Set<TaskState>
@@ -40,7 +46,7 @@ export function TaskGraphToolbar({ layout, stateFilters, worksets, searchQuery, 
   // Expose search focus for keyboard shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === '/' && !e.metaKey && !e.ctrlKey && document.activeElement?.tagName !== 'INPUT') {
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !isTextEntryElement(e.target)) {
         e.preventDefault()
         searchRef.current?.focus()
       }

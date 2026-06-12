@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-11: Task graph slash shortcut no longer steals voice compose input
+
+**What changed:**
+- Task graph's `/` search shortcut now ignores all text-entry targets (`input`, `textarea`, `select`, and `contentEditable`) instead of only ignoring `input`.
+- Added a focused toolbar regression test proving `/` still focuses Search tasks from the page, but does not prevent default or move focus while a textarea is active.
+
+**Why:**
+- When the task graph was open, pressing `/` inside the voice compose tray textarea was intercepted by the task search shortcut, so the slash was not entered and focus jumped to Search tasks.
+
+**Key files:** `app/ui/src/tasks/TaskGraphToolbar.tsx`, `app/ui/src/tasks/__tests__/TaskGraphToolbar.test.tsx`
+**Verification:** `cd app/ui && npx vitest run src/tasks/__tests__/TaskGraphToolbar.test.tsx`; `npm run lint`; `npm run build`.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-11: Colocated repos — `plan/` as a private repo, first-class in the app
 
 **What changed:**
