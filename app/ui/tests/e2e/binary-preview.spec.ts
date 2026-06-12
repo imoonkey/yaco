@@ -31,12 +31,14 @@ test.describe('Binary file preview', () => {
     const errors = collectErrors(page)
 
     // Seed persisted state with a PDF as the active tab before the workspace mounts.
+    // Per-instance shape: the home editor's view holds the open tabs / active tab
+    // (the loader keeps `editorViews.editor` against the default tree's home editor).
     await page.addInitScript(({ key, openTabs }) => {
       const state = {
-        openTabs,
-        activeTab: 'coinbase.pdf',
-        previewTab: null,
-        activeSession: '',
+        editorViews: { editor: { openTabs, activeTab: 'coinbase.pdf', previewTab: null } },
+        terminalBindings: {},
+        editorMru: ['editor'],
+        terminalMru: [],
         mobilePane: 'editor',
         layout: { previewMode: 'edit', splitDirection: 'horizontal', splitSize: 50, autocompleteEnabled: false },
         recentFiles: [],

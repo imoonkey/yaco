@@ -5,6 +5,7 @@ import {
   createFixtureProject,
   waitForAppReady,
   getWorkspaceState,
+  activeEditorView,
   createTestFile,
   deleteTestFile,
   openFileViaSearch,
@@ -193,9 +194,9 @@ test.describe('Layout persistence characterization', () => {
     // Tab should be restored in the DOM
     await expect(page.locator('.overflow-x-auto').locator(`[title="${testFile}"]`)).toBeVisible({ timeout: 10_000 })
 
-    // Active tab should be our file
+    // Active tab should be our file (the active editor's per-instance view).
     const state = await getWorkspaceState(page, project.name)
-    expect(state?.activeTab).toBe(testFile)
+    expect(activeEditorView(state)?.activeTab).toBe(testFile)
 
     // Cleanup
     await deleteTestFile(page, project.name, testFile)
