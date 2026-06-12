@@ -10,7 +10,7 @@
 // `previewTab`/`activeSession`) from the ACTIVE instance and keeps the old
 // active-resolving action signatures, so the provider and the not-yet-migrated
 // panels keep working unchanged while the per-instance surface lands.
-import { useReducer, useState, useCallback, useRef, useEffect, type MutableRefObject } from 'react'
+import { useReducer, useState, useCallback, useRef, type MutableRefObject } from 'react'
 import {
   type WorkspaceLayout,
   type WorkspacePanelLayout,
@@ -337,10 +337,12 @@ export function useLayoutState(
   const previewTab = activeView.previewTab
   const activeSession = activeTerminalId ? (state.terminalBindings[activeTerminalId] ?? '') : ''
 
-  // Mirror live state for stable callbacks that resolve the active instance
-  // without re-subscribing (keeps the command surface identity-stable).
+  // Mirror live state into a ref so stable callbacks can resolve the active
+  // instance without re-subscribing. Written synchronously in render (not an
+  // effect), so a command fired in the same task as a structural commit reads the
+  // fresh tree/MRU and never routes to a stale instance.
   const stateRef = useRef(state)
-  useEffect(() => { stateRef.current = state })
+  stateRef.current = state
   const activeEditor = useCallback(
     () => resolveActiveEditor(stateRef.current.panelLayout.desktop, stateRef.current.editorMru), [],
   )
