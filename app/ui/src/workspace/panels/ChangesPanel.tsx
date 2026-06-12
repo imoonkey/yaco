@@ -102,7 +102,7 @@ async function loadCompare(
 function ChangesPanelBody() {
   const env = useWorkspaceEnv()
   const { git } = useWorkspaceDataContext()
-  const { activeTab } = useWorkspaceSelection()
+  const { activeEditorTabId } = useWorkspaceSelection()
   const { openDiff, openDiffTabId, expandFolderInFiles } = useWorkspaceCommands()
   const { name: projectName, worktree } = env.project
   const key = compareKey(projectName, worktree)
@@ -141,7 +141,7 @@ function ChangesPanelBody() {
           const tabId = `diff:${c.path}?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(head)}`
           return (
             <GitChangeItem key={c.path} change={c}
-              isActive={activeTab === tabId}
+              isActive={activeEditorTabId === tabId}
               onActivate={() => openDiffTabId(tabId)}
               onFolderClick={expandFolderInFiles}
             />
@@ -163,7 +163,7 @@ function ChangesPanelBody() {
         const isDir = c.path.endsWith('/')
         return (
           <GitChangeItem key={c.path} change={c}
-            isActive={!isDir && activeTab === `diff:${c.path}`}
+            isActive={!isDir && activeEditorTabId === `diff:${c.path}`}
             onActivate={isDir ? () => expandFolderInFiles(c.path.slice(0, -1)) : () => openDiff(c.path)}
             onFolderClick={expandFolderInFiles}
           />

@@ -29,9 +29,9 @@ import {
 } from './context'
 import {
   HANDLE_PX, FRAMED_BODY_CLASS, minBasisPx, canonicalizeSplit, planSplitChildren,
-  withEmptyEditorRule, collectFramedLeaves,
+  collectFramedLeaves,
 } from './desktopTreeSizing'
-import { MAIN_TABS_ID, editorInstancesInOrder, terminalInstancesInOrder } from './panelLayoutModel'
+import { editorInstancesInOrder, terminalInstancesInOrder } from './panelLayoutModel'
 import { paneMarker, type PaneMarker } from './panelInstance'
 import type { LayoutNode, SplitNode } from '../hooks/workspaceTypes'
 
@@ -41,16 +41,11 @@ type MarkerFor = (type: PanelId, instanceId: string) => PaneMarker
 
 const ROOT_SIZING: CSSProperties = { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 0 }
 
-// Structural ARIA landmarks. The three canonical regions of the default tree —
-// the left dock, the editor/tasks main node, and the right activity column —
-// expose the SAME landmarks the legacy skeleton did (`role="navigation"`
-// "Sidebar", `role="main"`, `role="complementary"` "Activity panel"), so assistive
-// tech and the workspace specs see one set of regions under either engine. Keyed
-// by the stable structural node ids (`dock` / `main` / `activity`); any other node
-// renders without a landmark.
+// Structural ARIA landmarks. The dock and the activity column expose the SAME
+// landmarks the legacy skeleton did. The working-area `role="main"` is restored on
+// the first group by vt-render (the reserved MAIN_TABS_ID id is gone).
 const NODE_LANDMARK: Record<string, { role: string; label?: string }> = {
   dock: { role: 'navigation', label: 'Sidebar' },
-  [MAIN_TABS_ID]: { role: 'main' },
   activity: { role: 'complementary', label: 'Activity panel' },
 }
 
@@ -63,16 +58,12 @@ export type DesktopPanelTreeLayoutProps = {
 export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCapture }: DesktopPanelTreeLayoutProps) {
   const { isTouch } = useWorkspaceEnv().viewport
   const { panelLayout } = useWorkspaceLayout()
-  const { openTabs, focusedPane, activeEditorId, activeTerminalId } = useWorkspaceSelection()
+  const { focusedPane, activeEditorId, activeTerminalId } = useWorkspaceSelection()
   const commands = useWorkspaceCommands()
   const collapsePanel = commands.collapsePanel
   const resizeSplitChild = commands.resizeSplitChild
 
-  const hasOpenTabs = openTabs.length > 0
-  const effectiveRoot = useMemo(
-    () => withEmptyEditorRule(panelLayout.desktop, hasOpenTabs),
-    [panelLayout.desktop, hasOpenTabs],
-  )
+  const effectiveRoot = panelLayout.desktop
 
   // Focus/active markers: the focused editor/terminal pane is bright, the
   // active-but-unfocused one dim (suppressed when its type has a single instance).
@@ -130,14 +121,15 @@ function TreeNode({ node, sizing, resizeSplitChild, markerFor }: {
   if (node.kind === 'split') {
     return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} />
   }
-  // leaf or tabs → a sized flex column hosting the panel. A tabs node renders its
-  // active panel (v1: the main node's editor, which owns the editor/tasks tab bar).
-  // The instance id is the leaf's own id, or the active panel's id for a tabs node
-  // (the home editor's instance id is 'editor', distinct from the node id 'main').
-  const panel = node.kind === 'leaf' ? node.panel : node.active
-  const instanceId = node.kind === 'leaf' ? node.id : node.active
+  // leaf or tabs → a sized flex column hosting the panel. A tabs (group) node
+  // renders its ACTIVE tab's body (vt-render replaces this with <PanelGroup>); an
+  // empty group renders an empty shell. The instance id is the leaf's own id, or
+  // the active tab's instanceId for a group.
+  const activeTabNode = node.kind === 'tabs' ? node.tabs.find((t) => t.instanceId === node.activeTab) : undefined
+  const panel: PanelId | undefined = node.kind === 'leaf' ? node.panel : activeTabNode?.kind
+  const instanceId = node.kind === 'leaf' ? node.id : node.activeTab
   const landmark = NODE_LANDMARK[node.id]
-  const marker = markerFor(panel, instanceId)
+  const marker = markerFor(panel ?? 'editor', instanceId)
   const markable = panel === 'editor' || panel === 'terminal'
   // Reserve a 2px top border on markable panes (transparent when unmarked) so the
   // focus/active marker never shifts layout (box-sizing: border-box).
@@ -147,9 +139,9 @@ function TreeNode({ node, sizing, resizeSplitChild, markerFor }: {
   return (
     <div
       data-node-id={node.id}
-      data-instance-id={instanceId}
+      data-instance-id={panel ? instanceId : undefined}
       data-panel-leaf={node.kind === 'leaf' ? node.panel : undefined}
-      data-tabs-active={node.kind === 'tabs' ? node.active : undefined}
+      data-tabs-active={node.kind === 'tabs' ? node.activeTab : undefined}
       data-focused={marker.focused || undefined}
       data-active={marker.active || undefined}
       role={landmark?.role}
@@ -157,7 +149,7 @@ function TreeNode({ node, sizing, resizeSplitChild, markerFor }: {
       style={borderTop ? { ...sizing, borderTop } : sizing}
       className="flex flex-col min-w-0 min-h-0"
     >
-      <PanelHost id={panel} instanceId={instanceId} />
+      {panel && <PanelHost id={panel} instanceId={instanceId} />}
     </div>
   )
 }

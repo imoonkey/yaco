@@ -16,7 +16,8 @@ import {
   type WorkspaceCommands, type WorkspaceSelection, type WorkspaceData,
   type WorkspaceLayoutContextValue, type WorkspaceEnv, type WorkspacePanelResources,
 } from '../context'
-import type { FocusedPane } from '../../hooks/workspaceTypes'
+import type { FocusedPane, WorkspacePanelLayout } from '../../hooks/workspaceTypes'
+import { defaultWorkspacePanelLayout, normalizeLayout } from '../panelLayoutModel'
 import type { FileNode } from '../../types'
 
 afterEach(() => {
@@ -65,21 +66,34 @@ type SelectionOverrides = Partial<{
   explorerFocusedPath: string | null
   showSearch: boolean
   activeSession: string
-  openTabs: string[]
-  activeTab: string | null
+  activeGroupId: string
+  activeEditorTabId: string | null
 }>
 
 function makeSelection(over: SelectionOverrides): WorkspaceSelection {
   return {
     activeSession: '',
-    openTabs: [],
-    activeTab: null,
+    activeGroupId: 'group:1',
+    activeEditorTabId: null,
     focusedPane: { kind: 'editor', instanceId: 'editor' },
     focusTarget: 'editor',
     explorerFocusedPath: null,
     showSearch: false,
     ...over,
   } as unknown as WorkspaceSelection
+}
+
+/** A desktop layout whose group:1 holds one editor tab per id (instanceId === id). */
+function tabsLayout(tabIds: string[]): WorkspacePanelLayout {
+  return normalizeLayout({
+    desktop: {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: tabIds.map((id) => ({ instanceId: id, kind: 'editor', tabId: id })), activeTab: tabIds[0] ?? '' } },
+      ],
+    },
+  })
 }
 
 function makeOpts() {
@@ -104,11 +118,12 @@ function renderKeyboard(opts: {
   selection?: SelectionOverrides
   orderedSessions?: { name: string }[]
   fileTree?: FileNode[]
+  panelLayout?: WorkspacePanelLayout
 }) {
   const commands = makeCommands()
   const selection = makeSelection(opts.selection ?? {})
   const data = { sessions: { orderedSessions: opts.orderedSessions ?? [] } } as unknown as WorkspaceData
-  const layout = { layout: { previewMode: 'edit' } } as unknown as WorkspaceLayoutContextValue
+  const layout = { layout: { previewMode: 'edit' }, panelLayout: opts.panelLayout ?? defaultWorkspacePanelLayout() } as unknown as WorkspaceLayoutContextValue
   const env = { viewport: { isMobile: false } } as unknown as WorkspaceEnv
   const panelResources = { fileTree: { data: opts.fileTree ?? null } } as unknown as WorkspacePanelResources
   render(
@@ -270,7 +285,8 @@ describe('useWorkspaceKeyboard — cycling acts on the active instance', () => {
 
   it('Cmd+Ctrl+Right selects the next tab in the active editor', () => {
     const { commands } = renderKeyboard({
-      selection: { openTabs: ['x', 'y', 'z'], activeTab: 'x' },
+      selection: { activeGroupId: 'group:1', activeEditorTabId: 'x' },
+      panelLayout: tabsLayout(['x', 'y', 'z']),
     })
     fireEvent.keyDown(window, { key: 'ArrowRight', code: 'ArrowRight', metaKey: true, ctrlKey: true })
     expect(commands.actions.setActiveTab).toHaveBeenCalledWith('y')

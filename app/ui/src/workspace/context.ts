@@ -19,7 +19,7 @@ import type { Project, GitChange, AgentSession, SessionProvider, FileNode, Histo
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import type {
   FileState, PreviewMode, SplitDirection, MobilePane, WorkspaceLayout,
-  WorkspacePanelLayout, EditorView, FocusedPane,
+  WorkspacePanelLayout, GroupTab, FocusedPane,
 } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import type { WorkspaceData } from './resources'
@@ -90,15 +90,19 @@ export type WorkspaceEditorState = {
 }
 
 export type WorkspaceSelection = {
-  // Derived single-value globals over the ACTIVE instance (the routing rule).
-  // Kept for the keyboard label + the not-yet-instance-aware panels.
-  openTabs: string[]
-  activeTab: string | null
-  previewTab: string | null
+  // The active terminal's bound session (the routing rule's single value).
   activeSession: string
+  // The resolved target group (activeGroupId → focused tab's group → first group).
+  // A focused EMPTY group is named here even though it has no tab instance.
+  activeGroupId: string
+  // The active editor instance's tab payload (NULLABLE — empty group / no editor):
+  // `activeEditorTab` is the GroupTab, `activeEditorTabId` its `tabId` (file path or
+  // diff id), `activeEditorPath` the underlying file path (diff → its target path).
+  activeEditorTab: GroupTab | null
+  activeEditorTabId: string | null
+  activeEditorPath: string | null
   // Per-instance state (design: §C). The renderer + instance-aware panels read
-  // these; a read for a missing id defaults to EMPTY_VIEW / unbound.
-  editorViews: Record<string, EditorView>
+  // these; a read for a missing id defaults to unbound / reconciled focus.
   terminalBindings: Record<string, string>
   editorMru: string[]
   terminalMru: string[]

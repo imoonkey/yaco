@@ -13,16 +13,24 @@ import {
 import {
   voiceReducer, INITIAL_STATE, selectTarget, type VoiceTargetContext,
 } from '../../hooks/voiceStateMachine'
-import { EMPTY_VIEW, type EditorView } from '../../hooks/workspaceTypes'
+import { type LayoutNode, type GroupTab } from '../../hooks/workspaceTypes'
 
-const ev = (activeTab: string | null): EditorView => ({ ...EMPTY_VIEW, openTabs: activeTab ? [activeTab] : [], activeTab })
+// An editor GroupTab (the eligible-target unit under FLAT).
+const et = (tabId: string): GroupTab => ({ instanceId: 'editor', kind: 'editor', tabId })
+
+// A tree of editor tabs keyed by instance id. An instance with no editor tab here
+// is ineligible (editorVoiceTab → null), modelling the old `ev(null)` empty pane.
+function mkTree(editors: Record<string, string>): LayoutNode {
+  const tabs: GroupTab[] = Object.entries(editors).map(([instanceId, tabId]) => ({ instanceId, kind: 'editor', tabId }))
+  return { kind: 'tabs', id: 'group:1', tabs, activeTab: tabs[0]?.instanceId ?? '' }
+}
 
 // A baseline: two editors on plain code files, one bound terminal.
 function base(overrides: Partial<ResolveVoiceTargetArgs> = {}): ResolveVoiceTargetArgs {
   return {
     editorIds: ['editor', 'editor:2'],
     terminalIds: ['terminal'],
-    editorViews: { editor: ev('a.ts'), 'editor:2': ev('b.ts') },
+    tree: mkTree({ editor: 'a.ts', 'editor:2': 'b.ts' }),
     terminalBindings: { terminal: 's1' },
     previewMode: 'edit',
     showingTasks: false,
@@ -46,32 +54,32 @@ describe('resolveVoiceTarget — eligible instances', () => {
 
   it('labels an editor by its file basename, a terminal by its session name', () => {
     const { instances } = resolveVoiceTarget(base({
-      editorViews: { editor: ev('src/deep/Thing.tsx'), 'editor:2': ev(null) },
+      tree: mkTree({ editor: 'src/deep/Thing.tsx' }),
     }))
     expect(instances[0]).toMatchObject({ instanceId: 'editor', label: 'Thing.tsx' })
   })
 
   it('excludes an editor whose active tab is empty or a diff tab', () => {
     const { instances } = resolveVoiceTarget(base({
-      editorViews: { editor: ev(null), 'editor:2': ev('diff:b.ts') },
+      tree: mkTree({ 'editor:2': 'diff:b.ts' }),
     }))
     expect(instances.filter(i => i.kind === 'editor')).toEqual([])
   })
 
   it('excludes a previewable file shown in preview mode, keeps it in split mode', () => {
-    const md = base({ editorIds: ['editor'], editorViews: { editor: ev('README.md') }, activeEditorId: 'editor' })
+    const md = base({ editorIds: ['editor'], tree: mkTree({ editor: 'README.md' }), activeEditorId: 'editor' })
     expect(resolveVoiceTarget({ ...md, previewMode: 'preview' }).instances.some(i => i.kind === 'editor')).toBe(false)
     expect(resolveVoiceTarget({ ...md, previewMode: 'split' }).instances.some(i => i.kind === 'editor')).toBe(true)
   })
 
   it('keeps a non-previewable file editable even in preview mode', () => {
-    const code = base({ editorIds: ['editor'], editorViews: { editor: ev('a.ts') }, activeEditorId: 'editor', previewMode: 'preview' })
+    const code = base({ editorIds: ['editor'], tree: mkTree({ editor: 'a.ts' }), activeEditorId: 'editor', previewMode: 'preview' })
     expect(resolveVoiceTarget(code).instances.some(i => i.kind === 'editor')).toBe(true)
   })
 
-  it('excludes the home editor while the main region shows tasks (it is hidden)', () => {
+  it('excludes every editor while the active surface shows tasks (it is hidden)', () => {
     const { instances } = resolveVoiceTarget(base({ showingTasks: true }))
-    expect(instances.map(i => i.instanceId)).toEqual(['editor:2', 'terminal'])
+    expect(instances.map(i => i.instanceId)).toEqual(['terminal'])
   })
 
   it('excludes an unbound terminal', () => {
@@ -89,17 +97,17 @@ describe('resolveVoiceTarget — default from focus', () => {
   })
 
   it('falls back to the other type when the recent kind has no eligible active instance', () => {
-    // recent kind = editor, but the active editor shows a diff (ineligible) → terminal.
-    const args = base({ recentMultiKind: 'editor', editorViews: { editor: ev('diff:a.ts'), 'editor:2': ev('diff:b.ts') } })
+    // recent kind = editor, but every editor shows a diff (ineligible) → terminal.
+    const args = base({ recentMultiKind: 'editor', tree: mkTree({ editor: 'diff:a.ts', 'editor:2': 'diff:b.ts' }) })
     expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'terminal', instanceId: 'terminal' })
   })
 
   it('falls back to the first eligible instance in order when neither active instance is eligible', () => {
-    // active editor + active terminal both ineligible; editor (home) is still eligible.
+    // active editor + active terminal both ineligible; editor (first) is still eligible.
     const args = base({
       recentMultiKind: 'terminal',
       activeEditorId: 'editor:2',
-      editorViews: { editor: ev('a.ts'), 'editor:2': ev('diff:b.ts') },
+      tree: mkTree({ editor: 'a.ts', 'editor:2': 'diff:b.ts' }),
       terminalBindings: { terminal: '' },
     })
     expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'editor', instanceId: 'editor' })
@@ -107,7 +115,7 @@ describe('resolveVoiceTarget — default from focus', () => {
 
   it('returns no target and no instances when nothing is eligible', () => {
     const args = base({
-      editorViews: { editor: ev(null), 'editor:2': ev(null) },
+      tree: mkTree({}),
       terminalBindings: { terminal: '' },
     })
     const { instances, target } = resolveVoiceTarget(args)
@@ -147,23 +155,22 @@ describe('instanceFromTarget — frozen target → display instance', () => {
 
 describe('isEditorVoiceEligible — shared editable-target predicate', () => {
   it('accepts an editable file tab', () => {
-    expect(isEditorVoiceEligible(ev('a.ts'), 'editor', 'edit', false)).toBe(true)
+    expect(isEditorVoiceEligible(et('a.ts'), 'edit', false)).toBe(true)
   })
   it('rejects an empty pane and a diff tab', () => {
-    expect(isEditorVoiceEligible(ev(null), 'editor', 'edit', false)).toBe(false)
-    expect(isEditorVoiceEligible(ev('diff:a.ts'), 'editor', 'edit', false)).toBe(false)
+    expect(isEditorVoiceEligible(null, 'edit', false)).toBe(false)
+    expect(isEditorVoiceEligible(et('diff:a.ts'), 'edit', false)).toBe(false)
   })
   it('rejects a previewable file rendered in preview mode, accepts it in split/edit', () => {
-    expect(isEditorVoiceEligible(ev('README.md'), 'editor', 'preview', false)).toBe(false)
-    expect(isEditorVoiceEligible(ev('README.md'), 'editor', 'split', false)).toBe(true)
-    expect(isEditorVoiceEligible(ev('README.md'), 'editor', 'edit', false)).toBe(true)
+    expect(isEditorVoiceEligible(et('README.md'), 'preview', false)).toBe(false)
+    expect(isEditorVoiceEligible(et('README.md'), 'split', false)).toBe(true)
+    expect(isEditorVoiceEligible(et('README.md'), 'edit', false)).toBe(true)
   })
   it('keeps a non-previewable file editable even in preview mode', () => {
-    expect(isEditorVoiceEligible(ev('a.ts'), 'editor', 'preview', false)).toBe(true)
+    expect(isEditorVoiceEligible(et('a.ts'), 'preview', false)).toBe(true)
   })
-  it('rejects the home editor while tasks overlays it, but not a secondary editor', () => {
-    expect(isEditorVoiceEligible(ev('a.ts'), 'editor', 'edit', true)).toBe(false)
-    expect(isEditorVoiceEligible(ev('a.ts'), 'editor:2', 'edit', true)).toBe(true)
+  it('rejects any editor while tasks overlays the active surface', () => {
+    expect(isEditorVoiceEligible(et('a.ts'), 'edit', true)).toBe(false)
   })
 })
 

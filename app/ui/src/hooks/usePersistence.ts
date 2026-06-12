@@ -4,6 +4,7 @@ import {
   type PersistedDrafts,
   type WorkspaceLayout,
   type WorkspacePanelLayout,
+  type LayoutNode,
   type EditorView,
   DEFAULT_LAYOUT,
   isFileTab,
@@ -13,8 +14,10 @@ import {
   dedupeTabs,
 } from './workspaceTypes'
 import {
-  defaultWorkspacePanelLayout, normalizeLayout, activateTabsPanel, reconstituteMainTabs,
-  editorInstancesInOrder, terminalInstancesInOrder, MAIN_TABS_ID, HOME_EDITOR_ID,
+  defaultWorkspacePanelLayout, normalizeLayout,
+  migrateTreeToGroups, mapEditorMru,
+  editorInstancesInOrder, terminalInstancesInOrder,
+  firstGroupId, groupOf,
 } from '../workspace/panelLayoutModel'
 
 // --- Load helpers ---
@@ -24,16 +27,31 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 function defaultPersistedState(): PersistedState {
+  const panelLayout = defaultWorkspacePanelLayout()
   return {
-    editorViews: {},
     terminalBindings: {},
     editorMru: [],
     terminalMru: [],
+    activeGroupId: firstGroupId(panelLayout.desktop) ?? '',
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
     recentFiles: [],
-    panelLayout: defaultWorkspacePanelLayout(),
+    panelLayout,
   }
+}
+
+/** Is this stored desktop tree ALREADY in the flat group shape (tabs nodes carry a
+ *  `tabs` array, no `editor`/`terminal` leaves)? Distinguishes a new group blob
+ *  (skip migration) from an old `panels[]`/leaf tree (migrate). */
+function isGroupShapeTree(node: unknown): boolean {
+  const raw = asRecord(node)
+  if (raw.kind === 'leaf') return raw.panel !== 'editor' && raw.panel !== 'terminal'
+  if (raw.kind === 'tabs') return Array.isArray(raw.tabs)
+  if (raw.kind === 'split') {
+    const children = Array.isArray(raw.children) ? raw.children : []
+    return children.every((c) => isGroupShapeTree(asRecord(c).node))
+  }
+  return false
 }
 
 /** Parse the flat `WorkspaceLayout` bag, salvaging every field independently to
@@ -64,37 +82,8 @@ function parseFlatLayout(pl: Record<string, unknown>): WorkspaceLayout {
   }
 }
 
-/** Derive the panel-layout tree (design: Persistence Shape / Load behavior).
- *
- *  - A stored `version: 1` tree is validated + normalized; `normalizeLayout`
- *    salvages every field independently (tree → default subtree, mobile dock,
- *    panel state), so a malformed tree is repaired, never wholesale discarded.
- *  - Any other input is an old flat blob: use the default desktop/mobile
- *    arrangement and lift only the four editor preference fields into
- *    `panelState.editor`. They are read from the already-salvaged `flat` layout,
- *    so an invalid pref falls back to its default per field. */
-function migratePanelLayout(parsed: Record<string, unknown>, flat: WorkspaceLayout): WorkspacePanelLayout {
-  const stored = parsed.panelLayout
-  if (stored && typeof stored === 'object' && (stored as Record<string, unknown>).version === 1) {
-    return normalizeLayout(stored)
-  }
-  const base = defaultWorkspacePanelLayout()
-  return {
-    ...base,
-    panelState: {
-      ...base.panelState,
-      editor: {
-        previewMode: flat.previewMode,
-        splitDirection: flat.splitDirection,
-        splitSize: flat.splitSize,
-        autocompleteEnabled: flat.autocompleteEnabled,
-      },
-    },
-  }
-}
-
-/** Parse + salvage one editor view: dedupe its tabs, drop the pre-T7 NUL tasks
- *  sentinel, and pin active/preview to a tab that survived. */
+/** Parse + salvage one legacy editor view: dedupe its tabs, drop the pre-group NUL
+ *  tasks sentinel, and pin active/preview to a tab that survived. */
 function parseEditorView(raw: unknown): EditorView {
   const r = asRecord(raw)
   const openTabs = dedupeTabs(Array.isArray(r.openTabs)
@@ -103,6 +92,18 @@ function parseEditorView(raw: unknown): EditorView {
   const activeTab = typeof r.activeTab === 'string' && openTabs.includes(r.activeTab) ? r.activeTab : (openTabs[0] ?? null)
   const previewTab = typeof r.previewTab === 'string' && openTabs.includes(r.previewTab) ? r.previewTab : null
   return { openTabs, activeTab, previewTab }
+}
+
+/** The legacy per-editor views: the old `editorViews` map (v1 blob), or the single
+ *  flat editor view (oldest blob — top-level openTabs/activeTab/previewTab) keyed as
+ *  the home editor. The migration expands each into a group of per-file tabs. */
+function parseOldViews(parsed: Record<string, unknown>): Record<string, EditorView> {
+  if (parsed.editorViews && typeof parsed.editorViews === 'object') {
+    const out: Record<string, EditorView> = {}
+    for (const [id, v] of Object.entries(parsed.editorViews as Record<string, unknown>)) out[id] = parseEditorView(v)
+    return out
+  }
+  return { editor: parseEditorView(parsed) }
 }
 
 function parseMru(raw: unknown, liveIds: ReadonlySet<string>): string[] {
@@ -132,45 +133,111 @@ function parseTerminalBindings(raw: unknown, orderedTerminalIds: string[]): Reco
   return out
 }
 
-type InstanceFields = Pick<PersistedState, 'editorViews' | 'terminalBindings' | 'editorMru' | 'terminalMru'>
+/** Does the tree have a group (tabs) node with this id? */
+function hasGroupNode(node: LayoutNode, id: string): boolean {
+  if (node.kind === 'tabs') return node.id === id
+  if (node.kind === 'split') return node.children.some((c) => hasGroupNode(c.node, id))
+  return false
+}
 
-/** Derive the per-instance state for the loaded tree (design: Persistence Shape).
- *  A stored new-shape blob is parsed + GC'd against the tree's instance ids; an
- *  old flat blob migrates its single editor view to the home editor and its
- *  `activeSession` to the structural terminal. The tree (already reconstituted to
- *  contain the home editor) is the authority on which ids survive. */
-function loadInstanceState(parsed: Record<string, unknown>, panelLayout: WorkspacePanelLayout): InstanceFields {
-  const editorIds = new Set(editorInstancesInOrder(panelLayout.desktop))
-  const terminalOrder = terminalInstancesInOrder(panelLayout.desktop)
+/** A synthetic OLD-shape default tree (dock + main editor tabs node + optional
+ *  terminal leaf + activity) used to migrate a flat blob that never persisted a
+ *  tree, so it lands the same dock as a stored old tree would. */
+function syntheticOldTree(hasTerminal: boolean): Record<string, unknown> {
+  const children: unknown[] = [
+    { basis: 220, node: { kind: 'split', id: 'dock', axis: 'col', children: [
+      { basis: 120, node: { kind: 'leaf', id: 'projects', panel: 'projects' } },
+      { grow: true, node: { kind: 'leaf', id: 'files', panel: 'files' } },
+      { basis: 150, node: { kind: 'leaf', id: 'changes', panel: 'changes' } },
+    ] } },
+    { grow: true, node: { kind: 'tabs', id: 'main', active: 'editor', panels: ['editor'] } },
+  ]
+  if (hasTerminal) children.push({ node: { kind: 'leaf', id: 'terminal', panel: 'terminal' } })
+  children.push({ basis: 280, node: { kind: 'split', id: 'activity', axis: 'col', children: [
+    { grow: true, node: { kind: 'leaf', id: 'sessions', panel: 'sessions' } },
+    { basis: 180, node: { kind: 'leaf', id: 'tasks', panel: 'tasks' } },
+  ] } })
+  return { kind: 'split', id: 'root', axis: 'row', children }
+}
 
-  if (parsed.editorViews && typeof parsed.editorViews === 'object') {
-    const editorViews: Record<string, EditorView> = {}
-    for (const [id, v] of Object.entries(parsed.editorViews as Record<string, unknown>)) {
-      if (editorIds.has(id)) editorViews[id] = parseEditorView(v)
-    }
-    return {
-      editorViews,
-      terminalBindings: parseTerminalBindings(parsed.terminalBindings, terminalOrder),
-      editorMru: parseMru(parsed.editorMru, editorIds),
-      terminalMru: parseMru(parsed.terminalMru, new Set(terminalOrder)),
-    }
-  }
+type LoadedTree = {
+  panelLayout: WorkspacePanelLayout
+  terminalBindings: Record<string, string>
+  editorMru: string[]
+  terminalMru: string[]
+  activeGroupId: string
+}
 
-  // Old flat blob → home editor view + structural terminal binding.
-  const home = parseEditorView(parsed)
-  const hasHome = editorIds.has(HOME_EDITOR_ID)
-  const editorViews: Record<string, EditorView> = hasHome && (home.openTabs.length > 0 || home.activeTab)
-    ? { [HOME_EDITOR_ID]: home }
-    : {}
-  const activeSession = typeof parsed.activeSession === 'string' ? parsed.activeSession : ''
-  const hasTerminal = terminalOrder.includes('terminal')
-  const terminalBindings: Record<string, string> = activeSession && hasTerminal ? { terminal: activeSession } : {}
+/** Load a stored NEW group blob: normalize + GC the aux maps, restore activeGroupId
+ *  if it still names a live group. No migration. */
+function loadGroupBlob(parsed: Record<string, unknown>, stored: Record<string, unknown>): LoadedTree {
+  const panelLayout = normalizeLayout(stored)
+  const tree = panelLayout.desktop
+  const editorIds = new Set(editorInstancesInOrder(tree))
+  const terminalOrder = terminalInstancesInOrder(tree)
+  const storedActive = typeof parsed.activeGroupId === 'string' ? parsed.activeGroupId : ''
+  const activeGroupId = storedActive && hasGroupNode(tree, storedActive) ? storedActive : (firstGroupId(tree) ?? '')
   return {
-    editorViews,
-    terminalBindings,
-    editorMru: hasHome ? [HOME_EDITOR_ID] : [],
-    terminalMru: terminalBindings.terminal ? ['terminal'] : [],
+    panelLayout,
+    terminalBindings: parseTerminalBindings(parsed.terminalBindings, terminalOrder),
+    editorMru: parseMru(parsed.editorMru, editorIds),
+    terminalMru: parseMru(parsed.terminalMru, new Set(terminalOrder)),
+    activeGroupId,
   }
+}
+
+/** Migrate an OLD blob (v1 panels/leaf tree, or the oldest flat blob) into the
+ *  group model: expand every old editor's `openTabs` into per-file tabs, re-point
+ *  `editorMru` through the migration id map, preserve terminal bindings + dirty
+ *  buffers (the latter via the path-keyed file state), seed activeGroupId from the
+ *  MRU head's group. */
+function migrateOldBlob(parsed: Record<string, unknown>, flat: WorkspaceLayout): LoadedTree {
+  const stored = asRecord(parsed.panelLayout)
+  const isV1 = stored.version === 1
+  const activeSession = typeof parsed.activeSession === 'string' ? parsed.activeSession : ''
+
+  const oldTree = isV1 && stored.desktop ? stored.desktop : syntheticOldTree(!!activeSession)
+  const oldViews = parseOldViews(parsed)
+  const { tree: migratedTree, idMap } = migrateTreeToGroups(oldTree, oldViews)
+
+  const panelState = isV1 ? stored.panelState : {
+    editor: {
+      previewMode: flat.previewMode,
+      splitDirection: flat.splitDirection,
+      splitSize: flat.splitSize,
+      autocompleteEnabled: flat.autocompleteEnabled,
+    },
+  }
+  const panelLayout = normalizeLayout({
+    version: 1,
+    desktop: migratedTree,
+    mobile: isV1 ? stored.mobile : undefined,
+    panelState,
+  })
+  const tree = panelLayout.desktop
+  const editorIds = new Set(editorInstancesInOrder(tree))
+  const terminalOrder = terminalInstancesInOrder(tree)
+
+  const oldMru = Array.isArray(parsed.editorMru) ? parsed.editorMru : Object.keys(oldViews)
+  const editorMru = mapEditorMru(oldMru, idMap).filter((id) => editorIds.has(id))
+
+  let terminalBindings: Record<string, string>
+  if (parsed.terminalBindings && typeof parsed.terminalBindings === 'object') {
+    terminalBindings = parseTerminalBindings(parsed.terminalBindings, terminalOrder)
+  } else if (activeSession && terminalOrder.includes('terminal')) {
+    terminalBindings = { terminal: activeSession }
+  } else {
+    terminalBindings = {}
+  }
+
+  const terminalMru = Array.isArray(parsed.terminalMru)
+    ? parseMru(parsed.terminalMru, new Set(terminalOrder))
+    : (terminalBindings.terminal ? ['terminal'] : [])
+
+  const head = editorMru[0]
+  const activeGroupId = (head && groupOf(tree, head)) || (firstGroupId(tree) ?? '')
+
+  return { panelLayout, terminalBindings, editorMru, terminalMru, activeGroupId }
 }
 
 export function loadPersistedState(project: string, worktree?: string | null): PersistedState {
@@ -182,27 +249,22 @@ export function loadPersistedState(project: string, worktree?: string | null): P
     const pl = (parsed.layout ?? parsed) as Record<string, unknown>
     const layout = parseFlatLayout(pl)
 
-    // Pre-T7 persisted "Tasks open" as a fake editor tab whose id was the NUL
-    // sentinel (`activeTab` = '\0tasks'). Migrate that intent to the tasks panel
-    // being active in the main tabs node (post-T7 / new-shape state carries this
-    // in panelLayout already, so this only fires for one-time legacy loads).
-    const tasksWasActive = typeof parsed.activeTab === 'string' && parsed.activeTab.startsWith('\0')
-    // Reconstitute the home editor first, so the instance-state GC keeps the
-    // migrated home view (a legacy tree that moved editor out has no 'editor').
-    const reconstituted = reconstituteMainTabs(migratePanelLayout(parsed, layout))
-    const panelLayout = tasksWasActive
-      ? activateTabsPanel(reconstituted, MAIN_TABS_ID, 'tasks')
-      : reconstituted
+    const stored = asRecord(parsed.panelLayout)
+    const isNewGroupBlob = stored.version === 1 && isGroupShapeTree(stored.desktop)
+    const loaded: LoadedTree = isNewGroupBlob ? loadGroupBlob(parsed, stored) : migrateOldBlob(parsed, layout)
 
     return {
-      ...loadInstanceState(parsed, panelLayout),
+      terminalBindings: loaded.terminalBindings,
+      editorMru: loaded.editorMru,
+      terminalMru: loaded.terminalMru,
+      activeGroupId: loaded.activeGroupId,
       mobilePane: parsed.mobilePane === 'files' || parsed.mobilePane === 'editor' || parsed.mobilePane === 'tasks' || parsed.mobilePane === 'terminal'
         ? parsed.mobilePane as PersistedState['mobilePane'] : 'files',
       layout,
       recentFiles: Array.isArray(parsed.recentFiles)
         ? (parsed.recentFiles as unknown[]).filter((s): s is string => typeof s === 'string').slice(0, 50)
         : [],
-      panelLayout,
+      panelLayout: loaded.panelLayout,
     }
   } catch {
     return defaultPersistedState()

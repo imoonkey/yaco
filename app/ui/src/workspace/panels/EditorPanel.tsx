@@ -23,7 +23,7 @@
 // surface renders no voice button and never inserts.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiffTab, isFileTab, parseDiffTab } from '../../hooks/useWorkspaceState'
-import { EMPTY_VIEW } from '../../hooks/workspaceTypes'
+import { editorTabByInstance } from '../../hooks/useLayoutState'
 import { fetchGitCompare } from '../../hooks/useApi'
 import type { GitChange } from '../../types'
 import type { CompareContext } from '../diff/DiffTab'
@@ -33,7 +33,7 @@ import {
   type SplitSide,
 } from '../context'
 import { usePanelInstance } from '../panelInstance'
-import { HOME_EDITOR_ID, MAIN_TABS_ID } from '../panelLayoutModel'
+import { editorInstancesInOrder, groupOf, firstGroupId } from '../panelLayoutModel'
 import { useWorkspaceDiff } from '../useWorkspaceDiff'
 import { WorkspaceEditorColumn } from '../WorkspaceEditorColumn'
 import { PANEL_META } from '../panelMeta'
@@ -48,20 +48,26 @@ export function EditorPanel() {
   const env = useWorkspaceEnv()
   const data = useWorkspaceDataContext()
   const selection = useWorkspaceSelection()
-  const { layout } = useWorkspaceLayout()
+  const { layout, panelLayout } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
   const voice = useWorkspaceVoiceSurface()
   const actions = commands.actions
 
   const { name: projectName, worktree } = env.project
   const { isMobile, isTouch } = env.viewport
-  // Which editor instance this pane is. Outside a PanelHost (isolation tests)
-  // there is no instance context → the home editor ('editor').
-  const instanceId = usePanelInstance()?.instanceId ?? HOME_EDITOR_ID
-  const isSecondary = instanceId !== HOME_EDITOR_ID
-  // View is per-instance (design: §E); a missing id resolves to the empty view.
-  const view = selection.editorViews[instanceId] ?? EMPTY_VIEW
-  const { openTabs, activeTab, previewTab } = view
+  const tree = panelLayout.desktop
+  // Which editor instance this pane is. Outside a PanelHost (isolation tests) there
+  // is no instance context → the active editor instance.
+  const instanceId = usePanelInstance()?.instanceId ?? selection.activeEditorId
+  // FLAT: an editor instance IS one tab. Derive the single-tab view from the group
+  // node so the (still single-tab) editor column renders unchanged (vt-bodies will
+  // strip the per-editor tab bar entirely).
+  const myTab = editorTabByInstance(tree, instanceId)
+  const tabId = myTab && myTab.kind === 'editor' ? myTab.tabId : null
+  const isSecondary = false
+  const openTabs = tabId ? [tabId] : []
+  const activeTab = tabId
+  const previewTab = myTab && myTab.kind === 'editor' && myTab.preview ? tabId : null
   const { files, dirtyTabs, conflictTabs, jumpRequest } = selection.editor
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
   // Derived tab state (mirrors the inline editor body).
@@ -142,36 +148,35 @@ export function EditorPanel() {
   }, [commands])
 
   // Per-instance routing of go-to-line + voice insert: consume only requests
-  // aimed at this pane (design: §E). The home editor's id is HOME_EDITOR_ID. The
-  // insert must ALSO target the file this pane currently shows, so a take stamped
-  // before a tab switch never lands in the wrong file.
-  const myJump = jumpRequest && jumpRequest.instanceId === instanceId ? jumpRequest : null
+  // aimed at this pane (design: §E). Go-to-line matches by path (the open-and-jump
+  // command stamps the path); the voice insert must ALSO target this pane and the
+  // file it currently shows.
+  const myJump = jumpRequest && jumpRequest.path === activeFilePath
+    && (jumpRequest.instanceId === undefined || jumpRequest.instanceId === instanceId) ? jumpRequest : null
   const insert = voice.editorInsert as TargetedInsert | null
   const myInsert = insert && insert.instanceId === instanceId && insert.filePath === activeTab ? insert : null
 
-  // Paths open in OTHER editor views — closing a dirty tab here is loss-free when
+  // Paths open in OTHER editor tabs — closing a dirty tab here is loss-free when
   // the file is still shown elsewhere (shared buffer), so the tab bar skips its
-  // discard confirm in that case (design: §B explicit-discard). On the LAST view,
-  // the confirmed discard runs `acceptDisk` (the surface's revert-to-disk action:
-  // draft → null, status → clean), so the post-close GC drops the now-unreferenced
-  // buffer instead of keeping it dirty and resurrecting the edit on reopen.
+  // discard confirm in that case (design: §B explicit-discard).
   const pathsOpenElsewhere = useMemo(() => {
     const set = new Set<string>()
-    for (const [id, v] of Object.entries(selection.editorViews)) {
+    for (const id of editorInstancesInOrder(tree)) {
       if (id === instanceId) continue
-      for (const tab of v.openTabs) set.add(tab)
+      const t = editorTabByInstance(tree, id)
+      if (t && t.kind === 'editor') set.add(t.tabId)
     }
     return set
-  }, [selection.editorViews, instanceId])
+  }, [tree, instanceId])
 
   // Split/Move/Close chrome (design: §E). The home editor only splits; secondary
   // editors also move (beside the structural home region) and close.
   const editorSplit = useMemo(() => ({
     isSecondary,
     onSplit: (side: SplitSide) => commands.splitEditor(instanceId, side),
-    onMove: (side: SplitSide) => commands.movePane(instanceId, { targetId: MAIN_TABS_ID, side }),
+    onMove: (side: SplitSide) => commands.movePane(instanceId, { targetId: groupOf(tree, instanceId) ?? firstGroupId(tree) ?? instanceId, side }),
     onClose: () => commands.closePane(instanceId),
-  }), [isSecondary, instanceId, commands])
+  }), [isSecondary, instanceId, commands, tree])
 
   return (
     <WorkspaceEditorColumn

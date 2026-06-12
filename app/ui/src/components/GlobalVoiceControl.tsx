@@ -12,11 +12,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, FileText, LoaderCircle, Mic, Square, SquareTerminal } from 'lucide-react'
 import type { CapabilityState, InteractionState, VoiceTargetContext } from '../hooks/useVoice'
-import { isFileTab, type EditorView, type PreviewMode } from '../hooks/workspaceTypes'
+import { isFileTab, type GroupTab, type LayoutNode, type PreviewMode } from '../hooks/workspaceTypes'
 import { isPreviewableFile } from '../lib/binaryFiles'
-import { HOME_EDITOR_ID } from '../workspace/panelLayoutModel'
+import { tabByInstance } from '../workspace/panelLayoutModel'
 
 export type VoiceInstanceKind = 'editor' | 'terminal'
+
+/** The editor tab an instance shows, or null (absent / a terminal tab). */
+export function editorVoiceTab(tree: LayoutNode, instanceId: string): GroupTab | null {
+  const t = tabByInstance(tree, instanceId)
+  return t && t.kind === 'editor' ? t : null
+}
 
 /** One eligible voice target: an editor pane showing an editable file, or a bound
  *  terminal pane. `filePath`/`sessionName` are the record-context payload. */
@@ -33,10 +39,10 @@ export type VoiceTargetOverride = { kind: VoiceInstanceKind; instanceId: string 
 export type ResolveVoiceTargetArgs = {
   editorIds: string[]
   terminalIds: string[]
-  editorViews: Record<string, EditorView>
+  tree: LayoutNode
   terminalBindings: Record<string, string>
   previewMode: PreviewMode
-  /** The main region currently shows the tasks panel, hiding the home editor. */
+  /** The active surface hides the editor (mobile tasks pane). */
   showingTasks: boolean
   activeEditorId: string
   activeTerminalId: string | null
@@ -46,19 +52,18 @@ export type ResolveVoiceTargetArgs = {
 
 const basename = (path: string): string => path.split('/').pop() || path
 
-/** An editor pane is an eligible voice target iff it shows a plain editable file:
- *  a real file tab (not a diff), not a previewable file in preview mode (markdown/
- *  html/image/pdf render a preview, not an Editor), and — for the home editor —
- *  not hidden behind the tasks panel. The single source of truth the resolver,
- *  target-loss, and confirm paths all share, so a take can only land where an
- *  Editor is actually mounted on the target file (design: §G). */
+/** An editor tab is an eligible voice target iff it shows a plain editable file: a
+ *  real file tab (not a diff), not a previewable file in preview mode (markdown/
+ *  html/image/pdf render a preview, not an Editor), and not hidden behind the tasks
+ *  pane. The single source of truth the resolver, target-loss, and confirm paths
+ *  all share, so a take can only land where an Editor is actually mounted (§G). */
 export function isEditorVoiceEligible(
-  view: EditorView | undefined, instanceId: string, previewMode: PreviewMode, showingTasks: boolean,
+  tab: GroupTab | null, previewMode: PreviewMode, showingTasks: boolean,
 ): boolean {
-  if (showingTasks && instanceId === HOME_EDITOR_ID) return false
-  const tab = view?.activeTab ?? null
-  if (!isFileTab(tab)) return false
-  if (isPreviewableFile(tab) && previewMode === 'preview') return false
+  if (showingTasks) return false
+  const tabId = tab && tab.kind === 'editor' ? tab.tabId : null
+  if (!isFileTab(tabId)) return false
+  if (isPreviewableFile(tabId) && previewMode === 'preview') return false
   return true
 }
 
@@ -70,13 +75,13 @@ export function resolveVoiceTarget(args: ResolveVoiceTargetArgs): {
   instances: VoiceInstance[]
   target: VoiceInstance | null
 } {
-  const { editorIds, terminalIds, editorViews, terminalBindings, previewMode, showingTasks } = args
+  const { editorIds, terminalIds, tree, terminalBindings, previewMode, showingTasks } = args
 
   const instances: VoiceInstance[] = []
   for (const id of editorIds) {
-    const view = editorViews[id]
-    if (!isEditorVoiceEligible(view, id, previewMode, showingTasks)) continue
-    const filePath = view!.activeTab as string
+    const tab = editorVoiceTab(tree, id)
+    if (!isEditorVoiceEligible(tab, previewMode, showingTasks)) continue
+    const filePath = tab!.kind === 'editor' ? tab!.tabId : ''
     instances.push({ kind: 'editor', instanceId: id, label: basename(filePath), filePath })
   }
   for (const id of terminalIds) {

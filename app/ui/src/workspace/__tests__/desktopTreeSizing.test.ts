@@ -7,9 +7,9 @@ import {
   minBasisPx, isCollapsedLeaf, canonicalizeSplit, planSplitChildren,
   withEmptyEditorRule, collectFramedLeaves,
 } from '../desktopTreeSizing'
-import { defaultDesktopTree, MAIN_TABS_ID } from '../panelLayoutModel'
+import { defaultDesktopTree } from '../panelLayoutModel'
 import type { PanelId } from '../context'
-import type { LayoutNode, SplitNode, SplitChild } from '../../hooks/workspaceTypes'
+import type { SplitNode, SplitChild } from '../../hooks/workspaceTypes'
 
 // --- builders ---------------------------------------------------------------
 
@@ -26,7 +26,6 @@ function split(axis: 'row' | 'col', children: SplitChild[], id = 'split'): Split
   return { kind: 'split', id, axis, children }
 }
 
-const rootOf = (tree: LayoutNode): SplitNode => tree as SplitNode
 const childAt = (s: SplitNode, id: string) => s.children.find((c) => c.node.id === id)
 const idOfAbsorber = (s: SplitNode): string | undefined =>
   s.children.find((c) => c.hidden !== true && c.grow === true)?.node.id
@@ -111,37 +110,16 @@ describe('planSplitChildren — flex sizing per visible child', () => {
   })
 })
 
-describe('withEmptyEditorRule — empty editor yields width to activity', () => {
-  it('hides the main tabs node when no tabs are open and activity is visible', () => {
-    const root = rootOf(withEmptyEditorRule(defaultDesktopTree(), false))
-    const main = root.children.find((c) => c.node.id === MAIN_TABS_ID)
-    expect(main?.hidden).toBe(true)
-    // with main hidden, the activity column absorbs the freed width
-    const canon = canonicalizeSplit(root)
-    expect(idOfAbsorber(canon)).toBe('activity')
+describe('withEmptyEditorRule — identity under the group model', () => {
+  // Empty groups are valid, full-size structural nodes now, so the old
+  // "yield the empty editor's width" hide rule is gone — the pass is identity.
+  it('returns the tree unchanged regardless of the hasOpenTabs flag', () => {
+    const tree = defaultDesktopTree()
+    expect(withEmptyEditorRule(tree, false)).toBe(tree)
+    expect(withEmptyEditorRule(tree, true)).toBe(tree)
   })
 
-  it('keeps the main tabs node when a tab is open', () => {
-    const root = rootOf(withEmptyEditorRule(defaultDesktopTree(), true))
-    const main = root.children.find((c) => c.node.id === MAIN_TABS_ID)
-    expect(main?.hidden).toBeUndefined()
-    expect(idOfAbsorber(canonicalizeSplit(root))).toBe(MAIN_TABS_ID)
-  })
-
-  it('keeps the main tabs node when the activity column is hidden (nothing else to absorb)', () => {
-    const base = rootOf(defaultDesktopTree())
-    const withHiddenActivity: SplitNode = {
-      ...base,
-      children: base.children.map((c) => (c.node.id === 'activity' ? { ...c, hidden: true } : c)),
-    }
-    const root = rootOf(withEmptyEditorRule(withHiddenActivity, false))
-    const main = root.children.find((c) => c.node.id === MAIN_TABS_ID)
-    expect(main?.hidden).toBeUndefined()
-    // main is the only flexible candidate left ⇒ it absorbs
-    expect(idOfAbsorber(canonicalizeSplit(root))).toBe(MAIN_TABS_ID)
-  })
-
-  it('does not mutate the input tree (render-only derivation)', () => {
+  it('does not mutate the input tree', () => {
     const tree = defaultDesktopTree()
     const snapshot = JSON.stringify(tree)
     withEmptyEditorRule(tree, false)

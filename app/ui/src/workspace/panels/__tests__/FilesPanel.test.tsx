@@ -16,6 +16,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PanelFrame } from '../../PanelFrame'
 import { resolvePanelTitle } from '../../panelMeta'
+import { defaultWorkspacePanelLayout } from '../../panelLayoutModel'
 import { filesPanelDef } from '../FilesPanel'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
@@ -92,12 +93,13 @@ function renderFilesPanel(opts: RenderOpts = {}) {
   } as unknown as WorkspaceData
 
   const selection = {
-    selectedFilePath: null, activeTab: null, previewTab: null,
+    selectedFilePath: null, activeGroupId: 'group:1', activeEditorTabId: null, activeEditorPath: null,
   } as unknown as WorkspaceSelection
 
   const layout = {
     layout: { showTextSearch, showSidebar: true, showExplorer: true },
     mobilePane: 'files',
+    panelLayout: defaultWorkspacePanelLayout(),
   } as unknown as WorkspaceLayoutContextValue
 
   const setFilesMode = vi.fn()

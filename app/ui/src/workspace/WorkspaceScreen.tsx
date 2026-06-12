@@ -5,7 +5,7 @@ import { useVoice } from '../hooks/useVoice'
 import { isPreviewableFile } from '../lib/binaryFiles'
 import { ComposeTray } from '../components/ComposeTray'
 import {
-  GlobalVoiceControl, resolveVoiceTarget, instanceFromTarget, isEditorVoiceEligible, advanceFocusEpoch,
+  GlobalVoiceControl, resolveVoiceTarget, instanceFromTarget, isEditorVoiceEligible, editorVoiceTab, advanceFocusEpoch,
   type VoiceInstance, type VoiceTargetOverride, type FocusEpochState,
 } from '../components/GlobalVoiceControl'
 import { FileSearch } from './WorkspaceSearch'
@@ -19,7 +19,7 @@ import { useWorkspaceKeyboard } from './useWorkspaceKeyboard'
 import { useWorkspaceVoice, type VoiceInsert } from './useWorkspaceVoice'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import { WorkspaceProvider } from './WorkspaceProvider'
-import { mainTabsActivePanel, editorInstancesInOrder, terminalInstancesInOrder } from './panelLayoutModel'
+import { editorInstancesInOrder, terminalInstancesInOrder } from './panelLayoutModel'
 import {
   useWorkspaceEnv, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceCommands,
   WorkspaceVoiceContext, type WorkspaceVoiceSurface,
@@ -83,7 +83,7 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
 
   const { name: projectName, worktree } = env.project
   const { isMobile } = env.viewport
-  const { activeTab, activeSession, recentFiles, showSearch, focusedPane } = selection
+  const { activeEditorTabId, activeSession, recentFiles, showSearch, focusedPane } = selection
   const { previewMode } = layout
 
   const rootRef = useRef<HTMLDivElement>(null)
@@ -95,17 +95,14 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
   const [editorInsert, setEditorInsert] = useState<VoiceInsert | null>(null)
   const [terminalSend, setTerminalSend] = useState<VoiceInsert | null>(null)
 
-  // Is the tasks panel the surface currently shown in the main region? When it
-  // is, the editor (and its active file tab) is hidden behind tasks, so editor-
-  // only shortcuts — preview-mode toggle (Cmd+Shift+V) and editor voice — must be
-  // inert (the old fake tasks tab made `activeTab` non-file, achieving the same).
-  const showingTasks = isMobile
-    ? mobilePane === 'tasks'
-    : mainTabsActivePanel(panelLayout.desktop) === 'tasks'
+  // On mobile only one pane shows at a time, so the editor is hidden while the
+  // tasks pane is active; desktop renders the editor group + the tasks dock leaf
+  // side by side, so the editor is never hidden by tasks there.
+  const showingTasks = isMobile && mobilePane === 'tasks'
 
   // Derived tab state the voice routing keys off — null while tasks is showing.
-  const activeFilePath = !showingTasks && isFileTab(activeTab) ? activeTab : null
-  const activeDiffTab = !showingTasks && isDiffTab(activeTab)
+  const activeFilePath = !showingTasks && isFileTab(activeEditorTabId) ? activeEditorTabId : null
+  const activeDiffTab = !showingTasks && isDiffTab(activeEditorTabId)
   const isPreviewable = !!activeFilePath && isPreviewableFile(activeFilePath)
 
   // The single workspace voice (one useVoice + one ComposeTray below).
@@ -116,7 +113,7 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
     activeTerminalId: selection.activeTerminalId,
     activeFilePath, attachedSession: activeSession,
     activeDiffTab, isPreviewable, previewMode, showingTasks,
-    editorViews: selection.editorViews,
+    tree: panelLayout.desktop,
     terminalBindings: selection.terminalBindings,
     setEditorInsert, setTerminalSend,
     focusPane: commands.focusPane,
@@ -140,7 +137,7 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
   const focusKey = `${focusedPane.kind}:${focusedPane.instanceId}`
   const focusedEligible =
     focusedPane.kind === 'editor'
-      ? isEditorVoiceEligible(selection.editorViews[focusedPane.instanceId], focusedPane.instanceId, previewMode, showingTasks)
+      ? isEditorVoiceEligible(editorVoiceTab(panelLayout.desktop, focusedPane.instanceId), previewMode, showingTasks)
       : focusedPane.kind === 'terminal'
         ? !!selection.terminalBindings[focusedPane.instanceId]
         : false
@@ -163,14 +160,14 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
 
   const voiceTarget = useMemo(() => resolveVoiceTarget({
     editorIds, terminalIds,
-    editorViews: selection.editorViews,
+    tree: panelLayout.desktop,
     terminalBindings: selection.terminalBindings,
     previewMode, showingTasks,
     activeEditorId: selection.activeEditorId,
     activeTerminalId: selection.activeTerminalId,
     recentMultiKind,
     override: override ? { kind: override.kind, instanceId: override.instanceId } : null,
-  }), [editorIds, terminalIds, selection.editorViews, selection.terminalBindings, previewMode, showingTasks, selection.activeEditorId, selection.activeTerminalId, recentMultiKind, override])
+  }), [editorIds, terminalIds, panelLayout.desktop, selection.terminalBindings, previewMode, showingTasks, selection.activeEditorId, selection.activeTerminalId, recentMultiKind, override])
 
   // The mic records into the live idle target; read it from a ref so the handler
   // identity stays stable as the target recomputes each render.

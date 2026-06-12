@@ -16,7 +16,7 @@
 //     the main tabs node is excluded (render-only) so the activity column absorbs
 //     the freed width, reproducing today's behavior.
 import { getPanelMeta } from './panelMeta'
-import { DEFAULT_MIN_SIZE, MAIN_TABS_ID, mainTabsActivePanel } from './panelLayoutModel'
+import { DEFAULT_MIN_SIZE } from './panelLayoutModel'
 import type { PanelId } from './context'
 import type { LayoutNode, SplitNode, SplitChild, SplitAxis } from '../hooks/workspaceTypes'
 import type { CSSProperties } from 'react'
@@ -108,30 +108,12 @@ export function planSplitChildren(canonical: SplitNode): SplitItem[] {
     })
 }
 
-/** Does the subtree contain the reserved main tabs node? */
-function containsMainTabs(node: LayoutNode): boolean {
-  if (node.kind === 'tabs') return node.id === MAIN_TABS_ID
-  if (node.kind === 'split') return node.children.some((c) => containsMainTabs(c.node))
-  return false
-}
-
-/** Empty-editor yields space (design): with no open tabs and a visible activity
- *  column, exclude the main tabs node from width allocation (render-only hide) so
- *  the activity column absorbs the freed width. Returns the tree unchanged when
- *  the main node should keep its width (a tab is open, the tasks panel is the
- *  active main panel, or no visible activity column exists to absorb the space). */
-export function withEmptyEditorRule(tree: LayoutNode, hasOpenTabs: boolean): LayoutNode {
-  if (tree.kind !== 'split') return tree
-  // Tasks active → the main node renders the task panel (no editor tabs needed),
-  // so it always occupies its width.
-  if (mainTabsActivePanel(tree) === 'tasks') return tree
-  const mainIndex = tree.children.findIndex((c) => containsMainTabs(c.node))
-  if (mainIndex === -1) return tree
-  const activity = tree.children[mainIndex + 1]
-  const activityVisible = activity != null && activity.hidden !== true
-  if (hasOpenTabs || !activityVisible) return tree
-  const children = tree.children.map((c, i) => (i === mainIndex ? { ...c, hidden: true } : c))
-  return { ...tree, children }
+/** Empty groups are valid, full-size structural nodes under the group model, so
+ *  there is no render-only "yield the empty editor's width" rule anymore — a group
+ *  sizes like any split child. Kept as an identity pass so the renderer call site
+ *  is stable until vt-render removes it. */
+export function withEmptyEditorRule(tree: LayoutNode, _hasOpenTabs: boolean): LayoutNode {
+  return tree
 }
 
 // Per-framed-panel body chrome, mirroring the legacy section body wrappers so

@@ -3,6 +3,7 @@ import type { UseVoiceReturn } from '../hooks/useVoice'
 import type { FileNode } from '../types'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { splitSideFromGeometry, orthogonalSide } from './panelInstance'
+import { editorTabsInGroup } from './panelLayoutModel'
 import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceDataContext, useWorkspaceEnv, useOptionalWorkspacePanelResources } from './context'
 
 /** Type of the tree node at `path` (file/dir), or null if not in the tree. */
@@ -55,9 +56,9 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
   const splitTerminal = commands.splitTerminal
   const openToSide = commands.openToSide
   const setShowSearch = commands.actions.setShowSearch
-  const { activeSession, openTabs, activeTab, focusedPane, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
+  const { activeSession, activeGroupId, activeEditorTabId, focusedPane, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
   const { orderedSessions } = useWorkspaceDataContext().sessions
-  const { layout } = useWorkspaceLayout()
+  const { layout, panelLayout } = useWorkspaceLayout()
   const { previewMode } = layout
   const { isMobile } = useWorkspaceEnv().viewport
   // The file tree the explorer renders (provider-owned, always-on). Used to gate
@@ -148,19 +149,20 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         if (isMobile) actions.setMobilePane('terminal')
         return
       }
-      // Cmd+Ctrl+Arrow Left/Right: cycle editor tabs
+      // Cmd+Ctrl+Arrow Left/Right: cycle the active group's editor tabs
       if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey
           && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-        if (openTabs.length === 0) return
+        const openTabIds = editorTabsInGroup(panelLayout.desktop, activeGroupId).flatMap((t) => (t.kind === 'editor' ? [t.tabId] : []))
+        if (openTabIds.length === 0) return
         e.preventDefault()
         e.stopPropagation()
-        const cur = activeTab ? openTabs.indexOf(activeTab) : -1
+        const cur = activeEditorTabId ? openTabIds.indexOf(activeEditorTabId) : -1
         const next = cur === -1
-          ? (e.key === 'ArrowRight' ? 0 : openTabs.length - 1)
+          ? (e.key === 'ArrowRight' ? 0 : openTabIds.length - 1)
           : e.key === 'ArrowRight'
-            ? (cur + 1) % openTabs.length
-            : (cur - 1 + openTabs.length) % openTabs.length
-        actions.setActiveTab(openTabs[next])
+            ? (cur + 1) % openTabIds.length
+            : (cur - 1 + openTabIds.length) % openTabIds.length
+        actions.setActiveTab(openTabIds[next])
         setFocusTarget('editor')
         if (isMobile) actions.setMobilePane('editor')
         return
@@ -269,7 +271,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, fileTree, focusedPane, focusTarget, openToSide, recordEditor, recordTerminal, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, splitEditor, splitTerminal, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeEditorTabId, activeGroupId, panelLayout, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, fileTree, focusedPane, focusTarget, openToSide, recordEditor, recordTerminal, isMobile, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, splitEditor, splitTerminal, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

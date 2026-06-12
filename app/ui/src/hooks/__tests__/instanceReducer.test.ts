@@ -1,246 +1,317 @@
-// Unit tests for the multi-instance reducer (mi-state). The reducer is pure, so
-// these run without React. They pin: per-instance tab logic parity with the old
-// global logic (preview drop / dirty-pin / close-neighbor), per-instance
-// isolation, retarget/close-under fan-out across ALL views, atomic seed+GC on
-// every structural transition, and the focus/MRU model.
+// Unit tests for the flat tab-group reducer (vt-state). The reducer is pure, so
+// these run without React. They pin: group-tab open/preview/close semantics, the
+// empty-group invariant, atomic create+bind for terminals, split → empty focused
+// group, retarget/close-under across ALL groups, and the activeGroupId/MRU/focus
+// model (clamped on every transition).
 import { describe, it, expect } from 'vitest'
 import { instanceReducer, buildInstanceState, type InstanceState } from '../useLayoutState'
 import {
-  type WorkspacePanelLayout, type EditorView, type PersistedState,
-  EMPTY_VIEW, DEFAULT_LAYOUT,
+  type WorkspacePanelLayout, type PersistedState, type LayoutNode, type TabsNode, type GroupTab,
+  DEFAULT_LAYOUT,
 } from '../workspaceTypes'
 import {
-  MAIN_TABS_ID, defaultWorkspacePanelLayout, normalizeLayout,
-  editorInstancesInOrder, terminalInstancesInOrder,
+  defaultWorkspacePanelLayout, normalizeLayout, firstGroupId, groupOf,
+  tabsInGroup, editorTabPaths, editorInstancesInOrder, terminalInstancesInOrder,
 } from '../../workspace/panelLayoutModel'
 
 // --- Fixtures ---------------------------------------------------------------
 
-function makeState(opts: Partial<Pick<PersistedState, 'editorViews' | 'terminalBindings' | 'editorMru' | 'terminalMru'>> & { layout?: WorkspacePanelLayout }): InstanceState {
-  return buildInstanceState({
+function makeState(opts: {
+  layout?: WorkspacePanelLayout
+  terminalBindings?: Record<string, string>
+  editorMru?: string[]
+  terminalMru?: string[]
+  activeGroupId?: string
+}): InstanceState {
+  const initial: PersistedState = {
     panelLayout: opts.layout ?? defaultWorkspacePanelLayout(),
-    editorViews: opts.editorViews ?? {},
     terminalBindings: opts.terminalBindings ?? {},
     editorMru: opts.editorMru ?? [],
     terminalMru: opts.terminalMru ?? [],
+    activeGroupId: opts.activeGroupId ?? 'group:1',
     mobilePane: 'files',
     layout: DEFAULT_LAYOUT,
     recentFiles: [],
-  })
+  }
+  return buildInstanceState(initial)
 }
 
-/** A tree with the home editor + a secondary editor + two terminals. */
-function multiLayout(): WorkspacePanelLayout {
+/** A dock + one working group carrying `tabs`. */
+function oneGroup(tabs: GroupTab[]): WorkspacePanelLayout {
   return normalizeLayout({
     desktop: {
       kind: 'split', id: 'root', axis: 'row',
       children: [
         { node: { kind: 'leaf', id: 'files', panel: 'files' } },
-        { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
-        { node: { kind: 'leaf', id: 'editor:2', panel: 'editor' } },
-        { node: { kind: 'leaf', id: 'terminal', panel: 'terminal' } },
-        { node: { kind: 'leaf', id: 'terminal:2', panel: 'terminal' } },
+        { grow: true, node: { kind: 'tabs', id: 'group:1', tabs, activeTab: tabs[0]?.instanceId ?? '' } },
       ],
     },
   })
 }
 
+/** Two working groups, each carrying its own tabs. */
+function twoGroups(g1: GroupTab[], g2: GroupTab[]): WorkspacePanelLayout {
+  return normalizeLayout({
+    desktop: {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: g1, activeTab: g1[0]?.instanceId ?? '' } },
+        { node: { kind: 'tabs', id: 'group:2', tabs: g2, activeTab: g2[0]?.instanceId ?? '' } },
+      ],
+    },
+  })
+}
+
+function findGroup(tree: LayoutNode, id: string): TabsNode | null {
+  if (tree.kind === 'tabs') return tree.id === id ? tree : null
+  if (tree.kind === 'split') {
+    for (const c of tree.children) { const hit = findGroup(c.node, id); if (hit) return hit }
+  }
+  return null
+}
+
+const editor = (instanceId: string, tabId: string, extra: Partial<GroupTab> = {}): GroupTab =>
+  ({ instanceId, kind: 'editor', tabId, ...extra } as GroupTab)
+
 const NO_PROTECT: ReadonlySet<string> = new Set()
 
-// --- Per-instance tab logic (parity with the old global logic) --------------
+// --- Open a file into a focused EMPTY group ---------------------------------
 
-describe('editor view tab logic, keyed by instance', () => {
-  it('opens a file tab as active + pinned', () => {
-    const s = instanceReducer(makeState({}), { type: 'OPEN_FILE_TAB', id: 'editor', path: 'a.ts' })
-    expect(s.editorViews.editor).toEqual({ openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: null })
+describe('OPEN_TAB into a focused empty group', () => {
+  it('appends the editor tab, activates + focuses it, sets activeGroupId', () => {
+    let s = makeState({}) // default tree: empty group:1, activeGroupId group:1
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([])
+
+    s = instanceReducer(s, { type: 'OPEN_TAB', groupId: 'group:1', tab: editor('editor', 'a.ts') })
+
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([editor('editor', 'a.ts')])
+    expect(findGroup(s.panelLayout.desktop, 'group:1')?.activeTab).toBe('editor')
+    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor' })
+    expect(s.activeGroupId).toBe('group:1')
+    expect(s.editorMru[0]).toBe('editor')
   })
 
-  it('drops a clean old preview when opening a new preview', () => {
-    let s = makeState({ editorViews: { editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: 'a.ts' } } })
-    s = instanceReducer(s, { type: 'OPEN_PREVIEW_TAB', id: 'editor', path: 'b.ts', protectedPaths: NO_PROTECT })
-    expect(s.editorViews.editor).toEqual({ openTabs: ['b.ts'], activeTab: 'b.ts', previewTab: 'b.ts' })
+  it('dedups by exact tabId: a second open of the same tab just activates it', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts'), editor('editor:2', 'b.ts')]) })
+    s = instanceReducer(s, { type: 'SET_ACTIVE_GROUP_TAB', groupId: 'group:1', instanceId: 'editor:2' })
+    s = instanceReducer(s, { type: 'OPEN_TAB', groupId: 'group:1', tab: editor('editor:9', 'a.ts') })
+    // No new tab — the existing 'a.ts' tab is activated, 'editor:9' unused.
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([editor('editor', 'a.ts'), editor('editor:2', 'b.ts')])
+    expect(findGroup(s.panelLayout.desktop, 'group:1')?.activeTab).toBe('editor')
   })
 
-  it('keeps a DIRTY old preview pinned when opening a new preview', () => {
-    let s = makeState({ editorViews: { editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: 'a.ts' } } })
-    s = instanceReducer(s, { type: 'OPEN_PREVIEW_TAB', id: 'editor', path: 'b.ts', protectedPaths: new Set(['a.ts']) })
-    expect(s.editorViews.editor.openTabs).toEqual(['a.ts', 'b.ts']) // a stays (auto-pinned)
-    expect(s.editorViews.editor.previewTab).toBe('b.ts')
+  it('a.ts and diff:a.ts coexist (exact-tabId dedup, not path)', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts')]) })
+    s = instanceReducer(s, { type: 'OPEN_DIFF_TAB', groupId: 'group:1', tabId: 'diff:a.ts', newId: 'editor:2' })
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1').map((t) => (t.kind === 'editor' ? t.tabId : '')))
+      .toEqual(['a.ts', 'diff:a.ts'])
+  })
+})
+
+// --- Open a session into a focused empty group (atomic create+bind) ---------
+
+describe('OPEN_BOUND_TERMINAL_TAB is create+bind atomic', () => {
+  it('appends a terminal tab AND binds it in ONE transition', () => {
+    let s = makeState({}) // empty group:1
+    s = instanceReducer(s, { type: 'OPEN_BOUND_TERMINAL_TAB', groupId: 'group:1', session: 's1', newId: 'terminal' })
+
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([{ instanceId: 'terminal', kind: 'terminal' }])
+    expect(s.terminalBindings).toEqual({ terminal: 's1' }) // bound in the same transition, survives GC
+    expect(s.focusedPane).toEqual({ kind: 'terminal', instanceId: 'terminal' })
+    expect(s.terminalMru[0]).toBe('terminal')
+    expect(s.activeGroupId).toBe('group:1')
+  })
+})
+
+// --- Split → empty focused group → open lands there -------------------------
+
+describe('SPLIT_GROUP spawns an empty focused sibling', () => {
+  it('creates an empty group and sets activeGroupId to it; the next open lands there', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts')]) })
+    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2' })
+
+    expect(firstGroupId(s.panelLayout.desktop)).toBe('group:1')
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:2')).toEqual([]) // empty
+    expect(s.activeGroupId).toBe('group:2') // focused via activeGroupId, not focusedPane
+
+    // targetGroup resolves to the empty group:2, so OPEN_TAB lands there.
+    s = instanceReducer(s, { type: 'OPEN_TAB', groupId: s.activeGroupId, tab: editor('editor:2', 'b.ts') })
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:2')).toEqual([editor('editor:2', 'b.ts')])
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([editor('editor', 'a.ts')]) // original kept its file
+  })
+})
+
+// --- Close last tab → one empty group survives ------------------------------
+
+describe('CLOSE_GROUP_TAB / empty-group invariant', () => {
+  it('closing the last tab of the LAST group leaves one empty group', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts')]) })
+    s = instanceReducer(s, { type: 'CLOSE_GROUP_TAB', groupId: 'group:1', instanceId: 'editor' })
+
+    expect(firstGroupId(s.panelLayout.desktop)).toBe('group:1') // still there
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([]) // empty
+    expect(editorInstancesInOrder(s.panelLayout.desktop)).toEqual([])
+  })
+
+  it('closing the last tab of a NON-last group removes that group', () => {
+    let s = makeState({ layout: twoGroups([editor('editor', 'a.ts')], [editor('editor:2', 'b.ts')]) })
+    s = instanceReducer(s, { type: 'CLOSE_GROUP_TAB', groupId: 'group:2', instanceId: 'editor:2' })
+    expect(findGroup(s.panelLayout.desktop, 'group:2')).toBeNull() // group removed
+    expect(firstGroupId(s.panelLayout.desktop)).toBe('group:1')
+  })
+
+  it('closing the active tab activates the in-group neighbour (Math.min rule)', () => {
+    let s = makeState({ layout: oneGroup([editor('a', 'a.ts'), editor('b', 'b.ts'), editor('c', 'c.ts')]) })
+    s = instanceReducer(s, { type: 'SET_ACTIVE_GROUP_TAB', groupId: 'group:1', instanceId: 'b' })
+    s = instanceReducer(s, { type: 'CLOSE_GROUP_TAB', groupId: 'group:1', instanceId: 'b' })
+    expect(findGroup(s.panelLayout.desktop, 'group:1')?.activeTab).toBe('c') // neighbour at min(idx, len-1)
+  })
+
+  it('an explicit CLOSE_GROUP removes an empty non-last group', () => {
+    let s = makeState({ layout: twoGroups([editor('editor', 'a.ts')], []) })
+    s = instanceReducer(s, { type: 'CLOSE_GROUP', groupId: 'group:2' })
+    expect(findGroup(s.panelLayout.desktop, 'group:2')).toBeNull()
+  })
+})
+
+// --- Dirty-close with the same path open elsewhere (spans all groups) -------
+
+describe('buffer keep-set spans every group on the underlying path', () => {
+  it('closing one of two editor tabs on a.ts keeps a.ts referenced', () => {
+    let s = makeState({ layout: twoGroups([editor('editor', 'a.ts')], [editor('editor:2', 'a.ts')]) })
+    expect(editorTabPaths(s.panelLayout.desktop)).toEqual(['a.ts']) // deduped union
+
+    s = instanceReducer(s, { type: 'CLOSE_GROUP_TAB', groupId: 'group:1', instanceId: 'editor' })
+    // group:2 still shows a.ts, so the path stays in the keep-set (no buffer drop).
+    expect(editorTabPaths(s.panelLayout.desktop)).toEqual(['a.ts'])
+  })
+
+  it('a file tab and its diff tab count together on the underlying path', () => {
+    const s = makeState({ layout: twoGroups([editor('editor', 'a.ts')], [editor('editor:2', 'diff:a.ts')]) })
+    expect(editorTabPaths(s.panelLayout.desktop)).toEqual(['a.ts'])
+  })
+})
+
+// --- Preview promote / replace ----------------------------------------------
+
+describe('OPEN_PREVIEW_TAB promote/replace (re-homed onto the group)', () => {
+  it('drops a clean old preview when a new preview opens', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts', { preview: true })]) })
+    s = instanceReducer(s, { type: 'OPEN_PREVIEW_TAB', groupId: 'group:1', tabId: 'b.ts', newId: 'editor:2', protectedPaths: NO_PROTECT })
+    const tabs = tabsInGroup(s.panelLayout.desktop, 'group:1')
+    expect(tabs.map((t) => (t.kind === 'editor' ? t.tabId : ''))).toEqual(['b.ts']) // a.ts (clean preview) dropped
+    expect(tabs[0].kind === 'editor' && tabs[0].preview).toBe(true)
+  })
+
+  it('keeps a DIRTY old preview (auto-pins it) when a new preview opens', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts', { preview: true })]) })
+    s = instanceReducer(s, { type: 'OPEN_PREVIEW_TAB', groupId: 'group:1', tabId: 'b.ts', newId: 'editor:2', protectedPaths: new Set(['a.ts']) })
+    const tabs = tabsInGroup(s.panelLayout.desktop, 'group:1')
+    expect(tabs.map((t) => (t.kind === 'editor' ? t.tabId : ''))).toEqual(['a.ts', 'b.ts']) // a.ts kept
+    expect(tabs[0].kind === 'editor' && !!tabs[0].preview).toBe(false) // a.ts auto-pinned
+    expect(tabs[1].kind === 'editor' && tabs[1].preview).toBe(true)
   })
 
   it('just activates an already-pinned tab opened as preview (no demote)', () => {
-    let s = makeState({ editorViews: { editor: { openTabs: ['a.ts', 'b.ts'], activeTab: 'a.ts', previewTab: null } } })
-    s = instanceReducer(s, { type: 'OPEN_PREVIEW_TAB', id: 'editor', path: 'b.ts', protectedPaths: NO_PROTECT })
-    expect(s.editorViews.editor).toEqual({ openTabs: ['a.ts', 'b.ts'], activeTab: 'b.ts', previewTab: null })
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts'), editor('editor:2', 'b.ts')]) })
+    s = instanceReducer(s, { type: 'OPEN_PREVIEW_TAB', groupId: 'group:1', tabId: 'b.ts', newId: 'editor:9', protectedPaths: NO_PROTECT })
+    const g = findGroup(s.panelLayout.desktop, 'group:1')!
+    expect(g.tabs.map((t) => (t.kind === 'editor' ? t.tabId : ''))).toEqual(['a.ts', 'b.ts'])
+    expect(g.tabs.every((t) => t.kind !== 'editor' || !t.preview)).toBe(true) // none became preview
+    expect(g.activeTab).toBe('editor:2')
   })
 
-  it('selects the neighbour after closing the active tab', () => {
-    let s = makeState({ editorViews: { editor: { openTabs: ['a.ts', 'b.ts', 'c.ts'], activeTab: 'b.ts', previewTab: null } } })
-    s = instanceReducer(s, { type: 'CLOSE_TAB', id: 'editor', tab: 'b.ts' })
-    expect(s.editorViews.editor).toEqual({ openTabs: ['a.ts', 'c.ts'], activeTab: 'c.ts', previewTab: null })
-  })
-
-  it('pins a preview tab (clears the preview pointer)', () => {
-    let s = makeState({ editorViews: { editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: 'a.ts' } } })
-    s = instanceReducer(s, { type: 'PIN_TAB', id: 'editor', path: 'a.ts' })
-    expect(s.editorViews.editor.previewTab).toBeNull()
+  it('PIN_TAB clears the preview flag', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts', { preview: true })]) })
+    s = instanceReducer(s, { type: 'PIN_TAB', groupId: 'group:1', instanceId: 'editor' })
+    const tab = tabsInGroup(s.panelLayout.desktop, 'group:1')[0]
+    expect(tab.kind === 'editor' && !!tab.preview).toBe(false)
   })
 })
 
-// --- Per-instance isolation -------------------------------------------------
+// --- Retarget / close-under across every group ------------------------------
 
-describe('per-instance isolation', () => {
-  it('an op on one editor leaves the other untouched', () => {
-    let s = makeState({
-      layout: multiLayout(),
-      editorViews: {
-        editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: null },
-        'editor:2': { openTabs: ['b.ts'], activeTab: 'b.ts', previewTab: null },
-      },
-    })
-    s = instanceReducer(s, { type: 'OPEN_FILE_TAB', id: 'editor', path: 'x.ts' })
-    expect(s.editorViews['editor:2']).toEqual({ openTabs: ['b.ts'], activeTab: 'b.ts', previewTab: null })
-    expect(s.editorViews.editor.openTabs).toEqual(['a.ts', 'x.ts'])
-  })
-})
-
-// --- Fan-out across all views -----------------------------------------------
-
-describe('retarget / close-under fan out across every view', () => {
-  it('retargets a renamed path in all editor views', () => {
-    let s = makeState({
-      layout: multiLayout(),
-      editorViews: {
-        editor: { openTabs: ['src/a.ts'], activeTab: 'src/a.ts', previewTab: null },
-        'editor:2': { openTabs: ['src/a.ts', 'diff:src/a.ts'], activeTab: 'diff:src/a.ts', previewTab: null },
-      },
-    })
+describe('RETARGET_PATHS / CLOSE_TABS_UNDER fan out across all groups', () => {
+  it('retargets a renamed path in every group (file + diff)', () => {
+    let s = makeState({ layout: twoGroups([editor('editor', 'src/a.ts')], [editor('editor:2', 'diff:src/a.ts')]) })
     s = instanceReducer(s, { type: 'RETARGET_PATHS', oldPath: 'src/a.ts', newPath: 'src/b.ts' })
-    expect(s.editorViews.editor.openTabs).toEqual(['src/b.ts'])
-    expect(s.editorViews['editor:2'].openTabs).toEqual(['src/b.ts', 'diff:src/b.ts'])
-    expect(s.editorViews['editor:2'].activeTab).toBe('diff:src/b.ts')
+    expect(editorTabPaths(s.panelLayout.desktop)).toEqual(['src/b.ts'])
   })
 
-  it('closes tabs under a deleted dir in all editor views', () => {
-    let s = makeState({
-      layout: multiLayout(),
-      editorViews: {
-        editor: { openTabs: ['src/a.ts', 'lib/x.ts'], activeTab: 'src/a.ts', previewTab: null },
-        'editor:2': { openTabs: ['src/deep/y.ts'], activeTab: 'src/deep/y.ts', previewTab: 'src/deep/y.ts' },
-      },
-    })
+  it('closes tabs under a deleted dir in every group', () => {
+    let s = makeState({ layout: twoGroups([editor('editor', 'src/a.ts'), editor('e2', 'lib/x.ts')], [editor('editor:3', 'src/deep/y.ts')]) })
     s = instanceReducer(s, { type: 'CLOSE_TABS_UNDER', path: 'src' })
-    expect(s.editorViews.editor.openTabs).toEqual(['lib/x.ts'])
-    expect(s.editorViews['editor:2'].openTabs).toEqual([])
-    expect(s.editorViews['editor:2'].previewTab).toBeNull()
+    expect(editorTabPaths(s.panelLayout.desktop).sort()).toEqual(['lib/x.ts'])
   })
 })
 
-// --- Atomic seed + GC on structural transitions -----------------------------
+// --- activeGroupId clamp + focus model --------------------------------------
 
-describe('SET_PANEL_LAYOUT GCs maps/MRU against the tree', () => {
-  it('drops views/bindings/MRU for ids the new tree no longer has', () => {
+describe('activeGroupId / focus reconcile', () => {
+  it('gcMaps clamps activeGroupId to the first group when its group disappears', () => {
+    let s = makeState({ layout: twoGroups([editor('editor', 'a.ts')], [editor('editor:2', 'b.ts')]), activeGroupId: 'group:2' })
+    expect(s.activeGroupId).toBe('group:2')
+    // Closing group:2's only tab removes the group → activeGroupId clamps to group:1.
+    s = instanceReducer(s, { type: 'CLOSE_GROUP_TAB', groupId: 'group:2', instanceId: 'editor:2' })
+    expect(s.activeGroupId).toBe('group:1')
+  })
+
+  it('FOCUS_PANE sets activeGroupId to the focused instance group', () => {
+    let s = makeState({ layout: twoGroups([editor('editor', 'a.ts')], [editor('editor:2', 'b.ts')]) })
+    s = instanceReducer(s, { type: 'FOCUS_PANE', kind: 'editor', instanceId: 'editor:2' })
+    expect(s.activeGroupId).toBe(groupOf(s.panelLayout.desktop, 'editor:2'))
+    expect(s.activeGroupId).toBe('group:2')
+    expect(s.editorMru[0]).toBe('editor:2')
+  })
+
+  it('REORDER_GROUP_TAB splices a tab to a new index', () => {
+    let s = makeState({ layout: oneGroup([editor('a', 'a.ts'), editor('b', 'b.ts'), editor('c', 'c.ts')]) })
+    s = instanceReducer(s, { type: 'REORDER_GROUP_TAB', groupId: 'group:1', instanceId: 'c', toIndex: 0 })
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1').map((t) => t.instanceId)).toEqual(['c', 'a', 'b'])
+  })
+})
+
+// --- SET_PANEL_LAYOUT GCs maps against the tree -----------------------------
+
+describe('SET_PANEL_LAYOUT GCs maps/MRU/activeGroupId', () => {
+  it('drops bindings/MRU for ids the new tree lacks and clamps activeGroupId', () => {
     let s = makeState({
-      layout: multiLayout(),
-      editorViews: {
-        editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: null },
-        'editor:2': { openTabs: ['b.ts'], activeTab: 'b.ts', previewTab: null },
-      },
-      terminalBindings: { terminal: 's1', 'terminal:2': 's2' },
-      editorMru: ['editor:2', 'editor'],
-      terminalMru: ['terminal:2', 'terminal'],
+      layout: twoGroups([editor('editor', 'a.ts')], [{ instanceId: 'terminal', kind: 'terminal' }]),
+      terminalBindings: { terminal: 's1' },
+      editorMru: ['editor'],
+      terminalMru: ['terminal'],
+      activeGroupId: 'group:2',
     })
-    // Reset to the default tree (only home editor + one terminal survive).
     s = instanceReducer(s, { type: 'SET_PANEL_LAYOUT', update: defaultWorkspacePanelLayout() })
-    expect(Object.keys(s.editorViews)).toEqual(['editor'])
-    expect(Object.keys(s.terminalBindings)).toEqual(['terminal'])
-    expect(s.editorMru).toEqual(['editor'])
-    expect(s.terminalMru).toEqual(['terminal'])
-    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor' })
+    expect(editorInstancesInOrder(s.panelLayout.desktop)).toEqual([])
+    expect(terminalInstancesInOrder(s.panelLayout.desktop)).toEqual([])
+    expect(s.terminalBindings).toEqual({})
+    expect(s.editorMru).toEqual([])
+    expect(s.terminalMru).toEqual([])
+    expect(s.activeGroupId).toBe('group:1') // clamped to the default's only group
   })
 })
 
-describe('SPLIT_PANE seeds the new view + focuses + GCs atomically', () => {
-  it('splits a new editor beside the home, seeding its view and focusing it', () => {
-    const seed: EditorView = { openTabs: ['mirror.ts'], activeTab: 'mirror.ts', previewTab: null }
-    let s = makeState({ editorViews: { editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: null } }, editorMru: ['editor'] })
-    s = instanceReducer(s, { type: 'SPLIT_PANE', panel: 'editor', targetNodeId: MAIN_TABS_ID, side: 'right', newId: 'editor:2', seedView: seed })
-    expect(editorInstancesInOrder(s.panelLayout.desktop)).toEqual(['editor', 'editor:2'])
-    expect(s.editorViews['editor:2']).toEqual(seed)
-    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor:2' })
-    expect(s.editorMru[0]).toBe('editor:2') // new pane is active
-  })
-})
+// --- BIND_TERMINAL / buildInstanceState -------------------------------------
 
-describe('CLOSE_PANE drops the view + refocuses next in MRU', () => {
-  it('closes a secondary editor and refocuses the next live editor', () => {
-    let s = makeState({
-      layout: multiLayout(),
-      editorViews: {
-        editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: null },
-        'editor:2': { openTabs: ['b.ts'], activeTab: 'b.ts', previewTab: null },
-      },
-      editorMru: ['editor:2', 'editor'],
-    })
-    s = instanceReducer(s, { type: 'CLOSE_PANE', id: 'editor:2' })
-    expect(editorInstancesInOrder(s.panelLayout.desktop)).toEqual(['editor'])
-    expect(s.editorViews['editor:2']).toBeUndefined() // view GC'd
-    expect(s.editorMru).toEqual(['editor'])
-    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor' }) // refocus next in MRU
-  })
-
-  it('closing a terminal pane keeps its session binding off the GC and refocuses editor when none left', () => {
-    let s = makeState({
-      layout: multiLayout(),
-      terminalBindings: { terminal: 's1', 'terminal:2': 's2' },
-      terminalMru: ['terminal:2', 'terminal'],
-    })
-    // focus the terminal:2 first
-    s = instanceReducer(s, { type: 'FOCUS_PANE', kind: 'terminal', instanceId: 'terminal:2' })
-    s = instanceReducer(s, { type: 'CLOSE_PANE', id: 'terminal:2' })
-    expect(terminalInstancesInOrder(s.panelLayout.desktop)).toEqual(['terminal'])
-    expect(s.terminalBindings['terminal:2']).toBeUndefined()
-    expect(s.focusedPane).toEqual({ kind: 'terminal', instanceId: 'terminal' }) // next live terminal
-  })
-})
-
-// --- Terminal binding + focus/MRU -------------------------------------------
-
-describe('BIND_TERMINAL / FOCUS_PANE', () => {
-  it('binds and unbinds a terminal', () => {
-    let s = makeState({ layout: multiLayout() })
+describe('BIND_TERMINAL / buildInstanceState', () => {
+  it('binds and unbinds a terminal by instance id', () => {
+    let s = makeState({ layout: oneGroup([{ instanceId: 'terminal', kind: 'terminal' }]) })
     s = instanceReducer(s, { type: 'BIND_TERMINAL', id: 'terminal', session: 's1' })
     expect(s.terminalBindings.terminal).toBe('s1')
     s = instanceReducer(s, { type: 'BIND_TERMINAL', id: 'terminal', session: '' })
     expect(s.terminalBindings.terminal).toBeUndefined()
   })
 
-  it('FOCUS_PANE pushes the id to its MRU head and sets focusedPane', () => {
-    let s = makeState({ layout: multiLayout(), editorMru: ['editor'] })
-    s = instanceReducer(s, { type: 'FOCUS_PANE', kind: 'editor', instanceId: 'editor:2' })
-    expect(s.editorMru).toEqual(['editor:2', 'editor'])
-    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor:2' })
-  })
-
-  it('returns the same state for a no-op focus (already focused, MRU head)', () => {
-    const s0 = makeState({ layout: multiLayout(), editorMru: ['editor:2', 'editor'] })
-    const focused = instanceReducer(s0, { type: 'FOCUS_PANE', kind: 'editor', instanceId: 'editor:2' })
-    const again = instanceReducer(focused, { type: 'FOCUS_PANE', kind: 'editor', instanceId: 'editor:2' })
-    expect(again).toBe(focused)
-  })
-})
-
-// --- buildInstanceState -----------------------------------------------------
-
-describe('buildInstanceState', () => {
-  it('GCs the seeded maps and points focus at the active editor', () => {
+  it('seeds activeGroupId + focus from the restored MRU head; GCs ghost ids', () => {
     const s = makeState({
-      layout: defaultWorkspacePanelLayout(),
-      editorViews: { editor: { ...EMPTY_VIEW }, 'ghost': { ...EMPTY_VIEW } }, // ghost not in tree
+      layout: oneGroup([editor('editor', 'a.ts')]),
       editorMru: ['ghost', 'editor'],
+      activeGroupId: 'gone',
     })
-    expect(Object.keys(s.editorViews)).toEqual(['editor']) // ghost dropped
-    expect(s.editorMru).toEqual(['editor'])
+    expect(s.editorMru).toEqual(['editor']) // ghost dropped
     expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor' })
+    expect(s.activeGroupId).toBe('group:1') // 'gone' clamped to the live group
   })
 })

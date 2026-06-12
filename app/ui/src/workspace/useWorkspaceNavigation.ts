@@ -3,6 +3,7 @@ import { isDiffTab, isFileTab } from '../hooks/workspaceTypes'
 import type { SearchEntry } from './WorkspaceSearch'
 import type { FileExplorerHandle } from '../components/FileExplorer'
 import { TASKS_FILE_PATH } from '../hooks/useTaskGraph'
+import { editorTabsInGroup } from './panelLayoutModel'
 import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, type FocusTarget } from './context'
 
 interface UseWorkspaceNavigationOpts {
@@ -14,9 +15,13 @@ interface UseWorkspaceNavigationOpts {
 export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
   const { expandDir, explorerRef } = opts
   const commands = useWorkspaceCommands()
-  const { activeTab, previewTab } = useWorkspaceSelection()
-  const { layout } = useWorkspaceLayout()
+  const { activeEditorTabId, activeGroupId } = useWorkspaceSelection()
+  const { layout, panelLayout } = useWorkspaceLayout()
   const { showSidebar, showExplorer } = layout
+  // The active group's preview (italic) editor tab id — a double-click on it pins it.
+  const previewTabId = editorTabsInGroup(panelLayout.desktop, activeGroupId)
+    .map((t) => (t.kind === 'editor' && t.preview ? t.tabId : null))
+    .find((id) => id !== null) ?? null
   const actions = commands.actions
   const setSelectedFilePath = commands.setSelectedFilePath
   const setFocusTarget = commands.setFocusTarget
@@ -70,7 +75,7 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
   }, [revealInExplorer, actions, setSelectedFilePath, setFocusTarget])
 
   const activateChange = useCallback(async (path: string) => {
-    if (activeTab === `diff:${path}`) {
+    if (activeEditorTabId === `diff:${path}`) {
       openFile(path)
       return
     }
@@ -80,7 +85,7 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
     setSelectedFilePath(path)
     setFocusTarget('editor')
     actions.setMobilePane('editor')
-  }, [activeTab, actions, openFile, revealInExplorer, setSelectedFilePath, setFocusTarget])
+  }, [activeEditorTabId, actions, openFile, revealInExplorer, setSelectedFilePath, setFocusTarget])
 
   const handleOpenTasksFile = useCallback(() => {
     openFile(TASKS_FILE_PATH)
@@ -95,10 +100,10 @@ export function useWorkspaceNavigation(opts: UseWorkspaceNavigationOpts) {
   }, [actions, setFocusTarget, setSelectedFilePath])
 
   const handleDoubleClickTab = useCallback((tab: string) => {
-    if (tab !== previewTab) return
+    if (tab !== previewTabId) return
     if (isFileTab(tab)) actions.openFileTab(tab)
     if (isDiffTab(tab)) actions.openDiffTab(tab.slice(5))
-  }, [previewTab, actions])
+  }, [previewTabId, actions])
 
   return {
     openFile,

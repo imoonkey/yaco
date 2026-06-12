@@ -65,7 +65,7 @@ describe('PanelMenu', () => {
     renderMenu('sessions', commands, desktopEnv)
     openMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move left' }))
-    // Default tree leaves L→R: projects, files, changes, terminal, sessions.
+    // Default tree leaves L→R: projects, files, changes, sessions, tasks.
     // Leftmost OTHER leaf is projects; a vertical split keeps a wide panel from
     // overflowing the narrow dock.
     expect(commands.splitPanel).toHaveBeenCalledWith('projects', 'sessions', 'above')
@@ -76,8 +76,8 @@ describe('PanelMenu', () => {
     renderMenu('sessions', commands, desktopEnv)
     openMenu()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Move right' }))
-    // Rightmost OTHER leaf (sessions excluded) is terminal.
-    expect(commands.splitPanel).toHaveBeenCalledWith('terminal', 'sessions', 'below')
+    // Rightmost OTHER leaf (sessions excluded) is tasks.
+    expect(commands.splitPanel).toHaveBeenCalledWith('tasks', 'sessions', 'below')
   })
 
   it('returns the panel to its default placement', () => {

@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect } from 'react'
 import type { UseVoiceReturn } from '../hooks/useVoice'
-import type { EditorView, PreviewMode } from '../hooks/workspaceTypes'
+import type { LayoutNode, PreviewMode } from '../hooks/workspaceTypes'
 import type { FocusTarget, InsertRequest } from './context'
-import { isEditorVoiceEligible } from '../components/GlobalVoiceControl'
+import { isEditorVoiceEligible, editorVoiceTab } from '../components/GlobalVoiceControl'
 
 /** A confirmed transcript routed to one editor/terminal instance. `instanceId`
  *  rides the existing `editorInsert`/`terminalSend` key-bump channel so only the
@@ -26,9 +26,9 @@ interface UseWorkspaceVoiceOpts {
   previewMode: PreviewMode
   // The home editor is hidden behind the tasks panel — its take is lost.
   showingTasks: boolean
-  // Per-instance state, for instanceId-checked confirm + target-loss: the frozen
-  // run target must still be presented, editably, by the exact pane it was bound to.
-  editorViews: Record<string, EditorView>
+  // The group tree, for instanceId-checked confirm + target-loss: the frozen run
+  // target must still be presented, editably, by the exact tab it was bound to.
+  tree: LayoutNode
   terminalBindings: Record<string, string>
   setEditorInsert: (v: VoiceInsert | null) => void
   setTerminalSend: (v: VoiceInsert | null) => void
@@ -36,24 +36,24 @@ interface UseWorkspaceVoiceOpts {
 }
 
 /** Is editor instance `id` still presenting `filePath` in an *editable* Editor?
- *  Reuses the shared eligibility predicate (no diff, no preview render, home not
- *  hidden by tasks) so a take never lands where no Editor is mounted, then pins
- *  the active tab to the exact target file. */
+ *  Reuses the shared eligibility predicate (no diff, no preview render, not hidden
+ *  by tasks) so a take never lands where no Editor is mounted, then pins the active
+ *  tab to the exact target file. */
 function editorTargetValid(
-  editorViews: Record<string, EditorView>, id: string, filePath: string | undefined,
+  tree: LayoutNode, id: string, filePath: string | undefined,
   previewMode: PreviewMode, showingTasks: boolean,
 ): boolean {
   if (!filePath) return false
-  const view = editorViews[id]
-  if (!isEditorVoiceEligible(view, id, previewMode, showingTasks)) return false
-  return view?.activeTab === filePath
+  const tab = editorVoiceTab(tree, id)
+  if (!isEditorVoiceEligible(tab, previewMode, showingTasks)) return false
+  return tab?.kind === 'editor' && tab.tabId === filePath
 }
 
 export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
   const {
     voice, activeEditorId, activeTerminalId, activeFilePath, attachedSession,
     activeDiffTab, isPreviewable, previewMode, showingTasks,
-    editorViews, terminalBindings,
+    tree, terminalBindings,
     setEditorInsert, setTerminalSend, focusPane,
   } = opts
 
@@ -102,7 +102,7 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     const id = target?.instanceId
     if (!target || !id) return
     if (target.surface === 'editor') {
-      if (!editorTargetValid(editorViews, id, target.filePath, previewMode, showingTasks)) return
+      if (!editorTargetValid(tree, id, target.filePath, previewMode, showingTasks)) return
       setEditorInsert({ text, key: Date.now(), instanceId: id, filePath: target.filePath })
     } else {
       if ((terminalBindings[id] ?? '') !== target.sessionName) return
@@ -110,7 +110,7 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
       focusPane('terminal', id)
     }
     voice.confirm(text)
-  }, [voice, editorViews, terminalBindings, previewMode, showingTasks, setEditorInsert, setTerminalSend, focusPane])
+  }, [voice, tree, terminalBindings, previewMode, showingTasks, setEditorInsert, setTerminalSend, focusPane])
 
   // Detect target loss while the tray is open: the bound instance stopped
   // presenting the target file editably / stopped being bound to the target session.
@@ -121,11 +121,11 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
     const id = t.instanceId
     if (!id) { voice.markTargetLost(); return }
     if (t.surface === 'editor') {
-      if (!editorTargetValid(editorViews, id, t.filePath, previewMode, showingTasks)) voice.markTargetLost()
+      if (!editorTargetValid(tree, id, t.filePath, previewMode, showingTasks)) voice.markTargetLost()
     } else if ((terminalBindings[id] ?? '') !== t.sessionName) {
       voice.markTargetLost()
     }
-  }, [voice, editorViews, terminalBindings, previewMode, showingTasks])
+  }, [voice, tree, terminalBindings, previewMode, showingTasks])
 
   return {
     voiceSurface,

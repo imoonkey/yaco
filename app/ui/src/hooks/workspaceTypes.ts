@@ -65,30 +65,29 @@ export type PersistedDrafts = {
   files: Record<string, PersistedDraftEntry>
 }
 
-/** One editor instance's tab view — the per-instance slice of what used to be the
- *  global `openTabs`/`activeTab`/`previewTab` (design: Multi-Instance Panels / B).
- *  Document buffers stay global by path in `useFileState`; only this view is
- *  per-instance. A read for a missing instance id defaults to `EMPTY_VIEW`. */
+/** The LEGACY per-editor multi-file view shape (`{ openTabs, activeTab, previewTab }`).
+ *  Editor-tab payload now lives flat in the group tree (`GroupTab.tabId`/`preview`),
+ *  so this type no longer backs any live state — it survives ONLY as the old-shape
+ *  descriptor the persistence-loader migration reads (`migrateTreeToGroups`). */
 export type EditorView = {
   openTabs: string[]
   activeTab: string | null
   previewTab: string | null
 }
 
-export const EMPTY_VIEW: EditorView = { openTabs: [], activeTab: null, previewTab: null }
-
 /** The single focused pane. `kind` generalizes the old `focusTarget`; `instanceId`
  *  is meaningful for editor/terminal and otherwise equals the kind. */
 export type FocusedPane = { kind: FocusTarget; instanceId: string }
 
 export type PersistedState = {
-  // Per-instance editor/terminal state (design: Persistence Shape). Replaces the
-  // old global openTabs/activeTab/previewTab/activeSession; the loader migrates an
-  // old flat blob into `editorViews.editor` + `terminalBindings.terminal`.
-  editorViews: Record<string, EditorView>
+  // Per-instance auxiliary state, keyed by instanceId. Editor-tab payload
+  // (tabId/preview/pin) lives in the tree node (`panelLayout.desktop`), not here.
   terminalBindings: Record<string, string>
   editorMru: string[]
   terminalMru: string[]
+  // The explicitly-selected target group (design: VSCode Tab Groups). Persisted so
+  // a focused EMPTY group survives reload; clamped to a live group id on load.
+  activeGroupId: string
   mobilePane: MobilePane
   layout: WorkspaceLayout
   recentFiles: string[]

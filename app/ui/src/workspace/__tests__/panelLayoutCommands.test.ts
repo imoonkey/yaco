@@ -6,7 +6,6 @@
 // survive the edit.
 import { describe, it, expect, vi } from 'vitest'
 import {
-  MAIN_TABS_ID,
   DEFAULT_MIN_SIZE,
   DEFAULT_SPLIT_BASIS,
   defaultWorkspacePanelLayout,
@@ -19,14 +18,13 @@ import {
   setDockVisible,
   setActivityVisible,
   setActiveDock,
-  activateTabsPanel,
   movePanel,
   splitPanel,
   resetLayout,
   leafPanelsInOrder,
 } from '../panelLayoutModel'
 import { getPanelMeta } from '../panelMeta'
-import type { LayoutNode, SplitNode, TabsNode, LeafNode, SplitChild } from '../../hooks/workspaceTypes'
+import type { LayoutNode, SplitNode, LeafNode, SplitChild } from '../../hooks/workspaceTypes'
 import type { PanelId } from '../context'
 
 // The clamp/normalize math reads each panel's min size from the metadata lookup.
@@ -52,20 +50,16 @@ function asSplit(node: LayoutNode): SplitNode {
   if (node.kind !== 'split') throw new Error(`expected split, got ${node.kind}`)
   return node
 }
-function asTabs(node: LayoutNode): TabsNode {
-  if (node.kind !== 'tabs') throw new Error(`expected tabs, got ${node.kind}`)
-  return node
-}
 function asLeaf(node: LayoutNode): LeafNode {
   if (node.kind !== 'leaf') throw new Error(`expected leaf, got ${node.kind}`)
   return node
 }
 
-/** Every panel rendered in the tree (leaves + tabs), in DFS order. Used to pin
- *  the single-occurrence invariant after structural edits. */
+/** Every dock panel rendered in the tree, in DFS order. Group (tabs) nodes hold
+ *  editor/terminal tabs, not dock panels, so they contribute none. */
 function panelsOf(node: LayoutNode): PanelId[] {
   if (node.kind === 'leaf') return [node.panel]
-  if (node.kind === 'tabs') return [...node.panels]
+  if (node.kind === 'tabs') return []
   return node.children.flatMap((c) => panelsOf(c.node))
 }
 
@@ -115,21 +109,10 @@ function tryFindChild(node: LayoutNode, panel: PanelId): { parent: SplitNode; ch
   return null
 }
 
-const ALL_PANELS: PanelId[] = ['projects', 'files', 'changes', 'sessions', 'editor', 'terminal', 'tasks']
+// The five dock panels (editor/terminal live as group tabs, not dock leaves).
+const ALL_PANELS: PanelId[] = ['projects', 'files', 'changes', 'sessions', 'tasks']
 
-/** Find a tabs node by id (DFS), or null. */
-function tryFindTabs(node: LayoutNode, id: string): TabsNode | null {
-  if (node.kind === 'tabs') return node.id === id ? node : null
-  if (node.kind === 'split') {
-    for (const c of node.children) {
-      const hit = tryFindTabs(c.node, id)
-      if (hit) return hit
-    }
-  }
-  return null
-}
-
-/** Assert the tree still holds exactly one of every panel (nothing lost/dupe'd). */
+/** Assert the tree still holds exactly one of every dock panel (nothing lost/dupe'd). */
 function expectAllPanelsOnce(node: LayoutNode): void {
   expect(panelsOf(node).sort()).toEqual([...ALL_PANELS].sort())
 }
@@ -155,9 +138,9 @@ describe('collapsePanel', () => {
     expect(asLeaf(findChild(next.desktop, 'changes').child.node).collapsed).toBeUndefined()
   })
 
-  it('is a no-op for a panel that lives in a tabs node (not a section)', () => {
+  it('is a no-op for a panel that lives in a group (not a dock section)', () => {
     expect(collapsePanel(base(), 'editor', true)).toEqual(base())
-    expect(collapsePanel(base(), 'tasks', true)).toEqual(base())
+    expect(collapsePanel(base(), 'terminal', true)).toEqual(base())
   })
 })
 
@@ -227,7 +210,7 @@ describe('toggleDock / toggleActivity', () => {
     const children = asSplit(hidden.desktop).children
     expect(children[children.length - 1].hidden).toBe(true)
     expect(children[0].hidden).toBeUndefined()
-    expect(children[children.length - 1].basis).toBe(420)
+    expect(children[children.length - 1].basis).toBe(280)
   })
 
   it('toggles dock and activity independently', () => {
@@ -251,23 +234,6 @@ describe('toggleDock / toggleActivity', () => {
     const single = normalizeLayout({ desktop: { kind: 'leaf', id: 'files', panel: 'files' } })
     expect(toggleDock(single)).toEqual(single)
     expect(toggleActivity(single)).toEqual(single)
-  })
-
-  it('no-ops on the missing side, anchoring on the main slot (not blindly first/last)', () => {
-    // Park both activity panels into the main tabs node: the activity column
-    // empties and normalizes away, leaving root = [dock, main].
-    let layout = movePanel(base(), 'sessions', { kind: 'tabs', tabsId: MAIN_TABS_ID })
-    layout = movePanel(layout, 'terminal', { kind: 'tabs', tabsId: MAIN_TABS_ID })
-    const children = asSplit(layout.desktop).children
-    expect(children).toHaveLength(2) // [dock, main]; no activity slot
-    expect(children[children.length - 1].node.kind).toBe('tabs') // last child IS main
-
-    // toggleActivity must NOT hide main (the old first/last bug); it is a no-op.
-    expect(toggleActivity(layout)).toEqual(layout)
-    // toggleDock still targets the real dock (the child before main).
-    const dockHidden = toggleDock(layout)
-    expect(asSplit(dockHidden.desktop).children[0].hidden).toBe(true)
-    expect(asSplit(dockHidden.desktop).children[1].hidden).toBeUndefined() // main untouched
   })
 })
 
@@ -304,14 +270,6 @@ describe('setDockVisible / setActivityVisible', () => {
     expect(asSplit(cycled.desktop).children[0].basis).toBe(300)
     expect(asLeaf(findChild(cycled.desktop, 'projects').child.node).collapsed).toBe(true)
   })
-
-  it('anchor on the main slot, no-op when the targeted column is absent', () => {
-    // Park both activity panels into main → root = [dock, main]; no activity slot.
-    let layout = movePanel(base(), 'sessions', { kind: 'tabs', tabsId: MAIN_TABS_ID })
-    layout = movePanel(layout, 'terminal', { kind: 'tabs', tabsId: MAIN_TABS_ID })
-    expect(setActivityVisible(layout, false)).toBe(layout) // no activity column
-    expect(asSplit(setDockVisible(layout, false).desktop).children[0].hidden).toBe(true)
-  })
 })
 
 // --- setActiveDock (mobile projection's active pane) ------------------------
@@ -331,27 +289,6 @@ describe('setActiveDock', () => {
     expect(setActiveDock(layout, 'browse')).toBe(layout)
     const onEditor = setActiveDock(layout, 'editor')
     expect(setActiveDock(onEditor, 'editor')).toBe(onEditor)
-  })
-})
-
-// --- activateTabsPanel ------------------------------------------------------
-
-describe('activateTabsPanel', () => {
-  it('switches the active tab of the main tabs node', () => {
-    const toTasks = activateTabsPanel(base(), MAIN_TABS_ID, 'tasks')
-    const tabs = asTabs(asSplit(toTasks.desktop).children[1].node)
-    expect(tabs.active).toBe('tasks')
-
-    const backToEditor = activateTabsPanel(toTasks, MAIN_TABS_ID, 'editor')
-    expect(asTabs(asSplit(backToEditor.desktop).children[1].node).active).toBe('editor')
-  })
-
-  it('ignores a panel that is not one of the tabs node panels', () => {
-    expect(activateTabsPanel(base(), MAIN_TABS_ID, 'files')).toEqual(base())
-  })
-
-  it('ignores an unknown tabs id', () => {
-    expect(activateTabsPanel(base(), 'nope', 'tasks')).toEqual(base())
   })
 })
 
@@ -383,20 +320,20 @@ describe('splitPanel', () => {
 
   it('detaches the panel from its old home (no duplicate; empty parent collapses)', () => {
     // projects leaves the dock; the dock split keeps files + changes.
-    const next = splitPanel(base(), 'terminal', 'projects', 'left')
+    const next = splitPanel(base(), 'sessions', 'projects', 'left')
     expectAllPanelsOnce(next.desktop)
     const dock = findSplit(next.desktop, 'dock')
     expect(dock.children.map((c) => panelsOf(c.node)[0])).toEqual(['files', 'changes'])
   })
 
   it('collapses a two-child split to a leaf when one child is detached away', () => {
-    // Move sessions out of the activity column → activity has only terminal left,
-    // so the single-child split collapses; terminal carries the activity slot.
+    // Move sessions out of the activity column → activity has only tasks left,
+    // so the single-child split collapses; tasks carries the activity slot.
     const next = splitPanel(base(), 'projects', 'sessions', 'above')
     expect(() => findSplit(next.desktop, 'activity')).toThrow()
     const activitySlot = asSplit(next.desktop).children[2]
-    expect(panelsOf(activitySlot.node)).toEqual(['terminal'])
-    expect(activitySlot.basis).toBe(420) // outer slot size preserved
+    expect(panelsOf(activitySlot.node)).toEqual(['tasks'])
+    expect(activitySlot.basis).toBe(280) // outer slot size preserved
   })
 
   it('is a no-op when target is not a standalone leaf (it lives in a tabs node)', () => {
@@ -405,13 +342,6 @@ describe('splitPanel', () => {
 
   it('is a no-op when panel === target', () => {
     expect(splitPanel(base(), 'files', 'files', 'left')).toEqual(base())
-  })
-
-  it('is a no-op when the target panel is absent (already moved into a tabs node)', () => {
-    // Park sessions in the main tabs node, then try to split beside it: sessions
-    // is no longer a standalone leaf, so there is nothing to split against.
-    const parked = movePanel(base(), 'sessions', { kind: 'tabs', tabsId: MAIN_TABS_ID })
-    expect(splitPanel(parked, 'sessions', 'projects', 'left')).toEqual(parked)
   })
 
   it('produces an already-normalized (idempotent) result', () => {
@@ -434,7 +364,7 @@ describe('splitPanel', () => {
         kind: 'split', id: 'root', axis: 'row',
         children: [
           { node: { kind: 'leaf', id: 'files', panel: 'files' } },
-          { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
+          { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: [], activeTab: '' } },
           { basis: 420, node: { kind: 'leaf', id: 'sess-custom', panel: 'sessions', collapsed: true } },
         ],
       },
@@ -454,69 +384,36 @@ describe('movePanel', () => {
       .toEqual(splitPanel(base(), 'sessions', 'projects', 'left'))
   })
 
-  it('moves a panel into a tabs node at an index and activates it', () => {
-    // Drop changes into the main tabs node at the front.
-    const next = movePanel(base(), 'changes', { kind: 'tabs', tabsId: MAIN_TABS_ID, index: 0 })
-    const tabs = asTabs(asSplit(next.desktop).children[1].node)
-    expect(tabs.panels).toEqual(['changes', 'editor', 'tasks'])
-    expect(tabs.active).toBe('changes')
-    expectAllPanelsOnce(next.desktop)
-    // changes no longer a dock leaf
-    expect(() => findChild(next.desktop, 'changes')).toThrow()
-  })
-
-  it('appends to a tabs node when index is omitted', () => {
-    const next = movePanel(base(), 'changes', { kind: 'tabs', tabsId: MAIN_TABS_ID })
-    expect(asTabs(asSplit(next.desktop).children[1].node).panels).toEqual(['editor', 'tasks', 'changes'])
-  })
-
-  it('is a no-op moving into an unknown tabs node', () => {
+  it('is a no-op for a tabs placement (dock panels never live in a working group)', () => {
+    expect(movePanel(base(), 'changes', { kind: 'tabs', tabsId: 'group:1' })).toEqual(base())
     expect(movePanel(base(), 'changes', { kind: 'tabs', tabsId: 'ghost' })).toEqual(base())
   })
 
   it('returns a moved panel to its default home, rebuilding the canonical activity column', () => {
-    // Move sessions out (the activity split collapses to a bare terminal leaf),
-    // then back to default (beside terminal, below).
+    // Move sessions out (the activity split collapses to a bare tasks leaf), then
+    // back to default (beside tasks, above).
     const moved = movePanel(base(), 'sessions', { kind: 'split', target: 'projects', side: 'above' })
     expect(tryFindChild(moved.desktop, 'sessions')?.parent.id).not.toBe('activity')
     expect(tryFindSplit(moved.desktop, 'activity')).toBeNull() // activity dismantled
 
     const restored = movePanel(moved, 'sessions', { kind: 'default' })
     const { parent } = findChild(restored.desktop, 'sessions')
-    // sessions sits in the canonical 'activity' col split next to terminal again —
-    // NOT a generic split:sessions — so the renderer's "Activity panel" landmark
-    // (keyed on the 'activity' node id) is restored.
+    // sessions sits in the canonical 'activity' col split next to tasks again — so
+    // the renderer's "Activity panel" landmark (keyed on the 'activity' id) is restored.
     expect(parent.id).toBe('activity')
     expect(parent.axis).toBe('col')
-    expect(panelsOf(parent).sort()).toEqual(['sessions', 'terminal'])
+    expect(panelsOf(parent).sort()).toEqual(['sessions', 'tasks'])
     expectAllPanelsOnce(restored.desktop)
-    // The reset reproduces the exact default tree shape (H1 regression guard).
-    expect(restored.desktop).toEqual(defaultWorkspacePanelLayout().desktop)
     expect(normalizeLayout(restored)).toEqual(restored)
   })
 
   it('uses a generic split id (not the canonical column id) when that column still exists', () => {
     // dock still holds files+changes, so returning projects to default must NOT
     // mint a second 'dock' node (id collision) — it falls back to a generic split.
-    const moved = movePanel(base(), 'projects', { kind: 'split', target: 'terminal', side: 'below' })
+    const moved = movePanel(base(), 'projects', { kind: 'split', target: 'sessions', side: 'below' })
     expect(tryFindSplit(moved.desktop, 'dock')).not.toBeNull() // dock survives (files+changes)
     const restored = movePanel(moved, 'projects', { kind: 'default' })
     expect(tryFindChild(restored.desktop, 'projects')?.parent.id).not.toBe('activity')
-    expectAllPanelsOnce(restored.desktop)
-    expect(normalizeLayout(restored)).toEqual(restored)
-  })
-
-  it('keeps the home editor structural in the main node; tasks can leave and return to default', () => {
-    // The home editor is structural — it always stays in the main tabs node, so
-    // the main node is never dismantled (multi-instance model). Moving tasks out
-    // leaves the main node holding just the home editor.
-    const layout = movePanel(base(), 'tasks', { kind: 'split', target: 'changes', side: 'below' })
-    expect(tryFindTabs(layout.desktop, MAIN_TABS_ID)?.panels).toEqual(['editor'])
-    expect(tryFindTabs(layout.desktop, MAIN_TABS_ID)?.active).toBe('editor')
-
-    // Restoring tasks to default rejoins it in the main node beside the editor.
-    const restored = movePanel(layout, 'tasks', { kind: 'default' })
-    expect(tryFindTabs(restored.desktop, MAIN_TABS_ID)?.panels.sort()).toEqual(['editor', 'tasks'])
     expectAllPanelsOnce(restored.desktop)
     expect(normalizeLayout(restored)).toEqual(restored)
   })
@@ -553,25 +450,24 @@ describe('resetLayout', () => {
 // --- leafPanelsInOrder (the panel menu's relocation-target source) ----------
 
 describe('leafPanelsInOrder', () => {
-  it('lists visible standalone leaf panels left-to-right, excluding tabs panels', () => {
-    // Default tree: dock [projects, files, changes], main tabs [editor, tasks],
-    // activity [terminal, sessions]. editor/tasks live in the tabs node, so they
-    // are NOT standalone leaves and must be absent.
+  it('lists visible standalone leaf panels left-to-right, excluding group tabs', () => {
+    // Default tree: dock [projects, files, changes], one empty group, activity
+    // [sessions, tasks]. The group holds no dock leaves.
     expect(leafPanelsInOrder(base().desktop)).toEqual(
-      ['projects', 'files', 'changes', 'terminal', 'sessions'],
+      ['projects', 'files', 'changes', 'sessions', 'tasks'],
     )
   })
 
   it('skips leaves inside a hidden subtree (not a valid move target)', () => {
     const hidden = toggleDock(base()) // hides the dock column
-    expect(leafPanelsInOrder(hidden.desktop)).toEqual(['terminal', 'sessions'])
+    expect(leafPanelsInOrder(hidden.desktop)).toEqual(['sessions', 'tasks'])
   })
 
   it('reflects a relocation: a moved panel lists in its new position', () => {
     // Move sessions above projects (into the dock) → it leads the order.
     const moved = splitPanel(base(), 'projects', 'sessions', 'above')
     expect(leafPanelsInOrder(moved.desktop)).toEqual(
-      ['sessions', 'projects', 'files', 'changes', 'terminal'],
+      ['sessions', 'projects', 'files', 'changes', 'tasks'],
     )
   })
 })
@@ -618,9 +514,8 @@ describe('command outputs stay normalized + single-occurrence', () => {
     layout = collapsePanel(layout, 'files', true)
     layout = resizeSplitChild(layout, 'root', 'activity', 500)
     layout = toggleDock(layout)
-    layout = activateTabsPanel(layout, MAIN_TABS_ID, 'tasks')
-    layout = splitPanel(layout, 'terminal', 'changes', 'below')
-    layout = movePanel(layout, 'projects', { kind: 'tabs', tabsId: MAIN_TABS_ID })
+    layout = splitPanel(layout, 'sessions', 'changes', 'below')
+    layout = movePanel(layout, 'projects', { kind: 'split', target: 'tasks', side: 'above' })
 
     expectAllPanelsOnce(layout.desktop)
     expect(normalizeLayout(layout)).toEqual(layout)

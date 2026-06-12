@@ -11,8 +11,8 @@
 import {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
-import { useWorkspaceState, isFileTab, isDiffTab } from '../hooks/useWorkspaceState'
-import { mobilePaneToDock, EMPTY_VIEW, type LayoutNode, type EditorView } from '../hooks/workspaceTypes'
+import { useWorkspaceState, isFileTab } from '../hooks/useWorkspaceState'
+import { mobilePaneToDock, type LayoutNode } from '../hooks/workspaceTypes'
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
 import { useFileTree, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
@@ -22,11 +22,7 @@ import { markStale as markSearchIndexStale } from './quickOpenIndex'
 import {
   collapsePanel as modelCollapsePanel,
   resizeSplitChild as modelResizeSplitChild,
-  activateTabsPanel as modelActivateTabsPanel,
-  mainTabsActivePanel,
-  MAIN_TABS_ID,
-  HOME_EDITOR_ID,
-  newInstanceId,
+  editorTabsInGroup,
   setDockVisible as modelSetDockVisible,
   setActivityVisible as modelSetActivityVisible,
   setActiveDock as modelSetActiveDock,
@@ -84,34 +80,15 @@ const NOOP_CONTROLLERS: WorkspaceControllers = {
   onSessionChange: () => {},
 }
 
-/** The node id of the leaf rendering `panel`, or null. */
-function findPanelLeafId(node: LayoutNode, panel: PanelId): string | null {
-  if (node.kind === 'leaf') return node.panel === panel ? node.id : null
-  if (node.kind === 'split') {
-    for (const c of node.children) {
-      const hit = findPanelLeafId(c.node, panel)
-      if (hit) return hit
-    }
-  }
-  return null
-}
-
-/** Terminal-leaf ids actually visible in the layout (not under a hidden subtree)
- *  — the panes whose bound sessions count as visible for mark-read (design: §C). */
+/** Terminal-tab instance ids actually visible in the layout (not under a hidden
+ *  subtree) — the panes whose bound sessions count as visible for mark-read. */
 function visibleTerminalIds(node: LayoutNode, out: string[] = []): string[] {
-  if (node.kind === 'leaf') {
-    if (node.panel === 'terminal') out.push(node.id)
+  if (node.kind === 'tabs') {
+    for (const t of node.tabs) if (t.kind === 'terminal') out.push(t.instanceId)
   } else if (node.kind === 'split') {
     for (const c of node.children) if (c.hidden !== true) visibleTerminalIds(c.node, out)
   }
   return out
-}
-
-/** Where to drop a brand-new terminal when none can be split beside: beside the
- *  Sessions list (the default activity column), else beside the main region. */
-function defaultTerminalTarget(tree: LayoutNode): { targetId: string; side: SplitSide } {
-  const sessionsId = findPanelLeafId(tree, 'sessions')
-  return sessionsId ? { targetId: sessionsId, side: 'above' } : { targetId: MAIN_TABS_ID, side: 'right' }
 }
 
 /** Build a self-describing compare diff tab id (design: ChangesPanel). */
@@ -142,41 +119,36 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // Centralized tab/layout/file state.
   const ws = useWorkspaceState(projectName, worktree)
   const {
-    openTabs, activeTab, previewTab, activeSession, mobilePane, layout, panelLayout,
-    setPanelLayout, files, dirtyTabs, conflictTabs, recentFiles, actions, instances,
-    fetchForTab, addRecentFile,
-  } = ws
-  const {
-    editorViews, terminalBindings, editorMru, terminalMru, focusedPane,
+    activeGroupId, activeEditorTab, activeEditorTabId, activeEditorPath, activeSession,
+    mobilePane, layout, panelLayout, setPanelLayout, files, dirtyTabs, conflictTabs, recentFiles,
+    terminalBindings, editorMru, terminalMru, focusedPane,
     activeEditorId, activeTerminalId,
-    // Stable action callbacks (useCallback([]) in the reducer hook).
-    focusPane, splitPane, closePane, movePane, bindTerminal, selectTabIn, closeTabIn,
-    openFileIn, previewFileIn, openDiffTabIn, openPreviewDiffTabIn, openPreviewDiffTabByIdIn,
-  } = instances
+    // group dispatchers + resolution
+    focusPane, bindTerminal, movePane,
+    splitGroup, openBoundTerminalTab, closeGroupTab, setActiveGroupTab,
+    openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
+    resolveTarget, groupForInstance,
+    // file + raw actions
+    setMobilePane, updateLayout, setActiveSession,
+    saveFile, forceSave, acceptDisk, updateFileDraft, updateFileViewport,
+    retargetPaths: retargetTabPaths, onDeletePath,
+  } = ws
   // focusTarget is now the focused pane's kind (the reducer owns focusedPane).
   const focusTarget = focusedPane.kind
 
   // Hot selection state owned here (read everywhere, mutated through commands).
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
-    isFileTab(activeTab) ? activeTab : null
+    isFileTab(activeEditorTabId) ? activeEditorTabId : null
   ))
   const [explorerFocusedPath, setExplorerFocusedPath] = useState<string | null>(null)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [showSearch, setShowSearch] = useState(false)
 
-  // Track the active file tab as the selected explorer path (adjust during render).
-  const [prevActiveTab, setPrevActiveTab] = useState(activeTab)
-  if (activeTab !== prevActiveTab) {
-    setPrevActiveTab(activeTab)
-    if (isFileTab(activeTab)) setSelectedFilePath(activeTab)
-    // Opening/activating a file or diff tab in the HOME editor while the tasks
-    // panel is the active main panel returns the main region to the editor. A
-    // SECONDARY editor leaves Tasks beside the code (§3.4), so guard on the home.
-    if (activeTab && (isFileTab(activeTab) || isDiffTab(activeTab))
-        && activeEditorId === HOME_EDITOR_ID
-        && mainTabsActivePanel(panelLayout.desktop) === 'tasks') {
-      setPanelLayout(prev => modelActivateTabsPanel(prev, MAIN_TABS_ID, 'editor'))
-    }
+  // Track the active editor tab as the selected explorer path (adjust during render).
+  const [prevActiveTabId, setPrevActiveTabId] = useState(activeEditorTabId)
+  if (activeEditorTabId !== prevActiveTabId) {
+    setPrevActiveTabId(activeEditorTabId)
+    if (isFileTab(activeEditorTabId)) setSelectedFilePath(activeEditorTabId)
   }
 
   // Renderer-registered callbacks (file reveal + post-session refresh) and the
@@ -296,15 +268,15 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // Latest hot state, mirrored into a ref so command callbacks can read current
   // values without listing them as deps — keeping the commands object stable.
   const latestRef = useRef({
-    activeSession, activeTab, focusTarget, showSearch, isMobile,
+    activeSession, activeEditorTabId, focusTarget, showSearch, isMobile,
     liveSessionHandles, layout, mobilePane, panelLayout,
-    terminalBindings, editorViews, activeEditorId, activeTerminalId,
+    terminalBindings, activeGroupId, activeEditorId, activeTerminalId,
   })
   useEffect(() => {
     latestRef.current = {
-      activeSession, activeTab, focusTarget, showSearch, isMobile,
+      activeSession, activeEditorTabId, focusTarget, showSearch, isMobile,
       liveSessionHandles, layout, mobilePane, panelLayout,
-      terminalBindings, editorViews, activeEditorId, activeTerminalId,
+      terminalBindings, activeGroupId, activeEditorId, activeTerminalId,
     }
   })
 
@@ -312,61 +284,45 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // All read latest state off latestRef so their identity stays stable.
 
   const revealTerminalColumn = useCallback(() => {
-    if (latestRef.current.isMobile) actions.setMobilePane('terminal')
-    else actions.updateLayout({ showRightPanel: true })
-  }, [actions])
+    if (latestRef.current.isMobile) setMobilePane('terminal')
+    else updateLayout({ showRightPanel: true })
+  }, [setMobilePane, updateLayout])
 
   const splitEditor = useCallback((sourceId: string, side: SplitSide) => {
-    const { panelLayout: pl, editorViews: views } = latestRef.current
-    const newId = newInstanceId(pl.desktop, 'editor')
-    const src = views[sourceId] ?? EMPTY_VIEW
-    const seed: EditorView | undefined = src.activeTab && isFileTab(src.activeTab)
-      ? { openTabs: [src.activeTab], activeTab: src.activeTab, previewTab: null }
-      : undefined
-    splitPane('editor', sourceId === HOME_EDITOR_ID ? MAIN_TABS_ID : sourceId, side, newId, seed)
-  }, [splitPane])
+    splitGroup(groupForInstance(sourceId), side)
+  }, [splitGroup, groupForInstance])
 
   const splitTerminal = useCallback((sourceId: string | null, side: SplitSide) => {
-    const { panelLayout: pl } = latestRef.current
-    const newId = newInstanceId(pl.desktop, 'terminal')
-    if (sourceId) { splitPane('terminal', sourceId, side, newId); return }
-    const t = defaultTerminalTarget(pl.desktop)
-    splitPane('terminal', t.targetId, t.side, newId)
-  }, [splitPane])
+    splitGroup(sourceId ? groupForInstance(sourceId) : resolveTarget(), side)
+  }, [splitGroup, groupForInstance, resolveTarget])
 
-  // clickSession: smart-focus-else-replace (§3.5). Focus the terminal already
-  // showing the session, else bind the active terminal, else create one.
+  // clickSession: focus the terminal already showing the session, else create a
+  // NEW terminal tab bound on create in the target group (flat resolver — Bug 3
+  // gone; the legacy `bind`-active branch also creates-and-binds atomically here).
   const clickSession = useCallback((name: string) => {
-    const { terminalBindings: bindings, activeTerminalId: tid, panelLayout: pl } = latestRef.current
+    const { terminalBindings: bindings, activeTerminalId: tid } = latestRef.current
     const action = resolveSessionClick(name, bindings, tid)
     if (action.kind === 'focus') {
-      focusPane('terminal', action.terminalId)
-    } else if (action.kind === 'bind') {
-      bindTerminal(action.terminalId, name)
-      focusPane('terminal', action.terminalId)
+      setActiveGroupTab(groupForInstance(action.terminalId), action.terminalId)
     } else {
-      const newId = newInstanceId(pl.desktop, 'terminal')
-      const { targetId, side } = defaultTerminalTarget(pl.desktop)
-      splitPane('terminal', targetId, side, newId)
-      bindTerminal(newId, name)
+      openBoundTerminalTab(resolveTarget(), name)
     }
     revealTerminalColumn()
-  }, [focusPane, bindTerminal, splitPane, revealTerminalColumn])
+  }, [setActiveGroupTab, groupForInstance, openBoundTerminalTab, resolveTarget, revealTerminalColumn])
 
-  // openBeside: 1-per-session — focus if shown, else open a new bound terminal.
+  // openBeside: 1-per-session — focus if shown, else split an empty group and
+  // create a bound terminal tab in it.
   const openBeside = useCallback((name: string) => {
-    const { terminalBindings: bindings, activeTerminalId: tid, panelLayout: pl } = latestRef.current
+    const { terminalBindings: bindings } = latestRef.current
     const action = resolveOpenBeside(name, bindings)
     if (action.kind === 'focus') {
-      focusPane('terminal', action.terminalId)
+      setActiveGroupTab(groupForInstance(action.terminalId), action.terminalId)
     } else {
-      const newId = newInstanceId(pl.desktop, 'terminal')
-      const place = tid ? { targetId: tid, side: 'below' as SplitSide } : defaultTerminalTarget(pl.desktop)
-      splitPane('terminal', place.targetId, place.side, newId)
-      bindTerminal(newId, name)
+      const newGroupId = splitGroup(resolveTarget(), 'right')
+      openBoundTerminalTab(newGroupId, name)
     }
     revealTerminalColumn()
-  }, [focusPane, bindTerminal, splitPane, revealTerminalColumn])
+  }, [setActiveGroupTab, groupForInstance, splitGroup, openBoundTerminalTab, resolveTarget, revealTerminalColumn])
 
   const detachSession = useCallback((): boolean => {
     const { activeSession: s, activeTerminalId: tid } = latestRef.current
@@ -392,9 +348,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     if (dead.length === 0) return
     const deadSet = new Set(dead)
     for (const [id, session] of Object.entries(bindings)) {
-      if (deadSet.has(session)) closePane(id)
+      if (deadSet.has(session)) closeGroupTab(groupForInstance(id), id)
     }
-  }, [liveSessionHandles, sessionsLoaded, closePane])
+  }, [liveSessionHandles, sessionsLoaded, closeGroupTab, groupForInstance])
 
   // Mirror the legacy flat dock/activity visibility onto the panel-layout tree so
   // the tree renderer (engine: 'tree') can never drift out of step with it. The
@@ -452,159 +408,144 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }, [attachIntent, clearAttachIntent, projectName, sessionsLoaded, liveSessionHandles, clickSession])
 
   // --- Raw passthroughs (drive the unchanged renderer + keyboard) ---
+  // The active-resolving variants target the resolved group; the instance-scoped
+  // (*In) variants target a specific tab instance's group. Tab id → instance is
+  // resolved against the live tree at call time.
+  const activeGroupTabInstance = useCallback((tabId: string): { groupId: string; instanceId: string } | null => {
+    const groupId = resolveTarget()
+    const t = editorTabsInGroup(latestRef.current.panelLayout.desktop, groupId).find((x) => x.kind === 'editor' && x.tabId === tabId)
+    return t ? { groupId, instanceId: t.instanceId } : null
+  }, [resolveTarget])
+
   const rawActions = useMemo<WorkspaceRawActions>(() => ({
-    setActiveTab: actions.setActiveTab,
-    setActiveSession: actions.setActiveSession,
-    setMobilePane: actions.setMobilePane,
-    updateLayout: actions.updateLayout,
-    openFileTab: actions.openFileTab,
-    openPreviewTab: actions.openPreviewTab,
-    openDiffTab: actions.openDiffTab,
-    openPreviewDiffTab: actions.openPreviewDiffTab,
-    openPreviewDiffTabById: actions.openPreviewDiffTabById,
-    // Instance-scoped pass-throughs (the reducer's *-In transitions): openFileTabIn
-    // opens (and gently fetches) a file tab in the given editor; the diff variants
-    // open in it without fetching (diffs are panel-private).
-    openFileTabIn: openFileIn,
-    openDiffTabIn,
-    openPreviewDiffTabByIdIn,
+    setActiveTab: (tab: string) => {
+      const hit = activeGroupTabInstance(tab)
+      if (hit) setActiveGroupTab(hit.groupId, hit.instanceId)
+    },
+    setActiveSession,
+    setMobilePane,
+    updateLayout,
+    openFileTab: (path: string) => openFileInGroup(resolveTarget(), path),
+    openPreviewTab: (path: string) => previewFileInGroup(resolveTarget(), path),
+    openDiffTab: (path: string) => openDiffInGroup(resolveTarget(), `diff:${path}`),
+    openPreviewDiffTab: (path: string) => previewDiffInGroup(resolveTarget(), `diff:${path}`),
+    openPreviewDiffTabById: (tabId: string) => previewDiffInGroup(resolveTarget(), tabId),
+    // Instance-scoped pass-throughs route to the given tab instance's group.
+    openFileTabIn: (instanceId: string, path: string) => openFileInGroup(groupForInstance(instanceId), path),
+    openDiffTabIn: (instanceId: string, path: string) => openDiffInGroup(groupForInstance(instanceId), `diff:${path}`),
+    openPreviewDiffTabByIdIn: (instanceId: string, tabId: string) => previewDiffInGroup(groupForInstance(instanceId), tabId),
     setJumpRequest,
     setShowSearch,
-  }), [actions, openFileIn, openDiffTabIn, openPreviewDiffTabByIdIn])
+  }), [
+    activeGroupTabInstance, setActiveGroupTab, setActiveSession, setMobilePane, updateLayout,
+    openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
+    resolveTarget, groupForInstance,
+  ])
 
   // --- Commands ---
+  // Opening a file/diff resolves the target group, then opens (or activates) the
+  // tab there; the reducer focuses the resulting tab, so no separate focus call is
+  // needed. Tasks is a dock leaf now, so there is no main-region flip.
 
-  // Return the desktop main region to the editor surface. Every deliberate
-  // "open this file/diff" command calls this so opening a file from Tasks always
-  // shows the editor — even when the target is ALREADY the active tab (so
-  // `activeTab` does not change and the render-phase mirror above never fires).
-  // Guarded so it never churns the layout when the editor is already active.
-  // Flip the main tabs node from Tasks back to the editor — but ONLY for the home
-  // editor (§3.4): a SECONDARY editor opening a file leaves Tasks beside the code.
-  const flipMainToEditor = useCallback((editorId: string) => {
-    if (editorId !== HOME_EDITOR_ID) return
-    setPanelLayout((prev) => mainTabsActivePanel(prev.desktop) === 'tasks'
-      ? modelActivateTabsPanel(prev, MAIN_TABS_ID, 'editor')
-      : prev)
-  }, [setPanelLayout])
-
-  // The open commands capture the target editor id ONCE at invocation and route to
-  // it (instance-scoped), so a focus change during an async reveal can't land the
-  // open — or the go-to-line jump — in a different editor than intended.
   const openFile = useCallback((path: string) => {
-    const id = latestRef.current.activeEditorId
-    openFileIn(id, path)
+    openFileInGroup(resolveTarget(), path)
     setSelectedFilePath(path)
-    focusPane('editor', id)
-    actions.setMobilePane('editor')
-    flipMainToEditor(id)
-  }, [openFileIn, focusPane, actions, flipMainToEditor])
+    setMobilePane('editor')
+  }, [openFileInGroup, resolveTarget, setMobilePane])
 
   // previewFile is the quick-open select path: reveal the file's parents in the
-  // explorer, then open it as a preview tab in the captured editor.
+  // explorer, then open it as a preview tab in the target group.
   const previewFile = useCallback((path: string) => {
-    const id = latestRef.current.activeEditorId
     void revealParents(path).then(() => {
-      previewFileIn(id, path)
+      previewFileInGroup(resolveTarget(), path)
       setSelectedFilePath(path)
-      focusPane('editor', id)
-      actions.setMobilePane('editor')
-      flipMainToEditor(id)
+      setMobilePane('editor')
     })
-  }, [previewFileIn, revealParents, focusPane, actions, flipMainToEditor])
+  }, [previewFileInGroup, revealParents, resolveTarget, setMobilePane])
 
   const openFileAtLine = useCallback((path: string, line: number) => {
-    const id = latestRef.current.activeEditorId
     void revealParents(path).then(() => {
-      openFileIn(id, path)
+      openFileInGroup(resolveTarget(), path)
       setSelectedFilePath(path)
-      focusPane('editor', id)
-      actions.setMobilePane('editor')
-      flipMainToEditor(id)
+      setMobilePane('editor')
     })
-    // jumpRequest carries the SAME captured id, so only that editor consumes it.
-    setJumpRequest({ key: Date.now(), path, line, instanceId: id })
-  }, [openFileIn, revealParents, focusPane, actions, flipMainToEditor])
+    // jumpRequest carries the path; the editor body showing that file consumes it.
+    setJumpRequest({ key: Date.now(), path, line })
+  }, [openFileInGroup, revealParents, resolveTarget, setMobilePane])
 
   // openDiff mirrors the old activateChange handler: a re-clicked active diff
   // toggles back to its file; otherwise reveal parents, open the (preview) diff in
-  // the captured editor, select the path, and focus it — carrying compare refs.
+  // the target group, select the path — carrying compare refs.
   const openDiff = useCallback((path: string, opts?: { preview?: boolean; base?: string; compare?: string }) => {
-    const id = latestRef.current.activeEditorId
     const tabId = diffTabId(path, opts?.base, opts?.compare)
-    if (latestRef.current.activeTab === tabId) {
+    if (latestRef.current.activeEditorTabId === tabId) {
       openFile(path)
       return
     }
-    const refs = !!(opts?.base && opts?.compare)
     const pinned = opts?.preview === false
     void revealParents(path).then(() => {
-      if (refs) openPreviewDiffTabByIdIn(id, tabId)
-      else if (pinned) openDiffTabIn(id, path)
-      else openPreviewDiffTabIn(id, path)
+      const g = resolveTarget()
+      if (pinned) openDiffInGroup(g, tabId)
+      else previewDiffInGroup(g, tabId)
       setSelectedFilePath(path)
-      focusPane('editor', id)
-      actions.setMobilePane('editor')
-      flipMainToEditor(id)
+      setMobilePane('editor')
     })
-  }, [openFile, openPreviewDiffTabByIdIn, openDiffTabIn, openPreviewDiffTabIn, revealParents, focusPane, actions, flipMainToEditor])
+  }, [openFile, openDiffInGroup, previewDiffInGroup, revealParents, resolveTarget, setMobilePane])
 
   const openDiffTabId = useCallback((tabId: string, opts?: { preview?: boolean }) => {
-    const id = latestRef.current.activeEditorId
-    if (opts?.preview === false) openDiffTabIn(id, tabId.slice(5))
-    else openPreviewDiffTabByIdIn(id, tabId)
-    focusPane('editor', id)
-    actions.setMobilePane('editor')
-    flipMainToEditor(id)
-  }, [openDiffTabIn, openPreviewDiffTabByIdIn, focusPane, actions, flipMainToEditor])
+    const g = resolveTarget()
+    if (opts?.preview === false) openDiffInGroup(g, tabId)
+    else previewDiffInGroup(g, tabId)
+    setMobilePane('editor')
+  }, [openDiffInGroup, previewDiffInGroup, resolveTarget, setMobilePane])
 
-  // closeTab/selectTab act on `id` when given (a pane's own tab bar) and also focus
-  // that pane, else the active editor. The diff cache self-cleans when a tab leaves
-  // the active/editor key set, so no explicit clear is needed here.
+  // closeTab/selectTab act on `id` when given (a pane's own tab — the tab IS the
+  // instance now), else the active editor tab.
   const closeTab = useCallback((tab: string, id?: string) => {
-    if (id) { closeTabIn(id, tab); focusPane('editor', id) }
-    else actions.closeTab(tab)
-  }, [actions, closeTabIn, focusPane])
+    if (id) { closeGroupTab(groupForInstance(id), id); return }
+    const hit = activeGroupTabInstance(tab)
+    if (hit) closeGroupTab(hit.groupId, hit.instanceId)
+  }, [closeGroupTab, groupForInstance, activeGroupTabInstance])
 
   const selectTab = useCallback((tab: string, id?: string) => {
-    if (id) { selectTabIn(id, tab); focusPane('editor', id) }
-    else { actions.setActiveTab(tab); setFocusTarget('editor') }
+    if (id) { setActiveGroupTab(groupForInstance(id), id) }
+    else { const hit = activeGroupTabInstance(tab); if (hit) setActiveGroupTab(hit.groupId, hit.instanceId) }
     if (isFileTab(tab)) setSelectedFilePath(tab)
-  }, [actions, selectTabIn, focusPane, setFocusTarget])
+  }, [setActiveGroupTab, groupForInstance, activeGroupTabInstance])
 
-  // openToSide: split the active editor and open `path` in the NEW group (§3.4a).
-  // The new group is a secondary editor, so Tasks (if showing) stays beside it — no
-  // main flip. splitPane focuses the new pane; fetch loads its buffer (shared by path).
+  // openToSide: split the focused group to an empty sibling and open `path` there.
   const openToSide = useCallback((path: string, side: SplitSide = 'right') => {
     if (!isFileTab(path)) return
-    const { panelLayout: pl, activeEditorId: eid } = latestRef.current
-    const newId = newInstanceId(pl.desktop, 'editor')
     void revealParents(path).then(() => {
-      splitPane('editor', eid === HOME_EDITOR_ID ? MAIN_TABS_ID : eid, side, newId,
-        { openTabs: [path], activeTab: path, previewTab: null })
-      fetchForTab(path)
-      addRecentFile(path)
+      const newGroupId = splitGroup(resolveTarget(), side)
+      openFileInGroup(newGroupId, path)
       setSelectedFilePath(path)
-      actions.setMobilePane('editor')
+      setMobilePane('editor')
     })
-  }, [splitPane, fetchForTab, addRecentFile, revealParents, actions])
+  }, [splitGroup, openFileInGroup, revealParents, resolveTarget, setMobilePane])
 
   const retargetPaths = useCallback((oldPath: string, newPath: string) => {
-    actions.retargetPaths(oldPath, newPath)
+    retargetTabPaths(oldPath, newPath)
     setSelectedFilePath(prev => {
       if (prev === oldPath) return newPath
       if (prev && prev.startsWith(oldPath + '/')) return newPath + prev.slice(oldPath.length)
       return prev
     })
-  }, [actions])
+  }, [retargetTabPaths])
 
   const deletePath = useCallback((path: string) => {
-    actions.onDeletePath(path)
+    onDeletePath(path)
     setSelectedFilePath(prev => {
       if (prev === path || (prev && prev.startsWith(path + '/'))) return null
       return prev
     })
-  }, [actions])
+  }, [onDeletePath])
+
+  // closePane closes a pane's tab (the tab IS the instance now); the session keeps
+  // running for a terminal tab.
+  const closePane = useCallback((id: string) => {
+    closeGroupTab(groupForInstance(id), id)
+  }, [closeGroupTab, groupForInstance])
 
   // Deferred reveal: record the latest intent, reveal the Files surface, and ask
   // the registered controller to drain it. A controller that mounts/becomes
@@ -612,45 +553,40 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const recordReveal = useCallback((kind: 'file' | 'folder', path: string) => {
     revealKeyRef.current += 1
     revealBufferRef.current = { kind, path, key: revealKeyRef.current }
-    if (latestRef.current.isMobile) actions.setMobilePane('files')
-    else actions.updateLayout({ showSidebar: true, showExplorer: true })
+    if (latestRef.current.isMobile) setMobilePane('files')
+    else updateLayout({ showSidebar: true, showExplorer: true })
     controllersRef.current.drainReveal()
-  }, [actions])
+  }, [setMobilePane, updateLayout])
   const revealPathInFiles = useCallback((path: string) => { recordReveal('file', path) }, [recordReveal])
   const expandFolderInFiles = useCallback((path: string) => { recordReveal('folder', path) }, [recordReveal])
 
   const setFilesMode = useCallback((mode: 'tree' | 'search') => {
-    actions.updateLayout({ showTextSearch: mode === 'search', showSidebar: true, showExplorer: true })
-  }, [actions])
+    updateLayout({ showTextSearch: mode === 'search', showSidebar: true, showExplorer: true })
+  }, [updateLayout])
 
   const showQuickOpen = useCallback(() => { setShowSearch(true) }, [])
 
-  // Tasks is a real panel in the main tabs node. Desktop toggles that node's
-  // active panel between `editor` and `tasks`; mobile toggles the tasks dock. The
-  // legacy flat `showTasks` stays the legacy sidebar Tasks section's reflection of
-  // the open/closed state (the tree renderer ignores it). This replaces the old
-  // fake tasks tab, which modeled the same toggle as a synthetic `activeTab`.
+  // Tasks is a dock leaf now. Desktop toggles the flat `showTasks` flag (the dock
+  // leaf's visibility is downstream — vt-render); mobile toggles the tasks dock.
   const mainShowsTasks = useCallback((): boolean => {
-    const { isMobile: mobile, mobilePane: pane, panelLayout: pl } = latestRef.current
-    return mobile ? pane === 'tasks' : mainTabsActivePanel(pl.desktop) === 'tasks'
+    const { isMobile: mobile, mobilePane: pane, layout: lay } = latestRef.current
+    return mobile ? pane === 'tasks' : lay.showTasks
   }, [])
 
   const closeTasks = useCallback(() => {
-    if (latestRef.current.isMobile) { actions.setMobilePane('editor'); return }
-    actions.updateLayout({ showTasks: false })
-    setPanelLayout((prev) => modelActivateTabsPanel(prev, MAIN_TABS_ID, 'editor'))
-  }, [actions, setPanelLayout])
+    if (latestRef.current.isMobile) { setMobilePane('editor'); return }
+    updateLayout({ showTasks: false })
+  }, [setMobilePane, updateLayout])
 
   const toggleTasks = useCallback(() => {
     if (mainShowsTasks()) { closeTasks(); return }
-    if (latestRef.current.isMobile) { actions.setMobilePane('tasks'); return }
-    actions.updateLayout({ showTasks: true })
-    setPanelLayout((prev) => modelActivateTabsPanel(prev, MAIN_TABS_ID, 'tasks'))
+    if (latestRef.current.isMobile) { setMobilePane('tasks'); return }
+    updateLayout({ showTasks: true })
     setFocusTarget('editor')
-  }, [actions, setPanelLayout, mainShowsTasks, closeTasks, setFocusTarget])
+  }, [setMobilePane, updateLayout, mainShowsTasks, closeTasks, setFocusTarget])
 
   const closeFocusedSurface = useCallback((): boolean => {
-    const { showSearch: search, focusTarget: focus, activeTab: tab, activeTerminalId: tid } = latestRef.current
+    const { showSearch: search, focusTarget: focus, activeEditorTabId: tab, activeTerminalId: tid } = latestRef.current
     if (search) { setShowSearch(false); return true }
     // Terminal Cmd+W closes the pane (the session keeps running, design §3.7).
     // Self-contained: never fall through to the editor-tab path even if a terminal
@@ -660,12 +596,12 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     if (focus === 'editor' || focus === 'tasks') {
       // Tasks showing → return to the editor (syncs the legacy sidebar toggle off).
       if (mainShowsTasks()) { closeTasks(); return true }
-      if (tab) { actions.closeTab(tab); return true }
+      if (tab) { closeTab(tab); return true }
     }
-    if (tab) { actions.closeTab(tab); return true }
+    if (tab) { closeTab(tab); return true }
     if (detachSession()) return true
     return true
-  }, [detachSession, actions, mainShowsTasks, closeTasks, closePane])
+  }, [detachSession, closeTab, mainShowsTasks, closeTasks, closePane])
 
   // Layout commands. These mutate the panel-layout tree through the pure
   // `panelLayoutModel` edits (the tree renderer reads the result). Dock/activity
@@ -677,20 +613,19 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // command is tree-only — the legacy renderer never calls it — so it is purely
   // additive.
   const toggleDock = useCallback(() => {
-    actions.updateLayout({ showSidebar: !latestRef.current.layout.showSidebar })
-  }, [actions])
+    updateLayout({ showSidebar: !latestRef.current.layout.showSidebar })
+  }, [updateLayout])
   const toggleActivity = useCallback(() => {
-    actions.updateLayout({ showRightPanel: !latestRef.current.layout.showRightPanel })
-  }, [actions])
+    updateLayout({ showRightPanel: !latestRef.current.layout.showRightPanel })
+  }, [updateLayout])
   const collapsePanel = useCallback((panel: PanelId, collapsed: boolean) => {
     setPanelLayout((prev) => modelCollapsePanel(prev, panel, collapsed))
   }, [setPanelLayout])
   const resizeSplitChild = useCallback((splitId: string, childId: string, basis: number) => {
     setPanelLayout((prev) => modelResizeSplitChild(prev, splitId, childId, basis))
   }, [setPanelLayout])
-  const activateTabsPanel = useCallback((tabsId: string, panel: PanelId) => {
-    setPanelLayout((prev) => modelActivateTabsPanel(prev, tabsId, panel))
-  }, [setPanelLayout])
+  // Tasks is a dock leaf (no main-tabs panel switch) — the legacy command is inert.
+  const activateTabsPanel = useCallback((_tabsId: string, _panel: PanelId) => {}, [])
   const movePanel = useCallback((panel: PanelId, placement: PanelPlacement) => {
     setPanelLayout((prev) => modelMovePanel(prev, panel, placement))
   }, [setPanelLayout])
@@ -701,13 +636,13 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setPanelLayout((prev) => modelResetLayout(prev))
   }, [setPanelLayout])
   const setEditorPrefs = useCallback((patch: Partial<EditorPrefs>) => {
-    actions.updateLayout(patch)
-  }, [actions])
+    updateLayout(patch)
+  }, [updateLayout])
 
   const commands = useMemo<WorkspaceCommands>(() => ({
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
-    saveFile: actions.saveFile, forceSave: actions.forceSave, acceptDisk: actions.acceptDisk,
-    updateDraft: actions.updateFileDraft, updateViewport: actions.updateFileViewport,
+    saveFile, forceSave, acceptDisk,
+    updateDraft: updateFileDraft, updateViewport: updateFileViewport,
     retargetPaths, deletePath,
     splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
     clickSession, openBeside, detachSession,
@@ -719,7 +654,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     actions: rawActions,
   }), [
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
-    actions, retargetPaths, deletePath,
+    saveFile, forceSave, acceptDisk, updateFileDraft, updateFileViewport, retargetPaths, deletePath,
     splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
     clickSession, openBeside, detachSession, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
@@ -750,14 +685,14 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   ])
 
   const selection = useMemo<WorkspaceSelection>(() => ({
-    openTabs, activeTab, previewTab, activeSession,
-    editorViews, terminalBindings, editorMru, terminalMru, focusedPane,
+    activeGroupId, activeEditorTab, activeEditorTabId, activeEditorPath, activeSession,
+    terminalBindings, editorMru, terminalMru, focusedPane,
     activeEditorId, activeTerminalId,
     selectedFilePath, explorerFocusedPath, focusTarget, recentFiles, showSearch,
     editor: { files, dirtyTabs, conflictTabs, jumpRequest },
   }), [
-    openTabs, activeTab, previewTab, activeSession,
-    editorViews, terminalBindings, editorMru, terminalMru, focusedPane,
+    activeGroupId, activeEditorTab, activeEditorTabId, activeEditorPath, activeSession,
+    terminalBindings, editorMru, terminalMru, focusedPane,
     activeEditorId, activeTerminalId,
     selectedFilePath, explorerFocusedPath, focusTarget, recentFiles, showSearch,
     files, dirtyTabs, conflictTabs, jumpRequest,
