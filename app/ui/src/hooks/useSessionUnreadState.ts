@@ -14,8 +14,10 @@ export type SessionUnreadCounts = Record<string, number> // key = `${project}::$
 
 export type WorkspaceVisibilityReport = {
   projectName: string
-  attachedSession: string | null
-  terminalVisible: boolean
+  // Sessions bound to terminal panes that are ACTUALLY visible in the layout
+  // (design: §C). Multiple tiled terminals → multiple visible sessions, all of
+  // which are auto-marked read. Empty when no bound terminal is visible.
+  visibleSessions: string[]
 }
 
 export type AttachSessionIntent = {
@@ -212,34 +214,32 @@ export function useSessionUnreadState(
     return set
   }, [allSessions])
 
-  // Visible-session guard: auto-advance read timestamp for visible sessions
+  // Visible-session guard: auto-advance the read watermark for EVERY session
+  // bound to a visible terminal pane (both tiled terminals mark read, design §C).
   useEffect(() => {
-    if (!visibilityReport) return
-    if (!pageVisible) return
-    if (!visibilityReport.attachedSession || !visibilityReport.terminalVisible) return
+    if (!visibilityReport || !pageVisible) return
     if (visibilityReport.projectName !== activeProject) return
+    if (!progress || visibilityReport.visibleSessions.length === 0) return
 
-    const key = sessionKey(visibilityReport.projectName, visibilityReport.attachedSession)
-    if (!progress) return
-
-    let maxTs = 0
+    const visible = new Set(visibilityReport.visibleSessions)
+    const maxBySession = new Map<string, number>()
     for (const entry of progress) {
       if (!isEligible(entry, liveSessions)) continue
       if (entry.project !== visibilityReport.projectName) continue
-      if (entry.sessionName !== visibilityReport.attachedSession) continue
+      if (!visible.has(entry.sessionName!)) continue
       const ts = entryTimestamp(entry)
-      if (ts > maxTs) maxTs = ts
+      if (ts > (maxBySession.get(entry.sessionName!) ?? 0)) maxBySession.set(entry.sessionName!, ts)
     }
-
-    if (maxTs === 0) return
+    if (maxBySession.size === 0) return
 
     updateReadState(prev => {
-      const currentCutoff = prev.sessionReadAt[key] ?? 0
-      if (maxTs <= currentCutoff) return prev
-      return {
-        ...prev,
-        sessionReadAt: { ...prev.sessionReadAt, [key]: maxTs },
+      let changed = false
+      const sessionReadAt = { ...prev.sessionReadAt }
+      for (const [session, ts] of maxBySession) {
+        const key = sessionKey(visibilityReport.projectName, session)
+        if (ts > (sessionReadAt[key] ?? 0)) { sessionReadAt[key] = ts; changed = true }
       }
+      return changed ? { ...prev, sessionReadAt } : prev
     })
   }, [progress, visibilityReport, activeProject, liveSessions, pageVisible, updateReadState])
 

@@ -56,11 +56,11 @@ interface SessionActions {
 export interface WorkspaceSessionsResourceOptions {
   projectName: string
   projectPath: string
-  activeSession: string
   actions: SessionActions
   setFocusTarget: (target: SessionFocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   onSessionChange?: () => void
+  onRenameBoundTerminals?: (oldName: string, newName: string) => void
 }
 
 export interface WorkspaceDataOptions extends WorkspaceSessionsResourceOptions {
@@ -97,13 +97,13 @@ export function useWorkspaceSessionsResource(
   } = useWorkspaceSessions({
     actions: opts.actions,
     projectPath: opts.projectPath,
-    activeSession: opts.activeSession,
     sessions: rawSessions,
     refreshSessions,
     setFocusTarget: opts.setFocusTarget,
     sessionUnreadCounts: opts.sessionUnreadCounts,
     projectName,
     onSessionChange: opts.onSessionChange,
+    onRenameBoundTerminals: opts.onRenameBoundTerminals,
   })
 
   const liveSessionHandles = useMemo(

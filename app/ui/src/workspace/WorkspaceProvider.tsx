@@ -12,11 +12,12 @@ import {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 import { useWorkspaceState, isFileTab, isDiffTab } from '../hooks/useWorkspaceState'
-import { mobilePaneToDock } from '../hooks/workspaceTypes'
+import { mobilePaneToDock, EMPTY_VIEW, type LayoutNode, type EditorView } from '../hooks/workspaceTypes'
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
 import { useFileTree, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
 import { useWorkspaceData } from './resources'
+import { resolveSessionClick, resolveOpenBeside, stepSessionMisses } from './useWorkspaceSessions'
 import { markStale as markSearchIndexStale } from './quickOpenIndex'
 import {
   collapsePanel as modelCollapsePanel,
@@ -24,6 +25,8 @@ import {
   activateTabsPanel as modelActivateTabsPanel,
   mainTabsActivePanel,
   MAIN_TABS_ID,
+  HOME_EDITOR_ID,
+  newInstanceId,
   setDockVisible as modelSetDockVisible,
   setActivityVisible as modelSetActivityVisible,
   setActiveDock as modelSetActiveDock,
@@ -78,6 +81,36 @@ const NOOP_CONTROLLERS: WorkspaceControllers = {
   onSessionChange: () => {},
 }
 
+/** The node id of the leaf rendering `panel`, or null. */
+function findPanelLeafId(node: LayoutNode, panel: PanelId): string | null {
+  if (node.kind === 'leaf') return node.panel === panel ? node.id : null
+  if (node.kind === 'split') {
+    for (const c of node.children) {
+      const hit = findPanelLeafId(c.node, panel)
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+/** Terminal-leaf ids actually visible in the layout (not under a hidden subtree)
+ *  — the panes whose bound sessions count as visible for mark-read (design: §C). */
+function visibleTerminalIds(node: LayoutNode, out: string[] = []): string[] {
+  if (node.kind === 'leaf') {
+    if (node.panel === 'terminal') out.push(node.id)
+  } else if (node.kind === 'split') {
+    for (const c of node.children) if (c.hidden !== true) visibleTerminalIds(c.node, out)
+  }
+  return out
+}
+
+/** Where to drop a brand-new terminal when none can be split beside: beside the
+ *  Sessions list (the default activity column), else beside the main region. */
+function defaultTerminalTarget(tree: LayoutNode): { targetId: string; side: SplitSide } {
+  const sessionsId = findPanelLeafId(tree, 'sessions')
+  return sessionsId ? { targetId: sessionsId, side: 'above' } : { targetId: MAIN_TABS_ID, side: 'right' }
+}
+
 /** Build a self-describing compare diff tab id (design: ChangesPanel). */
 function diffTabId(path: string, base?: string, compare?: string): string {
   return base && compare
@@ -90,9 +123,11 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     projectName, projectPath, worktree, worktrees, activeWorktree, onWorktreeSelect,
     projects, activeProject, projectUnreadCounts, projectSessionCounts,
     onProjectSelect, onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
-    sessionUnreadCounts, markSessionRead, onVisibilityReport,
+    sessionUnreadCounts, onVisibilityReport,
     attachIntent, clearAttachIntent, notificationBell, children,
   } = props
+  // markSessionRead is still accepted (App wires it) but mark-read is now driven
+  // by the visibleSessions report inside useSessionUnreadState, not the provider.
 
   const isMobile = useIsMobile()
   const isLandscape = useIsLandscape()
@@ -101,13 +136,24 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
 
   // Centralized tab/layout/file state.
   const ws = useWorkspaceState(projectName, worktree)
-  const { openTabs, activeTab, previewTab, activeSession, mobilePane, layout, panelLayout, setPanelLayout, files, dirtyTabs, conflictTabs, recentFiles, actions } = ws
+  const {
+    openTabs, activeTab, previewTab, activeSession, mobilePane, layout, panelLayout,
+    setPanelLayout, files, dirtyTabs, conflictTabs, recentFiles, actions, instances,
+    fetchForTab, addRecentFile,
+  } = ws
+  const {
+    editorViews, terminalBindings, editorMru, terminalMru, focusedPane,
+    activeEditorId, activeTerminalId,
+    // Stable action callbacks (useCallback([]) in the reducer hook).
+    focusPane, splitPane, closePane, movePane, bindTerminal, selectTabIn, closeTabIn,
+  } = instances
+  // focusTarget is now the focused pane's kind (the reducer owns focusedPane).
+  const focusTarget = focusedPane.kind
 
   // Hot selection state owned here (read everywhere, mutated through commands).
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() => (
     isFileTab(activeTab) ? activeTab : null
   ))
-  const [focusTarget, setFocusTarget] = useState<FocusTarget>('editor')
   const [explorerFocusedPath, setExplorerFocusedPath] = useState<string | null>(null)
   const [jumpRequest, setJumpRequest] = useState<JumpRequest | null>(null)
   const [showSearch, setShowSearch] = useState(false)
@@ -153,10 +199,37 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   useEffect(() => { historyRefreshRef.current = history.refresh })
   const onSessionChange = useCallback(() => { void historyRefreshRef.current() }, [])
 
+  // Latest active instance ids + bindings, mirrored in effects (refs stay out of
+  // render) so the stable command callbacks resolve the active editor/terminal
+  // and the bound terminals without re-subscribing.
+  const activeIdsRef = useRef({ editor: activeEditorId, terminal: activeTerminalId })
+  const bindingsRef = useRef(terminalBindings)
+  useEffect(() => {
+    activeIdsRef.current = { editor: activeEditorId, terminal: activeTerminalId }
+    bindingsRef.current = terminalBindings
+  })
+
+  // setFocusTarget routes a type to the focused pane: editor/terminal resolve to
+  // the active instance; other kinds equal their type (design: §C focusPane).
+  const setFocusTarget = useCallback((kind: FocusTarget) => {
+    const ids = activeIdsRef.current
+    const id = kind === 'editor' ? ids.editor : kind === 'terminal' ? (ids.terminal ?? '') : kind
+    focusPane(kind, id)
+  }, [focusPane])
+
+  // Rename rebinds every terminal bound to the old name (the binding outlives the
+  // rename; reconcile must not mistake it for a death).
+  const renameBoundTerminals = useCallback((oldName: string, newName: string) => {
+    for (const [id, session] of Object.entries(bindingsRef.current)) {
+      if (session === oldName) bindTerminal(id, newName)
+    }
+  }, [bindTerminal])
+
   // Single shared resources: one git poller, one sessions poller + manager.
   const data = useWorkspaceData({
     projectName, projectPath: effectivePath, worktree,
-    activeSession, actions, setFocusTarget, sessionUnreadCounts, onSessionChange,
+    actions, setFocusTarget, sessionUnreadCounts, onSessionChange,
+    onRenameBoundTerminals: renameBoundTerminals,
   })
   const { liveSessionHandles } = data.sessions
   const sessionsLoaded = data.sessionsLoaded
@@ -194,13 +267,104 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const latestRef = useRef({
     activeSession, activeTab, focusTarget, showSearch, isMobile,
     liveSessionHandles, layout, mobilePane, panelLayout,
+    terminalBindings, editorViews, activeEditorId, activeTerminalId,
   })
   useEffect(() => {
     latestRef.current = {
       activeSession, activeTab, focusTarget, showSearch, isMobile,
       liveSessionHandles, layout, mobilePane, panelLayout,
+      terminalBindings, editorViews, activeEditorId, activeTerminalId,
     }
   })
+
+  // --- Multi-instance structural + session commands (design: §C table) ---
+  // All read latest state off latestRef so their identity stays stable.
+
+  const revealTerminalColumn = useCallback(() => {
+    if (latestRef.current.isMobile) actions.setMobilePane('terminal')
+    else actions.updateLayout({ showRightPanel: true })
+  }, [actions])
+
+  const splitEditor = useCallback((sourceId: string, side: SplitSide) => {
+    const { panelLayout: pl, editorViews: views } = latestRef.current
+    const newId = newInstanceId(pl.desktop, 'editor')
+    const src = views[sourceId] ?? EMPTY_VIEW
+    const seed: EditorView | undefined = src.activeTab && isFileTab(src.activeTab)
+      ? { openTabs: [src.activeTab], activeTab: src.activeTab, previewTab: null }
+      : undefined
+    splitPane('editor', sourceId === HOME_EDITOR_ID ? MAIN_TABS_ID : sourceId, side, newId, seed)
+  }, [splitPane])
+
+  const splitTerminal = useCallback((sourceId: string | null, side: SplitSide) => {
+    const { panelLayout: pl } = latestRef.current
+    const newId = newInstanceId(pl.desktop, 'terminal')
+    if (sourceId) { splitPane('terminal', sourceId, side, newId); return }
+    const t = defaultTerminalTarget(pl.desktop)
+    splitPane('terminal', t.targetId, t.side, newId)
+  }, [splitPane])
+
+  // clickSession: smart-focus-else-replace (§3.5). Focus the terminal already
+  // showing the session, else bind the active terminal, else create one.
+  const clickSession = useCallback((name: string) => {
+    const { terminalBindings: bindings, activeTerminalId: tid, panelLayout: pl } = latestRef.current
+    const action = resolveSessionClick(name, bindings, tid)
+    if (action.kind === 'focus') {
+      focusPane('terminal', action.terminalId)
+    } else if (action.kind === 'bind') {
+      bindTerminal(action.terminalId, name)
+      focusPane('terminal', action.terminalId)
+    } else {
+      const newId = newInstanceId(pl.desktop, 'terminal')
+      const { targetId, side } = defaultTerminalTarget(pl.desktop)
+      splitPane('terminal', targetId, side, newId)
+      bindTerminal(newId, name)
+    }
+    revealTerminalColumn()
+  }, [focusPane, bindTerminal, splitPane, revealTerminalColumn])
+
+  // openBeside: 1-per-session — focus if shown, else open a new bound terminal.
+  const openBeside = useCallback((name: string) => {
+    const { terminalBindings: bindings, activeTerminalId: tid, panelLayout: pl } = latestRef.current
+    const action = resolveOpenBeside(name, bindings)
+    if (action.kind === 'focus') {
+      focusPane('terminal', action.terminalId)
+    } else {
+      const newId = newInstanceId(pl.desktop, 'terminal')
+      const place = tid ? { targetId: tid, side: 'below' as SplitSide } : defaultTerminalTarget(pl.desktop)
+      splitPane('terminal', place.targetId, place.side, newId)
+      bindTerminal(newId, name)
+    }
+    revealTerminalColumn()
+  }, [focusPane, bindTerminal, splitPane, revealTerminalColumn])
+
+  const detachSession = useCallback((): boolean => {
+    const { activeSession: s, activeTerminalId: tid } = latestRef.current
+    if (!s || !tid) return false
+    bindTerminal(tid, '')
+    return true
+  }, [bindTerminal])
+
+  // Session reconcile (design: §C). Per-session miss-count: a bound session
+  // absent from the live handles for 2 polls closes its terminal pane(s) → the
+  // session goes to History. A restored binding is pre-seeded at miss-count 1, so
+  // a session dead between reloads drops on the first poll confirming it absent.
+  const missRef = useRef<Map<string, number>>(new Map())
+  useEffect(() => {
+    missRef.current = new Map(Object.values(terminalBindings).filter(Boolean).map((s) => [s, 1]))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  useEffect(() => {
+    if (!sessionsLoaded) return
+    const bindings = latestRef.current.terminalBindings
+    const bound = new Set(Object.values(bindings).filter(Boolean))
+    const { next, dead } = stepSessionMisses(missRef.current, bound, liveSessionHandles)
+    missRef.current = next
+    if (dead.length === 0) return
+    const deadSet = new Set(dead)
+    for (const [id, session] of Object.entries(bindings)) {
+      if (deadSet.has(session)) closePane(id)
+    }
+  }, [liveSessionHandles, sessionsLoaded, closePane])
 
   // Mirror the legacy flat dock/activity visibility onto the panel-layout tree so
   // the tree renderer (engine: 'tree') can never drift out of step with it. The
@@ -229,12 +393,23 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setPanelLayout((prev) => modelSetActiveDock(prev, mobilePaneToDock(mobilePane)))
   }, [mobilePane, setPanelLayout])
 
-  // --- Cross-component effects (moved verbatim from WorkspaceScreen) ---
+  // --- Cross-component effects ---
+  // Report the sessions bound to ACTUALLY-VISIBLE terminal panes (design: §C) —
+  // a stable NUL-joined signature so the report fires only when the set changes.
+  const visibleSessionsSig = useMemo(() => {
+    const ids = isMobile
+      ? (mobilePane === 'terminal' && activeTerminalId ? [activeTerminalId] : [])
+      : visibleTerminalIds(panelLayout.desktop)
+    const sessions = ids.map((id) => terminalBindings[id]).filter((s): s is string => !!s)
+    return [...new Set(sessions)].sort().join(' ')
+  }, [isMobile, mobilePane, activeTerminalId, terminalBindings, panelLayout.desktop])
+  const visibleSessions = useMemo(
+    () => (visibleSessionsSig ? visibleSessionsSig.split(' ') : []), [visibleSessionsSig],
+  )
   useEffect(() => {
     if (!onVisibilityReport) return
-    const terminalVisible = isMobile ? mobilePane === 'terminal' : layout.showRightPanel
-    onVisibilityReport({ projectName, attachedSession: activeSession, terminalVisible })
-  }, [onVisibilityReport, projectName, activeSession, isMobile, mobilePane, layout.showRightPanel])
+    onVisibilityReport({ projectName, visibleSessions })
+  }, [onVisibilityReport, projectName, visibleSessions])
 
   useEffect(() => {
     if (!attachIntent || !clearAttachIntent) return
@@ -242,20 +417,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     // Wait for the first sessions poll before deciding — clearing the intent
     // against an unloaded poller would drop the attach request entirely.
     if (!sessionsLoaded) return
-    if (liveSessionHandles.has(attachIntent.sessionName)) {
-      actions.setActiveSession(attachIntent.sessionName)
-      if (isMobile) actions.setMobilePane('terminal')
-      else actions.updateLayout({ showRightPanel: true })
-    }
+    if (liveSessionHandles.has(attachIntent.sessionName)) clickSession(attachIntent.sessionName)
     clearAttachIntent()
-  }, [attachIntent, clearAttachIntent, projectName, sessionsLoaded, liveSessionHandles, actions, isMobile])
-
-  useEffect(() => {
-    if (!activeSession || !markSessionRead) return
-    const terminalVisible = isMobile ? mobilePane === 'terminal' : layout.showRightPanel
-    if (!terminalVisible) return
-    markSessionRead(projectName, activeSession)
-  }, [activeSession, projectName, markSessionRead, isMobile, mobilePane, layout.showRightPanel])
+  }, [attachIntent, clearAttachIntent, projectName, sessionsLoaded, liveSessionHandles, clickSession])
 
   // --- Raw passthroughs (drive the unchanged renderer + keyboard) ---
   const rawActions = useMemo<WorkspaceRawActions>(() => ({
@@ -291,7 +455,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setFocusTarget('editor')
     actions.setMobilePane('editor')
     showEditorSurface()
-  }, [actions, showEditorSurface])
+  }, [actions, showEditorSurface, setFocusTarget])
 
   // previewFile is the quick-open select path: reveal the file's parents in the
   // explorer, then open it as a preview tab and focus the editor (behavior-
@@ -304,7 +468,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       actions.setMobilePane('editor')
       showEditorSurface()
     })
-  }, [actions, revealParents, showEditorSurface])
+  }, [actions, revealParents, showEditorSurface, setFocusTarget])
 
   const openFileAtLine = useCallback((path: string, line: number) => {
     void revealParents(path).then(() => {
@@ -314,8 +478,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       actions.setMobilePane('editor')
       showEditorSurface()
     })
-    setJumpRequest({ key: Date.now(), path, line })
-  }, [actions, revealParents, showEditorSurface])
+    // jumpRequest is per-instance: stamp the active editor so only it consumes it.
+    setJumpRequest({ key: Date.now(), path, line, instanceId: latestRef.current.activeEditorId })
+  }, [actions, revealParents, showEditorSurface, setFocusTarget])
 
   // openDiff mirrors the old activateChange handler: a re-clicked active diff
   // toggles back to its file; otherwise reveal parents, open the (preview) diff,
@@ -337,7 +502,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       actions.setMobilePane('editor')
       showEditorSurface()
     })
-  }, [actions, openFile, revealParents, showEditorSurface])
+  }, [actions, openFile, revealParents, showEditorSurface, setFocusTarget])
 
   const openDiffTabId = useCallback((tabId: string, opts?: { preview?: boolean }) => {
     if (opts?.preview === false) actions.openDiffTab(tabId.slice(5))
@@ -345,17 +510,38 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setFocusTarget('editor')
     actions.setMobilePane('editor')
     showEditorSurface()
-  }, [actions, showEditorSurface])
+  }, [actions, showEditorSurface, setFocusTarget])
 
-  // closeTab: the diff cache self-cleans when the closed tab leaves the active /
-  // editor key set, so no explicit clear is needed here.
-  const closeTab = useCallback((tab: string) => { actions.closeTab(tab) }, [actions])
+  // closeTab/selectTab act on `id` when given (a pane's own tab bar; also focuses
+  // it), else the active editor. The diff cache self-cleans when a tab leaves the
+  // active/editor key set, so no explicit clear is needed here.
+  const closeTab = useCallback((tab: string, id?: string) => {
+    if (id) closeTabIn(id, tab)
+    else actions.closeTab(tab)
+  }, [actions, closeTabIn])
 
-  const selectTab = useCallback((tab: string) => {
-    actions.setActiveTab(tab)
-    setFocusTarget('editor')
+  const selectTab = useCallback((tab: string, id?: string) => {
+    if (id) { selectTabIn(id, tab); focusPane('editor', id) }
+    else { actions.setActiveTab(tab); setFocusTarget('editor') }
     if (isFileTab(tab)) setSelectedFilePath(tab)
-  }, [actions])
+  }, [actions, selectTabIn, focusPane, setFocusTarget])
+
+  // openToSide: split the active editor and open `path` in the new group (§3.4a).
+  // splitPane focuses the new pane; fetch loads its buffer (shared by path).
+  const openToSide = useCallback((path: string, side: SplitSide = 'right') => {
+    if (!isFileTab(path)) return
+    const { panelLayout: pl, activeEditorId: eid } = latestRef.current
+    const newId = newInstanceId(pl.desktop, 'editor')
+    void revealParents(path).then(() => {
+      splitPane('editor', eid === HOME_EDITOR_ID ? MAIN_TABS_ID : eid, side, newId,
+        { openTabs: [path], activeTab: path, previewTab: null })
+      fetchForTab(path)
+      addRecentFile(path)
+      setSelectedFilePath(path)
+      actions.setMobilePane('editor')
+      showEditorSurface()
+    })
+  }, [splitPane, fetchForTab, addRecentFile, revealParents, actions, showEditorSurface])
 
   const retargetPaths = useCallback((oldPath: string, newPath: string) => {
     actions.retargetPaths(oldPath, newPath)
@@ -372,25 +558,6 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       if (prev === path || (prev && prev.startsWith(path + '/'))) return null
       return prev
     })
-  }, [actions])
-
-  const attachSession = useCallback((name: string, opts?: { focusTerminal?: boolean }) => {
-    actions.setActiveSession(name)
-    setFocusTarget(opts?.focusTerminal ? 'terminal' : 'session')
-    if (latestRef.current.isMobile) actions.setMobilePane('terminal')
-  }, [actions])
-
-  const detachSession = useCallback((): boolean => {
-    if (!latestRef.current.activeSession) return false
-    actions.setActiveSession('')
-    return true
-  }, [actions])
-
-  const openTerminalForSession = useCallback((name: string) => {
-    if (!latestRef.current.liveSessionHandles.has(name)) return
-    actions.setActiveSession(name)
-    if (latestRef.current.isMobile) actions.setMobilePane('terminal')
-    else actions.updateLayout({ showRightPanel: true })
   }, [actions])
 
   // Deferred reveal: record the latest intent, reveal the Files surface, and ask
@@ -434,7 +601,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     actions.updateLayout({ showTasks: true })
     setPanelLayout((prev) => modelActivateTabsPanel(prev, MAIN_TABS_ID, 'tasks'))
     setFocusTarget('editor')
-  }, [actions, setPanelLayout, mainShowsTasks, closeTasks])
+  }, [actions, setPanelLayout, mainShowsTasks, closeTasks, setFocusTarget])
 
   const closeFocusedSurface = useCallback((): boolean => {
     const { showSearch: search, focusTarget: focus, activeTab: tab } = latestRef.current
@@ -492,7 +659,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     saveFile: actions.saveFile, forceSave: actions.forceSave, acceptDisk: actions.acceptDisk,
     updateDraft: actions.updateFileDraft, updateViewport: actions.updateFileViewport,
     retargetPaths, deletePath,
-    attachSession, detachSession, openTerminalForSession,
+    splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
+    clickSession, openBeside, detachSession,
     setSelectedFilePath, setExplorerFocusedPath, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,
@@ -501,7 +669,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     actions: rawActions,
   }), [
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
-    actions, retargetPaths, deletePath, attachSession, detachSession, openTerminalForSession,
+    actions, retargetPaths, deletePath,
+    splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
+    clickSession, openBeside, detachSession, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,
     collapsePanel, resizeSplitChild, toggleDock, toggleActivity, activateTabsPanel,
@@ -529,11 +699,16 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
 
   const selection = useMemo<WorkspaceSelection>(() => ({
     openTabs, activeTab, previewTab, activeSession,
+    editorViews, terminalBindings, editorMru, terminalMru, focusedPane,
+    activeEditorId, activeTerminalId,
     selectedFilePath, explorerFocusedPath, focusTarget, recentFiles, showSearch,
     editor: { files, dirtyTabs, conflictTabs, jumpRequest },
   }), [
-    openTabs, activeTab, previewTab, activeSession, selectedFilePath, explorerFocusedPath,
-    focusTarget, recentFiles, showSearch, files, dirtyTabs, conflictTabs, jumpRequest,
+    openTabs, activeTab, previewTab, activeSession,
+    editorViews, terminalBindings, editorMru, terminalMru, focusedPane,
+    activeEditorId, activeTerminalId,
+    selectedFilePath, explorerFocusedPath, focusTarget, recentFiles, showSearch,
+    files, dirtyTabs, conflictTabs, jumpRequest,
   ])
 
   const layoutValue = useMemo<WorkspaceLayoutContextValue>(() => ({

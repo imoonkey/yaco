@@ -8,7 +8,7 @@
 //   - active session            (selection)
 //   - live session handles      (data → sessions)
 //   - openFile                  (commands)        → onOpenFile + onOpenTasksFile
-//   - openTerminalForSession    (commands)        → onOpenTerminal
+//   - clickSession              (commands)        → onOpenTerminal (focus-or-bind)
 //   - setFocusTarget            (commands)        → onMouseDown task-surface focus
 //   - closeTasks                (commands)        → onClose
 //
@@ -76,7 +76,7 @@ export function TaskGraphPanel() {
           onOpenFile={openFile}
           activeSession={activeSession}
           liveSessionHandles={liveSessionHandles}
-          onOpenTerminal={commands.openTerminalForSession}
+          onOpenTerminal={commands.clickSession}
         />
       </Suspense>
     </div>

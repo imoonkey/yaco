@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useEffect } from 'react'
+import { useCallback, useMemo } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { usePinnedSessions } from '../hooks/usePinnedSessions'
 import type { AgentSession, SessionProvider } from '../types'
@@ -6,25 +6,85 @@ import type { MobilePane } from '../hooks/workspaceTypes'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
+// --- Pure session routing (design: Multi-Instance Panels §C/§3.5) -----------
+//
+// These decide WHICH terminal a session gesture targets, given the live bindings.
+// The provider wires the decision to focusPane / bindTerminal / splitPane. Pure
+// so the state machines are unit-tested without mounting the provider.
+
+export type SessionClickAction =
+  | { kind: 'focus'; terminalId: string } // already shown → focus it (no rebind / no dup PTY)
+  | { kind: 'bind'; terminalId: string } // replace the active terminal's session
+  | { kind: 'create' } // no terminal exists → create one bound to the session
+
+/** Smart-focus-else-replace (§3.5): focus the terminal already showing `name`,
+ *  else bind the active terminal, else signal that one must be created. */
+export function resolveSessionClick(
+  name: string, terminalBindings: Record<string, string>, activeTerminalId: string | null,
+): SessionClickAction {
+  for (const [id, session] of Object.entries(terminalBindings)) {
+    if (session === name) return { kind: 'focus', terminalId: id }
+  }
+  if (activeTerminalId) return { kind: 'bind', terminalId: activeTerminalId }
+  return { kind: 'create' }
+}
+
+export type OpenBesideAction =
+  | { kind: 'focus'; terminalId: string } // 1-per-session: already shown → focus it
+  | { kind: 'create' } // else open a new terminal bound to the session
+
+/** Open-beside with the 1-per-session guard: focus the terminal already showing
+ *  `name`, else signal that a new bound terminal must be created. */
+export function resolveOpenBeside(name: string, terminalBindings: Record<string, string>): OpenBesideAction {
+  for (const [id, session] of Object.entries(terminalBindings)) {
+    if (session === name) return { kind: 'focus', terminalId: id }
+  }
+  return { kind: 'create' }
+}
+
+/** Step the per-session miss-count map one poll. A bound session present in
+ *  `live` resets (omitted from the result); an absent one increments. A session
+ *  reaching 2 misses is returned as `dead` (its terminal pane(s) should close).
+ *  Restored bindings are pre-seeded at 1 by the caller, so a session that died
+ *  between reloads reaches 2 on the first poll confirming it absent (§3.9). */
+export function stepSessionMisses(
+  prev: ReadonlyMap<string, number>, boundSessions: ReadonlySet<string>, live: ReadonlySet<string>,
+): { next: Map<string, number>; dead: string[] } {
+  const next = new Map<string, number>()
+  const dead: string[] = []
+  for (const session of boundSessions) {
+    if (live.has(session)) continue
+    const count = (prev.get(session) ?? 0) + 1
+    if (count >= 2) dead.push(session)
+    else next.set(session, count)
+  }
+  return { next, dead }
+}
+
+// --- Hook -------------------------------------------------------------------
+
 interface UseWorkspaceSessionsOpts {
   actions: {
     setActiveSession: (name: string) => void
     setMobilePane: (pane: MobilePane) => void
   }
   projectPath: string
-  activeSession: string
   sessions: AgentSession[] | null
   refreshSessions: () => Promise<void>
   setFocusTarget: (t: FocusTarget) => void
   sessionUnreadCounts?: Record<string, number>
   projectName: string
   onSessionChange?: () => void
+  /** Rebind every terminal bound to `oldName` → `newName` on rename (the binding
+   *  outlives the old name; reconcile must not mistake the rename for a death). */
+  onRenameBoundTerminals?: (oldName: string, newName: string) => void
 }
 
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
-    actions, projectPath, activeSession, sessions,
+    actions, projectPath, sessions,
     refreshSessions, setFocusTarget, sessionUnreadCounts, projectName, onSessionChange,
+    onRenameBoundTerminals,
   } = opts
 
   const { pinnedSessions, setPinnedSessions } = usePinnedSessions(projectName)
@@ -56,30 +116,6 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     return [...pinned, ...blocked, ...processing, ...idle]
   }, [projectSessions, pinnedSessions, pinnedSet, getSessionUnread])
 
-  // Auto-detach when a previously-known session disappears from 2 consecutive polls.
-  // A single transient miss (race between state-file write and API read) is tolerated.
-  const knownSessionsRef = useRef(new Set<string>())
-  const missCountRef = useRef(0)
-  useEffect(() => {
-    if (!sessions) return
-    const current = new Set(projectSessions.map(s => s.name))
-    if (activeSession && knownSessionsRef.current.has(activeSession)) {
-      if (!current.has(activeSession)) {
-        missCountRef.current += 1
-        if (missCountRef.current >= 2) {
-          actions.setActiveSession('')
-          missCountRef.current = 0
-        } else {
-          // Keep active session in known set so next poll can detect a second miss
-          current.add(activeSession)
-        }
-      } else {
-        missCountRef.current = 0
-      }
-    }
-    knownSessionsRef.current = current
-  }, [activeSession, projectSessions, sessions, actions])
-
   const handleNewSession = useCallback(async (provider: SessionProvider) => {
     try {
       const name = await startSession(provider, projectPath)
@@ -92,41 +128,31 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     }
   }, [actions, projectPath, setFocusTarget, refreshSessions])
 
+  // Killing a session ends it remotely; its terminal pane(s) close via the
+  // provider's reconcile when the session leaves the live set (design: §3.7) — no
+  // separate detach here.
   const killSession = useCallback(async (sessionName: string) => {
     if (!sessionName) return
-    const shouldDetach = activeSession === sessionName
-    if (shouldDetach) actions.setActiveSession('')
     try {
       await closeRemoteSession(sessionName)
       void refreshSessions()
       onSessionChange?.()
     } catch (err) {
       console.error('Failed to close session:', err)
-      if (shouldDetach) actions.setActiveSession(sessionName)
     }
-  }, [activeSession, refreshSessions, actions, onSessionChange])
+  }, [refreshSessions, onSessionChange])
 
-  const executeRename = useCallback(async (oldName: string, newName: string) => {
+  const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
     try {
       await renameSession(oldName, newName)
       setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
-      if (activeSession === oldName) actions.setActiveSession(newName)
+      onRenameBoundTerminals?.(oldName, newName)
       void refreshSessions()
       onSessionChange?.()
     } catch (err) {
       console.error('Failed to rename session:', err)
     }
-  }, [activeSession, actions, refreshSessions, setPinnedSessions, onSessionChange])
-
-  const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
-    await executeRename(oldName, newName)
-  }, [executeRename])
-
-  const detachActiveSession = useCallback(() => {
-    if (!activeSession) return false
-    actions.setActiveSession('')
-    return true
-  }, [activeSession, actions])
+  }, [refreshSessions, setPinnedSessions, onSessionChange, onRenameBoundTerminals])
 
   const togglePin = useCallback((name: string) => {
     setPinnedSessions(prev =>
@@ -155,7 +181,6 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     handleNewSession,
     killSession,
     handleRenameSession,
-    detachActiveSession,
     refreshSessions,
     togglePin,
     handlePinnedReorder,

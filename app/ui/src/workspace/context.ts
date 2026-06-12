@@ -19,7 +19,7 @@ import type { Project, GitChange, AgentSession, SessionProvider, FileNode, Histo
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
 import type {
   FileState, PreviewMode, SplitDirection, MobilePane, WorkspaceLayout,
-  WorkspacePanelLayout,
+  WorkspacePanelLayout, EditorView, FocusedPane,
 } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import type { WorkspaceData } from './resources'
@@ -30,8 +30,13 @@ export type { WorkspaceData, WorkspaceGitResource, WorkspaceSessionsResource } f
 // a real surface (design: Selection Context / TaskGraphPanel).
 export type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal' | 'tasks'
 
-export type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
+// jumpRequest carries instanceId so only the matching editor pane consumes a
+// go-to-line (design: §B — same treatment as editorInsert/terminalSend).
+export type JumpRequest = { key: number; path: string; line: number; scroll?: boolean; instanceId?: string }
 export type InsertRequest = { text: string; key: number }
+
+/** Where to drop a moved pane (design: id-addressed move). */
+export type PanePlacement = { targetId: string; side: SplitSide }
 
 // --- Env ------------------------------------------------------------------
 
@@ -77,12 +82,25 @@ export type WorkspaceEditorState = {
 }
 
 export type WorkspaceSelection = {
+  // Derived single-value globals over the ACTIVE instance (the routing rule).
+  // Kept for the keyboard label + the not-yet-instance-aware panels.
   openTabs: string[]
   activeTab: string | null
   previewTab: string | null
   activeSession: string
+  // Per-instance state (design: §C). The renderer + instance-aware panels read
+  // these; a read for a missing id defaults to EMPTY_VIEW / unbound.
+  editorViews: Record<string, EditorView>
+  terminalBindings: Record<string, string>
+  editorMru: string[]
+  terminalMru: string[]
+  focusedPane: FocusedPane
+  activeEditorId: string
+  activeTerminalId: string | null
   selectedFilePath: string | null
   explorerFocusedPath: string | null
+  // focusTarget is the focused pane's kind (derived from focusedPane); kept so
+  // existing keyboard/close routing reads the kind without the instance id.
   focusTarget: FocusTarget
   recentFiles: string[]
   showSearch: boolean
@@ -140,14 +158,16 @@ export type WorkspaceRawActions = {
 }
 
 export type WorkspaceCommands = {
-  // Tabs / files
+  // Tabs / files — active-resolving (route to the active editor)
   openFile: (path: string) => void
   previewFile: (path: string) => void
   openFileAtLine: (path: string, line: number, column?: number) => void
   openDiff: (path: string, opts?: { preview?: boolean; base?: string; compare?: string }) => void
   openDiffTabId: (tabId: string, opts?: { preview?: boolean }) => void
-  closeTab: (tab: string) => void
-  selectTab: (tab: string) => void
+  // selectTab/closeTab act on `id` when given (a pane's own tab bar), else the
+  // active editor (the old global call sites).
+  closeTab: (tab: string, id?: string) => void
+  selectTab: (tab: string, id?: string) => void
 
   // Editor file state
   saveFile: (path: string, content: string) => Promise<{ conflict: boolean }>
@@ -158,10 +178,18 @@ export type WorkspaceCommands = {
   retargetPaths: (oldPath: string, newPath: string) => void
   deletePath: (path: string) => void
 
+  // Multi-instance structural commands (design: §C table)
+  splitEditor: (sourceId: string, side: SplitSide) => void
+  openToSide: (path: string, side?: SplitSide) => void
+  splitTerminal: (sourceId: string | null, side: SplitSide) => void
+  closePane: (id: string) => void
+  focusPane: (kind: FocusTarget, instanceId: string) => void
+  movePane: (id: string, placement: PanePlacement) => void
+
   // Sessions
-  attachSession: (name: string, opts?: { focusTerminal?: boolean }) => void
+  clickSession: (name: string) => void
+  openBeside: (name: string) => void
   detachSession: () => boolean
-  openTerminalForSession: (name: string) => void
 
   // Selection
   setSelectedFilePath: (path: string | null) => void
@@ -180,7 +208,7 @@ export type WorkspaceCommands = {
   toggleTasks: () => void
   closeTasks: () => void
 
-  // Layout (phase-1 maps to the flat layout; flexible ops land in phase 8)
+  // Layout
   collapsePanel: (panel: PanelId, collapsed: boolean) => void
   resizeSplitChild: (splitId: string, childId: string, basis: number) => void
   toggleDock: () => void
