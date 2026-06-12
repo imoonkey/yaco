@@ -8,7 +8,8 @@ import type { SearchEntry } from './WorkspaceSearch'
 import { WorkspaceLayoutShell } from './WorkspaceLayoutShell'
 import { ShortcutSheet } from './ShortcutSheet'
 import type { Project } from '../types'
-import type { WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts } from '../hooks/useSessionUnreadState'
+import type { WorkspaceVisibilityReport, AttachSessionIntent } from './visibility'
+import type { AttentionBadge, AttentionTaskIds } from '../hooks/useAttention'
 import { useWorkspaceKeyboard } from './useWorkspaceKeyboard'
 import { useWorkspaceVoice } from './useWorkspaceVoice'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
@@ -28,15 +29,16 @@ type WorkspaceProps = {
   onWorktreeSelect: (slug: string | null) => void
   projects: Project[]
   activeProject: string
-  projectUnreadCounts: Record<string, number>
+  badgesByProject: Record<string, AttentionBadge>
+  badgesBySession: Record<string, AttentionBadge>
+  readySessionKeys: Set<string>
+  attentionTaskIds: AttentionTaskIds
   projectSessionCounts: Record<string, { active: number; total: number }>
   onProjectSelect: (name: string) => void
   onProjectReorder: (fromName: string, toName: string) => void
   onProjectRemove: (project: Project) => void
   onAddProject: () => void
   onMarkAllRead: (projectName: string) => void
-  sessionUnreadCounts?: SessionUnreadCounts
-  markSessionRead?: (project: string, session: string) => void
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void

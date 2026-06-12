@@ -53,6 +53,13 @@ export interface AttentionSnapshot {
   global: AttentionBadge
 }
 
+/** Task ids (for one project) the task graph chips off of: a `task_blocked` →
+ *  blocked chip; a `task_done` → done chip. Derived from the snapshot. */
+export interface AttentionTaskIds {
+  blocked: Set<string>
+  done: Set<string>
+}
+
 /** `/feed` adds the recent-history pagination cursor to the snapshot. */
 interface AttentionFeed extends AttentionSnapshot {
   nextBefore: number | null

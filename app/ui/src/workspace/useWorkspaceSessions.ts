@@ -3,6 +3,7 @@ import { startSession, closeSession as closeRemoteSession, renameSession } from 
 import { usePinnedSessions } from '../hooks/usePinnedSessions'
 import type { AgentSession, SessionProvider } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
@@ -16,7 +17,10 @@ interface UseWorkspaceSessionsOpts {
   sessions: AgentSession[] | null
   refreshSessions: () => Promise<void>
   setFocusTarget: (t: FocusTarget) => void
-  sessionUnreadCounts?: Record<string, number>
+  // Attention rollup badge per session subtree (`proj::name`) + owned-idle "your
+  // turn" set, both from the server-projected snapshot. Separate from status.
+  badgesBySession?: Record<string, AttentionBadge>
+  readySessionKeys?: Set<string>
   projectName: string
   onSessionChange?: () => void
 }
@@ -24,7 +28,7 @@ interface UseWorkspaceSessionsOpts {
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
     actions, projectPath, activeSession, sessions,
-    refreshSessions, setFocusTarget, sessionUnreadCounts, projectName, onSessionChange,
+    refreshSessions, setFocusTarget, badgesBySession, readySessionKeys, projectName, onSessionChange,
   } = opts
 
   const { pinnedSessions, setPinnedSessions } = usePinnedSessions(projectName)
@@ -32,10 +36,17 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
   const pinnedSet = useMemo(() => new Set(pinnedSessions), [pinnedSessions])
 
-  const getSessionUnread = useCallback((sessionName: string): number => {
-    if (!sessionUnreadCounts) return 0
-    return sessionUnreadCounts[`${projectName}::${sessionName}`] ?? 0
-  }, [sessionUnreadCounts, projectName])
+  // Rollup badge for a session subtree (count + worst-tier color). Separate from
+  // the self-only status dot — never used to recolor it.
+  const getSessionBadge = useCallback((sessionName: string): AttentionBadge | null => {
+    return badgesBySession?.[`${projectName}::${sessionName}`] ?? null
+  }, [badgesBySession, projectName])
+
+  // True when this session has an unacked owned REVIEW (a `session_idle` Ready
+  // item) → the "↩ your turn" leaf chip.
+  const isSessionReady = useCallback((sessionName: string): boolean => {
+    return readySessionKeys?.has(`${projectName}::${sessionName}`) ?? false
+  }, [readySessionKeys, projectName])
 
   // Display order: pinned (custom order) -> crashed -> blocked -> processing -> idle.
   // crashed leads the unpinned set — a dead session is the most urgent to surface
@@ -48,17 +59,18 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     const blocked = unpinned.filter(s => s.status === 'blocked')
     const processing = unpinned.filter(s => s.status === 'processing' || s.status === 'starting')
     const idle = unpinned.filter(s => s.status === 'idle')
-    const byUnread = (a: { name: string }, b: { name: string }) => {
-      const ua = getSessionUnread(a.name) > 0 ? 0 : 1
-      const ub = getSessionUnread(b.name) > 0 ? 0 : 1
+    // Within a status bucket, sessions carrying an attention badge sort first.
+    const byAttention = (a: { name: string }, b: { name: string }) => {
+      const ua = (getSessionBadge(a.name)?.count ?? 0) > 0 ? 0 : 1
+      const ub = (getSessionBadge(b.name)?.count ?? 0) > 0 ? 0 : 1
       return ua - ub
     }
-    crashed.sort(byUnread)
-    blocked.sort(byUnread)
-    processing.sort(byUnread)
-    idle.sort(byUnread)
+    crashed.sort(byAttention)
+    blocked.sort(byAttention)
+    processing.sort(byAttention)
+    idle.sort(byAttention)
     return [...pinned, ...crashed, ...blocked, ...processing, ...idle]
-  }, [projectSessions, pinnedSessions, pinnedSet, getSessionUnread])
+  }, [projectSessions, pinnedSessions, pinnedSet, getSessionBadge])
 
   // Auto-detach when a previously-known session disappears from 2 consecutive polls.
   // A single transient miss (race between state-file write and API read) is tolerated.
@@ -155,7 +167,8 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     projectSessions,
     pinnedSet,
     orderedSessions,
-    getSessionUnread,
+    getSessionBadge,
+    isSessionReady,
     handleNewSession,
     killSession,
     handleRenameSession,

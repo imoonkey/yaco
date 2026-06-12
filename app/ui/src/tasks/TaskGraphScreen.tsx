@@ -12,6 +12,9 @@ import { TaskGraphStatusPane } from './TaskGraphStatusPane'
 import { useTaskGraphInteraction } from './useTaskGraphInteraction'
 import { useTaskGraphKeyboard } from './useTaskGraphKeyboard'
 import { computeLinkedTaskIds } from './taskGraphSelection'
+import type { AttentionTaskIds } from '../hooks/useAttention'
+
+const EMPTY_ATTENTION_TASK_IDS: AttentionTaskIds = { blocked: new Set(), done: new Set() }
 
 type TaskGraphScreenProps = {
   projectName: string
@@ -22,9 +25,10 @@ type TaskGraphScreenProps = {
   selectedTaskId?: string | null
   openTaskId?: string | null
   activeSession?: string | null
+  attentionTaskIds?: AttentionTaskIds
 }
 
-export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, onOpenTask, onCloseTask, selectedTaskId, openTaskId, activeSession }: TaskGraphScreenProps) {
+export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, onOpenTask, onCloseTask, selectedTaskId, openTaskId, activeSession, attentionTaskIds = EMPTY_ATTENTION_TASK_IDS }: TaskGraphScreenProps) {
   const { status, graph, error, warnings, refresh } = useTaskGraph(projectName)
   const isMobile = useIsMobile()
   // Gantt needs real horizontal room; gate it on viewport width (not platform) so
@@ -250,6 +254,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
                 layout={displayLayout as GanttLayout}
                 searchMatchIds={ix.searchMatchIds}
                 linkedTaskIds={linkedTaskIds}
+                attentionTaskIds={attentionTaskIds}
                 highlight={ix.highlight}
                 selection={ix.selection}
                 scale={viewport.scale}
@@ -268,6 +273,7 @@ export function TaskGraphScreen({ projectName, onOpenTasksFile, onSelectTask, on
                 layout={displayLayout}
                 searchMatchIds={ix.searchMatchIds}
                 linkedTaskIds={linkedTaskIds}
+                attentionTaskIds={attentionTaskIds}
                 highlight={ix.highlight}
                 selection={ix.selection}
                 scale={viewport.scale}
