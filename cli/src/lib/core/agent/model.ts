@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { CliError, ErrCode } from "../errors.ts";
 import { ADJECTIVES, NOUNS } from "./words.ts";
 
-export type SessionStatus = "starting" | "idle" | "processing" | "blocked";
+export type SessionStatus = "starting" | "idle" | "processing" | "blocked" | "crashed";
 
 /** Sub-reason for a `blocked` status. Presentation-only tag for the UI badge. */
 export type BlockReason = "permission" | "question" | "trust";
@@ -25,6 +25,12 @@ export interface SessionState {
   sessionId: string;
   status: SessionStatus;
   createdAt: string;
+  /** ISO time the current status was entered. Stamped on every status
+   *  transition; the durable status-edge generation identity is derived from it
+   *  (`<kind>:<subjectKey>:<statusEnteredAt>`). Legacy files may omit it. */
+  statusEnteredAt?: string;
+  /** Agent process exit code. Present iff status === "crashed". */
+  exitCode?: number;
   /** Block sub-reason. Present iff status === "blocked". */
   blockReason?: BlockReason;
   /** Spawn source. New starts always write it; legacy files may omit it. */
@@ -39,17 +45,25 @@ export type RuntimeSessionState = Omit<SessionState, "status"> & {
 };
 
 /** Mutable status-bearing shape: both SessionState and RuntimeSessionState satisfy it. */
-type StatusWritable = { status: string; blockReason?: BlockReason };
+type StatusWritable = { status: string; blockReason?: BlockReason; statusEnteredAt?: string };
 
 /** Write status and blockReason atomically, preserving the invariant
  *  `blockReason` is set iff status === "blocked". A non-blocked status (or a
  *  blocked status with no reason) clears blockReason. In-place mutator: callers
- *  (send.ts, status.ts, hook-event.ts) own a mutable session-state object. */
+ *  (send.ts, status.ts, hook-event.ts) own a mutable session-state object.
+ *
+ *  Stamps `statusEnteredAt` (ISO now) only on a real status *transition* — the
+ *  durable status-edge generation key (`<kind>:<subject>:<statusEnteredAt>`).
+ *  Re-affirming the same status leaves it untouched, so re-seeing the same edge
+ *  never mints a new generation (the recurrence fix, spec §4). */
 export function setStatus<T extends StatusWritable>(
   state: T,
   status: T["status"],
   reason?: BlockReason,
 ): void {
+  if (state.status !== status) {
+    state.statusEnteredAt = new Date().toISOString();
+  }
   state.status = status;
   if (status === "blocked" && reason) {
     state.blockReason = reason;

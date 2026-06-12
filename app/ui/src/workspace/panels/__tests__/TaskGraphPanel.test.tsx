@@ -34,6 +34,7 @@ type TaskScreenProps = {
   activeSession?: string | null
   liveSessionHandles?: Set<string>
   onOpenTerminal?: (handle: string) => void
+  attentionTaskIds?: { blocked: Set<string>; done: Set<string> }
 }
 let taskGraphPanelCapturedProps: TaskScreenProps | null = null
 
@@ -54,8 +55,11 @@ const taskGraphPanelSetFocusTarget = vi.fn<(target: string) => void>()
 const taskGraphPanelCloseTasks = vi.fn<() => void>()
 const taskGraphPanelLiveHandles = new Set(['handle-live'])
 
+const taskGraphPanelAttentionTaskIds = { blocked: new Set(['T2']), done: new Set(['T7']) }
+
 const taskGraphPanelEnv = {
   project: { name: 'demo', path: '/demo', effectivePath: '/demo' },
+  attentionTaskIds: taskGraphPanelAttentionTaskIds,
 } as unknown as WorkspaceEnv
 
 const taskGraphPanelSelection = {
@@ -132,6 +136,8 @@ describe('TaskGraphPanel — prop wiring into the lazy TaskScreen', () => {
     expect(taskGraphPanelCapturedProps?.activeSession).toBe('sess-active')
     // Same Set identity from the data context — not a copy.
     expect(taskGraphPanelCapturedProps?.liveSessionHandles).toBe(taskGraphPanelLiveHandles)
+    // Attention task-chip sets flow from env straight through.
+    expect(taskGraphPanelCapturedProps?.attentionTaskIds).toBe(taskGraphPanelAttentionTaskIds)
   })
 
   it('wires onOpenFile and onOpenTerminal straight to the commands surface', async () => {

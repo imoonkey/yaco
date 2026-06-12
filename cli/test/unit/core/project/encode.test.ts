@@ -19,15 +19,15 @@ describe("encodeClaudeCwd", () => {
 
   it("matches the real layout observed under ~/.claude/projects/", () => {
     // Sample from desktop (cli/CLAUDE.md context):
-    //   /home/qiguo/ld-workspace/yaco -> -home-qiguo-ld-workspace-yaco
-    expect(encodeClaudeCwd("/home/qiguo/ld-workspace/yaco")).toBe(
-      "-home-qiguo-ld-workspace-yaco",
+    //   /home/user/ld-workspace/yaco -> -home-user-ld-workspace-yaco
+    expect(encodeClaudeCwd("/home/user/ld-workspace/yaco")).toBe(
+      "-home-user-ld-workspace-yaco",
     );
-    //   /home/qiguo/ld-workspace/yaco/.worktrees/remote-perf-compress
-    //     -> -home-qiguo-ld-workspace-yaco--worktrees-remote-perf-compress
+    //   /home/user/ld-workspace/yaco/.worktrees/remote-perf-compress
+    //     -> -home-user-ld-workspace-yaco--worktrees-remote-perf-compress
     expect(
-      encodeClaudeCwd("/home/qiguo/ld-workspace/yaco/.worktrees/remote-perf-compress"),
-    ).toBe("-home-qiguo-ld-workspace-yaco--worktrees-remote-perf-compress");
+      encodeClaudeCwd("/home/user/ld-workspace/yaco/.worktrees/remote-perf-compress"),
+    ).toBe("-home-user-ld-workspace-yaco--worktrees-remote-perf-compress");
   });
 
   it("collapses other non-alphanumerics (whitespace, underscores)", () => {

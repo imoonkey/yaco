@@ -3,6 +3,7 @@ import { useTaskData } from './hooks/useTaskData'
 import { TaskGraphScreen } from './TaskGraphScreen'
 import { TaskDetailPanel } from './TaskDetailPanel'
 import { useResize } from '../workspace/useResize'
+import type { AttentionTaskIds } from '../hooks/useAttention'
 
 interface TaskScreenProps {
   projectName: string
@@ -16,6 +17,8 @@ interface TaskScreenProps {
   liveSessionHandles?: Set<string>
   // Open the existing terminal surface for a live session handle.
   onOpenTerminal?: (handle: string) => void
+  // Attention task chips (blocked / done task ids) for the active project.
+  attentionTaskIds?: AttentionTaskIds
 }
 
 /**
@@ -23,7 +26,7 @@ interface TaskScreenProps {
  * workset, state, and search) plus the detail panel for the selected task. No
  * Board/List/Graph/Archive pane switching — workset is a filter, not a separate view.
  */
-export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile, activeSession, liveSessionHandles, onOpenTerminal }: TaskScreenProps) {
+export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile, activeSession, liveSessionHandles, onOpenTerminal, attentionTaskIds }: TaskScreenProps) {
   const { tasks, mutate } = useTaskData(projectName)
   const rootRef = useRef<HTMLDivElement>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
@@ -60,6 +63,7 @@ export function TaskScreen({ projectName, onOpenTasksFile, onOpenFile, activeSes
         selectedTaskId={selectedTaskId}
         openTaskId={openTaskId}
         activeSession={activeSession}
+        attentionTaskIds={attentionTaskIds}
       />
 
       {openTask && (

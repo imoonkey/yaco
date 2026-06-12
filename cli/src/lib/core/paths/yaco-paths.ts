@@ -4,6 +4,14 @@
  *  canonical defaults. Missing yaco.toml ⇒ defaults. Project identity
  *  lives in ~/.yaco/projects.json and is never read or required here.
  *
+ *  Path model: `plan` is the explicit plan-root (repo-relative, default
+ *  "plan"); `tasks`/`active`/`archive`/`backlog` are *plan-relative* raw keys
+ *  (defaults "tasks"/"active"/"archive"/"backlog") joined under the plan root;
+ *  `worktrees` is repo-relative (default ".worktrees", and lives at the repo
+ *  root, not under plan). readYacoProjectPaths() returns the normalized
+ *  repo-relative effective paths, so callers keep resolving against repoRoot
+ *  unchanged and sub-paths can never disagree with the plan root.
+ *
  *  All values must be repo-relative. Absolute paths and any segment equal
  *  to ".." are rejected — both surface as CliError(ENV) so the dispatcher
  *  exits 3 with a machine-readable envelope.
@@ -12,31 +20,42 @@
  */
 
 import { readFileSync } from "node:fs";
-import { isAbsolute, join, sep } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { CliError, ErrCode } from "../errors.ts";
 import { parseScopedToml, TomlParseError } from "./toml.ts";
 
 export interface YacoProjectPaths {
+  plan: string;
   tasks: string;
   active: string;
   archive: string;
+  backlog: string;
   worktrees: string;
 }
 
+/** Effective repo-relative defaults (plan root applied). */
 export const DEFAULT_PROJECT_PATHS: YacoProjectPaths = {
+  plan: "plan",
   tasks: "plan/tasks",
   active: "plan/active",
   archive: "plan/archive",
+  backlog: "plan/backlog",
   worktrees: ".worktrees",
 };
 
-const KEYS: readonly (keyof YacoProjectPaths)[] = [
-  "tasks",
-  "active",
-  "archive",
-  "worktrees",
-] as const;
+/** Raw config defaults: plan + worktrees are repo-relative; the rest are
+ *  plan-relative and get joined under the resolved plan root. */
+const RAW_DEFAULTS = {
+  plan: "plan",
+  worktrees: ".worktrees",
+  tasks: "tasks",
+  active: "active",
+  archive: "archive",
+  backlog: "backlog",
+};
+
+const PLAN_RELATIVE_KEYS = ["tasks", "active", "archive", "backlog"] as const;
 
 /** Read <repoRoot>/yaco.toml and return resolved repo-relative project paths. */
 export function readYacoProjectPaths(repoRoot: string): YacoProjectPaths {
@@ -65,31 +84,65 @@ export function readYacoProjectPaths(repoRoot: string): YacoProjectPaths {
   }
 
   const paths = sections["paths"] ?? {};
-  const result: YacoProjectPaths = { ...DEFAULT_PROJECT_PATHS };
+  const cfg = { ...RAW_DEFAULTS };
 
-  for (const key of KEYS) {
-    if (!(key in paths)) continue;
-    const value = paths[key]!;
-    validateRepoRelative(key, value);
-    result[key] = value;
+  if ("plan" in paths) {
+    cfg.plan = normalizeRepoRelative("plan", paths["plan"]!);
   }
-  return result;
+  if ("worktrees" in paths) {
+    cfg.worktrees = normalizeRepoRelative("worktrees", paths["worktrees"]!);
+  }
+  for (const key of PLAN_RELATIVE_KEYS) {
+    if (!(key in paths)) continue;
+    cfg[key] = normalizeRepoRelative(key, paths[key]!);
+  }
+
+  return {
+    plan: cfg.plan,
+    tasks: join(cfg.plan, cfg.tasks),
+    active: join(cfg.plan, cfg.active),
+    archive: join(cfg.plan, cfg.archive),
+    backlog: join(cfg.plan, cfg.backlog),
+    worktrees: cfg.worktrees,
+  };
 }
 
-function validateRepoRelative(key: string, value: string): void {
+/** Validate a `[paths]` value and return its canonical repo-relative form.
+ *  Rejects absolute paths, `..` segments, empty/dot-only values, and any
+ *  segment starting with `-` (so a value can never be option-injected into a
+ *  git argv, e.g. `plan = "--bare"`). Strips `.` segments and redundant
+ *  separators so the stored value is canonical (`"./plan"` → `"plan"`), which
+ *  keeps the `info/exclude` entry and detection consistent. */
+function normalizeRepoRelative(key: string, value: string): string {
   if (isAbsolute(value)) {
     throw new CliError(
       ErrCode.ENV,
       `yaco.toml: [paths].${key} must be repo-relative, got absolute path "${value}"`,
     );
   }
-  const segments = value.split(/[/\\]/).filter((s) => s.length > 0);
+  const segments = value.split(/[/\\]/).filter((s) => s.length > 0 && s !== ".");
   if (segments.includes("..")) {
     throw new CliError(
       ErrCode.ENV,
       `yaco.toml: [paths].${key} must be repo-relative, got path with ".." segment "${value}"`,
     );
   }
-  // Be conservative about platform separators landing in stored values.
-  void sep;
+  if (segments.length === 0) {
+    if (value === "") {
+      throw new CliError(ErrCode.ENV, `yaco.toml: [paths].${key} must not be empty`);
+    }
+    throw new CliError(
+      ErrCode.ENV,
+      `yaco.toml: [paths].${key} must resolve to a repo-relative subdirectory, got "${value}"`,
+    );
+  }
+  for (const seg of segments) {
+    if (seg.startsWith("-")) {
+      throw new CliError(
+        ErrCode.ENV,
+        `yaco.toml: [paths].${key} segment must not start with "-" (got "${value}")`,
+      );
+    }
+  }
+  return segments.join("/");
 }

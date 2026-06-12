@@ -23,6 +23,7 @@ import type {
 } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import type { WorkspaceData } from './resources'
+import type { AttentionBadge, AttentionTaskIds } from '../hooks/useAttention'
 
 export type { WorkspaceData, WorkspaceGitResource, WorkspaceSessionsResource } from './resources'
 
@@ -60,7 +61,13 @@ export type WorkspaceEnv = {
   activeProject: string
   worktrees: WorktreeInfo[]
   activeWorktree: string | null
-  projectUnreadCounts: Record<string, number>
+  // Attention (Facet B) — actionable badges, separate from status counts.
+  badgesByProject: Record<string, AttentionBadge>
+  badgesBySession: Record<string, AttentionBadge>
+  // `proj::name` of sessions with an unacked owned REVIEW (the "↩ your turn" chip).
+  readySessionKeys: Set<string>
+  // Task-graph attention chips for the ACTIVE project (blocked / done task ids).
+  attentionTaskIds: AttentionTaskIds
   projectSessionCounts: Record<string, { active: number; total: number }>
   notificationBell?: ReactNode
   // Project-management callbacks (not panel layout state).
@@ -69,6 +76,7 @@ export type WorkspaceEnv = {
   reorderProjects: (fromName: string, toName: string) => void
   removeProject: (project: Project) => void
   addProject: () => void
+  // Ack the project's attention (the "Mark All Read" affordance).
   markAllRead: (projectName: string) => void
 }
 

@@ -1,12 +1,16 @@
 import { existsSync } from 'fs'
 import { readdir, stat, readFile, writeFile, mkdir, realpath, rename as fsRename, rm } from 'fs/promises'
 import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { join, relative, dirname, normalize, basename, extname } from 'path'
 import { Hono } from 'hono'
 import { getProjectGitignore } from '../lib/gitignore'
+import { getColocatedRepos } from '../lib/colocatedRepos'
 import { GIT_MAX_BUFFER, FILE_SIZE_LIMIT, RAW_FILE_SIZE_LIMIT, SEARCH_INDEX_BUDGET } from '../lib/constants'
 import { fail } from '../lib/response'
 import { withProject, type ProjectEnv } from '../middleware/project'
+
+const execFileAsync = promisify(execFile)
 
 export interface FileNode {
   name: string
@@ -14,6 +18,7 @@ export interface FileNode {
   type: 'file' | 'dir'
   children?: FileNode[]
   gitignored?: boolean
+  colocated?: true
 }
 
 const IGNORE = new Set([
@@ -26,8 +31,11 @@ function shouldIgnoreEntry(name: string): boolean {
 }
 
 /** List one directory level, marking gitignored entries. Dirs get children: [] (expandable).
- *  relPrefix overrides relative-path computation (needed for symlinked dirs outside the project). */
-async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof import('ignore').default> | null, relPrefix?: string): Promise<FileNode[]> {
+ *  relPrefix overrides relative-path computation (needed for symlinked dirs outside the project).
+ *  colocated holds the host's detected colocated-repo names (depth-1 only): a dir node whose
+ *  relPath is one of them is flagged `colocated: true`. Only the root listing passes a set —
+ *  deeper `/children` listings never match (a colocated repo is always depth-1). */
+async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof import('ignore').default> | null, relPrefix?: string, colocated?: Set<string>): Promise<FileNode[]> {
   let entries
   try {
     entries = await readdir(absDir, { withFileTypes: true })
@@ -60,7 +68,9 @@ async function listDir(absDir: string, basePath: string, ig: ReturnType<typeof i
     const ignored = ig ? ig.ignores(isDir ? relPath + '/' : relPath) : false
 
     if (isDir) {
-      return { name: entry.name, path: relPath, type: 'dir', children: [], ...(ignored && { gitignored: true }) } satisfies FileNode
+      // Colocated repos are always depth-1, so a name match on a top-level dir is sufficient.
+      const isColocated = colocated?.has(relPath) && !relPath.includes('/')
+      return { name: entry.name, path: relPath, type: 'dir', children: [], ...(ignored && { gitignored: true }), ...(isColocated && { colocated: true }) } satisfies FileNode
     }
     return { name: entry.name, path: relPath, type: 'file', ...(ignored && { gitignored: true }) } satisfies FileNode
   })
@@ -124,17 +134,20 @@ async function walkSymlinkedDir(
 /** Find top-level symlinked directories and collect the files inside them.
  *  git ls-files doesn't follow symlinks, so we recover those here.
  *  Top-level only: avoids walking the entire project tree (which can be 100k+ dirs
- *  on monorepos with large gitignored data dirs). Nested symlinked dirs are not indexed. */
+ *  on monorepos with large gitignored data dirs). Nested symlinked dirs are not indexed.
+ *  skipNames holds top-level names already indexed via their own git ls-files (a
+ *  symlinked-in colocated repo) — re-walking them would leak their .gitignored files. */
 async function collectSymlinkedFiles(
   projectPath: string, seen: Set<string>,
-  files: { name: string; path: string; type: string }[]
+  files: { name: string; path: string; type: string }[],
+  skipNames: Set<string> = new Set()
 ) {
   let entries
   try { entries = await readdir(projectPath, { withFileTypes: true }) } catch { return }
   let projectReal: string
   try { projectReal = await realpath(projectPath) } catch { return }
   for (const entry of entries) {
-    if (!entry.isSymbolicLink() || shouldIgnoreEntry(entry.name)) continue
+    if (!entry.isSymbolicLink() || shouldIgnoreEntry(entry.name) || skipNames.has(entry.name)) continue
     const abs = join(projectPath, entry.name)
     let isDir, real
     try {
@@ -155,7 +168,10 @@ app.get('/:project', withProject, async (c) => {
   const proj = c.var.project
 
   const ig = await getProjectGitignore(proj.path)
-  const tree = await listDir(proj.path, proj.path, ig)
+  // One detection per request (cached by realpath) flags colocated-repo roots; deeper
+  // /children listings skip it since only depth-1 dirs can be colocated repos.
+  const colocated = new Set(await getColocatedRepos(proj.path))
+  const tree = await listDir(proj.path, proj.path, ig, undefined, colocated)
   return c.json(tree)
 })
 
@@ -164,10 +180,6 @@ app.get('/:project', withProject, async (c) => {
 app.get('/:project/search-index', withProject, async (c) => {
   const proj = c.var.project
   const includeIgnored = c.req.query('ignored') === 'true'
-
-  const { execFile } = await import('child_process')
-  const { promisify } = await import('util')
-  const exec = promisify(execFile)
 
   const toFile = (p: string) => ({ name: basename(p), path: p, type: 'file' as const })
 
@@ -185,32 +197,56 @@ app.get('/:project/search-index', withProject, async (c) => {
     }
   }
 
+  const lsFiles = (cwd: string, args: string[]) =>
+    execFileAsync('git', ['ls-files', ...args], { cwd, maxBuffer: GIT_MAX_BUFFER })
+
   try {
-    const { stdout } = await exec('git', ['ls-files', '--cached', '--others', '--exclude-standard'], { cwd: proj.path, maxBuffer: GIT_MAX_BUFFER })
+    const { stdout } = await lsFiles(proj.path, ['--cached', '--others', '--exclude-standard'])
     const files = stdout.trimEnd().split('\n').filter(Boolean).map(toFile)
+    // One seen-set spans host + ignored + colocated + symlink-recovery, so a path
+    // surfaced by one source is never re-listed by another (deterministic order).
+    const seen = new Set(files.map(f => f.path))
 
     if (includeIgnored) {
       try {
-        const { stdout: ignored } = await exec('git', ['ls-files', '--others', '--ignored', '--exclude-standard'], { cwd: proj.path, maxBuffer: GIT_MAX_BUFFER })
-        const seen = new Set(files.map(f => f.path))
+        const { stdout: ignored } = await lsFiles(proj.path, ['--others', '--ignored', '--exclude-standard'])
         for (const p of ignored.trimEnd().split('\n')) {
           if (!p || seen.has(p)) continue
           // Skip files under hardcoded IGNORE dirs
           const topDir = p.split('/')[0]
           if (shouldIgnoreEntry(topDir)) continue
+          seen.add(p)
           files.push(toFile(p))
         }
       } catch (e) { console.warn('[files] git ls-files --ignored failed (may be shallow clone):', e) }
     }
 
-    // git ls-files doesn't follow symlinked directories — walk top-level symlinks separately
-    const seen = new Set(files.map(f => f.path))
-    await collectSymlinkedFiles(proj.path, seen, files)
+    // Colocated repos: git ls-files never descends into a nested repo, so run it
+    // per repo (host first, then repos sorted by prefix) and merge with a <repo>/
+    // prefix. The repo's own .gitignore (logs/locks) is honored by --exclude-standard.
+    const repos = await getColocatedRepos(proj.path)
+    for (const repo of repos) {
+      try {
+        const { stdout: sub } = await lsFiles(join(proj.path, repo), ['--cached', '--others', '--exclude-standard'])
+        for (const p of sub.trimEnd().split('\n')) {
+          if (!p) continue
+          const full = `${repo}/${p}`
+          if (seen.has(full)) continue
+          seen.add(full)
+          files.push(toFile(full))
+        }
+      } catch (e) { console.warn(`[files] git ls-files in colocated repo ${repo} failed:`, e) }
+    }
+
+    // git ls-files doesn't follow symlinked directories — walk top-level symlinks
+    // separately (skipping any symlinked-in colocated repo already indexed above).
+    await collectSymlinkedFiles(proj.path, seen, files, new Set(repos))
 
     addDirs(files)
     return c.json(files)
   } catch {
-    // Non-git project: fall back to recursive walk
+    // Non-git project: fall back to recursive walk (colocated repos, if any, are
+    // plain dirs on disk and get walked here — no separate ls-files merge).
     const ig = includeIgnored ? null : await getProjectGitignore(proj.path)
     const files: { name: string; path: string; type: string }[] = []
 

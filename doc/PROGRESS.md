@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-12: Disable native iOS long-press menus on app-owned menu targets
+
+**What changed:**
+- Added shared `nativeContextMenuDisabledProps` and attached it to `useContextMenu().bind()` targets, rendered `Menu` surfaces, and the mobile `TerminalKeyBar`.
+- Added scoped CSS for `[data-yaco-native-context-menu='disabled']` that disables iOS touch callouts and selection menus while restoring normal selection for nested text inputs/contenteditable elements.
+- Updated mobile docs to reflect the current 350ms long-press threshold and the native-menu suppression contract.
+
+**Why:**
+- App-owned right-click/long-press actions should show YACO's custom menus or repeat terminal keys without Safari's native long-press menu competing on mobile.
+
+**Key files:** `app/ui/src/components/{nativeContextMenu.ts,Menu.tsx,useContextMenu.ts,TerminalKeyBar.tsx}`, `app/ui/src/index.css`, `doc/main/app/ui/mobile.md`
+**Verification:** `cd app/ui && npm run lint`; `cd app/ui && npm run build`.
+**Commit:** this commit
+**Next:** Real-device iOS smoke test for file tree, project/session rows, editor tabs, and terminal key repeat.
+**Blockers:** None.
+
 ## 2026-06-11: Multi-instance panels — N editor + N terminal panes with per-instance state
 
 **What changed:**
@@ -19,6 +35,57 @@
 **Verification:** Feature shipped with unit coverage (`instanceReducer`, `panelLayoutModelMulti`, `panelInstance`, `sharedBufferGc`, `layoutMigration`) and e2e (`multi-instance-{editors,terminals,persistence,mobile}`, `close-surface`, `shared-state`, `voice-target`); characterization specs migrated to the new persisted shape. This entry is the docs sync — no code changed.
 **Commit:** `4e6a1a7..639e760` (17 commits on `task/panel-mi`) + this docs commit.
 **Next:** Group-focus shortcuts (`Cmd+1/2/3`) were deferred (binding clash with session shortcuts).
+**Blockers:** None.
+
+## 2026-06-11: Task graph slash shortcut no longer steals voice compose input
+
+**What changed:**
+- Task graph's `/` search shortcut now ignores all text-entry targets (`input`, `textarea`, `select`, and `contentEditable`) instead of only ignoring `input`.
+- Added a focused toolbar regression test proving `/` still focuses Search tasks from the page, but does not prevent default or move focus while a textarea is active.
+
+**Why:**
+- When the task graph was open, pressing `/` inside the voice compose tray textarea was intercepted by the task search shortcut, so the slash was not entered and focus jumped to Search tasks.
+
+**Key files:** `app/ui/src/tasks/TaskGraphToolbar.tsx`, `app/ui/src/tasks/__tests__/TaskGraphToolbar.test.tsx`
+**Verification:** `cd app/ui && npx vitest run src/tasks/__tests__/TaskGraphToolbar.test.tsx`; `npm run lint`; `npm run build`.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
+## 2026-06-11: Colocated repos — `plan/` as a private repo, first-class in the app
+
+**What changed:**
+- **General colocated-repo mechanism.** A depth-1 child that is its own git repo but kept out of the host repo (motivating case: `plan/`) is now first-class in the app — searchable, changes/diffs shown, tree undimmed — without entering host git. The app never hardcodes `plan`; `app/server/src/lib/colocatedRepos.ts` (`getColocatedRepos`) detects the set by signal: `.git` exists (dir or worktree file), **not in host index** (one `git ls-files -z`), **not matched by the root working-tree `.gitignore`** (reuses `gitignore.ts`, so detection ≡ dimming). Policy from `yaco.toml [colocated] repos` = `auto`|`off`|comma allow-list; realpath-keyed short-TTL cache.
+- **Multi-repo read-only git surfaces.** `/status` (`git.ts`) aggregates host + each colocated repo with a `<repo>/` prefix, deterministic order, one `seen` set; snapshots re-keyed by `<effectivePath>\0<repoPrefix>` (fixes the prior by-projectName worktree-sharing bug) with a partial-failure state table. `/files` search-index (`files.ts`) merges per-repo `git ls-files` (the v1 blocker — host `--exclude-standard` can't see an `info/exclude`d nested repo). `resolveFileRepo` routes `/diff` (`deny`) and `/baseline` (`preserve`) to the owning repo, handling deleted colocated files and never running git outside the project.
+- **Explicit `[paths] plan` root.** `yaco-paths.ts` gains `plan` (default `plan`) + `backlog`; `tasks/active/archive/backlog` are plan-relative internally but `readYacoProjectPaths()` returns repo-relative effective paths (default layout byte-identical, callers unchanged). `parseScopedToml` re-exported from the barrel.
+- **`yaco plan init`** (new `plan` CLI area). In-place `git init`, `/<plan>/` in the git-resolved `info/exclude` (never committed → public repo clean + app doesn't dim it), default `<plan>/.gitignore` (never overwritten), idempotent, `--remote` adds origin but **never pushes**. Refuses if the root `.gitignore` matches plan or if run from inside the plan repo.
+
+**Why:**
+- `plan/` shouldn't ship in the open-sourced repo, but physically moving it out is undesirable. Splitting the two conflated meanings of "git-ignored by the host" — real-git exclusion (`info/exclude`) vs YACO surfacing (mirror read-only git per repo) — keeps it colocated, private, and first-class. A general signal (not hardcoding `plan`) is IDE-like and makes the "plan tracked in the host repo just works" case fall out for free. Pushing the separate plan repo is a personal preference, so the tool only ever adds a remote.
+
+**Security/robustness pass (Codex review):** reject `[paths]` segments starting with `-` + pass paths after `--` to git (no git-option injection, e.g. `plan = "--bare"`); canonicalize plan roots (`./plan` → `/plan/` in `info/exclude`, not `/./plan/`) and require a depth-1 plan root in `yaco plan init`; `/diff` (deny policy) skips the `--no-index` content read for a path that realpaths outside the project tree (a symlinked-in external file/dir never leaks); drop reserved `auto`/`off` tokens in allow-list position. Codex final verdict: APPROVE (0 blockers/majors).
+
+**Key files:** `app/server/src/lib/colocatedRepos.ts` (new), `app/server/src/routes/{git,files}.ts`, `cli/src/lib/core/paths/{yaco-paths,index}.ts`, `cli/src/commands/plan/{index,init}.ts` (new), `cli/src/main.ts`; tests under `app/server/src/{lib,routes}/__tests__/` + `cli/test/unit/{core/paths,commands/plan}/`; docs `doc/main/app/backend/{routes,libs}.md`, `doc/main/cli/{paths,plan,README,command-surface}.md`.
+**Verification:** app/server `vitest run src/` → 526 passed (35 files); `cli bun run test` → 945 passed, 1 pre-existing unrelated failure (`project/move.test.ts` jsonl mtime, also red on `main`). Each phase independently code-reviewed + committed; final Codex review pass (2 rounds) → APPROVE.
+**Commit:** `3ef3e7c`..`e59901e` on branch `task/colocated-repo`, merged to `main`.
+**Next:** optional `colocated-tree-badge` (backlog); the one-time OSS migration (`plan-repo-migration` milestone — history scrub + separate private repos) is human-driven and out of scope here.
+
+## 2026-06-11: Notification & attention redesign (v2) — two facets, server-projected attention, fail-closed crash contract
+
+**What changed:**
+- **Two facets.** Split the old notification system into **Facet A** (live status dots, client-derived from the session snapshot — now including a `crashed` dot/chip) and **Facet B** (attention: bell, badges, interrupts). Facet B is **server-projected and SSE-pushed** so a hidden/backgrounded tab still gets interrupted (the client polling path is suppressed while `document.hidden`, but an `attention` SSE push still arrives).
+- **CLI fail-closed crash contract.** Agent status union gains `crashed` (+`exitCode`, +`statusEnteredAt`). The wrapper EXIT trap captures `ec=$?` and, on a non-zero agent exit that isn't an intentional kill, tombstones the session as `crashed` via `yaco agent mark-crashed` — or an inline `crash_fallback` shell rewrite (same JSON shape / same generation) when the binary can't run. A generation-scoped `.killing` sentinel (carrying `createdAt`) distinguishes an intentional kill; `list --reconcile` GC and `start` reclaim both skip a `crashed` tombstone; only `yaco agent kill` clears it. `YACO_BIN` is an absolute path reaching the wrapper via tmux `-e`.
+- **Durable generation identity.** `setStatus` stamps `statusEnteredAt` on every session status transition; `yaco task set` stamps `stateEnteredAt` on every state change including rollup-flipped parents. The attention generation id is `<kind>:<proj>::<subject>:<enteredAt>`, stable across restart / reload / second device. `appendEvent` is idempotent by id, so re-seeing an edge never re-notifies.
+- **Server Facet B.** New `attention-engine.ts` (change-driven edge detection over session/task fs-watches + boot reconciliation + `attention` SSE push), `attention-projection.ts` (pure, server-owned projector: ACT open-from-live, REVIEW unread vs. a monotonic ack watermark, owner routing OWNED/DELEGATED, dedup/supersede, badge precedence), `attention-runtime.ts` (fs readers + cold-mount snapshot), and `routes/attention.ts` (`GET /feed`, `POST /ack`, `POST /clear` — server-stamped, monotonic). The 60s session-reconciler is reduced to GC + safety.
+- **Removed the capped-50 inbox.** Deleted `notifications-store.ts`, `notify.ts:dispatch()`, the inbox REST endpoints, and the per-item `notification` / `notifications:changed` SSE events; kept `GET /api/notifications/stream` as the SSE transport and added the `attention` event. Client: deleted `useSessionUnreadState` + `useNotifications`; added `useAttention` (hidden-tab-safe `attention` subscription, OS notification while hidden, active-viewing guard with window focus, ack/clear, permission requested only on a user gesture). Bell shows Needs-you / Ready / Recent; collapsed-parent rollup badge is separate from the self-only status dot; owned-idle leaf shows a "↩ your turn" chip.
+
+**Why:**
+- The old system had two competing unread systems and a capped, recurrence-prone inbox; "clear" didn't durably stick, and a hidden tab missed interrupts. A crash could be GC'd before anyone saw it. The redesign makes ACT open-ness derived from live status (no stored/dismissed flag), REVIEW a monotonic-max watermark, crash a fail-closed durable tombstone, and interrupts reach hidden tabs — pulling the user back only for things that need them and making "clear" mean something. Facet B moved server-side (vs. v1 client-only) to get hidden-tab push, a global task snapshot, and stable cross-device generations in one place.
+
+**Key files:** cli: `scripts/agent-wrapper.sh`, `src/commands/agent/{mark-crashed,kill,status,start}.ts`, `src/lib/core/agent/{model,projection,kill-sentinel}.ts`, `src/commands/task/set.ts`, `src/lib/core/task/model.ts`; app/server: `lib/{attention-engine,attention-projection,attention-runtime,notify,eventsLog,ui-state,project-watcher,session-reconciler,agent}.ts`, `routes/{attention,notifications,ui-state}.ts`, `index.ts`; app/ui: `hooks/useAttention.ts` (+ deleted `useSessionUnreadState`/`useNotifications`), `hooks/useSSE.ts`, `components/{NotificationBell,NotificationPanel,BadgeCount}.tsx`, `lib/attentionColors.ts`, `App.tsx`, `workspace/WorkspaceSessionList.tsx`, `tasks/TaskGraphNode.tsx`, `types.ts`. Design: `plan/all/20260611_notif-redesign-v2/eng-design_claude.md`.
+**Verification:** Per-task unit + integration suites added (crash contract, status-edge identity, attention engine/projection/routes, ui-state watermarks, `useAttention` incl. hidden-tab, attention e2e). Not re-run in this docs pass.
+**Commit:** d9e76e4..e08490d (code); this commit (docs).
+**Next:** Deferred OQs — `waiting` signal (OQ2) and a recent-interaction active-viewing signal (OQ5), both with cheap upgrade paths.
 **Blockers:** None.
 
 ## 2026-06-11: Voice — revert streaming segmentation to a single-take unified compose tray

@@ -53,7 +53,7 @@ The workspace holds **N editor + N terminal panes at once**, each keeping its ow
 │  ├──────────┤│  │ Diff /           ││  │               ││
 │  │ Explorer ││  │ Task Graph       ││  ├───────────────┤│
 │  │          ││  │                  ││  │ Sessions      ││
-│  ├──────────┤│  │                  ││  │ (unread pills)││
+│  ├──────────┤│  │                  ││  │ (status+badge)││
 │  │ Changes  ││  │                  ││  │               ││
 │  ├──────────┤│                      │                   │
 │  │ Tasks    ││                      │                   │

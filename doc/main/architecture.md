@@ -26,6 +26,16 @@ app, the `yaco` CLI/runtime, and global agent configuration.
   into `yaco`, then delegates to `yaco install`.
 - `yaco install` owns global hook/wrapper install, skill symlinks, and registry
   upsert into `${YACO_HOME}/projects.json`.
+- **Session-state edge contract (cli → app).** The CLI agent runtime writes the
+  durable runtime status into `${YACO_HOME}/sessions/<handle>.json`, including the
+  fail-closed `crashed` status (`+ exitCode`) and a `statusEnteredAt` stamp on
+  every status transition. Tasks carry the analogous `stateEnteredAt`. The app's
+  attention engine reads these (hot, no CLI spawn) and derives a stable
+  status-edge **generation** id (`<kind>:<proj>::<subject>:<enteredAt>`) so the
+  same condition is never re-notified. The CLI's `crashed` tombstone is fail-closed
+  against the wrapper EXIT trap, `list --reconcile` GC, `start` reclaim, and the
+  kill sentinel — see [cli/state-contract.md](cli/state-contract.md) and
+  [app/ui/notifications.md](app/ui/notifications.md).
 
 ## Documentation Ownership
 

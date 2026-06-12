@@ -653,7 +653,10 @@ export function ensureHooks(provider: string): void {
   getProvider(provider).hooks?.install();
 }
 
-/** Wrap a command string so it runs inside the exit-trap wrapper. */
+/** Wrap a command string so it runs inside the exit-trap wrapper. The absolute
+ *  yaco binary the wrapper's crash path needs (`YACO_BIN`) is propagated into the
+ *  tmux session env by `createSession`, not baked into this command — a leading
+ *  `VAR=val` token would be exec'd by tmux as a (non-existent) program. */
 export function buildWrappedCommand(handle: string, createdAt: string, command: string, startupDelaySeconds = 0): string {
   const delayedCommand = startupDelaySeconds > 0
     ? `bash -lc 'sleep ${startupDelaySeconds}; exec "$@"' _ ${command}`

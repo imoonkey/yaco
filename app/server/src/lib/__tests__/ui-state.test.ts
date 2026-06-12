@@ -18,6 +18,8 @@ const {
   writeJson,
   getPinnedSessions,
   setPinnedSessions,
+  getUnreadWatermarks,
+  mergeUnreadWatermarks,
 } = await import('../ui-state')
 
 const uiStateDir = join(homeDir.value, '.yaco', 'ui-state')
@@ -87,6 +89,93 @@ describe('ui-state: pinned sessions', () => {
     await setPinnedSessions('proj-a', [])
     expect(await getPinnedSessions('proj-a')).toEqual([])
     expect(await getPinnedSessions('proj-b')).toEqual(['b1'])
+  })
+})
+
+describe('ui-state: unread watermarks (monotonic-max)', () => {
+  const WATERMARKS = join(uiStateDir, 'unread-watermarks.json')
+
+  beforeEach(async () => {
+    await rm(uiStateDir, { recursive: true, force: true })
+  })
+  afterAll(async () => {
+    await rm(homeDir.value, { recursive: true, force: true })
+  })
+
+  it('getUnreadWatermarks defaults all four maps to {} when unset', async () => {
+    expect(await getUnreadWatermarks()).toEqual({
+      projectReadAt: {},
+      sessionReadAt: {},
+      taskReadAt: {},
+      recentClearedAt: {},
+    })
+  })
+
+  it('back-compat: an old file with only projectReadAt/sessionReadAt loads with the new maps defaulted', async () => {
+    const { writeFile } = await import('fs/promises')
+    await mkdir(uiStateDir, { recursive: true })
+    await writeFile(WATERMARKS, JSON.stringify({ projectReadAt: { p: 5 }, sessionReadAt: { 'p::s': 7 } }), 'utf-8')
+    expect(await getUnreadWatermarks()).toEqual({
+      projectReadAt: { p: 5 },
+      sessionReadAt: { 'p::s': 7 },
+      taskReadAt: {},
+      recentClearedAt: {},
+    })
+  })
+
+  it('merge advances a watermark to max and never backwards', async () => {
+    await mergeUnreadWatermarks({ projectReadAt: { p: 100 } })
+    expect((await getUnreadWatermarks()).projectReadAt).toEqual({ p: 100 })
+
+    await mergeUnreadWatermarks({ projectReadAt: { p: 200 } }) // higher → advances
+    expect((await getUnreadWatermarks()).projectReadAt).toEqual({ p: 200 })
+
+    await mergeUnreadWatermarks({ projectReadAt: { p: 150 } }) // lower → ignored
+    expect((await getUnreadWatermarks()).projectReadAt).toEqual({ p: 200 })
+
+    await mergeUnreadWatermarks({ projectReadAt: { p: 200 } }) // equal → no change
+    expect((await getUnreadWatermarks()).projectReadAt).toEqual({ p: 200 })
+  })
+
+  it('merge rejects decreases independently for session/task/clear keys', async () => {
+    await mergeUnreadWatermarks({
+      sessionReadAt: { 'p::s': 100 },
+      taskReadAt: { 'p::t': 100 },
+      recentClearedAt: { p: 100 },
+    })
+    await mergeUnreadWatermarks({
+      sessionReadAt: { 'p::s': 50 },
+      taskReadAt: { 'p::t': 50 },
+      recentClearedAt: { p: 50 },
+    })
+    const wm = await getUnreadWatermarks()
+    expect(wm.sessionReadAt).toEqual({ 'p::s': 100 })
+    expect(wm.taskReadAt).toEqual({ 'p::t': 100 })
+    expect(wm.recentClearedAt).toEqual({ p: 100 })
+  })
+
+  it('merge drops non-finite incoming values', async () => {
+    await mergeUnreadWatermarks({ projectReadAt: { p: 100 } })
+    await mergeUnreadWatermarks({ projectReadAt: { p: Infinity, q: NaN } })
+    const wm = await getUnreadWatermarks()
+    expect(wm.projectReadAt).toEqual({ p: 100 }) // p unchanged, q dropped
+  })
+
+  it('merge of one map leaves the other maps untouched', async () => {
+    await mergeUnreadWatermarks({ projectReadAt: { p: 10 }, sessionReadAt: { 'p::s': 20 } })
+    await mergeUnreadWatermarks({ taskReadAt: { 'p::t': 30 } })
+    expect(await getUnreadWatermarks()).toEqual({
+      projectReadAt: { p: 10 },
+      sessionReadAt: { 'p::s': 20 },
+      taskReadAt: { 'p::t': 30 },
+      recentClearedAt: {},
+    })
+  })
+
+  it('merge returns the persisted (merged) watermarks', async () => {
+    await mergeUnreadWatermarks({ projectReadAt: { p: 100 } })
+    const merged = await mergeUnreadWatermarks({ projectReadAt: { p: 50, q: 5 } })
+    expect(merged.projectReadAt).toEqual({ p: 100, q: 5 })
   })
 })
 

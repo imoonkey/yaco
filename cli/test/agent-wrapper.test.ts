@@ -239,3 +239,145 @@ describe("agent-wrapper.sh execution", () => {
     expect(existsSync(decoy)).toBe(true);
   });
 });
+
+describe("agent-wrapper.sh crash contract", () => {
+  const createdAt = "2026-04-10T00:00:00.000Z";
+  let tmpDir: string;
+  let mockBinDir: string;
+  let sessionsDir: string;
+
+  /** Mock tmux that reports the session alive (has-session 0, display "test"). */
+  function writeMockTmux(): void {
+    writeFileSync(
+      join(mockBinDir, "tmux"),
+      '#!/bin/bash\nif [ "$1" = "display-message" ]; then echo "test"; fi\nif [ "$1" = "has-session" ]; then exit 0; fi\n',
+      { mode: 0o755 },
+    );
+  }
+
+  /** Run the wrapper with a command that exits `code`, tolerating the non-zero
+   *  exit (execSync throws on it). YACO_BIN is set explicitly per test. */
+  function runWrapper(code: number, yacoBin: string, extraEnv: Record<string, string> = {}): void {
+    try {
+      execSync(`bash ${WRAPPER_PATH} test ${createdAt} bash -c 'exit ${code}'`, {
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          PATH: `${mockBinDir}:${process.env.PATH}`,
+          YACO_AGENT_SESSIONS_DIR: sessionsDir,
+          YACO_BIN: yacoBin,
+          ...extraEnv,
+        },
+        timeout: 10000,
+        stdio: "pipe",
+      });
+    } catch {
+      /* non-zero exit from the wrapped command is expected */
+    }
+  }
+
+  function stateFile(): string {
+    return join(sessionsDir, "test.json");
+  }
+
+  function writeStateFile(json: string): void {
+    writeFileSync(stateFile(), json);
+  }
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), "yaco-wrapper-crash-"));
+    mockBinDir = join(tmpDir, "bin");
+    sessionsDir = join(tmpDir, "sessions");
+    mkdirSync(mockBinDir);
+    mkdirSync(sessionsDir);
+    writeMockTmux();
+  });
+
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("invokes `yaco agent mark-crashed` with exit code + createdAt on non-zero exit", () => {
+    writeStateFile(`{"handle":"test","status":"processing","sessionId":"","createdAt":"${createdAt}"}`);
+    const markFile = join(tmpDir, "mark.txt");
+    // Mock yaco records its mark-crashed invocation, then exits 0 (so no fallback).
+    const mockYaco = join(mockBinDir, "yaco");
+    writeFileSync(
+      mockYaco,
+      `#!/bin/bash\nif [ "$1" = "agent" ] && [ "$2" = "mark-crashed" ]; then echo "$@" > "${markFile}"; fi\nexit 0\n`,
+      { mode: 0o755 },
+    );
+
+    runWrapper(7, mockYaco);
+
+    expect(existsSync(markFile)).toBe(true);
+    const recorded = readFileSync(markFile, "utf-8").trim();
+    expect(recorded).toBe(`agent mark-crashed test --exit 7 --created-at ${createdAt}`);
+  });
+
+  it("fail-closed fallback tombstones a valid crashed state when mark-crashed cannot run", () => {
+    writeStateFile(
+      `{"handle":"test","provider":"claude","sessionPath":"/p","pid":42,"sessionId":"s1","status":"processing","createdAt":"${createdAt}"}`,
+    );
+
+    runWrapper(139, join(mockBinDir, "does-not-exist-yaco"));
+
+    expect(existsSync(stateFile())).toBe(true);
+    const parsed = JSON.parse(readFileSync(stateFile(), "utf-8"));
+    expect(parsed.status).toBe("crashed");
+    expect(parsed.exitCode).toBe(139);
+    expect(typeof parsed.statusEnteredAt).toBe("string");
+    expect(parsed.statusEnteredAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(parsed.createdAt).toBe(createdAt);
+    expect(parsed.provider).toBe("claude");
+    expect(parsed.pid).toBe(42);
+  });
+
+  it("fallback drops a stale blockReason and preserves lineage fields", () => {
+    writeStateFile(
+      `{"handle":"test","provider":"codex","sessionPath":"/p","pid":42,"sessionId":"s1","status":"blocked","createdAt":"${createdAt}","blockReason":"question","spawnedBy":"agent","parentSession":"boss"}`,
+    );
+
+    runWrapper(1, join(mockBinDir, "nope-yaco"));
+
+    const parsed = JSON.parse(readFileSync(stateFile(), "utf-8"));
+    expect(parsed.status).toBe("crashed");
+    expect(parsed.exitCode).toBe(1);
+    expect(parsed.blockReason).toBeUndefined();
+    expect(parsed.spawnedBy).toBe("agent");
+    expect(parsed.parentSession).toBe("boss");
+    expect(parsed.statusEnteredAt).toBeDefined();
+  });
+
+  it("clean exit (0) deletes the state file even when YACO_BIN is broken", () => {
+    writeStateFile(`{"handle":"test","status":"processing","sessionId":"","createdAt":"${createdAt}"}`);
+
+    runWrapper(0, join(mockBinDir, "broken-yaco"));
+
+    expect(existsSync(stateFile())).toBe(false);
+  });
+
+  it("a generation-matching kill sentinel deletes (intentional kill, not a crash)", () => {
+    writeStateFile(`{"handle":"test","status":"processing","sessionId":"","createdAt":"${createdAt}"}`);
+    writeFileSync(join(sessionsDir, ".killing-test"), createdAt);
+
+    // Non-zero (SIGTERM-style) exit + broken yaco: if mis-classified as a crash,
+    // the fallback would tombstone. The matching sentinel must force a clean delete.
+    runWrapper(143, join(mockBinDir, "broken-yaco"));
+
+    expect(existsSync(stateFile())).toBe(false);
+  });
+
+  it("a stale (wrong-generation) sentinel does NOT suppress a future crash (R1)", () => {
+    writeStateFile(`{"handle":"test","status":"processing","sessionId":"","createdAt":"${createdAt}"}`);
+    // Sentinel from a DIFFERENT (older) generation.
+    writeFileSync(join(sessionsDir, ".killing-test"), "2020-01-01T00:00:00.000Z");
+
+    runWrapper(139, join(mockBinDir, "broken-yaco"));
+
+    expect(existsSync(stateFile())).toBe(true);
+    const parsed = JSON.parse(readFileSync(stateFile(), "utf-8"));
+    expect(parsed.status).toBe("crashed");
+    expect(parsed.exitCode).toBe(139);
+  });
+});

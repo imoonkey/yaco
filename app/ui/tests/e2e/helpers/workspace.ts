@@ -1,9 +1,9 @@
 import { expect, type Page, type APIRequestContext } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, mkdirSync, rmSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { FIXTURE_MARKER } from './cleanup'
+import { FIXTURE_MARKER, ephemeralYacoHome } from './cleanup'
 
 // Shared e2e helpers for the workspace persistence / worktree / binary specs.
 //
@@ -420,4 +420,91 @@ export async function createBinaryFixture(request: APIRequestContext): Promise<B
     imagePath: 'ui/public/icon-192.png',
     dispose: disposer(request, name, root),
   }
+}
+
+// --- Attention-surface seeding (Facet B) -------------------------------------
+//
+// The attention engine (app/server) projects from THREE on-disk sources under
+// the ephemeral YACO_HOME the isolated server binds (the same one this test
+// process resolves):
+//   - `${YACO_HOME}/sessions/<handle>.json`         — live session snapshot.
+//   - `${YACO_HOME}/projects/<project>/events.jsonl` — durable edge/generation log.
+//   - `${YACO_HOME}/ui-state/pinned-sessions.json`   — pins (promote to OWNED).
+//
+// `GET /api/sessions` reads the session state files DIRECTLY (a pure read, no
+// liveness GC — see server/src/routes/sessions.ts), so a hand-written state
+// file with a non-running pid still renders. `GET /api/attention/feed` projects
+// the CURRENT snapshot from these same files. The engine's boot reconciliation
+// (which mints a `session_idle` event for an owned-idle session) only runs at
+// server startup against an empty home, so a spec that needs a Ready item seeds
+// the matching `session_idle` event directly — the byte-shape the engine writes.
+
+/** The ephemeral YACO_HOME the isolated e2e server binds. Throws in E2E_REUSE
+ *  mode (real ~/.yaco) — attention seeding specs run isolated only. */
+function requireEphemeralHome(): string {
+  const home = ephemeralYacoHome()
+  if (!home) throw new Error('attention seeding requires the isolated e2e server (no E2E_REUSE)')
+  return home
+}
+
+/** A seedable session-state file (`${YACO_HOME}/sessions/<handle>.json`). The
+ *  shape mirrors cli `SessionState` (see cli/src/lib/core/agent/model.ts). The
+ *  server associates it to a project by `sessionPath` being the project path or
+ *  a descendant of it. */
+export interface SeedSessionOpts {
+  handle: string
+  /** Must equal (or be under) the fixture project's path so it associates. */
+  sessionPath: string
+  status: 'starting' | 'idle' | 'processing' | 'blocked' | 'crashed'
+  /** ISO time the status was entered — the status-edge generation key. */
+  statusEnteredAt: string
+  provider?: string
+  exitCode?: number
+  blockReason?: 'permission' | 'question' | 'trust'
+  spawnedBy?: 'user:web' | 'user:terminal' | 'agent'
+  parentSession?: string
+  pid?: number
+  createdAt?: string
+}
+
+/** Write one session state file into the ephemeral sessions dir. Returns the
+ *  handle so callers can build selectors / event ids off it. */
+export function seedSession(opts: SeedSessionOpts): string {
+  const dir = join(requireEphemeralHome(), 'sessions')
+  mkdirSync(dir, { recursive: true })
+  const state: Record<string, unknown> = {
+    handle: opts.handle,
+    provider: opts.provider ?? 'claude',
+    sessionPath: opts.sessionPath,
+    pid: opts.pid ?? 999_999, // a non-running pid; the pure read does not GC it.
+    sessionId: `seed-${opts.handle}`,
+    status: opts.status,
+    createdAt: opts.createdAt ?? opts.statusEnteredAt,
+    statusEnteredAt: opts.statusEnteredAt,
+  }
+  if (opts.exitCode !== undefined) state.exitCode = opts.exitCode
+  if (opts.blockReason !== undefined) state.blockReason = opts.blockReason
+  if (opts.spawnedBy !== undefined) state.spawnedBy = opts.spawnedBy
+  if (opts.parentSession !== undefined) state.parentSession = opts.parentSession
+  writeFileSync(join(dir, `${opts.handle}.json`), JSON.stringify(state, null, 2))
+  return opts.handle
+}
+
+/** Append a `session_idle` event for an owned-idle session, byte-shaped exactly
+ *  as the engine writes it (id = generation, payload carries sessionName+owner),
+ *  so the projector emits an unacked Ready ("Your turn") item. `statusEnteredAt`
+ *  MUST match the session's so the live generation and the durable event agree. */
+export function seedSessionIdleEvent(project: string, handle: string, statusEnteredAt: string): void {
+  const generation = `session_idle:${project}::${handle}:${statusEnteredAt}`
+  const event = {
+    id: generation,
+    ts: statusEnteredAt,
+    kind: 'session_idle',
+    projectId: project,
+    sessionId: handle,
+    payload: { sessionName: handle, owner: 'OWNED' },
+  }
+  const file = join(requireEphemeralHome(), 'projects', project, 'events.jsonl')
+  mkdirSync(dirname(file), { recursive: true })
+  appendFileSync(file, JSON.stringify(event) + '\n')
 }

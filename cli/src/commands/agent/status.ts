@@ -113,6 +113,13 @@ function resolveDetail(handle: string, cachedAlive?: boolean | null): ResolveDet
   // tmux says gone AND the recorded process is gone (see confirmedDead).
   const tmuxAlive = cachedAlive === undefined ? checkSessionAlive(handle) : cachedAlive;
   const state = readState(handle);
+  // A `crashed` tombstone is dead-but-retained: the app must observe the crash
+  // and the user must act before it can be cleared. Short-circuit BEFORE the
+  // confirmedDead GC verdict so `list --reconcile` / `status --reconcile` never
+  // erase it. Only an explicit `yaco agent kill` deletes it.
+  if (state?.status === "crashed") {
+    return { dead: false, state, persist: null };
+  }
   if (confirmedDead(tmuxAlive, state?.pid)) {
     return { dead: true, state: null, persist: null };
   }
@@ -293,7 +300,8 @@ export function list(options: ListOptions = {}): string {
   // session as dead via has-session, but must not wipe state for live processes.
   if (options.reconcile) {
     for (const session of sessions) {
-      if (confirmedDead(aliveCache.get(session.handle) ?? null, session.pid)) {
+      // Never GC a crashed tombstone — it is dead-but-retained until observed.
+      if (session.status !== "crashed" && confirmedDead(aliveCache.get(session.handle) ?? null, session.pid)) {
         deleteState(session.handle);
       }
     }
@@ -301,8 +309,11 @@ export function list(options: ListOptions = {}): string {
   }
 
   // Filter confirmed-dead sessions out of the view (keep anything not confirmed
-  // dead). The pure path does this WITHOUT deleting their files.
-  const liveSessions = sessions.filter(s => !confirmedDead(aliveCache.get(s.handle) ?? null, s.pid));
+  // dead). A crashed tombstone is dead-but-retained, so it always survives the
+  // filter. The pure path does this WITHOUT deleting their files.
+  const liveSessions = sessions.filter(
+    s => s.status === "crashed" || !confirmedDead(aliveCache.get(s.handle) ?? null, s.pid),
+  );
 
   const projects = readProjects();
   const rows: AgentSessionRow[] = [];

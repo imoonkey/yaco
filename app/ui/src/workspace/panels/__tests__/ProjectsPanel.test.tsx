@@ -34,7 +34,10 @@ function makeProjectsTestEnv(overrides: Partial<WorkspaceEnv> = {}): WorkspaceEn
     activeProject: 'alpha',
     worktrees: projectsTestWorktrees,
     activeWorktree: null,
-    projectUnreadCounts: { alpha: 3 },
+    badgesByProject: { alpha: { count: 3, color: 'orange' } },
+    badgesBySession: {},
+    readySessionKeys: new Set<string>(),
+    attentionTaskIds: { blocked: new Set<string>(), done: new Set<string>() },
     projectSessionCounts: { alpha: { active: 1, total: 2 } },
     selectProject: vi.fn(),
     selectWorktree: vi.fn(),
@@ -78,7 +81,7 @@ describe('ProjectsPanel body — same DOM as the inline projectListBody', () => 
         activeProject={env.activeProject}
         activeWorktree={env.activeWorktree}
         worktrees={env.worktrees}
-        projectUnreadCounts={env.projectUnreadCounts}
+        badgesByProject={env.badgesByProject}
         projectSessionCounts={env.projectSessionCounts}
         onSelect={env.selectProject}
         onWorktreeSelect={env.selectWorktree}
@@ -101,7 +104,7 @@ describe('ProjectsPanel body — same DOM as the inline projectListBody', () => 
   })
 
   it('renders the empty state when there are no projects', () => {
-    const env = makeProjectsTestEnv({ projects: [], worktrees: [], projectUnreadCounts: {}, projectSessionCounts: {} })
+    const env = makeProjectsTestEnv({ projects: [], worktrees: [], badgesByProject: {}, projectSessionCounts: {} })
     const Body = projectsPanelDef.Component
     renderInProjectsEnv(env, <Body />)
 

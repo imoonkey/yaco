@@ -15,6 +15,7 @@ import { fileRoutes } from './routes/files.js'
 import { gitRoutes } from './routes/git.js'
 import { notificationRoutes } from './routes/notifications.js'
 import { uiStateRoutes } from './routes/ui-state.js'
+import { attentionRoutes } from './routes/attention.js'
 import { browseRoutes } from './routes/browse.js'
 import { voiceRoutes } from './routes/voice.js'
 import { searchRoutes } from './routes/search.js'
@@ -26,6 +27,7 @@ import { ensureYacoHome, loadProjects } from './lib/projects.js'
 import { pickEncoding, appendVary } from './lib/static-encoding.js'
 import { startSessionReconciler, stopSessionReconciler } from './lib/session-reconciler.js'
 import { startProjectWatchers, stopProjectWatchers } from './lib/project-watcher.js'
+import { startAttentionEngine, stopAttentionEngine } from './lib/attention-runtime.js'
 import { emitRefresh } from './lib/notify.js'
 import { initWeChat, shutdownWeChat } from './lib/wechat/index.js'
 import { initWhatsApp, shutdownWhatsApp } from './lib/whatsapp/index.js'
@@ -229,6 +231,7 @@ app.route('/api/files', fileRoutes)
 app.route('/api/git', gitRoutes)
 app.route('/api/notifications', notificationRoutes)
 app.route('/api/ui-state', uiStateRoutes)
+app.route('/api/attention', attentionRoutes)
 app.route('/api/browse', browseRoutes)
 app.route('/api/voice', voiceRoutes)
 app.route('/api/search', searchRoutes)
@@ -250,6 +253,9 @@ async function startRuntime(): Promise<void> {
   const projects = await loadProjects()
   startSessionReconciler()
   await startProjectWatchers(projects)
+  // Attention engine (Facet B): boot reconciliation + change-driven edges.
+  // Started after the watchers so their notify hooks reach a live engine.
+  await startAttentionEngine()
   setShellSessionChangeCallback(() => emitRefresh('sessions'))
 
   if (process.env.WECHAT_ENABLED === '1') {
@@ -505,6 +511,7 @@ function cleanupTerminalResources(): void {
   if (pingInterval) clearInterval(pingInterval)
   if (sweepInterval) clearInterval(sweepInterval)
   stopSessionReconciler()
+  stopAttentionEngine()
   stopProjectWatchers()
   shutdownWeChat()
   for (const ws of [...connections.keys()]) {

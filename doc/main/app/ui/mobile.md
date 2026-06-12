@@ -72,13 +72,14 @@ On touch devices: `user-select: none` is removed so iOS gesture recognition work
 
 ### Context Menus (Long-Press)
 
-On desktop, right-click opens context menus (file explorer, project list, session list). On mobile, long-press (500ms hold) triggers the same menus. Implemented via the `bind()` method on `useContextMenu()`:
+On desktop, right-click opens context menus (file explorer, project list, session list, tab bar). On mobile, long-press (350ms hold) triggers the same menus. Implemented via the `bind()` method on `useContextMenu()`:
 
-- 500ms hold threshold, 10px movement tolerance
+- 350ms hold threshold, 10px movement tolerance
 - `touchend` calls `preventDefault()` to suppress the click that would otherwise follow
 - Consumers spread `{...menu.bind(onOpen)}` onto target elements — handles both `onContextMenu` and touch events
+- `bind()` and `Menu` attach `data-yaco-native-context-menu="disabled"`; global CSS sets `-webkit-touch-callout: none` and disables selection for those app-owned menu targets so iOS does not show its native long-press menu. Text inputs under such targets opt back into normal selection.
 
--> See: `ui/src/components/Menu.tsx`
+-> See: `app/ui/src/components/Menu.tsx`, `app/ui/src/components/useContextMenu.ts`, `app/ui/src/components/nativeContextMenu.ts`
 
 ### File Pane
 
@@ -98,9 +99,9 @@ On desktop, right-click opens context menus (file explorer, project list, sessio
 
 **Virtual Meta → workspace shortcuts**: Certain Meta+key combos are intercepted before reaching the terminal: Meta+P opens the quick-open search, Meta+B toggles the sidebar. These dispatch a synthetic `KeyboardEvent` with `metaKey: true` so the workspace keyboard handler (`useWorkspaceKeyboard.ts`) picks them up. Other Meta combos send ESC prefix to the terminal as normal.
 
-**iOS touch fix**: Ctrl, Shift, and expand (`···`) buttons use `onPointerDown` instead of `onClick` because the parent toolbar's `onMouseDown={preventDefault}` (needed to prevent xterm focus loss) swallows the touch-to-click chain on iOS Safari. Regular key buttons are unaffected since they fire on `onTouchStart`. Modifier active state uses hardcoded solarized blue (`#268bd2`) via Tailwind class rather than CSS variables — CSS var-based `className` switching didn't reliably apply on iOS.
+**iOS touch fix**: Ctrl, Shift, and expand (`···`) buttons use `onPointerDown` instead of `onClick` because the parent toolbar's `onMouseDown={preventDefault}` (needed to prevent xterm focus loss) swallows the touch-to-click chain on iOS Safari. Regular key buttons are unaffected since they fire on `onTouchStart`. The key bar root also uses the shared native-context-menu suppression marker so long-held repeat keys do not surface Safari's native callout menu. Modifier active state uses hardcoded solarized blue (`#268bd2`) via Tailwind class rather than CSS variables — CSS var-based `className` switching didn't reliably apply on iOS.
 
--> See: `ui/src/components/TerminalKeyBar.tsx`
+-> See: `app/ui/src/components/TerminalKeyBar.tsx`
 
 **Mobile IME fix**: xterm v6's `_inputEvent()` silently drops spaces and symbols from Chinese mobile keyboards. The IME keydown (keyCode 229) sets `_keyDownSeen=true`, and subsequent space/symbol `input` events with `ev.composed=true` fail the guard condition `(!ev.composed || !this._keyDownSeen)`. Terminal.tsx works around this with a capture-phase `input` listener on the terminal **container** (not the textarea — same-element listeners fire in registration order, and xterm registers first, causing our flag reset to run after `onData` already set it). A companion capture-phase `keydown` listener tracks whether the key had a real keyCode (not 229); when it does, xterm handles the char via its keydown path and the fallback is skipped to prevent double input (this was the root cause of double-spaces on English mobile keyboards). Only active on touch devices.
 

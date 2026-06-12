@@ -1,3 +1,19 @@
+## 2026-06-11: Notification & attention redesign (v2)
+
+Replaced the capped-50 notification inbox with a two-facet system: **Facet A**
+live status dots (client-derived, now incl. a `crashed` dot/chip) and **Facet B**
+attention — a server-side engine (`attention-engine.ts`) + pure projector
+(`attention-projection.ts`) over `events.jsonl` + monotonic ack/clear watermarks,
+pushed via an `attention` SSE event and consumed by a hidden-tab-safe
+`useAttention` hook. Bell shows Needs-you/Ready/Recent; rollup badge is separate
+from the self-only status dot. Deleted `notifications-store.ts`,
+`useSessionUnreadState`, and the inbox role of `useNotifications`; kept
+`/api/notifications/stream` as the SSE transport. Backed by a fail-closed CLI
+crash contract (`crashed` runtime status + `yaco agent mark-crashed` + a
+generation-scoped `.killing` sentinel) and durable `statusEnteredAt` /
+`stateEnteredAt` edge generations. Full detail + verification in
+`doc/PROGRESS.md` (2026-06-11).
+
 ## 2026-06-11: Voice single-take + unified compose tray
 
 Reverted the bug-prone mid-recording VAD segmentation to a single-take flow

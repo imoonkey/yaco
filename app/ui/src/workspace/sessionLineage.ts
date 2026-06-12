@@ -61,6 +61,40 @@ export function buildSessionLineage(sessions: AgentSession[]): SessionLineageRow
 }
 
 /**
+ * Collect a session and every descendant by name, walking the `parentSession`
+ * links of the given list. Returns `[]` when the name is not present.
+ *
+ * Used by the "Mark subtree read" action to fan an ack out over a parent plus
+ * its whole subtree. Cycle-guarded with a visited set so a malformed
+ * parent loop terminates. Pure and order-stable (parent first, then children
+ * in input order) so it can be unit-tested independently of the manager.
+ */
+export function collectSubtree(sessions: AgentSession[], rootName: string): string[] {
+  const childrenByParent = new Map<string, AgentSession[]>()
+  for (const s of sessions) {
+    const parent = s.parentSession
+    if (parent && parent !== s.name) {
+      const siblings = childrenByParent.get(parent) ?? []
+      siblings.push(s)
+      childrenByParent.set(parent, siblings)
+    }
+  }
+
+  if (!sessions.some(s => s.name === rootName)) return []
+
+  const collected: string[] = []
+  const visited = new Set<string>()
+  const walk = (name: string): void => {
+    if (visited.has(name)) return
+    visited.add(name)
+    collected.push(name)
+    for (const child of childrenByParent.get(name) ?? []) walk(child.name)
+  }
+  walk(rootName)
+  return collected
+}
+
+/**
  * Drop the descendants of any collapsed session, keeping the collapsed parent
  * itself visible. Relies on lineage order: rows are depth-first and a subtree is
  * contiguous, so a single depth threshold tracks "inside a collapsed ancestor".

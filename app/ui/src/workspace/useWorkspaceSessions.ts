@@ -1,7 +1,9 @@
 import { useCallback, useMemo } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { usePinnedSessions } from '../hooks/usePinnedSessions'
+import { collectSubtree } from './sessionLineage'
 import type { AgentSession, SessionProvider } from '../types'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 // --- Pure session routing (design: Multi-Instance Panels §C/§3.5) -----------
 //
@@ -64,7 +66,6 @@ interface UseWorkspaceSessionsOpts {
   projectPath: string
   sessions: AgentSession[] | null
   refreshSessions: () => Promise<void>
-  sessionUnreadCounts?: Record<string, number>
   projectName: string
   onSessionChange?: () => void
   /** Show a session in a terminal — the create-or-focus-or-bind path (clickSession).
@@ -74,13 +75,21 @@ interface UseWorkspaceSessionsOpts {
   /** Rebind every terminal bound to `oldName` → `newName` on rename (the binding
    *  outlives the old name; reconcile must not mistake the rename for a death). */
   onRenameBoundTerminals?: (oldName: string, newName: string) => void
+  // Attention rollup badge per session subtree (`proj::name`) + owned-idle "your
+  // turn" set, both from the server-projected snapshot. Separate from status.
+  badgesBySession?: Record<string, AttentionBadge>
+  readySessionKeys?: Set<string>
+  // Ack one session's REVIEW watermark (from useAttention). Used to fan a
+  // "mark subtree read" across a parent and all its descendants.
+  ackSession: (project: string, sessionName: string) => void
 }
 
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
     projectPath, sessions,
-    refreshSessions, sessionUnreadCounts, projectName, onSessionChange,
+    refreshSessions, projectName, onSessionChange,
     onAttachSession, onRenameBoundTerminals,
+    badgesBySession, readySessionKeys, ackSession,
   } = opts
 
   const { pinnedSessions, setPinnedSessions } = usePinnedSessions(projectName)
@@ -88,29 +97,41 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
   const pinnedSet = useMemo(() => new Set(pinnedSessions), [pinnedSessions])
 
-  const getSessionUnread = useCallback((sessionName: string): number => {
-    if (!sessionUnreadCounts) return 0
-    return sessionUnreadCounts[`${projectName}::${sessionName}`] ?? 0
-  }, [sessionUnreadCounts, projectName])
+  // Rollup badge for a session subtree (count + worst-tier color). Separate from
+  // the self-only status dot — never used to recolor it.
+  const getSessionBadge = useCallback((sessionName: string): AttentionBadge | null => {
+    return badgesBySession?.[`${projectName}::${sessionName}`] ?? null
+  }, [badgesBySession, projectName])
 
-  // Display order: pinned (custom order) -> blocked -> processing -> idle
+  // True when this session has an unacked owned REVIEW (a `session_idle` Ready
+  // item) → the "↩ your turn" leaf chip.
+  const isSessionReady = useCallback((sessionName: string): boolean => {
+    return readySessionKeys?.has(`${projectName}::${sessionName}`) ?? false
+  }, [readySessionKeys, projectName])
+
+  // Display order: pinned (custom order) -> crashed -> blocked -> processing -> idle.
+  // crashed leads the unpinned set — a dead session is the most urgent to surface
+  // (red outranks orange in the attention precedence) and must never be dropped.
   const orderedSessions = useMemo(() => {
     const byName = new Map(projectSessions.map(s => [s.name, s]))
     const pinned = pinnedSessions.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
     const unpinned = projectSessions.filter(s => !pinnedSet.has(s.name))
+    const crashed = unpinned.filter(s => s.status === 'crashed')
     const blocked = unpinned.filter(s => s.status === 'blocked')
     const processing = unpinned.filter(s => s.status === 'processing' || s.status === 'starting')
     const idle = unpinned.filter(s => s.status === 'idle')
-    const byUnread = (a: { name: string }, b: { name: string }) => {
-      const ua = getSessionUnread(a.name) > 0 ? 0 : 1
-      const ub = getSessionUnread(b.name) > 0 ? 0 : 1
+    // Within a status bucket, sessions carrying an attention badge sort first.
+    const byAttention = (a: { name: string }, b: { name: string }) => {
+      const ua = (getSessionBadge(a.name)?.count ?? 0) > 0 ? 0 : 1
+      const ub = (getSessionBadge(b.name)?.count ?? 0) > 0 ? 0 : 1
       return ua - ub
     }
-    blocked.sort(byUnread)
-    processing.sort(byUnread)
-    idle.sort(byUnread)
-    return [...pinned, ...blocked, ...processing, ...idle]
-  }, [projectSessions, pinnedSessions, pinnedSet, getSessionUnread])
+    crashed.sort(byAttention)
+    blocked.sort(byAttention)
+    processing.sort(byAttention)
+    idle.sort(byAttention)
+    return [...pinned, ...crashed, ...blocked, ...processing, ...idle]
+  }, [projectSessions, pinnedSessions, pinnedSet, getSessionBadge])
 
   const handleNewSession = useCallback(async (provider: SessionProvider) => {
     try {
@@ -170,16 +191,29 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     })
   }, [setPinnedSessions])
 
+  // Mark a parent session and all its descendants read: ack each subtree member's
+  // REVIEW watermark. This clears their Ready / done items ("your turn", task-done)
+  // exactly like project/bell mark-all-read; it never touches Needs-you (blocked /
+  // crashed have no read concept). The subtree is derived from the project session
+  // list's `parentSession` links (cycle-guarded in collectSubtree).
+  const markSubtreeRead = useCallback((parentName: string) => {
+    for (const name of collectSubtree(projectSessions, parentName)) {
+      ackSession(projectName, name)
+    }
+  }, [projectSessions, ackSession, projectName])
+
   return {
     projectSessions,
     pinnedSet,
     orderedSessions,
-    getSessionUnread,
+    getSessionBadge,
+    isSessionReady,
     handleNewSession,
     killSession,
     handleRenameSession,
     refreshSessions,
     togglePin,
     handlePinnedReorder,
+    markSubtreeRead,
   }
 }

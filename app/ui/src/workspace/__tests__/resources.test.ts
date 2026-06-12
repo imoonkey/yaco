@@ -10,6 +10,7 @@ import { useWorkspaceSessions } from '../useWorkspaceSessions'
 import { useWorkspaceData } from '../resources'
 import type { WorkspaceGitResource, WorkspaceSessionsResource } from '../resources'
 import type { AgentSession, GitChange, SessionProvider } from '../../types'
+import type { AttentionBadge } from '../../hooks/useAttention'
 
 // Call-through spy on the sessions manager so we can count how many manager
 // instances the composition mounts, without losing real behavior (the pinned
@@ -43,12 +44,14 @@ export type _SessionsResourceIsExplicit = Expect<Equal<WorkspaceSessionsResource
   orderedSessions: AgentSession[]
   pinnedSet: Set<string>
   liveSessionHandles: Set<string>
-  getSessionUnread: (name: string) => number
+  getSessionBadge: (name: string) => AttentionBadge | null
+  isSessionReady: (name: string) => boolean
   startSession: (provider: SessionProvider) => Promise<void>
   killSession: (name: string) => Promise<void>
   renameSession: (oldName: string, newName: string) => Promise<void>
   togglePin: (name: string) => void
   reorderPinned: (fromName: string, toName: string) => void
+  markSubtreeRead: (parentName: string) => void
   refresh: () => Promise<void>
 }>>
 
@@ -92,6 +95,7 @@ function makeOpts() {
     projectPath: '/tmp/res-proj',
     worktree: null,
     onAttachSession: vi.fn(),
+    ackSession: vi.fn(),
   }
 }
 

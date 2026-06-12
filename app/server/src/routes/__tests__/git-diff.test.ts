@@ -187,7 +187,7 @@ describe('GET /:project/baseline — HEAD content', () => {
     expect(json).toEqual({ content: 'committed content\n', exists: true })
     expect(mockExecFile).toHaveBeenCalledWith(
       'git',
-      ['show', 'HEAD:src/file.ts'],
+      ['show', 'HEAD:./src/file.ts'],
       expect.objectContaining({ cwd: testProjectPath }),
       expect.any(Function),
     )

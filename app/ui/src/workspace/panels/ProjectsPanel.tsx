@@ -28,7 +28,7 @@ function ProjectsPanelBody() {
       activeProject={env.activeProject}
       activeWorktree={env.activeWorktree}
       worktrees={env.worktrees}
-      projectUnreadCounts={env.projectUnreadCounts}
+      badgesByProject={env.badgesByProject}
       projectSessionCounts={env.projectSessionCounts}
       onSelect={env.selectProject}
       onWorktreeSelect={env.selectWorktree}

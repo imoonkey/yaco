@@ -21,6 +21,7 @@ read-surface pass (text/contract) · 📜 added in the agent-messages pass.
 Outside the grid — the only agent command that isn't CRUD-shaped:
 
 - **agent**: `providers` ✅ — the static provider catalog.
+- **agent**: `mark-crashed` — internal, called by the wrapper EXIT trap (not a user command): generation/sentinel-guarded rewrite of a session state file to `crashed` + `exitCode`. See [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
 
 A worktree is a git object, so YACO adds **no** worktree read command: `git
 worktree list` and `git -C .worktrees/<slug> status` are its canonical readers.
@@ -65,8 +66,8 @@ compact JSON blob — the old behavior the read-surface pass removed.
 
 ## Area inventory (today)
 
-Nine top-level areas: `agent` · `task` · `worktree` · `project` · `align` ·
-`init` · `install` · `doctor` · `paths`. A follow-up `surface-hygiene` design
+Ten top-level areas: `agent` · `task` · `worktree` · `project` · `align` ·
+`init` · `install` · `doctor` · `paths` · `plan`. A follow-up `surface-hygiene` design
 proposes consolidating these to six (folding `init links` + `agent hooks
 install` into `install`, relocating `align poll` under `agent`, and merging
 `doctor` + `paths` into a read-only `env` area) — **not shipped**; tracked

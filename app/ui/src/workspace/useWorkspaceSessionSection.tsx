@@ -9,17 +9,20 @@ import { matchAgentSessions, matchHistorySessions } from './sessionSearch'
 import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { SectionRefreshButton } from './SectionHeader'
 import type { AgentSession, HistorySession } from '../types'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 interface SessionsMgr {
   orderedSessions: AgentSession[]
   projectSessions: AgentSession[]
   pinnedSet: Set<string>
-  getSessionUnread: (name: string) => number
+  getSessionBadge: (name: string) => AttentionBadge | null
+  isSessionReady: (name: string) => boolean
   killSession: (name: string) => Promise<void>
   handleNewSession: (provider: string) => Promise<void>
   handleRenameSession: (old: string, next: string) => Promise<void>
   togglePin: (name: string) => void
   handlePinnedReorder: (from: string, to: string) => void
+  markSubtreeRead: (parentName: string) => void
   detachActiveSession: () => boolean
 }
 
@@ -229,12 +232,18 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const renderSessionItem = (s: AgentSession, isPinned?: boolean, depth = 0, hasChildren = false) => {
     const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
     const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
+    const isCollapsed = collapsedSessions.has(s.name)
     return (
       <SessionItem key={`session:${s.name}`} session={s} isActive={shownSessions.has(s.name)} pinned={isPinned} depth={depth}
         hasChildren={hasChildren}
-        collapsed={collapsedSessions.has(s.name)}
+        collapsed={isCollapsed}
         onToggleCollapse={() => toggleCollapse(s.name)}
-        unreadCount={sessionsMgr.getSessionUnread(s.name)}
+        // Rollup badge only on a COLLAPSED parent (subtree attention, hidden
+        // children); separate from the self-only status dot.
+        rollupBadge={hasChildren && isCollapsed ? sessionsMgr.getSessionBadge(s.name) : null}
+        // Owned-idle leaf "↩ your turn" chip when this session has an unacked
+        // owned REVIEW (a Ready item). Distinct from the neutral idle dot.
+        yourTurn={sessionsMgr.isSessionReady(s.name)}
         shortcutIndex={shortcutIndex}
         searchMatch={liveSearchMatches.get(s.name)}
         onKill={() => { void sessionsMgr.killSession(s.name) }}
@@ -242,6 +251,9 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         onOpenBeside={isMobile ? undefined : () => openBeside(s.name)}
         onPin={() => sessionsMgr.togglePin(s.name)}
         onRename={s.provider !== 'shell' ? (newName) => { void sessionsMgr.handleRenameSession(s.name, newName) } : undefined}
+        // Parent-only: mark this session + its whole subtree read (acks each member's
+        // REVIEW). Leaves get no handler so the MenuItem never renders for them.
+        onMarkSubtreeRead={hasChildren ? () => sessionsMgr.markSubtreeRead(s.name) : undefined}
         {...(isPinned ? {
           onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', s.name); e.dataTransfer.effectAllowed = 'move'; setDraggedSession(s.name) },
           onDragEnd: () => setDraggedSession(null),

@@ -174,40 +174,27 @@ Behavior:
 - Single EventSource to `/api/notifications/stream`
 - Manual reconnect with exponential backoff (1s → 30s) on error — disables browser's built-in auto-reconnect to prevent listener accumulation and refresh storms
 - On reconnect: fires all registered refresh callbacks immediately (catch-up)
-- Per-channel trailing-edge debounce (150ms) on `refresh` and `notification` events — prevents fetch cascades during rapid file changes (server already debounces at 200ms)
-- Routes `notification` events to listeners and triggers `progress` refresh (debounced)
-- Routes `refresh` events to channel-specific callbacks (debounced)
+- Per-channel trailing-edge debounce (150ms) on `refresh` events — prevents fetch cascades during rapid file changes (server already debounces at 200ms)
+- Routes the `attention` event (server-projected `AttentionSnapshot`, Facet B) **directly** to listeners — not via the document-hidden-gated polling path — so a backgrounded tab still receives it and can fire OS interrupts
+- Routes `refresh` and `ui-state:changed` events to channel-specific / typed listeners (refresh debounced)
 - **Sleep/wake recovery**: module-level `visibilitychange` listener forces `closeSource()` + `getSource()` when page becomes visible — kills zombie EventSource connections that survive sleep without firing `onerror`, then cascades refresh to all polling hooks via the `open` handler
 
-## useNotifications.ts
+## useAttention.ts (~356 lines)
 
-Dual-mode notification delivery via SSE.
+Hidden-tab-safe Facet B consumer — the single client entry point for the bell,
+badges, and interrupts. Mirrors the server `AttentionSnapshot` shape (does not
+import across packages).
 
-**Export**: `useNotifications(onNotificationClick?)` → `{ notifications, unreadCount, markAllRead, markRead, clearAll }`
-
-Behavior:
-- Listens for `notification` SSE events
-- Page visible: shows `toast.custom()` with full-area click (Sonner v2 ignores `onClick` on toast options)
-- Page hidden: shows browser Notification (click → window.focus + route)
-- Auto-requests notification permission on mount
-- Per-tab deduplication via seen-ID set (max 500 entries, FIFO eviction)
-- **Note**: the `unreadCount` returned here is inbox-derived (inbox `read` flags). App.tsx ignores it and computes the bell badge from `useSessionUnreadState`'s `projectUnreadCounts` instead so bell and sidebar stay aligned.
-
-## useSessionUnreadState.ts
-
-Per-session and per-project unread counts derived from projected YACO event entries + server-backed watermarks (`${YACO_HOME:-~/.yaco}/ui-state/unread-watermarks.json`).
-
-**Export**: `useSessionUnreadState(progress, allSessions, activeProject, visibilityReport)` → `{ sessionUnreadCounts, projectUnreadCounts, readState, markSessionRead, markAllRead }`
+**Export**: `useAttention(activeTarget, onItemClick?)` → `{ snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask, clear, requestPermission, permission }`
 
 Behavior:
-- An entry contributes to the unread count iff it is `status === 'active'`, has a `sessionName`, and that session is currently live. Type is not restricted (all `info` / `human_review` / `blocked` / `session_idle` entries count).
-- `sessionUnreadCounts[project::session]` = entries with `timestamp > max(projectReadAt[project], sessionReadAt[key])`.
-- `projectUnreadCounts[project]` = sum of session counts for that project.
-- `markSessionRead(p, s)` / `markAllRead(p)` advance the corresponding watermark to `Date.now()`.
-- Visibility guard: takes a `visibilityReport` whose `visibleSessions` is the set of sessions bound to terminal panes **actually visible in the layout** (multiple tiled terminals → multiple visible sessions). While the page is visible, every such session's watermark is auto-advanced to the highest matching progress timestamp — so both tiled terminals mark read, not just one.
-- Server sync: seeds from `GET /api/ui-state/unread-watermarks`, refetches on `ui-state:changed` SSE + visibilitychange; mutations debounce-PUT with a mutation-version clobber-guard (same shape as `usePinnedSessions`).
+- Cold mount: `GET /api/attention/feed` for the initial snapshot + first Recent page; `loadMore()` pages older history via the opaque composite `nextBefore` cursor.
+- Live: subscribes to the `attention` SSE event directly (hidden-safe) and replaces the snapshot.
+- Interrupts: a newly-seen `interrupt` item fires `toast.custom` (visible) or one `new Notification` (hidden, permission-granted only); a burst collapses to one summary; dedup by generation so reconnect/re-projection never re-toasts.
+- Active-viewing guard: `visible && document.hasFocus() && attached to target` → suppress the interrupt and auto-ack the subject's own generation (session ack vs. task ack).
+- OS permission requested **only on a user gesture** (`requestPermission`, fired by the first bell open), never on mount.
 
-App.tsx wires `projectUnreadCounts` into both the sidebar (per-project badges) and the bell badge (sum), and overrides each inbox item's `read` flag using the same watermark check so the notification panel styling matches.
+Replaces the deleted `useNotifications` (inbox + per-tab dedup + on-mount permission) and `useSessionUnreadState` (capped unread counts + visibility auto-advance). The ack watermark store moved server-side as the REVIEW ack. The multi-instance workspace still reports an active-viewing target (the focused terminal's session + whether that terminal is on screen) via `WorkspaceProvider`'s visibility report, which `App.tsx` feeds into this guard — see [app-shell.md](../ui/app-shell.md).
 
 ## useVoice.ts (~290 lines)
 

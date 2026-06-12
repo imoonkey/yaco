@@ -1,10 +1,11 @@
 import { Hono } from 'hono'
 import {
   getPinnedSessions, setPinnedSessions,
-  getUnreadWatermarks, setUnreadWatermarks,
-  type UnreadWatermarks,
+  getUnreadWatermarks, mergeUnreadWatermarks,
+  type UnreadWatermarksPatch,
 } from '../lib/ui-state'
 import { broadcastChange } from '../lib/notify'
+import { notifyAttentionPinChange } from '../lib/attention-runtime'
 import { fail } from '../lib/response'
 
 const app = new Hono()
@@ -33,6 +34,9 @@ app.put('/pinned-sessions', async (c) => {
   }
 
   await setPinnedSessions(project, sessions)
+  // A pin reclassifies a session's owner (delegated → owned), which changes its
+  // Ready handoff — recompute + push the attention snapshot (parallels F2).
+  notifyAttentionPinChange()
   broadcastChange('ui-state:changed')
   return c.body(null, 204)
 })
@@ -51,19 +55,21 @@ app.put('/unread-watermarks', async (c) => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return fail(c, 400, 'body must be an object')
   }
-  const obj = body as { projectReadAt?: unknown; sessionReadAt?: unknown }
-  const validate = (v: unknown): v is Record<string, number> => {
+  const obj = body as Record<string, unknown>
+  const isNumberMap = (v: unknown): v is Record<string, number> => {
+    if (v === undefined) return true // optional map
     if (!v || typeof v !== 'object' || Array.isArray(v)) return false
     return Object.values(v as Record<string, unknown>).every((n) => typeof n === 'number' && Number.isFinite(n))
   }
-  if (!validate(obj.projectReadAt) || !validate(obj.sessionReadAt)) {
-    return fail(c, 400, 'projectReadAt and sessionReadAt must be Record<string, number>')
+  for (const key of ['projectReadAt', 'sessionReadAt', 'taskReadAt', 'recentClearedAt'] as const) {
+    if (!isNumberMap(obj[key])) {
+      return fail(c, 400, `${key} must be a Record<string, number>`)
+    }
   }
 
-  await setUnreadWatermarks({
-    projectReadAt: obj.projectReadAt,
-    sessionReadAt: obj.sessionReadAt,
-  } satisfies UnreadWatermarks)
+  // Monotonic-max merge: a client PUTting an older value must not lower the
+  // stored watermark (spec §5.3). Returns the persisted (merged) values.
+  await mergeUnreadWatermarks(obj as UnreadWatermarksPatch)
   broadcastChange('ui-state:changed')
   return c.body(null, 204)
 })

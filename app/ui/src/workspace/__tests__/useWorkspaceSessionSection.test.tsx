@@ -20,12 +20,14 @@ function makeSessionsMgr(sessions: AgentSession[]) {
     orderedSessions: sessions,
     projectSessions: sessions,
     pinnedSet: new Set<string>(),
-    getSessionUnread: () => 0,
+    getSessionBadge: () => null,
+    isSessionReady: () => false,
     killSession: vi.fn<() => Promise<void>>(),
     handleNewSession: vi.fn<() => Promise<void>>(),
     handleRenameSession: vi.fn<() => Promise<void>>(),
     togglePin: vi.fn<(name: string) => void>(),
     handlePinnedReorder: vi.fn<(from: string, to: string) => void>(),
+    markSubtreeRead: vi.fn<(parentName: string) => void>(),
     detachActiveSession: vi.fn<() => boolean>(),
   }
 }

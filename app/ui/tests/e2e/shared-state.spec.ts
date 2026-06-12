@@ -22,7 +22,6 @@ test.describe.configure({ mode: 'serial' })
 const YACO_HOME =
   resolveDevPorts({ e2e: true }).yacoHome ?? process.env.YACO_HOME ?? join(homedir(), '.yaco')
 const UI_STATE_DIR = join(YACO_HOME, 'ui-state')
-const NOTIFICATIONS_FILE = join(UI_STATE_DIR, 'notifications.json')
 const PINNED_FILE = join(UI_STATE_DIR, 'pinned-sessions.json')
 const SESSIONS_DIR = join(YACO_HOME, 'sessions')
 
@@ -33,7 +32,6 @@ const SESSION_B = `${TEST_SESSION_PREFIX}b`
 
 // --- Backup / restore for user data files ---
 
-let notificationsBackup: string | null = null
 let pinnedBackup: string | null = null
 
 function readIfExists(path: string): string | null {
@@ -69,20 +67,16 @@ function writeFakeSession(handle: string, projectPath: string): void {
 
 test.beforeAll(async () => {
   await fs.mkdir(UI_STATE_DIR, { recursive: true })
-  notificationsBackup = readIfExists(NOTIFICATIONS_FILE)
   pinnedBackup = readIfExists(PINNED_FILE)
 })
 
 test.afterAll(async () => {
-  if (notificationsBackup != null) writeFileSync(NOTIFICATIONS_FILE, notificationsBackup)
-  else removeIfExists(NOTIFICATIONS_FILE)
   if (pinnedBackup != null) writeFileSync(PINNED_FILE, pinnedBackup)
   else removeIfExists(PINNED_FILE)
   removeTestStateFiles()
 })
 
 test.beforeEach(async () => {
-  writeJson(NOTIFICATIONS_FILE, [])
   writeJson(PINNED_FILE, {})
   removeTestStateFiles()
 })
@@ -132,69 +126,114 @@ async function readSessionListNames(page: Page, names: string[]): Promise<string
   }, names)
 }
 
-// --- Test 1: notification inbox cross-tab read sync ---
+// --- Test 1: attention ack is durable + shared across tabs ---
 //
-// The bell badge count is derived from progress.json + watermarks (not from
-// inbox `read` flags), so seeding a synthetic inbox row won't drive it.
-// This test exercises the inbox SSE refetch path: a row's `read` flag flips
-// in tab A → propagates to tab B and shows as no-longer-highlighted there.
+// The capped-50 notification inbox is gone (eng-design §4.3); attention (the
+// bell) is now SERVER-PROJECTED from sessions/tasks/events + an ack watermark
+// (Facet B). This replaces the old "mark-all-read flips inbox row styling" with
+// the equivalent in the new model: a Ready ("Your turn") item projected from a
+// seeded owned-idle session + its durable `session_idle` event renders in two
+// independent tabs (shared projection); acking the project advances a durable
+// watermark, so after a reload the item has LEFT the Ready section and moved to
+// Recent (history) in BOTH tabs — and stays there.
+//
+// Ack semantics (server projector, app/server/src/lib/attention-projection.ts):
+// acking a REVIEW (Ready) item does NOT delete it — it advances the watermark so
+// the item drops out of `ready` and `buildHistory` re-emits it into `recent`.
+// Only Clear hides Recent. So the durable assertion is "no longer Ready, now in
+// Recent", scoped to THIS run's unique `project / handle` location (the feed is
+// GLOBAL; sibling specs seed their own rows into the shared YACO_HOME).
 
-test.describe('Shared state: notifications', () => {
-  test('mark-all-read in one tab updates inbox styling in another tab', async ({ browser }) => {
-    // Seed an unread notification before either tab loads.
-    writeJson(NOTIFICATIONS_FILE, [
-      {
-        id: 'e2e-test-notif-1',
-        kind: 'progress',
-        title: 'Test notification',
-        message: 'cross-tab sync',
-        project: '',
-        workstream: '',
-        progressType: 'session_idle',
-        sessionName: '',
-        timestamp: Date.now(),
-        read: false,
-      },
-    ])
+test.describe('Shared state: attention', () => {
+  test('an acked Ready item moves to Recent durably across tabs', async ({ browser, request }) => {
+    const project = await createFixtureProject(request)
+    const enteredAt = new Date().toISOString()
+
+    // An owned (user:web) idle session + its session_idle event → unacked REVIEW
+    // → a "Your turn" Ready item the bell shows from the cold feed.
+    const handle = `${TEST_SESSION_PREFIX}idle`
+    const state = {
+      handle,
+      provider: 'claude',
+      sessionPath: project.path,
+      pid: process.pid,
+      sessionId: '',
+      status: 'idle',
+      createdAt: enteredAt,
+      statusEnteredAt: enteredAt,
+      spawnedBy: 'user:web',
+    }
+    mkdirSync(SESSIONS_DIR, { recursive: true })
+    writeFileSync(join(SESSIONS_DIR, `${handle}.json`), JSON.stringify(state, null, 2))
+
+    const eventsFile = join(YACO_HOME, 'projects', project.name, 'events.jsonl')
+    mkdirSync(join(YACO_HOME, 'projects', project.name), { recursive: true })
+    const generation = `session_idle:${project.name}::${handle}:${enteredAt}`
+    writeFileSync(eventsFile, JSON.stringify({
+      id: generation, ts: enteredAt, kind: 'session_idle', projectId: project.name,
+      sessionId: handle, payload: { sessionName: handle, owner: 'OWNED' },
+    }) + '\n')
 
     const a = await newPage(browser)
     const b = await newPage(browser)
     try {
+      const openBell = async (page: Page) => {
+        await page.locator('button[aria-label="Notifications"]').click()
+      }
+      // The 340px bell dropdown card. Each section renders a sticky header
+      // (`div.sticky`) carrying the exact label, with its rows as following
+      // siblings inside the same wrapper. Scope a row lookup to ONE section so we
+      // can tell "in Ready" from "in Recent" — both render the same "Your turn"
+      // title and the same `project / handle` location. Anchor on the section's
+      // header, then take the sibling rows (`div.cursor-pointer`) filtered to the
+      // unique location.
+      const panel = (page: Page) => page.locator('.rounded-xl.w-\\[340px\\]')
+      const sectionRow = (page: Page, label: string, location: string) =>
+        panel(page)
+          .locator('div.sticky')
+          .filter({ hasText: label })
+          .locator('xpath=following-sibling::div[contains(@class,"cursor-pointer")]')
+          .filter({ hasText: location })
+
+      // Both tabs project the SAME server state → both show the Ready item in the
+      // Ready section. Assert on THIS run's unique location row, never a global
+      // "Your turn" count (parallel specs seed their own Ready items).
+      const location = `${project.name} / ${handle}`
       await gotoApp(a.page)
       await gotoApp(b.page)
+      await openBell(a.page)
+      await openBell(b.page)
+      await expect(a.page.getByText('Ready', { exact: true })).toBeVisible({ timeout: 5_000 })
+      await expect(b.page.getByText('Ready', { exact: true })).toBeVisible({ timeout: 5_000 })
+      await expect(sectionRow(a.page, 'Ready', location)).toBeVisible()
+      await expect(sectionRow(b.page, 'Ready', location)).toBeVisible()
 
-      // Open the bell panel on both tabs and locate the seeded row.
-      const openPanel = async (page: Page) => {
-        await page.locator('button[aria-label="Notifications"]').click()
-        await expect(page.getByText('Test notification')).toBeVisible({ timeout: 5_000 })
-      }
-      await openPanel(a.page)
-      await openPanel(b.page)
-
-      // Unread rows render with an accent left border; read rows don't.
-      const rowStyle = (page: Page) => page
-        .getByText('Test notification')
-        .locator('xpath=ancestor::div[contains(@style, "borderBottom") or contains(@style, "border-bottom")][1]')
-        .getAttribute('style')
-
-      const aStyleBefore = await rowStyle(a.page)
-      const bStyleBefore = await rowStyle(b.page)
-      expect(aStyleBefore).toMatch(/border-left/i)
-      expect(bStyleBefore).toMatch(/border-left/i)
-
-      // Page A: mark all read via REST (server broadcasts notifications:changed)
-      const status = await a.page.evaluate(async () => {
-        const res = await fetch('/api/notifications/read-all', { method: 'POST' })
+      // Tab A acks the project (server stamps a monotonic watermark, durable).
+      const status = await a.page.evaluate(async (proj) => {
+        const res = await fetch('/api/attention/ack', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope: 'project', project: proj }),
+        })
         return res.status
-      })
-      expect(status).toBe(200)
+      }, project.name)
+      expect(status).toBe(204)
 
-      // Page B sees the row flip to read styling via SSE-driven refetch
-      await expect.poll(() => rowStyle(b.page), { timeout: 3_000 }).not.toMatch(/border-left/i)
-      await expect.poll(() => rowStyle(a.page), { timeout: 3_000 }).not.toMatch(/border-left/i)
+      // The watermark is durable + shared: a fresh cold feed (reload) in BOTH
+      // tabs surfaces THIS item NOT in Ready but in Recent — and persists there.
+      for (const page of [a.page, b.page]) {
+        await page.reload()
+        await expect(page.locator('button[aria-label="Notifications"]')).toBeVisible({ timeout: 10_000 })
+        await page.locator('button[aria-label="Notifications"]').click()
+        // No longer an unacked Ready row…
+        await expect(sectionRow(page, 'Ready', location)).toHaveCount(0)
+        // …it now lives in Recent (history), durably.
+        await expect(sectionRow(page, 'Recent', location)).toBeVisible()
+      }
     } finally {
       await a.ctx.close()
       await b.ctx.close()
+      await project.dispose()
     }
   })
 })

@@ -36,9 +36,8 @@ import {
 } from './panelLayoutModel'
 import type { Project } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
-import type {
-  WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts,
-} from '../hooks/useSessionUnreadState'
+import type { WorkspaceVisibilityReport, AttachSessionIntent } from './visibility'
+import type { AttentionBadge, AttentionTaskIds } from '../hooks/useAttention'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
   WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceControllersContext,
@@ -59,15 +58,19 @@ export type WorkspaceProviderProps = {
   onWorktreeSelect: (slug: string | null) => void
   projects: Project[]
   activeProject: string
-  projectUnreadCounts: Record<string, number>
+  badgesByProject: Record<string, AttentionBadge>
+  badgesBySession: Record<string, AttentionBadge>
+  readySessionKeys: Set<string>
+  attentionTaskIds: AttentionTaskIds
   projectSessionCounts: Record<string, { active: number; total: number }>
   onProjectSelect: (name: string) => void
   onProjectReorder: (fromName: string, toName: string) => void
   onProjectRemove: (project: Project) => void
   onAddProject: () => void
   onMarkAllRead: (projectName: string) => void
-  sessionUnreadCounts?: SessionUnreadCounts
-  markSessionRead?: (project: string, session: string) => void
+  /** Ack one session's REVIEW watermark (from useAttention) — threaded to the
+   *  sessions resource so a parent's "Mark subtree read" can fan acks out. */
+  ackSession: (project: string, sessionName: string) => void
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void
@@ -121,13 +124,15 @@ function diffTabId(path: string, base?: string, compare?: string): string {
 export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const {
     projectName, projectPath, worktree, worktrees, activeWorktree, onWorktreeSelect,
-    projects, activeProject, projectUnreadCounts, projectSessionCounts,
+    projects, activeProject, badgesByProject, badgesBySession, readySessionKeys,
+    attentionTaskIds, projectSessionCounts,
     onProjectSelect, onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
-    sessionUnreadCounts, onVisibilityReport,
+    ackSession, onVisibilityReport,
     attachIntent, clearAttachIntent, notificationBell, children,
   } = props
-  // markSessionRead is still accepted (App wires it) but mark-read is now driven
-  // by the visibleSessions report inside useSessionUnreadState, not the provider.
+  // The attention active-viewing guard (App → useAttention) is fed by the
+  // visibility report below; `ackSession` lets a parent's "Mark subtree read" fan
+  // acks across its descendants (threaded to the sessions resource).
 
   const isMobile = useIsMobile()
   const isLandscape = useIsLandscape()
@@ -252,9 +257,10 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // Single shared resources: one git poller, one sessions poller + manager.
   const data = useWorkspaceData({
     projectName, projectPath: effectivePath, worktree,
-    sessionUnreadCounts, onSessionChange,
+    onSessionChange,
     onRenameBoundTerminals: renameBoundTerminals,
     onAttachSession,
+    badgesBySession, readySessionKeys, ackSession,
   })
   const { liveSessionHandles } = data.sessions
   const sessionsLoaded = data.sessionsLoaded
@@ -418,22 +424,22 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }, [mobilePane, setPanelLayout])
 
   // --- Cross-component effects ---
-  // Report the sessions bound to ACTUALLY-VISIBLE terminal panes (design: §C) —
-  // a stable NUL-joined signature so the report fires only when the set changes.
-  const visibleSessionsSig = useMemo(() => {
-    const ids = isMobile
-      ? (mobilePane === 'terminal' && activeTerminalId ? [activeTerminalId] : [])
-      : visibleTerminalIds(panelLayout.desktop)
-    const sessions = ids.map((id) => terminalBindings[id]).filter((s): s is string => !!s)
-    return [...new Set(sessions)].sort().join(' ')
-  }, [isMobile, mobilePane, activeTerminalId, terminalBindings, panelLayout.desktop])
-  const visibleSessions = useMemo(
-    () => (visibleSessionsSig ? visibleSessionsSig.split(' ') : []), [visibleSessionsSig],
-  )
+  // Report the active-viewing target to App's attention guard (design §C): the
+  // session bound to the ACTIVE terminal, marked visible only when that terminal
+  // pane is actually on screen. A terminal can be moved out of the activity column
+  // (or shown while it is hidden), so visibility is read from the tree — not the
+  // legacy `showRightPanel` flag. `activeSession` is the derived single value
+  // (`terminalBindings[activeTerminalId]`), so it tracks the focused terminal.
+  const terminalVisible = useMemo(() => {
+    if (!activeTerminalId) return false
+    return isMobile
+      ? mobilePane === 'terminal'
+      : visibleTerminalIds(panelLayout.desktop).includes(activeTerminalId)
+  }, [isMobile, mobilePane, activeTerminalId, panelLayout.desktop])
   useEffect(() => {
     if (!onVisibilityReport) return
-    onVisibilityReport({ projectName, visibleSessions })
-  }, [onVisibilityReport, projectName, visibleSessions])
+    onVisibilityReport({ projectName, attachedSession: activeSession || null, terminalVisible })
+  }, [onVisibilityReport, projectName, activeSession, terminalVisible])
 
   useEffect(() => {
     if (!attachIntent || !clearAttachIntent) return
@@ -727,7 +733,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     project: { name: projectName, path: projectPath, worktree, effectivePath },
     viewport: { isMobile, isLandscape, isTouch },
     projects, activeProject, worktrees, activeWorktree,
-    projectUnreadCounts, projectSessionCounts, notificationBell,
+    badgesByProject, badgesBySession, readySessionKeys, attentionTaskIds,
+    projectSessionCounts, notificationBell,
     selectProject: onProjectSelect,
     selectWorktree: onWorktreeSelect,
     reorderProjects: onProjectReorder,
@@ -736,8 +743,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     markAllRead: onMarkAllRead,
   }), [
     projectName, projectPath, worktree, effectivePath, isMobile, isLandscape, isTouch,
-    projects, activeProject, worktrees, activeWorktree, projectUnreadCounts,
-    projectSessionCounts, notificationBell, onProjectSelect, onWorktreeSelect,
+    projects, activeProject, worktrees, activeWorktree, badgesByProject, badgesBySession,
+    readySessionKeys, attentionTaskIds, projectSessionCounts, notificationBell,
+    onProjectSelect, onWorktreeSelect,
     onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
   ])
 

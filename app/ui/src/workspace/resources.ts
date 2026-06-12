@@ -12,6 +12,7 @@ import { useMemo } from 'react'
 import { useGitStatus, useSessions } from '../hooks/useApi'
 import { useWorkspaceSessions } from './useWorkspaceSessions'
 import type { AgentSession, GitChange, SessionProvider } from '../types'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 export interface WorkspaceGitResource {
   changes: GitChange[]
@@ -27,12 +28,18 @@ export interface WorkspaceSessionsResource {
   orderedSessions: AgentSession[]
   pinnedSet: Set<string>
   liveSessionHandles: Set<string>
-  getSessionUnread: (name: string) => number
+  /** Attention rollup badge for a session subtree (or null). Separate from the
+   *  self-only status dot. */
+  getSessionBadge: (name: string) => AttentionBadge | null
+  /** True when the session has an unacked owned REVIEW (the "↩ your turn" chip). */
+  isSessionReady: (name: string) => boolean
   startSession: (provider: SessionProvider) => Promise<void>
   killSession: (name: string) => Promise<void>
   renameSession: (oldName: string, newName: string) => Promise<void>
   togglePin: (name: string) => void
   reorderPinned: (fromName: string, toName: string) => void
+  /** Ack a parent session and all its descendants (clears their Ready/REVIEW). */
+  markSubtreeRead: (parentName: string) => void
   refresh: () => Promise<void>
 }
 
@@ -48,10 +55,12 @@ export interface WorkspaceData {
 export interface WorkspaceSessionsResourceOptions {
   projectName: string
   projectPath: string
-  sessionUnreadCounts?: Record<string, number>
   onSessionChange?: () => void
   onAttachSession: (name: string) => void
   onRenameBoundTerminals?: (oldName: string, newName: string) => void
+  badgesBySession?: Record<string, AttentionBadge>
+  readySessionKeys?: Set<string>
+  ackSession: (project: string, sessionName: string) => void
 }
 
 export interface WorkspaceDataOptions extends WorkspaceSessionsResourceOptions {
@@ -82,18 +91,20 @@ export function useWorkspaceSessionsResource(
   const { projectName } = opts
   const { data: rawSessions, refresh: refreshSessions } = useSessions(projectName)
   const {
-    projectSessions, orderedSessions, pinnedSet, getSessionUnread,
+    projectSessions, orderedSessions, pinnedSet, getSessionBadge, isSessionReady,
     handleNewSession, killSession, handleRenameSession, togglePin,
-    handlePinnedReorder, refreshSessions: refresh,
+    handlePinnedReorder, markSubtreeRead, refreshSessions: refresh,
   } = useWorkspaceSessions({
     projectPath: opts.projectPath,
     sessions: rawSessions,
     refreshSessions,
-    sessionUnreadCounts: opts.sessionUnreadCounts,
     projectName,
     onSessionChange: opts.onSessionChange,
     onAttachSession: opts.onAttachSession,
     onRenameBoundTerminals: opts.onRenameBoundTerminals,
+    badgesBySession: opts.badgesBySession,
+    readySessionKeys: opts.readySessionKeys,
+    ackSession: opts.ackSession,
   })
 
   const liveSessionHandles = useMemo(
@@ -106,17 +117,19 @@ export function useWorkspaceSessionsResource(
     orderedSessions,
     pinnedSet,
     liveSessionHandles,
-    getSessionUnread,
+    getSessionBadge,
+    isSessionReady,
     startSession: handleNewSession,
     killSession,
     renameSession: handleRenameSession,
     togglePin,
     reorderPinned: handlePinnedReorder,
+    markSubtreeRead,
     refresh,
   }), [
     projectSessions, orderedSessions, pinnedSet, liveSessionHandles,
-    getSessionUnread, handleNewSession, killSession, handleRenameSession,
-    togglePin, handlePinnedReorder, refresh,
+    getSessionBadge, isSessionReady, handleNewSession, killSession, handleRenameSession,
+    togglePin, handlePinnedReorder, markSubtreeRead, refresh,
   ])
 
   return useMemo(() => ({ sessions, loaded: rawSessions != null }), [sessions, rawSessions])

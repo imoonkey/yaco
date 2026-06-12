@@ -55,6 +55,10 @@ export interface Task {
   worktree?: string;
   created?: string;
   updated?: string;
+  /** ISO time the current `state` was entered — stamped on every state
+   *  transition (incl. rollup-flipped parents). The durable task-state-edge
+   *  generation key (`task_done|task_blocked:<proj>::<id>:<stateEnteredAt>`). */
+  stateEnteredAt?: string;
   [extra: string]: unknown;
 }
 

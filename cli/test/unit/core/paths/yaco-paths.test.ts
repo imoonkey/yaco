@@ -34,22 +34,42 @@ describe("readYacoProjectPaths", () => {
     expect(readYacoProjectPaths(repoRoot)).toEqual(DEFAULT_PROJECT_PATHS);
   });
 
-  it("applies full [paths] overrides", () => {
+  it("re-roots all sub-paths under an explicit [paths] plan", () => {
+    writeFileSync(
+      join(repoRoot, "yaco.toml"),
+      '[paths]\nplan = "private-plan"\n',
+      "utf-8",
+    );
+    expect(readYacoProjectPaths(repoRoot)).toEqual({
+      plan: "private-plan",
+      tasks: "private-plan/tasks",
+      active: "private-plan/active",
+      archive: "private-plan/archive",
+      backlog: "private-plan/backlog",
+      worktrees: ".worktrees",
+    });
+  });
+
+  it("applies full [paths] overrides (sub-keys are plan-relative)", () => {
     writeFileSync(
       join(repoRoot, "yaco.toml"),
       [
         "[paths]",
-        'tasks = "plan/tasks.json"',
-        'active = "plan/active"',
-        'archive = "plan/archive"',
+        'plan = "pl"',
+        'tasks = "tasks.json"',
+        'active = "live"',
+        'archive = "old"',
+        'backlog = "later"',
         'worktrees = "wt"',
       ].join("\n"),
       "utf-8",
     );
     expect(readYacoProjectPaths(repoRoot)).toEqual({
-      tasks: "plan/tasks.json",
-      active: "plan/active",
-      archive: "plan/archive",
+      plan: "pl",
+      tasks: "pl/tasks.json",
+      active: "pl/live",
+      archive: "pl/old",
+      backlog: "pl/later",
       worktrees: "wt",
     });
   });
@@ -62,7 +82,7 @@ describe("readYacoProjectPaths", () => {
     );
     expect(readYacoProjectPaths(repoRoot)).toEqual({
       ...DEFAULT_PROJECT_PATHS,
-      tasks: "custom/tasks.json",
+      tasks: "plan/custom/tasks.json",
     });
   });
 
@@ -75,19 +95,21 @@ describe("readYacoProjectPaths", () => {
         'id = "also-ignored"',
         "",
         "[paths]",
-        'tasks = "p/tasks.json"',
+        'tasks = "tasks.json"',
       ].join("\n"),
       "utf-8",
     );
     const result = readYacoProjectPaths(repoRoot);
     expect(result).toEqual({
       ...DEFAULT_PROJECT_PATHS,
-      tasks: "p/tasks.json",
+      tasks: "plan/tasks.json",
     });
     expect(JSON.stringify(result)).not.toContain("should-be-ignored");
     expect(Object.keys(result).sort()).toEqual([
       "active",
       "archive",
+      "backlog",
+      "plan",
       "tasks",
       "worktrees",
     ]);
@@ -122,6 +144,66 @@ describe("readYacoProjectPaths", () => {
       expect(e).toBeInstanceOf(CliError);
       expect((e as CliError).code).toBe(ErrCode.ENV);
       expect((e as Error).message).toMatch(/\.\./);
+    }
+  });
+
+  it("rejects plan = '.' (repo root) with CliError(ENV)", () => {
+    writeFileSync(join(repoRoot, "yaco.toml"), '[paths]\nplan = "."\n', "utf-8");
+    try {
+      readYacoProjectPaths(repoRoot);
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as Error).message).toMatch(/subdirectory/);
+    }
+  });
+
+  it("rejects a degenerate dot-only plan ('././') with CliError(ENV)", () => {
+    writeFileSync(join(repoRoot, "yaco.toml"), '[paths]\nplan = "././"\n', "utf-8");
+    try {
+      readYacoProjectPaths(repoRoot);
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as Error).message).toMatch(/subdirectory/);
+    }
+  });
+
+  it("rejects an empty path value with CliError(ENV)", () => {
+    writeFileSync(join(repoRoot, "yaco.toml"), '[paths]\nplan = ""\n', "utf-8");
+    try {
+      readYacoProjectPaths(repoRoot);
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as Error).message).toMatch(/empty/);
+    }
+  });
+
+  it("canonicalizes './plan' and trailing slashes", () => {
+    writeFileSync(join(repoRoot, "yaco.toml"), '[paths]\nplan = "./private-plan/"\n', "utf-8");
+    expect(readYacoProjectPaths(repoRoot)).toEqual({
+      plan: "private-plan",
+      tasks: "private-plan/tasks",
+      active: "private-plan/active",
+      archive: "private-plan/archive",
+      backlog: "private-plan/backlog",
+      worktrees: ".worktrees",
+    });
+  });
+
+  it("rejects a path segment starting with '-' (git option injection) with CliError(ENV)", () => {
+    writeFileSync(join(repoRoot, "yaco.toml"), '[paths]\nplan = "--bare"\n', "utf-8");
+    try {
+      readYacoProjectPaths(repoRoot);
+      expect("should have thrown").toBe("");
+    } catch (e) {
+      expect(e).toBeInstanceOf(CliError);
+      expect((e as CliError).code).toBe(ErrCode.ENV);
+      expect((e as Error).message).toMatch(/must not start with/);
     }
   });
 

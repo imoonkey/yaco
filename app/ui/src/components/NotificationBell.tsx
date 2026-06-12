@@ -1,45 +1,89 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Bell } from 'lucide-react'
 import { BadgeCount } from './BadgeCount'
 import { NotificationPanel } from './NotificationPanel'
-import type { NotificationItem } from '../hooks/useNotifications'
+import type { AttentionItem, AttentionSnapshot } from '../hooks/useAttention'
 
 export function NotificationBell({
-  notifications,
-  unreadCount,
-  markRead,
-  markAllRead,
-  clearAll,
+  snapshot,
   onItemClick,
+  ackSession,
+  ackTask,
+  ackProject,
+  clear,
+  requestPermission,
   size = 15,
 }: {
-  notifications: NotificationItem[]
-  unreadCount: number
-  markRead: (id: string) => void
-  markAllRead: () => void
-  clearAll: () => void
-  onItemClick: (project: string, sessionName: string) => void
+  snapshot: AttentionSnapshot
+  onItemClick: (item: AttentionItem) => void
+  ackSession: (project: string, sessionName: string) => void
+  ackTask: (project: string, taskId: string) => void
+  ackProject: (project: string) => void
+  clear: (project: string) => void
+  /** Requested on the first bell interaction (user gesture), never on mount. */
+  requestPermission: () => void
   size?: number
 }) {
   const [open, setOpen] = useState(false)
+
+  // Open/click a Ready (handoff) item acks it — it's a REVIEW the user has now
+  // seen. needs-you items self-resolve from live status, so they are not acked.
+  const ackReady = useCallback((item: AttentionItem) => {
+    if (item.group !== 'ready') return
+    const s = item.subject
+    if (s.kind === 'session') ackSession(s.project, s.sessionName)
+    else ackTask(s.project, s.taskId)
+  }, [ackSession, ackTask])
+
+  const handleItemClick = useCallback((item: AttentionItem) => {
+    ackReady(item)
+    onItemClick(item)
+    setOpen(false)
+  }, [ackReady, onItemClick])
+
+  // Clearing Recent clears every project that has a recent row.
+  const handleClear = useCallback(() => {
+    const projects = new Set(snapshot.recent.map(item => item.subject.project))
+    for (const project of projects) clear(project)
+  }, [snapshot.recent, clear])
+
+  // Mark all read acks every project present in Ready (advancing each project's
+  // REVIEW watermark clears that project's Ready handoffs). It must NOT touch
+  // Needs-you (open ACT has no read concept — it self-resolves from live status).
+  const handleMarkAllRead = useCallback(() => {
+    const projects = new Set(snapshot.ready.map(item => item.subject.project))
+    for (const project of projects) ackProject(project)
+  }, [snapshot.ready, ackProject])
+
+  const toggleOpen = useCallback(() => {
+    // First bell interaction is the user gesture that may request OS permission.
+    requestPermission()
+    setOpen(v => !v)
+  }, [requestPermission])
 
   return (
     <span className="relative">
       <button
         className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded"
-        onClick={() => setOpen(v => !v)}
+        onClick={toggleOpen}
         title="Notifications"
         aria-label="Notifications"
       >
         <Bell size={size} />
       </button>
-      <BadgeCount count={unreadCount} className="absolute -top-1.5 -right-1.5 px-0.5" />
+      <BadgeCount
+        count={snapshot.global.count}
+        color={snapshot.global.color}
+        className="absolute -top-1.5 -right-1.5 px-0.5"
+      />
       {open && (
         <NotificationPanel
-          notifications={notifications}
-          onClickItem={(n) => { markRead(n.id); onItemClick(n.project, n.sessionName); setOpen(false) }}
-          onMarkAllRead={markAllRead}
-          onClearAll={clearAll}
+          needsYou={snapshot.needsYou}
+          ready={snapshot.ready}
+          recent={snapshot.recent}
+          onClickItem={handleItemClick}
+          onClear={handleClear}
+          onMarkAllRead={handleMarkAllRead}
           onClose={() => setOpen(false)}
         />
       )}

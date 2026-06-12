@@ -70,12 +70,14 @@ export function SessionsPanel() {
     orderedSessions: data.sessions.orderedSessions,
     projectSessions: data.sessions.projectSessions,
     pinnedSet: data.sessions.pinnedSet,
-    getSessionUnread: data.sessions.getSessionUnread,
+    getSessionBadge: data.sessions.getSessionBadge,
+    isSessionReady: data.sessions.isSessionReady,
     killSession: data.sessions.killSession,
     handleNewSession: data.sessions.startSession,
     handleRenameSession: data.sessions.renameSession,
     togglePin: data.sessions.togglePin,
     handlePinnedReorder: data.sessions.reorderPinned,
+    markSubtreeRead: data.sessions.markSubtreeRead,
     detachActiveSession: commands.detachSession,
   }), [data.sessions, commands.detachSession])
 

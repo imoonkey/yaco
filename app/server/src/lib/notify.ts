@@ -1,19 +1,4 @@
-import type { ProgressType } from './scanner'
-import * as notificationsStore from './notifications-store'
-
-export interface NotificationEvent {
-  id: string
-  kind: 'progress'
-  title: string
-  message: string
-  timestamp: string
-  project: string
-  workstream: string
-  progressType: ProgressType
-  sessionName?: string
-}
-
-export type ChangeChannel = 'notifications:changed' | 'ui-state:changed'
+export type ChangeChannel = 'ui-state:changed'
 
 export type SSEWriter = (event: string, data: string) => void
 
@@ -25,26 +10,17 @@ function send(event: string, data: string): void {
   }
 }
 
-/** Persist a notification then broadcast it to all SSE clients. */
-export async function dispatch(event: NotificationEvent): Promise<void> {
-  const parsedTs = Date.parse(event.timestamp)
-  const persisted = await notificationsStore.append({
-    id: event.id,
-    kind: event.kind,
-    title: event.title,
-    message: event.message,
-    project: event.project,
-    workstream: event.workstream,
-    progressType: event.progressType,
-    sessionName: event.sessionName ?? '',
-    timestamp: Number.isFinite(parsedTs) ? parsedTs : undefined,
-  })
-  send('notification', JSON.stringify(persisted))
-}
-
 /** Broadcast a typed re-fetch signal (no payload) to all SSE clients. */
 export function broadcastChange(channel: ChangeChannel): void {
   send(channel, '')
+}
+
+/** Push the projected attention snapshot to all SSE clients (hidden-safe — the
+ *  client handles `attention` directly, not via the document-hidden polling
+ *  path). Parallels `dispatch`'s `notification` push; the `/stream` endpoint
+ *  passes any (event, data) through, so no endpoint change is needed. */
+export function broadcastAttention(payload: unknown): void {
+  send('attention', JSON.stringify(payload))
 }
 
 /** Push a lightweight refresh signal to all SSE clients (no osascript) */

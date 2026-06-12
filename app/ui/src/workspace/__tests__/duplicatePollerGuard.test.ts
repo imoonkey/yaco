@@ -106,13 +106,17 @@ function workspaceProps() {
     onWorktreeSelect: () => {},
     projects: [],
     activeProject: PROJECT,
-    projectUnreadCounts: {},
+    badgesByProject: {},
+    badgesBySession: {},
+    readySessionKeys: new Set<string>(),
+    attentionTaskIds: { blocked: new Set<string>(), done: new Set<string>() },
     projectSessionCounts: {},
     onProjectSelect: () => {},
     onProjectReorder: () => {},
     onProjectRemove: () => {},
     onAddProject: () => {},
     onMarkAllRead: () => {},
+    ackSession: () => {},
   }
 }
 

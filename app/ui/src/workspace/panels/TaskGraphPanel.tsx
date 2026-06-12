@@ -77,6 +77,7 @@ export function TaskGraphPanel() {
           activeSession={activeSession}
           liveSessionHandles={liveSessionHandles}
           onOpenTerminal={commands.clickSession}
+          attentionTaskIds={env.attentionTaskIds}
         />
       </Suspense>
     </div>

@@ -52,7 +52,6 @@ agent-wrapper, tmux, git, providers, task-graph).
 
 ## History
 
-The pre-monorepo split source roots were retired on 2026-06-03 and are
-retained under `/home/qiguo/ld-workspace/split-repo-archive/20260603_*` for
-rollback insurance. One-time monorepo migration scripts are archived under
-`doc/dev/app/monorepo-migration/2026-monorepo-tools/`.
+`app/`, `cli/`, and `agent-config/` were imported from separate repos into this
+monorepo in 2026-06. The one-time import tooling has been removed; the detailed
+migration record lives in the project's planning history.

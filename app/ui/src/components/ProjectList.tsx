@@ -6,13 +6,14 @@ import { useContextMenu } from './useContextMenu'
 import { BadgeCount } from './BadgeCount'
 import type { Project } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 export function ProjectList({
   projects,
   activeProject,
   activeWorktree,
   worktrees,
-  projectUnreadCounts,
+  badgesByProject,
   projectSessionCounts,
   onSelect,
   onWorktreeSelect,
@@ -24,7 +25,7 @@ export function ProjectList({
   activeProject: string
   activeWorktree: string | null
   worktrees: WorktreeInfo[]
-  projectUnreadCounts: Record<string, number>
+  badgesByProject: Record<string, AttentionBadge>
   projectSessionCounts: Record<string, { active: number; total: number }>
   onSelect: (name: string) => void
   onWorktreeSelect: (slug: string | null) => void
@@ -79,7 +80,7 @@ export function ProjectList({
     <div className="flex flex-col gap-0.5 px-1 py-1">
       {projects.map((project, idx) => {
         const isActive = activeProject === project.name
-        const unreadCount = projectUnreadCounts[project.name] ?? 0
+        const badge = badgesByProject[project.name]
         const sc = projectSessionCounts[project.name]
         const isMainActive = isActive && !activeWorktree
         const shortcutIndex = idx < 9 ? idx + 1 : null
@@ -121,7 +122,7 @@ export function ProjectList({
                 </span>
               )}
               <span className="flex items-center gap-1 shrink-0 ml-auto">
-                <BadgeCount count={unreadCount} />
+                {badge && <BadgeCount count={badge.count} color={badge.color} />}
                 {sc && sc.total > 0 && (
                   <span
                     className="text-ui-md tabular-nums"

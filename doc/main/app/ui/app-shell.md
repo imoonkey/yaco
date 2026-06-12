@@ -14,7 +14,7 @@ Top-level application chrome: top bar, clock, project selection, rhythm pulse, a
 
 - Workspace content (see [workspace/overview.md](workspace/overview.md))
 - Keyboard shortcuts (see [keyboard.md](keyboard.md))
-- Unread tracking (see `useSessionUnreadState.ts`)
+- Attention feed (see [notifications.md](notifications.md) and `useAttention.ts`)
 
 ## Related Code
 
@@ -22,7 +22,7 @@ Top-level application chrome: top bar, clock, project selection, rhythm pulse, a
 
 ## Shell Architecture
 
-The app is a single-workspace shell — no view switcher, no Monitor tab, no separate Tasks view. App.tsx renders one `<Workspace>` component keyed by the active project. The project list with unread badges lives inside the workspace sidebar.
+The app is a single-workspace shell — no view switcher, no Monitor tab, no separate Tasks view. App.tsx renders one `<Workspace>` component keyed by the active project. The project list with attention badges lives inside the workspace sidebar.
 
 ### Top Bar
 
@@ -62,7 +62,7 @@ CSS animation (`rhythm-pulse` keyframe in `index.css`) animates opacity for smoo
 ### State
 
 - `workflow-ui-state` stores `{ project }` (tolerates old `{ view, project }` shape — ignores `view`)
-- App-level bridge state: `visibilityReport` and `attachIntent` for session unread tracking, and `voiceSlot` (the top-bar element the workspace portals `GlobalVoiceControl` into)
+- App-level bridge state: `visibilityReport` and `attachIntent`. The workspace's visibility report (the focused terminal's session + whether that terminal is on screen) derives the `activeTarget` whose interrupts `useAttention` suppresses and auto-acks; `attachIntent` routes a clicked attention item to its project + session. `voiceSlot` is the top-bar element the workspace portals `GlobalVoiceControl` into.
 
 ## PWA Shell
 

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import type { GanttLayout, TaskGraphModel } from './taskGraphModel'
 import type { HighlightModel, Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
+import type { AttentionTaskIds } from '../hooks/useAttention'
 import { TaskGraphEdges } from './TaskGraphEdges'
 import { TaskGraphRows } from './TaskGraphRows'
 import { TaskGanttBar, GanttBarDefs } from './TaskGanttBar'
@@ -20,11 +21,12 @@ const DIVIDER_GUTTER = 19
 // the stacked canvas, so cards, indent guides, and workset section dividers render
 // identically; a draggable divider (the app's VResizeHandle style) between the
 // panes resizes that column.
-export function TaskGanttCanvas({ graph, layout, searchMatchIds, linkedTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave, onResizeLeftWidth }: {
+export function TaskGanttCanvas({ graph, layout, searchMatchIds, linkedTaskIds, attentionTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave, onResizeLeftWidth }: {
   graph: TaskGraphModel
   layout: GanttLayout
   searchMatchIds: Set<string>
   linkedTaskIds: Set<string>
+  attentionTaskIds: AttentionTaskIds
   highlight: HighlightModel
   selection: Selection
   scale: number
@@ -78,6 +80,7 @@ export function TaskGanttCanvas({ graph, layout, searchMatchIds, linkedTaskIds, 
             layout={layout}
             searchMatchIds={searchMatchIds}
             linkedTaskIds={linkedTaskIds}
+            attentionTaskIds={attentionTaskIds}
             highlight={highlight}
             selection={selection}
             scale={scale}

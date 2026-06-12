@@ -76,26 +76,30 @@ describe("yaco paths project --json", () => {
     expect(parsed).toEqual({
       ok: true,
       data: {
+        plan: `${repo}/plan`,
         tasks: `${repo}/plan/tasks`,
         active: `${repo}/plan/active`,
         archive: `${repo}/plan/archive`,
+        backlog: `${repo}/plan/backlog`,
         worktrees: `${repo}/.worktrees`,
       },
     });
   });
 
-  it("applies overrides from yaco.toml [paths] and emits absolute paths", () => {
+  it("applies a [paths] plan override and re-roots sub-paths to absolute", () => {
     const repo = tempDir();
     writeFileSync(
       join(repo, "yaco.toml"),
-      '[paths]\ntasks = "p/tasks.json"\n',
+      '[paths]\nplan = "pl"\n',
       "utf-8",
     );
     const r = runYaco(["paths", "project", "--json", "--repo", repo]);
     expect(r.status).toBe(0);
     const parsed = JSON.parse(r.stdout);
-    expect(parsed.data.tasks).toBe(`${repo}/p/tasks.json`);
-    expect(parsed.data.active).toBe(`${repo}/plan/active`);
+    expect(parsed.data.plan).toBe(`${repo}/pl`);
+    expect(parsed.data.tasks).toBe(`${repo}/pl/tasks`);
+    expect(parsed.data.active).toBe(`${repo}/pl/active`);
+    expect(parsed.data.backlog).toBe(`${repo}/pl/backlog`);
   });
 });
 

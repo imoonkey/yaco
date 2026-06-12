@@ -51,7 +51,7 @@ All file routes support `?worktree=<slug>` query param — when present, `withPr
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/files/:project` | Root-level file listing (lazy — dirs have `children: []`, gitignored entries marked) |
-| GET | `/api/files/:project/search-index` | Flat list of all file paths for Cmd+P search. Uses `git ls-files --cached --others --exclude-standard` (fast, honors `.gitignore`); falls back to recursive walk for non-git projects (10k budget). Also recovers files inside **top-level** symlinked directories — nested symlinked dirs are not indexed (avoids full-tree walk on large monorepos). Symlink walker is loop-safe via per-recursion-path realpath ancestor tracking. |
+| GET | `/api/files/:project/search-index` | Flat list of all file paths for Cmd+P search. Uses `git ls-files --cached --others --exclude-standard` (fast, honors `.gitignore`); falls back to recursive walk for non-git projects (10k budget). Also recovers files inside **top-level** symlinked directories — nested symlinked dirs are not indexed (avoids full-tree walk on large monorepos). Symlink walker is loop-safe via per-recursion-path realpath ancestor tracking. **Colocated-repo aware:** also runs `git ls-files` per detected colocated repo (`cwd=<repo>`) and merges with a `<repo>/` prefix (host first, then repos sorted by prefix), one shared `seen` set — so a plan repo kept out of host git via `info/exclude` is still searchable, while the repo's own `.gitignore` still hides its logs/locks. -> See: [colocated repos](#colocated-repos) |
 | GET | `/api/files/:project/children?dir=...` | One directory's immediate children (lazy expand on demand) |
 | GET | `/api/files/:project/content?path=...` | Read file — returns `{ content, path, revision }` (max 1MB, path-validated) |
 | GET | `/api/files/:project/raw?path=...` | Serve raw binary file — returns file with proper `Content-Type` (images, PDFs). Max 20MB. MIME map: `.png/.jpg/.jpeg/.gif/.svg/.webp/.ico/.bmp` (image types) + `.pdf`. Falls back to `application/octet-stream`. |
@@ -65,21 +65,28 @@ All file routes support `?worktree=<slug>` query param — when present, `withPr
 
 ### Git
 
-All git routes support `?worktree=<slug>` query param via `withProject` middleware.
+All git routes support `?worktree=<slug>` query param via `withProject` middleware. `/status`, `/diff`, and `/baseline` are **colocated-repo aware** (-> See: [colocated repos](#colocated-repos)); the `/compare` ref-diff stays host-rooted.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/git/:project/refs` | Branches, tags, recent commits (50) — returns `{ branches: string[], tags: string[], recentCommits: { hash, subject, date, author }[] }`. 5s in-memory cache per project. Log format: `%h\t%ci\t%an\t%s` |
-| GET | `/api/git/:project/status` | Git status — returns `{ changes: [{ path, status }], stale: boolean }` |
-| GET | `/api/git/:project/diff?path=...` | Unified diff for a file. Optional `&base=REF&compare=REF` for ref-to-ref diff; without them falls back through: `git diff HEAD` → `git diff --cached HEAD` (staged changes) → `--no-index /dev/null` (untracked) |
-| GET | `/api/git/:project/baseline?path=...` | File's HEAD content for editor-buffer diffing (gutter) — returns `{ content, exists }`. Resolves symlinks and reads the target's HEAD blob from the target's own dir (so the gutter diffs against real content, not the link text); `exists:false` when untracked or the target is outside any repo |
-| GET | `/api/git/:project/compare?base=REF&compare=REF` | File list changed between two refs — returns `{ files: GitChange[] }`. Status letters: M/A/D (renames mapped to M). 400 if base/compare missing, 500 on git error |
+| GET | `/api/git/:project/status` | Git status — returns `{ changes: [{ path, status }], stale: boolean, stats? }`. Aggregates the host **plus every colocated repo** (`git status` + `git diff --shortstat` per repo), prefixing a colocated repo's paths with `<repo>/`; deterministic order (host first, repos sorted by prefix), one shared `seen` set. Snapshots key by `<effectivePath>\0<repoPrefix>` (so a worktree never inherits the primary's colocated changes). Partial failure: `stale:true` if any repo's git fails (that repo falls back to its last snapshot); `stats` is summed across repos and omitted while stale |
+| GET | `/api/git/:project/diff?path=...` | Unified diff for a file. Optional `&base=REF&compare=REF` for ref-to-ref diff (host-rooted); without them falls back through: `git diff HEAD` → `git diff --cached HEAD` (staged) → `--no-index /dev/null` (untracked), run in the file's **owning repo** via `resolveFileRepo(..., "deny")` — a colocated logical path (`plan/foo.md`, path-boundary so `plan2/x` ≠ `plan`) diffs against that repo's HEAD (works for deleted files); a host symlink is never followed outside the project (git never runs in an external location) |
+| GET | `/api/git/:project/baseline?path=...` | File's HEAD content for editor-buffer diffing (gutter) — returns `{ content, exists }`. Via `resolveFileRepo(..., "preserve")`: an existing file follows its symlink target's HEAD blob (so the gutter diffs real content, not the link text); a deleted colocated file resolves to its own repo's HEAD; `exists:false` when untracked or the target is outside any repo |
+| GET | `/api/git/:project/compare?base=REF&compare=REF` | File list changed between two refs — returns `{ files: GitChange[] }`. Status letters: M/A/D (renames mapped to M). 400 if base/compare missing, 500 on git error. Host-rooted (cross-ref colocated diff is out of scope) |
 
-### Notifications
+#### Colocated repos
+
+A **colocated repo** is a depth-1 child directory that is its own git repo but is deliberately kept out of the host repo (the motivating case: `plan/`, excluded via `.git/info/exclude`). `lib/colocatedRepos.ts` `getColocatedRepos(projectPath)` detects them by a general signal — a depth-1 child whose `.git` exists (dir or worktree file), that is **not in the host index** (one `git ls-files -z` read) and **not matched by the root working-tree `.gitignore`** (the same source the tree's dimming uses, so detection and dimming never disagree). A `colocatedRepos` policy from `yaco.toml` `[colocated] repos` narrows it: `"auto"` (default, all qualifying), `"off"`, or a comma-separated allow-list (re-validated by the same signal). Result is cached by `realpath(projectPath)` for a short TTL (no watchers). The read-only git surfaces above mirror across the host + each detected repo so a colocated repo shows up first-class (searchable, changes/diffs, undimmed tree) without ever entering host git. -> See: [lib/colocatedRepos.ts](libs.md), [yaco plan init](../../cli/plan.md)
+
+### Attention & SSE
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/notifications/stream` | SSE stream — events: `notification`, `refresh` (30s heartbeat) |
+| GET | `/api/notifications/stream` | SSE transport — events: `attention` (projected `AttentionSnapshot`), `refresh`, `ui-state:changed` (30s heartbeat). No per-item notification event |
+| GET | `/api/attention/feed?limit=&before=` | Live attention snapshot + bounded/paginated Recent history. `limit` default 50, max 200; `before` is the opaque composite cursor; response carries `nextBefore` |
+| POST | `/api/attention/ack` | `{ scope: 'project'\|'session'\|'task', project, key? }` — server-stamped, monotonic-max ack (rejects/clamps a future or lower value). 204 |
+| POST | `/api/attention/clear` | `{ project }` — set the project's monotonic `recentClearedAt`. 204 |
 
 ### WebSocket
 

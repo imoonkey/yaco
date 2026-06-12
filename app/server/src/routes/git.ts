@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import { execFile } from 'child_process'
 import { existsSync } from 'fs'
 import { realpath } from 'fs/promises'
-import { join, dirname, basename } from 'path'
+import { join, dirname, basename, sep } from 'path'
 import { GIT_COMMAND_TIMEOUT_MS } from '../lib/constants'
 import { fail } from '../lib/response'
+import { getColocatedRepos } from '../lib/colocatedRepos'
 import { withProject, type ProjectEnv } from '../middleware/project'
 
 export interface GitChange {
@@ -42,17 +43,70 @@ function unsafeFilePath(filePath: string): boolean {
   return filePath.includes('..') || filePath.startsWith('/')
 }
 
+/** Resolve the git working directory + repo-relative path for a file, choosing
+ *  the right repo when it lives in a colocated repo.
+ *
+ *  externalSymlinks:
+ *    "deny"     — /diff: route a colocated logical path (plan/foo.md) to its repo
+ *                 (works for deleted files too, since the match is on the logical
+ *                 path); everything else stays host-rooted. Never follows a symlink
+ *                 outside the project, so git never runs in an external location.
+ *    "preserve" — /baseline: for an existing file, follow its realpath (the /files
+ *                 endpoint serves a symlink's target, so the gutter must diff that
+ *                 target's HEAD blob); for a missing file, use the colocated prefix
+ *                 (a deleted colocated file) or fall back to the host root.
+ *  Path-boundary match: "plan2/x" does not match the "plan" repo. */
+async function resolveFileRepo(
+  projectPath: string,
+  filePath: string,
+  { externalSymlinks }: { externalSymlinks: 'preserve' | 'deny' },
+): Promise<{ cwd: string; relPath: string; external?: boolean }> {
+  const repos = await getColocatedRepos(projectPath)
+  const repo = repos.find((r) => filePath.startsWith(`${r}/`))
+  if (repo) return { cwd: join(projectPath, repo), relPath: filePath.slice(repo.length + 1) }
+
+  const absPath = join(projectPath, filePath)
+  if (externalSymlinks === 'preserve') {
+    if (existsSync(absPath)) {
+      const real = await realpath(absPath)
+      return { cwd: dirname(real), relPath: basename(real) }
+    }
+    return { cwd: projectPath, relPath: filePath }
+  }
+  // deny: host-rooted, but flag a path that resolves outside the project tree
+  // (a symlink to an external file/dir) so the caller skips the content-reading
+  // `git diff --no-index` fallback — git never exposes content from outside.
+  return { cwd: projectPath, relPath: filePath, external: await escapesProjectTree(projectPath, absPath) }
+}
+
+/** True iff absPath's realpath — or its nearest existing ancestor, for a file
+ *  that does not exist on disk — lies outside the project tree. */
+async function escapesProjectTree(projectPath: string, absPath: string): Promise<boolean> {
+  let base: string
+  try {
+    base = await realpath(projectPath)
+  } catch {
+    return false
+  }
+  let target = absPath
+  while (!existsSync(target) && dirname(target) !== target) target = dirname(target)
+  let real: string
+  try {
+    real = await realpath(target)
+  } catch {
+    return false
+  }
+  return real !== base && !real.startsWith(base + sep)
+}
+
 /** Resolve the git location + ref for a file's HEAD baseline.
  *  The /files content endpoint serves a symlink's real target, so the gutter must
  *  diff the buffer against that target's HEAD blob. `git show HEAD:<symlink>` returns
  *  only the link text, which paints the whole file blue. Running git from the resolved
- *  file's own directory yields the real content — and works even when the target lives
- *  in another repo. Paths absent on disk fall back to the literal lookup. */
+ *  file's own directory (or its colocated repo) yields the real content. */
 async function resolveBaseline(projectPath: string, filePath: string): Promise<{ cwd: string; ref: string }> {
-  const absPath = join(projectPath, filePath)
-  if (!existsSync(absPath)) return { cwd: projectPath, ref: `HEAD:${filePath}` }
-  const real = await realpath(absPath)
-  return { cwd: dirname(real), ref: `HEAD:./${basename(real)}` }
+  const { cwd, relPath } = await resolveFileRepo(projectPath, filePath, { externalSymlinks: 'preserve' })
+  return { cwd, ref: `HEAD:./${relPath}` }
 }
 
 /** Parse `git diff --shortstat` output → { added, deleted } */
@@ -62,7 +116,9 @@ function parseShortstat(output: string): { added: number; deleted: number } {
   return { added: added ? Number(added[1]) : 0, deleted: deleted ? Number(deleted[1]) : 0 }
 }
 
-/** Last-known-good git snapshots per project */
+/** Last-known-good git snapshots, keyed by `<effectivePath>\0<repoPrefix>` so a
+ *  worktree never shares the primary's snapshot and each colocated repo is
+ *  tracked independently. */
 const gitSnapshots = new Map<string, GitChange[]>()
 
 /** Cached refs per project (5s TTL) */
@@ -108,16 +164,27 @@ app.get('/:project/refs', withProject, async (c) => {
   return c.json(data)
 })
 
-async function resolveStatus(projectName: string, projectPath: string) {
+interface RepoStatus {
+  prefix: string
+  changes: GitChange[]
+  fresh: boolean
+  stats?: { added: number; deleted: number }
+}
+
+/** Status for one repo (host when prefix is "", else a "<repo>/" colocated repo).
+ *  On transient git failure, returns that repo's last-known-good snapshot marked
+ *  stale; on success, stores a fresh snapshot keyed by effective path + prefix. */
+async function resolveRepoStatus(projectPath: string, prefix: string): Promise<RepoStatus> {
+  const cwd = prefix === '' ? projectPath : join(projectPath, prefix.slice(0, -1))
+  const key = `${projectPath}\0${prefix}`
+
   const [result, statResult] = await Promise.all([
-    git(projectPath, ['status', '--porcelain', '-z']),
-    git(projectPath, ['diff', '--shortstat']),
+    git(cwd, ['status', '--porcelain', '-z']),
+    git(cwd, ['diff', '--shortstat']),
   ])
 
   if (!result.ok) {
-    // Transient failure — return last-known-good snapshot with stale marker
-    const snapshot = gitSnapshots.get(projectName)
-    return { changes: snapshot ?? [], stale: true }
+    return { prefix, changes: gitSnapshots.get(key) ?? [], fresh: false }
   }
 
   const entries = result.stdout.split('\0').filter(Boolean)
@@ -125,25 +192,55 @@ async function resolveStatus(projectName: string, projectPath: string) {
   for (let i = 0; i < entries.length; i++) {
     const entry = entries[i]
     const xy = entry.substring(0, 2)
-    const path = entry.substring(3)
+    const path = prefix + entry.substring(3)
     changes.push({ path, status: parseStatus(xy) })
     // Renames/copies have an extra entry for the old path — skip it
     if (xy[0] === 'R' || xy[0] === 'C') i++
   }
 
-  const stats = parseShortstat(statResult.stdout)
-  gitSnapshots.set(projectName, changes)
+  gitSnapshots.set(key, changes)
+  const stats = statResult.ok ? parseShortstat(statResult.stdout) : { added: 0, deleted: 0 }
+  return { prefix, changes, fresh: true, stats }
+}
+
+/** Aggregate status across the host plus every colocated repo. Order is
+ *  deterministic — host first, then colocated repos sorted by prefix
+ *  (getColocatedRepos returns them sorted) — and a single seen-set prevents any
+ *  path from being listed twice. If any repo is stale the response is stale and
+ *  stats are suppressed; otherwise stats are summed across all repos. */
+async function resolveStatus(projectPath: string) {
+  const repos = await getColocatedRepos(projectPath)
+  const prefixes = ['', ...repos.map((r) => `${r}/`)]
+  const results = await Promise.all(prefixes.map((p) => resolveRepoStatus(projectPath, p)))
+
+  const seen = new Set<string>()
+  const changes: GitChange[] = []
+  for (const repo of results) {
+    for (const change of repo.changes) {
+      if (seen.has(change.path)) continue
+      seen.add(change.path)
+      changes.push(change)
+    }
+  }
+
+  if (results.some((r) => !r.fresh)) {
+    return { changes, stale: true }
+  }
+  const stats = results.reduce(
+    (acc, r) => ({ added: acc.added + (r.stats?.added ?? 0), deleted: acc.deleted + (r.stats?.deleted ?? 0) }),
+    { added: 0, deleted: 0 },
+  )
   return { changes, stale: false, stats }
 }
 
-// GET /:project/status — git status for a project
+// GET /:project/status — aggregated git status (host + colocated repos)
 app.get('/:project/status', withProject, async (c) => {
   const proj = c.var.project
   // Key by effective path so worktree variants don't share the main repo's promise
   const key = proj.path
   let pending = statusInflight.get(key)
   if (!pending) {
-    pending = resolveStatus(proj.name, proj.path)
+    pending = resolveStatus(proj.path)
       .finally(() => statusInflight.delete(key))
     statusInflight.set(key, pending)
   }
@@ -190,17 +287,22 @@ app.get('/:project/diff', withProject, async (c) => {
     return c.json({ diff: result.stdout })
   }
 
-  // No refs — diff working tree vs HEAD, then check staged, then untracked fallback
-  let diff = (await git(proj.path, ['diff', 'HEAD', '--', filePath])).stdout
+  // No refs — diff working tree vs HEAD, then check staged, then untracked fallback.
+  // Resolve to the owning repo so a colocated file diffs against its own HEAD.
+  const { cwd, relPath, external } = await resolveFileRepo(proj.path, filePath, { externalSymlinks: 'deny' })
+
+  let diff = (await git(cwd, ['diff', 'HEAD', '--', relPath])).stdout
 
   // Working tree matches HEAD — check staged (index) changes
   if (!diff) {
-    diff = (await git(proj.path, ['diff', '--cached', 'HEAD', '--', filePath])).stdout
+    diff = (await git(cwd, ['diff', '--cached', 'HEAD', '--', relPath])).stdout
   }
 
-  // For untracked files, show full content as additions
-  if (!diff) {
-    diff = (await git(proj.path, ['diff', '--no-index', '--', '/dev/null', filePath])).stdout
+  // For untracked files, show full content as additions — but never for a path
+  // that resolves outside the project tree (an external symlink), so git does
+  // not expose content from outside the project.
+  if (!diff && !external) {
+    diff = (await git(cwd, ['diff', '--no-index', '--', '/dev/null', relPath])).stdout
   }
 
   return c.json({ diff })

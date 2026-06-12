@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Ellipsis, SquarePen } from 'lucide-react'
 import type { MouseEvent, SyntheticEvent, TouchEvent } from 'react'
+import { nativeContextMenuDisabledProps } from './nativeContextMenu'
 
 type KeyDef = {
   id: TerminalKeyBarKey
@@ -202,7 +203,14 @@ export function TerminalKeyBar({
   }, [clearRepeat, clearSuppressedClickTimer])
 
   return (
-    <div className="bg-(--sol-editor-bg) border-t border-(--sol-border)" style={{ paddingBottom: 'calc(var(--kb-safe-bottom, env(safe-area-inset-bottom)) / 2)' }} role="toolbar" aria-label="Terminal key bar" onMouseDown={preventContext}>
+    <div
+      {...nativeContextMenuDisabledProps}
+      className="bg-(--sol-editor-bg) border-t border-(--sol-border)"
+      style={{ paddingBottom: 'calc(var(--kb-safe-bottom, env(safe-area-inset-bottom)) / 2)' }}
+      role="toolbar"
+      aria-label="Terminal key bar"
+      onMouseDown={preventContext}
+    >
       <div className="flex gap-1 px-2 py-1">
         {PRIMARY_KEYS.map(key => (
           <button
