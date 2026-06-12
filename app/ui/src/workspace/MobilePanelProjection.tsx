@@ -27,7 +27,7 @@ import { PanelHost } from './PanelHost'
 import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import { collectFramedLeaves } from './desktopTreeSizing'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
-import { useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands } from './context'
+import { useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection } from './context'
 import { mobileDockToPane, type MobilePane } from '../hooks/workspaceTypes'
 
 export type MobilePanelProjectionProps = {
@@ -82,6 +82,10 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
 
   const activeDock = panelLayout.mobile.activeDock
   const activePane = mobileDockToPane(activeDock)
+  // Mobile projects the ACTIVE editor/terminal instance (design: §D) — the editor
+  // pane renders the active editor's view, the terminal pane the active terminal's
+  // binding. Other panels are singletons (instanceId === type).
+  const { activeEditorId, activeTerminalId } = useWorkspaceSelection()
 
   // Browse-dock section chrome: collapse + body sizing for each framed panel,
   // read by its `PanelHost` through `PanelChromeContext`. Collapse comes from the
@@ -161,7 +165,12 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
             </div>
           )}
           <div className="flex-1 min-h-0 flex flex-col">
-            <ActiveDockPanes dock={activeDock} onBrowseFocus={() => commands.setFocusTarget('explorer')} />
+            <ActiveDockPanes
+              dock={activeDock}
+              onBrowseFocus={() => commands.setFocusTarget('explorer')}
+              activeEditorId={activeEditorId}
+              activeTerminalId={activeTerminalId}
+            />
           </div>
         </div>
       </div>
@@ -173,9 +182,16 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
 // metadata (`mobileDockPanels`). Only the genuinely dock-specific wrapper chrome
 // lives outside that map — the browse scroll surface + explorer-focus, and the
 // terminal flex column — so a metadata change to ANY dock (membership or order)
-// changes what projects here, not just the browse dock.
-function ActiveDockPanes({ dock, onBrowseFocus }: { dock: MobileDock; onBrowseFocus: () => void }) {
-  const panels = mobileDockPanels(dock).map((panel) => <PanelHost key={panel} id={panel} />)
+// changes what projects here, not just the browse dock. The editor/terminal
+// panels render the ACTIVE instance (its instanceId), so mobile shows one of N.
+function ActiveDockPanes({ dock, onBrowseFocus, activeEditorId, activeTerminalId }: {
+  dock: MobileDock; onBrowseFocus: () => void; activeEditorId: string; activeTerminalId: string | null
+}) {
+  const instanceOf = (panel: string): string | undefined =>
+    panel === 'editor' ? activeEditorId : panel === 'terminal' ? (activeTerminalId ?? 'terminal') : undefined
+  const panels = mobileDockPanels(dock).map((panel) => (
+    <PanelHost key={panel} id={panel} instanceId={instanceOf(panel)} />
+  ))
   if (dock === 'browse') {
     return (
       <div

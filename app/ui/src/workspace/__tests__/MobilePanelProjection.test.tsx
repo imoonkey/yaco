@@ -26,8 +26,8 @@ import { MobilePanelProjection } from '../MobilePanelProjection'
 import { mobileDockPanels, type MobileDock } from '../panelMeta'
 import { defaultWorkspacePanelLayout } from '../panelLayoutModel'
 import {
-  WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext,
-  type WorkspaceEnv, type WorkspaceLayoutContextValue, type WorkspaceCommands, type PanelId,
+  WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceSelectionContext,
+  type WorkspaceEnv, type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceSelection, type PanelId,
 } from '../context'
 
 const mobileDockPanelsMock = vi.mocked(mobileDockPanels)
@@ -61,12 +61,18 @@ function renderDock(dock: MobileDock): void {
     collapsePanel: vi.fn(),
     setFocusTarget: vi.fn(),
   } as unknown as WorkspaceCommands
+  const selection = {
+    activeEditorId: 'editor',
+    activeTerminalId: 'terminal',
+  } as unknown as WorkspaceSelection
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   render(
     <WorkspaceEnvContext.Provider value={env}>
       <WorkspaceLayoutContext.Provider value={layoutValue}>
         <WorkspaceCommandsContext.Provider value={commands}>
-          <MobilePanelProjection rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+          <WorkspaceSelectionContext.Provider value={selection}>
+            <MobilePanelProjection rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+          </WorkspaceSelectionContext.Provider>
         </WorkspaceCommandsContext.Provider>
       </WorkspaceLayoutContext.Provider>
     </WorkspaceEnvContext.Provider>,
