@@ -1,9 +1,15 @@
+// WorkspaceEditorColumn — the editor BODY (design: VSCode Tab Groups / vt-bodies).
+//
+// Under the flat tab-group model an editor instance IS a single tab; the GROUP
+// owns the tab strip (file/diff names, dirty dots, close ×, split). So this body
+// renders only: a slim action bar (preview-mode + suggestions, plus the mobile-only
+// mic), breadcrumbs, and the editor area for the ONE active file/diff. It holds no
+// `openTabs` list and no per-editor tab bar.
 import { useCallback } from 'react'
 import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
-import { Sparkles } from 'lucide-react'
-import { WorkspaceTabBar, type EditorSplitChrome } from './WorkspaceTabBar'
+import { Sparkles, Columns2, Rows2 } from 'lucide-react'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { VoiceControl } from '../components/VoiceControl'
@@ -23,11 +29,49 @@ interface EditorColumnVoice {
   onStop: () => void
 }
 
+// The markdown/html preview-mode segmented control + its split-direction toggle.
+// Editor-body view chrome (it switches how the ACTIVE file renders), so it lives
+// here rather than in the group's tab strip.
+function PreviewModeToggle({ mode, splitDirection, onChange, onDirectionChange, isTouch }: { mode: PreviewMode; splitDirection: SplitDirection; onChange: (m: PreviewMode) => void; onDirectionChange: (d: SplitDirection) => void; isTouch: boolean }) {
+  const modes: { value: PreviewMode; label: string }[] = isTouch
+    ? [{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]
+    : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
+
+  return (
+    <div className="flex items-center gap-1 shrink-0">
+      <div className="flex rounded border overflow-hidden" style={{ borderColor: 'var(--sol-border)' }}>
+        {modes.map(({ value, label }) => {
+          const active = mode === value
+          return (
+            <button key={value} onClick={() => onChange(value)}
+              className="text-ui-xs px-2 py-0.5 cursor-pointer"
+              style={{
+                backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
+                color: active ? 'var(--sol-accent)' : 'var(--sol-text)',
+                borderRight: value !== modes[modes.length - 1].value ? '1px solid var(--sol-border)' : undefined,
+              }}>
+              {label}
+            </button>
+          )
+        })}
+      </div>
+      {mode === 'split' && !isTouch && (
+        <button
+          onClick={() => onDirectionChange(splitDirection === 'horizontal' ? 'vertical' : 'horizontal')}
+          className="flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg"
+          style={{ width: 20, height: 20, color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
+          title={splitDirection === 'horizontal' ? 'Switch to vertical split' : 'Switch to horizontal split'}
+        >
+          {splitDirection === 'horizontal' ? <Rows2 size={12} /> : <Columns2 size={12} />}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export interface WorkspaceEditorColumnProps {
-  openTabs: string[]
+  // The single file/diff this editor instance shows (its tab's tabId), or null.
   activeTab: string | null
-  previewTab: string | null
-  dirtyTabs: Set<string>
   conflictTabs: Set<string>
   files: Record<string, FileState>
   layout: { previewMode: PreviewMode; splitDirection: SplitDirection; splitSize: number; autocompleteEnabled: boolean }
@@ -41,19 +85,9 @@ export interface WorkspaceEditorColumnProps {
   worktree?: string | null
   voice: EditorColumnVoice
   compareContext?: CompareContext
-  // Per-instance identity + chrome (design: §E). instanceId stamps the in-editor
-  // self-jump so only this pane consumes it; editorSplit drives the tab-bar Split/
-  // Move/Close control (suppressed on mobile); pathsOpenElsewhere lets the tab bar
-  // skip its dirty-close confirm when a file is still open in another view.
+  // Per-instance identity (design: §B). Stamps the in-editor self-jump so only this
+  // pane consumes it.
   instanceId: string
-  editorSplit?: EditorSplitChrome
-  pathsOpenElsewhere?: ReadonlySet<string>
-  // Discards the draft (→ clean) on an explicit "Close Without Saving" of a file's
-  // last view, so the shared buffer GC drops it instead of resurrecting the edit.
-  onDiscardDirty?: (path: string) => void
-  onSelectTab: (tab: string) => void
-  onDoubleClickTab: (tab: string) => void
-  onCloseTab: (tab: string, e?: React.MouseEvent) => void
   onLayoutUpdate: (patch: Partial<WorkspaceLayout>) => void
   onSaveFile: (path: string, content: string) => Promise<{ conflict: boolean }>
   onForceSave: (path: string, content: string) => Promise<void>
@@ -64,23 +98,25 @@ export interface WorkspaceEditorColumnProps {
   onNavigateToFile: (path: string) => void
   onNavigateDir: (dir: string) => Promise<void>
   onFocusEditor: () => void
+  // Closes THIS instance's tab (the editor's Cmd+W / close request); the group tab
+  // bar owns the strip-level close.
+  onCloseTab: () => void
 }
 
 export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const {
-    openTabs, activeTab, previewTab, dirtyTabs, conflictTabs,
+    activeTab, conflictTabs,
     files, layout, isTouch, isMobile,
     activeDiff, editorDiffHunks, jumpRequest, editorInsert,
     projectName, worktree, voice, compareContext,
-    instanceId, editorSplit, pathsOpenElsewhere, onDiscardDirty,
-    onSelectTab, onDoubleClickTab, onCloseTab, onLayoutUpdate,
+    instanceId, onLayoutUpdate,
     onSaveFile, onForceSave, onAcceptDisk, onUpdateDraft, onUpdateViewport,
-    onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor,
+    onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor, onCloseTab,
   } = props
 
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
 
-  // Derive from activeTab
+  // Derive from activeTab (the tab's tabId).
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
   const activeDiffTab = isDiffTab(activeTab)
   const isMd = !!activeFilePath && isMarkdownFile(activeFilePath)
@@ -98,12 +134,10 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const suggestionsTitle = autocompleteEnabled
     ? 'Disable inline suggestions'
     : 'Enable inline suggestions - sends nearby markdown text to the model provider'
-
-  const handleSaveTab = useCallback((tab: string) => {
-    const f = files[tab]
-    const content = f?.draft ?? f?.serverContent
-    if (isFileTab(tab) && content != null) void onSaveFile(tab, content)
-  }, [files, onSaveFile])
+  // Per-pane mic is MOBILE-only: on desktop the GlobalVoiceControl in the app top
+  // bar is the single voice surface (design: §G).
+  const showMic = isMobile && voice.eligible
+  const showActionBar = canTogglePreview || showSuggestionsToggle || showMic
 
   const handleViewportLine = useCallback((line: number) => {
     if (activeFilePath) onUpdateViewport(activeFilePath, Math.max(1, line))
@@ -112,7 +146,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const handleActivateLine = useCallback((line: number) => {
     if (!activeFilePath) return
     // Stamp this pane's instanceId so the go-to-line is consumed only here
-    // (design: §E — the last bare jumpRequest producer).
+    // (design: §B — the last bare jumpRequest producer).
     onSetJumpRequest({ key: Date.now(), path: activeFilePath, line: clampLine(line), scroll: false, instanceId })
     if (previewMode !== 'split') onLayoutUpdate({ previewMode: 'edit' })
     onFocusEditor()
@@ -120,29 +154,9 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
-      <WorkspaceTabBar
-        openTabs={openTabs}
-        activeTab={activeTab}
-        previewTab={previewTab}
-        dirtyTabs={dirtyTabs}
-        conflictTabs={conflictTabs}
-        canTogglePreview={canTogglePreview}
-        previewMode={previewMode}
-        splitDirection={splitDirection}
-        isTouch={isTouch}
-        onSelectTab={onSelectTab}
-        onDoubleClickTab={onDoubleClickTab}
-        onCloseTab={onCloseTab}
-        onPreviewModeChange={(mode) => onLayoutUpdate({ previewMode: mode })}
-        onSplitDirectionChange={(dir) => onLayoutUpdate({ splitDirection: dir })}
-        onSaveTab={handleSaveTab}
-        editorSplit={isMobile ? undefined : editorSplit}
-        pathsOpenElsewhere={pathsOpenElsewhere}
-        onDiscardDirty={onDiscardDirty}
-        rightActions={<>
-          {/* Per-pane mic is MOBILE-only: on desktop the GlobalVoiceControl in the
-              app top bar is the single voice surface (design: §G). */}
-          {isMobile && voice.eligible && (
+      {showActionBar && (
+        <div className="flex items-center justify-end gap-1 shrink-0 px-2" style={{ height: 28, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}>
+          {showMic && (
             <VoiceControl
               capability={voice.capability}
               state={voice.state}
@@ -168,8 +182,11 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
               <Sparkles size={13} aria-hidden="true" />
             </button>
           )}
-        </>}
-      />
+          {canTogglePreview && (
+            <PreviewModeToggle mode={previewMode} splitDirection={splitDirection} onChange={(mode) => onLayoutUpdate({ previewMode: mode })} onDirectionChange={(dir) => onLayoutUpdate({ splitDirection: dir })} isTouch={isTouch} />
+          )}
+        </div>
+      )}
 
       <WorkspaceBreadcrumbs activeTab={activeTab} onNavigateDir={onNavigateDir} />
 
@@ -196,7 +213,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         onNavigateToFile={onNavigateToFile}
         onNavigateDir={onNavigateDir}
         onFocus={onFocusEditor}
-        onCloseTab={() => activeTab && onCloseTab(activeTab)}
+        onCloseTab={onCloseTab}
         onDraftChange={(content) => activeFilePath && onUpdateDraft(activeFilePath, content)}
         onSave={async (content) => { if (activeFilePath) await onSaveFile(activeFilePath, content) }}
         diffHunks={editorDiffHunks}

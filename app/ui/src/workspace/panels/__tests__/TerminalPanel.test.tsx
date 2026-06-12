@@ -1,17 +1,18 @@
 // @vitest-environment jsdom
 //
-// TerminalPanel isolation test — render the panel inside a mock provider and
-// assert its instance-aware behavior (design: Multi-Instance Panels §E):
-//   - unbound instance → the attach placeholder, no header/terminal (the ONLY
-//     idle state)
-//   - bound instance → provider icon + session name + Split/Close header over the
-//     lazy terminal, wired with the right session/project/provider
-//   - close / disconnect / Close (×) → closePane(instanceId); the session is NOT
-//     killed (no detach/kill command exists)
-//   - Split Terminal → splitTerminal(instanceId, side)
+// TerminalPanel isolation test — render the BODY inside a mock provider and assert
+// its instance-aware behavior (design: VSCode Tab Groups / vt-bodies):
+//   - unbound instance → the attach placeholder, no header/terminal (the ONLY idle
+//     state) — closability lives in the GROUP tab bar, not here
+//   - bound instance (desktop) → the lazy terminal with NO body header (the group
+//     tab bar owns the session name + close/split), wired to the right
+//     session/project/provider
+//   - terminal close / disconnect → closePane(instanceId); the session is NOT
+//     killed (closePane === closeGroupTab; the session keeps running)
 //   - interaction / body mousedown → focusPane('terminal', instanceId)
 //   - terminalSend consumed IFF its routed instanceId matches this pane
-//   - no DESKTOP mic (global voice control owns it); mobile keeps the per-pane mic
+//   - no DESKTOP mic (global voice control owns it); MOBILE keeps a slim header
+//     (provider icon + session name + the per-pane mic), no group tab bar there
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
@@ -68,7 +69,6 @@ type MockOpts = {
   terminalSend?: RoutedSend
   closePane?: (id: string) => void
   focusPane?: (kind: string, id: string) => void
-  splitTerminal?: (sourceId: string | null, side: string) => void
 }
 
 function renderTerminalPanel(opts: MockOpts = {}) {
@@ -80,7 +80,6 @@ function renderTerminalPanel(opts: MockOpts = {}) {
     terminalSend = null,
     closePane = vi.fn(),
     focusPane = vi.fn(),
-    splitTerminal = vi.fn(),
   } = opts
   // Omitted binding → bound to 'claude-1'; an explicit '' → unbound placeholder.
   const bound = binding === undefined ? 'claude-1' : binding
@@ -93,7 +92,7 @@ function renderTerminalPanel(opts: MockOpts = {}) {
     terminalBindings: bound ? { [instanceId]: bound } : {},
   } as unknown as WorkspaceSelection
   const data = { sessions: { projectSessions: sessions } } as unknown as WorkspaceData
-  const commands = { closePane, focusPane, splitTerminal } as unknown as WorkspaceCommands
+  const commands = { closePane, focusPane } as unknown as WorkspaceCommands
   const voice: WorkspaceVoiceSurface = { ...DEFAULT_WORKSPACE_VOICE, terminalSend }
 
   const wrap = (ui: ReactNode) => (
@@ -112,7 +111,7 @@ function renderTerminalPanel(opts: MockOpts = {}) {
     </WorkspaceEnvContext.Provider>
   )
 
-  return { ...render(wrap(<TerminalPanel />)), instanceId, closePane, focusPane, splitTerminal }
+  return { ...render(wrap(<TerminalPanel />)), instanceId, closePane, focusPane }
 }
 
 describe('TerminalPanel — unbound instance', () => {
@@ -121,20 +120,22 @@ describe('TerminalPanel — unbound instance', () => {
     expect(screen.getByText('Select a session to attach terminal')).toBeTruthy()
     expect(screen.queryByTestId('mock-terminal')).toBeNull()
     expect(screen.queryByText('claude-1')).toBeNull()
-    // No header chrome.
+    // Closability lives in the group tab bar — the body has no header at all.
     expect(screen.queryByLabelText('Split terminal')).toBeNull()
     expect(screen.queryByLabelText('Close terminal')).toBeNull()
   })
 })
 
 describe('TerminalPanel — bound instance (desktop)', () => {
-  it('renders provider icon, session name, and Split/Close header — no desktop mic', () => {
+  it('renders the terminal body with NO header — name/close/split live in the group tab bar', async () => {
     const { container } = renderTerminalPanel()
-    expect(screen.getByText('claude-1')).toBeTruthy()
-    // claude provider → the claude symbol img (see ProviderIcon / providerUi).
-    expect(container.querySelector('img[src="/claude-code-symbol.svg"]')).toBeTruthy()
-    expect(screen.getByLabelText('Split terminal')).toBeTruthy()
-    expect(screen.getByLabelText('Close terminal')).toBeTruthy()
+    await screen.findByTestId('mock-terminal')
+    // The session name + provider icon + close/split are the GROUP tab bar's job —
+    // the desktop body is pure terminal, no header chrome.
+    expect(screen.queryByText('claude-1')).toBeNull()
+    expect(container.querySelector('img[src="/claude-code-symbol.svg"]')).toBeNull()
+    expect(screen.queryByLabelText('Split terminal')).toBeNull()
+    expect(screen.queryByLabelText('Close terminal')).toBeNull()
     // Desktop voice is the global control — no per-pane mic here.
     expect(screen.queryByRole('button', { name: 'Start voice recording' })).toBeNull()
   })
@@ -155,21 +156,6 @@ describe('TerminalPanel — bound instance (desktop)', () => {
     fireEvent.click(screen.getByText('disconnect'))
     expect(closePane).toHaveBeenCalledTimes(2)
     expect(closePane).toHaveBeenCalledWith(instanceId)
-  })
-
-  it('closes the pane on the header Close (×) button', () => {
-    const { closePane, instanceId } = renderTerminalPanel()
-    fireEvent.click(screen.getByLabelText('Close terminal'))
-    expect(closePane).toHaveBeenCalledTimes(1)
-    expect(closePane).toHaveBeenCalledWith(instanceId)
-  })
-
-  it('splits this terminal instance from the Split Terminal button', () => {
-    const { splitTerminal, instanceId } = renderTerminalPanel()
-    fireEvent.click(screen.getByLabelText('Split terminal'))
-    expect(splitTerminal).toHaveBeenCalledTimes(1)
-    // jsdom reports 0×0 geometry → splitSideFromGeometry(0,0) === 'right'.
-    expect(splitTerminal).toHaveBeenCalledWith(instanceId, 'right')
   })
 
   it('routes focus to this terminal instance on interaction and body mousedown', async () => {
@@ -205,10 +191,12 @@ describe('TerminalPanel — terminalSend instance gating', () => {
 })
 
 describe('TerminalPanel — mobile', () => {
-  it('keeps the per-pane mic and drops the Split/Close affordances', () => {
-    renderTerminalPanel({ isMobile: true })
+  it('keeps a slim header with provider icon, session name, and the per-pane mic', () => {
+    const { container } = renderTerminalPanel({ isMobile: true })
     expect(screen.getByText('claude-1')).toBeTruthy()
+    expect(container.querySelector('img[src="/claude-code-symbol.svg"]')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Start voice recording' })).toBeTruthy()
+    // Even on mobile the split/close affordances live in the group tab bar.
     expect(screen.queryByLabelText('Split terminal')).toBeNull()
     expect(screen.queryByLabelText('Close terminal')).toBeNull()
   })

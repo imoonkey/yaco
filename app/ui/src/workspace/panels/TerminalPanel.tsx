@@ -1,29 +1,26 @@
-// TerminalPanel — one terminal pane, instance-aware (design: Multi-Instance
-// Panels §E). The workspace can hold N terminal panes at once; this component is
-// ONE of them and reads its identity from `usePanelInstance()`.
+// TerminalPanel — one terminal pane's BODY, instance-aware (design: VSCode Tab
+// Groups / vt-bodies). The workspace holds N terminal tabs across its groups; this
+// component renders ONE of them and reads its identity from `usePanelInstance()`.
 //
 // Its binding is per-instance: `bound = terminalBindings[instanceId] ?? ''`.
-// Unbound → the "Select a session to attach" placeholder, the ONLY idle state.
-// Bound → a session header (provider icon + session name + Split/Close on
-// desktop, or the per-pane mic on mobile) over a lazy `Terminal`. Chrome is
-// UNFRAMED — the panel owns its header, so PanelFrame is a passthrough.
+// Unbound → the "Select a session to attach" idle placeholder (the ONLY idle
+// state); bound → a lazy `Terminal` (xterm). Chrome is UNFRAMED and the body owns
+// NO tab header: the GROUP tab bar renders this terminal's tab + its close ×
+// (close/split live there), so an unbound pane is never an unclosable orphan.
 //
 // Structural ops route by instance id, never by session lifecycle:
-//   - Close (×) / terminal close / disconnect → `closePane(instanceId)` — the
-//     pane detaches; the underlying session KEEPS RUNNING (no kill).
-//   - Split Terminal → `splitTerminal(instanceId, side)`, side from the pane's
-//     live geometry (wide → right, tall → below).
+//   - terminal close / disconnect → `closePane(instanceId)` — the pane's tab
+//     detaches; the underlying session KEEPS RUNNING (no kill).
 //   - mousedown / terminal interaction → `focusPane('terminal', instanceId)`.
 //
 // Voice is the SINGLE screen-level surface (one `useVoice` + one `ComposeTray`),
-// not a panel-private machine. On DESKTOP the global voice control owns the mic
-// (task mi-voice-global), so this panel renders no desktop mic; on MOBILE the
-// single active pane is the unambiguous target, so the per-pane mic stays. The
-// screen-routed `terminalSend` carries the target instanceId frozen at record
-// start; this pane consumes it IFF that id matches — the same per-instance gate
-// as `jumpRequest`.
+// not a panel-private machine. On DESKTOP the global voice control owns the mic, so
+// the body renders no chrome at all; on MOBILE there is no group tab bar, so the
+// single active pane keeps a slim header (provider icon + session name + the
+// per-pane mic). The screen-routed `terminalSend` carries the target instanceId
+// frozen at record start; this pane consumes it IFF that id matches — the same
+// per-instance gate as `jumpRequest`.
 import { lazy, Suspense } from 'react'
-import { Columns2, X } from 'lucide-react'
 import { VoiceControl } from '../../components/VoiceControl'
 import { ProviderIcon } from '../../components/SessionIcons'
 import {
@@ -31,7 +28,7 @@ import {
   useWorkspaceDataContext, useWorkspaceCommands, useWorkspaceVoiceSurface,
   type InsertRequest,
 } from '../context'
-import { usePanelInstance, splitSideFromGeometry } from '../panelInstance'
+import { usePanelInstance } from '../panelInstance'
 import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition } from '../panelRegistry'
 
@@ -63,8 +60,8 @@ export function TerminalPanel() {
   const sessionInfo = data.sessions.projectSessions.find(s => s.name === bound) ?? null
 
   // The screen routes `terminalSend` with the target instanceId frozen at record
-  // start (mi-voice-global). Consume it IFF it targets THIS pane — until the
-  // surface type carries the field it is read structurally, like `jumpRequest`.
+  // start. Consume it IFF it targets THIS pane — read structurally, like
+  // `jumpRequest`, until the surface type carries the field.
   const send = voice.terminalSend as (InsertRequest & { instanceId?: string }) | null
   const mySend = send?.instanceId === instanceId ? send : null
 
@@ -78,37 +75,23 @@ export function TerminalPanel() {
     )
   }
 
-  // Split axis from the pane's live geometry — position-independent (the wrapper
-  // carries data-instance-id wherever the pane was moved); 0×0 in jsdom → 'right'.
-  const handleSplit = () => {
-    const el = document.querySelector<HTMLElement>(`[data-instance-id="${instanceId}"]`)
-    const side = el ? splitSideFromGeometry(el.offsetWidth, el.offsetHeight) : 'right'
-    commands.splitTerminal(instanceId, side)
-  }
-
   return (
     <>
-      <div className="h-7 flex items-center gap-2 px-2 text-ui-md shrink-0" style={{ backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)', color: 'var(--sol-text-brown)' }}>
-        {sessionInfo && <ProviderIcon provider={sessionInfo.provider} className="w-4 h-4 shrink-0" />}
-        <span className="truncate flex-1 font-semibold">{bound}</span>
-        {isMobile ? (
+      {/* Mobile-only header: no group tab bar exists on mobile, so the single
+          active pane carries its session identity + the per-pane mic. On desktop
+          the group tab bar owns the tab (name + close), so the body has no chrome. */}
+      {isMobile && (
+        <div className="h-7 flex items-center gap-2 px-2 text-ui-md shrink-0" style={{ backgroundColor: 'var(--sol-header-bg)', borderBottom: '1px solid var(--sol-border)', color: 'var(--sol-text-brown)' }}>
+          {sessionInfo && <ProviderIcon provider={sessionInfo.provider} className="w-4 h-4 shrink-0" />}
+          <span className="truncate flex-1 font-semibold">{bound}</span>
           <VoiceControl
             capability={voice.terminal.capability}
             state={voice.terminal.state}
             onRecord={voice.terminal.onRecord}
             onStop={voice.terminal.onStop}
           />
-        ) : (
-          <>
-            <button type="button" className="section-header-icon-btn" title="Split terminal" aria-label="Split terminal" onClick={handleSplit}>
-              <Columns2 />
-            </button>
-            <button type="button" className="section-header-icon-btn" title="Close terminal" aria-label="Close terminal" onClick={() => commands.closePane(instanceId)}>
-              <X />
-            </button>
-          </>
-        )}
-      </div>
+        </div>
+      )}
       <div
         className="flex-1 overflow-hidden p-[3px] select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text', backgroundColor: 'var(--sol-editor-bg)' }}

@@ -1,21 +1,22 @@
 // @vitest-environment jsdom
 //
-// EditorPanel isolation test.
+// EditorPanel isolation test (design: VSCode Tab Groups / vt-bodies).
 //
-// NOTE (vt-state): the EditorPanel BODY is owned by the downstream vt-bodies task.
-// Under the flat tab-group model an editor instance IS a single tab (its payload
-// read from the group tree via `editorTabByInstance`), not a multi-`openTabs`
-// `editorViews[instanceId]` slice. The behavior describes below were written for
-// the OLD per-editor-view body and assert the multi-tab strip / per-view-slice
-// semantics that no longer exist here; they are SKIPPED until vt-bodies rewrites
-// EditorPanel into a single-tab body and re-authors these against the group tree.
-// The `editorPanelDef` describe (registry wiring) still runs.
+// Under the flat tab-group model an editor instance IS a single tab: the panel
+// reads its `instanceId` from `usePanelInstance()` and resolves its ONE file/diff
+// from the group tree via `editorTabByInstance` — never from a tab bar, never from
+// another instance. The GROUP owns the tab strip, so the body renders no `tab`
+// elements. These describes assert the single-tab body + per-instance gating + the
+// shared per-path buffer.
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { EditorPanel, editorPanelDef } from '../EditorPanel'
 import { PanelInstanceProvider } from '../../panelInstance'
-import { DEFAULT_LAYOUT, type EditorView, type FileState, type WorkspaceLayout } from '../../../hooks/workspaceTypes'
+import {
+  DEFAULT_LAYOUT, type FileState, type WorkspaceLayout,
+  type TabsNode, type WorkspacePanelLayout,
+} from '../../../hooks/workspaceTypes'
 import { fetchGitBaseline, fetchGitCompare, fetchGitDiff } from '../../../hooks/useApi'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
@@ -26,18 +27,19 @@ import {
   type WorkspaceVoiceSurface, type VoiceControlState,
 } from '../../context'
 
-// Replace the CodeMirror editor leaf with a stub that echoes its insertText prop,
-// so the per-instance + per-file insert gate is observable without mounting CM.
-// Only a content-bearing file tab renders <Editor>; the diff/compare/loading/empty
-// tests use other branches, so this mock leaves them untouched.
+// Replace the CodeMirror editor leaf with a stub that echoes its content/filePath/
+// insertText props, so the single-file body + the per-instance/per-file insert gate
+// + the shared per-path buffer are observable without mounting CM. Only a
+// content-bearing file tab renders <Editor>; the diff/loading/empty tests use other
+// branches, so this mock leaves them untouched.
 vi.mock('../../../components/Editor', () => ({
-  Editor: ({ insertText }: { insertText?: string | null }) =>
-    <div data-testid="cm-editor" data-insert-text={insertText ?? ''} />,
+  Editor: ({ insertText, content, filePath }: { insertText?: string | null; content?: string; filePath?: string }) =>
+    <div data-testid="cm-editor" data-insert-text={insertText ?? ''} data-content={content ?? ''} data-file-path={filePath ?? ''} />,
 }))
 
-// Stub the network reads the panel drives: editor baseline, diff content, and
-// the on-demand compare file list. Everything else (API base for useVoice) is
-// kept real so the voice machine initializes exactly as in the app.
+// Stub the network reads the panel drives: editor baseline, diff content, and the
+// on-demand compare file list. Everything else (API base for useVoice) is kept real
+// so the voice machine initializes exactly as in the app.
 vi.mock('../../../hooks/useApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../hooks/useApi')>()
   return {
@@ -52,7 +54,7 @@ const mockFetchGitBaseline = vi.mocked(fetchGitBaseline)
 const mockFetchGitDiff = vi.mocked(fetchGitDiff)
 const mockFetchGitCompare = vi.mocked(fetchGitCompare)
 
-// The tab bar observes its scroll container; jsdom has no ResizeObserver.
+// The diff/preview surfaces observe their scroll container; jsdom has no ResizeObserver.
 vi.stubGlobal('ResizeObserver', class {
   observe() { /* no-op */ }
   unobserve() { /* no-op */ }
@@ -66,8 +68,8 @@ beforeEach(() => {
   mockFetchGitCompare.mockReset().mockResolvedValue({ files: [], stats: { added: 0, deleted: 0 } })
 })
 
-// A minimal unified diff so the diff view renders its toolbar (and the compare
-// ref bar) instead of the empty "No changes detected" state.
+// A minimal unified diff so the diff view renders its toolbar (and the compare ref
+// bar) instead of the empty "No changes detected" state.
 const FOO_DIFF = [
   'diff --git a/src/foo.ts b/src/foo.ts',
   'index 1111111..2222222 100644',
@@ -80,18 +82,24 @@ const FOO_DIFF = [
   '',
 ].join('\n')
 
-type ViewInput = { openTabs?: string[]; activeTab?: string | null; previewTab?: string | null }
+type TabSpec = { instanceId: string; tabId: string; preview?: boolean }
 
 type EditorPanelHarnessInput = {
   // When set, the panel is wrapped in a PanelInstanceProvider for this instance;
-  // omitted → rendered bare, exercising the home-editor ('editor') fallback.
+  // omitted → rendered bare, exercising the active-editor ('editor') fallback.
   instanceId?: string
-  openTabs?: string[]
-  activeTab?: string | null
-  previewTab?: string | null
-  dirtyTabs?: string[]
-  // Additional editor views (other panes) — seeds pathsOpenElsewhere.
-  otherViews?: Record<string, ViewInput>
+  // The single file/diff this instance's tab shows (its tabId). null/omitted → this
+  // instance has no tab in the group → the "No file open" empty body.
+  tabId?: string | null
+  // Marks this instance's single tab as the group's preview tab.
+  preview?: boolean
+  // Extra tabs for OTHER instances in the same group (instance-routing / shared
+  // buffer). Defaults to just this instance's tab.
+  tabs?: TabSpec[]
+  // The group's active tab instanceId (defaults to the rendered instance). Set it to
+  // a sibling to prove the body reads ITS OWN tab, not the group's active one.
+  activeInstance?: string
+  conflictTabs?: string[]
   // Shared per-path buffers (content) so a file tab mounts the (stubbed) editor.
   files?: Record<string, Partial<FileState>>
   // A queued voice insert ({ text, key, instanceId, filePath }) on the voice surface.
@@ -102,14 +110,9 @@ type EditorPanelHarnessInput = {
   isMobile?: boolean
 }
 
-function toView(v: ViewInput): EditorView {
-  return { openTabs: v.openTabs ?? [], activeTab: v.activeTab ?? null, previewTab: v.previewTab ?? null }
-}
-
-// Records every command/action the panel can invoke so behavioral wiring (e.g.
-// the Suggestions toggle → updateLayout, tab select → selectTab(id), split →
-// splitEditor(id, side), compare-nav → openPreviewDiffTabByIdIn(id, tabId)) is
-// observable.
+// Records every command/action the panel can invoke so behavioral wiring (the
+// Suggestions toggle → updateLayout, compare-nav → openPreviewDiffTabByIdIn(id,
+// tabId), focus → focusPane(id)) is observable.
 function makeEditorPanelCommands() {
   const actions = {
     setActiveTab: vi.fn(), setActiveSession: vi.fn(), setMobilePane: vi.fn(),
@@ -142,14 +145,28 @@ function makeEditorPanelCommands() {
   return { commands, actions }
 }
 
+// One group holding the spec's editor tabs (the working area for the test).
+function buildPanelLayout(tabs: TabSpec[], activeInstance: string): WorkspacePanelLayout {
+  const group: TabsNode = {
+    kind: 'tabs',
+    id: 'group:1',
+    tabs: tabs.map(t => ({ instanceId: t.instanceId, kind: 'editor', tabId: t.tabId, ...(t.preview ? { preview: true } : {}) })),
+    activeTab: activeInstance,
+  }
+  return {
+    version: 1,
+    desktop: group,
+    mobile: { activeDock: 'editor' },
+    panelState: { files: { mode: 'tree' }, editor: { previewMode: 'edit', splitDirection: 'horizontal', splitSize: 50, autocompleteEnabled: false } },
+  } as unknown as WorkspacePanelLayout
+}
+
 function buildContexts(input: EditorPanelHarnessInput) {
   const { commands, actions } = makeEditorPanelCommands()
   const id = input.instanceId ?? 'editor'
-
-  const editorViews: Record<string, EditorView> = {
-    [id]: toView({ openTabs: input.openTabs, activeTab: input.activeTab, previewTab: input.previewTab }),
-  }
-  for (const [oid, v] of Object.entries(input.otherViews ?? {})) editorViews[oid] = toView(v)
+  const tabs = input.tabs
+    ?? (input.tabId ? [{ instanceId: id, tabId: input.tabId, preview: input.preview } as TabSpec] : [])
+  const activeInstance = input.activeInstance ?? tabs[0]?.instanceId ?? ''
 
   const env = {
     project: { name: 'demo', path: '/demo', worktree: undefined, effectivePath: '/demo' },
@@ -167,11 +184,11 @@ function buildContexts(input: EditorPanelHarnessInput) {
   }
 
   const selection = {
-    openTabs: input.openTabs ?? [],
-    activeTab: input.activeTab ?? null,
-    previewTab: input.previewTab ?? null,
     activeSession: '',
-    editorViews,
+    activeGroupId: 'group:1',
+    activeEditorTab: null,
+    activeEditorTabId: null,
+    activeEditorPath: null,
     terminalBindings: {},
     editorMru: [id],
     terminalMru: [],
@@ -185,8 +202,8 @@ function buildContexts(input: EditorPanelHarnessInput) {
     showSearch: false,
     editor: {
       files,
-      dirtyTabs: new Set<string>(input.dirtyTabs ?? []),
-      conflictTabs: new Set<string>(),
+      dirtyTabs: new Set<string>(),
+      conflictTabs: new Set<string>(input.conflictTabs ?? []),
       jumpRequest: null,
     },
   } as unknown as WorkspaceSelection
@@ -194,6 +211,7 @@ function buildContexts(input: EditorPanelHarnessInput) {
   const layoutValue = {
     layout: { ...DEFAULT_LAYOUT, ...input.layout },
     mobilePane: 'editor',
+    panelLayout: buildPanelLayout(tabs, activeInstance),
   } as WorkspaceLayoutContextValue
 
   // Screen voice surface: inert by default; opt-in an eligible editor mic and/or a
@@ -238,11 +256,6 @@ function renderEditorPanel(input: EditorPanelHarnessInput = {}) {
   return { commands: ctx.commands, actions: ctx.actions, id: ctx.id, ...render(wrapProviders(ctx, panel)) }
 }
 
-// Open the Split-editor options menu (the caret beside the Split button).
-function openSplitMenu() {
-  fireEvent.click(screen.getByRole('button', { name: 'Split editor options' }))
-}
-
 describe('editorPanelDef', () => {
   it('is an unframed editor panel with no shared header hook', () => {
     expect(editorPanelDef.id).toBe('editor')
@@ -255,53 +268,111 @@ describe('editorPanelDef', () => {
   })
 })
 
-describe.skip('EditorPanel — behavior-equivalent to the inline editor body', () => {
-  it('renders the empty editor column: tab bar, the No-file-open prompt, and the Suggestions toggle', () => {
-    renderEditorPanel()
+describe('EditorPanel — single-tab body (no own tab bar)', () => {
+  it('renders the single file of its tab — the editor body, no tab strip', () => {
+    renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: 'hi' } } })
+    const cm = screen.getByTestId('cm-editor')
+    expect(cm.getAttribute('data-file-path')).toBe('notes.md')
+    expect(cm.getAttribute('data-content')).toBe('hi')
+    // The group owns the tab strip — the body renders no tabs.
+    expect(screen.queryByTestId('tab')).toBeNull()
+  })
+
+  it('with no tab open, renders the No-file-open prompt + the Suggestions toggle, no tab strip', () => {
+    renderEditorPanel({ instanceId: 'editor:2', tabId: null })
     expect(screen.getByText('No file open')).toBeTruthy()
-    expect(screen.getByText('No files open')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Suggestions/ })).toBeTruthy()
-    expect(screen.queryByText('Suggestions')).toBeNull()
+    expect(screen.queryByTestId('tab')).toBeNull()
     expect(mockFetchGitCompare).not.toHaveBeenCalled()
   })
 
-  it('renders open tabs from this instance view slice (editorViews[instanceId])', () => {
-    renderEditorPanel({ instanceId: 'editor:2', openTabs: ['src/alpha.ts', 'docs/beta.md'] })
-    expect(screen.getAllByTestId('tab')).toHaveLength(2)
-    expect(screen.getByText('alpha.ts')).toBeTruthy()
-    expect(screen.getByText('beta.md')).toBeTruthy()
-  })
-
-  it('reads only its own view slice — a sibling instance view does not leak in', () => {
-    // This pane (editor:2) has one tab; the home editor has two. Only ours shows.
-    renderEditorPanel({
-      instanceId: 'editor:2',
-      openTabs: ['src/only.ts'],
-      otherViews: { editor: { openTabs: ['a.ts', 'b.ts'] } },
-    })
-    expect(screen.getAllByTestId('tab')).toHaveLength(1)
-    expect(screen.getByText('only.ts')).toBeTruthy()
-  })
-
   it('toggling Suggestions drives an editor-pref layout update', () => {
-    const { actions } = renderEditorPanel({ layout: { autocompleteEnabled: false } })
+    const { actions } = renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, layout: { autocompleteEnabled: false } })
     fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
     expect(actions.updateLayout).toHaveBeenCalledWith({ autocompleteEnabled: true })
   })
+})
 
-  it('renders no voice control (voice/insertion is integration-owned)', () => {
-    renderEditorPanel({ openTabs: ['notes.md'], activeTab: 'notes.md' })
-    expect(screen.getByRole('button', { name: /Suggestions/ })).toBeTruthy()
-    expect(screen.queryByLabelText(/voice/i)).toBeNull()
+describe('EditorPanel — instance routing', () => {
+  it('renders ITS instance tab — not the group active tab, not a sibling', () => {
+    // group active is 'editor' (a.ts); we render editor:2 (only.ts) → it shows only.ts.
+    renderEditorPanel({
+      instanceId: 'editor:2',
+      tabs: [
+        { instanceId: 'editor', tabId: 'src/a.ts' },
+        { instanceId: 'editor:2', tabId: 'src/only.ts' },
+      ],
+      activeInstance: 'editor',
+      files: { 'src/a.ts': { serverContent: 'A' }, 'src/only.ts': { serverContent: 'ONLY' } },
+    })
+    const cm = screen.getByTestId('cm-editor')
+    expect(cm.getAttribute('data-file-path')).toBe('src/only.ts')
+    expect(cm.getAttribute('data-content')).toBe('ONLY')
   })
 
+  it('falls back to the active editor instance ("editor") outside a PanelHost', () => {
+    renderEditorPanel({ tabId: 'src/a.ts', files: { 'src/a.ts': { serverContent: 'A' } } })
+    expect(screen.getByTestId('cm-editor').getAttribute('data-file-path')).toBe('src/a.ts')
+  })
+
+  it('mousedown on the editor body focuses THIS instance', () => {
+    const { commands } = renderEditorPanel({ instanceId: 'editor:2', tabId: null })
+    fireEvent.mouseDown(screen.getByText('No file open'))
+    expect(commands.focusPane).toHaveBeenCalledWith('editor', 'editor:2')
+  })
+})
+
+describe('EditorPanel — voice insert gating (instanceId + filePath)', () => {
+  const insertTextOf = () => screen.getByTestId('cm-editor').getAttribute('data-insert-text')
+
+  it('applies an insert aimed at this instance AND its active file', () => {
+    renderEditorPanel({
+      instanceId: 'editor:2', tabId: 'src/a.ts',
+      files: { 'src/a.ts': { serverContent: 'x' } },
+      editorInsert: { text: 'TYPED', key: 1, instanceId: 'editor:2', filePath: 'src/a.ts' },
+    })
+    expect(insertTextOf()).toBe('TYPED')
+  })
+
+  it('does NOT apply an insert aimed at a different instance', () => {
+    renderEditorPanel({
+      instanceId: 'editor:2', tabId: 'src/a.ts',
+      files: { 'src/a.ts': { serverContent: 'x' } },
+      editorInsert: { text: 'TYPED', key: 1, instanceId: 'editor', filePath: 'src/a.ts' },
+    })
+    expect(insertTextOf()).toBe('')
+  })
+
+  it('does NOT apply an insert whose filePath !== the current active tab (stale after switch)', () => {
+    renderEditorPanel({
+      instanceId: 'editor:2', tabId: 'src/a.ts',
+      files: { 'src/a.ts': { serverContent: 'x' } },
+      editorInsert: { text: 'TYPED', key: 1, instanceId: 'editor:2', filePath: 'src/other.ts' },
+    })
+    expect(insertTextOf()).toBe('')
+  })
+})
+
+describe('EditorPanel — per-pane mic is mobile-only', () => {
+  it('renders no per-pane mic on desktop even when the voice surface is eligible', () => {
+    renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, voiceEditorEligible: true })
+    expect(screen.queryByRole('button', { name: /recording/i })).toBeNull()
+  })
+
+  it('renders the per-pane mic on mobile when eligible', () => {
+    renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, voiceEditorEligible: true, isMobile: true })
+    expect(screen.getByRole('button', { name: /recording/i })).toBeTruthy()
+  })
+})
+
+describe('EditorPanel — compare diff tabs', () => {
   it('derives compare context from a self-describing diff tab id', async () => {
     mockFetchGitDiff.mockResolvedValue(FOO_DIFF)
     mockFetchGitCompare.mockResolvedValue({
       files: [{ path: 'src/foo.ts', status: 'M' }, { path: 'src/bar.ts', status: 'M' }],
       stats: { added: 1, deleted: 1 },
     })
-    renderEditorPanel({ activeTab: 'diff:src/foo.ts?base=main&compare=HEAD' })
+    renderEditorPanel({ instanceId: 'editor:2', tabId: 'diff:src/foo.ts?base=main&compare=HEAD' })
     await waitFor(() =>
       expect(mockFetchGitCompare).toHaveBeenCalledWith('demo', 'main', 'HEAD', undefined),
     )
@@ -318,195 +389,56 @@ describe.skip('EditorPanel — behavior-equivalent to the inline editor body', (
       stats: { added: 1, deleted: 1 },
     })
     const { actions, commands } = renderEditorPanel({
-      instanceId: 'editor:2', activeTab: 'diff:src/foo.ts?base=main&compare=HEAD',
+      instanceId: 'editor:2', tabId: 'diff:src/foo.ts?base=main&compare=HEAD',
     })
     fireEvent.click(await screen.findByRole('button', { name: 'Next file' }))
-    // Instance-scoped open: lands in THIS editor (editor:2), not the active one.
+    // Instance-scoped open: lands in THIS editor's group (editor:2), not the active one.
     expect(actions.openPreviewDiffTabByIdIn).toHaveBeenCalledWith('editor:2', 'diff:src/bar.ts?base=main&compare=HEAD')
     expect(actions.openPreviewDiffTabById).not.toHaveBeenCalled()
     expect(commands.focusPane).toHaveBeenCalledWith('editor', 'editor:2')
   })
 
   it('does not fetch a compare list for a plain (non-compare) diff tab', async () => {
-    renderEditorPanel({ activeTab: 'diff:src/foo.ts' })
+    renderEditorPanel({ instanceId: 'editor:2', tabId: 'diff:src/foo.ts' })
     await waitFor(() => expect(mockFetchGitDiff).toHaveBeenCalled())
     expect(mockFetchGitCompare).not.toHaveBeenCalled()
     expect(screen.queryByRole('button', { name: /Suggestions/ })).toBeNull()
   })
 })
 
-describe.skip('EditorPanel — instance-scoped tab routing + focus', () => {
-  it('selecting a tab routes selectTab(tab, instanceId)', () => {
-    const { commands } = renderEditorPanel({ instanceId: 'editor:2', openTabs: ['src/a.ts', 'src/b.ts'] })
-    fireEvent.click(screen.getByText('b.ts'))
-    expect(commands.selectTab).toHaveBeenCalledWith('src/b.ts', 'editor:2')
-  })
-
-  it('closing a clean tab routes closeTab(tab, instanceId) with no confirm', () => {
-    const { commands } = renderEditorPanel({ instanceId: 'editor:2', openTabs: ['src/a.ts'] })
-    fireEvent.click(screen.getByRole('button', { name: 'Close a.ts' }))
-    expect(commands.closeTab).toHaveBeenCalledWith('src/a.ts', 'editor:2')
-    expect(screen.queryByText('Discard unsaved changes?')).toBeNull()
-  })
-
-  it('mousedown on the editor surface focuses THIS instance', () => {
-    const { commands } = renderEditorPanel({ instanceId: 'editor:2' })
-    fireEvent.mouseDown(screen.getByText('No file open'))
-    expect(commands.focusPane).toHaveBeenCalledWith('editor', 'editor:2')
-  })
-
-  it('double-clicking a preview tab promotes it to pinned IN THIS instance', () => {
-    const { actions } = renderEditorPanel({
-      instanceId: 'editor:2', openTabs: ['src/a.ts'], activeTab: 'src/a.ts', previewTab: 'src/a.ts',
-    })
-    fireEvent.doubleClick(screen.getByTestId('tab'))
-    expect(actions.openFileTabIn).toHaveBeenCalledWith('editor:2', 'src/a.ts')
-    expect(actions.openFileTab).not.toHaveBeenCalled()
-  })
-
-  it('falls back to the home editor ("editor") outside a PanelHost', () => {
-    const { commands } = renderEditorPanel({ openTabs: ['src/a.ts'] })
-    fireEvent.click(screen.getByText('a.ts'))
-    expect(commands.selectTab).toHaveBeenCalledWith('src/a.ts', 'editor')
-  })
-})
-
-describe.skip('EditorPanel — voice insert gating (instanceId + filePath)', () => {
-  const insertTextOf = () => screen.getByTestId('cm-editor').getAttribute('data-insert-text')
-
-  it('applies an insert aimed at this instance AND its active file', () => {
-    renderEditorPanel({
-      instanceId: 'editor:2', openTabs: ['src/a.ts'], activeTab: 'src/a.ts',
-      files: { 'src/a.ts': { serverContent: 'x' } },
-      editorInsert: { text: 'TYPED', key: 1, instanceId: 'editor:2', filePath: 'src/a.ts' },
-    })
-    expect(insertTextOf()).toBe('TYPED')
-  })
-
-  it('does NOT apply an insert aimed at a different instance', () => {
-    renderEditorPanel({
-      instanceId: 'editor:2', openTabs: ['src/a.ts'], activeTab: 'src/a.ts',
-      files: { 'src/a.ts': { serverContent: 'x' } },
-      editorInsert: { text: 'TYPED', key: 1, instanceId: 'editor', filePath: 'src/a.ts' },
-    })
-    expect(insertTextOf()).toBe('')
-  })
-
-  it('does NOT apply an insert whose filePath !== the current active tab (stale after switch)', () => {
-    renderEditorPanel({
-      instanceId: 'editor:2', openTabs: ['src/a.ts'], activeTab: 'src/a.ts',
-      files: { 'src/a.ts': { serverContent: 'x' } },
-      editorInsert: { text: 'TYPED', key: 1, instanceId: 'editor:2', filePath: 'src/other.ts' },
-    })
-    expect(insertTextOf()).toBe('')
-  })
-})
-
-describe.skip('EditorPanel — per-pane mic is mobile-only', () => {
-  it('renders no per-pane mic on desktop even when the voice surface is eligible', () => {
-    renderEditorPanel({ openTabs: ['notes.md'], activeTab: 'notes.md', voiceEditorEligible: true })
-    expect(screen.queryByRole('button', { name: /recording/i })).toBeNull()
-  })
-
-  it('renders the per-pane mic on mobile when eligible', () => {
-    renderEditorPanel({ openTabs: ['notes.md'], activeTab: 'notes.md', voiceEditorEligible: true, isMobile: true })
-    expect(screen.getByRole('button', { name: /recording/i })).toBeTruthy()
-  })
-})
-
-describe.skip('EditorPanel — Split / Move / Close chrome', () => {
-  it('the Split button splits along the geometry-default side (no measurable box → right)', () => {
-    const { commands } = renderEditorPanel({ instanceId: 'editor:2' })
-    fireEvent.click(screen.getByRole('button', { name: 'Split editor' }))
-    expect(commands.splitEditor).toHaveBeenCalledWith('editor:2', 'right')
-  })
-
-  it('the caret menu exposes both split axes', () => {
-    const { commands } = renderEditorPanel({ instanceId: 'editor:2' })
-    openSplitMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Split Down' }))
-    expect(commands.splitEditor).toHaveBeenCalledWith('editor:2', 'below')
-  })
-
-  it('a secondary editor exposes Move + Close in the overflow menu', () => {
-    const { commands } = renderEditorPanel({ instanceId: 'editor:2' })
-    openSplitMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Move Left' }))
-    expect(commands.movePane).toHaveBeenCalledWith('editor:2', { targetId: 'main', side: 'left' })
-    openSplitMenu()
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Close Editor' }))
-    expect(commands.closePane).toHaveBeenCalledWith('editor:2')
-  })
-
-  it('the home editor exposes split only — no Move, no Close', () => {
-    renderEditorPanel({ instanceId: 'editor' })
-    openSplitMenu()
-    expect(screen.getByRole('menuitem', { name: 'Split Right' })).toBeTruthy()
-    expect(screen.queryByRole('menuitem', { name: 'Move Left' })).toBeNull()
-    expect(screen.queryByRole('menuitem', { name: 'Close Editor' })).toBeNull()
-  })
-
-  it('hides the split chrome on mobile', () => {
-    renderEditorPanel({ instanceId: 'editor:2', isMobile: true })
-    expect(screen.queryByRole('button', { name: 'Split editor' })).toBeNull()
-  })
-})
-
-describe.skip('EditorPanel — dirty-close confirm + shared buffer', () => {
-  it('confirms before discarding the LAST view of a dirty file, then discards + closes on confirm', () => {
-    const { commands } = renderEditorPanel({
-      instanceId: 'editor', openTabs: ['src/a.ts'], activeTab: 'src/a.ts', dirtyTabs: ['src/a.ts'],
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Close a.ts' }))
-    // The discard is gated by a confirm — nothing discarded or closed yet.
-    expect(screen.getByText('Discard unsaved changes?')).toBeTruthy()
-    expect(commands.acceptDisk).not.toHaveBeenCalled()
-    expect(commands.closeTab).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Close Without Saving' }))
-    // The confirmed discard clears the draft (acceptDisk → clean buffer the GC then
-    // drops, so reopening shows server content, not the discarded edit) AND closes.
-    expect(commands.acceptDisk).toHaveBeenCalledWith('src/a.ts')
-    expect(commands.closeTab).toHaveBeenCalledWith('src/a.ts', 'editor')
-  })
-
-  it('closing a dirty tab still open in another view skips the confirm AND the discard (loss-free)', () => {
-    const { commands } = renderEditorPanel({
-      instanceId: 'editor',
-      openTabs: ['src/a.ts'], activeTab: 'src/a.ts', dirtyTabs: ['src/a.ts'],
-      otherViews: { 'editor:2': { openTabs: ['src/a.ts'] } },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Close a.ts' }))
-    expect(screen.queryByText('Discard unsaved changes?')).toBeNull()
-    // Must NOT clear the shared draft — the other view still shows it.
-    expect(commands.acceptDisk).not.toHaveBeenCalled()
-    expect(commands.closeTab).toHaveBeenCalledWith('src/a.ts', 'editor')
-  })
-
-  it('cancelling the discard confirm neither discards nor closes', () => {
-    const { commands } = renderEditorPanel({
-      instanceId: 'editor', openTabs: ['src/a.ts'], activeTab: 'src/a.ts', dirtyTabs: ['src/a.ts'],
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Close a.ts' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
-    expect(commands.acceptDisk).not.toHaveBeenCalled()
-    expect(commands.closeTab).not.toHaveBeenCalled()
-  })
-
-  it('two editors on one file each render it (shared per-path buffer)', () => {
+describe('EditorPanel — shared per-path buffer', () => {
+  // Two editor tabs on one path (two instanceIds, two groups in real use) read the
+  // SAME per-path buffer, so both render the same content and a buffer edit mirrors
+  // to both — the FLAT linchpin.
+  const twoPanels = (files: Record<string, Partial<FileState>>) => {
     const ctx = buildContexts({
       instanceId: 'editor',
-      openTabs: ['src/shared.ts'], activeTab: 'src/shared.ts',
-      otherViews: { 'editor:2': { openTabs: ['src/shared.ts'], activeTab: 'src/shared.ts' } },
+      tabs: [
+        { instanceId: 'editor', tabId: 'src/shared.ts' },
+        { instanceId: 'editor:2', tabId: 'src/shared.ts' },
+      ],
+      activeInstance: 'editor',
+      files,
     })
-    render(wrapProviders(ctx, (
+    const node = (
       <>
         <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor' }}><EditorPanel /></PanelInstanceProvider>
         <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor:2' }}><EditorPanel /></PanelInstanceProvider>
       </>
-    )))
-    // Both panes show the same file tab — they read the same shared selection/file state.
-    const tabs = screen.getAllByTestId('tab')
-    expect(tabs).toHaveLength(2)
-    expect(tabs.every(t => t.textContent?.includes('shared.ts'))).toBe(true)
+    )
+    return wrapProviders(ctx, node)
+  }
+
+  it('both panes render the same file, and an edit to the shared buffer mirrors to both', () => {
+    const { rerender } = render(twoPanels({ 'src/shared.ts': { serverContent: 'ORIGINAL' } }))
+    const bodies = () => screen.getAllByTestId('cm-editor')
+    expect(bodies()).toHaveLength(2)
+    expect(bodies().every(e => e.getAttribute('data-file-path') === 'src/shared.ts')).toBe(true)
+    expect(bodies().every(e => e.getAttribute('data-content') === 'ORIGINAL')).toBe(true)
+
+    // Editing the per-path buffer (a draft) updates BOTH bodies — they key on path,
+    // not on instance.
+    rerender(twoPanels({ 'src/shared.ts': { serverContent: 'ORIGINAL', draft: 'EDITED' } }))
+    expect(bodies().every(e => e.getAttribute('data-content') === 'EDITED')).toBe(true)
   })
 })

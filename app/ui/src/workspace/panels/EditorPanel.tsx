@@ -1,26 +1,26 @@
-// EditorPanel — the editor section as a self-contained, propless panel.
+// EditorPanel — the editor BODY for ONE instance (design: VSCode Tab Groups /
+// vt-bodies). Under the flat tab-group model an editor instance IS a single tab;
+// the GROUP owns the tab strip. So this panel reads its `instanceId` from
+// `usePanelInstance()`, resolves its ONE tab (a file path or `diff:` id) from the
+// group tree via `editorTabByInstance`, and renders that single file/diff. It owns
+// no `openTabs` list and no tab bar.
 //
-// Design (Panel Encapsulation / EditorPanel): wraps `WorkspaceEditorColumn`,
-// owns `useWorkspaceDiff` panel-private, and derives `CompareContext` from the
-// active diff tab id (fetching the compare file list on demand from the tab's
-// base/compare refs, so compare state never becomes global).
+// Chrome: UNFRAMED. It still owns its inner action bar (preview-mode + suggestions,
+// mobile mic) and breadcrumbs via `WorkspaceEditorColumn`; the file tab + its close
+// × live in the group tab bar.
 //
-// Chrome: UNFRAMED. The editor owns its chrome (tab bar + breadcrumbs), so it
-// publishes no shared section header.
-//
-// It is a pure consumer of the T1b contexts:
+// It is a pure consumer of the workspace contexts:
 //   env       — viewport (isMobile/isTouch) + project (name/worktree)
-//   data      — git.changes (editor gutter diff), sessions.liveSessionHandles
-//   selection — openTabs/activeTab/previewTab/activeSession + editor file state
+//   data      — git.changes (editor gutter diff)
+//   selection — the group tree (its tab payload) + shared per-path file state
 //   layout    — editor prefs (previewMode/splitDirection/splitSize/autocomplete)
-//   commands  — tab/file/session commands + raw layout/tab actions
+//   commands  — file/focus/close commands + raw layout/tab actions
 //   voice     — the single screen-level voice surface (editor control + insert)
 //
 // Voice is NOT owned here. The workspace has one screen-level voice surface (one
 // `useVoice` + one `ComposeTray`); this panel consumes its editor control slot
 // (eligibility/handlers decided by the screen) and the `editorInsert` the screen
-// routes to it on confirm. Outside the screen (isolation tests) the inert default
-// surface renders no voice button and never inserts.
+// routes to it on confirm.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiffTab, isFileTab, parseDiffTab } from '../../hooks/useWorkspaceState'
 import { editorTabByInstance } from '../../hooks/useLayoutState'
@@ -30,10 +30,8 @@ import type { CompareContext } from '../diff/DiffTab'
 import {
   useWorkspaceEnv, useWorkspaceDataContext, useWorkspaceSelection,
   useWorkspaceLayout, useWorkspaceCommands, useWorkspaceVoiceSurface,
-  type SplitSide,
 } from '../context'
 import { usePanelInstance } from '../panelInstance'
-import { editorInstancesInOrder, groupOf, firstGroupId } from '../panelLayoutModel'
 import { useWorkspaceDiff } from '../useWorkspaceDiff'
 import { WorkspaceEditorColumn } from '../WorkspaceEditorColumn'
 import { PANEL_META } from '../panelMeta'
@@ -59,16 +57,11 @@ export function EditorPanel() {
   // Which editor instance this pane is. Outside a PanelHost (isolation tests) there
   // is no instance context → the active editor instance.
   const instanceId = usePanelInstance()?.instanceId ?? selection.activeEditorId
-  // FLAT: an editor instance IS one tab. Derive the single-tab view from the group
-  // node so the (still single-tab) editor column renders unchanged (vt-bodies will
-  // strip the per-editor tab bar entirely).
+  // The single file/diff this instance shows comes from ITS tab in the group tree —
+  // NOT the tab bar, NOT another instance's tab.
   const myTab = editorTabByInstance(tree, instanceId)
-  const tabId = myTab && myTab.kind === 'editor' ? myTab.tabId : null
-  const isSecondary = false
-  const openTabs = tabId ? [tabId] : []
-  const activeTab = tabId
-  const previewTab = myTab && myTab.kind === 'editor' && myTab.preview ? tabId : null
-  const { files, dirtyTabs, conflictTabs, jumpRequest } = selection.editor
+  const activeTab = myTab?.tabId ?? null
+  const { files, conflictTabs, jumpRequest } = selection.editor
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
   // Derived tab state (mirrors the inline editor body).
   const activeFilePath = isFileTab(activeTab) ? activeTab : null
@@ -112,8 +105,8 @@ export function EditorPanel() {
   const navigateCompareFile = useCallback((path: string) => {
     if (!compareBase || !compareHead) return
     const tabId = `diff:${path}?base=${encodeURIComponent(compareBase)}&compare=${encodeURIComponent(compareHead)}`
-    // Open in THIS pane (instance-scoped), not the active editor, so compare-nav
-    // from a non-active editor stays in the editor the user clicked (design: §E).
+    // Open in THIS pane's group (instance-scoped), not the active editor, so
+    // compare-nav from a non-active editor stays in the editor the user clicked.
     actions.openPreviewDiffTabByIdIn(instanceId, tabId)
     commands.focusPane('editor', instanceId)
   }, [compareBase, compareHead, actions, commands, instanceId])
@@ -129,18 +122,11 @@ export function EditorPanel() {
     }
   }, [isCompareDiff, compareBase, compareHead, parsedDiff, compareFiles, navigateCompareFile])
 
-  // Tab interactions are instance-scoped: select/close act on THIS pane's view and
-  // also focus it; mousedown focuses it. Double-click promotes preview→pinned IN
-  // THIS pane (instance-scoped open), not the active editor.
-  const handleDoubleClickTab = useCallback((tab: string) => {
-    if (tab !== previewTab) return
-    if (isFileTab(tab)) actions.openFileTabIn(instanceId, tab)
-    if (isDiffTab(tab)) actions.openDiffTabIn(instanceId, tab.slice(5))
-  }, [previewTab, actions, instanceId])
-
-  const handleSelectTab = useCallback((tab: string) => commands.selectTab(tab, instanceId), [commands, instanceId])
-  const handleCloseTab = useCallback((tab: string) => commands.closeTab(tab, instanceId), [commands, instanceId])
   const handleFocusEditor = useCallback(() => commands.focusPane('editor', instanceId), [commands, instanceId])
+  // The editor's own close request (Cmd+W) closes THIS instance's tab; the session/
+  // file is unaffected beyond the shared-buffer GC. The strip-level close lives in
+  // the group tab bar.
+  const handleCloseTab = useCallback(() => commands.closePane(instanceId), [commands, instanceId])
   // Breadcrumb directory navigation awaits the result; the command is fire-and-
   // forget, so adapt it to the async prop shape.
   const handleNavigateDir = useCallback(async (dir: string) => {
@@ -156,34 +142,9 @@ export function EditorPanel() {
   const insert = voice.editorInsert as TargetedInsert | null
   const myInsert = insert && insert.instanceId === instanceId && insert.filePath === activeTab ? insert : null
 
-  // Paths open in OTHER editor tabs — closing a dirty tab here is loss-free when
-  // the file is still shown elsewhere (shared buffer), so the tab bar skips its
-  // discard confirm in that case (design: §B explicit-discard).
-  const pathsOpenElsewhere = useMemo(() => {
-    const set = new Set<string>()
-    for (const id of editorInstancesInOrder(tree)) {
-      if (id === instanceId) continue
-      const t = editorTabByInstance(tree, id)
-      if (t && t.kind === 'editor') set.add(t.tabId)
-    }
-    return set
-  }, [tree, instanceId])
-
-  // Split/Move/Close chrome (design: §E). The home editor only splits; secondary
-  // editors also move (beside the structural home region) and close.
-  const editorSplit = useMemo(() => ({
-    isSecondary,
-    onSplit: (side: SplitSide) => commands.splitEditor(instanceId, side),
-    onMove: (side: SplitSide) => commands.movePane(instanceId, { targetId: groupOf(tree, instanceId) ?? firstGroupId(tree) ?? instanceId, side }),
-    onClose: () => commands.closePane(instanceId),
-  }), [isSecondary, instanceId, commands, tree])
-
   return (
     <WorkspaceEditorColumn
-      openTabs={openTabs}
       activeTab={activeTab}
-      previewTab={previewTab}
-      dirtyTabs={dirtyTabs}
       conflictTabs={conflictTabs}
       files={files}
       layout={{ previewMode, splitDirection, splitSize, autocompleteEnabled }}
@@ -197,12 +158,6 @@ export function EditorPanel() {
       worktree={worktree}
       voice={voice.editor}
       instanceId={instanceId}
-      editorSplit={editorSplit}
-      pathsOpenElsewhere={pathsOpenElsewhere}
-      onDiscardDirty={commands.acceptDisk}
-      onSelectTab={handleSelectTab}
-      onDoubleClickTab={handleDoubleClickTab}
-      onCloseTab={handleCloseTab}
       onLayoutUpdate={actions.updateLayout}
       onSaveFile={commands.saveFile}
       onForceSave={commands.forceSave}
@@ -213,6 +168,7 @@ export function EditorPanel() {
       onNavigateToFile={commands.openFile}
       onNavigateDir={handleNavigateDir}
       onFocusEditor={handleFocusEditor}
+      onCloseTab={handleCloseTab}
       compareContext={compareContext}
     />
   )
