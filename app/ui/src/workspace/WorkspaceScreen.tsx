@@ -223,12 +223,17 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
     commands.previewFile(entry.path)
   }, [commands])
 
+  // Cmd+Enter in quick-open splits the active editor and opens the file beside it.
+  const handleSearchOpenToSide = useCallback((entry: SearchEntry) => {
+    commands.openToSide(entry.path)
+  }, [commands])
+
   return (
     <WorkspaceVoiceContext.Provider value={voiceSurface}>
       <WorkspaceLayoutShell
         isMobile={isMobile}
         rootRef={rootRef}
-        searchOverlay={showSearch ? <FileSearch projectName={projectName} worktree={worktree} recentFiles={recentFiles} onSelect={handleSearchSelect} onClose={() => actions.setShowSearch(false)} /> : null}
+        searchOverlay={showSearch ? <FileSearch projectName={projectName} worktree={worktree} recentFiles={recentFiles} onSelect={handleSearchSelect} onOpenToSide={handleSearchOpenToSide} onClose={() => actions.setShowSearch(false)} /> : null}
         onInteractionCapture={() => { void lockCloseShortcut() }}
       />
       <ComposeTray

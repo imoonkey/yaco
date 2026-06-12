@@ -1,7 +1,20 @@
-import { useEffect, useCallback } from 'react'
+import { useEffect, useCallback, useRef } from 'react'
 import type { UseVoiceReturn } from '../hooks/useVoice'
+import type { FileNode } from '../types'
 import { writeTextToClipboard } from '../lib/clipboard'
-import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceDataContext, useWorkspaceEnv } from './context'
+import { splitSideFromGeometry, orthogonalSide } from './panelInstance'
+import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceDataContext, useWorkspaceEnv, useOptionalWorkspacePanelResources } from './context'
+
+/** Type of the tree node at `path` (file/dir), or null if not in the tree. */
+function findNodeType(nodes: FileNode[] | null, path: string): 'file' | 'dir' | null {
+  if (!nodes) return null
+  for (const node of nodes) {
+    if (node.path === path) return node.type
+    const child = node.children ? findNodeType(node.children, path) : null
+    if (child) return child
+  }
+  return null
+}
 
 type KeyboardLockHandle = {
   lock?: (keyCodes?: string[]) => Promise<void>
@@ -38,12 +51,23 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
   const toggleTasks = commands.toggleTasks
   const toggleDock = commands.toggleDock
   const toggleActivity = commands.toggleActivity
+  const splitEditor = commands.splitEditor
+  const splitTerminal = commands.splitTerminal
+  const openToSide = commands.openToSide
   const setShowSearch = commands.actions.setShowSearch
-  const { activeSession, openTabs, activeTab, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
+  const { activeSession, openTabs, activeTab, focusedPane, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
   const { orderedSessions } = useWorkspaceDataContext().sessions
   const { layout } = useWorkspaceLayout()
   const { previewMode } = layout
   const { isMobile } = useWorkspaceEnv().viewport
+  // The file tree the explorer renders (provider-owned, always-on). Used to gate
+  // Cmd+Enter open-to-side to FILES — the explorer reports a focused path for
+  // directories too, and openToSide would otherwise open a bogus side editor.
+  const fileTree = useOptionalWorkspacePanelResources()?.fileTree.data ?? null
+
+  // Cmd+K arms the orthogonal-split prefix; the next Cmd+\ flips the axis. A plain
+  // ref (no timer) — the next keydown either completes the chord or cancels it.
+  const chordPendingRef = useRef(false)
 
   const getKeyboardLock = useCallback((): KeyboardLockHandle | null => {
     if (!window.isSecureContext) return null
@@ -69,8 +93,32 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
 
   // Main keydown handler
   useEffect(() => {
+    // Split the focused editor/terminal along its live geometry's default axis
+    // (wide → right, tall → below), or the orthogonal axis when Cmd+K armed it.
+    const splitFocusedPane = (orthogonal: boolean) => {
+      if (focusedPane.kind !== 'editor' && focusedPane.kind !== 'terminal') return
+      const el = document.querySelector<HTMLElement>(`[data-instance-id="${focusedPane.instanceId}"]`)
+      if (!el) return
+      const base = splitSideFromGeometry(el.offsetWidth, el.offsetHeight)
+      const side = orthogonal ? orthogonalSide(base) : base
+      if (focusedPane.kind === 'editor') splitEditor(focusedPane.instanceId, side)
+      else splitTerminal(focusedPane.instanceId, side)
+    }
+
     const handler = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase()
+      // Cmd+K prefix completion: only a clean Cmd+\ flips the split axis. Any
+      // other key (incl. a bare '\' after Cmd was released) cancels the prefix
+      // and is handled normally below — no preventDefault.
+      if (chordPendingRef.current) {
+        chordPendingRef.current = false
+        if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'Backslash') {
+          e.preventDefault()
+          e.stopPropagation()
+          splitFocusedPane(true)
+          return
+        }
+      }
       // Cmd+Ctrl+[1-9]: switch to session N
       if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey && /^Digit[1-9]$/.test(e.code)) {
         e.preventDefault()
@@ -115,6 +163,30 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         actions.setActiveTab(openTabs[next])
         setFocusTarget('editor')
         if (isMobile) actions.setMobilePane('editor')
+        return
+      }
+      // Cmd+\: split the focused pane along its geometry-default axis.
+      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'Backslash') {
+        e.preventDefault()
+        e.stopPropagation()
+        splitFocusedPane(false)
+        return
+      }
+      // Cmd+K: arm the orthogonal-split prefix (completed by Cmd+\ above).
+      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'KeyK') {
+        e.preventDefault()
+        e.stopPropagation()
+        chordPendingRef.current = true
+        return
+      }
+      // Cmd+Enter in the explorer: open the focused FILE beside the active editor
+      // (directories report a focused path too, but must not open a side editor).
+      if (!showSearch && e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+          && e.key === 'Enter' && focusTarget === 'explorer' && explorerFocusedPath
+          && findNodeType(fileTree, explorerFocusedPath) === 'file') {
+        e.preventDefault()
+        e.stopPropagation()
+        openToSide(explorerFocusedPath)
         return
       }
       if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && key === 'b') {
@@ -197,7 +269,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, focusTarget, recordEditor, recordTerminal, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeTab, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, fileTree, focusedPane, focusTarget, openToSide, recordEditor, recordTerminal, isMobile, openTabs, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, splitEditor, splitTerminal, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {
