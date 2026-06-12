@@ -613,7 +613,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     const { showSearch: search, focusTarget: focus, activeTab: tab, activeTerminalId: tid } = latestRef.current
     if (search) { setShowSearch(false); return true }
     // Terminal Cmd+W closes the pane (the session keeps running, design §3.7).
-    if (focus === 'terminal' && tid) { closePane(tid); return true }
+    // Self-contained: never fall through to the editor-tab path even if a terminal
+    // closed between render and keypress (tid null), which would close a file tab.
+    if (focus === 'terminal') { if (tid) closePane(tid); return true }
     if (focus === 'session' && detachSession()) return true
     if (focus === 'editor' || focus === 'tasks') {
       // Tasks showing → return to the editor (syncs the legacy sidebar toggle off).
