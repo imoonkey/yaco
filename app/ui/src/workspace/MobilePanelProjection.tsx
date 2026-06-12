@@ -26,6 +26,7 @@ import { toggleTheme } from '../lib/theme'
 import { PanelHost } from './PanelHost'
 import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import { collectFramedLeaves } from './desktopTreeSizing'
+import { editorTabsInGroup, terminalTabsInGroup } from './panelLayoutModel'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
 import { useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection } from './context'
 import { mobileDockToPane, type MobilePane } from '../hooks/workspaceTypes'
@@ -82,10 +83,22 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
 
   const activeDock = panelLayout.mobile.activeDock
   const activePane = mobileDockToPane(activeDock)
-  // Mobile projects the ACTIVE editor/terminal instance (design: §D) — the editor
-  // pane renders the active editor's view, the terminal pane the active terminal's
-  // binding. Other panels are singletons (instanceId === type).
-  const { activeEditorId, activeTerminalId } = useWorkspaceSelection()
+  // Mobile projects the ACTIVE GROUP's editor + terminal tabs (design: §D). The
+  // editor pane shows the active group's active editor tab (or its first editor tab
+  // when a terminal is active); the terminal pane the active group's active/first
+  // terminal tab. A group with ZERO editor tabs resolves to '' → the editor body
+  // renders "No file open" rather than crashing.
+  const { activeGroupId, activeEditorTab, activeTerminalId } = useWorkspaceSelection()
+  const tree = panelLayout.desktop
+  const editorInstanceId =
+    activeEditorTab?.instanceId
+    ?? editorTabsInGroup(tree, activeGroupId)[0]?.instanceId
+    ?? ''
+  const groupTerminals = terminalTabsInGroup(tree, activeGroupId)
+  const terminalInstanceId =
+    groupTerminals.find((t) => t.instanceId === activeTerminalId)?.instanceId
+    ?? groupTerminals[0]?.instanceId
+    ?? null
 
   // Browse-dock section chrome: collapse + body sizing for each framed panel,
   // read by its `PanelHost` through `PanelChromeContext`. Collapse comes from the
@@ -168,8 +181,8 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
             <ActiveDockPanes
               dock={activeDock}
               onBrowseFocus={() => commands.setFocusTarget('explorer')}
-              activeEditorId={activeEditorId}
-              activeTerminalId={activeTerminalId}
+              editorInstanceId={editorInstanceId}
+              terminalInstanceId={terminalInstanceId}
             />
           </div>
         </div>
@@ -182,13 +195,14 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
 // metadata (`mobileDockPanels`). Only the genuinely dock-specific wrapper chrome
 // lives outside that map — the browse scroll surface + explorer-focus, and the
 // terminal flex column — so a metadata change to ANY dock (membership or order)
-// changes what projects here, not just the browse dock. The editor/terminal
-// panels render the ACTIVE instance (its instanceId), so mobile shows one of N.
-function ActiveDockPanes({ dock, onBrowseFocus, activeEditorId, activeTerminalId }: {
-  dock: MobileDock; onBrowseFocus: () => void; activeEditorId: string; activeTerminalId: string | null
+// changes what projects here, not just the browse dock. The editor/terminal panels
+// render the ACTIVE GROUP's instance ('' editor ⇒ "No file open"; no terminal ⇒ the
+// idle 'terminal' placeholder).
+function ActiveDockPanes({ dock, onBrowseFocus, editorInstanceId, terminalInstanceId }: {
+  dock: MobileDock; onBrowseFocus: () => void; editorInstanceId: string; terminalInstanceId: string | null
 }) {
   const instanceOf = (panel: string): string | undefined =>
-    panel === 'editor' ? activeEditorId : panel === 'terminal' ? (activeTerminalId ?? 'terminal') : undefined
+    panel === 'editor' ? editorInstanceId : panel === 'terminal' ? (terminalInstanceId ?? 'terminal') : undefined
   const panels = mobileDockPanels(dock).map((panel) => (
     <PanelHost key={panel} id={panel} instanceId={instanceOf(panel)} />
   ))

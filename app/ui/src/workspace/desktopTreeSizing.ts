@@ -1,7 +1,7 @@
 // Desktop tree sizing — the pure layout math behind `DesktopPanelTreeLayout`.
 //
-// Kept component-free (like `panelMeta`) so the flex/absorber/empty-editor rules
-// are unit-testable without mounting React, and so the renderer file exports only
+// Kept component-free (like `panelMeta`) so the flex/absorber rules are
+// unit-testable without mounting React, and so the renderer file exports only
 // components (fast-refresh clean). The renderer composes these with `PanelHost`,
 // `usePanelResize`, and the resize handles.
 //
@@ -12,9 +12,8 @@
 //     `grow`, giving the flex planner and `usePanelResize` one consistent view.
 //   - a collapsed framed leaf is header-only and drops out of sizing — matching
 //     the legacy `flexFallback` (a collapsed Explorer lets the next section grow).
-//   - empty-editor yields space: with no open tabs and a visible activity column,
-//     the main tabs node is excluded (render-only) so the activity column absorbs
-//     the freed width, reproducing today's behavior.
+//   - a working group (tabs node) sizes like any split child — uniform, with no
+//     special empty-editor rule.
 import { getPanelMeta } from './panelMeta'
 import { DEFAULT_MIN_SIZE } from './panelLayoutModel'
 import type { PanelId } from './context'
@@ -106,14 +105,6 @@ export function planSplitChildren(canonical: SplitNode): SplitItem[] {
         : minBasisPx(child.node, axis)
       return { child, collapsed: false, sizing: { flexGrow: 0, flexShrink: 0, flexBasis: basis } }
     })
-}
-
-/** Empty groups are valid, full-size structural nodes under the group model, so
- *  there is no render-only "yield the empty editor's width" rule anymore — a group
- *  sizes like any split child. Kept as an identity pass so the renderer call site
- *  is stable until vt-render removes it. */
-export function withEmptyEditorRule(tree: LayoutNode, _hasOpenTabs: boolean): LayoutNode {
-  return tree
 }
 
 // Per-framed-panel body chrome, mirroring the legacy section body wrappers so

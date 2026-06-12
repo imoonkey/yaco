@@ -20,6 +20,7 @@ import {
   type CSSProperties, type ReactNode, type RefObject,
 } from 'react'
 import { PanelHost } from './PanelHost'
+import { PanelGroup } from './PanelGroup'
 import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import { usePanelResize, type BasisResolver } from './usePanelResize'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
@@ -31,9 +32,9 @@ import {
   HANDLE_PX, FRAMED_BODY_CLASS, minBasisPx, canonicalizeSplit, planSplitChildren,
   collectFramedLeaves,
 } from './desktopTreeSizing'
-import { editorInstancesInOrder, terminalInstancesInOrder } from './panelLayoutModel'
+import { editorInstancesInOrder, terminalInstancesInOrder, firstGroupId } from './panelLayoutModel'
 import { paneMarker, type PaneMarker } from './panelInstance'
-import type { LayoutNode, SplitNode } from '../hooks/workspaceTypes'
+import type { LayoutNode, LeafNode, SplitNode } from '../hooks/workspaceTypes'
 
 type ResizeSplitChild = (splitId: string, childId: string, basis: number) => void
 /** Compute the focus/active marker for a pane (editor/terminal only). */
@@ -41,9 +42,10 @@ type MarkerFor = (type: PanelId, instanceId: string) => PaneMarker
 
 const ROOT_SIZING: CSSProperties = { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 0 }
 
-// Structural ARIA landmarks. The dock and the activity column expose the SAME
-// landmarks the legacy skeleton did. The working-area `role="main"` is restored on
-// the first group by vt-render (the reserved MAIN_TABS_ID id is gone).
+// Structural ARIA landmarks for the split columns. The dock and the activity
+// column expose the SAME landmarks the legacy skeleton did. The working-area
+// `role="main"` lives on the first group (PanelGroup); the reserved MAIN_TABS_ID
+// id is gone.
 const NODE_LANDMARK: Record<string, { role: string; label?: string }> = {
   dock: { role: 'navigation', label: 'Sidebar' },
   activity: { role: 'complementary', label: 'Activity panel' },
@@ -73,6 +75,9 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
     (type, instanceId) => paneMarker(type, instanceId, focusedPane, activeEditorId, activeTerminalId, editorCount, terminalCount),
     [focusedPane, activeEditorId, activeTerminalId, editorCount, terminalCount],
   )
+
+  // The first group carries the `role="main"` landmark.
+  const mainGroupId = useMemo(() => firstGroupId(panelLayout.desktop), [panelLayout.desktop])
 
   // Renderer-published collapse + body sizing for the framed panels, read by each
   // framed PanelHost through PanelChromeContext (same seam the legacy renderer used).
@@ -104,58 +109,44 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
         onKeyDownCapture={onInteractionCapture}
       >
         {searchOverlay}
-        <TreeNode node={effectiveRoot} sizing={ROOT_SIZING} resizeSplitChild={resizeSplitChild} markerFor={markerFor} />
+        <TreeNode node={effectiveRoot} sizing={ROOT_SIZING} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} />
       </div>
     </PanelChromeContext.Provider>
   )
 }
 
-// Marker colors: bright accent for the focused pane, a dimmed accent for the
-// active-but-unfocused instance (design: §D).
-const FOCUS_ACCENT = 'var(--sol-accent)'
-const ACTIVE_ACCENT = 'color-mix(in srgb, var(--sol-accent) 40%, transparent)'
-
-function TreeNode({ node, sizing, resizeSplitChild, markerFor }: {
-  node: LayoutNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor
+// A tabs node renders a <PanelGroup> (tab bar + active tab body); a leaf renders a
+// dock panel through <PanelHost>; a split recurses. `mainGroupId` carries the
+// first-group id down so PanelGroup can claim `role="main"`.
+function TreeNode({ node, sizing, resizeSplitChild, markerFor, mainGroupId }: {
+  node: LayoutNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor; mainGroupId: string | null
 }) {
   if (node.kind === 'split') {
-    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} />
+    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} />
   }
-  // leaf or tabs → a sized flex column hosting the panel. A tabs (group) node
-  // renders its ACTIVE tab's body (vt-render replaces this with <PanelGroup>); an
-  // empty group renders an empty shell. The instance id is the leaf's own id, or
-  // the active tab's instanceId for a group.
-  const activeTabNode = node.kind === 'tabs' ? node.tabs.find((t) => t.instanceId === node.activeTab) : undefined
-  const panel: PanelId | undefined = node.kind === 'leaf' ? node.panel : activeTabNode?.kind
-  const instanceId = node.kind === 'leaf' ? node.id : node.activeTab
-  const landmark = NODE_LANDMARK[node.id]
-  const marker = markerFor(panel ?? 'editor', instanceId)
-  const markable = panel === 'editor' || panel === 'terminal'
-  // Reserve a 2px top border on markable panes (transparent when unmarked) so the
-  // focus/active marker never shifts layout (box-sizing: border-box).
-  const borderTop = markable
-    ? `2px solid ${marker.focused ? FOCUS_ACCENT : marker.active ? ACTIVE_ACCENT : 'transparent'}`
-    : undefined
+  if (node.kind === 'tabs') {
+    return <PanelGroup group={node} sizing={sizing} isMain={node.id === mainGroupId} markerFor={markerFor} />
+  }
+  return <LeafView node={node} sizing={sizing} />
+}
+
+// A dock leaf (projects/files/changes/sessions/tasks). Editor/terminal never live
+// as leaves under the group model, so a leaf is never a markable pane.
+function LeafView({ node, sizing }: { node: LeafNode; sizing: CSSProperties }) {
   return (
     <div
       data-node-id={node.id}
-      data-instance-id={panel ? instanceId : undefined}
-      data-panel-leaf={node.kind === 'leaf' ? node.panel : undefined}
-      data-tabs-active={node.kind === 'tabs' ? node.activeTab : undefined}
-      data-focused={marker.focused || undefined}
-      data-active={marker.active || undefined}
-      role={landmark?.role}
-      aria-label={landmark?.label}
-      style={borderTop ? { ...sizing, borderTop } : sizing}
+      data-panel-leaf={node.panel}
+      style={sizing}
       className="flex flex-col min-w-0 min-h-0"
     >
-      {panel && <PanelHost id={panel} instanceId={instanceId} />}
+      <PanelHost id={node.panel} instanceId={node.id} />
     </div>
   )
 }
 
-function SplitView({ node, sizing, resizeSplitChild, markerFor }: {
-  node: SplitNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor
+function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId }: {
+  node: SplitNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor; mainGroupId: string | null
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canonical = canonicalizeSplit(node)
@@ -187,6 +178,7 @@ function SplitView({ node, sizing, resizeSplitChild, markerFor }: {
         sizing={item.sizing}
         resizeSplitChild={resizeSplitChild}
         markerFor={markerFor}
+        mainGroupId={mainGroupId}
       />,
     )
     if (i < items.length - 1) {

@@ -1,11 +1,11 @@
 // Unit tests for the desktop tree sizing math (the pure layer behind
-// DesktopPanelTreeLayout). These pin the absorber selection, flex sizing,
-// empty-editor exclusion, and framed-leaf collection that the renderer's
-// geometry depends on — without mounting React.
+// DesktopPanelTreeLayout). These pin the absorber selection, flex sizing, and
+// framed-leaf collection that the renderer's geometry depends on — without
+// mounting React.
 import { describe, it, expect } from 'vitest'
 import {
   minBasisPx, isCollapsedLeaf, canonicalizeSplit, planSplitChildren,
-  withEmptyEditorRule, collectFramedLeaves,
+  collectFramedLeaves,
 } from '../desktopTreeSizing'
 import { defaultDesktopTree } from '../panelLayoutModel'
 import type { PanelId } from '../context'
@@ -107,23 +107,6 @@ describe('planSplitChildren — flex sizing per visible child', () => {
     ], 'dock')
     const items = planSplitChildren(canonicalizeSplit(dock))
     expect(items.map((it) => it.child.node.id)).toEqual(['files'])
-  })
-})
-
-describe('withEmptyEditorRule — identity under the group model', () => {
-  // Empty groups are valid, full-size structural nodes now, so the old
-  // "yield the empty editor's width" hide rule is gone — the pass is identity.
-  it('returns the tree unchanged regardless of the hasOpenTabs flag', () => {
-    const tree = defaultDesktopTree()
-    expect(withEmptyEditorRule(tree, false)).toBe(tree)
-    expect(withEmptyEditorRule(tree, true)).toBe(tree)
-  })
-
-  it('does not mutate the input tree', () => {
-    const tree = defaultDesktopTree()
-    const snapshot = JSON.stringify(tree)
-    withEmptyEditorRule(tree, false)
-    expect(JSON.stringify(tree)).toBe(snapshot)
   })
 })
 
