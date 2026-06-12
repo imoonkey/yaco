@@ -69,6 +69,24 @@ export function useContextMenu() {
     setPosition({ x: e.clientX, y: e.clientY })
   }, [cleanupTouchGuard, clearArmTimer])
 
+  // Dismiss-safe left-click opener for a visible trigger button (e.g. the split
+  // button). A plain left-click that opens a menu would also bubble to the
+  // document `click` dismiss below and close it the instant it opens. Stopping
+  // propagation halts the synthetic AND native click at React's root container —
+  // an element BELOW `document` — so the dismiss listener never sees the opening
+  // click. The menu anchors under the trigger element. Use this, never `open`.
+  const openFromTrigger = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    cleanupTouchGuard()
+    clearArmTimer()
+    setArmed(true)
+    setFocusOnOpen(true)
+    setExiting(false)
+    const rect = e.currentTarget.getBoundingClientRect()
+    setPosition({ x: rect.left, y: rect.bottom })
+  }, [cleanupTouchGuard, clearArmTimer])
+
   const close = useCallback(() => {
     cleanupTouchGuard()
     clearArmTimer()
@@ -157,5 +175,5 @@ export function useContextMenu() {
     clearArmTimer()
   }, [cancelLp, cleanupTouchGuard, clearArmTimer])
 
-  return { position, exiting, armed, focusOnOpen, open, close, onExitDone, bind }
+  return { position, exiting, armed, focusOnOpen, open, openFromTrigger, close, onExitDone, bind }
 }

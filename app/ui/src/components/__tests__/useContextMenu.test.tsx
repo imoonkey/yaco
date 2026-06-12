@@ -28,9 +28,54 @@ function TestContextMenu({ onAction, onDragStart }: { onAction: () => void; onDr
   )
 }
 
+function TriggerMenu({ onAction }: { onAction: () => void }) {
+  const menu = useContextMenu()
+
+  return (
+    <>
+      <button type="button" data-testid="trigger" onClick={menu.openFromTrigger}>
+        Split
+      </button>
+      <button type="button">Outside</button>
+      {menu.position && (
+        <Menu
+          position={menu.position}
+          exiting={menu.exiting}
+          armed={menu.armed}
+          focusOnOpen={menu.focusOnOpen}
+          onExitDone={menu.onExitDone}
+        >
+          <MenuItem label="Action" onClick={onAction} />
+        </Menu>
+      )}
+    </>
+  )
+}
+
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+})
+
+describe('useContextMenu openFromTrigger', () => {
+  it('opens a menu from a left-click trigger and keeps it open through that click', () => {
+    const docClick = vi.fn()
+    document.addEventListener('click', docClick)
+    const onAction = vi.fn()
+    render(<TriggerMenu onAction={onAction} />)
+
+    fireEvent.click(screen.getByTestId('trigger'))
+
+    // The menu is open — the opening click did NOT instantly dismiss it (Bug 2).
+    expect(screen.getByRole('menuitem', { name: 'Action' })).toBeTruthy()
+    // The opening click never reached the document dismiss path (stopPropagation).
+    expect(docClick).not.toHaveBeenCalled()
+    document.removeEventListener('click', docClick)
+
+    // A choice still fires normally.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Action' }))
+    expect(onAction).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('useContextMenu touch behavior', () => {

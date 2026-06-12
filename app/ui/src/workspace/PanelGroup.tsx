@@ -15,9 +15,9 @@
 // never read the tab bar. So `vt-bodies` renders against the instance context only.
 //
 // Command wiring goes through the PUBLIC command surface (`useWorkspaceCommands`):
-// select/close/split are fully wired; within-group reorder needs a group-native
-// `reorderGroupTab` on the command surface (not exposed to render yet) and is inert
-// until vt-group-tabbar + the command surface land it.
+// select/close, the group-native `splitGroup`/`reorderGroupTab`/`closeGroup`, and
+// the dirty-close draft discard (`acceptDisk`) are all wired here and handed to the
+// tab bar as group-native callbacks.
 import { useCallback, useMemo, type CSSProperties } from 'react'
 import { PanelHost } from './PanelHost'
 import { GroupTabBar } from './GroupTabBar'
@@ -76,18 +76,29 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
     commands.closePane(instanceId)
   }, [commands])
 
-  // Split this group to an empty sibling. The public surface resolves the split
-  // source from a tab instance, so reference the active (or first) tab; the new
-  // empty group becomes the open target via the reducer's `activeGroupId`.
+  // Split this group to an empty sibling. Group-native: it targets the group id
+  // directly, so it works even when the group has no tabs (the new empty group
+  // becomes the open target via the reducer's `activeGroupId`).
   const onSplit = useCallback((side: SplitSide) => {
-    commands.splitEditor(group.activeTab || group.tabs[0]?.instanceId || '', side)
-  }, [commands, group.activeTab, group.tabs])
+    commands.splitGroup(group.id, side)
+  }, [commands, group.id])
 
-  // Within-group reorder is a pure tree edit (REORDER_GROUP_TAB); it needs a
-  // group-native command on the public surface, which the render layer cannot reach
-  // yet. vt-group-tabbar wires the DnD against this prop; inert until the command
-  // surface exposes `reorderGroupTab`.
-  const onReorderTab = useCallback((_instanceId: string, _toIndex: number) => {}, [])
+  // Within-group reorder — a pure tree edit (REORDER_GROUP_TAB) the tab bar's DnD
+  // drives by group id.
+  const onReorderTab = useCallback((instanceId: string, toIndex: number) => {
+    commands.reorderGroupTab(group.id, instanceId, toIndex)
+  }, [commands, group.id])
+
+  // Close an EMPTY split-created group (the tab-bar "Close Group" context item).
+  const onCloseGroup = useCallback(() => {
+    commands.closeGroup(group.id)
+  }, [commands, group.id])
+
+  // Discard a file's draft (→ clean) on an explicit dirty-close of its last view,
+  // so the shared-buffer GC drops it instead of resurrecting the edit.
+  const onDiscardDirty = useCallback((path: string) => {
+    commands.acceptDisk(path)
+  }, [commands])
 
   const activeTabNode = group.tabs.find((t) => t.instanceId === group.activeTab) ?? null
   const marker = activeTabNode ? markerFor(activeTabNode.kind, activeTabNode.instanceId) : null
@@ -114,6 +125,8 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         onCloseTab={onCloseTab}
         onSplit={onSplit}
         onReorderTab={onReorderTab}
+        onCloseGroup={onCloseGroup}
+        onDiscardDirty={onDiscardDirty}
       />
       {activeTabNode && (
         <div
