@@ -224,6 +224,9 @@ export type GroupTab =
   | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
   | { instanceId: string; kind: 'terminal' }
 
+export type EditorGroupTab = Extract<GroupTab, { kind: 'editor' }>
+export type TerminalGroupTab = Extract<GroupTab, { kind: 'terminal' }>
+
 /** A working-area group: an ordered, mixed strip of editor/terminal tabs. `id` is
  *  the group's structural node id (the split target — disjoint from any tab's
  *  `instanceId`). `activeTab` is the shown tab's `instanceId`, or `''` for an

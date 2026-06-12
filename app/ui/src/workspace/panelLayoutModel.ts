@@ -30,7 +30,7 @@ import { getPanelMeta } from './panelMeta'
 import type { PanelId, SplitSide, PanelPlacement } from './context'
 import type { MobileDock } from './panelMeta'
 import type {
-  LayoutNode, LeafNode, SplitChild, TabsNode, GroupTab, EditorView,
+  LayoutNode, LeafNode, SplitChild, TabsNode, GroupTab, EditorGroupTab, TerminalGroupTab, EditorView,
   SplitAxis, PanelState, WorkspacePanelLayout, PreviewMode,
 } from '../hooks/workspaceTypes'
 import { parseDiffTab } from '../hooks/workspaceTypes'
@@ -210,11 +210,11 @@ export function tabsInGroup(tree: LayoutNode, groupId: string): GroupTab[] {
   return tabs
 }
 
-export const editorTabsInGroup = (tree: LayoutNode, groupId: string): GroupTab[] =>
-  tabsInGroup(tree, groupId).filter((t) => t.kind === 'editor')
+export const editorTabsInGroup = (tree: LayoutNode, groupId: string): EditorGroupTab[] =>
+  tabsInGroup(tree, groupId).filter((t): t is EditorGroupTab => t.kind === 'editor')
 
-export const terminalTabsInGroup = (tree: LayoutNode, groupId: string): GroupTab[] =>
-  tabsInGroup(tree, groupId).filter((t) => t.kind === 'terminal')
+export const terminalTabsInGroup = (tree: LayoutNode, groupId: string): TerminalGroupTab[] =>
+  tabsInGroup(tree, groupId).filter((t): t is TerminalGroupTab => t.kind === 'terminal')
 
 /** The tab with `instanceId` anywhere in the tree, or null. */
 export function tabByInstance(tree: LayoutNode, instanceId: string): GroupTab | null {
