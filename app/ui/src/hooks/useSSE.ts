@@ -61,13 +61,6 @@ function getSource(): EventSource {
   })
 
   // Route events to registered listeners
-  es.addEventListener('notification', (e) => {
-    const set = listeners.get('notification')
-    if (set) for (const fn of set) fn(e as MessageEvent)
-    // Notification events mean progress.json changed — trigger progress refresh
-    debouncedFireChannel('progress')
-  })
-
   es.addEventListener('refresh', (e) => {
     const channel = (e as MessageEvent).data
     debouncedFireChannel(channel)
@@ -83,11 +76,6 @@ function getSource(): EventSource {
   // it and can fire OS interrupts (eng-design §2.1, §5.4).
   es.addEventListener('attention', (e) => {
     const set = listeners.get('attention')
-    if (set) for (const fn of set) fn(e as MessageEvent)
-  })
-
-  es.addEventListener('notifications:changed', (e) => {
-    const set = listeners.get('notifications:changed')
     if (set) for (const fn of set) fn(e as MessageEvent)
   })
 
