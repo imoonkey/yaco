@@ -3,7 +3,7 @@ import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirec
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import { Sparkles } from 'lucide-react'
-import { WorkspaceTabBar } from './WorkspaceTabBar'
+import { WorkspaceTabBar, type EditorSplitChrome } from './WorkspaceTabBar'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
 import { VoiceControl } from '../components/VoiceControl'
@@ -13,7 +13,7 @@ import type { DiffState } from './useWorkspaceDiff'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
 
-type JumpRequest = { key: number; path: string; line: number; scroll?: boolean }
+type JumpRequest = { key: number; path: string; line: number; scroll?: boolean; instanceId?: string }
 
 interface EditorColumnVoice {
   eligible: boolean
@@ -41,6 +41,16 @@ export interface WorkspaceEditorColumnProps {
   worktree?: string | null
   voice: EditorColumnVoice
   compareContext?: CompareContext
+  // Per-instance identity + chrome (design: §E). instanceId stamps the in-editor
+  // self-jump so only this pane consumes it; editorSplit drives the tab-bar Split/
+  // Move/Close control (suppressed on mobile); pathsOpenElsewhere lets the tab bar
+  // skip its dirty-close confirm when a file is still open in another view.
+  instanceId: string
+  editorSplit?: EditorSplitChrome
+  pathsOpenElsewhere?: ReadonlySet<string>
+  // Discards the draft (→ clean) on an explicit "Close Without Saving" of a file's
+  // last view, so the shared buffer GC drops it instead of resurrecting the edit.
+  onDiscardDirty?: (path: string) => void
   onSelectTab: (tab: string) => void
   onDoubleClickTab: (tab: string) => void
   onCloseTab: (tab: string, e?: React.MouseEvent) => void
@@ -62,6 +72,7 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
     files, layout, isTouch, isMobile,
     activeDiff, editorDiffHunks, jumpRequest, editorInsert,
     projectName, worktree, voice, compareContext,
+    instanceId, editorSplit, pathsOpenElsewhere, onDiscardDirty,
     onSelectTab, onDoubleClickTab, onCloseTab, onLayoutUpdate,
     onSaveFile, onForceSave, onAcceptDisk, onUpdateDraft, onUpdateViewport,
     onSetJumpRequest, onNavigateToFile, onNavigateDir, onFocusEditor,
@@ -100,10 +111,12 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
 
   const handleActivateLine = useCallback((line: number) => {
     if (!activeFilePath) return
-    onSetJumpRequest({ key: Date.now(), path: activeFilePath, line: clampLine(line), scroll: false })
+    // Stamp this pane's instanceId so the go-to-line is consumed only here
+    // (design: §E — the last bare jumpRequest producer).
+    onSetJumpRequest({ key: Date.now(), path: activeFilePath, line: clampLine(line), scroll: false, instanceId })
     if (previewMode !== 'split') onLayoutUpdate({ previewMode: 'edit' })
     onFocusEditor()
-  }, [activeFilePath, previewMode, onSetJumpRequest, onLayoutUpdate, onFocusEditor])
+  }, [activeFilePath, previewMode, instanceId, onSetJumpRequest, onLayoutUpdate, onFocusEditor])
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden min-w-0" style={{ backgroundColor: 'var(--sol-editor-bg)' }} onMouseDown={onFocusEditor}>
@@ -123,8 +136,13 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
         onPreviewModeChange={(mode) => onLayoutUpdate({ previewMode: mode })}
         onSplitDirectionChange={(dir) => onLayoutUpdate({ splitDirection: dir })}
         onSaveTab={handleSaveTab}
+        editorSplit={isMobile ? undefined : editorSplit}
+        pathsOpenElsewhere={pathsOpenElsewhere}
+        onDiscardDirty={onDiscardDirty}
         rightActions={<>
-          {voice.eligible && (
+          {/* Per-pane mic is MOBILE-only: on desktop the GlobalVoiceControl in the
+              app top bar is the single voice surface (design: §G). */}
+          {isMobile && voice.eligible && (
             <VoiceControl
               capability={voice.capability}
               state={voice.state}
