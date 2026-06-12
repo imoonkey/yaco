@@ -1,4 +1,4 @@
-import type { PanelId } from '../workspace/context'
+import type { PanelId, FocusTarget } from '../workspace/context'
 import type { MobileDock } from '../workspace/panelMeta'
 
 // --- Types ---
@@ -65,11 +65,30 @@ export type PersistedDrafts = {
   files: Record<string, PersistedDraftEntry>
 }
 
-export type PersistedState = {
+/** One editor instance's tab view — the per-instance slice of what used to be the
+ *  global `openTabs`/`activeTab`/`previewTab` (design: Multi-Instance Panels / B).
+ *  Document buffers stay global by path in `useFileState`; only this view is
+ *  per-instance. A read for a missing instance id defaults to `EMPTY_VIEW`. */
+export type EditorView = {
   openTabs: string[]
   activeTab: string | null
   previewTab: string | null
-  activeSession: string
+}
+
+export const EMPTY_VIEW: EditorView = { openTabs: [], activeTab: null, previewTab: null }
+
+/** The single focused pane. `kind` generalizes the old `focusTarget`; `instanceId`
+ *  is meaningful for editor/terminal and otherwise equals the kind. */
+export type FocusedPane = { kind: FocusTarget; instanceId: string }
+
+export type PersistedState = {
+  // Per-instance editor/terminal state (design: Persistence Shape). Replaces the
+  // old global openTabs/activeTab/previewTab/activeSession; the loader migrates an
+  // old flat blob into `editorViews.editor` + `terminalBindings.terminal`.
+  editorViews: Record<string, EditorView>
+  terminalBindings: Record<string, string>
+  editorMru: string[]
+  terminalMru: string[]
   mobilePane: MobilePane
   layout: WorkspaceLayout
   recentFiles: string[]
@@ -78,7 +97,7 @@ export type PersistedState = {
   // every write path carries it, so it is required: the type makes dropping it
   // from a save snapshot a compile error. The flat `layout`/`mobilePane` remain
   // the source of truth for dock/activity visibility + the mobile pane, mirrored
-  // onto the tree by the provider.
+  // onto the tree by the provider. It carries the instance ids the maps key on.
   panelLayout: WorkspacePanelLayout
 }
 

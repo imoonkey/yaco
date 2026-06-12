@@ -677,19 +677,36 @@ function mainTabsNode(panel: PanelId): TabsNode {
   return { kind: 'tabs', id: MAIN_TABS_ID, active: panel, panels: [panel], chrome: 'none' }
 }
 
-/** Graft a freshly-created main tabs node (holding `panel`) back into the tree as
- *  a grow child of the root, used when default-restoring editor/tasks after the
- *  reserved main node was dismantled (both its panels left, so it normalized
- *  away). Inserting before the last root child reproduces the default dock / main
- *  / activity order in the canonical case. */
-function insertMainTabs(tree: LayoutNode | null, panel: PanelId): LayoutNode {
-  if (!tree) return mainTabsNode(panel)
-  const main: SplitChild = { grow: true, node: mainTabsNode(panel) }
+/** Graft a main tabs `node` back into the tree as a grow child of the root.
+ *  Inserting before the last root child reproduces the default dock / main /
+ *  activity order in the canonical case. */
+function graftMainTabs(tree: LayoutNode | null, node: TabsNode): LayoutNode {
+  if (!tree) return node
+  const main: SplitChild = { grow: true, node }
   if (tree.kind !== 'split') {
     return { kind: 'split', id: 'root', axis: 'row', children: [{ node: tree }, main] }
   }
   const at = Math.max(0, tree.children.length - 1)
   return { ...tree, children: [...tree.children.slice(0, at), main, ...tree.children.slice(at)] }
+}
+
+/** Graft a freshly-created main tabs node (holding `panel`) back into the tree,
+ *  used when default-restoring editor/tasks after the reserved main node was
+ *  dismantled (both its panels left, so it normalized away). */
+function insertMainTabs(tree: LayoutNode | null, panel: PanelId): LayoutNode {
+  return graftMainTabs(tree, mainTabsNode(panel))
+}
+
+/** Ensure the structural home editor exists: if a loaded/legacy tree dismantled
+ *  the main tabs node, reconstitute it (home editor + tasks) so `'editor'` is
+ *  always a live instance (design: Persistence Shape / load normalization). A
+ *  duplicate editor/tasks left as leaves is folded by re-normalization: the home
+ *  keeps `'editor'`/`'tasks'`, a stray editor leaf becomes a secondary, a stray
+ *  tasks leaf is dropped (singleton). No-op when the main node is present. */
+export function reconstituteMainTabs(layout: WorkspacePanelLayout): WorkspacePanelLayout {
+  if (hasTabsNode(layout.desktop, MAIN_TABS_ID)) return layout
+  const main: TabsNode = { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' }
+  return withDesktop(layout, graftMainTabs(layout.desktop, main))
 }
 
 /** Insert `panel` into the tabs node `tabsId` at `index` (clamped; appended when
