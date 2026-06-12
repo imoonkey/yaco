@@ -131,7 +131,7 @@ export function FileNodeRenderer({ node, style, dragHandle }: NodeRendererProps<
           ? <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FolderIcon open={node.isOpen} /></span>
           : <span style={isGitignored ? GITIGNORED_STYLE : undefined}><FileTypeIcon name={d.name} /></span>}
         <span className="flex-1 truncate" style={{ color: nameColor }}>{d.name}</span>
-        {d.colocated && <GitFork className="shrink-0" style={COLOCATED_STYLE} title="Sub-repo (colocated git repository)" aria-label="Sub-repo" />}
+        {d.colocated && <span className="shrink-0" title="Sub-repo (colocated git repository)"><GitFork style={COLOCATED_STYLE} aria-label="Sub-repo" /></span>}
         {!isGitignored && gitStatus && <span className="text-ui-xs font-semibold shrink-0" style={{ color: GIT_COLORS[gitStatus] }} title={GIT_STATUS_LABELS[gitStatus]}>{gitStatus}</span>}
         {!isGitignored && folderChanged && !gitStatus && <span className="w-1.5 h-1.5 rounded-full shrink-0" style={CHANGE_DOT_STYLE} title="Contains changes" />}
       </div>
