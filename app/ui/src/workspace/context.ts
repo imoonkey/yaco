@@ -153,6 +153,12 @@ export type WorkspaceRawActions = {
   openDiffTab: (path: string) => void
   openPreviewDiffTab: (path: string) => void
   openPreviewDiffTabById: (tabId: string) => void
+  // Instance-scoped openers — route to a SPECIFIC editor instance (not the active
+  // one), so a non-active pane (compare-nav, tab promotion) opens in itself. They
+  // seed/focus per the reducer's existing transitions; no active-instance resolve.
+  openFileTabIn: (instanceId: string, path: string) => void
+  openDiffTabIn: (instanceId: string, path: string) => void
+  openPreviewDiffTabByIdIn: (instanceId: string, tabId: string) => void
   setJumpRequest: (req: JumpRequest | null) => void
   setShowSearch: (value: boolean | ((prev: boolean) => boolean)) => void
 }

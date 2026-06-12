@@ -456,9 +456,15 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     openDiffTab: actions.openDiffTab,
     openPreviewDiffTab: actions.openPreviewDiffTab,
     openPreviewDiffTabById: actions.openPreviewDiffTabById,
+    // Instance-scoped pass-throughs (the reducer's *-In transitions): openFileTabIn
+    // opens (and gently fetches) a file tab in the given editor; the diff variants
+    // open in it without fetching (diffs are panel-private).
+    openFileTabIn: openFileIn,
+    openDiffTabIn,
+    openPreviewDiffTabByIdIn,
     setJumpRequest,
     setShowSearch,
-  }), [actions])
+  }), [actions, openFileIn, openDiffTabIn, openPreviewDiffTabByIdIn])
 
   // --- Commands ---
 
