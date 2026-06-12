@@ -147,3 +147,7 @@ export function stopAttentionEngine(): void {
 export function notifyAttentionSessionChange(): void { engine?.notifySessionChange() }
 export function notifyAttentionTaskChange(): void { engine?.notifyTaskChange() }
 export function notifyAttentionPinChange(): void { engine?.notifyPinChange() }
+/** Ack/clear advanced an unread watermark — recompute + push a fresh snapshot so
+ *  the acting client (and every other) reflects the new read/clear state at once
+ *  (F2). Called by the /ack and /clear routes after mergeUnreadWatermarks. */
+export function notifyAttentionWatermarkChange(): void { engine?.notifyWatermarkChange() }

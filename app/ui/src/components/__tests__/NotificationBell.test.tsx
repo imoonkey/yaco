@@ -58,6 +58,7 @@ function makeProps(snapshot: AttentionSnapshot) {
     onItemClick: vi.fn(),
     ackSession: vi.fn(),
     ackTask: vi.fn(),
+    ackProject: vi.fn(),
     clear: vi.fn(),
     requestPermission: vi.fn(),
   }
@@ -135,8 +136,39 @@ describe('NotificationBell', () => {
     expect(props.clear).toHaveBeenCalledWith('p2')
   })
 
-  it('shows the empty state when the snapshot has no items', () => {
-    render(<NotificationBell {...makeProps(makeSnapshot())} />)
+  it('Mark all read acks each distinct project in Ready and NOT the Needs-you ones (F5)', () => {
+    const props = makeProps(makeSnapshot({
+      needsYou: [
+        // A blocked session in p3 — open ACT, no read concept; must not be acked.
+        sessionItem({ project: 'p3', sessionName: 'blocky', title: 'needs approval' }),
+      ],
+      ready: [
+        sessionItem({ project: 'p1', sessionName: 'a', group: 'ready', type: 'session_idle', tier: 'handoff', title: 'your turn a' }),
+        taskItem({ project: 'p1', taskId: 'T1', title: 'task done T1' }),
+        taskItem({ project: 'p2', taskId: 'T2', title: 'task done T2' }),
+      ],
+    }))
+    render(<NotificationBell {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    fireEvent.click(screen.getByText('Mark all read'))
+    // One ackProject per distinct Ready project (p1 deduped across its 2 items).
+    expect(props.ackProject).toHaveBeenCalledTimes(2)
+    expect(props.ackProject).toHaveBeenCalledWith('p1')
+    expect(props.ackProject).toHaveBeenCalledWith('p2')
+    // Needs-you project p3 is never acked.
+    expect(props.ackProject).not.toHaveBeenCalledWith('p3')
+  })
+
+  it('Mark all read is absent when Ready is empty', () => {
+    const props = makeProps(makeSnapshot({
+      needsYou: [sessionItem({ project: 'p', sessionName: 'blocky', title: 'needs approval' })],
+    }))
+    render(<NotificationBell {...props} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
+    expect(screen.queryByText('Mark all read')).toBeNull()
+  })
+
+  it('shows the empty state when the snapshot has no items', () => {    render(<NotificationBell {...makeProps(makeSnapshot())} />)
     fireEvent.click(screen.getByRole('button', { name: 'Notifications' }))
     expect(screen.getByText('Nothing needs you')).toBeTruthy()
     // No Clear when there is nothing recent.

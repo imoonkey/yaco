@@ -9,6 +9,7 @@ export function NotificationBell({
   onItemClick,
   ackSession,
   ackTask,
+  ackProject,
   clear,
   requestPermission,
   size = 15,
@@ -17,6 +18,7 @@ export function NotificationBell({
   onItemClick: (item: AttentionItem) => void
   ackSession: (project: string, sessionName: string) => void
   ackTask: (project: string, taskId: string) => void
+  ackProject: (project: string) => void
   clear: (project: string) => void
   /** Requested on the first bell interaction (user gesture), never on mount. */
   requestPermission: () => void
@@ -44,6 +46,14 @@ export function NotificationBell({
     const projects = new Set(snapshot.recent.map(item => item.subject.project))
     for (const project of projects) clear(project)
   }, [snapshot.recent, clear])
+
+  // Mark all read acks every project present in Ready (advancing each project's
+  // REVIEW watermark clears that project's Ready handoffs). It must NOT touch
+  // Needs-you (open ACT has no read concept — it self-resolves from live status).
+  const handleMarkAllRead = useCallback(() => {
+    const projects = new Set(snapshot.ready.map(item => item.subject.project))
+    for (const project of projects) ackProject(project)
+  }, [snapshot.ready, ackProject])
 
   const toggleOpen = useCallback(() => {
     // First bell interaction is the user gesture that may request OS permission.
@@ -73,6 +83,7 @@ export function NotificationBell({
           recent={snapshot.recent}
           onClickItem={handleItemClick}
           onClear={handleClear}
+          onMarkAllRead={handleMarkAllRead}
           onClose={() => setOpen(false)}
         />
       )}

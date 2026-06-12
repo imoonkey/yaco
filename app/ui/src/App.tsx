@@ -233,6 +233,7 @@ function App() {
     onItemClick: handleNotificationClick,
     ackSession,
     ackTask,
+    ackProject,
     clear,
     requestPermission,
   }

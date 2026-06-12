@@ -143,6 +143,9 @@ export class AttentionEngine {
   notifySessionChange(): void { void this.recompute() }
   notifyTaskChange(): void { void this.recompute() }
   notifyPinChange(): void { void this.recompute() }
+  /** Ack/clear advanced a watermark. Recompute + push so every client (incl. the
+   *  acting one) reflects the new read/clear state without a 60s tick (F2). */
+  notifyWatermarkChange(): void { void this.recompute() }
 
   // ── Boot reconciliation (R3) ───────────────────────────────────────────────
 

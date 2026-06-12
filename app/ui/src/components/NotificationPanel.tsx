@@ -108,6 +108,7 @@ export function NotificationPanel({
   recent,
   onClickItem,
   onClear,
+  onMarkAllRead,
   onClose,
 }: {
   needsYou: AttentionItem[]
@@ -115,6 +116,7 @@ export function NotificationPanel({
   recent: AttentionItem[]
   onClickItem: (item: AttentionItem) => void
   onClear: () => void
+  onMarkAllRead: () => void
   onClose: () => void
 }) {
   // Force a re-render every 60s so relative timestamps stay fresh.
@@ -149,7 +151,22 @@ export function NotificationPanel({
         ) : (
           <>
             <Section label="Needs you" Icon={AlertTriangle} iconColor="var(--sol-red)" items={needsYou} onClickItem={onClickItem} />
-            <Section label="Ready" Icon={CornerDownLeft} iconColor="var(--sol-yellow)" items={ready} onClickItem={onClickItem} />
+            <Section
+              label="Ready"
+              Icon={CornerDownLeft}
+              iconColor="var(--sol-yellow)"
+              items={ready}
+              onClickItem={onClickItem}
+              action={ready.length > 0 ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onMarkAllRead() }}
+                  className="text-ui-sm cursor-pointer hover:underline"
+                  style={{ color: 'var(--sol-text)' }}
+                >
+                  Mark all read
+                </button>
+              ) : undefined}
+            />
             <Section
               label="Recent"
               Icon={History}

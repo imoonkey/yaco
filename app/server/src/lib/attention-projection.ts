@@ -399,14 +399,17 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
     const m = metaOf(ev)
     const name = m.sessionName!
     const liveSession = live.sessionByKey.get(liveKey(ev.projectId, name))
+    // F1: "Your turn" is gated on the session being CURRENTLY idle AND this being
+    // the session's CURRENT idle generation. A session that resumed
+    // (processing/blocked/crashed/starting), is gone, or re-entered idle before
+    // the engine recorded the new edge (so the latest idle EVENT is stale) has no
+    // live Ready item — it stays in Recent (buildHistory); the matching event
+    // surfaces it once appended.
+    if (liveSession?.status !== 'idle' || !liveSession.statusEnteredAt) continue
+    if (ev.id !== sessionGenerationId('session_idle', ev.projectId, name, liveSession.statusEnteredAt)) continue
     const pinned = isPinned(input.pins, ev.projectId, name)
-    // Owner is computed at projection time (pin reclassifies). Fall back to the
-    // owner recorded at edge time when the session is no longer live.
-    const owner = liveSession
-      ? ownerClass(liveSession, pinned)
-      : pinned
-        ? 'OWNED'
-        : (m.owner ?? 'OWNED')
+    // Owner is computed at projection time (pin reclassifies).
+    const owner = ownerClass(liveSession, pinned)
     if (owner !== 'OWNED') continue // delegated idle is FYI, never REVIEW
     const item: AttentionItem = {
       generation: ev.id,

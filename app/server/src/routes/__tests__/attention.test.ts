@@ -20,8 +20,10 @@ await mkdir(join(homeDir.value, '.yaco'), { recursive: true })
 // projector unit tests). Watermark writes still hit the real temp YACO_HOME so
 // the monotonic-max behavior is verified end-to-end through the route.
 const { snapshot } = vi.hoisted(() => ({ snapshot: { value: null as AttentionSnapshot | null } }))
+const { notifyWatermark } = vi.hoisted(() => ({ notifyWatermark: vi.fn() }))
 vi.mock('../../lib/attention-runtime', () => ({
   currentAttentionSnapshot: async () => snapshot.value,
+  notifyAttentionWatermarkChange: () => notifyWatermark(),
 }))
 
 const { attentionRoutes } = await import('../attention')
@@ -60,6 +62,7 @@ describe('attention routes', () => {
   beforeEach(async () => {
     await rm(join(homeDir.value, '.yaco', 'ui-state'), { recursive: true, force: true })
     snapshot.value = emptySnapshot()
+    notifyWatermark.mockClear()
   })
   afterAll(async () => {
     await rm(homeDir.value, { recursive: true, force: true })
@@ -283,6 +286,18 @@ describe('attention routes', () => {
     }
   })
 
+  it('POST /ack triggers an engine recompute + attention push (F2) after merging the watermark', async () => {
+    const res = await attentionRoutes.request('/ack', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ scope: 'project', project: 'proj' }),
+    })
+    expect(res.status).toBe(204)
+    // The route notifies the engine so every connected client gets a fresh
+    // snapshot reflecting the new watermark without a 60s tick / page reload.
+    expect(notifyWatermark).toHaveBeenCalledTimes(1)
+  })
+
   // ── POST /clear ────────────────────────────────────────────────────────────
 
   it('POST /clear sets a monotonic recentClearedAt and broadcasts', async () => {
@@ -317,8 +332,17 @@ describe('attention routes', () => {
     expect(wm.recentClearedAt.proj).toBe(farFuture) // unchanged — server-now < farFuture
   })
 
-  it('POST /clear rejects a missing project', async () => {
+  it('POST /clear triggers an engine recompute + attention push (F2) after merging the clear watermark', async () => {
     const res = await attentionRoutes.request('/clear', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project: 'proj' }),
+    })
+    expect(res.status).toBe(204)
+    expect(notifyWatermark).toHaveBeenCalledTimes(1)
+  })
+
+  it('POST /clear rejects a missing project', async () => {    const res = await attentionRoutes.request('/clear', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),

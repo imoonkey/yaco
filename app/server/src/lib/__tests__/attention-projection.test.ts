@@ -171,13 +171,22 @@ describe('ACT dedup (spec §8)', () => {
 // ── REVIEW: owned idle, delegated FYI, unread math, supersede ────────────────
 
 describe('REVIEW — session_idle owner routing', () => {
-  const idleEvent = (id: string, ts: string, name = 's', owner?: string) =>
-    ev({ id, ts, kind: 'session_idle', sessionId: name, payload: { sessionName: name, owner } })
+  // The id mirrors a real session_idle generation: derived from the session's
+  // statusEnteredAt (the generation key) so it matches what buildReview re-derives
+  // from the live session. First arg is therefore the generation key, not an id.
+  const idleEvent = (enteredAt: string, ts: string, name = 's', owner?: string) =>
+    ev({
+      id: sessionGenerationId('session_idle', 'proj', name, enteredAt),
+      ts,
+      kind: 'session_idle',
+      sessionId: name,
+      payload: { sessionName: name, owner },
+    })
 
   it('owned idle (live user:web session) → Ready, unread above watermark', () => {
     const snap = projectAttention(
       input({
-        events: [idleEvent('g1', '2026-06-10T00:00:05.000Z')],
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z')],
         sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
       }),
     )
@@ -188,7 +197,7 @@ describe('REVIEW — session_idle owner routing', () => {
   it('delegated idle (agent-spawned, unpinned) → FYI: never Ready, only history', () => {
     const snap = projectAttention(
       input({
-        events: [idleEvent('g1', '2026-06-10T00:00:05.000Z', 's', 'DELEGATED')],
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z', 's', 'DELEGATED')],
         sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'agent' })],
       }),
     )
@@ -199,7 +208,7 @@ describe('REVIEW — session_idle owner routing', () => {
   it('pin promotes a delegated idle into a Ready handoff', () => {
     const snap = projectAttention(
       input({
-        events: [idleEvent('g1', '2026-06-10T00:00:05.000Z', 's')],
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z', 's')],
         sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'agent' })],
         pins: { proj: new Set(['s']) },
       }),
@@ -211,7 +220,7 @@ describe('REVIEW — session_idle owner routing', () => {
   it('idle below project watermark is acked (not Ready)', () => {
     const snap = projectAttention(
       input({
-        events: [idleEvent('g1', '2026-06-10T00:00:05.000Z')],
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z')],
         sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
         watermarks: { projectReadAt: { proj: Date.parse('2026-06-10T00:00:10.000Z') }, sessionReadAt: {} },
       }),
@@ -223,7 +232,7 @@ describe('REVIEW — session_idle owner routing', () => {
     // project watermark is below; session watermark is above → acked.
     const snap = projectAttention(
       input({
-        events: [idleEvent('g1', '2026-06-10T00:00:05.000Z')],
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z')],
         sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
         watermarks: {
           projectReadAt: { proj: Date.parse('2026-06-10T00:00:01.000Z') },
@@ -235,29 +244,70 @@ describe('REVIEW — session_idle owner routing', () => {
   })
 
   it('≤1 idle supersede: only newest idle generation is Ready, older stays in history', () => {
+    // Two distinct generation keys; the live session sits on the NEWER one (T2),
+    // so only that generation is the current "your turn". The older (T1) idle
+    // event is superseded and stays in Recent.
     const snap = projectAttention(
       input({
         events: [
-          idleEvent('g-old', '2026-06-10T00:00:01.000Z'),
-          idleEvent('g-new', '2026-06-10T00:00:09.000Z'),
+          idleEvent('T1', '2026-06-10T00:00:01.000Z'),
+          idleEvent('T2', '2026-06-10T00:00:09.000Z'),
         ],
-        sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
+        sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T2', spawnedBy: 'user:web' })],
       }),
     )
     expect(snap.ready).toHaveLength(1)
-    expect(snap.ready[0].generation).toBe('g-new')
-    expect(snap.recent.some((r) => r.generation === 'g-old')).toBe(true)
+    expect(snap.ready[0].generation).toBe(sessionGenerationId('session_idle', 'proj', 's', 'T2'))
+    expect(snap.recent.some((r) => r.generation === sessionGenerationId('session_idle', 'proj', 's', 'T1'))).toBe(true)
   })
 
   it('numeric tsMs is exposed and never an ISO string', () => {
     const snap = projectAttention(
       input({
-        events: [idleEvent('g1', '2026-06-10T00:00:05.000Z')],
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z')],
         sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
       }),
     )
     expect(typeof snap.ready[0].tsMs).toBe('number')
     expect(snap.ready[0].tsMs).toBe(Date.parse('2026-06-10T00:00:05.000Z'))
+  })
+
+  // F1 — Ready ("your turn") is gated on the session being CURRENTLY idle. A
+  // session that idled then resumed (or is gone) must not show a stale handoff.
+  it('idle event but live session now PROCESSING → not Ready (stale handoff), still in Recent', () => {
+    // The idle event's generation key is the OLD idle edge (T1); the live session
+    // has since moved on to processing (statusEnteredAt T2). The stale idle stays
+    // in Recent only.
+    const snap = projectAttention(
+      input({
+        events: [idleEvent('T1', '2026-06-10T00:00:05.000Z')],
+        sessions: [sess({ name: 's', status: 'processing', statusEnteredAt: 'T2', spawnedBy: 'user:web' })],
+      }),
+    )
+    expect(snap.ready).toHaveLength(0)
+    expect(snap.recent.some((r) => r.type === 'session_idle' && r.generation === sessionGenerationId('session_idle', 'proj', 's', 'T1'))).toBe(true)
+  })
+
+  it('idle event and live session STILL idle → Ready', () => {
+    const snap = projectAttention(
+      input({
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z')],
+        sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
+      }),
+    )
+    expect(snap.ready).toHaveLength(1)
+    expect(snap.ready[0].generation).toBe(sessionGenerationId('session_idle', 'proj', 's', 'T'))
+  })
+
+  it('idle event but session no longer in the live snapshot → not Ready, still in Recent', () => {
+    const snap = projectAttention(
+      input({
+        events: [idleEvent('T', '2026-06-10T00:00:05.000Z')],
+        sessions: [],
+      }),
+    )
+    expect(snap.ready).toHaveLength(0)
+    expect(snap.recent.some((r) => r.type === 'session_idle' && r.generation === sessionGenerationId('session_idle', 'proj', 's', 'T'))).toBe(true)
   })
 })
 
@@ -294,13 +344,13 @@ describe('REVIEW — task_done', () => {
       input({
         events: [
           ev({ id: 'done-old', ts: '2026-06-10T00:00:01.000Z', kind: 'task_done', taskId: 'uxr', payload: { taskId: 'uxr', agents: ['a'] } }),
-          ev({ id: 'idle-new', ts: '2026-06-10T00:00:09.000Z', kind: 'session_idle', sessionId: 'a', payload: { sessionName: 'a' } }),
+          ev({ id: sessionGenerationId('session_idle', 'proj', 'a', 'T'), ts: '2026-06-10T00:00:09.000Z', kind: 'session_idle', sessionId: 'a', payload: { sessionName: 'a' } }),
         ],
         sessions: [sess({ name: 'a', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
       }),
     )
     expect(snap.ready.filter((r) => r.type === 'session_idle')).toHaveLength(1)
-    expect(snap.ready.find((r) => r.type === 'session_idle')?.generation).toBe('idle-new')
+    expect(snap.ready.find((r) => r.type === 'session_idle')?.generation).toBe(sessionGenerationId('session_idle', 'proj', 'a', 'T'))
   })
 
   it('task_done below taskReadAt watermark is acked', () => {
@@ -345,7 +395,7 @@ describe('clear — hides history but not open ACT / unacked REVIEW', () => {
   it('does NOT hide an unacked REVIEW row even if cleared timestamp is later', () => {
     const snap = projectAttention(
       input({
-        events: [ev({ id: 'idle1', ts: '2026-06-10T00:00:09.000Z', kind: 'session_idle', sessionId: 's', payload: { sessionName: 's' } })],
+        events: [ev({ id: sessionGenerationId('session_idle', 'proj', 's', 'T'), ts: '2026-06-10T00:00:09.000Z', kind: 'session_idle', sessionId: 's', payload: { sessionName: 's' } })],
         sessions: [sess({ name: 's', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
         watermarks: { projectReadAt: {}, sessionReadAt: {}, recentClearedAt: { proj: Date.parse('2026-06-10T01:00:00.000Z') } },
       }),
@@ -365,7 +415,7 @@ describe('badges — precedence red → orange → yellow', () => {
           sess({ name: 'b', status: 'blocked', statusEnteredAt: 'T1' }),
           sess({ name: 'i', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'user:web' }),
         ],
-        events: [ev({ id: 'idle-i', ts: '2026-06-10T00:00:09.000Z', kind: 'session_idle', sessionId: 'i', payload: { sessionName: 'i' } })],
+        events: [ev({ id: sessionGenerationId('session_idle', 'proj', 'i', 'T1'), ts: '2026-06-10T00:00:09.000Z', kind: 'session_idle', sessionId: 'i', payload: { sessionName: 'i' } })],
       }),
     )
     expect(snap.badgesByProject.proj.count).toBe(3)
