@@ -35,25 +35,25 @@ function makeOpts(overrides: Partial<Parameters<typeof useWorkspaceSessions>[0]>
   }
 }
 
-// --- resolveSessionClick (§3.5 smart-focus-else-replace) --------------------
+// --- resolveSessionClick (flat focus | create — no rebind) ------------------
 
 describe('resolveSessionClick', () => {
-  it('focuses the terminal already showing the session (no rebind)', () => {
+  it('focuses the terminal tab already showing the session (no rebind, no dup PTY)', () => {
     const bindings = { 'terminal': 's1', 'terminal:2': 's2' }
-    expect(resolveSessionClick('s2', bindings, 'terminal')).toEqual({ kind: 'focus', terminalId: 'terminal:2' })
+    expect(resolveSessionClick('s2', bindings)).toEqual({ kind: 'focus', terminalId: 'terminal:2' })
   })
 
-  it('binds the active terminal when the session is not shown', () => {
-    expect(resolveSessionClick('s3', { terminal: 's1' }, 'terminal')).toEqual({ kind: 'bind', terminalId: 'terminal' })
+  it('creates — never rebinds — when the session is not shown, even with live terminals', () => {
+    expect(resolveSessionClick('s3', { terminal: 's1' })).toEqual({ kind: 'create' })
   })
 
-  it('signals create when no terminal exists', () => {
-    expect(resolveSessionClick('s3', {}, null)).toEqual({ kind: 'create' })
+  it('creates when no terminal exists', () => {
+    expect(resolveSessionClick('s3', {})).toEqual({ kind: 'create' })
   })
 
-  it('prefers focus over bind even when an active terminal exists', () => {
+  it('prefers focus over create when the session is already shown', () => {
     const bindings = { 'terminal': 's1', 'terminal:2': 's2' }
-    expect(resolveSessionClick('s1', bindings, 'terminal:2')).toEqual({ kind: 'focus', terminalId: 'terminal' })
+    expect(resolveSessionClick('s1', bindings)).toEqual({ kind: 'focus', terminalId: 'terminal' })
   })
 })
 

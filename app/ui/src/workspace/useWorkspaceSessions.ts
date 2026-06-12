@@ -5,26 +5,26 @@ import { collectSubtree } from './sessionLineage'
 import type { AgentSession, SessionProvider } from '../types'
 import type { AttentionBadge } from '../hooks/useAttention'
 
-// --- Pure session routing (design: Multi-Instance Panels §C/§3.5) -----------
+// --- Pure session routing (design: VSCode Tab Groups — flat resolver) --------
 //
-// These decide WHICH terminal a session gesture targets, given the live bindings.
-// The provider wires the decision to focusPane / bindTerminal / splitPane. Pure
-// so the state machines are unit-tested without mounting the provider.
+// These decide WHICH terminal tab a session gesture targets, given the live
+// bindings. The provider wires the decision onto setActiveGroupTab (focus) /
+// openBoundTerminalTab (create+bind) / splitGroup (open beside). Pure, so the
+// state machines are unit-tested without mounting the provider.
 
 export type SessionClickAction =
-  | { kind: 'focus'; terminalId: string } // already shown → focus it (no rebind / no dup PTY)
-  | { kind: 'bind'; terminalId: string } // replace the active terminal's session
-  | { kind: 'create' } // no terminal exists → create one bound to the session
+  | { kind: 'focus'; terminalId: string } // already shown → focus its tab (no rebind / no dup PTY)
+  | { kind: 'create' } // not shown → create a terminal tab bound to the session on create
 
-/** Smart-focus-else-replace (§3.5): focus the terminal already showing `name`,
- *  else bind the active terminal, else signal that one must be created. */
+/** Flat session resolver: focus the terminal tab already showing `name`, else
+ *  signal that a new bound terminal tab must be created in the target group. A
+ *  session click never rebinds an existing terminal — create+bind is atomic. */
 export function resolveSessionClick(
-  name: string, terminalBindings: Record<string, string>, activeTerminalId: string | null,
+  name: string, terminalBindings: Record<string, string>,
 ): SessionClickAction {
   for (const [id, session] of Object.entries(terminalBindings)) {
     if (session === name) return { kind: 'focus', terminalId: id }
   }
-  if (activeTerminalId) return { kind: 'bind', terminalId: activeTerminalId }
   return { kind: 'create' }
 }
 

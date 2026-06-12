@@ -296,12 +296,11 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     splitGroup(sourceId ? groupForInstance(sourceId) : resolveTarget(), side)
   }, [splitGroup, groupForInstance, resolveTarget])
 
-  // clickSession: focus the terminal already showing the session, else create a
-  // NEW terminal tab bound on create in the target group (flat resolver — Bug 3
-  // gone; the legacy `bind`-active branch also creates-and-binds atomically here).
+  // clickSession: focus the terminal tab already showing the session, else create
+  // a NEW terminal tab bound on create in the target group (flat resolver — a
+  // session click is focus | create; it never rebinds an existing terminal).
   const clickSession = useCallback((name: string) => {
-    const { terminalBindings: bindings, activeTerminalId: tid } = latestRef.current
-    const action = resolveSessionClick(name, bindings, tid)
+    const action = resolveSessionClick(name, latestRef.current.terminalBindings)
     if (action.kind === 'focus') {
       setActiveGroupTab(groupForInstance(action.terminalId), action.terminalId)
     } else {
