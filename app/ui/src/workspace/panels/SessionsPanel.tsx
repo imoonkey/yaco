@@ -77,6 +77,7 @@ export function SessionsPanel() {
     handleRenameSession: data.sessions.renameSession,
     togglePin: data.sessions.togglePin,
     handlePinnedReorder: data.sessions.reorderPinned,
+    markSubtreeRead: data.sessions.markSubtreeRead,
     detachActiveSession: commands.detachSession,
   }), [data.sessions, commands.detachSession])
 

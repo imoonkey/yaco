@@ -41,6 +41,8 @@ export interface WorkspaceSessionsResource {
   renameSession: (oldName: string, newName: string) => Promise<void>
   togglePin: (name: string) => void
   reorderPinned: (fromName: string, toName: string) => void
+  /** Ack a parent session and all its descendants (clears their Ready/REVIEW). */
+  markSubtreeRead: (parentName: string) => void
   refresh: () => Promise<void>
 }
 
@@ -67,6 +69,7 @@ export interface WorkspaceSessionsResourceOptions {
   badgesBySession?: Record<string, AttentionBadge>
   readySessionKeys?: Set<string>
   onSessionChange?: () => void
+  ackSession: (project: string, sessionName: string) => void
 }
 
 export interface WorkspaceDataOptions extends WorkspaceSessionsResourceOptions {
@@ -99,7 +102,7 @@ export function useWorkspaceSessionsResource(
   const {
     projectSessions, orderedSessions, pinnedSet, getSessionBadge, isSessionReady,
     handleNewSession, killSession, handleRenameSession, togglePin,
-    handlePinnedReorder, refreshSessions: refresh,
+    handlePinnedReorder, markSubtreeRead, refreshSessions: refresh,
   } = useWorkspaceSessions({
     actions: opts.actions,
     projectPath: opts.projectPath,
@@ -111,6 +114,7 @@ export function useWorkspaceSessionsResource(
     readySessionKeys: opts.readySessionKeys,
     projectName,
     onSessionChange: opts.onSessionChange,
+    ackSession: opts.ackSession,
   })
 
   const liveSessionHandles = useMemo(
@@ -130,11 +134,12 @@ export function useWorkspaceSessionsResource(
     renameSession: handleRenameSession,
     togglePin,
     reorderPinned: handlePinnedReorder,
+    markSubtreeRead,
     refresh,
   }), [
     projectSessions, orderedSessions, pinnedSet, liveSessionHandles,
     getSessionBadge, isSessionReady, handleNewSession, killSession, handleRenameSession,
-    togglePin, handlePinnedReorder, refresh,
+    togglePin, handlePinnedReorder, markSubtreeRead, refresh,
   ])
 
   return useMemo(() => ({ sessions, loaded: rawSessions != null }), [sessions, rawSessions])

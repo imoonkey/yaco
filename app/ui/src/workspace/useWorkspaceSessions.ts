@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useEffect } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { usePinnedSessions } from '../hooks/usePinnedSessions'
+import { collectSubtree } from './sessionLineage'
 import type { AgentSession, SessionProvider } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
 import type { AttentionBadge } from '../hooks/useAttention'
@@ -23,12 +24,16 @@ interface UseWorkspaceSessionsOpts {
   readySessionKeys?: Set<string>
   projectName: string
   onSessionChange?: () => void
+  // Ack one session's REVIEW watermark (from useAttention). Used to fan a
+  // "mark subtree read" across a parent and all its descendants.
+  ackSession: (project: string, sessionName: string) => void
 }
 
 export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const {
     actions, projectPath, activeSession, sessions,
     refreshSessions, setFocusTarget, badgesBySession, readySessionKeys, projectName, onSessionChange,
+    ackSession,
   } = opts
 
   const { pinnedSessions, setPinnedSessions } = usePinnedSessions(projectName)
@@ -163,6 +168,17 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     })
   }, [setPinnedSessions])
 
+  // Mark a parent session and all its descendants read: ack each subtree member's
+  // REVIEW watermark. This clears their Ready / done items ("your turn", task-done)
+  // exactly like project/bell mark-all-read; it never touches Needs-you (blocked /
+  // crashed have no read concept). The subtree is derived from the project session
+  // list's `parentSession` links (cycle-guarded in collectSubtree).
+  const markSubtreeRead = useCallback((parentName: string) => {
+    for (const name of collectSubtree(projectSessions, parentName)) {
+      ackSession(projectName, name)
+    }
+  }, [projectSessions, ackSession, projectName])
+
   return {
     projectSessions,
     pinnedSet,
@@ -176,5 +192,6 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     refreshSessions,
     togglePin,
     handlePinnedReorder,
+    markSubtreeRead,
   }
 }

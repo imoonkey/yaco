@@ -61,6 +61,7 @@ export function SessionItem({
   onPin,
   onToggleCollapse,
   onRename,
+  onMarkSubtreeRead,
   onDragStart,
   onDragEnd,
   onDragOver,
@@ -85,6 +86,10 @@ export function SessionItem({
   onPin?: () => void
   onToggleCollapse?: () => void
   onRename?: (newName: string) => void
+  // Parent-only: ack this session + its whole subtree (clears Ready/REVIEW for
+  // every descendant). Supplied only for sessions with children; the MenuItem
+  // renders only when present.
+  onMarkSubtreeRead?: () => void
   onDragStart?: (e: React.DragEvent) => void
   onDragEnd?: () => void
   onDragOver?: (e: React.DragEvent) => void
@@ -294,9 +299,12 @@ export function SessionItem({
           Kill
         </button>
       </span>
-      {menu.position && onRename && (
+      {menu.position && (onRename || (hasChildren && onMarkSubtreeRead)) && (
         <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
-          <MenuItem label="Rename" onClick={startRename} />
+          {onRename && <MenuItem label="Rename" onClick={startRename} />}
+          {hasChildren && onMarkSubtreeRead && (
+            <MenuItem label="Mark subtree read" onClick={() => { onMarkSubtreeRead(); menu.close() }} />
+          )}
         </Menu>
       )}
     </div>

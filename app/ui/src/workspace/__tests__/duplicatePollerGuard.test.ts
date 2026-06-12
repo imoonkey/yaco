@@ -116,6 +116,7 @@ function workspaceProps() {
     onProjectRemove: () => {},
     onAddProject: () => {},
     onMarkAllRead: () => {},
+    ackSession: () => {},
   }
 }
 

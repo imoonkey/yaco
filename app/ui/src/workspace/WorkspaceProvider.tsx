@@ -65,6 +65,9 @@ export type WorkspaceProviderProps = {
   onProjectRemove: (project: Project) => void
   onAddProject: () => void
   onMarkAllRead: (projectName: string) => void
+  /** Ack one session's REVIEW watermark (from useAttention) — threaded to the
+   *  sessions resource so a parent's "Mark subtree read" can fan acks out. */
+  ackSession: (project: string, sessionName: string) => void
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void
@@ -91,7 +94,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     projects, activeProject, badgesByProject, badgesBySession, readySessionKeys,
     attentionTaskIds, projectSessionCounts,
     onProjectSelect, onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
-    onVisibilityReport,
+    ackSession, onVisibilityReport,
     attachIntent, clearAttachIntent, notificationBell, children,
   } = props
 
@@ -158,7 +161,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const data = useWorkspaceData({
     projectName, projectPath: effectivePath, worktree,
     activeSession, actions, setFocusTarget,
-    badgesBySession, readySessionKeys, onSessionChange,
+    badgesBySession, readySessionKeys, onSessionChange, ackSession,
   })
   const { liveSessionHandles } = data.sessions
   const sessionsLoaded = data.sessionsLoaded

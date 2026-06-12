@@ -25,6 +25,7 @@ interface SessionsMgr {
   handleRenameSession: (old: string, next: string) => Promise<void>
   togglePin: (name: string) => void
   handlePinnedReorder: (from: string, to: string) => void
+  markSubtreeRead: (parentName: string) => void
   detachActiveSession: () => boolean
 }
 
@@ -256,6 +257,9 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
         onClick={() => handleSessionClick(s.name)}
         onPin={() => sessionsMgr.togglePin(s.name)}
         onRename={s.provider !== 'shell' ? (newName) => { void sessionsMgr.handleRenameSession(s.name, newName) } : undefined}
+        // Parent-only: mark this session + its whole subtree read (acks each member's
+        // REVIEW). Leaves get no handler so the MenuItem never renders for them.
+        onMarkSubtreeRead={hasChildren ? () => sessionsMgr.markSubtreeRead(s.name) : undefined}
         {...(isPinned ? {
           onDragStart: (e: React.DragEvent) => { e.dataTransfer.setData('text/plain', s.name); e.dataTransfer.effectAllowed = 'move'; setDraggedSession(s.name) },
           onDragEnd: () => setDraggedSession(null),

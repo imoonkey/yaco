@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildSessionLineage, groupSessionLineage, filterCollapsedRows } from '../sessionLineage'
+import { buildSessionLineage, groupSessionLineage, filterCollapsedRows, collectSubtree } from '../sessionLineage'
 import type { AgentSession, SessionStatus } from '../../types'
 
 function makeSession(name: string, parentSession?: string, status: SessionStatus = 'idle'): AgentSession {
@@ -194,5 +194,39 @@ describe('groupSessionLineage', () => {
     expect(pinned).toEqual([])
     expect(namesAt(processing)).toEqual([['a', 0]])
     expect(namesAt(idle)).toEqual([['b', 0]])
+  })
+})
+
+describe('collectSubtree', () => {
+  it('collects the parent plus every descendant, excluding unrelated siblings', () => {
+    const sessions = [
+      makeSession('parent'),
+      makeSession('childA', 'parent'),
+      makeSession('childB', 'parent'),
+      makeSession('grandchild', 'childB'),
+      makeSession('sibling'),
+    ]
+    expect(new Set(collectSubtree(sessions, 'parent'))).toEqual(
+      new Set(['parent', 'childA', 'childB', 'grandchild']),
+    )
+  })
+
+  it('returns just the session itself when it has no children', () => {
+    const sessions = [makeSession('parent'), makeSession('child', 'parent')]
+    expect(collectSubtree(sessions, 'child')).toEqual(['child'])
+  })
+
+  it('returns an empty list for an unknown session name', () => {
+    expect(collectSubtree([makeSession('a')], 'missing')).toEqual([])
+  })
+
+  it('terminates on a parent cycle without looping forever', () => {
+    const sessions = [
+      makeSession('a', 'b'),
+      makeSession('b', 'a'),
+      makeSession('c', 'a'),
+    ]
+    // From 'a': descendants reachable are 'a','b' (cycle guarded) and 'c' (child of a).
+    expect(new Set(collectSubtree(sessions, 'a'))).toEqual(new Set(['a', 'b', 'c']))
   })
 })

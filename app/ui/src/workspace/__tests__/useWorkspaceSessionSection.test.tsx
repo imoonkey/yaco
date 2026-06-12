@@ -30,6 +30,7 @@ function makeSessionsMgr(sessions: AgentSession[]) {
     handleRenameSession: vi.fn<() => Promise<void>>(),
     togglePin: vi.fn<(name: string) => void>(),
     handlePinnedReorder: vi.fn<(from: string, to: string) => void>(),
+    markSubtreeRead: vi.fn<(parentName: string) => void>(),
     detachActiveSession: vi.fn<() => boolean>(),
   }
 }

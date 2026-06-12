@@ -39,6 +39,7 @@ type WorkspaceProps = {
   onProjectRemove: (project: Project) => void
   onAddProject: () => void
   onMarkAllRead: (projectName: string) => void
+  ackSession: (project: string, sessionName: string) => void
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void

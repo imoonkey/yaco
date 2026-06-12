@@ -46,6 +46,7 @@ function useDetachHarness(initial: { active: string; sessions: AgentSession[] | 
     refreshSessions: async () => {},
     setFocusTarget: () => {},
     projectName: 'proj',
+    ackSession: () => {},
   })
   return { activeSession, setSessions }
 }

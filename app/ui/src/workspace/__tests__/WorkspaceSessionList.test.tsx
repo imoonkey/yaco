@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionItem } from '../WorkspaceSessionList'
 import type { AgentSession } from '../../types'
@@ -51,5 +51,37 @@ describe('SessionItem — attention surfaces', () => {
   it('delegated-idle leaf (no yourTurn, no badge) shows neither chip nor badge', () => {
     render(<SessionItem {...baseProps()} session={makeSession({ name: 'theirs' })} />)
     expect(screen.queryByText('your turn')).toBeNull()
+  })
+})
+
+describe('SessionItem — mark subtree read', () => {
+  it('offers "Mark subtree read" in a parent session context menu and invokes the handler', () => {
+    const onMarkSubtreeRead = vi.fn()
+    const { container } = render(
+      <SessionItem
+        {...baseProps()}
+        session={makeSession({ name: 'parent' })}
+        hasChildren
+        onRename={vi.fn()}
+        onMarkSubtreeRead={onMarkSubtreeRead}
+      />,
+    )
+    fireEvent.contextMenu(container.firstChild as Element)
+    const item = screen.getByRole('menuitem', { name: 'Mark subtree read' })
+    fireEvent.click(item)
+    expect(onMarkSubtreeRead).toHaveBeenCalledTimes(1)
+  })
+
+  it('omits "Mark subtree read" for a leaf session (no children)', () => {
+    const { container } = render(
+      <SessionItem
+        {...baseProps()}
+        session={makeSession({ name: 'leaf' })}
+        onRename={vi.fn()}
+        onMarkSubtreeRead={vi.fn()}
+      />,
+    )
+    fireEvent.contextMenu(container.firstChild as Element)
+    expect(screen.queryByRole('menuitem', { name: 'Mark subtree read' })).toBeNull()
   })
 })

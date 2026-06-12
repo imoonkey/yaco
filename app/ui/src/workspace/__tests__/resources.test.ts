@@ -51,6 +51,7 @@ export type _SessionsResourceIsExplicit = Expect<Equal<WorkspaceSessionsResource
   renameSession: (oldName: string, newName: string) => Promise<void>
   togglePin: (name: string) => void
   reorderPinned: (fromName: string, toName: string) => void
+  markSubtreeRead: (parentName: string) => void
   refresh: () => Promise<void>
 }>>
 
@@ -96,6 +97,7 @@ function makeOpts() {
     activeSession: '',
     actions: { setActiveSession: vi.fn(), setMobilePane: vi.fn() },
     setFocusTarget: vi.fn(),
+    ackSession: vi.fn(),
   }
 }
 

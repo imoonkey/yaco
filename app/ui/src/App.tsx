@@ -388,6 +388,7 @@ function App() {
             onProjectRemove={handleRemoveProject}
             onAddProject={handleAddProject}
             onMarkAllRead={ackProject}
+            ackSession={ackSession}
             onVisibilityReport={setVisibilityReport}
             attachIntent={attachIntent}
             clearAttachIntent={() => setAttachIntent(null)}

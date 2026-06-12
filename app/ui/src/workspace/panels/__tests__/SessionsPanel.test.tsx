@@ -39,6 +39,7 @@ function makeData(sessions: AgentSession[]): WorkspaceData {
     renameSession: vi.fn(async () => {}),
     togglePin: vi.fn(),
     reorderPinned: vi.fn(),
+    markSubtreeRead: vi.fn(),
     refresh: vi.fn(async () => {}),
   }
   return { git, sessions: resource, sessionsLoaded: true }
