@@ -3,8 +3,8 @@
  *  Claude Code stores per-cwd state under `~/.claude/projects/<encoded-cwd>/`.
  *  The encoding is lossy: each `/`, `.`, and other non-alphanumeric character
  *  in the cwd is collapsed to a single `-`. Existing hyphens are preserved.
- *  Example: `/home/qiguo/ld-workspace/yaco/.worktrees/foo`
- *        -> `-home-qiguo-ld-workspace-yaco--worktrees-foo`.
+ *  Example: `/home/user/ld-workspace/yaco/.worktrees/foo`
+ *        -> `-home-user-ld-workspace-yaco--worktrees-foo`.
  *
  *  Codex (~/.codex/sessions/) is NOT cwd-keyed at the directory level — it
  *  shards by date — so no path encoder is exported for Codex. Codex per-cwd
