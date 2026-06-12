@@ -3,7 +3,8 @@ import type { UseVoiceReturn } from '../hooks/useVoice'
 import type { FileNode } from '../types'
 import { writeTextToClipboard } from '../lib/clipboard'
 import { splitSideFromGeometry, orthogonalSide } from './panelInstance'
-import { editorTabsInGroup } from './panelLayoutModel'
+import { editorTabsInGroup, tabsInGroup } from './panelLayoutModel'
+import type { LayoutNode } from '../hooks/workspaceTypes'
 import { useWorkspaceCommands, useWorkspaceSelection, useWorkspaceLayout, useWorkspaceDataContext, useWorkspaceEnv, useOptionalWorkspacePanelResources } from './context'
 
 /** Type of the tree node at `path` (file/dir), or null if not in the tree. */
@@ -15,6 +16,14 @@ function findNodeType(nodes: FileNode[] | null, path: string): 'file' | 'dir' | 
     if (child) return child
   }
   return null
+}
+
+/** Working-group count — Cmd+W closes an empty active group only when another
+ *  group survives (the last group stays, empty, per ensureFirstGroup). */
+function groupCount(node: LayoutNode): number {
+  if (node.kind === 'tabs') return 1
+  if (node.kind === 'split') return node.children.reduce((n, c) => n + groupCount(c.node), 0)
+  return 0
 }
 
 type KeyboardLockHandle = {
@@ -52,8 +61,9 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
   const toggleTasks = commands.toggleTasks
   const toggleDock = commands.toggleDock
   const toggleActivity = commands.toggleActivity
-  const splitEditor = commands.splitEditor
-  const splitTerminal = commands.splitTerminal
+  const splitGroup = commands.splitGroup
+  const closeGroup = commands.closeGroup
+  const clickSession = commands.clickSession
   const openToSide = commands.openToSide
   const setShowSearch = commands.actions.setShowSearch
   const { activeSession, activeGroupId, activeEditorTabId, focusedPane, focusTarget, explorerFocusedPath, showSearch } = useWorkspaceSelection()
@@ -94,16 +104,17 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
 
   // Main keydown handler
   useEffect(() => {
-    // Split the focused editor/terminal along its live geometry's default axis
+    // Split the focused tab's GROUP along its live geometry's default axis
     // (wide → right, tall → below), or the orthogonal axis when Cmd+K armed it.
+    // The split spawns an EMPTY group; activeGroupId (= the focused tab's group)
+    // is the resolved target, and the new empty group becomes the next open target.
     const splitFocusedPane = (orthogonal: boolean) => {
       if (focusedPane.kind !== 'editor' && focusedPane.kind !== 'terminal') return
       const el = document.querySelector<HTMLElement>(`[data-instance-id="${focusedPane.instanceId}"]`)
       if (!el) return
       const base = splitSideFromGeometry(el.offsetWidth, el.offsetHeight)
       const side = orthogonal ? orthogonalSide(base) : base
-      if (focusedPane.kind === 'editor') splitEditor(focusedPane.instanceId, side)
-      else splitTerminal(focusedPane.instanceId, side)
+      splitGroup(activeGroupId, side)
     }
 
     const handler = (e: KeyboardEvent) => {
@@ -126,27 +137,10 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         e.stopPropagation()
         const target = orderedSessions[Number(e.code.slice(5)) - 1]
         if (target) {
-          actions.setActiveSession(target.name)
+          clickSession(target.name)
           setFocusTarget('session')
           if (isMobile) actions.setMobilePane('terminal')
         }
-        return
-      }
-      // Cmd+Ctrl+Arrow Up/Down: cycle sessions
-      if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey
-          && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        if (orderedSessions.length === 0) return
-        e.preventDefault()
-        e.stopPropagation()
-        const cur = orderedSessions.findIndex(s => s.name === activeSession)
-        const next = cur === -1
-          ? (e.key === 'ArrowDown' ? 0 : orderedSessions.length - 1)
-          : e.key === 'ArrowDown'
-            ? (cur + 1) % orderedSessions.length
-            : (cur - 1 + orderedSessions.length) % orderedSessions.length
-        actions.setActiveSession(orderedSessions[next].name)
-        setFocusTarget('terminal')
-        if (isMobile) actions.setMobilePane('terminal')
         return
       }
       // Cmd+Ctrl+Arrow Left/Right: cycle the active group's editor tabs
@@ -165,6 +159,24 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         actions.setActiveTab(openTabIds[next])
         setFocusTarget('editor')
         if (isMobile) actions.setMobilePane('editor')
+        return
+      }
+      // Cmd+Ctrl+Arrow Up/Down: cycle sessions (focus-or-create the next session's
+      // terminal tab via the flat resolver — never rebind the active terminal).
+      if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey
+          && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        if (orderedSessions.length === 0) return
+        e.preventDefault()
+        e.stopPropagation()
+        const cur = orderedSessions.findIndex(s => s.name === activeSession)
+        const next = cur === -1
+          ? (e.key === 'ArrowDown' ? 0 : orderedSessions.length - 1)
+          : e.key === 'ArrowDown'
+            ? (cur + 1) % orderedSessions.length
+            : (cur - 1 + orderedSessions.length) % orderedSessions.length
+        clickSession(orderedSessions[next].name)
+        setFocusTarget('terminal')
+        if (isMobile) actions.setMobilePane('terminal')
         return
       }
       // Cmd+\: split the focused pane along its geometry-default axis.
@@ -235,9 +247,22 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
         actions.updateLayout({ previewMode: cycle[previewMode] })
         return
       }
-      if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'w' && closeFocusedSurface()) {
-        e.preventDefault()
-        e.stopPropagation()
+      // Cmd+W: close the focused group tab (editor = its file, or a terminal),
+      // OR — when the active group is an EMPTY, non-last group — close the group
+      // itself (the last group always survives, empty, via ensureFirstGroup).
+      if (e.metaKey && !e.ctrlKey && !e.altKey && key === 'w') {
+        const groupEmpty = tabsInGroup(panelLayout.desktop, activeGroupId).length === 0
+        if (groupEmpty && groupCount(panelLayout.desktop) > 1) {
+          e.preventDefault()
+          e.stopPropagation()
+          closeGroup(activeGroupId)
+          return
+        }
+        if (closeFocusedSurface()) {
+          e.preventDefault()
+          e.stopPropagation()
+        }
+        return
       }
       // ? : toggle shortcut cheatsheet (ignore when typing in input/textarea/contenteditable)
       if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
@@ -271,7 +296,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [actions, activeSession, activeEditorTabId, activeGroupId, panelLayout, canTogglePreview, closeFocusedSurface, editorVoiceEligible, explorerFocusedPath, fileTree, focusedPane, focusTarget, openToSide, recordEditor, recordTerminal, isMobile, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, splitEditor, splitTerminal, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
+  }, [actions, activeSession, activeEditorTabId, activeGroupId, panelLayout, canTogglePreview, closeFocusedSurface, closeGroup, clickSession, editorVoiceEligible, explorerFocusedPath, fileTree, focusedPane, focusTarget, openToSide, recordEditor, recordTerminal, isMobile, orderedSessions, previewMode, onToggleShortcutSheet, onToggleTextSearch, showSearch, splitGroup, terminalVoiceEligible, toggleActivity, toggleDock, toggleTasks, voice, setFocusTarget, setShowSearch])
 
   // Unlock keyboard lock on blur/visibility change
   useEffect(() => {

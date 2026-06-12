@@ -2,11 +2,13 @@
 //
 // useWorkspaceKeyboard unit test (design §F): the structural chords resolve the
 // FOCUSED pane's live element by `data-instance-id`, pick the split axis from its
-// geometry (Cmd+\), flip it on the Cmd+K prefix (Cmd+K Cmd+\), open the explorer
-// selection to the side (Cmd+Enter), close through the instance-aware
-// `closeFocusedSurface` (Cmd+W), and cycle the ACTIVE editor/terminal
-// (Cmd+Ctrl+arrows). The hook owns a window-level capture listener, so the tests
-// drive it by dispatching keydown on `window`.
+// geometry, and split the ACTIVE group to an empty sibling (Cmd+\), flipping the
+// axis on the Cmd+K prefix (Cmd+K Cmd+\); open the explorer selection to the side
+// (Cmd+Enter); close the focused tab via `closeFocusedSurface`, or an empty
+// non-last active group via `closeGroup` (Cmd+W); and cycle sessions/tabs on the
+// ACTIVE group — session cycling routes through the flat `clickSession`
+// (focus-or-create, never a rebind). The hook owns a window-level capture
+// listener, so the tests drive it by dispatching keydown on `window`.
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useWorkspaceKeyboard } from '../useWorkspaceKeyboard'
@@ -26,13 +28,13 @@ afterEach(() => {
 })
 
 type CommandMocks = WorkspaceCommands & {
-  splitEditor: ReturnType<typeof vi.fn>
-  splitTerminal: ReturnType<typeof vi.fn>
+  splitGroup: ReturnType<typeof vi.fn>
+  closeGroup: ReturnType<typeof vi.fn>
+  clickSession: ReturnType<typeof vi.fn>
   openToSide: ReturnType<typeof vi.fn>
   closeFocusedSurface: ReturnType<typeof vi.fn>
   setFocusTarget: ReturnType<typeof vi.fn>
   actions: {
-    setActiveSession: ReturnType<typeof vi.fn>
     setActiveTab: ReturnType<typeof vi.fn>
     setMobilePane: ReturnType<typeof vi.fn>
     updateLayout: ReturnType<typeof vi.fn>
@@ -42,8 +44,9 @@ type CommandMocks = WorkspaceCommands & {
 
 function makeCommands(): CommandMocks {
   return {
-    splitEditor: vi.fn(),
-    splitTerminal: vi.fn(),
+    splitGroup: vi.fn(),
+    closeGroup: vi.fn(),
+    clickSession: vi.fn(),
     openToSide: vi.fn(),
     closeFocusedSurface: vi.fn(() => true),
     setFocusTarget: vi.fn(),
@@ -51,7 +54,6 @@ function makeCommands(): CommandMocks {
     toggleDock: vi.fn(),
     toggleActivity: vi.fn(),
     actions: {
-      setActiveSession: vi.fn(),
       setActiveTab: vi.fn(),
       setMobilePane: vi.fn(),
       updateLayout: vi.fn(),
@@ -91,6 +93,20 @@ function tabsLayout(tabIds: string[]): WorkspacePanelLayout {
       children: [
         { node: { kind: 'leaf', id: 'files', panel: 'files' } },
         { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: tabIds.map((id) => ({ instanceId: id, kind: 'editor', tabId: id })), activeTab: tabIds[0] ?? '' } },
+      ],
+    },
+  })
+}
+
+/** A desktop layout with a populated group:1 and an EMPTY non-last group:2. */
+function twoGroupsLayout(): WorkspacePanelLayout {
+  return normalizeLayout({
+    desktop: {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: [{ instanceId: 'editor', kind: 'editor', tabId: 'a.ts' }], activeTab: 'editor' } },
+        { grow: true, node: { kind: 'tabs', id: 'group:2', tabs: [], activeTab: '' } },
       ],
     },
   })
@@ -157,72 +173,69 @@ const cmd = (key: string, code: string, extra: Partial<KeyboardEventInit> = {}) 
   fireEvent.keyDown(window, { key, code, metaKey: true, ...extra })
 
 describe('useWorkspaceKeyboard — split chords (Cmd+\\ / Cmd+K Cmd+\\)', () => {
-  it('splits a wide focused editor to the right (geometry default)', () => {
-    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' } } })
+  it('splits the active group on the geometry default (wide → right)', () => {
+    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' }, activeGroupId: 'group:1' } })
     mountPane('editor', 800, 400)
     cmd('\\', 'Backslash')
-    expect(commands.splitEditor).toHaveBeenCalledWith('editor', 'right')
-    expect(commands.splitTerminal).not.toHaveBeenCalled()
+    expect(commands.splitGroup).toHaveBeenCalledWith('group:1', 'right')
   })
 
-  it('splits a tall focused terminal below (geometry default)', () => {
-    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'terminal', instanceId: 'terminal-2' } } })
+  it('splits the active group on the geometry default (tall → below)', () => {
+    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'terminal', instanceId: 'terminal-2' }, activeGroupId: 'group:1' } })
     mountPane('terminal-2', 300, 600)
     cmd('\\', 'Backslash')
-    expect(commands.splitTerminal).toHaveBeenCalledWith('terminal-2', 'below')
-    expect(commands.splitEditor).not.toHaveBeenCalled()
+    expect(commands.splitGroup).toHaveBeenCalledWith('group:1', 'below')
   })
 
-  it('Cmd+K Cmd+\\ splits a wide editor along the ORTHOGONAL axis (below)', () => {
-    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' } } })
+  it('Cmd+K Cmd+\\ splits the active group along the ORTHOGONAL axis (below)', () => {
+    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' }, activeGroupId: 'group:1' } })
     mountPane('editor', 800, 400)
     cmd('k', 'KeyK')
     cmd('\\', 'Backslash')
-    expect(commands.splitEditor).toHaveBeenCalledWith('editor', 'below')
+    expect(commands.splitGroup).toHaveBeenCalledWith('group:1', 'below')
   })
 
-  it('Cmd+K Cmd+\\ splits a tall terminal along the ORTHOGONAL axis (right)', () => {
-    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'terminal', instanceId: 'terminal' } } })
+  it('Cmd+K Cmd+\\ splits the active group along the ORTHOGONAL axis (right)', () => {
+    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'terminal', instanceId: 'terminal' }, activeGroupId: 'group:1' } })
     mountPane('terminal', 300, 600)
     cmd('k', 'KeyK')
     cmd('\\', 'Backslash')
-    expect(commands.splitTerminal).toHaveBeenCalledWith('terminal', 'right')
+    expect(commands.splitGroup).toHaveBeenCalledWith('group:1', 'right')
   })
 
   it('a non-chord key cancels the Cmd+K prefix (next Cmd+\\ is the default axis)', () => {
-    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' } } })
+    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' }, activeGroupId: 'group:1' } })
     mountPane('editor', 800, 400)
     cmd('k', 'KeyK')
     fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' })
     cmd('\\', 'Backslash')
-    expect(commands.splitEditor).toHaveBeenCalledWith('editor', 'right')
-    expect(commands.splitEditor).not.toHaveBeenCalledWith('editor', 'below')
+    expect(commands.splitGroup).toHaveBeenCalledWith('group:1', 'right')
+    expect(commands.splitGroup).not.toHaveBeenCalledWith('group:1', 'below')
   })
 
   it('a bare backslash after Cmd+K (Cmd released) does NOT split and clears the prefix', () => {
-    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' } } })
+    const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' }, activeGroupId: 'group:1' } })
     mountPane('editor', 800, 400)
     cmd('k', 'KeyK')
     fireEvent.keyDown(window, { key: '\\', code: 'Backslash' }) // no metaKey
-    expect(commands.splitEditor).not.toHaveBeenCalled()
+    expect(commands.splitGroup).not.toHaveBeenCalled()
     // Prefix was cleared, so a following Cmd+\\ is the DEFAULT axis, not orthogonal.
     cmd('\\', 'Backslash')
-    expect(commands.splitEditor).toHaveBeenCalledTimes(1)
-    expect(commands.splitEditor).toHaveBeenCalledWith('editor', 'right')
+    expect(commands.splitGroup).toHaveBeenCalledTimes(1)
+    expect(commands.splitGroup).toHaveBeenCalledWith('group:1', 'right')
   })
 
   it('does nothing when the focused pane is not splittable (explorer)', () => {
     const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'explorer', instanceId: 'explorer' } } })
     cmd('\\', 'Backslash')
-    expect(commands.splitEditor).not.toHaveBeenCalled()
-    expect(commands.splitTerminal).not.toHaveBeenCalled()
+    expect(commands.splitGroup).not.toHaveBeenCalled()
   })
 
   it('does nothing when the focused pane element is absent', () => {
     const { commands } = renderKeyboard({ selection: { focusedPane: { kind: 'editor', instanceId: 'editor' } } })
     // No mountPane → querySelector returns null.
     cmd('\\', 'Backslash')
-    expect(commands.splitEditor).not.toHaveBeenCalled()
+    expect(commands.splitGroup).not.toHaveBeenCalled()
   })
 })
 
@@ -265,25 +278,58 @@ describe('useWorkspaceKeyboard — Cmd+Enter open-to-side', () => {
 })
 
 describe('useWorkspaceKeyboard — Cmd+W close', () => {
-  it('routes to the instance-aware closeFocusedSurface', () => {
-    const { commands } = renderKeyboard({})
+  it('routes a non-empty active group to the instance-aware closeFocusedSurface', () => {
+    const { commands } = renderKeyboard({
+      selection: { activeGroupId: 'group:1' },
+      panelLayout: tabsLayout(['a.ts']),
+    })
     cmd('w', 'KeyW')
+    expect(commands.closeFocusedSurface).toHaveBeenCalledTimes(1)
+    expect(commands.closeGroup).not.toHaveBeenCalled()
+  })
+
+  it('closes a focused EMPTY non-last group via closeGroup (CLOSE_GROUP)', () => {
+    const { commands } = renderKeyboard({
+      selection: { activeGroupId: 'group:2', focusedPane: { kind: 'editor', instanceId: 'editor' } },
+      panelLayout: twoGroupsLayout(),
+    })
+    cmd('w', 'KeyW')
+    expect(commands.closeGroup).toHaveBeenCalledWith('group:2')
+    expect(commands.closeFocusedSurface).not.toHaveBeenCalled()
+  })
+
+  it('does NOT closeGroup when the empty active group is the last group', () => {
+    const { commands } = renderKeyboard({
+      selection: { activeGroupId: 'group:1' },
+      panelLayout: tabsLayout([]), // one empty group, no others
+    })
+    cmd('w', 'KeyW')
+    expect(commands.closeGroup).not.toHaveBeenCalled()
     expect(commands.closeFocusedSurface).toHaveBeenCalledTimes(1)
   })
 })
 
-describe('useWorkspaceKeyboard — cycling acts on the active instance', () => {
-  it('Cmd+Ctrl+Down binds the active terminal to the next session', () => {
+describe('useWorkspaceKeyboard — cycling routes through the flat session resolver', () => {
+  it('Cmd+Ctrl+Down focus-or-creates the next session (never rebinds)', () => {
     const { commands } = renderKeyboard({
       selection: { activeSession: 'a' },
       orderedSessions: [{ name: 'a' }, { name: 'b' }, { name: 'c' }],
     })
     fireEvent.keyDown(window, { key: 'ArrowDown', code: 'ArrowDown', metaKey: true, ctrlKey: true })
-    expect(commands.actions.setActiveSession).toHaveBeenCalledWith('b')
+    expect(commands.clickSession).toHaveBeenCalledWith('b')
     expect(commands.setFocusTarget).toHaveBeenCalledWith('terminal')
   })
 
-  it('Cmd+Ctrl+Right selects the next tab in the active editor', () => {
+  it('Cmd+Ctrl+1 focus-or-creates session N (never rebinds)', () => {
+    const { commands } = renderKeyboard({
+      orderedSessions: [{ name: 'a' }, { name: 'b' }],
+    })
+    fireEvent.keyDown(window, { key: '1', code: 'Digit1', metaKey: true, ctrlKey: true })
+    expect(commands.clickSession).toHaveBeenCalledWith('a')
+    expect(commands.setFocusTarget).toHaveBeenCalledWith('session')
+  })
+
+  it('Cmd+Ctrl+Right selects the next tab in the active group', () => {
     const { commands } = renderKeyboard({
       selection: { activeGroupId: 'group:1', activeEditorTabId: 'x' },
       panelLayout: tabsLayout(['x', 'y', 'z']),

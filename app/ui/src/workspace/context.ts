@@ -157,7 +157,6 @@ export type EditorPrefs = {
  *  use the named commands above; these dissolve as that migration completes. */
 export type WorkspaceRawActions = {
   setActiveTab: (tab: string) => void
-  setActiveSession: (name: string) => void
   setMobilePane: (pane: MobilePane) => void
   updateLayout: (patch: Partial<WorkspaceLayout>) => void
   openFileTab: (path: string) => void

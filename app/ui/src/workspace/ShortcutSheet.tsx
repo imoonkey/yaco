@@ -27,10 +27,10 @@ const GROUPS: Group[] = [
       { keys: `${CMD} B`, label: 'Toggle sidebar' },
       { keys: `${CMD} ⇧ B`, label: 'Toggle right panel' },
       { keys: `${CMD} ⇧ T`, label: 'Toggle tasks' },
-      { keys: `${CMD} \\`, label: 'Split pane' },
-      { keys: `${CMD} K ${CMD} \\`, label: 'Split pane (other axis)' },
+      { keys: `${CMD} \\`, label: 'Split group' },
+      { keys: `${CMD} K ${CMD} \\`, label: 'Split group (other axis)' },
       { keys: `${CMD} ⏎`, label: 'Open file to the side' },
-      { keys: `${CMD} W`, label: 'Close tab / surface' },
+      { keys: `${CMD} W`, label: 'Close tab / group' },
     ],
   },
   {

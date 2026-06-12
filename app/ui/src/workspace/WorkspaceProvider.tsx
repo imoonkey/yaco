@@ -130,7 +130,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
     resolveTarget, groupForInstance,
     // file + raw actions
-    setMobilePane, updateLayout, setActiveSession,
+    setMobilePane, updateLayout,
     saveFile, forceSave, acceptDisk, updateFileDraft, updateFileViewport,
     retargetPaths: retargetTabPaths, onDeletePath,
   } = ws
@@ -422,7 +422,6 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       const hit = activeGroupTabInstance(tab)
       if (hit) setActiveGroupTab(hit.groupId, hit.instanceId)
     },
-    setActiveSession,
     setMobilePane,
     updateLayout,
     openFileTab: (path: string) => openFileInGroup(resolveTarget(), path),
@@ -437,7 +436,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setJumpRequest,
     setShowSearch,
   }), [
-    activeGroupTabInstance, setActiveGroupTab, setActiveSession, setMobilePane, updateLayout,
+    activeGroupTabInstance, setActiveGroupTab, setMobilePane, updateLayout,
     openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
     resolveTarget, groupForInstance,
   ])
