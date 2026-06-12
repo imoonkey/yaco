@@ -137,22 +137,6 @@ describe("runInstall — basic shape", () => {
     );
   });
 
-  it("links USER.md into ~/.claude and ~/.codex when it exists", () => {
-    const userMd = join(repoRoot, "agent-config", "global", "USER.md");
-    writeFileSync(userMd, "# my env\n");
-    runInstall(baseOpts());
-    const home = process.env["HOME"]!;
-    expect(readlinkSync(join(home, ".claude", "USER.md"))).toBe(userMd);
-    expect(readlinkSync(join(home, ".codex", "USER.md"))).toBe(userMd);
-  });
-
-  it("does not create a USER.md link when none exists in the repo", () => {
-    runInstall(baseOpts());
-    const home = process.env["HOME"]!;
-    expect(existsSync(join(home, ".claude", "USER.md"))).toBe(false);
-    expect(existsSync(join(home, ".codex", "USER.md"))).toBe(false);
-  });
-
   it("upserts {id: yaco, path: repoRoot} into the registry", () => {
     runInstall(baseOpts());
     const reg = JSON.parse(

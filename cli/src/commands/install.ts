@@ -338,15 +338,6 @@ function installGlobalLinks(repoRoot: string, force: boolean, actions: string[],
   upsertSymlink(join(home, ".claude", "skills"), skillsDir, force, actions, dryRun);
   upsertSymlink(join(home, ".codex", "AGENTS.md"), claudeMd, force, actions, dryRun);
   upsertSymlink(join(home, ".agents", "skills"), join(home, ".claude", "skills"), force, actions, dryRun);
-
-  // Per-user machine config: link USER.md beside CLAUDE.md/AGENTS.md when it
-  // exists (gitignored; copied from USER.md.example). Conditional so a checkout
-  // without one — e.g. a fresh OSS clone — still installs cleanly.
-  const userMd = join(repoRoot, "agent-config", "global", "USER.md");
-  if (existsSync(userMd)) {
-    upsertSymlink(join(home, ".claude", "USER.md"), userMd, force, actions, dryRun);
-    upsertSymlink(join(home, ".codex", "USER.md"), userMd, force, actions, dryRun);
-  }
 }
 
 /** Run npm install in app/server and app/ui (no-op when --cli-only). */
