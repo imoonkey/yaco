@@ -16,7 +16,7 @@ Responsive layouts, pane switching, touch handling, and mobile-specific behavior
 
 ## Related Code
 
-`ui/src/hooks/useIsMobile.ts`, `ui/src/components/LandscapeNav.tsx`, `ui/src/components/PaneSwitch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
+`ui/src/hooks/useIsMobile.ts`, `ui/src/components/LandscapeNav.tsx`, `ui/src/components/PaneSwitch.tsx`, `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/MobilePanelProjection.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/index.css`
 
 ## Breakpoint
 
@@ -53,9 +53,7 @@ Collapsible floating nav (`LandscapeNav` component) to maximize vertical space:
 
 `Files` | `Editor` | `Terminal`
 
-Controlled by PaneSwitch component.
-
-The `Files` pane stacks the workspace sidebar sections in order: Explorer, Changes, Tasks, Sessions.
+Controlled by PaneSwitch component (`MobilePanelProjection` renders the active dock). The `Files` pane stacks the workspace sidebar sections in order: Explorer, Changes, Tasks, Sessions. The `Editor` and `Terminal` panes **project the active instance** of their type (mobile shows one editor and one terminal — the most-recently-focused live instance — with no split/open-beside affordances).
 
 ### Auto-Switching
 

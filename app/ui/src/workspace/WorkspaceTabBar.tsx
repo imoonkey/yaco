@@ -1,10 +1,13 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
-import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
+import { X, AlertTriangle, Columns2, Rows2, SplitSquareHorizontal, ChevronDown } from 'lucide-react'
 
 import { isDiffTab, isFileTab, parseDiffTab, type PreviewMode, type SplitDirection } from '../hooks/useWorkspaceState'
+import type { SplitSide } from './context'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
-import { Menu, MenuItem } from '../components/Menu'
+import { Menu, MenuItem, MenuDivider } from '../components/Menu'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useContextMenu } from '../components/useContextMenu'
+import { splitSideFromGeometry } from './panelInstance'
 
 function truncateRef(ref: string, max = 12): string {
   return ref.length > max ? ref.slice(0, max - 1) + '\u2026' : ref
@@ -115,6 +118,65 @@ function PreviewModeToggle({ mode, splitDirection, onChange, onDirectionChange, 
   )
 }
 
+// --- Editor split / move / close chrome (design: §E) -----------------------
+// The home editor (instanceId 'editor') only splits; secondary editors also move
+// and close. The split button picks its axis from the live pane geometry; the
+// caret menu exposes both axes (the orthogonal mirrors Cmd+K Cmd+\) plus the
+// secondary-only Move/Close.
+export type EditorSplitChrome = {
+  isSecondary: boolean
+  onSplit: (side: SplitSide) => void
+  onMove: (side: SplitSide) => void
+  onClose: () => void
+}
+
+const SPLIT_BTN_STYLE: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  height: 22, padding: 0, border: 'none', borderRadius: 3, cursor: 'pointer',
+  background: 'transparent', color: 'var(--sol-text-dim)',
+}
+
+function EditorSplitControl({ isSecondary, onSplit, onMove, onClose }: EditorSplitChrome) {
+  const menu = useContextMenu()
+  const btnRef = useRef<HTMLButtonElement>(null)
+  // Default axis from the pane's own box: wide → split right, tall → split below.
+  const geometrySide = (): SplitSide => {
+    const pane = btnRef.current?.closest('[data-instance-id]') as HTMLElement | null
+    return pane ? splitSideFromGeometry(pane.offsetWidth, pane.offsetHeight) : 'right'
+  }
+  const run = (fn: () => void) => () => { fn(); menu.close() }
+  return (
+    <div className="flex items-center shrink-0">
+      <button ref={btnRef} type="button" onClick={() => onSplit(geometrySide())}
+        title="Split editor" aria-label="Split editor" style={{ ...SPLIT_BTN_STYLE, width: 24 }}>
+        <SplitSquareHorizontal size={13} aria-hidden="true" />
+      </button>
+      <button type="button" onClick={menu.open}
+        title="Split options" aria-label="Split editor options" aria-haspopup="menu"
+        style={{ ...SPLIT_BTN_STYLE, width: 14 }}>
+        <ChevronDown size={11} aria-hidden="true" />
+      </button>
+      {menu.position && (
+        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
+          <MenuItem label="Split Right" onClick={run(() => onSplit('right'))} />
+          <MenuItem label="Split Down" onClick={run(() => onSplit('below'))} />
+          {isSecondary && (
+            <>
+              <MenuDivider />
+              <MenuItem label="Move Left" onClick={run(() => onMove('left'))} />
+              <MenuItem label="Move Right" onClick={run(() => onMove('right'))} />
+              <MenuDivider />
+              <MenuItem label="Close Editor" danger onClick={run(onClose)} />
+            </>
+          )}
+        </Menu>
+      )}
+    </div>
+  )
+}
+
+const NO_PATHS: ReadonlySet<string> = new Set()
+
 export function WorkspaceTabBar({
   openTabs,
   activeTab,
@@ -132,6 +194,9 @@ export function WorkspaceTabBar({
   onSplitDirectionChange,
   onSaveTab,
   rightActions,
+  editorSplit,
+  pathsOpenElsewhere,
+  onDiscardDirty,
 }: {
   openTabs: string[]
   activeTab: string | null
@@ -144,15 +209,32 @@ export function WorkspaceTabBar({
   isTouch: boolean
   onSelectTab: (tab: string) => void
   onDoubleClickTab: (tab: string) => void
-  onCloseTab: (tab: string, e?: React.MouseEvent) => void
+  onCloseTab: (tab: string) => void
   onPreviewModeChange: (mode: PreviewMode) => void
   onSplitDirectionChange: (direction: SplitDirection) => void
   onSaveTab?: (tab: string) => void
   rightActions?: React.ReactNode
+  editorSplit?: EditorSplitChrome
+  pathsOpenElsewhere?: ReadonlySet<string>
+  // Explicit discard for the LAST view of a dirty file: clears the draft (→ clean)
+  // so the post-close GC drops the now-unreferenced buffer (design: §B). Not called
+  // on the no-prompt path (file still open elsewhere → the shared buffer is kept).
+  onDiscardDirty?: (tab: string) => void
 }) {
   const disambigSuffixes = useMemo(() => computeDisambigSuffixes(openTabs), [openTabs])
   const ctxMenu = useContextMenu()
   const [ctxTab, setCtxTab] = useState<string | null>(null)
+  const [pendingClose, setPendingClose] = useState<string | null>(null)
+  const elsewhere = pathsOpenElsewhere ?? NO_PATHS
+
+  // Dirty-close confirm (design: §B). Closing a dirty tab still shown in another
+  // editor view loses nothing (shared buffer), so it closes immediately; the LAST
+  // view of a dirty file prompts before discarding.
+  const requestClose = useCallback((tab: string, e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (dirtyTabs.has(tab) && !elsewhere.has(tab)) setPendingClose(tab)
+    else onCloseTab(tab)
+  }, [dirtyTabs, elsewhere, onCloseTab])
 
   // Scroll fade affordance
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -216,13 +298,13 @@ export function WorkspaceTabBar({
             ) : isDirty ? (
               <span className="relative w-3 h-3 flex items-center justify-center shrink-0">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0 group-hover:hidden" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
-                <button onClick={(e) => onCloseTab(tab, e)}
+                <button onClick={(e) => requestClose(tab, e)}
                   className="hidden group-hover:flex w-3 h-3 items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg absolute inset-0" style={{ color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
                   aria-label={`Close ${tabName(tab)}`}
                 ><X size={10} /></button>
               </span>
             ) : (
-              <button onClick={(e) => onCloseTab(tab, e)}
+              <button onClick={(e) => requestClose(tab, e)}
                 className="w-3 h-3 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer hover:bg-sol-hover-bg" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
                 aria-label={`Close ${tabName(tab)}`}
                 ><X size={10} /></button>
@@ -232,6 +314,7 @@ export function WorkspaceTabBar({
       })}
       </div>
       <div className="flex items-center gap-1 shrink-0 px-2" style={{ borderLeft: '1px solid var(--sol-border)' }}>
+        {editorSplit && <EditorSplitControl {...editorSplit} />}
         {rightActions}
         {canTogglePreview && (
           <PreviewModeToggle mode={previewMode} splitDirection={splitDirection} onChange={onPreviewModeChange} onDirectionChange={onSplitDirectionChange} isTouch={isTouch} />
@@ -248,14 +331,24 @@ export function WorkspaceTabBar({
             <MenuItem label="Save" onClick={() => { onSaveTab(tab); ctxMenu.close() }} />
           )}
           {isDirty && (
-            <MenuItem label="Close Without Saving" danger onClick={() => { onCloseTab(tab); ctxMenu.close() }} />
+            <MenuItem label="Close Without Saving" danger onClick={() => { requestClose(tab); ctxMenu.close() }} />
           )}
           {!isDirty && (
-            <MenuItem label="Close" onClick={() => { onCloseTab(tab); ctxMenu.close() }} />
+            <MenuItem label="Close" onClick={() => { requestClose(tab); ctxMenu.close() }} />
           )}
         </Menu>
       )
     })()}
+    {pendingClose && (
+      <ConfirmDialog
+        title="Discard unsaved changes?"
+        description={`${tabName(pendingClose)} has unsaved changes that will be lost.`}
+        confirmLabel="Close Without Saving"
+        danger
+        onConfirm={() => { onDiscardDirty?.(pendingClose); onCloseTab(pendingClose) }}
+        onClose={() => setPendingClose(null)}
+      />
+    )}
     </>
   )
 }

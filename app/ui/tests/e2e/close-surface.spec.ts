@@ -10,6 +10,7 @@ import {
   sidebar,
   activityPanel,
   getWorkspaceState,
+  activeBoundSession,
   type FixtureProject,
 } from './helpers/workspace'
 
@@ -48,9 +49,10 @@ async function startShell(request: APIRequestContext, cwd: string): Promise<stri
   return body.name
 }
 
-/** The persisted active session — the exact state `detachActiveSession` clears. */
-async function persistedActiveSession(page: Page): Promise<string | undefined> {
-  return (await getWorkspaceState(page, fixture!.name))?.activeSession as string | undefined
+/** The session bound to the active terminal — the exact state `detachActiveSession`
+ *  clears (the old global `activeSession`, now derived from `terminalBindings`). */
+async function persistedActiveSession(page: Page): Promise<string> {
+  return activeBoundSession(await getWorkspaceState(page, fixture!.name))
 }
 
 /** Provision an isolated project + a live shell session, then open the committed
@@ -150,38 +152,50 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
     await expect(page.locator('[data-layer="nodes"]')).toHaveCount(0)
   })
 
-  test('session-focus branch: Cmd+W detaches the session and leaves the editor tab open', async ({ page, request }) => {
+  test('session-focus branch: Cmd+W closes the focused terminal pane and leaves the editor tab open', async ({ page, request }) => {
     const { sessionName, readmeTab } = await openProjectWithSessionAndTab(page, request)
     const placeholder = activityPanel(page).getByText(TERMINAL_PLACEHOLDER)
+    const xterm = activityPanel(page).locator('.yaco-terminal-xterm')
 
-    // Cmd+Ctrl+1 attaches + sets focusTarget='session'.
+    // Cmd+Ctrl+1 attaches the session into the active terminal and focuses it.
     await page.keyboard.press('Control+Meta+Digit1')
     await expect(placeholder).toHaveCount(0)
     await expect.poll(() => persistedActiveSession(page)).toBe(sessionName)
 
     await page.keyboard.press('Meta+w')
 
-    // Session branch detached the session — the editor tab is UNTOUCHED. (If this
-    // branch were broken, the fallback would close the tab instead.)
-    await expect(placeholder).toBeVisible()
-    await expect.poll(() => persistedActiveSession(page)).toBe('')
+    // New routing (design §3.7): attaching focuses the terminal pane, so Cmd+W
+    // routes to closePane — the focused terminal pane closes (xterm gone, no idle
+    // placeholder), the binding clears, and the editor tab is UNTOUCHED.
+    await expect(xterm).toHaveCount(0)
+    await expect(placeholder).toHaveCount(0)
     await expect(readmeTab).toBeVisible()
+    await expect.poll(() => persistedActiveSession(page)).toBe('')
+    // The session keeps running (closePane removed the pane, not the PTY): its row
+    // stays listed (afterEach closes it by name and would throw if it were gone).
+    // Unscoped — closing the only terminal collapses the activity column, so the
+    // 'Activity panel' landmark is gone and Sessions reparents under the root.
+    await expect(page.getByText(sessionName, { exact: true })).toBeVisible()
   })
 
-  test('terminal-focus branch: Cmd+W detaches the session and leaves the editor tab open', async ({ page, request }) => {
+  test('terminal-focus branch: Cmd+W closes the focused terminal pane and leaves the editor tab open', async ({ page, request }) => {
     const { sessionName, readmeTab } = await openProjectWithSessionAndTab(page, request)
     const placeholder = activityPanel(page).getByText(TERMINAL_PLACEHOLDER)
+    const xterm = activityPanel(page).locator('.yaco-terminal-xterm')
 
-    // Cmd+Ctrl+ArrowDown attaches + sets focusTarget='terminal'.
+    // Cmd+Ctrl+ArrowDown attaches the session into the active terminal and focuses it.
     await page.keyboard.press('Control+Meta+ArrowDown')
     await expect(placeholder).toHaveCount(0)
     await expect.poll(() => persistedActiveSession(page)).toBe(sessionName)
 
     await page.keyboard.press('Meta+w')
 
-    // Terminal branch detached the session — the editor tab is UNTOUCHED.
-    await expect(placeholder).toBeVisible()
-    await expect.poll(() => persistedActiveSession(page)).toBe('')
+    // Terminal branch closes the pane (design §3.7: closePane, the session keeps
+    // running); the editor tab is UNTOUCHED.
+    await expect(xterm).toHaveCount(0)
+    await expect(placeholder).toHaveCount(0)
     await expect(readmeTab).toBeVisible()
+    await expect.poll(() => persistedActiveSession(page)).toBe('')
+    await expect(page.getByText(sessionName, { exact: true })).toBeVisible()
   })
 })

@@ -7,11 +7,12 @@ import { getCached, isCacheStale, fetchIndex } from './quickOpenIndex'
 
 export type { SearchEntry } from '../lib/fuzzySearch'
 
-export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClose }: {
+export function FileSearch({ projectName, worktree, recentFiles, onSelect, onOpenToSide, onClose }: {
   projectName: string
   worktree?: string | null
   recentFiles: string[]
   onSelect: (entry: { name: string; path: string; type: 'file' | 'dir' }) => void
+  onOpenToSide?: (entry: { name: string; path: string; type: 'file' | 'dir' }) => void
   onClose: () => void
 }) {
   const [query, setQuery] = useState('')
@@ -74,7 +75,19 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onClo
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIdx(i => Math.min(i + 1, displayItems.length - 1)); return }
     if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIdx(i => Math.max(i - 1, 0)); return }
     const isInput = e.target === inputRef.current
-    if (e.key === 'Enter' && isInput && displayItems[selectedIdx]) { onSelect(displayItems[selectedIdx].entry); onClose(); return }
+    if (e.key === 'Enter' && isInput && displayItems[selectedIdx]) {
+      const entry = displayItems[selectedIdx].entry
+      // Cmd+Enter opens a FILE to the side (design §F); dirs keep plain behavior.
+      if (e.metaKey && entry.type === 'file' && onOpenToSide) {
+        e.preventDefault()
+        onOpenToSide(entry)
+        onClose()
+        return
+      }
+      onSelect(entry)
+      onClose()
+      return
+    }
     if (!isInput && e.key === ' ') return
     if (!isInput && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1 && !e.nativeEvent.isComposing) {
       e.preventDefault()

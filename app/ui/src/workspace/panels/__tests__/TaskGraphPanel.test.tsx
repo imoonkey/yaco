@@ -72,7 +72,7 @@ const taskGraphPanelData = {
 
 const taskGraphPanelCommands = {
   openFile: taskGraphPanelOpenFile,
-  openTerminalForSession: taskGraphPanelOpenTerminal,
+  clickSession: taskGraphPanelOpenTerminal,
   setFocusTarget: taskGraphPanelSetFocusTarget,
   closeTasks: taskGraphPanelCloseTasks,
 } as unknown as WorkspaceCommands

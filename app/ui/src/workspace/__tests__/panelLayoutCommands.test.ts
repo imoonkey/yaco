@@ -506,24 +506,19 @@ describe('movePanel', () => {
     expect(normalizeLayout(restored)).toEqual(restored)
   })
 
-  it('recreates the dismantled main tabs node when restoring editor/tasks to default', () => {
-    // Move both editor and tasks out as leaves: the reserved main node empties
-    // and normalizes away.
-    let layout = movePanel(base(), 'editor', { kind: 'split', target: 'files', side: 'below' })
-    layout = movePanel(layout, 'tasks', { kind: 'split', target: 'changes', side: 'below' })
-    expect(tryFindTabs(layout.desktop, MAIN_TABS_ID)).toBeNull() // main is gone
+  it('keeps the home editor structural in the main node; tasks can leave and return to default', () => {
+    // The home editor is structural — it always stays in the main tabs node, so
+    // the main node is never dismantled (multi-instance model). Moving tasks out
+    // leaves the main node holding just the home editor.
+    const layout = movePanel(base(), 'tasks', { kind: 'split', target: 'changes', side: 'below' })
+    expect(tryFindTabs(layout.desktop, MAIN_TABS_ID)?.panels).toEqual(['editor'])
+    expect(tryFindTabs(layout.desktop, MAIN_TABS_ID)?.active).toBe('editor')
 
-    // Restoring editor to default must rebuild the main tabs node...
-    layout = movePanel(layout, 'editor', { kind: 'default' })
-    const mainAfterEditor = tryFindTabs(layout.desktop, MAIN_TABS_ID)
-    expect(mainAfterEditor?.panels).toEqual(['editor'])
-    expect(mainAfterEditor?.active).toBe('editor')
-
-    // ...and restoring tasks then rejoins it in the same node.
-    layout = movePanel(layout, 'tasks', { kind: 'default' })
-    expect(tryFindTabs(layout.desktop, MAIN_TABS_ID)?.panels.sort()).toEqual(['editor', 'tasks'])
-    expectAllPanelsOnce(layout.desktop)
-    expect(normalizeLayout(layout)).toEqual(layout)
+    // Restoring tasks to default rejoins it in the main node beside the editor.
+    const restored = movePanel(layout, 'tasks', { kind: 'default' })
+    expect(tryFindTabs(restored.desktop, MAIN_TABS_ID)?.panels.sort()).toEqual(['editor', 'tasks'])
+    expectAllPanelsOnce(restored.desktop)
+    expect(normalizeLayout(restored)).toEqual(restored)
   })
 })
 

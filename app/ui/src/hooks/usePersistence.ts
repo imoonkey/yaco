@@ -4,6 +4,7 @@ import {
   type PersistedDrafts,
   type WorkspaceLayout,
   type WorkspacePanelLayout,
+  type EditorView,
   DEFAULT_LAYOUT,
   isFileTab,
   layoutKey,
@@ -11,16 +12,23 @@ import {
   loadStoredSize,
   dedupeTabs,
 } from './workspaceTypes'
-import { defaultWorkspacePanelLayout, normalizeLayout, activateTabsPanel, MAIN_TABS_ID } from '../workspace/panelLayoutModel'
+import {
+  defaultWorkspacePanelLayout, normalizeLayout, activateTabsPanel, reconstituteMainTabs,
+  editorInstancesInOrder, terminalInstancesInOrder, MAIN_TABS_ID, HOME_EDITOR_ID,
+} from '../workspace/panelLayoutModel'
 
 // --- Load helpers ---
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+}
+
 function defaultPersistedState(): PersistedState {
   return {
-    openTabs: [],
-    activeTab: null,
-    previewTab: null,
-    activeSession: '',
+    editorViews: {},
+    terminalBindings: {},
+    editorMru: [],
+    terminalMru: [],
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
     recentFiles: [],
@@ -85,41 +93,109 @@ function migratePanelLayout(parsed: Record<string, unknown>, flat: WorkspaceLayo
   }
 }
 
+/** Parse + salvage one editor view: dedupe its tabs, drop the pre-T7 NUL tasks
+ *  sentinel, and pin active/preview to a tab that survived. */
+function parseEditorView(raw: unknown): EditorView {
+  const r = asRecord(raw)
+  const openTabs = dedupeTabs(Array.isArray(r.openTabs)
+    ? (r.openTabs as unknown[]).filter((t): t is string => typeof t === 'string' && !t.startsWith('\0'))
+    : [])
+  const activeTab = typeof r.activeTab === 'string' && openTabs.includes(r.activeTab) ? r.activeTab : (openTabs[0] ?? null)
+  const previewTab = typeof r.previewTab === 'string' && openTabs.includes(r.previewTab) ? r.previewTab : null
+  return { openTabs, activeTab, previewTab }
+}
+
+function parseMru(raw: unknown, liveIds: ReadonlySet<string>): string[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const id of raw) {
+    if (typeof id === 'string' && liveIds.has(id) && !seen.has(id)) { seen.add(id); out.push(id) }
+  }
+  return out
+}
+
+/** Terminal bindings for live terminals, deduped to one terminal per session
+ *  (keep the first in document order) — the 1-per-session invariant on load. */
+function parseTerminalBindings(raw: unknown, orderedTerminalIds: string[]): Record<string, string> {
+  const r = asRecord(raw)
+  const liveIds = new Set(orderedTerminalIds)
+  const seenSessions = new Set<string>()
+  const out: Record<string, string> = {}
+  for (const id of orderedTerminalIds) {
+    const session = r[id]
+    if (typeof session === 'string' && session && liveIds.has(id) && !seenSessions.has(session)) {
+      seenSessions.add(session)
+      out[id] = session
+    }
+  }
+  return out
+}
+
+type InstanceFields = Pick<PersistedState, 'editorViews' | 'terminalBindings' | 'editorMru' | 'terminalMru'>
+
+/** Derive the per-instance state for the loaded tree (design: Persistence Shape).
+ *  A stored new-shape blob is parsed + GC'd against the tree's instance ids; an
+ *  old flat blob migrates its single editor view to the home editor and its
+ *  `activeSession` to the structural terminal. The tree (already reconstituted to
+ *  contain the home editor) is the authority on which ids survive. */
+function loadInstanceState(parsed: Record<string, unknown>, panelLayout: WorkspacePanelLayout): InstanceFields {
+  const editorIds = new Set(editorInstancesInOrder(panelLayout.desktop))
+  const terminalOrder = terminalInstancesInOrder(panelLayout.desktop)
+
+  if (parsed.editorViews && typeof parsed.editorViews === 'object') {
+    const editorViews: Record<string, EditorView> = {}
+    for (const [id, v] of Object.entries(parsed.editorViews as Record<string, unknown>)) {
+      if (editorIds.has(id)) editorViews[id] = parseEditorView(v)
+    }
+    return {
+      editorViews,
+      terminalBindings: parseTerminalBindings(parsed.terminalBindings, terminalOrder),
+      editorMru: parseMru(parsed.editorMru, editorIds),
+      terminalMru: parseMru(parsed.terminalMru, new Set(terminalOrder)),
+    }
+  }
+
+  // Old flat blob → home editor view + structural terminal binding.
+  const home = parseEditorView(parsed)
+  const hasHome = editorIds.has(HOME_EDITOR_ID)
+  const editorViews: Record<string, EditorView> = hasHome && (home.openTabs.length > 0 || home.activeTab)
+    ? { [HOME_EDITOR_ID]: home }
+    : {}
+  const activeSession = typeof parsed.activeSession === 'string' ? parsed.activeSession : ''
+  const hasTerminal = terminalOrder.includes('terminal')
+  const terminalBindings: Record<string, string> = activeSession && hasTerminal ? { terminal: activeSession } : {}
+  return {
+    editorViews,
+    terminalBindings,
+    editorMru: hasHome ? [HOME_EDITOR_ID] : [],
+    terminalMru: terminalBindings.terminal ? ['terminal'] : [],
+  }
+}
+
 export function loadPersistedState(project: string, worktree?: string | null): PersistedState {
   try {
     const raw = localStorage.getItem(layoutKey(project, worktree))
     if (!raw) return defaultPersistedState()
     const parsed = JSON.parse(raw) as Record<string, unknown>
 
-    const openTabs = dedupeTabs(Array.isArray(parsed.openTabs)
-      ? (parsed.openTabs as unknown[]).filter((t): t is string => typeof t === 'string' && !t.startsWith('\0'))
-      : [])
-    const activeTab = typeof parsed.activeTab === 'string' && openTabs.includes(parsed.activeTab)
-      ? parsed.activeTab
-      : openTabs[0] ?? null
-
     const pl = (parsed.layout ?? parsed) as Record<string, unknown>
     const layout = parseFlatLayout(pl)
 
     // Pre-T7 persisted "Tasks open" as a fake editor tab whose id was the NUL
-    // sentinel (`activeTab` = '\0tasks'). The sentinel is filtered out of
-    // openTabs/activeTab above, so migrate that intent to the real-panel state:
-    // the tasks panel active in the main tabs node. (Post-T7 state already
-    // carries tasks-active in `panelLayout`, and `activeTab` is never the
-    // sentinel, so this only fires for one-time pre-T7 loads.)
+    // sentinel (`activeTab` = '\0tasks'). Migrate that intent to the tasks panel
+    // being active in the main tabs node (post-T7 / new-shape state carries this
+    // in panelLayout already, so this only fires for one-time legacy loads).
     const tasksWasActive = typeof parsed.activeTab === 'string' && parsed.activeTab.startsWith('\0')
-    const basePanelLayout = migratePanelLayout(parsed, layout)
+    // Reconstitute the home editor first, so the instance-state GC keeps the
+    // migrated home view (a legacy tree that moved editor out has no 'editor').
+    const reconstituted = reconstituteMainTabs(migratePanelLayout(parsed, layout))
     const panelLayout = tasksWasActive
-      ? activateTabsPanel(basePanelLayout, MAIN_TABS_ID, 'tasks')
-      : basePanelLayout
+      ? activateTabsPanel(reconstituted, MAIN_TABS_ID, 'tasks')
+      : reconstituted
 
     return {
-      openTabs,
-      activeTab,
-      previewTab: typeof parsed.previewTab === 'string' && openTabs.includes(parsed.previewTab)
-        ? parsed.previewTab
-        : null,
-      activeSession: typeof parsed.activeSession === 'string' ? parsed.activeSession : '',
+      ...loadInstanceState(parsed, panelLayout),
       mobilePane: parsed.mobilePane === 'files' || parsed.mobilePane === 'editor' || parsed.mobilePane === 'tasks' || parsed.mobilePane === 'terminal'
         ? parsed.mobilePane as PersistedState['mobilePane'] : 'files',
       layout,

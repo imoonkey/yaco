@@ -8,6 +8,7 @@ import {
   writeFileViaAPI,
   waitForSSERefresh,
   getWorkspaceState,
+  activeEditorView,
   uniqueFileName,
   type FixtureProject,
 } from './helpers/workspace'
@@ -185,7 +186,7 @@ test.describe('Workspace regression', () => {
           },
           `yaco-drafts:${project.name}`,
         )
-        const tabPersisted = Array.isArray(layout?.openTabs) && layout.openTabs.includes(filePath)
+        const tabPersisted = !!activeEditorView(layout)?.openTabs.includes(filePath)
         const draftBody = drafts?.files?.[filePath]?.draft ?? ''
         return tabPersisted && draftBody.includes('DRAFT CONTENT')
       }, { timeout: 10_000 })

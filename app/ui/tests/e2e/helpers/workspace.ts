@@ -57,6 +57,50 @@ export function getWorkspaceState(page: Page, project: string, worktree?: string
   }, layoutKey(project, worktree))
 }
 
+// --- Per-instance persisted-state readers (multi-instance panel model) ---
+//
+// The global `openTabs`/`activeTab`/`previewTab`/`activeSession` fields are gone:
+// editor view state is now keyed by instance id in `editorViews`, terminal session
+// bindings in `terminalBindings`, with `editorMru`/`terminalMru` naming the active
+// instance (mirrors `resolveActiveEditor`/`resolveActiveTerminal` in the model).
+// These readers return the ACTIVE instance's slice — the single-value equivalents
+// the old flat fields exposed — so single-pane characterization specs assert the
+// same observable persisted state through the new shape.
+
+export type PersistedEditorView = { openTabs: string[]; activeTab: string | null; previewTab: string | null }
+type PersistedInstanceState = {
+  editorViews?: Record<string, PersistedEditorView>
+  terminalBindings?: Record<string, string>
+  editorMru?: string[]
+  terminalMru?: string[]
+} | null | undefined
+
+/** The active editor instance id: the MRU head that still has a view, else the
+ *  structural home editor `'editor'` (always present). */
+function activeEditorId(state: PersistedInstanceState): string {
+  const views = state?.editorViews ?? {}
+  for (const id of state?.editorMru ?? []) if (views[id]) return id
+  return 'editor'
+}
+
+/** The active editor's persisted view — the per-instance replacement for the old
+ *  global `openTabs`/`activeTab`/`previewTab`. Null when no editor view persisted. */
+export function activeEditorView(state: PersistedInstanceState): PersistedEditorView | null {
+  return state?.editorViews?.[activeEditorId(state)] ?? null
+}
+
+/** The session bound to the active terminal — the value the old flat blob stored
+ *  as `activeSession`. Returns '' when no terminal is bound (the detached state). */
+export function activeBoundSession(state: PersistedInstanceState): string {
+  const bindings = state?.terminalBindings ?? {}
+  for (const id of state?.terminalMru ?? []) {
+    const session = bindings[id]
+    if (typeof session === 'string' && session) return session
+  }
+  const first = Object.values(bindings).find((s): s is string => typeof s === 'string' && s.length > 0)
+  return first ?? ''
+}
+
 // --- Workspace navigation ---
 
 type ProjectInfo = { name: string; path: string }

@@ -17,7 +17,20 @@ Multi-tab editor, dirty state, draft model, markdown preview, and diff view.
 
 ## Related Code
 
-`ui/src/components/Editor.tsx`, `ui/src/workspace/WorkspaceEditorArea.tsx`
+`ui/src/components/Editor.tsx`, `ui/src/workspace/panels/EditorPanel.tsx`, `ui/src/workspace/WorkspaceEditorColumn.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`
+
+## Multi-Instance Editors
+
+The workspace can show **N editor panes** side-by-side. Each `EditorPanel` reads its `instanceId` (from `PanelInstanceContext`) and renders `editorViews[instanceId]` — its own `{ openTabs, activeTab, previewTab }`. A read for a missing id defaults to `EMPTY_VIEW`. -> See: [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
+
+- **Shared buffers.** File content / dirty state live in `useFileState` keyed by **path**, not instance. An edit in editor A is visible in editor B, and both show the same dirty dot. Only the tab view is per-instance.
+- **Instance-scoped events.** Tab clicks call `selectTab(tab, id)` / `closeTab(tab, id)` on the pane's own id and focus it (`focusPane('editor', id)` on mousedown). `jumpRequest` (go-to-line) and `editorInsert` (voice) carry an `instanceId` and are consumed **iff** it matches.
+- **Split chrome.** The tab bar has a **Split Editor** button (default axis from its own geometry; `Cmd+K Cmd+\` or a caret for the orthogonal axis). Secondary editors also get **Move** / **Close** in an overflow menu; the home editor has neither (it is structural). Splitting seeds the new editor with the source's active file (pinned) or empty, and focuses it.
+- **Open to the side.** `Cmd+Enter` in the explorer / quick-open opens the focused file in a new editor beside the active one (`openToSide`).
+- **Dirty-close confirm.** "Close Without Saving" on the last view of a dirty file confirms and clears the draft first; it **no-ops when the same path is open in another view** (closing A's tab while B shows it loses nothing).
+- **Close.** Emptying a **secondary** editor (last tab closed) reflows it away (`closePane`); emptying the **home** editor leaves it in the empty state.
+
+Editor *preferences* (`previewMode` / `splitDirection` / `splitSize` / inline-suggestions) stay global (in `panelState.editor`), shared across all editor instances.
 
 ## Syntax Highlighting
 
@@ -59,7 +72,7 @@ State is persisted to localStorage alongside other workspace state.
 
 ## Draft Model
 
-Managed by `useWorkspaceState` hook. Each open file tab maintains:
+Managed by `useFileState` (keyed by path, shared across editor instances). Each open file path maintains:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -75,12 +88,12 @@ Managed by `useWorkspaceState` hook. Each open file tab maintains:
 3. `Cmd+S` → content sent to server with `baseRevision`, on success: `draft` reset to `null`, new `baseRevision` stored
 4. If server revision changed since last fetch → status becomes `conflict`
 5. Conflict resolution: `forceSave()` (overwrite server) or `acceptDisk()` (discard local draft)
-6. Tab closed → draft discarded from state
+6. Tab closed → buffer kept iff still referenced by some open editor view **or** dirty (a shared-buffer GC); a clean, unreferenced buffer drops immediately, a dirty one lingers (recoverable) until explicitly discarded
 7. Switch tabs → draft preserved (survives tab switching)
 
 ### Persistence
 
-Dirty drafts are persisted to localStorage (`workflow-drafts:<project>`) with debounced writes. On app reload, persisted drafts are restored and hydrated against server content to detect conflicts.
+Dirty drafts are persisted to localStorage (`yaco-drafts:<project>`, keyed by path) with debounced writes. On app reload, persisted drafts are restored and hydrated against server content to detect conflicts.
 
 ### Draft as Single Source of Truth
 

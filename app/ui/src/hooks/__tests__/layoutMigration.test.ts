@@ -38,6 +38,8 @@ import {
   defaultDesktopTree,
   normalizeLayout,
   mainTabsActivePanel,
+  editorInstancesInOrder,
+  MAIN_TABS_ID,
 } from '../../workspace/panelLayoutModel'
 
 const PROJECT = 'proj'
@@ -160,10 +162,12 @@ describe('migration: old flat blob → panel layout', () => {
 
     const state = loadPersistedState(PROJECT)
 
-    expect(state.openTabs).toEqual(['a.ts', 'b.ts'])
-    expect(state.activeTab).toBe('b.ts')
-    expect(state.previewTab).toBe('a.ts')
-    expect(state.activeSession).toBe('sess-1')
+    // The single old editor view migrates to the home editor; activeSession to
+    // the structural terminal; both seed their MRU head.
+    expect(state.editorViews.editor).toEqual({ openTabs: ['a.ts', 'b.ts'], activeTab: 'b.ts', previewTab: 'a.ts' })
+    expect(state.editorMru).toEqual(['editor'])
+    expect(state.terminalBindings.terminal).toBe('sess-1')
+    expect(state.terminalMru).toEqual(['terminal'])
     expect(state.recentFiles).toEqual(['a.ts', 'b.ts', 'c.ts'])
     expect(state.panelLayout?.panelState.editor.autocompleteEnabled).toBe(true)
   })
@@ -200,7 +204,7 @@ describe('migration: stored version:1 tree', () => {
           { node: { kind: 'leaf', id: 'a', panel: 'files' } },
           { node: { kind: 'leaf', id: 'b', panel: 'files' } }, // duplicate → dropped
           { node: { kind: 'leaf', id: 'c', panel: 'bogus' } }, // unknown → dropped
-          { grow: true, node: { kind: 'leaf', id: 'd', panel: 'editor' } },
+          { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
         ],
       },
       mobile: { activeDock: 'nope' }, // invalid → browse
@@ -214,12 +218,46 @@ describe('migration: stored version:1 tree', () => {
     const { panelLayout } = loadPersistedState(PROJECT)
 
     // Routed through normalization (per-field salvage), never wholesale discard.
+    // The home editor is present, so no reconstitution fires.
     expect(panelLayout).toEqual(normalizeLayout(malformed))
     // Concrete repairs:
-    expect(collectPanels(panelLayout!.desktop).sort()).toEqual(['editor', 'files'])
+    expect(collectPanels(panelLayout!.desktop).sort()).toEqual(['editor', 'files', 'tasks'])
     expect(panelLayout?.mobile.activeDock).toBe('browse')
     expect(panelLayout?.panelState.files.mode).toBe('tree')
     expect(panelLayout?.panelState.editor).toEqual(defaultWorkspacePanelLayout().panelState.editor)
+  })
+
+  it('reconstitutes the home editor when a stored tree dismantled the main tabs node', () => {
+    // A legacy tree that moved editor out as a leaf (claiming the home id) and
+    // dropped tasks entirely — no main tabs node survives. Load must restore the
+    // structural home editor so 'editor' is always a live instance, and migrate
+    // the old global tabs into it (the moved-out leaf becomes a secondary).
+    seedLayout({
+      openTabs: ['src/keep.ts'],
+      activeTab: 'src/keep.ts',
+      panelLayout: {
+        version: 1,
+        desktop: {
+          kind: 'split', id: 'root', axis: 'row',
+          children: [
+            { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+            { grow: true, node: { kind: 'leaf', id: 'editor', panel: 'editor' } }, // claims home id
+          ],
+        },
+        mobile: { activeDock: 'browse' },
+        panelState: defaultWorkspacePanelLayout().panelState,
+      },
+    })
+
+    const state = loadPersistedState(PROJECT)
+
+    // Home editor reconstituted in the main tabs node; the moved-out leaf is a secondary.
+    expect(mainTabsActivePanel(state.panelLayout.desktop)).toBe('editor')
+    const editors = editorInstancesInOrder(state.panelLayout.desktop)
+    expect(editors).toContain('editor')
+    expect(editors.length).toBe(2) // home + the re-id'd secondary
+    // The old global tabs land in the home editor (kept live by the reconstitution).
+    expect(state.editorViews.editor).toEqual({ openTabs: ['src/keep.ts'], activeTab: 'src/keep.ts', previewTab: null })
   })
 
   it('treats a non-1 version as an old blob (default tree + editor-pref read)', () => {
@@ -249,7 +287,7 @@ describe('migration: corrupt or empty input', () => {
     const state = loadPersistedState(PROJECT)
 
     expect(state.panelLayout).toEqual(defaultWorkspacePanelLayout())
-    expect(state.openTabs).toEqual([])
+    expect(state.editorViews).toEqual({})
     expect(state.layout).toEqual(DEFAULT_LAYOUT)
   })
 
@@ -259,14 +297,79 @@ describe('migration: corrupt or empty input', () => {
     const state = loadPersistedState(PROJECT)
 
     expect(state.panelLayout).toEqual(defaultWorkspacePanelLayout())
-    expect(state.openTabs).toEqual([])
+    expect(state.editorViews).toEqual({})
+  })
+})
+
+// --- new-shape load: parse + GC the per-instance maps ----------------------
+
+describe('migration: new-shape per-instance state', () => {
+  const multiTree = {
+    version: 1,
+    desktop: {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
+        { node: { kind: 'leaf', id: 'editor:2', panel: 'editor' } },
+        { node: { kind: 'leaf', id: 'terminal', panel: 'terminal' } },
+      ],
+    },
+    mobile: { activeDock: 'browse' as const },
+    panelState: defaultWorkspacePanelLayout().panelState,
+  }
+
+  it('parses editor views / bindings / MRU and GCs every id the tree lacks', () => {
+    seedLayout({
+      panelLayout: multiTree,
+      editorViews: {
+        editor: { openTabs: ['a.ts'], activeTab: 'a.ts', previewTab: null },
+        'editor:2': { openTabs: ['b.ts'], activeTab: 'b.ts', previewTab: null },
+        ghost: { openTabs: ['z.ts'], activeTab: 'z.ts', previewTab: null }, // no such pane → dropped
+      },
+      terminalBindings: { terminal: 'sess-1', 'terminal:2': 'sess-2' }, // terminal:2 absent → dropped
+      editorMru: ['ghost', 'editor:2', 'editor'], // ghost GC'd
+      terminalMru: ['terminal:2', 'terminal'], // terminal:2 GC'd
+    })
+
+    const s = loadPersistedState(PROJECT)
+
+    expect(Object.keys(s.editorViews).sort()).toEqual(['editor', 'editor:2'])
+    expect(s.editorViews['editor:2'].openTabs).toEqual(['b.ts'])
+    expect(s.terminalBindings).toEqual({ terminal: 'sess-1' })
+    expect(s.editorMru).toEqual(['editor:2', 'editor'])
+    expect(s.terminalMru).toEqual(['terminal'])
+  })
+
+  it('dedups terminal bindings to one-per-session (keep first in document order)', () => {
+    seedLayout({
+      panelLayout: {
+        version: 1,
+        desktop: {
+          kind: 'split', id: 'root', axis: 'row',
+          children: [
+            { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
+            { node: { kind: 'leaf', id: 'terminal', panel: 'terminal' } },
+            { node: { kind: 'leaf', id: 'terminal:2', panel: 'terminal' } },
+          ],
+        },
+        mobile: { activeDock: 'browse' as const },
+        panelState: defaultWorkspacePanelLayout().panelState,
+      },
+      editorViews: {}, // present → new-shape blob (so terminalBindings is read)
+      terminalBindings: { 'terminal:2': 'dup', terminal: 'dup' },
+    })
+
+    const s = loadPersistedState(PROJECT)
+    // 'terminal' precedes 'terminal:2' in document order → it keeps the session.
+    expect(s.terminalBindings).toEqual({ terminal: 'dup' })
   })
 })
 
 // --- final-shape round-trip through the REAL save path ---------------------
 
 describe('migration: new-shape round-trip via useWorkspaceState', () => {
-  it('persists the live panel layout through bindSnapshots → saveLayout', () => {
+  it('persists the live panel layout + per-instance maps through bindSnapshots → saveLayout', () => {
     // A non-default, fully-valid stored tree: every field differs from the
     // defaults, so a dropped panelLayout (re-derived defaults on reload) fails
     // this assertion instead of passing vacuously.
@@ -278,15 +381,26 @@ describe('migration: new-shape round-trip via useWorkspaceState', () => {
         editor: { previewMode: 'preview' as const, splitDirection: 'vertical' as const, splitSize: 42, autocompleteEnabled: true },
       },
     }
-    seedLayout({ panelLayout: stored })
+    seedLayout({
+      panelLayout: stored,
+      editorViews: { editor: { openTabs: ['src/keep.ts'], activeTab: 'src/keep.ts', previewTab: null } },
+      terminalBindings: { terminal: 'sess-keep' },
+      editorMru: ['editor'],
+      terminalMru: ['terminal'],
+    })
 
-    // Mount the real hook: it loads the stored tree, seeds live state, and binds
+    // Mount the real hook: it loads the stored state, seeds live state, and binds
     // the persistence snapshot. Unmounting flushes that snapshot synchronously
     // through saveLayout — the same path the running app uses on teardown.
     const { unmount } = renderHook(() => useWorkspaceState(PROJECT))
     unmount()
 
-    expect(loadPersistedState(PROJECT).panelLayout).toEqual(stored)
+    const reloaded = loadPersistedState(PROJECT)
+    expect(reloaded.panelLayout).toEqual(stored)
+    expect(reloaded.editorViews).toEqual({ editor: { openTabs: ['src/keep.ts'], activeTab: 'src/keep.ts', previewTab: null } })
+    expect(reloaded.terminalBindings).toEqual({ terminal: 'sess-keep' })
+    expect(reloaded.editorMru).toEqual(['editor'])
+    expect(reloaded.terminalMru).toEqual(['terminal'])
   })
 })
 
@@ -342,8 +456,8 @@ describe('migration: pre-T7 fake tasks tab → tasks panel active', () => {
     const state = loadPersistedState(PROJECT)
 
     // The sentinel is stripped from the tab set, and the intent moves to the tree.
-    expect(state.openTabs).toEqual(['src/a.ts'])
-    expect(state.activeTab).toBe('src/a.ts')
+    expect(state.editorViews.editor.openTabs).toEqual(['src/a.ts'])
+    expect(state.editorViews.editor.activeTab).toBe('src/a.ts')
     expect(mainTabsActivePanel(state.panelLayout.desktop)).toBe('tasks')
   })
 

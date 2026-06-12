@@ -17,7 +17,19 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/SearchHighlightedText.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/workspace/WorkspaceLayout.tsx`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`, `ui/src/lib/codexInputPromptFrame.ts`
+`ui/src/workspace/WorkspaceProvider.tsx` (session commands + reconcile), `ui/src/workspace/panels/SessionsPanel.tsx`, `ui/src/workspace/panels/TerminalPanel.tsx`, `ui/src/workspace/WorkspaceSessionList.tsx`, `ui/src/workspace/SessionSearchBox.tsx`, `ui/src/workspace/SearchHighlightedText.tsx`, `ui/src/workspace/useWorkspaceSessionSection.tsx`, `ui/src/workspace/useWorkspaceSessions.ts`, `ui/src/workspace/sessionLineage.ts`, `ui/src/workspace/sessionSearch.ts`, `ui/src/components/Terminal.tsx`, `ui/src/components/SessionIcons.tsx`, `ui/src/lib/codexInputPromptFrame.ts`
+
+## Multi-Instance Terminals
+
+The workspace can show **N terminal panes**, each bound to one session. Each `TerminalPanel` reads its `instanceId` and renders `terminalBindings[instanceId]` — an empty binding shows the "Select a session to attach" placeholder (the only idle state). Terminals carry **one PTY per session** (the 1-per-session invariant). -> See: [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
+
+- **Session click (`clickSession`)** — smart-focus-else-replace: if the session is already shown in some terminal, focus it (no rebind, no duplicate PTY); else bind the **active** terminal to it; else (no terminal exists) create one bound to it. Reveals the terminal column/dock.
+- **Open beside (`openBeside`)** — hover/right-click "Open beside" on a session row: focus the terminal already showing it (1-per-session guard), else split a **new** terminal pane bound to it.
+- **Split / close chrome.** The terminal header has **Split Terminal** + **Close (×)**. Close → `closePane(id)`; the session keeps running (it is not killed). No desktop mic on the terminal — voice is the single global control in the top bar (-> [../app-shell.md](../app-shell.md#global-voice-control)). `terminalSend` (voice) is consumed iff its `instanceId` matches; mousedown focuses the pane.
+- **Session reconcile (per-session miss-count).** Each poll, every *bound* session absent from the live handles increments a miss counter; at **2 misses** the provider closes the terminal pane(s) bound to it (the session goes to History — no tombstone). A persisted binding is pre-seeded at miss-count 1 (previously-seen), so a session that died between reloads is dropped on the first poll that confirms it absent. **Rename** rebinds *every* terminal bound to the old name (the binding outlives the name, so reconcile does not mistake a rename for a death).
+- **Unread / mark-read (`visibleSessions`).** The provider reports the sessions bound to terminal panes **actually visible in the layout** (a terminal leaf not under a hidden subtree on desktop, or the active terminal dock on mobile) — not "the activity column is visible". With two tiled terminals, **both** sessions are auto-marked read.
+
+A derived single `activeSession` (= the active terminal's binding) is kept only for the keyboard session label and single-value fallbacks; unread/visibility use the `visibleSessions` set.
 
 ## Session List
 
@@ -89,8 +101,9 @@ Plain terms use case-insensitive substring matching with AND semantics across wh
 | Start Claude | Click Claude button | `POST /api/sessions/start { provider: 'claude' }` |
 | Start Codex | Click Codex button | `POST /api/sessions/start { provider: 'codex' }` |
 | Start Shell | Click Shell button | `POST /api/sessions/start { provider: 'shell' }` |
-| Select session | Click session row | Attaches terminal to selected session |
-| Kill session | Click Kill button on row | `POST /api/sessions/:handle/close` |
+| Select session | Click session row | `clickSession` — focus the terminal already showing it, else bind the active terminal, else create one (smart-focus-else-replace) |
+| Open beside | Hover/right-click → "Open beside" | `openBeside` — focus if shown, else split a new terminal pane bound to it (1-per-session) |
+| Kill session | Click Kill button on row | `POST /api/sessions/:handle/close`; its terminal pane(s) close via the reconcile when the session leaves the live set |
 | Rename session | Right-click → Rename (inline edit) | `POST /api/sessions/:handle/rename { name, cwd }`; the CLI renames state/tmux immediately and input-gates provider-native `/rename` so it never merges into a user's draft |
 | Reorder session | Drag pinned session row vertically | Reorders within pinned section (client-side only, not persisted) |
 | Refresh sessions | Click refresh in the Sessions header | Live tab re-fetches `GET /api/sessions?project=<name>`; History tab re-fetches `GET /api/sessions/history?project=<name>`. The refresh icon is the far-right header action and spins until the request settles. |
@@ -124,9 +137,9 @@ xterm v6 can silently drop characters from Chinese/CJK IME input — its `Compos
 
 ### Session Attachment
 
-Terminal mounts immediately when `activeSession` is set — no longer gated by the sessions API poll. This eliminates the blank-screen delay on mobile when creating a new session (previously the Terminal wouldn't mount until `refreshSessions()` resolved).
+Terminal mounts immediately when its `instanceId` has a non-empty binding (`terminalBindings[instanceId]`) — no longer gated by the sessions API poll. This eliminates the blank-screen delay on mobile when creating a new session.
 
-Auto-detach: a `knownSessionsRef` tracks sessions seen in prior API responses. If a session was previously known but disappears from **2 consecutive** poll responses, `activeSession` is cleared automatically. A single transient miss (e.g., race between state-file write and API read) is tolerated. Explicitly killed sessions bypass this — `killSession()` clears `activeSession` directly.
+Auto-close: the provider keeps a **per-session miss-count map**. Each poll, every bound session absent from the live handles increments its count; at **2 consecutive misses** the bound terminal pane(s) close (the session goes to History). A single transient miss (e.g., a race between state-file write and API read) is tolerated. A persisted binding is pre-seeded at miss-count 1, so a session that died between reloads is dropped on the first confirming poll. Explicitly killed sessions close their pane the same way (they leave the live set). -> See: [Multi-Instance Terminals](#multi-instance-terminals).
 
 ### Connection Lifecycle
 
@@ -167,8 +180,8 @@ Before the server creates a tmux shell or starts a new yaco agent child process,
 
 | Action | Shortcut | Effect |
 |--------|----------|--------|
-| Detach | `Cmd+W` (terminal focused) | Closes WebSocket, session continues running |
-| Kill | Kill button on session row | `POST /api/sessions/:handle/close`, session terminated |
+| Close pane | `Cmd+W` (terminal focused) or header × | `closePane(id)` — closes the WebSocket and removes the pane; the session keeps running |
+| Kill | Kill button on session row | `POST /api/sessions/:handle/close`, session terminated; bound terminal pane(s) close via the reconcile |
 
 ## Clipboard
 

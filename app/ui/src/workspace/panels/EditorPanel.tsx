@@ -23,17 +23,26 @@
 // surface renders no voice button and never inserts.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isDiffTab, isFileTab, parseDiffTab } from '../../hooks/useWorkspaceState'
+import { EMPTY_VIEW } from '../../hooks/workspaceTypes'
 import { fetchGitCompare } from '../../hooks/useApi'
 import type { GitChange } from '../../types'
 import type { CompareContext } from '../diff/DiffTab'
 import {
   useWorkspaceEnv, useWorkspaceDataContext, useWorkspaceSelection,
   useWorkspaceLayout, useWorkspaceCommands, useWorkspaceVoiceSurface,
+  type SplitSide,
 } from '../context'
+import { usePanelInstance } from '../panelInstance'
+import { HOME_EDITOR_ID, MAIN_TABS_ID } from '../panelLayoutModel'
 import { useWorkspaceDiff } from '../useWorkspaceDiff'
 import { WorkspaceEditorColumn } from '../WorkspaceEditorColumn'
 import { PANEL_META } from '../panelMeta'
 import type { PanelDefinition } from '../panelRegistry'
+
+// editorInsert carries instanceId + filePath (design: §G); we read them
+// structurally so this panel consumes only inserts aimed at this pane AND at the
+// file it is currently showing (a take stamped before a tab switch never lands).
+type TargetedInsert = { text: string; key: number; instanceId?: string; filePath?: string }
 
 export function EditorPanel() {
   const env = useWorkspaceEnv()
@@ -46,7 +55,13 @@ export function EditorPanel() {
 
   const { name: projectName, worktree } = env.project
   const { isMobile, isTouch } = env.viewport
-  const { openTabs, activeTab, previewTab } = selection
+  // Which editor instance this pane is. Outside a PanelHost (isolation tests)
+  // there is no instance context → the home editor ('editor').
+  const instanceId = usePanelInstance()?.instanceId ?? HOME_EDITOR_ID
+  const isSecondary = instanceId !== HOME_EDITOR_ID
+  // View is per-instance (design: §E); a missing id resolves to the empty view.
+  const view = selection.editorViews[instanceId] ?? EMPTY_VIEW
+  const { openTabs, activeTab, previewTab } = view
   const { files, dirtyTabs, conflictTabs, jumpRequest } = selection.editor
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
   // Derived tab state (mirrors the inline editor body).
@@ -91,9 +106,11 @@ export function EditorPanel() {
   const navigateCompareFile = useCallback((path: string) => {
     if (!compareBase || !compareHead) return
     const tabId = `diff:${path}?base=${encodeURIComponent(compareBase)}&compare=${encodeURIComponent(compareHead)}`
-    actions.openPreviewDiffTabById(tabId)
-    commands.setFocusTarget('editor')
-  }, [compareBase, compareHead, actions, commands])
+    // Open in THIS pane (instance-scoped), not the active editor, so compare-nav
+    // from a non-active editor stays in the editor the user clicked (design: §E).
+    actions.openPreviewDiffTabByIdIn(instanceId, tabId)
+    commands.focusPane('editor', instanceId)
+  }, [compareBase, compareHead, actions, commands, instanceId])
 
   const compareContext = useMemo<CompareContext | undefined>(() => {
     if (!isCompareDiff || !compareBase || !compareHead || !parsedDiff) return undefined
@@ -106,25 +123,55 @@ export function EditorPanel() {
     }
   }, [isCompareDiff, compareBase, compareHead, parsedDiff, compareFiles, navigateCompareFile])
 
-  // Tab interactions not covered by a named command: promote-preview-to-pinned
-  // (double click) and the close-tab event wrapper.
+  // Tab interactions are instance-scoped: select/close act on THIS pane's view and
+  // also focus it; mousedown focuses it. Double-click promotes preview→pinned IN
+  // THIS pane (instance-scoped open), not the active editor.
   const handleDoubleClickTab = useCallback((tab: string) => {
     if (tab !== previewTab) return
-    if (isFileTab(tab)) actions.openFileTab(tab)
-    if (isDiffTab(tab)) actions.openDiffTab(tab.slice(5))
-  }, [previewTab, actions])
+    if (isFileTab(tab)) actions.openFileTabIn(instanceId, tab)
+    if (isDiffTab(tab)) actions.openDiffTabIn(instanceId, tab.slice(5))
+  }, [previewTab, actions, instanceId])
 
-  const handleCloseTab = useCallback((tab: string, e?: React.MouseEvent) => {
-    e?.stopPropagation()
-    commands.closeTab(tab)
-  }, [commands])
-
-  const handleFocusEditor = useCallback(() => commands.setFocusTarget('editor'), [commands])
+  const handleSelectTab = useCallback((tab: string) => commands.selectTab(tab, instanceId), [commands, instanceId])
+  const handleCloseTab = useCallback((tab: string) => commands.closeTab(tab, instanceId), [commands, instanceId])
+  const handleFocusEditor = useCallback(() => commands.focusPane('editor', instanceId), [commands, instanceId])
   // Breadcrumb directory navigation awaits the result; the command is fire-and-
   // forget, so adapt it to the async prop shape.
   const handleNavigateDir = useCallback(async (dir: string) => {
     commands.expandFolderInFiles(dir)
   }, [commands])
+
+  // Per-instance routing of go-to-line + voice insert: consume only requests
+  // aimed at this pane (design: §E). The home editor's id is HOME_EDITOR_ID. The
+  // insert must ALSO target the file this pane currently shows, so a take stamped
+  // before a tab switch never lands in the wrong file.
+  const myJump = jumpRequest && jumpRequest.instanceId === instanceId ? jumpRequest : null
+  const insert = voice.editorInsert as TargetedInsert | null
+  const myInsert = insert && insert.instanceId === instanceId && insert.filePath === activeTab ? insert : null
+
+  // Paths open in OTHER editor views — closing a dirty tab here is loss-free when
+  // the file is still shown elsewhere (shared buffer), so the tab bar skips its
+  // discard confirm in that case (design: §B explicit-discard). On the LAST view,
+  // the confirmed discard runs `acceptDisk` (the surface's revert-to-disk action:
+  // draft → null, status → clean), so the post-close GC drops the now-unreferenced
+  // buffer instead of keeping it dirty and resurrecting the edit on reopen.
+  const pathsOpenElsewhere = useMemo(() => {
+    const set = new Set<string>()
+    for (const [id, v] of Object.entries(selection.editorViews)) {
+      if (id === instanceId) continue
+      for (const tab of v.openTabs) set.add(tab)
+    }
+    return set
+  }, [selection.editorViews, instanceId])
+
+  // Split/Move/Close chrome (design: §E). The home editor only splits; secondary
+  // editors also move (beside the structural home region) and close.
+  const editorSplit = useMemo(() => ({
+    isSecondary,
+    onSplit: (side: SplitSide) => commands.splitEditor(instanceId, side),
+    onMove: (side: SplitSide) => commands.movePane(instanceId, { targetId: MAIN_TABS_ID, side }),
+    onClose: () => commands.closePane(instanceId),
+  }), [isSecondary, instanceId, commands])
 
   return (
     <WorkspaceEditorColumn
@@ -139,12 +186,16 @@ export function EditorPanel() {
       isMobile={isMobile}
       activeDiff={activeDiff}
       editorDiffHunks={editorDiffHunks}
-      jumpRequest={jumpRequest}
-      editorInsert={voice.editorInsert}
+      jumpRequest={myJump}
+      editorInsert={myInsert}
       projectName={projectName}
       worktree={worktree}
       voice={voice.editor}
-      onSelectTab={commands.selectTab}
+      instanceId={instanceId}
+      editorSplit={editorSplit}
+      pathsOpenElsewhere={pathsOpenElsewhere}
+      onDiscardDirty={commands.acceptDisk}
+      onSelectTab={handleSelectTab}
       onDoubleClickTab={handleDoubleClickTab}
       onCloseTab={handleCloseTab}
       onLayoutUpdate={actions.updateLayout}

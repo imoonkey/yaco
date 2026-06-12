@@ -14,7 +14,7 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 
 ## Related Code
 
-`ui/src/components/Workspace.tsx`
+`ui/src/workspace/WorkspaceProvider.tsx` (commands), `ui/src/workspace/WorkspaceScreen.tsx`, `ui/src/workspace/panels/*`
 
 ## Flow: Open and Edit a File
 
@@ -67,17 +67,32 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 4. Session appears in Sessions list with provider icon
 5. On mobile: auto-switches to Terminal pane
 
+## Flow: Compare Two Files Side-by-Side
+
+1. With a file open, click **Split Editor** in the tab bar (or `Cmd+\`)
+2. A new editor pane opens beside the active one (axis chosen from the pane's geometry — wide splits right, tall splits below; `Cmd+K Cmd+\` for the other axis), seeded with the source's active file (pinned)
+3. The new pane becomes the focused/active editor; open a different file in it (`Cmd+Enter` on an explorer file opens it to the side directly)
+4. Editing a file open in both panes updates both (shared buffer); each pane keeps its own tab strip
+5. Closing the last tab in a secondary pane reflows it away; both panes restore per (project, worktree) on reload
+
 ## Flow: Switch Terminal Session
 
-1. User clicks a different session in Sessions list
-2. Current terminal WebSocket disconnects (non-persistent PTYs are killed)
-3. New terminal WebSocket connects to selected session
-4. Terminal renders session output
+1. User clicks a different session in the Sessions list (`clickSession`)
+2. If that session is already shown in a terminal pane → that pane is focused (no rebind, no duplicate PTY)
+3. Else the **active** terminal pane rebinds to the session (its previous session keeps running off-screen); if no terminal exists, one is created bound to it
+4. The terminal renders the session output (tmux-persistent PTY)
+
+## Flow: Watch Two Sessions at Once
+
+1. Hover/right-click a session row → **"Open beside"** (`openBeside`)
+2. If the session is already shown → its terminal is focused; else a **new** terminal pane opens bound to it (1-per-session guard)
+3. Both terminals tile and both sessions are marked read while visible
+4. When a session ends (`/exit`, kill, or crash), the reconcile closes its terminal pane after 2 missed polls → the session moves to History
 
 ## Flow: Detach/Kill Session
 
-- `Cmd+W` while terminal is focused: detaches the terminal (session continues running)
-- Click Kill button on a session row: hard-terminates the session
+- `Cmd+W` while a terminal is focused (or the header ×): closes the pane (`closePane`); the session keeps running
+- Click Kill button on a session row: hard-terminates the session; its terminal pane(s) close via the reconcile
 
 ## Flow: Project Switch
 

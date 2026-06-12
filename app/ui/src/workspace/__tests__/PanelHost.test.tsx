@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { PanelHost } from '../PanelHost'
 import { PanelFrame } from '../PanelFrame'
+import { usePanelInstance } from '../panelInstance'
 import { WorkspaceEnvContext, type WorkspaceEnv } from '../context'
 import * as registry from '../panelRegistry'
 import type { PanelDefinition } from '../panelRegistry'
@@ -29,6 +30,12 @@ const renderInEnv = (ui: ReactNode) =>
 
 function FakeBody() {
   return <div>panel-body</div>
+}
+
+// Reads the published per-instance identity so tests can assert PanelHost wiring.
+function InstanceProbe() {
+  const inst = usePanelInstance()
+  return <div data-testid="instance">{inst ? `${inst.type}/${inst.instanceId}` : 'none'}</div>
 }
 
 const framedDef: PanelDefinition = {
@@ -90,6 +97,20 @@ describe('PanelHost — registered panels', () => {
     renderInEnv(<PanelHost id="editor" />)
     expect(screen.getByText('panel-body')).toBeTruthy()
     expect(screen.queryByText('Editor')).toBeNull() // no framed header
+  })
+
+  it('publishes the instance identity to the panel (instanceId prop, type from def)', () => {
+    const def: PanelDefinition = { ...unframedDef, Component: InstanceProbe }
+    getPanelDefinition.mockReturnValue(def)
+    renderInEnv(<PanelHost id="editor" instanceId="editor:2" />)
+    expect(screen.getByTestId('instance').textContent).toBe('editor/editor:2')
+  })
+
+  it('defaults instanceId to the panel type for a singleton (no instanceId prop)', () => {
+    const def: PanelDefinition = { ...unframedDef, id: 'changes', Component: InstanceProbe }
+    getPanelDefinition.mockReturnValue(def)
+    renderInEnv(<PanelHost id="changes" />)
+    expect(screen.getByTestId('instance').textContent).toBe('changes/changes')
   })
 })
 

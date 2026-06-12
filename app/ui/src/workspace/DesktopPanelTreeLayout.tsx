@@ -25,15 +25,19 @@ import { usePanelResize, type BasisResolver } from './usePanelResize'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import {
   useWorkspaceEnv, useWorkspaceLayout, useWorkspaceSelection, useWorkspaceCommands,
+  type PanelId,
 } from './context'
 import {
   HANDLE_PX, FRAMED_BODY_CLASS, minBasisPx, canonicalizeSplit, planSplitChildren,
   withEmptyEditorRule, collectFramedLeaves,
 } from './desktopTreeSizing'
-import { MAIN_TABS_ID } from './panelLayoutModel'
+import { MAIN_TABS_ID, editorInstancesInOrder, terminalInstancesInOrder } from './panelLayoutModel'
+import { paneMarker, type PaneMarker } from './panelInstance'
 import type { LayoutNode, SplitNode } from '../hooks/workspaceTypes'
 
 type ResizeSplitChild = (splitId: string, childId: string, basis: number) => void
+/** Compute the focus/active marker for a pane (editor/terminal only). */
+type MarkerFor = (type: PanelId, instanceId: string) => PaneMarker
 
 const ROOT_SIZING: CSSProperties = { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 0 }
 
@@ -59,7 +63,7 @@ export type DesktopPanelTreeLayoutProps = {
 export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCapture }: DesktopPanelTreeLayoutProps) {
   const { isTouch } = useWorkspaceEnv().viewport
   const { panelLayout } = useWorkspaceLayout()
-  const { openTabs } = useWorkspaceSelection()
+  const { openTabs, focusedPane, activeEditorId, activeTerminalId } = useWorkspaceSelection()
   const commands = useWorkspaceCommands()
   const collapsePanel = commands.collapsePanel
   const resizeSplitChild = commands.resizeSplitChild
@@ -68,6 +72,15 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
   const effectiveRoot = useMemo(
     () => withEmptyEditorRule(panelLayout.desktop, hasOpenTabs),
     [panelLayout.desktop, hasOpenTabs],
+  )
+
+  // Focus/active markers: the focused editor/terminal pane is bright, the
+  // active-but-unfocused one dim (suppressed when its type has a single instance).
+  const editorCount = useMemo(() => editorInstancesInOrder(panelLayout.desktop).length, [panelLayout.desktop])
+  const terminalCount = useMemo(() => terminalInstancesInOrder(panelLayout.desktop).length, [panelLayout.desktop])
+  const markerFor = useCallback<MarkerFor>(
+    (type, instanceId) => paneMarker(type, instanceId, focusedPane, activeEditorId, activeTerminalId, editorCount, terminalCount),
+    [focusedPane, activeEditorId, activeTerminalId, editorCount, terminalCount],
   )
 
   // Renderer-published collapse + body sizing for the framed panels, read by each
@@ -100,39 +113,57 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
         onKeyDownCapture={onInteractionCapture}
       >
         {searchOverlay}
-        <TreeNode node={effectiveRoot} sizing={ROOT_SIZING} resizeSplitChild={resizeSplitChild} />
+        <TreeNode node={effectiveRoot} sizing={ROOT_SIZING} resizeSplitChild={resizeSplitChild} markerFor={markerFor} />
       </div>
     </PanelChromeContext.Provider>
   )
 }
 
-function TreeNode({ node, sizing, resizeSplitChild }: {
-  node: LayoutNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild
+// Marker colors: bright accent for the focused pane, a dimmed accent for the
+// active-but-unfocused instance (design: §D).
+const FOCUS_ACCENT = 'var(--sol-accent)'
+const ACTIVE_ACCENT = 'color-mix(in srgb, var(--sol-accent) 40%, transparent)'
+
+function TreeNode({ node, sizing, resizeSplitChild, markerFor }: {
+  node: LayoutNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor
 }) {
   if (node.kind === 'split') {
-    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} />
+    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} />
   }
   // leaf or tabs → a sized flex column hosting the panel. A tabs node renders its
   // active panel (v1: the main node's editor, which owns the editor/tasks tab bar).
+  // The instance id is the leaf's own id, or the active panel's id for a tabs node
+  // (the home editor's instance id is 'editor', distinct from the node id 'main').
   const panel = node.kind === 'leaf' ? node.panel : node.active
+  const instanceId = node.kind === 'leaf' ? node.id : node.active
   const landmark = NODE_LANDMARK[node.id]
+  const marker = markerFor(panel, instanceId)
+  const markable = panel === 'editor' || panel === 'terminal'
+  // Reserve a 2px top border on markable panes (transparent when unmarked) so the
+  // focus/active marker never shifts layout (box-sizing: border-box).
+  const borderTop = markable
+    ? `2px solid ${marker.focused ? FOCUS_ACCENT : marker.active ? ACTIVE_ACCENT : 'transparent'}`
+    : undefined
   return (
     <div
       data-node-id={node.id}
+      data-instance-id={instanceId}
       data-panel-leaf={node.kind === 'leaf' ? node.panel : undefined}
       data-tabs-active={node.kind === 'tabs' ? node.active : undefined}
+      data-focused={marker.focused || undefined}
+      data-active={marker.active || undefined}
       role={landmark?.role}
       aria-label={landmark?.label}
-      style={sizing}
+      style={borderTop ? { ...sizing, borderTop } : sizing}
       className="flex flex-col min-w-0 min-h-0"
     >
-      <PanelHost id={panel} />
+      <PanelHost id={panel} instanceId={instanceId} />
     </div>
   )
 }
 
-function SplitView({ node, sizing, resizeSplitChild }: {
-  node: SplitNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild
+function SplitView({ node, sizing, resizeSplitChild, markerFor }: {
+  node: SplitNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canonical = canonicalizeSplit(node)
@@ -163,6 +194,7 @@ function SplitView({ node, sizing, resizeSplitChild }: {
         node={item.child.node}
         sizing={item.sizing}
         resizeSplitChild={resizeSplitChild}
+        markerFor={markerFor}
       />,
     )
     if (i < items.length - 1) {

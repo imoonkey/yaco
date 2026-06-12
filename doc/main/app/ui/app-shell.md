@@ -8,6 +8,7 @@ Top-level application chrome: top bar, clock, project selection, rhythm pulse, a
 - Clock with dark pill styling and rhythm pulse trigger
 - Project selection and ordering
 - Single Workspace rendering keyed by active project
+- The App-owned top-bar slot the workspace portals its global voice control into
 
 ## Does Not Own
 
@@ -27,7 +28,15 @@ The app is a single-workspace shell — no view switcher, no Monitor tab, no sep
 
 Top bar (hidden on mobile via `useIsMobile()` conditional rendering, 40px height):
 - Left: active project name or "Workflow"
-- Right: notification bell, channels button, theme toggle, Clock component (dark pill style)
+- Right: global voice control (desktop), notification bell, channels button, theme toggle, Clock component (dark pill style)
+
+### Global Voice Control
+
+On desktop, voice is a single control in the top bar (`GlobalVoiceControl`) — a mic + a target indicator + a target dropdown — rendered left of the notification bell. Voice state lives inside the workspace provider (`useVoice` is at `WorkspaceScreen`), but the top bar is App-level chrome, so `App.tsx` exposes a stable ref'd `<span>` slot (`voiceSlot`) and `WorkspaceScreen` `createPortal`s the control into it. The slot is App-owned, so it survives workspace remounts.
+
+- **Target** = an explicit dropdown override, else the default from focus (the recently-focused kind's active instance if eligible, else the other type's, else the first eligible in order). An override clears when focus next lands on an eligible pane.
+- **Eligibility**: an editor is a target iff its active tab is an editable file (not a diff, not a previewable file in preview mode, and — for the home editor — not hidden behind the tasks panel); a terminal is a target iff bound. The mic is disabled when nothing is eligible.
+- A take's target instance is **frozen at record start**, so the transcript can only land where it was started even if focus moves. On mobile the per-pane mic is used instead (the single active pane is unambiguous). -> See: [workspace/sessions-and-terminal.md](workspace/sessions-and-terminal.md) and `ui/src/components/GlobalVoiceControl.tsx`.
 
 ### Clock
 
@@ -53,7 +62,7 @@ CSS animation (`rhythm-pulse` keyframe in `index.css`) animates opacity for smoo
 ### State
 
 - `workflow-ui-state` stores `{ project }` (tolerates old `{ view, project }` shape — ignores `view`)
-- App-level bridge state: `visibilityReport` and `attachIntent`. The workspace's visibility report (attached + shown session) derives the `activeTarget` whose interrupts `useAttention` suppresses and auto-acks; `attachIntent` routes a clicked attention item to its project + session.
+- App-level bridge state: `visibilityReport` and `attachIntent`. The workspace's visibility report (the focused terminal's session + whether that terminal is on screen) derives the `activeTarget` whose interrupts `useAttention` suppresses and auto-acks; `attachIntent` routes a clicked attention item to its project + session. `voiceSlot` is the top-bar element the workspace portals `GlobalVoiceControl` into.
 
 ## PWA Shell
 

@@ -94,9 +94,7 @@ function makeOpts() {
     projectName: 'res-proj',
     projectPath: '/tmp/res-proj',
     worktree: null,
-    activeSession: '',
-    actions: { setActiveSession: vi.fn(), setMobilePane: vi.fn() },
-    setFocusTarget: vi.fn(),
+    onAttachSession: vi.fn(),
     ackSession: vi.fn(),
   }
 }

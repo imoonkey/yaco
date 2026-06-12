@@ -11,16 +11,6 @@ import {
 import { isBinaryPreviewFile } from '../lib/binaryFiles'
 import { fileTransition, reconcileFile } from './fileStateMachine'
 
-// --- PreviewLifecycle interface ---
-
-/** Narrow contract connecting layout state to file state for preview tab cleanup */
-export interface PreviewLifecycle {
-  /** Returns true if the preview tab is clean and can be dropped */
-  canDropPreview: (tab: string) => boolean
-  /** Remove file state entry for a dropped preview tab */
-  onDropPreview: (tab: string) => void
-}
-
 // --- Fetch helper ---
 
 async function fetchContent(
@@ -145,25 +135,6 @@ export function useFileState(
   const dirtyTabs = useMemo(() => new Set(dirtySig ? dirtySig.split('\u0000') : []), [dirtySig])
   const conflictTabs = useMemo(() => new Set(conflictSig ? conflictSig.split('\u0000') : []), [conflictSig])
 
-  // --- Preview lifecycle ---
-  const previewLifecycle: PreviewLifecycle = useMemo(() => ({
-    canDropPreview: (tab: string) => {
-      if (!isFileTab(tab)) return true
-      const state = filesRef.current[tab]
-      if (!state) return true
-      return state.status !== 'dirty' && state.status !== 'saving' && state.status !== 'conflict'
-    },
-    onDropPreview: (tab: string) => {
-      if (!isFileTab(tab)) return
-      setFiles(prev => {
-        if (!(tab in prev)) return prev
-        const next = { ...prev }
-        delete next[tab]
-        return next
-      })
-    },
-  }), [])
-
   // --- File actions ---
 
   /** Fetch content for a newly opened tab (gentle — won't clobber drafts) */
@@ -185,14 +156,20 @@ export function useFileState(
     }).catch(() => {/* network/server error — file stays in current state */})
   }, [])
 
-  /** Remove file state entry (for tab close) */
-  const removeFile = useCallback((tab: string) => {
-    if (!isFileTab(tab)) return
+  /** Shared-buffer GC (design: §B). Keep a buffer iff some open editor view still
+   *  references its path OR it is dirty — so closing one view never drops a buffer
+   *  another shows, and no structural close (close tab / close pane / reset) ever
+   *  silently loses unsaved work. Run in an effect over the POST-mutation union. */
+  const gcBuffers = useCallback((keepPaths: ReadonlySet<string>) => {
     setFiles(prev => {
-      if (!(tab in prev)) return prev
-      const next = { ...prev }
-      delete next[tab]
-      return next
+      let changed = false
+      const next: Record<string, FileState> = {}
+      for (const [path, state] of Object.entries(prev)) {
+        const dirty = state.status === 'dirty' || state.status === 'saving' || state.status === 'conflict'
+        if (keepPaths.has(path) || dirty) next[path] = state
+        else changed = true
+      }
+      return changed ? next : prev
     })
   }, [])
 
@@ -335,9 +312,8 @@ export function useFileState(
     filesRef,
     dirtyTabs,
     conflictTabs,
-    previewLifecycle,
+    gcBuffers,
     fetchForTab,
-    removeFile,
     retargetFile,
     removeFilesUnder,
     updateDraft,

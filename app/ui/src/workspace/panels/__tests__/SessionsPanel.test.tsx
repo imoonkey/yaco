@@ -47,28 +47,36 @@ function makeData(sessions: AgentSession[]): WorkspaceData {
 
 // Only the slices SessionsPanel reads are populated; the rest is cast away so
 // the test documents the real contract instead of fabricating every field.
-const env = {
-  project: { name: 'test', path: '/test', worktree: null, effectivePath: '/test' },
-  viewport: { isMobile: false, isLandscape: false, isTouch: false },
-} as unknown as WorkspaceEnv
+function makeEnv(isMobile = false): WorkspaceEnv {
+  return {
+    project: { name: 'test', path: '/test', worktree: null, effectivePath: '/test' },
+    viewport: { isMobile, isLandscape: false, isTouch: false },
+  } as unknown as WorkspaceEnv
+}
 
+// Session gestures route through the spine command surface; the panel never sets
+// active session itself. clickSession/openBeside own focus + the mobile reveal.
 const commands = {
+  clickSession: vi.fn(),
+  openBeside: vi.fn(),
   detachSession: vi.fn(() => false),
   setFocusTarget: vi.fn(),
   actions: { setActiveSession: vi.fn(), setMobilePane: vi.fn() },
 } as unknown as WorkspaceCommands
 
-function makeSelection(activeSession: string): WorkspaceSelection {
-  return { activeSession } as unknown as WorkspaceSelection
+// terminalBindings (instanceId → sessionName) is the source of truth for which
+// sessions read as live; the panel projects its VALUES into the live marker.
+function makeSelection(terminalBindings: Record<string, string>): WorkspaceSelection {
+  return { terminalBindings } as unknown as WorkspaceSelection
 }
 
-function Providers({ sessions, activeSession, children }: {
-  sessions: AgentSession[]; activeSession: string; children: ReactNode
+function Providers({ sessions, terminalBindings, isMobile, children }: {
+  sessions: AgentSession[]; terminalBindings: Record<string, string>; isMobile: boolean; children: ReactNode
 }) {
   return (
-    <WorkspaceEnvContext.Provider value={env}>
+    <WorkspaceEnvContext.Provider value={makeEnv(isMobile)}>
       <WorkspaceDataContext.Provider value={makeData(sessions)}>
-        <WorkspaceSelectionContext.Provider value={makeSelection(activeSession)}>
+        <WorkspaceSelectionContext.Provider value={makeSelection(terminalBindings)}>
           <WorkspaceCommandsContext.Provider value={commands}>
             {children}
           </WorkspaceCommandsContext.Provider>
@@ -78,9 +86,9 @@ function Providers({ sessions, activeSession, children }: {
   )
 }
 
-function renderBody(sessions: AgentSession[], activeSession = '') {
+function renderBody(sessions: AgentSession[], terminalBindings: Record<string, string> = {}, isMobile = false) {
   return render(
-    <Providers sessions={sessions} activeSession={activeSession}>
+    <Providers sessions={sessions} terminalBindings={terminalBindings} isMobile={isMobile}>
       <SessionsPanel />
     </Providers>,
   )
@@ -88,9 +96,9 @@ function renderBody(sessions: AgentSession[], activeSession = '') {
 
 // Mounts the panel exactly as PanelHost would: framed chrome + the useHeader
 // bridge that publishes the section actions into the shared header.
-function renderFramed(sessions: AgentSession[], activeSession = '') {
+function renderFramed(sessions: AgentSession[], terminalBindings: Record<string, string> = {}) {
   return render(
-    <Providers sessions={sessions} activeSession={activeSession}>
+    <Providers sessions={sessions} terminalBindings={terminalBindings} isMobile={false}>
       <PanelFrame
         chrome={sessionsPanelDef.chrome}
         title="Sessions"
@@ -104,7 +112,10 @@ function renderFramed(sessions: AgentSession[], activeSession = '') {
 
 describe('SessionsPanel', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     localStorage.clear()
+    // jsdom has no layout: a live (active) row scrolls itself into view on mount.
+    Element.prototype.scrollIntoView = vi.fn()
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       callback(0)
       return 0
@@ -171,5 +182,55 @@ describe('SessionsPanel', () => {
     fireEvent.click(toggle)
     expect(screen.getByTitle('Show live sessions')).toBeTruthy()
     expect(await screen.findByText('No past sessions')).toBeTruthy()
+  })
+
+  // --- Session gestures (design §C / §3.5) ---------------------------------
+
+  it('routes a primary session-row click to clickSession exactly once', () => {
+    renderBody([makeSession('alpha', 'idle')])
+    fireEvent.click(screen.getByText('alpha'))
+    expect(commands.clickSession).toHaveBeenCalledTimes(1)
+    expect(commands.clickSession).toHaveBeenCalledWith('alpha')
+  })
+
+  it('clicking a session already shown in a terminal still routes one clickSession (command focuses, no dup PTY)', () => {
+    renderBody([makeSession('alpha', 'idle')], { terminal: 'alpha' })
+    fireEvent.click(screen.getByText('alpha'))
+    expect(commands.clickSession).toHaveBeenCalledTimes(1)
+    expect(commands.clickSession).toHaveBeenCalledWith('alpha')
+  })
+
+  it('routes the Open beside affordance to openBeside without triggering the row click', () => {
+    renderBody([makeSession('alpha', 'idle')])
+    fireEvent.click(screen.getByLabelText('Open alpha beside'))
+    expect(commands.openBeside).toHaveBeenCalledTimes(1)
+    expect(commands.openBeside).toHaveBeenCalledWith('alpha')
+    expect(commands.clickSession).not.toHaveBeenCalled()
+  })
+
+  it('marks a session shown in a terminal as live, leaving others inactive', () => {
+    const { container } = renderBody(
+      [makeSession('alpha', 'idle'), makeSession('beta', 'idle')],
+      { terminal: 'alpha' },
+    )
+    const live = container.querySelectorAll('[data-active]')
+    expect(live.length).toBe(1)
+    expect(live[0].textContent).toContain('alpha')
+  })
+
+  it('marks every session bound to a terminal as live (two tiled terminals)', () => {
+    const { container } = renderBody(
+      [makeSession('alpha', 'idle'), makeSession('beta', 'idle'), makeSession('gamma', 'idle')],
+      { terminal: 'alpha', 'terminal:2': 'beta' },
+    )
+    const liveNames = [...container.querySelectorAll('[data-active]')].map(el => el.textContent)
+    expect(liveNames.length).toBe(2)
+    expect(liveNames.some(t => t?.includes('alpha'))).toBe(true)
+    expect(liveNames.some(t => t?.includes('beta'))).toBe(true)
+  })
+
+  it('hides the Open beside affordance on mobile (no split/open-beside on mobile)', () => {
+    renderBody([makeSession('alpha', 'idle')], {}, true)
+    expect(screen.queryByLabelText('Open alpha beside')).toBeNull()
   })
 })

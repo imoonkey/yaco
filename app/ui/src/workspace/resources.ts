@@ -12,10 +12,7 @@ import { useMemo } from 'react'
 import { useGitStatus, useSessions } from '../hooks/useApi'
 import { useWorkspaceSessions } from './useWorkspaceSessions'
 import type { AgentSession, GitChange, SessionProvider } from '../types'
-import type { MobilePane } from '../hooks/workspaceTypes'
 import type { AttentionBadge } from '../hooks/useAttention'
-
-type SessionFocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
 export interface WorkspaceGitResource {
   changes: GitChange[]
@@ -55,20 +52,14 @@ export interface WorkspaceData {
   sessionsLoaded: boolean
 }
 
-interface SessionActions {
-  setActiveSession: (name: string) => void
-  setMobilePane: (pane: MobilePane) => void
-}
-
 export interface WorkspaceSessionsResourceOptions {
   projectName: string
   projectPath: string
-  activeSession: string
-  actions: SessionActions
-  setFocusTarget: (target: SessionFocusTarget) => void
+  onSessionChange?: () => void
+  onAttachSession: (name: string) => void
+  onRenameBoundTerminals?: (oldName: string, newName: string) => void
   badgesBySession?: Record<string, AttentionBadge>
   readySessionKeys?: Set<string>
-  onSessionChange?: () => void
   ackSession: (project: string, sessionName: string) => void
 }
 
@@ -104,16 +95,15 @@ export function useWorkspaceSessionsResource(
     handleNewSession, killSession, handleRenameSession, togglePin,
     handlePinnedReorder, markSubtreeRead, refreshSessions: refresh,
   } = useWorkspaceSessions({
-    actions: opts.actions,
     projectPath: opts.projectPath,
-    activeSession: opts.activeSession,
     sessions: rawSessions,
     refreshSessions,
-    setFocusTarget: opts.setFocusTarget,
-    badgesBySession: opts.badgesBySession,
-    readySessionKeys: opts.readySessionKeys,
     projectName,
     onSessionChange: opts.onSessionChange,
+    onAttachSession: opts.onAttachSession,
+    onRenameBoundTerminals: opts.onRenameBoundTerminals,
+    badgesBySession: opts.badgesBySession,
+    readySessionKeys: opts.readySessionKeys,
     ackSession: opts.ackSession,
   })
 

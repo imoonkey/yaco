@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { renderHook, cleanup, act } from '@testing-library/react'
-import { useWorkspaceSessions } from '../useWorkspaceSessions'
+import {
+  useWorkspaceSessions,
+  resolveSessionClick,
+  resolveOpenBeside,
+} from '../useWorkspaceSessions'
 import { renameSession } from '../../hooks/useApi'
 import type { AgentSession } from '../../types'
 
@@ -21,102 +25,65 @@ function makeSession(name: string, status: 'idle' | 'processing' = 'idle', paren
 
 function makeOpts(overrides: Partial<Parameters<typeof useWorkspaceSessions>[0]> = {}) {
   return {
-    actions: {
-      setActiveSession: vi.fn(),
-      setMobilePane: vi.fn(),
-    },
     projectPath: '/test',
-    activeSession: '',
     sessions: [] as AgentSession[],
     refreshSessions: vi.fn(),
-    setFocusTarget: vi.fn(),
     ackSession: vi.fn<(project: string, sessionName: string) => void>(),
     projectName: 'test',
+    onAttachSession: vi.fn(),
     ...overrides,
   }
 }
 
-describe('useWorkspaceSessions auto-detach', () => {
-  afterEach(() => {
-    cleanup()
-    vi.clearAllMocks()
+// --- resolveSessionClick (§3.5 smart-focus-else-replace) --------------------
+
+describe('resolveSessionClick', () => {
+  it('focuses the terminal already showing the session (no rebind)', () => {
+    const bindings = { 'terminal': 's1', 'terminal:2': 's2' }
+    expect(resolveSessionClick('s2', bindings, 'terminal')).toEqual({ kind: 'focus', terminalId: 'terminal:2' })
   })
 
-  it('does not detach on first miss (single transient miss tolerated)', () => {
-    const sessions = [makeSession('s1')]
-    const opts = makeOpts({ activeSession: 's1', sessions })
-    const { rerender } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
-
-    // Session disappears from the list (first miss)
-    rerender({ ...opts, sessions: [] })
-
-    expect(opts.actions.setActiveSession).not.toHaveBeenCalled()
+  it('binds the active terminal when the session is not shown', () => {
+    expect(resolveSessionClick('s3', { terminal: 's1' }, 'terminal')).toEqual({ kind: 'bind', terminalId: 'terminal' })
   })
 
-  it('detaches after 2 consecutive misses', () => {
-    const sessions = [makeSession('s1')]
-    const opts = makeOpts({ activeSession: 's1', sessions })
-    const { rerender } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
-
-    // First miss
-    const emptyOpts = { ...opts, sessions: [] as AgentSession[] }
-    rerender(emptyOpts)
-    expect(opts.actions.setActiveSession).not.toHaveBeenCalled()
-
-    // Second consecutive miss — trigger a new effect run by changing the sessions reference
-    rerender({ ...emptyOpts, sessions: [] as AgentSession[] })
-    expect(opts.actions.setActiveSession).toHaveBeenCalledWith('')
+  it('signals create when no terminal exists', () => {
+    expect(resolveSessionClick('s3', {}, null)).toEqual({ kind: 'create' })
   })
 
-  it('resets miss count when session reappears', () => {
-    const sessions = [makeSession('s1')]
-    const opts = makeOpts({ activeSession: 's1', sessions })
-    const { rerender } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
+  it('prefers focus over bind even when an active terminal exists', () => {
+    const bindings = { 'terminal': 's1', 'terminal:2': 's2' }
+    expect(resolveSessionClick('s1', bindings, 'terminal:2')).toEqual({ kind: 'focus', terminalId: 'terminal' })
+  })
+})
 
-    // First miss
-    rerender({ ...opts, sessions: [] as AgentSession[] })
-    expect(opts.actions.setActiveSession).not.toHaveBeenCalled()
+// --- resolveOpenBeside (1-per-session guard) --------------------------------
 
-    // Session reappears
-    rerender({ ...opts, sessions: [makeSession('s1')] })
-
-    // Another miss — should be treated as first miss again (count was reset)
-    rerender({ ...opts, sessions: [] as AgentSession[] })
-    expect(opts.actions.setActiveSession).not.toHaveBeenCalled()
+describe('resolveOpenBeside', () => {
+  it('focuses the existing terminal for an already-shown session', () => {
+    expect(resolveOpenBeside('s1', { 'terminal:2': 's1' })).toEqual({ kind: 'focus', terminalId: 'terminal:2' })
   })
 
-  it('does not detach sessions not previously known', () => {
-    // Start with no sessions known
-    const opts = makeOpts({ activeSession: 's1', sessions: [] as AgentSession[] })
-    const { rerender } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
-
-    // Session was never in the list — should not trigger auto-detach
-    rerender({ ...opts, sessions: [] as AgentSession[] })
-    expect(opts.actions.setActiveSession).not.toHaveBeenCalled()
+  it('signals create for a not-yet-shown session', () => {
+    expect(resolveOpenBeside('s9', { terminal: 's1' })).toEqual({ kind: 'create' })
   })
+})
 
-  it('does not detach when sessions is null (loading)', () => {
-    const opts = makeOpts({ activeSession: 's1', sessions: [makeSession('s1')] })
-    const { rerender } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
+// --- rename (rebinds bound terminals via the provider callback) -------------
 
-    // Sessions becomes null (re-fetch in progress)
-    rerender({ ...opts, sessions: null as unknown as AgentSession[] })
-    expect(opts.actions.setActiveSession).not.toHaveBeenCalled()
-  })
+describe('useWorkspaceSessions rename', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks() })
 
-  it('renames processing sessions immediately', async () => {
+  it('renames the session and rebinds every bound terminal', async () => {
     vi.mocked(renameSession).mockResolvedValue(undefined)
-    const opts = makeOpts({
-      activeSession: 's1',
-      sessions: [makeSession('s1', 'processing')],
-    })
+    const onRenameBoundTerminals = vi.fn()
+    const opts = makeOpts({ sessions: [makeSession('s1', 'processing')], onRenameBoundTerminals })
     const { result } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
 
-    await act(async () => {
-      await result.current.handleRenameSession('s1', 's2')
-    })
+    await act(async () => { await result.current.handleRenameSession('s1', 's2') })
 
     expect(renameSession).toHaveBeenCalledWith('s1', 's2')
+    expect(onRenameBoundTerminals).toHaveBeenCalledWith('s1', 's2')
   })
 })
 

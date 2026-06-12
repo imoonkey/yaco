@@ -32,31 +32,31 @@ the React Compiler ruleset. `npm run lint` enforces these — write hooks accord
   effects that must keep specific timing — kept narrow and commented at the call site.
 
 
-## useWorkspaceState.ts (161 lines — composition root)
+## useWorkspaceState.ts (composition root)
 
-Per-project workspace state management. Thin wiring layer that composes three focused hooks and returns the same public shape. Accepts optional `worktree` param to isolate state per worktree checkout.
-
-**Export**: `useWorkspaceState(projectName, worktree?)` → `{ openTabs, activeTab, previewTab, activeSession, mobilePane, layout, files, dirtyTabs, conflictTabs, pinnedSessions, actions }`
+Per-project workspace state management. Thin wiring layer that composes the focused hooks below and returns the combined public shape. Accepts optional `worktree` param to isolate state per worktree checkout. The workspace holds **N editor + N terminal panes**; per-instance view state is keyed by `instanceId`. -> See: [state.md](state.md#workspace-hot-state--one-reducer-multi-instance) for the model.
 
 ### Decomposed into:
 
-- **`useLayoutState.ts`** (156 lines) — tabs, activeTab, previewTab, activeSession, mobilePane, layout, pinnedSessions, and all tab open/close/toggle logic. Includes `retargetPaths(oldPath, newPath)` to remap tab IDs on rename/move, `closeTabsUnder(path)` to close tabs under a deleted path, and `openPreviewDiffTabById(tabId)` to open compare diff tabs using a pre-built tab ID (e.g. `diff:path?base=X&compare=Y`).
-- **`useFileState.ts`** (342 lines) — files map, dirtyTabs, conflictTabs, file CRUD (hydrate, refetch, save, reconcile), `PreviewLifecycle` interface for narrow layout↔file coupling. Uses `fileStateMachine.ts` for explicit state transitions.
-- **`fileStateMachine.ts`** (100 lines) — pure state machine for file status transitions. `FileEvent` discriminated union (9 events: SERVER_SYNC, SERVER_MISSING, FILL_REVISION, EDIT, SAVE_START, SAVE_SUCCESS, SAVE_CONFLICT, SAVE_ERROR, ACCEPT_DISK). `fileTransition(state, event)` returns new state or same reference if unchanged. `reconcileFile()` wraps server fetch results.
-- **`usePersistence.ts`** (190 lines) — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush. localStorage keys include worktree slug when active: `workflow-workspace:<project>:wt:<slug>`, `workflow-drafts:<project>:wt:<slug>`
-- **`workspaceTypes.ts`** (139 lines) — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`), constants (`TASKS_TAB_ID`), tab guards (`isFileTab`, `isDiffTab`, `isTasksTab`), localStorage key builders (`layoutKey(project, worktree?)`, `draftsKey(project, worktree?)`)
+- **`useLayoutState.ts`** — the multi-instance hot-state core. Exposes the `instanceReducer` (one reducer owning `panelLayout` desktop tree + `editorViews` + `terminalBindings` + `editorMru` + `terminalMru` + `focusedPane`) and the hook that drives it. Every structural transition (`SPLIT_PANE`, `CLOSE_PANE`, `MOVE_PANE`, `BIND_TERMINAL`, `FOCUS_PANE`, …) seeds ids + GCs the maps/MRU against the tree atomically (`gcMaps`). Per-view tab logic (`openFileTabView`/`previewInto`/`closeTabView`/`pinTabView`) is keyed by instance; `retargetPaths`/`closeTabsUnder` fan out across all views. Exposes active-resolving compat actions (route to `resolveActiveEditor`/`resolveActiveTerminal`) **and** instance-scoped actions (`selectTabIn`/`closeTabIn`/`splitPane`/`closePane`/`movePane`/`focusPane`/`bindTerminal`), plus the derived single-value globals (`openTabs`/`activeTab`/`previewTab`/`activeSession`) over the active instance.
+- **`useFileState.ts`** — `files` map keyed by **path** (shared document model), `dirtyTabs`/`conflictTabs`, file CRUD (hydrate, refetch, save, reconcile), and the shared-buffer GC (`gcBuffers`: keep iff referenced by some open view **or** dirty). Uses `fileStateMachine.ts` for explicit state transitions.
+- **`fileStateMachine.ts`** — pure state machine for file status transitions. `fileTransition(state, event)` returns new state or same reference if unchanged. `reconcileFile()` wraps server fetch results.
+- **`usePersistence.ts`** — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush. Owns the **one-time migration** (old flat `{openTabs,activeTab,previewTab,activeSession}` blob → `editorViews.editor` + `terminalBindings.terminal`) and **load-normalize** (reconstitute the `main` tabs node, GC the maps against the tree's instance ids, dedup terminal bindings one-per-session). localStorage keys include the worktree slug when active: `yaco-workspace:<project>:wt:<slug>`, `yaco-drafts:<project>:wt:<slug>`.
+- **`workspaceTypes.ts`** — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`, `EditorView`, `EMPTY_VIEW`, `FocusedPane`, the panel-layout `LayoutNode`/`WorkspacePanelLayout` model), tab guards (`isFileTab`, `isDiffTab`, `parseDiffTab`), localStorage key builders (`layoutKey`/`draftsKey`).
+- **`panelLayoutModel.ts`** (`workspace/`) — the pure panel-tree model: normalization (`MULTI_INSTANCE_PANELS` whitelist relaxes the singleton rule for `editor`/`terminal`; `HOME_EDITOR_ID='editor'` reserved), id-addressed ops (`newInstanceId`, `splitBeside`, `closeLeaf`, `moveLeaf`), and the routing primitives (`editorInstancesInOrder`/`terminalInstancesInOrder`, `resolveActiveEditor`/`resolveActiveTerminal`).
 
 ### State
 
 | Field | Type | Persisted |
 |-------|------|-----------|
-| `openTabs` | `string[]` | localStorage (`workflow-workspace:<project>` or `workflow-workspace:<project>:wt:<slug>`) |
-| `activeTab` | `string \| null` | localStorage |
-| `previewTab` | `string \| null` | localStorage |
-| `activeSession` | `string` | localStorage |
-| `mobilePane` | `'files' \| 'editor' \| 'terminal'` | localStorage |
-| `layout` | `WorkspaceLayout` | localStorage |
-| `files` | `Record<string, FileState>` | localStorage (`workflow-drafts:<project>` or `workflow-drafts:<project>:wt:<slug>`) — dirty drafts only |
+| `panelLayout` | `WorkspacePanelLayout` (desktop tree + instance ids) | localStorage (`yaco-workspace:<project>[:wt:<slug>]`) |
+| `editorViews` | `Record<instanceId, EditorView>` | localStorage |
+| `terminalBindings` | `Record<instanceId, sessionName>` | localStorage |
+| `editorMru` / `terminalMru` | `string[]` (most-recent-first) | localStorage |
+| `focusedPane` | `{ kind, instanceId }` | derived/in-memory |
+| `mobilePane` | `'files' \| 'editor' \| 'tasks' \| 'terminal'` | localStorage |
+| `layout` | `WorkspaceLayout` (visibility + sizes) | localStorage |
+| `files` | `Record<path, FileState>` | localStorage (`yaco-drafts:<project>[:wt:<slug>]`) — dirty drafts only |
 
 ### File State Model
 
@@ -64,29 +64,35 @@ Per-project workspace state management. Thin wiring layer that composes three fo
 type FileStatus = 'clean' | 'dirty' | 'saving' | 'conflict' | 'missing'
 
 type FileState = {
+  serverContent: string | null
   draft: string | null        // null = clean (show disk content)
   baseRevision: number | null // server revision for conflict detection
   viewportLine: number        // source line for editor/preview sync
   status: FileStatus
+  editedAt: number
+}
+
+type EditorView = {            // one editor instance's tab view (per instanceId)
+  openTabs: string[]
+  activeTab: string | null
+  previewTab: string | null
 }
 ```
 
 ### Key Behaviors
 
-- **Tab classification**: exports `TASKS_TAB_ID = '\0tasks'` plus `isFileTab()`, `isDiffTab()`, and `isTasksTab()` to keep file-only logic away from the synthetic Tasks tab
-- **Hydration**: on mount, fetches server content only for open file tabs to detect conflicts
-- **Conflict detection**: if `baseRevision` doesn't match server revision, status becomes `'conflict'`
-- **SSE refetch**: listens on `filetree` and `git` channels to refetch open file tabs and detect external changes. Uses AbortController to cancel in-flight fetches when a new SSE refresh arrives.
-- **Draft persistence**: dirty drafts for real files are saved to localStorage with debounce (500ms). On quota exceeded, evicts oldest drafts.
-- **Layout persistence**: layout saved with 300ms debounce
-- **Tasks tab lifecycle**: `openTasksTab()` and `toggleTasksTab()` keep the Tasks tab unique per project and never treat it as a preview tab
-- **Stable derived state**: `dirtyTabs` and `conflictTabs` are memoized on a sorted content signature, so each Set keeps a stable reference until its membership changes (prevents downstream re-renders on unrelated file-state updates such as viewport scroll)
-- **Force save**: `forceSave()` writes without revision check (for resolving conflicts)
-- **Accept disk**: `acceptDisk()` discards local draft and reloads server content
+- **Tree as authority**: per-instance maps GC against the live tree ids on every structural transition; a read for a missing id returns the default (`EMPTY_VIEW` / unbound).
+- **Active-instance routing**: type-global commands act on `resolveActiveEditor`/`resolveActiveTerminal` (MRU head → first in document order). Always ≥1 editor; terminals may be zero.
+- **Shared buffers**: `files` keyed by path, so two editors on one file stay in sync. `gcBuffers` keeps a buffer iff referenced by an open view or dirty — close/reset never silently loses unsaved work.
+- **Hydration**: on mount, fetches server content only for open file tabs to detect conflicts.
+- **SSE refetch**: listens on `filetree` and `git` channels to refetch open file tabs; AbortController cancels in-flight fetches when a new SSE refresh arrives.
+- **Draft persistence**: dirty drafts for real files saved with 500ms debounce; on quota exceeded, evicts oldest. Layout saved with 300ms debounce.
+- **Stable derived state**: `dirtyTabs`/`conflictTabs` memoized on a sorted content signature so each Set keeps a stable reference until membership changes.
+- **Force save / accept disk**: `forceSave()` writes without revision check; `acceptDisk()` discards local draft and reloads server content.
 
 ### Exported Types
 
-- `FileStatus`, `FileState`, `WorkspaceLayout`, `DEFAULT_LAYOUT`
+- `FileStatus`, `FileState`, `EditorView`, `FocusedPane`, `WorkspaceLayout`, `DEFAULT_LAYOUT`, `PersistedState`
 
 ## useApi.ts (~386 lines)
 
@@ -188,7 +194,7 @@ Behavior:
 - Active-viewing guard: `visible && document.hasFocus() && attached to target` → suppress the interrupt and auto-ack the subject's own generation (session ack vs. task ack).
 - OS permission requested **only on a user gesture** (`requestPermission`, fired by the first bell open), never on mount.
 
-Replaces the deleted `useNotifications` (inbox + per-tab dedup + on-mount permission) and `useSessionUnreadState` (capped unread counts + visibility auto-advance). The ack watermark store moved server-side as the REVIEW ack.
+Replaces the deleted `useNotifications` (inbox + per-tab dedup + on-mount permission) and `useSessionUnreadState` (capped unread counts + visibility auto-advance). The ack watermark store moved server-side as the REVIEW ack. The multi-instance workspace still reports an active-viewing target (the focused terminal's session + whether that terminal is on screen) via `WorkspaceProvider`'s visibility report, which `App.tsx` feeds into this guard — see [app-shell.md](../ui/app-shell.md).
 
 ## useVoice.ts (~290 lines)
 
