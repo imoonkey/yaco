@@ -211,16 +211,30 @@ export type SplitNode = {
   children: SplitChild[]
 }
 
-/** `chrome: 'none'` is the v1 editor/tasks main tabs node (chrome owned by its
- *  panels); `chrome: 'tabs'` is reserved for future desktop tab groups. */
-export type TabsChrome = 'none' | 'tabs'
+export type GroupTabKind = 'editor' | 'terminal'
 
+/** One tab in a working-area group. `instanceId` is the identity the per-instance
+ *  AUX maps key on (`terminalBindings`, MRU, focus). `kind` selects which body
+ *  renders. An editor tab ALSO carries its `tabId` — the same encoding the old
+ *  `openTabs[]` entries used: a bare file path, or a `diff:<path>?...` id. The
+ *  file/diff IS the tab; there is no per-editor multi-file list. `preview`/`pinned`
+ *  are the per-tab flags lifted off the old `EditorView`. The same file open in
+ *  two groups = two editor tabs (two `instanceId`s, same `tabId`) sharing the
+ *  per-path buffer. */
+export type GroupTab =
+  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
+  | { instanceId: string; kind: 'terminal' }
+
+/** A working-area group: an ordered, mixed strip of editor/terminal tabs. `id` is
+ *  the group's structural node id (the split target — disjoint from any tab's
+ *  `instanceId`). `activeTab` is the shown tab's `instanceId`, or `''` for an
+ *  EMPTY group. An empty group is a first-class, persisted node — normalization
+ *  never collapses it. */
 export type TabsNode = {
   kind: 'tabs'
   id: string
-  active: PanelId
-  panels: PanelId[]
-  chrome: TabsChrome
+  tabs: GroupTab[]
+  activeTab: string
 }
 
 export type LayoutNode = LeafNode | SplitNode | TabsNode

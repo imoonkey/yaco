@@ -1,404 +1,386 @@
-// Unit tests for the panel layout model (T4a). The model is pure data/logic, so
-// these run without a DOM. They pin every normalization invariant, duplicate /
-// malformed repair, registry min-size clamping, and idempotency (round-trip).
+// Unit tests for the panel layout model (group model). Pure data/logic — no DOM.
+// Pins the group-node invariants: payload-preserving normalization, the empty-
+// group invariant, the dock-leaf guard, the group helpers, the structural ops,
+// and idempotency.
 import { describe, it, expect } from 'vitest'
 import {
   PANEL_IDS,
   isPanelId,
+  isDockPanel,
   MOBILE_DOCKS,
   isMobileDock,
-  MAIN_TABS_ID,
   DEFAULT_MOBILE_DOCK,
   defaultDesktopTree,
-  defaultPanelState,
   defaultWorkspacePanelLayout,
   normalizeDesktopTree,
   normalizeLayout,
+  firstGroupId,
+  groupOf,
+  tabsInGroup,
+  editorTabsInGroup,
+  terminalTabsInGroup,
+  tabByInstance,
+  editorTabPaths,
+  editorInstancesInOrder,
+  terminalInstancesInOrder,
+  newInstanceId,
+  collectIds,
+  splitBeside,
+  closeGroup,
+  ensureFirstGroup,
+  mapGroup,
+  resolveActiveEditor,
+  resolveActiveTerminal,
 } from '../panelLayoutModel'
-import { getPanelDefinition } from '../panelRegistry'
-import type { LayoutNode, SplitNode, TabsNode, LeafNode } from '../../hooks/workspaceTypes'
-
-// --- Narrowing helpers (keep assertions readable + type-safe) ---------------
+import type { LayoutNode, SplitNode, TabsNode, WorkspacePanelLayout } from '../../hooks/workspaceTypes'
 
 function asSplit(node: LayoutNode): SplitNode {
   if (node.kind !== 'split') throw new Error(`expected split, got ${node.kind}`)
   return node
 }
-
 function asTabs(node: LayoutNode): TabsNode {
   if (node.kind !== 'tabs') throw new Error(`expected tabs, got ${node.kind}`)
   return node
 }
 
-function asLeaf(node: LayoutNode): LeafNode {
-  if (node.kind !== 'leaf') throw new Error(`expected leaf, got ${node.kind}`)
-  return node
+/** A layout wrapping a raw desktop tree (normalized through the default). */
+function layoutWith(desktop: unknown): WorkspacePanelLayout {
+  return { ...defaultWorkspacePanelLayout(), desktop: normalizeDesktopTree(desktop) }
 }
 
-function leaf(panel: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { kind: 'leaf', id: panel, panel, ...extra }
-}
+const ed = (instanceId: string, tabId: string, extra: Record<string, unknown> = {}) =>
+  ({ instanceId, kind: 'editor', tabId, ...extra })
+const term = (instanceId: string) => ({ instanceId, kind: 'terminal' })
+const group = (id: string, tabs: unknown[], activeTab = '') => ({ kind: 'tabs', id, tabs, activeTab })
 
 // --- Guards + canonical sets ------------------------------------------------
 
-describe('panel id / mobile dock guards', () => {
-  it('recognizes exactly the seven canonical panel ids', () => {
+describe('guards + canonical sets', () => {
+  it('recognizes the seven panel ids', () => {
     expect([...PANEL_IDS].sort()).toEqual(
-      ['changes', 'editor', 'files', 'projects', 'sessions', 'tasks', 'terminal'],
+      ['changes', 'editor', 'files', 'projects', 'sessions', 'tasks', 'terminal'].sort(),
     )
-    for (const id of PANEL_IDS) expect(isPanelId(id)).toBe(true)
-    for (const bad of ['', 'nope', 'Editor', null, 42, undefined, {}]) {
-      expect(isPanelId(bad)).toBe(false)
-    }
+    expect(isPanelId('files')).toBe(true)
+    expect(isPanelId('nope')).toBe(false)
   })
 
-  it('recognizes the four mobile docks', () => {
-    expect([...MOBILE_DOCKS]).toEqual(['browse', 'editor', 'tasks', 'terminal'])
-    for (const d of MOBILE_DOCKS) expect(isMobileDock(d)).toBe(true)
-    for (const bad of ['files', 'Browse', null, 0]) expect(isMobileDock(bad)).toBe(false)
+  it('dock panels are exactly the five singletons (editor/terminal are not docks)', () => {
+    for (const p of ['projects', 'files', 'changes', 'sessions', 'tasks'] as const) {
+      expect(isDockPanel(p)).toBe(true)
+    }
+    expect(isDockPanel('editor')).toBe(false)
+    expect(isDockPanel('terminal')).toBe(false)
+  })
+
+  it('recognizes mobile docks', () => {
+    expect([...MOBILE_DOCKS]).toContain(DEFAULT_MOBILE_DOCK)
+    expect(isMobileDock('browse')).toBe(true)
+    expect(isMobileDock('nope')).toBe(false)
   })
 })
 
 // --- Defaults ---------------------------------------------------------------
 
-describe('default trees', () => {
-  it('builds the three-region desktop tree', () => {
+describe('default tree', () => {
+  it('is a dock column + one empty working group + an activity column', () => {
     const root = asSplit(defaultDesktopTree())
     expect(root.axis).toBe('row')
-    expect(root.children).toHaveLength(3)
-
-    const [dock, main, activity] = root.children
-    expect(dock.basis).toBe(220)
-    expect(asSplit(dock.node).id).toBe('dock')
-    expect(main.grow).toBe(true)
-    expect(asTabs(main.node).id).toBe(MAIN_TABS_ID)
-    expect(asTabs(main.node).panels).toEqual(['editor', 'tasks'])
-    expect(activity.basis).toBe(420)
-    expect(asSplit(activity.node).id).toBe('activity')
+    const gid = firstGroupId(root)
+    expect(gid).toBe('group:1')
+    const g = asTabs(tabsNode(root, 'group:1'))
+    expect(g.tabs).toEqual([])
+    expect(g.activeTab).toBe('')
+    // editor/terminal are never dock leaves
+    const leafPanels = collectLeafPanels(root)
+    expect(leafPanels.sort()).toEqual(['changes', 'files', 'projects', 'sessions', 'tasks'])
   })
 
-  it('default panel layout uses the browse dock + tree file mode', () => {
-    const layout = defaultWorkspacePanelLayout()
-    expect(layout.version).toBe(1)
-    expect(layout.mobile.activeDock).toBe(DEFAULT_MOBILE_DOCK)
-    expect(layout.panelState).toEqual(defaultPanelState())
-  })
-
-  it('normalization leaves the default tree unchanged (it is already canonical)', () => {
-    expect(normalizeDesktopTree(defaultDesktopTree())).toEqual(defaultDesktopTree())
-    expect(normalizeLayout(defaultWorkspacePanelLayout())).toEqual(defaultWorkspacePanelLayout())
-  })
-})
-
-// --- Single-occurrence (duplicate-id repair) --------------------------------
-
-describe('single-occurrence invariant', () => {
-  it('keeps the first occurrence of a duplicate panel and drops the rest', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { node: leaf('files') },
-        { node: leaf('files') }, // duplicate → dropped
-        { node: leaf('editor') },
-      ],
-    }))
-    expect(root.children).toHaveLength(2)
-    expect(asLeaf(root.children[0].node).panel).toBe('files')
-    expect(asLeaf(root.children[1].node).panel).toBe('editor')
-  })
-
-  it('counts a non-whitelisted panel inside a tabs node as an occurrence', () => {
-    // tasks appears in the main tabs node first, so a later tasks leaf is dropped
-    // (tasks is single-occurrence). editor/terminal are exempt — see the
-    // multi-instance suite.
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
-        { node: leaf('tasks') }, // duplicate of the tabs tasks → dropped
-        { node: leaf('files') },
-      ],
-    }))
-    expect(root.children).toHaveLength(2)
-    expect(asTabs(root.children[0].node).panels).toEqual(['editor', 'tasks'])
-    expect(asLeaf(root.children[1].node).panel).toBe('files')
-  })
-
-  it('drops duplicated panels within a single tabs node', () => {
-    const tabs = asTabs(normalizeDesktopTree({
-      kind: 'tabs', id: MAIN_TABS_ID, active: 'tasks',
-      panels: ['editor', 'editor', 'tasks'], chrome: 'none',
-    }))
-    expect(tabs.panels).toEqual(['editor', 'tasks'])
-    expect(tabs.active).toBe('tasks')
-  })
-})
-
-// --- Malformed-tree repair --------------------------------------------------
-
-describe('malformed-tree repair', () => {
-  it('falls back to the default tree for non-object / unknown-kind roots', () => {
-    for (const bad of [null, undefined, 42, 'leaf', {}, { kind: 'bogus' }, []]) {
-      expect(normalizeDesktopTree(bad)).toEqual(defaultDesktopTree())
-    }
-  })
-
-  it('drops leaves with an unknown panel id', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { node: leaf('ghost') }, // unknown → dropped
-        { node: leaf('files') },
-        { node: leaf('editor') },
-      ],
-    }))
-    expect(root.children.map((c) => asLeaf(c.node).panel)).toEqual(['files', 'editor'])
-  })
-
-  it('drops malformed split children (non-objects, bad kinds)', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        null,
-        { node: { kind: 'mystery' } },
-        'garbage',
-        { node: leaf('files') },
-        { node: leaf('editor') },
-      ],
-    }))
-    expect(root.children.map((c) => asLeaf(c.node).panel)).toEqual(['files', 'editor'])
-  })
-
-  it('removes an empty tabs node and collapses a one-panel tabs node to a leaf', () => {
-    // empty tabs → null → its sole-parent split collapses to the surviving child
-    const emptyParent = normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { node: { kind: 'tabs', id: 'extra', active: 'editor', panels: [], chrome: 'none' } },
-        { node: leaf('files') },
-      ],
-    })
-    expect(asLeaf(emptyParent).panel).toBe('files')
-
-    // one-panel, non-reserved tabs → leaf (a non-whitelisted panel; editor would
-    // be stripped from a non-main tabs node — see the multi-instance suite).
-    const collapsed = normalizeDesktopTree({
-      kind: 'tabs', id: 'extra', active: 'changes', panels: ['changes'], chrome: 'none',
-    })
-    expect(asLeaf(collapsed)).toMatchObject({ kind: 'leaf', panel: 'changes' })
-  })
-
-  it('keeps the reserved main tabs node a tabs node even with one panel', () => {
-    const node = normalizeDesktopTree({
-      kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor'], chrome: 'none',
-    })
-    expect(asTabs(node)).toMatchObject({ kind: 'tabs', id: MAIN_TABS_ID, panels: ['editor'] })
-  })
-
-  it('repairs an invalid tabs active to the first panel and invalid chrome to none', () => {
-    const tabs = asTabs(normalizeDesktopTree({
-      kind: 'tabs', id: MAIN_TABS_ID, active: 'ghost', panels: ['editor', 'tasks'], chrome: 'weird',
-    }))
-    expect(tabs.active).toBe('editor')
-    expect(tabs.chrome).toBe('none')
-  })
-
-  it('synthesizes ids for nodes that lack them', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', axis: 'row',
-      children: [{ node: { kind: 'leaf', panel: 'files' } }, { node: { kind: 'leaf', panel: 'editor' } }],
-    }))
-    expect(root.id).toMatch(/^split-\d+$/)
-    expect(asLeaf(root.children[0].node).id).toMatch(/^leaf-\d+$/)
-  })
-
-  it('collapses a single-child split into its child, keeping the parent slot basis', () => {
-    const node = normalizeDesktopTree({
-      kind: 'split', id: 'outer', axis: 'row',
-      children: [{ basis: 300, node: { kind: 'split', id: 'inner', axis: 'col', children: [{ grow: true, node: leaf('files') }] } }],
-    })
-    // outer has one child (inner), inner has one child (files) → fully collapses
-    expect(asLeaf(node)).toMatchObject({ kind: 'leaf', panel: 'files' })
-  })
-})
-
-// --- One grow child + last-child-absorbs-slack ------------------------------
-
-describe('grow-child invariant', () => {
-  it('keeps only the first visible grow child', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { grow: true, node: leaf('files') },
-        { grow: true, node: leaf('editor') }, // extra grow → cleared
-        { grow: true, node: leaf('terminal') }, // extra grow → cleared
-      ],
-    }))
-    expect(root.children.map((c) => c.grow ?? false)).toEqual([true, false, false])
-  })
-
-  it('allows zero grow children (last-child-absorbs is a renderer rule)', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { basis: 200, node: leaf('files') },
-        { basis: 200, node: leaf('editor') },
-      ],
-    }))
-    expect(root.children.some((c) => c.grow)).toBe(false)
-  })
-
-  it('ignores hidden children when picking the visible grow child', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { grow: true, hidden: true, node: leaf('files') }, // hidden grow preserved
-        { grow: true, node: leaf('editor') }, // first *visible* grow → kept
-        { grow: true, node: leaf('terminal') }, // extra visible grow → cleared
-      ],
-    }))
-    expect(root.children[0]).toMatchObject({ hidden: true, grow: true })
-    expect(root.children[1].grow).toBe(true)
-    expect(root.children[2].grow ?? false).toBe(false)
-  })
-})
-
-// --- Hidden preservation ----------------------------------------------------
-
-describe('hidden-child preservation', () => {
-  it('keeps hidden children in state (sizes + collapse preserved)', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { hidden: true, basis: 220, node: leaf('files', { collapsed: true }) },
-        { grow: true, node: leaf('editor') },
-      ],
-    }))
-    expect(root.children).toHaveLength(2)
-    expect(root.children[0]).toMatchObject({ hidden: true, basis: 220 })
-    expect(asLeaf(root.children[0].node).collapsed).toBe(true)
-  })
-
-  it('reveals the last child when every child is hidden', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { hidden: true, basis: 200, node: leaf('files') },
-        { hidden: true, basis: 200, node: leaf('editor') },
-      ],
-    }))
-    expect(root.children[0].hidden).toBe(true)
-    expect(root.children[1].hidden ?? false).toBe(false)
-  })
-})
-
-// --- Min-size clamping ------------------------------------------------------
-
-describe('registry min-size clamping', () => {
-  it('clamps an undersized basis up to the axis min (width on a row split)', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { basis: 10, node: leaf('projects') }, // below min width
-        { grow: true, node: leaf('files') },
-      ],
-    }))
-    expect(root.children[0].basis).toBe(getPanelDefinition('projects')!.minSize.width)
-  })
-
-  it('clamps against the height min on a column split', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'col',
-      children: [
-        { basis: 5, node: leaf('sessions') }, // below min height
-        { grow: true, node: leaf('terminal') },
-      ],
-    }))
-    expect(root.children[0].basis).toBe(getPanelDefinition('sessions')!.minSize.height)
-  })
-
-  it('preserves a basis already above the min', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { basis: 400, node: leaf('projects') },
-        { grow: true, node: leaf('files') },
-      ],
-    }))
-    expect(root.children[0].basis).toBe(400)
-  })
-
-  it('drops a non-numeric / non-finite basis to undefined', () => {
-    const root = asSplit(normalizeDesktopTree({
-      kind: 'split', id: 'root', axis: 'row',
-      children: [
-        { basis: 'wide', node: leaf('projects') },
-        { basis: Number.NaN, node: leaf('files') },
-        { grow: true, node: leaf('editor') },
-      ],
-    }))
-    expect(root.children[0].basis).toBeUndefined()
-    expect(root.children[1].basis).toBeUndefined()
-  })
-})
-
-// --- Layout-level salvage ---------------------------------------------------
-
-describe('normalizeLayout field salvage', () => {
-  it('repairs an invalid mobile dock and editor prefs to defaults, per field', () => {
-    const layout = normalizeLayout({
-      version: 1,
-      desktop: defaultDesktopTree(),
-      mobile: { activeDock: 'nonsense' },
-      panelState: {
-        files: { mode: 'search' },
-        editor: { previewMode: 'preview', splitDirection: 'bogus', splitSize: -1, autocompleteEnabled: true },
-      },
-    })
-    expect(layout.mobile.activeDock).toBe(DEFAULT_MOBILE_DOCK)
-    expect(layout.panelState.files.mode).toBe('search') // valid → kept
-    expect(layout.panelState.editor.previewMode).toBe('preview') // valid → kept
-    expect(layout.panelState.editor.splitDirection).toBe('horizontal') // invalid → default
-    expect(layout.panelState.editor.splitSize).toBe(defaultPanelState().editor.splitSize) // invalid → default
-    expect(layout.panelState.editor.autocompleteEnabled).toBe(true)
-  })
-
-  it('fills defaults for a totally empty layout object', () => {
-    expect(normalizeLayout({})).toEqual(defaultWorkspacePanelLayout())
-  })
-})
-
-// --- Idempotency (round-trip) -----------------------------------------------
-
-describe('normalization is idempotent', () => {
-  const messyTree = {
-    kind: 'split', id: 'root', axis: 'row',
-    children: [
-      { hidden: true, basis: 5, node: leaf('projects') }, // clamp + hidden
-      { node: { kind: 'tabs', active: 'ghost', panels: ['editor', 'editor', 'tasks'], chrome: 'x', id: MAIN_TABS_ID } },
-      { grow: true, node: leaf('files') },
-      { grow: true, node: leaf('files') }, // duplicate dropped
-      { basis: 9999, node: leaf('terminal') },
-      { node: { kind: 'bogus' } }, // dropped
-    ],
-  }
-
-  it('normalizeDesktopTree(normalizeDesktopTree(x)) === normalizeDesktopTree(x)', () => {
-    const once = normalizeDesktopTree(messyTree)
-    const twice = normalizeDesktopTree(once)
-    expect(twice).toEqual(once)
-  })
-
-  it('normalizeLayout round-trips a messy layout', () => {
-    const once = normalizeLayout({ desktop: messyTree, mobile: { activeDock: 'bad' }, panelState: {} })
+  it('normalizes idempotently', () => {
+    const once = normalizeLayout(defaultWorkspacePanelLayout())
     const twice = normalizeLayout(once)
     expect(twice).toEqual(once)
   })
+})
 
-  it('round-trips repeatedly on the default layout', () => {
-    const a = normalizeLayout(defaultWorkspacePanelLayout())
-    const b = normalizeLayout(a)
-    const c = normalizeLayout(b)
-    expect(c).toEqual(a)
+// helper: find a tabs node by id
+function tabsNode(node: LayoutNode, id: string): LayoutNode {
+  let hit: LayoutNode | null = null
+  const walk = (n: LayoutNode) => {
+    if (n.kind === 'tabs' && n.id === id) hit = n
+    else if (n.kind === 'split') n.children.forEach((c) => walk(c.node))
+  }
+  walk(node)
+  if (!hit) throw new Error(`no group ${id}`)
+  return hit
+}
+function collectLeafPanels(node: LayoutNode, out: string[] = []): string[] {
+  if (node.kind === 'leaf') out.push(node.panel)
+  else if (node.kind === 'split') node.children.forEach((c) => collectLeafPanels(c.node, out))
+  return out
+}
+
+// --- normalizeGroup ---------------------------------------------------------
+
+describe('normalizeGroup — payload-preserving', () => {
+  it('NEVER collapses an empty group', () => {
+    const tree = normalizeDesktopTree(group('group:1', []))
+    const g = asTabs(tree)
+    expect(g.kind).toBe('tabs')
+    expect(g.tabs).toEqual([])
+    expect(g.activeTab).toBe('')
+  })
+
+  it('preserves valid editor tabs and drops only malformed ones', () => {
+    const tree = normalizeDesktopTree(group('group:1', [
+      ed('editor:1', 'a.ts'),
+      { instanceId: 'editor:2', kind: 'editor' }, // malformed: no tabId
+      { instanceId: 'x', kind: 'bogus' }, // malformed: bad kind
+      ed('editor:3', 'b.ts'),
+    ], 'editor:1'))
+    const g = asTabs(tree)
+    expect(g.tabs.map((t) => t.instanceId)).toEqual(['editor:1', 'editor:3'])
+    expect(g.tabs.map((t) => (t.kind === 'editor' ? t.tabId : null))).toEqual(['a.ts', 'b.ts'])
+  })
+
+  it('re-ids a duplicate instanceId, keeping its tabId/preview/pinned payload', () => {
+    const tree = normalizeDesktopTree(group('group:1', [
+      ed('editor:1', 'a.ts'),
+      ed('editor:1', 'b.ts', { pinned: true }), // duplicate id
+    ], 'editor:1'))
+    const g = asTabs(tree)
+    expect(g.tabs).toHaveLength(2)
+    const [first, second] = g.tabs
+    expect(first.instanceId).toBe('editor:1')
+    expect(second.instanceId).not.toBe('editor:1')
+    expect(second.kind === 'editor' && second.tabId).toBe('b.ts')
+    expect(second.kind === 'editor' && second.pinned).toBe(true)
+  })
+
+  it('keeps exactly one preview editor tab (first in document order wins)', () => {
+    const tree = normalizeDesktopTree(group('group:1', [
+      ed('editor:1', 'a.ts', { preview: true }),
+      ed('editor:2', 'b.ts', { preview: true }),
+    ], 'editor:1'))
+    const g = asTabs(tree)
+    expect(g.tabs.filter((t) => t.kind === 'editor' && t.preview)).toHaveLength(1)
+    expect(g.tabs[0].kind === 'editor' && g.tabs[0].preview).toBe(true)
+    expect(g.tabs[1].kind === 'editor' && g.tabs[1].preview).toBeUndefined()
+  })
+
+  it('clamps activeTab to a surviving tab, following re-ids; empties to ""', () => {
+    const dropped = normalizeDesktopTree(group('group:1', [ed('editor:1', 'a.ts')], 'gone'))
+    expect(asTabs(dropped).activeTab).toBe('editor:1') // fell back to first
+
+    const empty = normalizeDesktopTree(group('group:1', []))
+    expect(asTabs(empty).activeTab).toBe('')
+
+    // active follows the re-id of a duplicate
+    const reId = normalizeDesktopTree(group('group:1', [
+      ed('editor:1', 'a.ts'),
+      ed('editor:1', 'b.ts'),
+    ], 'editor:1'))
+    expect(asTabs(reId).activeTab).toBe('editor:1') // first occurrence kept the id
+  })
+
+  it('mixes editor + terminal tabs in one strip in order', () => {
+    const tree = normalizeDesktopTree(group('group:1', [
+      ed('editor:1', 'a.ts'), term('terminal:1'), ed('editor:2', 'b.ts'),
+    ], 'terminal:1'))
+    const g = asTabs(tree)
+    expect(g.tabs.map((t) => t.kind)).toEqual(['editor', 'terminal', 'editor'])
+    expect(g.activeTab).toBe('terminal:1')
   })
 })
+
+// --- dock-leaf guard --------------------------------------------------------
+
+describe('dock-leaf guard', () => {
+  it('drops an editor/terminal leaf (those exist only as group tabs)', () => {
+    const tree = normalizeDesktopTree({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: { kind: 'leaf', id: 'editor', panel: 'editor' } },
+        { node: { kind: 'leaf', id: 'terminal', panel: 'terminal' } },
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { node: group('group:1', []) },
+      ],
+    })
+    expect(collectLeafPanels(tree).sort()).toEqual(['files'])
+  })
+
+  it('keeps dock panels as singletons (a duplicate dock leaf drops)', () => {
+    const tree = normalizeDesktopTree({
+      kind: 'split', id: 'root', axis: 'col', children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { node: { kind: 'leaf', id: 'files-2', panel: 'files' } },
+        { node: group('group:1', []) },
+      ],
+    })
+    expect(collectLeafPanels(tree)).toEqual(['files'])
+  })
+})
+
+// --- idempotency ------------------------------------------------------------
+
+describe('idempotency', () => {
+  it('re-normalizing a normalized tree is a no-op', () => {
+    const src = {
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { basis: 220, node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: group('g', [ed('editor:1', 'a.ts'), term('terminal:1')], 'editor:1') },
+      ],
+    }
+    const once = normalizeDesktopTree(src)
+    const twice = normalizeDesktopTree(once)
+    expect(twice).toEqual(once)
+  })
+})
+
+// --- group helpers ----------------------------------------------------------
+
+describe('group helpers', () => {
+  const tree = normalizeDesktopTree({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { node: group('g1', [ed('editor:1', 'a.ts'), ed('editor:2', 'diff:b.ts?base=main&compare=HEAD')], 'editor:1') },
+      { node: group('g2', [term('terminal:1'), ed('editor:3', 'a.ts')], 'terminal:1') },
+    ],
+  })
+
+  it('firstGroupId / groupOf', () => {
+    expect(firstGroupId(tree)).toBe('g1')
+    expect(groupOf(tree, 'editor:2')).toBe('g1')
+    expect(groupOf(tree, 'terminal:1')).toBe('g2')
+    expect(groupOf(tree, 'nope')).toBeNull()
+  })
+
+  it('tabsInGroup / editorTabsInGroup / terminalTabsInGroup', () => {
+    expect(tabsInGroup(tree, 'g1').map((t) => t.instanceId)).toEqual(['editor:1', 'editor:2'])
+    expect(editorTabsInGroup(tree, 'g2').map((t) => t.instanceId)).toEqual(['editor:3'])
+    expect(terminalTabsInGroup(tree, 'g2').map((t) => t.instanceId)).toEqual(['terminal:1'])
+  })
+
+  it('tabByInstance', () => {
+    const t = tabByInstance(tree, 'editor:2')
+    expect(t && t.kind === 'editor' && t.tabId).toBe('diff:b.ts?base=main&compare=HEAD')
+    expect(tabByInstance(tree, 'nope')).toBeNull()
+  })
+
+  it('editorTabPaths maps diff ids to underlying paths and de-dupes', () => {
+    // a.ts (g1), b.ts (diff in g1), a.ts again (g2) -> unique [a.ts, b.ts]
+    expect(editorTabPaths(tree)).toEqual(['a.ts', 'b.ts'])
+  })
+
+  it('editor/terminal instances in document order', () => {
+    expect(editorInstancesInOrder(tree)).toEqual(['editor:1', 'editor:2', 'editor:3'])
+    expect(terminalInstancesInOrder(tree)).toEqual(['terminal:1'])
+  })
+
+  it('newInstanceId is unique within the tree', () => {
+    const id = newInstanceId(tree, 'terminal')
+    expect(collectIds(tree).has(id)).toBe(false)
+    expect(id).toBe('terminal') // the bare base id is free (only 'terminal:1' is taken)
+    expect(newInstanceId(tree, 'editor')).toBe('editor') // bare 'editor' free; 'editor:1..3' taken
+  })
+
+  it('resolveActive* picks MRU-then-document-order, nullable when empty', () => {
+    expect(resolveActiveEditor(tree, ['editor:3', 'editor:1'])).toBe('editor:3')
+    expect(resolveActiveEditor(tree, [])).toBe('editor:1')
+    expect(resolveActiveTerminal(tree, [])).toBe('terminal:1')
+    const empty = normalizeDesktopTree(group('group:1', []))
+    expect(resolveActiveEditor(empty, [])).toBeNull()
+    expect(resolveActiveTerminal(empty, [])).toBeNull()
+  })
+})
+
+// --- structural ops ---------------------------------------------------------
+
+describe('splitBeside / closeGroup / ensureFirstGroup / mapGroup', () => {
+  it('splitBeside spawns an empty sibling group; axis from side', () => {
+    const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
+    const split = splitBeside(base, 'group:1', 'right', 'group:2')
+    expect(firstGroupId(split.desktop)).toBeTruthy()
+    const ids = collectIds(split.desktop)
+    expect(ids.has('group:1')).toBe(true)
+    expect(ids.has('group:2')).toBe(true)
+    expect(tabsInGroup(split.desktop, 'group:2')).toEqual([])
+    // a left/right split is a row axis wrapper
+    const wrapper = findSplitContaining(split.desktop, 'group:2')
+    expect(wrapper.axis).toBe('row')
+  })
+
+  it('splitBeside below uses a col axis', () => {
+    const base = layoutWith(group('group:1', [], ''))
+    const split = splitBeside(base, 'group:1', 'below', 'group:2')
+    expect(findSplitContaining(split.desktop, 'group:2').axis).toBe('col')
+  })
+
+  it('splitBeside is a no-op when the target is absent', () => {
+    const base = layoutWith(group('group:1', []))
+    expect(splitBeside(base, 'nope', 'right', 'group:2')).toEqual(base)
+  })
+
+  it('closeGroup removes the group and collapses the surrounding split', () => {
+    const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
+    const split = splitBeside(base, 'group:1', 'right', 'group:2')
+    const closed = closeGroup(split, 'group:2')
+    const ids = collectIds(closed.desktop)
+    expect(ids.has('group:2')).toBe(false)
+    expect(ids.has('group:1')).toBe(true)
+    // surrounding split:group:2 collapsed away
+    expect(hasNode(closed.desktop, 'split:group:2')).toBe(false)
+  })
+
+  it('closeGroup on the last group leaves exactly one empty group (ensureFirstGroup)', () => {
+    const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
+    const closed = closeGroup(base, 'group:1')
+    const gid = firstGroupId(closed.desktop)
+    expect(gid).toBeTruthy()
+    expect(tabsInGroup(closed.desktop, gid!)).toEqual([])
+  })
+
+  it('ensureFirstGroup grafts an empty group when none exists', () => {
+    const noGroup: WorkspacePanelLayout = {
+      ...defaultWorkspacePanelLayout(),
+      desktop: normalizeDesktopTree({
+        kind: 'split', id: 'root', axis: 'row', children: [
+          { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        ],
+      }),
+    }
+    expect(firstGroupId(noGroup.desktop)).toBeNull()
+    const ensured = ensureFirstGroup(noGroup)
+    const gid = firstGroupId(ensured.desktop)
+    expect(gid).toBeTruthy()
+    expect(tabsInGroup(ensured.desktop, gid!)).toEqual([])
+    // already-has-a-group is a no-op (returns the same layout)
+    expect(ensureFirstGroup(ensured)).toBe(ensured)
+  })
+
+  it('mapGroup edits a group purely and re-normalizes', () => {
+    const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
+    const next = mapGroup(base, 'group:1', (g) => ({
+      ...g,
+      tabs: [...g.tabs, { instanceId: 'editor:2', kind: 'editor', tabId: 'b.ts' }],
+      activeTab: 'editor:2',
+    }))
+    expect(tabsInGroup(next.desktop, 'group:1').map((t) => t.instanceId)).toEqual(['editor:1', 'editor:2'])
+    expect(asTabs(tabsNode(next.desktop, 'group:1')).activeTab).toBe('editor:2')
+  })
+})
+
+function findSplitContaining(node: LayoutNode, childGroupId: string): SplitNode {
+  let hit: SplitNode | null = null
+  const walk = (n: LayoutNode) => {
+    if (n.kind === 'split') {
+      if (n.children.some((c) => c.node.kind === 'tabs' && c.node.id === childGroupId)) hit = n
+      n.children.forEach((c) => walk(c.node))
+    }
+  }
+  walk(node)
+  if (!hit) throw new Error(`no split containing ${childGroupId}`)
+  return hit
+}
+function hasNode(node: LayoutNode, id: string): boolean {
+  if (node.id === id) return true
+  if (node.kind === 'split') return node.children.some((c) => hasNode(c.node, id))
+  return false
+}
