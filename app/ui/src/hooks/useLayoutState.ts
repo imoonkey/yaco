@@ -562,8 +562,13 @@ export function useLayoutState(
 
   // --- Group-targeted tab dispatchers ---
 
-  const openTab = useCallback((groupId: string, tabId: string) => {
-    dispatch({ type: 'OPEN_TAB', groupId, tab: { instanceId: newEditorId(), kind: 'editor', tabId } })
+  /** Returns the instanceId the open activated (existing tab) or created. */
+  const openTab = useCallback((groupId: string, tabId: string): string => {
+    const newId = newEditorId()
+    const existing = tabsInGroup(stateRef.current.panelLayout.desktop, groupId)
+      .find((t) => t.kind === 'editor' && t.tabId === tabId)
+    dispatch({ type: 'OPEN_TAB', groupId, tab: { instanceId: newId, kind: 'editor', tabId } })
+    return existing?.instanceId ?? newId
   }, [])
 
   /** Returns true when the caller should fetch the file (it is not already open). */

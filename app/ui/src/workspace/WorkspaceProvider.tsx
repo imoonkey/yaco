@@ -463,13 +463,13 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }, [previewFileInGroup, revealParents, resolveTarget, setMobilePane])
 
   const openFileAtLine = useCallback((path: string, line: number) => {
-    void revealParents(path).then(() => {
-      openFileInGroup(resolveTarget(), path)
-      setSelectedFilePath(path)
-      setMobilePane('editor')
-    })
-    // jumpRequest carries the path; the editor body showing that file consumes it.
-    setJumpRequest({ key: Date.now(), path, line })
+    const instanceId = openFileInGroup(resolveTarget(), path)
+    setSelectedFilePath(path)
+    setMobilePane('editor')
+    void revealParents(path)
+    // Stamp the jump with the opened instance so only THAT editor tab consumes it:
+    // the same path can be open as two tabs sharing one buffer.
+    if (instanceId) setJumpRequest({ key: Date.now(), path, line, instanceId })
   }, [openFileInGroup, revealParents, resolveTarget, setMobilePane])
 
   // openDiff mirrors the old activateChange handler: a re-clicked active diff

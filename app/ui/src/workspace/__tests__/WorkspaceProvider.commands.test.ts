@@ -22,6 +22,7 @@ import {
   normalizeLayout, firstGroupId, groupOf, newInstanceId, collectIds,
   terminalInstancesInOrder, terminalTabsInGroup, editorTabsInGroup,
 } from '../panelLayoutModel'
+import type { JumpRequest } from '../context'
 
 // --- Fixtures ---------------------------------------------------------------
 
@@ -128,6 +129,20 @@ function renameBound(state: InstanceState, oldName: string, newName: string): In
     if (session === oldName) s = instanceReducer(s, { type: 'BIND_TERMINAL', id, session: newName })
   }
   return s
+}
+
+// openFileAtLine: resolve the target group, open (or activate) the file there, and
+// stamp the jump with the resulting instance (openTab's return = the reducer's
+// focused instance after OPEN_TAB). The stamp targets exactly one tab so a same-path
+// sibling in another group never double-consumes the jump.
+function openFileAtLine(state: InstanceState, path: string, line: number): { state: InstanceState; jump: JumpRequest } {
+  const tree = state.panelLayout.desktop
+  const groupId = targetGroup(state)
+  const existing = editorTabsInGroup(tree, groupId).find((t) => t.tabId === path)
+  const newId = newInstanceId(tree, 'editor')
+  const instanceId = existing?.instanceId ?? newId
+  const next = instanceReducer(state, { type: 'OPEN_TAB', groupId, tab: editorTab(newId, path) })
+  return { state: next, jump: { key: 1, path, line, instanceId } }
 }
 
 // --- clickSession -----------------------------------------------------------
@@ -265,5 +280,45 @@ describe('rename', () => {
     const next = renameBound(state, 's1', 's9')
 
     expect(next.terminalBindings).toEqual({ terminal: 's9', 'terminal:3': 's9', 'terminal:2': 's2' })
+  })
+})
+
+// --- openFileAtLine (go-to-line stamps the opened instance) -----------------
+
+describe('openFileAtLine', () => {
+  it('stamps the target group\'s tab — a same-path sibling in another group never jumps', () => {
+    // The same file open as two tabs in two groups; group:2 is the active target.
+    const state = makeState(
+      groupsLayout([
+        { id: 'group:1', tabs: [editorTab('editor', 'src/a.ts')] },
+        { id: 'group:2', tabs: [editorTab('editor:2', 'src/a.ts')] },
+      ]),
+      { activeGroupId: 'group:2', editorMru: ['editor:2', 'editor'] },
+    )
+    const { state: after, jump } = openFileAtLine(state, 'src/a.ts', 10)
+
+    // The stamp targets group:2's tab (the resolved target) — its sibling 'editor'
+    // in group:1 shares the path but is NOT the stamp, so it does not jump.
+    expect(jump.instanceId).toBe('editor:2')
+    // The stamp IS the instance the reducer activated/focused (openTab's contract).
+    expect(after.focusedPane).toEqual({ kind: 'editor', instanceId: 'editor:2' })
+  })
+
+  it('stamps the freshly-created instance when the target group has no tab for the path', () => {
+    const state = makeState(
+      groupsLayout([
+        { id: 'group:1', tabs: [editorTab('editor', 'src/a.ts')] },
+        { id: 'group:2', tabs: [] },
+      ]),
+      { activeGroupId: 'group:2' },
+    )
+    const { state: after, jump } = openFileAtLine(state, 'src/a.ts', 5)
+
+    // A brand-new tab in group:2 carries the stamp; group:1's sibling is untouched.
+    const g2 = editorTabsInGroup(after.panelLayout.desktop, 'group:2')
+    expect(g2).toHaveLength(1)
+    expect(jump.instanceId).toBe(g2[0].instanceId)
+    expect(jump.instanceId).not.toBe('editor')
+    expect(after.focusedPane).toEqual({ kind: 'editor', instanceId: jump.instanceId })
   })
 })

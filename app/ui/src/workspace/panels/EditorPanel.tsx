@@ -134,11 +134,11 @@ export function EditorPanel() {
   }, [commands])
 
   // Per-instance routing of go-to-line + voice insert: consume only requests
-  // aimed at this pane (design: §E). Go-to-line matches by path (the open-and-jump
-  // command stamps the path); the voice insert must ALSO target this pane and the
-  // file it currently shows.
+  // aimed at this pane (design: §E). Go-to-line matches by path AND the stamped
+  // instanceId (every producer stamps it), so a same-path sibling tab never jumps;
+  // the voice insert must ALSO target this pane and the file it currently shows.
   const myJump = jumpRequest && jumpRequest.path === activeFilePath
-    && (jumpRequest.instanceId === undefined || jumpRequest.instanceId === instanceId) ? jumpRequest : null
+    && jumpRequest.instanceId === instanceId ? jumpRequest : null
   const insert = voice.editorInsert as TargetedInsert | null
   const myInsert = insert && insert.instanceId === instanceId && insert.filePath === activeTab ? insert : null
 

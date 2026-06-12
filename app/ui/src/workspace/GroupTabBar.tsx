@@ -39,7 +39,7 @@ export type GroupTabBarProps = {
   conflictTabs: ReadonlySet<string>
   /** instanceId → bound session name for terminal tabs (absent ⇒ unbound "Terminal"). */
   terminalBindings: Record<string, string>
-  /** Underlying file paths open in OTHER groups — dirty-close is loss-free for these. */
+  /** Underlying file paths open in 2+ editor tabs tree-wide — dirty-close is loss-free for these. */
   pathsOpenElsewhere: ReadonlySet<string>
   /** Activate a tab in this group (sets the group's active tab + focus). */
   onSelectTab: (instanceId: string) => void
@@ -105,15 +105,19 @@ export function GroupTabBar(props: GroupTabBarProps) {
   )
 
   // Dirty-close confirm (design: §B): the LAST view of a dirty file prompts before
-  // discarding; a file still open in another group closes immediately (the shared
-  // per-path buffer survives there), as does any terminal tab.
+  // discarding; a file still open in another tab closes immediately (the shared
+  // per-path buffer survives there), as does any terminal tab. Dirty/conflict are
+  // keyed by the underlying PATH, so a diff tab reflects its file's state too.
   const requestClose = useCallback((tab: GroupTab, e?: React.MouseEvent) => {
     e?.stopPropagation()
-    if (tab.kind === 'editor' && dirtyTabs.has(tab.tabId) && !pathsOpenElsewhere.has(tabIdToPath(tab.tabId))) {
-      setPendingClose({ instanceId: tab.instanceId, tabId: tab.tabId })
-    } else {
-      onCloseTab(tab.instanceId)
+    if (tab.kind === 'editor') {
+      const path = tabIdToPath(tab.tabId)
+      if (dirtyTabs.has(path) && !pathsOpenElsewhere.has(path)) {
+        setPendingClose({ instanceId: tab.instanceId, tabId: tab.tabId })
+        return
+      }
     }
+    onCloseTab(tab.instanceId)
   }, [dirtyTabs, pathsOpenElsewhere, onCloseTab])
 
   const onDrop = useCallback((toIndex: number) => (e: React.DragEvent) => {
@@ -130,8 +134,8 @@ export function GroupTabBar(props: GroupTabBarProps) {
         {tabs.map((tab, index) => {
           const isActive = tab.instanceId === activeTab
           const isEditor = tab.kind === 'editor'
-          const isDirty = isEditor && dirtyTabs.has(tab.tabId)
-          const isConflict = isEditor && conflictTabs.has(tab.tabId)
+          const isDirty = isEditor && dirtyTabs.has(tabIdToPath(tab.tabId))
+          const isConflict = isEditor && conflictTabs.has(tabIdToPath(tab.tabId))
           const isDiff = isEditor && isDiffTab(tab.tabId)
           const isPreview = isEditor && tab.preview
           const suffix = isEditor ? disambig.get(tab.tabId) : undefined

@@ -33,8 +33,8 @@ import {
 // content-bearing file tab renders <Editor>; the diff/loading/empty tests use other
 // branches, so this mock leaves them untouched.
 vi.mock('../../../components/Editor', () => ({
-  Editor: ({ insertText, content, filePath }: { insertText?: string | null; content?: string; filePath?: string }) =>
-    <div data-testid="cm-editor" data-insert-text={insertText ?? ''} data-content={content ?? ''} data-file-path={filePath ?? ''} />,
+  Editor: ({ insertText, content, filePath, jumpToLine }: { insertText?: string | null; content?: string; filePath?: string; jumpToLine?: number | null }) =>
+    <div data-testid="cm-editor" data-insert-text={insertText ?? ''} data-content={content ?? ''} data-file-path={filePath ?? ''} data-jump-line={jumpToLine ?? ''} />,
 }))
 
 // Stub the network reads the panel drives: editor baseline, diff content, and the
@@ -104,6 +104,8 @@ type EditorPanelHarnessInput = {
   files?: Record<string, Partial<FileState>>
   // A queued voice insert ({ text, key, instanceId, filePath }) on the voice surface.
   editorInsert?: { text: string; key: number; instanceId?: string; filePath?: string }
+  // A go-to-line request on the selection ({ key, path, line, instanceId? }).
+  jumpRequest?: { key: number; path: string; line: number; instanceId?: string }
   // When true, the screen voice surface marks the editor mic eligible.
   voiceEditorEligible?: boolean
   layout?: Partial<WorkspaceLayout>
@@ -204,7 +206,7 @@ function buildContexts(input: EditorPanelHarnessInput) {
       files,
       dirtyTabs: new Set<string>(),
       conflictTabs: new Set<string>(input.conflictTabs ?? []),
-      jumpRequest: null,
+      jumpRequest: input.jumpRequest ?? null,
     },
   } as unknown as WorkspaceSelection
 
@@ -350,6 +352,43 @@ describe('EditorPanel — voice insert gating (instanceId + filePath)', () => {
       editorInsert: { text: 'TYPED', key: 1, instanceId: 'editor:2', filePath: 'src/other.ts' },
     })
     expect(insertTextOf()).toBe('')
+  })
+})
+
+describe('EditorPanel — go-to-line gating (stamped instanceId)', () => {
+  // Two editor tabs on ONE path (two instanceIds, sharing one buffer). The jump is
+  // stamped with one instanceId, so ONLY that pane jumps — the same-path sibling
+  // must NOT consume it (the FLAT double-consume bug).
+  const twoPanesOnePath = (jumpRequest: EditorPanelHarnessInput['jumpRequest']) => {
+    const ctx = buildContexts({
+      instanceId: 'editor',
+      tabs: [
+        { instanceId: 'editor', tabId: 'src/shared.ts' },
+        { instanceId: 'editor:2', tabId: 'src/shared.ts' },
+      ],
+      activeInstance: 'editor',
+      files: { 'src/shared.ts': { serverContent: 'X' } },
+      jumpRequest,
+    })
+    const node = (
+      <>
+        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor' }}><EditorPanel /></PanelInstanceProvider>
+        <PanelInstanceProvider value={{ type: 'editor', instanceId: 'editor:2' }}><EditorPanel /></PanelInstanceProvider>
+      </>
+    )
+    return wrapProviders(ctx, node)
+  }
+  // bodies render in DOM order: [editor, editor:2].
+  const jumpLines = () => screen.getAllByTestId('cm-editor').map((e) => e.getAttribute('data-jump-line'))
+
+  it('delivers the jump only to the stamped pane; the same-path sibling does not jump', () => {
+    render(twoPanesOnePath({ key: 1, path: 'src/shared.ts', line: 42, instanceId: 'editor:2' }))
+    expect(jumpLines()).toEqual(['', '42'])
+  })
+
+  it('an unstamped (instanceId-less) jump reaches NO pane — every producer must stamp', () => {
+    render(twoPanesOnePath({ key: 1, path: 'src/shared.ts', line: 42 }))
+    expect(jumpLines()).toEqual(['', ''])
   })
 })
 

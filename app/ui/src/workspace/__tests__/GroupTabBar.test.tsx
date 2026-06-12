@@ -181,6 +181,37 @@ describe('GroupTabBar — dirty-close confirm', () => {
   })
 })
 
+describe('GroupTabBar — dirty/conflict keyed by underlying path (diff tabs)', () => {
+  it('shows the dirty dot + prompts on close for a diff tab whose path is dirty', () => {
+    const onCloseTab = vi.fn()
+    const onDiscardDirty = vi.fn()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'diff:src/a.ts?base=main&compare=HEAD')],
+      activeTab: 'editor:1',
+      dirtyTabs: new Set(['src/a.ts']), // the PATH, not the diff tabId
+      onCloseTab,
+      onDiscardDirty,
+    })
+
+    fireEvent.click(screen.getByLabelText('Close a.ts (main..HEAD)'))
+    expect(screen.getByText('Discard unsaved changes?')).toBeTruthy()
+    expect(onCloseTab).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Without Saving' }))
+    expect(onDiscardDirty).toHaveBeenCalledWith('src/a.ts') // discards by PATH
+    expect(onCloseTab).toHaveBeenCalledWith('editor:1')
+  })
+
+  it('marks a diff tab conflicted when its underlying path is in conflictTabs', () => {
+    const { container } = renderBar({
+      tabs: [EDITOR('editor:1', 'diff:src/a.ts')],
+      activeTab: 'editor:1',
+      conflictTabs: new Set(['src/a.ts']),
+    })
+    expect(container.querySelector('[title="File changed on disk"]')).toBeTruthy()
+  })
+})
+
 describe('GroupTabBar — within-group reorder', () => {
   it('reorders a dragged tab to the drop target index', () => {
     const onReorderTab = vi.fn()

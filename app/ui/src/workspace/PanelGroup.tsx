@@ -26,7 +26,7 @@ import {
   type PanelId, type SplitSide,
 } from './context'
 import type { PaneMarker } from './panelInstance'
-import { editorInstancesInOrder, groupOf, tabIdToPath } from './panelLayoutModel'
+import { editorInstancesInOrder, tabIdToPath } from './panelLayoutModel'
 import { editorTabByInstance } from '../hooks/useLayoutState'
 import type { TabsNode } from '../hooks/workspaceTypes'
 
@@ -52,18 +52,22 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
   const commands = useWorkspaceCommands()
   const tree = useWorkspaceLayout().panelLayout.desktop
 
-  // Underlying file paths open in OTHER groups: closing a dirty tab here is
-  // loss-free when the file still shows elsewhere (shared per-path buffer), so the
-  // tab bar's dirty-close confirm no-ops for these.
+  // Underlying file paths open in 2+ editor tabs tree-wide: closing one view of a
+  // dirty file is loss-free while another tab still holds the shared per-path
+  // buffer — including a same-group file+diff pair — so the tab bar's dirty-close
+  // confirm no-ops for these.
   const pathsOpenElsewhere = useMemo(() => {
-    const set = new Set<string>()
+    const counts = new Map<string, number>()
     for (const id of editorInstancesInOrder(tree)) {
-      if (groupOf(tree, id) === group.id) continue
       const t = editorTabByInstance(tree, id)
-      if (t) set.add(tabIdToPath(t.tabId))
+      if (!t) continue
+      const path = tabIdToPath(t.tabId)
+      counts.set(path, (counts.get(path) ?? 0) + 1)
     }
+    const set = new Set<string>()
+    for (const [path, n] of counts) if (n > 1) set.add(path)
     return set
-  }, [tree, group.id])
+  }, [tree])
 
   // Group-native callbacks, wired onto the public command surface. `selectTab`/
   // `closePane` are keyed by instanceId and work for both editor and terminal tabs.

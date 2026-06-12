@@ -120,11 +120,12 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
 
   // Phase 4: composed file-open helpers (group-targeted). A file open also loads
   // its shared-by-path buffer; a diff open does not (diff bodies fetch their own).
-  const openFileInGroup = useCallback((groupId: string, path: string) => {
-    if (!isFileTab(path)) return
-    ls.openTab(groupId, path)
+  const openFileInGroup = useCallback((groupId: string, path: string): string | null => {
+    if (!isFileTab(path)) return null
+    const instanceId = ls.openTab(groupId, path)
     ls.addRecentFile(path)
     if (!isBinaryPreviewFile(path)) fetchForTab(path)
+    return instanceId
   }, [ls.openTab, ls.addRecentFile, fetchForTab])
 
   const previewFileInGroup = useCallback((groupId: string, path: string) => {
