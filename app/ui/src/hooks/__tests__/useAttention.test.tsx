@@ -107,6 +107,21 @@ function pushAttention(snapshot: AttentionSnapshot) {
   act(() => { cb({ data: JSON.stringify(snapshot) } as MessageEvent) })
 }
 
+function pushUiStateChanged() {
+  const cb = sseListeners.get('ui-state:changed')!
+  act(() => { cb({ data: '' } as MessageEvent) })
+}
+
+function idleReadyItem(over: Partial<AttentionItem> = {}): AttentionItem {
+  return {
+    generation: 'session_idle:proj::sess:50',
+    type: 'session_idle', tier: 'handoff', group: 'ready',
+    subject: { kind: 'session', project: 'proj', sessionName: 'sess' },
+    title: 'Your turn', message: 'proj · sess', tsMs: 50, count: 1, interrupt: false,
+    ...over,
+  }
+}
+
 beforeEach(() => {
   toastCustom.mockReset()
   setHidden(false)
@@ -339,8 +354,7 @@ describe('useAttention', () => {
     ).toBeGreaterThan(feedCountBefore))
   })
 
-  it('replaces the snapshot from a pushed attention event', async () => {
-    installNotification('granted')
+  it('replaces the snapshot from a pushed attention event', async () => {    installNotification('granted')
     const calls = installFetchStub()
     const { result } = renderHook(() => useAttention(null))
     await settleInitialFeed(calls, makeSnapshot())
@@ -380,5 +394,171 @@ describe('useAttention', () => {
     expect(result.current.snapshot.needsYou).toEqual([])
     expect(result.current.snapshot.ready).toEqual([])
     expect(result.current.snapshot.global).toEqual({ count: 0, color: null })
+  })
+
+  // ── F3: engaging a session acks its pending "your turn" ───────────────────────
+
+  it('F3: actively viewing a target acks a matching pending Ready session_idle (no interrupt)', async () => {
+    installNotification('granted')
+    setHidden(false)
+    setFocus(true)
+    const calls = installFetchStub()
+    // Attached + visible + focused on proj/sess, with a session_idle already
+    // sitting in Ready (interrupt:false — it was not a fresh edge, so the ingest
+    // auto-ack path never fired). Engaging it must ack it.
+    await act(async () => {
+      renderHook(() => useAttention({ project: 'proj', sessionName: 'sess' }))
+    })
+    await settleInitialFeed(calls, makeSnapshot({ ready: [idleReadyItem()] }))
+
+    await waitFor(() => expect(
+      calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack')
+        && c.body && (c.body as { scope: string }).scope === 'session'
+        && (c.body as { key: string }).key === 'sess'
+        && (c.body as { project: string }).project === 'proj'),
+    ).toBe(true))
+  })
+
+  it('F3: a bound task_done in Ready is acked by TASK scope when engaging the bound session', async () => {
+    installNotification('granted')
+    setHidden(false)
+    setFocus(true)
+    const calls = installFetchStub()
+    renderHook(() => useAttention({ project: 'proj', sessionName: 'sess' }))
+    await settleInitialFeed(calls, makeSnapshot({
+      ready: [idleReadyItem({
+        generation: 'task_done:proj::t1:60', type: 'task_done',
+        subject: { kind: 'task', project: 'proj', taskId: 't1', sessionNames: ['sess'] },
+      })],
+    }))
+    await waitFor(() => expect(
+      calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack')
+        && (c.body as { scope: string }).scope === 'task'
+        && (c.body as { key: string }).key === 't1'),
+    ).toBe(true))
+  })
+
+  it('F3: does NOT ack a Ready item for a session the user is not engaged with', async () => {
+    installNotification('granted')
+    setHidden(false)
+    setFocus(true)
+    const calls = installFetchStub()
+    renderHook(() => useAttention({ project: 'proj', sessionName: 'other' }))
+    await settleInitialFeed(calls, makeSnapshot({ ready: [idleReadyItem()] }))
+    // Give effects a chance to run.
+    await act(async () => { await Promise.resolve() })
+    expect(calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack'))).toBe(false)
+  })
+
+  // ── F4: client refreshes on ui-state:changed ──────────────────────────────────
+
+  it('F4: a ui-state:changed SSE event refetches the feed', async () => {
+    installNotification('granted')
+    const calls = installFetchStub()
+    renderHook(() => useAttention(null))
+    await settleInitialFeed(calls, makeSnapshot())
+    const feedCountBefore = calls.filter(c => c.url.includes('/attention/feed')).length
+
+    pushUiStateChanged()
+
+    await waitFor(() => expect(
+      calls.filter(c => c.url.includes('/attention/feed')).length,
+    ).toBeGreaterThan(feedCountBefore))
+  })
+
+  // ── Headline regression: an ack updates the snapshot WITHOUT a page reload ────
+
+  it('an ack → ui-state:changed → refetch removes the item from the snapshot (no reload)', async () => {
+    installNotification('granted')
+    const calls = installFetchStub()
+    const item = idleReadyItem()
+    const { result } = renderHook(() => useAttention(null))
+    // Cold feed shows one Ready item.
+    await settleInitialFeed(calls, makeSnapshot({ ready: [item], global: { count: 1, color: 'yellow' } }))
+    await waitFor(() => expect(result.current.snapshot.ready).toHaveLength(1))
+
+    // User acks it; the server merges the watermark and broadcasts ui-state:changed.
+    act(() => { result.current.ackSession('proj', 'sess') })
+    pushUiStateChanged()
+
+    // The F4 refetch hits /feed again — resolve it with the post-ack snapshot
+    // (item gone). The client reflects it WITHOUT a page reload.
+    await waitFor(() => expect(calls.filter(c => c.url.includes('/attention/feed')).length).toBeGreaterThan(1))
+    const refetch = calls.filter(c => c.url.includes('/attention/feed')).at(-1)!
+    await act(async () => { refetch.resolve({ ...makeSnapshot(), nextBefore: null }) })
+
+    await waitFor(() => expect(result.current.snapshot.ready).toHaveLength(0))
+    expect(result.current.snapshot.global).toEqual({ count: 0, color: null })
+  })
+
+  // ── F3: ack-on-attach re-runs on window focus regain ──────────────────────────
+
+  it('F3: regaining window focus on an attached target acks its pending Ready session_idle', async () => {
+    installNotification('granted')
+    setHidden(false)
+    setFocus(false) // window starts BLURRED → ack-on-attach must NOT fire yet
+    const calls = installFetchStub()
+    // Attached + visible but blurred, with a matching session_idle already in Ready.
+    renderHook(() => useAttention({ project: 'proj', sessionName: 'sess' }))
+    await settleInitialFeed(calls, makeSnapshot({ ready: [idleReadyItem()] }))
+
+    // Blurred → no ack yet (the engage effect bails on document.hasFocus() === false).
+    await act(async () => { await Promise.resolve() })
+    expect(calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack'))).toBe(false)
+
+    // The window regains focus (document.hasFocus() now true) → the ack-on-attach
+    // effect re-runs via the focus listener and acks the pending "your turn".
+    setFocus(true)
+    act(() => { window.dispatchEvent(new Event('focus')) })
+
+    await waitFor(() => expect(
+      calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack')
+        && c.body && (c.body as { scope: string }).scope === 'session'
+        && (c.body as { key: string }).key === 'sess'
+        && (c.body as { project: string }).project === 'proj'),
+    ).toBe(true))
+  })
+
+  // ── F4: out-of-order full-snapshot refreshes ignore the stale (earlier) request ─
+
+  it('F4: an earlier full-feed refetch resolving LAST is ignored; the latest request wins', async () => {
+    installNotification('granted')
+    const calls = installFetchStub()
+    const { result } = renderHook(() => useAttention(null))
+    // Settle the cold mount so the snapshot has a known empty baseline.
+    await settleInitialFeed(calls, makeSnapshot())
+    const baseFeedCount = calls.filter(c => c.url.includes('/attention/feed')).length
+
+    // Two overlapping full-snapshot refreshes (each ui-state:changed triggers a
+    // loadFeed() with before==null, so both are versioned).
+    pushUiStateChanged() // request A (issued first, older version)
+    await waitFor(() => expect(
+      calls.filter(c => c.url.includes('/attention/feed')).length,
+    ).toBe(baseFeedCount + 1))
+    pushUiStateChanged() // request B (issued second, newer version)
+    await waitFor(() => expect(
+      calls.filter(c => c.url.includes('/attention/feed')).length,
+    ).toBe(baseFeedCount + 2))
+
+    const feeds = calls.filter(c => c.url.includes('/attention/feed'))
+    const reqA = feeds.at(-2)!
+    const reqB = feeds.at(-1)!
+
+    // Resolve out of order: the LATER-issued request B resolves FIRST, then the
+    // stale request A resolves LAST. The newer data must win, and the stale
+    // response must be dropped (version mismatch).
+    await act(async () => {
+      reqB.resolve({ ...makeSnapshot({ ready: [idleReadyItem()], global: { count: 1, color: 'yellow' } }), nextBefore: null })
+    })
+    await waitFor(() => expect(result.current.snapshot.ready).toHaveLength(1))
+
+    await act(async () => {
+      reqA.resolve({ ...makeSnapshot({ needsYou: [crashItem({ interrupt: false })], global: { count: 9, color: 'red' } }), nextBefore: null })
+    })
+    // Stale A is ignored — the snapshot still reflects B's data.
+    await act(async () => { await Promise.resolve() })
+    expect(result.current.snapshot.ready).toHaveLength(1)
+    expect(result.current.snapshot.needsYou).toHaveLength(0)
+    expect(result.current.snapshot.global).toEqual({ count: 1, color: 'yellow' })
   })
 })

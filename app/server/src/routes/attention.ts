@@ -14,7 +14,7 @@
  */
 
 import { Hono } from 'hono'
-import { currentAttentionSnapshot } from '../lib/attention-runtime'
+import { currentAttentionSnapshot, notifyAttentionWatermarkChange } from '../lib/attention-runtime'
 import { mergeUnreadWatermarks } from '../lib/ui-state'
 import { broadcastChange } from '../lib/notify'
 import { fail } from '../lib/response'
@@ -167,6 +167,12 @@ app.post('/ack', async (c) => {
     await mergeUnreadWatermarks(patch)
   }
 
+  // Recompute the attention projection and push a fresh `attention` snapshot to
+  // every connected client (incl. the acting one) reflecting the new watermark —
+  // the primary refresh path (F2). The `ui-state:changed` broadcast remains the
+  // belt-and-suspenders fallback (F4 refetch) + the signal other ui-state
+  // consumers (pins) listen on; both converge on the same snapshot idempotently.
+  notifyAttentionWatermarkChange()
   broadcastChange('ui-state:changed')
   return c.body(null, 204)
 })
@@ -187,6 +193,7 @@ app.post('/clear', async (c) => {
   }
 
   await mergeUnreadWatermarks({ recentClearedAt: { [project]: Date.now() } })
+  notifyAttentionWatermarkChange()
   broadcastChange('ui-state:changed')
   return c.body(null, 204)
 })

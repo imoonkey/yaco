@@ -5,6 +5,7 @@ import {
   type UnreadWatermarksPatch,
 } from '../lib/ui-state'
 import { broadcastChange } from '../lib/notify'
+import { notifyAttentionPinChange } from '../lib/attention-runtime'
 import { fail } from '../lib/response'
 
 const app = new Hono()
@@ -33,6 +34,9 @@ app.put('/pinned-sessions', async (c) => {
   }
 
   await setPinnedSessions(project, sessions)
+  // A pin reclassifies a session's owner (delegated → owned), which changes its
+  // Ready handoff — recompute + push the attention snapshot (parallels F2).
+  notifyAttentionPinChange()
   broadcastChange('ui-state:changed')
   return c.body(null, 204)
 })

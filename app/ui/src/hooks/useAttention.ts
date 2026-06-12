@@ -191,6 +191,11 @@ export function useAttention(
   // re-pushing the same snapshot never re-toasts (§10.5).
   const seenInterrupts = useRef<Set<string>>(new Set())
 
+  // Generations we've already auto-acked from the active-viewing engage path (F3)
+  // so a re-render / re-push doesn't re-POST the same ack before the refresh
+  // removes it from Ready.
+  const engagedAcks = useRef<Set<string>>(new Set())
+
   // Keep the active target + click handler in refs so the SSE listener effect
   // (registered once) always reads the latest without re-subscribing.
   const activeTargetRef = useRef(activeTarget)
@@ -278,7 +283,9 @@ export function useAttention(
       if (isActivelyViewing(item)) {
         // Suppress + auto-ack the actively-viewed target's generation so it does
         // not linger unacked in Ready/badges. Ack the subject's own scope: a task
-        // interrupt must clear the TASK watermark, not a session one.
+        // interrupt must clear the TASK watermark, not a session one. Record the
+        // generation so the F3 engage-ack effect doesn't re-POST the same ack.
+        engagedAcks.current.add(item.generation)
         if (item.subject.kind === 'session') ackSession(item.subject.project, item.subject.sessionName)
         else ackTask(item.subject.project, item.subject.taskId)
         continue
@@ -291,13 +298,21 @@ export function useAttention(
   const ingestRef = useRef(ingest)
   useEffect(() => { ingestRef.current = ingest }, [ingest])
 
+  // F4: version full-snapshot refreshes so an out-of-order stale refetch never
+  // overwrites a newer one. Only the before==null (full snapshot) path is
+  // versioned; pagination (before != null) appends and must not be invalidated.
+  const feedReqVersion = useRef(0)
+
   // Cold mount: initial feed fetch.
   const loadFeed = useCallback((before?: string, signal?: AbortSignal) => {
+    const version = before == null ? ++feedReqVersion.current : 0
     fetchFeed(undefined, before, signal)
       .then((feed) => {
         if (signal?.aborted) return
         const { nextBefore: nb, ...snap } = feed
         if (before == null) {
+          // Ignore a stale full-snapshot refresh that resolved after a newer one.
+          if (version !== feedReqVersion.current) return
           ingestRef.current(snap)
           setNextBefore(nb)
         } else {
@@ -335,6 +350,50 @@ export function useAttention(
       } catch { /* ignore malformed push */ }
     })
   }, [])
+
+  // F3 — Engaging a session clears its pending "your turn". When the user is
+  // actively viewing a target (attached + visible + window-focused), ack any
+  // pending Ready item whose subject is that target: a session_idle for the
+  // target → ackSession; a task_* bound to the target → ackTask. Acks each
+  // generation once (it disappears after the F2/F4 refresh anyway).
+  //
+  // `engagementTick` re-fires this effect on window focus / visibility regain,
+  // so gaining focus on an already-attached session clears its pending "your
+  // turn" — the data deps alone wouldn't catch a pure focus change.
+  const [engagementTick, setEngagementTick] = useState(0)
+  useEffect(() => {
+    const bump = () => setEngagementTick((t) => t + 1)
+    window.addEventListener('focus', bump)
+    document.addEventListener('visibilitychange', bump)
+    return () => {
+      window.removeEventListener('focus', bump)
+      document.removeEventListener('visibilitychange', bump)
+    }
+  }, [])
+  useEffect(() => {
+    if (!activeTarget) return
+    if (document.visibilityState !== 'visible') return
+    if (typeof document.hasFocus === 'function' && !document.hasFocus()) return
+    for (const item of snapshot.ready) {
+      if (engagedAcks.current.has(item.generation)) continue
+      const s = item.subject
+      const matches = s.kind === 'session'
+        ? s.project === activeTarget.project && s.sessionName === activeTarget.sessionName
+        : s.project === activeTarget.project && s.sessionNames.includes(activeTarget.sessionName)
+      if (!matches) continue
+      engagedAcks.current.add(item.generation)
+      if (s.kind === 'session') ackSession(s.project, s.sessionName)
+      else ackTask(s.project, s.taskId)
+    }
+  }, [activeTarget, snapshot.ready, ackSession, ackTask, engagementTick])
+
+  // F4 — Refresh the feed on `ui-state:changed` (an ack/clear/pin advanced a
+  // watermark server-side). This reflects the acting client's own ack promptly
+  // and covers cross-device; it is belt-and-suspenders with F2's `attention`
+  // push (both converge on the same snapshot idempotently).
+  useEffect(() => {
+    return addSSEListener('ui-state:changed', () => loadFeed())
+  }, [loadFeed])
 
   // On visibilitychange → visible, refetch the feed (SSE force-reconnect lives in
   // useSSE). Cross-device acks/clears land too.
