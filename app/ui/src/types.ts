@@ -49,6 +49,7 @@ export interface FileNode {
   type: 'file' | 'dir'
   children?: FileNode[]
   gitignored?: boolean
+  colocated?: true
 }
 
 export interface GitChange {
