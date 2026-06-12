@@ -66,6 +66,10 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       const now = nowIso();
       const existed = id in tasks;
       const oldState: State | undefined = tasks[id]?.state;
+      // Snapshot every task's state BEFORE the whole mutation so stateEnteredAt
+      // can be stamped on the edited task AND any rollup-flipped parent (R5).
+      const beforeStates = new Map<string, State | undefined>();
+      for (const [tid, t] of Object.entries(tasks)) beforeStates.set(tid, t.state);
 
       if (existed) {
         delete (data as Record<string, unknown>)["created"];
@@ -97,6 +101,11 @@ export async function runSet(id: string, opts: SetOpts): Promise<Result<unknown>
       validateState(tasks, id, oldState, tasks[id]!.state as string);
       checkCycles(tasks);
       rollup(tasks, id);
+      // Stamp stateEnteredAt for every task whose state changed across the whole
+      // mutation — the edited task and any parent rollup() flipped (R5).
+      for (const [tid, t] of Object.entries(tasks)) {
+        if (t.state !== beforeStates.get(tid)) t.stateEnteredAt = now;
+      }
       resultTasksFile = sourceForTask(store, id);
       saveTaskStore(store);
       resultTask = tasks[id]!;

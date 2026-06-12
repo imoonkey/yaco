@@ -177,6 +177,26 @@ describe('eventsLog.readEvents', () => {
   })
 })
 
+describe('eventsLog.appendEvent — idempotent by id', () => {
+  it('a re-appended caller-supplied id is a no-op (no duplicate generation)', async () => {
+    const gen = 'session_crashed:workflow::w-foo:2026-06-11T00:00:00.000Z'
+    const first = await appendEvent('workflow', { id: gen, kind: 'session_crashed', sessionId: 'w-foo' })
+    const second = await appendEvent('workflow', { id: gen, kind: 'session_crashed', sessionId: 'w-foo' })
+    expect(second).toEqual(first) // returns the existing event verbatim
+
+    const all = await readEvents('workflow')
+    expect(all.filter((e) => e.id === gen)).toHaveLength(1) // written exactly once
+  })
+
+  it('omitted ids stay unique — two appends produce two distinct events', async () => {
+    await appendEvent('workflow', { kind: 'session_idle', sessionId: 'w-foo' })
+    await appendEvent('workflow', { kind: 'session_idle', sessionId: 'w-foo' })
+    const all = await readEvents('workflow')
+    expect(all).toHaveLength(2)
+    expect(all[0]!.id).not.toBe(all[1]!.id)
+  })
+})
+
 describe('projectEventsFile path resolution under YACO_HOME', () => {
   it('writes events under the YACO_HOME override, not under ~/.yaco', async () => {
     await appendEvent('demo', { kind: 'dispatched', taskId: 'foo' })

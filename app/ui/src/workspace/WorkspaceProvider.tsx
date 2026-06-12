@@ -33,9 +33,8 @@ import {
 } from './panelLayoutModel'
 import type { Project } from '../types'
 import type { WorktreeInfo } from '../hooks/useProjectWorktrees'
-import type {
-  WorkspaceVisibilityReport, AttachSessionIntent, SessionUnreadCounts,
-} from '../hooks/useSessionUnreadState'
+import type { WorkspaceVisibilityReport, AttachSessionIntent } from './visibility'
+import type { AttentionBadge, AttentionTaskIds } from '../hooks/useAttention'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
   WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceControllersContext,
@@ -56,15 +55,16 @@ export type WorkspaceProviderProps = {
   onWorktreeSelect: (slug: string | null) => void
   projects: Project[]
   activeProject: string
-  projectUnreadCounts: Record<string, number>
+  badgesByProject: Record<string, AttentionBadge>
+  badgesBySession: Record<string, AttentionBadge>
+  readySessionKeys: Set<string>
+  attentionTaskIds: AttentionTaskIds
   projectSessionCounts: Record<string, { active: number; total: number }>
   onProjectSelect: (name: string) => void
   onProjectReorder: (fromName: string, toName: string) => void
   onProjectRemove: (project: Project) => void
   onAddProject: () => void
   onMarkAllRead: (projectName: string) => void
-  sessionUnreadCounts?: SessionUnreadCounts
-  markSessionRead?: (project: string, session: string) => void
   onVisibilityReport?: (report: WorkspaceVisibilityReport) => void
   attachIntent?: AttachSessionIntent | null
   clearAttachIntent?: () => void
@@ -88,9 +88,10 @@ function diffTabId(path: string, base?: string, compare?: string): string {
 export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const {
     projectName, projectPath, worktree, worktrees, activeWorktree, onWorktreeSelect,
-    projects, activeProject, projectUnreadCounts, projectSessionCounts,
+    projects, activeProject, badgesByProject, badgesBySession, readySessionKeys,
+    attentionTaskIds, projectSessionCounts,
     onProjectSelect, onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
-    sessionUnreadCounts, markSessionRead, onVisibilityReport,
+    onVisibilityReport,
     attachIntent, clearAttachIntent, notificationBell, children,
   } = props
 
@@ -156,7 +157,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // Single shared resources: one git poller, one sessions poller + manager.
   const data = useWorkspaceData({
     projectName, projectPath: effectivePath, worktree,
-    activeSession, actions, setFocusTarget, sessionUnreadCounts, onSessionChange,
+    activeSession, actions, setFocusTarget,
+    badgesBySession, readySessionKeys, onSessionChange,
   })
   const { liveSessionHandles } = data.sessions
   const sessionsLoaded = data.sessionsLoaded
@@ -249,13 +251,6 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     }
     clearAttachIntent()
   }, [attachIntent, clearAttachIntent, projectName, sessionsLoaded, liveSessionHandles, actions, isMobile])
-
-  useEffect(() => {
-    if (!activeSession || !markSessionRead) return
-    const terminalVisible = isMobile ? mobilePane === 'terminal' : layout.showRightPanel
-    if (!terminalVisible) return
-    markSessionRead(projectName, activeSession)
-  }, [activeSession, projectName, markSessionRead, isMobile, mobilePane, layout.showRightPanel])
 
   // --- Raw passthroughs (drive the unchanged renderer + keyboard) ---
   const rawActions = useMemo<WorkspaceRawActions>(() => ({
@@ -513,7 +508,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     project: { name: projectName, path: projectPath, worktree, effectivePath },
     viewport: { isMobile, isLandscape, isTouch },
     projects, activeProject, worktrees, activeWorktree,
-    projectUnreadCounts, projectSessionCounts, notificationBell,
+    badgesByProject, badgesBySession, readySessionKeys, attentionTaskIds,
+    projectSessionCounts, notificationBell,
     selectProject: onProjectSelect,
     selectWorktree: onWorktreeSelect,
     reorderProjects: onProjectReorder,
@@ -522,8 +518,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     markAllRead: onMarkAllRead,
   }), [
     projectName, projectPath, worktree, effectivePath, isMobile, isLandscape, isTouch,
-    projects, activeProject, worktrees, activeWorktree, projectUnreadCounts,
-    projectSessionCounts, notificationBell, onProjectSelect, onWorktreeSelect,
+    projects, activeProject, worktrees, activeWorktree, badgesByProject, badgesBySession,
+    readySessionKeys, attentionTaskIds, projectSessionCounts, notificationBell,
+    onProjectSelect, onWorktreeSelect,
     onProjectReorder, onProjectRemove, onAddProject, onMarkAllRead,
   ])
 

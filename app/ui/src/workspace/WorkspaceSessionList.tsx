@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Pin, FolderGit2 } from 'lucide-react'
+import { Pin, FolderGit2, CornerDownLeft } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 
 import { Menu, MenuItem } from '../components/Menu'
@@ -9,6 +9,7 @@ import { sanitizeSummary } from './sanitizeSummary'
 import { SearchHighlightedText } from './SearchHighlightedText'
 import { fieldMatch, type SearchMatch } from './sessionSearch'
 import type { AgentSession, BlockReason, SessionStatus } from '../types'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 // Indentation geometry for nested (parent → child) sessions. Each child level is
 // indented one step so the dashed guide columns read as a hierarchy. The provider
@@ -32,6 +33,8 @@ const STATUS_DOT_CLASS: Record<SessionStatus, string> = {
   // Distinct from processing's cyan glow: orange "needs you" dot with an
   // opacity pulse so a waiting session reads as attention, not activity.
   blocked: 'bg-[var(--sol-orange)] animate-pulse',
+  // Terminal: a crash is a dead session. Solid red, no pulse (not activity).
+  crashed: 'bg-[var(--sol-red)]',
 }
 
 // Reason a blocked session is waiting → human-readable badge / a11y text.
@@ -49,7 +52,8 @@ export function SessionItem({
   depth = 0,
   hasChildren,
   collapsed,
-  unreadCount,
+  rollupBadge,
+  yourTurn,
   shortcutIndex,
   searchMatch,
   onClick,
@@ -69,7 +73,11 @@ export function SessionItem({
   depth?: number
   hasChildren?: boolean
   collapsed?: boolean
-  unreadCount?: number
+  // Subtree rollup badge (count + worst-tier color), shown only on a collapsed
+  // parent. Never recolors the self-only status dot.
+  rollupBadge?: AttentionBadge | null
+  // Owned-idle "↩ your turn" chip — distinct from the neutral idle status dot.
+  yourTurn?: boolean
   shortcutIndex?: number | null
   searchMatch?: SearchMatch | null
   onClick: () => void
@@ -117,6 +125,9 @@ export function SessionItem({
   const summary = sanitizeSummary(session.summary, session.name)
   const blockLabel = session.status === 'blocked' && session.blockReason
     ? BLOCK_REASON_LABEL[session.blockReason]
+    : null
+  const crashLabel = session.status === 'crashed'
+    ? `Crashed (exit ${session.exitCode ?? '?'})`
     : null
   const nameMatch = fieldMatch(searchMatch, 'name')
   const summaryMatch = fieldMatch(searchMatch, 'summary')
@@ -179,7 +190,7 @@ export function SessionItem({
       ) : (
         <ProviderIcon provider={session.provider} className="w-4 h-4 shrink-0" />
       )}
-      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={blockLabel ? `blocked: ${blockLabel}` : session.status} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT_CLASS[session.status] ?? 'bg-[var(--sol-base1)]'}`} aria-label={crashLabel ?? (blockLabel ? `blocked: ${blockLabel}` : session.status)} />
       {renaming ? (
         <input
           ref={inputRef}
@@ -230,6 +241,27 @@ export function SessionItem({
                 {blockLabel}
               </span>
             )}
+            {crashLabel && (
+              <span
+                className="inline-flex items-center px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                style={{ color: 'var(--sol-red)', backgroundColor: 'color-mix(in srgb, var(--sol-red) 14%, transparent)' }}
+                title={crashLabel}
+                aria-label={crashLabel}
+              >
+                {crashLabel}
+              </span>
+            )}
+            {yourTurn && (
+              <span
+                className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                style={{ color: 'var(--sol-yellow)', backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 16%, transparent)' }}
+                title="Your turn — this session is waiting on your review"
+                aria-label="Your turn"
+              >
+                <CornerDownLeft size={9} />
+                your turn
+              </span>
+            )}
             {summary && (
               <SearchHighlightedText
                 text={summaryText}
@@ -248,7 +280,7 @@ export function SessionItem({
         </div>
       )}
       <span className="flex items-center gap-1 shrink-0">
-        <BadgeCount count={unreadCount ?? 0} />
+        {rollupBadge && <BadgeCount count={rollupBadge.count} color={rollupBadge.color} />}
         <button
           onClick={(e) => {
             e.stopPropagation()

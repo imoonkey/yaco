@@ -10,6 +10,7 @@ import { WorkspaceHistoryList } from './WorkspaceHistoryList'
 import { SectionRefreshButton } from './SectionHeader'
 import type { AgentSession, HistorySession } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
@@ -17,7 +18,8 @@ interface SessionsMgr {
   orderedSessions: AgentSession[]
   projectSessions: AgentSession[]
   pinnedSet: Set<string>
-  getSessionUnread: (name: string) => number
+  getSessionBadge: (name: string) => AttentionBadge | null
+  isSessionReady: (name: string) => boolean
   killSession: (name: string) => Promise<void>
   handleNewSession: (provider: string) => Promise<void>
   handleRenameSession: (old: string, next: string) => Promise<void>
@@ -236,12 +238,18 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   const renderSessionItem = (s: AgentSession, isPinned?: boolean, depth = 0, hasChildren = false) => {
     const idx = sessionsMgr.orderedSessions.findIndex(x => x.name === s.name)
     const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
+    const isCollapsed = collapsedSessions.has(s.name)
     return (
       <SessionItem key={`session:${s.name}`} session={s} isActive={s.name === attachedSession} pinned={isPinned} depth={depth}
         hasChildren={hasChildren}
-        collapsed={collapsedSessions.has(s.name)}
+        collapsed={isCollapsed}
         onToggleCollapse={() => toggleCollapse(s.name)}
-        unreadCount={sessionsMgr.getSessionUnread(s.name)}
+        // Rollup badge only on a COLLAPSED parent (subtree attention, hidden
+        // children); separate from the self-only status dot.
+        rollupBadge={hasChildren && isCollapsed ? sessionsMgr.getSessionBadge(s.name) : null}
+        // Owned-idle leaf "↩ your turn" chip when this session has an unacked
+        // owned REVIEW (a Ready item). Distinct from the neutral idle dot.
+        yourTurn={sessionsMgr.isSessionReady(s.name)}
         shortcutIndex={shortcutIndex}
         searchMatch={liveSearchMatches.get(s.name)}
         onKill={() => { void sessionsMgr.killSession(s.name) }}

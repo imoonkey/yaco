@@ -25,8 +25,9 @@ Source-of-truth boundaries for the workflow system's data.
 | Task graph | Source artifact | `plan/tasks/**/tasks.json` | Tasks API → Frontend |
 | Task artifact bundles | Source artifact | `plan/all/**` with `plan/{active,backlog,archive}` symlink views | Editor, design skills (opaque doc folders — not parsed by the server) |
 | Progress entries | YACO runtime | `${YACO_HOME:-~/.yaco}/projects/<id>/events.jsonl` | Server scanner → Frontend |
+| Attention feed | Server projection | `events.jsonl` + ack/clear watermarks + live snapshot | Attention engine → `attention` SSE / `GET /attention/feed` → Frontend |
 | Session list | Server (poller cache) | In-memory | Frontend (via API) |
-| Session status | yaco agent / Workflow shell state + tmux | State files + live tmux checks | Server poller → Frontend |
+| Session status | yaco agent / Workflow shell state + tmux | State files + live tmux checks (incl. `crashed`) | Server poller → Frontend |
 | File tree | Server (cached) | In-memory (server + client) | Frontend |
 | Git status | git CLI | Live query | Frontend (via API) |
 | Workspace UI state | Frontend | localStorage | Frontend only |

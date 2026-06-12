@@ -79,11 +79,14 @@ All git routes support `?worktree=<slug>` query param via `withProject` middlewa
 
 A **colocated repo** is a depth-1 child directory that is its own git repo but is deliberately kept out of the host repo (the motivating case: `plan/`, excluded via `.git/info/exclude`). `lib/colocatedRepos.ts` `getColocatedRepos(projectPath)` detects them by a general signal — a depth-1 child whose `.git` exists (dir or worktree file), that is **not in the host index** (one `git ls-files -z` read) and **not matched by the root working-tree `.gitignore`** (the same source the tree's dimming uses, so detection and dimming never disagree). A `colocatedRepos` policy from `yaco.toml` `[colocated] repos` narrows it: `"auto"` (default, all qualifying), `"off"`, or a comma-separated allow-list (re-validated by the same signal). Result is cached by `realpath(projectPath)` for a short TTL (no watchers). The read-only git surfaces above mirror across the host + each detected repo so a colocated repo shows up first-class (searchable, changes/diffs, undimmed tree) without ever entering host git. -> See: [lib/colocatedRepos.ts](libs.md), [yaco plan init](../../cli/plan.md)
 
-### Notifications
+### Attention & SSE
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/notifications/stream` | SSE stream — events: `notification`, `refresh` (30s heartbeat) |
+| GET | `/api/notifications/stream` | SSE transport — events: `attention` (projected `AttentionSnapshot`), `refresh`, `ui-state:changed` (30s heartbeat). No per-item notification event |
+| GET | `/api/attention/feed?limit=&before=` | Live attention snapshot + bounded/paginated Recent history. `limit` default 50, max 200; `before` is the opaque composite cursor; response carries `nextBefore` |
+| POST | `/api/attention/ack` | `{ scope: 'project'\|'session'\|'task', project, key? }` — server-stamped, monotonic-max ack (rejects/clamps a future or lower value). 204 |
+| POST | `/api/attention/clear` | `{ project }` — set the project's monotonic `recentClearedAt`. 204 |
 
 ### WebSocket
 

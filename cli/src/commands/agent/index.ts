@@ -27,6 +27,7 @@ import { start, extractResume } from "./start.ts";
 import { send } from "./send.ts";
 import { capture } from "./capture.ts";
 import { kill } from "./kill.ts";
+import { markCrashed } from "./mark-crashed.ts";
 import { rename } from "./rename.ts";
 import { status, list } from "./status.ts";
 import { whoami } from "./whoami.ts";
@@ -65,6 +66,7 @@ Usage:
   yaco agent messages <name> [--meta|--index <i>|--summary] [--role r] [--type t] [--range a..b] [--preview[=N]] [--ts] [--json]
   yaco agent kill <name> | --all
   yaco agent rename <old> <new>
+  yaco agent mark-crashed <name> --exit <code> --created-at <ts>   (called by the wrapper EXIT trap)
   yaco agent hooks install
   yaco agent hook-event <EventName>   (called by provider hook runner)
 
@@ -404,6 +406,27 @@ export async function handleAgent(
       }
       kill(name);
       return dual(json, { killed: name }, () => `killed ${name}\n`);
+    }
+
+    case "mark-crashed": {
+      // Internal: the wrapper EXIT trap calls this on a non-zero agent exit that
+      // is not an intentional kill. Generation/sentinel-guarded inside.
+      const handle = rest[0];
+      if (!handle) {
+        throw new CliError(ErrCode.USAGE, "yaco agent mark-crashed <name> --exit <code> --created-at <ts>");
+      }
+      validateName(handle);
+      let exitCode: number | undefined;
+      let createdAt: string | undefined;
+      for (let i = 1; i < rest.length; i++) {
+        if (rest[i] === "--exit") exitCode = Number(rest[++i]);
+        else if (rest[i] === "--created-at") createdAt = rest[++i];
+      }
+      if (exitCode === undefined || Number.isNaN(exitCode) || !createdAt) {
+        throw new CliError(ErrCode.USAGE, "yaco agent mark-crashed <name> --exit <code> --created-at <ts>");
+      }
+      const marked = markCrashed(handle, exitCode, createdAt);
+      return dual(opts.json, { marked, handle }, () => `${marked ? "marked crashed" : "no-op"}: ${handle}\n`);
     }
 
     case "list": {

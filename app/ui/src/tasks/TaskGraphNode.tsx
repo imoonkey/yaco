@@ -83,7 +83,7 @@ function getNodeFillOpacity(node: LayoutNode, highlight: HighlightModel, worktre
   return 1
 }
 
-export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isLinkedToActiveSession, isCollapsed, depCount, scale, onClick, onOpen, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphNode({ node, task, group, highlight, isSelected, isSearchMatch, isLinkedToActiveSession, isAttentionBlocked, isAttentionDone, isCollapsed, depCount, scale, onClick, onOpen, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   node: LayoutNode
   task: TaskGraphTask
   group?: LayoutGroup
@@ -91,6 +91,11 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
   isSelected: boolean
   isSearchMatch: boolean
   isLinkedToActiveSession: boolean
+  // Attention chips (Facet B): a `task_blocked` shows a blocked chip; a
+  // `task_done` shows a done chip. Driven by the server-projected snapshot,
+  // independent of the live `task.state` dot.
+  isAttentionBlocked: boolean
+  isAttentionDone: boolean
   isCollapsed: boolean
   depCount: number
   scale: number
@@ -202,6 +207,40 @@ export function TaskGraphNode({ node, task, group, highlight, isSelected, isSear
           rx={1.25}
           fill={'var(--sol-accent)'}
         />
+      )}
+
+      {/* Attention chip — top-right corner marker driven by the attention
+          snapshot (blocked → red, done → green). Independent of the live state
+          dot; blocked outranks done when both are present. */}
+      {(isAttentionBlocked || isAttentionDone) && (
+        <g
+          data-attention={isAttentionBlocked ? 'blocked' : 'done'}
+          aria-label={isAttentionBlocked ? 'Task blocked — needs you' : 'Task done'}
+          opacity={showLabels ? 1 : 0}
+          style={{ transition: 'opacity 150ms ease-out' }}
+        >
+          <circle
+            cx={node.x + node.width - 7}
+            cy={node.y + 7}
+            r={4.5}
+            fill={isAttentionBlocked ? 'var(--sol-red)' : 'var(--sol-green)'}
+            stroke={'var(--sol-editor-bg)'}
+            strokeWidth={1.5}
+          />
+          {isAttentionBlocked ? (
+            <line
+              x1={node.x + node.width - 9} y1={node.y + 5}
+              x2={node.x + node.width - 5} y2={node.y + 9}
+              stroke={'var(--sol-editor-bg)'} strokeWidth={1.2} strokeLinecap="round"
+            />
+          ) : (
+            <path
+              d={`M ${node.x + node.width - 9.2} ${node.y + 7} l 1.6 1.6 l 2.8 -3`}
+              fill="none" stroke={'var(--sol-editor-bg)'} strokeWidth={1.2}
+              strokeLinecap="round" strokeLinejoin="round"
+            />
+          )}
+        </g>
       )}
 
       {/* Search match ring */}

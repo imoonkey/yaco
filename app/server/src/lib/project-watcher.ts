@@ -7,12 +7,19 @@ import { emitRefresh } from './notify'
 import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 import { AGENT_SESSIONS_DIR } from './constants'
 import { isPathDescendantOrEqual } from './agent'
+import { notifyAttentionSessionChange, notifyAttentionTaskChange } from './attention-runtime'
 import { projectsFile as yacoProjectsFile } from '@yaco/cli/core/paths'
 
 const DEBOUNCE_MS = 200
+/** How often to retry arming the sessions-dir watcher when the dir is absent at
+ *  startup (the agent runtime creates it on first session — without re-arming,
+ *  the change-driven engine would have a cold-start blind spot, R3). */
+const SESSIONS_DIR_REARM_MS = 1_000
 
 // Small, high-value global watchers (projects.json, agent sessions dir).
 const globalWatchers: FSWatcher[] = []
+/** Pending retry to arm the sessions-dir watcher when it was absent at startup. */
+let sessionsDirRearmTimer: ReturnType<typeof setTimeout> | null = null
 // Per-project recursive watchers, keyed by project path so a project can be
 // watched/unwatched incrementally as it is registered/removed at runtime.
 const projectWatchers = new Map<string, FSWatcher>()
@@ -37,6 +44,15 @@ function routeChange(filename: string): string | null {
   if (/^\.git\//.test(filename)) return 'git'
 
   return 'filetree'
+}
+
+/** True when a changed repo-relative filename is a task-graph file (default
+ *  `plan/tasks/**`). A task-state write must wake the attention engine so
+ *  `task_done`/`task_blocked` edges are change-driven (not 60s-sampled). The
+ *  default path is matched directly; a yaco.toml `[paths].tasks` override is
+ *  covered by the engine's 60s safety tick. */
+function isTaskFile(filename: string): boolean {
+  return /(^|\/)plan\/tasks\/.*\.json$/.test(filename)
 }
 
 function debouncedEmit(channel: string): void {
@@ -98,6 +114,9 @@ async function handleGlobalSessionChange(filename: string): Promise<void> {
   const projects = await loadProjects()
   if (projects.some(project => isPathDescendantOrEqual(sessionPath, project.path))) {
     debouncedEmit('sessions')
+    // Change-driven attention: a session state-file write may be a status edge
+    // (idle/blocked/crashed). The engine debounces + projects + pushes.
+    notifyAttentionSessionChange()
   }
 }
 
@@ -115,26 +134,44 @@ function watchProjectsFile(): void {
 }
 
 async function watchAgentSessionsDir(): Promise<void> {
-  if (existsSync(AGENT_SESSIONS_DIR)) {
-    await primeSessionPathCache()
-    try {
-      const watcher = watch(AGENT_SESSIONS_DIR, (_event, filename) => {
-        if (!filename) {
-          // macOS FSEvents may deliver null filename on deletion — emit blanket refresh
-          debouncedEmit('sessions')
-          return
-        }
-        void handleGlobalSessionChange(String(filename)).catch(err => {
-          console.warn(`[project-watcher] failed to handle agent session change ${String(filename)}:`, err)
-        })
+  if (!existsSync(AGENT_SESSIONS_DIR)) {
+    // The agent runtime creates the sessions dir on the first session. Without
+    // re-arming, a server started before any agent ran would never watch it and
+    // the change-driven engine would miss every first write (R3 blind spot).
+    // Poll until the dir appears, then arm the real watcher.
+    sessionsDirRearmTimer = setTimeout(() => { void watchAgentSessionsDir() }, SESSIONS_DIR_REARM_MS)
+    sessionsDirRearmTimer.unref?.()
+    return
+  }
+
+  if (sessionsDirRearmTimer) { clearTimeout(sessionsDirRearmTimer); sessionsDirRearmTimer = null }
+  const wasPrimed = sessionPathCache.size > 0
+  await primeSessionPathCache()
+  try {
+    const watcher = watch(AGENT_SESSIONS_DIR, (_event, filename) => {
+      if (!filename) {
+        // macOS FSEvents may deliver null filename on deletion — emit blanket refresh
+        debouncedEmit('sessions')
+        notifyAttentionSessionChange()
+        return
+      }
+      void handleGlobalSessionChange(String(filename)).catch(err => {
+        console.warn(`[project-watcher] failed to handle agent session change ${String(filename)}:`, err)
       })
-      watcher.on('error', (err) => {
-        console.warn(`[project-watcher] sessions watcher error:`, err)
-      })
-      globalWatchers.push(watcher)
-    } catch (e) {
-      console.warn(`[project-watcher] failed to watch ${AGENT_SESSIONS_DIR}:`, e)
+    })
+    watcher.on('error', (err) => {
+      console.warn(`[project-watcher] sessions watcher error:`, err)
+    })
+    globalWatchers.push(watcher)
+    // A dir armed late (created after startup) may already hold sessions written
+    // before fs.watch attached — those writes won't fire an event. Kick a refresh
+    // + engine recompute so they aren't missed (the cold-start blind spot, R3).
+    if (!wasPrimed && sessionPathCache.size > 0) {
+      debouncedEmit('sessions')
+      notifyAttentionSessionChange()
     }
+  } catch (e) {
+    console.warn(`[project-watcher] failed to watch ${AGENT_SESSIONS_DIR}:`, e)
   }
 }
 
@@ -171,6 +208,11 @@ export async function watchProject(project: Project): Promise<void> {
 
       debouncedEmit(channel)
       if (channel === 'filetree') debouncedEmit('git')
+
+      // Change-driven attention: a task-graph write may be a state edge
+      // (task_done/task_blocked). plan/tasks/** is not gitignored, so this
+      // fires before the ignore check above would matter.
+      if (isTaskFile(filename)) notifyAttentionTaskChange()
     })
   } catch (err) {
     console.error(`[project-watcher] failed to watch ${project.path}:`, err)
@@ -213,6 +255,7 @@ export async function startProjectWatchers(projects: Project[]): Promise<void> {
 }
 
 export function stopProjectWatchers(): void {
+  if (sessionsDirRearmTimer) { clearTimeout(sessionsDirRearmTimer); sessionsDirRearmTimer = null }
   for (const w of globalWatchers) w.close()
   globalWatchers.length = 0
   for (const w of projectWatchers.values()) w.close()

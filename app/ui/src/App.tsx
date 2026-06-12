@@ -1,20 +1,19 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Workspace } from './components/Workspace'
-import { useProjects, useProgress, useSessions, removeProject, reorderProjects } from './hooks/useApi'
+import { useProjects, useSessions, removeProject, reorderProjects } from './hooks/useApi'
 import { useProjectWorktrees } from './hooks/useProjectWorktrees'
 import { AddProjectDialog } from './components/AddProjectDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { NotificationBell } from './components/NotificationBell'
 import { ChannelsHeaderButton } from './components/WeChatLoginDialog'
-import { useNotifications } from './hooks/useNotifications'
+import { useAttention, type AttentionItem } from './hooks/useAttention'
 import { useKeyboardViewport } from './hooks/useKeyboardViewport'
-import { useSessionUnreadState } from './hooks/useSessionUnreadState'
 import { useIsMobile } from './hooks/useIsMobile'
 import { toggleTheme } from './lib/theme'
 import { computeProjectSessionCounts } from './lib/sessionCounts'
 import { Sun, Moon } from 'lucide-react'
 import { Toaster, toast } from 'sonner'
-import type { WorkspaceVisibilityReport, AttachSessionIntent } from './hooks/useSessionUnreadState'
+import type { WorkspaceVisibilityReport, AttachSessionIntent } from './workspace/visibility'
 import type { Project } from './types'
 
 const STORAGE_KEY = 'yaco-ui-state'
@@ -123,7 +122,6 @@ function App() {
   }, [])
 
   const { data: projects, refresh: refreshProjects } = useProjects()
-  const { data: progress } = useProgress()
   const { data: allSessions } = useSessions()
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState<Project | null>(null)
@@ -205,65 +203,69 @@ function App() {
 
   const currentProjectPath = orderedProjects.find(p => p.name === activeProject)?.path ?? ''
 
-  // Unread state — purely derived from progress, sessions, and localStorage read timestamps
-  const { sessionUnreadCounts, projectUnreadCounts, readState, markSessionRead, markAllRead } = useSessionUnreadState(
-    progress,
-    allSessions,
-    activeProject,
-    visibilityReport,
-  )
-
-  // Browser notifications with project/session routing
-  const handleNotificationClick = useCallback((project: string, sessionName: string) => {
-    setProjectName(project)
+  // Attention routing: clicking an item (toast / OS notification / bell row)
+  // switches to its project and attaches the session (if any).
+  const handleNotificationClick = useCallback((item: AttentionItem) => {
+    const s = item.subject
+    setProjectName(s.project)
+    const sessionName = s.kind === 'session' ? s.sessionName : s.sessionNames[0]
     if (sessionName) {
-      setAttachIntent({ token: Date.now(), projectName: project, sessionName })
+      setAttachIntent({ token: Date.now(), projectName: s.project, sessionName })
     }
   }, [])
 
-  const { notifications, markAllRead: markNotificationsRead, markRead, clearAll: clearNotifications } = useNotifications(handleNotificationClick)
-
-  // Bell mark-read actions must advance watermarks too (otherwise the bell
-  // badge — derived from watermarks — wouldn't reset when the user uses the
-  // bell UI). Single click → advance that notif's session. Mark all read →
-  // advance every project's watermark to now.
-  const notificationsRef = useRef(notifications)
-  const orderedProjectsRef = useRef(orderedProjects)
-  useEffect(() => { notificationsRef.current = notifications }, [notifications])
-  useEffect(() => { orderedProjectsRef.current = orderedProjects }, [orderedProjects])
-
-  const handleBellMarkRead = useCallback((id: string) => {
-    const item = notificationsRef.current.find(n => n.id === id)
-    if (item?.project && item.sessionName) {
-      markSessionRead(item.project, item.sessionName)
-    } else if (item?.project) {
-      markAllRead(item.project)
-    }
-    markRead(id)
-  }, [markRead, markSessionRead, markAllRead])
-
-  const handleBellMarkAllRead = useCallback(() => {
-    for (const p of orderedProjectsRef.current) markAllRead(p.name)
-    markNotificationsRead()
-  }, [markAllRead, markNotificationsRead])
-
-  // Bell badge derived from watermarks so it matches sidebar totals.
-  // Inbox items have their `read` flag overridden by the same derivation
-  // so the panel's per-item styling stays in sync.
-  const bellUnreadCount = useMemo(
-    () => Object.values(projectUnreadCounts).reduce((a, b) => a + b, 0),
-    [projectUnreadCounts],
+  // The active-viewing target (visible + focused + attached session) whose
+  // interrupts useAttention suppresses and auto-acks. Derived from the
+  // workspace's visibility report (its attached + shown session).
+  const activeTarget = useMemo(
+    () => (visibilityReport?.attachedSession && visibilityReport.terminalVisible
+      ? { project: visibilityReport.projectName, sessionName: visibilityReport.attachedSession }
+      : null),
+    [visibilityReport],
   )
-  const derivedNotifications = useMemo(() => notifications.map(n => {
-    if (!n.project) return n
-    const sessionCutoff = n.sessionName
-      ? (readState.sessionReadAt[`${n.project}::${n.sessionName}`] ?? 0)
-      : 0
-    const cutoff = Math.max(readState.projectReadAt[n.project] ?? 0, sessionCutoff)
-    return { ...n, read: n.timestamp <= cutoff }
-  }), [notifications, readState])
 
-  const notificationBellProps = { notifications: derivedNotifications, unreadCount: bellUnreadCount, markRead: handleBellMarkRead, markAllRead: handleBellMarkAllRead, clearAll: clearNotifications, onItemClick: handleNotificationClick }
+  // Facet B — server-projected attention feed (bell sections, badges, interrupts).
+  const attention = useAttention(activeTarget, handleNotificationClick)
+  const { snapshot, ackSession, ackTask, ackProject, clear, requestPermission } = attention
+
+  const notificationBellProps = {
+    snapshot,
+    onItemClick: handleNotificationClick,
+    ackSession,
+    ackTask,
+    clear,
+    requestPermission,
+  }
+
+  // Owned-idle leaf "↩ your turn" set: `proj::name` for every session that has
+  // an unacked owned REVIEW (a `session_idle` Ready item). The dot is never
+  // recolored — this is a separate leaf chip (spec §5.6, OQ4).
+  const readySessionKeys = useMemo(() => {
+    const set = new Set<string>()
+    for (const item of snapshot.ready) {
+      if (item.type !== 'session_idle') continue
+      const s = item.subject
+      if (s.kind === 'session') set.add(`${s.project}::${s.sessionName}`)
+    }
+    return set
+  }, [snapshot.ready])
+
+  // Task chips for the active project's graph: a `task_blocked` (Needs you) →
+  // blocked chip; a `task_done` (Ready/Recent) → done chip. Keyed by task id.
+  const attentionTaskIds = useMemo(() => {
+    const blocked = new Set<string>()
+    const done = new Set<string>()
+    const add = (item: AttentionItem) => {
+      const s = item.subject
+      if (s.kind !== 'task' || s.project !== activeProject) return
+      if (item.type === 'task_blocked') blocked.add(s.taskId)
+      else if (item.type === 'task_done') done.add(s.taskId)
+    }
+    for (const item of snapshot.needsYou) add(item)
+    for (const item of snapshot.ready) add(item)
+    for (const item of snapshot.recent) add(item)
+    return { blocked, done }
+  }, [snapshot, activeProject])
 
   // Persist project selection
   useEffect(() => {
@@ -375,15 +377,16 @@ function App() {
             onWorktreeSelect={handleWorktreeSelect}
             projects={orderedProjects}
             activeProject={activeProject}
-            projectUnreadCounts={projectUnreadCounts}
+            badgesByProject={snapshot.badgesByProject}
+            badgesBySession={snapshot.badgesBySession}
+            readySessionKeys={readySessionKeys}
+            attentionTaskIds={attentionTaskIds}
             projectSessionCounts={projectSessionCounts}
             onProjectSelect={handleProjectChange}
             onProjectReorder={handleProjectReorder}
             onProjectRemove={handleRemoveProject}
             onAddProject={handleAddProject}
-            onMarkAllRead={markAllRead}
-            sessionUnreadCounts={sessionUnreadCounts}
-            markSessionRead={markSessionRead}
+            onMarkAllRead={ackProject}
             onVisibilityReport={setVisibilityReport}
             attachIntent={attachIntent}
             clearAttachIntent={() => setAttachIntent(null)}

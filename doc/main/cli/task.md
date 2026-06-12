@@ -68,6 +68,7 @@ object.
 - `worktree: null` → field is deleted from the task (matches Python null-as-delete semantics).
 - A payload carrying `agent` or `agents` is rejected (`INVALID` exit 1) — session links are mutated only through [`attach`/`detach`](#attach-id-handle--detach-id-handle).
 - Validation order (matches Python): leaf `acceptCriteria` non-blank → `validateRefs` → `validateState` → `checkCycles` → `rollup` → save.
+- **State-edge stamping**: `set` snapshots every task's `state` before the **whole** mutation, then after `rollup()` stamps `stateEnteredAt = now` on **every** task whose `state` changed — the edited task and any parent `rollup()` flipped to `done`. This is the durable task-state-edge generation key (`task_done|task_blocked:<proj>::<id>:<stateEnteredAt>`) the app's attention engine reads, so a rollup-induced parent transition gets a stable generation.
 - After save, if the task has a `worktree` slug, an advisory check compares scope globs across siblings sharing the slug and emits a warning if the implied repo sets diverge. Warnings land under `data.warnings` (text mode: `warning: ...` on stderr).
 
 Response shape (`--json`):

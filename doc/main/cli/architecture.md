@@ -108,8 +108,10 @@ Three-layer approach, in priority order. All read paths (`status` text/JSON, `ag
 ### State Machine
 
 ```
-States: starting, idle, processing
-File existence = active session; file deletion = session ended.
+States: starting, idle, processing, blocked, crashed
+File existence = active session; file deletion = session ended. `crashed` is a
+dead-but-retained tombstone (kept until an explicit kill). Every transition
+stamps `statusEnteredAt` (status-edge generation key). See [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
 
 Transitions:
   [yaco agent start]   → starting
@@ -123,9 +125,10 @@ Transitions:
   [yaco agent send]    → processing  (optimistic hint; hook overwrites)
   Stop / StopFailure   → idle        (after 120ms debounce; dropped if state mutated during the pause)
   SessionEnd           → idle        (context reset safe — process may still be alive)
-  [wrapper EXIT trap]  → [file deleted]  (process actually died)
-  [tmux session confirmed dead]  → [GC deletes file]  (three-state: only on false, not null)
-  [yaco agent kill]    → [file deleted]
+  [wrapper EXIT trap, exit 0 / matching kill sentinel]  → [file deleted]
+  [wrapper EXIT trap, non-zero agent exit]              → crashed (+exitCode; mark-crashed / fallback)
+  [tmux session confirmed dead]  → [GC deletes file]  (three-state: only on false, not null; never a crashed tombstone)
+  [yaco agent kill]    → [file deleted]  (clears any status, incl. crashed)
   [bootstrap death]    → [file deleted + Error thrown]  (start never returns phantom state)
 
 Context window reset sequence:
@@ -145,9 +148,10 @@ the state file directly.
 - **Session name re-read at exit** — the EXIT trap calls `tmux display-message -p '#{session_name}'` to get the current name (which reflects any renames that occurred during the session's lifetime). Falls back to the startup-cached name when the tmux session is already gone (e.g., `tmux kill-session`).
 - **Rename breadcrumb** — `renameState()` writes `.renamed-<oldHandle>` in the sessions dir pointing to the new name. Write-before-delete: new state file is written before old is removed, preventing a race where GC deletes the old file between tmux rename and state rename (leaving no file). Callers pass pre-read state to avoid a re-read race with GC. Chain-safe: A→B→C updates A's breadcrumb to point to C. Cleanup: EXIT trap removes breadcrumb on exit; `deleteState()` removes breadcrumbs to/from the deleted handle; `status` GC sweeps orphans whose target file is gone.
 - **Handle-reuse guard** — the wrapper receives the session's `createdAt` and only deletes the state file if the on-disk file still belongs to the same launch. This prevents an older exiting process from deleting a newer session that quickly reused the same default handle.
-- **Primary cleanup mechanism** — the only code path that deletes state files on session end.
+- **Exit-code branch (fail-closed crash contract)** — the trap captures `ec=$?` first. exit 0 (or a generation-matching `.killing` sentinel → intentional kill) deletes the state file; a non-zero agent exit instead tombstones it as `crashed`+`exitCode` via `"$YACO_BIN" agent mark-crashed` (absolute path exported at start), with an inline `crash_fallback` shell rewrite when the binary can't run. -> See: [state-contract.md](state-contract.md#crash-contract-fail-closed-crashed-tombstone).
+- **Primary cleanup mechanism** — the only code path that deletes (or crash-tombstones) state files on session end.
 - **Essential for Codex** (which lacks `SessionEnd` hook) and Claude crash scenarios.
-- **Complements the TS hook-event handler** — hooks handle status transitions (`idle`/`processing`); wrapper handles file lifecycle (deletion).
+- **Complements the TS hook-event handler** — hooks handle status transitions (`idle`/`processing`/`blocked`); wrapper owns end-of-life file lifecycle (delete vs. crash tombstone).
 - **Login + interactive bash for the agent** — after the trap is installed, the wrapper runs the agent via `bash -lic 'exec "$@"' _ "$@"` so claude/codex inherit the same env as if launched from a hand-opened terminal: sources `/etc/profile`, `~/.profile`, `~/.bashrc`; picks up `SSH_AUTH_SOCK` (via keychain), full PATH (cargo/nvm/cuda/etc.), and other interactive-shell exports. Without this the workflow → agent → tmux → `/bin/sh -c` chain skipped every shell init and the agent had a stripped-down env. The wrapper also `unset`s `npm_(config|lifecycle|package)_*` first because tmux server caches its initial env — vars leaked when the parent was launched via `npm run` (e.g. `npm_config_prefix`) make nvm refuse to initialize.
 
 -> See: [src/lib/core/agent/lifecycle.ts](../../../cli/src/lib/core/agent/lifecycle.ts), [scripts/agent-wrapper.sh](../../../cli/scripts/agent-wrapper.sh), [src/commands/agent/start.ts](../../../cli/src/commands/agent/start.ts)

@@ -1,6 +1,6 @@
 # Lifecycle
 
-> Last updated: 2026-06-09 (Startup trust gating: Codex hooks-review interstitials are gated by the fail-closed `codexHooksAllYacoOwned` predicate → `blocked(trust)` on a foreign/unverifiable hook set. Prior: Codex async title sync — start enqueues `/rename` after ready and never waits for settle)
+> Last updated: 2026-06-11 (Crash contract: a non-zero agent exit tombstones the session as `crashed`+`exitCode` via `mark-crashed` or an inline fail-closed fallback; a generation-scoped `.killing` sentinel distinguishes an intentional kill; GC + `start` reclaim skip a `crashed` tombstone. `setStatus` stamps `statusEnteredAt` on every transition.)
 
 Visual state diagrams and sequence flows for session lifecycle. For the text-based state machine summary, see [architecture.md](architecture.md#state-machine). For provider-specific hooks and assumptions, see [providers.md](providers.md).
 
@@ -18,6 +18,13 @@ stateDiagram-v2
 
         idle --> processing : UserPromptSubmit hook
         processing --> idle : Stop / StopFailure hook (after 120ms debounce)
+
+        idle --> blocked : PermissionRequest / Notification / question tool
+        processing --> blocked : PermissionRequest / Notification / question tool
+        blocked --> processing : answer / PostToolUse (last-event-wins)
+
+        processing --> crashed : non-zero agent exit (mark-crashed / fallback)
+        blocked --> crashed : non-zero agent exit
     }
 
     NO_FILE --> starting : yaco agent start (writeState)
@@ -34,9 +41,13 @@ stateDiagram-v2
     processing --> NO_FILE : wrapper EXIT trap (createdAt match)
     processing --> NO_FILE : passive GC (reconcile/status)
 
+    crashed --> NO_FILE : yaco agent kill (ONLY — GC + start reclaim skip crashed)
+
     note right of EXISTS
         Runtime reconciliation on read (no file mutation):
         • liveness=false → not found + delete state file
+        • status === crashed → dead-but-retained (never GC'd,
+          never reclaimed by start; only kill clears it)
         • processing + mtime > 30min → capturePane detection
         • starting + mtime > 30min → same as above
         • pid/sessionId backfilled from live process/provider metadata
@@ -44,8 +55,6 @@ stateDiagram-v2
           process may still be alive after context reset)
         • Stop debounce drops stale Stop if a fresher event
           mutated state during the 120ms re-check window
-        • text status / JSON status / agent list
-          must share same reconciliation contract [Gap G8]
         • GC only triggered passively in
           reconcile/status / kill / EXIT trap, not background
     end note
@@ -65,9 +74,11 @@ stateDiagram-v2
     alive --> dying : user manual kill
 
     dying --> EXIT_TRAP : wrapper EXIT trap fires
-    EXIT_TRAP --> cleaned : state file deleted (createdAt match)
+    EXIT_TRAP --> cleaned : state file deleted (exit 0 / matching kill sentinel)
+    EXIT_TRAP --> tombstoned : non-zero agent exit → crashed (mark-crashed / fallback)
     EXIT_TRAP --> preserved : state file preserved (createdAt mismatch, handle reused)
     cleaned --> [*]
+    tombstoned --> [*]
     preserved --> [*]
 
     alive --> orphan : tmux server crash / reboot
@@ -75,10 +86,12 @@ stateDiagram-v2
     cleaned --> [*]
 
     note right of dying
-        wrapper on EXIT:
+        wrapper on EXIT (ec=$?):
         1. resolve current name (tmux query / breadcrumb)
         2. compare createdAt
-        3. delete only on match
+        3. exit 0 OR matching kill sentinel → delete on match
+        4. non-zero, no matching sentinel → mark-crashed
+           (inline crash_fallback if YACO_BIN can't run)
         explicit kill path usually has yaco agent delete file first,
         wrapper is no-op
     end note

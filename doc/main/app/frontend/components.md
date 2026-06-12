@@ -57,7 +57,7 @@ App (384 lines)
         ├── FileSearch — recent files section, search cap banner
         ├── ShortcutSheet — ? key opens shortcut cheatsheet
         ├── TaskScreen — task panel toggled from sidebar (full editor column height)
-        ├── BadgeCount — reusable unread count badge
+        ├── BadgeCount — reusable attention badge (tier-colored)
         └── ProviderIcon
 ```
 
@@ -186,7 +186,7 @@ chips and `TaskDetailPanel`.
 
 **File**: `ui/src/App.tsx` (384 lines)
 
-Single-workspace shell. Manages project selection, unread state, and browser notifications. Renders one `<Workspace>` keyed by active project.
+Single-workspace shell. Manages project selection, the attention feed, and browser notifications. Renders one `<Workspace>` keyed by active project.
 
 **Props**: None (root component)
 
@@ -194,8 +194,8 @@ Single-workspace shell. Manages project selection, unread state, and browser not
 - Project selection and ordering (project list lives in workspace sidebar)
 - Header bar with notification bell and add-project button
 - Keyboard shortcuts: `Cmd+1` through `Cmd+9` for project switching (holding `Cmd` reveals index hints in `ProjectList`)
-- Session/project unread state via `useSessionUnreadState`
-- Browser notification routing (click → project + session)
+- Server-projected attention feed via `useAttention` (bell sections, badges, interrupts)
+- Attention routing (click toast / OS notification / bell row → project + session via `attachIntent`); derives the active-viewing target from the workspace visibility report
 - Persist project to localStorage
 
 ## Workspace / WorkspaceScreen
@@ -206,7 +206,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 **Compare mode**: Toggle via `GitCompareArrows` icon in Changes section header. State: `compareMode`, `compareBase`, `compareHead`, `compareResult`. When active, the Changes section shows `CompareRefPicker` + file list from `/git/:project/compare`. Clicking a file opens a compare diff tab (`diff:path?base=X&compare=Y`) via `openPreviewDiffTabById`. Loading uses skeleton shimmer.
 
-**Props**: `{ projectName: string; projectPath: string; worktree?: string | null; worktrees: WorktreeInfo[]; activeWorktree: string | null; onWorktreeSelect: (slug: string | null) => void; projects; activeProject; projectUnreadCounts; projectSessionCounts; onProjectSelect; onProjectReorder; onProjectRemove; onMarkAllRead; sessionUnreadCounts; markSessionRead; onVisibilityReport; attachIntent; notificationBell? }`
+**Props**: `{ projectName: string; projectPath: string; worktree?: string | null; worktrees: WorktreeInfo[]; activeWorktree: string | null; onWorktreeSelect: (slug: string | null) => void; projects; activeProject; badgesByProject; badgesBySession; readySessionKeys; attentionTaskIds; projectSessionCounts; onProjectSelect; onProjectReorder; onProjectRemove; onAddProject; onMarkAllRead; onVisibilityReport; attachIntent; clearAttachIntent; notificationBell? }`
 
 **Responsibilities**:
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
@@ -215,7 +215,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 - Builds section content (project list with worktree sub-items, explorer, changes, tasks doorway, sessions, editor, terminal) as React nodes
 - Passes content slots to `WorkspaceLayout` for placement
 - Delegates domain state to `useWorkspaceState` hook
-- Session unread pills and project unread badges
+- Per-project attention badges (status `active/total` count + the separate actionable badge); owned-idle "↩ your turn" leaf chips; collapsed-parent rollup badges
 
 ### WorkspaceLayout
 
@@ -350,13 +350,13 @@ Reusable dialog/panel chrome that extracts shared overlay, glass card, animation
 
 **File**: `ui/src/components/BadgeCount.tsx`
 
-Reusable unread count badge (orange circle, white text). Used by NotificationBell, ProjectList, SessionItem.
+Reusable attention badge: a count in a tier-colored circle (red → orange → yellow via `lib/attentionColors.ts`; null color defaults to orange), white text. Used by NotificationBell (global badge), ProjectList, and the session list rollup badge.
 
 ### NotificationBell
 
 **File**: `ui/src/components/NotificationBell.tsx`
 
-Self-contained bell icon with unread badge and notification panel dropdown. Manages open/close state internally. Used in desktop header (App.tsx) and mobile header (WorkspaceLayout via `notificationBell` ReactNode slot).
+Self-contained bell icon with the global attention badge and a panel dropdown (Needs-you / Ready / Recent sections). Manages open/close state internally; the first open is the user gesture that may request OS notification permission. Used in desktop header (App.tsx) and mobile header (WorkspaceLayout via `notificationBell` ReactNode slot).
 
 -> See: [../ui/notifications.md](../ui/notifications.md) for full notification pipeline docs
 

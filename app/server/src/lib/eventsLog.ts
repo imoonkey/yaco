@@ -51,8 +51,35 @@ async function withWriteLock<T>(file: string, fn: () => Promise<T>): Promise<T> 
   }
 }
 
+/** Scan a project's events.jsonl for an event with the given id. Returns it (or
+ *  null). Used to make `appendEvent` idempotent for caller-supplied ids. */
+async function findEventById(file: string, id: string): Promise<YacoEvent | null> {
+  if (!existsSync(file)) return null
+  let raw: string
+  try {
+    raw = await readFile(file, 'utf-8')
+  } catch {
+    return null
+  }
+  for (const line of raw.split('\n')) {
+    if (!line) continue
+    try {
+      const ev = JSON.parse(line) as YacoEvent
+      if (ev?.id === id) return ev
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
 /** Append a single event line to `~/.yaco/projects/<projectId>/events.jsonl`.
- *  Assigns `id` (uuid v4) and `ts` (ISO) if the caller omitted them. */
+ *  Assigns `id` (uuid v4) and `ts` (ISO) if the caller omitted them.
+ *
+ *  Idempotent by id: when the caller supplies an `id` that already exists in the
+ *  log, this is a no-op and returns the existing event — so a producer restart
+ *  or safety-net re-observation can never mint a duplicate generation (spec §4).
+ *  Auto-generated uuids are unique, so this only constrains stable caller ids. */
 export async function appendEvent(projectId: string, input: EventInput): Promise<YacoEvent> {
   const event: YacoEvent = {
     id: input.id ?? randomUUID(),
@@ -66,11 +93,15 @@ export async function appendEvent(projectId: string, input: EventInput): Promise
   validate(event)
 
   const file = projectEventsFile(projectId)
-  await withWriteLock(file, async () => {
+  return withWriteLock(file, async () => {
     await mkdir(dirname(file), { recursive: true })
+    if (input.id !== undefined) {
+      const existing = await findEventById(file, event.id)
+      if (existing) return existing
+    }
     await appendFile(file, JSON.stringify(event) + '\n', 'utf-8')
+    return event
   })
-  return event
 }
 
 export interface ReadEventsOptions {

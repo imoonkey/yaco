@@ -14,7 +14,7 @@ On-disk and in-browser storage formats for the workflow system.
 
 ## Related Code
 
-`@yaco/cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/notifications-store.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useNotifications.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
+`@yaco/cli/core/paths` (workspace package — `cli/src/lib/core/paths/`), `server/src/lib/projects.ts`, `server/src/lib/scanner.ts`, `server/src/lib/eventsLog.ts`, `server/src/lib/attention-engine.ts`, `server/src/lib/session-reconciler.ts`, `server/src/lib/ui-state.ts`, `ui/src/hooks/useWorkspaceState.ts`, `ui/src/hooks/useAttention.ts`, `ui/src/hooks/usePinnedSessions.ts`, `ui/src/App.tsx`
 
 ## On-Disk State
 
@@ -31,9 +31,8 @@ ${YACO_HOME:-~/.yaco}/
   sessions/                  # yaco agent session state: <handle>.json
   shell-sessions/            # workflow-managed tmux shell sessions: <id>.json
   ui-state/                  # cross-device shared UI state
-    notifications.json       # projected inbox cache + read flags (NotificationItem[])
     pinned-sessions.json     # per-project ordered session pins
-    unread-watermarks.json   # per-project / per-session unread cutoffs
+    unread-watermarks.json   # attention ack/clear watermarks (REVIEW + Recent-cleared)
   channels/                  # messaging channel scopes (WhatsApp, WeChat, …)
     <scope>/                 # one directory per channel scope
       auth.json              # credentials / login state
@@ -58,12 +57,12 @@ Managed by: `server/src/lib/projects.ts` (path from `yacoHome.projectsFile()`).
 
 ### `${YACO_HOME}/projects/<id>/events.jsonl`
 
-Append-only NDJSON event stream per registered project. **Durable source of truth** for the notification inbox, sidebar badges, and downstream channel deliveries — `${YACO_HOME}/ui-state/notifications.json` is a derived cache. One event per line; lines are immutable. Schema: [`plan/all/yaco-core/final/schemas/event.schema.json`](../../../../plan/all/yaco-core/final/schemas/event.schema.json).
+Append-only NDJSON event stream per registered project. **Durable source of truth** for the attention feed (Facet B), sidebar badges, and downstream channel deliveries. The actionable attention state is *projected* from this log + the live snapshot + the ack/clear watermarks every time it is computed — there is no derived inbox cache. One event per line; lines are immutable. Schema: [`plan/all/yaco-core/final/schemas/event.schema.json`](../../../../plan/all/yaco-core/final/schemas/event.schema.json).
 
 Line shape:
 
 ```json
-{ "id": "evt_...", "ts": "2026-05-27T11:42:08.123Z", "kind": "session_idle", "projectId": "workflow", "sessionId": "w-foo", "payload": { "agent": "claude", "message": "..." } }
+{ "id": "session_idle:workflow::w-foo:2026-05-27T11:42:08.000Z", "ts": "2026-05-27T11:42:08.123Z", "kind": "session_idle", "projectId": "workflow", "sessionId": "w-foo", "payload": { "owner": "OWNED" } }
 ```
 
 Known v0 event kinds (consumers MUST tolerate unknown kinds):
@@ -71,16 +70,27 @@ Known v0 event kinds (consumers MUST tolerate unknown kinds):
 | Kind | When |
 |---|---|
 | `dispatched` | a task transitions `ready → running` and an agent session is started |
-| `session_idle` | a yaco agent session transitions `processing → idle` (NOT task completion) |
+| `session_idle` | a yaco agent session transitions active → `idle` (NOT task completion) |
+| `session_blocked` | a yaco agent session enters `blocked` (debounced ~1.5s confirm) |
+| `session_crashed` | a yaco agent session enters `crashed` (non-zero agent exit) |
+| `task_done` | a task transitions to `done` |
+| `task_blocked` | a task transitions to `blocked` |
 | `verified` | `acceptCriteria` pass; task transitions to `done` |
 | `verification_failed` | `acceptCriteria` fail; task transitions to `blocked/verification-failed` |
 | `human_review_requested` | task requires human review; transitions to `blocked/human-review` |
+
+Each event `id` is a stable **status-edge generation** —
+`<kind>:<proj>::<subjectKey>:<enteredAt>` — derived from the session
+`statusEnteredAt` / task `stateEnteredAt`. `appendEvent` is **idempotent by id**
+(`eventsLog.ts#findEventById`): re-appending a known id is a no-op, so a producer
+restart, a safety-net re-observation, or boot reconciliation never mints a
+duplicate generation.
 
 Wired emit sites (server-owned):
 
 | Kind | Wired by | Notes |
 |---|---|---|
-| `session_idle` | `server/src/lib/session-reconciler.ts` (`emitSessionIdle`) | Fires after the existing idle debounce; also dispatches a `NotificationItem` to `notifications-store` so the inbox cache stays warm. |
+| `session_idle` / `session_blocked` / `session_crashed` / `task_done` / `task_blocked` | `server/src/lib/attention-engine.ts` | Change-driven edge detection vs. an in-memory cache; appended idempotently at the edge (even if it self-resolves before the next read), then projected + pushed over the `attention` SSE. Boot reconciliation id-scans the log so a crash/block during a server-down window still surfaces. |
 
 Future emit sites (owned by `orchestrate`, which runs outside the server process):
 
@@ -88,17 +98,20 @@ Future emit sites (owned by `orchestrate`, which runs outside the server process
 
 Managed by: `server/src/lib/eventsLog.ts` (`appendEvent`, `readEvents`). Path resolution via `yacoHome.projectEventsFile(projectId)`; the `projects/<id>/` parent dir is created lazily on first append. Concurrent writers within the same Node process are serialized per file by an in-memory lock; cross-process concurrency is not expected in v0 (single Hono server).
 
-### `${YACO_HOME}/ui-state/notifications.json`
-
-Cross-device notifications inbox **cache**, projected from `events.jsonl` plus per-item read flags. `NotificationItem[]` (superset of the in-memory `NotificationEvent`: preserves `kind`, `workstream`/task id, `progressType`, adds `read: boolean` and numeric `timestamp`). Mutex-protected writes via `server/src/lib/notifications-store.ts`. The cache is populated when emit sites call `notify.dispatch()` alongside `eventsLog.appendEvent()`; the durable record is `events.jsonl`.
-
 ### `${YACO_HOME}/ui-state/pinned-sessions.json`
 
 Per-project ordered list of pinned session names. Shape: `{ [projectName]: string[] }`. Mutex-protected writes via `server/src/lib/ui-state.ts`. Order is preserved across devices.
 
 ### `${YACO_HOME}/ui-state/unread-watermarks.json`
 
-Per-project and per-session read cutoffs (`{ projectReadAt, sessionReadAt }`, both `Record<string, number>` of millisecond timestamps). A progress entry is "unread" iff its timestamp exceeds `max(projectReadAt[project], sessionReadAt["${project}::${session}"])`. The bell badge and sidebar unread counts both derive from this file (via `useSessionUnreadState`); marking-read actions advance the relevant watermark(s) to `Date.now()`. Mutex-protected writes via `server/src/lib/ui-state.ts`.
+Monotonic attention ack/clear watermarks (Facet B REVIEW + Recent-cleared). Four maps, each `key → server-time ms`:
+
+- `projectReadAt` — `Record<project, ms>`: ack a whole project up to a server timestamp.
+- `sessionReadAt` — `Record<"${project}::${session}", ms>`: ack an owned-idle session key.
+- `taskReadAt` — `Record<"${project}::${taskId}", ms>`: ack a `task_done` key.
+- `recentClearedAt` — `Record<project, ms>`: hide read/resolved/FYI Recent rows with `tsMs ≤` this.
+
+A REVIEW generation is **unread** iff `gen.tsMs > max(projectReadAt[project], keyReadAt[scopeKey])`. Every write goes through `mergeUnreadWatermarks`, which merges **monotonic-max** (a lower or clock-skewed incoming value never lowers the stored one). Timestamps are **server-stamped** — the client never sends `Date.now()`; ack derives the cutoff server-side and clamps to now. Mutex-protected writes via `server/src/lib/ui-state.ts`.
 
 `plan/progress.json`, `plan/active/<bundle>/progress.json`, and `plan/active/<bundle>/workstream.json` are no longer runtime inputs. The one-time migration script converts/removes them; server runtime reads `events.jsonl` only.
 
@@ -165,7 +178,7 @@ Only dirty drafts are persisted. On localStorage quota exceeded, oldest drafts a
 State is split between server files (shared across devices via REST + SSE) and `localStorage` (per-device).
 
 **Shared (server, `${YACO_HOME}/ui-state/`):**
-- Notifications inbox and per-item `read` flag
+- Attention ack/clear watermarks (REVIEW read state + Recent-cleared cutoffs)
 - Pinned sessions and their order, keyed by project
 
 **Per-device (`localStorage`):**
@@ -179,21 +192,20 @@ State is split between server files (shared across devices via REST + SSE) and `
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET`    | `/api/notifications` | List all notifications (newest first) |
-| `POST`   | `/api/notifications/:id/read` | Mark one notification as read |
-| `POST`   | `/api/notifications/read-all` | Mark all as read |
-| `DELETE` | `/api/notifications` | Clear the inbox |
+| `GET`    | `/api/attention/feed?limit=&before=` | Bounded/paginated Recent history + the full live snapshot (needsYou/ready/badges). Cursor is the opaque composite `nextBefore` |
+| `POST`   | `/api/attention/ack` | `{ scope: 'project'\|'session'\|'task', project, key? }` — server-stamped, monotonic-max ack |
+| `POST`   | `/api/attention/clear` | `{ project }` — set the project's monotonic `recentClearedAt` |
 | `GET`    | `/api/ui-state/pinned-sessions?project=<p>` | Read pinned sessions for a project |
 | `PUT`    | `/api/ui-state/pinned-sessions?project=<p>` | Replace pinned sessions for a project |
-| `GET`    | `/api/ui-state/unread-watermarks` | Read all per-project / per-session unread cutoffs |
-| `PUT`    | `/api/ui-state/unread-watermarks` | Replace the watermarks map (`{ projectReadAt, sessionReadAt }`) |
+| `GET`    | `/api/ui-state/unread-watermarks` | Read all attention watermark maps |
+| `PUT`    | `/api/ui-state/unread-watermarks` | Monotonic-max merge of the watermarks map (never lowers a stored value) |
 
 ### SSE events
 
 | Event | Payload | Trigger |
 |-------|---------|---------|
-| `notification`           | full `NotificationItem` | new notification appended (UI prepends optimistically + toasts) |
-| `notifications:changed`  | none / change marker    | read/clear/any mutation that doesn't carry a new item (consumers re-fetch) |
-| `ui-state:changed`       | `{ key: 'pinned-sessions', project }` | server-side mutation of ui-state (other devices re-fetch the affected slice) |
+| `attention`        | full `AttentionSnapshot` | engine projected a new state (push; handled directly so it reaches hidden tabs) |
+| `refresh`          | channel name            | lightweight re-fetch signal (sessions/filetree/git/…) |
+| `ui-state:changed` | none                    | server-side ui-state mutation (ack/clear/pin) — other devices re-fetch |
 
-Hooks: `useNotifications` (server-sourced inbox + `notifications:changed` listener + visibilitychange resync), `usePinnedSessions` (per-project optimistic writes, version-tracked refetch protects in-flight edits from stale GET clobber), `useSessionUnreadState` (watermarks + derived per-session/per-project counts; debounced PUTs with the same clobber-guard).
+Hooks: `useAttention` (cold `GET /attention/feed` + live `attention` SSE; hidden-safe interrupts; ack/clear), `usePinnedSessions` (per-project optimistic writes, version-tracked refetch protects in-flight edits from stale GET clobber).

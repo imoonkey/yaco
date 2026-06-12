@@ -11,7 +11,7 @@ Session list, terminal emulation, attach/detach, clipboard, and touch scrolling.
 
 ## Does Not Own
 
-- Session idle detection pipeline (see [../notifications.md](../notifications.md))
+- Attention / idle-edge detection pipeline (see [../notifications.md](../notifications.md))
 - Session API endpoints (see [../../backend/routes.md](../../backend/routes.md))
 - Mobile pane switching (see [../mobile.md](../mobile.md))
 

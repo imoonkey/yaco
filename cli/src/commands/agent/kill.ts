@@ -1,6 +1,7 @@
 import { checkSessionAlive, killSession } from "../../lib/core/agent/tmux.ts";
 import { deleteState, listByPath, readState } from "../../lib/core/agent/session-state.ts";
 import { validateName } from "../../lib/core/agent/model.ts";
+import { removeKillSentinel, writeKillSentinel } from "../../lib/core/agent/kill-sentinel.ts";
 
 interface KillOptions {
   all?: boolean;
@@ -34,16 +35,27 @@ export function kill(name?: string, options: KillOptions = {}): void {
       const state = readState(session.handle);
       if (!state) continue;
       const alive = checkSessionAlive(session.handle);
+      if (alive === null) continue; // uncertainty must not delete state
       if (alive === true) {
+        writeKillSentinel(session.handle, state.createdAt);
         try {
           safeKillSession(session.handle);
         } catch {
+          removeKillSentinel(session.handle);
           continue; // uncertain — skip, preserve state
         }
+        // Cleanup is in finally so a deleteState failure can't leak the
+        // sentinel (a leaked same-generation sentinel would misclassify a
+        // future crash as an intentional kill).
+        try {
+          deleteStateIfSameGeneration(session.handle, state.createdAt);
+        } finally {
+          removeKillSentinel(session.handle);
+        }
+        continue;
       }
-      // alive === false or true (after kill): delete state with generation guard
-      // alive === null: skip — uncertainty must not delete state
-      if (alive !== null) deleteStateIfSameGeneration(session.handle, state.createdAt);
+      // alive === false: no sentinel written; GC the dead state file directly.
+      deleteStateIfSameGeneration(session.handle, state.createdAt);
     }
     return;
   }
@@ -63,11 +75,21 @@ export function kill(name?: string, options: KillOptions = {}): void {
     throw new Error(`Cannot determine tmux status for "${name}" — state preserved`);
   }
 
+  // Drop the generation-scoped kill sentinel BEFORE SIGTERM so the wrapper's
+  // EXIT trap classifies the (non-zero) signal exit as an intentional kill, not
+  // a crash. Removed in finally; a sentinel removed before the trap reads it is
+  // harmless because the post-kill deleteState already removed the file, so the
+  // trap's mark-crashed no-ops on a missing file.
   if (alive) {
-    safeKillSession(name);
+    if (state) writeKillSentinel(name, state.createdAt);
   } else if (!state) {
     throw new Error(`Session "${name}" not found`);
   }
 
-  if (state) deleteStateIfSameGeneration(name, state.createdAt);
+  try {
+    if (alive) safeKillSession(name);
+    if (state) deleteStateIfSameGeneration(name, state.createdAt);
+  } finally {
+    removeKillSentinel(name);
+  }
 }

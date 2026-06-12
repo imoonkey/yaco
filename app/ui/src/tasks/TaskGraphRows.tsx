@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import type { GraphLayout, LayoutSection, TaskGraphModel } from './taskGraphModel'
 import type { HighlightModel, Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
+import type { AttentionTaskIds } from '../hooks/useAttention'
 import { TaskGraphGroup } from './TaskGraphGroup'
 import { TaskGraphNode } from './TaskGraphNode'
 import { SECTION_FONT_SIZE } from './graphType'
@@ -43,11 +44,12 @@ export function TaskGraphSectionHeader({ section }: { section: LayoutSection }) 
 // by one code path in both modes. `edges` is an optional slot painted between
 // the guides and the cards (stacked draws dependency arcs here; Gantt routes its
 // finish-to-start links in the separate time pane instead).
-export function TaskGraphRows({ graph, layout, searchMatchIds, linkedTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onToggleCollapse, onPointerEnter, onPointerLeave, edges }: {
+export function TaskGraphRows({ graph, layout, searchMatchIds, linkedTaskIds, attentionTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onToggleCollapse, onPointerEnter, onPointerLeave, edges }: {
   graph: TaskGraphModel
   layout: GraphLayout
   searchMatchIds: Set<string>
   linkedTaskIds: Set<string>
+  attentionTaskIds: AttentionTaskIds
   highlight: HighlightModel
   selection: Selection
   scale: number
@@ -98,6 +100,8 @@ export function TaskGraphRows({ graph, layout, searchMatchIds, linkedTaskIds, hi
               isSelected={selection === node.id}
               isSearchMatch={searchMatchIds.has(node.id)}
               isLinkedToActiveSession={linkedTaskIds.has(node.id)}
+              isAttentionBlocked={attentionTaskIds.blocked.has(node.id)}
+              isAttentionDone={attentionTaskIds.done.has(node.id)}
               isCollapsed={collapsedTaskIds.has(node.id)}
               depCount={task.depends.length}
               scale={scale}

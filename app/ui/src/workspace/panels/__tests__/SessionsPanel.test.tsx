@@ -32,7 +32,8 @@ function makeData(sessions: AgentSession[]): WorkspaceData {
     orderedSessions: sessions,
     pinnedSet: new Set<string>(),
     liveSessionHandles: new Set(sessions.map((s) => s.name)),
-    getSessionUnread: () => 0,
+    getSessionBadge: () => null,
+    isSessionReady: () => false,
     startSession: vi.fn(async () => {}),
     killSession: vi.fn(async () => {}),
     renameSession: vi.fn(async () => {}),
@@ -126,6 +127,17 @@ describe('SessionsPanel', () => {
     renderBody([makeSession('alpha', 'idle'), makeSession('beta', 'idle')])
     expect(screen.getByText('alpha')).toBeTruthy()
     expect(screen.getByText('beta')).toBeTruthy()
+  })
+
+  it('renders a crashed session with a red status dot and "Crashed (exit N)" chip', () => {
+    const crashed: AgentSession = {
+      name: 'boom', provider: 'codex', status: 'crashed', exitCode: 139, project: 'test', summary: '',
+    }
+    const { container } = renderBody([crashed])
+    expect(screen.getByText('Crashed (exit 139)')).toBeTruthy()
+    // The status dot is the only element whose class carries --sol-red (the dot
+    // is never recolored; the chip uses an inline style, not this class).
+    expect(container.querySelector('[class*="--sol-red"]')).toBeTruthy()
   })
 
   it('shows the empty message when there are no live sessions', () => {

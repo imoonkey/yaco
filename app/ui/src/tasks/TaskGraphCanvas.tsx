@@ -2,14 +2,16 @@ import type { GraphLayout, TaskGraphModel } from './taskGraphModel'
 import type { HighlightModel } from './taskGraphSelection'
 import type { Selection } from './taskGraphSelection'
 import type { TooltipTarget } from './TaskGraphTooltip'
+import type { AttentionTaskIds } from '../hooks/useAttention'
 import { TaskGraphEdges } from './TaskGraphEdges'
 import { TaskGraphRows } from './TaskGraphRows'
 
-export function TaskGraphCanvas({ graph, layout, searchMatchIds, linkedTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
+export function TaskGraphCanvas({ graph, layout, searchMatchIds, linkedTaskIds, attentionTaskIds, highlight, selection, scale, collapsedTaskIds, onSelectTask, onOpenTask, onClearSelection, onToggleCollapse, onPointerEnter, onPointerLeave }: {
   graph: TaskGraphModel
   layout: GraphLayout
   searchMatchIds: Set<string>
   linkedTaskIds: Set<string>
+  attentionTaskIds: AttentionTaskIds
   highlight: HighlightModel
   selection: Selection
   scale: number
@@ -37,6 +39,7 @@ export function TaskGraphCanvas({ graph, layout, searchMatchIds, linkedTaskIds, 
         layout={layout}
         searchMatchIds={searchMatchIds}
         linkedTaskIds={linkedTaskIds}
+        attentionTaskIds={attentionTaskIds}
         highlight={highlight}
         selection={selection}
         scale={scale}

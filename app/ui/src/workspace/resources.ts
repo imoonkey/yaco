@@ -13,6 +13,7 @@ import { useGitStatus, useSessions } from '../hooks/useApi'
 import { useWorkspaceSessions } from './useWorkspaceSessions'
 import type { AgentSession, GitChange, SessionProvider } from '../types'
 import type { MobilePane } from '../hooks/workspaceTypes'
+import type { AttentionBadge } from '../hooks/useAttention'
 
 type SessionFocusTarget = 'editor' | 'explorer' | 'session' | 'terminal'
 
@@ -30,7 +31,11 @@ export interface WorkspaceSessionsResource {
   orderedSessions: AgentSession[]
   pinnedSet: Set<string>
   liveSessionHandles: Set<string>
-  getSessionUnread: (name: string) => number
+  /** Attention rollup badge for a session subtree (or null). Separate from the
+   *  self-only status dot. */
+  getSessionBadge: (name: string) => AttentionBadge | null
+  /** True when the session has an unacked owned REVIEW (the "↩ your turn" chip). */
+  isSessionReady: (name: string) => boolean
   startSession: (provider: SessionProvider) => Promise<void>
   killSession: (name: string) => Promise<void>
   renameSession: (oldName: string, newName: string) => Promise<void>
@@ -59,7 +64,8 @@ export interface WorkspaceSessionsResourceOptions {
   activeSession: string
   actions: SessionActions
   setFocusTarget: (target: SessionFocusTarget) => void
-  sessionUnreadCounts?: Record<string, number>
+  badgesBySession?: Record<string, AttentionBadge>
+  readySessionKeys?: Set<string>
   onSessionChange?: () => void
 }
 
@@ -91,7 +97,7 @@ export function useWorkspaceSessionsResource(
   const { projectName } = opts
   const { data: rawSessions, refresh: refreshSessions } = useSessions(projectName)
   const {
-    projectSessions, orderedSessions, pinnedSet, getSessionUnread,
+    projectSessions, orderedSessions, pinnedSet, getSessionBadge, isSessionReady,
     handleNewSession, killSession, handleRenameSession, togglePin,
     handlePinnedReorder, refreshSessions: refresh,
   } = useWorkspaceSessions({
@@ -101,7 +107,8 @@ export function useWorkspaceSessionsResource(
     sessions: rawSessions,
     refreshSessions,
     setFocusTarget: opts.setFocusTarget,
-    sessionUnreadCounts: opts.sessionUnreadCounts,
+    badgesBySession: opts.badgesBySession,
+    readySessionKeys: opts.readySessionKeys,
     projectName,
     onSessionChange: opts.onSessionChange,
   })
@@ -116,7 +123,8 @@ export function useWorkspaceSessionsResource(
     orderedSessions,
     pinnedSet,
     liveSessionHandles,
-    getSessionUnread,
+    getSessionBadge,
+    isSessionReady,
     startSession: handleNewSession,
     killSession,
     renameSession: handleRenameSession,
@@ -125,7 +133,7 @@ export function useWorkspaceSessionsResource(
     refresh,
   }), [
     projectSessions, orderedSessions, pinnedSet, liveSessionHandles,
-    getSessionUnread, handleNewSession, killSession, handleRenameSession,
+    getSessionBadge, isSessionReady, handleNewSession, killSession, handleRenameSession,
     togglePin, handlePinnedReorder, refresh,
   ])
 
