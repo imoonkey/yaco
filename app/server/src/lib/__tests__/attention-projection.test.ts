@@ -287,6 +287,22 @@ describe('REVIEW — task_done', () => {
     expect(snap.ready.filter((r) => r.type === 'session_idle')).toHaveLength(0)
   })
 
+  it('an OLD task_done does NOT suppress a NEWER bound owned idle (fresh handoff)', () => {
+    // task_done at T-old (small tsMs) bound to agent `a`; a newer owned idle for
+    // `a` at T-new (larger tsMs) is a fresh "your turn" handoff and must survive.
+    const snap = projectAttention(
+      input({
+        events: [
+          ev({ id: 'done-old', ts: '2026-06-10T00:00:01.000Z', kind: 'task_done', taskId: 'uxr', payload: { taskId: 'uxr', agents: ['a'] } }),
+          ev({ id: 'idle-new', ts: '2026-06-10T00:00:09.000Z', kind: 'session_idle', sessionId: 'a', payload: { sessionName: 'a' } }),
+        ],
+        sessions: [sess({ name: 'a', status: 'idle', statusEnteredAt: 'T', spawnedBy: 'user:web' })],
+      }),
+    )
+    expect(snap.ready.filter((r) => r.type === 'session_idle')).toHaveLength(1)
+    expect(snap.ready.find((r) => r.type === 'session_idle')?.generation).toBe('idle-new')
+  })
+
   it('task_done below taskReadAt watermark is acked', () => {
     const snap = projectAttention(
       input({
@@ -368,6 +384,62 @@ describe('badges — precedence red → orange → yellow', () => {
     const snap = projectAttention(input({ sessions: [sess({ name: 'i', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'agent' })] }))
     expect(snap.global).toEqual({ count: 0, color: null })
     expect(Object.keys(snap.badgesByProject)).toHaveLength(0)
+  })
+})
+
+// ── Badge subtree rollup to collapsed parents (spec §5.6) ────────────────────
+
+describe('badges — actionable items roll up to ancestor sessions', () => {
+  it('a collapsed child crash rolls up to its parent session badge', () => {
+    // Parent is idle (no badge of its own); a child session crashed. The UI
+    // shows the rollup badge only on the collapsed PARENT, reading
+    // badgesBySession['proj::parent'] — so the child's critical must roll up.
+    const snap = projectAttention(
+      input({
+        sessions: [
+          sess({ name: 'parent', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'agent' }),
+          sess({ name: 'child', status: 'crashed', statusEnteredAt: 'T1', exitCode: 1, parentSession: 'parent' }),
+        ],
+      }),
+    )
+    expect(snap.badgesBySession['proj::child']).toMatchObject({ count: 1, color: 'red' })
+    expect(snap.badgesBySession['proj::parent']).toMatchObject({ count: 1, color: 'red' })
+  })
+
+  it('rolls up the whole ancestor chain (grandparent gets the badge too)', () => {
+    const snap = projectAttention(
+      input({
+        sessions: [
+          sess({ name: 'gp', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'agent' }),
+          sess({ name: 'parent', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'agent', parentSession: 'gp' }),
+          sess({ name: 'child', status: 'blocked', statusEnteredAt: 'T1', parentSession: 'parent' }),
+        ],
+      }),
+    )
+    expect(snap.badgesBySession['proj::child']).toMatchObject({ count: 1, color: 'orange' })
+    expect(snap.badgesBySession['proj::parent']).toMatchObject({ count: 1, color: 'orange' })
+    expect(snap.badgesBySession['proj::gp']).toMatchObject({ count: 1, color: 'orange' })
+  })
+
+  it('a multi-agent task does not double-count a shared ancestor', () => {
+    // Two bound agents share the same parent; the single task item must add the
+    // parent exactly once (dedupe keys per item), and the project badge counts
+    // the item once.
+    const snap = projectAttention(
+      input({
+        sessions: [
+          sess({ name: 'parent', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'agent' }),
+          sess({ name: 'a', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'agent', parentSession: 'parent' }),
+          sess({ name: 'b', status: 'idle', statusEnteredAt: 'T1', spawnedBy: 'agent', parentSession: 'parent' }),
+        ],
+        tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: 'T1', agents: ['a', 'b'] })],
+      }),
+    )
+    expect(snap.badgesBySession['proj::a']).toMatchObject({ count: 1 })
+    expect(snap.badgesBySession['proj::b']).toMatchObject({ count: 1 })
+    // Parent counted once for the one task item, not twice for its two agents.
+    expect(snap.badgesBySession['proj::parent'].count).toBe(1)
+    expect(snap.badgesByProject.proj.count).toBe(1)
   })
 })
 

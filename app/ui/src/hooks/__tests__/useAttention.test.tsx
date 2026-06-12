@@ -255,6 +255,41 @@ describe('useAttention', () => {
     ).toBe(true))
   })
 
+  it('active-viewing suppresses a bound task_done interrupt AND auto-acks the TASK (M-medium-1)', async () => {
+    installNotification('granted')
+    setHidden(false)
+    setFocus(true)
+    const calls = installFetchStub()
+    // The user is attached to + focused on proj/sess, which is one of the task's
+    // bound agents — so the task_done interrupt targets the actively-viewed session.
+    renderHook(() => useAttention({ project: 'proj', sessionName: 'sess' }))
+    await settleInitialFeed(calls, makeSnapshot())
+
+    pushAttention(makeSnapshot({
+      ready: [crashItem({
+        generation: 'task_done:proj::t1:200',
+        type: 'task_done', tier: 'handoff', group: 'ready', interrupt: true,
+        subject: { kind: 'task', project: 'proj', taskId: 't1', sessionNames: ['sess'] },
+      })],
+    }))
+
+    // No toast / OS for the actively-viewed task.
+    expect(toastCustom).not.toHaveBeenCalled()
+    expect(notificationCtor).not.toHaveBeenCalled()
+
+    // Auto-ack POSTed for the TASK (scope=task, key=taskId) — not a session ack,
+    // so the bound task_done clears from Ready/badges instead of staying unacked.
+    await waitFor(() => expect(
+      calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack')
+        && c.body && (c.body as { scope: string }).scope === 'task'
+        && (c.body as { key: string }).key === 't1'
+        && (c.body as { project: string }).project === 'proj'),
+    ).toBe(true))
+    // And no session-scope ack was issued for this task interrupt.
+    expect(calls.some(c => c.method === 'POST' && c.url.includes('/attention/ack')
+      && c.body && (c.body as { scope: string }).scope === 'session')).toBe(false)
+  })
+
   it('does NOT suppress when window is blurred even if visible+attached (window focus, M10)', async () => {
     installNotification('granted')
     setHidden(false)

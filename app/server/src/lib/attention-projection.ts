@@ -368,14 +368,17 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
     }
   }
 
-  // task_done suppresses bound session_idle in the same window (spec §8): a
-  // task_done whose bound agents include a session masks that session's idle.
+  // task_done suppresses bound session_idle in the same handoff window (spec §8):
+  // a task_done whose bound agents include a session masks that session's idle —
+  // but only when the done is the same-or-later edge (tsMs(done) >= tsMs(idle)).
+  // An OLDER task_done (before the idle) is a stale completion that must NOT mask
+  // a newer "your turn" idle, which is a fresh handoff back to the owner.
   const suppressedIdleGenerations = new Set<string>()
   for (const ev of taskDoneEvents) {
     const agents = metaOf(ev).agents ?? []
     for (const a of agents) {
       const idle = latestIdleByKey.get(liveKey(ev.projectId, a))
-      if (idle) suppressedIdleGenerations.add(idle.id)
+      if (idle && tsMsOf(ev) >= tsMsOf(idle)) suppressedIdleGenerations.add(idle.id)
     }
   }
 
@@ -515,7 +518,42 @@ function buildHistory(
 
 // ── Badges / rollup (spec §9, §5.6) ─────────────────────────────────────────
 
-function buildBadges(needsYou: AttentionItem[], ready: AttentionItem[]): {
+/** project → (session name → parent session name), derived from the live
+ *  snapshot. Used to roll a subtree's actionable items up to a collapsed parent. */
+function buildParentMap(sessions: LiveSession[]): Map<string, Map<string, string>> {
+  const byProject = new Map<string, Map<string, string>>()
+  for (const s of sessions) {
+    if (!s.parentSession) continue
+    const m = byProject.get(s.project) ?? new Map<string, string>()
+    m.set(s.name, s.parentSession)
+    byProject.set(s.project, m)
+  }
+  return byProject
+}
+
+/** Subject session name(s) plus every ancestor up the parentSession chain,
+ *  deduped, so an item rolls up to each collapsed parent without double-counting
+ *  a shared ancestor (multi-agent task) or an ancestor that is itself a subject. */
+function sessionRollupNames(
+  names: string[],
+  parents: Map<string, string> | undefined,
+): Set<string> {
+  const keys = new Set<string>()
+  for (const name of names) {
+    let cur: string | undefined = name
+    while (cur && !keys.has(cur)) {
+      keys.add(cur)
+      cur = parents?.get(cur)
+    }
+  }
+  return keys
+}
+
+function buildBadges(
+  needsYou: AttentionItem[],
+  ready: AttentionItem[],
+  parentByProject: Map<string, Map<string, string>>,
+): {
   badgesByProject: Record<string, AttentionBadge>
   badgesBySession: Record<string, AttentionBadge>
   global: AttentionBadge
@@ -533,11 +571,13 @@ function buildBadges(needsYou: AttentionItem[], ready: AttentionItem[]): {
     p.color = worseColor(p.color, color)
     byProject.set(proj, p)
 
-    // Session badge keyed by the subject's session(s) so a collapsed parent can
-    // sum its subtree (the engine maps names → subtree; here we key by name).
+    // Session badge: increment the subject session(s) AND every ancestor up the
+    // parentSession chain so a collapsed parent shows its subtree's actionable
+    // count (spec §5.6). Keys are deduped per item (sessionRollupNames) so a
+    // multi-agent task does not double-count a shared ancestor.
     const names =
       item.subject.kind === 'session' ? [item.subject.sessionName] : item.subject.sessionNames
-    for (const name of names) {
+    for (const name of sessionRollupNames(names, parentByProject.get(proj))) {
       const key = liveKey(proj, name)
       const s = bySession.get(key) ?? { count: 0, color: null }
       s.count += 1
@@ -577,7 +617,11 @@ export function projectAttention(input: ProjectionInput): AttentionSnapshot {
 
   const recent = buildHistory(input, openActGenerations, readyGenerations)
 
-  const { badgesByProject, badgesBySession, global } = buildBadges(needsYou, ready)
+  const { badgesByProject, badgesBySession, global } = buildBadges(
+    needsYou,
+    ready,
+    buildParentMap(input.sessions),
+  )
 
   return { needsYou, ready, recent, badgesByProject, badgesBySession, global }
 }

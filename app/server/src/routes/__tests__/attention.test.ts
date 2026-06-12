@@ -85,27 +85,25 @@ describe('attention routes', () => {
     for (const r of body.recent) expect(typeof r.tsMs).toBe('number')
   })
 
-  it('GET /feed?limit= caps the recent page and exposes nextBefore', async () => {
-    snapshot.value = {
-      ...emptySnapshot(),
-      recent: [recentRow(5000), recentRow(4000), recentRow(3000), recentRow(2000), recentRow(1000)],
-    }
+  it('GET /feed?limit= caps the recent page and exposes a composite nextBefore cursor', async () => {
+    const rows = [recentRow(5000), recentRow(4000), recentRow(3000), recentRow(2000), recentRow(1000)]
+    snapshot.value = { ...emptySnapshot(), recent: rows }
     const res = await attentionRoutes.request('/feed?limit=2')
     const body = await res.json()
     expect(body.recent.map((r: AttentionItem) => r.tsMs)).toEqual([5000, 4000])
-    // More history remains → nextBefore is the oldest tsMs of this page.
-    expect(body.nextBefore).toBe(4000)
+    // More history remains → nextBefore is the composite cursor of this page's last
+    // row: "<tsMs>:<generation>".
+    expect(body.nextBefore).toBe(`4000:${rows[1].generation}`)
   })
 
-  it('GET /feed?before= returns only rows strictly older than the cursor', async () => {
-    snapshot.value = {
-      ...emptySnapshot(),
-      recent: [recentRow(5000), recentRow(4000), recentRow(3000), recentRow(2000), recentRow(1000)],
-    }
-    const res = await attentionRoutes.request('/feed?before=4000&limit=2')
+  it('GET /feed?before= returns only rows strictly after the composite cursor', async () => {
+    const rows = [recentRow(5000), recentRow(4000), recentRow(3000), recentRow(2000), recentRow(1000)]
+    snapshot.value = { ...emptySnapshot(), recent: rows }
+    const cursor = `4000:${rows[1].generation}`
+    const res = await attentionRoutes.request(`/feed?before=${encodeURIComponent(cursor)}&limit=2`)
     const body = await res.json()
     expect(body.recent.map((r: AttentionItem) => r.tsMs)).toEqual([3000, 2000])
-    expect(body.nextBefore).toBe(2000) // 1000 still remains
+    expect(body.nextBefore).toBe(`2000:${rows[3].generation}`) // 1000 still remains
   })
 
   it('GET /feed nextBefore is null when the page exhausts history', async () => {
@@ -114,6 +112,57 @@ describe('attention routes', () => {
     const body = await res.json()
     expect(body.recent).toHaveLength(2)
     expect(body.nextBefore).toBeNull()
+  })
+
+  it('GET /feed paginates through rows sharing one tsMs without skipping any (composite cursor)', async () => {
+    // 5 distinct rows all stamped with the SAME tsMs (rollup-stamped task
+    // transitions / burst). With a tsMs-only cursor the same-tsMs rows past the
+    // first page would be filtered out permanently — assert no loss, no dup.
+    const sameTs = 5000
+    const rows = Array.from({ length: 5 }, (_, i) => recentRow(sameTs, `burst-${i}`))
+    snapshot.value = { ...emptySnapshot(), recent: rows }
+
+    const seen: string[] = []
+    let before: string | null = null
+    let guard = 0
+    do {
+      const url = `/feed?limit=2${before ? `&before=${encodeURIComponent(before)}` : ''}`
+      const res = await attentionRoutes.request(url)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      for (const r of body.recent as AttentionItem[]) seen.push(r.generation)
+      before = body.nextBefore
+      if (++guard > 20) throw new Error('pagination did not terminate')
+    } while (before !== null)
+
+    // Every distinct row returned exactly once across pages.
+    expect(seen.sort()).toEqual(rows.map((r) => r.generation).sort())
+    expect(new Set(seen).size).toBe(rows.length)
+  })
+
+  it('GET /feed paginates a mix of equal and distinct tsMs without loss or dup', async () => {
+    // Page boundary lands inside a same-tsMs cluster.
+    const rows = [
+      recentRow(3000, 'a'),
+      recentRow(2000, 'b'), recentRow(2000, 'c'), recentRow(2000, 'd'),
+      recentRow(1000, 'e'),
+    ]
+    snapshot.value = { ...emptySnapshot(), recent: rows }
+
+    const seen: string[] = []
+    let before: string | null = null
+    let guard = 0
+    do {
+      const url = `/feed?limit=2${before ? `&before=${encodeURIComponent(before)}` : ''}`
+      const res = await attentionRoutes.request(url)
+      const body = await res.json()
+      for (const r of body.recent as AttentionItem[]) seen.push(r.generation)
+      before = body.nextBefore
+      if (++guard > 20) throw new Error('pagination did not terminate')
+    } while (before !== null)
+
+    expect(seen.sort()).toEqual(rows.map((r) => r.generation).sort())
+    expect(new Set(seen).size).toBe(rows.length)
   })
 
   it('GET /feed clamps an over-large limit to the cap', async () => {

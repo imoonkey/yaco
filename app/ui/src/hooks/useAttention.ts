@@ -60,9 +60,11 @@ export interface AttentionTaskIds {
   done: Set<string>
 }
 
-/** `/feed` adds the recent-history pagination cursor to the snapshot. */
+/** `/feed` adds the recent-history pagination cursor to the snapshot. The cursor
+ *  is an opaque composite `"<tsMs>:<generation>"` string the server pages by; the
+ *  client only round-trips it back as `before` (never parses it). */
 interface AttentionFeed extends AttentionSnapshot {
-  nextBefore: number | null
+  nextBefore: string | null
 }
 
 /** The session the user is currently attached to + viewing — the active-viewing
@@ -94,10 +96,10 @@ function normalizeSnapshot(raw: Partial<AttentionSnapshot> | null | undefined): 
 
 // ── HTTP helpers ───────────────────────────────────────────────────────────────
 
-async function fetchFeed(limit?: number, before?: number, signal?: AbortSignal): Promise<AttentionFeed> {
+async function fetchFeed(limit?: number, before?: string, signal?: AbortSignal): Promise<AttentionFeed> {
   const params = new URLSearchParams()
   if (limit != null) params.set('limit', String(limit))
-  if (before != null) params.set('before', String(before))
+  if (before != null) params.set('before', before)
   const qs = params.toString()
   const res = await fetch(`/api/attention/feed${qs ? `?${qs}` : ''}`, signal ? { signal } : undefined)
   if (!res.ok) {
@@ -146,7 +148,7 @@ function hasPermission(): boolean {
 
 export interface UseAttention {
   snapshot: AttentionSnapshot
-  nextBefore: number | null
+  nextBefore: string | null
   loadMore: () => void
   ackProject: (project: string) => void
   ackSession: (project: string, sessionName: string) => void
@@ -180,7 +182,7 @@ export function useAttention(
   onItemClick?: (item: AttentionItem) => void,
 ): UseAttention {
   const [snapshot, setSnapshot] = useState<AttentionSnapshot>(EMPTY)
-  const [nextBefore, setNextBefore] = useState<number | null>(null)
+  const [nextBefore, setNextBefore] = useState<string | null>(null)
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
     typeof Notification !== 'undefined' ? Notification.permission : 'unsupported',
   )
@@ -274,20 +276,23 @@ export function useAttention(
       if (seenInterrupts.current.has(item.generation)) continue
       seenInterrupts.current.add(item.generation)
       if (isActivelyViewing(item)) {
-        // Suppress + auto-ack the actively-viewed target's generation.
+        // Suppress + auto-ack the actively-viewed target's generation so it does
+        // not linger unacked in Ready/badges. Ack the subject's own scope: a task
+        // interrupt must clear the TASK watermark, not a session one.
         if (item.subject.kind === 'session') ackSession(item.subject.project, item.subject.sessionName)
+        else ackTask(item.subject.project, item.subject.taskId)
         continue
       }
       fresh.push(item)
     }
     surfaceInterrupts(fresh)
-  }, [isActivelyViewing, ackSession, surfaceInterrupts])
+  }, [isActivelyViewing, ackSession, ackTask, surfaceInterrupts])
 
   const ingestRef = useRef(ingest)
   useEffect(() => { ingestRef.current = ingest }, [ingest])
 
   // Cold mount: initial feed fetch.
-  const loadFeed = useCallback((before?: number, signal?: AbortSignal) => {
+  const loadFeed = useCallback((before?: string, signal?: AbortSignal) => {
     fetchFeed(undefined, before, signal)
       .then((feed) => {
         if (signal?.aborted) return
