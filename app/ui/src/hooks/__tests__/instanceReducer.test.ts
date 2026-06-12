@@ -4,7 +4,7 @@
 // group, retarget/close-under across ALL groups, and the activeGroupId/MRU/focus
 // model (clamped on every transition).
 import { describe, it, expect } from 'vitest'
-import { instanceReducer, buildInstanceState, type InstanceState } from '../useLayoutState'
+import { instanceReducer, buildInstanceState, activeEditorTabOf, type InstanceState } from '../useLayoutState'
 import {
   type WorkspacePanelLayout, type PersistedState, type LayoutNode, type TabsNode, type GroupTab,
   DEFAULT_LAYOUT,
@@ -161,11 +161,16 @@ describe('CLOSE_GROUP_TAB / empty-group invariant', () => {
     expect(firstGroupId(s.panelLayout.desktop)).toBe('group:1')
   })
 
-  it('closing the active tab activates the in-group neighbour (Math.min rule)', () => {
+  it('closing the active tab focuses the in-group neighbour (group.activeTab, focusedPane, selection all agree)', () => {
     let s = makeState({ layout: oneGroup([editor('a', 'a.ts'), editor('b', 'b.ts'), editor('c', 'c.ts')]) })
     s = instanceReducer(s, { type: 'SET_ACTIVE_GROUP_TAB', groupId: 'group:1', instanceId: 'b' })
     s = instanceReducer(s, { type: 'CLOSE_GROUP_TAB', groupId: 'group:1', instanceId: 'b' })
-    expect(findGroup(s.panelLayout.desktop, 'group:1')?.activeTab).toBe('c') // neighbour at min(idx, len-1)
+    // The neighbour at min(idx, len-1) is 'c' — and focus + MRU + the resolved
+    // selection must all land on it, not on whatever the global MRU/doc-order picks.
+    expect(findGroup(s.panelLayout.desktop, 'group:1')?.activeTab).toBe('c')
+    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'c' })
+    expect(s.editorMru[0]).toBe('c')
+    expect(activeEditorTabOf(s)?.tabId).toBe('c.ts')
   })
 
   it('an explicit CLOSE_GROUP removes an empty non-last group', () => {
@@ -243,6 +248,41 @@ describe('RETARGET_PATHS / CLOSE_TABS_UNDER fan out across all groups', () => {
     let s = makeState({ layout: twoGroups([editor('editor', 'src/a.ts'), editor('e2', 'lib/x.ts')], [editor('editor:3', 'src/deep/y.ts')]) })
     s = instanceReducer(s, { type: 'CLOSE_TABS_UNDER', path: 'src' })
     expect(editorTabPaths(s.panelLayout.desktop).sort()).toEqual(['lib/x.ts'])
+  })
+
+  it('retargets a compare diff tab on its underlying path, preserving base/compare refs', () => {
+    let s = makeState({ layout: oneGroup([editor('e1', 'diff:a.ts?base=main&compare=HEAD')]) })
+    s = instanceReducer(s, { type: 'RETARGET_PATHS', oldPath: 'a.ts', newPath: 'b.ts' })
+    const tab = tabsInGroup(s.panelLayout.desktop, 'group:1')[0]
+    expect(tab.kind === 'editor' && tab.tabId).toBe('diff:b.ts?base=main&compare=HEAD')
+  })
+
+  it('closes a compare diff tab under a deleted dir (matches on the underlying path)', () => {
+    let s = makeState({ layout: oneGroup([editor('e1', 'diff:src/a.ts?base=main&compare=HEAD'), editor('e2', 'lib/x.ts')]) })
+    s = instanceReducer(s, { type: 'CLOSE_TABS_UNDER', path: 'src' })
+    expect(editorTabPaths(s.panelLayout.desktop)).toEqual(['lib/x.ts'])
+  })
+})
+
+// --- activeEditorTabOf — the ACTIVE GROUP's editor tab (selection API) -------
+
+describe('activeEditorTabOf reflects the active group, not the global MRU editor', () => {
+  it('returns the active group\'s active editor tab', () => {
+    const s = makeState({ layout: oneGroup([editor('e1', 'a.ts')]) })
+    expect(activeEditorTabOf(s)?.tabId).toBe('a.ts')
+  })
+
+  it('is null after splitting to a focused EMPTY group (empty group → null, not the old file)', () => {
+    let s = makeState({ layout: oneGroup([editor('e1', 'a.ts')]) })
+    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2' })
+    expect(s.activeGroupId).toBe('group:2')
+    expect(activeEditorTabOf(s)).toBeNull()
+  })
+
+  it('is null when the active group\'s active tab is a terminal', () => {
+    let s = makeState({ layout: oneGroup([editor('e1', 'a.ts'), { instanceId: 't1', kind: 'terminal' }]) })
+    s = instanceReducer(s, { type: 'SET_ACTIVE_GROUP_TAB', groupId: 'group:1', instanceId: 't1' })
+    expect(activeEditorTabOf(s)).toBeNull()
   })
 })
 

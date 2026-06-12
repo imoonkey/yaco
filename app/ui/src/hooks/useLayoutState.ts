@@ -21,7 +21,6 @@ import {
   type LayoutNode,
   type TabsNode,
   isFileTab,
-  isDiffTab,
   parseDiffTab,
 } from './workspaceTypes'
 import type { FocusTarget, SplitSide } from '../workspace/context'
@@ -157,21 +156,38 @@ function removeTab(group: TabsNode, instanceId: string): TabsNode {
   return { ...group, tabs, activeTab }
 }
 
-/** Remap a single tab id on rename/move (exact file, its diff, or a dir prefix). */
-function remapTab(tab: string, oldPath: string, newPath: string): string {
-  if (tab === oldPath) return newPath
-  if (tab === `diff:${oldPath}`) return `diff:${newPath}`
-  if (isFileTab(tab) && tab.startsWith(oldPath + '/')) return newPath + tab.slice(oldPath.length)
-  if (isDiffTab(tab) && tab.slice(5).startsWith(oldPath + '/')) return 'diff:' + newPath + tab.slice(5 + oldPath.length)
-  return tab
+/** Remap a plain file path on rename/move (exact, or a dir prefix). */
+function remapPlainPath(path: string, oldPath: string, newPath: string): string {
+  if (path === oldPath) return newPath
+  if (path.startsWith(oldPath + '/')) return newPath + path.slice(oldPath.length)
+  return path
 }
 
-/** Does `tab` reference `path` (exact file, its diff, or a dir prefix)? */
+/** Rebuild a diff tab id from its underlying path, preserving compare refs. */
+function diffIdOf(path: string, base?: string, compare?: string): string {
+  return base && compare
+    ? `diff:${path}?base=${encodeURIComponent(base)}&compare=${encodeURIComponent(compare)}`
+    : `diff:${path}`
+}
+
+/** Remap a single tab id on rename/move. A diff tab is retargeted on its UNDERLYING
+ *  path (via `parseDiffTab`) with its `base`/`compare` query refs preserved, so a
+ *  compare diff (`diff:a.ts?base=…&compare=…`) is not left stale. */
+function remapTab(tab: string, oldPath: string, newPath: string): string {
+  const diff = parseDiffTab(tab)
+  if (diff) {
+    const next = remapPlainPath(diff.path, oldPath, newPath)
+    return next === diff.path ? tab : diffIdOf(next, diff.base, diff.compare)
+  }
+  return remapPlainPath(tab, oldPath, newPath)
+}
+
+/** Does `tab` reference `path` (exact file, a diff on it, or a dir prefix)? Diff
+ *  tabs match on their underlying path, regardless of any `base`/`compare` query. */
 function tabMatchesPath(tab: string, path: string): boolean {
-  if (tab === path || tab === `diff:${path}`) return true
-  if (isFileTab(tab) && tab.startsWith(path + '/')) return true
-  if (isDiffTab(tab) && tab.slice(5).startsWith(path + '/')) return true
-  return false
+  const diff = parseDiffTab(tab)
+  const p = diff ? diff.path : tab
+  return p === path || p.startsWith(path + '/')
 }
 
 function retargetGroup(group: TabsNode, oldPath: string, newPath: string): TabsNode {
@@ -232,6 +248,25 @@ export function targetGroup(state: InstanceState): string {
   const g = groupOf(tree, state.focusedPane.instanceId)
   if (g) return g
   return firstGroupId(tree) ?? ''
+}
+
+/** The active tab instance id of the group `groupId` ('' when empty/absent). */
+function activeTabOf(tree: LayoutNode, groupId: string): string {
+  let at = ''
+  forEachGroup(tree, (g) => { if (g.id === groupId) at = g.activeTab })
+  return at
+}
+
+/** The selection API's active editor tab: the ACTIVE GROUP's active tab, iff it is
+ *  an editor tab — null for an EMPTY active group, a terminal-active group, or no
+ *  editor open (design: §"the replacement selection API" — "NULLABLE — empty group
+ *  / no editor open"). Deliberately the active GROUP's tab, NOT the global-MRU
+ *  editor, so splitting to an empty focused group reports null rather than the
+ *  previous group's file. */
+export function activeEditorTabOf(state: InstanceState): EditorGroupTab | null {
+  const tree = state.panelLayout.desktop
+  const active = activeTabOf(tree, targetGroup(state))
+  return active ? editorTabByInstance(tree, active) : null
 }
 
 // --- GC + structural helpers ------------------------------------------------
@@ -375,12 +410,29 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       return gcMaps({ ...state, panelLayout })
     }
     case 'CLOSE_GROUP_TAB': {
+      const wasFocused = state.focusedPane.instanceId === action.instanceId
       let panelLayout = mapGroup(state.panelLayout, action.groupId, (g) => removeTab(g, action.instanceId))
       const emptied = tabsInGroup(panelLayout.desktop, action.groupId).length === 0
       if (emptied && groupCount(panelLayout.desktop) > 1) {
         panelLayout = closeGroupNode(panelLayout, action.groupId)
       }
-      return gcMaps({ ...state, panelLayout })
+      // When the FOCUSED tab closed, focus the in-group successor (the tab the group
+      // now shows) BEFORE gcMaps, so group.activeTab, focusedPane, and the resolved
+      // selection all agree. If the group emptied/closed (no successor), gcMaps'
+      // reconcileFocus picks the next live instance via MRU.
+      const successor = activeTabOf(panelLayout.desktop, action.groupId)
+      let next: InstanceState = { ...state, panelLayout }
+      if (wasFocused && successor) {
+        const sTab = tabByInstance(panelLayout.desktop, successor)
+        const kind: FocusTarget = sTab?.kind === 'terminal' ? 'terminal' : 'editor'
+        next = {
+          ...next,
+          editorMru: kind === 'editor' ? pushMru(state.editorMru, successor) : state.editorMru,
+          terminalMru: kind === 'terminal' ? pushMru(state.terminalMru, successor) : state.terminalMru,
+          focusedPane: { kind, instanceId: successor },
+        }
+      }
+      return gcMaps(next)
     }
     case 'CLOSE_GROUP':
       return gcMaps({ ...state, panelLayout: closeGroupNode(state.panelLayout, action.groupId) })
@@ -473,11 +525,14 @@ export function useLayoutState(
   const tree = state.panelLayout.desktop
 
   // Derived active instances + the selection API over the active editor / group.
+  // `activeEditorId` is the global-MRU editor instance (mobile projection, focus
+  // markers, voice default). `activeEditorTab*` reflect the ACTIVE GROUP's tab and
+  // are null when that group is empty / terminal-active (see activeEditorTabOf).
   const activeEditorId = resolveActiveEditor(tree, state.editorMru) ?? ''
   const activeTerminalId = resolveActiveTerminal(tree, state.terminalMru)
   const activeSession = activeTerminalId ? (state.terminalBindings[activeTerminalId] ?? '') : ''
   const activeGroupId = targetGroup(state)
-  const activeEditorTab = activeEditorId ? editorTabByInstance(tree, activeEditorId) : null
+  const activeEditorTab = activeEditorTabOf(state)
   const activeEditorTabId = activeEditorTab?.tabId ?? null
   const activeEditorPath = tabIdToFilePath(activeEditorTabId)
 

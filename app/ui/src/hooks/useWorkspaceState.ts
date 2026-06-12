@@ -16,6 +16,19 @@ function tabFilePath(tabId: string): string | null {
   return isFileTab(tabId) ? tabId : null
 }
 
+/** A stable, collision-free signature for the shared-buffer keep-set. JSON (not a
+ *  space-join) so a filename-legal character — a space in "src/my file.ts" — never
+ *  splits one path into two, which would drop a still-referenced clean buffer and
+ *  break SSE refetch tracking. */
+export function keepPathsSignature(paths: string[]): string {
+  return JSON.stringify([...paths].sort())
+}
+
+/** Rebuild the keep-set from its signature, preserving every path verbatim. */
+export function parseKeepPaths(sig: string): Set<string> {
+  return new Set<string>(JSON.parse(sig) as string[])
+}
+
 export function useWorkspaceState(projectName: string, worktree?: string | null) {
   // Phase 1: load persisted state
   const { initialLayout, initialDrafts, bindSnapshots, scheduleLayoutSave, scheduleDraftsSave } = usePersistence(projectName, worktree)
@@ -52,11 +65,13 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   const layoutRef = useRef(layoutValue)
 
   // The open-file-tab union, derived from the live group tree; identity is stable
-  // across edits that don't change the union (a content signature) so the
-  // buffer-GC effect stays calm. allEditorTabPaths = editorTabPaths.
-  const openFileTabsSig = useMemo(() => editorTabPaths(ls.panelLayout.desktop).sort().join(' '), [ls.panelLayout.desktop])
+  // across edits that don't change the union (a JSON signature) so the buffer-GC
+  // effect stays calm. JSON.stringify never collides on a filename-legal char (a
+  // space in a path must not split a single path into two). allEditorTabPaths =
+  // editorTabPaths.
+  const openFileTabsSig = useMemo(() => keepPathsSignature(editorTabPaths(ls.panelLayout.desktop)), [ls.panelLayout.desktop])
   const openFileTabSet = useMemo(
-    () => new Set(openFileTabsSig ? openFileTabsSig.split(' ') : []), [openFileTabsSig],
+    () => parseKeepPaths(openFileTabsSig), [openFileTabsSig],
   )
 
   // Mirror the open-tab union + layout snapshot in an effect for the SSE refetch
