@@ -988,6 +988,22 @@ body {
   flex-shrink: 0;
 }
 
+/* App-owned context menus should not trigger iOS touch callouts or selection menus. */
+[data-yaco-native-context-menu='disabled'],
+[data-yaco-native-context-menu='disabled'] * {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+[data-yaco-native-context-menu='disabled'] input,
+[data-yaco-native-context-menu='disabled'] textarea,
+[data-yaco-native-context-menu='disabled'] [contenteditable='true'] {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* ═══ Reduced Motion ═══ */
 
 @media (prefers-reduced-motion: reduce) {

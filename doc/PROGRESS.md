@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-12: Disable native iOS long-press menus on app-owned menu targets
+
+**What changed:**
+- Added shared `nativeContextMenuDisabledProps` and attached it to `useContextMenu().bind()` targets, rendered `Menu` surfaces, and the mobile `TerminalKeyBar`.
+- Added scoped CSS for `[data-yaco-native-context-menu='disabled']` that disables iOS touch callouts and selection menus while restoring normal selection for nested text inputs/contenteditable elements.
+- Updated mobile docs to reflect the current 350ms long-press threshold and the native-menu suppression contract.
+
+**Why:**
+- App-owned right-click/long-press actions should show YACO's custom menus or repeat terminal keys without Safari's native long-press menu competing on mobile.
+
+**Key files:** `app/ui/src/components/{nativeContextMenu.ts,Menu.tsx,useContextMenu.ts,TerminalKeyBar.tsx}`, `app/ui/src/index.css`, `doc/main/app/ui/mobile.md`
+**Verification:** `cd app/ui && npm run lint`; `cd app/ui && npm run build`.
+**Commit:** this commit
+**Next:** Real-device iOS smoke test for file tree, project/session rows, editor tabs, and terminal key repeat.
+**Blockers:** None.
+
 ## 2026-06-11: Task graph slash shortcut no longer steals voice compose input
 
 **What changed:**

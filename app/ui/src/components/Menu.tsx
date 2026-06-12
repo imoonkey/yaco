@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react'
+import { nativeContextMenuDisabledProps, type NativeContextMenuDisabledProps } from './nativeContextMenu'
 
 // --- Shared types ---
 
@@ -10,7 +11,7 @@ export type ContextMenuHandlers = {
   onTouchMove: (e: React.TouchEvent) => void
   onTouchEnd: (e: React.TouchEvent) => void
   onTouchCancel: () => void
-}
+} & NativeContextMenuDisabledProps
 
 // --- Components ---
 
@@ -87,6 +88,7 @@ export function Menu({ position, exiting, onExitDone, children }: {
     <div
       ref={menuRef}
       role="menu"
+      {...nativeContextMenuDisabledProps}
       className="fixed z-50 min-w-[160px] py-1 rounded-lg"
       style={{
         left: position.x,

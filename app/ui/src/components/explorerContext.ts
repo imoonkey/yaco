@@ -1,5 +1,6 @@
 import { createContext } from 'react'
 import type { ContextMenuHandlers } from './Menu'
+import { nativeContextMenuDisabledProps } from './nativeContextMenu'
 
 // --- Context for passing data to the file-tree node renderer ---
 
@@ -13,4 +14,18 @@ export const ExplorerContext = createContext<{
   onExpandDir?: (path: string) => void
   pendingNewId: string | null
   cancelCreate: () => void
-}>({ gitMap: new Map(), gitFolders: new Set(), bindContextMenu: () => ({ onContextMenu: () => {}, onTouchStart: () => {}, onTouchMove: () => {}, onTouchEnd: () => {}, onTouchCancel: () => {} }), reportContextFolder: () => {}, pendingNewId: null, cancelCreate: () => {} })
+}>({
+  gitMap: new Map(),
+  gitFolders: new Set(),
+  bindContextMenu: () => ({
+    ...nativeContextMenuDisabledProps,
+    onContextMenu: () => {},
+    onTouchStart: () => {},
+    onTouchMove: () => {},
+    onTouchEnd: () => {},
+    onTouchCancel: () => {},
+  }),
+  reportContextFolder: () => {},
+  pendingNewId: null,
+  cancelCreate: () => {},
+})

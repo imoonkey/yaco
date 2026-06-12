@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import type { MenuPosition, ContextMenuHandlers } from './Menu'
+import { nativeContextMenuDisabledProps } from './nativeContextMenu'
 
 // --- Context-menu controller hook (open/close + element handler binding) ---
 
@@ -33,6 +34,7 @@ export function useContextMenu() {
   /** Returns event handlers for an element — spread onto the target.
    *  Optional `onOpen` is called when the menu opens (for setting per-item state). */
   const bind = useCallback((onOpen?: () => void): ContextMenuHandlers => ({
+    ...nativeContextMenuDisabledProps,
     onContextMenu: (e) => {
       e.preventDefault()
       setExiting(false)
