@@ -992,6 +992,7 @@ body {
 [data-yaco-native-context-menu='disabled'],
 [data-yaco-native-context-menu='disabled'] * {
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
 }

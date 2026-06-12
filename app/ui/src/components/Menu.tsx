@@ -15,14 +15,18 @@ export type ContextMenuHandlers = {
 
 // --- Components ---
 
-export function Menu({ position, exiting, onExitDone, children }: {
+export function Menu({ position, exiting, onExitDone, armed, focusOnOpen, children }: {
   position: MenuPosition
   exiting?: boolean
   onExitDone?: () => void
+  armed?: boolean
+  focusOnOpen?: boolean
   children: React.ReactNode
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
   const focusedRef = useRef(0)
+  const isArmed = armed ?? true
+  const shouldFocusOnOpen = focusOnOpen ?? true
 
   const getItems = () =>
     menuRef.current ? Array.from(menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]')) : []
@@ -31,7 +35,7 @@ export function Menu({ position, exiting, onExitDone, children }: {
     if (exiting) onExitDone?.()
   }, [exiting, onExitDone])
 
-  // Adjust position after first paint + auto-focus first item
+  // Adjust position after first paint + optionally auto-focus first item.
   useEffect(() => {
     const el = menuRef.current
     if (!el) return
@@ -42,13 +46,19 @@ export function Menu({ position, exiting, onExitDone, children }: {
       if (rect.right > vw) el.style.left = `${Math.max(0, vw - rect.width - 4)}px`
       if (rect.bottom > vh) el.style.top = `${Math.max(0, vh - rect.height - 4)}px`
       const items = getItems()
-      if (items.length > 0) {
+      if (items.length > 0 && shouldFocusOnOpen) {
         focusedRef.current = 0
         items.forEach((item, i) => { item.tabIndex = i === 0 ? 0 : -1 })
         items[0].focus()
       }
     })
-  }, [position])
+  }, [position, shouldFocusOnOpen])
+
+  const stopIfDisarmed = useCallback((e: React.SyntheticEvent) => {
+    if (isArmed) return
+    e.preventDefault()
+    e.stopPropagation()
+  }, [isArmed])
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     const items = getItems()
@@ -103,6 +113,10 @@ export function Menu({ position, exiting, onExitDone, children }: {
         WebkitBackdropFilter: 'var(--backdrop-blur)',
       }}
       onAnimationEnd={handleAnimationEnd}
+      onPointerDownCapture={stopIfDisarmed}
+      onPointerUpCapture={stopIfDisarmed}
+      onTouchEndCapture={stopIfDisarmed}
+      onClickCapture={stopIfDisarmed}
       onClick={e => e.stopPropagation()}
       onKeyDown={onKeyDown}
     >

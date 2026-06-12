@@ -175,7 +175,7 @@ export function ProjectList({
       )}
 
       {menu.position && menuProject && (
-        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
+        <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
           <MenuItem label="Copy Path" onClick={() => { writeTextToClipboard(menuProject.path); menu.close() }} />
           <MenuItem label="Mark All Read" onClick={() => { onMarkAllRead(menuProject.name); menu.close() }} />
           <MenuDivider />

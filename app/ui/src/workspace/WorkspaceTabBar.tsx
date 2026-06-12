@@ -243,7 +243,7 @@ export function WorkspaceTabBar({
       const isDirty = dirtyTabs.has(tab)
       const isFile = isFileTab(tab)
       return (
-        <Menu position={ctxMenu.position} exiting={ctxMenu.exiting} onExitDone={ctxMenu.onExitDone}>
+        <Menu position={ctxMenu.position} exiting={ctxMenu.exiting} armed={ctxMenu.armed} focusOnOpen={ctxMenu.focusOnOpen} onExitDone={ctxMenu.onExitDone}>
           {isFile && isDirty && onSaveTab && (
             <MenuItem label="Save" onClick={() => { onSaveTab(tab); ctxMenu.close() }} />
           )}

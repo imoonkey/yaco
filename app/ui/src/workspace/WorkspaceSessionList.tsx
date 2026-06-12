@@ -300,7 +300,7 @@ export function SessionItem({
         </button>
       </span>
       {menu.position && (onRename || (hasChildren && onMarkSubtreeRead)) && (
-        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
+        <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
           {onRename && <MenuItem label="Rename" onClick={startRename} />}
           {hasChildren && onMarkSubtreeRead && (
             <MenuItem label="Mark subtree read" onClick={() => { onMarkSubtreeRead(); menu.close() }} />

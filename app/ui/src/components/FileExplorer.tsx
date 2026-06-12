@@ -453,7 +453,7 @@ function FileExplorer({ projectName, projectPath, worktree, tree, gitMap, gitFol
       </div>
 
       {menu.position && menuTarget && (
-        <Menu position={menu.position} exiting={menu.exiting} onExitDone={menu.onExitDone}>
+        <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
           <MenuItem label="New File" onClick={() => handleNewFile(ctxParent)} />
           <MenuItem label="New Folder" onClick={() => handleNewFolder(ctxParent)} />
           <MenuDivider />
