@@ -175,6 +175,23 @@ describe('home editor id reservation', () => {
     }))
     expect(tabs.panels).toEqual(['editor', 'tasks'])
   })
+
+  it('a dropped singleton id-collision does not block a later valid same-type leaf', () => {
+    // Corrupt: a 'files' leaf claiming the reserved 'tasks' id collides and drops,
+    // but a subsequent well-formed 'files' leaf must still survive (the type is
+    // only marked seen when a leaf is kept).
+    const root = asSplit(normalizeDesktopTree({
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
+        { node: { kind: 'leaf', id: 'tasks', panel: 'files' } }, // id collides with the tasks entry → drop
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } }, // valid → survives
+      ],
+    }))
+    const filesLeaves = leaves(root).filter((l) => l.panel === 'files')
+    expect(filesLeaves).toHaveLength(1)
+    expect(filesLeaves[0].id).toBe('files')
+  })
 })
 
 // --- Idempotency on multi-instance trees ------------------------------------
@@ -285,6 +302,24 @@ describe('closeLeaf', () => {
   it('is value-stable (re-normalizes) for an unknown id', () => {
     const base = multiLayout()
     expect(closeLeaf(base, 'ghost')).toEqual(base)
+  })
+
+  it('never tears out a split/tabs node whose id collides with the instance id', () => {
+    // A (corrupt) split node carrying an instance-shaped id must not be removed
+    // by closeLeaf — only leaves are closable.
+    const layout = normalizeLayout({
+      desktop: {
+        kind: 'split', id: 'root', axis: 'row',
+        children: [
+          { node: { kind: 'split', id: 'terminal:2', axis: 'col', children: [
+            { grow: true, node: { kind: 'leaf', id: 'files', panel: 'files' } },
+          ] } },
+          { grow: true, node: { kind: 'tabs', id: MAIN_TABS_ID, active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
+        ],
+      },
+    })
+    expect(closeLeaf(layout, 'terminal:2')).toEqual(layout) // split id collision → no-op
+    expect(closeLeaf(layout, MAIN_TABS_ID)).toEqual(layout) // tabs id → no-op (home not closable)
   })
 })
 

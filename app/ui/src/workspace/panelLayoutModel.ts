@@ -224,16 +224,16 @@ function clampBasis(raw: unknown, node: LayoutNode, axis: SplitAxis): number | u
 function normalizeLeaf(raw: Record<string, unknown>, ctx: NormCtx): LeafNode | null {
   const panel = raw.panel
   if (!isPanelId(panel)) return null
-  if (!isMulti(panel)) {
-    if (ctx.seenSingletonTypes.has(panel)) return null
-    ctx.seenSingletonTypes.add(panel)
-  }
   let id = idOf(raw.id, ctx, 'leaf')
   const claimsHomeId = panel === HOME_EDITOR_ID && id === HOME_EDITOR_ID
   if (isMulti(panel)) {
     if (claimsHomeId || ctx.seenIds.has(id)) id = freshInstanceId(ctx.seenIds, panel)
-  } else if (ctx.seenIds.has(id)) {
-    return null
+  } else {
+    // Singleton: drop a type duplicate, or (corrupt input) an id that collides
+    // with an already-placed node. Mark the type only when the leaf is kept, so a
+    // dropped collision never blocks a later valid occurrence of the same type.
+    if (ctx.seenSingletonTypes.has(panel) || ctx.seenIds.has(id)) return null
+    ctx.seenSingletonTypes.add(panel)
   }
   ctx.seenIds.add(id)
   const node: LeafNode = { kind: 'leaf', id, panel }
@@ -844,22 +844,9 @@ export function splitBeside(
   return withDesktop(layout, insertBesideNodeById(layout.desktop, targetNodeId, inserted, side, `split:${newId}`))
 }
 
-/** Remove the node with id `id`; normalization collapses any emptied parent. */
-function detachNodeById(node: LayoutNode, id: string): LayoutNode | null {
-  if (node.id === id) return null
-  if (node.kind === 'split') {
-    const children: SplitChild[] = []
-    for (const c of node.children) {
-      const next = detachNodeById(c.node, id)
-      if (next) children.push({ ...c, node: next })
-    }
-    return children.length > 0 ? { ...node, children } : null
-  }
-  return node
-}
-
 /** Detach the leaf with id `id`, returning the pruned tree plus the removed leaf
- *  (so a move can reuse its node — id + collapsed travel with it). */
+ *  (so a move can reuse its node — id + collapsed travel with it). Only leaves
+ *  match: a split/tabs node id is never torn out by an instance-id op. */
 function detachLeafById(node: LayoutNode, id: string): { tree: LayoutNode | null; leaf: LeafNode | null } {
   if (node.kind === 'leaf') {
     return node.id === id ? { tree: null, leaf: node } : { tree: node, leaf: null }
@@ -877,10 +864,14 @@ function detachLeafById(node: LayoutNode, id: string): { tree: LayoutNode | null
   return { tree: node, leaf: null }
 }
 
-/** Detach the leaf `instanceId`; normalization collapses the hole. The home editor
- *  is a tabs entry (not a leaf), so it is never closable this way. */
+/** Detach the leaf `instanceId`; normalization collapses the hole. No-op if the
+ *  id is absent or names a non-leaf node — so a stray split/tabs id can never
+ *  tear out a whole subtree. The home editor is a tabs entry (not a leaf), so it
+ *  is never closable this way. */
 export function closeLeaf(layout: WorkspacePanelLayout, instanceId: string): WorkspacePanelLayout {
-  return { ...layout, desktop: normalizeDesktopTree(detachNodeById(layout.desktop, instanceId)) }
+  const { tree, leaf } = detachLeafById(layout.desktop, instanceId)
+  if (!leaf) return layout
+  return { ...layout, desktop: normalizeDesktopTree(tree) }
 }
 
 /** Move the leaf `instanceId` beside another node, reusing the SAME leaf so its id
