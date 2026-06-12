@@ -209,6 +209,15 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     bindingsRef.current = terminalBindings
   })
 
+  // Per-session miss-count for the reconcile (design: §C). Seeded once with the
+  // restored bindings at count 1 (a session dead between reloads drops on the
+  // first poll confirming it absent).
+  const missRef = useRef<Map<string, number>>(new Map())
+  useEffect(() => {
+    missRef.current = new Map(Object.values(terminalBindings).filter(Boolean).map((s) => [s, 1]))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // setFocusTarget routes a type to the focused pane: editor/terminal resolve to
   // the active instance; other kinds equal their type (design: §C focusPane).
   const setFocusTarget = useCallback((kind: FocusTarget) => {
@@ -218,11 +227,13 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }, [focusPane])
 
   // Rename rebinds every terminal bound to the old name (the binding outlives the
-  // rename; reconcile must not mistake it for a death).
+  // rename). Also drop the old name from the miss map, so a reconcile poll that
+  // races the rebind can never mistake the renamed-away session for a death.
   const renameBoundTerminals = useCallback((oldName: string, newName: string) => {
     for (const [id, session] of Object.entries(bindingsRef.current)) {
       if (session === oldName) bindTerminal(id, newName)
     }
+    missRef.current.delete(oldName)
   }, [bindTerminal])
 
   // Single shared resources: one git poller, one sessions poller + manager.
@@ -344,15 +355,10 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     return true
   }, [bindTerminal])
 
-  // Session reconcile (design: §C). Per-session miss-count: a bound session
-  // absent from the live handles for 2 polls closes its terminal pane(s) → the
-  // session goes to History. A restored binding is pre-seeded at miss-count 1, so
-  // a session dead between reloads drops on the first poll confirming it absent.
-  const missRef = useRef<Map<string, number>>(new Map())
-  useEffect(() => {
-    missRef.current = new Map(Object.values(terminalBindings).filter(Boolean).map((s) => [s, 1]))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  // Session reconcile (design: §C). Per-session miss-count (seeded above): a bound
+  // session absent from the live handles for 2 polls closes its terminal pane(s) →
+  // the session goes to History. The bindings are read off latestRef, which a
+  // no-dep effect refreshes every render before this (later-declared) effect runs.
   useEffect(() => {
     if (!sessionsLoaded) return
     const bindings = latestRef.current.terminalBindings
@@ -604,9 +610,11 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }, [actions, setPanelLayout, mainShowsTasks, closeTasks, setFocusTarget])
 
   const closeFocusedSurface = useCallback((): boolean => {
-    const { showSearch: search, focusTarget: focus, activeTab: tab } = latestRef.current
+    const { showSearch: search, focusTarget: focus, activeTab: tab, activeTerminalId: tid } = latestRef.current
     if (search) { setShowSearch(false); return true }
-    if ((focus === 'terminal' || focus === 'session') && detachSession()) return true
+    // Terminal Cmd+W closes the pane (the session keeps running, design §3.7).
+    if (focus === 'terminal' && tid) { closePane(tid); return true }
+    if (focus === 'session' && detachSession()) return true
     if (focus === 'editor' || focus === 'tasks') {
       // Tasks showing → return to the editor (syncs the legacy sidebar toggle off).
       if (mainShowsTasks()) { closeTasks(); return true }
@@ -615,7 +623,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     if (tab) { actions.closeTab(tab); return true }
     if (detachSession()) return true
     return true
-  }, [detachSession, actions, mainShowsTasks, closeTasks])
+  }, [detachSession, actions, mainShowsTasks, closeTasks, closePane])
 
   // Layout commands. These mutate the panel-layout tree through the pure
   // `panelLayoutModel` edits (the tree renderer reads the result). Dock/activity
