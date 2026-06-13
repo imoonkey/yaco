@@ -32,6 +32,7 @@ function renderBar(
 ) {
   const props: GroupTabBarProps = {
     groupId: 'g1',
+    region: 'center',
     tabs: [],
     activeTab: '',
     isActiveGroup: true,
@@ -42,7 +43,8 @@ function renderBar(
     onSelectTab: vi.fn(),
     onCloseTab: vi.fn(),
     onSplit: vi.fn(),
-    onReorderTab: vi.fn(),
+    onMoveTab: vi.fn(),
+    onMoveGroup: vi.fn(),
     onCloseGroup: vi.fn(),
     onActivateGroup: vi.fn(),
     onDiscardDirty: vi.fn(),
@@ -236,7 +238,7 @@ describe('GroupTabBar — dirty/conflict keyed by underlying path (diff tabs)', 
   })
 })
 
-describe('GroupTabBar — within-group reorder', () => {
+describe('GroupTabBar — tab-bar drop (move + reorder via the global pane payload)', () => {
   // A real pane drag carries a DataTransfer tagged with our pane mime; the same
   // transfer object rides both dragStart (source sets the mime) and drop (target
   // gates on it). A bare fake is enough — setData populates `types`.
@@ -252,35 +254,49 @@ describe('GroupTabBar — within-group reorder', () => {
     }
   }
 
-  it('reorders a dragged tab to the drop target index (through the global pane payload)', () => {
-    const onReorderTab = vi.fn()
+  // jsdom gives every element a zero rect; the insertion index is geometry, so stub
+  // sequential 100px-wide tab rects (midpoints 50/150/250/…) to drive `tabInsertIndex`.
+  const stubTabRects = (els: HTMLElement[], width = 100) => {
+    els.forEach((el, i) => {
+      el.getBoundingClientRect = () => ({ x: i * width, y: 0, width, height: 28, top: 0, left: i * width, right: (i + 1) * width, bottom: 28, toJSON: () => ({}) })
+    })
+  }
+
+  it('moves a dragged tab to the pointer-derived insertion index (within-group reorder)', () => {
+    const onMoveTab = vi.fn()
     renderBar({
       tabs: [EDITOR('editor:1', 'a.ts'), EDITOR('editor:2', 'b.ts'), EDITOR('editor:3', 'c.ts')],
-      onReorderTab,
+      onMoveTab,
     })
     const tabEls = screen.getAllByTestId('group-tab')
+    stubTabRects(tabEls)
     const dataTransfer = paneTransfer()
     fireEvent.dragStart(tabEls[0], { dataTransfer })
     // The source tags the native drag so the move cursor shows + drop targets can
     // tell this apart from a foreign/text-plain list drag.
     expect(dataTransfer.types).toContain('application/yaco-pane')
     expect(dataTransfer.getData('application/yaco-pane')).toBe('tab')
-    fireEvent.drop(tabEls[2], { dataTransfer })
-    expect(onReorderTab).toHaveBeenCalledWith('editor:1', 2)
+    // clientX past the first two midpoints (50, 150) → insertion index 2. The same
+    // MOVE_TAB path serves the within-group reorder (from===to) and a cross-group move.
+    // jsdom drops drag-event mouse coords from init, so set clientX explicitly.
+    const drop = createEvent.drop(tabEls[2], { dataTransfer })
+    Object.defineProperty(drop, 'clientX', { value: 200, configurable: true })
+    fireEvent(tabEls[2], drop)
+    expect(onMoveTab).toHaveBeenCalledWith('g1', 'editor:1', 'g1', 2)
   })
 
   it('ignores a foreign drag (no pane mime) — the text/plain list reorders stay independent', () => {
-    const onReorderTab = vi.fn()
+    const onMoveTab = vi.fn()
     renderBar({
       tabs: [EDITOR('editor:1', 'a.ts'), EDITOR('editor:2', 'b.ts')],
-      onReorderTab,
+      onMoveTab,
     })
     const tabEls = screen.getAllByTestId('group-tab')
     const foreign = paneTransfer()
     foreign.setData('text/plain', 'some-session') // a ProjectList/SessionList-style drag
     // No pane dragStart fired ⇒ no live payload + no pane mime ⇒ the drop is a no-op.
     fireEvent.drop(tabEls[1], { dataTransfer: foreign })
-    expect(onReorderTab).not.toHaveBeenCalled()
+    expect(onMoveTab).not.toHaveBeenCalled()
   })
 
   it('does NOT accept a pane-typed dragover without a live payload (a drop target needs BOTH)', () => {

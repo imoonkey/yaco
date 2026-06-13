@@ -13,10 +13,10 @@
 //
 // Group-native callbacks are wired by `PanelGroup`; session metadata + `isTouch`
 // are read from context here, and `useContextMenu` is instantiated internally.
-import { useCallback, useContext, useMemo, useState } from 'react'
+import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { X, AlertTriangle, SplitSquareHorizontal } from 'lucide-react'
 import { isDiffTab } from '../hooks/useWorkspaceState'
-import { WorkspaceDataContext, WorkspaceEnvContext, type SplitSide, type EditorPrefs } from './context'
+import { WorkspaceDataContext, WorkspaceEnvContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
 import { tabIdToPath } from './panelLayoutModel'
 import { tabName, computeDisambigSuffixes } from './tabLabels'
@@ -27,10 +27,16 @@ import { Menu, MenuItem, MenuDivider } from '../components/Menu'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useContextMenu } from '../components/useContextMenu'
 import { useDrag, isPaneDrag } from './WorkspaceDragContext'
+import { tabInsertIndex, legalZones, type Rect, type Region } from './dndGeometry'
+import { InsertionMarker } from './InsertionMarker'
 
 export type GroupTabBarProps = {
-  /** The group's structural node id — the target for select/close/split/reorder. */
+  /** The group's structural node id — the target for select/close/split/move. */
   groupId: string
+  /** The group's enforced region. The split affordance is offered only in `center`
+   *  (a split on a sidebar group would just merge), and the tab-bar drop legality
+   *  (`legalZones` on the `group` target) is region-scoped. */
+  region: Region
   /** The group's ordered, mixed editor+terminal tabs (interleaved). */
   tabs: GroupTab[]
   /** The active tab's instanceId, or '' for an empty group. */
@@ -52,8 +58,12 @@ export type GroupTabBarProps = {
   onCloseTab: (instanceId: string) => void
   /** Split this group to a sibling on `side`; the new group becomes the open target. */
   onSplit: (side: SplitSide) => void
-  /** Reorder a tab within this group to `toIndex` (within-group DnD). */
-  onReorderTab: (instanceId: string, toIndex: number) => void
+  /** Move a tab into this group at `toIndex` (the universal tab mover — covers both a
+   *  cross-group move and the within-group reorder, the from===to case). */
+  onMoveTab: (fromGroupId: string, instanceId: string, toGroupId: string, toIndex: number) => void
+  /** Relocate a whole dragged group (beside a node, or merged into a group). The tab
+   *  bar drops a group as a MERGE into this group. */
+  onMoveGroup: (groupId: string, placement: GroupPlacement) => void
   /** Close this (empty) group — the "Close Group" context item. */
   onCloseGroup: () => void
   /** True when this group may be removed (more than one group exists) — gates the
@@ -99,13 +109,23 @@ const SPLIT_ITEMS: { label: string; side: SplitSide }[] = [
 
 export function GroupTabBar(props: GroupTabBarProps) {
   const {
-    groupId, tabs, activeTab, isActiveGroup, dirtyTabs, conflictTabs, terminalBindings,
-    pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onReorderTab,
+    groupId, region, tabs, activeTab, isActiveGroup, dirtyTabs, conflictTabs, terminalBindings,
+    pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onMoveTab, onMoveGroup,
     onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, editorPrefs, onSetEditorPrefs,
   } = props
 
   const menu = useContextMenu()
   const drag = useDrag()
+  const stripRef = useRef<HTMLDivElement>(null)
+  // Drag feedback over the strip: the insertion index for a tab drop (the marker), and
+  // a merge hint while a whole group hovers (its tabs would append here).
+  const [dropIndex, setDropIndex] = useState<number | null>(null)
+  const [mergeHint, setMergeHint] = useState(false)
+  // The split affordance is center-only; the right sidebar group can hold one group but
+  // a "split" there would just merge, so it is not offered. An empty group still needs
+  // its menu for Close Group, so bind/render the menu when there is something to show.
+  const canSplit = region === 'center'
+  const showMenu = canSplit || tabs.length === 0
   // Session metadata (terminal provider/icon) and the touch flag are global, not
   // group-scoped — read directly and optionally so the strip still renders in a
   // structural isolation harness that omits the data/env providers.
@@ -141,23 +161,78 @@ export function GroupTabBar(props: GroupTabBarProps) {
     onCloseTab(tab.instanceId)
   }, [dirtyTabs, pathsOpenElsewhere, onCloseTab])
 
-  // A pane drop is accepted only with BOTH a live payload AND our pane mime (a
-  // foreign/text-plain drag is ignored). Within-group reorder is the from===to
-  // case of the global path — it keeps calling the existing reorder command.
-  // Cross-group drops are routed by a later task; here they no-op.
-  const onDrop = useCallback((toIndex: number) => (e: React.DragEvent) => {
+  // The tab strip is ONE drop target (not per-tab): the insertion index comes from the
+  // pointer vs the live tab midpoints (`tabInsertIndex`), so a marker can show exactly
+  // where the tab lands. A drop is accepted only with BOTH a live payload AND our pane
+  // mime, and only when `legalZones` allows it on this region's `group` target (a tab →
+  // {tab}, a group → {center: merge}; both empty outside the center). A tab move is the
+  // universal mover (cross-group AND the from===to within-group reorder); a group is a
+  // merge into this group.
+  const measureTabs = useCallback((): Rect[] => {
+    const root = stripRef.current
+    if (!root) return []
+    return Array.from(root.querySelectorAll<HTMLElement>('[data-testid="group-tab"]')).map((el) => {
+      const r = el.getBoundingClientRect()
+      return { x: r.left, y: r.top, width: r.width, height: r.height }
+    })
+  }, [])
+
+  const clearDropFeedback = () => { setDropIndex(null); setMergeHint(false) }
+
+  const onStripDragOver = useCallback((e: React.DragEvent) => {
     const payload = drag.peek()
     if (!payload || !isPaneDrag(e)) return
-    e.preventDefault()
-    if (payload.kind === 'tab' && payload.fromGroupId === groupId) onReorderTab(payload.instanceId, toIndex)
+    const zones = legalZones({ kind: payload.kind }, { region, kind: 'group' })
+    if (payload.kind === 'tab' && zones.has('tab')) {
+      e.preventDefault()
+      setDropIndex(tabInsertIndex(measureTabs(), e.clientX))
+      setMergeHint(false)
+    } else if (payload.kind === 'group' && zones.has('center')) {
+      e.preventDefault()
+      setMergeHint(payload.groupId !== groupId)
+      setDropIndex(null)
+    } else {
+      clearDropFeedback() // illegal — render no feedback, leave the drop rejected
+    }
+  }, [drag, region, groupId, measureTabs])
+
+  const onStripDragLeave = useCallback((e: React.DragEvent) => {
+    if (!stripRef.current?.contains(e.relatedTarget as Node | null)) clearDropFeedback()
+  }, [])
+
+  const onStripDrop = useCallback((e: React.DragEvent) => {
+    const payload = drag.peek()
+    clearDropFeedback()
+    if (!payload || !isPaneDrag(e)) return
+    const zones = legalZones({ kind: payload.kind }, { region, kind: 'group' })
+    if (payload.kind === 'tab' && zones.has('tab')) {
+      e.preventDefault()
+      onMoveTab(payload.fromGroupId, payload.instanceId, groupId, tabInsertIndex(measureTabs(), e.clientX))
+    } else if (payload.kind === 'group' && zones.has('center')) {
+      e.preventDefault()
+      if (payload.groupId !== groupId) onMoveGroup(payload.groupId, { kind: 'merge', targetGroupId: groupId })
+    }
     drag.clear()
-  }, [drag, groupId, onReorderTab])
+  }, [drag, region, groupId, measureTabs, onMoveTab, onMoveGroup])
 
   const chooseSplit = (side: SplitSide) => { onSplit(side); menu.close() }
 
+  // Feedback shows only while a drag is live; a drag that ends anywhere (drop/cancel)
+  // flips the reactive payload to null and re-renders, clearing the marker/hint without
+  // a cleanup effect.
+  const dragging = !!drag.payload
+  const showMarkerAt = (i: number) => dragging && dropIndex === i
+
   return (
     <div className="flex items-center shrink-0" style={BAR_STYLE} data-group-tab-bar={groupId}>
-      <div className="flex-1 min-w-0 flex items-center h-full overflow-x-auto">
+      <div
+        ref={stripRef}
+        className="flex-1 min-w-0 flex items-center h-full overflow-x-auto"
+        style={{ backgroundColor: dragging && mergeHint ? 'color-mix(in srgb, var(--sol-accent) 12%, transparent)' : undefined }}
+        onDragOver={onStripDragOver}
+        onDragLeave={onStripDragLeave}
+        onDrop={onStripDrop}
+      >
         {tabs.map((tab, index) => {
           const isActive = tab.instanceId === activeTab
           const isEditor = tab.kind === 'editor'
@@ -178,55 +253,56 @@ export function GroupTabBar(props: GroupTabBarProps) {
             ? (isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)')
             : 'var(--sol-text-faint)'
           return (
-            <div
-              key={tab.instanceId}
-              data-testid="group-tab"
-              data-tab-instance={tab.instanceId}
-              data-tab-kind={tab.kind}
-              data-tab-active={isActive || undefined}
-              draggable={!isTouch}
-              onDragStart={(e) => drag.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
-              onDragOver={(e) => { if (drag.peek() && isPaneDrag(e)) e.preventDefault() }}
-              onDrop={onDrop(index)}
-              onDragEnd={drag.clear}
-              onClick={() => onSelectTab(tab.instanceId)}
-              title={isEditor ? tab.tabId : label}
-              className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
-              style={{
-                ...TAB_STYLE_BASE,
-                backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)',
-                color: labelColor,
-                borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
-                borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
-                fontStyle: isPreview ? 'italic' : undefined,
-                opacity: drag.payload?.kind === 'tab' && drag.payload.instanceId === tab.instanceId ? 0.4 : undefined,
-              }}
-            >
-              {isEditor
-                ? !isDiff && <FileTypeIcon name={tab.tabId} />
-                : <ProviderIcon provider={provider ?? 'terminal'} className="w-3.5 h-3.5 shrink-0" />}
-              <span className="truncate max-w-[120px]">{label}</span>
-              {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
-              {isConflict ? (
-                <span className="w-3 h-3 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={10} /></span>
-              ) : isDirty ? (
-                <span className="relative w-3 h-3 flex items-center justify-center shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0 group-hover:hidden" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
+            <Fragment key={tab.instanceId}>
+              {showMarkerAt(index) && <InsertionMarker />}
+              <div
+                data-testid="group-tab"
+                data-tab-instance={tab.instanceId}
+                data-tab-kind={tab.kind}
+                data-tab-active={isActive || undefined}
+                draggable={!isTouch}
+                onDragStart={(e) => drag.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
+                onDragEnd={drag.clear}
+                onClick={() => onSelectTab(tab.instanceId)}
+                title={isEditor ? tab.tabId : label}
+                className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
+                style={{
+                  ...TAB_STYLE_BASE,
+                  backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)',
+                  color: labelColor,
+                  borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
+                  borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
+                  fontStyle: isPreview ? 'italic' : undefined,
+                  opacity: drag.payload?.kind === 'tab' && drag.payload.instanceId === tab.instanceId ? 0.4 : undefined,
+                }}
+              >
+                {isEditor
+                  ? !isDiff && <FileTypeIcon name={tab.tabId} />
+                  : <ProviderIcon provider={provider ?? 'terminal'} className="w-3.5 h-3.5 shrink-0" />}
+                <span className="truncate max-w-[120px]">{label}</span>
+                {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
+                {isConflict ? (
+                  <span className="w-3 h-3 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={10} /></span>
+                ) : isDirty ? (
+                  <span className="relative w-3 h-3 flex items-center justify-center shrink-0">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0 group-hover:hidden" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
+                    <button onClick={(e) => requestClose(tab, e)}
+                      className="hidden group-hover:flex w-3 h-3 items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg absolute inset-0" style={{ color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
+                      aria-label={closeLabel}
+                    ><X size={10} /></button>
+                  </span>
+                ) : (
                   <button onClick={(e) => requestClose(tab, e)}
-                    className="hidden group-hover:flex w-3 h-3 items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg absolute inset-0" style={{ color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
+                    className={`w-3 h-3 flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg ${isTouch ? '' : 'opacity-0 group-hover:opacity-100'}`}
+                    style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
                     aria-label={closeLabel}
                   ><X size={10} /></button>
-                </span>
-              ) : (
-                <button onClick={(e) => requestClose(tab, e)}
-                  className={`w-3 h-3 flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg ${isTouch ? '' : 'opacity-0 group-hover:opacity-100'}`}
-                  style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
-                  aria-label={closeLabel}
-                ><X size={10} /></button>
-              )}
-            </div>
+                )}
+              </div>
+            </Fragment>
           )
         })}
+        {showMarkerAt(tabs.length) && <InsertionMarker />}
         {/* The empty/background area is the WHOLE-GROUP drag source (mirrors VSCode
             "drag the tabs container") — distinct from a tab drag because tabs are
             sibling elements, so a tab dragstart never originates here. A left-click
@@ -235,7 +311,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
           draggable={!isTouch}
           onDragStart={(e) => drag.start(e, { kind: 'group', groupId })}
           onDragEnd={drag.clear}
-          onClick={onActivateGroup} {...menu.bind()} data-testid="group-empty-area">
+          onClick={onActivateGroup} {...(showMenu ? menu.bind() : {})} data-testid="group-empty-area">
           {tabs.length === 0 && <span className="px-3 text-ui-sm shrink-0" style={{ color: 'var(--sol-text)' }}>No files open</span>}
         </div>
       </div>
@@ -251,11 +327,13 @@ export function GroupTabBar(props: GroupTabBarProps) {
             onSetEditorPrefs={onSetEditorPrefs}
           />
         )}
-        <button type="button" onClick={menu.openFromTrigger}
-          data-testid="split-group" title="Split editor group" aria-label="Split editor group" aria-haspopup="menu"
-          style={SPLIT_BTN_STYLE}>
-          <SplitSquareHorizontal size={13} aria-hidden="true" />
-        </button>
+        {canSplit && (
+          <button type="button" onClick={menu.openFromTrigger}
+            data-testid="split-group" title="Split editor group" aria-label="Split editor group" aria-haspopup="menu"
+            style={SPLIT_BTN_STYLE}>
+            <SplitSquareHorizontal size={13} aria-hidden="true" />
+          </button>
+        )}
         {/* An empty group offers a VISIBLE Close Group button (FIX B) so the source
             group left behind by a terminal split-move is obviously closable — not
             only via the right-click menu. The last group is never closable. */}
@@ -268,14 +346,14 @@ export function GroupTabBar(props: GroupTabBarProps) {
         )}
       </div>
 
-      {menu.position && (
+      {showMenu && menu.position && (
         <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
-          {SPLIT_ITEMS.map(({ label, side }) => (
+          {canSplit && SPLIT_ITEMS.map(({ label, side }) => (
             <MenuItem key={side} label={label} onClick={() => chooseSplit(side)} />
           ))}
           {tabs.length === 0 && (
             <>
-              <MenuDivider />
+              {canSplit && <MenuDivider />}
               <MenuItem label="Close Group" danger onClick={() => { onCloseGroup(); menu.close() }} />
             </>
           )}
