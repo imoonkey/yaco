@@ -207,13 +207,19 @@ export function GroupTabBar(props: GroupTabBarProps) {
     const zones = legalZones({ kind: payload.kind }, { region, kind: 'group' })
     if (payload.kind === 'tab' && zones.has('tab')) {
       e.preventDefault()
-      onMoveTab(payload.fromGroupId, payload.instanceId, groupId, tabInsertIndex(measureTabs(), e.clientX))
+      const rawIndex = tabInsertIndex(measureTabs(), e.clientX)
+      // MOVE_TAB removes the source tab BEFORE inserting at toIndex, so a SAME-group
+      // rightward move (source sits left of the visual insertion point) must target one
+      // slot earlier or it lands one too far. Cross-group moves are unaffected.
+      const fromIndex = tabs.findIndex((t) => t.instanceId === payload.instanceId)
+      const sameGroupRightward = payload.fromGroupId === groupId && fromIndex !== -1 && fromIndex < rawIndex
+      onMoveTab(payload.fromGroupId, payload.instanceId, groupId, sameGroupRightward ? rawIndex - 1 : rawIndex)
     } else if (payload.kind === 'group' && zones.has('center')) {
       e.preventDefault()
       if (payload.groupId !== groupId) onMoveGroup(payload.groupId, { kind: 'merge', targetGroupId: groupId })
     }
     drag.clear()
-  }, [drag, region, groupId, measureTabs, onMoveTab, onMoveGroup])
+  }, [drag, region, groupId, tabs, measureTabs, onMoveTab, onMoveGroup])
 
   const chooseSplit = (side: SplitSide) => { onSplit(side); menu.close() }
 

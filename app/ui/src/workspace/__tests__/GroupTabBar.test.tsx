@@ -276,13 +276,14 @@ describe('GroupTabBar — tab-bar drop (move + reorder via the global pane paylo
     // tell this apart from a foreign/text-plain list drag.
     expect(dataTransfer.types).toContain('application/yaco-pane')
     expect(dataTransfer.getData('application/yaco-pane')).toBe('tab')
-    // clientX past the first two midpoints (50, 150) → insertion index 2. The same
-    // MOVE_TAB path serves the within-group reorder (from===to) and a cross-group move.
-    // jsdom drops drag-event mouse coords from init, so set clientX explicitly.
+    // clientX past the first two midpoints (50, 150) → visual insertion index 2. The
+    // same MOVE_TAB path serves the within-group reorder (from===to) and a cross-group
+    // move. Because MOVE_TAB removes the source first, a same-group rightward move
+    // targets one slot earlier (2 → 1). jsdom drops drag-event coords, so set clientX.
     const drop = createEvent.drop(tabEls[2], { dataTransfer })
     Object.defineProperty(drop, 'clientX', { value: 200, configurable: true })
     fireEvent(tabEls[2], drop)
-    expect(onMoveTab).toHaveBeenCalledWith('g1', 'editor:1', 'g1', 2)
+    expect(onMoveTab).toHaveBeenCalledWith('g1', 'editor:1', 'g1', 1)
   })
 
   it('ignores a foreign drag (no pane mime) — the text/plain list reorders stay independent', () => {

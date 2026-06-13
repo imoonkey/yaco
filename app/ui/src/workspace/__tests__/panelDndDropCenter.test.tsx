@@ -27,7 +27,7 @@ import {
 } from '../context'
 import { useDrag, type DragPayload } from '../WorkspaceDragContext'
 import {
-  splitBeside, defaultWorkspacePanelLayout, normalizeDesktopTree,
+  splitBeside, moveTabBetweenGroups, defaultWorkspacePanelLayout, normalizeDesktopTree,
 } from '../panelLayoutModel'
 import type { PaneMarker } from '../panelInstance'
 import type { GroupTab, LayoutNode, SplitNode, TabsNode, WorkspacePanelLayout } from '../../hooks/workspaceTypes'
@@ -72,6 +72,14 @@ const findSplit = (tree: LayoutNode, id: string): SplitNode | null => {
   if (tree.kind !== 'split') return null
   if (tree.id === id) return tree
   for (const c of tree.children) { const hit = findSplit(c.node, id); if (hit) return hit }
+  return null
+}
+
+const findGroup = (tree: LayoutNode, id: string): TabsNode | null => {
+  if (tree.kind === 'tabs') return tree.id === id ? tree : null
+  if (tree.kind === 'split') {
+    for (const c of tree.children) { const hit = findGroup(c.node, id); if (hit) return hit }
+  }
   return null
 }
 
@@ -253,6 +261,30 @@ describe('GroupTabBar — cross-group move + group merge', () => {
     // Drop on g2's strip → merge g1 into g2.
     fireEvent.drop(within(screen.getByTestId('bar2')).getByTestId('group-empty-area'), { dataTransfer: transfer })
     expect(p2.onMoveGroup).toHaveBeenCalledWith('g1', { kind: 'merge', targetGroupId: 'g2' })
+  })
+
+  it('a same-group rightward reorder moves the tab exactly ONE slot (remove-before-insert)', () => {
+    const { p1 } = renderTwoBars(
+      { tabs: [EDITOR('e1', 'a.ts'), EDITOR('e2', 'b.ts'), EDITOR('e3', 'c.ts')] },
+      {},
+    )
+    const transfer = paneTransfer()
+    const tabs = within(screen.getByTestId('bar1')).getAllByTestId('group-tab')
+    tabs.forEach((el, i) => stubRect(el, { x: i * 100, y: 0, width: 100, height: 28 }))
+    // Drag e1 (index 0) and drop between e2 and e3 (clientX 200 → visual index 2).
+    fireEvent.dragStart(tabs[0], { dataTransfer: transfer })
+    fireDrag('drop', tabs[2], transfer, 200)
+    // MOVE_TAB removes e1 first, so the rightward same-group move targets index 1, not 2.
+    expect(p1.onMoveTab).toHaveBeenCalledWith('g1', 'e1', 'g1', 1)
+    // Feeding that index through the REAL mover yields the intended order — e1 lands
+    // BETWEEN e2 and e3 (moved one slot), not after e3 (moved two).
+    const layout = {
+      ...defaultWorkspacePanelLayout(),
+      desktop: normalizeDesktopTree(groupNode('g1', [EDITOR('e1', 'a.ts'), EDITOR('e2', 'b.ts'), EDITOR('e3', 'c.ts')])),
+    }
+    const [from, inst, to, toIndex] = vi.mocked(p1.onMoveTab).mock.calls[0]
+    const next = moveTabBetweenGroups(layout, from, inst, to, toIndex)
+    expect(findGroup(next.desktop, 'g1')!.tabs.map((t) => t.instanceId)).toEqual(['e2', 'e1', 'e3'])
   })
 
   it('shows an insertion marker on dragover at the computed index, gone after drop', () => {
