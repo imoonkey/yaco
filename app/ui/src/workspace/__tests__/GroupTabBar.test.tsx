@@ -6,7 +6,7 @@
 // dismiss-safe Split menu (button + empty-area right-click), Close Group on an
 // empty group, the dirty-close confirm + its pathsOpenElsewhere no-op, and
 // within-group drag reorder.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { GroupTabBar, type GroupTabBarProps } from '../GroupTabBar'
@@ -16,7 +16,10 @@ import {
 } from '../context'
 import type { GroupTab } from '../../hooks/workspaceTypes'
 
-afterEach(cleanup)
+// The dragged-pane identity is a module singleton (WorkspaceDragContext) — clear
+// it between tests via the window-level dragend fallback so a stale payload never
+// leaks across cases.
+afterEach(() => { cleanup(); window.dispatchEvent(new Event('dragend')) })
 
 const EDITOR = (instanceId: string, tabId: string, extra: Partial<GroupTab> = {}): GroupTab =>
   ({ instanceId, kind: 'editor', tabId, ...extra }) as GroupTab
@@ -234,16 +237,73 @@ describe('GroupTabBar — dirty/conflict keyed by underlying path (diff tabs)', 
 })
 
 describe('GroupTabBar — within-group reorder', () => {
-  it('reorders a dragged tab to the drop target index', () => {
+  // A real pane drag carries a DataTransfer tagged with our pane mime; the same
+  // transfer object rides both dragStart (source sets the mime) and drop (target
+  // gates on it). A bare fake is enough — setData populates `types`.
+  const paneTransfer = () => {
+    const store: Record<string, string> = {}
+    const types: string[] = []
+    return {
+      effectAllowed: 'none',
+      dropEffect: 'none',
+      types,
+      setData: (type: string, value: string) => { if (!(type in store)) types.push(type); store[type] = value },
+      getData: (type: string) => store[type] ?? '',
+    }
+  }
+
+  it('reorders a dragged tab to the drop target index (through the global pane payload)', () => {
     const onReorderTab = vi.fn()
     renderBar({
       tabs: [EDITOR('editor:1', 'a.ts'), EDITOR('editor:2', 'b.ts'), EDITOR('editor:3', 'c.ts')],
       onReorderTab,
     })
     const tabEls = screen.getAllByTestId('group-tab')
-    fireEvent.dragStart(tabEls[0])
-    fireEvent.drop(tabEls[2])
+    const dataTransfer = paneTransfer()
+    fireEvent.dragStart(tabEls[0], { dataTransfer })
+    // The source tags the native drag so the move cursor shows + drop targets can
+    // tell this apart from a foreign/text-plain list drag.
+    expect(dataTransfer.types).toContain('application/yaco-pane')
+    expect(dataTransfer.getData('application/yaco-pane')).toBe('tab')
+    fireEvent.drop(tabEls[2], { dataTransfer })
     expect(onReorderTab).toHaveBeenCalledWith('editor:1', 2)
+  })
+
+  it('ignores a foreign drag (no pane mime) — the text/plain list reorders stay independent', () => {
+    const onReorderTab = vi.fn()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'a.ts'), EDITOR('editor:2', 'b.ts')],
+      onReorderTab,
+    })
+    const tabEls = screen.getAllByTestId('group-tab')
+    const foreign = paneTransfer()
+    foreign.setData('text/plain', 'some-session') // a ProjectList/SessionList-style drag
+    // No pane dragStart fired ⇒ no live payload + no pane mime ⇒ the drop is a no-op.
+    fireEvent.drop(tabEls[1], { dataTransfer: foreign })
+    expect(onReorderTab).not.toHaveBeenCalled()
+  })
+
+  it('does NOT accept a pane-typed dragover without a live payload (a drop target needs BOTH)', () => {
+    renderBar({ tabs: [EDITOR('editor:1', 'a.ts')] })
+    const tab = screen.getByTestId('group-tab')
+    // The pane mime is present but no dragStart fired ⇒ no live payload. Accepting
+    // (preventDefault) here would let a stale/foreign typed drag drop onto a pane.
+    const spoof = paneTransfer()
+    spoof.setData('application/yaco-pane', 'tab')
+    const over = createEvent.dragOver(tab, { dataTransfer: spoof })
+    fireEvent(tab, over)
+    expect(over.defaultPrevented).toBe(false)
+  })
+
+  it('drags the whole group from the background area (distinct from a tab drag)', () => {
+    renderBar({ tabs: [EDITOR('editor:1', 'a.ts')] })
+    const tabTransfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('group-tab'), { dataTransfer: tabTransfer })
+    expect(tabTransfer.getData('application/yaco-pane')).toBe('tab')
+
+    const groupTransfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('group-empty-area'), { dataTransfer: groupTransfer })
+    expect(groupTransfer.getData('application/yaco-pane')).toBe('group')
   })
 })
 

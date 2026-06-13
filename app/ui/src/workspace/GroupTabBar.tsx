@@ -26,6 +26,7 @@ import { ProviderIcon } from '../components/SessionIcons'
 import { Menu, MenuItem, MenuDivider } from '../components/Menu'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useContextMenu } from '../components/useContextMenu'
+import { useDrag, isPaneDrag } from './WorkspaceDragContext'
 
 export type GroupTabBarProps = {
   /** The group's structural node id — the target for select/close/split/reorder. */
@@ -104,6 +105,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   } = props
 
   const menu = useContextMenu()
+  const drag = useDrag()
   // Session metadata (terminal provider/icon) and the touch flag are global, not
   // group-scoped — read directly and optionally so the strip still renders in a
   // structural isolation harness that omits the data/env providers.
@@ -111,7 +113,6 @@ export function GroupTabBar(props: GroupTabBarProps) {
   const isTouch = useContext(WorkspaceEnvContext)?.viewport.isTouch ?? false
 
   const [pendingClose, setPendingClose] = useState<{ instanceId: string; tabId: string } | null>(null)
-  const [dragId, setDragId] = useState<string | null>(null)
 
   // Disambiguate same-basename files by their shortest unique parent suffix.
   const disambig = useMemo(
@@ -140,11 +141,17 @@ export function GroupTabBar(props: GroupTabBarProps) {
     onCloseTab(tab.instanceId)
   }, [dirtyTabs, pathsOpenElsewhere, onCloseTab])
 
+  // A pane drop is accepted only with BOTH a live payload AND our pane mime (a
+  // foreign/text-plain drag is ignored). Within-group reorder is the from===to
+  // case of the global path — it keeps calling the existing reorder command.
+  // Cross-group drops are routed by a later task; here they no-op.
   const onDrop = useCallback((toIndex: number) => (e: React.DragEvent) => {
+    const payload = drag.peek()
+    if (!payload || !isPaneDrag(e)) return
     e.preventDefault()
-    if (dragId) onReorderTab(dragId, toIndex)
-    setDragId(null)
-  }, [dragId, onReorderTab])
+    if (payload.kind === 'tab' && payload.fromGroupId === groupId) onReorderTab(payload.instanceId, toIndex)
+    drag.clear()
+  }, [drag, groupId, onReorderTab])
 
   const chooseSplit = (side: SplitSide) => { onSplit(side); menu.close() }
 
@@ -178,10 +185,10 @@ export function GroupTabBar(props: GroupTabBarProps) {
               data-tab-kind={tab.kind}
               data-tab-active={isActive || undefined}
               draggable={!isTouch}
-              onDragStart={() => setDragId(tab.instanceId)}
-              onDragOver={(e) => { if (dragId) e.preventDefault() }}
+              onDragStart={(e) => drag.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
+              onDragOver={(e) => { if (drag.peek() && isPaneDrag(e)) e.preventDefault() }}
               onDrop={onDrop(index)}
-              onDragEnd={() => setDragId(null)}
+              onDragEnd={drag.clear}
               onClick={() => onSelectTab(tab.instanceId)}
               title={isEditor ? tab.tabId : label}
               className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
@@ -192,7 +199,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
                 borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
                 borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
                 fontStyle: isPreview ? 'italic' : undefined,
-                opacity: dragId === tab.instanceId ? 0.4 : undefined,
+                opacity: drag.payload?.kind === 'tab' && drag.payload.instanceId === tab.instanceId ? 0.4 : undefined,
               }}
             >
               {isEditor
@@ -220,9 +227,15 @@ export function GroupTabBar(props: GroupTabBarProps) {
             </div>
           )
         })}
-        {/* The empty area: a left-click focuses this (possibly empty) group as the
-            open/close target; a right-click here opens the same Split menu as the button. */}
-        <div className="flex-1 self-stretch flex items-center" style={{ minWidth: 32 }} onClick={onActivateGroup} {...menu.bind()} data-testid="group-empty-area">
+        {/* The empty/background area is the WHOLE-GROUP drag source (mirrors VSCode
+            "drag the tabs container") — distinct from a tab drag because tabs are
+            sibling elements, so a tab dragstart never originates here. A left-click
+            still focuses this group; a right-click opens the same Split menu. */}
+        <div className="flex-1 self-stretch flex items-center" style={{ minWidth: 32 }}
+          draggable={!isTouch}
+          onDragStart={(e) => drag.start(e, { kind: 'group', groupId })}
+          onDragEnd={drag.clear}
+          onClick={onActivateGroup} {...menu.bind()} data-testid="group-empty-area">
           {tabs.length === 0 && <span className="px-3 text-ui-sm shrink-0" style={{ color: 'var(--sol-text)' }}>No files open</span>}
         </div>
       </div>
