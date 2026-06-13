@@ -754,6 +754,22 @@ export function useLayoutState(
   const groupForInstance = useCallback((instanceId: string): string =>
     groupOf(stateRef.current.panelLayout.desktop, instanceId) ?? targetGroup(stateRef.current), [])
 
+  /** The live kind-aware editor open target (pure resolver over current state). The
+   *  single-shot go-to-line path reads this to pre-mint its instanceId without the
+   *  reducer round-trip (design: Synchronous results). */
+  const resolveEditorTarget = useCallback((): OpenTarget => resolveOpenTarget('editor', stateRef.current), [])
+
+  /** Split a fresh EMPTY group beside the center's first group (the routed "new
+   *  group" home) and return its id — the dispatching twin of `splitCenterGroup`, so
+   *  go-to-line into a {new} target lands in the same place a routed action would. */
+  const newCenterGroup = useCallback((): string => {
+    const tree = stateRef.current.panelLayout.desktop
+    const target = firstCenterGroupId(centerOf(tree)) ?? firstGroupId(tree) ?? ''
+    const newGroupId = freshGroupId()
+    dispatch({ type: 'SPLIT_GROUP', fromGroupId: target, side: 'right', newGroupId, seed: false, basis: halfGroupBasis(target, 'right') })
+    return newGroupId
+  }, [])
+
   const setPanelLayout = useCallback((update: PanelLayoutUpdate) => {
     dispatch({ type: 'SET_PANEL_LAYOUT', update })
   }, [])
@@ -795,6 +811,24 @@ export function useLayoutState(
     const newId = newTerminalId()
     dispatch({ type: 'OPEN_BOUND_TERMINAL_TAB', groupId, session, newId, preview, protectedPaths: dirtyPathsRef.current })
     return newId
+  }, [dirtyPathsRef])
+
+  // --- Routed open dispatchers (design: separateKinds) ---
+  // No group/instance ids: the reducer resolves the kind-`K` target group from LIVE
+  // state and spawns a center split when the rule asks for a new group — all in one
+  // transition, so rapid dispatches coalesce. The thin command wrapper supplies only
+  // the tabId/session and its path-keyed effects.
+  const openRoutedTab = useCallback((tabId: string) => {
+    dispatch({ type: 'OPEN_ROUTED_TAB', tabId })
+  }, [])
+  const openRoutedDiffTab = useCallback((tabId: string) => {
+    dispatch({ type: 'OPEN_ROUTED_DIFF_TAB', tabId })
+  }, [])
+  const openRoutedPreviewTab = useCallback((tabId: string) => {
+    dispatch({ type: 'OPEN_ROUTED_PREVIEW_TAB', tabId, protectedPaths: dirtyPathsRef.current })
+  }, [dirtyPathsRef])
+  const openRoutedBoundTerminalTab = useCallback((session: string, preview = false) => {
+    dispatch({ type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB', session, preview, protectedPaths: dirtyPathsRef.current })
   }, [dirtyPathsRef])
 
   const pinTab = useCallback((groupId: string, instanceId: string) => {
@@ -902,6 +936,13 @@ export function useLayoutState(
     openPreviewTab,
     openDiffTab,
     openBoundTerminalTab,
+    // routed opens (kind-aware; reducer resolves target + creates group atomically)
+    openRoutedTab,
+    openRoutedDiffTab,
+    openRoutedPreviewTab,
+    openRoutedBoundTerminalTab,
+    resolveEditorTarget,
+    newCenterGroup,
     pinTab,
     closeGroupTab,
     closeGroup,

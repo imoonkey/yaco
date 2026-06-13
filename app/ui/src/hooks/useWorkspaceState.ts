@@ -128,13 +128,6 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     return instanceId
   }, [ls.openTab, ls.addRecentFile, fetchForTab])
 
-  const previewFileInGroup = useCallback((groupId: string, path: string) => {
-    if (!isFileTab(path)) return
-    const shouldFetch = ls.openPreviewTab(groupId, path)
-    ls.addRecentFile(path)
-    if (shouldFetch && !isBinaryPreviewFile(path)) fetchForTab(path)
-  }, [ls.openPreviewTab, ls.addRecentFile, fetchForTab])
-
   const openDiffInGroup = useCallback((groupId: string, tabId: string) => {
     ls.openDiffTab(groupId, tabId)
   }, [ls.openDiffTab])
@@ -142,6 +135,50 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   const previewDiffInGroup = useCallback((groupId: string, tabId: string) => {
     ls.openPreviewTab(groupId, tabId)
   }, [ls.openPreviewTab])
+
+  // --- Routed open helpers (kind-aware; design: separateKinds) ---
+  // Each dispatches a reducer-owned OPEN_ROUTED_* (the reducer resolves the target
+  // group + creates one if needed, atomically) and rides the PATH-keyed effects the
+  // reducer must not own: an editor open fetches unconditionally (as openFileInGroup
+  // does); an editor preview gates the fetch on a PURE content-presence pre-check
+  // (no synchronous reducer return); diff opens fetch nothing (the viewer hydrates).
+  const openFileRouted = useCallback((path: string) => {
+    if (!isFileTab(path)) return
+    ls.openRoutedTab(path)
+    ls.addRecentFile(path)
+    if (!isBinaryPreviewFile(path)) fetchForTab(path)
+  }, [ls.openRoutedTab, ls.addRecentFile, fetchForTab])
+
+  const previewFileRouted = useCallback((path: string) => {
+    if (!isFileTab(path)) return
+    const loaded = filesRef.current[path]?.serverContent != null
+    ls.openRoutedPreviewTab(path)
+    ls.addRecentFile(path)
+    if (!loaded && !isBinaryPreviewFile(path)) fetchForTab(path)
+  }, [ls.openRoutedPreviewTab, ls.addRecentFile, fetchForTab, filesRef])
+
+  const openDiffRouted = useCallback((tabId: string) => {
+    ls.openRoutedDiffTab(tabId)
+  }, [ls.openRoutedDiffTab])
+
+  const previewDiffRouted = useCallback((tabId: string) => {
+    ls.openRoutedPreviewTab(tabId)
+  }, [ls.openRoutedPreviewTab])
+
+  const openBoundTerminalRouted = useCallback((session: string, preview = false) => {
+    ls.openRoutedBoundTerminalTab(session, preview)
+  }, [ls.openRoutedBoundTerminalTab])
+
+  // Go-to-line stays command-resolved: the PURE resolver picks the editor home (a new
+  // center group when none), we open there and RETURN the opened instanceId so the
+  // caller stamps the jump on exactly that tab — synchronous, no reducer round-trip,
+  // no id race (design: Synchronous results & follow-ups).
+  const openFileAtLineRouted = useCallback((path: string): string | null => {
+    if (!isFileTab(path)) return null
+    const target = ls.resolveEditorTarget()
+    const groupId = 'groupId' in target ? target.groupId : ls.newCenterGroup()
+    return openFileInGroup(groupId, path)
+  }, [ls.resolveEditorTarget, ls.newCenterGroup, openFileInGroup])
 
   // A draft promotes a preview tab to pinned: pin every preview editor tab on this
   // path (the shared-buffer edit could surface in more than one pane).
@@ -236,9 +273,16 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     setActiveSession,
     // composed open helpers (group-targeted)
     openFileInGroup,
-    previewFileInGroup,
     openDiffInGroup,
     previewDiffInGroup,
+    // routed open helpers (kind-aware; design: separateKinds)
+    openFileRouted,
+    previewFileRouted,
+    openDiffRouted,
+    previewDiffRouted,
+    openBoundTerminalRouted,
+    openFileAtLineRouted,
+    toggleSeparateKinds: ls.toggleSeparateKinds,
     // group dispatchers + resolution
     openTab: ls.openTab,
     openPreviewTab: ls.openPreviewTab,
