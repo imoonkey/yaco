@@ -56,7 +56,7 @@ App (384 lines)
         ├── GitChangeItem
         ├── FileSearch — recent files section, search cap banner
         ├── ShortcutSheet — ? key opens shortcut cheatsheet
-        ├── TaskScreen — task panel toggled from sidebar (full editor column height)
+        ├── TaskScreen — task panel toggled by `Meta+Shift+T` (full-working-area overlay)
         ├── BadgeCount — reusable attention badge (tier-colored)
         └── ProviderIcon
 ```
@@ -132,7 +132,7 @@ active session and revealing the terminal surface (right panel desktop / termina
 pane mobile) — Show Terminal re-reveals it when the surface was hidden while the
 handle stayed active. `activeSession`, `liveSessionHandles`, and `onOpenTerminal`
 thread down TaskScreen ← WorkspaceEditorColumn / WorkspaceScreen (both the desktop
-tasks tab and the mobile tasks pane). No app-server route is added; the UI only
+tasks overlay and the mobile tasks pane). No app-server route is added; the UI only
 displays links, opens terminals, and highlights.
 
 Navigation is native vertical scroll (no horizontal infinite canvas, no zoom).
@@ -212,7 +212,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
 - Computes `effectivePath` from `projectPath + worktree` for session cwd and file ops
 - Threads `worktree` param through `useWorkspaceState`, `useFileTree`, `useGitStatus`, and all mutation functions
-- Builds section content (project list with worktree sub-items, explorer, changes, tasks doorway, sessions, editor, terminal) as React nodes
+- Builds section content (project list with worktree sub-items, explorer, changes, working-area groups, sessions) plus the Tasks overlay as React nodes
 - Passes content slots to `WorkspaceLayout` for placement
 - Delegates domain state to `useWorkspaceState` hook
 - Per-project attention badges (status `active/total` count + the separate actionable badge); owned-idle "↩ your turn" leaf chips; collapsed-parent rollup badges
@@ -223,7 +223,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
-**Desktop**: `Sidebar(Projects + Explorer/Search + Changes + [Tasks toggle]) | Center(File / Diff / TaskPanel) | ActivityColumn(Terminal + Sessions)`
+**Desktop**: `LeftDock(Projects + Explorer/Search + Changes) | WorkingArea(grid of tab groups, Tasks overlay on Meta+Shift+T) | ActivityColumn(Sessions)`
 **Mobile**: `PaneSwitch(Browse | Editor | Tasks | Terminal)` — 4-pane navigation, Tasks renders `TaskScreen` directly in its own pane
 
 ### Extracted modules in `ui/src/workspace/`
@@ -264,7 +264,7 @@ Virtualized file tree using react-arborist. Wrapped in `React.memo` to prevent r
 - Context menu (right-click on desktop, long-press on mobile): New File, New Folder, Rename, Delete, Copy Relative Path, Copy Absolute Path, Reveal in Finder
 - Inline rename (F2) with stem-only selection (excludes file extension)
 - Optimistic mutations: tree is patched locally before server call completes, reverted on failure
-- Tab retargeting on rename/move: updates openTabs, activeTab, previewTab, file state, selectedFilePath
+- Tab retargeting on rename/move: updates every editor tab's `tabId` (file + diff) across all groups, file state, selectedFilePath
 - Selection sync with active editor tab
 - Preview tab support (single-click opens preview, double-click pins)
 

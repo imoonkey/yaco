@@ -182,24 +182,28 @@ registry. The workspace localStorage key is `yaco-workspace:<project>`
 (its fake MicVAD is `import.meta.env.DEV`-gated, the only dev-gated UI behavior) —
 run it with `E2E_REUSE=1`.
 
-### Multi-instance workspace surfaces
+### Tab-group workspace surfaces
 
-The workspace holds **N editor + N terminal panes** (instance ids: home editor
-`'editor'`, secondaries `editor:2…`, terminals `terminal`/`terminal:2…`). Devs
-interact with three surfaces, all spec'd under [doc/main/app/ui/](../../main/app/ui/):
+The working area is a **grid of tab groups**; each group (`tabs` node, ids `group:1…`)
+holds a mixed strip of editor tabs (one per file/diff) and terminal tabs (one per
+session), each carrying an `instanceId` (`editor`/`editor:2…`, `terminal`/`terminal:2…`).
+Devs interact with three surfaces, all spec'd under [doc/main/app/ui/](../../main/app/ui/):
 
-- **Commands** (`workspace/context.ts` → `WorkspaceCommands`): active-resolving
-  (`openFile`, `openDiff`, …) vs instance-scoped (`splitEditor`, `splitTerminal`,
-  `closePane`, `focusPane`, `movePane`, `clickSession`, `openBeside`).
-- **Keyboard** (`workspace/useWorkspaceKeyboard.ts`): `Cmd+\` split focused pane,
-  `Cmd+K Cmd+\` orthogonal, `Cmd+Enter` open-to-side, instance-aware `Cmd+W`,
-  cycling on the active instance. -> [keyboard.md](../../main/app/ui/keyboard.md).
+- **Commands** (`workspace/context.ts` → `WorkspaceCommands`): target-resolving
+  (`openFile`, `openDiff`, …, routed to the active group) and group ops
+  (`splitGroup`, `closeGroup`, `reorderGroupTab`, `splitEditor`/`splitTerminal`,
+  `closePane`, `focusPane`, `clickSession`, `openBeside`).
+- **Keyboard** (`workspace/useWorkspaceKeyboard.ts`): `Cmd+\` split the active group,
+  `Cmd+K Cmd+\` orthogonal, `Cmd+Enter` open-to-side, `Cmd+W` closes the focused tab
+  or an empty non-last group, session/tab cycling on the active group.
+  -> [keyboard.md](../../main/app/ui/keyboard.md).
 - **Voice** (`components/GlobalVoiceControl.tsx`): one desktop control in the App
   top bar, portaled from `WorkspaceScreen`; per-pane mic on mobile.
   -> [app-shell.md](../../main/app/ui/app-shell.md#global-voice-control).
 
 E2E coverage lives in `tests/e2e/multi-instance-{editors,terminals,persistence,mobile}.spec.ts`
-plus `close-surface.spec.ts`, `shared-state.spec.ts`, and `voice-target.spec.ts`.
+(migrated to the group model) plus `workspace-tabs.spec.ts`, `close-surface.spec.ts`,
+`shared-state.spec.ts`, and `voice-target.spec.ts`.
 
 ### Local Browser Automation Env
 

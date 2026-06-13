@@ -34,25 +34,25 @@ the React Compiler ruleset. `npm run lint` enforces these — write hooks accord
 
 ## useWorkspaceState.ts (composition root)
 
-Per-project workspace state management. Thin wiring layer that composes the focused hooks below and returns the combined public shape. Accepts optional `worktree` param to isolate state per worktree checkout. The workspace holds **N editor + N terminal panes**; per-instance view state is keyed by `instanceId`. -> See: [state.md](state.md#workspace-hot-state--one-reducer-multi-instance) for the model.
+Per-project workspace state management. Thin wiring layer that composes the focused hooks below and returns the combined public shape. Accepts optional `worktree` param to isolate state per worktree checkout. The working area is a **grid of tab groups**; the group tree carries the editor-tab payload and the aux maps key by `instanceId`. -> See: [state.md](state.md#workspace-hot-state--one-reducer-the-group-model) for the model.
 
 ### Decomposed into:
 
-- **`useLayoutState.ts`** — the multi-instance hot-state core. Exposes the `instanceReducer` (one reducer owning `panelLayout` desktop tree + `editorViews` + `terminalBindings` + `editorMru` + `terminalMru` + `focusedPane`) and the hook that drives it. Every structural transition (`SPLIT_PANE`, `CLOSE_PANE`, `MOVE_PANE`, `BIND_TERMINAL`, `FOCUS_PANE`, …) seeds ids + GCs the maps/MRU against the tree atomically (`gcMaps`). Per-view tab logic (`openFileTabView`/`previewInto`/`closeTabView`/`pinTabView`) is keyed by instance; `retargetPaths`/`closeTabsUnder` fan out across all views. Exposes active-resolving compat actions (route to `resolveActiveEditor`/`resolveActiveTerminal`) **and** instance-scoped actions (`selectTabIn`/`closeTabIn`/`splitPane`/`closePane`/`movePane`/`focusPane`/`bindTerminal`), plus the derived single-value globals (`openTabs`/`activeTab`/`previewTab`/`activeSession`) over the active instance.
-- **`useFileState.ts`** — `files` map keyed by **path** (shared document model), `dirtyTabs`/`conflictTabs`, file CRUD (hydrate, refetch, save, reconcile), and the shared-buffer GC (`gcBuffers`: keep iff referenced by some open view **or** dirty). Uses `fileStateMachine.ts` for explicit state transitions.
+- **`useLayoutState.ts`** — the flat tab-group hot-state core. Exposes the `instanceReducer` (one reducer owning `panelLayout` desktop tree + `terminalBindings` + `editorMru` + `terminalMru` + `focusedPane` + `activeGroupId`) and the hook that drives it. Every structural transition (`OPEN_TAB`/`OPEN_PREVIEW_TAB`/`OPEN_DIFF_TAB`/`OPEN_BOUND_TERMINAL_TAB`/`CLOSE_GROUP_TAB`/`CLOSE_GROUP`/`SET_ACTIVE_GROUP_TAB`/`SPLIT_GROUP`/`REORDER_GROUP_TAB`/`PIN_TAB`/`BIND_TERMINAL`/`MOVE_PANE`/`FOCUS_PANE`, …) edits the tree, GCs the maps/MRU against it, and clamps `activeGroupId` atomically (`gcMaps`). Pure group-tab logic (`openEditorTab`/`previewEditorTab`/`removeTab`/`retargetGroup`/`closeTabsUnderGroup`) targets the group's `tabs[]`; `RETARGET_PATHS`/`CLOSE_TABS_UNDER` fan out across every group. Derives the NULLABLE selection API (`activeEditorTab`/`activeEditorTabId`/`activeEditorPath` over the active group, plus `editorTabByInstance`/`editorTabsInGroup`/`terminalTabsInGroup`) and the group-targeted dispatchers the command surface composes on.
+- **`useFileState.ts`** — `files` map keyed by **path** (shared document model), `dirtyTabs`/`conflictTabs`, file CRUD (hydrate, refetch, save, reconcile), and the shared-buffer GC (`gcBuffers`: keep iff referenced by some open editor tab **or** dirty). Uses `fileStateMachine.ts` for explicit state transitions.
 - **`fileStateMachine.ts`** — pure state machine for file status transitions. `fileTransition(state, event)` returns new state or same reference if unchanged. `reconcileFile()` wraps server fetch results.
-- **`usePersistence.ts`** — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush. Owns the **one-time migration** (old flat `{openTabs,activeTab,previewTab,activeSession}` blob → `editorViews.editor` + `terminalBindings.terminal`) and **load-normalize** (reconstitute the `main` tabs node, GC the maps against the tree's instance ids, dedup terminal bindings one-per-session). localStorage keys include the worktree slug when active: `yaco-workspace:<project>:wt:<slug>`, `yaco-drafts:<project>:wt:<slug>`.
-- **`workspaceTypes.ts`** — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`, `EditorView`, `EMPTY_VIEW`, `FocusedPane`, the panel-layout `LayoutNode`/`WorkspacePanelLayout` model), tab guards (`isFileTab`, `isDiffTab`, `parseDiffTab`), localStorage key builders (`layoutKey`/`draftsKey`).
-- **`panelLayoutModel.ts`** (`workspace/`) — the pure panel-tree model: normalization (`MULTI_INSTANCE_PANELS` whitelist relaxes the singleton rule for `editor`/`terminal`; `HOME_EDITOR_ID='editor'` reserved), id-addressed ops (`newInstanceId`, `splitBeside`, `closeLeaf`, `moveLeaf`), and the routing primitives (`editorInstancesInOrder`/`terminalInstancesInOrder`, `resolveActiveEditor`/`resolveActiveTerminal`).
+- **`usePersistence.ts`** — two-phase init: returns `initialLayout` + `initialDrafts` on mount from localStorage, then `bindSnapshots()` for ref-based debounced save + beforeunload flush. Owns the **migration loader**: a stored group blob is normalized as-is (restoring `activeGroupId`); an old `panels[]`/leaf tree (or the oldest flat blob) runs through the pure, idempotent `migrateTreeToGroups` (expand each old editor's `openTabs` into per-file tabs via an old→new id map that re-points `editorMru`; terminal ids + dirty buffers preserved; the old `tasks` tab dropped), then normalize + GC + dedup terminal bindings one-per-session. localStorage keys include the worktree slug when active: `yaco-workspace:<project>:wt:<slug>`, `yaco-drafts:<project>:wt:<slug>`.
+- **`workspaceTypes.ts`** — shared types (`WorkspaceLayout`, `PersistedState`, `FileState`, `GroupTab`/`TabsNode`, `EditorView` (legacy migration descriptor only), `FocusedPane`, the panel-layout `LayoutNode`/`WorkspacePanelLayout` model), tab guards (`isFileTab`, `isDiffTab`, `parseDiffTab`), localStorage key builders (`layoutKey`/`draftsKey`).
+- **`panelLayoutModel.ts`** (`workspace/`) — the pure panel-tree model: `defaultDesktopTree` (one empty working group), payload-preserving `normalizeGroup`/`normalizeDesktopTree` (empty groups are valid; one preview per group; editor/terminal exist only as group tabs), group ops (`splitBeside`, `closeGroup`, `ensureFirstGroup`, `mapGroup`, `newInstanceId`, `firstGroupId`/`groupOf`/`tabsInGroup`), the routing primitives (`editorInstancesInOrder`/`terminalInstancesInOrder`, `resolveActiveEditor`/`resolveActiveTerminal`), and the `migrateTreeToGroups` loader migration.
 
 ### State
 
 | Field | Type | Persisted |
 |-------|------|-----------|
-| `panelLayout` | `WorkspacePanelLayout` (desktop tree + instance ids) | localStorage (`yaco-workspace:<project>[:wt:<slug>]`) |
-| `editorViews` | `Record<instanceId, EditorView>` | localStorage |
+| `panelLayout` | `WorkspacePanelLayout` (group tree + editor-tab payload + instance ids) | localStorage (`yaco-workspace:<project>[:wt:<slug>]`) |
 | `terminalBindings` | `Record<instanceId, sessionName>` | localStorage |
 | `editorMru` / `terminalMru` | `string[]` (most-recent-first) | localStorage |
+| `activeGroupId` | `string` (the explicit target group) | localStorage |
 | `focusedPane` | `{ kind, instanceId }` | derived/in-memory |
 | `mobilePane` | `'files' \| 'editor' \| 'tasks' \| 'terminal'` | localStorage |
 | `layout` | `WorkspaceLayout` (visibility + sizes) | localStorage |
@@ -72,18 +72,17 @@ type FileState = {
   editedAt: number
 }
 
-type EditorView = {            // one editor instance's tab view (per instanceId)
-  openTabs: string[]
-  activeTab: string | null
-  previewTab: string | null
-}
+// One tab in a working-area group; an editor tab carries its file/diff payload.
+type GroupTab =
+  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
+  | { instanceId: string; kind: 'terminal' }
 ```
 
 ### Key Behaviors
 
-- **Tree as authority**: per-instance maps GC against the live tree ids on every structural transition; a read for a missing id returns the default (`EMPTY_VIEW` / unbound).
-- **Active-instance routing**: type-global commands act on `resolveActiveEditor`/`resolveActiveTerminal` (MRU head → first in document order). Always ≥1 editor; terminals may be zero.
-- **Shared buffers**: `files` keyed by path, so two editors on one file stay in sync. `gcBuffers` keeps a buffer iff referenced by an open view or dirty — close/reset never silently loses unsaved work.
+- **Tree as authority**: the group tree owns group order, each group's `activeTab`, and editor-tab payload; the aux maps GC against the live tree ids on every structural transition; a read for a missing id returns the default (unbound terminal / reconciled focus).
+- **Target + active-instance routing**: an open/session resolves the target group (`activeGroupId` → focused tab's group → first group); type-global commands act on `resolveActiveEditor`/`resolveActiveTerminal` (MRU head → first in document order). Both editors and terminals may be zero.
+- **Shared buffers**: `files` keyed by path, so two editor tabs on one file stay in sync. `gcBuffers` keeps a buffer iff referenced by an open editor tab (`allEditorTabPaths`) or dirty — close/reset never silently loses unsaved work.
 - **Hydration**: on mount, fetches server content only for open file tabs to detect conflicts.
 - **SSE refetch**: listens on `filetree` and `git` channels to refetch open file tabs; AbortController cancels in-flight fetches when a new SSE refresh arrives.
 - **Draft persistence**: dirty drafts for real files saved with 500ms debounce; on quota exceeded, evicts oldest. Layout saved with 300ms debounce.
@@ -92,7 +91,7 @@ type EditorView = {            // one editor instance's tab view (per instanceId
 
 ### Exported Types
 
-- `FileStatus`, `FileState`, `EditorView`, `FocusedPane`, `WorkspaceLayout`, `DEFAULT_LAYOUT`, `PersistedState`
+- `FileStatus`, `FileState`, `GroupTab`, `TabsNode`, `FocusedPane`, `WorkspaceLayout`, `DEFAULT_LAYOUT`, `PersistedState` (`EditorView` survives only as the legacy migration-input descriptor)
 
 ## useApi.ts (~386 lines)
 

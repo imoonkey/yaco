@@ -27,7 +27,7 @@ No global state library (no Redux, Zustand, or Context). State lives in componen
 |----------|----------|-------------|
 | View/project selection | `App.tsx` useState | localStorage |
 | Server data (projects, sessions, etc.) | `usePolling` hooks | In-memory (re-fetched) |
-| Workspace hot state (tree + per-instance views) | `useLayoutState` reducer | localStorage per (project, worktree) |
+| Workspace hot state (group tree + per-instance maps) | `useLayoutState` reducer | localStorage per (project, worktree) |
 | File buffers + drafts | `useFileState` hook | localStorage (dirty drafts only) |
 | Diff cache | `useWorkspaceDiff` (panel-private) | In-memory only |
 | SSE connection | `useSSE.ts` module-level singleton | In-memory only |
@@ -57,35 +57,36 @@ A monotonic sequence counter (`seqRef`) ensures only the most recent fetch updat
 - **Single-poller invariant**: the composition owns exactly one git poller and one sessions poller/manager. Pinned by `__tests__/duplicatePollerGuard.test.ts` and `__tests__/resources.test.ts`.
 - **Explicit public types**: the interfaces enumerate named fields — no `ReturnType<typeof hook>` in the public surface, so the Data Context never leaks a hook's return shape. A compile-time `Equal<>` guard in the test fails `tsc` on drift.
 
-## Workspace Hot State — one reducer (multi-instance)
+## Workspace Hot State — one reducer (the group model)
 
-The workspace holds **N editor panes and N terminal panes** at once. The desktop layout is a structural panel tree; per-instance view state lives in selection maps keyed by `instanceId`. A **single reducer** (`instanceReducer` in `useLayoutState.ts`) owns all of it, so every structural change is one atomic transition that edits the tree, seeds/GCs the maps, and updates MRU together:
+The working area is a **grid of tab groups** (VSCode-style). The desktop layout is a structural panel tree whose `tabs` (group) nodes each hold an ordered, mixed strip of editor/terminal tabs; the **tree** carries group order, each group's `activeTab`, AND the editor-tab payload (`tabId`/`preview`/`pinned`). The per-instance aux maps hold only data keyed by `instanceId`. A **single reducer** (`instanceReducer` in `useLayoutState.ts`) owns all of it, so every structural change is one atomic transition that edits the tree, GCs the maps, and updates MRU + the active group together:
 
 ```typescript
 type InstanceState = {
-  panelLayout: WorkspacePanelLayout                 // the structural tree (the authority)
-  editorViews: Record<string, EditorView>           // by instanceId; missing id → EMPTY_VIEW
+  panelLayout: WorkspacePanelLayout                 // the structural tree (authority for groups, activeTab, editor-tab payload)
   terminalBindings: Record<string, string>          // by instanceId; sessionName ('' / missing → unbound)
   editorMru: string[]                               // most-recent-first; head = active editor
   terminalMru: string[]                             // most-recent-first; head = active terminal
   focusedPane: { kind: FocusTarget; instanceId: string }
+  activeGroupId: string                             // the explicitly-selected target group (may be EMPTY)
 }
 ```
 
-- **Instance identity.** Singletons keep `id === panel`. The home editor's id is the constant `'editor'` (a main-tabs entry); secondary editors are leaves `editor:2`, `editor:3`; terminals are leaves `terminal`, `terminal:2`, … The **tree is the authority** on which instances exist.
-- **Tree as authority, maps GC against it.** Per-instance state is not stored in the tree. Every transition that changes the tree ends by **GCing** the maps + MRU against the tree's live instance ids (`gcMaps`): an entry whose id is gone is dropped, a read for a missing id returns the default. No reconciliation logic, only a one-way drop — so structure and selection never drift.
-- **One routing rule.** A type-global command acts on the **active instance**: `resolveActiveEditor` / `resolveActiveTerminal` = the most-recently-focused live id in MRU, else the first in document order. There is always ≥1 editor (the structural home); terminals may be zero (a command that needs one creates it). The hook derives the single-value globals (`openTabs`/`activeTab`/`previewTab`/`activeSession`) over the active instance, so not-yet-migrated consumers keep working.
-- **Commands split** into active-resolving (caller has no instance: `openFile`, `previewFile`, `openDiff`, …) and instance-scoped (a pane acts on itself: `selectTab(tab, id)`, `closeTab(tab, id)`, `splitEditor`, `closePane`, `focusPane`, `movePane`). See `workspace/context.ts` (`WorkspaceCommands`) for the full surface.
+- **Tab identity (`instanceId`).** Each tab carries an `instanceId` (`editor`, `editor:2`, …; `terminal`, `terminal:2`, …) — the key the aux maps and focus use. A group's own `id` (`group:1`, …) is the split target, disjoint from any tab's `instanceId`. An editor tab's payload (`tabId`/`preview`/`pinned`) is **flat in the tree node** (no per-editor view side-map); the file/diff IS the tab.
+- **Tree as authority, maps GC against it.** The aux maps are not stored in the tree. Every transition that changes the tree ends by **GCing** the maps + MRU against the tree's live instance ids and clamping `activeGroupId` to a live group (`gcMaps`): an entry whose id is gone is dropped, a read for a missing id returns the default. One-way drop, no reconciliation — structure and selection never drift.
+- **One target rule.** A type-global open/session resolves the **target group**: explicit `activeGroupId` (if live) → the focused tab's group → the first group. A type-global command acts on the **active instance**: `resolveActiveEditor` / `resolveActiveTerminal` = the most-recently-focused live id in MRU, else the first in document order. Both editors and terminals may be zero (a command that needs one creates it; the working area can be a single empty group).
+- **Selection API.** The hook derives a NULLABLE selection over the **active group's** active tab: `activeEditorTab` / `activeEditorTabId` / `activeEditorPath` are null for an empty or terminal-active group, plus `editorTabByInstance`, `editorTabsInGroup`, `terminalTabsInGroup`, and `allEditorTabPaths` (the buffer-GC keep-set + hydration feed). `activeEditorId` stays the global-MRU editor for the mobile projection / focus markers / voice default.
+- **Commands.** Group-targeted dispatchers (`openTab`/`openPreviewTab`/`openDiffTab`/`openBoundTerminalTab`/`pinTab`/`closeGroupTab`/`closeGroup`/`setActiveGroupTab`/`splitGroup`/`reorderGroupTab`) compose the command surface; a session click routes through the flat `resolveSessionClick` (focus | create) + the atomic `OPEN_BOUND_TERMINAL_TAB` (bound-on-create). See `workspace/context.ts` (`WorkspaceCommands`) for the full surface.
 
 Orthogonal state (`mobilePane`, the flat `layout` visibility/sizes, `recentFiles`) stays in plain `useState` cells beside the reducer. The flat `layout` dock/activity visibility + the mobile pane are mirrored onto the tree by the provider (`useLayoutEffect`), so the tree renderer never drifts from the legacy visibility source of truth.
 
--> See: [hooks.md](hooks.md#uselayoutstatets) for the reducer API, and `plan/all/20260611_panel-multi-instance/design.md` for the full model.
+-> See: [hooks.md](hooks.md#uselayoutstatets) for the reducer API, and `plan/all/20260612_panel-vscode-tabs/design.md` for the full model.
 
 ## File Buffers — global by path (shared document model)
 
-`useFileState` keys `files`/`dirtyTabs`/`conflictTabs` by **path** (not by instance), so two editors on the same file show the same buffer and the same dirty dot. Only the *view* (which tabs, which is active/preview) is per-instance.
+`useFileState` keys `files`/`dirtyTabs`/`conflictTabs` by **path** (not by tab), so two editor tabs on the same file show the same buffer and the same dirty dot. Only the tab is duplicated; the buffer is one.
 
-A **shared-buffer GC** runs inside the close transitions (`gcBuffers`): keep a buffer iff some open editor view still references its path **or** it is dirty. Closing one view never drops a buffer another shows, and no structural close (close tab / close pane / reset) ever silently loses unsaved work — a dirty buffer lingers (recoverable from `draftsKey`) until explicitly discarded ("Close Without Saving" clears the draft first, then the next GC drops the now-clean buffer).
+A **shared-buffer GC** runs inside the close transitions (`gcBuffers`): keep a buffer iff some open editor tab still references its path (the `allEditorTabPaths` keep-set) **or** it is dirty. Closing one tab never drops a buffer another shows, and no structural close (close tab / close group / reset) ever silently loses unsaved work — a dirty buffer lingers (recoverable from `draftsKey`) until explicitly discarded ("Close Without Saving" clears the draft first, then the next GC drops the now-clean buffer).
 
 ### File Drafts and Conflict Detection
 
@@ -112,9 +113,9 @@ Persisted on every view/project/order change. Restored on mount with fallback de
 
 Key: `yaco-workspace:<project>` (or `yaco-workspace:<project>:wt:<slug>` when a worktree is active — state is independent per worktree).
 
-`PersistedState` carries the panel tree (`panelLayout`, which holds the instance ids) plus the per-instance maps `editorViews` / `terminalBindings` / `editorMru` / `terminalMru`, the flat `layout` visibility/sizes, `mobilePane`, and `recentFiles`. `usePersistence` is two-phase (synchronous initial load, then debounced 300ms saves + beforeunload/unmount flush).
+`PersistedState` carries the panel tree (`panelLayout`, which holds the group order, per-group `activeTab`, and editor-tab payload) plus the per-instance maps `terminalBindings` / `editorMru` / `terminalMru`, the explicit `activeGroupId`, the flat `layout` visibility/sizes, `mobilePane`, and `recentFiles`. `usePersistence` is two-phase (synchronous initial load, then debounced 300ms saves + beforeunload/unmount flush).
 
-**Migration + load-normalize** (one-time, in `loadPersistedState`): an old flat blob `{openTabs,activeTab,previewTab}` → `editorViews.editor` + `editorMru:['editor']`, and `activeSession` → `terminalBindings.terminal`. On every load the tree is normalized (reconstitute the `main` tabs node with home editor + tasks if a legacy tree dismantled it), the maps are GC'd against the tree's instance ids, and terminal bindings are deduped to one-per-session. Dead-session bindings survive load until the first post-load reconcile confirms them absent.
+**Migration + load-normalize** (one-time, in `loadPersistedState`): a stored **group blob** (a tree whose `tabs` nodes carry a `tabs[]` array) is normalized and loaded as-is, restoring `activeGroupId` if it still names a live group. An **old blob** (a `panels[]`/leaf tree, or the oldest flat `{openTabs,activeTab,previewTab}` blob) is run through the pure, idempotent `migrateTreeToGroups`: each old editor's `openTabs` expands into one editor tab per file (an id map old-editor-id → new active-tab `instanceId` re-points `editorMru`/focus), terminal leaves become terminal tabs (ids + dirty buffers preserved), and the old `tasks` tab is dropped (Tasks is the desktop overlay now). On every load the tree is normalized, the maps are GC'd against the tree's instance ids, and terminal bindings are deduped to one-per-session. No version bump — the loader is self-describing.
 
 ### Workspace Drafts
 
@@ -126,7 +127,7 @@ Only dirty drafts are persisted (with baseRevision for conflict detection). On q
 
 ### Diff Cache
 
-`useWorkspaceDiff` is panel-private, so each editor instance gets its own per-path cache of fetched diff strings — prevents reload flash when switching between change tabs.
+`useWorkspaceDiff` is panel-private, so each editor tab body gets its own per-path cache of fetched diff strings — prevents reload flash when switching between change tabs.
 
 ## SSE Singleton
 

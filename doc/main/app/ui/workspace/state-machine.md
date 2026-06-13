@@ -16,17 +16,17 @@ Canonical workspace document and layout states and their transitions.
 
 `ui/src/hooks/useLayoutState.ts` (the reducer), `ui/src/workspace/panelLayoutModel.ts` (tree model), `ui/src/workspace/WorkspaceProvider.tsx`
 
-## Per-Instance Document Surface
+## Per-Tab Document Surface
 
-The document-surface states below describe **one editor instance**. The workspace can hold **N editor panes**, each independently in its own state (one in Diff, another in FileEdit), driven by its own `editorViews[instanceId]`. The terminal surface is likewise per-instance (each pane bound to a session, or the empty "select a session" placeholder). -> See: [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
+The document-surface states below describe **one editor tab's body**. A group can hold many editor tabs, each independently in its own state (one tab showing Diff, another FileEdit), and groups tile across the working area. A tab's body state is derived from its `tabId` (a file path or a `diff:` id) plus the per-path file status. Terminal tabs render their bound session, or an empty group renders the "split to begin" placeholder. -> See: [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-the-group-model).
 
 ## Document Surface States
 
-The main editor area is always in exactly one of these states:
+An editor tab's body is always in exactly one of these states:
 
 ```
 ┌─────────┐
-│  Empty  │ ← no tabs open
+│  Empty  │ ← group has no tabs
 └────┬────┘
      │ open file
      ▼
@@ -42,14 +42,14 @@ The main editor area is always in exactly one of these states:
 
 ### Empty
 
-- No file tabs are open
-- Terminal/session pane expands to full content width
-- Triggered by: closing last tab, initial workspace load with no saved tabs
+- The group has no tabs (`activeTab === ''`)
+- Renders an empty placeholder with a Split affordance; the final group always survives empty (`ensureFirstGroup`)
+- Triggered by: closing the last tab in the only group, initial workspace load with no saved tabs
 
 ### FileEdit
 
 - An editable file is open in CodeMirror
-- Draft state tracked per tab (`null` = clean, non-null = dirty)
+- Draft state tracked per path (`null` = clean, non-null = dirty)
 - Dirty indicator: black dot instead of close button
 - Triggered by: clicking file in explorer, clicking change row when diff is already active, opening from search
 
@@ -71,19 +71,19 @@ The main editor area is always in exactly one of these states:
 
 ### Desktop
 
-The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes) — not a fixed three-column grid. Panes are split, moved, collapsed, resized, and closed; the tree is the authority on which instances exist.
+The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes) — not a fixed three-column grid. The dock panels are singleton leaves; the working area is a grid of **groups** that are split, reordered, resized, and closed. The tree is the authority on which groups and tabs exist.
 
 ```
-┌───────────────────────────┐
-│ Left Sidebar │ Editor(s) │ Terminal(s) / Sessions │
-└───────────────────────────┘
+┌──────────────────────────────────────────────┐
+│ Left Dock │ Working-Area Groups │ Sessions   │
+└──────────────────────────────────────────────┘
 ```
 
-Multiple editor and terminal leaves can tile at once. Each panel is independently visible/hidden, with resize handles between split children.
+Multiple groups tile at once; each group's strip mixes editor and terminal tabs. Each column/group is independently visible/hidden, with resize handles between split children. `Meta+Shift+T` opens the Tasks overlay over the working-area groups.
 
 ### Focus / Active-Instance Model
 
-`focusedPane = { kind, instanceId }` names the one focused pane. For editor/terminal there is also an **active instance** per type = most-recently-focused live instance (MRU head), else first in document order. Type-global commands (open file, voice insert, session cycle) act on the active instance. Markers: focused pane → bright `data-focused`; active-but-unfocused editor/terminal → dim `data-active` (suppressed when only one of that type exists).
+`focusedPane = { kind, instanceId }` names the one focused pane. A persisted `activeGroupId` names the explicit target group (resolver: `activeGroupId` → focused tab's group → first group). For editor/terminal there is also an **active instance** per type = most-recently-focused live instance (MRU head), else first in document order. Type-global commands (open file, voice insert, session cycle) act on the active instance / target group. Markers: focused pane → bright `data-focused`; active-but-unfocused editor/terminal → dim `data-active` (suppressed when only one of that type exists).
 
 ### Mobile: Files
 
@@ -91,7 +91,7 @@ Single-pane showing the file explorer tree.
 
 ### Mobile: Editor
 
-Single-pane showing the editor/preview/diff for the active tab.
+Single-pane showing the editor/preview/diff for the active group's active editor tab.
 
 ### Mobile: Terminal
 

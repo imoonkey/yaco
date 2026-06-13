@@ -95,7 +95,7 @@ manual sync controls land consistently across workspace sections:
 
 All mutations are **optimistic**: the tree is patched locally before the server call completes. On failure, the tree is refreshed from the server.
 
-**Tab retargeting (rename/move):** When a file or directory is renamed or moved, all affected `openTabs`, `activeTab`, `previewTab`, file state entries (in `useFileState`), and `selectedFilePath` are updated to reflect the new path. Diff tabs (`diff:<path>`) are also retargeted. Directory renames retarget all descendant paths.
+**Tab retargeting (rename/move):** When a file or directory is renamed or moved, every editor tab's `tabId` across all groups (`retargetPaths` → `RETARGET_PATHS`), the file state entries (in `useFileState`), and `selectedFilePath` are updated to reflect the new path. Diff tabs (`diff:<path>`) are retargeted on their underlying path, preserving `base`/`compare` refs. Directory renames retarget all descendant paths.
 
 **Delete cleanup:** When a file or directory is deleted, all tabs under that path are closed immediately, and their file state entries are removed.
 

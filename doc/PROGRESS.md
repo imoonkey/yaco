@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-12: VSCode tab groups — flat tab strips, Tasks overlay, loader migration
+
+**What changed:**
+- **Working area is a grid of groups.** Replaced the editor-only `MAIN_TABS`/home-editor model with a grid of **groups** (`tabs` nodes). Each group holds an ordered, mixed strip of tabs: one editor tab per open file/diff (`GroupTab {instanceId, kind:'editor', tabId, preview?, pinned?}`), one tab per terminal (`{instanceId, kind:'terminal'}`). The tree is authoritative for group order, each group's `activeTab` (`''` for an empty group — a first-class persisted node), and editor-tab payload.
+- **FLAT tabs.** Every file is its own editor tab; the per-editor `editorViews`/`openTabs` list is gone. Shared per-path buffers are unchanged (GC keep-set = `allEditorTabPaths`), so two tabs on one path mirror edits. The aux maps (`terminalBindings`/`editorMru`/`terminalMru`/`focusedPane`) stay keyed by `instanceId`; a new persisted `activeGroupId` (resolver: `activeGroupId` → focused tab's group → first group) names the open target. A NULLABLE selection API (`activeEditorTab`/`Id`/`Path`, `editorTabByInstance`, `editorTabsInGroup`, `terminalTabsInGroup`) derives over the active group.
+- **Split / close / reorder.** Splitting spawns an **empty** adjacent group (`splitGroup` via right-click the tab bar's empty area or the dismiss-safe Split button), which becomes the open target — it never clones a file or PTY. `closeGroupTab`/`closeGroup`, within-group `reorderGroupTab`. A session click routes through the flat `resolveSessionClick` (focus | create) + the atomic `OPEN_BOUND_TERMINAL_TAB` (bound-on-create; the old rebind path is gone). Keyboard: `Cmd+\` / `Cmd+K Cmd+\` split the active group; `Cmd+W` closes the focused tab or an empty non-last group; session cycling routes through `clickSession`.
+- **Tasks is a full-working-area overlay** (`showTasks`, default closed, `Meta+Shift+T`) over the editor groups — not a dock leaf. The four dock panels (projects/files/changes/sessions) stay singleton leaves. Mobile projects the active group's active editor + terminal.
+- **Persistence.** `PersistedState` drops `editorViews`, adds `activeGroupId`; a pure, idempotent `migrateTreeToGroups` in the loader expands an old editor's `openTabs` into N per-file tabs (old-editor-id → new active-tab `instanceId` map re-points `editorMru`; terminal ids + dirty buffers preserved; the old `tasks` tab dropped). Self-describing, no version bump.
+
+**Why:**
+- The shipped multi-instance model encoded the opposite structure (editor-only `panels: PanelId[]`, terminals-as-leaves, the `'editor'` home special-case, a per-editor `openTabs[]`). The group model makes the working area a uniform VSCode-style grid where a file IS a tab and a terminal IS a tab in one freely-orderable strip, closing the four prior bugs by construction. See `plan/all/20260612_panel-vscode-tabs/design.md`.
+
+**Key files:** `app/ui/src/workspace/{panelLayoutModel,PanelGroup,GroupTabBar,DesktopPanelTreeLayout,WorkspaceProvider,useWorkspaceKeyboard}.{ts,tsx}`, `app/ui/src/workspace/panels/{EditorPanel,TerminalPanel}.tsx`, `app/ui/src/hooks/{workspaceTypes,useLayoutState,usePersistence}.ts`; tests under `app/ui/src/**/__tests__/*` + `app/ui/tests/e2e/*`; docs `doc/main/app/{frontend/{state,hooks,components},data-model/{persistence,types},ui/{keyboard,app-shell,mobile,workspace/*},README}.md`, `doc/dev/app/workflow.md`. This entry is the docs sync — no code changed.
+**Verification:** Feature shipped with unit + e2e coverage (e2e migrated to the group model + new tab-group flows).
+**Commit:** `f3029b7..8be73ea` (12 commits on `task/vscode-tabs`) + this docs commit.
+**Next:** None outstanding.
+**Blockers:** None.
+
 ## 2026-06-12: Disable native iOS long-press menus on app-owned menu targets
 
 **What changed:**

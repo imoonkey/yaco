@@ -69,30 +69,30 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 
 ## Flow: Compare Two Files Side-by-Side
 
-1. With a file open, click **Split Editor** in the tab bar (or `Cmd+\`)
-2. A new editor pane opens beside the active one (axis chosen from the pane's geometry — wide splits right, tall splits below; `Cmd+K Cmd+\` for the other axis), seeded with the source's active file (pinned)
-3. The new pane becomes the focused/active editor; open a different file in it (`Cmd+Enter` on an explorer file opens it to the side directly)
-4. Editing a file open in both panes updates both (shared buffer); each pane keeps its own tab strip
-5. Closing the last tab in a secondary pane reflows it away; both panes restore per (project, worktree) on reload
+1. With a file open, right-click the group's tab-bar empty area (or click **Split**) → **Split Right** (or `Cmd+\`)
+2. An **empty** group opens beside the active one (axis chosen from geometry — wide splits right, tall splits below; `Cmd+K Cmd+\` for the other axis), and becomes the open target
+3. Open a file in it — from the explorer, or `Cmd+Enter` on an explorer file opens it to the side directly
+4. Editing a file open in both groups updates both (shared per-path buffer); each group keeps its own tab strip
+5. Closing the last tab in a non-last group removes that empty group; the layout restores per (project, worktree) on reload
 
 ## Flow: Switch Terminal Session
 
 1. User clicks a different session in the Sessions list (`clickSession`)
-2. If that session is already shown in a terminal pane → that pane is focused (no rebind, no duplicate PTY)
-3. Else the **active** terminal pane rebinds to the session (its previous session keeps running off-screen); if no terminal exists, one is created bound to it
+2. If that session is already shown in a terminal tab → that tab is focused (no rebind, no duplicate PTY)
+3. Else a **new** terminal tab is created in the target group, bound on create (it never rebinds an existing terminal — the previous session keeps running in its own tab)
 4. The terminal renders the session output (tmux-persistent PTY)
 
 ## Flow: Watch Two Sessions at Once
 
 1. Hover/right-click a session row → **"Open beside"** (`openBeside`)
-2. If the session is already shown → its terminal is focused; else a **new** terminal pane opens bound to it (1-per-session guard)
+2. If the session is already shown → its terminal tab is focused; else an empty group is split and a **new** terminal tab opens in it bound to the session (1-per-session guard)
 3. Both terminals tile and both sessions are marked read while visible
-4. When a session ends (`/exit`, kill, or crash), the reconcile closes its terminal pane after 2 missed polls → the session moves to History
+4. When a session ends (`/exit`, kill, or crash), the reconcile closes its terminal tab after 2 missed polls → the session moves to History
 
 ## Flow: Detach/Kill Session
 
-- `Cmd+W` while a terminal is focused (or the header ×): closes the pane (`closePane`); the session keeps running
-- Click Kill button on a session row: hard-terminates the session; its terminal pane(s) close via the reconcile
+- `Cmd+W` while a terminal is focused (or the tab ×): closes the terminal tab (`closePane`); the session keeps running
+- Click Kill button on a session row: hard-terminates the session; its terminal tab(s) close via the reconcile
 
 ## Flow: Project Switch
 

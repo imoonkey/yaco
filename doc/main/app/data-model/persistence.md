@@ -131,22 +131,22 @@ App-level state persisted by `App.tsx`:
 
 ### localStorage: `yaco-workspace:<projectName>` (or `yaco-workspace:<projectName>:wt:<slug>`)
 
-Per-project (or per-worktree) workspace layout state persisted by `usePersistence` (`useLayoutState` snapshot). When a worktree is active, state is keyed separately so tabs/sessions/layout are independent per worktree. The workspace holds **N editor + N terminal panes**, so per-instance view state is keyed by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#localstorage-persistence).
+Per-project (or per-worktree) workspace layout state persisted by `usePersistence` (`useLayoutState` snapshot). When a worktree is active, state is keyed separately so tabs/sessions/layout are independent per worktree. The working area is a **grid of tab groups**, so the group tree carries the editor-tab payload and the aux maps key by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#localstorage-persistence).
 
-- `panelLayout` — the desktop panel tree (`{ version, desktop, mobile, panelState }`); carries the instance ids the maps key on (home editor `'editor'`, secondaries `editor:2…`, terminals `terminal`/`terminal:2…`)
-- `editorViews` — `Record<instanceId, { openTabs, activeTab, previewTab }>`
+- `panelLayout` — the desktop panel tree (`{ version, desktop, mobile, panelState }`); its `tabs` (group) nodes carry the editor-tab payload (`tabId`/`preview`/`pinned`) and the instance ids the maps key on (editor tabs `editor`/`editor:2…`, terminal tabs `terminal`/`terminal:2…`, groups `group:1…`)
 - `terminalBindings` — `Record<instanceId, sessionName>`
 - `editorMru` / `terminalMru` — `string[]`, most-recent-first (head = active instance)
+- `activeGroupId` — the explicitly-selected target group id (a focused EMPTY group survives reload; clamped to a live group on load)
 - `mobilePane` — `'files' | 'editor' | 'tasks' | 'terminal'`
 - `recentFiles` — `string[]`
 - `layout.showSidebar` / `layout.showRightPanel` — dock/activity visibility (mirrored onto the tree by the provider)
-- `layout.showProjects` / `showExplorer` / `showChanges` / `showSessions` / `showTasks` — section visibility
+- `layout.showProjects` / `showExplorer` / `showChanges` / `showSessions` / `showTasks` — section visibility (`showTasks` drives the desktop Tasks overlay)
 - `layout.showTextSearch` — Explorer body mode (`false` = file tree, `true` = cross-file text search)
 - `layout.previewMode` — `'edit' | 'preview' | 'split'`; `layout.splitDirection` — `'horizontal' | 'vertical'`; `layout.splitSize` — number (20–80)
 - `layout.autocompleteEnabled` — inline-suggestions toggle
 - `layout.leftSize` / `rightSize` / `explorerSize` / `searchSize` / `changesSize` / `sessionSize` / `projectSize` — pixel sizes
 
-**One-time migration on load**: an old flat blob `{openTabs,activeTab,previewTab}` → `editorViews.editor` + `editorMru:['editor']`, and `activeSession` → `terminalBindings.terminal`. The tree is normalized (reconstitute the `main` tabs node if a legacy tree dismantled it), the maps are GC'd against the tree's instance ids, and terminal bindings are deduped one-per-session. Invalid saved sizes are sanitized to visible defaults.
+**Migration on load** (pure, idempotent, no version bump): a stored **group blob** (a tree whose `tabs` nodes carry a `tabs[]` array) is normalized as-is, restoring `activeGroupId` if it still names a live group. An **old blob** (a `panels[]`/leaf tree, or the oldest flat `{openTabs,activeTab,previewTab}` blob) runs through `migrateTreeToGroups`: each old editor's `openTabs` expands into one editor tab per file (an old-editor-id → new active-tab `instanceId` map re-points `editorMru`/focus), terminal leaves become terminal tabs (ids + dirty buffers preserved), and the old `tasks` tab is dropped (Tasks is the desktop overlay now). The tree is then normalized, the maps GC'd against the tree's instance ids, terminal bindings deduped one-per-session, and invalid saved sizes sanitized to visible defaults.
 
 ### localStorage: `yaco-drafts:<projectName>` (or `yaco-drafts:<projectName>:wt:<slug>`)
 
@@ -182,7 +182,7 @@ State is split between server files (shared across devices via REST + SSE) and `
 - Pinned sessions and their order, keyed by project
 
 **Per-device (`localStorage`):**
-- Workspace panel tree + per-instance editor views / terminal bindings / MRU (`yaco-workspace:<project>`)
+- Workspace group tree (editor-tab payload) + per-instance terminal bindings / MRU + active group (`yaco-workspace:<project>`)
 - Editor drafts, keyed by path (`yaco-drafts:<project>`)
 - `mobilePane` selection
 - Theme

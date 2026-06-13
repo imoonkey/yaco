@@ -25,18 +25,19 @@ Complete keyboard shortcut reference.
 
 | Shortcut | Context | Action |
 |----------|---------|--------|
-| `Cmd+B` | Workspace | Toggle left sidebar (Explorer + Changes + Tasks) |
+| `Cmd+B` | Workspace | Toggle the left dock (Projects + Explorer + Changes) |
 | `Cmd+Shift+B` | Workspace | Toggle right session/terminal pane |
 | `Cmd+Ctrl+1` … `Cmd+Ctrl+9` | Workspace | Switch to session N (in display order). Holding `Cmd+Ctrl` reveals numeric index hints next to the first 9 session names in the sidebar. |
-| `Cmd+Ctrl+↑` / `Cmd+Ctrl+↓` | Workspace | Cycle the **active** terminal to previous/next session (wraps around) |
-| `Cmd+Ctrl+←` / `Cmd+Ctrl+→` | Workspace | Cycle the **active** editor to previous/next tab (wraps around) |
-| `Cmd+\` | Workspace (editor/terminal focused) | Split the focused pane along its geometry-default axis (wide → right, tall → below) |
-| `Cmd+K Cmd+\` | Workspace (editor/terminal focused) | Split the focused pane along the **orthogonal** axis |
-| `Cmd+Enter` | Workspace (explorer file focused) | Open the focused file in a new editor beside the active one (`openToSide`) |
-| `Cmd+Shift+T` | Workspace | Open Tasks tab, focus it if already open, or close it if active |
+| `Cmd+Ctrl+↑` / `Cmd+Ctrl+↓` | Workspace | Cycle to the previous/next session (focus-or-create its terminal tab; never rebinds the active terminal). Wraps around. |
+| `Cmd+Ctrl+←` / `Cmd+Ctrl+→` | Workspace | Cycle the **active group's** editor tabs left/right (wraps around) |
+| `Cmd+\` | Workspace (editor/terminal focused) | Split the **active group** (the focused tab's group) along its geometry-default axis (wide → right, tall → below) — spawns an empty adjacent group |
+| `Cmd+K Cmd+\` | Workspace (editor/terminal focused) | Split the active group along the **orthogonal** axis |
+| `Cmd+Enter` | Workspace (explorer file focused) | Split an empty group beside the active one and open the focused file there (`openToSide`) |
+| `Cmd+Shift+T` | Workspace | Toggle the Tasks overlay (open + focus the task graph, or close it if already shown) |
 | `Cmd+P` | Workspace | Open file search modal |
-| `Cmd+W` | Workspace (editor focused) | Close the focused editor tab; emptying a **secondary** editor closes the pane, the home editor falls to its empty state |
-| `Cmd+W` | Workspace (terminal focused) | Close the focused terminal pane (`closePane`) — the session keeps running |
+| `Cmd+W` | Workspace (editor focused) | Close the focused editor tab; closing the last tab in a **non-last** group removes the now-empty group (the final group stays, empty) |
+| `Cmd+W` | Workspace (terminal focused) | Close the focused terminal tab (`closePane`) — the session keeps running |
+| `Cmd+W` | Workspace (empty non-last group active) | Close the empty group (`closeGroup`) |
 | `Cmd+W` | Workspace (no focus) | No-op (does not close browser tab) |
 | `Cmd+Shift+V` | Workspace (`.md` tab active) | Cycle markdown mode: edit → split → preview → edit |
 | `Cmd+C` | Workspace (explorer focused) | Copy selected file path |
@@ -63,5 +64,5 @@ Workspace uses a best-effort `Cmd+W` interception strategy:
 
 1. **Keydown capture**: event listener on the capture phase intercepts `Cmd+W` before the browser processes it
 2. **Keyboard Lock**: on supporting browsers in secure contexts, requests `Keyboard Lock` for `KeyW` so the browser yields the key entirely
-3. **Priority**: editor tab close > terminal pane close (`closePane`) > no-op
-4. **Empty surface**: when no tabs or terminals are focused, `Cmd+W` is consumed as a no-op to prevent browser tab close
+3. **Priority**: empty non-last group close (`closeGroup`) > focused editor-tab close > terminal-tab close (`closePane`) > no-op
+4. **Empty surface**: when no tab is focused and the active group is the last (empty) group, `Cmd+W` is consumed as a no-op to prevent browser tab close

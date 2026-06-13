@@ -99,7 +99,7 @@ interface GitChange {
 
 ## Workspace State Types
 
-Defined in `ui/src/hooks/workspaceTypes.ts`. The workspace holds **N editor + N terminal panes**; per-instance view state is keyed by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
+Defined in `ui/src/hooks/workspaceTypes.ts`. The working area is a **grid of tab groups**; the group tree carries the editor-tab payload and the aux maps key by `instanceId`. -> See: [../frontend/state.md](../frontend/state.md#workspace-hot-state--one-reducer-the-group-model).
 
 ### File State (keyed by path — shared document model)
 
@@ -116,10 +116,20 @@ type FileState = {
 }
 ```
 
-### Per-Instance View + Focus
+### Group Tabs + Focus
 
 ```typescript
-// One editor instance's tab view; a read for a missing instanceId → EMPTY_VIEW.
+// One tab in a working-area group. `instanceId` is the identity the aux maps
+// (terminalBindings, MRU, focus) key on; `kind` selects which body renders. An
+// editor tab also carries its `tabId` (a file path OR a `diff:<path>?...` id) plus
+// the `preview`/`pinned` flags — the file/diff IS the tab.
+type GroupTab =
+  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
+  | { instanceId: string; kind: 'terminal' }
+
+// LEGACY: the old per-editor multi-file view. No longer backs live state — it
+// survives only as the old-shape descriptor the persistence-loader migration
+// (`migrateTreeToGroups`) reads.
 type EditorView = {
   openTabs: string[]
   activeTab: string | null
@@ -132,7 +142,8 @@ type FocusTarget = 'editor' | 'explorer' | 'session' | 'terminal' | 'tasks'
 // otherwise equals the kind.
 type FocusedPane = { kind: FocusTarget; instanceId: string }
 
-// Go-to-line carries instanceId so only the matching editor pane consumes it.
+// Go-to-line carries instanceId so only the matching editor tab consumes it
+// (the same path can be open as two tabs sharing one buffer).
 type JumpRequest = { key: number; path: string; line: number; scroll?: boolean; instanceId?: string }
 ```
 
@@ -140,14 +151,14 @@ type JumpRequest = { key: number; path: string; line: number; scroll?: boolean; 
 
 ```typescript
 type PersistedState = {
-  editorViews: Record<string, EditorView>      // by instanceId
   terminalBindings: Record<string, string>     // by instanceId → sessionName
   editorMru: string[]                          // most-recent-first
   terminalMru: string[]
+  activeGroupId: string                        // the explicitly-selected target group
   mobilePane: MobilePane                       // 'files' | 'editor' | 'tasks' | 'terminal'
   layout: WorkspaceLayout                      // flat visibility + sizes
   recentFiles: string[]
-  panelLayout: WorkspacePanelLayout            // desktop tree (carries instance ids) + mobile dock + panel state
+  panelLayout: WorkspacePanelLayout            // group tree (editor-tab payload + instance ids) + mobile dock + panel state
 }
 ```
 
@@ -157,7 +168,10 @@ type PersistedState = {
 // The desktop layout is an n-ary tree of split / tabs / leaf nodes (pure structure).
 type LeafNode  = { kind: 'leaf';  id: string; panel: PanelId; collapsed?: boolean }
 type SplitNode = { kind: 'split'; id: string; axis: 'row' | 'col'; children: SplitChild[] }
-type TabsNode  = { kind: 'tabs';  id: string; active: PanelId; panels: PanelId[]; chrome: 'none' | 'tabs' }
+// A working-area GROUP: an ordered, mixed strip of editor/terminal tabs. `id` is
+// the group's split target (disjoint from any tab's instanceId). `activeTab` is
+// the shown tab's instanceId, or '' for an EMPTY group (a first-class node).
+type TabsNode  = { kind: 'tabs';  id: string; tabs: GroupTab[]; activeTab: string }
 type LayoutNode = LeafNode | SplitNode | TabsNode
 
 type WorkspacePanelLayout = {
@@ -168,7 +182,7 @@ type WorkspacePanelLayout = {
 }
 ```
 
-`editor`/`terminal` are the multi-instance whitelist (`MULTI_INSTANCE_PANELS`); the home editor's id is the constant `'editor'` and lives in the `main` tabs node, secondary editors and all terminals are leaves.
+A `leaf.panel` is one of the four singleton **dock** panels (`projects`/`files`/`changes`/`sessions`); `editor`/`terminal` exist ONLY as group tabs, and `tasks` is the desktop overlay (driven by `showTasks`) — normalization drops any leaf claiming one.
 
 ### Workspace Layout (flat visibility + sizes)
 

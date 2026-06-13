@@ -1,10 +1,10 @@
 # Editor and Preview
 
-Multi-tab editor, dirty state, draft model, markdown preview, and diff view.
+Editor tabs, dirty state, draft model, markdown preview, and diff view.
 
 ## Owns
 
-- Tab management behavior
+- Editor-tab behavior within a group
 - Editor draft model and dirty state
 - Markdown preview behavior and sync mechanism
 - Diff view behavior
@@ -17,20 +17,21 @@ Multi-tab editor, dirty state, draft model, markdown preview, and diff view.
 
 ## Related Code
 
-`ui/src/components/Editor.tsx`, `ui/src/workspace/panels/EditorPanel.tsx`, `ui/src/workspace/WorkspaceEditorColumn.tsx`, `ui/src/workspace/WorkspaceTabBar.tsx`
+`ui/src/components/Editor.tsx`, `ui/src/workspace/panels/EditorPanel.tsx`, `ui/src/workspace/PanelGroup.tsx`, `ui/src/workspace/GroupTabBar.tsx`
 
-## Multi-Instance Editors
+## Editor Tabs in Groups
 
-The workspace can show **N editor panes** side-by-side. Each `EditorPanel` reads its `instanceId` (from `PanelInstanceContext`) and renders `editorViews[instanceId]` — its own `{ openTabs, activeTab, previewTab }`. A read for a missing id defaults to `EMPTY_VIEW`. -> See: [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
+The working area is a grid of **groups**; each group's strip mixes one **editor tab** per open file/diff with terminal tabs. An `EditorPanel` is a **single-tab body**: it reads its `instanceId` (from `PanelInstanceContext`) and renders the file/diff named by that editor tab's `tabId`. The tab payload (`tabId`/`preview`/`pinned`) lives in the group's tree node, not in a per-editor view map. -> See: [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-the-group-model).
 
-- **Shared buffers.** File content / dirty state live in `useFileState` keyed by **path**, not instance. An edit in editor A is visible in editor B, and both show the same dirty dot. Only the tab view is per-instance.
-- **Instance-scoped events.** Tab clicks call `selectTab(tab, id)` / `closeTab(tab, id)` on the pane's own id and focus it (`focusPane('editor', id)` on mousedown). `jumpRequest` (go-to-line) and `editorInsert` (voice) carry an `instanceId` and are consumed **iff** it matches.
-- **Split chrome.** The tab bar has a **Split Editor** button (default axis from its own geometry; `Cmd+K Cmd+\` or a caret for the orthogonal axis). Secondary editors also get **Move** / **Close** in an overflow menu; the home editor has neither (it is structural). Splitting seeds the new editor with the source's active file (pinned) or empty, and focuses it.
-- **Open to the side.** `Cmd+Enter` in the explorer / quick-open opens the focused file in a new editor beside the active one (`openToSide`).
-- **Dirty-close confirm.** "Close Without Saving" on the last view of a dirty file confirms and clears the draft first; it **no-ops when the same path is open in another view** (closing A's tab while B shows it loses nothing).
-- **Close.** Emptying a **secondary** editor (last tab closed) reflows it away (`closePane`); emptying the **home** editor leaves it in the empty state.
+- **Shared buffers.** File content / dirty state live in `useFileState` keyed by **path**, not by tab. The same file open as two editor tabs (in two groups) shows the same content and the same dirty dot; only the tab is duplicated, the buffer is one.
+- **Tab events.** A tab click activates it via `setActiveGroupTab(groupId, instanceId)` and focuses it (`focusPane('editor', id)` on mousedown). `jumpRequest` (go-to-line) and `editorInsert` (voice) carry an `instanceId` and are consumed **iff** it matches — so the same path open in two tabs jumps only the one that was targeted.
+- **Split.** Right-click the group's tab-bar empty area, or click the visible **Split** button (which opens the same dismiss-safe menu), → **Split Up/Down/Left/Right** spawns an **empty** adjacent group, which becomes the open target. Splitting never clones a file or PTY into the new group — it starts empty, mirroring VSCode.
+- **Open to the side.** `Cmd+Enter` in the explorer / quick-open splits an empty group beside the active one and opens the focused file there (`openToSide`).
+- **Reorder.** Tabs drag-reorder within their group (`reorderGroupTab`); editor and terminal tabs share one freely-orderable strip.
+- **Dirty-close confirm.** "Close Without Saving" on the last tab of a dirty file confirms and clears the draft first; it **no-ops when the same path is open in another tab** (closing one tab while another shows it loses nothing).
+- **Close.** Closing a tab via its `×` removes it (`closeGroupTab`); the active tab falls to its neighbour. Closing the last tab in a non-last group removes the now-empty group (`closeGroup`); the final group stays alive, empty (`ensureFirstGroup`).
 
-Editor *preferences* (`previewMode` / `splitDirection` / `splitSize` / inline-suggestions) stay global (in `panelState.editor`), shared across all editor instances.
+Editor *preferences* (`previewMode` / `splitDirection` / `splitSize` / inline-suggestions) stay global (in `panelState.editor`), shared across all editor tabs.
 
 ## Syntax Highlighting
 
@@ -39,13 +40,13 @@ The editor uses CodeMirror 6 with two-tier language loading:
 1. **Static** — JS/TS/JSON/Python/Markdown have dedicated `@codemirror/lang-*` imports for instant highlighting
 2. **Dynamic** — All other file types (Kotlin, Go, Rust, Java, C/C++, SQL, YAML, etc.) are resolved via `LanguageDescription.matchFilename()` from `@codemirror/language-data` and async-loaded into a `Compartment`. No new packages needed — `language-data` bundles 100+ language descriptions that load on demand.
 
-## Tab Bar
+## Group Tab Bar
 
-- Horizontal tab strip above the editor area
-- Each tab shows filename (not full path)
+- Horizontal tab strip above each group's body, mixing editor and terminal tabs in document order
+- Each editor tab shows filename (not full path); a terminal tab shows its session label
 - Active tab has `base3` background, inactive tabs have `base2`
-- Tabs can be clicked to switch
-- No drag-reorder of tabs
+- Tabs can be clicked to switch and **drag-reordered** within the group
+- The empty area to the right of the tabs is the **Split** trigger (right-click, or the visible Split button) — opens the Split Up/Down/Left/Right menu
 
 ### Tab States
 
@@ -55,14 +56,15 @@ The editor uses CodeMirror 6 with two-tier language loading:
 | Dirty | Black dot on right side (replaces `×`) | Close immediately (draft discarded) |
 | Preview | *Italic* tab title | Replaced by next single-click in explorer |
 | Diff | File path + "diff" styling | Close immediately |
+| Terminal | Session label + status dot | Close detaches the pane; the session keeps running |
 
 ### Preview Tabs
 
-VS Code-style preview behavior. At most one preview tab exists at a time.
+VS Code-style preview behavior. At most one preview tab exists **per group** at a time.
 
 | Action | Result |
 |--------|--------|
-| Single-click in explorer | Opens **preview tab** — italic title, replaced by next single-click |
+| Single-click in explorer | Opens **preview tab** in the target group — italic title, replaced by next single-click |
 | Double-click in explorer | Opens **pinned tab** — normal title, persists |
 | Double-click preview tab header | Pins it |
 | Edit content in preview tab | Auto-pins it |
@@ -72,7 +74,7 @@ State is persisted to localStorage alongside other workspace state.
 
 ## Draft Model
 
-Managed by `useFileState` (keyed by path, shared across editor instances). Each open file path maintains:
+Managed by `useFileState` (keyed by path, shared across editor tabs). Each open file path maintains:
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -88,7 +90,7 @@ Managed by `useFileState` (keyed by path, shared across editor instances). Each 
 3. `Cmd+S` → content sent to server with `baseRevision`, on success: `draft` reset to `null`, new `baseRevision` stored
 4. If server revision changed since last fetch → status becomes `conflict`
 5. Conflict resolution: `forceSave()` (overwrite server) or `acceptDisk()` (discard local draft)
-6. Tab closed → buffer kept iff still referenced by some open editor view **or** dirty (a shared-buffer GC); a clean, unreferenced buffer drops immediately, a dirty one lingers (recoverable) until explicitly discarded
+6. Tab closed → buffer kept iff still referenced by some open editor tab **or** dirty (a shared-buffer GC over `allEditorTabPaths`); a clean, unreferenced buffer drops immediately, a dirty one lingers (recoverable) until explicitly discarded
 7. Switch tabs → draft preserved (survives tab switching)
 
 ### Persistence

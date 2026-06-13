@@ -58,7 +58,7 @@ Controlled by PaneSwitch component (`MobilePanelProjection` renders the active d
 ### Auto-Switching
 
 - Selecting a file in `Files` pane → auto-switches to `Editor`
-- Opening the Tasks doorway or toggling the Tasks tab → auto-switches to `Editor`
+- Opening Tasks (`Meta+Shift+T`) → auto-switches to the `Tasks` pane
 - Selecting or creating a session → auto-switches to `Terminal` (terminal mounts immediately, not gated by API poll)
 - Background data updates never force pane changes
 

@@ -22,79 +22,79 @@ Surface summary and desktop/mobile composition for the Workspace view.
 The Workspace is a multi-pane code editing environment for a single project. It provides:
 
 - File explorer with git status
-- **N editor panes** (multi-tab) for files, diffs, and the task graph — split side-by-side, each with its own tab strip and view state
+- A **grid of tab groups** for the working area — one editor tab per open file/diff, one tab per terminal, freely interleaved in each group's strip
 - Git changes panel with diff viewer
-- Tasks doorway that opens the task graph; task records live across `plan/tasks/**/tasks.json`
-- **N terminal panes**, each bound to a session
+- Tasks overlay that opens the task graph over the working area; task records live across `plan/tasks/**/tasks.json`
+- Terminal sessions, each a tab bound to one session
 - File search
 
-The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes), not a fixed three-column grid. Panels are split, moved, collapsed, and resized; the tree is the authority on which panes exist. -> See: [state-machine.md](state-machine.md) and [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-multi-instance).
+The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes), not a fixed three-column grid. The four dock panels (projects/files/changes/sessions) are singleton leaves; the working area is a grid of **groups** (`tabs` nodes) that are split, reordered, and closed. The tree is the authority on which groups and tabs exist. -> See: [state-machine.md](state-machine.md) and [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-the-group-model).
 
-## Multi-Instance Panels
+## Tab Groups (the working area)
 
-The workspace holds **N editor + N terminal panes at once**, each keeping its own view state, persisted per (project, worktree) and restored on reload — so "watch two agents" and "compare two files" are first-class.
+The working area is a **grid of groups**, exactly like VSCode. A **group** (a `tabs` node) holds an ordered, **mixed** strip of tabs: one **editor tab** per open file or diff, one **terminal tab** per session, freely interleaved (`CLAUDE.md` tab, *Claude Code* terminal tab, `AGENTS.md` tab in one strip). Every group, tab, and the layout persist per (project, worktree) and restore on reload — so "watch two agents" and "compare two files" are first-class.
 
-- **Instance identity (`instanceId`).** The home editor's id is the constant `'editor'`; secondary editors are `editor:2`, `editor:3`; terminals are `terminal`, `terminal:2`, … Singleton dock panels keep `id === panel`.
-- **Per-instance view state.** Each editor instance owns its `{ openTabs, activeTab, previewTab }`; each terminal instance owns its session binding. File **buffers stay global by path** (shared document model) — two editors on one file show the same content and dirty dot; only the tab view is per-instance.
+- **Flat tabs.** Every open file is its own editor tab; there is no per-editor multi-file list. A tab carries an `instanceId` (the identity the per-instance maps key on); an editor tab also carries its `tabId` (a file path or a `diff:` id) plus `preview`/`pinned` flags, stored in the tree node. The same file open in two groups is two editor tabs that **share one per-path buffer**, so edits and the dirty dot mirror.
+- **Active group + active tab.** Each group has an `activeTab` (the tab's `instanceId`, or `''` for an empty group). A persisted `activeGroupId` names the explicitly-selected **target group** (where the next open/session lands); the resolver is `activeGroupId` → the focused tab's group → the first group.
 - **Focus / active instance.** A type-global command (open file, voice insert, session cycle) targets the **active** instance of its type = most-recently-focused live instance, else first in document order. The focused pane gets a bright accent (`data-focused`); the active-but-unfocused editor/terminal gets a dim accent (`data-active`), suppressed when only one of that type exists.
-- **Split / open-to-side / close.** Split chrome on the editor/terminal headers, plus `Cmd+\` (split focused pane along its geometry axis), `Cmd+K Cmd+\` (orthogonal), `Cmd+Enter` (open file to the side), and instance-aware `Cmd+W`. -> See: [../keyboard.md](../keyboard.md).
+- **Split / open-to-side / close.** Right-click a group's tab-bar empty area (or the visible Split button, routed through the same menu) → **Split Up/Down/Left/Right** spawns an **empty** adjacent group, which becomes the open target. Plus `Cmd+\` (split the active group along its geometry axis), `Cmd+K Cmd+\` (orthogonal), `Cmd+Enter` (open file to the side), within-group drag-reorder, and `Cmd+W` (close the focused tab, or an empty non-last group). -> See: [../keyboard.md](../keyboard.md).
 - **Voice** is a single desktop control in the App top bar that targets a chosen instance. -> See: [../app-shell.md](../app-shell.md#global-voice-control).
 
 ## Desktop Composition
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Tab Bar (open file tabs)                               │
+│  Group Tab Bar (mixed editor + terminal tabs · Split)  │
 ├──────────────┬──────────────────────┬───────────────────┤
-│  Left Sidebar│  Editor Area         │  Activity Column  │
-│  ┌──────────┐│  ┌──────────────────┐│  ┌───────────────┐│
-│  │ Projects ││  │ CodeMirror /     ││  │ Terminal      ││
-│  │ (list)   ││  │ Preview /        ││  │               ││
-│  ├──────────┤│  │ Diff /           ││  │               ││
-│  │ Explorer ││  │ Task Graph       ││  ├───────────────┤│
-│  │          ││  │                  ││  │ Sessions      ││
-│  ├──────────┤│  │                  ││  │ (status+badge)││
-│  │ Changes  ││  │                  ││  │               ││
-│  ├──────────┤│                      │                   │
-│  │ Tasks    ││                      │                   │
-│  └──────────┘│                      │                   │
+│  Left Dock   │  Working-Area Groups │  Activity Column  │
+│  ┌──────────┐│  ┌─────────┬────────┐│  ┌───────────────┐│
+│  │ Projects ││  │ group:1 │ group:2││  │ Sessions      ││
+│  │ (list)   ││  │ ┌─────┐ │ ┌────┐ ││  │ (status+badge)││
+│  ├──────────┤│  │ │tabs │ │ │tabs│ ││  │               ││
+│  │ Files    ││  │ ├─────┤ │ ├────┤ ││  │               ││
+│  │          ││  │ │body │ │ │body│ ││  │               ││
+│  ├──────────┤│  │ └─────┘ │ └────┘ ││  │               ││
+│  │ Changes  ││  └─────────┴────────┘│  │               ││
+│  └──────────┘│  (Tasks overlay ▲)   │  └───────────────┘│
 └──────────────┴──────────────────────┴───────────────────┘
 ```
+
+A body is whatever the group's active tab renders — a CodeMirror editor / preview / diff for an editor tab, or a terminal for a terminal tab. `Meta+Shift+T` toggles the **Tasks overlay**, which covers the working-area groups (they stay mounted underneath).
 
 ### Panel Behavior
 
 | Panel | Toggle | Default | Resizable |
 |-------|--------|---------|-----------|
-| Left sidebar | `Cmd+B` | Visible | Yes (horizontal drag) |
+| Left dock | `Cmd+B` | Visible | Yes (horizontal drag) |
 | Activity column | `Cmd+Shift+B` | Visible | Yes (horizontal drag) |
 | Explorer/Search section | Click header; search icon switches body; search mode offers quick file search, full text search, and back actions | Open | Yes (vertical drag) |
 | Changes section | Click header | Open | Yes (vertical drag, dynamic max) |
-| Tasks section | Click header | Open | No (doorway body only) |
+| Tasks overlay | `Meta+Shift+T` | Closed | No (covers the full working area) |
 | Sessions tray | Click header | Open | No (fixed max-height 180px, scrollable) |
 
-### Empty Editor
+### Empty Working Area
 
-When no center tabs are open, the activity column (terminal + sessions) expands to occupy the full main content area.
+A group with no tabs is a valid, persisted node — it renders an empty placeholder with a Split affordance, and `ensureFirstGroup` keeps at least one group alive so the working area never disappears. Opening a file or session creates the first tab in the target group.
 
 ## Mobile Composition
 
 Single full-width pane with PaneSwitch: `Files` | `Editor` | `Terminal`
 
 - `Files`: shows explorer, changes, tasks, and sessions sections
-- `Editor`: projects the **active editor instance** — its file editor, preview, diff, or task graph
-- `Terminal`: projects the **active terminal instance** — the terminal for its bound session
+- `Editor`: projects the **active group's active editor tab** — its file editor, preview, or diff
+- `Terminal`: projects the **active terminal** — the terminal for its bound session
 
-Mobile renders only the active instance of each type (no split/open-beside affordances). Auto-switching:
+Mobile projects a single editor + single terminal from the active group (no split/open-beside affordances). Auto-switching:
 - File select → `Editor` pane
-- Tasks doorway or `Cmd+Shift+T` → `Editor` pane
+- Tasks (`Meta+Shift+T`) → `Tasks` pane
 - Session select or create → `Terminal` pane
 
 ## State Persistence
 
 Per-(project, worktree) state in localStorage (`yaco-workspace:<project>[:wt:<slug>]` and `yaco-drafts:<project>[:wt:<slug>]`):
-- Panel tree (`panelLayout`) — carries the instance ids
-- Per-instance editor views (`editorViews`) and terminal bindings (`terminalBindings`)
-- Editor/terminal MRU (`editorMru` / `terminalMru`)
+- Panel tree (`panelLayout`) — the group tree carries the editor-tab payload (`tabId`/`preview`/`pinned`) and the instance ids
+- Per-instance terminal bindings (`terminalBindings`) keyed by `instanceId`
+- Editor/terminal MRU (`editorMru` / `terminalMru`) and the active target group (`activeGroupId`)
 - Mobile pane (`mobilePane`), recent files (`recentFiles`)
 - Flat dock/section visibility + panel/section sizes (`layout`)
 - Task graph collapse state persists separately in `yaco-task-workspace:<project>`
