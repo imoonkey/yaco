@@ -373,6 +373,27 @@ describe('splitBeside / closeGroup / ensureCenterGroup / mapGroup', () => {
     expect(ensureCenterGroup(ensured)).toBe(ensured)
   })
 
+  it('closeGroup of the last CENTER group keeps an empty center; a right-sidebar group is NOT promoted', () => {
+    const base = layoutWith({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: group('center', [ed('e1', 'a.ts')], 'e1') },
+        { node: group('right', [term('t1')], 't1') }, // a right-sidebar terminal group
+      ],
+    })
+    // Precondition: the right group really is the right region (not the center).
+    expect(asTabs(centerOf(base.desktop)!).id).toBe('center')
+    expect(asTabs(regionsOf(base.desktop).right!).id).toBe('right')
+
+    const closed = closeGroup(base, 'center')
+    const { center, right } = regionsOf(closed.desktop)
+    // The center stays a (now empty) group; the right terminal group is untouched.
+    expect(center).not.toBeNull()
+    expect(asTabs(center!).tabs).toEqual([])
+    expect(right).not.toBeNull()
+    expect(terminalTabsInGroup(closed.desktop, asTabs(right!).id).map((t) => t.instanceId)).toEqual(['t1'])
+  })
+
   it('mapGroup edits a group purely and re-normalizes', () => {
     const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
     const next = mapGroup(base, 'group:1', (g) => ({
@@ -543,6 +564,22 @@ describe('normalizeRegions — left/center/right canonicalizer', () => {
     const { left, center } = regionsOf(out)
     expect((left as { panel?: string }).panel).toBe('files')
     expect(asTabs(center!).id).toBe('g')
+  })
+
+  it('an all-hidden sidebar folds into a fixed point (normalize twice == once)', () => {
+    // Two hidden pre-center docks fold into one left col. Without the all-hidden
+    // repair in foldSidebar, the next normalizeSplit pass un-hides the col's last
+    // child and the tree diverges on the second normalize.
+    const raw = rowOf('root', [
+      { hidden: true, node: leaf('projects') },
+      { hidden: true, node: leaf('files') },
+      { grow: true, node: group('g', [ed('e1', 'a.ts')], 'e1') },
+    ])
+    const once = normalizeDesktopTree(raw)
+    expect(normalizeDesktopTree(once)).toEqual(once)
+    // The folded left col is not all-hidden (its last child was un-hidden).
+    const { left } = regionsOf(once)
+    expect(asSplit(left!).children.every((c) => c.hidden === true)).toBe(false)
   })
 })
 

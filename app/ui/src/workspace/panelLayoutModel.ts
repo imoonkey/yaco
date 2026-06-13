@@ -567,11 +567,16 @@ function sidebarChild(node: LayoutNode, meta: SplitChild): SplitChild {
 }
 
 /** Fold sidebar material into one region child: a single item stays as-is; many
- *  stack in a fresh single-axis `col` split. Null when empty. */
+ *  stack in a fresh single-axis `col` split. Null when empty. An all-hidden stack
+ *  gets its last child un-hidden — mirroring `normalizeSplit` so the folded col is
+ *  a true fixed point (else the next normalize pass would un-hide it and diverge). */
 function foldSidebar(items: SplitChild[], mint: (kind: string) => string): SplitChild | null {
   if (items.length === 0) return null
   if (items.length === 1) return items[0]
-  return { node: { kind: 'split', id: mint('col'), axis: 'col', children: items } }
+  const children = items.every((c) => c.hidden === true)
+    ? items.map((c, i) => (i === items.length - 1 ? withChildHidden(c, false) : c))
+    : items
+  return { node: { kind: 'split', id: mint('col'), axis: 'col', children } }
 }
 
 /** Repair any (node-normalized) tree into the canonical left? · center · right?
@@ -1037,6 +1042,13 @@ function detachGroupById(node: LayoutNode, id: string): LayoutNode | null {
  *  no working area. No-op if the id is absent or names a non-group node. */
 export function closeGroup(layout: WorkspacePanelLayout, groupId: string): WorkspacePanelLayout {
   if (!hasNodeId(layout.desktop, groupId)) return layout
+  // Closing the LAST center group while other (sidebar) groups exist must not let a
+  // sidebar group get promoted into the center: empty the center group in place so
+  // the center region keeps its (now empty) group, distinct from the sidebar.
+  const center = centerOf(layout.desktop)
+  if (center && hasNodeId(center, groupId) && groupCount(center) === 1 && groupCount(layout.desktop) > 1) {
+    return withDesktop(layout, mapTabsNode(layout.desktop, groupId, (g) => ({ ...g, tabs: [], activeTab: '' })))
+  }
   const pruned = detachGroupById(layout.desktop, groupId)
   return ensureCenterGroup({ ...layout, desktop: normalizeDesktopTree(pruned) })
 }
