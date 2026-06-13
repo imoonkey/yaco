@@ -38,8 +38,9 @@ import { parseDiffTab } from '../hooks/workspaceTypes'
 // --- Canonical sets ---------------------------------------------------------
 
 /** Every registered panel id. Existence + the per-panel min size (read from
- *  `panelMeta`) are validated against this set. `editor`/`terminal` are registry
- *  body ids (a group tab renders one), NOT dock leaves. */
+ *  `panelMeta`) are validated against this set. `editor`/`terminal`/`tasks` are
+ *  registry body ids (a group tab or the desktop tasks overlay renders one), NOT
+ *  dock leaves. */
 export const PANEL_IDS: readonly PanelId[] = [
   'projects', 'files', 'changes', 'sessions', 'editor', 'terminal', 'tasks',
 ]
@@ -50,11 +51,11 @@ export function isPanelId(value: unknown): value is PanelId {
   return typeof value === 'string' && PANEL_ID_SET.has(value)
 }
 
-/** The panels that live as singleton dock leaves. `editor`/`terminal` are not
- *  here — they are group tabs, and the dock-leaf guard drops any leaf claiming
- *  one of them. */
+/** The panels that live as singleton dock leaves. `editor`/`terminal`/`tasks` are
+ *  not here — editor/terminal are group tabs, and tasks is the desktop overlay
+ *  (driven by `showTasks`); the dock-leaf guard drops any leaf claiming one. */
 export const DOCK_PANELS: ReadonlySet<PanelId> = new Set<PanelId>([
-  'projects', 'files', 'changes', 'sessions', 'tasks',
+  'projects', 'files', 'changes', 'sessions',
 ])
 
 export const isDockPanel = (panel: PanelId): boolean => DOCK_PANELS.has(panel)
@@ -90,8 +91,9 @@ function emptyGroup(id: string): TabsNode {
 
 /** The default desktop tree: a left dock column (projects/files/changes), one
  *  empty working group in the middle (grows; opening a file creates the first
- *  tab here), and a right activity column (sessions/tasks). Mirrors VSCode's
- *  empty editor area. */
+ *  tab here), and a right activity column (sessions). Tasks is the desktop
+ *  overlay (driven by `showTasks`), not a dock leaf. Mirrors VSCode's empty
+ *  editor area. */
 export function defaultDesktopTree(): LayoutNode {
   return {
     kind: 'split',
@@ -112,18 +114,7 @@ export function defaultDesktopTree(): LayoutNode {
         },
       },
       { grow: true, node: emptyGroup('group:1') },
-      {
-        basis: 280,
-        node: {
-          kind: 'split',
-          id: 'activity',
-          axis: 'col',
-          children: [
-            { grow: true, node: leaf('sessions') },
-            { basis: 180, node: leaf('tasks') },
-          ],
-        },
-      },
+      { basis: 280, node: leaf('sessions') },
     ],
   }
 }
@@ -688,18 +679,34 @@ export function splitPanel(
   return withDesktop(layout, desktop)
 }
 
-/** Each dock panel's home in the default tree, used by `movePanel(_, default)`. */
-const DEFAULT_PLACEMENT: Partial<Record<PanelId, PanelPlacement>> = {
-  projects: { kind: 'split', target: 'files', side: 'above' },
-  files: { kind: 'split', target: 'changes', side: 'above' },
-  changes: { kind: 'split', target: 'files', side: 'below' },
-  sessions: { kind: 'split', target: 'tasks', side: 'above' },
-  tasks: { kind: 'split', target: 'sessions', side: 'below' },
+/** A dock panel's home in the default tree, used by `movePanel(_, default)`.
+ *  The dock panels split beside a sibling inside their column; `sessions` is the
+ *  lone right column, so its home is a standalone grow-free root child grafted
+ *  after the working area (the renderer landmarks it "Activity panel"). */
+type DefaultHome =
+  | { kind: 'split'; target: PanelId; side: SplitSide; columnId?: string }
+  | { kind: 'rightColumn'; basis: number }
+
+const DEFAULT_PLACEMENT: Partial<Record<PanelId, DefaultHome>> = {
+  projects: { kind: 'split', target: 'files', side: 'above', columnId: 'dock' },
+  files: { kind: 'split', target: 'changes', side: 'above', columnId: 'dock' },
+  changes: { kind: 'split', target: 'files', side: 'below', columnId: 'dock' },
+  sessions: { kind: 'rightColumn', basis: 280 },
 }
 
-const DEFAULT_COLUMN_ID: Partial<Record<PanelId, string>> = {
-  projects: 'dock', files: 'dock', changes: 'dock',
-  sessions: 'activity', tasks: 'activity',
+/** Re-attach `panel`'s leaf as the last root child (the right activity column),
+ *  detaching it from its current home first. Recreates the canonical right column
+ *  when a panel is returned to its default placement. */
+function graftAsRightColumn(
+  layout: WorkspacePanelLayout, panel: PanelId, basis: number,
+): WorkspacePanelLayout {
+  const { tree, leaf: removed } = detachPanel(layout.desktop, panel)
+  const base = tree ?? layout.desktop
+  const inserted: SplitChild = { basis, node: removed ?? leaf(panel) }
+  if (base.kind !== 'split') {
+    return withDesktop(layout, { kind: 'split', id: 'root', axis: 'row', children: [{ node: base }, inserted] })
+  }
+  return withDesktop(layout, { ...base, children: [...base.children, inserted] })
 }
 
 /** Relocate a dock `panel`: split beside a target, or return to its default home.
@@ -714,9 +721,9 @@ export function movePanel(
       return layout
     case 'default': {
       const home = DEFAULT_PLACEMENT[panel]
-      if (!home || home.kind !== 'split') return layout
-      const columnId = DEFAULT_COLUMN_ID[panel]
-      const id = columnId && !hasSplitNode(layout.desktop, columnId) ? columnId : undefined
+      if (!home) return layout
+      if (home.kind === 'rightColumn') return graftAsRightColumn(layout, panel, home.basis)
+      const id = home.columnId && !hasSplitNode(layout.desktop, home.columnId) ? home.columnId : undefined
       return splitPanel(layout, home.target, panel, home.side, id)
     }
   }
@@ -934,8 +941,8 @@ function collectOldInstanceIds(node: unknown, out: Set<string>): void {
  *  into the group model. PURE + idempotent: a tree already in the group shape is
  *  returned unchanged. An old editor leaf / the old main-tabs `editor` entry
  *  expands into a group of per-file tabs; a terminal leaf becomes a group holding
- *  one terminal tab (its instanceId preserved); the old `tasks` tab becomes a
- *  dock leaf. */
+ *  one terminal tab (its instanceId preserved); the old `tasks` tab is dropped
+ *  (tasks is the desktop overlay now, not a dock leaf). */
 export function migrateTreeToGroups(
   oldNode: unknown, oldViews?: Record<string, EditorView>,
 ): MigrationResult {
@@ -969,10 +976,11 @@ export function migrateTreeToGroups(
         return { kind: 'tabs', id: String(raw.id ?? minter.group()), tabs: raw.tabs as GroupTab[], activeTab: typeof raw.activeTab === 'string' ? raw.activeTab : '' }
       }
       // Old main-tabs node: the `editor` entry becomes this slot's group; other
-      // (dock) panels are lifted to the dock; a missing editor entry yields an
-      // empty group so the working-area slot is preserved.
+      // DOCK panels are lifted to the dock; a missing editor entry yields an
+      // empty group so the working-area slot is preserved. A `tasks` entry is
+      // dropped (tasks is the desktop overlay now, not a dock leaf).
       const panels = Array.isArray(raw.panels) ? raw.panels.filter(isPanelId) : []
-      for (const p of panels) if (p !== 'editor' && p !== 'terminal') dockGrafts.push(p)
+      for (const p of panels) if (isDockPanel(p)) dockGrafts.push(p)
       if (panels.includes('editor')) return expandEditorView('editor', oldViews, minter, idMap)
       return emptyGroup(minter.group())
     }

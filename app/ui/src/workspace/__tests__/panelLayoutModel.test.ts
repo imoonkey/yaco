@@ -64,12 +64,13 @@ describe('guards + canonical sets', () => {
     expect(isPanelId('nope')).toBe(false)
   })
 
-  it('dock panels are exactly the five singletons (editor/terminal are not docks)', () => {
-    for (const p of ['projects', 'files', 'changes', 'sessions', 'tasks'] as const) {
+  it('dock panels are exactly the four singletons (editor/terminal/tasks are not docks)', () => {
+    for (const p of ['projects', 'files', 'changes', 'sessions'] as const) {
       expect(isDockPanel(p)).toBe(true)
     }
     expect(isDockPanel('editor')).toBe(false)
     expect(isDockPanel('terminal')).toBe(false)
+    expect(isDockPanel('tasks')).toBe(false)
   })
 
   it('recognizes mobile docks', () => {
@@ -90,9 +91,9 @@ describe('default tree', () => {
     const g = asTabs(tabsNode(root, 'group:1'))
     expect(g.tabs).toEqual([])
     expect(g.activeTab).toBe('')
-    // editor/terminal are never dock leaves
+    // editor/terminal/tasks are never dock leaves (tasks is the desktop overlay)
     const leafPanels = collectLeafPanels(root)
-    expect(leafPanels.sort()).toEqual(['changes', 'files', 'projects', 'sessions', 'tasks'])
+    expect(leafPanels.sort()).toEqual(['changes', 'files', 'projects', 'sessions'])
   })
 
   it('normalizes idempotently', () => {

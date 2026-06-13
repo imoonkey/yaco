@@ -83,22 +83,23 @@ test.describe('Flexible layout operations (panel header menu)', () => {
     expect(await sessionsInsideDock(page)).toBe(true)
   })
 
-  test('moving Sessions right relocates it out of the dock and persists across reload', async ({ page, request }) => {
+  test('Reset position relocates a docked Sessions panel back to the right column and persists across reload', async ({ page, request }) => {
     const project = await treeWorkspace(page, request)
 
-    // Park Sessions in the dock first (so a rightward move is observable), then
-    // move it right via the header menu (splitPanel beside the rightmost leaf).
+    // Park Sessions in the dock first (Sessions is the lone activity panel, so a
+    // rightward Move-beside has no out-of-dock anchor — Reset position is the way
+    // back to the standalone right column).
     await runPanelMenu(page, 'Sessions', 'Move left')
     await expect.poll(() => sessionsInsideDock(page)).toBe(true)
 
-    await runPanelMenu(page, 'Sessions', 'Move right')
+    await runPanelMenu(page, 'Sessions', 'Reset position')
     // It leaves the dock and renders in the right region again.
     await expect.poll(() => sessionsInsideDock(page)).toBe(false)
     await expect
       .poll(async () => (await getWorkspaceState(page, project.name))?.panelLayout?.version)
       .toBe(1)
 
-    // Reload — Sessions stays out of the dock (the rightward move persisted).
+    // Reload — Sessions stays out of the dock (the reset persisted).
     await page.reload()
     await waitForAppReady(page)
     await page.waitForTimeout(1500)
@@ -115,12 +116,11 @@ test.describe('Flexible layout operations (panel header menu)', () => {
     await runPanelMenu(page, 'Sessions', 'Reset position')
     // Back out of the dock — in the right activity column again.
     await expect.poll(() => sessionsInsideDock(page)).toBe(false)
-    // The canonical activity column is rebuilt: the "Activity panel" landmark
-    // (keyed on the 'activity' node id) is present and hosts Sessions again. This
-    // guards H1 — return-to-default must restore the activity node, not a generic
-    // split that drops the landmark.
+    // The right column is rebuilt: the "Activity panel" landmark (positional —
+    // the root child after the working area) is present and IS the Sessions leaf.
+    // This guards H1 — return-to-default must restore the activity landmark.
     await expect(activityPanel(page)).toBeVisible()
-    await expect(activityPanel(page).locator('[data-panel-leaf="sessions"]')).toBeVisible()
+    await expect(activityPanel(page)).toHaveAttribute('data-panel-leaf', 'sessions')
   })
 
   test('Reset layout restores the whole default arrangement', async ({ page, request }) => {

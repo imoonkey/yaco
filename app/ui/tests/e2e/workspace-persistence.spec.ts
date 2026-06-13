@@ -59,8 +59,9 @@ function readUiState(page: Page) {
 // grid of GROUPS (`tabs` nodes whose `tabs[]` hold mixed editor/terminal tabs);
 // `editor`/`terminal` are NO LONGER dock leaves. The default tree is the dock
 // (projects/files/changes) + one empty working group + the activity column
-// (sessions/tasks), so the singleton dock leaves are exactly those five and at
-// least one group node carries the (initially empty) working area.
+// (sessions), so the singleton dock leaves are exactly those four and at least
+// one group node carries the (initially empty) working area. Tasks is the desktop
+// overlay (driven by `showTasks`), not a dock leaf.
 
 type Json = Record<string, unknown>
 
@@ -94,15 +95,16 @@ function groupCount(node: unknown, n = 0): number {
 }
 
 /** Assert the blob persists a normalized v1 panel-layout tree carrying the
- *  default desktop arrangement: the five singleton DOCK leaves (changes / files /
- *  projects / sessions / tasks) plus at least one working-area GROUP (the empty
- *  editor area). `editor`/`terminal` live as group tabs, never as dock leaves. */
+ *  default desktop arrangement: the four singleton DOCK leaves (changes / files /
+ *  projects / sessions) plus at least one working-area GROUP (the empty editor
+ *  area). `editor`/`terminal` live as group tabs and `tasks` is the desktop
+ *  overlay, so none are dock leaves. */
 function expectPanelTree(state: Json | null): void {
   const pl = panelLayout(state)
   expect(pl.version).toBe(1)
   expect(asJson(pl.desktop).kind).toBe('split')
   expect(leafPanels(pl.desktop).sort()).toEqual(
-    ['changes', 'files', 'projects', 'sessions', 'tasks'],
+    ['changes', 'files', 'projects', 'sessions'],
   )
   expect(groupCount(pl.desktop)).toBeGreaterThanOrEqual(1)
 }

@@ -42,15 +42,22 @@ export function isCollapsedLeaf(node: LayoutNode): boolean {
     && getPanelMeta(node.panel)?.chrome === 'framed'
 }
 
-const isExpanded = (c: SplitChild): boolean => !isCollapsedLeaf(c.node)
+/** A framed section collapses to its HEADER, which is a vertical (height) shrink —
+ *  so a collapsed leaf only drops out of sizing inside a COLUMN split. In a ROW
+ *  split (the right activity column is a row child of the root) the collapsed leaf
+ *  keeps its fixed width and renders a header-only body, so the column does not
+ *  squeeze to the header width. */
+function isCollapsedForAxis(node: LayoutNode, axis: SplitAxis): boolean {
+  return axis === 'col' && isCollapsedLeaf(node)
+}
 
 /** Pick the child that absorbs slack: the visible grow child if expanded, else
  *  the last expanded visible child, else the last visible child. */
-function pickAbsorber(visible: SplitChild[]): SplitChild | undefined {
-  const grow = visible.find((c) => c.grow === true && isExpanded(c))
+function pickAbsorber(visible: SplitChild[], axis: SplitAxis): SplitChild | undefined {
+  const grow = visible.find((c) => c.grow === true && !isCollapsedForAxis(c.node, axis))
   if (grow) return grow
   for (let i = visible.length - 1; i >= 0; i--) {
-    if (isExpanded(visible[i])) return visible[i]
+    if (!isCollapsedForAxis(visible[i].node, axis)) return visible[i]
   }
   return visible[visible.length - 1]
 }
@@ -61,12 +68,13 @@ function pickAbsorber(visible: SplitChild[]): SplitChild | undefined {
  *  resize, collapsed/header-only children are neither. Render-only — child ids
  *  are preserved so resize commits still target the real tree. */
 export function canonicalizeSplit(split: SplitNode): SplitNode {
+  const axis = split.axis
   const visible = split.children.filter((c) => c.hidden !== true)
-  const absorber = pickAbsorber(visible)
+  const absorber = pickAbsorber(visible, axis)
   const children = split.children.map((c) => {
     if (c.hidden === true) return c
-    if (isCollapsedLeaf(c.node)) {
-      // Header-only: neither fixed nor the absorber.
+    if (isCollapsedForAxis(c.node, axis)) {
+      // Header-only (vertical): neither fixed nor the absorber.
       const { basis: _basis, grow: _grow, ...rest } = c
       return rest
     }
@@ -84,14 +92,14 @@ export function canonicalizeSplit(split: SplitNode): SplitNode {
 export type SplitItem = { child: SplitChild; sizing: CSSProperties; collapsed: boolean }
 
 /** Flex sizing for each visible child of a canonical split: the absorber flexes
- *  to fill, a collapsed leaf is content-sized (header height), every other child
- *  takes its fixed pixel basis along the axis. */
+ *  to fill, a collapsed leaf in a column is content-sized (header height), every
+ *  other child takes its fixed pixel basis along the axis. */
 export function planSplitChildren(canonical: SplitNode): SplitItem[] {
   const axis = canonical.axis
   return canonical.children
     .filter((c) => c.hidden !== true)
     .map((child) => {
-      if (isCollapsedLeaf(child.node)) {
+      if (isCollapsedForAxis(child.node, axis)) {
         return { child, collapsed: true, sizing: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' } }
       }
       if (child.grow === true) {

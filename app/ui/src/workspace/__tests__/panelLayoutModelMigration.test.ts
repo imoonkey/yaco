@@ -56,13 +56,13 @@ describe('migrateTreeToGroups', () => {
     expect(active && active.kind === 'editor' && active.tabId).toBe('b.ts')
   })
 
-  it('lifts the old `tasks` tab into a dock leaf', () => {
+  it('drops the old `tasks` tab (tasks is the desktop overlay, not a dock leaf)', () => {
     const old = oldRoot([
       oldLeaf('files', 'files'),
       oldMain(['editor', 'tasks'], 'editor'),
     ])
     const { tree } = migrateTreeToGroups(old, { editor: view([]) })
-    expect(leafPanels(tree)).toContain('tasks')
+    expect(leafPanels(tree)).not.toContain('tasks')
     expect(leafPanels(tree)).toContain('files')
   })
 

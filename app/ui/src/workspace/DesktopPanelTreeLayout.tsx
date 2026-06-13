@@ -42,13 +42,25 @@ type MarkerFor = (type: PanelId, instanceId: string) => PaneMarker
 
 const ROOT_SIZING: CSSProperties = { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 0 }
 
-// Structural ARIA landmarks for the split columns. The dock and the activity
-// column expose the SAME landmarks the legacy skeleton did. The working-area
-// `role="main"` lives on the first group (PanelGroup); the reserved MAIN_TABS_ID
-// id is gone.
-const NODE_LANDMARK: Record<string, { role: string; label?: string }> = {
-  dock: { role: 'navigation', label: 'Sidebar' },
-  activity: { role: 'complementary', label: 'Activity panel' },
+// Structural ARIA landmark for a split column / activity leaf.
+type Landmark = { role: string; label: string }
+
+// The dock and the activity column expose the SAME landmarks the legacy skeleton
+// did, assigned by POSITION around the working area: the root child before it is
+// the "Sidebar", the one after it the "Activity panel". Position (not a fixed
+// node id) keeps the landmark on the real column after tasks left the activity
+// column (it is the desktop overlay now, so the column is sessions alone). The
+// working-area `role="main"` lives on the first group (PanelGroup).
+function computeLandmarks(root: LayoutNode): { landmarks: Record<string, Landmark>; workingAreaId: string | null } {
+  const landmarks: Record<string, Landmark> = {}
+  if (root.kind !== 'split') return { landmarks, workingAreaId: root.id }
+  const mainIndex = root.children.findIndex((c) => firstGroupId(c.node) !== null)
+  if (mainIndex === -1) return { landmarks, workingAreaId: null }
+  const before = root.children[mainIndex - 1]
+  const after = root.children[mainIndex + 1]
+  if (before) landmarks[before.node.id] = { role: 'navigation', label: 'Sidebar' }
+  if (after) landmarks[after.node.id] = { role: 'complementary', label: 'Activity panel' }
+  return { landmarks, workingAreaId: root.children[mainIndex].node.id }
 }
 
 export type DesktopPanelTreeLayoutProps = {
@@ -59,7 +71,7 @@ export type DesktopPanelTreeLayoutProps = {
 
 export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCapture }: DesktopPanelTreeLayoutProps) {
   const { isTouch } = useWorkspaceEnv().viewport
-  const { panelLayout } = useWorkspaceLayout()
+  const { layout, panelLayout } = useWorkspaceLayout()
   const { focusedPane, activeEditorId, activeTerminalId } = useWorkspaceSelection()
   const commands = useWorkspaceCommands()
   const collapsePanel = commands.collapsePanel
@@ -78,6 +90,18 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
 
   // The first group carries the `role="main"` landmark.
   const mainGroupId = useMemo(() => firstGroupId(panelLayout.desktop), [panelLayout.desktop])
+
+  // Positional Sidebar/Activity landmarks + the working-area region id (the root
+  // child the tasks overlay covers when `showTasks`).
+  const { landmarks, workingAreaId } = useMemo(() => computeLandmarks(effectiveRoot), [effectiveRoot])
+
+  // Tasks (Meta+Shift+T) is a full-working-area overlay over the editor groups —
+  // the task workspace gets the wide region it had in the legacy main area, while
+  // the dock + sessions column stay put. The groups render behind it (kept mounted
+  // so terminals/editors survive an open/close), covered by the absolute overlay.
+  const taskOverlay = layout.showTasks
+    ? <PanelHost id="tasks" instanceId="tasks" />
+    : null
 
   // Renderer-published collapse + body sizing for the framed panels, read by each
   // framed PanelHost through PanelChromeContext (same seam the legacy renderer used).
@@ -109,7 +133,16 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
         onKeyDownCapture={onInteractionCapture}
       >
         {searchOverlay}
-        <TreeNode node={effectiveRoot} sizing={ROOT_SIZING} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} />
+        <TreeNode
+          node={effectiveRoot}
+          sizing={ROOT_SIZING}
+          resizeSplitChild={resizeSplitChild}
+          markerFor={markerFor}
+          mainGroupId={mainGroupId}
+          landmarks={landmarks}
+          workingAreaId={workingAreaId}
+          taskOverlay={taskOverlay}
+        />
       </div>
     </PanelChromeContext.Provider>
   )
@@ -117,26 +150,54 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
 
 // A tabs node renders a <PanelGroup> (tab bar + active tab body); a leaf renders a
 // dock panel through <PanelHost>; a split recurses. `mainGroupId` carries the
-// first-group id down so PanelGroup can claim `role="main"`.
-function TreeNode({ node, sizing, resizeSplitChild, markerFor, mainGroupId }: {
-  node: LayoutNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor; mainGroupId: string | null
-}) {
+// first-group id down so PanelGroup can claim `role="main"`. When `taskOverlay` is
+// set and this node is the working-area region, the groups render behind an
+// absolute overlay holding the tasks workspace.
+type TreeNodeProps = {
+  node: LayoutNode
+  sizing: CSSProperties
+  resizeSplitChild: ResizeSplitChild
+  markerFor: MarkerFor
+  mainGroupId: string | null
+  landmarks: Record<string, Landmark>
+  workingAreaId: string | null
+  taskOverlay: ReactNode | null
+}
+
+function TreeNode(props: TreeNodeProps) {
+  const { node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay } = props
+  // Overlay the tasks workspace over the working-area region, keeping the groups
+  // mounted behind it.
+  if (taskOverlay && node.id === workingAreaId) {
+    return (
+      <div style={sizing} className="relative flex min-w-0 min-h-0">
+        <TreeNode {...props} sizing={ROOT_SIZING} taskOverlay={null} />
+        <div className="absolute inset-0 flex min-w-0 min-h-0" style={{ zIndex: 10 }}>
+          {taskOverlay}
+        </div>
+      </div>
+    )
+  }
+  const landmark = landmarks[node.id]
   if (node.kind === 'split') {
-    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} />
+    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} landmarks={landmarks} workingAreaId={workingAreaId} taskOverlay={taskOverlay} landmark={landmark} />
   }
   if (node.kind === 'tabs') {
     return <PanelGroup group={node} sizing={sizing} isMain={node.id === mainGroupId} markerFor={markerFor} />
   }
-  return <LeafView node={node} sizing={sizing} />
+  return <LeafView node={node} sizing={sizing} landmark={landmark} />
 }
 
-// A dock leaf (projects/files/changes/sessions/tasks). Editor/terminal never live
-// as leaves under the group model, so a leaf is never a markable pane.
-function LeafView({ node, sizing }: { node: LeafNode; sizing: CSSProperties }) {
+// A dock leaf (projects/files/changes/sessions). Editor/terminal never live as
+// leaves under the group model, so a leaf is never a markable pane. A `landmark`
+// is set when this leaf is the lone activity column (sessions).
+function LeafView({ node, sizing, landmark }: { node: LeafNode; sizing: CSSProperties; landmark?: Landmark }) {
   return (
     <div
       data-node-id={node.id}
       data-panel-leaf={node.panel}
+      role={landmark?.role}
+      aria-label={landmark?.label}
       style={sizing}
       className="flex flex-col min-w-0 min-h-0"
     >
@@ -145,14 +206,14 @@ function LeafView({ node, sizing }: { node: LeafNode; sizing: CSSProperties }) {
   )
 }
 
-function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId }: {
+function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay, landmark }: {
   node: SplitNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor; mainGroupId: string | null
+  landmarks: Record<string, Landmark>; workingAreaId: string | null; taskOverlay: ReactNode | null; landmark?: Landmark
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canonical = canonicalizeSplit(node)
   const items = planSplitChildren(canonical)
   const flexDir = node.axis === 'row' ? 'flex-row' : 'flex-col'
-  const landmark = NODE_LANDMARK[node.id]
 
   // Max basis for a fixed child: keep every OTHER visible child at or above its
   // min along the axis given the live container size, mirroring the legacy
@@ -179,6 +240,9 @@ function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId }: {
         resizeSplitChild={resizeSplitChild}
         markerFor={markerFor}
         mainGroupId={mainGroupId}
+        landmarks={landmarks}
+        workingAreaId={workingAreaId}
+        taskOverlay={taskOverlay}
       />,
     )
     if (i < items.length - 1) {

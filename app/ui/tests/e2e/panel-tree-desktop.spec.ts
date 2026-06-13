@@ -54,7 +54,10 @@ async function treeWorkspace(page: Page, request: APIRequestContext): Promise<Fi
 
 // Tree-renderer node probes (the renderer stamps each split/leaf with its tree id).
 const dock = (page: Page) => page.locator('[data-node-id="dock"]')
-const activity = (page: Page) => page.locator('[data-node-id="activity"]')
+// Tasks is the desktop overlay now, so the right activity column is the sessions
+// leaf, landmarked "Activity panel" by position (the reserved `activity` split id
+// is gone).
+const activity = (page: Page) => page.locator('[role="complementary"][aria-label="Activity panel"]')
 // The working area is a GROUP now; the first group carries the `role="main"`
 // landmark (the reserved `[data-node-id="main"]` tabs node is gone). It is ALWAYS
 // present — even with zero tabs — and sizes like any grow child.
@@ -415,11 +418,12 @@ test.describe('Desktop tree renderer — collapse persistence + hidden-dock rest
   })
 })
 
-// Tasks is a DOCK leaf now (in the activity column), toggled by `showTasks` — not a
-// main-region tab. The working group sizes uniformly (no withEmptyEditorRule), so
-// opening Tasks never reflows the working area or the activity column.
-test.describe('Desktop tree renderer — tasks dock leaf', () => {
-  test('toggling Tasks shows the dock tasks panel without reflowing the working area', async ({ page, request }) => {
+// Tasks is the desktop overlay now (driven by `showTasks`, toggled by Meta+Shift+T):
+// it covers the working area at full width while the dock + activity column stay put.
+// The working group sizes uniformly (no withEmptyEditorRule), so opening Tasks never
+// reflows the activity column or unmounts the working group.
+test.describe('Desktop tree renderer — tasks overlay', () => {
+  test('toggling Tasks overlays the working area without reflowing the activity column', async ({ page, request }) => {
     const project = await createWorktreeFixture(request)
     provisioned.push(project)
     await page.goto('/')
@@ -429,15 +433,16 @@ test.describe('Desktop tree renderer — tasks dock leaf', () => {
     // The working group is present and the activity column docked, before Tasks.
     await expect(mainNode(page)).toBeVisible({ timeout: 15_000 })
     expectApproxSize(await widthOf(activity(page)), ACTIVITY)
-    // No working-area tabs are open.
+    // Tasks is closed by default — no graph and no working-area tabs.
+    await expect(page.locator('[data-layer="nodes"]')).toHaveCount(0)
     await expect(page.locator('[data-testid="group-tab"]')).toHaveCount(0)
 
-    // Open Tasks (the dock leaf) via Meta+Shift+T → its graph renders.
+    // Open Tasks via Meta+Shift+T → its graph renders in the overlay.
     await page.keyboard.press('Meta+Shift+t')
     await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
 
-    // The working group is still present and the activity column stays at its docked
-    // width — no empty-editor / tasks-active special sizing anymore.
+    // The working group stays mounted behind the overlay and the activity column
+    // stays at its docked width — the overlay covers the working area only.
     await expect(mainNode(page)).toBeVisible()
     expectApproxSize(await widthOf(activity(page)), ACTIVITY)
   })

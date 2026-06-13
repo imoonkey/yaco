@@ -77,13 +77,6 @@ async function openEditorAndTerminal(
   return { sessionName }
 }
 
-/** Dismiss the default-open Tasks dock (showTasks → false) so a subsequent editor
- *  Cmd+W routes to closing the tab rather than the editor/tasks "return" branch. */
-async function dismissTasks(page: Page): Promise<void> {
-  await page.keyboard.press('Meta+Shift+t')
-  await page.waitForTimeout(200)
-}
-
 test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
   test.afterEach(async ({ request }) => {
     const failures: string[] = []
@@ -113,11 +106,10 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
     const { sessionName } = await openEditorAndTerminal(page, request)
 
     // Activate the README editor tab → the terminal's xterm unmounts (only the active
-    // tab renders), so focus stays on the editor. Dismiss Tasks, then Cmd+W closes the
-    // editor tab; the bound terminal/session is untouched.
+    // tab renders), so focus stays on the editor. Tasks is closed by default, so Cmd+W
+    // closes the editor tab; the bound terminal/session is untouched.
     await readmeTab(page).click()
     await expect(editorBody(page)).toHaveAttribute('data-focused', 'true')
-    await dismissTasks(page)
     await page.keyboard.press('Meta+w')
 
     await expect(readmeTab(page)).toHaveCount(0)
@@ -141,16 +133,27 @@ test.describe('closeFocusedSurface routing (Cmd+W across all branches)', () => {
   })
 
   test('tasks branch: with Tasks showing, Cmd+W dismisses Tasks before closing the editor tab', async ({ page, request }) => {
-    // Tasks is shown by default; provision a clean editor tab with focus on it.
-    fixture = await provisionWorkspace(page, request)
+    // Provision a clean editor tab, focus it, then open Tasks (Meta+Shift+T) — the
+    // overlay covers the working area and toggleTasks keeps focus on the editor.
+    // Seed one task so the overlay renders a graph node (an empty task graph shows
+    // no toolbar/nodes); a clean editor tab is the close target.
+    fixture = await provisionWorkspace(page, request, {
+      tasks: { 'tb-root': { parent: null, depends: [], state: 'ready', workset: 'active', title: 'Tasks Branch Root', description: 'tb', acceptCriteria: ['ships'], worktree: null } },
+    })
     await expect(sidebar(page).getByText(README_TAB)).toBeVisible({ timeout: 10_000 })
     await openFileViaSearch(page, README_TAB)
-    await group(page, 'group:1').locator('[data-panel-leaf="editor"] .cm-content').click()
+    // Focus the editor PANE via its tab (not the CodeMirror surface, which would
+    // swallow the Meta+Shift+T chord), so the chord reaches the global handler.
+    await readmeTab(page).click()
+
+    const tasksGraph = page.locator('[data-layer="nodes"]')
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(tasksGraph).toBeVisible({ timeout: 15_000 })
 
     // First Cmd+W with Tasks showing routes to the editor/tasks branch (dismiss Tasks
     // / return to editor) — the editor tab is NOT closed yet.
     await page.keyboard.press('Meta+w')
-    await page.waitForTimeout(300)
+    await expect(tasksGraph).toHaveCount(0)
     await expect(readmeTab(page), 'the first Cmd+W dismisses Tasks, not the tab').toBeVisible()
 
     // Second Cmd+W (Tasks no longer showing) closes the editor tab.

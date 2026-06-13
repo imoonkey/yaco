@@ -109,7 +109,7 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showExplorer: true,
   showSessions: true,
   showChanges: true,
-  showTasks: true,
+  showTasks: false,
   showTextSearch: false,
   autocompleteEnabled: false,
   previewMode: 'edit',

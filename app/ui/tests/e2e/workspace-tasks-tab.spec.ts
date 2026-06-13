@@ -33,11 +33,10 @@ test.describe('Workspace Tasks', () => {
     await fixture.dispose()
   })
 
-  // NOTE: Tasks is a persistent DOCK LEAF now (in the activity column), not a
-  // flippable main surface. On desktop the `showTasks` flag toggled by Cmd+Shift+T
-  // does NOT currently hide the leaf, so the task workspace is always present. This
-  // pins that dock-leaf presence + its live graph rather than an open/close toggle.
-  test('the single task workspace renders as a dock leaf with its graph', async ({ page }) => {
+  // Tasks is a toggled full-width overlay (showTasks), opened via Cmd/Ctrl+Shift+T —
+  // not a persistent dock leaf. This pins that opening it renders the live graph.
+  test('opening Tasks renders the single task workspace with its live graph', async ({ page }) => {
+    await page.keyboard.press('Meta+Shift+t')
     await expect(search(page)).toBeVisible({ timeout: 10_000 })
     await expect(page.locator('[data-layer="nodes"]')).toBeVisible()
     // It reflects the live task graph (the seeded active root renders a node).
@@ -45,19 +44,16 @@ test.describe('Workspace Tasks', () => {
       .toBeVisible({ timeout: 15_000 })
   })
 
-  // Opening a file shows its editor tab in the working group; the Tasks dock leaf
-  // coexists (no "return from a Tasks main surface" step anymore). Regression (T7 H1
-  // legacy): re-opening the already-active file must still leave exactly one tab.
-  test('opening the already-active file shows its editor tab alongside the Tasks dock', async ({ page }) => {
+  // Regression (T7 H1 legacy): re-opening the already-active file must still leave
+  // exactly one editor tab in the working group.
+  test('re-opening the already-active file keeps exactly one editor tab', async ({ page }) => {
     // A real file as the active editor tab.
     await openFileViaSearch(page, 'package.json')
     await expect(page.locator('[data-testid="group-tab"]')).toHaveCount(1)
 
-    // Re-open the SAME (already-active) file — it stays a single editor tab, and the
-    // Tasks dock leaf is still present.
+    // Re-open the SAME (already-active) file — it stays a single editor tab.
     await openFileViaSearch(page, 'package.json')
     await expect(page.locator('[data-testid="group-tab"]')).toHaveCount(1)
-    await expect(search(page)).toBeVisible()
   })
 
   test('is one workspace surface — no Board/List/Archive panels, workset is a filter', async ({ page }) => {

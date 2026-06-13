@@ -141,8 +141,9 @@ function hasGroupNode(node: LayoutNode, id: string): boolean {
 }
 
 /** A synthetic OLD-shape default tree (dock + main editor tabs node + optional
- *  terminal leaf + activity) used to migrate a flat blob that never persisted a
- *  tree, so it lands the same dock as a stored old tree would. */
+ *  terminal leaf + a sessions activity column) used to migrate a flat blob that
+ *  never persisted a tree, so it lands the same dock as a stored old tree would.
+ *  Tasks is the desktop overlay now, so it is not a leaf here. */
 function syntheticOldTree(hasTerminal: boolean): Record<string, unknown> {
   const children: unknown[] = [
     { basis: 220, node: { kind: 'split', id: 'dock', axis: 'col', children: [
@@ -153,10 +154,7 @@ function syntheticOldTree(hasTerminal: boolean): Record<string, unknown> {
     { grow: true, node: { kind: 'tabs', id: 'main', active: 'editor', panels: ['editor'] } },
   ]
   if (hasTerminal) children.push({ node: { kind: 'leaf', id: 'terminal', panel: 'terminal' } })
-  children.push({ basis: 280, node: { kind: 'split', id: 'activity', axis: 'col', children: [
-    { grow: true, node: { kind: 'leaf', id: 'sessions', panel: 'sessions' } },
-    { basis: 180, node: { kind: 'leaf', id: 'tasks', panel: 'tasks' } },
-  ] } })
+  children.push({ basis: 280, node: { kind: 'leaf', id: 'sessions', panel: 'sessions' } })
   return { kind: 'split', id: 'root', axis: 'row', children }
 }
 

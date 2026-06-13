@@ -80,6 +80,16 @@ describe('canonicalizeSplit — exactly one visible grow (the absorber)', () => 
     // grow child hidden ⇒ last visible (sessions) absorbs
     expect(idOfAbsorber(canonicalizeSplit(row))).toBe('sessions')
   })
+
+  it('keeps a ROW-split collapsed framed leaf as a fixed child (collapse is vertical)', () => {
+    // The right activity column is a row child of the root; collapsing its section
+    // is a header (vertical) shrink, so the leaf stays a fixed-width child — not a
+    // header-only sizing that would squeeze the column to the header width.
+    const row = split('row', [fixed('files', 220), grow('editor'), fixed('sessions', 280, true)], 'root')
+    const canon = canonicalizeSplit(row)
+    expect(idOfAbsorber(canon)).toBe('editor')
+    expect(childAt(canon, 'sessions')?.basis).toBe(280) // basis retained, not dropped
+  })
 })
 
 describe('planSplitChildren — flex sizing per visible child', () => {
@@ -98,6 +108,14 @@ describe('planSplitChildren — flex sizing per visible child', () => {
     const projects = items.find((it) => it.child.node.id === 'projects')!
     expect(projects.collapsed).toBe(true)
     expect(projects.sizing).toMatchObject({ flexGrow: 0, flexShrink: 0, flexBasis: 'auto' })
+  })
+
+  it('keeps a ROW-split collapsed framed leaf at its fixed basis (collapse is vertical)', () => {
+    const row = split('row', [fixed('files', 220), grow('editor'), fixed('sessions', 280, true)], 'root')
+    const items = planSplitChildren(canonicalizeSplit(row))
+    const sessions = items.find((it) => it.child.node.id === 'sessions')!
+    expect(sessions.collapsed).toBe(false) // sized as a normal fixed child
+    expect(sessions.sizing).toMatchObject({ flexGrow: 0, flexShrink: 0, flexBasis: 280 })
   })
 
   it('skips hidden children entirely', () => {
