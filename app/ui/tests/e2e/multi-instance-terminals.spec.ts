@@ -149,43 +149,49 @@ test.describe('Multi-instance terminals (open-beside / 1-per-session / session e
     await expect(xterm(page)).toHaveCount(0)
   })
 
-  test('focus marker is bright on the focused pane; the dim active marker needs >1 instance', async ({ page, request }) => {
+  test('pane focus markers: data-focused on the focused pane, data-active needs >1 instance; data-group-active marks the active group', async ({ page, request }) => {
     const { sessions: [s] } = await openProjectWithSessions(page, request, 1)
     const project = fixture!
     const file = uniqueFileName('focus.ts')
     await createTestFile(page, project.name, file, 'export const f = 1\n')
     await waitForSSERefresh(page, 3000)
 
-    // One editor in group:1. A single editor instance → the focused pane is bright
-    // (data-focused) but the dim active marker is suppressed.
+    // One editor in group:1. A single editor instance → the focused pane carries
+    // data-focused but the data-active marker is suppressed (FIX 3: the active group
+    // is shown by tab-label text emphasis + data-group-active, not a visual bar).
     await openPinnedFile(page, file)
     await editorBody(page, 'group:1').locator('.cm-content').click()
     await expect(editorBody(page, 'group:1')).toHaveAttribute('data-focused', 'true', { timeout: 10_000 })
     await expect(editorBody(page, 'group:1')).not.toHaveAttribute('data-active', 'true') // 1 editor → suppressed
+    await expect(group(page, 'group:1')).toHaveAttribute('data-group-active', 'true') // the active group
 
     // Open the session beside → a bound terminal tab in its OWN group (group:2). Now
     // one editor + one terminal, each visible in its group. Each type is single, so
-    // focusing either lights it bright with no dim sibling.
+    // focusing either marks it data-focused with no data-active sibling; focusing the
+    // terminal makes group:2 the active group.
     await sessionRow(page, s).hover()
     await openBesideBtn(page, s).click()
     const termBody = group(page, 'group:2').locator('[data-panel-leaf="terminal"]')
     await expect(termBody).toBeVisible({ timeout: 15_000 })
     await termBody.locator('.yaco-terminal-xterm').click()
     await expect(termBody).toHaveAttribute('data-focused', 'true', { timeout: 10_000 })
+    await expect(group(page, 'group:2')).toHaveAttribute('data-group-active', 'true')
+    await expect(group(page, 'group:1')).not.toHaveAttribute('data-group-active', 'true')
     await expect(editorBody(page, 'group:1')).not.toHaveAttribute('data-active', 'true') // 1 editor → suppressed
 
     // Add a SECOND editor: focus the group:1 editor, Cmd+\ splits it into group:3
     // SEEDED with a duplicate of the file (FIX 2); re-selecting it via quick-open
-    // makes it the focused MRU head (editor:2).
+    // makes it the focused MRU head (editor:2) and group:3 the active group.
     await editorBody(page, 'group:1').locator('.cm-content').click()
     await page.keyboard.press('Meta+\\')
     await expect(group(page, 'group:3')).toBeVisible({ timeout: 10_000 })
     await openFileViaSearch(page, file)
     await expect(editorBody(page, 'group:3')).toHaveAttribute('data-focused', 'true', { timeout: 10_000 })
+    await expect(group(page, 'group:3')).toHaveAttribute('data-group-active', 'true')
 
-    // Focus the TERMINAL → it goes bright; the active-but-unfocused editor (editor:2,
-    // the MRU head) now carries the DIM active marker — two editors unmask it — while
-    // it is no longer the focused pane.
+    // Focus the TERMINAL → it carries data-focused; the active-but-unfocused editor
+    // (editor:2, the MRU head) now carries the data-active marker — two editors unmask
+    // it — while it is no longer the focused pane.
     await termBody.locator('.yaco-terminal-xterm').click()
     await expect(termBody).toHaveAttribute('data-focused', 'true')
     await expect(editorBody(page, 'group:3')).toHaveAttribute('data-active', 'true')

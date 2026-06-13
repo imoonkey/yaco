@@ -158,7 +158,7 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
     await deleteTestFile(page, project.name, file)
   })
 
-  test('flow 2b: a RIGHT-CLICK on the tab bar opens the same Split menu (stays open) and spawns an empty group', async ({ page, request }) => {
+  test('flow 2b: a RIGHT-CLICK on the tab bar opens the same Split menu (stays open) and spawns a seeded group', async ({ page, request }) => {
     const project = await ws(page, request)
     const file = uniqueFileName('rclick.ts')
     await createTestFile(page, project.name, file, 'export const r = 1\n')

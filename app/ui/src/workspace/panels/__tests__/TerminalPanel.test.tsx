@@ -113,7 +113,7 @@ function renderTerminalPanel(opts: MockOpts = {}) {
     </WorkspaceEnvContext.Provider>
   )
 
-  return { ...render(wrap(<TerminalPanel />)), instanceId, closePane, focusPane }
+  return { ...render(wrap(<TerminalPanel />)), instanceId, closePane, focusPane, pinTab }
 }
 
 describe('TerminalPanel — unbound instance', () => {
@@ -160,8 +160,8 @@ describe('TerminalPanel — bound instance (desktop)', () => {
     expect(closePane).toHaveBeenCalledWith(instanceId)
   })
 
-  it('routes focus to this terminal instance on interaction and body mousedown', async () => {
-    const { focusPane, instanceId } = renderTerminalPanel()
+  it('routes focus to this terminal instance AND pins its tab (preview→pinned) on interaction and body mousedown', async () => {
+    const { focusPane, pinTab, instanceId } = renderTerminalPanel()
     const term = await screen.findByTestId('mock-terminal')
 
     fireEvent.click(screen.getByText('interact')) // onInteract
@@ -169,6 +169,10 @@ describe('TerminalPanel — bound instance (desktop)', () => {
 
     expect(focusPane).toHaveBeenCalledTimes(2)
     expect(focusPane).toHaveBeenCalledWith('terminal', instanceId)
+    // FIX 1: interacting with a previewed terminal promotes it to pinned (clears preview),
+    // mirroring the editor's promote-on-edit.
+    expect(pinTab).toHaveBeenCalledTimes(2)
+    expect(pinTab).toHaveBeenCalledWith(instanceId)
   })
 })
 
