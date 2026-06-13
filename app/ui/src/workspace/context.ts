@@ -39,6 +39,12 @@ export type InsertRequest = { text: string; key: number }
 /** Where to drop a moved pane (design: id-addressed move). */
 export type PanePlacement = { targetId: string; side: SplitSide }
 
+/** Where a dragged GROUP lands (design: DnD mutations / MOVE_GROUP): beside a node
+ *  in a new split, or merged into another group. */
+export type GroupPlacement =
+  | { kind: 'beside'; targetId: string; side: SplitSide }
+  | { kind: 'merge'; targetGroupId: string }
+
 // --- Env ------------------------------------------------------------------
 
 export type WorkspaceProject = {
@@ -215,6 +221,15 @@ export type WorkspaceCommands = {
   closeGroup: (groupId: string) => void
   setActiveGroup: (groupId: string) => void
   pinTab: (instanceId: string) => void
+
+  // Tab/group movers (design: DnD mutations). `moveTab` is the universal tab mover
+  // — cross-group move OR (from===to) within-group reorder, identity preserved.
+  // `moveTabToSplit` splits a fresh group beside the target then moves the tab into
+  // it (the editor-grid split-drop). `moveGroup` relocates a whole group beside a
+  // node or merges it into another group.
+  moveTab: (fromGroupId: string, instanceId: string, toGroupId: string, toIndex: number) => void
+  moveTabToSplit: (fromGroupId: string, instanceId: string, targetGroupId: string, side: SplitSide) => void
+  moveGroup: (groupId: string, placement: GroupPlacement) => void
 
   // Sessions
   clickSession: (name: string) => void
