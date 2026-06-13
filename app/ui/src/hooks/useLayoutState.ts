@@ -36,6 +36,7 @@ import {
   groupOf,
   centerOf,
   firstCenterGroupId,
+  firstGroupId,
   tabByInstance,
   tabsInGroup,
   removeTab,
@@ -90,6 +91,13 @@ type Action =
   | { type: 'OPEN_PREVIEW_TAB'; groupId: string; tabId: string; newId: string; protectedPaths: ReadonlySet<string> }
   | { type: 'OPEN_DIFF_TAB'; groupId: string; tabId: string; newId: string }
   | { type: 'OPEN_BOUND_TERMINAL_TAB'; groupId: string; session: string; newId: string; preview: boolean; protectedPaths: ReadonlySet<string> }
+  // Routed opens (design: separateKinds). No group/instance ids — the reducer
+  // resolves the target group (creating a split when the kind has no group) and
+  // mints ids from LIVE state, so rapid dispatches coalesce into one new group.
+  | { type: 'OPEN_ROUTED_PREVIEW_TAB'; tabId: string; protectedPaths: ReadonlySet<string> }
+  | { type: 'OPEN_ROUTED_TAB'; tabId: string }
+  | { type: 'OPEN_ROUTED_DIFF_TAB'; tabId: string }
+  | { type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB'; session: string; preview: boolean; protectedPaths: ReadonlySet<string> }
   | { type: 'PIN_TAB'; groupId: string; instanceId: string }
   | { type: 'CLOSE_GROUP_TAB'; groupId: string; instanceId: string }
   | { type: 'CLOSE_GROUP'; groupId: string }
@@ -257,6 +265,65 @@ export function activeEditorTabOf(state: InstanceState): EditorGroupTab | null {
   return active ? editorTabByInstance(tree, active) : null
 }
 
+// --- Open routing (design: separateKinds) -----------------------------------
+
+/** The group (tabs) node `id`, or null. */
+function groupById(tree: LayoutNode, id: string): TabsNode | null {
+  let hit: TabsNode | null = null
+  forEachGroup(tree, (g) => { if (g.id === id) hit = g })
+  return hit
+}
+
+/** The kind of a group's ACTIVE tab — a diff tab counts as editor-kind; '' for an
+ *  empty/absent group. Kind is ALWAYS derived from the live tab, never stored. */
+export function activeTabKind(group: TabsNode | null): 'editor' | 'terminal' | '' {
+  if (!group) return ''
+  const t = group.tabs.find((x) => x.instanceId === group.activeTab)
+  return t ? t.kind : ''
+}
+
+/** Where a kind-`K` open should land. `{ new: true }` asks the caller to spawn a
+ *  fresh group (via `splitCenterGroup`). */
+export type OpenTarget = { groupId: string } | { new: true }
+
+/** The routing rule (design: "The rule — derived, no stored kind"). With
+ *  `separateKinds` off, every open targets the resolved focus group. With it on, an
+ *  open lands in the focused group when that group's active-tab kind matches `K`
+ *  (or the group is empty); otherwise it seeks the most-recent OTHER group of kind
+ *  `K` via the K-MRU (stale ids — no longer in the tree — are skipped), and asks for
+ *  a NEW group when none exists. Pure: kind is derived from live tabs. */
+export function resolveOpenTarget(kind: 'editor' | 'terminal', state: InstanceState): OpenTarget {
+  if (!state.panelLayout.panelState.separateKinds) return { groupId: targetGroup(state) }
+  const tree = state.panelLayout.desktop
+  const focused = targetGroup(state)
+  const fk = activeTabKind(groupById(tree, focused))
+  if (fk === kind || fk === '') return { groupId: focused }
+  const mru = kind === 'editor' ? state.editorMru : state.terminalMru
+  for (const id of mru) {
+    const g = groupOf(tree, id)
+    if (g && g !== focused) return { groupId: g }
+  }
+  return { new: true }
+}
+
+/** The lowest free `group:${n}` not in the LIVE tree — minted inside the reducer so
+ *  back-to-back routed opens that each need a new group still coalesce into one. */
+function mintGroupId(tree: LayoutNode): string {
+  const ids = collectIds(tree)
+  let n = 1
+  while (ids.has(`group:${n}`)) n++
+  return `group:${n}`
+}
+
+/** Split a fresh empty group beside the center's first group (seed:false), the id
+ *  minted from the live tree. Returns the grown layout + the new group id. */
+export function splitCenterGroup(state: InstanceState): [WorkspacePanelLayout, string] {
+  const tree = state.panelLayout.desktop
+  const target = firstCenterGroupId(centerOf(tree)) ?? firstGroupId(tree) ?? ''
+  const newGroupId = mintGroupId(tree)
+  return [splitBeside(state.panelLayout, target, 'right', newGroupId), newGroupId]
+}
+
 // --- GC + structural helpers ------------------------------------------------
 
 /** A most-recent-first list with `id` moved to the head (deduped). */
@@ -327,6 +394,17 @@ function withDesktop(layout: WorkspacePanelLayout, raw: WorkspacePanelLayout): W
 
 // --- Reducer ----------------------------------------------------------------
 
+/** Resolve a routed open's target group, spawning a center split when the rule
+ *  asks for a NEW group. Returns the (possibly grown) layout + the target id. */
+function routeOpen(
+  state: InstanceState, kind: 'editor' | 'terminal',
+): { layout: WorkspacePanelLayout; groupId: string } {
+  const r = resolveOpenTarget(kind, state)
+  if ('groupId' in r) return { layout: state.panelLayout, groupId: r.groupId }
+  const [layout, groupId] = splitCenterGroup(state)
+  return { layout, groupId }
+}
+
 export function instanceReducer(state: InstanceState, action: Action): InstanceState {
   switch (action.type) {
     case 'SET_PANEL_LAYOUT': {
@@ -389,6 +467,56 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
         terminalMru: pushMru(state.terminalMru, action.newId),
         focusedPane: { kind: 'terminal', instanceId: action.newId },
         activeGroupId: action.groupId,
+      })
+    }
+    case 'OPEN_ROUTED_PREVIEW_TAB': {
+      const { layout, groupId } = routeOpen(state, 'editor')
+      const newId = newInstanceId(layout.desktop, 'editor')
+      const existing = tabsInGroup(layout.desktop, groupId)
+        .find((t) => t.kind === 'editor' && t.tabId === action.tabId)
+      const activeId = existing?.instanceId ?? newId
+      const panelLayout = mapGroup(layout, groupId,
+        (g) => previewEditorTab(g, action.tabId, newId, action.protectedPaths))
+      return gcMaps({
+        ...state, panelLayout,
+        editorMru: pushMru(state.editorMru, activeId),
+        focusedPane: { kind: 'editor', instanceId: activeId },
+        activeGroupId: groupId,
+      })
+    }
+    case 'OPEN_ROUTED_TAB':
+    case 'OPEN_ROUTED_DIFF_TAB': {
+      // Open/activate a PINNED editor tab (a diff tab opens the same way; dedup by
+      // exact tabId so `a.ts` and `diff:a.ts` coexist).
+      const { layout, groupId } = routeOpen(state, 'editor')
+      const newId = newInstanceId(layout.desktop, 'editor')
+      const existing = tabsInGroup(layout.desktop, groupId)
+        .find((t) => t.kind === 'editor' && t.tabId === action.tabId)
+      const activeId = existing?.instanceId ?? newId
+      const panelLayout = mapGroup(layout, groupId, (g) => openEditorTab(g, action.tabId, newId))
+      return gcMaps({
+        ...state, panelLayout,
+        editorMru: pushMru(state.editorMru, activeId),
+        focusedPane: { kind: 'editor', instanceId: activeId },
+        activeGroupId: groupId,
+      })
+    }
+    case 'OPEN_ROUTED_BOUND_TERMINAL_TAB': {
+      const { layout, groupId } = routeOpen(state, 'terminal')
+      const newId = newInstanceId(layout.desktop, 'terminal')
+      const panelLayout = mapGroup(layout, groupId, (g) => {
+        const tabs = action.preview ? dropOldPreview(g.tabs, newId, action.protectedPaths) : g.tabs
+        const tab: GroupTab = action.preview
+          ? { instanceId: newId, kind: 'terminal', preview: true }
+          : { instanceId: newId, kind: 'terminal' }
+        return { ...g, tabs: [...tabs, tab], activeTab: newId }
+      })
+      return gcMaps({
+        ...state, panelLayout,
+        terminalBindings: { ...state.terminalBindings, [newId]: action.session },
+        terminalMru: pushMru(state.terminalMru, newId),
+        focusedPane: { kind: 'terminal', instanceId: newId },
+        activeGroupId: groupId,
       })
     }
     case 'PIN_TAB': {
@@ -614,12 +742,7 @@ export function useLayoutState(
 
   const newEditorId = () => newInstanceId(stateRef.current.panelLayout.desktop, 'editor')
   const newTerminalId = () => newInstanceId(stateRef.current.panelLayout.desktop, 'terminal')
-  const freshGroupId = (): string => {
-    const ids = collectIds(stateRef.current.panelLayout.desktop)
-    let n = 1
-    while (ids.has(`group:${n}`)) n++
-    return `group:${n}`
-  }
+  const freshGroupId = (): string => mintGroupId(stateRef.current.panelLayout.desktop)
 
   /** The resolved target group at call time (reads latest state). */
   const resolveTarget = useCallback(() => targetGroup(stateRef.current), [])
@@ -630,6 +753,15 @@ export function useLayoutState(
   const setPanelLayout = useCallback((update: PanelLayoutUpdate) => {
     dispatch({ type: 'SET_PANEL_LAYOUT', update })
   }, [])
+
+  /** Flip the kind-routing flag on `panelLayout.panelState` (off ≡ key omitted,
+   *  like a tab's preview/pinned). The panelState write path — not the flat layout. */
+  const toggleSeparateKinds = useCallback(() => {
+    setPanelLayout((prev) => {
+      const { separateKinds, ...rest } = prev.panelState
+      return { ...prev, panelState: separateKinds ? rest : { ...rest, separateKinds: true } }
+    })
+  }, [setPanelLayout])
 
   // --- Group-targeted tab dispatchers ---
 
@@ -757,6 +889,7 @@ export function useLayoutState(
     layout,
     recentFiles,
     setPanelLayout,
+    toggleSeparateKinds,
     // group dispatchers
     openTab,
     openPreviewTab,

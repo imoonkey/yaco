@@ -243,7 +243,9 @@ export type TabsNode = {
 
 export type LayoutNode = LeafNode | SplitNode | TabsNode
 
-/** Persisted panel-local state that is not tree structure. */
+/** Persisted panel-local state that is not tree structure. `separateKinds` routes
+ *  opens by kind (editor opens avoid terminal-active groups and vice versa); off by
+ *  default, so — like a tab's `preview`/`pinned` — it is OMITTED when false. */
 export type PanelState = {
   files: { mode: 'tree' | 'search' }
   editor: {
@@ -252,6 +254,7 @@ export type PanelState = {
     splitSize: number
     autocompleteEnabled: boolean
   }
+  separateKinds?: boolean
 }
 
 export type WorkspacePanelLayout = {
