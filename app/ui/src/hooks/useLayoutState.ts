@@ -23,7 +23,7 @@ import {
   isFileTab,
   parseDiffTab,
 } from './workspaceTypes'
-import type { FocusTarget, SplitSide } from '../workspace/context'
+import type { FocusTarget, SplitSide, GroupPlacement } from '../workspace/context'
 import {
   normalizeDesktopTree,
   splitBeside,
@@ -38,6 +38,12 @@ import {
   firstCenterGroupId,
   tabByInstance,
   tabsInGroup,
+  removeTab,
+  pinned,
+  dropOldPreview,
+  moveTabBetweenGroups,
+  mergeGroups,
+  moveGroupBeside,
   type LeafPlacement,
   editorInstancesInOrder,
   terminalInstancesInOrder,
@@ -91,6 +97,8 @@ type Action =
   | { type: 'SET_ACTIVE_GROUP'; groupId: string }
   | { type: 'SPLIT_GROUP'; fromGroupId: string; side: SplitSide; newGroupId: string; seed: boolean; basis?: number }
   | { type: 'REORDER_GROUP_TAB'; groupId: string; instanceId: string; toIndex: number }
+  | { type: 'MOVE_TAB'; fromGroupId: string; instanceId: string; toGroupId: string; toIndex: number; protectedPaths: ReadonlySet<string> }
+  | { type: 'MOVE_GROUP'; groupId: string; placement: GroupPlacement }
   | { type: 'RETARGET_PATHS'; oldPath: string; newPath: string }
   | { type: 'CLOSE_TABS_UNDER'; path: string }
   | { type: 'BIND_TERMINAL'; id: string; session: string }
@@ -98,22 +106,6 @@ type Action =
   | { type: 'FOCUS_PANE'; kind: FocusTarget; instanceId: string }
 
 // --- Pure group-tab logic (re-homed from the old per-EditorView fns) ---------
-
-/** Clear a tab's preview flag (pin it) — editor or terminal. */
-function pinned(tab: GroupTab): GroupTab {
-  return tab.preview ? { ...tab, preview: false } : tab
-}
-
-/** Drop the group's current droppable preview tab (other than `keep`) so at most
- *  ONE preview exists per group across editor+terminal. A clean editor preview or
- *  any terminal preview is removed; a dirty (protected) editor preview is pinned
- *  instead. This is the old `withoutOldPreview` rule, generalized to both kinds. */
-function dropOldPreview(tabs: GroupTab[], keep: string, protectedPaths: ReadonlySet<string>): GroupTab[] {
-  const old = tabs.find((t) => t.preview && t.instanceId !== keep)
-  if (!old) return tabs
-  const protectedEditor = old.kind === 'editor' && isFileTab(old.tabId) && protectedPaths.has(old.tabId)
-  return protectedEditor ? tabs.map((t) => (t === old ? pinned(t) : t)) : tabs.filter((t) => t !== old)
-}
 
 /** Open (or activate) a pinned editor tab for `tabId`. Dedup is by EXACT `tabId`
  *  (so `a.ts` / `diff:a.ts` coexist); an existing match is activated + pinned. */
@@ -150,17 +142,6 @@ function previewEditorTab(
   }
   const tab: GroupTab = { instanceId: newId, kind: 'editor', tabId, preview: true }
   return { ...group, tabs: [...tabs, tab], activeTab: newId }
-}
-
-/** Remove a tab; the active tab falls to the neighbour (`Math.min(idx, len-1)`). */
-function removeTab(group: TabsNode, instanceId: string): TabsNode {
-  const idx = group.tabs.findIndex((t) => t.instanceId === instanceId)
-  if (idx === -1) return group
-  const tabs = group.tabs.filter((t) => t.instanceId !== instanceId)
-  const activeTab = group.activeTab !== instanceId
-    ? group.activeTab
-    : (tabs[Math.min(idx, tabs.length - 1)]?.instanceId ?? '')
-  return { ...group, tabs, activeTab }
 }
 
 /** Remap a plain file path on rename/move (exact, or a dir prefix). */
@@ -497,6 +478,49 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       if (panelLayout === state.panelLayout) return state
       return gcMaps({ ...state, panelLayout })
     }
+    case 'MOVE_TAB': {
+      // The universal tab mover. The structural move + preview-travel is the pure
+      // transform (identity-preserving — the same instanceId travels, so the terminal
+      // binding + per-path editor buffer move for free); here we focus the moved tab +
+      // its group + MRU atomically.
+      const moved = tabByInstance(state.panelLayout.desktop, action.instanceId)
+      if (!moved || groupOf(state.panelLayout.desktop, action.instanceId) !== action.fromGroupId) return state
+      const panelLayout = moveTabBetweenGroups(
+        state.panelLayout, action.fromGroupId, action.instanceId, action.toGroupId, action.toIndex, action.protectedPaths,
+      )
+      if (panelLayout === state.panelLayout) return state
+      const kind: FocusTarget = moved.kind === 'terminal' ? 'terminal' : 'editor'
+      return gcMaps({
+        ...state, panelLayout,
+        editorMru: kind === 'editor' ? pushMru(state.editorMru, action.instanceId) : state.editorMru,
+        terminalMru: kind === 'terminal' ? pushMru(state.terminalMru, action.instanceId) : state.terminalMru,
+        focusedPane: { kind, instanceId: action.instanceId },
+        activeGroupId: action.toGroupId,
+      })
+    }
+    case 'MOVE_GROUP': {
+      const { groupId, placement } = action
+      if (placement.kind === 'beside') {
+        if (groupId === placement.targetId) return state
+        const panelLayout = moveGroupBeside(state.panelLayout, groupId, placement.targetId, placement.side)
+        if (panelLayout === state.panelLayout) return state
+        return gcMaps({ ...state, panelLayout, activeGroupId: groupId })
+      }
+      if (groupId === placement.targetGroupId) return state
+      const panelLayout = mergeGroups(state.panelLayout, groupId, placement.targetGroupId)
+      if (panelLayout === state.panelLayout) return state
+      // The survivor is the target group; focus its (moved-in) active tab.
+      const active = activeTabOf(panelLayout.desktop, placement.targetGroupId)
+      const aTab = active ? tabByInstance(panelLayout.desktop, active) : null
+      const kind: FocusTarget = aTab?.kind === 'terminal' ? 'terminal' : 'editor'
+      return gcMaps({
+        ...state, panelLayout,
+        editorMru: active && kind === 'editor' ? pushMru(state.editorMru, active) : state.editorMru,
+        terminalMru: active && kind === 'terminal' ? pushMru(state.terminalMru, active) : state.terminalMru,
+        focusedPane: active ? { kind, instanceId: active } : state.focusedPane,
+        activeGroupId: placement.targetGroupId,
+      })
+    }
     case 'RETARGET_PATHS': {
       const panelLayout = mapEveryGroup(state.panelLayout, (g) => retargetGroup(g, action.oldPath, action.newPath))
       return gcMaps({ ...state, panelLayout })
@@ -663,6 +687,23 @@ export function useLayoutState(
     dispatch({ type: 'REORDER_GROUP_TAB', groupId, instanceId, toIndex })
   }, [])
 
+  /** The universal tab mover (cross-group move OR from===to within-group reorder). */
+  const moveTab = useCallback((fromGroupId: string, instanceId: string, toGroupId: string, toIndex: number) => {
+    dispatch({ type: 'MOVE_TAB', fromGroupId, instanceId, toGroupId, toIndex, protectedPaths: dirtyPathsRef.current })
+  }, [dirtyPathsRef])
+
+  /** Split a fresh group beside `targetGroupId`, then move the tab into it — the
+   *  editor-grid split-drop, two batched dispatches (no flicker). */
+  const moveTabToSplit = useCallback((fromGroupId: string, instanceId: string, targetGroupId: string, side: SplitSide) => {
+    const newGroupId = freshGroupId()
+    dispatch({ type: 'SPLIT_GROUP', fromGroupId: targetGroupId, side, newGroupId, seed: false, basis: halfGroupBasis(targetGroupId, side) })
+    dispatch({ type: 'MOVE_TAB', fromGroupId, instanceId, toGroupId: newGroupId, toIndex: 0, protectedPaths: dirtyPathsRef.current })
+  }, [dirtyPathsRef])
+
+  const moveGroup = useCallback((groupId: string, placement: GroupPlacement) => {
+    dispatch({ type: 'MOVE_GROUP', groupId, placement })
+  }, [])
+
   const retargetPaths = useCallback((oldPath: string, newPath: string) => {
     dispatch({ type: 'RETARGET_PATHS', oldPath, newPath })
   }, [])
@@ -724,6 +765,9 @@ export function useLayoutState(
     setActiveGroup,
     splitGroup,
     reorderGroupTab,
+    moveTab,
+    moveTabToSplit,
+    moveGroup,
     focusPane,
     bindTerminal,
     movePane,

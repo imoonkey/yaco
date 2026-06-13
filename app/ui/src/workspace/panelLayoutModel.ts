@@ -37,7 +37,7 @@ import type {
   LayoutNode, LeafNode, SplitChild, TabsNode, GroupTab, EditorGroupTab, TerminalGroupTab, EditorView,
   SplitAxis, PanelState, WorkspacePanelLayout, PreviewMode,
 } from '../hooks/workspaceTypes'
-import { parseDiffTab } from '../hooks/workspaceTypes'
+import { parseDiffTab, isFileTab } from '../hooks/workspaceTypes'
 
 // --- Canonical sets ---------------------------------------------------------
 
@@ -529,23 +529,27 @@ function pruneNodes(
   return take(node) ? { kept: null, taken: [node] } : { kept: node, taken: [] }
 }
 
+/** Keep at most one preview tab across a strip — the first in document order wins;
+ *  any later preview flag is dropped. */
+function enforceSinglePreview(tabs: GroupTab[]): GroupTab[] {
+  let seen = false
+  return tabs.map((t) => {
+    if (!t.preview) return t
+    if (seen) { const { preview: _preview, ...rest } = t; return rest as GroupTab }
+    seen = true
+    return t
+  })
+}
+
 /** Merge `groups[1..]`'s tabs onto `groups[0]` (document order), re-enforcing one
  *  preview across the strip and keeping the first group's id + active tab. */
 function mergeTabsIntoFirst(groups: TabsNode[]): TabsNode {
+  const tabs = enforceSinglePreview(groups.flatMap((g) => g.tabs))
   const first = groups[0]
-  const tabs: GroupTab[] = [...first.tabs]
-  for (const g of groups.slice(1)) tabs.push(...g.tabs)
-  let previewSeen = false
-  const deduped = tabs.map((t) => {
-    if (!t.preview) return t
-    if (previewSeen) { const { preview: _preview, ...rest } = t; return rest as GroupTab }
-    previewSeen = true
-    return t
-  })
-  const activeTab = deduped.some((t) => t.instanceId === first.activeTab)
+  const activeTab = tabs.some((t) => t.instanceId === first.activeTab)
     ? first.activeTab
-    : (deduped[0]?.instanceId ?? '')
-  return { kind: 'tabs', id: first.id, tabs: deduped, activeTab }
+    : (tabs[0]?.instanceId ?? '')
+  return { kind: 'tabs', id: first.id, tabs, activeTab }
 }
 
 /** Replace the group node `id` with `replacement`, anywhere under `node`. */
@@ -1102,6 +1106,123 @@ export function moveLeaf(
   const axis: SplitAxis = placement.side === 'left' || placement.side === 'right' ? 'row' : 'col'
   const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS[axis], node: leaf }
   return withDesktop(layout, insertBesideNodeById(base, placement.targetId, inserted, placement.side, `split:${leaf.id}`))
+}
+
+// --- Tab / group movers (DnD mutations) -------------------------------------
+//
+// Pure, deterministic transforms over the desktop tree, composed by the reducer's
+// MOVE_TAB / MOVE_GROUP. Each re-normalizes through `withDesktop`, so an
+// intermediate empty/single-child shape is repaired and the region invariants hold.
+
+/** The group (tabs) node `id`, or null. */
+function findGroup(tree: LayoutNode, id: string): TabsNode | null {
+  let hit: TabsNode | null = null
+  eachGroup(tree, (g) => { if (!hit && g.id === id) hit = g })
+  return hit
+}
+
+/** Remove the tab `instanceId`; the active tab falls to the neighbour
+ *  (`Math.min(idx, len-1)`). No-op when the tab is absent. */
+export function removeTab(group: TabsNode, instanceId: string): TabsNode {
+  const idx = group.tabs.findIndex((t) => t.instanceId === instanceId)
+  if (idx === -1) return group
+  const tabs = group.tabs.filter((t) => t.instanceId !== instanceId)
+  const activeTab = group.activeTab !== instanceId
+    ? group.activeTab
+    : (tabs[Math.min(idx, tabs.length - 1)]?.instanceId ?? '')
+  return { ...group, tabs, activeTab }
+}
+
+/** Insert `tab` into `group` at `at` (clamped to the tab count) and make it the
+ *  group's active tab — the moved tab lands focused in its destination. */
+function insertTab(group: TabsNode, tab: GroupTab, at: number): TabsNode {
+  const i = Math.max(0, Math.min(at, group.tabs.length))
+  return { ...group, tabs: [...group.tabs.slice(0, i), tab, ...group.tabs.slice(i)], activeTab: tab.instanceId }
+}
+
+/** Clear a tab's preview flag (pin it) — editor or terminal. */
+export function pinned(tab: GroupTab): GroupTab {
+  return tab.preview ? { ...tab, preview: false } : tab
+}
+
+/** Drop the strip's current droppable preview tab (other than `keep`) so at most ONE
+ *  preview exists per group across editor+terminal: a clean editor preview or any
+ *  terminal preview is removed; a dirty (protected) editor preview is pinned. */
+export function dropOldPreview(
+  tabs: GroupTab[], keep: string, protectedPaths: ReadonlySet<string>,
+): GroupTab[] {
+  const old = tabs.find((t) => t.preview && t.instanceId !== keep)
+  if (!old) return tabs
+  const protectedEditor = old.kind === 'editor' && isFileTab(old.tabId) && protectedPaths.has(old.tabId)
+  return protectedEditor ? tabs.map((t) => (t === old ? pinned(t) : t)) : tabs.filter((t) => t !== old)
+}
+
+/** Move the tab `instanceId` from `fromGroupId` into `toGroupId` at `toIndex`
+ *  (clamped to the target tab count). The SAME tab object travels, so its kind,
+ *  editor payload, and `preview` flag move intact; the moved tab becomes the
+ *  destination group's active tab. When it carries a preview, the one-preview-per-
+ *  group rule re-runs on the target (`dropOldPreview` — a clean/terminal preview is
+ *  dropped, a dirty PROTECTED editor preview is pinned). The source's active falls to
+ *  its neighbour; a source that empties is closed via `closeGroup` (center-scoped —
+ *  the last center group stays empty, a right-sidebar group is removed). `from===to`
+ *  is a within-group reorder. No-op when either group or the tab is absent. */
+export function moveTabBetweenGroups(
+  layout: WorkspacePanelLayout, fromGroupId: string, instanceId: string, toGroupId: string, toIndex: number,
+  protectedPaths: ReadonlySet<string> = new Set(),
+): WorkspacePanelLayout {
+  const from = findGroup(layout.desktop, fromGroupId)
+  const moved = from?.tabs.find((t) => t.instanceId === instanceId)
+  if (!from || !moved || !findGroup(layout.desktop, toGroupId)) return layout
+
+  if (fromGroupId === toGroupId) {
+    return mapGroup(layout, toGroupId, (g) => insertTab(removeTab(g, instanceId), moved, toIndex))
+  }
+
+  let next = mapGroup(layout, fromGroupId, (g) => removeTab(g, instanceId))
+  next = mapGroup(next, toGroupId, (g) => {
+    const inserted = insertTab(g, moved, toIndex)
+    // Re-enforce one preview BEFORE normalization (which would otherwise just demote
+    // the old preview's flag, leaving a stray pinned tab instead of dropping it).
+    return moved.preview ? { ...inserted, tabs: dropOldPreview(inserted.tabs, instanceId, protectedPaths) } : inserted
+  })
+  if (findGroup(next.desktop, fromGroupId)?.tabs.length === 0) next = closeGroup(next, fromGroupId)
+  return next
+}
+
+/** Merge the group `srcGroupId` into `dstGroupId`: append src's tabs (document
+ *  order), keep one preview across the merged strip, make the merged group's active
+ *  tab the src's moved-in active (else keep dst's), and remove src. No-op on a
+ *  self-merge or an absent group. */
+export function mergeGroups(
+  layout: WorkspacePanelLayout, srcGroupId: string, dstGroupId: string,
+): WorkspacePanelLayout {
+  if (srcGroupId === dstGroupId) return layout
+  const src = findGroup(layout.desktop, srcGroupId)
+  const dst = findGroup(layout.desktop, dstGroupId)
+  if (!src || !dst) return layout
+  const tabs = enforceSinglePreview([...dst.tabs, ...src.tabs])
+  const has = (id: string): boolean => tabs.some((t) => t.instanceId === id)
+  const activeTab = (src.activeTab && has(src.activeTab) && src.activeTab)
+    || (has(dst.activeTab) && dst.activeTab) || (tabs[0]?.instanceId ?? '')
+  const merged: TabsNode = { ...dst, tabs, activeTab }
+  const pruned = detachGroupById(replaceGroupNode(layout.desktop, dstGroupId, merged), srcGroupId)
+  return withDesktop(layout, pruned ?? layout.desktop)
+}
+
+/** Detach the group `groupId` and re-insert it beside the node `targetId` on `side`
+ *  (wrapping the target in a new split). No-op on a self-drop or an absent
+ *  group/target. */
+export function moveGroupBeside(
+  layout: WorkspacePanelLayout, groupId: string, targetId: string, side: SplitSide,
+): WorkspacePanelLayout {
+  if (groupId === targetId) return layout
+  const group = findGroup(layout.desktop, groupId)
+  if (!group) return layout
+  const pruned = detachGroupById(layout.desktop, groupId)
+  if (!pruned || !hasNodeId(pruned, targetId)) return layout
+  const axis: SplitAxis = side === 'left' || side === 'right' ? 'row' : 'col'
+  const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS[axis], node: group }
+  return withDesktop(layout, insertBesideNodeById(pruned, targetId, inserted, side, `split:${group.id}`))
 }
 
 /** The active instance of a type = the most-recently-focused live id in `mru`,

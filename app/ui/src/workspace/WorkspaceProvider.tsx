@@ -128,7 +128,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     // group dispatchers + resolution
     focusPane, bindTerminal, movePane,
     splitGroup, openBoundTerminalTab, closeGroupTab, closeGroup, setActiveGroupTab, setActiveGroup,
-    pinTab, reorderGroupTab,
+    pinTab, reorderGroupTab, moveTab, moveTabToSplit, moveGroup,
     openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
     resolveTarget, groupForInstance,
     // file + raw actions
@@ -665,6 +665,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     retargetPaths, deletePath,
     splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
     splitGroup, reorderGroupTab, closeGroup, setActiveGroup, pinTab: pinFocusedTab,
+    moveTab, moveTabToSplit, moveGroup,
     clickSession, openBeside, detachSession,
     setSelectedFilePath, setExplorerFocusedPath, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
@@ -677,6 +678,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     saveFile, forceSave, acceptDisk, updateFileDraft, updateFileViewport, retargetPaths, deletePath,
     splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
     splitGroup, reorderGroupTab, closeGroup, setActiveGroup, pinFocusedTab,
+    moveTab, moveTabToSplit, moveGroup,
     clickSession, openBeside, detachSession, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,
