@@ -378,15 +378,20 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
 
   // The reverse reconcile: sidebar/edge DnD mutates the TREE directly (an edge
   // reveal adds a sidebar; dragging out the last dock empties one), so the flat
-  // flags would otherwise drift. Write them FROM the tree's actual visible presence
-  // here, making DnD a first-class visibility path. The mirrors above then
-  // re-confirm with no further change — the two converge (deps differ: those fire on
-  // a flag change, this on a tree change; both setters/updates are idempotent).
+  // flags would otherwise drift. Write them FROM the tree's actual visible presence.
+  //
+  // It keys on the TREE ALONE — deliberately NOT on the flat flags. A Cmd+B toggle
+  // flips a flag with the tree still un-mirrored for that render; re-running this on
+  // the flag would read that STALE tree and immediately revert the toggle (hide
+  // worked, restore didn't). The forward mirror above owns the flag→tree direction,
+  // so this only needs to fire on a real tree change (DnD, or the settled frame
+  // after the mirror), where the flag it reads already agrees — no fight, no revert.
   useLayoutEffect(() => {
     const vis = sidebarVisibility(panelLayout.desktop)
     if (vis.left !== layout.showSidebar) updateLayout({ showSidebar: vis.left })
     if (vis.right !== layout.showRightPanel) updateLayout({ showRightPanel: vis.right })
-  }, [panelLayout.desktop, layout.showSidebar, layout.showRightPanel, updateLayout])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- flags are read but are not triggers (see above)
+  }, [panelLayout.desktop, updateLayout])
 
   // Mirror the legacy mobile pane onto the panel-layout tree's `mobile.activeDock`
   // (design: Persistence Shape). The flat `mobilePane` is the single source — every
