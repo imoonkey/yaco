@@ -77,6 +77,23 @@ async function groupSplitAxis(page: Page): Promise<string | null> {
   })
 }
 
+/** Assert two groups split ~50-50 along `axis` ('row' = widths, 'col' = heights):
+ *  each within `tol` px of half their combined extent. The pre-fix bug seeded the
+ *  new group at a fixed ~240px strip while the source kept the rest, so this fails
+ *  unless the split STARTS even (VSCode-like). */
+async function expectEvenSplit(
+  page: Page, idA: string, idB: string, axis: 'row' | 'col', tol = 28,
+): Promise<void> {
+  const a = await group(page, idA).boundingBox()
+  const b = await group(page, idB).boundingBox()
+  expect(a && b, 'both group boxes present').toBeTruthy()
+  const sizeA = axis === 'row' ? a!.width : a!.height
+  const sizeB = axis === 'row' ? b!.width : b!.height
+  const half = (sizeA + sizeB) / 2
+  expect(Math.abs(sizeA - half), `group ${idA} ≈ 50% (got ${Math.round(sizeA)} of ${Math.round(sizeA + sizeB)})`).toBeLessThanOrEqual(tol)
+  expect(Math.abs(sizeB - half), `group ${idB} ≈ 50% (got ${Math.round(sizeB)} of ${Math.round(sizeA + sizeB)})`).toBeLessThanOrEqual(tol)
+}
+
 test.describe('USER-QA: editor group split (button + right-click) → seeded adjacent group', () => {
   test('flow 1: the Split button DUPLICATES the active file into a side-by-side group; the original keeps its file', async ({ page, request }) => {
     const project = await ws(page, request)
@@ -109,6 +126,10 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
 
     // OUTCOME: the two groups tile SIDE-BY-SIDE (split axis 'row'), not stacked.
     expect(await groupSplitAxis(page), 'Split Right tiles the groups side-by-side (row)').toBe('row')
+
+    // OUTCOME (sizing fix): the split STARTS ~50-50 — the new group is half the
+    // source's width, not a fixed ~240px strip with the source keeping the rest.
+    await expectEvenSplit(page, 'group:1', 'group:2', 'row')
 
     // The split focused the new group, so opening another file lands THERE → fileB
     // joins group:2's strip; group:1 still shows the original.
@@ -154,6 +175,9 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
     await expect(tabInGroup(page, 'group:2', file)).toBeVisible()
     expect(await groupSplitAxis(page), 'Split Down stacks the groups (col)').toBe('col')
+
+    // The vertical split also STARTS ~50-50 — each group is half the source height.
+    await expectEvenSplit(page, 'group:1', 'group:2', 'col')
 
     await deleteTestFile(page, project.name, file)
   })

@@ -782,13 +782,20 @@ function insertBesideNodeById(
 
 /** Split an EMPTY new group (`newGroupId`) beside the group `targetGroupId`. The
  *  caller picks `side` from live geometry; the new group becomes the open target
- *  via the reducer's `activeGroupId`. No-op when the target id is absent. */
+ *  via the reducer's `activeGroupId`. No-op when the target id is absent.
+ *
+ *  `basis` is the new group's starting size along the split axis: the call site
+ *  passes HALF the source group's measured size so the split begins ~50-50
+ *  (VSCode-like), falling back to `DEFAULT_SPLIT_BASIS` when geometry is
+ *  unavailable. The source keeps `grow`, so the divider stays drag-resizable. */
 export function splitBeside(
   layout: WorkspacePanelLayout, targetGroupId: string, side: SplitSide, newGroupId: string,
+  basis?: number,
 ): WorkspacePanelLayout {
   if (!hasNodeId(layout.desktop, targetGroupId)) return layout
   const axis: SplitAxis = side === 'left' || side === 'right' ? 'row' : 'col'
-  const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS[axis], node: emptyGroup(newGroupId) }
+  const childBasis = typeof basis === 'number' && Number.isFinite(basis) ? basis : DEFAULT_SPLIT_BASIS[axis]
+  const inserted: SplitChild = { basis: childBasis, node: emptyGroup(newGroupId) }
   return withDesktop(layout, insertBesideNodeById(layout.desktop, targetGroupId, inserted, side, `split:${newGroupId}`))
 }
 

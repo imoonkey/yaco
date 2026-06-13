@@ -26,6 +26,7 @@ import {
   newInstanceId,
   collectIds,
   splitBeside,
+  DEFAULT_SPLIT_BASIS,
   closeGroup,
   ensureFirstGroup,
   mapGroup,
@@ -312,6 +313,22 @@ describe('splitBeside / closeGroup / ensureFirstGroup / mapGroup', () => {
     const base = layoutWith(group('group:1', [], ''))
     const split = splitBeside(base, 'group:1', 'below', 'group:2')
     expect(findSplitContaining(split.desktop, 'group:2').axis).toBe('col')
+  })
+
+  it('splitBeside seeds the new group at the provided basis (even-split), else DEFAULT_SPLIT_BASIS', () => {
+    const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
+    const childOf = (layout: WorkspacePanelLayout) =>
+      findSplitContaining(layout.desktop, 'group:2').children.find(
+        (c) => c.node.kind === 'tabs' && c.node.id === 'group:2',
+      )!
+    // The call site measures HALF the source group's size and passes it through —
+    // the inserted group starts at that basis (a ~50-50 split), not a fixed strip.
+    expect(childOf(splitBeside(base, 'group:1', 'right', 'group:2', 400)).basis).toBe(400)
+    // A non-finite basis (NaN/Infinity — an unmeasured/zero DOM node) falls back to the default.
+    expect(childOf(splitBeside(base, 'group:1', 'right', 'group:2', NaN)).basis).toBe(DEFAULT_SPLIT_BASIS.row)
+    expect(childOf(splitBeside(base, 'group:1', 'right', 'group:2', Infinity)).basis).toBe(DEFAULT_SPLIT_BASIS.row)
+    // No basis (geometry-free callers / tests) → the default strip basis.
+    expect(childOf(splitBeside(base, 'group:1', 'right', 'group:2')).basis).toBe(DEFAULT_SPLIT_BASIS.row)
   })
 
   it('splitBeside is a no-op when the target is absent', () => {

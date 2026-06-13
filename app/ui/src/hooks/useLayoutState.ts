@@ -88,7 +88,7 @@ type Action =
   | { type: 'CLOSE_GROUP'; groupId: string }
   | { type: 'SET_ACTIVE_GROUP_TAB'; groupId: string; instanceId: string }
   | { type: 'SET_ACTIVE_GROUP'; groupId: string }
-  | { type: 'SPLIT_GROUP'; fromGroupId: string; side: SplitSide; newGroupId: string; seed: boolean }
+  | { type: 'SPLIT_GROUP'; fromGroupId: string; side: SplitSide; newGroupId: string; seed: boolean; basis?: number }
   | { type: 'REORDER_GROUP_TAB'; groupId: string; instanceId: string; toIndex: number }
   | { type: 'RETARGET_PATHS'; oldPath: string; newPath: string }
   | { type: 'CLOSE_TABS_UNDER'; path: string }
@@ -463,7 +463,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       })
     }
     case 'SPLIT_GROUP': {
-      let panelLayout = splitBeside(state.panelLayout, action.fromGroupId, action.side, action.newGroupId)
+      let panelLayout = splitBeside(state.panelLayout, action.fromGroupId, action.side, action.newGroupId, action.basis)
       if (panelLayout === state.panelLayout) return state
       // Seed the new group from the SOURCE's active tab (VSCode-like): an editor tab
       // is DUPLICATED (fresh instanceId, SAME tabId → shares the per-path buffer); a
@@ -541,6 +541,19 @@ export function buildInstanceState(initial: PersistedState): InstanceState {
 }
 
 // --- Hook -------------------------------------------------------------------
+
+/** Half the source group's current size along the split axis, read from the live
+ *  DOM so a working-area split STARTS ~50-50 (VSCode-like) instead of a fixed
+ *  strip. The model stays geometry-free — `splitGroup` is the call site that
+ *  supplies the size. Returns `undefined` when the container is unmeasured
+ *  (jsdom / pre-render), so `splitBeside` falls back to DEFAULT_SPLIT_BASIS. */
+function halfGroupBasis(groupId: string, side: SplitSide): number | undefined {
+  if (typeof document === 'undefined') return undefined
+  const el = document.querySelector<HTMLElement>(`[data-group-id="${groupId}"]`)
+  if (!el) return undefined
+  const size = side === 'left' || side === 'right' ? el.clientWidth : el.clientHeight
+  return size > 0 ? size / 2 : undefined
+}
 
 export function useLayoutState(
   initialLayout: PersistedState,
@@ -641,7 +654,7 @@ export function useLayoutState(
 
   const splitGroup = useCallback((fromGroupId: string, side: SplitSide, seed = true): string => {
     const newGroupId = freshGroupId()
-    dispatch({ type: 'SPLIT_GROUP', fromGroupId, side, newGroupId, seed })
+    dispatch({ type: 'SPLIT_GROUP', fromGroupId, side, newGroupId, seed, basis: halfGroupBasis(fromGroupId, side) })
     return newGroupId
   }, [])
 
