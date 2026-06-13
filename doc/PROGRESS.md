@@ -1,5 +1,21 @@
 # Progress
 
+## 2026-06-13: Panel drag-and-drop + kind-affinity open routing (region model)
+
+**What changed:**
+- **Enforced region model.** The desktop tree is canonicalized into three regions — a **left** sidebar (dock leaves only), the **center** working-area grid (groups only), and a **right** sidebar (docks + ≤1 group). `normalizeRegions` is the last pass of the single `withDesktop` funnel every tree edit passes through, repairing any loaded/edited tree to the `left? · center · right?` row (center = sole visible grow child; docks evicted from center; groups relocated out of the left; 2nd+ right group merged into the first). `regionsOf`/`centerOf` read it in O(1); `closeGroup`/`ensureCenterGroup` keep the center backstopped with ≥1 group.
+- **VSCode-style drag-and-drop.** Drag a tab, a whole group, or a dock panel. A tab dropped on a group body's **center** merges, on an **edge band** splits a new group toward that edge, on a **tab strip** inserts at the pointer index; a group drops `beside` (new split) or `merge`s into another; a dock reorders within a sidebar or, at a far screen edge, reveals/extends a sidebar. Two reducer actions (`MOVE_TAB`/`MOVE_GROUP`) wrap pure `panelLayoutModel` transforms (`moveTabBetweenGroups`/`moveGroupBeside`/`mergeGroups`) — the moved tab keeps its `instanceId`, so its terminal binding + per-path buffer travel. `dndGeometry.legalZones` is the visual gate (region constraints decide which `DropOverlay` zone lights up); the normalize funnel is the authoritative second gate. The dragged identity rides a module-level `WorkspaceDragContext` (HTML5 `dataTransfer` is unreadable mid-drag) tagged `application/yaco-pane` so foreign/list drags stay distinct.
+- **Kind-affinity open routing (opt-in).** A **Separate editors and terminals** toggle (group tab-bar menu) sets `panelState.separateKinds`. With it on, the reducer-owned `OPEN_ROUTED_*` opens call `resolveOpenTarget(kind, state)`: an open lands in the focused group when its active-tab kind matches (or it is empty), else the most-recent OTHER group of that kind (kind-MRU), else a fresh center split (`splitCenterGroup`). Off (default), every open targets the resolved focus group. Kind is derived from the live active tab, never stored.
+
+**Why:**
+- A flexible panel tree needed VSCode's spatial editing (drag to split/merge/move) and the kind-affinity workflow ("editors here, terminals there") on top of the group model. The enforced region model is the substrate that makes both safe — the same invariant gates the drop overlays and repairs any resulting tree. Builds on the group model in `plan/all/20260612_panel-vscode-tabs/design.md`.
+
+**Key files:** `app/ui/src/workspace/{dndGeometry,WorkspaceDragContext,DropOverlay,InsertionMarker,DesktopPanelTreeLayout,GroupTabBar,PanelGroup,panelLayoutModel,context}.{ts,tsx}`, `app/ui/src/hooks/{useLayoutState,useWorkspaceState,usePersistence,workspaceTypes}.ts`, `app/ui/src/components/Menu.tsx`; tests under `app/ui/src/**/__tests__/*` + `app/ui/tests/e2e/{panel-dnd-routing.spec.ts,helpers/dnd.ts}`; docs `doc/main/app/{ui/workspace/{overview,state-machine},frontend/{state,hooks},data-model/persistence}.md`.
+**Verification:** Feature shipped with unit (dnd geometry, move/merge mutations, open-routing, routing-wire) + e2e (`panel-dnd-routing` driving real affordances) coverage. This entry is the docs sync — no code changed.
+**Commit:** Milestone on `task/panel-dnd` + this docs commit.
+**Next:** None outstanding.
+**Blockers:** None.
+
 ## 2026-06-12: VSCode tab groups — flat tab strips, Tasks overlay, loader migration
 
 **What changed:**

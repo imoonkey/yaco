@@ -15,7 +15,7 @@ Surface summary and desktop/mobile composition for the Workspace view.
 
 ## Related Code
 
-`ui/src/workspace/WorkspaceScreen.tsx` (controller), `ui/src/workspace/WorkspaceProvider.tsx` (contexts + commands), `ui/src/workspace/DesktopPanelTreeLayout.tsx` / `MobilePanelProjection.tsx` (renderers), `ui/src/workspace/PanelHost.tsx` (per-instance host)
+`ui/src/workspace/WorkspaceScreen.tsx` (controller), `ui/src/workspace/WorkspaceProvider.tsx` (contexts + commands), `ui/src/workspace/DesktopPanelTreeLayout.tsx` / `MobilePanelProjection.tsx` (renderers), `ui/src/workspace/PanelHost.tsx` (per-instance host), `ui/src/workspace/{WorkspaceDragContext,DropOverlay,dndGeometry}.{ts,tsx}` (panel drag-and-drop)
 
 ## Surface
 
@@ -28,7 +28,7 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 - Terminal sessions, each a tab bound to one session
 - File search
 
-The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes), not a fixed three-column grid. The four dock panels (projects/files/changes/sessions) are singleton leaves; the working area is a grid of **groups** (`tabs` nodes) that are split, reordered, and closed. The tree is the authority on which groups and tabs exist. -> See: [state-machine.md](state-machine.md) and [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-the-group-model).
+The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes), not a fixed three-column grid, canonicalized into three enforced **regions** — a **left** sidebar (docks only), the **center** working-area grid (groups only), and a **right** sidebar (docks plus at most one group). The four dock panels (projects/files/changes/sessions) are singleton leaves; the center is a grid of **groups** (`tabs` nodes) that are split, reordered, dragged, merged, and closed. `normalizeRegions` repairs every tree edit back to the canonical `left? · center · right?` row, and `regionsOf`/`centerOf` read it in O(1); the tree is the authority on which groups and tabs exist. -> See: [state-machine.md](state-machine.md) and [../../frontend/state.md](../../frontend/state.md#workspace-hot-state--one-reducer-the-group-model).
 
 ## Tab Groups (the working area)
 
@@ -39,6 +39,8 @@ The working area is a **grid of groups**, exactly like VSCode. A **group** (a `t
 - **Group emphasis (active vs inactive).** Like VSCode, the **active group**'s tab labels render in the stronger foreground (its active tab strongest), and inactive groups' labels render dimmer — there is no coloured pane bar. `data-group-active` marks the active group; the focused/active pane still carries `data-focused`/`data-active` (used for focus routing + tests), suppressed when only one of that type exists.
 - **Focus / active instance.** A type-global command (open file, voice insert, session cycle) targets the **active** instance of its type = most-recently-focused live instance, else first in document order.
 - **Split / open-to-side / close.** Right-click a group's tab-bar empty area (or the visible Split button, routed through the same menu) → **Split Up/Down/Left/Right** spawns an adjacent group **seeded from the active tab** (an editor tab is duplicated, a terminal tab is moved; an empty source yields an empty group), which becomes the open target. Plus `Cmd+\` (split the active group along its geometry axis), `Cmd+K Cmd+\` (orthogonal), `Cmd+Enter` (open file to an empty side group), within-group drag-reorder, and `Cmd+W` (close the focused tab, or an empty non-last group). -> See: [../keyboard.md](../keyboard.md).
+- **Drag and drop (VSCode-style).** Drag a tab or a whole group across the center grid: dropping on a group body's **center** merges into that group (a `MOVE_TAB` whose moved tab keeps its identity, so its terminal binding / per-path buffer travel), dropping on an **edge band** splits a new group toward that edge, and dropping on a **tab strip** inserts/reorders at the pointer's insertion index. Dragging a **dock** panel reorders it within a sidebar or, at a far screen edge, reveals/extends a sidebar (left or right). A live drag paints a `DropOverlay` highlight only over **legal** zones — `legalZones` encodes the region constraints (docks never land in the center, groups never in the left, ≤1 group on the right) as the first visual gate, and the normalize funnel is the second, authoritative gate. The dragged identity rides a module-level `WorkspaceDragContext` (HTML5 `dataTransfer` is unreadable mid-drag) tagged with an `application/yaco-pane` mime so foreign/list drags stay distinct.
+- **Kind-affinity open routing (opt-in).** A **Separate editors and terminals** toggle in the group tab-bar menu turns on `separateKinds`: a file then opens into a group whose active tab is editor-kind (or empty) and a session into a terminal-kind group, spawning a fresh center split when no group of that kind exists — so editors and terminals self-sort into separate columns. Off (the default), every open targets the resolved focus group. Routing is reducer-owned (`OPEN_ROUTED_*`) and kind is always derived from the live active tab, never stored. -> See: [state-machine.md](state-machine.md).
 - **Voice** is a single desktop control in the App top bar that targets a chosen instance. -> See: [../app-shell.md](../app-shell.md#global-voice-control).
 
 ## Desktop Composition

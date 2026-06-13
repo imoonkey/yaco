@@ -14,7 +14,7 @@ Canonical workspace document and layout states and their transitions.
 
 ## Related Code
 
-`ui/src/hooks/useLayoutState.ts` (the reducer), `ui/src/workspace/panelLayoutModel.ts` (tree model), `ui/src/workspace/WorkspaceProvider.tsx`
+`ui/src/hooks/useLayoutState.ts` (the reducer, `resolveOpenTarget`), `ui/src/workspace/panelLayoutModel.ts` (tree model, `normalizeRegions`/`regionsOf`, DnD movers), `ui/src/workspace/dndGeometry.ts` (drop-zone + `legalZones` matrix), `ui/src/workspace/WorkspaceProvider.tsx`
 
 ## Per-Tab Document Surface
 
@@ -71,15 +71,37 @@ An editor tab's body is always in exactly one of these states:
 
 ### Desktop
 
-The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes) — not a fixed three-column grid. The dock panels are singleton leaves; the working area is a grid of **groups** that are split, reordered, resized, and closed. The tree is the authority on which groups and tabs exist.
+The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes) — not a fixed three-column grid — canonicalized into three enforced **regions**: a **left** sidebar (dock leaves only), the **center** working-area grid (groups only), and a **right** sidebar (docks plus at most one group). The dock panels are singleton leaves; the center is a grid of **groups** that are split, reordered, resized, dragged, merged, and closed. `normalizeRegions` (the last pass of every tree edit, run through the single `withDesktop` funnel) repairs any loaded or edited tree back to the canonical `left? · center · right?` row — forcing the center to be the sole visible grow child, evicting docks out of the center, relocating groups out of the left, and merging any 2nd+ right-sidebar group into the first. `regionsOf`/`centerOf` read this shape in O(1). The tree is the authority on which groups and tabs exist.
 
 ```
 ┌──────────────────────────────────────────────┐
 │ Left Dock │ Working-Area Groups │ Sessions   │
+│  (docks)  │  (center: groups)   │ (right:    │
+│           │                     │  docks+≤1g)│
 └──────────────────────────────────────────────┘
 ```
 
 Multiple groups tile at once; each group's strip mixes editor and terminal tabs. Each column/group is independently visible/hidden, with resize handles between split children. `Meta+Shift+T` opens the Tasks overlay over the working-area groups.
+
+### Layout Mutations (drag-and-drop)
+
+Pointer drags edit the tree through two reducer actions, each a pure transform re-normalized through the region funnel:
+
+| Drag | Drop target | Action | Result |
+|------|-------------|--------|--------|
+| Tab | group body center | `MOVE_TAB` | tab merges into that group (identity preserved) |
+| Tab | group body edge band | `MOVE_TAB` (to a fresh split) | tab splits a new group toward the edge |
+| Tab | a tab strip | `MOVE_TAB` | tab inserts/reorders at the pointer index |
+| Group | group body edge band | `MOVE_GROUP` (`beside`) | whole group relocates into a new split |
+| Group | another group / its tab bar | `MOVE_GROUP` (`merge`) | groups combine into one strip |
+| Dock | a sidebar column | `moveLeaf` | dock reorders among the column |
+| Dock | a far screen edge | `moveLeafToEdge` | reveals/extends the left or right sidebar |
+
+`legalZones(payload, target)` gates which `DropOverlay` highlight renders during the drag — an empty set (e.g. a dock over the center, a group over a left body) means no highlight and a rejected drop. The region invariants are the visual gate here and the authoritative gate in normalization.
+
+### Kind-Affinity Open Routing
+
+The persisted `panelState.separateKinds` flag (off by default, toggled via **Separate editors and terminals** in the group tab-bar menu) routes type-global opens. `resolveOpenTarget(kind, state)`: with the flag off, every open lands in the resolved target group; with it on, an open lands in the focused group when its active-tab kind matches (or it is empty), else seeks the most-recent OTHER group of that kind (via the kind's MRU), else asks for a NEW center split. Routing runs in the reducer (`OPEN_ROUTED_*`); kind is derived from the live active tab, never stored.
 
 ### Focus / Active-Instance Model
 
