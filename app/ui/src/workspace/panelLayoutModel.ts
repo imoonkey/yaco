@@ -674,7 +674,7 @@ function normalizePanelState(input: unknown): PanelState {
   const files = asRecord(raw.files)
   const editor = asRecord(raw.editor)
   const fallback = defaultPanelState()
-  return {
+  const state: PanelState = {
     files: { mode: files.mode === 'search' ? 'search' : 'tree' },
     editor: {
       previewMode: isPreviewMode(editor.previewMode) ? editor.previewMode : fallback.editor.previewMode,
@@ -688,6 +688,10 @@ function normalizePanelState(input: unknown): PanelState {
       autocompleteEnabled: editor.autocompleteEnabled === true,
     },
   }
+  // Off by default → only a stored `true` survives; a missing/invalid value coerces
+  // to off (the key omitted, like a tab's preview/pinned flag).
+  if (raw.separateKinds === true) state.separateKinds = true
+  return state
 }
 
 /** Repair a whole persisted layout. */

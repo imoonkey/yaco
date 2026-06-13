@@ -263,6 +263,9 @@ export type WorkspaceCommands = {
   splitPanel: (target: PanelId, panel: PanelId, side: SplitSide) => void
   resetLayout: () => void
   setEditorPrefs: (patch: Partial<EditorPrefs>) => void
+  // Flip kind-routing (design: separateKinds) via the panelState write path. Optional
+  // until the provider threads the hook dispatcher onto the command surface.
+  toggleSeparateKinds?: () => void
 
   // Raw passthroughs the phase-1 renderer still needs (see WorkspaceRawActions).
   actions: WorkspaceRawActions
