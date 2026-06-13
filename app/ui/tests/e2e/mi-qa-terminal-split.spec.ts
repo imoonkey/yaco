@@ -73,6 +73,11 @@ const allTerminalTabs = (page: Page) =>
 const idlePlaceholder = (page: Page) => page.getByText('Select a session to attach terminal')
 const splitButton = (page: Page, groupId: string) =>
   group(page, groupId).locator('[data-testid="split-group"]')
+const closeGroupButton = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="close-group"]')
+const emptyArea = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="group-empty-area"]')
+const allGroups = (page: Page) => page.locator('[data-group-id]')
 
 async function openProjectWithSessions(
   page: Page, request: APIRequestContext, count: number,
@@ -90,6 +95,28 @@ async function openProjectWithSessions(
 }
 
 test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / open-beside (5)', () => {
+  test('flow A: a session click opens a PREVIEW terminal (italic) that survives its own focus; a second click pins it (Bug A)', async ({ page, request }) => {
+    const { sessions: [s1] } = await openProjectWithSessions(page, request, 1)
+
+    // First click → a PREVIEW terminal tab (italic). FIX A: creating + auto-focusing
+    // the terminal must NOT pin it — the preview must SURVIVE (the bug pinned it
+    // immediately on the xterm's mount focus, so it was never a preview).
+    await sessionRow(page, s1).click()
+    const tab = terminalTab(group(page, 'group:1'), s1)
+    await expect(tab).toBeVisible({ timeout: 15_000 })
+    await expect(tab, 'a fresh session click is a PREVIEW terminal (italic)').toHaveCSS('font-style', 'italic')
+
+    // It STAYS a preview while idle — the mount/auto-focus (and PTY output) never
+    // promote it.
+    await page.waitForTimeout(600)
+    await expect(tab, 'the preview survives its own auto-focus — not auto-pinned').toHaveCSS('font-style', 'italic')
+
+    // A second click on the same session row pins it (click once = preview, click
+    // again = pinned) → no longer italic.
+    await sessionRow(page, s1).click()
+    await expect(tab, 'a second session click pins the preview (no longer italic)').not.toHaveCSS('font-style', 'italic')
+  })
+
   test('flow 3: splitting a terminal-active group MOVES the terminal (same instance), then a second session binds without rebinding (Bug 3)', async ({ page, request }) => {
     const { sessions: [s1, s2] } = await openProjectWithSessions(page, request, 2)
 
@@ -152,6 +179,51 @@ test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / op
     await expect(sessionRow(page, s1), 's1 keeps running after closing its terminal tab').toBeVisible()
 
     await page.screenshot({ path: 'test-results/mi-qa-terminal-flow4.png' })
+  })
+
+  // Set up a single-terminal group whose split MOVES the terminal into a new group,
+  // leaving group:1 empty — the FIX B repro.
+  async function splitSingleTerminalLeavingEmptySource(page: Page, s1: string): Promise<void> {
+    await sessionRow(page, s1).click()
+    await expect(terminalTab(group(page, 'group:1'), s1)).toBeVisible({ timeout: 15_000 })
+    await sessionRow(page, s1).click() // re-click → pinned, so it survives the move
+    await splitButton(page, 'group:1').click()
+    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    await expect(terminalTab(group(page, 'group:2'), s1), 'terminal moved into the new group').toBeVisible({ timeout: 10_000 })
+    await expect(emptyArea(page, 'group:1'), 'the source group:1 is left empty').toBeVisible()
+    await expect(allGroups(page)).toHaveCount(2)
+  }
+
+  test('flow B-1: the empty source left by a terminal split-move is closable via its Close Group button (Bug B)', async ({ page, request }) => {
+    const { sessions: [s1] } = await openProjectWithSessions(page, request, 1)
+    await splitSingleTerminalLeavingEmptySource(page, s1)
+
+    // The empty source group offers a VISIBLE Close Group affordance — click it.
+    await expect(closeGroupButton(page, 'group:1'), 'the empty group clearly offers a close affordance').toBeVisible()
+    await closeGroupButton(page, 'group:1').click()
+
+    // OUTCOME: back to ONE group — the empty source is gone; the moved terminal (in
+    // the surviving group) is untouched and still bound.
+    await expect(allGroups(page)).toHaveCount(1, { timeout: 10_000 })
+    await expect(group(page, 'group:1')).toHaveCount(0)
+    await expect(terminalTab(page, s1), 's1 terminal survives the empty-source close').toHaveCount(1)
+    await expect(idlePlaceholder(page)).toHaveCount(0)
+  })
+
+  test('flow B-2: the empty source is also closable by activating it + Cmd+W (Bug B)', async ({ page, request }) => {
+    const { sessions: [s1] } = await openProjectWithSessions(page, request, 1)
+    await splitSingleTerminalLeavingEmptySource(page, s1)
+
+    // Click the empty source to make it the active group (and blur the moved
+    // terminal's xterm), then Cmd+W → closeFocusedSurface closes the empty active
+    // group, NOT the focused terminal in the other group.
+    await emptyArea(page, 'group:1').click()
+    await page.keyboard.press('Meta+w')
+
+    await expect(allGroups(page)).toHaveCount(1, { timeout: 10_000 })
+    await expect(terminalTab(page, s1), 's1 terminal survives — Cmd+W closed the empty group, not the terminal').toHaveCount(1)
+    await expect(idlePlaceholder(page)).toHaveCount(0)
   })
 
   test('flow 5 (contrast): Open beside binds each session to its own distinct tab', async ({ page, request }) => {

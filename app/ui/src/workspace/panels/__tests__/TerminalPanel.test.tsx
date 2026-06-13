@@ -35,6 +35,7 @@ vi.mock('../../../components/Terminal', () => ({
     projectName?: string
     provider?: string
     onInteract?: () => void
+    onFocus?: () => void
     onCloseRequest?: () => void
     onDisconnect?: () => void
     sendText?: string | null
@@ -50,6 +51,7 @@ vi.mock('../../../components/Terminal', () => ({
       <button type="button" onClick={() => props.onCloseRequest?.()}>close</button>
       <button type="button" onClick={() => props.onDisconnect?.()}>disconnect</button>
       <button type="button" onClick={() => props.onInteract?.()}>interact</button>
+      <button type="button" onClick={() => props.onFocus?.()}>focus</button>
     </div>
   ),
 }))
@@ -169,10 +171,22 @@ describe('TerminalPanel — bound instance (desktop)', () => {
 
     expect(focusPane).toHaveBeenCalledTimes(2)
     expect(focusPane).toHaveBeenCalledWith('terminal', instanceId)
-    // FIX 1: interacting with a previewed terminal promotes it to pinned (clears preview),
-    // mirroring the editor's promote-on-edit.
+    // FIX A: a genuine interaction with a previewed terminal promotes it to pinned
+    // (clears preview), mirroring the editor's promote-on-edit.
     expect(pinTab).toHaveBeenCalledTimes(2)
     expect(pinTab).toHaveBeenCalledWith(instanceId)
+  })
+
+  it('FIX A: focus (mount/auto-focus) routes focus WITHOUT pinning — a preview terminal survives its own focus', async () => {
+    const { focusPane, pinTab, instanceId } = renderTerminalPanel()
+    await screen.findByTestId('mock-terminal')
+
+    // onFocus stands in for the xterm's programmatic `term.focus()` on mount: it must
+    // mark the pane focused but NEVER pin, or the freshly-created preview terminal
+    // would be promoted to pinned the instant it appears (the FIX A regression).
+    fireEvent.click(screen.getByText('focus'))
+    expect(focusPane).toHaveBeenCalledWith('terminal', instanceId)
+    expect(pinTab).not.toHaveBeenCalled()
   })
 })
 

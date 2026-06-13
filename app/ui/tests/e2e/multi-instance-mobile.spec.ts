@@ -55,6 +55,8 @@ async function seed(page: Page, project: string, blob: unknown): Promise<void> {
 const paneButton = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 const terminalHeader = (page: Page, name: string) =>
   page.locator('span.truncate.flex-1.font-semibold', { hasText: name })
+const editorTab = (page: Page, title: string) =>
+  page.locator(`[data-testid="mobile-editor-tab"][title="${title}"]`)
 
 const panelState = {
   files: { mode: 'tree' as const },
@@ -97,6 +99,55 @@ test.describe('Mobile projects the active instance (editor / terminal)', () => {
     const editor = page.locator('.cm-content')
     await expect(editor).toBeVisible({ timeout: 10_000 })
     await expect(editor).toContainText('BBB_MARKER')
+    await expect(editor).not.toContainText('AAA_MARKER')
+  })
+
+  test('the editor pane shows a switchable tab strip for the active group (FIX D)', async ({ page, request }) => {
+    fixture = await createFixtureProject(request, { files: { 'a.txt': 'AAA_MARKER\n', 'b.txt': 'BBB_MARKER\n' } })
+    await waitServed(request, fixture.name)
+    // One group with TWO editor tabs (the new group shape, no migration) — editor:1
+    // (a.txt) is the active tab; both must appear in the mobile tab strip.
+    await seed(page, fixture.name, {
+      panelLayout: {
+        version: 1,
+        desktop: {
+          kind: 'split', id: 'root', axis: 'row',
+          children: [
+            { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+            {
+              grow: true,
+              node: {
+                kind: 'tabs', id: 'group:1', activeTab: 'editor:1',
+                tabs: [
+                  { instanceId: 'editor:1', kind: 'editor', tabId: 'a.txt' },
+                  { instanceId: 'editor:2', kind: 'editor', tabId: 'b.txt' },
+                ],
+              },
+            },
+          ],
+        },
+        mobile: { activeDock: 'browse' },
+        panelState,
+      },
+      activeGroupId: 'group:1',
+      editorMru: ['editor:1', 'editor:2'],
+      terminalBindings: {}, terminalMru: [],
+    })
+    await page.goto('/')
+    await waitForAppReady(page)
+    await selectProject(page, fixture.name)
+
+    // The Editor pane shows a tab strip with BOTH editor tabs (FIX D regression: it
+    // used to project a single instance with no way to switch). a.txt is active.
+    await paneButton(page, 'Editor').click()
+    await expect(editorTab(page, 'a.txt')).toBeVisible({ timeout: 10_000 })
+    await expect(editorTab(page, 'b.txt')).toBeVisible()
+    const editor = page.locator('.cm-content')
+    await expect(editor).toContainText('AAA_MARKER', { timeout: 10_000 })
+
+    // Tapping the b.txt tab switches the editor to b.txt — the strip is the switcher.
+    await editorTab(page, 'b.txt').click()
+    await expect(editor).toContainText('BBB_MARKER', { timeout: 10_000 })
     await expect(editor).not.toContainText('AAA_MARKER')
   })
 

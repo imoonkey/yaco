@@ -28,7 +28,7 @@ import {
   type PanelId, type SplitSide,
 } from './context'
 import type { PaneMarker } from './panelInstance'
-import { editorInstancesInOrder, tabIdToPath } from './panelLayoutModel'
+import { editorInstancesInOrder, groupCount, tabIdToPath } from './panelLayoutModel'
 import { editorTabByInstance } from '../hooks/useLayoutState'
 import type { TabsNode } from '../hooks/workspaceTypes'
 
@@ -49,6 +49,9 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
   const { layout, panelLayout } = useWorkspaceLayout()
   const tree = panelLayout.desktop
   const isActiveGroup = selection.activeGroupId === group.id
+  // An empty group can be closed only when it is not the last working group
+  // (ensureFirstGroup keeps >=1) — gates the visible Close Group affordance.
+  const canCloseGroup = groupCount(tree) > 1
 
   // Underlying file paths open in 2+ editor tabs tree-wide: closing one view of a
   // dirty file is loss-free while another tab still holds the shared per-path
@@ -139,6 +142,7 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         onSplit={onSplit}
         onReorderTab={onReorderTab}
         onCloseGroup={onCloseGroup}
+        canCloseGroup={canCloseGroup}
         onActivateGroup={onActivateGroup}
         onDiscardDirty={onDiscardDirty}
       />

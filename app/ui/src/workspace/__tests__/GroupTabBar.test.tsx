@@ -143,6 +143,24 @@ describe('GroupTabBar — dismiss-safe Split menu', () => {
     fireEvent.click(screen.getByTestId('split-group'))
     expect(screen.queryByRole('menuitem', { name: 'Close Group' })).toBeNull()
   })
+
+  it('shows a VISIBLE Close Group button on an empty closable group (FIX B)', () => {
+    const onCloseGroup = vi.fn()
+    renderBar({ tabs: [], canCloseGroup: true, onCloseGroup })
+    const btn = screen.getByTestId('close-group')
+    fireEvent.click(btn)
+    expect(onCloseGroup).toHaveBeenCalledTimes(1)
+
+    // The LAST group (canCloseGroup false) hides the button — it can never be removed.
+    cleanup()
+    renderBar({ tabs: [], canCloseGroup: false })
+    expect(screen.queryByTestId('close-group')).toBeNull()
+
+    // A non-empty group never shows it either.
+    cleanup()
+    renderBar({ tabs: [EDITOR('editor:1', 'src/app.ts')], canCloseGroup: true })
+    expect(screen.queryByTestId('close-group')).toBeNull()
+  })
 })
 
 describe('GroupTabBar — dirty-close confirm', () => {

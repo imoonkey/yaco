@@ -19,17 +19,19 @@
 // `MobileDock` ⇄ `MobilePane` conversion is the only place the two vocabularies
 // meet (`mobileDockToPane` for the switch UI, the provider's mirror for writes).
 import { useMemo, type ReactNode, type RefObject } from 'react'
-import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal } from 'lucide-react'
+import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal, X, AlertTriangle } from 'lucide-react'
 import { PaneSwitch } from '../components/PaneSwitch'
 import { LandscapeNav } from '../components/LandscapeNav'
 import { toggleTheme } from '../lib/theme'
 import { PanelHost } from './PanelHost'
 import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import { collectFramedLeaves } from './desktopTreeSizing'
-import { editorTabsInGroup, terminalTabsInGroup } from './panelLayoutModel'
+import { editorTabsInGroup, terminalTabsInGroup, tabIdToPath } from './panelLayoutModel'
+import { tabName, computeDisambigSuffixes } from './tabLabels'
+import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
 import { useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection } from './context'
-import { mobileDockToPane, type MobilePane } from '../hooks/workspaceTypes'
+import { mobileDockToPane, isDiffTab, type MobilePane, type EditorGroupTab } from '../hooks/workspaceTypes'
 
 export type MobilePanelProjectionProps = {
   rootRef: RefObject<HTMLDivElement | null>
@@ -88,17 +90,32 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
   // when a terminal is active); the terminal pane the active group's active/first
   // terminal tab. A group with ZERO editor tabs resolves to '' → the editor body
   // renders "No file open" rather than crashing.
-  const { activeGroupId, activeEditorTab, activeTerminalId } = useWorkspaceSelection()
+  const { activeGroupId, activeEditorTab, activeTerminalId, editor } = useWorkspaceSelection()
   const tree = panelLayout.desktop
+  const groupEditorTabs = editorTabsInGroup(tree, activeGroupId)
   const editorInstanceId =
     activeEditorTab?.instanceId
-    ?? editorTabsInGroup(tree, activeGroupId)[0]?.instanceId
+    ?? groupEditorTabs[0]?.instanceId
     ?? ''
   const groupTerminals = terminalTabsInGroup(tree, activeGroupId)
   const terminalInstanceId =
     groupTerminals.find((t) => t.instanceId === activeTerminalId)?.instanceId
     ?? groupTerminals[0]?.instanceId
     ?? null
+
+  // The mobile editor tab strip — the active group's editor tabs, switchable +
+  // closable (FIX D). Mobile renders a single instance body, so without this strip a
+  // multi-tab group shows only its active tab with no way to switch between them.
+  const editorTabStrip = (
+    <MobileEditorTabs
+      tabs={groupEditorTabs}
+      activeInstanceId={editorInstanceId}
+      dirtyTabs={editor.dirtyTabs}
+      conflictTabs={editor.conflictTabs}
+      onSelect={(tabId, instanceId) => commands.selectTab(tabId, instanceId)}
+      onClose={(instanceId) => commands.closePane(instanceId)}
+    />
+  )
 
   // Browse-dock section chrome: collapse + body sizing for each framed panel,
   // read by its `PanelHost` through `PanelChromeContext`. Collapse comes from the
@@ -183,6 +200,7 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
               onBrowseFocus={() => commands.setFocusTarget('explorer')}
               editorInstanceId={editorInstanceId}
               terminalInstanceId={terminalInstanceId}
+              editorTabStrip={editorTabStrip}
             />
           </div>
         </div>
@@ -193,13 +211,14 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
 
 // Project the active dock's panels straight from the registry's mobile dock
 // metadata (`mobileDockPanels`). Only the genuinely dock-specific wrapper chrome
-// lives outside that map — the browse scroll surface + explorer-focus, and the
-// terminal flex column — so a metadata change to ANY dock (membership or order)
-// changes what projects here, not just the browse dock. The editor/terminal panels
-// render the ACTIVE GROUP's instance ('' editor ⇒ "No file open"; no terminal ⇒ the
-// idle 'terminal' placeholder).
-function ActiveDockPanes({ dock, onBrowseFocus, editorInstanceId, terminalInstanceId }: {
+// lives outside that map — the browse scroll surface + explorer-focus, the editor
+// tab strip + body, and the terminal flex column — so a metadata change to ANY dock
+// (membership or order) changes what projects here, not just the browse dock. The
+// editor/terminal panels render the ACTIVE GROUP's instance ('' editor ⇒ "No file
+// open"; no terminal ⇒ the idle 'terminal' placeholder).
+function ActiveDockPanes({ dock, onBrowseFocus, editorInstanceId, terminalInstanceId, editorTabStrip }: {
   dock: MobileDock; onBrowseFocus: () => void; editorInstanceId: string; terminalInstanceId: string | null
+  editorTabStrip: ReactNode
 }) {
   const instanceOf = (panel: string): string | undefined =>
     panel === 'editor' ? editorInstanceId : panel === 'terminal' ? (terminalInstanceId ?? 'terminal') : undefined
@@ -224,6 +243,78 @@ function ActiveDockPanes({ dock, onBrowseFocus, editorInstanceId, terminalInstan
       </div>
     )
   }
-  // editor / tasks: unframed panels own their chrome — no extra wrapper.
+  // editor: the switchable editor tab strip (FIX D) over the active tab's body.
+  if (dock === 'editor') {
+    return <>{editorTabStrip}{panels}</>
+  }
+  // tasks: unframed panel owns its chrome — no extra wrapper.
   return <>{panels}</>
+}
+
+// Mobile editor tab strip — the active group's editor tabs, switchable + closable.
+// Mobile renders a single instance body (no desktop group tab bar), so without this
+// strip a multi-tab group shows only its active tab with no way to switch (the FIX D
+// regression). Editor tabs only — terminals have their own mobile pane. On touch a
+// clean tab shows its close ×; a dirty tab shows only its dot (no destructive close
+// without a confirm), mirroring the desktop strip's touch behaviour.
+function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onSelect, onClose }: {
+  tabs: EditorGroupTab[]
+  activeInstanceId: string
+  dirtyTabs: ReadonlySet<string>
+  conflictTabs: ReadonlySet<string>
+  onSelect: (tabId: string, instanceId: string) => void
+  onClose: (instanceId: string) => void
+}) {
+  const disambig = useMemo(() => computeDisambigSuffixes(tabs.map((t) => t.tabId)), [tabs])
+  if (tabs.length === 0) return null
+  return (
+    <div
+      className="flex items-center shrink-0 overflow-x-auto"
+      style={{ height: 34, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
+      data-testid="mobile-editor-tabs"
+    >
+      {tabs.map((tab) => {
+        const isActive = tab.instanceId === activeInstanceId
+        const path = tabIdToPath(tab.tabId)
+        const isDirty = dirtyTabs.has(path)
+        const isConflict = conflictTabs.has(path)
+        const isDiff = isDiffTab(tab.tabId)
+        const suffix = disambig.get(tab.tabId)
+        return (
+          <div
+            key={tab.instanceId}
+            data-testid="mobile-editor-tab"
+            data-tab-instance={tab.instanceId}
+            data-tab-active={isActive || undefined}
+            onClick={() => onSelect(tab.tabId, tab.instanceId)}
+            title={tab.tabId}
+            className="flex items-center gap-1 px-2 h-full cursor-pointer text-ui-sm shrink-0"
+            style={{
+              borderRight: '1px solid var(--sol-border)',
+              backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)',
+              color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)',
+              borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
+              fontStyle: tab.preview ? 'italic' : undefined,
+            }}
+          >
+            {!isDiff && <FileTypeIcon name={tab.tabId} />}
+            <span className="truncate max-w-[140px]">{tabName(tab.tabId)}</span>
+            {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
+            {isConflict ? (
+              <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={11} /></span>
+            ) : isDirty ? (
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); onClose(tab.instanceId) }}
+                className="w-4 h-4 flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg shrink-0"
+                style={{ color: 'var(--sol-text-dim)' }}
+                aria-label={`Close ${tabName(tab.tabId)}`}
+              ><X size={12} /></button>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
 }

@@ -64,6 +64,7 @@ function renderDock(dock: MobileDock): void {
   const selection = {
     activeEditorId: 'editor',
     activeTerminalId: 'terminal',
+    editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
   } as unknown as WorkspaceSelection
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   render(

@@ -65,10 +65,17 @@ export function TerminalPanel() {
   const send = voice.terminalSend as (InsertRequest & { instanceId?: string }) | null
   const mySend = send?.instanceId === instanceId ? send : null
 
-  // Interacting with the terminal focuses it AND pins its tab (clears preview) —
-  // mirroring the editor's promote-on-edit, so a previewed terminal you actually
-  // use becomes permanent instead of being replaced by the next preview.
+  // Focus tracking only (programmatic auto-focus included): mark this the focused
+  // terminal WITHOUT pinning, so a freshly-created PREVIEW terminal survives its
+  // own mount/auto-focus and stays a preview until a genuine interaction.
   const focusTerminal = () => {
+    commands.focusPane('terminal', instanceId)
+  }
+  // A genuine user interaction (real click / keystroke / paste in the xterm) focuses
+  // AND pins the tab (clears preview) — mirroring the editor's promote-on-edit, so a
+  // previewed terminal you actually use becomes permanent (click once = preview,
+  // click again / interact = pinned) instead of being replaced by the next preview.
+  const interactTerminal = () => {
     commands.focusPane('terminal', instanceId)
     commands.pinTab(instanceId)
   }
@@ -101,14 +108,15 @@ export function TerminalPanel() {
       <div
         className="flex-1 overflow-hidden p-[3px] select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text', backgroundColor: 'var(--sol-editor-bg)' }}
-        onMouseDown={focusTerminal}
+        onMouseDown={interactTerminal}
       >
         <Suspense fallback={TerminalFallback}>
           <LazyTerminal
             sessionName={bound}
             projectName={projectName}
             provider={sessionInfo?.provider}
-            onInteract={focusTerminal}
+            onInteract={interactTerminal}
+            onFocus={focusTerminal}
             onCloseRequest={() => commands.closePane(instanceId)}
             onDisconnect={() => commands.closePane(instanceId)}
             sendText={mySend?.text}

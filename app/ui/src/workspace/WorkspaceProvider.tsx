@@ -23,6 +23,8 @@ import {
   collapsePanel as modelCollapsePanel,
   resizeSplitChild as modelResizeSplitChild,
   editorTabsInGroup,
+  tabsInGroup,
+  groupCount,
   setDockVisible as modelSetDockVisible,
   setActivityVisible as modelSetActivityVisible,
   setActiveDock as modelSetActiveDock,
@@ -596,8 +598,15 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }, [setMobilePane, updateLayout, mainShowsTasks, closeTasks, setFocusTarget])
 
   const closeFocusedSurface = useCallback((): boolean => {
-    const { showSearch: search, focusTarget: focus, activeEditorTabId: tab, activeTerminalId: tid } = latestRef.current
+    const { showSearch: search, focusTarget: focus, activeEditorTabId: tab, activeTerminalId: tid, activeGroupId: gid, panelLayout: pl } = latestRef.current
     if (search) { setShowSearch(false); return true }
+    // An activated EMPTY group (e.g. the source left behind after a terminal split
+    // MOVED its only tab into the new group): Cmd+W closes that empty group itself,
+    // NOT the focused tab living in another group. ensureFirstGroup keeps the last
+    // group, so this never strands the working area.
+    if (gid && groupCount(pl.desktop) > 1 && tabsInGroup(pl.desktop, gid).length === 0) {
+      closeGroup(gid); return true
+    }
     // Terminal Cmd+W closes the pane (the session keeps running, design §3.7).
     // Self-contained: never fall through to the editor-tab path even if a terminal
     // closed between render and keypress (tid null), which would close a file tab.
@@ -611,7 +620,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     if (tab) { closeTab(tab); return true }
     if (detachSession()) return true
     return true
-  }, [detachSession, closeTab, mainShowsTasks, closeTasks, closePane])
+  }, [detachSession, closeTab, mainShowsTasks, closeTasks, closePane, closeGroup])
 
   // Layout commands. These mutate the panel-layout tree through the pure
   // `panelLayoutModel` edits (the tree renderer reads the result). Dock/activity

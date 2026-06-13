@@ -55,6 +55,10 @@ export type GroupTabBarProps = {
   onReorderTab: (instanceId: string, toIndex: number) => void
   /** Close this (empty) group — the "Close Group" context item. */
   onCloseGroup: () => void
+  /** True when this group may be removed (more than one group exists) — gates the
+   *  visible Close Group button on an empty group. The last group is never closable
+   *  (it stays as the one empty working area). */
+  canCloseGroup?: boolean
   /** Focus this (possibly empty) group as the open/close target on a tab-bar click. */
   onActivateGroup: () => void
   /** Discard a file's draft (→ clean) on an explicit dirty-close of its last view. */
@@ -96,7 +100,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   const {
     groupId, tabs, activeTab, isActiveGroup, dirtyTabs, conflictTabs, terminalBindings,
     pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onReorderTab,
-    onCloseGroup, onActivateGroup, onDiscardDirty, editorPrefs, onSetEditorPrefs,
+    onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, editorPrefs, onSetEditorPrefs,
   } = props
 
   const menu = useContextMenu()
@@ -159,11 +163,13 @@ export function GroupTabBar(props: GroupTabBarProps) {
           const provider = session ? sessions.find((s) => s.name === session)?.provider : undefined
           const label = isEditor ? tabName(tab.tabId) : (session || 'Terminal')
           const closeLabel = isEditor ? `Close ${tabName(tab.tabId)}` : 'Close terminal'
-          // VSCode group emphasis: the active group's labels read in the stronger
-          // foreground (its active tab strongest), inactive groups dimmer.
+          // VSCode group emphasis (FIX C): the ACTIVE group reads in a strong
+          // foreground at medium weight (its active tab strongest, the rest standard);
+          // INACTIVE groups are uniformly muted in a distinctly fainter token — so it
+          // is obvious at a glance which group is active.
           const labelColor = isActiveGroup
             ? (isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)')
-            : (isActive ? 'var(--sol-text)' : 'var(--sol-text-faint)')
+            : 'var(--sol-text-faint)'
           return (
             <div
               key={tab.instanceId}
@@ -178,7 +184,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
               onDragEnd={() => setDragId(null)}
               onClick={() => onSelectTab(tab.instanceId)}
               title={isEditor ? tab.tabId : label}
-              className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup && isActive ? 'font-medium' : ''}`}
+              className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
               style={{
                 ...TAB_STYLE_BASE,
                 backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)',
@@ -237,6 +243,16 @@ export function GroupTabBar(props: GroupTabBarProps) {
           style={SPLIT_BTN_STYLE}>
           <SplitSquareHorizontal size={13} aria-hidden="true" />
         </button>
+        {/* An empty group offers a VISIBLE Close Group button (FIX B) so the source
+            group left behind by a terminal split-move is obviously closable — not
+            only via the right-click menu. The last group is never closable. */}
+        {tabs.length === 0 && canCloseGroup && (
+          <button type="button" onClick={onCloseGroup}
+            data-testid="close-group" title="Close group" aria-label="Close group"
+            style={SPLIT_BTN_STYLE}>
+            <X size={14} aria-hidden="true" />
+          </button>
+        )}
       </div>
 
       {menu.position && (

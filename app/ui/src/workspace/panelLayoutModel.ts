@@ -185,6 +185,13 @@ export function firstGroupId(node: LayoutNode): string | null {
   return null
 }
 
+/** How many working groups (tabs nodes) the tree holds. */
+export function groupCount(node: LayoutNode): number {
+  let n = 0
+  eachGroup(node, () => { n++ })
+  return n
+}
+
 /** The group id whose tabs contain `instanceId`, or null. */
 export function groupOf(tree: LayoutNode, instanceId: string): string | null {
   let found: string | null = null

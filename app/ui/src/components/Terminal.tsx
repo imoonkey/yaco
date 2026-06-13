@@ -136,6 +136,7 @@ interface TerminalProps {
   projectName?: string
   provider?: string
   onInteract?: () => void
+  onFocus?: () => void
   onCloseRequest?: () => void
   onDisconnect?: () => void
   sendText?: string | null
@@ -197,11 +198,12 @@ function buildWsUrl(sessionName: string, cols: number, rows: number, palette: Te
   return `${proto}//${host}/ws/terminal/${encodeURIComponent(sessionName)}?${params.toString()}`
 }
 
-export function Terminal({ sessionName, projectName, provider, onInteract, onCloseRequest, onDisconnect, sendText, sendTextKey, onOpenCompose }: TerminalProps) {
+export function Terminal({ sessionName, projectName, provider, onInteract, onFocus, onCloseRequest, onDisconnect, sendText, sendTextKey, onOpenCompose }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const onInteractRef = useRef(onInteract)
+  const onFocusRef = useRef(onFocus)
   const onCloseRequestRef = useRef(onCloseRequest)
   const onDisconnectRef = useRef(onDisconnect)
   // Resolve the provider once per render so terminal contrast and OSC suppression
@@ -263,6 +265,10 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
   useEffect(() => {
     onInteractRef.current = onInteract
   }, [onInteract])
+
+  useEffect(() => {
+    onFocusRef.current = onFocus
+  }, [onFocus])
 
   useEffect(() => {
     onCloseRequestRef.current = onCloseRequest
@@ -394,8 +400,13 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
     container.addEventListener('touchend', onTouchEnd, { passive: true })
     container.addEventListener('touchcancel', onTouchEnd, { passive: true })
 
+    // Focus moving into the terminal (including the programmatic `term.focus()` on
+    // mount / session switch) is FOCUS, not a genuine interaction — route it to
+    // onFocus so it never pins a freshly-created preview terminal. Pinning is left
+    // to real input (mousedown / keystroke / paste), mirroring the editor's
+    // promote-on-edit.
     const handleFocusIn = () => {
-      onInteractRef.current?.()
+      onFocusRef.current?.()
     }
     container.addEventListener('focusin', handleFocusIn)
 
@@ -713,7 +724,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onClo
         className="relative flex-1 min-h-0 w-full select-text"
         style={{ userSelect: 'text', WebkitUserSelect: 'text' }}
         onMouseDown={onInteract}
-        onFocusCapture={onInteract}
+        onFocusCapture={onFocus}
       >
         <div
           ref={containerRef}
