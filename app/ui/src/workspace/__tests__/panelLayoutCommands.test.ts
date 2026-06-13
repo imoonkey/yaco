@@ -231,10 +231,11 @@ describe('toggleDock / toggleActivity', () => {
     expect(asLeaf(findChild(cycled.desktop, 'projects').child.node).collapsed).toBe(true)
   })
 
-  it('is a no-op when the root cannot have dock/activity columns', () => {
-    const single = normalizeLayout({ desktop: { kind: 'leaf', id: 'files', panel: 'files' } })
-    expect(toggleDock(single)).toEqual(single)
-    expect(toggleActivity(single)).toEqual(single)
+  it('is a no-op when there is no left/right sidebar to toggle', () => {
+    // A center-only region row (no sidebars) — nothing for the dock/activity edge.
+    const centerOnly = normalizeLayout({ desktop: { kind: 'tabs', id: 'group:1', tabs: [], activeTab: '' } })
+    expect(toggleDock(centerOnly)).toBe(centerOnly)
+    expect(toggleActivity(centerOnly)).toBe(centerOnly)
   })
 })
 

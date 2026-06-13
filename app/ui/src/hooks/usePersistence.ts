@@ -17,7 +17,7 @@ import {
   defaultWorkspacePanelLayout, normalizeLayout,
   migrateTreeToGroups, mapEditorMru,
   editorInstancesInOrder, terminalInstancesInOrder,
-  firstGroupId, groupOf,
+  centerOf, firstCenterGroupId, groupOf,
 } from '../workspace/panelLayoutModel'
 
 // --- Load helpers ---
@@ -32,7 +32,7 @@ function defaultPersistedState(): PersistedState {
     terminalBindings: {},
     editorMru: [],
     terminalMru: [],
-    activeGroupId: firstGroupId(panelLayout.desktop) ?? '',
+    activeGroupId: firstCenterGroupId(centerOf(panelLayout.desktop)) ?? '',
     mobilePane: 'files',
     layout: { ...DEFAULT_LAYOUT },
     recentFiles: [],
@@ -187,7 +187,7 @@ function loadGroupBlob(parsed: Record<string, unknown>, stored: Record<string, u
   const editorIds = new Set(editorInstancesInOrder(tree))
   const terminalOrder = terminalInstancesInOrder(tree)
   const storedActive = typeof parsed.activeGroupId === 'string' ? parsed.activeGroupId : ''
-  const activeGroupId = storedActive && hasGroupNode(tree, storedActive) ? storedActive : (firstGroupId(tree) ?? '')
+  const activeGroupId = storedActive && hasGroupNode(tree, storedActive) ? storedActive : (firstCenterGroupId(centerOf(tree)) ?? '')
   return {
     panelLayout,
     terminalBindings: parseTerminalBindings(parsed.terminalBindings, terminalOrder),
@@ -246,7 +246,7 @@ function migrateOldBlob(parsed: Record<string, unknown>, flat: WorkspaceLayout):
     : (terminalBindings.terminal ? ['terminal'] : [])
 
   const head = editorMru[0]
-  const activeGroupId = (head && groupOf(tree, head)) || (firstGroupId(tree) ?? '')
+  const activeGroupId = (head && groupOf(tree, head)) || (firstCenterGroupId(centerOf(tree)) ?? '')
 
   return { panelLayout, terminalBindings, editorMru, terminalMru, activeGroupId }
 }

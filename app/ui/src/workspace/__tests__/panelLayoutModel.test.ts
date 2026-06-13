@@ -13,8 +13,12 @@ import {
   defaultDesktopTree,
   defaultWorkspacePanelLayout,
   normalizeDesktopTree,
+  normalizeRegions,
   normalizeLayout,
   firstGroupId,
+  regionsOf,
+  centerOf,
+  firstCenterGroupId,
   groupOf,
   tabsInGroup,
   editorTabsInGroup,
@@ -28,12 +32,12 @@ import {
   splitBeside,
   DEFAULT_SPLIT_BASIS,
   closeGroup,
-  ensureFirstGroup,
+  ensureCenterGroup,
   mapGroup,
   resolveActiveEditor,
   resolveActiveTerminal,
 } from '../panelLayoutModel'
-import type { LayoutNode, SplitNode, TabsNode, WorkspacePanelLayout } from '../../hooks/workspaceTypes'
+import type { LayoutNode, SplitNode, SplitChild, TabsNode, WorkspacePanelLayout } from '../../hooks/workspaceTypes'
 
 function asSplit(node: LayoutNode): SplitNode {
   if (node.kind !== 'split') throw new Error(`expected split, got ${node.kind}`)
@@ -53,6 +57,11 @@ const ed = (instanceId: string, tabId: string, extra: Record<string, unknown> = 
   ({ instanceId, kind: 'editor', tabId, ...extra })
 const term = (instanceId: string) => ({ instanceId, kind: 'terminal' })
 const group = (id: string, tabs: unknown[], activeTab = '') => ({ kind: 'tabs', id, tabs, activeTab })
+
+/** The center group of a normalized tree (the working area's first group). Most
+ *  `normalizeGroup` cases feed a bare group, which `normalizeRegions` wraps as the
+ *  center child of a region row — this unwraps it for the per-group assertions. */
+const centerGroup = (raw: unknown): TabsNode => asTabs(centerOf(normalizeDesktopTree(raw))!)
 
 // --- Guards + canonical sets ------------------------------------------------
 
@@ -125,31 +134,28 @@ function collectLeafPanels(node: LayoutNode, out: string[] = []): string[] {
 
 describe('normalizeGroup — payload-preserving', () => {
   it('NEVER collapses an empty group', () => {
-    const tree = normalizeDesktopTree(group('group:1', []))
-    const g = asTabs(tree)
+    const g = centerGroup(group('group:1', []))
     expect(g.kind).toBe('tabs')
     expect(g.tabs).toEqual([])
     expect(g.activeTab).toBe('')
   })
 
   it('preserves valid editor tabs and drops only malformed ones', () => {
-    const tree = normalizeDesktopTree(group('group:1', [
+    const g = centerGroup(group('group:1', [
       ed('editor:1', 'a.ts'),
       { instanceId: 'editor:2', kind: 'editor' }, // malformed: no tabId
       { instanceId: 'x', kind: 'bogus' }, // malformed: bad kind
       ed('editor:3', 'b.ts'),
     ], 'editor:1'))
-    const g = asTabs(tree)
     expect(g.tabs.map((t) => t.instanceId)).toEqual(['editor:1', 'editor:3'])
     expect(g.tabs.map((t) => (t.kind === 'editor' ? t.tabId : null))).toEqual(['a.ts', 'b.ts'])
   })
 
   it('re-ids a duplicate instanceId, keeping its tabId/preview/pinned payload', () => {
-    const tree = normalizeDesktopTree(group('group:1', [
+    const g = centerGroup(group('group:1', [
       ed('editor:1', 'a.ts'),
       ed('editor:1', 'b.ts', { pinned: true }), // duplicate id
     ], 'editor:1'))
-    const g = asTabs(tree)
     expect(g.tabs).toHaveLength(2)
     const [first, second] = g.tabs
     expect(first.instanceId).toBe('editor:1')
@@ -159,36 +165,32 @@ describe('normalizeGroup — payload-preserving', () => {
   })
 
   it('keeps exactly one preview editor tab (first in document order wins)', () => {
-    const tree = normalizeDesktopTree(group('group:1', [
+    const g = centerGroup(group('group:1', [
       ed('editor:1', 'a.ts', { preview: true }),
       ed('editor:2', 'b.ts', { preview: true }),
     ], 'editor:1'))
-    const g = asTabs(tree)
     expect(g.tabs.filter((t) => t.kind === 'editor' && t.preview)).toHaveLength(1)
     expect(g.tabs[0].kind === 'editor' && g.tabs[0].preview).toBe(true)
     expect(g.tabs[1].kind === 'editor' && g.tabs[1].preview).toBeUndefined()
   })
 
   it('clamps activeTab to a surviving tab, following re-ids; empties to ""', () => {
-    const dropped = normalizeDesktopTree(group('group:1', [ed('editor:1', 'a.ts')], 'gone'))
-    expect(asTabs(dropped).activeTab).toBe('editor:1') // fell back to first
+    expect(centerGroup(group('group:1', [ed('editor:1', 'a.ts')], 'gone')).activeTab).toBe('editor:1') // fell back to first
 
-    const empty = normalizeDesktopTree(group('group:1', []))
-    expect(asTabs(empty).activeTab).toBe('')
+    expect(centerGroup(group('group:1', [])).activeTab).toBe('')
 
     // active follows the re-id of a duplicate
-    const reId = normalizeDesktopTree(group('group:1', [
+    const reId = centerGroup(group('group:1', [
       ed('editor:1', 'a.ts'),
       ed('editor:1', 'b.ts'),
     ], 'editor:1'))
-    expect(asTabs(reId).activeTab).toBe('editor:1') // first occurrence kept the id
+    expect(reId.activeTab).toBe('editor:1') // first occurrence kept the id
   })
 
   it('mixes editor + terminal tabs in one strip in order', () => {
-    const tree = normalizeDesktopTree(group('group:1', [
+    const g = centerGroup(group('group:1', [
       ed('editor:1', 'a.ts'), term('terminal:1'), ed('editor:2', 'b.ts'),
     ], 'terminal:1'))
-    const g = asTabs(tree)
     expect(g.tabs.map((t) => t.kind)).toEqual(['editor', 'terminal', 'editor'])
     expect(g.activeTab).toBe('terminal:1')
   })
@@ -295,7 +297,7 @@ describe('group helpers', () => {
 
 // --- structural ops ---------------------------------------------------------
 
-describe('splitBeside / closeGroup / ensureFirstGroup / mapGroup', () => {
+describe('splitBeside / closeGroup / ensureCenterGroup / mapGroup', () => {
   it('splitBeside spawns an empty sibling group; axis from side', () => {
     const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
     const split = splitBeside(base, 'group:1', 'right', 'group:2')
@@ -347,7 +349,7 @@ describe('splitBeside / closeGroup / ensureFirstGroup / mapGroup', () => {
     expect(hasNode(closed.desktop, 'split:group:2')).toBe(false)
   })
 
-  it('closeGroup on the last group leaves exactly one empty group (ensureFirstGroup)', () => {
+  it('closeGroup on the last group leaves exactly one empty group (ensureCenterGroup)', () => {
     const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
     const closed = closeGroup(base, 'group:1')
     const gid = firstGroupId(closed.desktop)
@@ -355,22 +357,20 @@ describe('splitBeside / closeGroup / ensureFirstGroup / mapGroup', () => {
     expect(tabsInGroup(closed.desktop, gid!)).toEqual([])
   })
 
-  it('ensureFirstGroup grafts an empty group when none exists', () => {
+  it('ensureCenterGroup grafts an empty group into the center when none exists', () => {
+    // A RAW (un-normalized) desktop with no group anywhere — the funnel always
+    // canonicalizes a center group in, so this is the only way to observe the graft.
     const noGroup: WorkspacePanelLayout = {
       ...defaultWorkspacePanelLayout(),
-      desktop: normalizeDesktopTree({
-        kind: 'split', id: 'root', axis: 'row', children: [
-          { node: { kind: 'leaf', id: 'files', panel: 'files' } },
-        ],
-      }),
+      desktop: { kind: 'leaf', id: 'files', panel: 'files' },
     }
-    expect(firstGroupId(noGroup.desktop)).toBeNull()
-    const ensured = ensureFirstGroup(noGroup)
-    const gid = firstGroupId(ensured.desktop)
+    expect(firstCenterGroupId(centerOf(noGroup.desktop))).toBeNull()
+    const ensured = ensureCenterGroup(noGroup)
+    const gid = firstCenterGroupId(centerOf(ensured.desktop))
     expect(gid).toBeTruthy()
     expect(tabsInGroup(ensured.desktop, gid!)).toEqual([])
-    // already-has-a-group is a no-op (returns the same layout)
-    expect(ensureFirstGroup(ensured)).toBe(ensured)
+    // already-has-a-center-group is a no-op (returns the same layout)
+    expect(ensureCenterGroup(ensured)).toBe(ensured)
   })
 
   it('mapGroup edits a group purely and re-normalizes', () => {
@@ -401,4 +401,154 @@ function hasNode(node: LayoutNode, id: string): boolean {
   if (node.id === id) return true
   if (node.kind === 'split') return node.children.some((c) => hasNode(c.node, id))
   return false
+}
+
+// --- normalizeRegions (the root region canonicalizer) -----------------------
+
+describe('normalizeRegions — left/center/right canonicalizer', () => {
+  const leaf = (panel: string) => ({ kind: 'leaf', id: panel, panel })
+  // A split child: a bare node is wrapped to `{ node }`; an explicit `{ node, grow,
+  // basis, hidden }` passes through.
+  const wrap = (c: unknown) => (c && typeof c === 'object' && 'node' in c ? c : { node: c })
+  const rowOf = (id: string, children: unknown[]) => ({ kind: 'split', id, axis: 'row', children: children.map(wrap) })
+  const colOf = (id: string, children: unknown[]) => ({ kind: 'split', id, axis: 'col', children: children.map(wrap) })
+
+  /** Every visible grow child of the root row. The region invariant: exactly one. */
+  const visibleGrow = (root: LayoutNode): SplitChild[] =>
+    asSplit(root).children.filter((c) => c.grow === true && c.hidden !== true)
+
+  /** Assert the output is a canonical region row with one visible grow center, and
+   *  re-normalizing is a no-op. Returns it for further per-case assertions. */
+  const canon = (input: unknown): LayoutNode => {
+    const out = normalizeRegions(input as LayoutNode)
+    expect(out.kind).toBe('split')
+    expect(asSplit(out).axis).toBe('row')
+    expect(visibleGrow(out)).toHaveLength(1) // exactly one grow child = the center
+    expect(normalizeRegions(out)).toEqual(out) // idempotent
+    return out
+  }
+
+  it('the DEFAULT tree canonicalizes UNCHANGED (no migration)', () => {
+    expect(normalizeRegions(defaultDesktopTree())).toEqual(defaultDesktopTree())
+    // and through the full funnel
+    expect(normalizeDesktopTree(defaultDesktopTree())).toEqual(defaultDesktopTree())
+  })
+
+  it('zero-grow: promotes the lone group child to the center', () => {
+    const out = canon(rowOf('r', [{ node: leaf('files') }, { node: group('g', [ed('e1', 'a.ts')], 'e1') }]))
+    const { left, center, right } = regionsOf(out)
+    expect(asTabs(center!).id).toBe('g')
+    expect((left as { panel?: string }).panel).toBe('files')
+    expect(right).toBeNull()
+  })
+
+  it('multi-grow: keeps one center (most groups), demotes sidebars to fixed-basis', () => {
+    const out = canon(rowOf('r', [
+      { grow: true, node: leaf('files') },
+      { grow: true, node: group('center', [ed('e1', 'a.ts')], 'e1') },
+      { grow: true, node: leaf('sessions') },
+    ]))
+    const { left, center, right } = regionsOf(out)
+    expect(asTabs(center!).id).toBe('center')
+    expect((left as { panel?: string }).panel).toBe('files')
+    expect((right as { panel?: string }).panel).toBe('sessions')
+  })
+
+  it('hidden-grow center: un-hides + grows the real center', () => {
+    const out = canon(rowOf('r', [
+      { node: leaf('files') },
+      { grow: true, hidden: true, node: group('g', [ed('e1', 'a.ts')], 'e1') },
+    ]))
+    const centerChild = visibleGrow(out)[0]
+    expect(asTabs(centerChild.node).id).toBe('g')
+    expect(centerChild.hidden).toBeUndefined() // forced visible
+  })
+
+  it('growing sidebar: the center grows, the dock sidebar is fixed', () => {
+    const out = canon(rowOf('r', [
+      { grow: true, node: leaf('files') }, // a growing DOCK — must not be the center
+      { node: group('g', [ed('e1', 'a.ts')], 'e1') },
+    ]))
+    const { left, center } = regionsOf(out)
+    expect(asTabs(center!).id).toBe('g')
+    // left is the demoted dock, with no grow flag
+    const leftChild = asSplit(out).children[0]
+    expect((left as { panel?: string }).panel).toBe('files')
+    expect(leftChild.grow).toBeUndefined()
+  })
+
+  it('single-center bare node: wraps in a region row (never collapsed)', () => {
+    const out = canon(group('only', [ed('e1', 'a.ts')], 'e1'))
+    const { left, center, right } = regionsOf(out)
+    expect(left).toBeNull()
+    expect(right).toBeNull()
+    expect(asTabs(center!).id).toBe('only')
+  })
+
+  it('no-sidebar: a center-only row stays a one-child region row', () => {
+    const out = canon(rowOf('r', [{ grow: true, node: group('g', [], '') }]))
+    expect(asSplit(out).children).toHaveLength(1)
+    expect(regionsOf(out).left).toBeNull()
+    expect(regionsOf(out).right).toBeNull()
+  })
+
+  it('all-hidden-root: forces the center visible', () => {
+    const out = canon(rowOf('r', [
+      { hidden: true, node: leaf('files') },
+      { hidden: true, grow: true, node: group('g', [ed('e1', 'a.ts')], 'e1') },
+    ]))
+    expect(asTabs(regionsOf(out).center!).id).toBe('g')
+  })
+
+  it('dock-in-center: relocates the stray dock to the left', () => {
+    const out = canon(rowOf('r', [
+      { grow: true, node: colOf('mid', [leaf('files'), group('g', [ed('e1', 'a.ts')], 'e1')]) },
+    ]))
+    const { left, center } = regionsOf(out)
+    expect((left as { panel?: string }).panel).toBe('files')
+    // no dock survives inside the center
+    expect(collectLeafPanels(center!)).toEqual([])
+    expect(asTabs(center!).id).toBe('g')
+  })
+
+  it('group-in-left: relocates the stray group to the center', () => {
+    const out = canon(rowOf('r', [
+      { node: colOf('side', [leaf('files'), group('stray', [ed('e9', 'z.ts')], 'e9')]) },
+      { grow: true, node: group('center', [ed('e1', 'a.ts')], 'e1') },
+    ]))
+    const { left, center } = regionsOf(out)
+    // left keeps only the dock; the stray group moved into the center
+    expect((left as { panel?: string }).panel).toBe('files')
+    const centerGroups = collectGroupIds(center!)
+    expect(centerGroups).toContain('center')
+    expect(centerGroups).toContain('stray')
+  })
+
+  it('two-right-groups: merges the 2nd right group into the first', () => {
+    const out = canon(rowOf('r', [
+      { node: leaf('files') },
+      { grow: true, node: group('c', [ed('e1', 'a.ts')], 'e1') },
+      { node: group('r1', [ed('e2', 'b.ts')], 'e2') },
+      { node: group('r2', [ed('e3', 'c.ts')], 'e3') },
+    ]))
+    const { right } = regionsOf(out)
+    expect(collectGroupIds(right!)).toEqual(['r1']) // exactly one right group (r2 merged away)
+    const merged = asTabs(right!)
+    expect(merged.tabs.map((t) => t.instanceId)).toEqual(['e2', 'e3']) // both strips, in order
+  })
+
+  it('relocates a non-row root into a region row', () => {
+    const out = canon(colOf('stack', [leaf('files'), group('g', [ed('e1', 'a.ts')], 'e1')]))
+    expect(asSplit(out).axis).toBe('row')
+    const { left, center } = regionsOf(out)
+    expect((left as { panel?: string }).panel).toBe('files')
+    expect(asTabs(center!).id).toBe('g')
+  })
+})
+
+/** Every group id under `node`, in document order. */
+function collectGroupIds(node: LayoutNode, out: string[] = []): string[] {
+  if (node.kind === 'tabs') out.push(node.id)
+  else if (node.kind === 'split') node.children.forEach((c) => collectGroupIds(c.node, out))
+  return out
 }

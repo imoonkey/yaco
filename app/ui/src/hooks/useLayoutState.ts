@@ -28,13 +28,14 @@ import {
   normalizeDesktopTree,
   splitBeside,
   closeGroup as closeGroupNode,
-  ensureFirstGroup,
+  ensureCenterGroup,
   moveLeaf,
   mapGroup,
   collectIds,
   newInstanceId,
   groupOf,
-  firstGroupId,
+  centerOf,
+  firstCenterGroupId,
   tabByInstance,
   tabsInGroup,
   type LeafPlacement,
@@ -247,13 +248,13 @@ function mapEveryGroup(layout: WorkspacePanelLayout, fn: (group: TabsNode) => Ta
 }
 
 /** The one target-group resolution rule: explicit activeGroupId (if live), else the
- *  focused tab's group, else the first group. */
+ *  focused tab's group, else the first CENTER group (the working area's default). */
 export function targetGroup(state: InstanceState): string {
   const tree = state.panelLayout.desktop
   if (state.activeGroupId && hasGroupId(tree, state.activeGroupId)) return state.activeGroupId
   const g = groupOf(tree, state.focusedPane.instanceId)
   if (g) return g
-  return firstGroupId(tree) ?? ''
+  return firstCenterGroupId(centerOf(tree)) ?? ''
 }
 
 /** The active tab instance id of the group `groupId` ('' when empty/absent). */
@@ -327,7 +328,7 @@ function gcMaps(state: InstanceState): InstanceState {
   const editorMru = filterLive(state.editorMru, editorIds)
   const terminalMru = filterLive(state.terminalMru, terminalIds)
   const focusedPane = reconcileFocus(state.focusedPane, state.panelLayout, editorIds, terminalIds, editorMru, terminalMru)
-  const activeGroupId = hasGroupId(tree, state.activeGroupId) ? state.activeGroupId : (firstGroupId(tree) ?? '')
+  const activeGroupId = hasGroupId(tree, state.activeGroupId) ? state.activeGroupId : (firstCenterGroupId(centerOf(tree)) ?? '')
   if (
     terminalBindings === state.terminalBindings
     && editorMru === state.editorMru && terminalMru === state.terminalMru
@@ -336,11 +337,11 @@ function gcMaps(state: InstanceState): InstanceState {
   return { ...state, terminalBindings, editorMru, terminalMru, focusedPane, activeGroupId }
 }
 
-/** Re-normalize an edited desktop tree, keeping >=1 group. The fast path leaves a
- *  mobile-only update (same desktop ref) untouched. */
+/** Re-normalize an edited desktop tree, keeping >=1 center group. The fast path
+ *  leaves a mobile-only update (same desktop ref) untouched. */
 function withDesktop(layout: WorkspacePanelLayout, raw: WorkspacePanelLayout): WorkspacePanelLayout {
   if (raw.desktop === layout.desktop) return raw
-  return ensureFirstGroup({ ...raw, desktop: normalizeDesktopTree(raw.desktop) })
+  return ensureCenterGroup({ ...raw, desktop: normalizeDesktopTree(raw.desktop) })
 }
 
 // --- Reducer ----------------------------------------------------------------
@@ -529,7 +530,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
 }
 
 export function buildInstanceState(initial: PersistedState): InstanceState {
-  const panelLayout = ensureFirstGroup(initial.panelLayout)
+  const panelLayout = ensureCenterGroup(initial.panelLayout)
   return gcMaps({
     panelLayout,
     terminalBindings: initial.terminalBindings,

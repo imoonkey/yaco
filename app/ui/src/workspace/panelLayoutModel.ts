@@ -21,7 +21,11 @@
 //     `preview`; the first in document order wins.
 //   - empty groups are valid — an empty group (`tabs: []`, `activeTab: ''`) is a
 //     first-class, persisted node. Normalization NEVER collapses it; `closeGroup`
-//     is the only group remover and `ensureFirstGroup` keeps >=1.
+//     is the only group remover and `ensureCenterGroup` keeps >=1 in the center.
+//   - region row — the desktop root is always a `row` split whose sole VISIBLE grow
+//     child is the center (working-area grid, groups only); the child before it is
+//     the left sidebar (docks only), the one after it the right sidebar (docks +
+//     <=1 group). `normalizeRegions` enforces this; `regionsOf` reads it.
 //   - one grow child / last-child-absorbs-slack / min-size clamp / hidden
 //     preservation — unchanged split rules.
 //
@@ -258,6 +262,59 @@ function instancesOfKind(tree: LayoutNode, kind: 'editor' | 'terminal'): string[
 export const editorInstancesInOrder = (tree: LayoutNode): string[] => instancesOfKind(tree, 'editor')
 export const terminalInstancesInOrder = (tree: LayoutNode): string[] => instancesOfKind(tree, 'terminal')
 
+// --- Regions (left / center / right) ----------------------------------------
+//
+// The desktop root is a `row` split holding three logical regions: the CENTER is
+// its sole VISIBLE `grow` child (the working-area grid, groups only); the child
+// before it is the LEFT sidebar, the one after it the RIGHT sidebar (docks, plus
+// at most one group on the right). `normalizeRegions` (the last pass of
+// `normalizeDesktopTree`) actively enforces this shape, so `regionsOf` reads it in
+// O(1). An auto-hidden / absent sidebar is `null`.
+
+export type Regions = { left: LayoutNode | null; center: LayoutNode | null; right: LayoutNode | null }
+
+/** Index of the center child among a row's children: the sole visible `grow` child
+ *  that holds a group; else the group-bearing child with the most groups (tie → the
+ *  middle of the tied set); else -1 (no group anywhere). Shared by `regionsOf` and
+ *  `normalizeRegions` so the reader and the canonicalizer always pick the same
+ *  center. */
+function centerChildIndex(children: SplitChild[]): number {
+  const grown = children.filter((c) => c.grow === true && c.hidden !== true)
+  if (grown.length === 1) {
+    const only = children.indexOf(grown[0])
+    if (containsGroup(children[only].node)) return only
+  }
+  const cand = children
+    .map((c, i) => ({ i, n: groupCount(c.node) }))
+    .filter((x) => x.n > 0)
+  if (cand.length === 0) return -1
+  const max = Math.max(...cand.map((x) => x.n))
+  const tied = cand.filter((x) => x.n === max)
+  return tied[Math.floor((tied.length - 1) / 2)].i
+}
+
+/** The three regions of a desktop root. Center = the sole visible grow child of the
+ *  root row; the child before it is `left`, the one after it `right`; an absent
+ *  region is `null`. A non-row root is treated as a bare center. */
+export function regionsOf(root: LayoutNode): Regions {
+  if (root.kind !== 'split' || root.axis !== 'row') return { left: null, center: root, right: null }
+  const idx = centerChildIndex(root.children)
+  if (idx === -1) return { left: null, center: null, right: null }
+  return {
+    left: idx > 0 ? root.children[idx - 1].node : null,
+    center: root.children[idx].node,
+    right: idx < root.children.length - 1 ? root.children[idx + 1].node : null,
+  }
+}
+
+/** The center region (working-area grid) of a desktop root, or null. */
+export const centerOf = (root: LayoutNode): LayoutNode | null => regionsOf(root).center
+
+/** The first group of the center region in document order, or null — the
+ *  center-scoped analogue of `firstGroupId` (the working area's default group). */
+export const firstCenterGroupId = (center: LayoutNode | null): string | null =>
+  center ? firstGroupId(center) : null
+
 // --- Normalization ----------------------------------------------------------
 
 type NormCtx = {
@@ -426,8 +483,169 @@ function normalizeNode(input: unknown, ctx: NormCtx): LayoutNode | null {
   }
 }
 
+// --- Region canonicalizer ---------------------------------------------------
+//
+// `normalizeRegions` is the LAST pass of `normalizeDesktopTree`, so it runs through
+// the single `withDesktop` funnel every tree edit passes through. It repairs an
+// (already node-normalized) tree into the canonical region row — left? · center ·
+// right? — so `regionsOf` is always valid. Deterministic + idempotent: it NEVER
+// collapses the region row (even with one child), forces the center to be the sole
+// visible grow child, relocates docks out of the center, relocates groups out of
+// the left, and merges any 2nd+ group in the right into the first.
+
+/** Every node id (leaf / tabs / split) in the tree — seeds collision-free minting
+ *  of the region row / sidebar columns / a grafted center group. */
+function collectNodeIds(node: LayoutNode, out: Set<string>): Set<string> {
+  out.add(node.id)
+  if (node.kind === 'split') for (const c of node.children) collectNodeIds(c.node, out)
+  return out
+}
+
+/** Every group (tabs) node under `node`, in document order. */
+function groupNodesOf(node: LayoutNode): TabsNode[] {
+  const out: TabsNode[] = []
+  eachGroup(node, (g) => out.push(g))
+  return out
+}
+
+/** Remove every leaf/tabs node `take` selects, collecting them; collapse a split
+ *  left with a single child; null when nothing survives. A sidebar/center subtree
+ *  (not the region row), so collapsing single-child splits is correct here. */
+function pruneNodes(
+  node: LayoutNode, take: (n: LayoutNode) => boolean,
+): { kept: LayoutNode | null; taken: LayoutNode[] } {
+  if (node.kind === 'split') {
+    const taken: LayoutNode[] = []
+    const children: SplitChild[] = []
+    for (const c of node.children) {
+      const res = pruneNodes(c.node, take)
+      taken.push(...res.taken)
+      if (res.kept) children.push({ ...c, node: res.kept })
+    }
+    if (children.length === 0) return { kept: null, taken }
+    if (children.length === 1) return { kept: children[0].node, taken }
+    return { kept: { ...node, children }, taken }
+  }
+  return take(node) ? { kept: null, taken: [node] } : { kept: node, taken: [] }
+}
+
+/** Merge `groups[1..]`'s tabs onto `groups[0]` (document order), re-enforcing one
+ *  preview across the strip and keeping the first group's id + active tab. */
+function mergeTabsIntoFirst(groups: TabsNode[]): TabsNode {
+  const first = groups[0]
+  const tabs: GroupTab[] = [...first.tabs]
+  for (const g of groups.slice(1)) tabs.push(...g.tabs)
+  let previewSeen = false
+  const deduped = tabs.map((t) => {
+    if (!t.preview) return t
+    if (previewSeen) { const { preview: _preview, ...rest } = t; return rest as GroupTab }
+    previewSeen = true
+    return t
+  })
+  const activeTab = deduped.some((t) => t.instanceId === first.activeTab)
+    ? first.activeTab
+    : (deduped[0]?.instanceId ?? '')
+  return { kind: 'tabs', id: first.id, tabs: deduped, activeTab }
+}
+
+/** Replace the group node `id` with `replacement`, anywhere under `node`. */
+function replaceGroupNode(node: LayoutNode, id: string, replacement: TabsNode): LayoutNode {
+  if (node.kind === 'tabs') return node.id === id ? replacement : node
+  if (node.kind === 'split') {
+    return { ...node, children: node.children.map((c) => ({ ...c, node: replaceGroupNode(c.node, id, replacement) })) }
+  }
+  return node
+}
+
+/** A sidebar child carrying only its size metadata (basis/hidden) — never `grow`
+ *  (a sidebar is fixed-basis; only the center grows). */
+function sidebarChild(node: LayoutNode, meta: SplitChild): SplitChild {
+  const child: SplitChild = { node }
+  if (meta.basis !== undefined) child.basis = meta.basis
+  if (meta.hidden) child.hidden = true
+  return child
+}
+
+/** Fold sidebar material into one region child: a single item stays as-is; many
+ *  stack in a fresh single-axis `col` split. Null when empty. */
+function foldSidebar(items: SplitChild[], mint: (kind: string) => string): SplitChild | null {
+  if (items.length === 0) return null
+  if (items.length === 1) return items[0]
+  return { node: { kind: 'split', id: mint('col'), axis: 'col', children: items } }
+}
+
+/** Repair any (node-normalized) tree into the canonical left? · center · right?
+ *  region row. Deterministic + idempotent. */
+export function normalizeRegions(root: LayoutNode): LayoutNode {
+  const used = collectNodeIds(root, new Set<string>())
+  const mint = (kind: string): string => { const id = freshId(used, kind); used.add(id); return id }
+
+  // Root shape: a row split keeps its id; anything else is wrapped, the salvaged
+  // tree becoming the center child of a fresh region row (stable 'root' id so a
+  // bare-center row that re-collapses + re-wraps reproduces the same id).
+  let rowId: string
+  if (root.kind === 'split' && root.axis === 'row') rowId = root.id
+  else if (used.has('root')) rowId = mint('split')
+  else { used.add('root'); rowId = 'root' }
+  const rowChildren: SplitChild[] = root.kind === 'split' && root.axis === 'row'
+    ? root.children
+    : [{ grow: true, node: root }]
+
+  // Center selection (graft an empty center group when no group exists anywhere).
+  const centerIdx = centerChildIndex(rowChildren)
+  const centerNode = centerIdx === -1 ? emptyGroup(mint('group')) : rowChildren[centerIdx].node
+  const preChildren = centerIdx === -1 ? rowChildren : rowChildren.slice(0, centerIdx)
+  const postChildren = centerIdx === -1 ? [] : rowChildren.slice(centerIdx + 1)
+
+  // Content: docks never live in the center → evict them to the left.
+  const { kept: centerCore, taken: centerDocks } = pruneNodes(centerNode, (n) => n.kind === 'leaf')
+
+  // Left = the pre children with their groups relocated to the center (groups never
+  // live in the left), plus the docks evicted from the center.
+  const leftItems: SplitChild[] = []
+  const relocated: TabsNode[] = []
+  for (const c of preChildren) {
+    const { kept, taken } = pruneNodes(c.node, (n) => n.kind === 'tabs')
+    for (const t of taken) relocated.push(t as TabsNode)
+    if (kept) leftItems.push(sidebarChild(kept, c))
+  }
+  for (const dock of centerDocks) leftItems.push({ node: dock })
+
+  // Center = the core grid + any groups relocated out of the left, forced to grow.
+  const core = centerCore ?? emptyGroup(mint('group'))
+  const centerFinal: LayoutNode = relocated.length === 0
+    ? core
+    : {
+      kind: 'split', id: mint('split'), axis: 'row',
+      children: [{ grow: true, node: core }, ...relocated.map((g) => ({ node: g }))],
+    }
+
+  // Right = the post children, with any 2nd+ group merged into the first (≤1 group).
+  let rightItems: SplitChild[] = postChildren.map((c) => sidebarChild(c.node, c))
+  const rightGroups = rightItems.flatMap((c) => groupNodesOf(c.node))
+  if (rightGroups.length > 1) {
+    const merged = mergeTabsIntoFirst(rightGroups)
+    const removeIds = new Set(rightGroups.slice(1).map((g) => g.id))
+    rightItems = rightItems
+      .map((c) => {
+        const node = pruneNodes(replaceGroupNode(c.node, merged.id, merged), (n) => n.kind === 'tabs' && removeIds.has(n.id)).kept
+        return node ? { ...c, node } : null
+      })
+      .filter((c): c is SplitChild => c !== null)
+  }
+
+  const children: SplitChild[] = []
+  const left = foldSidebar(leftItems, mint)
+  if (left) children.push(left)
+  children.push({ grow: true, node: centerFinal })
+  const right = foldSidebar(rightItems, mint)
+  if (right) children.push(right)
+  return { kind: 'split', id: rowId, axis: 'row', children }
+}
+
 /** Repair any value into a valid desktop tree, falling back to the default tree
- *  when nothing salvageable remains. */
+ *  when nothing salvageable remains. The region canonicalizer runs last so every
+ *  tree the funnel emits is a canonical left? · center · right? region row. */
 export function normalizeDesktopTree(input: unknown): LayoutNode {
   let counter = 0
   const ctx: NormCtx = {
@@ -435,7 +653,7 @@ export function normalizeDesktopTree(input: unknown): LayoutNode {
     seenDockTypes: new Set<PanelId>(),
     nextId: (kind: string): string => `${kind}-${counter++}`,
   }
-  return normalizeNode(input, ctx) ?? defaultDesktopTree()
+  return normalizeRegions(normalizeNode(input, ctx) ?? defaultDesktopTree())
 }
 
 function isPreviewMode(value: unknown): value is PreviewMode {
@@ -549,23 +767,24 @@ export function resizeSplitChild(
   return withDesktop(layout, desktop)
 }
 
-/** Does the subtree contain any working group (tabs node)? The dock/activity
- *  toggles anchor on the root child that holds the working area. */
+/** Does the subtree contain any working group (tabs node)? The center selector
+ *  (`centerChildIndex`) anchors the region row on the child that holds the working
+ *  area. */
 function containsGroup(node: LayoutNode): boolean {
   if (node.kind === 'tabs') return true
   if (node.kind === 'split') return node.children.some((c) => containsGroup(c.node))
   return false
 }
 
-/** Flip `hidden` on the dock (the root child before the working area) or the
- *  activity column (the root child after it). Anchoring on the working-area slot
- *  keeps the toggle targeting the real column after panels move. */
+/** Flip `hidden` on the left sidebar (the root child before the center) or the right
+ *  sidebar (the root child after it). Anchoring on the center keeps the toggle
+ *  targeting the real column after panels move. */
 function toggleRootEdge(layout: WorkspacePanelLayout, side: 'dock' | 'activity'): WorkspacePanelLayout {
   const root = layout.desktop
   if (root.kind !== 'split') return layout
-  const mainIndex = root.children.findIndex((c) => containsGroup(c.node))
-  if (mainIndex === -1) return layout
-  const target = side === 'dock' ? mainIndex - 1 : mainIndex + 1
+  const center = centerChildIndex(root.children)
+  if (center === -1) return layout
+  const target = side === 'dock' ? center - 1 : center + 1
   if (target < 0 || target >= root.children.length) return layout
   const children = root.children.map((c, i) => (i === target ? { ...c, hidden: !c.hidden } : c))
   return withDesktop(layout, { ...root, children })
@@ -591,9 +810,9 @@ function setRootEdgeVisible(
 ): WorkspacePanelLayout {
   const root = layout.desktop
   if (root.kind !== 'split') return layout
-  const mainIndex = root.children.findIndex((c) => containsGroup(c.node))
-  if (mainIndex === -1) return layout
-  const target = side === 'dock' ? mainIndex - 1 : mainIndex + 1
+  const center = centerChildIndex(root.children)
+  if (center === -1) return layout
+  const target = side === 'dock' ? center - 1 : center + 1
   if (target < 0 || target >= root.children.length) return layout
   if ((root.children[target].hidden === true) === !visible) return layout
   const children = root.children.map((c, i) => (i === target ? withChildHidden(c, !visible) : c))
@@ -813,13 +1032,13 @@ function detachGroupById(node: LayoutNode, id: string): LayoutNode | null {
 }
 
 /** Remove the group `groupId` — the ONLY group remover. Normalization collapses
- *  the surrounding single-child split; `ensureFirstGroup` backstops >=1 group so
- *  removing the last group leaves one empty group rather than no working area.
- *  No-op if the id is absent or names a non-group node. */
+ *  the surrounding single-child split; `ensureCenterGroup` backstops >=1 group in
+ *  the center so removing the last group leaves one empty center group rather than
+ *  no working area. No-op if the id is absent or names a non-group node. */
 export function closeGroup(layout: WorkspacePanelLayout, groupId: string): WorkspacePanelLayout {
   if (!hasNodeId(layout.desktop, groupId)) return layout
   const pruned = detachGroupById(layout.desktop, groupId)
-  return ensureFirstGroup({ ...layout, desktop: normalizeDesktopTree(pruned) })
+  return ensureCenterGroup({ ...layout, desktop: normalizeDesktopTree(pruned) })
 }
 
 /** Graft a working group back as a grow child of the root (before the last child,
@@ -833,11 +1052,13 @@ function graftGroup(tree: LayoutNode, group: TabsNode): LayoutNode {
   return { ...tree, children: [...tree.children.slice(0, at), main, ...tree.children.slice(at)] }
 }
 
-/** Guarantee the tree has >=1 working group; graft an empty `group:1` if none.
- *  The backstop for the empty-group invariant. */
-export function ensureFirstGroup(layout: WorkspacePanelLayout): WorkspacePanelLayout {
-  if (firstGroupId(layout.desktop)) return layout
-  return withDesktop(layout, graftGroup(layout.desktop, emptyGroup('group:1')))
+/** Guarantee the CENTER region holds >=1 working group; graft an empty group (which
+ *  `normalizeRegions` then places as the center) when it has none. The center-scoped
+ *  backstop for the empty-group invariant. */
+export function ensureCenterGroup(layout: WorkspacePanelLayout): WorkspacePanelLayout {
+  if (firstCenterGroupId(centerOf(layout.desktop))) return layout
+  const id = freshId(collectIds(layout.desktop), 'group')
+  return withDesktop(layout, graftGroup(layout.desktop, emptyGroup(id)))
 }
 
 function detachLeafById(node: LayoutNode, id: string): { tree: LayoutNode | null; leaf: LeafNode | null } {

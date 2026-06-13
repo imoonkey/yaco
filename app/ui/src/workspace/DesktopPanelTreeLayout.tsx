@@ -32,7 +32,7 @@ import {
   HANDLE_PX, FRAMED_BODY_CLASS, minBasisPx, canonicalizeSplit, planSplitChildren,
   collectFramedLeaves,
 } from './desktopTreeSizing'
-import { editorInstancesInOrder, terminalInstancesInOrder, firstGroupId } from './panelLayoutModel'
+import { editorInstancesInOrder, terminalInstancesInOrder, regionsOf, centerOf, firstCenterGroupId } from './panelLayoutModel'
 import { paneMarker, type PaneMarker } from './panelInstance'
 import type { LayoutNode, LeafNode, SplitNode } from '../hooks/workspaceTypes'
 
@@ -45,22 +45,19 @@ const ROOT_SIZING: CSSProperties = { flexGrow: 1, flexShrink: 1, flexBasis: 0, m
 // Structural ARIA landmark for a split column / activity leaf.
 type Landmark = { role: string; label: string }
 
-// The dock and the activity column expose the SAME landmarks the legacy skeleton
-// did, assigned by POSITION around the working area: the root child before it is
-// the "Sidebar", the one after it the "Activity panel". Position (not a fixed
-// node id) keeps the landmark on the real column after tasks left the activity
-// column (it is the desktop overlay now, so the column is sessions alone). The
-// working-area `role="main"` lives on the first group (PanelGroup).
+// The left/right sidebars expose the SAME landmarks the legacy skeleton did,
+// assigned by REGION around the center: the child before the center is the
+// "Sidebar", the one after it the "Activity panel". Region identity (not a fixed
+// node id) keeps the landmark on the real column after panels move. The
+// working-area `role="main"` lives on the first center group (PanelGroup).
 function computeLandmarks(root: LayoutNode): { landmarks: Record<string, Landmark>; workingAreaId: string | null } {
   const landmarks: Record<string, Landmark> = {}
   if (root.kind !== 'split') return { landmarks, workingAreaId: root.id }
-  const mainIndex = root.children.findIndex((c) => firstGroupId(c.node) !== null)
-  if (mainIndex === -1) return { landmarks, workingAreaId: null }
-  const before = root.children[mainIndex - 1]
-  const after = root.children[mainIndex + 1]
-  if (before) landmarks[before.node.id] = { role: 'navigation', label: 'Sidebar' }
-  if (after) landmarks[after.node.id] = { role: 'complementary', label: 'Activity panel' }
-  return { landmarks, workingAreaId: root.children[mainIndex].node.id }
+  const { left, center, right } = regionsOf(root)
+  if (!center) return { landmarks, workingAreaId: null }
+  if (left) landmarks[left.id] = { role: 'navigation', label: 'Sidebar' }
+  if (right) landmarks[right.id] = { role: 'complementary', label: 'Activity panel' }
+  return { landmarks, workingAreaId: center.id }
 }
 
 export type DesktopPanelTreeLayoutProps = {
@@ -88,8 +85,8 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
     [focusedPane, activeEditorId, activeTerminalId, editorCount, terminalCount],
   )
 
-  // The first group carries the `role="main"` landmark.
-  const mainGroupId = useMemo(() => firstGroupId(panelLayout.desktop), [panelLayout.desktop])
+  // The first center group carries the `role="main"` landmark.
+  const mainGroupId = useMemo(() => firstCenterGroupId(centerOf(panelLayout.desktop)), [panelLayout.desktop])
 
   // Positional Sidebar/Activity landmarks + the working-area region id (the root
   // child the tasks overlay covers when `showTasks`).
