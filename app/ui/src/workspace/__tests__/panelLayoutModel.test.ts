@@ -34,6 +34,10 @@ import {
   closeGroup,
   ensureCenterGroup,
   mapGroup,
+  moveLeaf,
+  moveLeafToEdge,
+  sidebarVisibility,
+  leafPanelsInOrder,
   resolveActiveEditor,
   resolveActiveTerminal,
 } from '../panelLayoutModel'
@@ -589,3 +593,97 @@ function collectGroupIds(node: LayoutNode, out: string[] = []): string[] {
   else if (node.kind === 'split') node.children.forEach((c) => collectGroupIds(c.node, out))
   return out
 }
+
+const dockLeaf = (panel: string) => ({ kind: 'leaf', id: panel, panel })
+
+describe('moveLeafToEdge — root-edge sidebar reveal (HIGH 1 regression)', () => {
+  it('creates a RIGHT sidebar holding the dock — NOT evicted back to the left', () => {
+    // left col [projects, files] · center group:1 · (no right sidebar)
+    const base = layoutWith({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: { kind: 'split', id: 'dock', axis: 'col', children: [
+          { node: dockLeaf('projects') }, { grow: true, node: dockLeaf('files') },
+        ] } },
+        { grow: true, node: group('group:1', [ed('editor:1', 'src/a.ts')], 'editor:1') },
+      ],
+    })
+    expect(regionsOf(base.desktop).right).toBeNull()
+    const out = moveLeafToEdge(base, 'files', 'right')
+    const { left, right } = regionsOf(out.desktop)
+    // The whole point: a right-edge move lands the dock in the RIGHT region, where
+    // `moveLeaf` beside the center would have had the funnel evict it to the left.
+    expect(right).not.toBeNull()
+    expect(leafPanelsInOrder(right!)).toContain('files')
+    expect(leafPanelsInOrder(left!)).toEqual(['projects'])
+  })
+
+  it('reveals the LEFT sidebar from a left-edge move (still works)', () => {
+    const base = layoutWith({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { grow: true, node: group('group:1', [ed('editor:1', 'src/a.ts')], 'editor:1') },
+        { node: dockLeaf('sessions') },
+      ],
+    })
+    expect(regionsOf(base.desktop).left).toBeNull()
+    const out = moveLeafToEdge(base, 'sessions', 'left')
+    const { left, right } = regionsOf(out.desktop)
+    expect(left).not.toBeNull()
+    expect(leafPanelsInOrder(left!)).toContain('sessions')
+    expect(right).toBeNull()
+  })
+
+  it('is a no-op for an absent leaf', () => {
+    const base = layoutWith({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: dockLeaf('files') },
+        { grow: true, node: group('group:1', [ed('editor:1', 'src/a.ts')], 'editor:1') },
+      ],
+    })
+    expect(moveLeafToEdge(base, 'nope', 'right')).toBe(base)
+  })
+})
+
+describe('sidebarVisibility — DnD visibility reconcile (HIGH 2 regression)', () => {
+  const threeRegions = () => layoutWith({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { node: dockLeaf('files') },
+      { grow: true, node: group('group:1', [ed('editor:1', 'src/a.ts')], 'editor:1') },
+      { node: dockLeaf('sessions') },
+    ],
+  })
+
+  it('reports both sidebars visible for the default tree', () => {
+    expect(sidebarVisibility(defaultDesktopTree())).toEqual({ left: true, right: true })
+  })
+
+  it('flips a sidebar flag to hidden when its LAST dock is dragged out (auto-hide)', () => {
+    const out = moveLeaf(threeRegions(), 'files', { targetId: 'sessions', side: 'below' })
+    expect(regionsOf(out.desktop).left).toBeNull() // left emptied → absent region
+    // The exact boolean the provider mirror writes onto showSidebar.
+    expect(sidebarVisibility(out.desktop)).toEqual({ left: false, right: true })
+  })
+
+  it('flips a sidebar flag to visible on an edge reveal', () => {
+    const base = layoutWith({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: dockLeaf('files') },
+        { grow: true, node: group('group:1', [ed('editor:1', 'src/a.ts')], 'editor:1') },
+      ],
+    })
+    expect(sidebarVisibility(base.desktop).right).toBe(false)
+    const out = moveLeafToEdge(base, 'files', 'right')
+    expect(sidebarVisibility(out.desktop).right).toBe(true)
+  })
+
+  it('treats a toggled-HIDDEN sidebar as not visible (distinct from absent)', () => {
+    const hidden = layoutWith({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: dockLeaf('files') },
+        { grow: true, node: group('group:1', [ed('editor:1', 'src/a.ts')], 'editor:1') },
+        { hidden: true, node: dockLeaf('sessions') },
+      ],
+    })
+    expect(regionsOf(hidden.desktop).right).not.toBeNull() // present in the row...
+    expect(sidebarVisibility(hidden.desktop).right).toBe(false) // ...but hidden → not visible
+  })
+})

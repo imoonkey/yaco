@@ -809,6 +809,19 @@ export const toggleDock = (layout: WorkspacePanelLayout): WorkspacePanelLayout =
 export const toggleActivity = (layout: WorkspacePanelLayout): WorkspacePanelLayout =>
   toggleRootEdge(layout, 'activity')
 
+/** Whether each sidebar is currently VISIBLE — present in the root row AND not
+ *  hidden. The DnD-aware inverse of the flat `showSidebar`/`showRightPanel` mirror:
+ *  an auto-emptied sidebar is absent → false; a toggled one is present+hidden →
+ *  false; the reconcile in the provider writes the flags from this. */
+export function sidebarVisibility(desktop: LayoutNode): { left: boolean; right: boolean } {
+  if (desktop.kind !== 'split') return { left: false, right: false }
+  const center = centerChildIndex(desktop.children)
+  if (center === -1) return { left: false, right: false }
+  const visibleAt = (i: number): boolean =>
+    i >= 0 && i < desktop.children.length && desktop.children[i].hidden !== true
+  return { left: visibleAt(center - 1), right: visibleAt(center + 1) }
+}
+
 function withChildHidden(child: SplitChild, hidden: boolean): SplitChild {
   if (hidden) return { ...child, hidden: true }
   if (child.hidden === undefined) return child
@@ -1110,6 +1123,31 @@ export function moveLeaf(
   const axis: SplitAxis = placement.side === 'left' || placement.side === 'right' ? 'row' : 'col'
   const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS[axis], node: leaf }
   return withDesktop(layout, insertBesideNodeById(base, placement.targetId, inserted, placement.side, `split:${leaf.id}`))
+}
+
+/** Reveal/extend a sidebar by moving the dock leaf `instanceId` to the root row's
+ *  pre-center (`left`) or post-center (`right`) edge — a ROOT-edge placement. This
+ *  is NOT `moveLeaf` beside the center: that wraps the center node, and the funnel
+ *  then evicts the dock from the center back to the LEFT, so a right edge could
+ *  never recreate the RIGHT sidebar. Dropping at the root edge instead lets
+ *  `normalizeRegions` fold the leaf into the matching sidebar. No-op if absent. */
+export function moveLeafToEdge(
+  layout: WorkspacePanelLayout, instanceId: string, side: 'left' | 'right',
+): WorkspacePanelLayout {
+  const { tree, leaf } = detachLeafById(layout.desktop, instanceId)
+  if (!leaf) return layout
+  const base = tree ?? layout.desktop
+  const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS.row, node: leaf }
+  if (base.kind !== 'split' || base.axis !== 'row') {
+    const children = side === 'left' ? [inserted, { grow: true, node: base }] : [{ grow: true, node: base }, inserted]
+    return withDesktop(layout, { kind: 'split', id: 'root', axis: 'row', children })
+  }
+  const center = centerChildIndex(base.children)
+  const at = center === -1
+    ? (side === 'left' ? 0 : base.children.length)
+    : (side === 'left' ? center : center + 1)
+  const children = [...base.children.slice(0, at), inserted, ...base.children.slice(at)]
+  return withDesktop(layout, { ...base, children })
 }
 
 // --- Tab / group movers (DnD mutations) -------------------------------------

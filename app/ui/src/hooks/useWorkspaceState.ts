@@ -257,6 +257,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     focusPane: ls.focusPane,
     bindTerminal: ls.bindTerminal,
     movePane: ls.movePane,
+    moveLeafToEdge: ls.moveLeafToEdge,
     resolveTarget: ls.resolveTarget,
     groupForInstance: ls.groupForInstance,
   }

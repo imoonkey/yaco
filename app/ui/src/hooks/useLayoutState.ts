@@ -30,6 +30,7 @@ import {
   closeGroup as closeGroupNode,
   ensureCenterGroup,
   moveLeaf,
+  moveLeafToEdge as modelMoveLeafToEdge,
   mapGroup,
   collectIds,
   newInstanceId,
@@ -111,6 +112,7 @@ type Action =
   | { type: 'CLOSE_TABS_UNDER'; path: string }
   | { type: 'BIND_TERMINAL'; id: string; session: string }
   | { type: 'MOVE_PANE'; id: string; placement: LeafPlacement }
+  | { type: 'MOVE_PANE_TO_EDGE'; id: string; side: 'left' | 'right' }
   | { type: 'FOCUS_PANE'; kind: FocusTarget; instanceId: string }
 
 // --- Pure group-tab logic (re-homed from the old per-EditorView fns) ---------
@@ -670,6 +672,8 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
     }
     case 'MOVE_PANE':
       return gcMaps({ ...state, panelLayout: moveLeaf(state.panelLayout, action.id, action.placement) })
+    case 'MOVE_PANE_TO_EDGE':
+      return gcMaps({ ...state, panelLayout: modelMoveLeafToEdge(state.panelLayout, action.id, action.side) })
     case 'FOCUS_PANE': {
       const editorMru = action.kind === 'editor' ? pushMru(state.editorMru, action.instanceId) : state.editorMru
       const terminalMru = action.kind === 'terminal' ? pushMru(state.terminalMru, action.instanceId) : state.terminalMru
@@ -857,6 +861,9 @@ export function useLayoutState(
   const movePane = useCallback((id: string, placement: LeafPlacement) => {
     dispatch({ type: 'MOVE_PANE', id, placement })
   }, [])
+  const moveLeafToEdge = useCallback((id: string, side: 'left' | 'right') => {
+    dispatch({ type: 'MOVE_PANE_TO_EDGE', id, side })
+  }, [])
 
   const updateLayout = useCallback((partial: Partial<WorkspaceLayout>) => {
     setLayout((prev) => ({ ...prev, ...partial }))
@@ -908,6 +915,7 @@ export function useLayoutState(
     focusPane,
     bindTerminal,
     movePane,
+    moveLeafToEdge,
     retargetPaths,
     closeTabsUnder,
     // target resolution
