@@ -133,7 +133,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   const isTouch = useContext(WorkspaceEnvContext)?.viewport.isTouch ?? false
   // Kind-routing toggle (design: separateKinds) — read the flag + command optionally so
   // the strip still renders in a structural isolation harness that omits the providers.
-  const separateKinds = useContext(WorkspaceLayoutContext)?.panelLayout.panelState.separateKinds ?? false
+  const separateKinds = useContext(WorkspaceLayoutContext)?.panelLayout?.panelState?.separateKinds ?? false
   const toggleSeparateKinds = useContext(WorkspaceCommandsContext)?.toggleSeparateKinds
 
   const [pendingClose, setPendingClose] = useState<{ instanceId: string; tabId: string } | null>(null)
