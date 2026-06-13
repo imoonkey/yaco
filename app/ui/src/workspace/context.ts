@@ -208,6 +208,9 @@ export type WorkspaceCommands = {
   closePane: (id: string) => void
   focusPane: (kind: FocusTarget, instanceId: string) => void
   movePane: (id: string, placement: PanePlacement) => void
+  // Reveal/extend a sidebar by dropping a dock on the far-left/right edge strip —
+  // a ROOT-edge placement (not beside the center, which the funnel would evict).
+  moveLeafToEdge: (id: string, side: 'left' | 'right') => void
 
   // Group-native structural commands (design: VSCode Tab Groups). The group tab
   // bar drives these directly by group id — `splitGroup` spawns a sibling group

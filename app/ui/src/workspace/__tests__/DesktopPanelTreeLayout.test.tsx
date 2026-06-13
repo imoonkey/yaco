@@ -233,7 +233,7 @@ function PaneDragSource({ payload }: { payload: DragPayload }) {
   return <div data-testid="pane-source" draggable onDragStart={(e) => drag.start(e, payload)} />
 }
 
-type Movers = Pick<WorkspaceCommands, 'movePane' | 'moveTab' | 'moveGroup' | 'moveTabToSplit'>
+type Movers = Pick<WorkspaceCommands, 'movePane' | 'moveLeafToEdge' | 'moveTab' | 'moveGroup' | 'moveTabToSplit'>
 
 function mountSidebar(desktop: LayoutNode, source?: DragPayload): Movers {
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
@@ -241,7 +241,7 @@ function mountSidebar(desktop: LayoutNode, source?: DragPayload): Movers {
     layout: { showTasks: false },
     panelLayout: { version: 1, desktop, mobile: { activeDock: 'browse' }, panelState: {} },
   } as unknown as WorkspaceLayoutContextValue
-  const movers: Movers = { movePane: vi.fn(), moveTab: vi.fn(), moveGroup: vi.fn(), moveTabToSplit: vi.fn() }
+  const movers: Movers = { movePane: vi.fn(), moveLeafToEdge: vi.fn(), moveTab: vi.fn(), moveGroup: vi.fn(), moveTabToSplit: vi.fn() }
   const commands = { collapsePanel: vi.fn(), resizeSplitChild: vi.fn(), ...movers } as unknown as WorkspaceCommands
   const selection = {
     focusedPane: { kind: 'editor', instanceId: 'editor:1' } as FocusedPane,
@@ -420,14 +420,24 @@ describe('DesktopPanelTreeLayout — hidden/absent sidebars + edge reveal', () =
     expect(document.querySelector('[data-dock-leaf="sessions"]')).toBeNull()
   })
 
-  it('recreates the sidebar from an edge strip (moveLeaf beside the center) — region was normalized away', () => {
+  it('recreates the sidebar from an edge strip (root-edge placement) — region was normalized away', () => {
     const m = mountSidebar(noRight(), { kind: 'dock', instanceId: 'files', panel: 'files' as never })
     const transfer = paneTransfer()
     fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
     // The edge strips appear only during a dock drag.
     expect(edgeStrip('right')).toBeTruthy()
     fireEvent.drop(edgeStrip('right')!, { dataTransfer: transfer })
-    expect(m.movePane).toHaveBeenCalledWith('files', { targetId: 'group:1', side: 'right' })
+    // A ROOT-edge move (NOT moveLeaf beside the center, which the funnel evicts left).
+    expect(m.moveLeafToEdge).toHaveBeenCalledWith('files', 'right')
+    expect(m.movePane).not.toHaveBeenCalled()
+  })
+
+  it('reveals the LEFT sidebar from the left edge strip via a root-edge move', () => {
+    const m = mountSidebar(noRight(), { kind: 'dock', instanceId: 'files', panel: 'files' as never })
+    const transfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
+    fireEvent.drop(edgeStrip('left')!, { dataTransfer: transfer })
+    expect(m.moveLeafToEdge).toHaveBeenCalledWith('files', 'left')
   })
 
   it('does not show edge strips for a tab drag (dock-only reveal)', () => {

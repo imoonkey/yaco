@@ -54,6 +54,7 @@ type SidebarWiring = {
   rightId: string | null
   centerId: string | null
   movePane: (id: string, placement: PanePlacement) => void
+  moveLeafToEdge: (id: string, side: 'left' | 'right') => void
   moveTab: (fromGroupId: string, instanceId: string, toGroupId: string, toIndex: number) => void
   moveGroup: (groupId: string, placement: GroupPlacement) => void
   moveTabToSplit: (fromGroupId: string, instanceId: string, targetGroupId: string, side: SplitSide) => void
@@ -114,6 +115,7 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
     rightId: regions.right?.id ?? null,
     centerId: regions.center?.id ?? null,
     movePane: commands.movePane,
+    moveLeafToEdge: commands.moveLeafToEdge,
     moveTab: commands.moveTab,
     moveGroup: commands.moveGroup,
     moveTabToSplit: commands.moveTabToSplit,
@@ -184,7 +186,7 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
           taskOverlay={taskOverlay}
           drop={drop}
         />
-        <EdgeStrips centerId={drop.centerId} movePane={drop.movePane} />
+        <EdgeStrips centerId={drop.centerId} moveLeafToEdge={drop.moveLeafToEdge} />
       </div>
     </PanelChromeContext.Provider>
   )
@@ -459,7 +461,11 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
 // Two thin far-edge strips that reveal/extend a sidebar by `moveLeaf` beside the
 // center (the normalize funnel relocates the dock into the sidebar). Rendered only
 // during a dock drag, layered above the sidebars so the very edge wins.
-function EdgeStrips({ centerId, movePane }: { centerId: string | null; movePane: SidebarWiring['movePane'] }) {
+// Two thin far-edge strips that reveal/extend a sidebar by `moveLeafToEdge` — a
+// ROOT-edge placement (NOT beside the center, which the funnel would evict back to
+// the left). Rendered only during a dock drag, layered above the sidebars so the
+// very edge wins.
+function EdgeStrips({ centerId, moveLeafToEdge }: { centerId: string | null; moveLeafToEdge: SidebarWiring['moveLeafToEdge'] }) {
   const drag = useDrag()
   const [hot, setHot] = useState<EdgeSide | null>(null)
   const payload = drag.payload
@@ -479,7 +485,7 @@ function EdgeStrips({ centerId, movePane }: { centerId: string | null; movePane:
       }}
       onDragOver={(e) => { const p = drag.peek(); if (!p || p.kind !== 'dock' || !isPaneDrag(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setHot(side) }}
       onDragLeave={() => setHot(null)}
-      onDrop={(e) => { const p = drag.peek(); setHot(null); if (!p || p.kind !== 'dock' || !isPaneDrag(e)) return; e.preventDefault(); movePane(p.instanceId, { targetId: centerId, side }); drag.clear() }}
+      onDrop={(e) => { const p = drag.peek(); setHot(null); if (!p || p.kind !== 'dock' || !isPaneDrag(e)) return; e.preventDefault(); moveLeafToEdge(p.instanceId, side); drag.clear() }}
     />
   )
   return <>{strip('left')}{strip('right')}</>

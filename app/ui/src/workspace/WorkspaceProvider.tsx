@@ -27,6 +27,7 @@ import {
   groupCount,
   setDockVisible as modelSetDockVisible,
   setActivityVisible as modelSetActivityVisible,
+  sidebarVisibility,
   setActiveDock as modelSetActiveDock,
   movePanel as modelMovePanel,
   splitPanel as modelSplitPanel,
@@ -126,7 +127,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     terminalBindings, editorMru, terminalMru, focusedPane,
     activeEditorId, activeTerminalId,
     // group dispatchers + resolution
-    focusPane, bindTerminal, movePane,
+    focusPane, bindTerminal, movePane, moveLeafToEdge,
     splitGroup, openBoundTerminalTab, closeGroupTab, closeGroup, setActiveGroupTab, setActiveGroup,
     pinTab, reorderGroupTab, moveTab, moveTabToSplit, moveGroup,
     openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
@@ -372,6 +373,18 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   useLayoutEffect(() => {
     setPanelLayout((prev) => modelSetActivityVisible(prev, layout.showRightPanel))
   }, [layout.showRightPanel, setPanelLayout])
+
+  // The reverse reconcile: sidebar/edge DnD mutates the TREE directly (an edge
+  // reveal adds a sidebar; dragging out the last dock empties one), so the flat
+  // flags would otherwise drift. Write them FROM the tree's actual visible presence
+  // here, making DnD a first-class visibility path. The mirrors above then
+  // re-confirm with no further change — the two converge (deps differ: those fire on
+  // a flag change, this on a tree change; both setters/updates are idempotent).
+  useLayoutEffect(() => {
+    const vis = sidebarVisibility(panelLayout.desktop)
+    if (vis.left !== layout.showSidebar) updateLayout({ showSidebar: vis.left })
+    if (vis.right !== layout.showRightPanel) updateLayout({ showRightPanel: vis.right })
+  }, [panelLayout.desktop, layout.showSidebar, layout.showRightPanel, updateLayout])
 
   // Mirror the legacy mobile pane onto the panel-layout tree's `mobile.activeDock`
   // (design: Persistence Shape). The flat `mobilePane` is the single source — every
@@ -663,7 +676,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     saveFile, forceSave, acceptDisk,
     updateDraft: updateFileDraft, updateViewport: updateFileViewport,
     retargetPaths, deletePath,
-    splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
+    splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane, moveLeafToEdge,
     splitGroup, reorderGroupTab, closeGroup, setActiveGroup, pinTab: pinFocusedTab,
     moveTab, moveTabToSplit, moveGroup,
     clickSession, openBeside, detachSession,
@@ -676,7 +689,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   }), [
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
     saveFile, forceSave, acceptDisk, updateFileDraft, updateFileViewport, retargetPaths, deletePath,
-    splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
+    splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane, moveLeafToEdge,
     splitGroup, reorderGroupTab, closeGroup, setActiveGroup, pinFocusedTab,
     moveTab, moveTabToSplit, moveGroup,
     clickSession, openBeside, detachSession, setFocusTarget,
