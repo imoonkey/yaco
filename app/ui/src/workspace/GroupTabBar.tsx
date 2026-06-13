@@ -16,10 +16,11 @@
 import { useCallback, useContext, useMemo, useState } from 'react'
 import { X, AlertTriangle, SplitSquareHorizontal } from 'lucide-react'
 import { isDiffTab } from '../hooks/useWorkspaceState'
-import { WorkspaceDataContext, WorkspaceEnvContext, type SplitSide } from './context'
-import type { GroupTab } from '../hooks/workspaceTypes'
+import { WorkspaceDataContext, WorkspaceEnvContext, type SplitSide, type EditorPrefs } from './context'
+import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
 import { tabIdToPath } from './panelLayoutModel'
 import { tabName, computeDisambigSuffixes } from './tabLabels'
+import { EditorActions } from './EditorActions'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { ProviderIcon } from '../components/SessionIcons'
 import { Menu, MenuItem, MenuDivider } from '../components/Menu'
@@ -33,6 +34,9 @@ export type GroupTabBarProps = {
   tabs: GroupTab[]
   /** The active tab's instanceId, or '' for an empty group. */
   activeTab: string
+  /** True when this is the active/open-target group: its tab labels render in the
+   *  stronger foreground; inactive groups render dimmer (VSCode group emphasis). */
+  isActiveGroup: boolean
   /** Dirty editor tabIds (file path or diff id) — the dirty dot + dirty-close confirm. */
   dirtyTabs: ReadonlySet<string>
   /** Editor tabIds whose file changed on disk — the conflict marker. */
@@ -45,14 +49,21 @@ export type GroupTabBarProps = {
   onSelectTab: (instanceId: string) => void
   /** Close a tab in this group (its file / its terminal pane; the session keeps running). */
   onCloseTab: (instanceId: string) => void
-  /** Split this group to an empty sibling on `side`; the new group becomes the open target. */
+  /** Split this group to a sibling on `side`; the new group becomes the open target. */
   onSplit: (side: SplitSide) => void
   /** Reorder a tab within this group to `toIndex` (within-group DnD). */
   onReorderTab: (instanceId: string, toIndex: number) => void
   /** Close this (empty) group — the "Close Group" context item. */
   onCloseGroup: () => void
+  /** Focus this (possibly empty) group as the open/close target on a tab-bar click. */
+  onActivateGroup: () => void
   /** Discard a file's draft (→ clean) on an explicit dirty-close of its last view. */
   onDiscardDirty: (path: string) => void
+  /** The active editor tab's view prefs + setter — renders the right-aligned editor
+   *  actions (suggestions sparkle + preview-mode toggle) when an editor tab is active.
+   *  Omitted in isolation tests (no editor actions render then). */
+  editorPrefs?: { previewMode: PreviewMode; splitDirection: SplitDirection; autocompleteEnabled: boolean }
+  onSetEditorPrefs?: (patch: Partial<EditorPrefs>) => void
 }
 
 // 28px high bar, matching the editor tab strip the group replaces.
@@ -83,9 +94,9 @@ const SPLIT_ITEMS: { label: string; side: SplitSide }[] = [
 
 export function GroupTabBar(props: GroupTabBarProps) {
   const {
-    groupId, tabs, activeTab, dirtyTabs, conflictTabs, terminalBindings,
+    groupId, tabs, activeTab, isActiveGroup, dirtyTabs, conflictTabs, terminalBindings,
     pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onReorderTab,
-    onCloseGroup, onDiscardDirty,
+    onCloseGroup, onActivateGroup, onDiscardDirty, editorPrefs, onSetEditorPrefs,
   } = props
 
   const menu = useContextMenu()
@@ -103,6 +114,11 @@ export function GroupTabBar(props: GroupTabBarProps) {
     () => computeDisambigSuffixes(tabs.flatMap((t) => (t.kind === 'editor' ? [t.tabId] : []))),
     [tabs],
   )
+
+  // The active editor tab's tabId (null when a terminal tab / empty group is active) —
+  // gates the right-aligned editor view controls (FIX 4).
+  const activeTabNode = tabs.find((t) => t.instanceId === activeTab)
+  const activeEditorTabId = activeTabNode && activeTabNode.kind === 'editor' ? activeTabNode.tabId : null
 
   // Dirty-close confirm (design: §B): the LAST view of a dirty file prompts before
   // discarding; a file still open in another tab closes immediately (the shared
@@ -137,12 +153,17 @@ export function GroupTabBar(props: GroupTabBarProps) {
           const isDirty = isEditor && dirtyTabs.has(tabIdToPath(tab.tabId))
           const isConflict = isEditor && conflictTabs.has(tabIdToPath(tab.tabId))
           const isDiff = isEditor && isDiffTab(tab.tabId)
-          const isPreview = isEditor && tab.preview
+          const isPreview = !!tab.preview
           const suffix = isEditor ? disambig.get(tab.tabId) : undefined
           const session = !isEditor ? terminalBindings[tab.instanceId] : undefined
           const provider = session ? sessions.find((s) => s.name === session)?.provider : undefined
           const label = isEditor ? tabName(tab.tabId) : (session || 'Terminal')
           const closeLabel = isEditor ? `Close ${tabName(tab.tabId)}` : 'Close terminal'
+          // VSCode group emphasis: the active group's labels read in the stronger
+          // foreground (its active tab strongest), inactive groups dimmer.
+          const labelColor = isActiveGroup
+            ? (isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)')
+            : (isActive ? 'var(--sol-text)' : 'var(--sol-text-faint)')
           return (
             <div
               key={tab.instanceId}
@@ -157,11 +178,11 @@ export function GroupTabBar(props: GroupTabBarProps) {
               onDragEnd={() => setDragId(null)}
               onClick={() => onSelectTab(tab.instanceId)}
               title={isEditor ? tab.tabId : label}
-              className="group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0"
+              className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup && isActive ? 'font-medium' : ''}`}
               style={{
                 ...TAB_STYLE_BASE,
                 backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)',
-                color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)',
+                color: labelColor,
                 borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
                 borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
                 fontStyle: isPreview ? 'italic' : undefined,
@@ -193,13 +214,24 @@ export function GroupTabBar(props: GroupTabBarProps) {
             </div>
           )
         })}
-        {/* The empty area: a right-click here opens the same Split menu as the button. */}
-        <div className="flex-1 self-stretch flex items-center" style={{ minWidth: 32 }} {...menu.bind()} data-testid="group-empty-area">
+        {/* The empty area: a left-click focuses this (possibly empty) group as the
+            open/close target; a right-click here opens the same Split menu as the button. */}
+        <div className="flex-1 self-stretch flex items-center" style={{ minWidth: 32 }} onClick={onActivateGroup} {...menu.bind()} data-testid="group-empty-area">
           {tabs.length === 0 && <span className="px-3 text-ui-sm shrink-0" style={{ color: 'var(--sol-text)' }}>No files open</span>}
         </div>
       </div>
 
-      <div className="flex items-center shrink-0 px-1" style={{ borderLeft: '1px solid var(--sol-border)' }}>
+      <div className="flex items-center shrink-0 gap-1 px-1" style={{ borderLeft: '1px solid var(--sol-border)' }}>
+        {activeEditorTabId && editorPrefs && onSetEditorPrefs && (
+          <EditorActions
+            tabId={activeEditorTabId}
+            previewMode={editorPrefs.previewMode}
+            splitDirection={editorPrefs.splitDirection}
+            autocompleteEnabled={editorPrefs.autocompleteEnabled}
+            isTouch={isTouch}
+            onSetEditorPrefs={onSetEditorPrefs}
+          />
+        )}
         <button type="button" onClick={menu.openFromTrigger}
           data-testid="split-group" title="Split editor group" aria-label="Split editor group" aria-haspopup="menu"
           style={SPLIT_BTN_STYLE}>

@@ -31,13 +31,18 @@ function renderGroup(group: TabsNode, opts: { tree?: LayoutNode; dirtyTabs?: str
   const tree = opts.tree ?? group
   const commands = {
     selectTab: vi.fn(), closePane: vi.fn(), splitGroup: vi.fn(),
-    reorderGroupTab: vi.fn(), closeGroup: vi.fn(), acceptDisk: vi.fn(),
+    reorderGroupTab: vi.fn(), closeGroup: vi.fn(), setActiveGroup: vi.fn(),
+    setEditorPrefs: vi.fn(), acceptDisk: vi.fn(),
   } as unknown as WorkspaceCommands
   const selection = {
+    activeGroupId: group.id,
     terminalBindings: {},
     editor: { dirtyTabs: new Set(opts.dirtyTabs ?? []), conflictTabs: new Set<string>() },
   } as unknown as WorkspaceSelection
-  const layoutValue = { panelLayout: { desktop: tree } } as unknown as WorkspaceLayoutContextValue
+  const layoutValue = {
+    layout: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
+    panelLayout: { desktop: tree },
+  } as unknown as WorkspaceLayoutContextValue
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
   const markerFor = (): PaneMarker => ({ focused: false, active: false })
   render(

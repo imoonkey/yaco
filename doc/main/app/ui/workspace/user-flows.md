@@ -78,8 +78,8 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 ## Flow: Switch Terminal Session
 
 1. User clicks a different session in the Sessions list (`clickSession`)
-2. If that session is already shown in a terminal tab → that tab is focused (no rebind, no duplicate PTY)
-3. Else a **new** terminal tab is created in the target group, bound on create (it never rebinds an existing terminal — the previous session keeps running in its own tab)
+2. If that session is already shown in a terminal tab → that tab is focused (no rebind, no duplicate PTY), and a preview terminal is **pinned** on this re-click
+3. Else a **new PREVIEW** terminal tab is created in the target group, bound on create (it never rebinds an existing terminal — the previous session keeps running in its own tab). Interacting with the terminal, or clicking the session again, pins it; the next session preview otherwise replaces it (one preview per group)
 4. The terminal renders the session output (tmux-persistent PTY)
 
 ## Flow: Watch Two Sessions at Once

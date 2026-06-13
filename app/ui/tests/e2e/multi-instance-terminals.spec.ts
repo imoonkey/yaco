@@ -174,8 +174,9 @@ test.describe('Multi-instance terminals (open-beside / 1-per-session / session e
     await expect(termBody).toHaveAttribute('data-focused', 'true', { timeout: 10_000 })
     await expect(editorBody(page, 'group:1')).not.toHaveAttribute('data-active', 'true') // 1 editor → suppressed
 
-    // Add a SECOND editor: focus the group:1 editor, Cmd+\ to split it into an empty
-    // group:3, and open the same file there → editor:2 (focused, MRU head).
+    // Add a SECOND editor: focus the group:1 editor, Cmd+\ splits it into group:3
+    // SEEDED with a duplicate of the file (FIX 2); re-selecting it via quick-open
+    // makes it the focused MRU head (editor:2).
     await editorBody(page, 'group:1').locator('.cm-content').click()
     await page.keyboard.press('Meta+\\')
     await expect(group(page, 'group:3')).toBeVisible({ timeout: 10_000 })

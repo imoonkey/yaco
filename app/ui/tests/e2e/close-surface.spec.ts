@@ -5,6 +5,7 @@ import {
   selectProject,
   waitForAppReady,
   openFileViaSearch,
+  openPinnedFile,
   runTag,
   sidebar,
   activityPanel,
@@ -54,9 +55,11 @@ const terminalTab = (page: Page, name: string) =>
 const editorBody = (page: Page) => group(page, 'group:1').locator('[data-panel-leaf="editor"]')
 const terminalBody = (page: Page) => group(page, 'group:1').locator('[data-panel-leaf="terminal"]')
 
-/** Provision a project + a live session, open README as an editor tab, then bind the
- *  session as a terminal tab in the SAME group (so editor + terminal are two tabs in
- *  one strip; the terminal is the active tab right after binding). */
+/** Provision a project + a live session, open README as a PINNED editor tab, then
+ *  bind the session as a terminal tab in the SAME group (so editor + terminal are two
+ *  tabs in one strip; the terminal is the active tab right after binding). README is
+ *  PINNED so the session's PREVIEW terminal does not replace it (one preview total
+ *  per group, across editor + terminal). */
 async function openEditorAndTerminal(
   page: Page, request: APIRequestContext,
 ): Promise<{ sessionName: string }> {
@@ -68,7 +71,7 @@ async function openEditorAndTerminal(
   await selectProject(page, fixture.name)
 
   await expect(sidebar(page).getByText(README_TAB)).toBeVisible({ timeout: 10_000 })
-  await openFileViaSearch(page, README_TAB)
+  await openPinnedFile(page, README_TAB)
   await expect(readmeTab(page)).toBeVisible({ timeout: 10_000 })
 
   await expect(sessionRow(page, sessionName)).toBeVisible({ timeout: 15_000 })

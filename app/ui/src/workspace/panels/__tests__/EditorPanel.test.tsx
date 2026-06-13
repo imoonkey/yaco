@@ -280,16 +280,19 @@ describe('EditorPanel — single-tab body (no own tab bar)', () => {
     expect(screen.queryByTestId('tab')).toBeNull()
   })
 
-  it('with no tab open, renders the No-file-open prompt + the Suggestions toggle, no tab strip', () => {
+  it('with no tab open, renders the No-file-open prompt; the body owns no action toggles (desktop)', () => {
     renderEditorPanel({ instanceId: 'editor:2', tabId: null })
     expect(screen.getByText('No file open')).toBeTruthy()
-    expect(screen.getByRole('button', { name: /Suggestions/ })).toBeTruthy()
+    // The editor view controls live in the GROUP TAB BAR now (FIX 4); the desktop
+    // body owns no action row, so no Suggestions toggle here.
+    expect(screen.queryByRole('button', { name: /Suggestions/ })).toBeNull()
     expect(screen.queryByTestId('tab')).toBeNull()
     expect(mockFetchGitCompare).not.toHaveBeenCalled()
   })
 
-  it('toggling Suggestions drives an editor-pref layout update', () => {
-    const { actions } = renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, layout: { autocompleteEnabled: false } })
+  it('toggling Suggestions in the mobile editor action row drives an editor-pref layout update', () => {
+    // Desktop hosts the toggle in the tab bar; mobile keeps it in the body action row.
+    const { actions } = renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, layout: { autocompleteEnabled: false }, isMobile: true })
     fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
     expect(actions.updateLayout).toHaveBeenCalledWith({ autocompleteEnabled: true })
   })

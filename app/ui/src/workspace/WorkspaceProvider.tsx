@@ -125,8 +125,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     activeEditorId, activeTerminalId,
     // group dispatchers + resolution
     focusPane, bindTerminal, movePane,
-    splitGroup, openBoundTerminalTab, closeGroupTab, closeGroup, setActiveGroupTab,
-    reorderGroupTab,
+    splitGroup, openBoundTerminalTab, closeGroupTab, closeGroup, setActiveGroupTab, setActiveGroup,
+    pinTab, reorderGroupTab,
     openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
     resolveTarget, groupForInstance,
     // file + raw actions
@@ -297,28 +297,32 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     splitGroup(sourceId ? groupForInstance(sourceId) : resolveTarget(), side)
   }, [splitGroup, groupForInstance, resolveTarget])
 
-  // clickSession: focus the terminal tab already showing the session, else create
-  // a NEW terminal tab bound on create in the target group (flat resolver — a
-  // session click is focus | create; it never rebinds an existing terminal).
+  // clickSession: focus the terminal tab already showing the session — and PROMOTE
+  // it to pinned if it was the group's preview (a session tab behaves like a file
+  // tab: click once = preview, click again = pinned) — else create a NEW PREVIEW
+  // terminal tab bound on create in the target group (flat resolver — a session
+  // click is focus | create; it never rebinds an existing terminal).
   const clickSession = useCallback((name: string) => {
     const action = resolveSessionClick(name, latestRef.current.terminalBindings)
     if (action.kind === 'focus') {
-      setActiveGroupTab(groupForInstance(action.terminalId), action.terminalId)
+      const groupId = groupForInstance(action.terminalId)
+      setActiveGroupTab(groupId, action.terminalId)
+      pinTab(groupId, action.terminalId)
     } else {
-      openBoundTerminalTab(resolveTarget(), name)
+      openBoundTerminalTab(resolveTarget(), name, true)
     }
     revealTerminalColumn()
-  }, [setActiveGroupTab, groupForInstance, openBoundTerminalTab, resolveTarget, revealTerminalColumn])
+  }, [setActiveGroupTab, pinTab, groupForInstance, openBoundTerminalTab, resolveTarget, revealTerminalColumn])
 
-  // openBeside: 1-per-session — focus if shown, else split an empty group and
-  // create a bound terminal tab in it.
+  // openBeside: 1-per-session — focus if shown, else split an empty (non-seeding)
+  // group and create a bound, PINNED terminal tab in it.
   const openBeside = useCallback((name: string) => {
     const { terminalBindings: bindings } = latestRef.current
     const action = resolveOpenBeside(name, bindings)
     if (action.kind === 'focus') {
       setActiveGroupTab(groupForInstance(action.terminalId), action.terminalId)
     } else {
-      const newGroupId = splitGroup(resolveTarget(), 'right')
+      const newGroupId = splitGroup(resolveTarget(), 'right', false)
       openBoundTerminalTab(newGroupId, name)
     }
     revealTerminalColumn()
@@ -512,11 +516,12 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     if (isFileTab(tab)) setSelectedFilePath(tab)
   }, [setActiveGroupTab, groupForInstance, activeGroupTabInstance])
 
-  // openToSide: split the focused group to an empty sibling and open `path` there.
+  // openToSide: split the focused group to an empty (non-seeding) sibling and open
+  // `path` there.
   const openToSide = useCallback((path: string, side: SplitSide = 'right') => {
     if (!isFileTab(path)) return
     void revealParents(path).then(() => {
-      const newGroupId = splitGroup(resolveTarget(), side)
+      const newGroupId = splitGroup(resolveTarget(), side, false)
       openFileInGroup(newGroupId, path)
       setSelectedFilePath(path)
       setMobilePane('editor')
@@ -545,6 +550,12 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const closePane = useCallback((id: string) => {
     closeGroupTab(groupForInstance(id), id)
   }, [closeGroupTab, groupForInstance])
+
+  // Pin a pane's tab (clear preview) — the terminal body calls this on interaction
+  // so a previewed terminal becomes permanent, mirroring the editor's promote-on-edit.
+  const pinFocusedTab = useCallback((id: string) => {
+    pinTab(groupForInstance(id), id)
+  }, [pinTab, groupForInstance])
 
   // Deferred reveal: record the latest intent, reveal the Files surface, and ask
   // the registered controller to drain it. A controller that mounts/becomes
@@ -644,7 +655,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     updateDraft: updateFileDraft, updateViewport: updateFileViewport,
     retargetPaths, deletePath,
     splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
-    splitGroup, reorderGroupTab, closeGroup,
+    splitGroup, reorderGroupTab, closeGroup, setActiveGroup, pinTab: pinFocusedTab,
     clickSession, openBeside, detachSession,
     setSelectedFilePath, setExplorerFocusedPath, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
@@ -656,7 +667,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
     saveFile, forceSave, acceptDisk, updateFileDraft, updateFileViewport, retargetPaths, deletePath,
     splitEditor, openToSide, splitTerminal, closePane, focusPane, movePane,
-    splitGroup, reorderGroupTab, closeGroup,
+    splitGroup, reorderGroupTab, closeGroup, setActiveGroup, pinFocusedTab,
     clickSession, openBeside, detachSession, setFocusTarget,
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,

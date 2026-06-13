@@ -14,9 +14,9 @@ import {
 
 // Multi-instance editor flows under the VSCode tab-group model (design: vt-bodies
 // shared buffer, vt-keyboard split, reset). Pins the user-visible acceptance:
-//   - Cmd+\ splits the focused editor's group into a side-by-side EMPTY group;
-//     opening the SAME file there makes two editor tabs that SHARE one buffer (an
-//     edit in one shows in the other; the dirty dot lands on both);
+//   - Cmd+\ splits the focused editor's group into a side-by-side group SEEDED with
+//     a duplicate of the active file (FIX 2): two editor tabs on one path that SHARE
+//     one buffer (an edit in one shows in the other; the dirty dot lands on both);
 //   - Reset layout collapses the extra group, but the dirty buffer survives as
 //     data (reopening the file shows the unsaved edit).
 
@@ -41,8 +41,9 @@ const editorBody = (page: Page, groupId: string) => group(page, groupId).locator
 const tabInGroup = (page: Page, groupId: string, title: string) =>
   group(page, groupId).locator(`[data-testid="group-tab"][title="${title}"]`)
 
-/** Focus the group:1 editor body, then Cmd+\ to split its group into an empty
- *  side-by-side sibling (group:2). */
+/** Focus the group:1 editor body, then Cmd+\ to split its group into a
+ *  side-by-side sibling (group:2). With an editor active, the split SEEDS group:2
+ *  with a duplicate of the file (FIX 2). */
 async function splitFocusedEditor(page: Page): Promise<void> {
   await editorBody(page, 'group:1').locator('.cm-content').click()
   await expect(editorBody(page, 'group:1')).toHaveAttribute('data-focused', 'true')
@@ -64,15 +65,13 @@ test.describe('Multi-instance editors (split / shared buffer / reset)', () => {
     await createTestFile(page, project.name, file, 'export const v = 1\n')
     await waitForSSERefresh(page, 3000)
 
-    // Pin the file in group:1, then Cmd+\ → an EMPTY group:2 beside it.
+    // Pin the file in group:1, then Cmd+\ → group:2 SEEDED with a duplicate of it.
     await openPinnedFile(page, file)
     await expect(tabInGroup(page, 'group:1', file)).toBeVisible({ timeout: 10_000 })
     await splitFocusedEditor(page)
 
-    // The split made an EMPTY group (it does NOT clone the editor — OQ2). Open the
-    // SAME file into the focused new group → two editor tabs on one path.
-    await expect(group(page, 'group:2').locator('[data-panel-leaf]')).toHaveCount(0)
-    await openFileViaSearch(page, file)
+    // The split DUPLICATED the active file into the focused new group (FIX 2): two
+    // editor tabs on one path, one per group, sharing the per-path buffer.
     await expect(tabInGroup(page, 'group:2', file)).toBeVisible({ timeout: 10_000 })
     await expect(tabInGroup(page, 'group:1', file)).toBeVisible()
 

@@ -216,13 +216,15 @@ export type GroupTabKind = 'editor' | 'terminal'
  *  AUX maps key on (`terminalBindings`, MRU, focus). `kind` selects which body
  *  renders. An editor tab ALSO carries its `tabId` — the same encoding the old
  *  `openTabs[]` entries used: a bare file path, or a `diff:<path>?...` id. The
- *  file/diff IS the tab; there is no per-editor multi-file list. `preview`/`pinned`
- *  are the per-tab flags lifted off the old `EditorView`. The same file open in
- *  two groups = two editor tabs (two `instanceId`s, same `tabId`) sharing the
- *  per-path buffer. */
+ *  file/diff IS the tab; there is no per-editor multi-file list. `preview` is the
+ *  per-tab flag (italic, at most ONE per group across editor+terminal, replaced by
+ *  the next preview) lifted off the old `EditorView`; a terminal tab carries it too
+ *  (a session click opens a preview terminal, pinned on re-click/interaction). The
+ *  same file open in two groups = two editor tabs (two `instanceId`s, same `tabId`)
+ *  sharing the per-path buffer. */
 export type GroupTab =
   | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
-  | { instanceId: string; kind: 'terminal' }
+  | { instanceId: string; kind: 'terminal'; preview?: boolean }
 
 export type EditorGroupTab = Extract<GroupTab, { kind: 'editor' }>
 export type TerminalGroupTab = Extract<GroupTab, { kind: 'terminal' }>

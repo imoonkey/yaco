@@ -17,8 +17,8 @@
 //   - editor-tab payload preserved — normalization keeps every valid editor tab
 //     (its `tabId`/`preview`/`pinned`); only a malformed tab (bad kind, or an
 //     editor tab missing a string `tabId`) is dropped.
-//   - one preview per group — at most one editor tab carries `preview`; the first
-//     in document order wins.
+//   - one preview per group — at most one tab (editor OR terminal) carries
+//     `preview`; the first in document order wins.
 //   - empty groups are valid — an empty group (`tabs: []`, `activeTab: ''`) is a
 //     first-class, persisted node. Normalization NEVER collapses it; `closeGroup`
 //     is the only group remover and `ensureFirstGroup` keeps >=1.
@@ -321,7 +321,9 @@ function normalizeTab(raw: unknown, ctx: NormCtx): GroupTab | null {
   if (ctx.seenIds.has(instanceId)) instanceId = freshId(ctx.seenIds, r.kind, 2)
   if (r.kind === 'terminal') {
     ctx.seenIds.add(instanceId)
-    return { instanceId, kind: 'terminal' }
+    const tab: GroupTab = { instanceId, kind: 'terminal' }
+    if (r.preview === true) tab.preview = true
+    return tab
   }
   if (typeof r.tabId !== 'string' || r.tabId.length === 0) return null
   ctx.seenIds.add(instanceId)
@@ -332,9 +334,10 @@ function normalizeTab(raw: unknown, ctx: NormCtx): GroupTab | null {
 }
 
 /** Normalize a group: preserve every valid tab (re-id collisions keeping
- *  payload), keep exactly one preview editor tab (first wins), clamp `activeTab`
- *  to a surviving tab (following re-ids) or '', and NEVER collapse an empty
- *  group. The group id itself is uniqued + reserved before its tabs. */
+ *  payload), keep exactly one preview tab per group across editor+terminal (first
+ *  wins), clamp `activeTab` to a surviving tab (following re-ids) or '', and NEVER
+ *  collapse an empty group. The group id itself is uniqued + reserved before its
+ *  tabs. */
 function normalizeGroup(raw: Record<string, unknown>, ctx: NormCtx): TabsNode {
   let id = idOf(raw.id, ctx, 'group')
   if (ctx.seenIds.has(id)) id = freshId(ctx.seenIds, 'group')
@@ -348,7 +351,7 @@ function normalizeGroup(raw: Record<string, unknown>, ctx: NormCtx): TabsNode {
     const oldInstanceId = asRecord(rawTab).instanceId
     const tab = normalizeTab(rawTab, ctx)
     if (!tab) continue
-    if (tab.kind === 'editor' && tab.preview) {
+    if (tab.preview) {
       if (previewSeen) delete tab.preview
       else previewSeen = true
     }

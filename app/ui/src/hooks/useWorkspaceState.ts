@@ -248,6 +248,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     closeGroupTab: ls.closeGroupTab,
     closeGroup: ls.closeGroup,
     setActiveGroupTab: ls.setActiveGroupTab,
+    setActiveGroup: ls.setActiveGroup,
     splitGroup: ls.splitGroup,
     reorderGroupTab: ls.reorderGroupTab,
     focusPane: ls.focusPane,

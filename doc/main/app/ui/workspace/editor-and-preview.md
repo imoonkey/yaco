@@ -17,7 +17,7 @@ Editor tabs, dirty state, draft model, markdown preview, and diff view.
 
 ## Related Code
 
-`ui/src/components/Editor.tsx`, `ui/src/workspace/panels/EditorPanel.tsx`, `ui/src/workspace/PanelGroup.tsx`, `ui/src/workspace/GroupTabBar.tsx`
+`ui/src/components/Editor.tsx`, `ui/src/workspace/panels/EditorPanel.tsx`, `ui/src/workspace/PanelGroup.tsx`, `ui/src/workspace/GroupTabBar.tsx`, `ui/src/workspace/EditorActions.tsx`
 
 ## Editor Tabs in Groups
 
@@ -25,11 +25,12 @@ The working area is a grid of **groups**; each group's strip mixes one **editor 
 
 - **Shared buffers.** File content / dirty state live in `useFileState` keyed by **path**, not by tab. The same file open as two editor tabs (in two groups) shows the same content and the same dirty dot; only the tab is duplicated, the buffer is one.
 - **Tab events.** A tab click activates it via `setActiveGroupTab(groupId, instanceId)` and focuses it (`focusPane('editor', id)` on mousedown). `jumpRequest` (go-to-line) and `editorInsert` (voice) carry an `instanceId` and are consumed **iff** it matches — so the same path open in two tabs jumps only the one that was targeted.
-- **Split.** Right-click the group's tab-bar empty area, or click the visible **Split** button (which opens the same dismiss-safe menu), → **Split Up/Down/Left/Right** spawns an **empty** adjacent group, which becomes the open target. Splitting never clones a file or PTY into the new group — it starts empty, mirroring VSCode.
-- **Open to the side.** `Cmd+Enter` in the explorer / quick-open splits an empty group beside the active one and opens the focused file there (`openToSide`).
+- **Split.** Right-click the group's tab-bar empty area, or click the visible **Split** button (which opens the same dismiss-safe menu), → **Split Up/Down/Left/Right** spawns an adjacent group, **seeded from the source group's active tab**: an editor tab is **duplicated** (a fresh instance on the same `tabId`, sharing the per-path buffer), a terminal tab is **moved** (same instance + binding, no new PTY), an empty source yields an empty group. The new group becomes the open target.
+- **Open to the side.** `Cmd+Enter` in the explorer / quick-open splits an **empty** group beside the active one and opens the focused file there (`openToSide`, non-seeding).
 - **Reorder.** Tabs drag-reorder within their group (`reorderGroupTab`); editor and terminal tabs share one freely-orderable strip.
+- **Editor view controls.** The active editor tab's view toggles — the inline-suggestion sparkle, the md/html **edit | split | preview** mode toggle, and the split-direction button — render **right-aligned in the group tab bar** (`EditorActions`), not in the editor body. On mobile (no tab bar) they sit in a slim body action row with the mic. They act on the active editor tab via `setEditorPrefs`.
 - **Dirty-close confirm.** "Close Without Saving" on the last tab of a dirty file confirms and clears the draft first; it **no-ops when the same path is open in another tab** (closing one tab while another shows it loses nothing).
-- **Close.** Closing a tab via its `×` removes it (`closeGroupTab`); the active tab falls to its neighbour. Closing the last tab in a non-last group removes the now-empty group (`closeGroup`); the final group stays alive, empty (`ensureFirstGroup`).
+- **Close.** Closing a tab via its `×` removes it (`closeGroupTab`); the active tab falls to its neighbour. Closing the last tab in a non-last group removes the now-empty group (`closeGroup`); the final group stays alive, empty (`ensureFirstGroup`). An empty group is closable via its tab-bar **Close Group** item or `Cmd+W` when it is the active group.
 
 Editor *preferences* (`previewMode` / `splitDirection` / `splitSize` / inline-suggestions) stay global (in `panelState.editor`), shared across all editor tabs.
 

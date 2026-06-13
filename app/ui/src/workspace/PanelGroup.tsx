@@ -3,11 +3,13 @@
 // ownership stays here — the typed contract, the command wiring, the landmark +
 // marker placement, the active-tab body wrapper and its `data-*`).
 //
-// The group container carries `data-group-id` and, for the FIRST group, the
-// `role="main"` landmark. The active tab's body wrapper carries `data-instance-id`
-// + `data-panel-leaf="<kind>"` (so the geometry probe + focus markers resolve) and
-// the bright/dim focus border from `paneMarker`. An EMPTY group renders the tab bar
-// with NO body wrapper — a valid render state, not a crash.
+// The group container carries `data-group-id`, `data-group-active` (the active/
+// open-target group), and, for the FIRST group, the `role="main"` landmark. The
+// active tab's body wrapper carries `data-instance-id` + `data-panel-leaf="<kind>"`
+// (so the geometry probe + focus tracking resolve) and `data-focused`/`data-active`
+// from `paneMarker`. The GROUP-level active/inactive distinction is rendered as tab-
+// label text emphasis in `GroupTabBar` (VSCode-style), not a coloured pane border.
+// An EMPTY group renders the tab bar with NO body wrapper — a valid render state.
 //
 // The body is mounted through `PanelHost` (which publishes the per-instance
 // `PanelInstanceContext`); the editor/terminal bodies read their `instanceId` from
@@ -15,9 +17,9 @@
 // never read the tab bar. So `vt-bodies` renders against the instance context only.
 //
 // Command wiring goes through the PUBLIC command surface (`useWorkspaceCommands`):
-// select/close, the group-native `splitGroup`/`reorderGroupTab`/`closeGroup`, and
-// the dirty-close draft discard (`acceptDisk`) are all wired here and handed to the
-// tab bar as group-native callbacks.
+// select/close, the group-native `splitGroup`/`reorderGroupTab`/`closeGroup`/
+// `setActiveGroup`, the editor view-pref toggles (`setEditorPrefs`), and the dirty-
+// close draft discard (`acceptDisk`) are all wired here and handed to the tab bar.
 import { useCallback, useMemo, type CSSProperties } from 'react'
 import { PanelHost } from './PanelHost'
 import { GroupTabBar } from './GroupTabBar'
@@ -29,12 +31,6 @@ import type { PaneMarker } from './panelInstance'
 import { editorInstancesInOrder, tabIdToPath } from './panelLayoutModel'
 import { editorTabByInstance } from '../hooks/useLayoutState'
 import type { TabsNode } from '../hooks/workspaceTypes'
-
-// Marker colors: bright accent for the focused pane, a dimmed accent for the
-// active-but-unfocused instance (design: §D). Mirrors the editor/terminal pane
-// border the multi-instance renderer used.
-const FOCUS_ACCENT = 'var(--sol-accent)'
-const ACTIVE_ACCENT = 'color-mix(in srgb, var(--sol-accent) 40%, transparent)'
 
 export type PanelGroupProps = {
   /** The group (tabs) node to render. */
@@ -50,7 +46,9 @@ export type PanelGroupProps = {
 export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps) {
   const selection = useWorkspaceSelection()
   const commands = useWorkspaceCommands()
-  const tree = useWorkspaceLayout().panelLayout.desktop
+  const { layout, panelLayout } = useWorkspaceLayout()
+  const tree = panelLayout.desktop
+  const isActiveGroup = selection.activeGroupId === group.id
 
   // Underlying file paths open in 2+ editor tabs tree-wide: closing one view of a
   // dirty file is loss-free while another tab still holds the shared per-path
@@ -98,6 +96,12 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
     commands.closeGroup(group.id)
   }, [commands, group.id])
 
+  // Focus this (possibly empty) group as the open/close target on a tab-bar click,
+  // so Cmd+W / Close Group act on it.
+  const onActivateGroup = useCallback(() => {
+    commands.setActiveGroup(group.id)
+  }, [commands, group.id])
+
   // Discard a file's draft (→ clean) on an explicit dirty-close of its last view,
   // so the shared-buffer GC drops it instead of resurrecting the edit.
   const onDiscardDirty = useCallback((path: string) => {
@@ -106,13 +110,11 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
 
   const activeTabNode = group.tabs.find((t) => t.instanceId === group.activeTab) ?? null
   const marker = activeTabNode ? markerFor(activeTabNode.kind, activeTabNode.instanceId) : null
-  // Reserve a 2px top border (transparent when unmarked) so the marker never shifts
-  // layout (box-sizing: border-box).
-  const borderTop = `2px solid ${marker?.focused ? FOCUS_ACCENT : marker?.active ? ACTIVE_ACCENT : 'transparent'}`
 
   return (
     <div
       data-group-id={group.id}
+      data-group-active={isActiveGroup || undefined}
       role={isMain ? 'main' : undefined}
       style={sizing}
       className="flex flex-col min-w-0 min-h-0"
@@ -121,15 +123,23 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         groupId={group.id}
         tabs={group.tabs}
         activeTab={group.activeTab}
+        isActiveGroup={isActiveGroup}
         dirtyTabs={selection.editor.dirtyTabs}
         conflictTabs={selection.editor.conflictTabs}
         terminalBindings={selection.terminalBindings}
         pathsOpenElsewhere={pathsOpenElsewhere}
+        editorPrefs={{
+          previewMode: layout.previewMode,
+          splitDirection: layout.splitDirection,
+          autocompleteEnabled: layout.autocompleteEnabled,
+        }}
+        onSetEditorPrefs={commands.setEditorPrefs}
         onSelectTab={onSelectTab}
         onCloseTab={onCloseTab}
         onSplit={onSplit}
         onReorderTab={onReorderTab}
         onCloseGroup={onCloseGroup}
+        onActivateGroup={onActivateGroup}
         onDiscardDirty={onDiscardDirty}
       />
       {activeTabNode && (
@@ -138,7 +148,6 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
           data-panel-leaf={activeTabNode.kind}
           data-focused={marker?.focused || undefined}
           data-active={marker?.active || undefined}
-          style={{ borderTop }}
           className="flex flex-col flex-1 min-w-0 min-h-0"
         >
           <PanelHost id={activeTabNode.kind} instanceId={activeTabNode.instanceId} />

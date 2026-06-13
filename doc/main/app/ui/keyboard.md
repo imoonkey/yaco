@@ -30,7 +30,7 @@ Complete keyboard shortcut reference.
 | `Cmd+Ctrl+1` … `Cmd+Ctrl+9` | Workspace | Switch to session N (in display order). Holding `Cmd+Ctrl` reveals numeric index hints next to the first 9 session names in the sidebar. |
 | `Cmd+Ctrl+↑` / `Cmd+Ctrl+↓` | Workspace | Cycle to the previous/next session (focus-or-create its terminal tab; never rebinds the active terminal). Wraps around. |
 | `Cmd+Ctrl+←` / `Cmd+Ctrl+→` | Workspace | Cycle the **active group's** editor tabs left/right (wraps around) |
-| `Cmd+\` | Workspace (editor/terminal focused) | Split the **active group** (the focused tab's group) along its geometry-default axis (wide → right, tall → below) — spawns an empty adjacent group |
+| `Cmd+\` | Workspace (editor/terminal focused) | Split the **active group** (the focused tab's group) along its geometry-default axis (wide → right, tall → below) — the new group is **seeded** from the active tab (an editor tab is duplicated, a terminal tab is moved) |
 | `Cmd+K Cmd+\` | Workspace (editor/terminal focused) | Split the active group along the **orthogonal** axis |
 | `Cmd+Enter` | Workspace (explorer file focused) | Split an empty group beside the active one and open the focused file there (`openToSide`) |
 | `Cmd+Shift+T` | Workspace | Toggle the Tasks overlay (open + focus the task graph, or close it if already shown) |

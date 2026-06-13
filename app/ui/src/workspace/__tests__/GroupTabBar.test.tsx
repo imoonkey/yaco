@@ -20,7 +20,8 @@ afterEach(cleanup)
 
 const EDITOR = (instanceId: string, tabId: string, extra: Partial<GroupTab> = {}): GroupTab =>
   ({ instanceId, kind: 'editor', tabId, ...extra }) as GroupTab
-const TERMINAL = (instanceId: string): GroupTab => ({ instanceId, kind: 'terminal' })
+const TERMINAL = (instanceId: string, extra: Partial<GroupTab> = {}): GroupTab =>
+  ({ instanceId, kind: 'terminal', ...extra }) as GroupTab
 
 function renderBar(
   over: Partial<GroupTabBarProps> = {},
@@ -30,6 +31,7 @@ function renderBar(
     groupId: 'g1',
     tabs: [],
     activeTab: '',
+    isActiveGroup: true,
     dirtyTabs: new Set(),
     conflictTabs: new Set(),
     terminalBindings: {},
@@ -39,6 +41,7 @@ function renderBar(
     onSplit: vi.fn(),
     onReorderTab: vi.fn(),
     onCloseGroup: vi.fn(),
+    onActivateGroup: vi.fn(),
     onDiscardDirty: vi.fn(),
     ...over,
   }
@@ -223,5 +226,42 @@ describe('GroupTabBar — within-group reorder', () => {
     fireEvent.dragStart(tabEls[0])
     fireEvent.drop(tabEls[2])
     expect(onReorderTab).toHaveBeenCalledWith('editor:1', 2)
+  })
+})
+
+describe('GroupTabBar — preview / group emphasis / editor actions', () => {
+  it('renders a PREVIEW terminal tab in italic (FIX 1)', () => {
+    renderBar(
+      { tabs: [TERMINAL('terminal:1', { preview: true })], activeTab: 'terminal:1', terminalBindings: { 'terminal:1': 'claude-1' } },
+      { sessions: [{ name: 'claude-1', provider: 'claude' }] },
+    )
+    const tab = screen.getByTestId('group-tab')
+    expect(tab.style.fontStyle).toBe('italic')
+  })
+
+  it('focuses an empty group on a tab-bar click (FIX 2 empty-group close affordance)', () => {
+    const onActivateGroup = vi.fn()
+    renderBar({ tabs: [], activeTab: '', onActivateGroup })
+    fireEvent.click(screen.getByTestId('group-empty-area'))
+    expect(onActivateGroup).toHaveBeenCalled()
+  })
+
+  it('renders the editor actions (Suggestions) only when an editor tab is active (FIX 4)', () => {
+    const onSetEditorPrefs = vi.fn()
+    const editorPrefs = { previewMode: 'edit' as const, splitDirection: 'horizontal' as const, autocompleteEnabled: false }
+    renderBar({
+      tabs: [EDITOR('editor:1', 'src/app.ts')], activeTab: 'editor:1', editorPrefs, onSetEditorPrefs,
+    })
+    fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
+    expect(onSetEditorPrefs).toHaveBeenCalledWith({ autocompleteEnabled: true })
+  })
+
+  it('renders NO editor actions when the active tab is a terminal (FIX 4)', () => {
+    renderBar({
+      tabs: [TERMINAL('terminal:1')], activeTab: 'terminal:1',
+      editorPrefs: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
+      onSetEditorPrefs: vi.fn(),
+    })
+    expect(screen.queryByRole('button', { name: /Suggestions/ })).toBeNull()
   })
 })

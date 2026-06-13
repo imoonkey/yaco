@@ -18,8 +18,9 @@ import {
 // its file tab, the Split menu STAYS OPEN until a choice is made (the Bug 2
 // regression), and two files become two sibling editor tabs in one strip.
 //
-// Outcome shift (decided OQ2): Split spawns an EMPTY adjacent group — it does NOT
-// duplicate the editor. The original keeps its file; you open into the new group.
+// Outcome (FIX 2): Split SEEDS the new group from the source group's ACTIVE tab —
+// an editor tab is DUPLICATED into the new group (a fresh instance sharing the
+// per-path buffer), so the original keeps its file AND the new group shows it too.
 
 test.use({ viewport: { width: 1280, height: 800 } })
 
@@ -76,8 +77,8 @@ async function groupSplitAxis(page: Page): Promise<string | null> {
   })
 }
 
-test.describe('USER-QA: editor group split (button + right-click) → empty adjacent group', () => {
-  test('flow 1: the Split button makes an EMPTY group side-by-side; the original keeps its file', async ({ page, request }) => {
+test.describe('USER-QA: editor group split (button + right-click) → seeded adjacent group', () => {
+  test('flow 1: the Split button DUPLICATES the active file into a side-by-side group; the original keeps its file', async ({ page, request }) => {
     const project = await ws(page, request)
     const fileA = uniqueFileName('split_a.ts')
     const fileB = uniqueFileName('split_b.ts')
@@ -96,20 +97,21 @@ test.describe('USER-QA: editor group split (button + right-click) → empty adja
     await splitButton(page, 'group:1').click()
     await page.getByRole('menuitem', { name: 'Split Right' }).click()
 
-    // OUTCOME: a SECOND group appears — group:1 was NOT closed, and the new group is
-    // EMPTY (no editor body wrapper, "No files open" placeholder), side-by-side.
+    // OUTCOME (FIX 2): a SECOND group appears side-by-side — group:1 was NOT closed,
+    // and the new group is SEEDED with a DUPLICATE of fileA (same buffer, fresh tab),
+    // not left empty.
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
     expect(await groupIds(page)).toEqual(['group:1', 'group:2'])
     await expect(tabInGroup(page, 'group:1', fileA)).toBeVisible() // original keeps its file
     await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('ORIGINAL')
-    await expect(group(page, 'group:2').locator('[data-panel-leaf]')).toHaveCount(0) // empty: no body
-    await expect(group(page, 'group:2').getByText('No files open')).toBeVisible()
+    await expect(tabInGroup(page, 'group:2', fileA)).toBeVisible() // the duplicate
+    await expect(editorBody(page, 'group:2').locator('.cm-content')).toContainText('ORIGINAL')
 
     // OUTCOME: the two groups tile SIDE-BY-SIDE (split axis 'row'), not stacked.
     expect(await groupSplitAxis(page), 'Split Right tiles the groups side-by-side (row)').toBe('row')
 
-    // The split focused the empty group, so opening a file lands THERE → the two
-    // files now show side by side, one per group.
+    // The split focused the new group, so opening another file lands THERE → fileB
+    // joins group:2's strip; group:1 still shows the original.
     await openFileViaSearch(page, fileB)
     await expect(tabInGroup(page, 'group:2', fileB)).toBeVisible({ timeout: 10_000 })
     await expect(editorBody(page, 'group:2').locator('.cm-content')).toContainText('SIBLING')
@@ -146,11 +148,11 @@ test.describe('USER-QA: editor group split (button + right-click) → empty adja
 
     await page.screenshot({ path: 'test-results/mi-qa-editor-split-flow2.png' })
 
-    // Choosing "Split Down" → an EMPTY group STACKED below (an up/down split is
-    // axis 'col').
+    // Choosing "Split Down" → a group SEEDED with the duplicated file, STACKED
+    // below (an up/down split is axis 'col').
     await page.getByRole('menuitem', { name: 'Split Down' }).click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
-    await expect(group(page, 'group:2').locator('[data-panel-leaf]')).toHaveCount(0)
+    await expect(tabInGroup(page, 'group:2', file)).toBeVisible()
     expect(await groupSplitAxis(page), 'Split Down stacks the groups (col)').toBe('col')
 
     await deleteTestFile(page, project.name, file)
@@ -173,10 +175,11 @@ test.describe('USER-QA: editor group split (button + right-click) → empty adja
     await page.waitForTimeout(400)
     await expect(menu, 'the right-click Split menu also stays open until a choice').toBeVisible()
 
-    // Split Right → an empty group beside (row); the original keeps its file.
+    // Split Right → a group seeded with the duplicated file beside (row); the
+    // original keeps its file.
     await page.getByRole('menuitem', { name: 'Split Right' }).click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
-    await expect(group(page, 'group:2').locator('[data-panel-leaf]')).toHaveCount(0)
+    await expect(tabInGroup(page, 'group:2', file)).toBeVisible()
     await expect(tabInGroup(page, 'group:1', file)).toBeVisible()
     expect(await groupSplitAxis(page)).toBe('row')
 
@@ -219,14 +222,13 @@ test.describe('USER-QA: editor group split (button + right-click) → empty adja
     await createTestFile(page, project.name, file, 'export const v = 1\n')
     await waitForSSERefresh(page, 3000)
 
-    // group:1 shows the file; split to an empty group:2, then open the SAME file
-    // there → two editor tabs (two instances), one per group, sharing one buffer.
+    // group:1 shows the file; the Split DUPLICATES it into group:2 (two editor tabs,
+    // two instances, one per group) sharing one per-path buffer (FIX 2 seeding).
     await openFileViaSearch(page, file)
     await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('export const v')
     await splitButton(page, 'group:1').click()
     await page.getByRole('menuitem', { name: 'Split Right' }).click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
-    await openFileViaSearch(page, file) // lands in the focused empty group:2
     await expect(tabInGroup(page, 'group:2', file)).toBeVisible({ timeout: 10_000 })
 
     // Type into group:1's editor → the edit mirrors into group:2's editor showing
@@ -267,5 +269,30 @@ test.describe('USER-QA: editor group split (button + right-click) → empty adja
 
     await deleteTestFile(page, project.name, fileA)
     await deleteTestFile(page, project.name, fileB)
+  })
+
+  test('new: an EMPTY split group is closable (Close Group menu + Cmd+W)', async ({ page, request }) => {
+    await ws(page, request)
+    // Fresh workspace: group:1 is empty. Splitting an empty source yields an empty
+    // group:2 (nothing to seed) — both groups empty.
+    await expect(group(page, 'group:1').getByText('No files open')).toBeVisible({ timeout: 10_000 })
+    await splitButton(page, 'group:1').click()
+    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    expect(await groupIds(page)).toEqual(['group:1', 'group:2'])
+
+    // Close the empty group:2 via its tab-bar "Close Group" item → back to one group.
+    await splitButton(page, 'group:2').click()
+    await page.getByRole('menuitem', { name: 'Close Group' }).click()
+    await expect(group(page, 'group:2')).toHaveCount(0, { timeout: 10_000 })
+    expect(await groupIds(page)).toEqual(['group:1'])
+
+    // Split again; the new empty group is the active target → Cmd+W closes it.
+    await splitButton(page, 'group:1').click()
+    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    await page.keyboard.press('Meta+w')
+    await expect(group(page, 'group:2')).toHaveCount(0, { timeout: 10_000 })
+    expect(await groupIds(page)).toEqual(['group:1'])
   })
 })

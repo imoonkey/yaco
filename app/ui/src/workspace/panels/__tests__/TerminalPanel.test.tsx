@@ -69,6 +69,7 @@ type MockOpts = {
   terminalSend?: RoutedSend
   closePane?: (id: string) => void
   focusPane?: (kind: string, id: string) => void
+  pinTab?: (id: string) => void
 }
 
 function renderTerminalPanel(opts: MockOpts = {}) {
@@ -80,6 +81,7 @@ function renderTerminalPanel(opts: MockOpts = {}) {
     terminalSend = null,
     closePane = vi.fn(),
     focusPane = vi.fn(),
+    pinTab = vi.fn(),
   } = opts
   // Omitted binding → bound to 'claude-1'; an explicit '' → unbound placeholder.
   const bound = binding === undefined ? 'claude-1' : binding
@@ -92,7 +94,7 @@ function renderTerminalPanel(opts: MockOpts = {}) {
     terminalBindings: bound ? { [instanceId]: bound } : {},
   } as unknown as WorkspaceSelection
   const data = { sessions: { projectSessions: sessions } } as unknown as WorkspaceData
-  const commands = { closePane, focusPane } as unknown as WorkspaceCommands
+  const commands = { closePane, focusPane, pinTab } as unknown as WorkspaceCommands
   const voice: WorkspaceVoiceSurface = { ...DEFAULT_WORKSPACE_VOICE, terminalSend }
 
   const wrap = (ui: ReactNode) => (

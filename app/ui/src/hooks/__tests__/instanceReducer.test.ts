@@ -114,7 +114,7 @@ describe('OPEN_TAB into a focused empty group', () => {
 describe('OPEN_BOUND_TERMINAL_TAB is create+bind atomic', () => {
   it('appends a terminal tab AND binds it in ONE transition', () => {
     let s = makeState({}) // empty group:1
-    s = instanceReducer(s, { type: 'OPEN_BOUND_TERMINAL_TAB', groupId: 'group:1', session: 's1', newId: 'terminal' })
+    s = instanceReducer(s, { type: 'OPEN_BOUND_TERMINAL_TAB', groupId: 'group:1', session: 's1', newId: 'terminal', preview: false, protectedPaths: new Set() })
 
     expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([{ instanceId: 'terminal', kind: 'terminal' }])
     expect(s.terminalBindings).toEqual({ terminal: 's1' }) // bound in the same transition, survives GC
@@ -126,10 +126,10 @@ describe('OPEN_BOUND_TERMINAL_TAB is create+bind atomic', () => {
 
 // --- Split → empty focused group → open lands there -------------------------
 
-describe('SPLIT_GROUP spawns an empty focused sibling', () => {
+describe('SPLIT_GROUP (seed: false) spawns an empty focused sibling', () => {
   it('creates an empty group and sets activeGroupId to it; the next open lands there', () => {
     let s = makeState({ layout: oneGroup([editor('editor', 'a.ts')]) })
-    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2' })
+    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2', seed: false })
 
     expect(firstGroupId(s.panelLayout.desktop)).toBe('group:1')
     expect(tabsInGroup(s.panelLayout.desktop, 'group:2')).toEqual([]) // empty
@@ -139,6 +139,79 @@ describe('SPLIT_GROUP spawns an empty focused sibling', () => {
     s = instanceReducer(s, { type: 'OPEN_TAB', groupId: s.activeGroupId, tab: editor('editor:2', 'b.ts') })
     expect(tabsInGroup(s.panelLayout.desktop, 'group:2')).toEqual([editor('editor:2', 'b.ts')])
     expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([editor('editor', 'a.ts')]) // original kept its file
+  })
+})
+
+// --- Split SEEDS the new group from the source's active tab (FIX 2) ----------
+
+describe('SPLIT_GROUP (seed: true) seeds from the source active tab', () => {
+  it('DUPLICATES an editor active tab into the new group (fresh instanceId, same tabId)', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts')]) })
+    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2', seed: true })
+
+    // Source keeps its file; the new group shows the SAME file in a fresh tab.
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([editor('editor', 'a.ts')])
+    const dup = tabsInGroup(s.panelLayout.desktop, 'group:2')
+    expect(dup).toHaveLength(1)
+    expect(dup[0]).toMatchObject({ kind: 'editor', tabId: 'a.ts' })
+    expect(dup[0].instanceId).not.toBe('editor') // a distinct instance sharing the per-path buffer
+    expect(s.activeGroupId).toBe('group:2')
+  })
+
+  it('MOVES a terminal active tab into the new group (same instanceId + binding, no new PTY)', () => {
+    let s = makeState({
+      layout: oneGroup([editor('editor', 'a.ts'), { instanceId: 'terminal', kind: 'terminal' }]),
+      terminalBindings: { terminal: 's1' }, terminalMru: ['terminal'],
+    })
+    s = instanceReducer(s, { type: 'SET_ACTIVE_GROUP_TAB', groupId: 'group:1', instanceId: 'terminal' })
+    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2', seed: true })
+
+    // The terminal moved out of the source (its active falls to the editor neighbour);
+    // the SAME instance + binding now lives in the new group — no new terminal id.
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([editor('editor', 'a.ts')])
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:2')).toEqual([{ instanceId: 'terminal', kind: 'terminal' }])
+    expect(terminalInstancesInOrder(s.panelLayout.desktop)).toEqual(['terminal']) // exactly one terminal, not two
+    expect(s.terminalBindings).toEqual({ terminal: 's1' }) // binding preserved (no rebind)
+    expect(s.activeGroupId).toBe('group:2')
+  })
+
+  it('leaves the new group EMPTY when the source group is empty', () => {
+    let s = makeState({ layout: oneGroup([]) }) // empty group:1
+    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2', seed: true })
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:2')).toEqual([])
+    expect(s.activeGroupId).toBe('group:2')
+  })
+})
+
+// --- Terminal tabs preview / pin like file tabs (FIX 1) ----------------------
+
+describe('OPEN_BOUND_TERMINAL_TAB preview + one-preview-per-group', () => {
+  it('a preview terminal replaces the group\'s current preview editor tab', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts', { preview: true })]) })
+    s = instanceReducer(s, { type: 'OPEN_BOUND_TERMINAL_TAB', groupId: 'group:1', session: 's1', newId: 'terminal', preview: true, protectedPaths: new Set() })
+
+    // The clean preview editor tab was dropped; the preview terminal is the only preview.
+    const tabs = tabsInGroup(s.panelLayout.desktop, 'group:1')
+    expect(tabs).toEqual([{ instanceId: 'terminal', kind: 'terminal', preview: true }])
+  })
+
+  it('keeps a DIRTY (protected) preview editor and pins it instead of dropping', () => {
+    let s = makeState({ layout: oneGroup([editor('editor', 'a.ts', { preview: true })]) })
+    s = instanceReducer(s, { type: 'OPEN_BOUND_TERMINAL_TAB', groupId: 'group:1', session: 's1', newId: 'terminal', preview: true, protectedPaths: new Set(['a.ts']) })
+
+    const tabs = tabsInGroup(s.panelLayout.desktop, 'group:1')
+    expect(tabs).toEqual([
+      editor('editor', 'a.ts'), // dirty preview pinned (preview flag cleared), not dropped
+      { instanceId: 'terminal', kind: 'terminal', preview: true },
+    ])
+  })
+
+  it('PIN_TAB clears a terminal tab\'s preview flag (promote on re-click/interaction)', () => {
+    let s = makeState({ layout: oneGroup([]) })
+    s = instanceReducer(s, { type: 'OPEN_BOUND_TERMINAL_TAB', groupId: 'group:1', session: 's1', newId: 'terminal', preview: true, protectedPaths: new Set() })
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')[0]).toMatchObject({ preview: true })
+    s = instanceReducer(s, { type: 'PIN_TAB', groupId: 'group:1', instanceId: 'terminal' })
+    expect(tabsInGroup(s.panelLayout.desktop, 'group:1')).toEqual([{ instanceId: 'terminal', kind: 'terminal' }])
   })
 })
 
@@ -274,7 +347,7 @@ describe('activeEditorTabOf reflects the active group, not the global MRU editor
 
   it('is null after splitting to a focused EMPTY group (empty group → null, not the old file)', () => {
     let s = makeState({ layout: oneGroup([editor('e1', 'a.ts')]) })
-    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2' })
+    s = instanceReducer(s, { type: 'SPLIT_GROUP', fromGroupId: 'group:1', side: 'right', newGroupId: 'group:2', seed: false })
     expect(s.activeGroupId).toBe('group:2')
     expect(activeEditorTabOf(s)).toBeNull()
   })

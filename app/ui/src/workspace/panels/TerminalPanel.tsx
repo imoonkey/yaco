@@ -65,7 +65,13 @@ export function TerminalPanel() {
   const send = voice.terminalSend as (InsertRequest & { instanceId?: string }) | null
   const mySend = send?.instanceId === instanceId ? send : null
 
-  const focusTerminal = () => commands.focusPane('terminal', instanceId)
+  // Interacting with the terminal focuses it AND pins its tab (clears preview) —
+  // mirroring the editor's promote-on-edit, so a previewed terminal you actually
+  // use becomes permanent instead of being replaced by the next preview.
+  const focusTerminal = () => {
+    commands.focusPane('terminal', instanceId)
+    commands.pinTab(instanceId)
+  }
 
   if (!bound) {
     return (

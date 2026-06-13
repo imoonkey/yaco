@@ -74,19 +74,22 @@ const freshGroupId = (tree: LayoutNode): string => {
 // --- Provider command wiring (mirrors WorkspaceProvider.tsx) -----------------
 //
 // `groupForInstance(id) = groupOf(tree, id) ?? targetGroup`, `resolveTarget() =
-// targetGroup`. clickSession: focus → SET_ACTIVE_GROUP_TAB the shown tab; create →
-// OPEN_BOUND_TERMINAL_TAB into the target group. openBeside: focus, else SPLIT_GROUP
-// then OPEN_BOUND_TERMINAL_TAB into the new empty group.
+// targetGroup`. clickSession: focus → SET_ACTIVE_GROUP_TAB + PIN_TAB the shown tab
+// (preview → pinned on re-click); create → OPEN_BOUND_TERMINAL_TAB (preview) into the
+// target group. openBeside: focus, else SPLIT_GROUP (seed:false — empty) then
+// OPEN_BOUND_TERMINAL_TAB (pinned) into the new group.
 
 function clickSession(state: InstanceState, name: string): InstanceState {
   const tree = state.panelLayout.desktop
   const action = resolveSessionClick(name, state.terminalBindings)
   if (action.kind === 'focus') {
     const groupId = groupOf(tree, action.terminalId) ?? targetGroup(state)
-    return instanceReducer(state, { type: 'SET_ACTIVE_GROUP_TAB', groupId, instanceId: action.terminalId })
+    const focused = instanceReducer(state, { type: 'SET_ACTIVE_GROUP_TAB', groupId, instanceId: action.terminalId })
+    return instanceReducer(focused, { type: 'PIN_TAB', groupId, instanceId: action.terminalId })
   }
   return instanceReducer(state, {
-    type: 'OPEN_BOUND_TERMINAL_TAB', groupId: targetGroup(state), session: name, newId: newInstanceId(tree, 'terminal'),
+    type: 'OPEN_BOUND_TERMINAL_TAB', groupId: targetGroup(state), session: name,
+    newId: newInstanceId(tree, 'terminal'), preview: true, protectedPaths: new Set(),
   })
 }
 
@@ -98,10 +101,10 @@ function openBeside(state: InstanceState, name: string): InstanceState {
     return instanceReducer(state, { type: 'SET_ACTIVE_GROUP_TAB', groupId, instanceId: action.terminalId })
   }
   const newGroupId = freshGroupId(tree)
-  const split = instanceReducer(state, { type: 'SPLIT_GROUP', fromGroupId: targetGroup(state), side: 'right', newGroupId })
+  const split = instanceReducer(state, { type: 'SPLIT_GROUP', fromGroupId: targetGroup(state), side: 'right', newGroupId, seed: false })
   return instanceReducer(split, {
     type: 'OPEN_BOUND_TERMINAL_TAB', groupId: newGroupId, session: name,
-    newId: newInstanceId(split.panelLayout.desktop, 'terminal'),
+    newId: newInstanceId(split.panelLayout.desktop, 'terminal'), preview: false, protectedPaths: new Set(),
   })
 }
 

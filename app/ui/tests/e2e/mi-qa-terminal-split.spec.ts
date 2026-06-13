@@ -6,7 +6,7 @@ import {
   activityPanel,
   group,
   createTestFile,
-  openFileViaSearch,
+  openPinnedFile,
   waitForSSERefresh,
   uniqueFileName,
   runTag,
@@ -18,11 +18,12 @@ import {
 // a regression back to the old MRU/active-terminal rebind is caught end-to-end.
 //
 // Under the FLAT group model a terminal is its own TAB in a working group (bound on
-// create), never a standalone leaf or an unbound placeholder pane. The asserted
+// create), never a standalone leaf or an unbound placeholder pane. A session click
+// opens a PREVIEW terminal (like a file preview); re-clicking pins it. The asserted
 // USER-OBSERVABLE outcomes:
-//   3. clicking a session after a split binds it to the NEW (focused) group on
-//      create; the first session stays bound where it was (NO rebind); no leftover
-//      empty placeholder.
+//   3. splitting a terminal-active group MOVES the terminal into the new group (the
+//      SAME instance — no new PTY); clicking another session then binds it on create
+//      WITHOUT rebinding the first.
 //   4. every terminal TAB has a working close ×; closing it removes the tab and the
 //      session keeps running (survives).
 //   5. Open beside binds each session to its OWN distinct group/tab (the contrast).
@@ -89,30 +90,36 @@ async function openProjectWithSessions(
 }
 
 test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / open-beside (5)', () => {
-  test('flow 3: clicking a second session binds it on create WITHOUT rebinding the first (Bug 3)', async ({ page, request }) => {
+  test('flow 3: splitting a terminal-active group MOVES the terminal (same instance), then a second session binds without rebinding (Bug 3)', async ({ page, request }) => {
     const { sessions: [s1, s2] } = await openProjectWithSessions(page, request, 2)
 
-    // Bind s1 via the REAL session-row click → a bound terminal tab in group:1.
+    // Bind s1 via the REAL session-row click → a PREVIEW terminal tab in group:1;
+    // re-click PINS it (a session tab behaves like a file tab: click = preview, click
+    // again = pinned), so it survives the split move + a later session preview.
     await sessionRow(page, s1).click()
-    await expect(terminalTab(group(page, 'group:1'), s1)).toBeVisible({ timeout: 15_000 })
+    const s1Tab = terminalTab(group(page, 'group:1'), s1)
+    await expect(s1Tab).toBeVisible({ timeout: 15_000 })
+    await sessionRow(page, s1).click() // re-click → pinned
+    const s1Instance = await s1Tab.getAttribute('data-tab-instance')
 
-    // Split group:1 → an EMPTY adjacent group (decided OQ2: a split spawns an empty
-    // group, NEVER a stranded/unbound terminal pane). Capture the emptiness now,
-    // before any focus settles — there is no leftover placeholder to fill.
+    // Split group:1 whose ACTIVE tab is s1's terminal → the terminal MOVES into the
+    // new group (FIX 2): the SAME instance (no new PTY) now lives in group:2, and the
+    // source group:1 is left empty (its only tab moved out).
     await splitButton(page, 'group:1').click()
     await page.getByRole('menuitem', { name: 'Split Right' }).click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
-    await expect(group(page, 'group:2').locator('[data-panel-leaf]'), 'the split made an EMPTY group, not a stranded terminal').toHaveCount(0)
-    await expect(group(page, 'group:2').getByText('No files open')).toBeVisible()
+    const movedTab = terminalTab(group(page, 'group:2'), s1)
+    await expect(movedTab, 's1 terminal moved into the new group').toBeVisible({ timeout: 10_000 })
+    expect(await movedTab.getAttribute('data-tab-instance'), 'the SAME terminal instance moved — no new PTY').toBe(s1Instance)
+    await expect(group(page, 'group:1').getByText('No files open'), 'the source group is left empty').toBeVisible()
+    await expect(allTerminalTabs(page), 'still exactly one terminal — moved, not duplicated').toHaveCount(1)
 
     // Click the OTHER session row (the REAL provider clickSession). OUTCOME (Bug 3
-    // fix): s2 is BOUND ON CREATE to its OWN new terminal tab, and s1 is NOT
-    // rebound — its terminal tab survives, still bound to s1. (The new terminal
-    // lands in the focused group; the anti-rebind guarantee is the load-bearing
-    // outcome — the old bug silently rebound s1 to s2.)
+    // fix): s2 is BOUND ON CREATE to its OWN new terminal tab in the active group;
+    // s1 is NOT rebound — its (pinned, moved) terminal survives, still bound to s1.
     await sessionRow(page, s2).click()
     await expect(terminalTab(page, s2), 's2 is bound on create to its own new terminal tab').toHaveCount(1, { timeout: 15_000 })
-    await expect(terminalTab(page, s1), 's1 MUST stay bound — clicking s2 must NOT rebind the first terminal').toHaveCount(1)
+    await expect(terminalTab(page, s1), 's1 MUST stay bound — clicking s2 must NOT rebind/replace it').toHaveCount(1)
     await expect(idlePlaceholder(page), 'no empty/idle terminal placeholder is left behind').toHaveCount(0)
 
     // Two DISTINCT bound terminals coexist (s1 + s2) — neither overwrote the other.
@@ -176,11 +183,12 @@ test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / op
   test('new: clicking a session puts a terminal tab in the SAME strip as an editor tab (mixed, flat)', async ({ page, request }) => {
     const { project, sessions: [s1] } = await openProjectWithSessions(page, request, 1)
 
-    // Open a file → an editor tab in group:1.
+    // Open a file as a PINNED editor tab in group:1 (a pinned tab is not replaced by
+    // the next preview — the session click opens a PREVIEW terminal).
     const file = uniqueFileName('mixed.ts')
     await createTestFile(page, project.name, file, 'export const m = 1\n')
     await waitForSSERefresh(page, 3000)
-    await openFileViaSearch(page, file)
+    await openPinnedFile(page, file)
     await expect(group(page, 'group:1').locator('[data-testid="group-tab"][data-tab-kind="editor"]')).toHaveCount(1, { timeout: 10_000 })
 
     // Click the session → a terminal tab joins the SAME group's strip (one uniform,

@@ -82,12 +82,13 @@ type Action =
   | { type: 'OPEN_TAB'; groupId: string; tab: GroupTab }
   | { type: 'OPEN_PREVIEW_TAB'; groupId: string; tabId: string; newId: string; protectedPaths: ReadonlySet<string> }
   | { type: 'OPEN_DIFF_TAB'; groupId: string; tabId: string; newId: string }
-  | { type: 'OPEN_BOUND_TERMINAL_TAB'; groupId: string; session: string; newId: string }
+  | { type: 'OPEN_BOUND_TERMINAL_TAB'; groupId: string; session: string; newId: string; preview: boolean; protectedPaths: ReadonlySet<string> }
   | { type: 'PIN_TAB'; groupId: string; instanceId: string }
   | { type: 'CLOSE_GROUP_TAB'; groupId: string; instanceId: string }
   | { type: 'CLOSE_GROUP'; groupId: string }
   | { type: 'SET_ACTIVE_GROUP_TAB'; groupId: string; instanceId: string }
-  | { type: 'SPLIT_GROUP'; fromGroupId: string; side: SplitSide; newGroupId: string }
+  | { type: 'SET_ACTIVE_GROUP'; groupId: string }
+  | { type: 'SPLIT_GROUP'; fromGroupId: string; side: SplitSide; newGroupId: string; seed: boolean }
   | { type: 'REORDER_GROUP_TAB'; groupId: string; instanceId: string; toIndex: number }
   | { type: 'RETARGET_PATHS'; oldPath: string; newPath: string }
   | { type: 'CLOSE_TABS_UNDER'; path: string }
@@ -97,9 +98,20 @@ type Action =
 
 // --- Pure group-tab logic (re-homed from the old per-EditorView fns) ---------
 
-/** Clear an editor tab's preview flag (pin it). */
+/** Clear a tab's preview flag (pin it) — editor or terminal. */
 function pinned(tab: GroupTab): GroupTab {
-  return tab.kind === 'editor' && tab.preview ? { ...tab, preview: false } : tab
+  return tab.preview ? { ...tab, preview: false } : tab
+}
+
+/** Drop the group's current droppable preview tab (other than `keep`) so at most
+ *  ONE preview exists per group across editor+terminal. A clean editor preview or
+ *  any terminal preview is removed; a dirty (protected) editor preview is pinned
+ *  instead. This is the old `withoutOldPreview` rule, generalized to both kinds. */
+function dropOldPreview(tabs: GroupTab[], keep: string, protectedPaths: ReadonlySet<string>): GroupTab[] {
+  const old = tabs.find((t) => t.preview && t.instanceId !== keep)
+  if (!old) return tabs
+  const protectedEditor = old.kind === 'editor' && isFileTab(old.tabId) && protectedPaths.has(old.tabId)
+  return protectedEditor ? tabs.map((t) => (t === old ? pinned(t) : t)) : tabs.filter((t) => t !== old)
 }
 
 /** Open (or activate) a pinned editor tab for `tabId`. Dedup is by EXACT `tabId`
@@ -117,8 +129,8 @@ function openEditorTab(group: TabsNode, tabId: string, newId: string): TabsNode 
 }
 
 /** Open `tabId` as a preview editor tab: already-open-pinned → just activate; else
- *  drop the group's current droppable preview (clean / non-protected file) and add
- *  the new preview. Spans the group's editor tabs (the old `withoutOldPreview` rule). */
+ *  drop the group's current droppable preview (clean / non-protected file, or a
+ *  terminal preview) and add the new preview. Spans the group's tabs. */
 function previewEditorTab(
   group: TabsNode, tabId: string, newId: string, protectedPaths: ReadonlySet<string>,
 ): TabsNode {
@@ -126,14 +138,8 @@ function previewEditorTab(
   if (existing && existing.kind === 'editor' && !existing.preview) {
     return { ...group, activeTab: existing.instanceId }
   }
-  let tabs = group.tabs
-  const oldPreview = tabs.find((t) => t.kind === 'editor' && t.preview && t.tabId !== tabId)
-  if (oldPreview && oldPreview.kind === 'editor') {
-    const droppable = !isFileTab(oldPreview.tabId) || !protectedPaths.has(oldPreview.tabId)
-    tabs = droppable
-      ? tabs.filter((t) => t !== oldPreview)
-      : tabs.map((t) => (t === oldPreview ? pinned(t) : t))
-  }
+  const keep = existing?.instanceId ?? newId
+  const tabs = dropOldPreview(group.tabs, keep, protectedPaths)
   if (existing) {
     return {
       ...group,
@@ -388,11 +394,13 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       })
     }
     case 'OPEN_BOUND_TERMINAL_TAB': {
-      const panelLayout = mapGroup(state.panelLayout, action.groupId, (g) => ({
-        ...g,
-        tabs: [...g.tabs, { instanceId: action.newId, kind: 'terminal' } as GroupTab],
-        activeTab: action.newId,
-      }))
+      const panelLayout = mapGroup(state.panelLayout, action.groupId, (g) => {
+        const tabs = action.preview ? dropOldPreview(g.tabs, action.newId, action.protectedPaths) : g.tabs
+        const tab: GroupTab = action.preview
+          ? { instanceId: action.newId, kind: 'terminal', preview: true }
+          : { instanceId: action.newId, kind: 'terminal' }
+        return { ...g, tabs: [...tabs, tab], activeTab: action.newId }
+      })
       return gcMaps({
         ...state, panelLayout,
         terminalBindings: { ...state.terminalBindings, [action.newId]: action.session },
@@ -436,6 +444,11 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
     }
     case 'CLOSE_GROUP':
       return gcMaps({ ...state, panelLayout: closeGroupNode(state.panelLayout, action.groupId) })
+    case 'SET_ACTIVE_GROUP': {
+      if (!hasGroupId(state.panelLayout.desktop, action.groupId)) return state
+      if (state.activeGroupId === action.groupId) return state
+      return { ...state, activeGroupId: action.groupId }
+    }
     case 'SET_ACTIVE_GROUP_TAB': {
       const tab = tabByInstance(state.panelLayout.desktop, action.instanceId)
       const kind: FocusTarget = tab?.kind === 'terminal' ? 'terminal' : 'editor'
@@ -450,8 +463,24 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       })
     }
     case 'SPLIT_GROUP': {
-      const panelLayout = splitBeside(state.panelLayout, action.fromGroupId, action.side, action.newGroupId)
+      let panelLayout = splitBeside(state.panelLayout, action.fromGroupId, action.side, action.newGroupId)
       if (panelLayout === state.panelLayout) return state
+      // Seed the new group from the SOURCE's active tab (VSCode-like): an editor tab
+      // is DUPLICATED (fresh instanceId, SAME tabId → shares the per-path buffer); a
+      // terminal tab is MOVED (same instanceId + binding → no new PTY; the source's
+      // active falls to its neighbour). An empty source / `seed: false` → empty group.
+      if (action.seed) {
+        const activeId = activeTabOf(state.panelLayout.desktop, action.fromGroupId)
+        const activeTab = activeId ? tabByInstance(state.panelLayout.desktop, activeId) : null
+        if (activeTab?.kind === 'editor') {
+          const dupId = newInstanceId(panelLayout.desktop, 'editor')
+          const dup: GroupTab = { instanceId: dupId, kind: 'editor', tabId: activeTab.tabId }
+          panelLayout = mapGroup(panelLayout, action.newGroupId, (g) => ({ ...g, tabs: [dup], activeTab: dupId }))
+        } else if (activeTab?.kind === 'terminal') {
+          panelLayout = mapGroup(panelLayout, action.fromGroupId, (g) => removeTab(g, activeId))
+          panelLayout = mapGroup(panelLayout, action.newGroupId, (g) => ({ ...g, tabs: [activeTab], activeTab: activeId }))
+        }
+      }
       return gcMaps({ ...state, panelLayout, activeGroupId: action.newGroupId })
     }
     case 'REORDER_GROUP_TAB': {
@@ -584,11 +613,11 @@ export function useLayoutState(
     dispatch({ type: 'OPEN_DIFF_TAB', groupId, tabId, newId: newEditorId() })
   }, [])
 
-  const openBoundTerminalTab = useCallback((groupId: string, session: string): string => {
+  const openBoundTerminalTab = useCallback((groupId: string, session: string, preview = false): string => {
     const newId = newTerminalId()
-    dispatch({ type: 'OPEN_BOUND_TERMINAL_TAB', groupId, session, newId })
+    dispatch({ type: 'OPEN_BOUND_TERMINAL_TAB', groupId, session, newId, preview, protectedPaths: dirtyPathsRef.current })
     return newId
-  }, [])
+  }, [dirtyPathsRef])
 
   const pinTab = useCallback((groupId: string, instanceId: string) => {
     dispatch({ type: 'PIN_TAB', groupId, instanceId })
@@ -606,9 +635,13 @@ export function useLayoutState(
     dispatch({ type: 'SET_ACTIVE_GROUP_TAB', groupId, instanceId })
   }, [])
 
-  const splitGroup = useCallback((fromGroupId: string, side: SplitSide): string => {
+  const setActiveGroup = useCallback((groupId: string) => {
+    dispatch({ type: 'SET_ACTIVE_GROUP', groupId })
+  }, [])
+
+  const splitGroup = useCallback((fromGroupId: string, side: SplitSide, seed = true): string => {
     const newGroupId = freshGroupId()
-    dispatch({ type: 'SPLIT_GROUP', fromGroupId, side, newGroupId })
+    dispatch({ type: 'SPLIT_GROUP', fromGroupId, side, newGroupId, seed })
     return newGroupId
   }, [])
 
@@ -674,6 +707,7 @@ export function useLayoutState(
     closeGroupTab,
     closeGroup,
     setActiveGroupTab,
+    setActiveGroup,
     splitGroup,
     reorderGroupTab,
     focusPane,

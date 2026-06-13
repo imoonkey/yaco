@@ -9,9 +9,9 @@ import { useCallback } from 'react'
 import { isDiffTab, isFileTab, type FileState, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import type { WorkspaceLayout } from '../hooks/workspaceTypes'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
-import { Sparkles, Columns2, Rows2 } from 'lucide-react'
 import { WorkspaceBreadcrumbs } from './WorkspaceBreadcrumbs'
 import { WorkspaceEditorArea } from './WorkspaceEditorArea'
+import { EditorActions } from './EditorActions'
 import { VoiceControl } from '../components/VoiceControl'
 import { clampLine } from './markdown'
 import { isBinaryPreviewFile, isHtmlFile, isMarkdownFile, isPreviewableFile } from '../lib/binaryFiles'
@@ -27,46 +27,6 @@ interface EditorColumnVoice {
   state: InteractionState
   onRecord: () => void
   onStop: () => void
-}
-
-// The markdown/html preview-mode segmented control + its split-direction toggle.
-// Editor-body view chrome (it switches how the ACTIVE file renders), so it lives
-// here rather than in the group's tab strip.
-function PreviewModeToggle({ mode, splitDirection, onChange, onDirectionChange, isTouch }: { mode: PreviewMode; splitDirection: SplitDirection; onChange: (m: PreviewMode) => void; onDirectionChange: (d: SplitDirection) => void; isTouch: boolean }) {
-  const modes: { value: PreviewMode; label: string }[] = isTouch
-    ? [{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]
-    : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
-
-  return (
-    <div className="flex items-center gap-1 shrink-0">
-      <div className="flex rounded border overflow-hidden" style={{ borderColor: 'var(--sol-border)' }}>
-        {modes.map(({ value, label }) => {
-          const active = mode === value
-          return (
-            <button key={value} onClick={() => onChange(value)}
-              className="text-ui-xs px-2 py-0.5 cursor-pointer"
-              style={{
-                backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
-                color: active ? 'var(--sol-accent)' : 'var(--sol-text)',
-                borderRight: value !== modes[modes.length - 1].value ? '1px solid var(--sol-border)' : undefined,
-              }}>
-              {label}
-            </button>
-          )
-        })}
-      </div>
-      {mode === 'split' && !isTouch && (
-        <button
-          onClick={() => onDirectionChange(splitDirection === 'horizontal' ? 'vertical' : 'horizontal')}
-          className="flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg"
-          style={{ width: 20, height: 20, color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
-          title={splitDirection === 'horizontal' ? 'Switch to vertical split' : 'Switch to horizontal split'}
-        >
-          {splitDirection === 'horizontal' ? <Rows2 size={12} /> : <Columns2 size={12} />}
-        </button>
-      )}
-    </div>
-  )
 }
 
 export interface WorkspaceEditorColumnProps {
@@ -128,16 +88,12 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
   const activeViewportLine = activeFileState?.viewportLine ?? 1
   const hasConflict = !!activeFilePath && conflictTabs.has(activeFilePath)
   const showSuggestionsToggle = !activeDiffTab
-  const suggestionsLabel = autocompleteEnabled
-    ? 'Suggestions: disable inline suggestions'
-    : 'Suggestions: enable inline suggestions'
-  const suggestionsTitle = autocompleteEnabled
-    ? 'Disable inline suggestions'
-    : 'Enable inline suggestions - sends nearby markdown text to the model provider'
   // Per-pane mic is MOBILE-only: on desktop the GlobalVoiceControl in the app top
-  // bar is the single voice surface (design: §G).
+  // bar is the single voice surface (design: §G). The editor view controls (the
+  // suggestions sparkle + preview-mode toggle) live in the GROUP TAB BAR on desktop;
+  // mobile has no tab bar, so this body keeps a slim action row (mic + EditorActions).
   const showMic = isMobile && voice.eligible
-  const showActionBar = canTogglePreview || showSuggestionsToggle || showMic
+  const showActionBar = isMobile && (canTogglePreview || showSuggestionsToggle || showMic)
 
   const handleViewportLine = useCallback((line: number) => {
     if (activeFilePath) onUpdateViewport(activeFilePath, Math.max(1, line))
@@ -164,27 +120,14 @@ export function WorkspaceEditorColumn(props: WorkspaceEditorColumnProps) {
               onStop={voice.onStop}
             />
           )}
-          {showSuggestionsToggle && (
-            <button
-              onClick={() => onLayoutUpdate({ autocompleteEnabled: !autocompleteEnabled })}
-              title={suggestionsTitle}
-              aria-label={suggestionsLabel}
-              aria-pressed={autocompleteEnabled}
-              style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 24, height: 22, padding: 0,
-                fontSize: 'var(--text-ui-sm)', border: 'none', borderRadius: 3, cursor: 'pointer',
-                background: autocompleteEnabled ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'transparent',
-                color: autocompleteEnabled ? 'var(--sol-text)' : 'var(--sol-text-dim)',
-                opacity: autocompleteEnabled ? 1 : 0.6,
-              }}
-            >
-              <Sparkles size={13} aria-hidden="true" />
-            </button>
-          )}
-          {canTogglePreview && (
-            <PreviewModeToggle mode={previewMode} splitDirection={splitDirection} onChange={(mode) => onLayoutUpdate({ previewMode: mode })} onDirectionChange={(dir) => onLayoutUpdate({ splitDirection: dir })} isTouch={isTouch} />
-          )}
+          <EditorActions
+            tabId={activeTab ?? ''}
+            previewMode={previewMode}
+            splitDirection={splitDirection}
+            autocompleteEnabled={autocompleteEnabled}
+            isTouch={isTouch}
+            onSetEditorPrefs={onLayoutUpdate}
+          />
         </div>
       )}
 

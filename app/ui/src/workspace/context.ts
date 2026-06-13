@@ -204,12 +204,17 @@ export type WorkspaceCommands = {
   movePane: (id: string, placement: PanePlacement) => void
 
   // Group-native structural commands (design: VSCode Tab Groups). The group tab
-  // bar drives these directly by group id — `splitGroup` spawns an EMPTY sibling
-  // group (works even when the source group has no tabs), `reorderGroupTab` is the
-  // within-group drag, `closeGroup` removes an empty group.
-  splitGroup: (groupId: string, side: SplitSide) => void
+  // bar drives these directly by group id — `splitGroup` spawns a sibling group
+  // seeded from the source's active tab (duplicate editor / move terminal), or an
+  // EMPTY group when `seed` is false (openToSide/openBeside) or the source is empty;
+  // `reorderGroupTab` is the within-group drag, `closeGroup` removes a group,
+  // `setActiveGroup` focuses an (empty) group as the open/close target, `pinTab`
+  // clears a tab's preview flag.
+  splitGroup: (groupId: string, side: SplitSide, seed?: boolean) => void
   reorderGroupTab: (groupId: string, instanceId: string, toIndex: number) => void
   closeGroup: (groupId: string) => void
+  setActiveGroup: (groupId: string) => void
+  pinTab: (instanceId: string) => void
 
   // Sessions
   clickSession: (name: string) => void
