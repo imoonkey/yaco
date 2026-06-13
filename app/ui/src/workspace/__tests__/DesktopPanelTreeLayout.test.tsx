@@ -10,9 +10,9 @@
 //   - the focused active tab body carries `data-focused` (paneMarker)
 //   - split containers carry `data-split-axis`
 // PanelHost is mocked to a marker so the provider-heavy bodies never mount.
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { RefObject } from 'react'
+import type { ReactNode, RefObject } from 'react'
 
 // Mock PanelHost so the real editor/terminal/dock bodies (provider-heavy) never
 // mount; the marker records the id + instanceId the renderer asked for.
@@ -27,6 +27,7 @@ import {
   WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceSelectionContext,
   type WorkspaceEnv, type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceSelection,
 } from '../context'
+import { useDrag, type DragPayload } from '../WorkspaceDragContext'
 import type { LayoutNode, FocusedPane } from '../../hooks/workspaceTypes'
 
 // A dock leaf + three groups: one editor-active, one empty, one terminal-active.
@@ -75,7 +76,9 @@ function renderTree(focusedPane: FocusedPane = { kind: 'editor', instanceId: 'ed
 
 const group = (id: string): HTMLElement | null => document.querySelector(`[data-group-id="${id}"]`)
 
-afterEach(cleanup)
+// The dragged-pane identity is a module singleton — clear it between cases via the
+// window-level dragend fallback so a stale payload never leaks across tests.
+afterEach(() => { cleanup(); window.dispatchEvent(new Event('dragend')) })
 
 describe('DesktopPanelTreeLayout — group rendering', () => {
   it('renders a PanelGroup container per tabs node', () => {
@@ -193,5 +196,244 @@ describe('DesktopPanelTreeLayout — landmarks + tasks overlay', () => {
     expect(document.querySelector('[data-panel-host="tasks"]')).toBeTruthy()
     // the working group stays mounted behind the overlay
     expect(group('group:1')).toBeTruthy()
+  })
+})
+
+// ── Sidebar drag-and-drop ────────────────────────────────────────────────────
+//
+// The DROP side (this file's code) is driven through the REAL overlay/edge-strip
+// elements and the module-singleton pane payload (the same store every real drag
+// source mutates). Tab/group drags start from their REAL affordances (the rendered
+// GroupTabBar); a dock drag's source is the dock header inside the provider-heavy
+// PanelHost (mocked here), so a one-line `PaneDragSource` mutates the same store the
+// header would. The observable outcome asserted is the exact mover command + args.
+
+// A DataTransfer fake whose `setData` populates `types` — the same object rides
+// both dragStart (source tags our mime) and drop (target gates on it).
+function paneTransfer() {
+  const store: Record<string, string> = {}
+  const types: string[] = []
+  return {
+    effectAllowed: 'none', dropEffect: 'none', types,
+    setData: (t: string, v: string) => { if (!(t in store)) types.push(t); store[t] = v },
+    getData: (t: string) => store[t] ?? '',
+  }
+}
+
+// Stubs an element's measured rect (jsdom returns zeros) so `sidebarInsertIndex`
+// resolves a deterministic insertion position.
+function stubRect(el: Element, r: Partial<DOMRect>): void {
+  el.getBoundingClientRect = () =>
+    ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, toJSON() {}, ...r }) as DOMRect
+}
+
+// A pane drag source mutating the same singleton the real header/tab does.
+function PaneDragSource({ payload }: { payload: DragPayload }) {
+  const drag = useDrag()
+  return <div data-testid="pane-source" draggable onDragStart={(e) => drag.start(e, payload)} />
+}
+
+type Movers = Pick<WorkspaceCommands, 'movePane' | 'moveTab' | 'moveGroup' | 'moveTabToSplit'>
+
+function mountSidebar(desktop: LayoutNode, source?: DragPayload): Movers {
+  const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
+  const layoutValue = {
+    layout: { showTasks: false },
+    panelLayout: { version: 1, desktop, mobile: { activeDock: 'browse' }, panelState: {} },
+  } as unknown as WorkspaceLayoutContextValue
+  const movers: Movers = { movePane: vi.fn(), moveTab: vi.fn(), moveGroup: vi.fn(), moveTabToSplit: vi.fn() }
+  const commands = { collapsePanel: vi.fn(), resizeSplitChild: vi.fn(), ...movers } as unknown as WorkspaceCommands
+  const selection = {
+    focusedPane: { kind: 'editor', instanceId: 'editor:1' } as FocusedPane,
+    activeEditorId: 'editor:1', activeTerminalId: null, activeGroupId: 'group:1',
+    terminalBindings: {}, editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+  } as unknown as WorkspaceSelection
+  const rootRef = { current: null } as RefObject<HTMLDivElement | null>
+  const ui: ReactNode = (
+    <WorkspaceEnvContext.Provider value={env}>
+      <WorkspaceLayoutContext.Provider value={layoutValue}>
+        <WorkspaceCommandsContext.Provider value={commands}>
+          <WorkspaceSelectionContext.Provider value={selection}>
+            <DesktopPanelTreeLayout rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+            {source && <PaneDragSource payload={source} />}
+          </WorkspaceSelectionContext.Provider>
+        </WorkspaceCommandsContext.Provider>
+      </WorkspaceLayoutContext.Provider>
+    </WorkspaceEnvContext.Provider>
+  )
+  render(ui)
+  return movers
+}
+
+const grp = (id: string, tabId: string): LayoutNode =>
+  ({ kind: 'tabs', id, tabs: [{ instanceId: tabId, kind: 'editor', tabId: `src/${tabId}.ts` }], activeTab: tabId })
+const dock = (panel: string): LayoutNode => ({ kind: 'leaf', id: panel, panel: panel as never })
+
+const sidebarDrop = (region: 'left' | 'right'): HTMLElement | null =>
+  document.querySelector(`[data-sidebar-drop="${region}"]`)
+const edgeStrip = (side: 'left' | 'right'): HTMLElement | null =>
+  document.querySelector(`[data-edge-strip="${side}"]`)
+
+// A drop carrying a pointer Y that jsdom's synthetic DragEvent otherwise drops —
+// forced onto the native event so `sidebarInsertIndex` resolves a real position.
+function dropAtY(el: Element, transfer: ReturnType<typeof paneTransfer>, clientY: number): void {
+  const ev = createEvent.drop(el, { dataTransfer: transfer })
+  Object.defineProperty(ev, 'clientY', { value: clientY })
+  fireEvent(el, ev)
+}
+
+describe('DesktopPanelTreeLayout — dock sidebar DnD', () => {
+  // root[ left col[projects, files] · center group:1 · right sessions ]
+  const twoDockLeft = (): LayoutNode => ({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { basis: 220, node: { kind: 'split', id: 'dock', axis: 'col', children: [
+        { basis: 120, node: dock('projects') }, { grow: true, node: dock('files') },
+      ] } },
+      { grow: true, node: grp('group:1', 'editor:1') },
+      { basis: 280, node: dock('sessions') },
+    ],
+  })
+
+  it('reorders a dock within its sidebar (moveLeaf beside a sibling, index from geometry)', () => {
+    const m = mountSidebar(twoDockLeft(), { kind: 'dock', instanceId: 'projects', panel: 'projects' as never })
+    const transfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
+    // Stack the two dock rows; a low drop (y=190) lands past the last → append below.
+    stubRect(document.querySelector('[data-dock-leaf="projects"]')!, { top: 0, bottom: 100, height: 100 })
+    stubRect(document.querySelector('[data-dock-leaf="files"]')!, { top: 100, bottom: 200, height: 100 })
+    dropAtY(sidebarDrop('left')!, transfer, 190)
+    expect(m.movePane).toHaveBeenCalledWith('projects', { targetId: 'files', side: 'below' })
+  })
+
+  it('moves a dock across sidebars (left → right) via moveLeaf', () => {
+    const m = mountSidebar(twoDockLeft(), { kind: 'dock', instanceId: 'projects', panel: 'projects' as never })
+    const transfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
+    // The landing is the right column's own dock — the cross-sidebar move.
+    dropAtY(sidebarDrop('right')!, transfer, 0)
+    expect(m.movePane).toHaveBeenCalledWith('projects', { targetId: 'sessions', side: 'below' })
+  })
+})
+
+describe('DesktopPanelTreeLayout — right sidebar tab/group merge', () => {
+  // root[ left files · center group:1(editor:1) · right col[sessions, group:R(editor:9)] ]
+  const rightHasGroup = (): LayoutNode => ({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { basis: 220, node: dock('files') },
+      { grow: true, node: grp('group:1', 'editor:1') },
+      { basis: 280, node: { kind: 'split', id: 'rcol', axis: 'col', children: [
+        { basis: 150, node: dock('sessions') }, { grow: true, node: grp('group:R', 'editor:9') },
+      ] } },
+    ],
+  })
+  // root[ left files · center group:1(editor:1) · right sessions ]  (docks only, no group)
+  const rightDocksOnly = (): LayoutNode => ({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { basis: 220, node: dock('files') },
+      { grow: true, node: grp('group:1', 'editor:1') },
+      { basis: 280, node: dock('sessions') },
+    ],
+  })
+
+  const startTabDrag = () => {
+    const transfer = paneTransfer()
+    fireEvent.dragStart(document.querySelector('[data-tab-instance="editor:1"]')!, { dataTransfer: transfer })
+    return transfer
+  }
+  const startGroupDrag = (groupId: string) => {
+    const transfer = paneTransfer()
+    fireEvent.dragStart(group(groupId)!.querySelector('[data-testid="group-empty-area"]')!, { dataTransfer: transfer })
+    return transfer
+  }
+
+  it('merges a dropped TAB into the right sidebar group (never a 2nd group)', () => {
+    const m = mountSidebar(rightHasGroup())
+    const transfer = startTabDrag()
+    expect(transfer.getData('application/yaco-pane')).toBe('tab')
+    fireEvent.drop(sidebarDrop('right')!, { dataTransfer: transfer })
+    expect(m.moveTab).toHaveBeenCalledWith('group:1', 'editor:1', 'group:R', 1)
+    expect(m.moveTabToSplit).not.toHaveBeenCalled() // not a create
+  })
+
+  it('merges a dropped GROUP into the right sidebar group (never a 2nd group)', () => {
+    const m = mountSidebar(rightHasGroup())
+    const transfer = startGroupDrag('group:1')
+    expect(transfer.getData('application/yaco-pane')).toBe('group')
+    fireEvent.drop(sidebarDrop('right')!, { dataTransfer: transfer })
+    expect(m.moveGroup).toHaveBeenCalledWith('group:1', { kind: 'merge', targetGroupId: 'group:R' })
+  })
+
+  it('CREATES the one group from a dropped TAB when the right sidebar holds only docks', () => {
+    const m = mountSidebar(rightDocksOnly())
+    const transfer = startTabDrag()
+    fireEvent.drop(sidebarDrop('right')!, { dataTransfer: transfer })
+    expect(m.moveTabToSplit).toHaveBeenCalledWith('group:1', 'editor:1', 'sessions', 'below')
+    expect(m.moveTab).not.toHaveBeenCalled() // a fresh group, not a merge
+  })
+
+  it('CREATES the one group from a dropped GROUP when the right sidebar holds only docks', () => {
+    const m = mountSidebar(rightDocksOnly())
+    const transfer = startGroupDrag('group:1')
+    fireEvent.drop(sidebarDrop('right')!, { dataTransfer: transfer })
+    expect(m.moveGroup).toHaveBeenCalledWith('group:1', { kind: 'beside', targetId: 'sessions', side: 'below' })
+  })
+
+  it('REJECTS a group on the LEFT sidebar — no zone renders, no mover fires', () => {
+    const m = mountSidebar(rightDocksOnly())
+    const transfer = startGroupDrag('group:1')
+    // legalZones is empty for tab/group on the left → no overlay at all.
+    expect(sidebarDrop('left')).toBeNull()
+    expect(sidebarDrop('right')).toBeTruthy() // the right still accepts it
+    // Dropping on the bare left dock (no handler underneath) is a no-op.
+    fireEvent.drop(document.querySelector('[data-dock-leaf="files"]')!, { dataTransfer: transfer })
+    expect(m.moveGroup).not.toHaveBeenCalled()
+    expect(m.moveTab).not.toHaveBeenCalled()
+  })
+})
+
+describe('DesktopPanelTreeLayout — hidden/absent sidebars + edge reveal', () => {
+  // root[ left files · center group:1 ]  — right region normalized away (absent).
+  const noRight = (): LayoutNode => ({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { basis: 220, node: dock('files') },
+      { grow: true, node: grp('group:1', 'editor:1') },
+    ],
+  })
+  // root[ left files · center group:1 · right sessions(hidden) ] — the showRightPanel
+  // mirror sets hidden:true; the renderer skips it (distinct from an absent region).
+  const hiddenRight = (): LayoutNode => ({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { basis: 220, node: dock('files') },
+      { grow: true, node: grp('group:1', 'editor:1') },
+      { basis: 280, hidden: true, node: dock('sessions') },
+    ],
+  })
+
+  it('does not render a hidden right sidebar (showRightPanel mirror) — distinct from absent', () => {
+    mountSidebar(hiddenRight())
+    expect(document.querySelector('[data-dock-leaf="sessions"]')).toBeNull()
+    expect(document.querySelector('[role="complementary"]')).toBeNull()
+  })
+
+  it('does not render an absent right sidebar (auto-hidden when emptied)', () => {
+    mountSidebar(noRight())
+    expect(document.querySelector('[data-dock-leaf="sessions"]')).toBeNull()
+  })
+
+  it('recreates the sidebar from an edge strip (moveLeaf beside the center) — region was normalized away', () => {
+    const m = mountSidebar(noRight(), { kind: 'dock', instanceId: 'files', panel: 'files' as never })
+    const transfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
+    // The edge strips appear only during a dock drag.
+    expect(edgeStrip('right')).toBeTruthy()
+    fireEvent.drop(edgeStrip('right')!, { dataTransfer: transfer })
+    expect(m.movePane).toHaveBeenCalledWith('files', { targetId: 'group:1', side: 'right' })
+  })
+
+  it('does not show edge strips for a tab drag (dock-only reveal)', () => {
+    mountSidebar(noRight())
+    fireEvent.dragStart(document.querySelector('[data-tab-instance="editor:1"]')!, { dataTransfer: paneTransfer() })
+    expect(edgeStrip('left')).toBeNull()
+    expect(edgeStrip('right')).toBeNull()
   })
 })

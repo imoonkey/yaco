@@ -16,7 +16,7 @@
 // mutated by rendering and every resize/collapse commits to the real tree
 // through the commands.
 import {
-  useCallback, useMemo, useRef,
+  useCallback, useMemo, useRef, useState,
   type CSSProperties, type ReactNode, type RefObject,
 } from 'react'
 import { PanelHost } from './PanelHost'
@@ -26,19 +26,48 @@ import { usePanelResize, type BasisResolver } from './usePanelResize'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 import {
   useWorkspaceEnv, useWorkspaceLayout, useWorkspaceSelection, useWorkspaceCommands,
-  type PanelId,
+  type PanelId, type SplitSide, type PanePlacement, type GroupPlacement,
 } from './context'
 import {
   HANDLE_PX, FRAMED_BODY_CLASS, minBasisPx, canonicalizeSplit, planSplitChildren,
   collectFramedLeaves,
 } from './desktopTreeSizing'
-import { editorInstancesInOrder, terminalInstancesInOrder, regionsOf, centerOf, firstCenterGroupId } from './panelLayoutModel'
+import {
+  editorInstancesInOrder, terminalInstancesInOrder, regionsOf, centerOf, firstCenterGroupId,
+  firstGroupId, tabsInGroup,
+} from './panelLayoutModel'
+import { useDrag, isPaneDrag, type DragPayload } from './WorkspaceDragContext'
+import { legalZones, sidebarInsertIndex, EDGE_BAND_PX, type Region, type EdgeSide } from './dndGeometry'
 import { paneMarker, type PaneMarker } from './panelInstance'
 import type { LayoutNode, LeafNode, SplitNode } from '../hooks/workspaceTypes'
 
 type ResizeSplitChild = (splitId: string, childId: string, basis: number) => void
 /** Compute the focus/active marker for a pane (editor/terminal only). */
 type MarkerFor = (type: PanelId, instanceId: string) => PaneMarker
+
+// The sidebar/edge drop wiring: the region ids (so a rendered region node knows
+// which sidebar it is), the center id (edge reveal target), and the four movers
+// the drops dispatch. Computed once from `regionsOf` + the commands and threaded
+// down so only the leaf drop layers re-render on a drag (they call `useDrag`).
+type SidebarWiring = {
+  leftId: string | null
+  rightId: string | null
+  centerId: string | null
+  movePane: (id: string, placement: PanePlacement) => void
+  moveTab: (fromGroupId: string, instanceId: string, toGroupId: string, toIndex: number) => void
+  moveGroup: (groupId: string, placement: GroupPlacement) => void
+  moveTabToSplit: (fromGroupId: string, instanceId: string, targetGroupId: string, side: SplitSide) => void
+}
+
+/** The first dock leaf id in document order — the splitBeside/moveLeaf anchor for
+ *  creating the right sidebar's one group when it holds only docks. */
+function firstDockLeafId(node: LayoutNode): string | null {
+  if (node.kind === 'leaf') return node.id
+  if (node.kind === 'split') {
+    for (const c of node.children) { const id = firstDockLeafId(c.node); if (id) return id }
+  }
+  return null
+}
 
 const ROOT_SIZING: CSSProperties = { flexGrow: 1, flexShrink: 1, flexBasis: 0, minWidth: 0, minHeight: 0 }
 
@@ -75,6 +104,20 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
   const resizeSplitChild = commands.resizeSplitChild
 
   const effectiveRoot = panelLayout.desktop
+
+  // Region identity (left? · center · right?) read in O(1) from the canonical
+  // region row — the sidebars wrap their rendered node in a drop layer, the edge
+  // strips reveal/extend a sidebar by `moveLeaf` beside the center.
+  const regions = useMemo(() => regionsOf(effectiveRoot), [effectiveRoot])
+  const drop = useMemo<SidebarWiring>(() => ({
+    leftId: regions.left?.id ?? null,
+    rightId: regions.right?.id ?? null,
+    centerId: regions.center?.id ?? null,
+    movePane: commands.movePane,
+    moveTab: commands.moveTab,
+    moveGroup: commands.moveGroup,
+    moveTabToSplit: commands.moveTabToSplit,
+  }), [regions, commands])
 
   // Focus/active markers: the focused editor/terminal pane is bright, the
   // active-but-unfocused one dim (suppressed when its type has a single instance).
@@ -124,7 +167,7 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
     <PanelChromeContext.Provider value={chromeSlots}>
       <div
         ref={rootRef}
-        className={`flex h-full w-full ${isTouch ? '' : 'select-none'}`}
+        className={`relative flex h-full w-full ${isTouch ? '' : 'select-none'}`}
         onMouseDownCapture={onInteractionCapture}
         onTouchStartCapture={onInteractionCapture}
         onKeyDownCapture={onInteractionCapture}
@@ -139,7 +182,9 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
           landmarks={landmarks}
           workingAreaId={workingAreaId}
           taskOverlay={taskOverlay}
+          drop={drop}
         />
+        <EdgeStrips centerId={drop.centerId} movePane={drop.movePane} />
       </div>
     </PanelChromeContext.Provider>
   )
@@ -159,10 +204,11 @@ type TreeNodeProps = {
   landmarks: Record<string, Landmark>
   workingAreaId: string | null
   taskOverlay: ReactNode | null
+  drop: SidebarWiring
 }
 
 function TreeNode(props: TreeNodeProps) {
-  const { node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay } = props
+  const { node, sizing, workingAreaId, taskOverlay, drop } = props
   // Overlay the tasks workspace over the working-area region, keeping the groups
   // mounted behind it.
   if (taskOverlay && node.id === workingAreaId) {
@@ -175,9 +221,26 @@ function TreeNode(props: TreeNodeProps) {
       </div>
     )
   }
+  // A rendered sidebar region (the root child before/after the center) wraps its
+  // content in the drop layer for dock reorder / cross-sidebar / right-group drops.
+  const region: Region | null = node.id === drop.leftId ? 'left' : node.id === drop.rightId ? 'right' : null
+  if (region) {
+    return (
+      <SidebarDropLayer region={region} node={node} sizing={sizing} wiring={drop}>
+        {renderNode({ ...props, sizing: ROOT_SIZING })}
+      </SidebarDropLayer>
+    )
+  }
+  return renderNode(props)
+}
+
+// The split/tabs/leaf switch, factored out of `TreeNode` so the sidebar drop
+// layer can render the region's content without re-triggering the region wrap.
+function renderNode(props: TreeNodeProps): ReactNode {
+  const { node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay, drop } = props
   const landmark = landmarks[node.id]
   if (node.kind === 'split') {
-    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} landmarks={landmarks} workingAreaId={workingAreaId} taskOverlay={taskOverlay} landmark={landmark} />
+    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} landmarks={landmarks} workingAreaId={workingAreaId} taskOverlay={taskOverlay} drop={drop} landmark={landmark} />
   }
   if (node.kind === 'tabs') {
     return <PanelGroup group={node} sizing={sizing} isMain={node.id === mainGroupId} markerFor={markerFor} />
@@ -193,6 +256,7 @@ function LeafView({ node, sizing, landmark }: { node: LeafNode; sizing: CSSPrope
     <div
       data-node-id={node.id}
       data-panel-leaf={node.panel}
+      data-dock-leaf={node.panel}
       role={landmark?.role}
       aria-label={landmark?.label}
       style={sizing}
@@ -203,9 +267,9 @@ function LeafView({ node, sizing, landmark }: { node: LeafNode; sizing: CSSPrope
   )
 }
 
-function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay, landmark }: {
+function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay, drop, landmark }: {
   node: SplitNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor; mainGroupId: string | null
-  landmarks: Record<string, Landmark>; workingAreaId: string | null; taskOverlay: ReactNode | null; landmark?: Landmark
+  landmarks: Record<string, Landmark>; workingAreaId: string | null; taskOverlay: ReactNode | null; drop: SidebarWiring; landmark?: Landmark
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canonical = canonicalizeSplit(node)
@@ -240,6 +304,7 @@ function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, lan
         landmarks={landmarks}
         workingAreaId={workingAreaId}
         taskOverlay={taskOverlay}
+        drop={drop}
       />,
     )
     if (i < items.length - 1) {
@@ -280,4 +345,142 @@ function SplitResizeHandle({ split, handleIndex, resizeSplitChild, maxBasis }: {
   return split.axis === 'row'
     ? <VResizeHandle onMouseDown={handle.onMouseDown} isDragging={handle.isDragging} />
     : <HResizeHandle onMouseDown={handle.onMouseDown} isDragging={handle.isDragging} />
+}
+
+// --- Drop layers -------------------------------------------------------------
+//
+// A pane drop is accepted only with BOTH a live payload AND our pane mime (a
+// foreign/text-plain list drag is ignored). `legalZones` is the first gate — an
+// illegal target renders no overlay so the drop falls through and is rejected; the
+// normalize funnel behind the movers is the authoritative second gate.
+
+type SidebarFeedback = { kind: 'line'; top: number } | { kind: 'merge' } | null
+
+// A sidebar column drop target. A DOCK reorders/inserts among the column's dock
+// rows (`moveLeaf` beside a sibling, index via `sidebarInsertIndex`); on the RIGHT
+// a tab/group merges into the one allowed group, or — when the column holds only
+// docks — creates it (`moveTabToSplit` / `moveGroup` beside the first dock). The
+// LEFT rejects tab/group (legalZones is empty → no overlay).
+function SidebarDropLayer({ region, node, sizing, wiring, children }: {
+  region: Region; node: LayoutNode; sizing: CSSProperties; wiring: SidebarWiring; children: ReactNode
+}) {
+  const drag = useDrag()
+  const ref = useRef<HTMLDivElement>(null)
+  const [feedback, setFeedback] = useState<SidebarFeedback>(null)
+  const payload = drag.payload
+  const active = !!payload && legalZones({ kind: payload.kind }, { region, kind: 'sidebar' }).size > 0
+
+  // The column's dock rows in document order (viewport rects + node ids). The
+  // group's tab body is not a `data-dock-leaf`, so it never pollutes the index.
+  const dockRows = (): { ids: string[]; rects: DOMRect[] } => {
+    const el = ref.current
+    const rows = el ? Array.from(el.querySelectorAll<HTMLElement>('[data-dock-leaf]')) : []
+    return { ids: rows.map((r) => r.dataset.nodeId ?? '').filter(Boolean), rects: rows.map((r) => r.getBoundingClientRect()) }
+  }
+
+  const onDragOver = (e: React.DragEvent) => {
+    const p = drag.peek()
+    if (!p || !isPaneDrag(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (p.kind !== 'dock') { setFeedback({ kind: 'merge' }); return }
+    const { rects } = dockRows()
+    const ctop = ref.current?.getBoundingClientRect().top ?? 0
+    const idx = sidebarInsertIndex(rects, e.clientY)
+    const top = (idx < rects.length ? rects[idx].top : (rects[rects.length - 1]?.bottom ?? ctop)) - ctop
+    setFeedback({ kind: 'line', top })
+  }
+
+  const dropDock = (p: Extract<DragPayload, { kind: 'dock' }>, clientY: number) => {
+    const { ids, rects } = dockRows()
+    if (ids.length === 0) {
+      // A docks-less column (right sidebar holding only a group): insert beside it.
+      const anchor = firstGroupId(node) ?? node.id
+      wiring.movePane(p.instanceId, { targetId: anchor, side: 'above' })
+      return
+    }
+    const idx = sidebarInsertIndex(rects, clientY)
+    const placement: PanePlacement = idx < ids.length
+      ? { targetId: ids[idx], side: 'above' }
+      : { targetId: ids[ids.length - 1], side: 'below' }
+    wiring.movePane(p.instanceId, placement)
+  }
+
+  // Right sidebar only (legalZones gates tab/group off the left). Merge into the
+  // one group if present, else create it beside the first dock — never a 2nd group.
+  const dropGroupOrTab = (p: Exclude<DragPayload, { kind: 'dock' }>) => {
+    const groupId = firstGroupId(node)
+    if (groupId) {
+      if (p.kind === 'tab') wiring.moveTab(p.fromGroupId, p.instanceId, groupId, tabsInGroup(node, groupId).length)
+      else if (p.groupId !== groupId) wiring.moveGroup(p.groupId, { kind: 'merge', targetGroupId: groupId })
+      return
+    }
+    const anchor = firstDockLeafId(node)
+    if (!anchor) return
+    if (p.kind === 'tab') wiring.moveTabToSplit(p.fromGroupId, p.instanceId, anchor, 'below')
+    else wiring.moveGroup(p.groupId, { kind: 'beside', targetId: anchor, side: 'below' })
+  }
+
+  const onDrop = (e: React.DragEvent) => {
+    const p = drag.peek()
+    setFeedback(null)
+    if (!p || !isPaneDrag(e)) return
+    if (legalZones({ kind: p.kind }, { region, kind: 'sidebar' }).size === 0) return
+    e.preventDefault()
+    if (p.kind === 'dock') dropDock(p, e.clientY)
+    else dropGroupOrTab(p)
+    drag.clear()
+  }
+
+  return (
+    <div ref={ref} style={sizing} className="relative flex min-w-0 min-h-0">
+      {children}
+      {active && (
+        <div
+          data-sidebar-drop={region}
+          className="absolute inset-0"
+          style={{ zIndex: 20 }}
+          onDragOver={onDragOver}
+          onDragLeave={() => setFeedback(null)}
+          onDrop={onDrop}
+        >
+          {feedback?.kind === 'merge' && (
+            <div className="absolute inset-0 pointer-events-none" style={{ border: '2px solid var(--sol-accent)', background: 'var(--sol-accent)', opacity: 0.15 }} />
+          )}
+          {feedback?.kind === 'line' && (
+            <div className="absolute left-0 right-0 pointer-events-none" style={{ top: feedback.top, height: 2, background: 'var(--sol-accent)' }} />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Two thin far-edge strips that reveal/extend a sidebar by `moveLeaf` beside the
+// center (the normalize funnel relocates the dock into the sidebar). Rendered only
+// during a dock drag, layered above the sidebars so the very edge wins.
+function EdgeStrips({ centerId, movePane }: { centerId: string | null; movePane: SidebarWiring['movePane'] }) {
+  const drag = useDrag()
+  const [hot, setHot] = useState<EdgeSide | null>(null)
+  const payload = drag.payload
+  if (!payload || payload.kind !== 'dock' || !centerId) return null
+  const strip = (side: EdgeSide) => (
+    <div
+      key={side}
+      data-edge-strip={side}
+      className="absolute top-0 bottom-0"
+      style={{
+        left: side === 'left' ? 0 : undefined,
+        right: side === 'right' ? 0 : undefined,
+        width: EDGE_BAND_PX,
+        zIndex: 30,
+        background: hot === side ? 'var(--sol-accent)' : 'transparent',
+        opacity: hot === side ? 0.25 : undefined,
+      }}
+      onDragOver={(e) => { const p = drag.peek(); if (!p || p.kind !== 'dock' || !isPaneDrag(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setHot(side) }}
+      onDragLeave={() => setHot(null)}
+      onDrop={(e) => { const p = drag.peek(); setHot(null); if (!p || p.kind !== 'dock' || !isPaneDrag(e)) return; e.preventDefault(); movePane(p.instanceId, { targetId: centerId, side }); drag.clear() }}
+    />
+  )
+  return <>{strip('left')}{strip('right')}</>
 }
