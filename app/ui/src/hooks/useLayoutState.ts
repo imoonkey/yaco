@@ -509,7 +509,11 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       if (groupId === placement.targetGroupId) return state
       const panelLayout = mergeGroups(state.panelLayout, groupId, placement.targetGroupId)
       if (panelLayout === state.panelLayout) return state
-      // The survivor is the target group; focus its (moved-in) active tab.
+      // Focus moves to the survivor (dst) ONLY when the merge touched the active group
+      // (src or dst was active); an unrelated merge preserves activeGroupId/focus/MRU.
+      // The moved tabs survive in dst, so a focusedPane pointing into src stays valid.
+      const wasActive = state.activeGroupId === groupId || state.activeGroupId === placement.targetGroupId
+      if (!wasActive) return gcMaps({ ...state, panelLayout })
       const active = activeTabOf(panelLayout.desktop, placement.targetGroupId)
       const aTab = active ? tabByInstance(panelLayout.desktop, active) : null
       const kind: FocusTarget = aTab?.kind === 'terminal' ? 'terminal' : 'editor'

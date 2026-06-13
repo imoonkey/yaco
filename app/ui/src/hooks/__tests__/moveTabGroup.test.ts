@@ -70,6 +70,23 @@ function centerAndRightGroup(g1: GroupTab[], gR: GroupTab[]): WorkspacePanelLayo
   })
 }
 
+/** Three center groups (group:1/2/3 inside the center split). */
+function threeCenterGroups(g1: GroupTab[], g2: GroupTab[], g3: GroupTab[]): WorkspacePanelLayout {
+  return normalizeLayout({
+    desktop: {
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: leaf('files') },
+        { grow: true, node: { kind: 'split', id: 'center', axis: 'row', children: [
+          { grow: true, node: grp('group:1', g1) },
+          { node: grp('group:2', g2) },
+          { node: grp('group:3', g3) },
+        ] } },
+        { node: leaf('sessions') },
+      ],
+    },
+  })
+}
+
 function findGroup(tree: LayoutNode, id: string): TabsNode | null {
   if (tree.kind === 'tabs') return tree.id === id ? tree : null
   if (tree.kind === 'split') {
@@ -178,6 +195,21 @@ describe('MOVE_GROUP', () => {
     expect(ids(findGroup(s.panelLayout.desktop, 'group:2')!.tabs)).toEqual(['e2', 'e1'])
     expect(s.activeGroupId).toBe('group:2')
     expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'e1' })
+  })
+
+  it('merge: preserves activeGroupId/focus when neither src nor dst was active', () => {
+    let s = makeState({
+      layout: threeCenterGroups([ed('e1', 'a.ts')], [ed('e2', 'b.ts')], [ed('e3', 'c.ts')]),
+      activeGroupId: 'group:3', editorMru: ['e3'],
+    })
+    expect(s.activeGroupId).toBe('group:3')
+    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'e3' })
+    // Merge two UNRELATED groups → the active group + focus must not move.
+    s = instanceReducer(s, { type: 'MOVE_GROUP', groupId: 'group:1', placement: { kind: 'merge', targetGroupId: 'group:2' } })
+    expect(findGroup(s.panelLayout.desktop, 'group:1')).toBeNull()
+    expect(ids(findGroup(s.panelLayout.desktop, 'group:2')!.tabs)).toEqual(['e2', 'e1'])
+    expect(s.activeGroupId).toBe('group:3')
+    expect(s.focusedPane).toEqual({ kind: 'editor', instanceId: 'e3' })
   })
 
   it('is a no-op on a self-drop (beside or merge onto itself)', () => {
