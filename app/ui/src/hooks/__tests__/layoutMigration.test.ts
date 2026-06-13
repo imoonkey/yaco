@@ -292,3 +292,25 @@ describe('migration: per (project, worktree) scoping', () => {
     expect(loadPersistedState(PROJECT).panelLayout.panelState.editor.autocompleteEnabled).toBe(false)
   })
 })
+
+describe('migration: Tasks overlay showTasks coercion', () => {
+  it('a pre-overlay blob with stale showTasks:true does NOT auto-open the overlay', () => {
+    seedLayout({
+      panelLayout: { version: 1, desktop: oldTree(), mobile: { activeDock: 'browse' }, panelState: defaultWorkspacePanelLayout().panelState },
+      layout: { ...DEFAULT_LAYOUT, showTasks: true }, // OLD default; tasks tab merely existed
+    })
+    expect(loadPersistedState(PROJECT).layout.showTasks).toBe(false)
+  })
+
+  it('opens the overlay only when the old MAIN_TABS had tasks active', () => {
+    const tree = oldTree()
+    // flip the MAIN_TABS active panel to 'tasks'
+    ;(tree as { children: { node: { id?: string; active?: string } }[] }).children
+      .find((c) => c.node.id === 'main')!.node.active = 'tasks'
+    seedLayout({
+      panelLayout: { version: 1, desktop: tree, mobile: { activeDock: 'browse' }, panelState: defaultWorkspacePanelLayout().panelState },
+      layout: { ...DEFAULT_LAYOUT, showTasks: true },
+    })
+    expect(loadPersistedState(PROJECT).layout.showTasks).toBe(true)
+  })
+})

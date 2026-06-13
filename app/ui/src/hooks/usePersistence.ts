@@ -54,6 +54,19 @@ function isGroupShapeTree(node: unknown): boolean {
   return false
 }
 
+/** Did an OLD (pre-overlay) tree have its tasks tab active (the old MAIN_TABS node
+ *  with `active: 'tasks'`)? That is the only signal that should open the desktop
+ *  Tasks overlay on load — a stale `showTasks: true` (the OLD default, meaning the
+ *  tasks tab merely existed) must not auto-open the full-width overlay. */
+function oldTreeTasksActive(node: unknown): boolean {
+  const raw = asRecord(node)
+  if (raw.kind === 'tabs' && Array.isArray(raw.panels)) return raw.active === 'tasks'
+  if (raw.kind === 'split' && Array.isArray(raw.children)) {
+    return raw.children.some((c) => oldTreeTasksActive(asRecord(c).node))
+  }
+  return false
+}
+
 /** Parse the flat `WorkspaceLayout` bag, salvaging every field independently to
  *  its default. `pl` is `parsed.layout` (or `parsed` itself for very old blobs
  *  that stored the fields at the top level). */
@@ -249,6 +262,12 @@ export function loadPersistedState(project: string, worktree?: string | null): P
 
     const stored = asRecord(parsed.panelLayout)
     const isNewGroupBlob = stored.version === 1 && isGroupShapeTree(stored.desktop)
+    // Tasks is the desktop overlay now (showTasks). A pre-overlay blob stored
+    // showTasks=true as the OLD default (the tasks tab merely existed), which must
+    // NOT auto-open the full-width overlay — open it only if tasks was actually active.
+    if (!isNewGroupBlob) {
+      layout.showTasks = stored.version === 1 && stored.desktop ? oldTreeTasksActive(stored.desktop) : false
+    }
     const loaded: LoadedTree = isNewGroupBlob ? loadGroupBlob(parsed, stored) : migrateOldBlob(parsed, layout)
 
     return {

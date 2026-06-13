@@ -172,7 +172,7 @@ function TreeNode(props: TreeNodeProps) {
     return (
       <div style={sizing} className="relative flex min-w-0 min-h-0">
         <TreeNode {...props} sizing={ROOT_SIZING} taskOverlay={null} />
-        <div className="absolute inset-0 flex min-w-0 min-h-0" style={{ zIndex: 10 }}>
+        <div className="absolute inset-0 flex min-w-0 min-h-0" style={{ zIndex: 10 }} role="region" aria-label="Tasks">
           {taskOverlay}
         </div>
       </div>

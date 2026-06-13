@@ -964,7 +964,9 @@ export function migrateTreeToGroups(
         const instanceId = typeof raw.id === 'string' && raw.id.length > 0 ? raw.id : minter.editor()
         return { kind: 'tabs', id: minter.group(), tabs: [{ instanceId, kind: 'terminal' }], activeTab: instanceId }
       }
-      // Dock leaf: keep verbatim.
+      // Dock leaf: keep verbatim. A non-dock panel (e.g. an old `tasks` leaf — tasks
+      // is the desktop overlay now, not a leaf) is dropped.
+      if (!isDockPanel(raw.panel)) return null
       const node: LeafNode = { kind: 'leaf', id: typeof raw.id === 'string' ? raw.id : raw.panel, panel: raw.panel }
       if (raw.collapsed === true) node.collapsed = true
       return node
