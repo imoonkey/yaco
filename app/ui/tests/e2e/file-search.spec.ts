@@ -63,7 +63,7 @@ test.describe('File search (Cmd+P)', () => {
     await expect(editorContent).toContainText('search test content', { timeout: 5000 })
 
     // Verify tab is visible
-    const tab = page.locator('[data-testid="tab"]', { hasText: 'nested_file.txt' })
+    const tab = page.locator('[data-testid="group-tab"]', { hasText: 'nested_file.txt' })
     await expect(tab).toBeVisible()
   })
 
@@ -109,7 +109,7 @@ test.describe('Changes sidebar', () => {
     if (await changeItem.isVisible({ timeout: 5000 }).catch(() => false)) {
       await changeItem.click()
 
-      const diffTab = page.locator('[data-testid="tab"]', { hasText: testPath })
+      const diffTab = page.locator('[data-testid="group-tab"]', { hasText: testPath })
       await expect(diffTab).toBeVisible({ timeout: 3000 })
 
       // Preview tabs have italic styling

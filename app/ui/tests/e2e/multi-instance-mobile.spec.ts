@@ -105,31 +105,21 @@ test.describe('Mobile projects the active instance (editor / terminal)', () => {
     const s1 = await startShell(request, fixture.path)
     const s2 = await startShell(request, fixture.path)
     await waitServed(request, fixture.name)
-    // Two terminal instances bound to live sessions; terminal:2 (s2) is the MRU head.
-    await seed(page, fixture.name, {
-      panelLayout: {
-        version: 1,
-        desktop: {
-          kind: 'split', id: 'root', axis: 'row',
-          children: [
-            { grow: true, node: { kind: 'tabs', id: 'main', active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
-            { node: { kind: 'leaf', id: 'terminal', panel: 'terminal' } },
-            { node: { kind: 'leaf', id: 'terminal:2', panel: 'terminal' } },
-          ],
-        },
-        mobile: { activeDock: 'browse' },
-        panelState,
-      },
-      editorViews: {}, editorMru: [],
-      terminalBindings: { terminal: s1, 'terminal:2': s2 },
-      terminalMru: ['terminal:2', 'terminal'],
-    })
     await page.goto('/')
     await waitForAppReady(page)
     await selectProject(page, fixture.name)
 
-    // Switch to the Terminal pane: it projects the ACTIVE terminal (terminal:2 → s2),
-    // so its header shows s2 and not the other bound session s1.
+    // Bind both sessions via REAL session-row clicks → two terminal tabs in the
+    // active group; the second (s2) becomes the active terminal. (clickSession
+    // reveals the Terminal pane, so step back to Browse to bind the second.)
+    const browse = page.getByText('Sessions', { exact: true }).first()
+    await expect(browse).toBeVisible({ timeout: 10_000 })
+    await page.getByText(s1, { exact: true }).first().click()
+    await paneButton(page, 'Browse').click()
+    await page.getByText(s2, { exact: true }).first().click()
+
+    // The Terminal pane projects the ACTIVE terminal (s2 — the MRU head), not the
+    // sibling s1 also bound in the same group.
     await paneButton(page, 'Terminal').click()
     await expect(terminalHeader(page, s2)).toBeVisible({ timeout: 15_000 })
     await expect(terminalHeader(page, s1)).toHaveCount(0)

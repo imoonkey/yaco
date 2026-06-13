@@ -3,20 +3,29 @@ import {
   createFixtureProject,
   selectProject,
   waitForAppReady,
+  activityPanel,
+  group,
+  createTestFile,
+  openFileViaSearch,
+  waitForSSERefresh,
+  uniqueFileName,
   runTag,
   type FixtureProject,
 } from './helpers/workspace'
 
-// USER-QA reproduction of the reported "multi-instance panels" terminal bugs.
-// These drive the REAL gestures a user makes: split a bound terminal (an empty
-// "Select a session to attach terminal" pane appears), click a session row, and
-// try the per-pane Close (×). Flow 5 (Open beside) is the reported-WORKING contrast.
+// USER-QA for the VSCode tab-group TERMINAL flows. Drives the REAL provider
+// `clickSession` (a click on the actual Sessions-list row — NOT a test bypass), so
+// a regression back to the old MRU/active-terminal rebind is caught end-to-end.
 //
-// Reported actuals (to confirm / refute):
-//   3. After splitting a terminal, clicking a session row REBINDS the first/active
-//      terminal; the new empty pane stays empty. Expected: it binds to the NEW pane.
-//   4. The new (empty) terminal pane cannot be closed. Expected: it can be closed.
-//   5. Open beside (hover button / context menu) WORKS — confirm as a contrast.
+// Under the FLAT group model a terminal is its own TAB in a working group (bound on
+// create), never a standalone leaf or an unbound placeholder pane. The asserted
+// USER-OBSERVABLE outcomes:
+//   3. clicking a session after a split binds it to the NEW (focused) group on
+//      create; the first session stays bound where it was (NO rebind); no leftover
+//      empty placeholder.
+//   4. every terminal TAB has a working close ×; closing it removes the tab and the
+//      session keeps running (survives).
+//   5. Open beside binds each session to its OWN distinct group/tab (the contrast).
 
 test.use({ viewport: { width: 1280, height: 800 } })
 
@@ -49,14 +58,20 @@ async function waitServed(request: APIRequestContext, name: string): Promise<voi
   }, { timeout: 10_000 }).toBe(true)
 }
 
-// A bound terminal pane shows its session in the header.
-const terminalHeader = (page: Page, name: string) =>
-  page.locator('span.truncate.flex-1.font-semibold', { hasText: name })
-// Each terminal pane is a leaf wrapper (data-panel-leaf="terminal").
-const terminalPanes = (page: Page) => page.locator('[data-panel-leaf="terminal"]')
-const emptyPane = (page: Page) => page.locator('[data-panel-leaf="terminal"]').filter({ hasText: 'Select a session to attach terminal' })
+// The Sessions-list ROW (in the activity panel) — clicking it drives the REAL
+// provider clickSession. Scoped to the activity panel so it never resolves to the
+// session's name as it appears in a terminal TAB title in the working area.
+const sessionRow = (page: Page, name: string) =>
+  activityPanel(page).getByText(name, { exact: true }).first()
+// A bound terminal TAB shows its session name as the tab label/title. Optionally
+// scoped to one group.
+const terminalTab = (scope: Page | ReturnType<Page['locator']>, name: string) =>
+  scope.locator(`[data-testid="group-tab"][data-tab-kind="terminal"][title="${name}"]`)
+const allTerminalTabs = (page: Page) =>
+  page.locator('[data-testid="group-tab"][data-tab-kind="terminal"]')
 const idlePlaceholder = (page: Page) => page.getByText('Select a session to attach terminal')
-const sessionRow = (page: Page, name: string) => page.getByText(name, { exact: true }).first()
+const splitButton = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="split-group"]')
 
 async function openProjectWithSessions(
   page: Page, request: APIRequestContext, count: number,
@@ -69,101 +84,113 @@ async function openProjectWithSessions(
   await page.goto('/')
   await waitForAppReady(page)
   await selectProject(page, project.name)
-  for (const s of sessions) {
-    await expect(sessionRow(page, s)).toBeVisible({ timeout: 15_000 })
-  }
+  for (const s of sessions) await expect(sessionRow(page, s)).toBeVisible({ timeout: 15_000 })
   return { project, sessions }
 }
 
-/** Bind session `s` into the structural terminal by clicking its row. */
-async function bindFirstTerminal(page: Page, s: string): Promise<void> {
-  await sessionRow(page, s).click()
-  await expect(terminalHeader(page, s)).toHaveCount(1, { timeout: 15_000 })
-}
-
-/** Split the bound terminal via its header Split button → an empty pane appears. */
-async function splitBoundTerminal(page: Page): Promise<void> {
-  await page.getByRole('button', { name: 'Split terminal' }).first().click()
-  await expect(terminalPanes(page)).toHaveCount(2, { timeout: 10_000 })
-  await expect(idlePlaceholder(page)).toBeVisible({ timeout: 10_000 })
-}
-
-// TODO(vt-e2e): un-skip + migrate to the VSCode tab-group model. These assert the
-// CORRECT target behavior (bind-on-create, closable terminal tab) and are RED
-// against current main by design — skipped to keep the suite green until the rework.
-test.describe.skip('USER-QA: terminal split+bind (flow 3) / close (flow 4) / open-beside (flow 5)', () => {
-  test('flow 3: clicking a session after a split binds it to the NEW empty pane', async ({ page, request }) => {
+test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / open-beside (5)', () => {
+  test('flow 3: clicking a second session binds it on create WITHOUT rebinding the first (Bug 3)', async ({ page, request }) => {
     const { sessions: [s1, s2] } = await openProjectWithSessions(page, request, 2)
 
-    await bindFirstTerminal(page, s1)
-    await splitBoundTerminal(page)
-    // Now: one bound pane (s1) + one empty placeholder pane.
-    await expect(terminalHeader(page, s1)).toHaveCount(1)
+    // Bind s1 via the REAL session-row click → a bound terminal tab in group:1.
+    await sessionRow(page, s1).click()
+    await expect(terminalTab(group(page, 'group:1'), s1)).toBeVisible({ timeout: 15_000 })
 
-    // Click the OTHER session row. EXPECT: it binds into the NEW empty pane,
-    // leaving s1 still bound in the first pane → both headers show, no placeholder.
+    // Split group:1 → an EMPTY adjacent group (decided OQ2: a split spawns an empty
+    // group, NEVER a stranded/unbound terminal pane). Capture the emptiness now,
+    // before any focus settles — there is no leftover placeholder to fill.
+    await splitButton(page, 'group:1').click()
+    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    await expect(group(page, 'group:2').locator('[data-panel-leaf]'), 'the split made an EMPTY group, not a stranded terminal').toHaveCount(0)
+    await expect(group(page, 'group:2').getByText('No files open')).toBeVisible()
+
+    // Click the OTHER session row (the REAL provider clickSession). OUTCOME (Bug 3
+    // fix): s2 is BOUND ON CREATE to its OWN new terminal tab, and s1 is NOT
+    // rebound — its terminal tab survives, still bound to s1. (The new terminal
+    // lands in the focused group; the anti-rebind guarantee is the load-bearing
+    // outcome — the old bug silently rebound s1 to s2.)
     await sessionRow(page, s2).click()
-    // Wait for the binding to settle (rebind vs new-pane resolves within a tick).
-    await page.waitForTimeout(1500)
+    await expect(terminalTab(page, s2), 's2 is bound on create to its own new terminal tab').toHaveCount(1, { timeout: 15_000 })
+    await expect(terminalTab(page, s1), 's1 MUST stay bound — clicking s2 must NOT rebind the first terminal').toHaveCount(1)
+    await expect(idlePlaceholder(page), 'no empty/idle terminal placeholder is left behind').toHaveCount(0)
 
-    await expect(terminalHeader(page, s2), 'the clicked session should be shown').toHaveCount(1, { timeout: 15_000 })
-    await expect(terminalHeader(page, s1), 's1 MUST remain bound in the first pane — clicking s2 must not rebind it').toHaveCount(1)
-    await expect(idlePlaceholder(page), 'no empty terminal pane should remain after binding s2 (it should fill the new pane)').toHaveCount(0)
-    await expect(terminalPanes(page)).toHaveCount(2)
+    // Two DISTINCT bound terminals coexist (s1 + s2) — neither overwrote the other.
+    const ids = await allTerminalTabs(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-tab-instance')))
+    expect(ids.length, 'two terminal tabs (s1 + s2), not one rebound').toBe(2)
+    expect(new Set(ids).size, 'the two terminal tabs are distinct instances').toBe(2)
 
     await page.screenshot({ path: 'test-results/mi-qa-terminal-flow3.png' })
   })
 
-  test('flow 4: the new (empty) terminal pane can be closed', async ({ page, request }) => {
+  test('flow 4: a bound terminal tab has a working close × and the session survives', async ({ page, request }) => {
     const { sessions: [s1] } = await openProjectWithSessions(page, request, 1)
 
-    await bindFirstTerminal(page, s1)
-    await splitBoundTerminal(page)
-    // The reported gesture: close the NEW empty pane via its Close (×).
-    await expect(terminalPanes(page)).toHaveCount(2)
+    await sessionRow(page, s1).click()
+    const tab = terminalTab(group(page, 'group:1'), s1)
+    await expect(tab).toBeVisible({ timeout: 15_000 })
 
-    // EXPECT: the empty new pane exposes a Close affordance the user can click.
-    const closeOnEmpty = emptyPane(page).getByRole('button', { name: 'Close terminal' })
-    await expect(closeOnEmpty, 'the empty new terminal pane should offer a Close (x) button').toHaveCount(1, { timeout: 5_000 })
+    // Every terminal tab carries a close × (Bug 4: it can never be an unclosable
+    // header-less pane). Hover to reveal it, then close.
+    await tab.hover()
+    const closeX = tab.getByRole('button', { name: 'Close terminal' })
+    await expect(closeX, 'a terminal tab always offers a close ×').toHaveCount(1)
+    await closeX.click()
 
-    await closeOnEmpty.click()
-    // EXPECT: the empty pane is gone; the bound s1 pane survives.
-    await expect(idlePlaceholder(page), 'the empty pane should close').toHaveCount(0, { timeout: 10_000 })
-    await expect(terminalPanes(page), 'one terminal pane should remain after closing the empty one').toHaveCount(1)
-    await expect(terminalHeader(page, s1), 's1 should still be bound after closing the empty pane').toHaveCount(1)
+    // OUTCOME: the tab is gone, no idle placeholder takes its place, and the session
+    // KEEPS RUNNING (closePane detaches the tab, not the PTY) — its row stays listed
+    // (afterEach closes it by name and would throw if it were already gone).
+    await expect(tab).toHaveCount(0, { timeout: 10_000 })
+    await expect(idlePlaceholder(page)).toHaveCount(0)
+    await expect(sessionRow(page, s1), 's1 keeps running after closing its terminal tab').toBeVisible()
 
     await page.screenshot({ path: 'test-results/mi-qa-terminal-flow4.png' })
   })
 
-  test('flow 5 (contrast): Open beside binds each session to its own pane', async ({ page, request }) => {
+  test('flow 5 (contrast): Open beside binds each session to its own distinct tab', async ({ page, request }) => {
     const { sessions: [s1, s2] } = await openProjectWithSessions(page, request, 2)
 
-    // Open beside via the per-row hover button (revealed on hover). This is the
-    // reported-WORKING path: it binds the NEW pane directly (not via active-terminal).
+    // Open beside via the per-row hover button — it splits to a fresh group and
+    // binds the NEW terminal directly (the reported-working path).
     const openBeside = async (name: string) => {
-      const row = sessionRow(page, name)
-      await row.hover()
+      await sessionRow(page, name).hover()
       await page.getByRole('button', { name: `Open ${name} beside` }).click()
     }
 
     await openBeside(s1)
-    await expect(terminalHeader(page, s1)).toHaveCount(1, { timeout: 15_000 })
+    await expect(terminalTab(page, s1)).toHaveCount(1, { timeout: 15_000 })
     await openBeside(s2)
-    await expect(terminalHeader(page, s2)).toHaveCount(1, { timeout: 15_000 })
+    await expect(terminalTab(page, s2)).toHaveCount(1, { timeout: 15_000 })
 
-    // The contrast that matters: Open beside binds the NEW pane DIRECTLY, so BOTH
-    // sessions end up shown — neither overwrites the other (the failure mode of
-    // flow 3). Each lives in its own distinct pane.
-    await expect(terminalHeader(page, s1), 's1 stays bound (open-beside does not rebind)').toHaveCount(1)
-    await expect(terminalHeader(page, s2), 's2 is bound in its own new pane').toHaveCount(1)
-    const s1Pane = terminalPanes(page).filter({ hasText: s1 })
-    const s2Pane = terminalPanes(page).filter({ hasText: s2 })
-    await expect(s1Pane).toHaveCount(1)
-    await expect(s2Pane).toHaveCount(1)
-    // Distinct panes (different instance ids).
-    const ids = await terminalPanes(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-instance-id')))
-    expect(new Set(ids).size, 'each terminal pane has a distinct instance id').toBe(ids.length)
+    // Both sessions end up shown in their OWN tabs — neither overwrites the other
+    // (the failure mode flow 3 guards against). Distinct instance ids.
+    await expect(terminalTab(page, s1)).toHaveCount(1)
+    await expect(terminalTab(page, s2)).toHaveCount(1)
+    const ids = await allTerminalTabs(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-tab-instance')))
+    expect(new Set(ids).size, 'each terminal tab has a distinct instance id').toBe(ids.length)
+    expect(ids.length).toBe(2)
 
     await page.screenshot({ path: 'test-results/mi-qa-terminal-flow5.png' })
+  })
+
+  test('new: clicking a session puts a terminal tab in the SAME strip as an editor tab (mixed, flat)', async ({ page, request }) => {
+    const { project, sessions: [s1] } = await openProjectWithSessions(page, request, 1)
+
+    // Open a file → an editor tab in group:1.
+    const file = uniqueFileName('mixed.ts')
+    await createTestFile(page, project.name, file, 'export const m = 1\n')
+    await waitForSSERefresh(page, 3000)
+    await openFileViaSearch(page, file)
+    await expect(group(page, 'group:1').locator('[data-testid="group-tab"][data-tab-kind="editor"]')).toHaveCount(1, { timeout: 10_000 })
+
+    // Click the session → a terminal tab joins the SAME group's strip (one uniform,
+    // mixed editor+terminal row — the FLAT model).
+    await sessionRow(page, s1).click()
+    await expect(terminalTab(group(page, 'group:1'), s1)).toBeVisible({ timeout: 15_000 })
+    await expect(group(page, 'group:1').locator('[data-testid="group-tab"]')).toHaveCount(2) // 1 editor + 1 terminal
+    await expect(group(page, 'group:1').locator('[data-testid="group-tab"][data-tab-kind="editor"]')).toHaveCount(1)
+    await expect(group(page, 'group:1').locator('[data-testid="group-tab"][data-tab-kind="terminal"]')).toHaveCount(1)
+    // Still a single group — they share one strip.
+    await expect(page.locator('[data-group-id]')).toHaveCount(1)
   })
 })

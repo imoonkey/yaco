@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createFixtureProject, selectProject, getWorkspaceState, activeEditorView, type FixtureProject } from './helpers/workspace'
+import { createFixtureProject, selectProject, getWorkspaceState, activeEditorTabId, type FixtureProject } from './helpers/workspace'
 
 // Characterization of Changes compare mode + compare prev/next navigation against
 // CURRENT code (design.md "ChangesPanel" / "EditorPanel": self-describing
@@ -45,11 +45,12 @@ const fileCounter = (page: Page) => page.getByRole('button', { name: /^\d+ \/ \d
 const prevFile = (page: Page) => page.getByRole('button', { name: 'Previous file' })
 const nextFile = (page: Page) => page.getByRole('button', { name: 'Next file' })
 
-// The active editor's persisted active tab — the diff tab id compare-nav pages
-// through. Per-instance now (editorViews), but compare-nav uses the single home
-// editor, so the active view's `activeTab` is the same value the old global field held.
+// The active group's active editor tab id — the diff tab id compare-nav pages
+// through. Editor tab state lives in the panel-layout tree now; compare-nav uses
+// the single working group, so its active editor tab id is the value the old
+// global `activeTab` field held.
 const activeTab = async (page: Page, project: string) =>
-  activeEditorView(await getWorkspaceState(page, project))?.activeTab
+  activeEditorTabId(await getWorkspaceState(page, project))
 
 // Each fixture file's first line ("<name> line 1") only appears in that file's
 // diff body (added lines of a new file), so it proves the rendered DIFF CONTENT

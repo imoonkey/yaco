@@ -4,21 +4,22 @@ import {
   createTestFile,
   deleteTestFile,
   openFileViaSearch,
+  openPinnedFile,
   waitForSSERefresh,
   uniqueFileName,
+  group,
   type FixtureProject,
 } from './helpers/workspace'
 
-// USER-QA reproduction of the reported "multi-instance panels" editor bugs.
-// These assert what a USER OBSERVES after using the real tab-bar Split button +
-// its caret dropdown — NOT the keyboard split the shipped suite exercised.
+// USER-QA for the VSCode tab-group editor flows. Drives the SAME affordances a
+// user touches — the group tab bar's visible Split button and its right-click menu
+// (NOT keyboard shortcuts) — and asserts USER-OBSERVABLE outcomes: a second group
+// appears side-by-side (axis row) or stacked (axis col), the original group keeps
+// its file tab, the Split menu STAYS OPEN until a choice is made (the Bug 2
+// regression), and two files become two sibling editor tabs in one strip.
 //
-// Reported actuals (to confirm / refute):
-//   1. Clicking the tab-bar Split button on a single open editor CLOSES the whole
-//      editor; reopening a file then yields two STACKED (up/down) editors.
-//      Expected: two editors SIDE-BY-SIDE, the original still showing its file.
-//   2. Opening the Split caret dropdown CLOSES immediately instead of staying
-//      open until a choice is made.
+// Outcome shift (decided OQ2): Split spawns an EMPTY adjacent group — it does NOT
+// duplicate the editor. The original keeps its file; you open into the new group.
 
 test.use({ viewport: { width: 1280, height: 800 } })
 
@@ -36,46 +37,38 @@ async function ws(page: Page, request: APIRequestContext): Promise<FixtureProjec
   return project
 }
 
-// The wrapper a tree leaf/tabs-node carries (data-instance-id). The home editor
-// lives in the main-tabs node → its wrapper instance id is 'editor'; a split
-// secondary is a leaf with id 'editor:2'.
-const editorWrapper = (page: Page, id: string) => page.locator(`[data-instance-id="${id}"]`)
-// All editor surfaces (each carries a CodeMirror content area).
-const editorContents = (page: Page) => page.locator('[data-instance-id^="editor"] .cm-content')
-const tabIn = (pane: ReturnType<Page['locator']>, title: string) =>
-  pane.locator(`[data-testid="tab"][title="${title}"]`)
+// --- Working-area group affordances (the real DOM contract vt-render shipped) ---
 
-/** Open a file via quick-open and pin it (double-click clears the preview italic). */
-async function openPinned(page: Page, file: string): Promise<void> {
-  await openFileViaSearch(page, file)
-  const t = tabIn(editorWrapper(page, 'editor'), file)
-  await expect(t).toBeVisible({ timeout: 10_000 })
-  await t.dblclick()
-}
+// A group's visible Split button (opens the dismiss-safe Split menu via
+// `openFromTrigger`) and its right-clickable empty area (opens the SAME menu via
+// `menu.bind()`). Both routes survive the document-click dismiss (Bug 2 fix).
+const splitButton = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="split-group"]')
+const emptyArea = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="group-empty-area"]')
+// A group's ACTIVE editor tab body (only the active tab has a body wrapper).
+const editorBody = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-panel-leaf="editor"]')
+// A group-tab in a specific group, addressed by its title (an editor tab's title
+// is its tabId / file path).
+const tabInGroup = (page: Page, groupId: string, title: string) =>
+  group(page, groupId).locator(`[data-testid="group-tab"][title="${title}"]`)
+// Every working-area group (data-group-id) currently in the tree.
+const groupIds = (page: Page) =>
+  page.locator('[data-group-id]').evaluateAll((els) => els.map((e) => e.getAttribute('data-group-id')))
 
-// The tab-bar Split button + caret live inside the editor's own chrome.
-const splitButton = (page: Page) =>
-  editorWrapper(page, 'editor').getByRole('button', { name: 'Split editor', exact: true })
-const splitCaret = (page: Page) =>
-  editorWrapper(page, 'editor').getByRole('button', { name: 'Split editor options' })
-
-/** The axis of the split that holds the two editor instances: 'row' = side-by-
- *  side (vertical divider), 'col' = stacked (horizontal divider). Read off the
- *  nearest ancestor split node that contains BOTH editor wrappers. */
-async function editorSplitAxis(page: Page): Promise<string | null> {
+/** The axis of the lowest split node that contains BOTH working groups: 'row' =
+ *  side-by-side (left/right split), 'col' = stacked (up/down). Read off the
+ *  nearest common split ancestor of the two `[data-group-id]` containers. */
+async function groupSplitAxis(page: Page): Promise<string | null> {
   return page.evaluate(() => {
-    const panes = Array.from(document.querySelectorAll('[data-instance-id^="editor"][data-instance-id]'))
-      .filter((el) => {
-        const id = el.getAttribute('data-instance-id') || ''
-        return id === 'editor' || id.startsWith('editor:')
-      })
-    if (panes.length < 2) return null
-    // Walk up from the first pane to the lowest split that also contains another pane.
-    let node: HTMLElement | null = panes[0] as HTMLElement
+    const groups = Array.from(document.querySelectorAll('[data-group-id]'))
+    if (groups.length < 2) return null
+    let node: HTMLElement | null = groups[0] as HTMLElement
     while (node) {
       const split = node.closest('[data-split-axis]') as HTMLElement | null
       if (!split) return null
-      const contained = panes.filter((p) => split.contains(p)).length
+      const contained = groups.filter((g) => split.contains(g)).length
       if (contained >= 2) return split.getAttribute('data-split-axis')
       node = split.parentElement
     }
@@ -83,74 +76,196 @@ async function editorSplitAxis(page: Page): Promise<string | null> {
   })
 }
 
-// TODO(vt-e2e): un-skip + migrate to the VSCode tab-group model. These assert the
-// CORRECT target behavior (side-by-side split, dropdown stays open) and are RED
-// against current main by design — skipped to keep the suite green until the rework.
-test.describe.skip('USER-QA: editor Split button (flow 1) + Split dropdown (flow 2)', () => {
-  test('flow 1: tab-bar Split keeps the original file and tiles side-by-side', async ({ page, request }) => {
+test.describe('USER-QA: editor group split (button + right-click) → empty adjacent group', () => {
+  test('flow 1: the Split button makes an EMPTY group side-by-side; the original keeps its file', async ({ page, request }) => {
     const project = await ws(page, request)
-    const file = uniqueFileName('split_src.ts')
-    await createTestFile(page, project.name, file, 'export const ORIGINAL = 1\n')
+    const fileA = uniqueFileName('split_a.ts')
+    const fileB = uniqueFileName('split_b.ts')
+    await createTestFile(page, project.name, fileA, 'export const ORIGINAL = 1\n')
+    await createTestFile(page, project.name, fileB, 'export const SIBLING = 2\n')
     await waitForSSERefresh(page, 3000)
 
-    await openPinned(page, file)
-    // Precondition: exactly one editor, showing the file.
-    await expect(editorContents(page)).toHaveCount(1)
-    await expect(editorWrapper(page, 'editor').locator('.cm-content')).toContainText('ORIGINAL', { timeout: 10_000 })
+    // Precondition: one group (group:1) showing fileA, no second group yet.
+    await openFileViaSearch(page, fileA)
+    await expect(tabInGroup(page, 'group:1', fileA)).toBeVisible({ timeout: 10_000 })
+    await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('ORIGINAL')
+    expect(await groupIds(page)).toEqual(['group:1'])
 
-    // The real user gesture: click the tab-bar Split button.
-    await expect(splitButton(page)).toBeVisible()
-    await splitButton(page).click()
+    // The real user gesture: click the group's visible Split button → its menu →
+    // Split Right (a left/right split is a side-by-side, axis 'row').
+    await splitButton(page, 'group:1').click()
+    await page.getByRole('menuitem', { name: 'Split Right' }).click()
 
-    // EXPECT: two editor panes now exist (the original was NOT closed).
-    await expect(editorContents(page)).toHaveCount(2, { timeout: 10_000 })
+    // OUTCOME: a SECOND group appears — group:1 was NOT closed, and the new group is
+    // EMPTY (no editor body wrapper, "No files open" placeholder), side-by-side.
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    expect(await groupIds(page)).toEqual(['group:1', 'group:2'])
+    await expect(tabInGroup(page, 'group:1', fileA)).toBeVisible() // original keeps its file
+    await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('ORIGINAL')
+    await expect(group(page, 'group:2').locator('[data-panel-leaf]')).toHaveCount(0) // empty: no body
+    await expect(group(page, 'group:2').getByText('No files open')).toBeVisible()
 
-    // EXPECT: the ORIGINAL home editor still shows its file (not blanked/closed).
-    await expect(tabIn(editorWrapper(page, 'editor'), file)).toBeVisible()
-    await expect(editorWrapper(page, 'editor').locator('.cm-content')).toContainText('ORIGINAL')
+    // OUTCOME: the two groups tile SIDE-BY-SIDE (split axis 'row'), not stacked.
+    expect(await groupSplitAxis(page), 'Split Right tiles the groups side-by-side (row)').toBe('row')
 
-    // EXPECT: the new pane mirrors the same file.
-    await expect(tabIn(editorWrapper(page, 'editor:2'), file)).toBeVisible()
-
-    // EXPECT: the two editors are SIDE-BY-SIDE (axis 'row'), not STACKED ('col').
-    const axis = await editorSplitAxis(page)
-    expect(axis, 'the two editors should tile side-by-side (split axis row), not stacked (col)').toBe('row')
+    // The split focused the empty group, so opening a file lands THERE → the two
+    // files now show side by side, one per group.
+    await openFileViaSearch(page, fileB)
+    await expect(tabInGroup(page, 'group:2', fileB)).toBeVisible({ timeout: 10_000 })
+    await expect(editorBody(page, 'group:2').locator('.cm-content')).toContainText('SIBLING')
+    await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('ORIGINAL')
 
     await page.screenshot({ path: 'test-results/mi-qa-editor-split-flow1.png' })
-    await deleteTestFile(page, project.name, file)
+    await deleteTestFile(page, project.name, fileA)
+    await deleteTestFile(page, project.name, fileB)
   })
 
-  test('flow 2: Split caret dropdown stays open until a choice', async ({ page, request }) => {
+  test('flow 2: the Split menu STAYS OPEN until a choice; Split Down stacks the groups (col)', async ({ page, request }) => {
     const project = await ws(page, request)
     const file = uniqueFileName('caret.ts')
     await createTestFile(page, project.name, file, 'export const c = 1\n')
     await waitForSSERefresh(page, 3000)
 
-    await openPinned(page, file)
-    await expect(splitCaret(page)).toBeVisible()
+    await openFileViaSearch(page, file)
+    await expect(splitButton(page, 'group:1')).toBeVisible()
 
-    // Open the caret dropdown.
-    await splitCaret(page).click()
+    // Open the Split menu via the visible button (routed through the dismiss-safe
+    // `openFromTrigger` — NOT the deleted left-click `menu.open` antipattern).
+    await splitButton(page, 'group:1').click()
 
-    // EXPECT: the menu + its options are VISIBLE and STAY open (no choice made yet).
+    // OUTCOME (Bug 2 fix): the menu + its options are VISIBLE and STAY open — the
+    // same document-click that opened it must NOT immediately dismiss it.
     const menu = page.getByRole('menu')
     await expect(menu).toBeVisible({ timeout: 5_000 })
     await expect(page.getByRole('menuitem', { name: 'Split Right' })).toBeVisible()
     await expect(page.getByRole('menuitem', { name: 'Split Down' })).toBeVisible()
 
-    // It must remain open a beat later (the reported bug closes it immediately).
+    // It must remain open a beat later (the reported bug closed it immediately).
     await page.waitForTimeout(600)
-    await expect(menu, 'the Split dropdown should remain open until the user chooses').toBeVisible()
-    await expect(page.getByRole('menuitem', { name: 'Split Down' })).toBeVisible()
+    await expect(menu, 'the Split menu should remain open until the user chooses').toBeVisible()
 
     await page.screenshot({ path: 'test-results/mi-qa-editor-split-flow2.png' })
 
-    // And choosing "Split Down" should produce a STACKED pair (axis col).
+    // Choosing "Split Down" → an EMPTY group STACKED below (an up/down split is
+    // axis 'col').
     await page.getByRole('menuitem', { name: 'Split Down' }).click()
-    await expect(editorContents(page)).toHaveCount(2, { timeout: 10_000 })
-    const axis = await editorSplitAxis(page)
-    expect(axis, 'Split Down should stack the editors (col)').toBe('col')
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    await expect(group(page, 'group:2').locator('[data-panel-leaf]')).toHaveCount(0)
+    expect(await groupSplitAxis(page), 'Split Down stacks the groups (col)').toBe('col')
 
     await deleteTestFile(page, project.name, file)
+  })
+
+  test('flow 2b: a RIGHT-CLICK on the tab bar opens the same Split menu (stays open) and spawns an empty group', async ({ page, request }) => {
+    const project = await ws(page, request)
+    const file = uniqueFileName('rclick.ts')
+    await createTestFile(page, project.name, file, 'export const r = 1\n')
+    await waitForSSERefresh(page, 3000)
+
+    await openFileViaSearch(page, file)
+    await expect(tabInGroup(page, 'group:1', file)).toBeVisible({ timeout: 10_000 })
+
+    // The OTHER real route: right-click the tab bar's empty area (menu.bind's
+    // onContextMenu) — it opens the SAME Split menu, and it stays open.
+    await emptyArea(page, 'group:1').click({ button: 'right' })
+    const menu = page.getByRole('menu')
+    await expect(menu).toBeVisible({ timeout: 5_000 })
+    await page.waitForTimeout(400)
+    await expect(menu, 'the right-click Split menu also stays open until a choice').toBeVisible()
+
+    // Split Right → an empty group beside (row); the original keeps its file.
+    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    await expect(group(page, 'group:2').locator('[data-panel-leaf]')).toHaveCount(0)
+    await expect(tabInGroup(page, 'group:1', file)).toBeVisible()
+    expect(await groupSplitAxis(page)).toBe('row')
+
+    await deleteTestFile(page, project.name, file)
+  })
+
+  test('new: two files open as TWO editor tabs in ONE strip (flat), both selectable', async ({ page, request }) => {
+    const project = await ws(page, request)
+    const fileA = uniqueFileName('flat_a.ts')
+    const fileB = uniqueFileName('flat_b.ts')
+    await createTestFile(page, project.name, fileA, 'export const A = 1\n')
+    await createTestFile(page, project.name, fileB, 'export const B = 2\n')
+    await waitForSSERefresh(page, 3000)
+
+    // Pin both files into the SAME group (no split). FLAT model: each file is its
+    // own editor tab in one strip — opening the second does NOT stack it behind the
+    // first; both tabs coexist.
+    await openPinnedFile(page, fileA)
+    await openPinnedFile(page, fileB)
+
+    await expect(tabInGroup(page, 'group:1', fileA)).toBeVisible({ timeout: 10_000 })
+    await expect(tabInGroup(page, 'group:1', fileB)).toBeVisible()
+    await expect(group(page, 'group:1').locator('[data-testid="group-tab"][data-tab-kind="editor"]')).toHaveCount(2)
+    // Still a single group — the two files are siblings in one strip.
+    expect(await groupIds(page)).toEqual(['group:1'])
+
+    // Selecting each tab swaps the visible body to that file.
+    await tabInGroup(page, 'group:1', fileA).click()
+    await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('export const A')
+    await tabInGroup(page, 'group:1', fileB).click()
+    await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('export const B')
+
+    await deleteTestFile(page, project.name, fileA)
+    await deleteTestFile(page, project.name, fileB)
+  })
+
+  test('new: the SAME file open in two groups stays in sync via the shared per-path buffer', async ({ page, request }) => {
+    const project = await ws(page, request)
+    const file = uniqueFileName('shared.ts')
+    await createTestFile(page, project.name, file, 'export const v = 1\n')
+    await waitForSSERefresh(page, 3000)
+
+    // group:1 shows the file; split to an empty group:2, then open the SAME file
+    // there → two editor tabs (two instances), one per group, sharing one buffer.
+    await openFileViaSearch(page, file)
+    await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('export const v')
+    await splitButton(page, 'group:1').click()
+    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    await openFileViaSearch(page, file) // lands in the focused empty group:2
+    await expect(tabInGroup(page, 'group:2', file)).toBeVisible({ timeout: 10_000 })
+
+    // Type into group:1's editor → the edit mirrors into group:2's editor showing
+    // the same path (one shared buffer per file path).
+    await editorBody(page, 'group:1').locator('.cm-content').click()
+    await page.keyboard.type('SHAREDEDIT ')
+    await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('SHAREDEDIT', { timeout: 10_000 })
+    await expect(editorBody(page, 'group:2').locator('.cm-content')).toContainText('SHAREDEDIT', { timeout: 10_000 })
+
+    await deleteTestFile(page, project.name, file)
+  })
+
+  test('new: a within-group drag reorders the tab strip', async ({ page, request }) => {
+    const project = await ws(page, request)
+    const fileA = uniqueFileName('order_a.ts')
+    const fileB = uniqueFileName('order_b.ts')
+    await createTestFile(page, project.name, fileA, 'export const A = 1\n')
+    await createTestFile(page, project.name, fileB, 'export const B = 2\n')
+    await waitForSSERefresh(page, 3000)
+
+    await openPinnedFile(page, fileA)
+    await openPinnedFile(page, fileB)
+    const order = () =>
+      group(page, 'group:1').locator('[data-testid="group-tab"][data-tab-kind="editor"]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('title')))
+    expect(await order()).toEqual([fileA, fileB])
+
+    // Drag the second tab before the first → the strip order swaps. The strip uses
+    // HTML5 drag-and-drop (the tab's onDragStart sets the dragged id, onDrop fires
+    // REORDER_GROUP_TAB), so dispatch the native drag events with a shared
+    // DataTransfer — a mouse-only drag never fires dragstart/drop.
+    const dt = await page.evaluateHandle(() => new DataTransfer())
+    await tabInGroup(page, 'group:1', fileB).dispatchEvent('dragstart', { dataTransfer: dt })
+    await tabInGroup(page, 'group:1', fileA).dispatchEvent('dragover', { dataTransfer: dt })
+    await tabInGroup(page, 'group:1', fileA).dispatchEvent('drop', { dataTransfer: dt })
+    await tabInGroup(page, 'group:1', fileB).dispatchEvent('dragend', { dataTransfer: dt })
+    await expect.poll(order).toEqual([fileB, fileA])
+
+    await deleteTestFile(page, project.name, fileA)
+    await deleteTestFile(page, project.name, fileB)
   })
 })

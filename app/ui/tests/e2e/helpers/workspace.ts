@@ -57,41 +57,78 @@ export function getWorkspaceState(page: Page, project: string, worktree?: string
   }, layoutKey(project, worktree))
 }
 
-// --- Per-instance persisted-state readers (multi-instance panel model) ---
+// --- Persisted group-tree readers (VSCode tab-group model) ---
 //
-// The global `openTabs`/`activeTab`/`previewTab`/`activeSession` fields are gone:
-// editor view state is now keyed by instance id in `editorViews`, terminal session
-// bindings in `terminalBindings`, with `editorMru`/`terminalMru` naming the active
-// instance (mirrors `resolveActiveEditor`/`resolveActiveTerminal` in the model).
-// These readers return the ACTIVE instance's slice — the single-value equivalents
-// the old flat fields exposed — so single-pane characterization specs assert the
-// same observable persisted state through the new shape.
+// Editor tab state (tabId / preview / pinned) now lives in the panel-layout TREE:
+// each working-area GROUP (a `tabs` node) carries an ordered `tabs[]` of mixed
+// editor/terminal entries plus its own `activeTab` instanceId. There is no
+// `editorViews` map. Terminal session bindings stay in `terminalBindings` (by
+// instanceId), with `terminalMru` naming the active one, and the focused/open
+// target group is `activeGroupId`. These readers walk the persisted tree to
+// expose the single-value equivalents the old global `openTabs`/`activeTab` (and
+// per-instance editorViews) exposed, so characterization specs assert the same
+// observable persisted state through the group shape.
 
-export type PersistedEditorView = { openTabs: string[]; activeTab: string | null; previewTab: string | null }
-type PersistedInstanceState = {
-  editorViews?: Record<string, PersistedEditorView>
+type PersistedGroupTab =
+  | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
+  | { instanceId: string; kind: 'terminal' }
+type PersistedTreeNode = {
+  kind: string
+  id?: string
+  panel?: string
+  tabs?: PersistedGroupTab[]
+  activeTab?: string
+  children?: { node: PersistedTreeNode }[]
+}
+type PersistedGroupState = {
+  panelLayout?: { desktop?: PersistedTreeNode }
+  activeGroupId?: string
   terminalBindings?: Record<string, string>
   editorMru?: string[]
   terminalMru?: string[]
 } | null | undefined
 
-/** The active editor instance id: the MRU head that still has a view, else the
- *  structural home editor `'editor'` (always present). */
-function activeEditorId(state: PersistedInstanceState): string {
-  const views = state?.editorViews ?? {}
-  for (const id of state?.editorMru ?? []) if (views[id]) return id
-  return 'editor'
+/** Every working-area GROUP (`tabs` node) in document order. */
+function groupsInOrder(node: PersistedTreeNode | undefined, out: PersistedTreeNode[] = []): PersistedTreeNode[] {
+  if (!node) return out
+  if (node.kind === 'tabs') out.push(node)
+  else for (const c of node.children ?? []) groupsInOrder(c.node, out)
+  return out
 }
 
-/** The active editor's persisted view — the per-instance replacement for the old
- *  global `openTabs`/`activeTab`/`previewTab`. Null when no editor view persisted. */
-export function activeEditorView(state: PersistedInstanceState): PersistedEditorView | null {
-  return state?.editorViews?.[activeEditorId(state)] ?? null
+/** The active group: the one named by `activeGroupId` if it is live, else the
+ *  first group — mirroring the loader's `targetGroup` fallback. */
+function activeGroup(state: PersistedGroupState): PersistedTreeNode | null {
+  const groups = groupsInOrder(state?.panelLayout?.desktop)
+  if (groups.length === 0) return null
+  return groups.find((g) => g.id === state?.activeGroupId) ?? groups[0]
+}
+
+/** The active group's editor tab ids (each a file path or `diff:` id), in tab
+ *  order — the per-group replacement for the old global `openTabs`. */
+export function openEditorTabIds(state: PersistedGroupState): string[] {
+  const g = activeGroup(state)
+  return (g?.tabs ?? []).flatMap((t) => (t.kind === 'editor' ? [t.tabId] : []))
+}
+
+/** The active group's ACTIVE editor tab id (file path or `diff:` id), or null —
+ *  the per-group replacement for the old global `activeTab`. */
+export function activeEditorTabId(state: PersistedGroupState): string | null {
+  const g = activeGroup(state)
+  const active = g?.tabs?.find((t) => t.instanceId === g.activeTab)
+  return active && active.kind === 'editor' ? active.tabId : null
+}
+
+/** Every editor tab id across ALL groups (tree-wide), in document order. */
+export function allEditorTabIds(state: PersistedGroupState): string[] {
+  return groupsInOrder(state?.panelLayout?.desktop)
+    .flatMap((g) => (g.tabs ?? []).flatMap((t) => (t.kind === 'editor' ? [t.tabId] : [])))
 }
 
 /** The session bound to the active terminal — the value the old flat blob stored
- *  as `activeSession`. Returns '' when no terminal is bound (the detached state). */
-export function activeBoundSession(state: PersistedInstanceState): string {
+ *  as `activeSession`. Returns '' when no terminal is bound (the detached state).
+ *  `terminalBindings`/`terminalMru` are unchanged by the tab-group rework. */
+export function activeBoundSession(state: PersistedGroupState): string {
   const bindings = state?.terminalBindings ?? {}
   for (const id of state?.terminalMru ?? []) {
     const session = bindings[id]
@@ -244,6 +281,45 @@ export const sectionHeader = (page: Page, title: string) =>
 export function expectApproxSize(actual: number | undefined, expected: number, tol = 12): void {
   expect(actual, `expected ~${expected}px (±${tol}), got ${actual}`).toBeGreaterThan(expected - tol)
   expect(actual).toBeLessThan(expected + tol)
+}
+
+// --- Working-area group probes (VSCode tab-group model) ----------------------
+//
+// The working area is a grid of GROUPS, each `data-group-id`. A group renders a
+// mixed tab strip (`[data-testid="group-tab"]`, kind via `data-tab-kind`, active
+// via `data-tab-active`) over the ACTIVE tab's BODY wrapper — the body alone
+// carries `data-instance-id` + `data-panel-leaf="editor|terminal"` + the focus
+// markers (`data-focused`/`data-active`). A NON-active tab has no body in the DOM,
+// so select its tab first to mount it. The FIRST group is the `role="main"`
+// landmark. Terminals are tabs in the working groups now — NOT in the activity
+// panel — so a bound session's xterm/body lives under a group, not the dock.
+
+/** The first working-area group — the `role="main"` landmark. */
+export const mainGroup = (page: Page) => page.locator('[role="main"]')
+/** A working-area group container by its structural id (e.g. 'group:1'). */
+export const group = (page: Page, groupId: string) => page.locator(`[data-group-id="${groupId}"]`)
+/** All working-area group containers, in document order. */
+export const allGroups = (page: Page) => page.locator('[data-group-id]')
+/** A group-tab by its visible title (editor: its tabId; terminal: session name),
+ *  optionally scoped to a single group locator. */
+export const groupTab = (scope: Page | ReturnType<Page['locator']>, title: string) =>
+  scope.locator(`[data-testid="group-tab"][title="${title}"]`)
+/** The active tab BODY of `kind` inside `scope` (a group, or the page for the
+ *  single-group case) — carries data-instance-id / data-focused / data-active. */
+export const groupBody = (scope: Page | ReturnType<Page['locator']>, kind: 'editor' | 'terminal') =>
+  scope.locator(`[data-panel-leaf="${kind}"]`)
+
+/** Open a file as a PINNED editor tab in the active group. Quick-open selects it
+ *  as a PREVIEW (italic) tab and reveals it in the explorer; a double-click on its
+ *  explorer row pins it (the real "make permanent" gesture, mirroring VSCode —
+ *  single-click previews, double-click pins). Without pinning, opening a second
+ *  file would REPLACE the first's preview slot instead of adding a sibling tab. */
+export async function openPinnedFile(page: Page, query: string): Promise<void> {
+  await openFileViaSearch(page, query)
+  const base = query.split('/').pop() as string
+  const row = sidebar(page).getByText(base, { exact: true }).first()
+  await expect(row).toBeVisible({ timeout: 10_000 })
+  await row.dblclick()
 }
 
 // --- Per-run fixture projects ---

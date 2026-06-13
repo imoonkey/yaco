@@ -32,7 +32,7 @@ import {
 
 const VHANDLE = 3 // ResizeHandle.tsx width
 const DOCK = 220 // default dock split basis
-const ACTIVITY = 420 // default activity split basis
+const ACTIVITY = 280 // default activity split basis
 const PROJECTS = 120 // default projects leaf basis
 
 test.use({ viewport: { width: 1280, height: 800 } })
@@ -52,10 +52,13 @@ async function treeWorkspace(page: Page, request: APIRequestContext): Promise<Fi
   return project
 }
 
-// Tree-renderer node probes (the renderer stamps each node with its tree id).
+// Tree-renderer node probes (the renderer stamps each split/leaf with its tree id).
 const dock = (page: Page) => page.locator('[data-node-id="dock"]')
 const activity = (page: Page) => page.locator('[data-node-id="activity"]')
-const mainNode = (page: Page) => page.locator('[data-node-id="main"]')
+// The working area is a GROUP now; the first group carries the `role="main"`
+// landmark (the reserved `[data-node-id="main"]` tabs node is gone). It is ALWAYS
+// present — even with zero tabs — and sizes like any grow child.
+const mainNode = (page: Page) => page.locator('[role="main"]')
 const projectsLeaf = (page: Page) => page.locator('[data-panel-leaf="projects"]')
 
 const widthOf = async (l: Locator): Promise<number> => {
@@ -70,7 +73,7 @@ const heightOf = async (l: Locator): Promise<number> => {
 }
 
 test.describe('Desktop tree renderer — geometry', () => {
-  test('default columns: dock ≈ 220, projects ≈ 120, empty editor yields width to activity', async ({ page, request }) => {
+  test('default columns: dock ≈ 220, projects ≈ 120, the working group fills the middle at its grow width', async ({ page, request }) => {
     await treeWorkspace(page, request)
 
     // The tree rendered (its stamped nodes exist) — not the legacy skeleton.
@@ -79,23 +82,27 @@ test.describe('Desktop tree renderer — geometry', () => {
     expectApproxSize(await widthOf(dock(page)), DOCK)
     expectApproxSize(await heightOf(projectsLeaf(page)), PROJECTS)
 
-    // Empty editor: no open tabs ⇒ the main tabs node is excluded and the activity
-    // column absorbs the freed width (one handle between dock and activity).
-    await expect(mainNode(page)).toHaveCount(0)
+    // The working group (role="main") is present even with ZERO tabs — a group sizes
+    // uniformly now (no special empty-editor rule), so it grows to fill the middle and
+    // the activity column stays at its docked width.
+    await expect(mainNode(page)).toBeVisible()
     const vw = page.viewportSize()!.width
-    const emptyActivity = await widthOf(activity(page))
-    expectApproxSize(emptyActivity, vw - DOCK - VHANDLE, 14)
-    expect(emptyActivity).toBeGreaterThan(ACTIVITY + 200)
+    const dockW = await widthOf(dock(page))
+    const activityW = await widthOf(activity(page))
+    expectApproxSize(activityW, ACTIVITY)
+    // Editor group fills the remainder between dock and activity (two handles).
+    expectApproxSize(await widthOf(mainNode(page)), vw - dockW - activityW - 2 * VHANDLE, 16)
   })
 
-  test('opening a file mounts the editor and snaps activity back to its docked width', async ({ page, request }) => {
+  test('opening a file keeps the columns docked and shows the file in the working group', async ({ page, request }) => {
     await treeWorkspace(page, request)
-    await expect(mainNode(page)).toHaveCount(0)
+    // The working group is present before any file is open (uniform sizing).
+    await expect(mainNode(page)).toBeVisible()
+    const emptyMain = await widthOf(mainNode(page))
 
     // README.md ships with the fixture and is indexed at load.
     await openFileViaSearch(page, 'README')
 
-    await expect(mainNode(page)).toBeVisible()
     const vw = page.viewportSize()!.width
     const dockW = await widthOf(dock(page))
     const activityW = await widthOf(activity(page))
@@ -103,8 +110,12 @@ test.describe('Desktop tree renderer — geometry', () => {
 
     expectApproxSize(dockW, DOCK)
     expectApproxSize(activityW, ACTIVITY)
-    // Editor fills the remainder between dock and activity (two handles).
+    // Opening a file does NOT reflow the columns — the group already occupied its
+    // width (no empty-editor-yields-space behavior anymore).
+    expectApproxSize(mainW, emptyMain, 16)
     expectApproxSize(mainW, vw - dockW - activityW - 2 * VHANDLE, 16)
+    // The file shows in the working group's editor body.
+    await expect(mainNode(page).locator('.cm-content')).toBeVisible({ timeout: 10_000 })
   })
 })
 
@@ -404,30 +415,31 @@ test.describe('Desktop tree renderer — collapse persistence + hidden-dock rest
   })
 })
 
-// Migrated from the deleted legacy close-surface case "tasks-active with no open
-// tabs keeps the activity column at its docked width": when Tasks is the active
-// main panel, `withEmptyEditorRule` keeps the main node occupying its width even
-// with zero editor tabs, so the activity column stays at its docked ~420 instead
-// of flex-expanding over the main region.
-test.describe('Desktop tree renderer — tasks-active activity width', () => {
-  test('tasks active with no open tabs keeps the activity column docked', async ({ page, request }) => {
+// Tasks is a DOCK leaf now (in the activity column), toggled by `showTasks` — not a
+// main-region tab. The working group sizes uniformly (no withEmptyEditorRule), so
+// opening Tasks never reflows the working area or the activity column.
+test.describe('Desktop tree renderer — tasks dock leaf', () => {
+  test('toggling Tasks shows the dock tasks panel without reflowing the working area', async ({ page, request }) => {
     const project = await createWorktreeFixture(request)
     provisioned.push(project)
     await page.goto('/')
     await waitForAppReady(page)
     await selectProject(page, project.name)
 
-    // Open Tasks into the main region; no file has been opened, so zero editor tabs.
-    await page.keyboard.press('Meta+Shift+t')
+    // The working group is present and the activity column docked, before Tasks.
     await expect(mainNode(page)).toBeVisible({ timeout: 15_000 })
-    await expect(page.locator('[data-testid="tab"]')).toHaveCount(0)
+    expectApproxSize(await widthOf(activity(page)), ACTIVITY)
+    // No working-area tabs are open.
+    await expect(page.locator('[data-testid="group-tab"]')).toHaveCount(0)
 
-    // The activity column holds its fixed docked width (~420), not flex-expanding
-    // toward half the viewport (~530 on 1280px) the way an empty editor would.
-    await expect(activity(page)).toBeVisible()
-    const activityW = await widthOf(activity(page))
-    expect(activityW).toBeGreaterThan(360)
-    expect(activityW).toBeLessThan(480)
+    // Open Tasks (the dock leaf) via Meta+Shift+T → its graph renders.
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
+
+    // The working group is still present and the activity column stays at its docked
+    // width — no empty-editor / tasks-active special sizing anymore.
+    await expect(mainNode(page)).toBeVisible()
+    expectApproxSize(await widthOf(activity(page)), ACTIVITY)
   })
 })
 
@@ -454,10 +466,15 @@ test.describe('Desktop tree renderer — terminal lifecycle', () => {
     await waitForAppReady(page)
     await selectProject(page, project.name)
 
-    // The shell session lists in the activity column's Sessions section.
+    // Open a file → an editor in group:1. Then open the session BESIDE → a bound
+    // terminal in its OWN group:2 (terminals and editors hide each other within one
+    // group, so the no-remount probe needs them in separate groups).
+    await openFileViaSearch(page, 'README')
+    await expect(mainNode(page).locator('.cm-content')).toBeVisible({ timeout: 15_000 })
     const sessionRow = activity(page).getByText(sessionName, { exact: true })
     await expect(sessionRow).toBeVisible({ timeout: 15_000 })
-    await sessionRow.click()
+    await sessionRow.hover()
+    await page.getByRole('button', { name: `Open ${sessionName} beside` }).click()
     await expect(xterm(page)).toBeVisible({ timeout: 15_000 })
 
     // Stamp the live xterm node so a remount (new node) is observable.
@@ -465,22 +482,22 @@ test.describe('Desktop tree renderer — terminal lifecycle', () => {
     expect(node).not.toBeNull()
     await node!.evaluate((el) => el.setAttribute('data-tree-probe', 'attached'))
 
-    // Re-render #1: open a file. The main tabs node mounts and the activity column
-    // resizes from absorber to fixed — big layout churn — but the terminal must not
-    // remount (same node still attached, current node still stamped).
-    await expect(mainNode(page)).toHaveCount(0)
-    await openFileViaSearch(page, 'README')
-    await expect(mainNode(page)).toBeVisible({ timeout: 15_000 })
-    expect(await node!.evaluate((el) => el.isConnected), 'terminal node disposed (remounted)').toBe(true)
-    expect(await xterm(page).getAttribute('data-tree-probe'), 'live xterm replaced (remounted)').toBe('attached')
-
-    // Re-render #2: collapse a sidebar section — unrelated layout-state change.
+    // Re-render #1: collapse a sidebar section — a layout-state change unrelated to
+    // the terminal's group. The terminal must not remount.
     const header = sectionHeader(page, 'Projects')
     await expect(header).toHaveAttribute('aria-expanded', 'true')
     await header.click()
     await expect(header).toHaveAttribute('aria-expanded', 'false')
     expect(await node!.evaluate((el) => el.isConnected), 'terminal node disposed after collapse').toBe(true)
     expect(await xterm(page).getAttribute('data-tree-probe')).toBe('attached')
+
+    // Re-render #2: hide + restore the dock (Cmd+B) — big layout churn, still no remount.
+    await page.keyboard.press('Meta+b')
+    await expect(dock(page)).toHaveCount(0)
+    await page.keyboard.press('Meta+b')
+    await expect(dock(page)).toBeVisible()
+    expect(await node!.evaluate((el) => el.isConnected), 'terminal node disposed after dock toggle').toBe(true)
+    expect(await xterm(page).getAttribute('data-tree-probe'), 'live xterm replaced (remounted)').toBe('attached')
 
     await request.post(`/api/sessions/${encodeURIComponent(sessionName)}/close`).catch(() => undefined)
   })

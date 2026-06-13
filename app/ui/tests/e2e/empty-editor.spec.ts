@@ -11,24 +11,12 @@ import {
   type FixtureProject,
 } from './helpers/workspace'
 
-// Characterization of the current `shouldShowEditorPane` behavior in
-// WorkspaceLayout.tsx:
-//
-//   shouldShowEditorPane = hasOpenTabs || !showRightPanel
-//
-// With the activity (right) panel visible and NO open tabs, the editor pane
-// (`role="main"`) is not rendered at all and the activity panel takes `flex:1`,
-// so it absorbs the width freed by the absent editor. Opening a file flips
-// `hasOpenTabs`, which brings the editor pane back and snaps the activity panel
-// back to its docked width (`right.size`, default ~420).
-//
-// The flexible-layout refactor preserves this at the renderer boundary via:
-//   mainOccupiesWidth = openTabs.length > 0 || activityChild.hidden
-// These boundingBox assertions pin the observable geometry so the new tree
-// renderer can be checked against it. Every assertion can fail if the
-// empty-editor-yields-space behavior breaks.
+// The working area is a GROUP grid now. A group sizes uniformly (no special
+// empty-editor rule): the working group (`role="main"`) is ALWAYS present — even
+// with zero tabs — and the activity column stays at its docked width regardless of
+// whether a file is open. These boundingBox assertions pin that uniform geometry.
 
-const DOCKED_ACTIVITY = 420 // default right.size when the editor pane is present
+const DOCKED_ACTIVITY = 280 // default activity split basis (with the working group present)
 const VHANDLE = 3 // VResizeHandle width (workspace/ResizeHandle.tsx)
 
 let provisioned: FixtureProject[] = []
@@ -69,58 +57,45 @@ async function openFileViaQuickOpen(page: Page, query: string): Promise<void> {
   await expect(input).toBeHidden({ timeout: 10_000 }) // dialog closes on select
 }
 
-test.describe('Empty editor yields space (geometry)', () => {
-  test('no open tabs lets activity fill the freed width; opening/closing a file restores main', async ({ page, request }) => {
+test.describe('Working group sizing (geometry)', () => {
+  test('the working group is always present and the columns stay docked whether a file is open', async ({ page, request }) => {
     const project = await ws(page, request)
     const viewportWidth = page.viewportSize()!.width
 
-    // --- Empty editor: no open tabs + activity visible ---
-    // Wait for positive workspace DOM first, so the editor-absence assertion is
-    // meaningful (pre-workspace DOM also has no [role="main"]).
+    // --- No open tabs: the working group is STILL present (uniform sizing) ---
     await expect(activityPanel(page)).toBeVisible()
     await expect(sidebar(page)).toBeVisible()
-    // With the workspace rendered, the editor pane is genuinely not in the DOM.
-    await expect(mainPane(page)).toHaveCount(0)
+    await expect(mainPane(page)).toBeVisible()
 
     const sidebarWidth = await widthOf(sidebar(page))
     const emptyActivity = await widthOf(activityPanel(page))
+    const emptyMain = await widthOf(mainPane(page))
 
-    // Activity absorbs everything to the right of the sidebar (one VResizeHandle
-    // sits between them; the editor's right handle is absent with no main pane).
-    expectApproxSize(emptyActivity, viewportWidth - sidebarWidth - VHANDLE, 12)
-    // ...which is far wider than its normal docked width — proves it actually grew.
-    expect(emptyActivity).toBeGreaterThan(DOCKED_ACTIVITY + 200)
+    // The activity column holds its docked width (no empty-editor-yields-space), and
+    // the working group fills the middle between sidebar and activity (two handles).
+    expectApproxSize(emptyActivity, DOCKED_ACTIVITY)
+    expectApproxSize(emptyMain, viewportWidth - sidebarWidth - emptyActivity - 2 * VHANDLE, 14)
+    // No working-area tabs yet.
+    await expect(mainPane(page).locator('[data-testid="group-tab"]')).toHaveCount(0)
 
-    // --- Open a file: editor pane reappears, activity snaps back to docked width ---
+    // --- Open a file: it fills the SAME group; the columns do NOT reflow ---
     const testFile = uniqueFileName('empty_editor.txt')
     await createTestFile(page, project.name, testFile, 'hello editor\n')
     await openFileViaQuickOpen(page, testFile)
 
-    await expect(mainPane(page)).toBeVisible()
-    const openMain = await widthOf(mainPane(page))
-    const dockedActivity = await widthOf(activityPanel(page))
-
-    expectApproxSize(dockedActivity, DOCKED_ACTIVITY)
-    // Opening the file reclaimed width from the activity panel.
-    expect(dockedActivity).toBeLessThan(emptyActivity - 200)
-    // The editor fills the remainder between sidebar and activity (two handles).
-    expect(openMain).toBeGreaterThan(0)
-    expectApproxSize(openMain, viewportWidth - sidebarWidth - dockedActivity - 2 * VHANDLE, 14)
-
-    // --- Close the file (Cmd+W): back to empty → activity reclaims the width ---
-    await page.keyboard.press('Meta+w')
-    await expect(mainPane(page)).toHaveCount(0)
-    await expect(activityPanel(page)).toBeVisible()
-    const reEmptyActivity = await widthOf(activityPanel(page))
-    expectApproxSize(reEmptyActivity, viewportWidth - sidebarWidth - VHANDLE, 12)
-    expect(reEmptyActivity).toBeGreaterThan(DOCKED_ACTIVITY + 200)
-
-    // --- Reopen the file: main width is restored again ---
-    await openFileViaQuickOpen(page, testFile)
-    await expect(mainPane(page)).toBeVisible()
-    const reopenMain = await widthOf(mainPane(page))
+    await expect(mainPane(page).locator('.cm-content')).toBeVisible({ timeout: 10_000 })
     expectApproxSize(await widthOf(activityPanel(page)), DOCKED_ACTIVITY)
-    expectApproxSize(reopenMain, openMain, 14)
+    expectApproxSize(await widthOf(mainPane(page)), emptyMain, 14)
+
+    // --- Close the file via its tab's close × (a real affordance): the group stays
+    // present (empty), columns unchanged ---
+    const tab = mainPane(page).locator('[data-testid="group-tab"]').first()
+    await tab.hover()
+    await tab.getByRole('button').click()
+    await expect(mainPane(page).locator('[data-testid="group-tab"]')).toHaveCount(0)
+    await expect(mainPane(page)).toBeVisible()
+    expectApproxSize(await widthOf(activityPanel(page)), DOCKED_ACTIVITY)
+    expectApproxSize(await widthOf(mainPane(page)), emptyMain, 14)
 
     await deleteTestFile(page, project.name, testFile)
   })

@@ -8,7 +8,8 @@ import {
   writeFileViaAPI,
   waitForSSERefresh,
   getWorkspaceState,
-  activeEditorView,
+  openEditorTabIds,
+  openPinnedFile,
   uniqueFileName,
   type FixtureProject,
 } from './helpers/workspace'
@@ -33,21 +34,16 @@ async function ws(page: Page, request: APIRequestContext): Promise<FixtureProjec
   return project
 }
 
-/** A tab in the editor tab bar, addressed by its full-path title. */
+/** A tab in the working-area group strip, addressed by its full-path title. */
 function tab(page: Page, title: string) {
-  return page.locator(`[data-testid="tab"][title="${title}"]`)
+  return page.locator(`[data-testid="group-tab"][title="${title}"]`)
 }
 
-/** Open a file via quick-open and pin it (double-click) so a later preview open
- *  does not drop it. Waits on the `(preview)` marker clearing — the real "pinned"
- *  signal — instead of a fixed sleep. */
+/** Open a file and PIN it (explorer double-click) so opening the next file adds a
+ *  sibling tab instead of replacing the preview slot. */
 async function openPinnedTab(page: Page, fileName: string): Promise<void> {
-  await openFileViaSearch(page, fileName)
-  const t = tab(page, fileName)
-  await expect(t).toBeVisible({ timeout: 10_000 })
-  await expect(t).toContainText('(preview)') // opened as a preview tab
-  await t.dblclick()
-  await expect(t).not.toContainText('(preview)') // pinned — safe to open the next file
+  await openPinnedFile(page, fileName)
+  await expect(tab(page, fileName)).toBeVisible({ timeout: 10_000 })
 }
 
 /**
@@ -90,7 +86,7 @@ test.describe('Workspace regression', () => {
     await openPinnedTab(page, fileB)
 
     // Two tabs are genuinely open — the precondition the single-file test lacked.
-    await expect(page.locator('[data-testid="tab"]')).toHaveCount(2)
+    await expect(page.locator('[data-testid="group-tab"]')).toHaveCount(2)
     await expect(tab(page, fileA)).toBeVisible()
     await expect(tab(page, fileB)).toBeVisible()
 
@@ -186,7 +182,7 @@ test.describe('Workspace regression', () => {
           },
           `yaco-drafts:${project.name}`,
         )
-        const tabPersisted = !!activeEditorView(layout)?.openTabs.includes(filePath)
+        const tabPersisted = openEditorTabIds(layout).includes(filePath)
         const draftBody = drafts?.files?.[filePath]?.draft ?? ''
         return tabPersisted && draftBody.includes('DRAFT CONTENT')
       }, { timeout: 10_000 })

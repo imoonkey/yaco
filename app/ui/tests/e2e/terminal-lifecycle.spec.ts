@@ -3,7 +3,6 @@ import {
   createFixtureProject,
   selectProject,
   activityPanel,
-  openFileViaSearch,
   sectionHeader,
   runTag,
   type FixtureProject,
@@ -99,8 +98,10 @@ async function closeShellSession(request: APIRequestContext, name: string): Prom
 
 const xtermLocator = (page: Page) => page.locator('.yaco-terminal-xterm')
 const xtermRows = (page: Page) => page.locator('.yaco-terminal-xterm .xterm-rows')
+// A bound terminal's identity shows in its GROUP TAB now (desktop has no per-pane
+// header). The tab lives in the working group, not the activity panel.
 const terminalHeader = (page: Page, name: string) =>
-  activityPanel(page).locator('span.truncate.flex-1.font-semibold', { hasText: name })
+  page.locator(`[data-testid="group-tab"][data-tab-kind="terminal"][title="${name}"]`)
 
 test.describe('Terminal lifecycle: no remount on unrelated re-render', () => {
   let fixture: FixtureProject
@@ -195,22 +196,26 @@ test.describe('Terminal lifecycle: no remount on unrelated re-render', () => {
       expect(await termWsStats(page), `${label}: PTY reconnected or closed`).toEqual({ opens: 1, closes: 0 })
     }
 
-    // --- Re-render #1: open a file. hasOpenTabs flips → the editor pane (role=main,
-    // absent while the Activity panel held full width) mounts and the Activity panel
-    // resizes to a fixed split. Big layout churn, but the terminal must not remount.
-    // README.md is committed by the fixture and indexed at load. ---
-    await expect(page.locator('[role="main"]')).toHaveCount(0)
-    await openFileViaSearch(page, 'README')
-    await expect(page.locator('[role="main"]')).toBeVisible({ timeout: 15_000 })
-    await assertSameTerminal('after opening a file')
+    // The terminal is the sole tab of the working group (group:1); we never open a
+    // file into that group (which would swap the active tab and hide the terminal
+    // body). So the unrelated re-renders below are layout-state changes that churn
+    // WorkspaceScreen without touching the terminal's group/active tab.
 
-    // --- Re-render #2: toggle a sidebar section. Pure layout-state change that
-    // re-renders WorkspaceScreen / WorkspaceLayout, unrelated to the terminal. ---
+    // --- Re-render #1: collapse a sidebar section. A layout-state change unrelated
+    // to the terminal's group — the terminal must not remount. ---
     const projectsHeader = sectionHeader(page, 'Projects')
     await expect(projectsHeader).toHaveAttribute('aria-expanded', 'true')
     await projectsHeader.click()
     await expect(projectsHeader).toHaveAttribute('aria-expanded', 'false')
-    await assertSameTerminal('after toggling a sidebar section')
+    await assertSameTerminal('after collapsing a sidebar section')
+
+    // --- Re-render #2: hide + restore the dock (Cmd+B). Big layout churn that
+    // re-renders WorkspaceScreen / the tree, still unrelated to the terminal. ---
+    await page.keyboard.press('Meta+b')
+    await expect(page.locator('[data-node-id="dock"]')).toHaveCount(0)
+    await page.keyboard.press('Meta+b')
+    await expect(page.locator('[data-node-id="dock"]')).toBeVisible({ timeout: 10_000 })
+    await assertSameTerminal('after toggling the dock')
 
     expect(pageErrors, `page errors: ${pageErrors.join(' | ')}`).toEqual([])
   })

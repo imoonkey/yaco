@@ -6,6 +6,8 @@ import {
   openFileViaSearch,
   waitForSSERefresh,
   createTestFile,
+  activityPanel,
+  group,
   uniqueFileName,
   runTag,
   type FixtureProject,
@@ -61,9 +63,19 @@ async function stubVoiceEnabled(page: Page): Promise<void> {
   )
 }
 
-const homePane = (page: Page) => page.locator('[data-instance-id="editor"]')
-const terminalPane = (page: Page) => page.locator('[data-instance-id="terminal"]')
+// Editor and terminal share a group's strip and hide each other (one active body
+// per group), so the two eligible voice targets must live in SEPARATE groups: the
+// file editor in group:1, and a session opened BESIDE it as a terminal in group:2.
+const homePane = (page: Page) => group(page, 'group:1').locator('[data-panel-leaf="editor"]')
+const terminalPane = (page: Page) => group(page, 'group:2').locator('[data-panel-leaf="terminal"]')
 const voiceTarget = (page: Page) => page.getByRole('button', { name: /^Voice target:/ })
+const sessionRow = (page: Page, name: string) => activityPanel(page).getByText(name, { exact: true }).first()
+
+/** Open a session BESIDE the editor → a bound terminal in its own group:2. */
+async function openSessionBeside(page: Page, name: string): Promise<void> {
+  await sessionRow(page, name).hover()
+  await page.getByRole('button', { name: `Open ${name} beside` }).click()
+}
 
 /** Focus the editor and wait for the focus marker so a target assertion can't race
  *  the focus transition. */
@@ -92,7 +104,7 @@ test.describe('Global voice control — target follows focus + dropdown override
     await createTestFile(page, fixture.name, file, 'voice body\n')
     await waitForSSERefresh(page, 3000)
     await openFileViaSearch(page, file)
-    await page.getByText(s, { exact: true }).first().click() // clickSession → bind + focus terminal
+    await openSessionBeside(page, s) // bind the session as a terminal in group:2 + focus it
     await expect(terminalPane(page)).toHaveAttribute('data-focused', 'true', { timeout: 15_000 })
 
     // The target follows focus across kinds: terminal → the session, editor → the file.
@@ -131,12 +143,15 @@ test.describe('Global voice control — target follows focus + dropdown override
     await createTestFile(page, fixture.name, file, 'keep\n')
     await waitForSSERefresh(page, 3000)
     await openFileViaSearch(page, file)
-    await page.getByText(s, { exact: true }).first().click() // bind + focus terminal
+    await openSessionBeside(page, s) // bind the session as a terminal in group:2 + focus it
     await expect(voiceTarget(page)).toHaveAccessibleName(`Voice target: ${s}`, { timeout: 15_000 })
 
-    // Close the terminal pane (its session is the current target). With the terminal
-    // gone, the target re-resolves to the remaining eligible instance — the editor.
-    await terminalPane(page).getByRole('button', { name: 'Close terminal' }).click()
+    // Close the terminal via its tab's close × (the close lives in the group tab bar,
+    // not the pane body). With the terminal gone, the target re-resolves to the
+    // remaining eligible instance — the editor.
+    const terminalTab = group(page, 'group:2').locator('[data-testid="group-tab"][data-tab-kind="terminal"]')
+    await terminalTab.hover()
+    await terminalTab.getByRole('button', { name: 'Close terminal' }).click()
     await expect(terminalPane(page)).toHaveCount(0)
     await expect(voiceTarget(page)).toHaveAccessibleName(`Voice target: ${file}`, { timeout: 10_000 })
   })

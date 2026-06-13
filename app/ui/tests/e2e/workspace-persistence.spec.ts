@@ -5,7 +5,8 @@ import {
   createFixtureProject,
   waitForAppReady,
   getWorkspaceState,
-  activeEditorView,
+  activeEditorTabId,
+  openPinnedFile,
   createTestFile,
   deleteTestFile,
   openFileViaSearch,
@@ -51,18 +52,15 @@ function readUiState(page: Page) {
   })
 }
 
-// --- New persisted shape (design: Persistence Shape) ---
+// --- New persisted shape (design: VSCode Tab Groups / Persistence + migration) ---
 //
-// T4c (fl-model-persist) replaced the old flat `layout` bag with a normalized
-// `panelLayout` tree (+ `panelState.editor` prefs + `mobile.activeDock`), written
-// on every save. The field-reads below pin that the new shape round-trips through
-// the persisted blob well-formed. They assert the canonical *default* tree because
-// the legacy renderer still drives live geometry through the flat layout during
-// the migration window — the tree renderer that makes the tree the live source is
-// a later phase — so toggles/sizes/editor-prefs do not yet mutate `panelLayout`.
-// Each test's behavioral persistence (a panel actually hidden/visible, a section
-// rendered collapsed, a size applied, surviving reload) is carried by its
-// DOM/geometry assertions, which stay exactly as-is.
+// The desktop tree persists a normalized `panelLayout` (+ `panelState.editor`
+// prefs + `mobile.activeDock`). Under the tab-group model the working area is a
+// grid of GROUPS (`tabs` nodes whose `tabs[]` hold mixed editor/terminal tabs);
+// `editor`/`terminal` are NO LONGER dock leaves. The default tree is the dock
+// (projects/files/changes) + one empty working group + the activity column
+// (sessions/tasks), so the singleton dock leaves are exactly those five and at
+// least one group node carries the (initially empty) working area.
 
 type Json = Record<string, unknown>
 
@@ -74,29 +72,39 @@ function panelLayout(state: Json | null): Json {
   return asJson(asJson(state ?? {}).panelLayout)
 }
 
-/** Collect the panel ids of every leaf/tab in a desktop tree node. */
+/** Collect the panel ids of every dock LEAF in a desktop tree node. Editor and
+ *  terminal are group tabs now, not leaves, so they never appear here. */
 function leafPanels(node: unknown, acc: string[] = []): string[] {
   const n = asJson(node)
   if (n.kind === 'leaf' && typeof n.panel === 'string') acc.push(n.panel)
   if (n.kind === 'split' && Array.isArray(n.children)) {
     for (const child of n.children) leafPanels(asJson(child).node, acc)
   }
-  if (n.kind === 'tabs' && Array.isArray(n.panels)) {
-    for (const panel of n.panels) if (typeof panel === 'string') acc.push(panel)
-  }
   return acc
 }
 
-/** Assert the blob persists a normalized v1 panel-layout tree carrying the full
- *  default three-region desktop arrangement (dock split / editor+tasks main tabs /
- *  activity split), i.e. all seven panels exactly once. */
+/** Count working-area GROUP (`tabs`) nodes in a desktop tree node. */
+function groupCount(node: unknown, n = 0): number {
+  const j = asJson(node)
+  if (j.kind === 'tabs') return n + 1
+  if (j.kind === 'split' && Array.isArray(j.children)) {
+    for (const child of j.children) n = groupCount(asJson(child).node, n)
+  }
+  return n
+}
+
+/** Assert the blob persists a normalized v1 panel-layout tree carrying the
+ *  default desktop arrangement: the five singleton DOCK leaves (changes / files /
+ *  projects / sessions / tasks) plus at least one working-area GROUP (the empty
+ *  editor area). `editor`/`terminal` live as group tabs, never as dock leaves. */
 function expectPanelTree(state: Json | null): void {
   const pl = panelLayout(state)
   expect(pl.version).toBe(1)
   expect(asJson(pl.desktop).kind).toBe('split')
   expect(leafPanels(pl.desktop).sort()).toEqual(
-    ['changes', 'editor', 'files', 'projects', 'sessions', 'tasks', 'terminal'],
+    ['changes', 'files', 'projects', 'sessions', 'tasks'],
   )
+  expect(groupCount(pl.desktop)).toBeGreaterThanOrEqual(1)
 }
 
 /** Assert the blob persists a well-formed `panelState.editor` block (design:
@@ -181,9 +189,9 @@ test.describe('Layout persistence characterization', () => {
     await createTestFile(page, project.name, testFile, 'persistence test\n')
     await waitForSSERefresh(page, 3000)
 
-    // Open file and pin it
-    await openFileViaSearch(page, testFile)
-    await page.locator('.overflow-x-auto').locator(`[title="${testFile}"]`).dblclick()
+    // Open + PIN the file (quick-open previews; the explorer double-click pins it
+    // so reload restores it as a real tab, not a discardable preview).
+    await openPinnedFile(page, testFile)
     await page.waitForTimeout(500)
 
     // Reload
@@ -191,12 +199,13 @@ test.describe('Layout persistence characterization', () => {
     await waitForAppReady(page)
     await page.waitForTimeout(2000)
 
-    // Tab should be restored in the DOM
-    await expect(page.locator('.overflow-x-auto').locator(`[title="${testFile}"]`)).toBeVisible({ timeout: 10_000 })
+    // The pinned tab is restored in its group's strip.
+    const restoredTab = page.locator(`[data-testid="group-tab"][title="${testFile}"]`)
+    await expect(restoredTab).toBeVisible({ timeout: 10_000 })
 
-    // Active tab should be our file (the active editor's per-instance view).
+    // Active tab is our file (the active group's active editor tab id).
     const state = await getWorkspaceState(page, project.name)
-    expect(activeEditorView(state)?.activeTab).toBe(testFile)
+    expect(activeEditorTabId(state)).toBe(testFile)
 
     // Cleanup
     await deleteTestFile(page, project.name, testFile)
@@ -359,18 +368,18 @@ test.describe('Keyboard shortcut characterization', () => {
     await createTestFile(page, project.name, testFile, 'close me\n')
     await waitForSSERefresh(page, 3000)
 
-    // Open and pin the file
-    await openFileViaSearch(page, testFile)
-    await page.locator('.overflow-x-auto').locator(`[title="${testFile}"]`).dblclick()
-    await page.waitForTimeout(300)
-    await expect(page.locator('.overflow-x-auto').locator(`[title="${testFile}"]`)).toBeVisible()
+    // Open + pin the file (explorer pin leaves focusTarget on the explorer, so Cmd+W
+    // routes straight to closing the active editor tab).
+    await openPinnedFile(page, testFile)
+    const tab = page.locator(`[data-testid="group-tab"][title="${testFile}"]`)
+    await expect(tab).toBeVisible()
 
     // Close with Cmd+W
     await page.keyboard.press('Meta+w')
     await page.waitForTimeout(500)
 
     // Tab should be gone
-    await expect(page.locator('.overflow-x-auto').locator(`[title="${testFile}"]`)).not.toBeVisible()
+    await expect(tab).not.toBeVisible()
 
     // Cleanup
     await deleteTestFile(page, project.name, testFile)
