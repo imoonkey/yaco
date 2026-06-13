@@ -67,7 +67,11 @@ test.describe('Mobile projects the active instance (editor / terminal)', () => {
   test('the editor pane projects the active editor instance, not a sibling', async ({ page, request }) => {
     fixture = await createFixtureProject(request, { files: { 'a.txt': 'AAA_MARKER\n', 'b.txt': 'BBB_MARKER\n' } })
     await waitServed(request, fixture.name)
-    // Two editor instances; editor:2 (on b.txt) is the MRU head → the active editor.
+    // One CENTER group, two editor tabs; editor:2 (b.txt) is the ACTIVE tab (MRU head).
+    // Mobile is center-scoped (sidebar groups are desktop-only — see "center-scope
+    // mobile pane projection"), so the editor pane projects the center group's ACTIVE
+    // editor instance — b.txt — and never the sibling a.txt. The single mounted body
+    // is the active instance, no tab tap needed (distinct from the FIX-D strip test).
     await seed(page, fixture.name, {
       panelLayout: {
         version: 1,
@@ -75,18 +79,23 @@ test.describe('Mobile projects the active instance (editor / terminal)', () => {
           kind: 'split', id: 'root', axis: 'row',
           children: [
             { node: { kind: 'leaf', id: 'files', panel: 'files' } },
-            { grow: true, node: { kind: 'tabs', id: 'main', active: 'editor', panels: ['editor', 'tasks'], chrome: 'none' } },
-            { node: { kind: 'leaf', id: 'editor:2', panel: 'editor' } },
+            {
+              grow: true,
+              node: {
+                kind: 'tabs', id: 'group:1', activeTab: 'editor:2',
+                tabs: [
+                  { instanceId: 'editor:1', kind: 'editor', tabId: 'a.txt' },
+                  { instanceId: 'editor:2', kind: 'editor', tabId: 'b.txt' },
+                ],
+              },
+            },
           ],
         },
         mobile: { activeDock: 'browse' },
         panelState,
       },
-      editorViews: {
-        editor: { openTabs: ['a.txt'], activeTab: 'a.txt', previewTab: null },
-        'editor:2': { openTabs: ['b.txt'], activeTab: 'b.txt', previewTab: null },
-      },
-      editorMru: ['editor:2', 'editor'],
+      activeGroupId: 'group:1',
+      editorMru: ['editor:2', 'editor:1'],
       terminalBindings: {}, terminalMru: [],
     })
     await page.goto('/')
@@ -94,7 +103,7 @@ test.describe('Mobile projects the active instance (editor / terminal)', () => {
     await selectProject(page, fixture.name)
 
     // Switch to the Editor pane: it projects the ACTIVE editor (editor:2 → b.txt),
-    // showing b.txt's content and NOT the home editor's a.txt.
+    // showing b.txt's content and NOT the sibling editor's a.txt.
     await paneButton(page, 'Editor').click()
     const editor = page.locator('.cm-content')
     await expect(editor).toBeVisible({ timeout: 10_000 })
