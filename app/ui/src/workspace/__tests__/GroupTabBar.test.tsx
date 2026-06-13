@@ -6,7 +6,7 @@
 // dismiss-safe Split menu (button + empty-area right-click), Close Group on an
 // empty group, the dirty-close confirm + its pathsOpenElsewhere no-op, and
 // within-group drag reorder.
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { GroupTabBar, type GroupTabBarProps } from '../GroupTabBar'
@@ -16,7 +16,10 @@ import {
 } from '../context'
 import type { GroupTab } from '../../hooks/workspaceTypes'
 
-afterEach(cleanup)
+// The dragged-pane identity is a module singleton (WorkspaceDragContext) — clear
+// it between tests via the window-level dragend fallback so a stale payload never
+// leaks across cases.
+afterEach(() => { cleanup(); window.dispatchEvent(new Event('dragend')) })
 
 const EDITOR = (instanceId: string, tabId: string, extra: Partial<GroupTab> = {}): GroupTab =>
   ({ instanceId, kind: 'editor', tabId, ...extra }) as GroupTab
@@ -278,6 +281,18 @@ describe('GroupTabBar — within-group reorder', () => {
     // No pane dragStart fired ⇒ no live payload + no pane mime ⇒ the drop is a no-op.
     fireEvent.drop(tabEls[1], { dataTransfer: foreign })
     expect(onReorderTab).not.toHaveBeenCalled()
+  })
+
+  it('does NOT accept a pane-typed dragover without a live payload (a drop target needs BOTH)', () => {
+    renderBar({ tabs: [EDITOR('editor:1', 'a.ts')] })
+    const tab = screen.getByTestId('group-tab')
+    // The pane mime is present but no dragStart fired ⇒ no live payload. Accepting
+    // (preventDefault) here would let a stale/foreign typed drag drop onto a pane.
+    const spoof = paneTransfer()
+    spoof.setData('application/yaco-pane', 'tab')
+    const over = createEvent.dragOver(tab, { dataTransfer: spoof })
+    fireEvent(tab, over)
+    expect(over.defaultPrevented).toBe(false)
   })
 
   it('drags the whole group from the background area (distinct from a tab drag)', () => {

@@ -186,7 +186,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
               data-tab-active={isActive || undefined}
               draggable={!isTouch}
               onDragStart={(e) => drag.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
-              onDragOver={(e) => { if (isPaneDrag(e)) e.preventDefault() }}
+              onDragOver={(e) => { if (drag.peek() && isPaneDrag(e)) e.preventDefault() }}
               onDrop={onDrop(index)}
               onDragEnd={drag.clear}
               onClick={() => onSelectTab(tab.instanceId)}
