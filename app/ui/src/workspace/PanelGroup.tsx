@@ -23,14 +23,16 @@
 import { useCallback, useMemo, type CSSProperties } from 'react'
 import { PanelHost } from './PanelHost'
 import { GroupTabBar } from './GroupTabBar'
+import { DropOverlay } from './DropOverlay'
 import {
   useWorkspaceSelection, useWorkspaceCommands, useWorkspaceLayout,
   type PanelId, type SplitSide,
 } from './context'
 import type { PaneMarker } from './panelInstance'
-import { editorInstancesInOrder, groupCount, tabIdToPath } from './panelLayoutModel'
+import { collectIds, editorInstancesInOrder, groupCount, regionsOf, tabIdToPath } from './panelLayoutModel'
 import { editorTabByInstance } from '../hooks/useLayoutState'
-import type { TabsNode } from '../hooks/workspaceTypes'
+import type { LayoutNode, TabsNode } from '../hooks/workspaceTypes'
+import type { Region } from './dndGeometry'
 
 export type PanelGroupProps = {
   /** The group (tabs) node to render. */
@@ -52,6 +54,16 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
   // An empty group can be closed only when it is not the last working group
   // (ensureFirstGroup keeps >=1) — gates the visible Close Group affordance.
   const canCloseGroup = groupCount(tree) > 1
+
+  // The enforced region this group lives in (left = docks only; center = the grid;
+  // right = the single sidebar group). DnD legality + the split-affordance gate are
+  // region-scoped: a non-center group never splits (it would just merge) and its body
+  // is not a drop target.
+  const region = useMemo<Region>(() => {
+    const regions = regionsOf(tree)
+    const inNode = (n: LayoutNode | null) => !!n && collectIds(n).has(group.id)
+    return inNode(regions.left) ? 'left' : inNode(regions.right) ? 'right' : 'center'
+  }, [tree, group.id])
 
   // Underlying file paths open in 2+ editor tabs tree-wide: closing one view of a
   // dirty file is loss-free while another tab still holds the shared per-path
@@ -88,12 +100,6 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
     commands.splitGroup(group.id, side)
   }, [commands, group.id])
 
-  // Within-group reorder — a pure tree edit (REORDER_GROUP_TAB) the tab bar's DnD
-  // drives by group id.
-  const onReorderTab = useCallback((instanceId: string, toIndex: number) => {
-    commands.reorderGroupTab(group.id, instanceId, toIndex)
-  }, [commands, group.id])
-
   // Close an EMPTY split-created group (the tab-bar "Close Group" context item).
   const onCloseGroup = useCallback(() => {
     commands.closeGroup(group.id)
@@ -124,6 +130,7 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
     >
       <GroupTabBar
         groupId={group.id}
+        region={region}
         tabs={group.tabs}
         activeTab={group.activeTab}
         isActiveGroup={isActiveGroup}
@@ -140,23 +147,33 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         onSelectTab={onSelectTab}
         onCloseTab={onCloseTab}
         onSplit={onSplit}
-        onReorderTab={onReorderTab}
+        onMoveTab={commands.moveTab}
+        onMoveGroup={commands.moveGroup}
         onCloseGroup={onCloseGroup}
         canCloseGroup={canCloseGroup}
         onActivateGroup={onActivateGroup}
         onDiscardDirty={onDiscardDirty}
       />
-      {activeTabNode && (
-        <div
-          data-instance-id={activeTabNode.instanceId}
-          data-panel-leaf={activeTabNode.kind}
-          data-focused={marker?.focused || undefined}
-          data-active={marker?.active || undefined}
-          className="flex flex-col flex-1 min-w-0 min-h-0"
-        >
-          <PanelHost id={activeTabNode.kind} instanceId={activeTabNode.instanceId} />
-        </div>
-      )}
+      <DropOverlay
+        groupId={group.id}
+        region={region}
+        tabCount={group.tabs.length}
+        onMoveTab={commands.moveTab}
+        onMoveTabToSplit={commands.moveTabToSplit}
+        onMoveGroup={commands.moveGroup}
+      >
+        {activeTabNode && (
+          <div
+            data-instance-id={activeTabNode.instanceId}
+            data-panel-leaf={activeTabNode.kind}
+            data-focused={marker?.focused || undefined}
+            data-active={marker?.active || undefined}
+            className="flex flex-col flex-1 min-w-0 min-h-0"
+          >
+            <PanelHost id={activeTabNode.kind} instanceId={activeTabNode.instanceId} />
+          </div>
+        )}
+      </DropOverlay>
     </div>
   )
 }
