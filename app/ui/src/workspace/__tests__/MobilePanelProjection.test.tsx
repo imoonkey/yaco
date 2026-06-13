@@ -16,10 +16,12 @@ vi.mock('../panelMeta', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../panelMeta')>()
   return { ...actual, mobileDockPanels: vi.fn() }
 })
-// Mock PanelHost to a marker so the test reads which panel ids project, without
-// mounting the real (provider-heavy) panel components.
+// Mock PanelHost to a marker so the test reads which panel ids project (and the
+// bound instanceId), without mounting the real (provider-heavy) panel components.
 vi.mock('../PanelHost', () => ({
-  PanelHost: ({ id }: { id: unknown }) => <div data-panel-host={String(id)} />,
+  PanelHost: ({ id, instanceId }: { id: unknown; instanceId: unknown }) => (
+    <div data-panel-host={String(id)} data-panel-instance={instanceId === undefined ? undefined : String(instanceId)} />
+  ),
 }))
 
 import { MobilePanelProjection } from '../MobilePanelProjection'
@@ -46,13 +48,13 @@ beforeEach(() => {
   mobileDockPanelsMock.mockImplementation((dock: MobileDock) => REMAP[dock])
 })
 
-function renderDock(dock: MobileDock): void {
+function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?: unknown } = {}): void {
   const env = {
     viewport: { isMobile: true, isLandscape: false, isTouch: true },
     notificationBell: null,
   } as unknown as WorkspaceEnv
   const layoutValue = {
-    panelLayout: { ...defaultWorkspacePanelLayout(), mobile: { activeDock: dock } },
+    panelLayout: opts.panelLayout ?? { ...defaultWorkspacePanelLayout(), mobile: { activeDock: dock } },
     mobilePane: 'files',
     layout: {},
   } as unknown as WorkspaceLayoutContextValue
@@ -61,11 +63,11 @@ function renderDock(dock: MobileDock): void {
     collapsePanel: vi.fn(),
     setFocusTarget: vi.fn(),
   } as unknown as WorkspaceCommands
-  const selection = {
+  const selection = (opts.selection ?? {
     activeEditorId: 'editor',
     activeTerminalId: 'terminal',
     editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
-  } as unknown as WorkspaceSelection
+  }) as unknown as WorkspaceSelection
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   render(
     <WorkspaceEnvContext.Provider value={env}>
@@ -93,4 +95,39 @@ describe('MobilePanelProjection projects every dock from the registry metadata',
       expect(renderedPanels()).toEqual(REMAP[dock])
     },
   )
+})
+
+// Center-scoping (design: §Mobile — sidebar groups are desktop-only). A terminal
+// group living in the RIGHT sidebar must never drive the mobile terminal pane,
+// even when it is the focused (activeGroupId) group: the pane projects the CENTER
+// region only, so an empty center falls back to the idle 'terminal' placeholder.
+describe('MobilePanelProjection center-scopes the active group', () => {
+  it('does not let a right-sidebar terminal group become the mobile terminal target', () => {
+    const SIDEBAR_TERM = 'term:side'
+    const desktop = {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: [], activeTab: '' } },
+        { basis: 280, node: { kind: 'tabs', id: 'group:term', tabs: [{ instanceId: SIDEBAR_TERM, kind: 'terminal' }], activeTab: SIDEBAR_TERM } },
+      ],
+    }
+    const panelLayout = { ...defaultWorkspacePanelLayout(), desktop, mobile: { activeDock: 'terminal' } }
+    // The terminal dock projects the real terminal panel (the generic remap maps it
+    // elsewhere); the sidebar group is the only terminal anywhere in the tree.
+    mobileDockPanelsMock.mockImplementation((dock: MobileDock) => (dock === 'terminal' ? ['terminal'] : REMAP[dock]))
+    renderDock('terminal', {
+      panelLayout,
+      selection: {
+        activeGroupId: 'group:term',
+        activeTerminalId: SIDEBAR_TERM,
+        activeEditorTab: undefined,
+        editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+      },
+    })
+    const term = document.querySelector('[data-panel-host="terminal"]')
+    expect(term).not.toBeNull()
+    // The sidebar terminal is NOT bound; the pane falls back to the idle placeholder.
+    expect(term?.getAttribute('data-panel-instance')).toBe('terminal')
+    expect(term?.getAttribute('data-panel-instance')).not.toBe(SIDEBAR_TERM)
+  })
 })
