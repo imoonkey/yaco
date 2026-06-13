@@ -484,6 +484,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
       imeInputHandled = false
       setTimeout(() => {
         if (!imeInputHandled && ie.data && wsRef.current?.readyState === WebSocket.OPEN) {
+          onInteractRef.current?.() // CJK/IME input → pin a previewed terminal
           const mods = modifiersRef.current
           if (mods.ctrl || mods.shift || mods.meta) {
             const out = applyModifiers(ie.data, mods)
@@ -507,6 +508,7 @@ export function Terminal({ sessionName, projectName, provider, onInteract, onFoc
     const handlePaste = (event: ClipboardEvent) => {
       const items = event.clipboardData?.items
       if (!items) return
+      onInteractRef.current?.() // a genuine paste (text or image) → pin a previewed terminal
       for (const item of items) {
         if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
         const file = item.getAsFile()
