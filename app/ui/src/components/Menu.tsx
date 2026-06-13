@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef } from 'react'
+import { Check } from 'lucide-react'
 import { nativeContextMenuDisabledProps, type NativeContextMenuDisabledProps } from './nativeContextMenu'
 
 // --- Shared types ---
@@ -29,7 +30,9 @@ export function Menu({ position, exiting, onExitDone, armed, focusOnOpen, childr
   const shouldFocusOnOpen = focusOnOpen ?? true
 
   const getItems = () =>
-    menuRef.current ? Array.from(menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"]')) : []
+    menuRef.current
+      ? Array.from(menuRef.current.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]'))
+      : []
 
   const handleAnimationEnd = useCallback(() => {
     if (exiting) onExitDone?.()
@@ -125,16 +128,21 @@ export function Menu({ position, exiting, onExitDone, armed, focusOnOpen, childr
   )
 }
 
-export function MenuItem({ label, danger, onClick }: {
+export function MenuItem({ label, danger, checked, onClick }: {
   label: string
   danger?: boolean
+  /** When defined, the item is a checkbox: role=menuitemcheckbox, aria-checked, and a
+   *  leading Check icon (its slot is reserved when unchecked so labels stay aligned). */
+  checked?: boolean
   onClick: () => void
 }) {
+  const checkable = checked !== undefined
   return (
     <div
-      role="menuitem"
+      role={checkable ? 'menuitemcheckbox' : 'menuitem'}
+      aria-checked={checkable ? checked : undefined}
       tabIndex={-1}
-      className="px-3 py-1 text-ui-md cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg"
+      className={`px-3 py-1 text-ui-md cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg${checkable ? ' flex items-center gap-1.5' : ''}`}
       style={{
         color: danger ? 'var(--sol-red)' : 'var(--sol-text)',
         borderRadius: 4,
@@ -144,6 +152,11 @@ export function MenuItem({ label, danger, onClick }: {
       }}
       onClick={onClick}
     >
+      {checkable && (
+        <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0" aria-hidden="true">
+          {checked && <Check size={13} />}
+        </span>
+      )}
       {label}
     </div>
   )

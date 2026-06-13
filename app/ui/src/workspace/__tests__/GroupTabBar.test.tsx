@@ -8,11 +8,13 @@
 // within-group drag reorder.
 import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { GroupTabBar, type GroupTabBarProps } from '../GroupTabBar'
 import {
   WorkspaceEnvContext, WorkspaceDataContext,
+  WorkspaceLayoutContext, WorkspaceCommandsContext,
   type WorkspaceEnv, type WorkspaceData,
+  type WorkspaceLayoutContextValue, type WorkspaceCommands,
 } from '../context'
 import type { GroupTab } from '../../hooks/workspaceTypes'
 
@@ -358,5 +360,64 @@ describe('GroupTabBar — preview / group emphasis / editor actions', () => {
       onSetEditorPrefs: vi.fn(),
     })
     expect(screen.queryByRole('button', { name: /Suggestions/ })).toBeNull()
+  })
+})
+
+describe('GroupTabBar — Separate-editors-and-terminals toggle (design: separateKinds)', () => {
+  // The toggle reads `panelLayout.panelState.separateKinds` and fires
+  // `commands.toggleSeparateKinds()`; both come from the layout/commands contexts a
+  // mounted GroupTabBar lives under. A stateful harness flips the flag so the menu
+  // item's observable checked state is asserted as the user would see it.
+  function renderToggleMenu(initialSeparate: boolean) {
+    const onToggle = vi.fn()
+    function Harness() {
+      const [separateKinds, setSeparateKinds] = useState(initialSeparate)
+      const layout = { panelLayout: { panelState: { separateKinds } } } as unknown as WorkspaceLayoutContextValue
+      const commands = {
+        toggleSeparateKinds: () => { setSeparateKinds((s) => !s); onToggle() },
+      } as unknown as WorkspaceCommands
+      const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
+      const data = { sessions: { projectSessions: [] } } as unknown as WorkspaceData
+      const props = {
+        groupId: 'g1', region: 'center', tabs: [EDITOR('editor:1', 'src/app.ts')], activeTab: 'editor:1',
+        isActiveGroup: true, dirtyTabs: new Set<string>(), conflictTabs: new Set<string>(), terminalBindings: {},
+        pathsOpenElsewhere: new Set<string>(), onSelectTab: vi.fn(), onCloseTab: vi.fn(), onSplit: vi.fn(),
+        onMoveTab: vi.fn(), onMoveGroup: vi.fn(), onCloseGroup: vi.fn(), onActivateGroup: vi.fn(), onDiscardDirty: vi.fn(),
+      } as GroupTabBarProps
+      return (
+        <WorkspaceEnvContext.Provider value={env}>
+          <WorkspaceDataContext.Provider value={data}>
+            <WorkspaceLayoutContext.Provider value={layout}>
+              <WorkspaceCommandsContext.Provider value={commands}>
+                <GroupTabBar {...props} />
+              </WorkspaceCommandsContext.Provider>
+            </WorkspaceLayoutContext.Provider>
+          </WorkspaceDataContext.Provider>
+        </WorkspaceEnvContext.Provider>
+      )
+    }
+    render(<Harness />)
+    return { onToggle }
+  }
+
+  const openToggleItem = () => {
+    fireEvent.click(screen.getByTestId('split-group'))
+    return screen.getByRole('menuitemcheckbox', { name: 'Separate editors and terminals' })
+  }
+
+  it('reflects the current separateKinds flag as the item checked state', () => {
+    renderToggleMenu(true)
+    expect(openToggleItem().getAttribute('aria-checked')).toBe('true')
+  })
+
+  it('clicking the real menu item fires toggleSeparateKinds and flips the observable check', () => {
+    const { onToggle } = renderToggleMenu(false)
+    const item = openToggleItem()
+    expect(item.getAttribute('aria-checked')).toBe('false')
+
+    fireEvent.click(item)
+    expect(onToggle).toHaveBeenCalledTimes(1)
+    // The menu stays open; the same item now reads checked.
+    expect(screen.getByRole('menuitemcheckbox', { name: 'Separate editors and terminals' }).getAttribute('aria-checked')).toBe('true')
   })
 })

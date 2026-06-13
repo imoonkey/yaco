@@ -16,7 +16,7 @@
 import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { X, AlertTriangle, SplitSquareHorizontal } from 'lucide-react'
 import { isDiffTab } from '../hooks/useWorkspaceState'
-import { WorkspaceDataContext, WorkspaceEnvContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
+import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
 import { tabIdToPath } from './panelLayoutModel'
 import { tabName, computeDisambigSuffixes } from './tabLabels'
@@ -131,6 +131,10 @@ export function GroupTabBar(props: GroupTabBarProps) {
   // structural isolation harness that omits the data/env providers.
   const sessions = useContext(WorkspaceDataContext)?.sessions.projectSessions ?? []
   const isTouch = useContext(WorkspaceEnvContext)?.viewport.isTouch ?? false
+  // Kind-routing toggle (design: separateKinds) — read the flag + command optionally so
+  // the strip still renders in a structural isolation harness that omits the providers.
+  const separateKinds = useContext(WorkspaceLayoutContext)?.panelLayout.panelState.separateKinds ?? false
+  const toggleSeparateKinds = useContext(WorkspaceCommandsContext)?.toggleSeparateKinds
 
   const [pendingClose, setPendingClose] = useState<{ instanceId: string; tabId: string } | null>(null)
 
@@ -357,6 +361,17 @@ export function GroupTabBar(props: GroupTabBarProps) {
           {canSplit && SPLIT_ITEMS.map(({ label, side }) => (
             <MenuItem key={side} label={label} onClick={() => chooseSplit(side)} />
           ))}
+          {canSplit && (
+            <>
+              <MenuDivider />
+              {/* A checkbox toggle: it stays open so the check flip is visible. */}
+              <MenuItem
+                label="Separate editors and terminals"
+                checked={separateKinds}
+                onClick={() => toggleSeparateKinds?.()}
+              />
+            </>
+          )}
           {tabs.length === 0 && (
             <>
               {canSplit && <MenuDivider />}
