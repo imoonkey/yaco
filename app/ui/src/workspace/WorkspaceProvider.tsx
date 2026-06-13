@@ -130,7 +130,9 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     focusPane, bindTerminal, movePane, moveLeafToEdge,
     splitGroup, openBoundTerminalTab, closeGroupTab, closeGroup, setActiveGroupTab, setActiveGroup,
     pinTab, reorderGroupTab, moveTab, moveTabToSplit, moveGroup,
-    openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
+    openFileInGroup, openDiffInGroup, previewDiffInGroup,
+    openFileRouted, previewFileRouted, openDiffRouted, previewDiffRouted,
+    openBoundTerminalRouted, openFileAtLineRouted, toggleSeparateKinds,
     resolveTarget, groupForInstance,
     // file + raw actions
     setMobilePane, updateLayout,
@@ -312,10 +314,10 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
       setActiveGroupTab(groupId, action.terminalId)
       pinTab(groupId, action.terminalId)
     } else {
-      openBoundTerminalTab(resolveTarget(), name, true)
+      openBoundTerminalRouted(name, true)
     }
     revealTerminalColumn()
-  }, [setActiveGroupTab, pinTab, groupForInstance, openBoundTerminalTab, resolveTarget, revealTerminalColumn])
+  }, [setActiveGroupTab, pinTab, groupForInstance, openBoundTerminalRouted, revealTerminalColumn])
 
   // openBeside: 1-per-session — focus if shown, else split an empty (non-seeding)
   // group and create a bound, PINNED terminal tab in it.
@@ -443,11 +445,11 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     },
     setMobilePane,
     updateLayout,
-    openFileTab: (path: string) => openFileInGroup(resolveTarget(), path),
-    openPreviewTab: (path: string) => previewFileInGroup(resolveTarget(), path),
-    openDiffTab: (path: string) => openDiffInGroup(resolveTarget(), `diff:${path}`),
-    openPreviewDiffTab: (path: string) => previewDiffInGroup(resolveTarget(), `diff:${path}`),
-    openPreviewDiffTabById: (tabId: string) => previewDiffInGroup(resolveTarget(), tabId),
+    openFileTab: (path: string) => openFileRouted(path),
+    openPreviewTab: (path: string) => previewFileRouted(path),
+    openDiffTab: (path: string) => openDiffRouted(`diff:${path}`),
+    openPreviewDiffTab: (path: string) => previewDiffRouted(`diff:${path}`),
+    openPreviewDiffTabById: (tabId: string) => previewDiffRouted(tabId),
     // Instance-scoped pass-throughs route to the given tab instance's group.
     openFileTabIn: (instanceId: string, path: string) => openFileInGroup(groupForInstance(instanceId), path),
     openDiffTabIn: (instanceId: string, path: string) => openDiffInGroup(groupForInstance(instanceId), `diff:${path}`),
@@ -456,44 +458,50 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     setShowSearch,
   }), [
     activeGroupTabInstance, setActiveGroupTab, setMobilePane, updateLayout,
-    openFileInGroup, previewFileInGroup, openDiffInGroup, previewDiffInGroup,
-    resolveTarget, groupForInstance,
+    openFileRouted, previewFileRouted, openDiffRouted, previewDiffRouted,
+    openFileInGroup, openDiffInGroup, previewDiffInGroup,
+    groupForInstance,
   ])
 
   // --- Commands ---
-  // Opening a file/diff resolves the target group, then opens (or activates) the
-  // tab there; the reducer focuses the resulting tab, so no separate focus call is
-  // needed. Tasks is a dock leaf now, so there is no main-region flip.
+  // Implicit opens dispatch a reducer-owned routed action (the reducer resolves the
+  // kind-aware target group + creates one if needed, atomically); the thin wrappers
+  // here own only the PATH-keyed follow-ups — selection + mobile pane (the routed
+  // helpers in useWorkspaceState already ride the fetch + MRU). Tasks is a dock leaf
+  // now, so there is no main-region flip.
 
   const openFile = useCallback((path: string) => {
-    openFileInGroup(resolveTarget(), path)
+    openFileRouted(path)
     setSelectedFilePath(path)
     setMobilePane('editor')
-  }, [openFileInGroup, resolveTarget, setMobilePane])
+  }, [openFileRouted, setMobilePane])
 
   // previewFile is the quick-open select path: reveal the file's parents in the
-  // explorer, then open it as a preview tab in the target group.
+  // explorer, then open it as a routed preview tab.
   const previewFile = useCallback((path: string) => {
     void revealParents(path).then(() => {
-      previewFileInGroup(resolveTarget(), path)
+      previewFileRouted(path)
       setSelectedFilePath(path)
       setMobilePane('editor')
     })
-  }, [previewFileInGroup, revealParents, resolveTarget, setMobilePane])
+  }, [previewFileRouted, revealParents, setMobilePane])
 
+  // openFileAtLine stays command-resolved (design: Synchronous results): the routed
+  // helper resolves the editor home via the PURE resolver and RETURNS the opened
+  // instanceId, so the jump stamps exactly that tab — the same path can be two tabs
+  // sharing one buffer, and only the opened one must consume the go-to-line.
   const openFileAtLine = useCallback((path: string, line: number) => {
-    const instanceId = openFileInGroup(resolveTarget(), path)
+    const instanceId = openFileAtLineRouted(path)
     setSelectedFilePath(path)
     setMobilePane('editor')
     void revealParents(path)
-    // Stamp the jump with the opened instance so only THAT editor tab consumes it:
-    // the same path can be open as two tabs sharing one buffer.
     if (instanceId) setJumpRequest({ key: Date.now(), path, line, instanceId })
-  }, [openFileInGroup, revealParents, resolveTarget, setMobilePane])
+  }, [openFileAtLineRouted, revealParents, setMobilePane])
 
   // openDiff mirrors the old activateChange handler: a re-clicked active diff
-  // toggles back to its file; otherwise reveal parents, open the (preview) diff in
-  // the target group, select the path — carrying compare refs.
+  // toggles back to its file (a PRE-open read of the active tab, unaffected by
+  // routing); otherwise reveal parents, open the routed (preview) diff, select the
+  // path — carrying compare refs.
   const openDiff = useCallback((path: string, opts?: { preview?: boolean; base?: string; compare?: string }) => {
     const tabId = diffTabId(path, opts?.base, opts?.compare)
     if (latestRef.current.activeEditorTabId === tabId) {
@@ -502,20 +510,18 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     }
     const pinned = opts?.preview === false
     void revealParents(path).then(() => {
-      const g = resolveTarget()
-      if (pinned) openDiffInGroup(g, tabId)
-      else previewDiffInGroup(g, tabId)
+      if (pinned) openDiffRouted(tabId)
+      else previewDiffRouted(tabId)
       setSelectedFilePath(path)
       setMobilePane('editor')
     })
-  }, [openFile, openDiffInGroup, previewDiffInGroup, revealParents, resolveTarget, setMobilePane])
+  }, [openFile, openDiffRouted, previewDiffRouted, revealParents, setMobilePane])
 
   const openDiffTabId = useCallback((tabId: string, opts?: { preview?: boolean }) => {
-    const g = resolveTarget()
-    if (opts?.preview === false) openDiffInGroup(g, tabId)
-    else previewDiffInGroup(g, tabId)
+    if (opts?.preview === false) openDiffRouted(tabId)
+    else previewDiffRouted(tabId)
     setMobilePane('editor')
-  }, [openDiffInGroup, previewDiffInGroup, resolveTarget, setMobilePane])
+  }, [openDiffRouted, previewDiffRouted, setMobilePane])
 
   // closeTab/selectTab act on `id` when given (a pane's own tab — the tab IS the
   // instance now), else the active editor tab.
@@ -684,7 +690,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,
     collapsePanel, resizeSplitChild, toggleDock, toggleActivity, activateTabsPanel,
-    movePanel, splitPanel, resetLayout, setEditorPrefs,
+    movePanel, splitPanel, resetLayout, setEditorPrefs, toggleSeparateKinds,
     actions: rawActions,
   }), [
     openFile, previewFile, openFileAtLine, openDiff, openDiffTabId, closeTab, selectTab,
@@ -696,7 +702,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     revealPathInFiles, expandFolderInFiles, setFilesMode, showQuickOpen, closeFocusedSurface,
     toggleTasks, closeTasks,
     collapsePanel, resizeSplitChild, toggleDock, toggleActivity, activateTabsPanel,
-    movePanel, splitPanel, resetLayout, setEditorPrefs, rawActions,
+    movePanel, splitPanel, resetLayout, setEditorPrefs, toggleSeparateKinds, rawActions,
   ])
 
   // --- Context values ---
