@@ -32,15 +32,35 @@ export type DragPayload =
 // `useSyncExternalStore` re-renders consumers only when the payload truly flips.
 let payload: DragPayload | null = null
 const listeners = new Set<() => void>()
+let notifyScheduled = false
 
 function getPayload(): DragPayload | null {
   return payload
 }
 
+// Re-render subscribers on the NEXT frame, never synchronously. ANY synchronous
+// re-render from inside the `dragstart` handler (even just re-creating the source's
+// onDragStart prop) makes Chrome ABORT the just-started native drag — no ghost, no
+// dragover/drop/dragend, payload left stuck and the header frozen. The store VALUE
+// is set synchronously below, so `peek()` (used by drop handlers) is always current;
+// only the visual re-render is deferred one frame, after the drag is committed. The
+// drop overlays are ALWAYS mounted (interactivity gated by a style), so deferring the
+// re-render only delays arming them by a frame — well before the first dragover.
+function scheduleNotify() {
+  if (notifyScheduled) return
+  notifyScheduled = true
+  const run = () => {
+    notifyScheduled = false
+    for (const notify of listeners) notify()
+  }
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run)
+  else run()
+}
+
 function setPayload(next: DragPayload | null) {
   if (payload === next) return
   payload = next
-  for (const notify of listeners) notify()
+  scheduleNotify()
 }
 
 function subscribe(listener: () => void): () => void {
@@ -51,11 +71,18 @@ function subscribe(listener: () => void): () => void {
 /** Begin a pane drag: record the identity AND tag the native event so the move
  *  cursor shows and drop targets can tell this apart from a foreign/list drag. */
 function start(e: React.DragEvent, next: DragPayload) {
-  setPayload(next)
+  // react-arborist (the file tree) mounts react-dnd's HTML5Backend, which installs a
+  // window-level `dragstart` handler that calls preventDefault() on any native drag
+  // it doesn't own — i.e. it would CANCEL our hand-rolled pane drag outright (no
+  // ghost, no dragover/drop/dragend, payload left stuck). Stop the event before it
+  // bubbles up to that window listener so our drag survives. (react-dnd's matching
+  // capture-phase handler only records state; it never preventDefaults.)
+  e.stopPropagation()
   if (e.dataTransfer) {
     e.dataTransfer.setData(PANE_MIME, next.kind)
     e.dataTransfer.effectAllowed = 'move'
   }
+  setPayload(next)
 }
 
 /** Drop the dragged identity. Idempotent — safe to call from every cleanup path. */

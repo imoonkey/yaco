@@ -96,6 +96,11 @@ export type DesktopPanelTreeLayoutProps = {
   onInteractionCapture: () => void
 }
 
+// Keep a pane drag's events from reaching react-arborist's react-dnd window handlers
+// (which would force dropEffect='none' and reject the drop). Only our drags carry the
+// pane mime, so foreign / react-arborist tree drags are left to propagate normally.
+const shieldPaneDrag = (e: React.DragEvent) => { if (isPaneDrag(e)) e.stopPropagation() }
+
 export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCapture }: DesktopPanelTreeLayoutProps) {
   const { isTouch } = useWorkspaceEnv().viewport
   const { layout, panelLayout } = useWorkspaceLayout()
@@ -173,6 +178,15 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
         onMouseDownCapture={onInteractionCapture}
         onTouchStartCapture={onInteractionCapture}
         onKeyDownCapture={onInteractionCapture}
+        // Shield our hand-rolled pane drags from react-arborist's react-dnd HTML5Backend,
+        // whose window-level handlers force dropEffect='none' (rejecting the drop) on any
+        // drag it doesn't own. Our inner drop targets run first (deeper in the bubble);
+        // stopping here keeps the event from reaching react-dnd's window listeners. Only
+        // OUR pane drags carry the mime, so react-arborist's own tree drags pass through.
+        onDragEnter={shieldPaneDrag}
+        onDragOver={shieldPaneDrag}
+        onDragLeave={shieldPaneDrag}
+        onDrop={shieldPaneDrag}
       >
         {searchOverlay}
         <TreeNode
