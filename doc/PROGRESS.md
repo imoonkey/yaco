@@ -1,5 +1,24 @@
 # Progress
 
+## 2026-06-14: Structured open-questions + final-doc coherence bar for /align and /double-design
+
+**What changed:**
+- `/align`: added a **Final Doc Quality Bar** — `final/*` must read as a single-author, top-down artifact with no alignment seams ("Aligned Decisions", "Codex said", resolved-trails); deliberation stays in `discussion/`. Enforced as an approval gate (reviewer returns `CHANGES` on violation), so coherence rides the existing `status.txt` state machine with no extra phase.
+- `/align`: added an **Open Question packet** schema — question / impact / options + recommendation-default, plus both-side positions only when Codex and Claude diverge. Placement scales: ≤2 short inline, ≥3 or large → `final/open_questions.md`.
+- `/double-design`: references the above `/align` rules instead of restating them; its Doc Structure now shows the optional `final/open_questions.md`.
+- Considered then dropped a "closing coherence pass" phase in favor of the approval gate (no extra round, no `B.4` vote exception).
+
+**Why:**
+- `final/*` designs read less coherently than `initial/*` ones because the doc inherited the debate's structure and accreted as round-by-round patchwork.
+- Open Questions shipped as bare one-line questions, undecidable by the master user they escalate to.
+- Approval gate over a dedicated polish phase keeps the change minimal and avoids gold-plating / wasted rounds.
+
+**Key files:** `agent-config/global/skills/align/SKILL.md`, `agent-config/global/skills/double-design/SKILL.md`
+**Verification:** Two independent Codex reviews via `yaco agent` — first pass found 5 issues, all applied (B.4-legal coherence transition, seam-ban vs Open-Question Positions carve-out, single-source-of-truth de-dup, placement default, outline rigidity); second pass confirmed granularity matched the surrounding terse style with both regression fixes intact. SOTA surface (`doc/main`, `doc/dev`) checked and unchanged — SKILL.md is the source of truth and CLI/state-machine behavior is untouched.
+**Commit:** 66674a5 (skills); this commit (docs)
+**Next:** Optionally exercise the new conventions on a real `/double-design` run.
+**Blockers:** None.
+
 ## 2026-06-14: Clear UI lint warnings
 
 **What changed:**
