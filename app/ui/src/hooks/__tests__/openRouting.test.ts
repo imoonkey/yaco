@@ -18,7 +18,7 @@ import {
 } from '../workspaceTypes'
 import {
   normalizeLayout, defaultWorkspacePanelLayout, groupCount, groupOf,
-  editorInstancesInOrder, editorTabPaths, tabsInGroup,
+  editorInstancesInOrder, editorTabPaths, tabsInGroup, DEFAULT_SPLIT_BASIS,
 } from '../../workspace/panelLayoutModel'
 
 // --- Fixtures ---------------------------------------------------------------
@@ -145,6 +145,31 @@ describe('resolveOpenTarget', () => {
     const state = stateFrom(layout, { terminalMru: ['t1'], activeGroupId: 'group:1' })
     expect(resolveOpenTarget('editor', state)).toEqual({ new: true })
   })
+
+  it('fills an EMPTY center group instead of splitting when focus is a sidebar terminal (FIX 3)', () => {
+    // Center is an empty group; the terminal lives + is focused in the right sidebar.
+    // An editor open must FILL the empty center, not split a sliver beside it.
+    const layout = layoutFrom([
+      files,
+      center(group('group:1', [], '')),
+      side(group('group:2', [term('t1')])),
+    ], true)
+    const state = stateFrom(layout, { terminalMru: ['t1'], activeGroupId: 'group:2' })
+    expect(resolveOpenTarget('editor', state)).toEqual({ groupId: 'group:1' })
+  })
+
+  it('still asks for a NEW group when the center group is NON-empty and focus mismatches', () => {
+    // Center holds an editor; focus is a sidebar terminal; a terminal open finds no
+    // other terminal group and the center is occupied → a fresh group, not the center.
+    const layout = layoutFrom([
+      files,
+      center(group('group:1', [editor('e1', 'a.ts')])),
+      side(group('group:2', [term('t1')])),
+    ], true)
+    const state = stateFrom(layout, { editorMru: ['e1'], terminalMru: ['t1'], activeGroupId: 'group:1' })
+    // editor open with focus = the center editor group → that group (kind matches).
+    expect(resolveOpenTarget('editor', state)).toEqual({ groupId: 'group:1' })
+  })
 })
 
 // --- splitCenterGroup -------------------------------------------------------
@@ -167,6 +192,26 @@ describe('splitCenterGroup', () => {
     ])
     const [, newId] = splitCenterGroup(stateFrom(layout, { activeGroupId: 'group:1' }))
     expect(newId).toBe('group:3')
+  })
+
+  it('seeds the new group at the supplied basis (~50-50), else the default strip (FIX 2)', () => {
+    const layout = layoutFrom([files, center(group('group:1', [editor('e1', 'a.ts')]))])
+    const childBasis = (l: WorkspacePanelLayout, id: string): number | undefined => {
+      let basis: number | undefined
+      const walk = (n: { kind: string; children?: { node: { id: string }; basis?: number }[] }) => {
+        if (n.kind === 'split' && n.children) {
+          for (const c of n.children) { if (c.node.id === id) basis = c.basis; walk(c.node as never) }
+        }
+      }
+      walk(l.desktop as never)
+      return basis
+    }
+    // A finite basis seeds the new group ~50-50 (VSCode-like), not a fixed sliver.
+    const [withBasis] = splitCenterGroup(stateFrom(layout, { activeGroupId: 'group:1' }), 400)
+    expect(childBasis(withBasis, 'group:2')).toBe(400)
+    // No basis (geometry-free) → the default strip basis (jsdom / unmeasured).
+    const [noBasis] = splitCenterGroup(stateFrom(layout, { activeGroupId: 'group:1' }))
+    expect(childBasis(noBasis, 'group:2')).toBe(DEFAULT_SPLIT_BASIS.row)
   })
 })
 

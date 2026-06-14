@@ -95,10 +95,13 @@ type Action =
   // Routed opens (design: separateKinds). No group/instance ids — the reducer
   // resolves the target group (creating a split when the kind has no group) and
   // mints ids from LIVE state, so rapid dispatches coalesce into one new group.
-  | { type: 'OPEN_ROUTED_PREVIEW_TAB'; tabId: string; protectedPaths: ReadonlySet<string> }
-  | { type: 'OPEN_ROUTED_TAB'; tabId: string }
-  | { type: 'OPEN_ROUTED_DIFF_TAB'; tabId: string }
-  | { type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB'; session: string; preview: boolean; protectedPaths: ReadonlySet<string> }
+  // mints ids from LIVE state, so rapid dispatches coalesce into one new group. The
+  // optional `newGroupBasis` (half the center group's measured size, supplied by the
+  // command wrapper) seeds a `{new}` split ~50-50 instead of a fixed sliver.
+  | { type: 'OPEN_ROUTED_PREVIEW_TAB'; tabId: string; protectedPaths: ReadonlySet<string>; newGroupBasis?: number }
+  | { type: 'OPEN_ROUTED_TAB'; tabId: string; newGroupBasis?: number }
+  | { type: 'OPEN_ROUTED_DIFF_TAB'; tabId: string; newGroupBasis?: number }
+  | { type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB'; session: string; preview: boolean; protectedPaths: ReadonlySet<string>; newGroupBasis?: number }
   | { type: 'PIN_TAB'; groupId: string; instanceId: string }
   | { type: 'CLOSE_GROUP_TAB'; groupId: string; instanceId: string }
   | { type: 'CLOSE_GROUP'; groupId: string }
@@ -305,6 +308,15 @@ export function resolveOpenTarget(kind: 'editor' | 'terminal', state: InstanceSt
     const g = groupOf(tree, id)
     if (g && g !== focused) return { groupId: g }
   }
+  // No other K-group. Before spawning a fresh split, prefer an EXISTING empty center
+  // group — the natural working-area home. Without this, a terminal focused in the
+  // right sidebar (focused = that terminal group) over an empty center would route to
+  // `{new}` and split a thin editor sliver beside the empty center, instead of just
+  // filling it. (When focus IS the empty center, `fk === ''` already returned it above.)
+  const centerFirstId = firstCenterGroupId(centerOf(tree))
+  if (centerFirstId && centerFirstId !== focused && activeTabKind(groupById(tree, centerFirstId)) === '') {
+    return { groupId: centerFirstId }
+  }
   return { new: true }
 }
 
@@ -318,12 +330,15 @@ function mintGroupId(tree: LayoutNode): string {
 }
 
 /** Split a fresh empty group beside the center's first group (seed:false), the id
- *  minted from the live tree. Returns the grown layout + the new group id. */
-export function splitCenterGroup(state: InstanceState): [WorkspacePanelLayout, string] {
+ *  minted from the live tree. `basis` (half the source group's measured size, from
+ *  the command wrapper) seeds a ~50-50 split — a routed `{new}` editor group fills
+ *  half the working area like a normal split, not a thin sliver. Returns the grown
+ *  layout + the new group id. */
+export function splitCenterGroup(state: InstanceState, basis?: number): [WorkspacePanelLayout, string] {
   const tree = state.panelLayout.desktop
   const target = firstCenterGroupId(centerOf(tree)) ?? firstGroupId(tree) ?? ''
   const newGroupId = mintGroupId(tree)
-  return [splitBeside(state.panelLayout, target, 'right', newGroupId), newGroupId]
+  return [splitBeside(state.panelLayout, target, 'right', newGroupId, basis), newGroupId]
 }
 
 // --- GC + structural helpers ------------------------------------------------
@@ -399,11 +414,11 @@ function withDesktop(layout: WorkspacePanelLayout, raw: WorkspacePanelLayout): W
 /** Resolve a routed open's target group, spawning a center split when the rule
  *  asks for a NEW group. Returns the (possibly grown) layout + the target id. */
 function routeOpen(
-  state: InstanceState, kind: 'editor' | 'terminal',
+  state: InstanceState, kind: 'editor' | 'terminal', newGroupBasis?: number,
 ): { layout: WorkspacePanelLayout; groupId: string } {
   const r = resolveOpenTarget(kind, state)
   if ('groupId' in r) return { layout: state.panelLayout, groupId: r.groupId }
-  const [layout, groupId] = splitCenterGroup(state)
+  const [layout, groupId] = splitCenterGroup(state, newGroupBasis)
   return { layout, groupId }
 }
 
@@ -472,7 +487,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       })
     }
     case 'OPEN_ROUTED_PREVIEW_TAB': {
-      const { layout, groupId } = routeOpen(state, 'editor')
+      const { layout, groupId } = routeOpen(state, 'editor', action.newGroupBasis)
       const newId = newInstanceId(layout.desktop, 'editor')
       const existing = tabsInGroup(layout.desktop, groupId)
         .find((t) => t.kind === 'editor' && t.tabId === action.tabId)
@@ -490,7 +505,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
     case 'OPEN_ROUTED_DIFF_TAB': {
       // Open/activate a PINNED editor tab (a diff tab opens the same way; dedup by
       // exact tabId so `a.ts` and `diff:a.ts` coexist).
-      const { layout, groupId } = routeOpen(state, 'editor')
+      const { layout, groupId } = routeOpen(state, 'editor', action.newGroupBasis)
       const newId = newInstanceId(layout.desktop, 'editor')
       const existing = tabsInGroup(layout.desktop, groupId)
         .find((t) => t.kind === 'editor' && t.tabId === action.tabId)
@@ -504,7 +519,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       })
     }
     case 'OPEN_ROUTED_BOUND_TERMINAL_TAB': {
-      const { layout, groupId } = routeOpen(state, 'terminal')
+      const { layout, groupId } = routeOpen(state, 'terminal', action.newGroupBasis)
       const newId = newInstanceId(layout.desktop, 'terminal')
       const panelLayout = mapGroup(layout, groupId, (g) => {
         const tabs = action.preview ? dropOldPreview(g.tabs, newId, action.protectedPaths) : g.tabs
@@ -817,18 +832,24 @@ export function useLayoutState(
   // No group/instance ids: the reducer resolves the kind-`K` target group from LIVE
   // state and spawns a center split when the rule asks for a new group — all in one
   // transition, so rapid dispatches coalesce. The thin command wrapper supplies only
-  // the tabId/session and its path-keyed effects.
+  // the tabId/session, its path-keyed effects, and — read from the live DOM here, since
+  // the pure reducer cannot — `newGroupBasis` (half the center group's width) so a
+  // `{new}` split starts ~50-50 instead of a thin sliver.
+  const centerSplitBasis = (): number | undefined => {
+    const id = firstCenterGroupId(centerOf(stateRef.current.panelLayout.desktop))
+    return id ? halfGroupBasis(id, 'right') : undefined
+  }
   const openRoutedTab = useCallback((tabId: string) => {
-    dispatch({ type: 'OPEN_ROUTED_TAB', tabId })
+    dispatch({ type: 'OPEN_ROUTED_TAB', tabId, newGroupBasis: centerSplitBasis() })
   }, [])
   const openRoutedDiffTab = useCallback((tabId: string) => {
-    dispatch({ type: 'OPEN_ROUTED_DIFF_TAB', tabId })
+    dispatch({ type: 'OPEN_ROUTED_DIFF_TAB', tabId, newGroupBasis: centerSplitBasis() })
   }, [])
   const openRoutedPreviewTab = useCallback((tabId: string) => {
-    dispatch({ type: 'OPEN_ROUTED_PREVIEW_TAB', tabId, protectedPaths: dirtyPathsRef.current })
+    dispatch({ type: 'OPEN_ROUTED_PREVIEW_TAB', tabId, protectedPaths: dirtyPathsRef.current, newGroupBasis: centerSplitBasis() })
   }, [dirtyPathsRef])
   const openRoutedBoundTerminalTab = useCallback((session: string, preview = false) => {
-    dispatch({ type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB', session, preview, protectedPaths: dirtyPathsRef.current })
+    dispatch({ type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB', session, preview, protectedPaths: dirtyPathsRef.current, newGroupBasis: centerSplitBasis() })
   }, [dirtyPathsRef])
 
   const pinTab = useCallback((groupId: string, instanceId: string) => {
