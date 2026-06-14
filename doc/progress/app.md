@@ -1,3 +1,17 @@
+## 2026-06-14: Diff viewer syntax highlighting
+
+Added per-line syntax highlighting to the diff viewer (`DiffTab`). New
+`ui/src/lib/diffHighlight.ts` loads the editor's Lezer parsers by filename and
+reuses the `editorHighlight` HighlightStyle, so diffs match editor colors;
+`mergeSyntaxAndWord` layers the existing word-diff backgrounds under syntax
+foreground (syntax = color, add/del = background tint). Per-line (GitHub-style)
+because a diff only carries hunk fragments; plain-text fallback for unsupported
+languages or before the async parser loads.
+
+**Key files:** `ui/src/lib/diffHighlight.ts`, `ui/src/workspace/diff/DiffTab.tsx`
+**Verification:** `tsc -b` + `npm run lint` clean; unit tests for `mergeSyntaxAndWord` + an integration test driving the real TS parser path; full `vitest run src/` green except a pre-existing tab-groups `PanelGroup.test.tsx` failure (unrelated, fails identically with this change reverted).
+**Commit:** c0464d1
+
 ## 2026-06-11: Notification & attention redesign (v2)
 
 Replaced the capped-50 notification inbox with a two-facet system: **Facet A**

@@ -298,10 +298,11 @@ The extension is always installed; empty hunks is the no-op case.
 
 Rich diff rendering for git-changed files. Uses `DiffTab` component (`ui/src/workspace/diff/DiffTab.tsx`) consuming the shared `ParsedFileDiff` model.
 
--> See: `ui/src/workspace/diff/DiffTab.tsx`, `ui/src/workspace/useWorkspaceDiff.ts`
+-> See: `ui/src/workspace/diff/DiffTab.tsx`, `ui/src/workspace/useWorkspaceDiff.ts`, `ui/src/lib/diffHighlight.ts`
 
 - **Unified view**: dual old/new line numbers, word-level highlights for modified rows
 - **Split view**: side-by-side 5-column grid (desktop only, hidden on mobile)
+- **Syntax highlighting**: per-line tokenization reusing the editor's Lezer parsers + `editorHighlight` style (`lib/diffHighlight.ts`); syntax drives foreground, add/del drive background tint, word-diff backgrounds layer on top via `mergeSyntaxAndWord`. Per-line (GitHub-style) since a diff only carries hunk fragments — multi-line constructs may be approximate. Falls back to plain text for unsupported languages or before the async parser loads.
 - **View mode**: persisted to `localStorage["workflow-diff-viewmode"]`
 - **Navigation**: `j`/`k` keyboard shortcuts, toolbar prev/next buttons, "Change X of N" indicator
 - **Context collapse**: long in-hunk context runs collapse with expand-on-click; inter-hunk gaps show non-expandable "N unchanged lines omitted"
