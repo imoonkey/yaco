@@ -24,6 +24,18 @@ function labelPath(tab: string): string {
   return parseDiffTab(tab)?.path ?? tab
 }
 
+/**
+ * Accessible label for a tab's close button. A plain diff tab (no base/compare)
+ * renders the same basename as its file sibling — distinguished on screen only by
+ * an aria-hidden icon — so mark it "(diff)" to keep the accessible name unique.
+ * Compare diffs already carry a "(base..compare)" suffix and need no marker.
+ */
+export function tabCloseLabel(tab: string): string {
+  const parsed = parseDiffTab(tab)
+  const isPlainDiff = parsed !== null && !(parsed.base && parsed.compare)
+  return `Close ${tabName(tab)}${isPlainDiff ? ' (diff)' : ''}`
+}
+
 /** For tabs sharing a basename, compute the shortest parent suffix that disambiguates them. */
 export function computeDisambigSuffixes(tabs: string[]): Map<string, string> {
   const suffixes = new Map<string, string>()

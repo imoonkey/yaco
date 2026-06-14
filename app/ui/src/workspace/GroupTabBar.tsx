@@ -17,7 +17,7 @@ import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
 import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
 import { tabIdToPath } from './panelLayoutModel'
-import { tabName, computeDisambigSuffixes } from './tabLabels'
+import { tabName, computeDisambigSuffixes, tabCloseLabel } from './tabLabels'
 import { EditorActions } from './EditorActions'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { ProviderIcon } from '../components/SessionIcons'
@@ -268,7 +268,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
           const session = !isEditor ? terminalBindings[tab.instanceId] : undefined
           const provider = session ? sessions.find((s) => s.name === session)?.provider : undefined
           const label = isEditor ? tabName(tab.tabId) : (session || 'Terminal')
-          const closeLabel = isEditor ? `Close ${tabName(tab.tabId)}` : 'Close terminal'
+          const closeLabel = isEditor ? tabCloseLabel(tab.tabId) : 'Close terminal'
           // VSCode group emphasis (FIX C): the ACTIVE group reads in a strong
           // foreground at medium weight (its active tab strongest, the rest standard);
           // INACTIVE groups are uniformly muted in a distinctly fainter token — so it

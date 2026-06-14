@@ -8,7 +8,7 @@ import { Menu, MenuItem, MenuDivider } from '../components/Menu'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useContextMenu } from '../components/useContextMenu'
 import { splitSideFromGeometry } from './panelInstance'
-import { tabName, computeDisambigSuffixes } from './tabLabels'
+import { tabName, computeDisambigSuffixes, tabCloseLabel } from './tabLabels'
 
 function tabTitle(tab: string): string {
   return tab
@@ -246,13 +246,13 @@ export function WorkspaceTabBar({
                 <span className="w-1.5 h-1.5 rounded-full shrink-0 group-hover:hidden" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
                 <button onClick={(e) => requestClose(tab, e)}
                   className="hidden group-hover:flex w-3 h-3 items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg absolute inset-0" style={{ color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
-                  aria-label={`Close ${tabName(tab)}`}
+                  aria-label={tabCloseLabel(tab)}
                 ><X size={10} /></button>
               </span>
             ) : (
               <button onClick={(e) => requestClose(tab, e)}
                 className="w-3 h-3 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 cursor-pointer hover:bg-sol-hover-bg" style={{ color: 'var(--sol-text-dim)', transition: 'opacity 120ms, background-color 120ms' }}
-                aria-label={`Close ${tabName(tab)}`}
+                aria-label={tabCloseLabel(tab)}
                 ><X size={10} /></button>
             )}
           </div>
