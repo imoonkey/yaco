@@ -46,6 +46,7 @@ function renderBar(
     onCloseTab: vi.fn(),
     onSplit: vi.fn(),
     onMoveTab: vi.fn(),
+    onPinTab: vi.fn(),
     onMoveGroup: vi.fn(),
     onCloseGroup: vi.fn(),
     onActivateGroup: vi.fn(),
@@ -86,6 +87,43 @@ describe('GroupTabBar — mixed tab rendering', () => {
   it('marks the active tab and shows "No files open" for an empty group', () => {
     renderBar({ tabs: [], activeTab: '' })
     expect(screen.getByText('No files open')).toBeTruthy()
+  })
+
+  it('disambiguates same-label diff tabs by their underlying parent path', () => {
+    renderBar({
+      tabs: [
+        EDITOR('editor:1', 'diff:packages/app/foo.ts?base=main&compare=HEAD'),
+        EDITOR('editor:2', 'diff:packages/server/foo.ts?base=main&compare=HEAD'),
+      ],
+      activeTab: 'editor:1',
+    })
+
+    expect(screen.getByText('app')).toBeTruthy()
+    expect(screen.getByText('server')).toBeTruthy()
+  })
+
+  it('does not disambiguate a file tab against its diff tab', () => {
+    renderBar({
+      tabs: [
+        EDITOR('editor:1', 'src/foo.ts'),
+        EDITOR('editor:2', 'diff:src/foo.ts'),
+      ],
+      activeTab: 'editor:1',
+    })
+
+    expect(screen.getAllByText('foo.ts')).toHaveLength(2)
+    expect(screen.queryByText('src')).toBeNull()
+  })
+
+  it('renders a plain diff tab with a diff icon instead of "(diff)" text', () => {
+    const { container } = renderBar({
+      tabs: [EDITOR('editor:1', 'diff:src/foo.ts')],
+      activeTab: 'editor:1',
+    })
+
+    expect(screen.getByText('foo.ts')).toBeTruthy()
+    expect(screen.queryByText('foo.ts (diff)')).toBeNull()
+    expect(container.querySelector('.lucide-file-diff')).toBeTruthy()
   })
 })
 
@@ -413,6 +451,30 @@ describe('GroupTabBar — preview / group emphasis / editor actions', () => {
     expect(onSetEditorPrefs).toHaveBeenCalledWith({ autocompleteEnabled: true })
   })
 
+  it('pins a preview editor/diff tab on tab-header double-click', () => {
+    const onPinTab = vi.fn()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'diff:src/app.ts', { preview: true })],
+      activeTab: 'editor:1',
+      onPinTab,
+    })
+
+    fireEvent.doubleClick(screen.getByTestId('group-tab'))
+    expect(onPinTab).toHaveBeenCalledWith('editor:1')
+  })
+
+  it('does not pin an already-pinned tab on double-click', () => {
+    const onPinTab = vi.fn()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'src/app.ts')],
+      activeTab: 'editor:1',
+      onPinTab,
+    })
+
+    fireEvent.doubleClick(screen.getByTestId('group-tab'))
+    expect(onPinTab).not.toHaveBeenCalled()
+  })
+
   it('renders markdown/html view modes as icon buttons and toggles split direction from the middle button', () => {
     const onSetEditorPrefs = vi.fn()
     renderBar({
@@ -483,7 +545,7 @@ describe('GroupTabBar — Separate-editors-and-terminals toggle (design: separat
         groupId: 'g1', region: 'center', tabs: [EDITOR('editor:1', 'src/app.ts')], activeTab: 'editor:1',
         isActiveGroup: true, dirtyTabs: new Set<string>(), conflictTabs: new Set<string>(), terminalBindings: {},
         pathsOpenElsewhere: new Set<string>(), onSelectTab: vi.fn(), onCloseTab: vi.fn(), onSplit: vi.fn(),
-        onMoveTab: vi.fn(), onMoveGroup: vi.fn(), onCloseGroup: vi.fn(), onActivateGroup: vi.fn(), onDiscardDirty: vi.fn(),
+        onMoveTab: vi.fn(), onPinTab: vi.fn(), onMoveGroup: vi.fn(), onCloseGroup: vi.fn(), onActivateGroup: vi.fn(), onDiscardDirty: vi.fn(),
       } as GroupTabBarProps
       return (
         <WorkspaceEnvContext.Provider value={env}>

@@ -33,11 +33,11 @@ An editor tab's body is always in exactly one of these states:
 ┌──────────┐    Cmd+Shift+V    ┌──────────────┐
 │ FileEdit │ ◄───────────────► │ FilePreview  │
 └────┬─────┘                   └──────────────┘
-     │ click change row              ▲
-     ▼                               │ click .md change row again
-┌──────────┐                         │
-│   Diff   │ ── click same row ──────┘
-└──────────┘   (opens raw file)
+     │ click change row
+     ▼
+┌──────────┐
+│   Diff   │
+└──────────┘
 ```
 
 ### Empty
@@ -51,7 +51,7 @@ An editor tab's body is always in exactly one of these states:
 - An editable file is open in CodeMirror
 - Draft state tracked per path (`null` = clean, non-null = dirty)
 - Dirty indicator: black dot instead of close button
-- Triggered by: clicking file in explorer, clicking change row when diff is already active, opening from search
+- Triggered by: clicking file in explorer, opening from search
 
 ### FilePreview
 
@@ -64,7 +64,7 @@ An editor tab's body is always in exactly one of these states:
 
 - Unified diff view for a git-changed file (read-only)
 - Green additions, red deletions, blue hunk headers
-- Triggered by: clicking a file in the Changes panel
+- Triggered by: clicking a file in the Changes panel; double-click pins the diff tab
 - Per-path cache: switching between diff tabs does not re-fetch
 
 ## Layout Surface States

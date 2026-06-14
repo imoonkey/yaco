@@ -103,7 +103,7 @@ function ChangesPanelBody() {
   const env = useWorkspaceEnv()
   const { git } = useWorkspaceDataContext()
   const { activeEditorTabId } = useWorkspaceSelection()
-  const { openDiff, openDiffTabId, expandFolderInFiles } = useWorkspaceCommands()
+  const { openDiff, openDiffTabId, expandFolderInFiles, revealPathInFiles } = useWorkspaceCommands()
   const { name: projectName, worktree } = env.project
   const key = compareKey(projectName, worktree)
   const { mode, base, head, result } = useCompareState(key)
@@ -143,7 +143,8 @@ function ChangesPanelBody() {
             <GitChangeItem key={c.path} change={c}
               isActive={activeEditorTabId === tabId}
               onActivate={() => openDiffTabId(tabId)}
-              onFolderClick={expandFolderInFiles}
+              onOpenPinned={() => openDiffTabId(tabId, { preview: false })}
+              onPathClick={revealPathInFiles}
             />
           )
         })}
@@ -165,7 +166,8 @@ function ChangesPanelBody() {
           <GitChangeItem key={c.path} change={c}
             isActive={!isDir && activeEditorTabId === `diff:${c.path}`}
             onActivate={isDir ? () => expandFolderInFiles(c.path.slice(0, -1)) : () => openDiff(c.path)}
-            onFolderClick={expandFolderInFiles}
+            onOpenPinned={isDir ? undefined : () => openDiff(c.path, { preview: false })}
+            onPathClick={isDir ? expandFolderInFiles : revealPathInFiles}
           />
         )
       })}

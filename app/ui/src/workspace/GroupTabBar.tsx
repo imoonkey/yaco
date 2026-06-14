@@ -12,7 +12,7 @@
 // Group-native callbacks are wired by `PanelGroup`; session metadata + `isTouch`
 // are read from context here, and `useContextMenu` is instantiated internally.
 import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
-import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
+import { X, AlertTriangle, Columns2, Rows2, FileDiff } from 'lucide-react'
 import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
 import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
@@ -59,6 +59,8 @@ export type GroupTabBarProps = {
   /** Move a tab into this group at `toIndex` (the universal tab mover — covers both a
    *  cross-group move and the within-group reorder, the from===to case). */
   onMoveTab: (fromGroupId: string, instanceId: string, toGroupId: string, toIndex: number) => void
+  /** Pin this group's tab by instance id (clears preview). */
+  onPinTab: (instanceId: string) => void
   /** Relocate a whole dragged group (beside a node, or merged into a group). The tab
    *  bar drops a group as a MERGE into this group. */
   onMoveGroup: (groupId: string, placement: GroupPlacement) => void
@@ -94,7 +96,7 @@ const TAB_STYLE_BASE: React.CSSProperties = {
 
 const SPLIT_BTN_STYLE: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  width: 24, height: 22, padding: 0, border: 'none', borderRadius: 3,
+  width: 22, height: 22, padding: 0, border: 'none', borderRadius: 3,
   cursor: 'pointer', background: 'transparent', color: 'var(--sol-text-dim)',
 }
 
@@ -110,7 +112,7 @@ const SPLIT_ITEMS: { label: string; side: SplitSide }[] = [
 export function GroupTabBar(props: GroupTabBarProps) {
   const {
     groupId, region, tabs, activeTab, isActiveGroup, dirtyTabs, conflictTabs, terminalBindings,
-    pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onMoveTab, onMoveGroup,
+    pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onMoveTab, onPinTab, onMoveGroup,
     onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, onSaveTab, editorPrefs, onSetEditorPrefs,
   } = props
 
@@ -286,6 +288,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
                 onDragStart={(e) => dragControls.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
                 onDragEnd={dragControls.clear}
                 onClick={() => onSelectTab(tab.instanceId)}
+                onDoubleClick={() => { if (tab.preview) onPinTab(tab.instanceId) }}
                 {...(showMenu ? menu.bind(() => setContextTab(tab)) : {})}
                 title={isEditor ? tab.tabId : label}
                 className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
@@ -300,7 +303,9 @@ export function GroupTabBar(props: GroupTabBarProps) {
                 }}
               >
                 {isEditor
-                  ? !isDiff && <FileTypeIcon name={tab.tabId} />
+                  ? (isDiff
+                      ? <FileDiff size={13} aria-hidden="true" className="shrink-0" />
+                      : <FileTypeIcon name={tab.tabId} />)
                   : <ProviderIcon provider={provider ?? 'terminal'} className="w-3.5 h-3.5 shrink-0" />}
                 <span className="truncate max-w-[120px]">{label}</span>
                 {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
@@ -339,7 +344,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
         </div>
       </div>
 
-      <div className="flex items-center shrink-0 gap-1 px-1" style={{ borderLeft: '1px solid var(--sol-border)' }}>
+      <div className="flex items-center shrink-0 gap-0.5 px-0.5" style={{ borderLeft: '1px solid var(--sol-border)' }}>
         {activeEditorTabId && editorPrefs && onSetEditorPrefs && (
           <EditorActions
             tabId={activeEditorTabId}

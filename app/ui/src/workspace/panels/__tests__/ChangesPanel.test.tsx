@@ -66,6 +66,7 @@ function buildChangesTree(opts: ChangesPanelOpts) {
     openDiff: vi.fn(),
     openDiffTabId: vi.fn(),
     expandFolderInFiles: vi.fn(),
+    revealPathInFiles: vi.fn(),
   } as unknown as WorkspaceCommands
 
   const Body = changesPanelDef.Component
@@ -132,18 +133,43 @@ describe('ChangesPanel — working-tree mode (DOM parity with the inline changes
   it('opens a file change as a preview diff and a directory change as a folder reveal', () => {
     const { commands } = renderChangesPanel({
       projectName: 'click',
-      git: { changes: [{ path: 'src/a.ts', status: 'M' }, { path: 'sub/', status: 'A' }] },
+      git: { changes: [{ path: 'src/a.ts', status: 'M' }, { path: 'root/sub/', status: 'A' }] },
     })
     // Row body → openDiff(path); diff opens as a preview (openDiff default).
     fireEvent.click(screen.getByText('a.ts'))
     expect(commands.openDiff).toHaveBeenCalledWith('src/a.ts')
-    // The dir-segment of a file → expandFolderInFiles(parentDir).
+    // The path segment of a file reveals the file in Files.
     fireEvent.click(screen.getByText('src'))
-    expect(commands.expandFolderInFiles).toHaveBeenCalledWith('src')
-    // A directory change row → expandFolderInFiles(path-without-trailing-slash).
+    expect(commands.revealPathInFiles).toHaveBeenCalledWith('src/a.ts')
+    // A directory change row body → expandFolderInFiles(path-without-trailing-slash).
     fireEvent.click(screen.getByText('sub'))
-    expect(commands.expandFolderInFiles).toHaveBeenCalledWith('sub')
+    expect(commands.expandFolderInFiles).toHaveBeenCalledWith('root/sub')
+    // Its parent-path segment also expands the directory, not file-reveal.
+    fireEvent.click(screen.getByText('root'))
+    expect(commands.expandFolderInFiles).toHaveBeenCalledWith('root/sub')
     expect(commands.openDiff).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers a reveal affordance for root-level changed files', () => {
+    const { commands } = renderChangesPanel({
+      projectName: 'root-file',
+      git: { changes: [{ path: 'README.md', status: 'M' }] },
+    })
+
+    fireEvent.click(screen.getByTitle('Reveal README.md'))
+
+    expect(commands.revealPathInFiles).toHaveBeenCalledWith('README.md')
+  })
+
+  it('opens a file change as a pinned diff on row double-click', () => {
+    const { commands } = renderChangesPanel({
+      projectName: 'dblclick',
+      git: { changes: [{ path: 'src/a.ts', status: 'M' }] },
+    })
+
+    fireEvent.doubleClick(screen.getByText('a.ts'))
+
+    expect(commands.openDiff).toHaveBeenCalledWith('src/a.ts', { preview: false })
   })
 })
 
@@ -174,6 +200,12 @@ describe('ChangesPanel — compare mode (self-contained refs + fetch + diff-by-t
     fireEvent.click(screen.getByText('x.ts'))
     expect(commands.openDiffTabId).toHaveBeenCalledWith('diff:src/x.ts?base=main&compare=HEAD')
     expect(commands.openDiff).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByText('src'))
+    expect(commands.revealPathInFiles).toHaveBeenCalledWith('src/x.ts')
+
+    fireEvent.doubleClick(screen.getByText('x.ts'))
+    expect(commands.openDiffTabId).toHaveBeenCalledWith('diff:src/x.ts?base=main&compare=HEAD', { preview: false })
   })
 
   it('shows "No differences" when the refs are identical', async () => {

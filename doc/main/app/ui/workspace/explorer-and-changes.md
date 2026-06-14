@@ -127,11 +127,11 @@ Displays git-changed files from `useGitStatus()`.
 ### Behavior
 
 - Each row shows: file path, status badge (M/A/D/U)
-- Click a file → opens Diff as a **preview tab** (italic title, replaced by next change click); parent directories are expanded in the explorer and the file is selected
-- Click the same row again while its diff tab is active → opens the raw file for editing (pinned tab)
+- Click a file → opens Diff as a **preview tab** (italic title, replaced by next change click); Explorer selection is left unchanged
+- Double-click a file → opens Diff as a **pinned tab** (normal title, persists)
 - Click a **folder** row → expands that folder in the file explorer
-- Click the parent directory breadcrumb text → expands that parent in the explorer
-- Preview tab behavior: diff tabs opened from Changes follow the same preview semantics as single-click files in explorer — they are replaced when clicking a different change, unless the user pins them (double-click tab title)
+- Click the parent directory breadcrumb text → reveals the changed file itself in the file explorer, so the full file can be opened from the tree when needed
+- Preview tab behavior: diff tabs opened from Changes follow the same preview semantics as single-click files in explorer — they are replaced when clicking a different change, unless the user pins them (double-click the change row or tab title)
 
 ### Refresh
 

@@ -37,7 +37,7 @@ function PreviewModeToggle({ mode, splitDirection, onChange, onDirectionChange, 
   }
 
   return (
-    <div className="flex items-center gap-1 shrink-0">
+    <div className="flex items-center shrink-0">
       <div className="flex rounded border overflow-hidden" style={{ borderColor: 'var(--sol-border)' }}>
         {modes.map(({ value, label, title, icon }) => {
           const active = mode === value
@@ -98,7 +98,7 @@ export function EditorActions({ tabId, previewMode, splitDirection, autocomplete
     : 'Enable inline suggestions - sends nearby markdown text to the model provider'
 
   return (
-    <div className="flex items-center gap-1 shrink-0">
+    <div className="flex items-center gap-0.5 shrink-0">
       {showSuggestions && (
         <button
           onClick={() => onSetEditorPrefs({ autocompleteEnabled: !autocompleteEnabled })}

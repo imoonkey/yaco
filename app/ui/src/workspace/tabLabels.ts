@@ -1,7 +1,7 @@
 // Pure tab-label helpers shared by the editor tab strip (WorkspaceTabBar) and the
 // working-area group strip (GroupTabBar): a tab's display name and same-basename
 // disambiguation. Kept out of the component files so fast-refresh stays happy.
-import { isDiffTab, isFileTab, parseDiffTab } from '../hooks/useWorkspaceState'
+import { isDiffTab, parseDiffTab } from '../hooks/useWorkspaceState'
 
 function truncateRef(ref: string, max = 12): string {
   return ref.length > max ? ref.slice(0, max - 1) + '…' : ref
@@ -15,30 +15,35 @@ export function tabName(tab: string): string {
     if (parsed.base && parsed.compare) {
       return `${filename} (${truncateRef(parsed.base)}..${truncateRef(parsed.compare)})`
     }
-    return `${filename} (diff)`
+    return filename
   }
   return tab.split('/').pop() || tab
+}
+
+function labelPath(tab: string): string {
+  return parseDiffTab(tab)?.path ?? tab
 }
 
 /** For tabs sharing a basename, compute the shortest parent suffix that disambiguates them. */
 export function computeDisambigSuffixes(tabs: string[]): Map<string, string> {
   const suffixes = new Map<string, string>()
 
-  // Group file tabs by basename
-  const byBasename = new Map<string, string[]>()
+  // Group by rendered label inside each tab class. A file tab and a diff tab for
+  // the same path are already visually distinct, so they should not force a path
+  // suffix on each other.
+  const byLabel = new Map<string, string[]>()
   for (const tab of tabs) {
-    if (!isFileTab(tab)) continue
-    const basename = tab.split('/').pop() || tab
-    const group = byBasename.get(basename)
+    const key = `${isDiffTab(tab) ? 'diff' : 'file'}:${tabName(tab)}`
+    const group = byLabel.get(key)
     if (group) group.push(tab)
-    else byBasename.set(basename, [tab])
+    else byLabel.set(key, [tab])
   }
 
-  for (const [, group] of byBasename) {
+  for (const [, group] of byLabel) {
     if (group.length < 2) continue
     // For each tab in the group, find shortest parent dir suffix that's unique
     const parentSegments = group.map(tab => {
-      const parts = tab.split('/')
+      const parts = labelPath(tab).split('/')
       return parts.slice(0, -1) // dir segments only
     })
     for (let gi = 0; gi < group.length; gi++) {

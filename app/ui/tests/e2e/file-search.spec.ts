@@ -3,6 +3,7 @@ import {
   provisionWorkspace,
   createTestFile,
   fileExistsOnServer,
+  writeFileViaAPI,
   openFileViaSearch,
   uniqueFileName,
   type FixtureProject,
@@ -90,7 +91,7 @@ test.describe('Changes sidebar', () => {
   let fixture: FixtureProject
 
   test.beforeEach(async ({ page, request }) => {
-    fixture = await provisionWorkspace(page, request)
+    fixture = await provisionWorkspace(page, request, { files: FIXTURE_FILES })
   })
 
   test.afterEach(async () => {
@@ -103,18 +104,46 @@ test.describe('Changes sidebar', () => {
     await createTestFile(page, fixture.name, testPath, 'changes test\n')
     await expect.poll(() => fileExistsOnServer(page, fixture.name, testPath), { timeout: 10_000 }).toBe(true)
 
-    // Untracked-file visibility in the Changes section is environment-dependent,
-    // so assert the diff-tab flow only when the change actually surfaces.
-    const changeItem = page.locator(`.items-start[title="${testPath}"]`).first()
-    if (await changeItem.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await changeItem.click()
+    const changeItem = page.locator(`[data-testid="git-change-item"][data-change-path="${testPath}"]`).first()
+    await expect(changeItem).toBeVisible({ timeout: 10_000 })
+    await changeItem.click()
 
-      const diffTab = page.locator('[data-testid="group-tab"]', { hasText: testPath })
-      await expect(diffTab).toBeVisible({ timeout: 3000 })
+    const diffTab = page.locator(`[data-testid="group-tab"][title="diff:${testPath}"]`)
+    await expect(diffTab).toBeVisible({ timeout: 3000 })
 
-      // Preview tabs have italic styling
-      const tabStyle = await diffTab.evaluate(el => window.getComputedStyle(el).fontStyle)
-      expect(tabStyle).toBe('italic')
-    }
+    // Preview tabs have italic styling
+    await expect(diffTab).toHaveCSS('font-style', 'italic')
+  })
+
+  test('double-clicking a changed file opens diff as a pinned tab', async ({ page }) => {
+    const testPath = uniqueFileName('changes_pin_test.txt')
+    await createTestFile(page, fixture.name, testPath, 'changes pin test\n')
+    await expect.poll(() => fileExistsOnServer(page, fixture.name, testPath), { timeout: 10_000 }).toBe(true)
+
+    const changeItem = page.locator(`[data-testid="git-change-item"][data-change-path="${testPath}"]`).first()
+    await expect(changeItem).toBeVisible({ timeout: 10_000 })
+    await changeItem.dblclick()
+
+    const diffTab = page.locator(`[data-testid="group-tab"][title="diff:${testPath}"]`)
+    await expect(diffTab).toBeVisible({ timeout: 3000 })
+    await expect(diffTab).not.toHaveCSS('font-style', 'italic')
+  })
+
+  test('clicking a changed file path segment reveals the file in the explorer', async ({ page }) => {
+    const testDir = 'src/util'
+    const fileName = 'helper.ts'
+    const testPath = `${testDir}/${fileName}`
+    await writeFileViaAPI(page, fixture.name, testPath, 'export function helper() { return 2 }\n')
+
+    const changeItem = page.locator(`[data-testid="git-change-item"][data-change-path="${testPath}"]`).first()
+    await expect(changeItem).toBeVisible({ timeout: 10_000 })
+
+    await changeItem.getByText(fileName, { exact: true }).click()
+    await expect(page.locator(`[data-testid="group-tab"][title="diff:${testPath}"]`)).toBeVisible({ timeout: 3000 })
+    await expect(page.locator('[role="treeitem"]', { hasText: fileName }).first()).not.toBeVisible()
+
+    await changeItem.getByText(testDir, { exact: true }).click()
+
+    await expect(page.locator('[role="treeitem"]', { hasText: fileName }).first()).toBeVisible({ timeout: 10_000 })
   })
 })

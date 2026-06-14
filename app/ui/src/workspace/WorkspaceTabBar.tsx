@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react'
-import { X, AlertTriangle, Columns2, Rows2, SplitSquareHorizontal, ChevronDown } from 'lucide-react'
+import { X, AlertTriangle, Columns2, Rows2, SplitSquareHorizontal, ChevronDown, FileDiff } from 'lucide-react'
 
 import { isDiffTab, isFileTab, type PreviewMode, type SplitDirection } from '../hooks/useWorkspaceState'
 import type { SplitSide } from './context'
@@ -233,7 +233,9 @@ export function WorkspaceTabBar({
               borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
               fontStyle: isPreview ? 'italic' : undefined,
             }} title={tabTitle(tab)}>
-            {!isDiff && <FileTypeIcon name={tab} />}
+            {isDiff
+              ? <FileDiff size={13} aria-hidden="true" className="shrink-0" />
+              : <FileTypeIcon name={tab} />}
             <span className="truncate max-w-[120px]" style={isPreview ? { paddingRight: 2 } : undefined}>{tabName(tab)}</span>
             {isPreview && <span className="text-ui-2xs shrink-0" style={{ color: 'var(--sol-text-faint)', fontStyle: 'italic' }}>(preview)</span>}
             {parentDirSuffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{parentDirSuffix}</span>}

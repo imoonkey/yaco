@@ -19,7 +19,7 @@
 // `MobileDock` ⇄ `MobilePane` conversion is the only place the two vocabularies
 // meet (`mobileDockToPane` for the switch UI, the provider's mirror for writes).
 import { useCallback, useMemo, useState, type ReactNode, type RefObject } from 'react'
-import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal, X, AlertTriangle } from 'lucide-react'
+import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal, X, AlertTriangle, FileDiff } from 'lucide-react'
 import { PaneSwitch } from '../components/PaneSwitch'
 import { LandscapeNav } from '../components/LandscapeNav'
 import { toggleTheme } from '../lib/theme'
@@ -349,7 +349,9 @@ function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onS
                 fontStyle: tab.preview ? 'italic' : undefined,
               }}
             >
-              {!isDiff && <FileTypeIcon name={tab.tabId} />}
+              {isDiff
+                ? <FileDiff size={13} aria-hidden="true" className="shrink-0" />
+                : <FileTypeIcon name={tab.tabId} />}
               <span className="truncate max-w-[140px]">{tabName(tab.tabId)}</span>
               {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
               {isConflict ? (

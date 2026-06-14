@@ -293,4 +293,35 @@ describe('MobilePanelProjection active instance routing', () => {
     fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
     expect(setEditorPrefs).toHaveBeenCalledWith({ autocompleteEnabled: true })
   })
+
+  it('renders diff tabs with an explicit FileDiff icon in the mobile editor strip', () => {
+    const desktop = {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        {
+          grow: true,
+          node: {
+            kind: 'tabs',
+            id: 'group:1',
+            tabs: [{ instanceId: 'editor:1', kind: 'editor', tabId: 'diff:src/foo.ts' }],
+            activeTab: 'editor:1',
+          },
+        },
+      ],
+    }
+    const panelLayout = { ...defaultWorkspacePanelLayout(), desktop, mobile: { activeDock: 'editor' } }
+    mobileDockPanelsMock.mockImplementation((dock: MobileDock) => (dock === 'editor' ? ['editor'] : REMAP[dock]))
+
+    renderDock('editor', {
+      panelLayout,
+      selection: {
+        activeEditorId: 'editor:1',
+        activeGroupId: 'group:1',
+        editor: { files: {}, dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+      },
+    })
+
+    expect(screen.getByText('foo.ts')).toBeTruthy()
+    expect(document.querySelector('.lucide-file-diff')).toBeTruthy()
+  })
 })

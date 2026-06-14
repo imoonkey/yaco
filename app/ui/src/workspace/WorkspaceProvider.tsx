@@ -504,24 +504,24 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     if (instanceId) setJumpRequest({ key: Date.now(), path, line, instanceId })
   }, [openFileAtLineRouted, revealParents, setMobilePane])
 
-  // openDiff mirrors the old activateChange handler: a re-clicked active diff
-  // toggles back to its file (a PRE-open read of the active tab, unaffected by
-  // routing); otherwise reveal parents, open the routed (preview) diff, select the
-  // path — carrying compare refs.
+  // openDiff follows preview-tab semantics only. It deliberately does not reveal
+  // or select the underlying file in Explorer; the Changes row path shortcut owns
+  // that separate navigation.
   const openDiff = useCallback((path: string, opts?: { preview?: boolean; base?: string; compare?: string }) => {
     const tabId = diffTabId(path, opts?.base, opts?.compare)
+    const pinned = opts?.preview === false
     if (latestRef.current.activeEditorTabId === tabId) {
-      openFile(path)
+      if (pinned) {
+        const hit = activeGroupTabInstance(tabId)
+        if (hit) pinTab(hit.groupId, hit.instanceId)
+      }
+      setMobilePane('editor')
       return
     }
-    const pinned = opts?.preview === false
-    void revealParents(path).then(() => {
-      if (pinned) openDiffRouted(tabId)
-      else previewDiffRouted(tabId)
-      setSelectedFilePath(path)
-      setMobilePane('editor')
-    })
-  }, [openFile, openDiffRouted, previewDiffRouted, revealParents, setMobilePane])
+    if (pinned) openDiffRouted(tabId)
+    else previewDiffRouted(tabId)
+    setMobilePane('editor')
+  }, [activeGroupTabInstance, openDiffRouted, pinTab, previewDiffRouted, setMobilePane])
 
   const openDiffTabId = useCallback((tabId: string, opts?: { preview?: boolean }) => {
     if (opts?.preview === false) openDiffRouted(tabId)
@@ -594,7 +594,10 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     else updateLayout({ showSidebar: true, showExplorer: true })
     controllersRef.current.drainReveal()
   }, [setMobilePane, updateLayout])
-  const revealPathInFiles = useCallback((path: string) => { recordReveal('file', path) }, [recordReveal])
+  const revealPathInFiles = useCallback((path: string) => {
+    setSelectedFilePath(path)
+    recordReveal('file', path)
+  }, [recordReveal])
   const expandFolderInFiles = useCallback((path: string) => { recordReveal('folder', path) }, [recordReveal])
 
   const setFilesMode = useCallback((mode: 'tree' | 'search') => {

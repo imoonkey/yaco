@@ -155,6 +155,7 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         onCloseTab={onCloseTab}
         onSplit={onSplit}
         onMoveTab={commands.moveTab}
+        onPinTab={commands.pinTab}
         onMoveGroup={commands.moveGroup}
         onCloseGroup={onCloseGroup}
         canCloseGroup={canCloseGroup}

@@ -211,7 +211,7 @@ function renderTwoBars(g1: Partial<GroupTabBarProps>, g2: Partial<GroupTabBarPro
     groupId: 'g', region: 'center', tabs: [], activeTab: '', isActiveGroup: true,
     dirtyTabs: new Set(), conflictTabs: new Set(), terminalBindings: {}, pathsOpenElsewhere: new Set(),
     onSelectTab: vi.fn(), onCloseTab: vi.fn(), onSplit: vi.fn(),
-    onMoveTab: vi.fn(), onMoveGroup: vi.fn(),
+    onMoveTab: vi.fn(), onPinTab: vi.fn(), onMoveGroup: vi.fn(),
     onCloseGroup: vi.fn(), onActivateGroup: vi.fn(), onDiscardDirty: vi.fn(), ...over,
   })
   const p1 = base({ groupId: 'g1', ...g1 })

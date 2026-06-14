@@ -14,8 +14,7 @@ import {
 // The working-area group tab strip is a `.overflow-x-auto` row of
 // `[data-testid="group-tab"]` tabs (title = the tabId). A preview tab renders
 // italic; pinning clears the italic. Pinning gestures: edit the file (auto-pin),
-// or double-click the file's row in the explorer. (The group tab itself has no
-// double-click-to-pin — that VSCode affordance is not wired in GroupTabBar.)
+// double-click the tab header, or double-click the file's row in the explorer.
 
 function tabBar(page: Page) {
   return page.locator('.overflow-x-auto')
@@ -138,10 +137,19 @@ test.describe('Tab lifecycle characterization', () => {
     await openFileViaSearch(page, fileA)
     await expect(tabText(page, fileA)).toHaveCSS('font-style', 'italic')
 
-    // Pin via the explorer double-click (GroupTabBar has no tab double-click-to-pin).
+    // Pin via the explorer double-click.
     await pinViaExplorer(page, fileA)
 
     // No longer italic — pinned.
+    await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
+  })
+
+  test('double-clicking a preview tab header pins it', async ({ page }) => {
+    await openFileViaSearch(page, fileA)
+    await expect(tabText(page, fileA)).toHaveCSS('font-style', 'italic')
+
+    await tab(page, fileA).dblclick()
+
     await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
   })
 
@@ -163,18 +171,13 @@ test.describe('Tab lifecycle characterization', () => {
     await openPinnedFile(page, fileA)
     await expect(tabText(page, fileA)).not.toHaveCSS('font-style', 'italic')
 
-    // Find the change item in the sidebar Changes section (not in the tab bar).
-    // Change items use class `items-start`; tab bar items use `items-center`.
-    // Untracked-file visibility there is environment-dependent, so assert the
-    // diff-tab coexistence only when the change surfaces.
-    const changeItem = page.locator(`.items-start[title="${fileA}"]`).first()
-    if (await changeItem.isVisible({ timeout: 5000 }).catch(() => false)) {
-      await changeItem.click()
+    const changeItem = page.locator(`[data-testid="git-change-item"][data-change-path="${fileA}"]`).first()
+    await expect(changeItem).toBeVisible({ timeout: 10_000 })
+    await changeItem.click()
 
-      // Both the file tab and its diff tab are present in the strip (the diff tab's
-      // title is its `diff:` id; it renders the file's basename, not a "(diff)" suffix).
-      await expect(tab(page, fileA)).toBeVisible()
-      await expect(tab(page, `diff:${fileA}`)).toBeVisible()
-    }
+    // Both the file tab and its diff tab are present in the strip (the diff tab's
+    // title is its `diff:` id; it renders the file's basename, not a "(diff)" suffix).
+    await expect(tab(page, fileA)).toBeVisible()
+    await expect(tab(page, `diff:${fileA}`)).toBeVisible()
   })
 })

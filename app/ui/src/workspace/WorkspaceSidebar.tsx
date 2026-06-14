@@ -10,14 +10,26 @@ const STATUS_BG: Record<string, string> = {
   D: 'color-mix(in srgb, var(--sol-diff-del) 14%, transparent)',
 }
 
-export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: { change: GitChange; isActive: boolean; onActivate: () => void; onFolderClick?: (dir: string) => void }) {
+export function GitChangeItem({
+  change, isActive, onActivate, onOpenPinned, onPathClick,
+}: {
+  change: GitChange
+  isActive: boolean
+  onActivate: () => void
+  onOpenPinned?: () => void
+  onPathClick?: (path: string) => void
+}) {
   const isDir = change.path.endsWith('/')
   const cleanPath = isDir ? change.path.slice(0, -1) : change.path
   const name = cleanPath.split('/').pop() || cleanPath
   const dir = cleanPath.includes('/') ? cleanPath.slice(0, cleanPath.lastIndexOf('/')) : ''
+  const pathLabel = dir || (!isDir ? '.' : '')
   const statusColor = GIT_COLORS[change.status] || 'var(--sol-text)'
   return (
     <div onClick={onActivate}
+      onDoubleClick={onOpenPinned ? (e) => { e.stopPropagation(); onOpenPinned() } : undefined}
+      data-testid="git-change-item"
+      data-change-path={cleanPath}
       className="flex items-center gap-1.5 h-[24px] rounded cursor-pointer text-ui-md"
       title={cleanPath}
       style={{
@@ -34,11 +46,13 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
         {isDir ? <FolderIcon /> : <FileTypeIcon name={name} />}
       </span>
       <span className="truncate" style={{ color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
-      {dir && <span
+      {pathLabel && <span
         className="truncate text-ui-xs hover:underline shrink min-w-0"
         style={{ color: 'var(--sol-text-faint)' }}
-        onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
-      >{dir}</span>}
+        title={`Reveal ${cleanPath}`}
+        onClick={onPathClick ? (e) => { e.stopPropagation(); onPathClick(cleanPath) } : undefined}
+        onDoubleClick={onPathClick ? (e) => e.stopPropagation() : undefined}
+      >{pathLabel}</span>}
       <span
         className="ml-auto shrink-0 rounded text-ui-xs font-bold leading-none"
         style={{
