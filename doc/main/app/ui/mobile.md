@@ -76,7 +76,7 @@ On desktop, right-click opens context menus (file explorer, project list, sessio
 
 - 350ms hold threshold, 10px movement tolerance
 - `touchend` calls `preventDefault()` to suppress the click that would otherwise follow
-- Consumers spread `{...menu.bind(onOpen)}` onto target elements — handles both `onContextMenu` and touch events. Current consumers include file tree rows, project/session rows, group tabs and tab-bar empty areas, dock grips, and terminal key-bar surfaces.
+- Consumers spread `{...menu.bind(onOpen)}` onto target elements — handles both `onContextMenu` and touch events. Current consumers include file tree rows, project/session rows, desktop group tabs and tab-bar empty areas, mobile editor tab titles, dock grips, and terminal key-bar surfaces.
 - `bind()` and `Menu` attach `data-yaco-native-context-menu="disabled"`; global CSS sets `-webkit-touch-callout: none` and disables selection for those app-owned menu targets so iOS does not show its native long-press menu. Text inputs under such targets opt back into normal selection.
 
 -> See: `app/ui/src/components/Menu.tsx`, `app/ui/src/components/useContextMenu.ts`, `app/ui/src/components/nativeContextMenu.ts`

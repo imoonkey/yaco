@@ -18,7 +18,7 @@
 // write path (a `MobilePane`); the provider mirrors that onto `activeDock`. The
 // `MobileDock` ⇄ `MobilePane` conversion is the only place the two vocabularies
 // meet (`mobileDockToPane` for the switch UI, the provider's mirror for writes).
-import { useMemo, type ReactNode, type RefObject } from 'react'
+import { useCallback, useMemo, useState, type ReactNode, type RefObject } from 'react'
 import { Sun, Moon, FolderOpen, FileCode, ListTodo, SquareTerminal, X, AlertTriangle } from 'lucide-react'
 import { PaneSwitch } from '../components/PaneSwitch'
 import { LandscapeNav } from '../components/LandscapeNav'
@@ -31,7 +31,9 @@ import { tabName, computeDisambigSuffixes } from './tabLabels'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
 import { useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection } from './context'
-import { mobileDockToPane, isDiffTab, type MobilePane, type EditorGroupTab } from '../hooks/workspaceTypes'
+import { mobileDockToPane, isDiffTab, isFileTab, type MobilePane, type EditorGroupTab } from '../hooks/workspaceTypes'
+import { Menu, MenuItem } from '../components/Menu'
+import { useContextMenu } from '../components/useContextMenu'
 
 export type MobilePanelProjectionProps = {
   rootRef: RefObject<HTMLDivElement | null>
@@ -114,6 +116,15 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
       conflictTabs={editor.conflictTabs}
       onSelect={(tabId, instanceId) => commands.selectTab(tabId, instanceId)}
       onClose={(instanceId) => commands.closePane(instanceId)}
+      onSave={(tabId) => {
+        const path = tabIdToPath(tabId)
+        const file = editor.files[path]
+        if (file) void commands.saveFile(path, file.draft ?? file.serverContent ?? '')
+      }}
+      onCloseWithoutSaving={(tab) => {
+        commands.acceptDisk(tabIdToPath(tab.tabId))
+        commands.closePane(tab.instanceId)
+      }}
     />
   )
 
@@ -257,15 +268,23 @@ function ActiveDockPanes({ dock, onBrowseFocus, editorInstanceId, terminalInstan
 // regression). Editor tabs only — terminals have their own mobile pane. On touch a
 // clean tab shows its close ×; a dirty tab shows only its dot (no destructive close
 // without a confirm), mirroring the desktop strip's touch behaviour.
-function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onSelect, onClose }: {
+function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onSelect, onClose, onSave, onCloseWithoutSaving }: {
   tabs: EditorGroupTab[]
   activeInstanceId: string
   dirtyTabs: ReadonlySet<string>
   conflictTabs: ReadonlySet<string>
   onSelect: (tabId: string, instanceId: string) => void
   onClose: (instanceId: string) => void
+  onSave: (tabId: string) => void
+  onCloseWithoutSaving: (tab: EditorGroupTab) => void
 }) {
   const disambig = useMemo(() => computeDisambigSuffixes(tabs.map((t) => t.tabId)), [tabs])
+  const menu = useContextMenu()
+  const [contextTab, setContextTab] = useState<EditorGroupTab | null>(null)
+  const closeContextTab = useCallback((tab: EditorGroupTab) => {
+    onClose(tab.instanceId)
+    menu.close()
+  }, [menu, onClose])
   if (tabs.length === 0) return null
   return (
     <div
@@ -287,6 +306,7 @@ function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onS
             data-tab-instance={tab.instanceId}
             data-tab-active={isActive || undefined}
             onClick={() => onSelect(tab.tabId, tab.instanceId)}
+            {...menu.bind(() => setContextTab(tab))}
             title={tab.tabId}
             className="flex items-center gap-1 px-2 h-full cursor-pointer text-ui-sm shrink-0"
             style={{
@@ -315,6 +335,22 @@ function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onS
           </div>
         )
       })}
+      {menu.position && contextTab && (() => {
+        const path = tabIdToPath(contextTab.tabId)
+        const dirty = dirtyTabs.has(path)
+        return (
+          <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
+            {dirty && isFileTab(contextTab.tabId) && (
+              <MenuItem label="Save" onClick={() => { onSave(contextTab.tabId); menu.close() }} />
+            )}
+            {dirty ? (
+              <MenuItem label="Close Without Saving" danger onClick={() => { onCloseWithoutSaving(contextTab); menu.close() }} />
+            ) : (
+              <MenuItem label="Close" onClick={() => closeContextTab(contextTab)} />
+            )}
+          </Menu>
+        )
+      })()}
     </div>
   )
 }

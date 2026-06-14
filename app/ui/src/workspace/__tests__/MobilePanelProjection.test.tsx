@@ -7,7 +7,7 @@
 // dock's owner would render the wrong markers and fail here. Pairs with the pure
 // `mobileDocks.test.ts` (real metadata → membership/order); together they pin the
 // full chain metadata → helper → render.
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, createEvent, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RefObject } from 'react'
 
@@ -48,7 +48,7 @@ beforeEach(() => {
   mobileDockPanelsMock.mockImplementation((dock: MobileDock) => REMAP[dock])
 })
 
-function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?: unknown } = {}): void {
+function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?: unknown; commands?: Partial<WorkspaceCommands> } = {}): void {
   const env = {
     viewport: { isMobile: true, isLandscape: false, isTouch: true },
     notificationBell: null,
@@ -62,11 +62,16 @@ function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?:
     actions: { setMobilePane: vi.fn() },
     collapsePanel: vi.fn(),
     setFocusTarget: vi.fn(),
+    selectTab: vi.fn(),
+    closePane: vi.fn(),
+    saveFile: vi.fn(),
+    acceptDisk: vi.fn(),
+    ...opts.commands,
   } as unknown as WorkspaceCommands
   const selection = (opts.selection ?? {
     activeEditorId: 'editor',
     activeTerminalId: 'terminal',
-    editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+    editor: { files: {}, dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
   }) as unknown as WorkspaceSelection
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   render(
@@ -160,5 +165,66 @@ describe('MobilePanelProjection active instance routing', () => {
     const editor = document.querySelector('[data-panel-host="editor"]')
     expect(editor).not.toBeNull()
     expect(editor?.getAttribute('data-panel-instance')).toBe(SIDEBAR_EDITOR)
+  })
+
+  it('uses an app context menu for mobile editor tab titles and suppresses iOS callouts', () => {
+    const saveFile = vi.fn()
+    const acceptDisk = vi.fn()
+    const closePane = vi.fn()
+    const EDITOR = 'editor:mobile'
+    const desktop = {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        {
+          grow: true,
+          node: {
+            kind: 'tabs',
+            id: 'group:1',
+            tabs: [{ instanceId: EDITOR, kind: 'editor', tabId: 'src/mobile.ts' }],
+            activeTab: EDITOR,
+          },
+        },
+      ],
+    }
+    const panelLayout = { ...defaultWorkspacePanelLayout(), desktop, mobile: { activeDock: 'editor' } }
+    mobileDockPanelsMock.mockImplementation((dock: MobileDock) => (dock === 'editor' ? ['editor'] : REMAP[dock]))
+    renderDock('editor', {
+      panelLayout,
+      commands: { saveFile, acceptDisk, closePane } as Partial<WorkspaceCommands>,
+      selection: {
+        activeGroupId: 'group:1',
+        activeEditorId: EDITOR,
+        activeTerminalId: null,
+        activeEditorTab: { instanceId: EDITOR, kind: 'editor', tabId: 'src/mobile.ts' },
+        editor: {
+          files: {
+            'src/mobile.ts': {
+              serverContent: 'server',
+              draft: 'draft',
+              baseRevision: 1,
+              viewportLine: 1,
+              status: 'dirty',
+              editedAt: 1,
+            },
+          },
+          dirtyTabs: new Set<string>(['src/mobile.ts']),
+          conflictTabs: new Set<string>(),
+        },
+      },
+    })
+
+    const tab = screen.getByTestId('mobile-editor-tab')
+    expect(tab.getAttribute('data-yaco-native-context-menu')).toBe('disabled')
+    const event = createEvent.contextMenu(tab, { clientX: 20, clientY: 30 })
+    fireEvent(tab, event)
+    expect(event.defaultPrevented).toBe(true)
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Save' }))
+    expect(saveFile).toHaveBeenCalledWith('src/mobile.ts', 'draft')
+
+    fireEvent.contextMenu(tab)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close Without Saving' }))
+    expect(acceptDisk).toHaveBeenCalledWith('src/mobile.ts')
+    expect(closePane).toHaveBeenCalledWith(EDITOR)
   })
 })
