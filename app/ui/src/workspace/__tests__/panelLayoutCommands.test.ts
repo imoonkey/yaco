@@ -299,6 +299,62 @@ describe('setDockVisible / setActivityVisible', () => {
   })
 })
 
+// --- Proportional center rescaling on sidebar show/hide ---------------------
+//
+// A sidebar toggle widens/narrows the center region; with a live root width the
+// freed/consumed space is shared proportionally across the center's interior
+// panes (matching a divider drag), not absorbed by one neighbour. Without the
+// width the bases are left untouched (legacy behavior).
+
+describe('sidebar toggle — proportional center rescale', () => {
+  // root row: dock(200) · center[group:1 grow | group:2 = 400] · sessions(280).
+  const splitCenter = () => normalizeLayout({
+    desktop: {
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { basis: 200, node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        {
+          grow: true,
+          node: {
+            kind: 'split', id: 'center', axis: 'row', children: [
+              { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: [], activeTab: '' } },
+              { basis: 400, node: { kind: 'tabs', id: 'group:2', tabs: [], activeTab: '' } },
+            ],
+          },
+        },
+        { basis: 280, node: { kind: 'leaf', id: 'sessions', panel: 'sessions' } },
+      ],
+    },
+  })
+
+  // rootBasis 1000: center is 514px with the dock shown (1000 - 6px handles -
+  // 480px sidebars), 717px hidden (1000 - 3px - 280px). The center's own 3px
+  // handle gives interior ratio 714/511, scaling group:2 from 400 → ~559.
+  it('grows the center interior proportionally when a sidebar hides', () => {
+    const next = setDockVisible(splitCenter(), false, 1000)
+    expect(findSplit(next.desktop, 'center').children[1].basis).toBeCloseTo(558.9, 0)
+  })
+
+  it('shrinks the center interior proportionally when a sidebar shows', () => {
+    const hidden = setDockVisible(splitCenter(), false) // dock hidden, group:2 still 400
+    const shown = setDockVisible(hidden, true, 1000)
+    // Reverse of the hide ratio (511/714): group:2 returns from 400 → ~286.
+    expect(findSplit(shown.desktop, 'center').children[1].basis).toBeCloseTo(286.3, 0)
+  })
+
+  it('leaves the interior bases untouched when no root width is supplied', () => {
+    const next = setDockVisible(splitCenter(), false)
+    expect(findSplit(next.desktop, 'center').children[1].basis).toBe(400)
+  })
+
+  it('scales for the right sidebar too (toggleActivity with a live width)', () => {
+    const next = toggleActivity(splitCenter(), 1000)
+    expect(asSplit(next.desktop).children[2].hidden).toBe(true)
+    // Hiding sessions (280px) widens the center 514 → 797; interior ratio
+    // 794/511 scales group:2 from 400 → ~621.
+    expect(findSplit(next.desktop, 'center').children[1].basis).toBeCloseTo(621.5, 0)
+  })
+})
+
 // --- setActiveDock (mobile projection's active pane) ------------------------
 
 describe('setActiveDock', () => {

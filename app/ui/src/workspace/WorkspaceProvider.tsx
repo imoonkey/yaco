@@ -370,12 +370,23 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // has to know about the tree. useLayoutEffect applies the sync before paint, so
   // the tree never shows a stale frame, and the setters return the same layout
   // when already in the desired state, so an unchanged flag commits nothing.
+  // Measure the live root-row width (the workspace area, invariant to sidebar
+  // visibility) so the visibility mirror can scale the center interior
+  // proportionally across a show/hide — the toggle analogue of the drag path's
+  // `containerBasis`. Read from the committed DOM; 0 when unmounted → no scaling.
+  const measureRootWidth = useCallback((): number => {
+    if (typeof document === 'undefined') return 0
+    const id = latestRef.current.panelLayout.desktop.id
+    const escaped = window.CSS?.escape ? window.CSS.escape(id) : id
+    const el = document.querySelector(`[data-node-id="${escaped}"]`)
+    return el instanceof HTMLElement ? el.clientWidth : 0
+  }, [])
   useLayoutEffect(() => {
-    setPanelLayout((prev) => modelSetDockVisible(prev, layout.showSidebar))
-  }, [layout.showSidebar, setPanelLayout])
+    setPanelLayout((prev) => modelSetDockVisible(prev, layout.showSidebar, measureRootWidth()))
+  }, [layout.showSidebar, setPanelLayout, measureRootWidth])
   useLayoutEffect(() => {
-    setPanelLayout((prev) => modelSetActivityVisible(prev, layout.showRightPanel))
-  }, [layout.showRightPanel, setPanelLayout])
+    setPanelLayout((prev) => modelSetActivityVisible(prev, layout.showRightPanel, measureRootWidth()))
+  }, [layout.showRightPanel, setPanelLayout, measureRootWidth])
 
   // The reverse reconcile: sidebar/edge DnD mutates the TREE directly (an edge
   // reveal adds a sidebar; dragging out the last dock empties one), so the flat

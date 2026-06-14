@@ -34,7 +34,7 @@ import { getPanelMeta } from './panelMeta'
 import type { PanelId, SplitSide, PanelPlacement } from './context'
 import type { MobileDock } from './panelMeta'
 import type {
-  LayoutNode, LeafNode, SplitChild, TabsNode, GroupTab, EditorGroupTab, TerminalGroupTab, EditorView,
+  LayoutNode, LeafNode, SplitChild, SplitNode, TabsNode, GroupTab, EditorGroupTab, TerminalGroupTab, EditorView,
   SplitAxis, PanelState, WorkspacePanelLayout, PreviewMode,
 } from '../hooks/workspaceTypes'
 import { parseDiffTab, isFileTab } from '../hooks/workspaceTypes'
@@ -889,25 +889,47 @@ function containsGroup(node: LayoutNode): boolean {
   return false
 }
 
+/** Flip the sidebar `target` child's hidden flag, and — when a live root width is
+ *  supplied — scale the center region's interior proportionally across the change,
+ *  so the freed/consumed width is SHARED across the center's panes (matching a
+ *  divider drag) instead of being absorbed by a single neighbour. The center is the
+ *  root row's grow child, so `actualChildSizes` reads its rendered width before and
+ *  after the flip from the same stable root width; `scaleNodeAlongAxis` then ratios
+ *  every fixed pane inside it. Without `rootBasis` the bases are left untouched. */
+function withSidebarHidden(
+  root: SplitNode, center: number, target: number, hidden: boolean, rootBasis?: number,
+): SplitChild[] {
+  const flipped = root.children.map((c, i) => (i === target ? withChildHidden(c, hidden) : c))
+  if (typeof rootBasis !== 'number' || !Number.isFinite(rootBasis) || rootBasis <= 0) return flipped
+  const centerId = flipped[center].node.id
+  const fromW = actualChildSizes(root.children, 'row', rootBasis).get(centerId)
+  const toW = actualChildSizes(flipped, 'row', rootBasis).get(centerId)
+  if (fromW === undefined || toW === undefined) return flipped
+  return flipped.map((c, i) => (i === center ? { ...c, node: scaleNodeAlongAxis(c.node, 'row', fromW, toW) } : c))
+}
+
 /** Flip `hidden` on the left sidebar (the root child before the center) or the right
  *  sidebar (the root child after it). Anchoring on the center keeps the toggle
- *  targeting the real column after panels move. */
-function toggleRootEdge(layout: WorkspacePanelLayout, side: 'dock' | 'activity'): WorkspacePanelLayout {
+ *  targeting the real column after panels move. `rootBasis` (live root width) opts
+ *  the center interior into proportional rescaling — see `withSidebarHidden`. */
+function toggleRootEdge(
+  layout: WorkspacePanelLayout, side: 'dock' | 'activity', rootBasis?: number,
+): WorkspacePanelLayout {
   const root = layout.desktop
   if (root.kind !== 'split') return layout
   const center = centerChildIndex(root.children)
   if (center === -1) return layout
   const target = side === 'dock' ? center - 1 : center + 1
   if (target < 0 || target >= root.children.length) return layout
-  const children = root.children.map((c, i) => (i === target ? { ...c, hidden: !c.hidden } : c))
+  const children = withSidebarHidden(root, center, target, root.children[target].hidden !== true, rootBasis)
   return withDesktop(layout, { ...root, children })
 }
 
-export const toggleDock = (layout: WorkspacePanelLayout): WorkspacePanelLayout =>
-  toggleRootEdge(layout, 'dock')
+export const toggleDock = (layout: WorkspacePanelLayout, rootBasis?: number): WorkspacePanelLayout =>
+  toggleRootEdge(layout, 'dock', rootBasis)
 
-export const toggleActivity = (layout: WorkspacePanelLayout): WorkspacePanelLayout =>
-  toggleRootEdge(layout, 'activity')
+export const toggleActivity = (layout: WorkspacePanelLayout, rootBasis?: number): WorkspacePanelLayout =>
+  toggleRootEdge(layout, 'activity', rootBasis)
 
 /** Whether each sidebar is currently VISIBLE — present in the root row AND not
  *  hidden. The DnD-aware inverse of the flat `showSidebar`/`showRightPanel` mirror:
@@ -930,9 +952,11 @@ function withChildHidden(child: SplitChild, hidden: boolean): SplitChild {
 }
 
 /** Drive the dock / activity column to an EXPLICIT visibility. Returns the SAME
- *  layout when already in the desired state or absent (the provider bails). */
+ *  layout when already in the desired state or absent (the provider bails).
+ *  `rootBasis` (live root width) opts the center interior into proportional
+ *  rescaling across the change — see `withSidebarHidden`. */
 function setRootEdgeVisible(
-  layout: WorkspacePanelLayout, side: 'dock' | 'activity', visible: boolean,
+  layout: WorkspacePanelLayout, side: 'dock' | 'activity', visible: boolean, rootBasis?: number,
 ): WorkspacePanelLayout {
   const root = layout.desktop
   if (root.kind !== 'split') return layout
@@ -941,15 +965,15 @@ function setRootEdgeVisible(
   const target = side === 'dock' ? center - 1 : center + 1
   if (target < 0 || target >= root.children.length) return layout
   if ((root.children[target].hidden === true) === !visible) return layout
-  const children = root.children.map((c, i) => (i === target ? withChildHidden(c, !visible) : c))
+  const children = withSidebarHidden(root, center, target, !visible, rootBasis)
   return withDesktop(layout, { ...root, children })
 }
 
-export const setDockVisible = (layout: WorkspacePanelLayout, visible: boolean): WorkspacePanelLayout =>
-  setRootEdgeVisible(layout, 'dock', visible)
+export const setDockVisible = (layout: WorkspacePanelLayout, visible: boolean, rootBasis?: number): WorkspacePanelLayout =>
+  setRootEdgeVisible(layout, 'dock', visible, rootBasis)
 
-export const setActivityVisible = (layout: WorkspacePanelLayout, visible: boolean): WorkspacePanelLayout =>
-  setRootEdgeVisible(layout, 'activity', visible)
+export const setActivityVisible = (layout: WorkspacePanelLayout, visible: boolean, rootBasis?: number): WorkspacePanelLayout =>
+  setRootEdgeVisible(layout, 'activity', visible, rootBasis)
 
 /** Set the active mobile dock. Returns the SAME layout when already on it. */
 export function setActiveDock(layout: WorkspacePanelLayout, dock: MobileDock): WorkspacePanelLayout {

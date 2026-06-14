@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-06-14: Proportional center rescale on sidebar toggle (Cmd+B / Cmd+Shift+B)
+
+**What changed:**
+- `panelLayoutModel.ts`: `setDockVisible`/`setActivityVisible` and
+  `toggleDock`/`toggleActivity` gained an optional `rootBasis` (live root-row
+  width). A shared `withSidebarHidden` helper flips the sidebar's `hidden` and,
+  when `rootBasis` is supplied, scales the center region's interior from its old
+  rendered width to its new one — both read from `actualChildSizes`, then ratioed
+  by the existing `scaleNodeAlongAxis`. Without `rootBasis` the bases are left
+  untouched (legacy behavior preserved).
+- `WorkspaceProvider.tsx`: the two forward visibility mirrors now pass
+  `measureRootWidth()` (the committed root split's `clientWidth`) into the model
+  setters, so every visibility path (Cmd+B/Cmd+Shift+B toggle and the programmatic
+  reveals) rescales the center proportionally.
+- Tests: `panelLayoutCommands.test.ts` covers grow-on-hide, shrink-on-show, the
+  no-`rootBasis` fallback, and the right-sidebar path;
+  `panel-tree-desktop.spec.ts` adds an e2e asserting both panes of a split working
+  area widen proportionally on Cmd+B (not just the grow absorber).
+
+**Why:**
+- Dragging a divider inside the working area already redistributes width
+  proportionally (`scaleNodeAlongAxis` via `resizeSplitChild`'s `containerBasis`),
+  but toggling a sidebar let the center's grow pane absorb all the freed/consumed
+  width while every fixed-basis pane kept its absolute size. The toggle now shares
+  the delta the same way a drag does.
+
+
 ## 2026-06-14: Fix workspace white-screen — sidebar visibility-mirror update loop
 
 **What changed:**

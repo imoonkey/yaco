@@ -7,6 +7,7 @@ import {
   waitForAppReady,
   getWorkspaceState,
   openFileViaSearch,
+  group,
   sectionHeader,
   expectApproxSize,
   runTag,
@@ -144,6 +145,38 @@ test.describe('Desktop tree renderer — dock / activity toggles', () => {
 
     await page.keyboard.press('Meta+Shift+b')
     await expect(activity(page)).toBeVisible()
+  })
+
+  // The freed sidebar width is shared PROPORTIONALLY across the split working area
+  // (matching a divider drag), not absorbed entirely by the grow pane. Pre-fix the
+  // fixed-basis group kept its absolute width and only the absorber widened.
+  test('Cmd+B widens a split working area proportionally, not just the absorber', async ({ page, request }) => {
+    await treeWorkspace(page, request)
+    await openFileViaSearch(page, 'README')
+
+    // Split the working area into two side-by-side groups (group:1 grows, group:2
+    // is seeded at a fixed basis ≈ half the source).
+    const g1 = group(page, 'group:1')
+    const g2 = group(page, 'group:2')
+    await g1.locator('.cm-content').first().click()
+    await page.keyboard.press('Meta+\\')
+    await expect(g2).toBeVisible({ timeout: 10_000 })
+
+    const w1 = await widthOf(g1)
+    const w2 = await widthOf(g2)
+
+    // Hide the dock (Cmd+B): the center gains ≈ 223px (dock 220 + handle 3).
+    await page.keyboard.press('Meta+b')
+    await expect(dock(page)).toHaveCount(0)
+
+    const w1b = await widthOf(g1)
+    const w2b = await widthOf(g2)
+
+    // BOTH panes grow — the fixed-basis group:2 is not pinned at its old width.
+    expect(w2b).toBeGreaterThan(w2 + 50)
+    expect(w1b).toBeGreaterThan(w1 + 50)
+    // The gain is shared in proportion: both panes scale by ≈ the same ratio.
+    expect(Math.abs(w1b / w1 - w2b / w2)).toBeLessThan(0.08)
   })
 
   test('a reveal (Cmd+Shift+F) and subsequent Cmd+B keep flat + tree visibility in lockstep', async ({ page, request }) => {
