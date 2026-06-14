@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-14: Hide mobile dock grips
+
+**What changed:**
+- Hid framed-panel dock grips in the mobile projection so Browse section headers no longer imply touch drag reordering.
+- Updated the PanelFrame regression test and mobile context-menu docs to reflect that dock grips remain desktop-only.
+
+**Why:**
+- Mobile Browse section order is fixed by mobile dock metadata, while the old shared header grip only exposed desktop DnD/reset behavior and was misleading on touch layouts.
+
+**Key files:** `app/ui/src/workspace/PanelFrame.tsx`, `app/ui/src/workspace/__tests__/PanelHost.test.tsx`, `doc/main/app/ui/mobile.md`
+**Verification:** `cd app/ui && npm exec vitest -- src/workspace/__tests__/PanelHost.test.tsx --run`; `cd app/ui && npm exec vitest -- src --run`; `cd app/ui && npm run build`; `cd app/ui && npm run lint` (0 errors / existing 16 hook warnings); code secret scan on touched TSX files; `git diff --check`.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-14: Mobile terminal highlight and editor tab row
 
 **What changed:**

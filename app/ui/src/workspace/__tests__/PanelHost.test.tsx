@@ -178,7 +178,7 @@ describe('PanelFrame — chrome + header slots', () => {
     expect(resetLayout).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the grip context menu available under a mobile env for long-press', () => {
+  it('hides the dock grip under a mobile env', () => {
     const resetLayout = vi.fn()
     const env = { ...fakeEnv, viewport: { isMobile: true } } as unknown as WorkspaceEnv
     const commands = { resetLayout } as unknown as WorkspaceCommands
@@ -192,11 +192,8 @@ describe('PanelFrame — chrome + header slots', () => {
       </WorkspaceEnvContext.Provider>,
     )
 
-    const grip = screen.getByRole('button', { name: 'Move Files panel' })
-    expect(grip.getAttribute('data-yaco-native-context-menu')).toBe('disabled')
-    fireEvent.contextMenu(grip)
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset layout' }))
-    expect(resetLayout).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Move Files panel' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Reset layout' })).toBeNull()
   })
 
   it('unframed renders the body bare without a header', () => {

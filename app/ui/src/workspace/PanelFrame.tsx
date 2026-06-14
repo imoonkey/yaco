@@ -19,7 +19,7 @@ import type { PanelHeaderHook } from './panelRegistry'
 import type { PanelChrome } from './panelMeta'
 import type { PanelChromeSlot } from './panelChrome'
 import type { PanelId } from './context'
-import { WorkspaceCommandsContext } from './context'
+import { WorkspaceCommandsContext, WorkspaceEnvContext } from './context'
 import { SectionHeader } from './SectionHeader'
 import { usePanelInstance } from './panelInstance'
 import { useDragControls } from './WorkspaceDragContext'
@@ -75,12 +75,13 @@ function FramedHeader({ title, useHeader, collapsed, onToggle, panelId }: {
   const { title: dynamicTitle, actions, badge, stats } = useHeader()
   const instance = usePanelInstance()
   const drag = useDragControls()
+  const isMobile = useContext(WorkspaceEnvContext)?.viewport?.isMobile ?? false
   const commands = useContext(WorkspaceCommandsContext)
   const resetMenu = useContextMenu()
   // The dock grab handle is the rightmost header affordance and the drag SOURCE for
   // framed docks. Right-click/long-press on the same grip exposes the one recovery
   // action that DnD does not replace: Reset layout.
-  const grab = panelId ? (
+  const grab = panelId && !isMobile ? (
     <>
       <button type="button" draggable={!collapsed}
         onDragStart={(e) => drag.start(e, { kind: 'dock', instanceId: instance?.instanceId ?? panelId, panel: panelId })}
