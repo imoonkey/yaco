@@ -478,8 +478,8 @@ test.describe('Desktop tree renderer — terminal lifecycle', () => {
     await expect(mainNode(page).locator('.cm-content')).toBeVisible({ timeout: 15_000 })
     const sessionRow = activity(page).getByText(sessionName, { exact: true })
     await expect(sessionRow).toBeVisible({ timeout: 15_000 })
-    await sessionRow.hover()
-    await page.getByRole('button', { name: `Open ${sessionName} beside` }).click()
+    await sessionRow.click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Open beside' }).click()
     await expect(xterm(page)).toBeVisible({ timeout: 15_000 })
 
     // Stamp the live xterm node so a remount (new node) is observable.

@@ -229,11 +229,12 @@ test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / op
   test('flow 5 (contrast): Open beside binds each session to its own distinct tab', async ({ page, request }) => {
     const { sessions: [s1, s2] } = await openProjectWithSessions(page, request, 2)
 
-    // Open beside via the per-row hover button — it splits to a fresh group and
+    // Open beside from the row context menu — it splits to a fresh group and
     // binds the NEW terminal directly (the reported-working path).
     const openBeside = async (name: string) => {
-      await sessionRow(page, name).hover()
-      await page.getByRole('button', { name: `Open ${name} beside` }).click()
+      await sessionRow(page, name).click({ button: 'right' })
+      await page.getByRole('menuitem', { name: 'Open beside' }).click()
+      await expect(page.getByRole('menu')).toHaveCount(0)
     }
 
     await openBeside(s1)

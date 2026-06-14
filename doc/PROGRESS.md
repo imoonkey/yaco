@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-14: Unified compact context menus for group tabs and dock grips
+
+**What changed:**
+- Removed the framed-panel kebab menu. The rightmost dock grip remains the DnD handle and exposes only `Reset layout` from its right-click / long-press context menu.
+- Restored tab-title context menus: file actions (`Save`, `Close`, `Close Without Saving`) render above a divider, then group Split actions and the kind-affinity toggle.
+- Unified context-menu styling through the shared `Menu` component: compact spacing with readable `text-ui-md`, and explicit `normal-case font-normal tracking-normal` so menus do not inherit section-header uppercase/bold styles.
+- Moved Sessions `Open beside` into the session-row context menu and removed the row hover button; the kill affordance is icon-only.
+- Added regression coverage for tab context menus, grip reset menus, iOS native-menu suppression markers, and updated e2e flows to use grip/session context menus.
+
+**Why:**
+- Dock movement is now covered by DnD, so the header menu only needed a reset recovery path. Tab right-click still needed file-specific commands, and iOS long-press should trigger app menus without surfacing the system callout.
+
+**Key files:** `app/ui/src/components/Menu.tsx`, `app/ui/src/workspace/{GroupTabBar,PanelFrame,PanelGroup,WorkspaceSessionList}.tsx`, removed `app/ui/src/workspace/PanelMenu.tsx`, tests under `app/ui/src/workspace/**/__tests__` and `app/ui/tests/e2e/*`, docs `doc/main/app/{frontend/components,ui/mobile,ui/workspace/{overview,editor-and-preview,sessions-and-terminal,user-flows}}.md`, `plan/all/20260612_panel-dnd/implementation_summary.md`
+**Verification:** `cd app/ui && npx vitest run src`; `cd app/ui && npm run build`; `cd app/ui && npm run lint` (existing hook dependency warnings only); focused Playwright suites for flexible ops, editor split, terminal split, and multi-instance terminals; `git diff --check`.
+**Commit:** this commit
+**Next:** Optional real-device iOS smoke test for tab/grip/session long-press menus.
+**Blockers:** None.
+
 ## 2026-06-14: Panel DnD sizing, edge routing, and mobile active-instance fixes
 
 **What changed:**

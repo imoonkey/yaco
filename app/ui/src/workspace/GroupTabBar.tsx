@@ -15,7 +15,7 @@
 // are read from context here, and `useContextMenu` is instantiated internally.
 import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { X, AlertTriangle, SplitSquareHorizontal } from 'lucide-react'
-import { isDiffTab } from '../hooks/useWorkspaceState'
+import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
 import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
 import { tabIdToPath } from './panelLayoutModel'
@@ -74,6 +74,8 @@ export type GroupTabBarProps = {
   onActivateGroup: () => void
   /** Discard a file's draft (→ clean) on an explicit dirty-close of its last view. */
   onDiscardDirty: (path: string) => void
+  /** Save an editor file tab by tab id. No-op for diff/terminal tabs. */
+  onSaveTab?: (tabId: string) => void
   /** The active editor tab's view prefs + setter — renders the right-aligned editor
    *  actions (suggestions sparkle + preview-mode toggle) when an editor tab is active.
    *  Omitted in isolation tests (no editor actions render then). */
@@ -111,7 +113,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   const {
     groupId, region, tabs, activeTab, isActiveGroup, dirtyTabs, conflictTabs, terminalBindings,
     pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onMoveTab, onMoveGroup,
-    onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, editorPrefs, onSetEditorPrefs,
+    onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, onSaveTab, editorPrefs, onSetEditorPrefs,
   } = props
 
   const menu = useContextMenu()
@@ -142,6 +144,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   const toggleSeparateKinds = useContext(WorkspaceCommandsContext)?.toggleSeparateKinds
 
   const [pendingClose, setPendingClose] = useState<{ instanceId: string; tabId: string } | null>(null)
+  const [contextTab, setContextTab] = useState<GroupTab | null>(null)
 
   // Disambiguate same-basename files by their shortest unique parent suffix.
   const disambig = useMemo(
@@ -169,6 +172,11 @@ export function GroupTabBar(props: GroupTabBarProps) {
     }
     onCloseTab(tab.instanceId)
   }, [dirtyTabs, pathsOpenElsewhere, onCloseTab])
+
+  const closeWithoutSaving = useCallback((tab: GroupTab) => {
+    if (tab.kind === 'editor') onDiscardDirty(tabIdToPath(tab.tabId))
+    onCloseTab(tab.instanceId)
+  }, [onCloseTab, onDiscardDirty])
 
   // The tab strip is ONE drop target (not per-tab): the insertion index comes from the
   // pointer vs the live tab midpoints (`tabInsertIndex`), so a marker can show exactly
@@ -279,6 +287,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
                 onDragStart={(e) => dragControls.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
                 onDragEnd={dragControls.clear}
                 onClick={() => onSelectTab(tab.instanceId)}
+                {...(showMenu ? menu.bind(() => setContextTab(tab)) : {})}
                 title={isEditor ? tab.tabId : label}
                 className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
                 style={{
@@ -326,7 +335,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
           draggable={!isTouch}
           onDragStart={(e) => dragControls.start(e, { kind: 'group', groupId })}
           onDragEnd={dragControls.clear}
-          onClick={onActivateGroup} {...(showMenu ? menu.bind() : {})} data-testid="group-empty-area">
+          onClick={onActivateGroup} {...(showMenu ? menu.bind(() => setContextTab(null)) : {})} data-testid="group-empty-area">
           {tabs.length === 0 && <span className="px-3 text-ui-sm shrink-0" style={{ color: 'var(--sol-text)' }}>No files open</span>}
         </div>
       </div>
@@ -343,7 +352,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
           />
         )}
         {canSplit && (
-          <button type="button" onClick={menu.openFromTrigger}
+          <button type="button" onClick={(e) => { setContextTab(null); menu.openFromTrigger(e) }}
             data-testid="split-group" title="Split editor group" aria-label="Split editor group" aria-haspopup="menu"
             style={SPLIT_BTN_STYLE}>
             <SplitSquareHorizontal size={13} aria-hidden="true" />
@@ -363,6 +372,15 @@ export function GroupTabBar(props: GroupTabBarProps) {
 
       {showMenu && menu.position && (
         <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
+          {contextTab && contextTab.kind === 'editor' && isFileTab(contextTab.tabId) && dirtyTabs.has(tabIdToPath(contextTab.tabId)) && onSaveTab && (
+            <MenuItem label="Save" onClick={() => { onSaveTab(contextTab.tabId); menu.close() }} />
+          )}
+          {contextTab && (
+            contextTab.kind === 'editor' && dirtyTabs.has(tabIdToPath(contextTab.tabId))
+              ? <MenuItem label="Close Without Saving" danger onClick={() => { closeWithoutSaving(contextTab); menu.close() }} />
+              : <MenuItem label={contextTab.kind === 'terminal' ? 'Close Terminal' : 'Close'} onClick={() => { onCloseTab(contextTab.instanceId); menu.close() }} />
+          )}
+          {contextTab && canSplit && <MenuDivider />}
           {canSplit && SPLIT_ITEMS.map(({ label, side }) => (
             <MenuItem key={side} label={label} onClick={() => chooseSplit(side)} />
           ))}

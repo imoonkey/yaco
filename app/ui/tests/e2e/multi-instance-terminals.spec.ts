@@ -62,8 +62,11 @@ async function waitServed(request: APIRequestContext, name: string): Promise<voi
 // the activity panel so it never resolves to a terminal TAB title in a group.
 const sessionRow = (page: Page, name: string) =>
   activityPanel(page).getByText(name, { exact: true }).first()
-const openBesideBtn = (page: Page, name: string) =>
-  page.getByRole('button', { name: `Open ${name} beside` })
+const openBesideFromMenu = async (page: Page, name: string) => {
+  await sessionRow(page, name).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Open beside' }).click()
+  await expect(page.getByRole('menu')).toHaveCount(0)
+}
 // A bound terminal TAB shows its session name as its label/title.
 const terminalTab = (page: Page, name: string) =>
   page.locator(`[data-testid="group-tab"][data-tab-kind="terminal"][title="${name}"]`)
@@ -93,19 +96,16 @@ test.describe('Multi-instance terminals (open-beside / 1-per-session / session e
     const { project, sessions: [s1, s2] } = await openProjectWithSessions(page, request, 2)
 
     // Open beside each session → a terminal TAB bound to that session in its own group.
-    await sessionRow(page, s1).hover()
-    await openBesideBtn(page, s1).click()
+    await openBesideFromMenu(page, s1)
     await expect(terminalTab(page, s1)).toHaveCount(1, { timeout: 15_000 })
-    await sessionRow(page, s2).hover()
-    await openBesideBtn(page, s2).click()
+    await openBesideFromMenu(page, s2)
     await expect(terminalTab(page, s2)).toHaveCount(1, { timeout: 15_000 })
     // Two distinct bound terminal tabs coexist.
     await expect(allTerminalTabs(page)).toHaveCount(2)
 
     // 1-per-session guard: opening a session already shown FOCUSES its existing
     // terminal tab — it must not spawn a second tab AND must move focus onto it.
-    await sessionRow(page, s1).hover()
-    await openBesideBtn(page, s1).click()
+    await openBesideFromMenu(page, s1)
     await expect(terminalTab(page, s1), 're-opening a shown session does not duplicate it').toHaveCount(1)
     await expect(allTerminalTabs(page)).toHaveCount(2)
     const focusedTerminal = page.locator('[data-panel-leaf="terminal"][data-focused="true"]')
@@ -169,8 +169,7 @@ test.describe('Multi-instance terminals (open-beside / 1-per-session / session e
     // one editor + one terminal, each visible in its group. Each type is single, so
     // focusing either marks it data-focused with no data-active sibling; focusing the
     // terminal makes group:2 the active group.
-    await sessionRow(page, s).hover()
-    await openBesideBtn(page, s).click()
+    await openBesideFromMenu(page, s)
     const termBody = group(page, 'group:2').locator('[data-panel-leaf="terminal"]')
     await expect(termBody).toBeVisible({ timeout: 15_000 })
     await termBody.locator('.yaco-terminal-xterm').click()

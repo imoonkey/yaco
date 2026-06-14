@@ -69,7 +69,7 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 
 ## Flow: Compare Two Files Side-by-Side
 
-1. With a file open, right-click the group's tab-bar empty area (or click **Split**) → **Split Right** (or `Cmd+\`)
+1. With a file open, right-click / long-press the group's tab-bar empty area (or click **Split**) → **Split Right** (or `Cmd+\`)
 2. An **empty** group opens beside the active one (axis chosen from geometry — wide splits right, tall splits below; `Cmd+K Cmd+\` for the other axis), and becomes the open target
 3. Open a file in it — from the explorer, or `Cmd+Enter` on an explorer file opens it to the side directly
 4. Editing a file open in both groups updates both (shared per-path buffer); each group keeps its own tab strip
@@ -84,7 +84,7 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 
 ## Flow: Watch Two Sessions at Once
 
-1. Hover/right-click a session row → **"Open beside"** (`openBeside`)
+1. Right-click / long-press a session row → **"Open beside"** (`openBeside`)
 2. If the session is already shown → its terminal tab is focused; else an empty group is split and a **new** terminal tab opens in it bound to the session (1-per-session guard)
 3. Both terminals tile and both sessions are marked read while visible
 4. When a session ends (`/exit`, kill, or crash), the reconcile closes its terminal tab after 2 missed polls → the session moves to History

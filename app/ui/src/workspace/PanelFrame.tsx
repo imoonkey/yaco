@@ -13,16 +13,18 @@
 // collapsed and adopts the slot's height/flex so it measures like the old
 // per-section body wrapper. No slot ⇒ expanded, default fill (isolation tests
 // and renderers that do not size sections both rely on this).
-import type { ReactNode } from 'react'
+import { useContext, type ReactNode } from 'react'
 import { GripVertical } from 'lucide-react'
 import type { PanelHeaderHook } from './panelRegistry'
 import type { PanelChrome } from './panelMeta'
 import type { PanelChromeSlot } from './panelChrome'
 import type { PanelId } from './context'
+import { WorkspaceCommandsContext } from './context'
 import { SectionHeader } from './SectionHeader'
-import { PanelMenu } from './PanelMenu'
 import { usePanelInstance } from './panelInstance'
 import { useDragControls } from './WorkspaceDragContext'
+import { Menu, MenuItem } from '../components/Menu'
+import { useContextMenu } from '../components/useContextMenu'
 
 export type PanelFrameProps = {
   chrome: PanelChrome
@@ -33,8 +35,8 @@ export type PanelFrameProps = {
   /** Renderer-supplied collapse + body sizing. Omitted ⇒ expanded, default fill. */
   slot?: PanelChromeSlot
   /** The hosted panel's id. Supplied by `PanelHost` so the framed header can
-   *  surface the flexible-layout `PanelMenu`; omitted by isolation tests that
-   *  mount a frame directly, which then render no menu. */
+   *  expose the dock drag grip; omitted by isolation tests that mount a frame
+   *  directly, which then render no grip. */
   panelId?: PanelId
   children: ReactNode
 }
@@ -73,26 +75,32 @@ function FramedHeader({ title, useHeader, collapsed, onToggle, panelId }: {
   const { title: dynamicTitle, actions, badge, stats } = useHeader()
   const instance = usePanelInstance()
   const drag = useDragControls()
-  // The flexible-layout menu sits after the panel's own actions (rightmost), in a
-  // single flex row so a panel that publishes its actions as a block element does
-  // not push the kebab onto a second line (which would grow the fixed-height header
-  // and shove the action row under the adjacent resize handle). The dock grab
-  // handle leads the SAME row (one flex line) as the drag SOURCE for this dock —
-  // dragstart records a `dock` payload tagged with our pane mime. Only present when
-  // PanelHost supplies the id; SectionHeader hides actions (and so both) while
-  // collapsed.
+  const commands = useContext(WorkspaceCommandsContext)
+  const resetMenu = useContextMenu()
+  // The dock grab handle is the rightmost header affordance and the drag SOURCE for
+  // framed docks. Right-click/long-press on the same grip exposes the one recovery
+  // action that DnD does not replace: Reset layout.
   const grab = panelId ? (
-    <button type="button" draggable={!collapsed}
-      onDragStart={(e) => drag.start(e, { kind: 'dock', instanceId: instance?.instanceId ?? panelId, panel: panelId })}
-      onDragEnd={drag.clear}
-      aria-label={`Move ${dynamicTitle ?? title} panel`} title="Drag to move panel"
-      className="flex items-center justify-center w-4 h-4 cursor-grab active:cursor-grabbing"
-      style={{ color: 'var(--sol-text-faint)' }}>
-      <GripVertical size={13} aria-hidden="true" />
-    </button>
+    <>
+      <button type="button" draggable={!collapsed}
+        onDragStart={(e) => drag.start(e, { kind: 'dock', instanceId: instance?.instanceId ?? panelId, panel: panelId })}
+        onDragEnd={drag.clear}
+        aria-label={`Move ${dynamicTitle ?? title} panel`} title="Drag to move panel; right-click or long-press to reset layout"
+        aria-haspopup={commands ? 'menu' : undefined}
+        className="flex items-center justify-center w-4 h-4 cursor-grab active:cursor-grabbing"
+        style={{ color: 'var(--sol-text-faint)' }}
+        {...(commands ? resetMenu.bind() : {})}>
+        <GripVertical size={13} aria-hidden="true" />
+      </button>
+      {commands && resetMenu.position && (
+        <Menu position={resetMenu.position} exiting={resetMenu.exiting} armed={resetMenu.armed} focusOnOpen={resetMenu.focusOnOpen} onExitDone={resetMenu.onExitDone}>
+          <MenuItem label="Reset layout" onClick={() => { commands.resetLayout(); resetMenu.close() }} />
+        </Menu>
+      )}
+    </>
   ) : null
   const headerActions = panelId
-    ? <div className="flex items-center gap-0.5">{grab}{actions}<PanelMenu panel={panelId} /></div>
+    ? <div className="flex items-center gap-0.5">{actions}{grab}</div>
     : actions
   return (
     <SectionHeader

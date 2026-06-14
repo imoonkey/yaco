@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { PanelHost } from '../PanelHost'
 import { PanelFrame } from '../PanelFrame'
 import { usePanelInstance } from '../panelInstance'
-import { WorkspaceEnvContext, type WorkspaceEnv } from '../context'
+import { WorkspaceCommandsContext, WorkspaceEnvContext, type WorkspaceCommands, type WorkspaceEnv } from '../context'
 import * as registry from '../panelRegistry'
 import type { PanelDefinition } from '../panelRegistry'
 
@@ -139,6 +139,64 @@ describe('PanelFrame — chrome + header slots', () => {
     expect(screen.getByRole('button', { name: 'act' })).toBeTruthy()
     expect(screen.getByText('2')).toBeTruthy()
     expect(screen.getByText('stat')).toBeTruthy()
+  })
+
+  it('places the dock grip at the far right and exposes Reset layout from its context menu', () => {
+    const resetLayout = vi.fn()
+    const env = { ...fakeEnv, viewport: { isMobile: false } } as unknown as WorkspaceEnv
+    const commands = { resetLayout } as unknown as WorkspaceCommands
+    render(
+      <WorkspaceEnvContext.Provider value={env}>
+        <WorkspaceCommandsContext.Provider value={commands}>
+          <PanelFrame
+            chrome="framed"
+            title="Files"
+            panelId="files"
+            useHeader={() => ({ actions: <button type="button">act</button> })}
+          >
+            <div>body</div>
+          </PanelFrame>
+        </WorkspaceCommandsContext.Provider>
+      </WorkspaceEnvContext.Provider>,
+    )
+
+    const header = screen.getByRole('button', { name: 'Files section' })
+    const buttons = within(header).getAllByRole('button')
+    expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent)).toEqual([
+      'act',
+      'Move Files panel',
+    ])
+    expect(screen.queryByRole('button', { name: 'Panel menu' })).toBeNull()
+
+    const grip = screen.getByRole('button', { name: 'Move Files panel' })
+    expect(grip.getAttribute('data-yaco-native-context-menu')).toBe('disabled')
+    fireEvent.contextMenu(grip)
+    const item = screen.getByRole('menuitem', { name: 'Reset layout' })
+    expect(item.className).toContain('normal-case')
+    expect(item.className).toContain('font-normal')
+    fireEvent.click(item)
+    expect(resetLayout).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the grip context menu available under a mobile env for long-press', () => {
+    const resetLayout = vi.fn()
+    const env = { ...fakeEnv, viewport: { isMobile: true } } as unknown as WorkspaceEnv
+    const commands = { resetLayout } as unknown as WorkspaceCommands
+    render(
+      <WorkspaceEnvContext.Provider value={env}>
+        <WorkspaceCommandsContext.Provider value={commands}>
+          <PanelFrame chrome="framed" title="Files" panelId="files">
+            <div>body</div>
+          </PanelFrame>
+        </WorkspaceCommandsContext.Provider>
+      </WorkspaceEnvContext.Provider>,
+    )
+
+    const grip = screen.getByRole('button', { name: 'Move Files panel' })
+    expect(grip.getAttribute('data-yaco-native-context-menu')).toBe('disabled')
+    fireEvent.contextMenu(grip)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Reset layout' }))
+    expect(resetLayout).toHaveBeenCalledTimes(1)
   })
 
   it('unframed renders the body bare without a header', () => {

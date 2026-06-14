@@ -102,7 +102,7 @@ export function Menu({ position, exiting, onExitDone, armed, focusOnOpen, childr
       ref={menuRef}
       role="menu"
       {...nativeContextMenuDisabledProps}
-      className="fixed z-50 min-w-[160px] py-1 rounded-lg"
+      className="fixed z-50 min-w-[148px] py-0.5 rounded-md normal-case font-normal tracking-normal"
       style={{
         left: position.x,
         top: position.y,
@@ -142,19 +142,19 @@ export function MenuItem({ label, danger, checked, onClick }: {
       role={checkable ? 'menuitemcheckbox' : 'menuitem'}
       aria-checked={checkable ? checked : undefined}
       tabIndex={-1}
-      className={`px-3 py-1 text-ui-md cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg${checkable ? ' flex items-center gap-1.5' : ''}`}
+      className={`px-2 py-0.5 text-ui-md font-normal normal-case tracking-normal cursor-pointer outline-none hover:bg-sol-hover-bg focus:bg-sol-hover-bg${checkable ? ' flex items-center gap-1' : ''}`}
       style={{
         color: danger ? 'var(--sol-red)' : 'var(--sol-text)',
         borderRadius: 4,
-        marginLeft: 4,
-        marginRight: 4,
+        marginLeft: 3,
+        marginRight: 3,
         transition: 'background-color 120ms',
       }}
       onClick={onClick}
     >
       {checkable && (
-        <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0" aria-hidden="true">
-          {checked && <Check size={13} />}
+        <span className="w-3 h-3 flex items-center justify-center shrink-0" aria-hidden="true">
+          {checked && <Check size={12} />}
         </span>
       )}
       {label}
@@ -163,5 +163,5 @@ export function MenuItem({ label, danger, checked, onClick }: {
 }
 
 export function MenuDivider() {
-  return <div className="my-1" style={{ borderTop: '1px solid var(--sol-border)' }} />
+  return <div className="my-0.5" style={{ borderTop: '1px solid var(--sol-border)' }} />
 }

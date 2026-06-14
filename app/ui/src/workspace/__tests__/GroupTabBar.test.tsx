@@ -50,6 +50,7 @@ function renderBar(
     onCloseGroup: vi.fn(),
     onActivateGroup: vi.fn(),
     onDiscardDirty: vi.fn(),
+    onSaveTab: vi.fn(),
     ...over,
   }
   const env = {
@@ -135,6 +136,53 @@ describe('GroupTabBar — dismiss-safe Split menu', () => {
     expect(screen.getByRole('menu')).toBeTruthy()
     fireEvent.click(screen.getByRole('menuitem', { name: 'Split Down' }))
     expect(onSplit).toHaveBeenCalledWith('below')
+  })
+
+  it('opens the same Split menu from a tab title right-click and suppresses the browser menu', () => {
+    const onSplit = vi.fn()
+    renderBar({ tabs: [EDITOR('editor:1', 'src/app.ts')], onSplit })
+
+    const tab = screen.getByTestId('group-tab')
+    expect(tab.getAttribute('data-yaco-native-context-menu')).toBe('disabled')
+    const event = createEvent.contextMenu(tab, { clientX: 30, clientY: 40 })
+    fireEvent(tab, event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(screen.getByRole('menu')).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Split Right' }))
+    expect(onSplit).toHaveBeenCalledWith('right')
+  })
+
+  it('shows file tab actions above Split actions in the tab context menu', () => {
+    const onSaveTab = vi.fn()
+    const onCloseTab = vi.fn()
+    const onDiscardDirty = vi.fn()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'src/app.ts')],
+      dirtyTabs: new Set(['src/app.ts']),
+      onSaveTab,
+      onCloseTab,
+      onDiscardDirty,
+    })
+
+    fireEvent.contextMenu(screen.getByTestId('group-tab'))
+    const items = screen.getAllByRole('menuitem').map((item) => item.textContent)
+    expect(items.slice(0, 6)).toEqual([
+      'Save',
+      'Close Without Saving',
+      'Split Up',
+      'Split Down',
+      'Split Left',
+      'Split Right',
+    ])
+
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Save' }))
+    expect(onSaveTab).toHaveBeenCalledWith('src/app.ts')
+
+    fireEvent.contextMenu(screen.getByTestId('group-tab'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Close Without Saving' }))
+    expect(onDiscardDirty).toHaveBeenCalledWith('src/app.ts')
+    expect(onCloseTab).toHaveBeenCalledWith('editor:1')
   })
 
   it('offers Close Group only for an empty group', () => {

@@ -26,6 +26,7 @@ The working area is a grid of **groups**; each group's strip mixes one **editor 
 - **Shared buffers.** File content / dirty state live in `useFileState` keyed by **path**, not by tab. The same file open as two editor tabs (in two groups) shows the same content and the same dirty dot; only the tab is duplicated, the buffer is one.
 - **Tab events.** A tab click activates it via `setActiveGroupTab(groupId, instanceId)` and focuses it (`focusPane('editor', id)` on mousedown). `jumpRequest` (go-to-line) and `editorInsert` (voice) carry an `instanceId` and are consumed **iff** it matches — so the same path open in two tabs jumps only the one that was targeted.
 - **Split.** Right-click the group's tab-bar empty area, or click the visible **Split** button (which opens the same dismiss-safe menu), → **Split Up/Down/Left/Right** spawns an adjacent group, **seeded from the source group's active tab**: an editor tab is **duplicated** (a fresh instance on the same `tabId`, sharing the per-path buffer), a terminal tab is **moved** (same instance + binding, no new PTY), an empty source yields an empty group. The new group becomes the open target.
+- **Tab context menu.** Right-click / long-press an editor tab to open a tab-aware menu. File actions render first (`Save` for dirty file tabs, `Close` or `Close Without Saving`), then a divider, then group-level Split actions and the kind-affinity toggle. The tab and menu both carry the native-context-menu suppression marker so iOS does not show its system callout.
 - **Open to the side.** `Cmd+Enter` in the explorer / quick-open splits an **empty** group beside the active one and opens the focused file there (`openToSide`, non-seeding).
 - **Reorder.** Tabs drag-reorder within their group (`reorderGroupTab`); editor and terminal tabs share one freely-orderable strip.
 - **Editor view controls.** The active editor tab's view toggles — the inline-suggestion sparkle, the md/html **edit | split | preview** mode toggle, and the split-direction button — render **right-aligned in the group tab bar** (`EditorActions`), not in the editor body. On mobile (no tab bar) they sit in a slim body action row with the mic. They act on the active editor tab via `setEditorPrefs`.
@@ -47,7 +48,7 @@ The editor uses CodeMirror 6 with two-tier language loading:
 - Each editor tab shows filename (not full path); a terminal tab shows its session label
 - Active tab has `base3` background, inactive tabs have `base2`
 - Tabs can be clicked to switch and **drag-reordered** within the group
-- The empty area to the right of the tabs is the **Split** trigger (right-click, or the visible Split button) — opens the Split Up/Down/Left/Right menu
+- The empty area to the right of the tabs is the **Split** trigger (right-click, long-press, or the visible Split button) — opens the Split Up/Down/Left/Right menu
 
 ### Tab States
 

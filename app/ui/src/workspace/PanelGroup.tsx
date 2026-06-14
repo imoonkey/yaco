@@ -117,6 +117,13 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
     commands.acceptDisk(path)
   }, [commands])
 
+  const onSaveTab = useCallback((tabId: string) => {
+    const path = tabIdToPath(tabId)
+    const file = selection.editor.files[path]
+    if (!file) return
+    void commands.saveFile(path, file.draft ?? file.serverContent ?? '')
+  }, [commands, selection.editor.files])
+
   const activeTabNode = group.tabs.find((t) => t.instanceId === group.activeTab) ?? null
   const marker = activeTabNode ? markerFor(activeTabNode.kind, activeTabNode.instanceId) : null
 
@@ -153,6 +160,7 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         canCloseGroup={canCloseGroup}
         onActivateGroup={onActivateGroup}
         onDiscardDirty={onDiscardDirty}
+        onSaveTab={onSaveTab}
       />
       <DropOverlay
         groupId={group.id}

@@ -47,7 +47,7 @@ App (384 lines)
         │   ├── fileExplorerIcons — GIT_COLORS, GIT_STATUS_LABELS, FileTypeIcon
         │   └── fileExplorerNode — git letter indicators (M/A/D/U)
         ├── ProjectList (153 lines) — project rows + worktree sub-items
-        ├── Menu (154 lines) — keyboard nav (Arrow/Enter/Home/End), long-press (350ms)
+        ├── Menu — compact shared context menu: keyboard nav (Arrow/Enter/Home/End), long-press (350ms), iOS native-callout suppression
         ├── Terminal (528 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
         ├── SessionItem — status dots (processing/starting/idle/blocked) + blocked reason badge + parent collapse toggle
@@ -235,7 +235,9 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceEditorColumn.tsx` | 179 | Editor pane: tab bar + breadcrumbs + editor area |
 | `WorkspaceEditorArea.tsx` | 534 | Editor, split view, preview, diff, conflict banner, skeleton loaders |
 | `markdown.ts` | 157 | Markdown rendering, syntax highlighting, lazy mermaid loader |
-| `WorkspaceTabBar.tsx` | 191 | Tab strip with scroll fade, preview label, dirty close on hover |
+| `GroupTabBar.tsx` | mixed tab strip with editor/terminal tabs, tab context menus, Split menu, drag-reorder |
+| `PanelFrame.tsx` | framed panel chrome; rightmost dock grip is the drag source and Reset-layout context menu |
+| `WorkspaceTabBar.tsx` | legacy tab strip helper kept for older isolated surfaces |
 | `WorkspaceSearch.tsx` | 220 | File search modal, recent files section |
 | `WorkspaceTextSearch.tsx` | 489 | Full-text search with result cap banner |
 | `PanelSearchBox.tsx` | 59 | Shared panel search input used by text search and Sessions search |

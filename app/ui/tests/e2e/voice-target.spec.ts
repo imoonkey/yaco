@@ -73,8 +73,8 @@ const sessionRow = (page: Page, name: string) => activityPanel(page).getByText(n
 
 /** Open a session BESIDE the editor → a bound terminal in its own group:2. */
 async function openSessionBeside(page: Page, name: string): Promise<void> {
-  await sessionRow(page, name).hover()
-  await page.getByRole('button', { name: `Open ${name} beside` }).click()
+  await sessionRow(page, name).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Open beside' }).click()
 }
 
 /** Focus the editor and wait for the focus marker so a target assertion can't race

@@ -200,9 +200,10 @@ describe('SessionsPanel', () => {
     expect(commands.clickSession).toHaveBeenCalledWith('alpha')
   })
 
-  it('routes the Open beside affordance to openBeside without triggering the row click', () => {
+  it('routes context-menu Open beside to openBeside without triggering the row click', () => {
     renderBody([makeSession('alpha', 'idle')])
-    fireEvent.click(screen.getByLabelText('Open alpha beside'))
+    fireEvent.contextMenu(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open beside' }))
     expect(commands.openBeside).toHaveBeenCalledTimes(1)
     expect(commands.openBeside).toHaveBeenCalledWith('alpha')
     expect(commands.clickSession).not.toHaveBeenCalled()
@@ -229,8 +230,8 @@ describe('SessionsPanel', () => {
     expect(liveNames.some(t => t?.includes('beta'))).toBe(true)
   })
 
-  it('hides the Open beside affordance on mobile (no split/open-beside on mobile)', () => {
-    renderBody([makeSession('alpha', 'idle')], {}, true)
+  it('does not render a row Open beside button', () => {
+    renderBody([makeSession('alpha', 'idle')])
     expect(screen.queryByLabelText('Open alpha beside')).toBeNull()
   })
 })

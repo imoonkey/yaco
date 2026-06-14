@@ -7,10 +7,10 @@ import {
   openPinnedFile,
   waitForSSERefresh,
   uniqueFileName,
-  sectionHeader,
   group,
   type FixtureProject,
 } from './helpers/workspace'
+import { dockGrabSel } from './helpers/dnd'
 
 // Multi-instance editor flows under the VSCode tab-group model (design: vt-bodies
 // shared buffer, vt-keyboard split, reset). Pins the user-visible acceptance:
@@ -51,10 +51,9 @@ async function splitFocusedEditor(page: Page): Promise<void> {
   await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
 }
 
-/** Open a framed dock panel's header menu and click an item (waits for it to close). */
-async function runPanelMenu(page: Page, panelTitle: string, item: string): Promise<void> {
-  await sectionHeader(page, panelTitle).getByRole('button', { name: 'Panel menu' }).click()
-  await page.getByRole('menuitem', { name: item }).click()
+async function resetLayoutFromGrip(page: Page, panelTitle: string): Promise<void> {
+  await page.locator(dockGrabSel(panelTitle)).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Reset layout' }).click()
   await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
@@ -104,8 +103,8 @@ test.describe('Multi-instance editors (split / shared buffer / reset)', () => {
     await page.keyboard.type('DIRTYRESET ')
     await expect(tabInGroup(page, 'group:1', file).locator('.rounded-full')).toBeVisible()
 
-    // Reset layout via a dock panel's kebab (the editor body has no Reset).
-    await runPanelMenu(page, 'Sessions', 'Reset layout')
+    // Reset layout via a dock panel's grip context menu (the editor body has no Reset).
+    await resetLayoutFromGrip(page, 'Sessions')
 
     // The extra group is discarded → back to a single working group...
     await expect(group(page, 'group:2')).toHaveCount(0)

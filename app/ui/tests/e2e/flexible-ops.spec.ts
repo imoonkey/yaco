@@ -1,19 +1,15 @@
 import { test, expect, type Page, type Locator, type APIRequestContext } from '@playwright/test'
 import {
   provisionWorkspace,
-  waitForAppReady,
   getWorkspaceState,
-  sectionHeader,
   activityPanel,
   expectApproxSize,
   type FixtureProject,
 } from './helpers/workspace'
+import { dragBegin, dragDrop, dragOver, dockGrabSel, sidebarDropSel } from './helpers/dnd'
 
-// T8 flexible-operations: the framed-panel header menu surfaces the panel-layout
-// commands (move / split-beside / return-to-default / reset). This pins the
-// headline acceptance — moving Sessions left/right relocates it AND persists
-// across reload — plus reset-position and reset-layout, all through the real
-// `PanelMenu` over the desktop tree (the sole renderer since the T8 deletion).
+// Flexible layout recovery: moving docks is covered by panel DnD; the framed-panel
+// grip keeps only the recovery menu for Reset layout.
 
 test.use({ viewport: { width: 1280, height: 800 } })
 
@@ -47,92 +43,30 @@ async function sessionsInsideDock(page: Page): Promise<boolean> {
   return s.x >= d.x - 2 && s.x + s.width <= d.x + d.width + 2
 }
 
-/** Open a framed panel's header menu and click one of its items, then wait for
- *  the menu to fully close (its exit animation + unmount) so a chained action
- *  opens a clean menu instead of racing the previous one's teardown. */
-async function runPanelMenu(page: Page, panelTitle: string, item: string): Promise<void> {
-  await sectionHeader(page, panelTitle).getByRole('button', { name: 'Panel menu' }).click()
-  await page.getByRole('menuitem', { name: item }).click()
+async function resetLayoutFromGrip(page: Page, panelTitle: string): Promise<void> {
+  await page.locator(dockGrabSel(panelTitle)).click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Reset layout' }).click()
   await expect(page.getByRole('menu')).toHaveCount(0)
 }
 
-test.describe('Flexible layout operations (panel header menu)', () => {
-  test('moving Sessions left relocates it into the dock and persists across reload', async ({ page, request }) => {
-    const project = await treeWorkspace(page, request)
-
-    // Default: Sessions lives in the right activity column — NOT inside the dock.
-    await expect(sessionsLeaf(page)).toBeVisible()
-    expect(await sessionsInsideDock(page)).toBe(false)
-
-    // Move it left via the header menu (splitPanel beside the leftmost leaf).
-    await runPanelMenu(page, 'Sessions', 'Move left')
-
-    // It now renders inside the left dock column.
-    await expect.poll(() => sessionsInsideDock(page)).toBe(true)
-    // Committed to the panel-layout tree (version 1), so a reload restores it.
-    // Poll — the layout persist is debounced, so it may lag the relocation.
-    await expect
-      .poll(async () => (await getWorkspaceState(page, project.name))?.panelLayout?.version)
-      .toBe(1)
-
-    // Reload — Sessions stays in the dock (the move persisted).
-    await page.reload()
-    await waitForAppReady(page)
-    await page.waitForTimeout(1500)
-    await expect(sessionsLeaf(page)).toBeVisible()
-    expect(await sessionsInsideDock(page)).toBe(true)
-  })
-
-  test('Reset position relocates a docked Sessions panel back to the right column and persists across reload', async ({ page, request }) => {
-    const project = await treeWorkspace(page, request)
-
-    // Park Sessions in the dock first (Sessions is the lone activity panel, so a
-    // rightward Move-beside has no out-of-dock anchor — Reset position is the way
-    // back to the standalone right column).
-    await runPanelMenu(page, 'Sessions', 'Move left')
-    await expect.poll(() => sessionsInsideDock(page)).toBe(true)
-
-    await runPanelMenu(page, 'Sessions', 'Reset position')
-    // It leaves the dock and renders in the right region again.
-    await expect.poll(() => sessionsInsideDock(page)).toBe(false)
-    await expect
-      .poll(async () => (await getWorkspaceState(page, project.name))?.panelLayout?.version)
-      .toBe(1)
-
-    // Reload — Sessions stays out of the dock (the reset persisted).
-    await page.reload()
-    await waitForAppReady(page)
-    await page.waitForTimeout(1500)
-    await expect(sessionsLeaf(page)).toBeVisible()
-    expect(await sessionsInsideDock(page)).toBe(false)
-  })
-
-  test('Reset position returns a moved Sessions panel to its default placement', async ({ page, request }) => {
-    await treeWorkspace(page, request)
-
-    await runPanelMenu(page, 'Sessions', 'Move left')
-    await expect.poll(() => sessionsInsideDock(page)).toBe(true)
-
-    await runPanelMenu(page, 'Sessions', 'Reset position')
-    // Back out of the dock — in the right activity column again.
-    await expect.poll(() => sessionsInsideDock(page)).toBe(false)
-    // The right column is rebuilt: the "Activity panel" landmark (positional —
-    // the root child after the working area) is present and IS the Sessions leaf.
-    // This guards H1 — return-to-default must restore the activity landmark.
-    await expect(activityPanel(page)).toBeVisible()
-    await expect(activityPanel(page)).toHaveAttribute('data-panel-leaf', 'sessions')
-  })
-
+test.describe('Flexible layout recovery (dock grip context menu)', () => {
   test('Reset layout restores the whole default arrangement', async ({ page, request }) => {
-    await treeWorkspace(page, request)
+    const project = await treeWorkspace(page, request)
 
-    // Perturb the layout: move Sessions out of the activity column into the dock.
-    await runPanelMenu(page, 'Sessions', 'Move left')
+    // Perturb the layout via real dock DnD: move Sessions into the left sidebar.
+    await dragBegin(page, dockGrabSel('Sessions'))
+    await dragOver(page, sidebarDropSel('left'), { fy: 0.95 })
+    await dragDrop(page, sidebarDropSel('left'), { fy: 0.95 })
     await expect.poll(() => sessionsInsideDock(page)).toBe(true)
+    await expect
+      .poll(async () => (await getWorkspaceState(page, project.name))?.panelLayout?.version)
+      .toBe(1)
 
-    await runPanelMenu(page, 'Sessions', 'Reset layout')
+    await resetLayoutFromGrip(page, 'Sessions')
     // Default arrangement: Sessions back in the activity column, dock default width.
     await expect.poll(() => sessionsInsideDock(page)).toBe(false)
+    await expect(activityPanel(page)).toBeVisible()
+    await expect(activityPanel(page)).toHaveAttribute('data-panel-leaf', 'sessions')
     await expect(dock(page)).toBeVisible()
     expectApproxSize((await dock(page).boundingBox())?.width, DOCK)
   })

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Pin, FolderGit2, Columns2, CornerDownLeft } from 'lucide-react'
+import { Pin, FolderGit2, CornerDownLeft, CircleX } from 'lucide-react'
 import { ProviderIcon } from '../components/SessionIcons'
 
 import { Menu, MenuItem } from '../components/Menu'
@@ -291,37 +291,22 @@ export function SessionItem({
       )}
       <span className="flex items-center gap-1 shrink-0">
         {rollupBadge && <BadgeCount count={rollupBadge.count} color={rollupBadge.color} />}
-        {onOpenBeside && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onOpenBeside()
-            }}
-            className="shrink-0 rounded-md px-1 py-0.5 cursor-pointer opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-sol-hover-bg"
-            style={{ color: 'var(--sol-text-faint)' }}
-            title="Open beside"
-            aria-label={`Open ${session.name} beside`}
-          >
-            <Columns2 size={13} />
-          </button>
-        )}
         <button
           onClick={(e) => {
             e.stopPropagation()
             onKill()
           }}
-          className="shrink-0 rounded-md px-1.5 py-0.5 text-ui-sm cursor-pointer text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
-          style={{ border: '1px solid color-mix(in srgb, var(--sol-red) 20%, transparent)' }}
+          className="shrink-0 inline-flex items-center justify-center w-[18px] h-[20px] rounded-md cursor-pointer text-[var(--sol-text-faint)] transition-colors hover:text-[var(--sol-red)] focus-visible:text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8 focus-visible:bg-[var(--sol-red)]/8"
           title={`Kill ${session.name}`}
           aria-label={`Kill session ${session.name}`}
         >
-          Kill
+          <CircleX size={15} strokeWidth={1.8} aria-hidden="true" />
         </button>
       </span>
       {menu.position && (onRename || onOpenBeside || (hasChildren && onMarkSubtreeRead)) && (
         <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
-          {onOpenBeside && <MenuItem label="Open beside" onClick={() => { menu.close(); onOpenBeside() }} />}
           {onRename && <MenuItem label="Rename" onClick={startRename} />}
+          {onOpenBeside && <MenuItem label="Open beside" onClick={() => { menu.close(); onOpenBeside() }} />}
           {hasChildren && onMarkSubtreeRead && (
             <MenuItem label="Mark subtree read" onClick={() => { onMarkSubtreeRead(); menu.close() }} />
           )}
