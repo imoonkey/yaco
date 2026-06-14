@@ -1,5 +1,57 @@
 # Progress
 
+## 2026-06-14: `yaco align` — internalize the status.txt protocol behind 4 verbs
+
+**What changed:**
+- Replaced the read-only `yaco align poll` verb with a 4-verb module —
+  `init` / `wait` / `handoff` / `status` — that owns the **whole** alignment
+  handoff protocol (read + write). The single-line `status.txt` grammar and the
+  turn/vote state machine now live in one module; illegal transitions are
+  unrepresentable through the CLI (callers never hand-write `status.txt`).
+- **Vote inference, no `--vote`:** `wait` snapshots a recursive,
+  mtime-independent content hash of `final/` into `discussion/.align/turn.json`;
+  `handoff` re-hashes — any edit ⇒ `CHANGES` (reset the other role, re-review),
+  no edit ⇒ `APPROVE` (mutual APPROVE ⇒ `DONE`). Collapses the old fragile
+  substantive/trivial judgment. Re-running `wait` keeps the baseline (crash-resume).
+- `wait` stays process-owning, preserving the poll-era exit-code contract
+  (0 YOUR_TURN/DONE, 1 `align.timeout`, 2 `align.error`); interval fixed ~1s,
+  `--timeout` default 3600s. `init`/`handoff`/`status` are ordinary
+  `{ok,data}/{ok,error}` result commands.
+- Addressing: explicit `<dir>` or cwd walk-up to the nearest bundle; raw
+  `status.txt` path rejected. 2-party CODEX/CLAUDE rules are hardcoded behind a
+  pure `transition(state, role, vote)` function, so a future N-party `align.json`
+  manifest needs no rewrite (deferred as YAGNI).
+- `/align` SOP collapsed to a `wait → work → handoff` loop (status grammar /
+  state-machine / vote / SEQ prose deleted); `/double-design` Step 3 monitors via
+  `yaco align status`; `doc/main/cli/align.md` rewritten to the 4-verb interface.
+- Deleted `poll.ts` + its two tests; added `protocol`/`store`/`verbs`/`wait`.
+
+**Why:**
+- `status.txt` was a shared mutable file whose grammar + state machine were
+  prose (restated three places), with only the read side adaptered. Agents
+  hand-wrote the status line and hand-applied vote/reset rules — fragile,
+  thrice-specified, unvalidated. One deep module makes the protocol the seam.
+- Result-path verb errors map onto the existing `ErrCode` enum
+  (`USAGE`/`NOT_FOUND`/`CONFLICT`/`INVALID`, condition in the message) rather
+  than the exploration's granular dotted codes — those were a hypothetical seam
+  (no caller branches on them) and the codebase routes domain errors through
+  `ErrCode`. Only the process-owning `wait` keeps `align.timeout`/`align.error`.
+
+**Key files:** `cli/src/commands/align/{protocol,store,verbs,wait,index}.ts`,
+`cli/test/unit/commands/align/{protocol,store,align-cli}.test.ts`,
+`agent-config/global/skills/{align,double-design}/SKILL.md`,
+`doc/main/cli/{align,README,command-surface,doctor}.md`,
+`plan/all/yaco-align-cli/`.
+**Verification:** `cd cli && bun run test` (align 47/47; the one unrelated
+failure is the pre-existing project-move mtime test). `tsc -b` clean for align
+files. End-to-end run of the real binary: full `init → DONE` two-agent flow,
+vote inference, reset-on-CHANGES, blocking-then-flip wait, and every rejection
+path (out-of-turn, no-active-turn, raw path, uninitialized).
+**Commit:** 51cc055 (cli module) · 04a38d6 (skills + docs)
+**Next:** optional — relocate `align` under `agent` per the `surface-hygiene`
+proposal; N-party `align.json` manifest if a third agent ever ships.
+**Blockers:** None.
+
 ## 2026-06-14: Structured open-questions + final-doc coherence bar for /align and /double-design
 
 **What changed:**
