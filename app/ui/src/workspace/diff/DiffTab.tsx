@@ -6,6 +6,7 @@ import type { DiffHunk } from '../../lib/parseDiff'
 import type { GitChange } from '../../types'
 import { FileTypeIcon } from '../../components/fileExplorerIcons'
 import { GIT_COLORS } from '../../components/fileGitColors'
+import { loadDiffHighlighter, mergeSyntaxAndWord, type LineTokenizer } from '../../lib/diffHighlight'
 
 // --- View mode persistence ---
 
@@ -73,15 +74,47 @@ function collapseContextRows(rows: DiffRow[]): Array<DiffRow | { kind: 'collapse
 
 // --- Segment renderer ---
 
-function Segments({ segments, highlight }: { segments: DiffSegment[]; highlight: string }) {
+// Plain (non-modified) line: syntax-highlight when a tokenizer is available,
+// otherwise render the raw text.
+function CodeText({ text, tokenize }: { text: string; tokenize: LineTokenizer | null }) {
+  if (!tokenize) return <>{text}</>
   return (
     <>
-      {segments.map((seg, i) => (
+      {tokenize(text).map((s, i) => (
+        <span key={i} className={s.cls || undefined}>{s.text}</span>
+      ))}
+    </>
+  )
+}
+
+// Modified line: layer the word-diff background (`highlight`) under syntax colors.
+function Segments({ segments, highlight, tokenize }: { segments: DiffSegment[]; highlight: string; tokenize: LineTokenizer | null }) {
+  if (!tokenize) {
+    return (
+      <>
+        {segments.map((seg, i) => (
+          <span
+            key={i}
+            style={seg.kind !== 'same' ? { backgroundColor: highlight } : undefined}
+          >
+            {seg.text}
+          </span>
+        ))}
+      </>
+    )
+  }
+
+  const fullText = segments.map(s => s.text).join('')
+  const merged = mergeSyntaxAndWord(tokenize(fullText), segments)
+  return (
+    <>
+      {merged.map((s, i) => (
         <span
           key={i}
-          style={seg.kind !== 'same' ? { backgroundColor: highlight } : undefined}
+          className={s.cls || undefined}
+          style={s.changed ? { backgroundColor: highlight } : undefined}
         >
-          {seg.text}
+          {s.text}
         </span>
       ))}
     </>
@@ -120,12 +153,16 @@ const UNIFIED_TEXT: React.CSSProperties = {
   whiteSpace: 'pre-wrap',
 }
 
-function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new' }) {
+function UnifiedRow({ row, singleCol, tokenize }: { row: DiffRow; singleCol?: 'old' | 'new'; tokenize: LineTokenizer | null }) {
   let bg = ''
-  let color = 'var(--sol-text-dim)'
+  // When highlighting is active, syntax classes drive the foreground; add/del are
+  // shown by background tint only (otherwise red/green text masks syntax colors).
+  let color = tokenize ? 'var(--sol-editor-fg)' : 'var(--sol-text-dim)'
+  const delColor = tokenize ? 'var(--sol-editor-fg)' : 'var(--sol-red)'
+  const addColor = tokenize ? 'var(--sol-editor-fg)' : 'var(--sol-green)'
 
-  if (row.kind === 'added') { bg = COLORS.addBg; color = 'var(--sol-green)' }
-  else if (row.kind === 'deleted') { bg = COLORS.delBg; color = 'var(--sol-red)' }
+  if (row.kind === 'added') { bg = COLORS.addBg; color = addColor }
+  else if (row.kind === 'deleted') { bg = COLORS.delBg; color = delColor }
 
   // Single-column mode: all-added or all-deleted files only need one line number
   if (singleCol) {
@@ -136,16 +173,16 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
     if (row.kind === 'modified') {
       return (
         <>
-          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: 'var(--sol-red)', minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: delColor, minHeight: 20 }}>
             <LineNum num={row.oldLine} />
             <span style={UNIFIED_TEXT}>
-              <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
+              <Segments segments={row.oldSegments} highlight={COLORS.delWord} tokenize={tokenize} />
             </span>
           </div>
-          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: 'var(--sol-green)', minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: addColor, minHeight: 20 }}>
             <LineNum num={row.newLine} />
             <span style={UNIFIED_TEXT}>
-              <Segments segments={row.newSegments} highlight={COLORS.addWord} />
+              <Segments segments={row.newSegments} highlight={COLORS.addWord} tokenize={tokenize} />
             </span>
           </div>
         </>
@@ -155,7 +192,7 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
     return (
       <div style={{ display: 'flex', backgroundColor: bg, color, minHeight: 20 }}>
         <LineNum num={num} />
-        <span style={UNIFIED_TEXT}>{row.text}</span>
+        <span style={UNIFIED_TEXT}><CodeText text={row.text} tokenize={tokenize} /></span>
       </div>
     )
   }
@@ -164,18 +201,18 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
     <>
       {row.kind === 'modified' ? (
         <>
-          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: 'var(--sol-red)', minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.delBg, color: delColor, minHeight: 20 }}>
             <LineNum num={row.oldLine} />
             <LineNum num={null} />
             <span style={UNIFIED_TEXT}>
-              <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
+              <Segments segments={row.oldSegments} highlight={COLORS.delWord} tokenize={tokenize} />
             </span>
           </div>
-          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: 'var(--sol-green)', minHeight: 20 }}>
+          <div style={{ display: 'flex', backgroundColor: COLORS.addBg, color: addColor, minHeight: 20 }}>
             <LineNum num={null} />
             <LineNum num={row.newLine} />
             <span style={UNIFIED_TEXT}>
-              <Segments segments={row.newSegments} highlight={COLORS.addWord} />
+              <Segments segments={row.newSegments} highlight={COLORS.addWord} tokenize={tokenize} />
             </span>
           </div>
         </>
@@ -185,7 +222,7 @@ function UnifiedRow({ row, singleCol }: { row: DiffRow; singleCol?: 'old' | 'new
           <LineNum num={row.kind === 'deleted' ? null : row.newLine} />
           <span style={UNIFIED_TEXT}>
             {row.kind === 'context' || row.kind === 'added' || row.kind === 'deleted'
-              ? row.text
+              ? <CodeText text={row.text} tokenize={tokenize} />
               : null}
           </span>
         </div>
@@ -209,17 +246,21 @@ const SPLIT_TEXT: React.CSSProperties = {
   whiteSpace: 'pre-wrap',
 }
 
-function SplitRow({ row }: { row: DiffRow }) {
+function SplitRow({ row, tokenize }: { row: DiffRow; tokenize: LineTokenizer | null }) {
   const placeholderBg = 'var(--sol-base2)'
+  // Syntax classes drive foreground when highlighting; fall back to add/del text colors.
+  const ctxColor = tokenize ? 'var(--sol-editor-fg)' : 'var(--sol-text-dim)'
+  const delColor = tokenize ? 'var(--sol-editor-fg)' : 'var(--sol-red)'
+  const addColor = tokenize ? 'var(--sol-editor-fg)' : 'var(--sol-green)'
 
   if (row.kind === 'context') {
     return (
       <div style={SPLIT_GRID}>
         <LineNum num={row.oldLine} />
-        <span style={{ ...SPLIT_TEXT, color: 'var(--sol-text-dim)' }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, color: ctxColor }}><CodeText text={row.text} tokenize={tokenize} /></span>
         <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={row.newLine} />
-        <span style={{ ...SPLIT_TEXT, color: 'var(--sol-text-dim)' }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, color: ctxColor }}><CodeText text={row.text} tokenize={tokenize} /></span>
       </div>
     )
   }
@@ -228,7 +269,7 @@ function SplitRow({ row }: { row: DiffRow }) {
     return (
       <div style={SPLIT_GRID}>
         <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
-        <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.delBg, color: 'var(--sol-red)' }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.delBg, color: delColor }}><CodeText text={row.text} tokenize={tokenize} /></span>
         <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={null} style={{ backgroundColor: placeholderBg }} />
         <span style={{ backgroundColor: placeholderBg, minWidth: 0 }} />
@@ -243,7 +284,7 @@ function SplitRow({ row }: { row: DiffRow }) {
         <span style={{ backgroundColor: placeholderBg, minWidth: 0 }} />
         <div style={{ backgroundColor: 'var(--sol-border)' }} />
         <LineNum num={row.newLine} style={{ backgroundColor: COLORS.addBg }} />
-        <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.addBg, color: 'var(--sol-green)' }}>{row.text}</span>
+        <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.addBg, color: addColor }}><CodeText text={row.text} tokenize={tokenize} /></span>
       </div>
     )
   }
@@ -252,13 +293,13 @@ function SplitRow({ row }: { row: DiffRow }) {
   return (
     <div style={SPLIT_GRID}>
       <LineNum num={row.oldLine} style={{ backgroundColor: COLORS.delBg }} />
-      <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.delBg, color: 'var(--sol-red)' }}>
-        <Segments segments={row.oldSegments} highlight={COLORS.delWord} />
+      <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.delBg, color: delColor }}>
+        <Segments segments={row.oldSegments} highlight={COLORS.delWord} tokenize={tokenize} />
       </span>
       <div style={{ backgroundColor: 'var(--sol-border)' }} />
       <LineNum num={row.newLine} style={{ backgroundColor: COLORS.addBg }} />
-      <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.addBg, color: 'var(--sol-green)' }}>
-        <Segments segments={row.newSegments} highlight={COLORS.addWord} />
+      <span style={{ ...SPLIT_TEXT, backgroundColor: COLORS.addBg, color: addColor }}>
+        <Segments segments={row.newSegments} highlight={COLORS.addWord} tokenize={tokenize} />
       </span>
     </div>
   )
@@ -638,8 +679,21 @@ export function DiffTab({
   const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode)
   const [activeHunkIndex, setActiveHunkIndex] = useState(0)
   const [expandedContexts, setExpandedContexts] = useState<Set<string>>(new Set())
+  const [tokenize, setTokenize] = useState<LineTokenizer | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const hunkRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+
+  // Resolve a syntax-highlight tokenizer for this file; null until loaded or for
+  // unsupported languages, in which case rows render as plain text. The reset to
+  // null on file change happens in the render-time block below.
+  useEffect(() => {
+    let alive = true
+    loadDiffHighlighter(parsed.path).then(fn => {
+      // Store the function via updater form so React doesn't call it as a reducer.
+      if (alive) setTokenize(() => fn)
+    })
+    return () => { alive = false }
+  }, [parsed.path])
 
   // Mobile always uses unified
   const effectiveMode = isMobile ? 'unified' : viewMode
@@ -655,6 +709,9 @@ export function DiffTab({
     setPrevParsed(parsed)
     setActiveHunkIndex(0)
     setExpandedContexts(new Set())
+    // Drop the previous file's tokenizer so a stale language can't highlight the
+    // new file before the effect reloads the right one.
+    if (parsed.path !== prevParsed.path) setTokenize(null)
   }
 
   const hunkCount = parsed.hunks.length
@@ -807,8 +864,8 @@ export function DiffTab({
                       .slice(item.startIndex, item.startIndex + item.count)
                       .map(row => (
                         effectiveMode === 'split'
-                          ? <SplitRow key={row.key} row={row} />
-                          : <UnifiedRow key={row.key} row={row} singleCol={singleCol} />
+                          ? <SplitRow key={row.key} row={row} tokenize={tokenize} />
+                          : <UnifiedRow key={row.key} row={row} singleCol={singleCol} tokenize={tokenize} />
                       ))
                   }
                   return (
@@ -821,8 +878,8 @@ export function DiffTab({
                 }
                 const row = item as DiffRow
                 return effectiveMode === 'split'
-                  ? <SplitRow key={row.key} row={row} />
-                  : <UnifiedRow key={row.key} row={row} singleCol={singleCol} />
+                  ? <SplitRow key={row.key} row={row} tokenize={tokenize} />
+                  : <UnifiedRow key={row.key} row={row} singleCol={singleCol} tokenize={tokenize} />
               })}
             </div>
           )
