@@ -22,7 +22,7 @@ import type { PanelId } from './context'
 import { SectionHeader } from './SectionHeader'
 import { PanelMenu } from './PanelMenu'
 import { usePanelInstance } from './panelInstance'
-import { useDrag } from './WorkspaceDragContext'
+import { useDragControls } from './WorkspaceDragContext'
 
 export type PanelFrameProps = {
   chrome: PanelChrome
@@ -72,7 +72,7 @@ function FramedHeader({ title, useHeader, collapsed, onToggle, panelId }: {
 }) {
   const { title: dynamicTitle, actions, badge, stats } = useHeader()
   const instance = usePanelInstance()
-  const drag = useDrag()
+  const drag = useDragControls()
   // The flexible-layout menu sits after the panel's own actions (rightmost), in a
   // single flex row so a panel that publishes its actions as a block element does
   // not push the kebab onto a second line (which would grow the fixed-height header

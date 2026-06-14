@@ -282,14 +282,22 @@ function dropAtY(el: Element, transfer: ReturnType<typeof paneTransfer>, clientY
   fireEvent(el, ev)
 }
 
-// Production defers the drag-store notify to requestAnimationFrame so the drop-zone
-// overlays/edge strips don't mount DURING `dragstart` — a DOM mutation there makes
-// Chrome ABORT the native drag. These tests fire `dragStart` then synchronously
-// `drop`, so run rAF synchronously to flush that one-frame activation.
+// Production defers the drag-store notify to requestAnimationFrame (arming the drop
+// overlays/edge strips DURING `dragstart` would abort the native drag in Chrome — see
+// WorkspaceDragContext). These tests fire `dragStart` then synchronously `drop`/assert,
+// so run rAF synchronously to flush that one-frame activation. The shim is installed on
+// BOTH `globalThis` and `window` because jsdom exposes `requestAnimationFrame` on the
+// window object and the module resolves the bare global through the window binding.
 beforeEach(() => {
-  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => { cb(0); return 0 })
+  const sync = (cb: FrameRequestCallback): number => { cb(0); return 0 }
+  vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(sync)
+  if (typeof window !== 'undefined') vi.spyOn(window, 'requestAnimationFrame').mockImplementation(sync)
 })
-afterEach(() => { vi.restoreAllMocks() })
+// Clear the module-singleton payload WHILE the rAF shim is still active (so the
+// clear's deferred notify flushes synchronously instead of being scheduled on the
+// real rAF and left pending — which would wedge `notifyScheduled` and silence every
+// later drag), THEN restore the real timer.
+afterEach(() => { window.dispatchEvent(new Event('dragend')); vi.restoreAllMocks() })
 
 describe('DesktopPanelTreeLayout — dock sidebar DnD', () => {
   // root[ left col[projects, files] · center group:1 · right sessions ]
@@ -434,12 +442,11 @@ describe('DesktopPanelTreeLayout — hidden/absent sidebars + edge reveal', () =
   // re-render synchronously even with the rAF shim. Re-enable once the drag-store
   // re-render is made test-flushable (or sources stop subscribing). The feature
   // itself is verified working via real OS-level drag input.
-  it.skip('recreates the sidebar from an edge strip (root-edge placement) — region was normalized away', () => {
+  it('recreates the sidebar from an edge strip (root-edge placement) — region was normalized away', () => {
     const m = mountSidebar(noRight(), { kind: 'dock', instanceId: 'files', panel: 'files' as never })
     const transfer = paneTransfer()
-    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
-    act(() => {}) // flush the rAF-deferred drag-active re-render (rAF is mocked sync)
-    // The edge strips appear only during a dock drag.
+    act(() => { fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer }) })
+    // The edge strips appear only during a dock drag (rAF-deferred notify flushed sync).
     expect(edgeStrip('right')).toBeTruthy()
     fireEvent.drop(edgeStrip('right')!, { dataTransfer: transfer })
     // A ROOT-edge move (NOT moveLeaf beside the center, which the funnel evicts left).
@@ -447,11 +454,10 @@ describe('DesktopPanelTreeLayout — hidden/absent sidebars + edge reveal', () =
     expect(m.movePane).not.toHaveBeenCalled()
   })
 
-  it.skip('reveals the LEFT sidebar from the left edge strip via a root-edge move', () => {
+  it('reveals the LEFT sidebar from the left edge strip via a root-edge move', () => {
     const m = mountSidebar(noRight(), { kind: 'dock', instanceId: 'files', panel: 'files' as never })
     const transfer = paneTransfer()
-    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
-    act(() => {}) // flush the rAF-deferred drag-active re-render (rAF is mocked sync)
+    act(() => { fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer }) })
     fireEvent.drop(edgeStrip('left')!, { dataTransfer: transfer })
     expect(m.moveLeafToEdge).toHaveBeenCalledWith('files', 'left')
   })

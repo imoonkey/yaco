@@ -38,14 +38,16 @@ function getPayload(): DragPayload | null {
   return payload
 }
 
-// Re-render subscribers on the NEXT frame, never synchronously. ANY synchronous
-// re-render from inside the `dragstart` handler (even just re-creating the source's
-// onDragStart prop) makes Chrome ABORT the just-started native drag — no ghost, no
-// dragover/drop/dragend, payload left stuck and the header frozen. The store VALUE
-// is set synchronously below, so `peek()` (used by drop handlers) is always current;
-// only the visual re-render is deferred one frame, after the drag is committed. The
-// drop overlays are ALWAYS mounted (interactivity gated by a style), so deferring the
-// re-render only delays arming them by a frame — well before the first dragover.
+// Re-render subscribers on the NEXT frame, never synchronously. ANY synchronous React
+// re-render committed from inside the `dragstart` handler makes Chrome ABORT the
+// just-started native drag — no ghost, no dragover/drop/dragend, payload left stuck and
+// the header frozen. This is NOT only about the source element: arming the drop overlays
+// (a real DOM mutation) during the same dragstart dispatch aborts the drag too — verified
+// with OS-level input. So even though drag SOURCES use the non-subscribing
+// `useDragControls` (they never re-render on the flip they cause), the SUBSCRIBING drop
+// targets must still be notified one frame LATER. The store VALUE is set synchronously
+// below, so `peek()` (used by drop handlers) is always current; only the visual re-render
+// is deferred one frame, after the drag is committed — well before the first dragover.
 function scheduleNotify() {
   if (notifyScheduled) return
   notifyScheduled = true
@@ -112,7 +114,18 @@ export type WorkspaceDrag = {
   clear: () => void
 }
 
-/** Read + drive the shared pane-drag identity. */
+/** Drag CONTROLS for drag SOURCES — `{ start, clear, peek }` only, with NO
+ *  `useSyncExternalStore` subscription, so a source never re-renders on the payload
+ *  flip its own `dragstart` causes (a synchronous re-render there aborts the native
+ *  drag in Chrome; the subscribing drop targets are notified one frame later — see
+ *  `scheduleNotify`). Module-level stable refs → identity-stable across renders. */
+export function useDragControls(): Omit<WorkspaceDrag, 'payload'> {
+  return { peek: getPayload, start, clear }
+}
+
+/** Read + drive the shared pane-drag identity. Subscribes — use ONLY in DROP
+ *  targets that need the reactive `payload` (drop overlays / edge strips / tab-bar
+ *  feedback), never on a drag SOURCE element (see `useDragControls`). */
 export function useDrag(): WorkspaceDrag {
   const snapshot = useSyncExternalStore(subscribe, getPayload, getPayload)
   return { payload: snapshot, peek: getPayload, start, clear }

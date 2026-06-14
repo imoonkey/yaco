@@ -26,7 +26,7 @@ import { ProviderIcon } from '../components/SessionIcons'
 import { Menu, MenuItem, MenuDivider } from '../components/Menu'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { useContextMenu } from '../components/useContextMenu'
-import { useDrag, isPaneDrag } from './WorkspaceDragContext'
+import { useDrag, useDragControls, isPaneDrag } from './WorkspaceDragContext'
 import { tabInsertIndex, legalZones, type Rect, type Region } from './dndGeometry'
 import { InsertionMarker } from './InsertionMarker'
 
@@ -115,7 +115,12 @@ export function GroupTabBar(props: GroupTabBarProps) {
   } = props
 
   const menu = useContextMenu()
-  const drag = useDrag()
+  // Source + drop handlers use the NON-subscribing controls so a tab/group dragstart
+  // never re-renders this bar synchronously (which would abort the native drag); the
+  // reactive `payload` (drag feedback: dimming, merge hint) is read separately and
+  // only re-renders AFTER the drag has committed.
+  const dragControls = useDragControls()
+  const dragPayload = useDrag().payload
   const stripRef = useRef<HTMLDivElement>(null)
   // Drag feedback over the strip: the insertion index for a tab drop (the marker), and
   // a merge hint while a whole group hovers (its tabs would append here).
@@ -184,7 +189,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   const clearDropFeedback = () => { setDropIndex(null); setMergeHint(false) }
 
   const onStripDragOver = useCallback((e: React.DragEvent) => {
-    const payload = drag.peek()
+    const payload = dragControls.peek()
     if (!payload || !isPaneDrag(e)) return
     const zones = legalZones({ kind: payload.kind }, { region, kind: 'group' })
     if (payload.kind === 'tab' && zones.has('tab')) {
@@ -198,14 +203,14 @@ export function GroupTabBar(props: GroupTabBarProps) {
     } else {
       clearDropFeedback() // illegal — render no feedback, leave the drop rejected
     }
-  }, [drag, region, groupId, measureTabs])
+  }, [dragControls, region, groupId, measureTabs])
 
   const onStripDragLeave = useCallback((e: React.DragEvent) => {
     if (!stripRef.current?.contains(e.relatedTarget as Node | null)) clearDropFeedback()
   }, [])
 
   const onStripDrop = useCallback((e: React.DragEvent) => {
-    const payload = drag.peek()
+    const payload = dragControls.peek()
     clearDropFeedback()
     if (!payload || !isPaneDrag(e)) return
     const zones = legalZones({ kind: payload.kind }, { region, kind: 'group' })
@@ -222,15 +227,15 @@ export function GroupTabBar(props: GroupTabBarProps) {
       e.preventDefault()
       if (payload.groupId !== groupId) onMoveGroup(payload.groupId, { kind: 'merge', targetGroupId: groupId })
     }
-    drag.clear()
-  }, [drag, region, groupId, tabs, measureTabs, onMoveTab, onMoveGroup])
+    dragControls.clear()
+  }, [dragControls, region, groupId, tabs, measureTabs, onMoveTab, onMoveGroup])
 
   const chooseSplit = (side: SplitSide) => { onSplit(side); menu.close() }
 
   // Feedback shows only while a drag is live; a drag that ends anywhere (drop/cancel)
   // flips the reactive payload to null and re-renders, clearing the marker/hint without
   // a cleanup effect.
-  const dragging = !!drag.payload
+  const dragging = !!dragPayload
   const showMarkerAt = (i: number) => dragging && dropIndex === i
 
   return (
@@ -271,8 +276,8 @@ export function GroupTabBar(props: GroupTabBarProps) {
                 data-tab-kind={tab.kind}
                 data-tab-active={isActive || undefined}
                 draggable={!isTouch}
-                onDragStart={(e) => drag.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
-                onDragEnd={drag.clear}
+                onDragStart={(e) => dragControls.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
+                onDragEnd={dragControls.clear}
                 onClick={() => onSelectTab(tab.instanceId)}
                 title={isEditor ? tab.tabId : label}
                 className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
@@ -283,7 +288,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
                   borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
                   borderBottom: isActive ? '1px solid var(--sol-editor-bg)' : '1px solid var(--sol-border)',
                   fontStyle: isPreview ? 'italic' : undefined,
-                  opacity: drag.payload?.kind === 'tab' && drag.payload.instanceId === tab.instanceId ? 0.4 : undefined,
+                  opacity: dragPayload?.kind === 'tab' && dragPayload.instanceId === tab.instanceId ? 0.4 : undefined,
                 }}
               >
                 {isEditor
@@ -319,8 +324,8 @@ export function GroupTabBar(props: GroupTabBarProps) {
             still focuses this group; a right-click opens the same Split menu. */}
         <div className="flex-1 self-stretch flex items-center" style={{ minWidth: 32 }}
           draggable={!isTouch}
-          onDragStart={(e) => drag.start(e, { kind: 'group', groupId })}
-          onDragEnd={drag.clear}
+          onDragStart={(e) => dragControls.start(e, { kind: 'group', groupId })}
+          onDragEnd={dragControls.clear}
           onClick={onActivateGroup} {...(showMenu ? menu.bind() : {})} data-testid="group-empty-area">
           {tabs.length === 0 && <span className="px-3 text-ui-sm shrink-0" style={{ color: 'var(--sol-text)' }}>No files open</span>}
         </div>
