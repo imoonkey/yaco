@@ -1,92 +1,119 @@
 # Align Subcommand
 
-> Last updated: 2026-06-04 (yc-cleanup-legacy)
+> Last updated: 2026-06-14 (yaco-align-cli)
 
-The `align` area drives multi-agent alignment workflows. Today the only
-subcommand is `poll` — a pure-TypeScript port of the legacy `align_poll.sh`
-helper (deleted in yc-cleanup-legacy) that blocks until a `status.txt`
-flips to the caller's role or to `DONE`.
+The `align` area internalizes the whole multi-agent alignment handoff protocol
+(read **and** write) behind four verbs, so the `status.txt` grammar and the
+turn/vote state machine live in **one module** and illegal transitions are
+unrepresentable through the CLI. Two agents (CODEX, CLAUDE) take turns editing a
+shared `final/` design directory; the CLI is the **sole** reader/writer of the
+single-line `discussion/status.txt` coordination state — agents only call verbs
+and write content (`final/*` and their turn files).
 
-The pure loop lives in `cli/src/commands/align/poll.ts#pollStatus`; the
-CLI handler (`runPoll`) wraps it with argv parsing, the historical
-exit-code routing, and the `--json` envelope.
+Module: `cli/src/commands/align/` —
+`protocol.ts` (pure grammar + `transition` state machine), `store.ts` (bundle
+resolution, atomic status writes, `final/` fingerprint, per-turn snapshot,
+blocking wait), `verbs.ts` + `wait.ts` (handlers), `index.ts` (dispatcher).
 
 ## CLI surface
 
 ```
-yaco align poll <status_file> <role> [--interval <sec>] [--timeout <sec>] [--json]
+yaco align init    [<dir>] --first <CODEX|CLAUDE>           [--json]
+yaco align wait    [<dir>] <CODEX|CLAUDE> [--timeout <sec>] [--json]
+yaco align handoff [<dir>] <CODEX|CLAUDE>                   [--json]
+yaco align status  [<dir>]                                 [--json]
 ```
 
-- **`<status_file>`** — path to `align/discussion/status.txt`.
-- **`<role>`** — caller's agent role (e.g. `CODEX` or `CLAUDE`; case-insensitive).
-- **`--interval <sec>`** — poll cadence (default `15`).
-- **`--timeout <sec>`** — give-up deadline (default `3600`; `0` = wait forever).
-- **`--json`** — switch to the `{ok,data}/{ok,error}` envelope.
+| verb | who calls it | blocks? | returns (`--json` data) |
+|------|--------------|---------|--------------------------|
+| `init` | first-mover agent (once) | no | `{seq, next, dir}` |
+| `wait` | each agent, start of every turn | **yes** | `{status:"YOUR_TURN", seq, turnFile, finalDir}` or `{status:"DONE", seq}` |
+| `handoff` | each agent, end of every turn | no | `{status:"HANDED_OFF"\|"DONE", seq, role, vote, changedFinal, next}` |
+| `status` | orchestrator (read-only monitor) | no | `{seq, next, codex, claude, done}` |
 
-## status.txt grammar
+**Addressing.** Explicit `<dir>` (the bundle root holding `discussion/` +
+`final/`), or — when omitted — cwd inference walks up to the nearest dir with
+`discussion/status.txt`. A raw `.../status.txt` path is rejected (`USAGE`). There
+is no `--project`/registry coupling.
 
-The first line of `status.txt` is parsed for four tokens. The regex
-character classes mirror the legacy `grep -oE` patterns exactly:
+**The line the CLI never crosses.** It owns the coordination state and turn-file
+numbering; the **agent** writes all content — the `final/*` design and the
+`NNNN_ROLE.md` turn prose. The turn file is *reserved* by `wait` (path returned)
+and *written* by the agent; `handoff` refuses a missing/empty turn file.
 
-| Token | Class | Notes |
-|-------|-------|-------|
-| `SEQ=` | `[0-9]+` | Optional; non-numeric → undefined, doesn't fail the parse. |
-| `NEXT=` | `[A-Z]+` | Required. Match is greedy: `NEXT=CLAUDE1` parses as `CLAUDE`. `NEXT=claude` fails → ERROR. |
-| `CODEX=` | `[A-Z]+` | Optional vote field. |
-| `CLAUDE=` | `[A-Z]+` | Optional vote field. |
+## Vote inference (no `--vote`)
 
-Matching is unanchored — `XNEXT=CODEX` parses as `NEXT=CODEX`, same as
-the shell `grep -oE 'NEXT=[A-Z]+'`. A line whose first row lacks a
-parseable `NEXT=` is treated as malformed (→ ERROR).
+The agent never declares APPROVE/CHANGES. The CLI infers it from `final/`:
+
+- `wait` (on `YOUR_TURN`) snapshots a recursive, **mtime-independent** content
+  hash of `final/` into `discussion/.align/turn.json`.
+- `handoff` re-hashes `final/`: **changed ⇒ `CHANGES`** (reset the other role to
+  `PENDING`, `NEXT=other`); **unchanged ⇒ `APPROVE`** (both APPROVE ⇒ `NEXT=DONE`,
+  else `NEXT=other`).
+
+Any `final/` edit — even reformat/typo-only — forces a re-review. That is the
+accepted bias for alignment quality; it removes the old, fragile
+substantive/trivial judgment. Re-running `wait` before a `handoff` keeps the
+original baseline, so a crashed/resumed turn still compares against its true
+start.
+
+## State machine
+
+Coordination state is `(SEQ, NEXT, CODEX_vote, CLAUDE_vote)`, advanced entirely
+by `handoff` (the CLI computes the vote, so a caller cannot pick an illegal
+transition). `status.txt` line — an implementation detail callers never parse:
+
+```
+SEQ=<n> NEXT=<CODEX|CLAUDE|DONE> CODEX=<PENDING|APPROVE|CHANGES> CLAUDE=<...>
+```
+
+Invariants enforced by the CLI:
+
+- Only the role named by `NEXT` may `wait`/`handoff`; out-of-turn `handoff` →
+  `CONFLICT` (`not your turn`).
+- `handoff` requires a prior `wait` (an open-turn snapshot) → else `CONFLICT`
+  (`no active turn`).
+- `SEQ` increments by exactly 1 per `handoff`, never decreases.
+- `NEXT=DONE` is reachable **only** through mutual APPROVE and is absorbing
+  (further `handoff` → `CONFLICT`, `already DONE`).
+- The CLI is the sole writer, so `status.txt` is always well-formed: `wait`'s
+  `ERROR` means an uninitialized/corrupt bundle, never a torn line.
 
 ## Exit codes & output routing
 
-Text mode mirrors `align_poll.sh` exactly. **All four terminal words go
-to stdout**, which is load-bearing for legacy callers using
-`$(align_poll.sh ...)` capture-by-stdout:
+`wait` is process-owning (like the prior `poll` verb): it emits its envelope and
+`process.exit()`s directly so it can honor exit codes the shared `ErrCode` table
+doesn't model. The poll interval is fixed internally (~1s); `--timeout` defaults
+to `3600`s (`0` = wait forever).
 
-| Outcome | Exit | Text mode | `--json` |
-|---------|------|-----------|----------|
-| YOUR_TURN | `0` | stdout = `YOUR_TURN\n` | stdout = `{"ok":true,"data":{"status":"YOUR_TURN",...}}` |
-| DONE      | `0` | stdout = `DONE\n` | stdout = `{"ok":true,"data":{"status":"DONE",...}}` |
-| TIMEOUT   | `1` | stdout = `TIMEOUT\n` (stderr empty) | stderr = `{"ok":false,"error":{"code":"align.timeout",...}}` |
-| ERROR     | `2` | stdout = `ERROR\n` (stderr empty) | stderr = `{"ok":false,"error":{"code":"align.error",...}}` |
+| `wait` outcome | exit | text mode | `--json` |
+|----------------|------|-----------|----------|
+| YOUR_TURN | `0` | `YOUR_TURN seq=… turn=… final=…` on stdout | `{ok:true,data:{status:"YOUR_TURN",…}}` |
+| DONE      | `0` | `DONE` on stdout | `{ok:true,data:{status:"DONE",seq}}` |
+| TIMEOUT   | `1` | `TIMEOUT` on stdout | `{ok:false,error:{code:"align.timeout",…}}` on stderr |
+| ERROR     | `2` | `ERROR` on stdout | `{ok:false,error:{code:"align.error",…}}` on stderr |
 
-The handler reaches `process.exit()` directly because the historical
-exit codes (1 for TIMEOUT, 2 for ERROR) don't map cleanly through the
-shared `ErrCode` → exit-code table. Usage errors (`--interval` with no
-value, missing positional, unknown flag) still throw `CliError(USAGE)`
-and exit `2` via the normal dispatcher path.
-
-`--help` shows raw prose in text mode; `--help --json` is wrapped in the
-standard `{ok:true,data:{help:"..."}}` envelope so `--json` stdout stays
-a single machine-parseable line.
+`init` / `handoff` / `status` are ordinary result commands on the
+`{ok,data}/{ok,error}` envelope. Their failures throw `CliError(ErrCode.*)` and
+exit via the shared table — `USAGE`→2 (bad args, raw `status.txt` path),
+`NOT_FOUND`→1 (no/uninitialized bundle), `CONFLICT`→1 (already initialized, not
+your turn, no active turn, already DONE), `INVALID`→1 (empty turn file, malformed
+status). The specific condition rides the error **message**.
 
 ## Logging
 
-A best-effort `poll.log` is appended next to the status file (one line
-per state change, ISO-8601 timestamped). Failures to write are swallowed
-— logging never blocks the poll loop.
-
-## Differences vs the shell baseline
-
-| Behavior | Shell | TS port |
-|----------|-------|---------|
-| Stdout routing of terminal words | stdout (all four) | **stdout (all four)** — preserved |
-| Exit codes (text mode) | 0/1/2 | **0/1/2** — preserved |
-| Envelope output | n/a | new `--json` mode |
-| Regex character class | `[A-Z]+` / `[0-9]+` | **same** |
-| Polling primitive | `sleep` shell builtin | `setTimeout` via `Promise` |
-| Log file path | `dirname(status)/poll.log` | **same** |
-| `poll.log` write failures | terminate the script | swallowed (best-effort) |
+A best-effort `wait.log` is appended next to the status file (one line per state
+change, ISO-8601 timestamped). Failures to write are swallowed — logging never
+blocks the wait loop.
 
 ## Tests
 
-- `cli/test/unit/commands/align/poll.test.ts` — pure `pollStatus` and
-  `parseStatusFile` cases, including the `[A-Z]+` strictness corners
-  (`CLAUDE1` greedy match, lowercase rejection, vote-field strictness)
-  and a virtual-clock TIMEOUT path.
-- `cli/test/unit/commands/align/poll-cli.test.ts` — subprocess coverage
-  for exit codes, stdout-vs-stderr routing parity for all four terminal
-  words, `--json` envelope shape, the `--help --json` wrap, and the
-  three legacy-regex corner cases (`CLAUDE1`, `claude`, `OTHER`).
+- `cli/test/unit/commands/align/protocol.test.ts` — grammar round-trip +
+  malformed rejection, and the full `transition` matrix (CHANGES resets the
+  other; DONE only through mutual APPROVE; SEQ+1).
+- `cli/test/unit/commands/align/store.test.ts` — `hashFinal` mtime-independence
+  and add/edit/symlink detection; `resolveBundle` addressing; open-turn snapshot
+  lifecycle; `waitForTurn` with a stubbed clock (YOUR_TURN/DONE/flip/TIMEOUT/ERROR).
+- `cli/test/unit/commands/align/align-cli.test.ts` — subprocess suite driving a
+  full `init → wait → handoff → status` run to DONE plus every rejection path and
+  the `wait` timeout/error exit codes.

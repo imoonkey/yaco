@@ -66,7 +66,7 @@ disambiguate two envelope shapes. The exit code is the pass/fail signal.
 
 To honor this contract the handler reaches `process.exit()` directly
 (bypassing the dispatcher's render path, which would map any non-zero exit to
-an error envelope). Same convention as `yaco align poll`.
+an error envelope). Same convention as `yaco align wait`.
 
 ## Text mode
 

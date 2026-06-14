@@ -9,9 +9,9 @@ metadata:
 
 Align the design of the system or anything else between Codex and Claude.
 
-Align uses a `discussion/status.txt` handoff protocol, numbered discussion
-turns (`NNNN_{CLAUDE,CODEX}.md`), and a self-contained `final/*` output
-inside a YACO project bundle.
+Align uses the `yaco align` CLI for turn handoff (a `wait → work → handoff`
+loop), numbered discussion turns (`NNNN_{CLAUDE,CODEX}.md`), and a
+self-contained `final/*` output inside a YACO project bundle.
 
 ## Principles
 
@@ -43,7 +43,8 @@ Write and discuss the design like Linus Torvalds would.
 ```
 [project_folder]/
   discussion/
-    status.txt                 # Single-line state file
+    status.txt                 # Coordination state — owned by `yaco align`, never hand-edit
+    .align/                    # CLI-internal turn metadata
     0001_CODEX.md              # One file per turn (append-only)
     0002_CLAUDE.md
     ...
@@ -75,92 +76,60 @@ Resolve disagreements with evidence first; escalate only what needs the user. Ea
 
 ≤2 short packets inline; ≥3 or any large one → `final/open_questions.md` with one-line pointers in the body (when unsure, use the file). Resolved → fold into the body, delete the packet.
 
-### status.txt (single-line format)
-
-Single line, space-separated key=value pairs:
-
-```
-SEQ=0000 NEXT=CODEX CODEX=PENDING CLAUDE=PENDING
-```
-
-Fields:
-
-* `SEQ`: incrementing integer (+1 per round)
-* `NEXT`: `CODEX` / `CLAUDE` / `DONE`
-* `CODEX`, `CLAUDE`: `PENDING` / `APPROVE` / `CHANGES`
-
-### State Machine
-
-* `NEXT=CODEX`: Codex's turn to write
-* `NEXT=CLAUDE`: Claude's turn to write
-* Termination: `CODEX=APPROVE` and `CLAUDE=APPROVE` → `NEXT=DONE`
-
 ### SOP (both agents follow this)
 
-#### 0) Start
+The `yaco align` CLI owns all coordination state — `status.txt`, turn-file
+numbering, and vote inference. You never read or write `status.txt` by hand:
+you call four verbs and write content. Your whole loop is **wait → work →
+handoff**.
 
-- The prompt specifies which agent goes first. That agent initializes the folders.
-- If there is no initial draft, create one based on available references (individual designs, codebase, etc.) — document consensus, clarify conflicts, different opinions, and open questions.
+#### Start (first mover only)
 
-#### A) If `NEXT` is not you
+The prompt names the first mover. That agent initializes the bundle once, then
+enters the loop:
 
-1. **Do not read, think, or write anything** — only poll and wait.
-2. Block-wait using the poll command (**never hand-write sleep loops — they pollute context**):
+```bash
+yaco align init <bundle> --first <CODEX|CLAUDE> --json
+```
 
-   ```bash
-   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX> --json
-   ```
+If there is no initial draft, create one in `final/` from the available
+references (individual designs, codebase) — capture consensus, flag conflicts
+and open questions. The other agent skips `init` and goes straight to `wait`.
 
-   With `--json` the command blocks and writes one envelope line to
-   stdout when it's your turn or done:
-   `{"ok":true,"data":{"status":"YOUR_TURN", ...}}` (or `"DONE"`).
-   Exit code is 0 in both cases; on `TIMEOUT` / `ERROR` the envelope
-   becomes `{"ok":false,"error":{"code":"align.timeout"|"align.error", ...}}`
-   on stderr (exit 1 / 2). Best-effort poll details are appended to
-   `poll.log` next to `status.txt`.
-3. Parse `data.status` from the envelope. `YOUR_TURN` → go to B. `DONE` → go to C.
+#### Each turn
 
-#### B) If `NEXT` is you
-
-You are the **only one allowed to write** (both `discussion/` and `final/`).
-
-1. Read all discussion files under `discussion/` (ascending by SEQ), especially the other agent's latest file.
-2. If the aligned output needs updating: modify/add `final/*`. Edit incrementally; restructure locally when needed to keep it coherent against the Final Doc Quality Bar.
-3. Create a new discussion file (**always create, never modify old files**):
-   * Filename: `{newSEQ}_{YOU}.md` (e.g. `0003_CODEX.md`)
-   * Keep it short: this round's conclusions, what changed, unresolved issues, your vote (APPROVE/CHANGES).
-4. Update `discussion/status.txt` (still single line):
-   * `newSEQ = SEQ + 1`
-   * Set your vote: `YOU=APPROVE` (only if you made zero changes to `final/*` this round) or `YOU=CHANGES` (if you made any changes to `final/*`)
-   * **If you made any substantive changes to `final/`** (approach/interfaces/constraints/assumptions), reset the other agent's vote to `PENDING`
-   * If both are now `APPROVE`: set `NEXT=DONE`
-   * Otherwise: set `NEXT=<other agent>`
-5. Call the poll command again to wait for the other agent's response or DONE:
+1. **Wait for your turn** — blocks until it's you or the alignment is done
+   (**never hand-write sleep loops; they pollute context**):
 
    ```bash
-   yaco align poll <path/to/discussion/status.txt> <CLAUDE|CODEX> --json
+   yaco align wait <bundle> <CODEX|CLAUDE> --json
    ```
 
-#### C) If `NEXT=DONE`
+   - `{"status":"YOUR_TURN","seq":N,"turnFile":...,"finalDir":...}` → your turn;
+     the CLI reserved `turnFile` for you. Go to step 2.
+   - `{"status":"DONE"}` → both sides approved. Stop.
 
-Both agents have approved. End polling.
+2. **Work.** Read the latest `discussion/*` (especially the other agent's last
+   turn). Edit `final/*` as needed, holding it to the Final Doc Quality Bar and
+   Open Questions schema. Write this round's notes to the reserved `turnFile`
+   (conclusions, what changed, unresolved issues) — keep it short.
 
-**Status update examples:**
+3. **Hand off:**
 
-* Codex makes changes, hands to Claude:
-  ```
-  SEQ=0001 NEXT=CLAUDE CODEX=CHANGES CLAUDE=PENDING
-  ```
-* Claude finishes and approves, resets Codex for review:
-  ```
-  SEQ=0002 NEXT=CODEX CODEX=PENDING CLAUDE=APPROVE
-  ```
-* Codex reviews and approves, done:
-  ```
-  SEQ=0003 NEXT=DONE CODEX=APPROVE CLAUDE=APPROVE
-  ```
+   ```bash
+   yaco align handoff <bundle> <CODEX|CLAUDE> --json
+   ```
+
+   The CLI infers your vote from `final/`: any edit ⇒ `CHANGES` (the other side
+   must re-review); no edit ⇒ `APPROVE`. When both sides approve, the next
+   `wait` returns `DONE`.
+
+Loop back to step 1.
 
 ### Hard Rules
 
-* **Only write files when `NEXT` is you** (including `final/*` and `discussion/*`).
-* Discussion is append-only: always create new `####_AGENT.md` files, never edit old ones.
+* Edit `final/*` and write your turn file only between `wait` and `handoff` —
+  that window is your turn (the CLI rejects out-of-turn handoffs).
+* Discussion is append-only: write to the `turnFile` the CLI reserves for you,
+  never edit an earlier `####_AGENT.md`.
+* Let the CLI own `status.txt`, SEQ, and vote inference — don't hand-edit them.

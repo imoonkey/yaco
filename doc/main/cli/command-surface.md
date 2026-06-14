@@ -55,7 +55,7 @@ cost. `--json` returns the structured record; text returns the rendered block.
 **Streaming / process-owning commands are explicit exceptions** and never go
 through `dual` or the `{text}` rule — they own stdout directly and exit before
 the dispatcher renders an envelope: `agent output-follow` (NDJSON stream),
-`align poll` (status words + own exit codes), `doctor` (own `renderText` +
+`align wait` (status words + own exit codes), `doctor` (own `renderText` +
 `process.exit`).
 
 **Guarded fallback.** After the text sweep, `render()` treats any ordinary
@@ -69,7 +69,7 @@ compact JSON blob — the old behavior the read-surface pass removed.
 Ten top-level areas: `agent` · `task` · `worktree` · `project` · `align` ·
 `init` · `install` · `doctor` · `paths` · `plan`. A follow-up `surface-hygiene` design
 proposes consolidating these to six (folding `init links` + `agent hooks
-install` into `install`, relocating `align poll` under `agent`, and merging
+install` into `install`, relocating `align` under `agent`, and merging
 `doctor` + `paths` into a read-only `env` area) — **not shipped**; tracked
 separately so it does not entangle install/init/doctor semantics with the read
 surface.

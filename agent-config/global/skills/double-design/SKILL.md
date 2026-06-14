@@ -85,7 +85,7 @@ Send both agents into `/align` mode with the first mover explicitly assigned. Ex
 
 ```bash
 yaco agent send claude-design "Run /align. Read all files in plan/all/<project>/initial/. You are CLAUDE. Alignment folder: plan/all/<project>/. Claude is the explicit first mover. If it is your turn, initialize alignment artifacts and write the first draft. That first draft must be conservative: capture consensus, avoid opinionated picks on unresolved questions, record every unresolved issue as a structured Open Question packet per /align Open Questions, and keep final/ to the /align Final Doc Quality Bar. Whenever an open question is resolved later, fold it into the design and delete the packet. If it is not your turn, wait." --json
-yaco agent send codex-design  "Run /align. Read all files in plan/all/<project>/initial/. You are CODEX. Alignment folder: plan/all/<project>/. Claude is the explicit first mover. Do not start drafting unless status.txt says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Hold final/ to the /align Final Doc Quality Bar and Open Questions to the /align packet schema. Whenever an open question gets resolved later, fold it into the design and delete the packet." --json
+yaco agent send codex-design  "Run /align. Read all files in plan/all/<project>/initial/. You are CODEX. Alignment folder: plan/all/<project>/. Claude is the explicit first mover. Do not start drafting unless 'yaco align wait' says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Hold final/ to the /align Final Doc Quality Bar and Open Questions to the /align packet schema. Whenever an open question gets resolved later, fold it into the design and delete the packet." --json
 ```
 
 If the cross-reviews pick Codex, swap the role assignment in both prompts. The key invariant is that exactly one side is named the first mover in both messages.
@@ -95,24 +95,24 @@ If the cross-reviews pick Codex, swap the role assignment in both prompts. The k
 Minimal manual monitoring loop:
 
 ```bash
-cat plan/all/<project>/discussion/status.txt
+yaco align status plan/all/<project>/ --json
 yaco agent status claude-design --json
 yaco agent status codex-design  --json
 ```
 
-If `status.txt` says `NEXT=CLAUDE` and `yaco agent status claude-design --json` returns `idle`, send:
+If `yaco align status` reports `next=CLAUDE` and `yaco agent status claude-design --json` returns `idle`, send:
 
 ```bash
 yaco agent send claude-design "It's your turn. Read the latest discussion files and continue /align." --json
 ```
 
-If `status.txt` says `NEXT=CODEX` and `yaco agent status codex-design --json` returns `idle`, send:
+If `yaco align status` reports `next=CODEX` and `yaco agent status codex-design --json` returns `idle`, send:
 
 ```bash
 yaco agent send codex-design "It's your turn. Read the latest discussion files and continue /align." --json
 ```
 
-Repeat until `status.txt` reaches `NEXT=DONE`.
+Repeat until `yaco align status` reports `done=true` (`next=DONE`).
 
 ## Output
 
@@ -124,6 +124,6 @@ Hand off to `/implement` when ready.
 - Both agents must NOT read each other's work during Step 1 — independent thinking is the whole point
 - Session reuse (`send` instead of `start`) keeps prior context so agents build on their own reasoning
 - Steps 1 & 2: blocking provider-log waits (`wait --from-start` for fresh starts, `send --wait` for follow-up turns) are safe (bounded tasks, agents will finish)
-- Step 3: never block-wait — manually monitor `status.txt` plus `yaco agent status`, then nudge the side whose turn it is if that session is idle
+- Step 3: never block-wait — manually monitor `yaco align status` plus `yaco agent status`, then nudge the side whose turn it is if that session is idle
 - Step 3: the first mover owns the first draft, but that draft should mostly record shared ground plus explicit open questions, not force unresolved choices
 - Final-doc quality and the Open Question packet format are owned by `/align` (Final Doc Quality Bar, Open Questions); the Step 3 prompts already send both agents there. `final/*` stays self-contained — a resolved open question isn't done until folded into the body and its packet deleted.
