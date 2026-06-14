@@ -190,6 +190,31 @@ describe('resizeSplitChild', () => {
     expect(resizeSplitChild(base(), 'root', 'dock', Number.POSITIVE_INFINITY)).toEqual(base())
     expect(resizeSplitChild(base(), 'root', 'dock', Number.NEGATIVE_INFINITY)).toEqual(base())
   })
+
+  it('scales same-axis descendants when a grow sibling changes size', () => {
+    const layout = normalizeLayout({
+      desktop: {
+        kind: 'split', id: 'root', axis: 'row', children: [
+          { basis: 200, node: { kind: 'leaf', id: 'files', panel: 'files' } },
+          {
+            grow: true,
+            node: {
+              kind: 'split', id: 'center', axis: 'row', children: [
+                { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: [], activeTab: '' } },
+                { basis: 400, node: { kind: 'tabs', id: 'group:2', tabs: [], activeTab: '' } },
+              ],
+            },
+          },
+        ],
+      },
+    })
+
+    const next = resizeSplitChild(layout, 'root', 'files', 300, { containerBasis: 1003 })
+    // Root content: 1003px total - one 3px handle = 1000px. The center shrinks
+    // from 800px to 700px, so its fixed 400px child scales to ~350px instead of
+    // keeping the center divider pinned in absolute pixels.
+    expect(findSplit(next.desktop, 'center').children[1].basis).toBeCloseTo(350, 0)
+  })
 })
 
 // --- toggleDock / toggleActivity --------------------------------------------

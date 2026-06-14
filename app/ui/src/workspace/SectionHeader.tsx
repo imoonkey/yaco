@@ -13,7 +13,7 @@ export function SectionHeader({ title, collapsed, onToggle, actions, badge, stat
       <span className="flex-1 ml-0.5 min-w-0 truncate">{title}</span>
       {stats && <div onClick={e => e.stopPropagation()}>{stats}</div>}
       {badge != null && badge > 0 && (
-        <span className="w-[18px] h-[14px] rounded-full text-ui-2xs flex items-center justify-center font-bold" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-warning) 19%, transparent)', color: 'var(--sol-warning)' }}>{badge}</span>
+        <span className="w-[18px] h-[14px] rounded-full text-ui-xs flex items-center justify-center font-bold" style={{ backgroundColor: 'color-mix(in srgb, var(--sol-warning) 19%, transparent)', color: 'var(--sol-warning)' }}>{badge}</span>
       )}
       {!collapsed && actions && <div onClick={e => e.stopPropagation()}>{actions}</div>}
     </div>

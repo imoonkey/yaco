@@ -97,12 +97,11 @@ describe('MobilePanelProjection projects every dock from the registry metadata',
   )
 })
 
-// Center-scoping (design: §Mobile — sidebar groups are desktop-only). A terminal
-// group living in the RIGHT sidebar must never drive the mobile terminal pane,
-// even when it is the focused (activeGroupId) group: the pane projects the CENTER
-// region only, so an empty center falls back to the idle 'terminal' placeholder.
-describe('MobilePanelProjection center-scopes the active group', () => {
-  it('does not let a right-sidebar terminal group become the mobile terminal target', () => {
+// Mobile projects the active editor/terminal instance across the tree. Desktop can
+// park a group in the right sidebar, but a mobile pane still needs to show the
+// instance the command just activated.
+describe('MobilePanelProjection active instance routing', () => {
+  it('shows a right-sidebar terminal when it is the active terminal', () => {
     const SIDEBAR_TERM = 'term:side'
     const desktop = {
       kind: 'split', id: 'root', axis: 'row',
@@ -126,8 +125,40 @@ describe('MobilePanelProjection center-scopes the active group', () => {
     })
     const term = document.querySelector('[data-panel-host="terminal"]')
     expect(term).not.toBeNull()
-    // The sidebar terminal is NOT bound; the pane falls back to the idle placeholder.
-    expect(term?.getAttribute('data-panel-instance')).toBe('terminal')
-    expect(term?.getAttribute('data-panel-instance')).not.toBe(SIDEBAR_TERM)
+    expect(term?.getAttribute('data-panel-instance')).toBe(SIDEBAR_TERM)
+  })
+
+  it('shows a right-sidebar editor when it is the active editor', () => {
+    const SIDEBAR_EDITOR = 'editor:side'
+    const desktop = {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: [], activeTab: '' } },
+        {
+          basis: 280,
+          node: {
+            kind: 'tabs',
+            id: 'group:editor',
+            tabs: [{ instanceId: SIDEBAR_EDITOR, kind: 'editor', tabId: 'src/side.ts' }],
+            activeTab: SIDEBAR_EDITOR,
+          },
+        },
+      ],
+    }
+    const panelLayout = { ...defaultWorkspacePanelLayout(), desktop, mobile: { activeDock: 'editor' } }
+    mobileDockPanelsMock.mockImplementation((dock: MobileDock) => (dock === 'editor' ? ['editor'] : REMAP[dock]))
+    renderDock('editor', {
+      panelLayout,
+      selection: {
+        activeGroupId: 'group:editor',
+        activeEditorId: SIDEBAR_EDITOR,
+        activeTerminalId: null,
+        activeEditorTab: { instanceId: SIDEBAR_EDITOR, kind: 'editor', tabId: 'src/side.ts' },
+        editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+      },
+    })
+    const editor = document.querySelector('[data-panel-host="editor"]')
+    expect(editor).not.toBeNull()
+    expect(editor?.getAttribute('data-panel-instance')).toBe(SIDEBAR_EDITOR)
   })
 })

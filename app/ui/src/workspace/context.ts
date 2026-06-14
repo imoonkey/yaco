@@ -21,6 +21,7 @@ import type {
   FileState, PreviewMode, SplitDirection, MobilePane, WorkspaceLayout,
   WorkspacePanelLayout, GroupTab, FocusedPane,
 } from '../hooks/workspaceTypes'
+import type { ResizeSplitOptions } from './panelLayoutModel'
 import type { CapabilityState, InteractionState } from '../hooks/useVoice'
 import type { WorkspaceData } from './resources'
 import type { AttentionBadge, AttentionTaskIds } from '../hooks/useAttention'
@@ -258,7 +259,7 @@ export type WorkspaceCommands = {
 
   // Layout
   collapsePanel: (panel: PanelId, collapsed: boolean) => void
-  resizeSplitChild: (splitId: string, childId: string, basis: number) => void
+  resizeSplitChild: (splitId: string, childId: string, basis: number, options?: ResizeSplitOptions) => void
   toggleDock: () => void
   toggleActivity: () => void
   activateTabsPanel: (tabsId: string, panel: PanelId) => void

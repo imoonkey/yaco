@@ -398,6 +398,30 @@ describe('splitBeside / closeGroup / ensureCenterGroup / mapGroup', () => {
     expect(terminalTabsInGroup(closed.desktop, asTabs(right!).id).map((t) => t.instanceId)).toEqual(['t1'])
   })
 
+  it('closeGroup of an EMPTY last center group promotes the right group and keeps right docks right', () => {
+    const base = layoutWith({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: group('center', [], '') },
+        {
+          basis: 280,
+          node: {
+            kind: 'split', id: 'activity', axis: 'col', children: [
+              { basis: 160, node: { kind: 'leaf', id: 'sessions', panel: 'sessions' } },
+              { grow: true, node: group('right', [term('t1'), term('t2')], 't1') },
+            ],
+          },
+        },
+      ],
+    })
+
+    const closed = closeGroup(base, 'center')
+    const { center, right } = regionsOf(closed.desktop)
+    expect(asTabs(center!).id).toBe('right')
+    expect(terminalTabsInGroup(closed.desktop, 'right').map((t) => t.instanceId)).toEqual(['t1', 't2'])
+    expect(collectLeafPanels(right!)).toEqual(['sessions'])
+  })
+
   it('mapGroup edits a group purely and re-normalizes', () => {
     const base = layoutWith(group('group:1', [ed('editor:1', 'a.ts')], 'editor:1'))
     const next = mapGroup(base, 'group:1', (g) => ({

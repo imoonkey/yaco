@@ -282,6 +282,12 @@ function dropAtY(el: Element, transfer: ReturnType<typeof paneTransfer>, clientY
   fireEvent(el, ev)
 }
 
+function dragOverAtY(el: Element, transfer: ReturnType<typeof paneTransfer>, clientY: number): void {
+  const ev = createEvent.dragOver(el, { dataTransfer: transfer })
+  Object.defineProperty(ev, 'clientY', { value: clientY })
+  fireEvent(el, ev)
+}
+
 // Production defers the drag-store notify to requestAnimationFrame (arming the drop
 // overlays/edge strips DURING `dragstart` would abort the native drag in Chrome — see
 // WorkspaceDragContext). These tests fire `dragStart` then synchronously `drop`/assert,
@@ -384,7 +390,7 @@ describe('DesktopPanelTreeLayout — right sidebar tab/group merge', () => {
     const m = mountSidebar(rightDocksOnly())
     const transfer = startTabDrag()
     fireEvent.drop(sidebarDrop('right')!, { dataTransfer: transfer })
-    expect(m.moveTabToSplit).toHaveBeenCalledWith('group:1', 'editor:1', 'sessions', 'below')
+    expect(m.moveTabToSplit).toHaveBeenCalledWith('group:1', 'editor:1', 'sessions', 'above')
     expect(m.moveTab).not.toHaveBeenCalled() // a fresh group, not a merge
   })
 
@@ -392,7 +398,7 @@ describe('DesktopPanelTreeLayout — right sidebar tab/group merge', () => {
     const m = mountSidebar(rightDocksOnly())
     const transfer = startGroupDrag('group:1')
     fireEvent.drop(sidebarDrop('right')!, { dataTransfer: transfer })
-    expect(m.moveGroup).toHaveBeenCalledWith('group:1', { kind: 'beside', targetId: 'sessions', side: 'below' })
+    expect(m.moveGroup).toHaveBeenCalledWith('group:1', { kind: 'beside', targetId: 'sessions', side: 'above' })
   })
 
   it('REJECTS a group on the LEFT sidebar — no zone renders, no mover fires', () => {
@@ -431,6 +437,19 @@ describe('DesktopPanelTreeLayout — right sidebar dock ↔ group positioning (F
     dropAtY(sidebarDrop('right')!, transfer, 290)
     // The dock lands beside the GROUP — previously impossible (only sessions was an anchor).
     expect(m.movePane).toHaveBeenCalledWith('projects', { targetId: 'group:R', side: 'below' })
+  })
+
+  it('renders the bottom insertion line inside the sidebar when dropping after the last row', () => {
+    mountSidebar(rightDockAndGroup(), { kind: 'dock', instanceId: 'projects', panel: 'projects' as never })
+    const transfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
+    stubRect(sidebarDrop('right')!.parentElement!, { y: 0, top: 0, bottom: 300, height: 300 })
+    stubRect(document.querySelector('[data-dock-leaf="sessions"]')!, { y: 0, top: 0, bottom: 100, height: 100 })
+    stubRect(group('group:R')!, { y: 100, top: 100, bottom: 300, height: 200 })
+
+    dragOverAtY(sidebarDrop('right')!, transfer, 290)
+
+    expect(screen.getByTestId('sidebar-insertion-line').style.top).toBe('298px')
   })
 
   it('drops a dock ABOVE the right group (between sessions and the group)', () => {
@@ -491,12 +510,27 @@ describe('DesktopPanelTreeLayout — hidden/absent sidebars + edge reveal', () =
     expect(m.movePane).not.toHaveBeenCalled()
   })
 
-  it('reveals the LEFT sidebar from the left edge strip via a root-edge move', () => {
+  it('does not overlay an already-visible LEFT sidebar with a root edge strip', () => {
     const m = mountSidebar(noRight(), { kind: 'dock', instanceId: 'files', panel: 'files' as never })
     const transfer = paneTransfer()
     act(() => { fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer }) })
+    expect(edgeStrip('left')).toBeNull()
+    expect(m.moveLeafToEdge).not.toHaveBeenCalled()
+  })
+
+  it('reveals the LEFT sidebar from the left edge strip when it is absent', () => {
+    const noLeft = (): LayoutNode => ({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { grow: true, node: grp('group:1', 'editor:1') },
+        { basis: 280, node: dock('sessions') },
+      ],
+    })
+    const m = mountSidebar(noLeft(), { kind: 'dock', instanceId: 'sessions', panel: 'sessions' as never })
+    const transfer = paneTransfer()
+    act(() => { fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer }) })
+    expect(edgeStrip('left')).toBeTruthy()
     fireEvent.drop(edgeStrip('left')!, { dataTransfer: transfer })
-    expect(m.moveLeafToEdge).toHaveBeenCalledWith('files', 'left')
+    expect(m.moveLeafToEdge).toHaveBeenCalledWith('sessions', 'left')
   })
 
   it('does not show edge strips for a tab drag (dock-only reveal)', () => {

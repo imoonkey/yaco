@@ -14,6 +14,7 @@ import {
 } from '../useLayoutState'
 import {
   type WorkspacePanelLayout, type PersistedState, type TabsNode, type GroupTab,
+  type LayoutNode, type SplitNode,
   DEFAULT_LAYOUT,
 } from '../workspaceTypes'
 import {
@@ -45,6 +46,12 @@ function layoutFrom(children: Child[], sep = false): WorkspacePanelLayout {
 const files: Child = { node: { kind: 'leaf', id: 'files', panel: 'files' } }
 const center = (g: TabsNode): Child => ({ grow: true, node: g })
 const side = (g: TabsNode): Child => ({ node: g })
+const sessions: Child = { node: { kind: 'leaf', id: 'sessions', panel: 'sessions' } }
+const projects: Child = { node: { kind: 'leaf', id: 'projects', panel: 'projects' } }
+const centerSplit = (children: { node: unknown; grow?: boolean; basis?: number }[]): Child => ({
+  grow: true,
+  node: { kind: 'split', id: 'center', axis: 'row', children },
+})
 
 function stateFrom(layout: WorkspacePanelLayout, opts: {
   editorMru?: string[]; terminalMru?: string[]; activeGroupId?: string
@@ -61,6 +68,31 @@ function stateFrom(layout: WorkspacePanelLayout, opts: {
     recentFiles: [],
   }
   return buildInstanceState(initial)
+}
+
+function splitContainingGroup(node: LayoutNode, groupId: string): SplitNode {
+  if (node.kind === 'split') {
+    if (node.children.some((c) => c.node.kind === 'tabs' && c.node.id === groupId)) return node
+    for (const c of node.children) {
+      const hit = trySplitContainingGroup(c.node, groupId)
+      if (hit) return hit
+    }
+  }
+  throw new Error(`no split containing ${groupId}`)
+}
+
+function trySplitContainingGroup(node: LayoutNode, groupId: string): SplitNode | null {
+  if (node.kind !== 'split') return null
+  if (node.children.some((c) => c.node.kind === 'tabs' && c.node.id === groupId)) return node
+  for (const c of node.children) {
+    const hit = trySplitContainingGroup(c.node, groupId)
+    if (hit) return hit
+  }
+  return null
+}
+
+function childIds(split: SplitNode): string[] {
+  return split.children.map((c) => c.node.id)
 }
 
 // --- activeTabKind ----------------------------------------------------------
@@ -245,6 +277,78 @@ describe('OPEN_ROUTED_* reducer actions', () => {
       .toEqual(['a.ts', 'b.ts']) // distinct in-reducer-minted instance ids, one group
   })
 
+  it('places a new editor group LEFT of a terminal group when Sessions is in the right sidebar', () => {
+    const layout = layoutFrom([
+      projects,
+      centerSplit([
+        { grow: true, node: group('term:left', [term('t1')]) },
+        { basis: 300, node: group('term:right', [term('t2')]) },
+      ]),
+      sessions,
+    ], true)
+    const s0 = stateFrom(layout, { terminalMru: ['t2', 't1'], activeGroupId: 'term:right' })
+
+    const s1 = instanceReducer(s0, { type: 'OPEN_ROUTED_TAB', tabId: 'a.ts', newGroupBasis: 400 })
+    const editorGroup = groupOf(s1.panelLayout.desktop, s1.focusedPane.instanceId)!
+    const wrapper = splitContainingGroup(s1.panelLayout.desktop, editorGroup)
+
+    expect(childIds(wrapper)).toEqual([editorGroup, 'term:left'])
+  })
+
+  it('places a new editor group RIGHT of a terminal group when Sessions is in the left sidebar', () => {
+    const layout = layoutFrom([
+      sessions,
+      centerSplit([
+        { grow: true, node: group('term:left', [term('t1')]) },
+        { basis: 300, node: group('term:right', [term('t2')]) },
+      ]),
+      projects,
+    ], true)
+    const s0 = stateFrom(layout, { terminalMru: ['t2', 't1'], activeGroupId: 'term:right' })
+
+    const s1 = instanceReducer(s0, { type: 'OPEN_ROUTED_TAB', tabId: 'a.ts', newGroupBasis: 400 })
+    const editorGroup = groupOf(s1.panelLayout.desktop, s1.focusedPane.instanceId)!
+    const wrapper = splitContainingGroup(s1.panelLayout.desktop, editorGroup)
+
+    expect(childIds(wrapper)).toEqual(['term:right', editorGroup])
+  })
+
+  it('places a new terminal group RIGHT of editor groups when Sessions is in the right sidebar', () => {
+    const layout = layoutFrom([
+      projects,
+      centerSplit([
+        { grow: true, node: group('editor:left', [editor('e1', 'a.ts')]) },
+        { basis: 300, node: group('editor:right', [editor('e2', 'b.ts')]) },
+      ]),
+      sessions,
+    ], true)
+    const s0 = stateFrom(layout, { editorMru: ['e2', 'e1'], activeGroupId: 'editor:right' })
+
+    const s1 = instanceReducer(s0, { type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB', session: 'sess', preview: false, protectedPaths: NO_PROTECT })
+    const terminalGroup = groupOf(s1.panelLayout.desktop, s1.focusedPane.instanceId)!
+    const wrapper = splitContainingGroup(s1.panelLayout.desktop, terminalGroup)
+
+    expect(childIds(wrapper)).toEqual(['editor:right', terminalGroup])
+  })
+
+  it('places a new terminal group LEFT of editor groups when Sessions is in the left sidebar', () => {
+    const layout = layoutFrom([
+      sessions,
+      centerSplit([
+        { grow: true, node: group('editor:left', [editor('e1', 'a.ts')]) },
+        { basis: 300, node: group('editor:right', [editor('e2', 'b.ts')]) },
+      ]),
+      projects,
+    ], true)
+    const s0 = stateFrom(layout, { editorMru: ['e2', 'e1'], activeGroupId: 'editor:right' })
+
+    const s1 = instanceReducer(s0, { type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB', session: 'sess', preview: false, protectedPaths: NO_PROTECT })
+    const terminalGroup = groupOf(s1.panelLayout.desktop, s1.focusedPane.instanceId)!
+    const wrapper = splitContainingGroup(s1.panelLayout.desktop, terminalGroup)
+
+    expect(childIds(wrapper)).toEqual([terminalGroup, 'editor:left'])
+  })
+
   it('a routed editor open reuses the kind-matching focused group (no split)', () => {
     const layout = layoutFrom([files, center(group('group:1', [editor('e1', 'a.ts')]))], true)
     const s0 = stateFrom(layout, { editorMru: ['e1'], activeGroupId: 'group:1' })
@@ -295,5 +399,39 @@ describe('separateKinds flag', () => {
     expect(result.current.panelLayout.panelState.separateKinds).toBe(true)
     act(() => result.current.toggleSeparateKinds())
     expect(result.current.panelLayout.panelState.separateKinds).toBeUndefined()
+  })
+})
+
+describe('DOM-measured split basis', () => {
+  it('moveTabToSplit measures a dock leaf target so a right-sidebar tab starts half-height', () => {
+    const layout = layoutFrom([files, center(group('group:1', [term('terminal')], 'terminal')), sessions])
+    const initial: PersistedState = {
+      panelLayout: layout,
+      terminalBindings: {},
+      editorMru: [],
+      terminalMru: ['terminal'],
+      activeGroupId: 'group:1',
+      mobilePane: 'files',
+      layout: DEFAULT_LAYOUT,
+      recentFiles: [],
+    }
+    const target = document.createElement('div')
+    target.dataset.nodeId = 'sessions'
+    Object.defineProperty(target, 'clientHeight', { value: 600, configurable: true })
+    document.body.appendChild(target)
+
+    try {
+      const dirtyRef = { current: new Set<string>() as ReadonlySet<string> }
+      const { result } = renderHook(() => useLayoutState(initial, dirtyRef))
+      act(() => result.current.moveTabToSplit('group:1', 'terminal', 'sessions', 'below'))
+
+      const groupId = groupOf(result.current.panelLayout.desktop, 'terminal')
+      expect(groupId).not.toBe('group:1')
+      const wrapper = splitContainingGroup(result.current.panelLayout.desktop, groupId!)
+      const movedChild = wrapper.children.find((c) => c.node.kind === 'tabs' && c.node.id === groupId)!
+      expect(movedChild.basis).toBe(300)
+    } finally {
+      target.remove()
+    }
   })
 })

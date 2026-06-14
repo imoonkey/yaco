@@ -47,6 +47,7 @@ import {
   type FocusTarget, type JumpRequest, type PanelId, type EditorPrefs,
   type PanelPlacement, type SplitSide,
 } from './context'
+import type { ResizeSplitOptions } from './panelLayoutModel'
 
 export type WorkspaceProviderProps = {
   projectName: string
@@ -664,8 +665,8 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const collapsePanel = useCallback((panel: PanelId, collapsed: boolean) => {
     setPanelLayout((prev) => modelCollapsePanel(prev, panel, collapsed))
   }, [setPanelLayout])
-  const resizeSplitChild = useCallback((splitId: string, childId: string, basis: number) => {
-    setPanelLayout((prev) => modelResizeSplitChild(prev, splitId, childId, basis))
+  const resizeSplitChild = useCallback((splitId: string, childId: string, basis: number, options?: ResizeSplitOptions) => {
+    setPanelLayout((prev) => modelResizeSplitChild(prev, splitId, childId, basis, options))
   }, [setPanelLayout])
   // Tasks is a dock leaf (no main-tabs panel switch) — the legacy command is inert.
   const activateTabsPanel = useCallback((_tabsId: string, _panel: PanelId) => {}, [])

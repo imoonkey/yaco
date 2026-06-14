@@ -51,9 +51,9 @@ Collapsible floating nav (`LandscapeNav` component) to maximize vertical space:
 
 ### Workspace Panes
 
-`Files` | `Editor` | `Terminal`
+`Browse` | `Editor` | `Tasks` | `Terminal`
 
-Controlled by PaneSwitch component (`MobilePanelProjection` renders the active dock). The `Files` pane stacks the workspace sidebar sections in order: Explorer, Changes, Tasks, Sessions. The `Editor` and `Terminal` panes **project the active instance** of their type (mobile shows one editor and one terminal — the most-recently-focused live instance — with no split/open-beside affordances).
+Controlled by PaneSwitch component (`MobilePanelProjection` renders the active dock). The `Files` pane stacks the workspace sidebar sections in order: Explorer, Changes, Tasks, Sessions. The `Editor` and `Terminal` panes **project the active instance** of their type across the whole desktop tree (mobile shows one editor and one terminal — the most-recently-focused live instance, even if its desktop group is parked in the right sidebar — with no split/open-beside affordances).
 
 ### Auto-Switching
 

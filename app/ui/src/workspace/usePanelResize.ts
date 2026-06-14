@@ -34,7 +34,14 @@ export interface UsePanelResizeOptions {
   /** Handle position among the split's *visible* children: the handle lies
    *  between visible[handleIndex] and visible[handleIndex + 1]. */
   handleIndex: number
-  resizeSplitChild: (splitId: string, childId: string, basis: number) => void
+  resizeSplitChild: (
+    splitId: string,
+    childId: string,
+    basis: number,
+    options?: { counter?: { childId: string; basis: number }; containerBasis?: number },
+  ) => void
+  /** Live size of the split container along the split axis, including handles. */
+  containerBasis?: () => number
   /** Min basis along the axis. Defaults to the registry min size (with a
    *  DEFAULT_MIN_SIZE fallback). */
   minBasis?: BasisResolver
@@ -75,7 +82,8 @@ type ResizeConfig = {
   handleIndex: number
   minBasis: BasisResolver
   maxBasis: BasisResolver
-  resizeSplitChild: (splitId: string, childId: string, basis: number) => void
+  resizeSplitChild: UsePanelResizeOptions['resizeSplitChild']
+  containerBasis?: () => number
 }
 
 const clamp = (value: number, lo: number, hi: number): number =>
@@ -160,10 +168,12 @@ function commit(cfg: ResizeConfig, plan: ResizePlan, targetRaw: number): void {
   const hi = Math.max(lo, Math.min(targetMax - plan.targetStart, counterFloor))
   const delta = clamp(targetRaw - plan.targetStart, lo, hi)
 
-  cfg.resizeSplitChild(cfg.split.id, plan.target.node.id, plan.targetStart + delta)
-  if (plan.counter) {
-    cfg.resizeSplitChild(cfg.split.id, plan.counter.child.node.id, plan.counter.start - delta)
-  }
+  cfg.resizeSplitChild(cfg.split.id, plan.target.node.id, plan.targetStart + delta, {
+    counter: plan.counter
+      ? { childId: plan.counter.child.node.id, basis: plan.counter.start - delta }
+      : undefined,
+    containerBasis: cfg.containerBasis?.(),
+  })
 }
 
 // --- Hook -------------------------------------------------------------------
@@ -172,6 +182,7 @@ export function usePanelResize(opts: UsePanelResizeOptions): PanelResizeHandle {
   const { split, handleIndex, resizeSplitChild } = opts
   const minBasis = opts.minBasis ?? registryMin
   const maxBasis = opts.maxBasis ?? noMax
+  const containerBasis = opts.containerBasis
   const hasMax = opts.maxBasis != null
 
   const [isDragging, setIsDragging] = useState(false)
@@ -179,9 +190,9 @@ export function usePanelResize(opts: UsePanelResizeOptions): PanelResizeHandle {
   // Mirror the latest config so the document listeners + window-resize handler
   // never read a stale closure (they are attached once on mount). Updated in an
   // effect rather than during render, matching useResize's maxRef pattern.
-  const cfgRef = useRef<ResizeConfig>({ split, handleIndex, minBasis, maxBasis, resizeSplitChild })
+  const cfgRef = useRef<ResizeConfig>({ split, handleIndex, minBasis, maxBasis, resizeSplitChild, containerBasis })
   useEffect(() => {
-    cfgRef.current = { split, handleIndex, minBasis, maxBasis, resizeSplitChild }
+    cfgRef.current = { split, handleIndex, minBasis, maxBasis, resizeSplitChild, containerBasis }
   })
 
   // Frozen plan + start pointer for the active drag (null when not dragging).

@@ -221,7 +221,7 @@ export function SessionItem({
             <SearchHighlightedText text={session.name} positions={nameMatch?.positions} className="font-medium" />
             {shortcutIndex != null && (
               <span
-                className="text-ui-xs tabular-nums px-1 rounded ml-1.5 align-middle"
+                className="text-ui-sm tabular-nums px-1 rounded ml-1.5 align-middle"
                 style={{
                   color: 'var(--sol-text-faint)',
                   border: '1px solid var(--sol-border)',
@@ -234,7 +234,7 @@ export function SessionItem({
             )}
             {session.worktree && (
               <span
-                className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-xs font-medium ml-1.5 align-middle"
                 style={{ color: 'var(--sol-text-faint)', backgroundColor: 'var(--sol-subtle-bg)' }}
               >
                 <FolderGit2 size={9} />
@@ -243,7 +243,7 @@ export function SessionItem({
             )}
             {blockLabel && (
               <span
-                className="inline-flex items-center px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                className="inline-flex items-center px-1 py-px rounded text-ui-xs font-medium ml-1.5 align-middle"
                 style={{ color: 'var(--sol-orange)', backgroundColor: 'color-mix(in srgb, var(--sol-orange) 14%, transparent)' }}
                 title={blockLabel}
                 aria-label={blockLabel}
@@ -253,7 +253,7 @@ export function SessionItem({
             )}
             {crashLabel && (
               <span
-                className="inline-flex items-center px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                className="inline-flex items-center px-1 py-px rounded text-ui-xs font-medium ml-1.5 align-middle"
                 style={{ color: 'var(--sol-red)', backgroundColor: 'color-mix(in srgb, var(--sol-red) 14%, transparent)' }}
                 title={crashLabel}
                 aria-label={crashLabel}
@@ -263,7 +263,7 @@ export function SessionItem({
             )}
             {yourTurn && (
               <span
-                className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-2xs font-medium ml-1.5 align-middle"
+                className="inline-flex items-center gap-0.5 px-1 py-px rounded text-ui-xs font-medium ml-1.5 align-middle"
                 style={{ color: 'var(--sol-yellow)', backgroundColor: 'color-mix(in srgb, var(--sol-yellow) 16%, transparent)' }}
                 title="Your turn — this session is waiting on your review"
                 aria-label="Your turn"
@@ -276,14 +276,14 @@ export function SessionItem({
               <SearchHighlightedText
                 text={summaryText}
                 positions={summaryPositions}
-                className="text-ui-xs ml-1.5"
+                className="text-ui-sm ml-1.5"
                 style={{ color: 'var(--sol-text-faint)' }}
               />
             )}
           </div>
           {extraSnippet && (
-            <div className="text-ui-xs mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
-              <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{extraSnippet.label}:</span>
+            <div className="text-ui-sm mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
+              <span className="uppercase text-ui-xs mr-1" style={{ color: 'var(--sol-muted)' }}>{extraSnippet.label}:</span>
               <SearchHighlightedText text={extraSnippet.text} positions={extraSnippet.positions} />
             </div>
           )}
@@ -310,7 +310,7 @@ export function SessionItem({
             e.stopPropagation()
             onKill()
           }}
-          className="shrink-0 rounded-md px-1.5 py-0.5 text-ui-xs cursor-pointer text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
+          className="shrink-0 rounded-md px-1.5 py-0.5 text-ui-sm cursor-pointer text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8"
           style={{ border: '1px solid color-mix(in srgb, var(--sol-red) 20%, transparent)' }}
           title={`Kill ${session.name}`}
           aria-label={`Kill session ${session.name}`}

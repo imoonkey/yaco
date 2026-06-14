@@ -1,5 +1,23 @@
 # Progress
 
+## 2026-06-14: Panel DnD sizing, edge routing, and mobile active-instance fixes
+
+**What changed:**
+- Refined panel drag-and-drop edge behavior: far-edge strips now render only for absent sidebars, preserving sidebar-internal dock reorder at the screen edge; bottom insertion lines clamp inside the sidebar; a right-sidebar group created from a tab/group drop now appears above the dock stack.
+- Made split resizing propagate live container size so same-axis nested splits scale proportionally instead of pinning internal dividers in absolute pixels.
+- Tightened `separateKinds` fallback routing: when no matching-kind group exists, a new terminal group is created on the center edge nearest the `sessions` dock and a new editor group on the opposite edge, anchoring to the relevant edge group when multiple center groups exist.
+- Updated mobile projection to render the active editor/terminal instance across the full desktop tree, including right-sidebar groups, so Browse session/file clicks switch panes and show the newly activated instance.
+- Normalized several dense sidebar/search/badge text tokens from extra-small to readable UI token sizes.
+
+**Why:**
+- User testing found dock drops near a visible sidebar edge could trigger root-edge placement and destabilize the sidebar, right-sidebar groups landed in an unintuitive position, kind-affinity new-group placement was too hardcoded, and mobile panes could switch without showing the activated file/session.
+
+**Key files:** `app/ui/src/workspace/{DesktopPanelTreeLayout,MobilePanelProjection,WorkspaceProvider}.tsx`, `app/ui/src/workspace/{panelLayoutModel,usePanelResize,context}.ts`, `app/ui/src/hooks/useLayoutState.ts`, `app/ui/tests/e2e/helpers/dnd.ts`, `app/ui/src/workspace/__tests__/*`, `app/ui/src/hooks/__tests__/openRouting.test.ts`, `doc/main/app/{README,frontend/state,ui/mobile,ui/workspace/{overview,state-machine}}.md`, `plan/all/20260612_panel-dnd/implementation_summary.md`
+**Verification:** `cd app/ui && npx vitest run src`; `cd app/ui && npx playwright test tests/e2e/panel-dnd-routing.spec.ts`; `cd app/ui && npm run build`; `cd app/ui && npm run lint` (existing hook dependency warnings only); `git diff --check`.
+**Commit:** this commit
+**Next:** Optional broader Playwright coverage for mobile active-instance projection.
+**Blockers:** None.
+
 ## 2026-06-13: Panel drag-and-drop + kind-affinity open routing (region model)
 
 **What changed:**

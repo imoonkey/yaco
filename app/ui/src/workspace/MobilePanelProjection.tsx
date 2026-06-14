@@ -26,12 +26,12 @@ import { toggleTheme } from '../lib/theme'
 import { PanelHost } from './PanelHost'
 import { PanelChromeContext, type PanelChromeSlot } from './panelChrome'
 import { collectFramedLeaves } from './desktopTreeSizing'
-import { editorTabsInGroup, terminalTabsInGroup, tabIdToPath, centerOf, firstCenterGroupId } from './panelLayoutModel'
+import { editorTabsInGroup, terminalTabsInGroup, tabIdToPath, groupOf } from './panelLayoutModel'
 import { tabName, computeDisambigSuffixes } from './tabLabels'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
 import { useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection } from './context'
-import { mobileDockToPane, isDiffTab, type MobilePane, type EditorGroupTab, type LayoutNode } from '../hooks/workspaceTypes'
+import { mobileDockToPane, isDiffTab, type MobilePane, type EditorGroupTab } from '../hooks/workspaceTypes'
 
 export type MobilePanelProjectionProps = {
   rootRef: RefObject<HTMLDivElement | null>
@@ -75,15 +75,6 @@ const LANDSCAPE_PAD = {
 const MARGIN_RIGHT = 'calc(max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px), 36px) - 34px)'
 const MARGIN_TOP = 'max(env(safe-area-inset-top, 0px), 24px)'
 
-// Does the CENTER region subtree hold the group `id`? Mobile clamps its active
-// group to the center so a focused sidebar group never drives a mobile pane.
-function centerHasGroup(center: LayoutNode | null, id: string): boolean {
-  if (!center) return false
-  if (center.kind === 'tabs') return center.id === id
-  if (center.kind === 'split') return center.children.some((c) => centerHasGroup(c.node, id))
-  return false
-}
-
 export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCapture }: MobilePanelProjectionProps) {
   const { viewport, notificationBell } = useWorkspaceEnv()
   const { isLandscape, isTouch } = viewport
@@ -94,25 +85,19 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
 
   const activeDock = panelLayout.mobile.activeDock
   const activePane = mobileDockToPane(activeDock)
-  // Mobile projects the CENTER region's active group only (design: §Mobile —
-  // sidebar groups are desktop-only). The editor pane shows the center group's
-  // active editor tab (or its first when a terminal is active); the terminal pane
-  // its active/first terminal. A focused right-sidebar group
-  // (activeGroupId/activeEditorTab/activeTerminalId) must NOT hijack a mobile pane,
-  // so the active group is clamped to the center (else the center's first group);
-  // an absent/hidden sidebar has no mobile presence. A center group with ZERO
-  // editor tabs resolves to '' → the editor body renders "No file open".
-  const { activeGroupId, activeEditorTab, activeTerminalId, editor } = useWorkspaceSelection()
-  const center = centerOf(panelLayout.desktop)
-  const centerGroupId = centerHasGroup(center, activeGroupId)
-    ? activeGroupId
-    : (firstCenterGroupId(center) ?? '')
-  const groupEditorTabs = center ? editorTabsInGroup(center, centerGroupId) : []
+  // Mobile shows the active editor/terminal instance across the full desktop tree.
+  // A desktop group may live in a sidebar, but session/file clicks on mobile still
+  // activate that instance and the mobile pane must follow it.
+  const { activeEditorId, activeTerminalId, editor } = useWorkspaceSelection()
+  const tree = panelLayout.desktop
+  const editorGroupId = activeEditorId ? groupOf(tree, activeEditorId) : null
+  const groupEditorTabs = editorGroupId ? editorTabsInGroup(tree, editorGroupId) : []
   const editorInstanceId =
-    groupEditorTabs.find((t) => t.instanceId === activeEditorTab?.instanceId)?.instanceId
+    groupEditorTabs.find((t) => t.instanceId === activeEditorId)?.instanceId
     ?? groupEditorTabs[0]?.instanceId
     ?? ''
-  const groupTerminals = center ? terminalTabsInGroup(center, centerGroupId) : []
+  const terminalGroupId = activeTerminalId ? groupOf(tree, activeTerminalId) : null
+  const groupTerminals = terminalGroupId ? terminalTabsInGroup(tree, terminalGroupId) : []
   const terminalInstanceId =
     groupTerminals.find((t) => t.instanceId === activeTerminalId)?.instanceId
     ?? groupTerminals[0]?.instanceId

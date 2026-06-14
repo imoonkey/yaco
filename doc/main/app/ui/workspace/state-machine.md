@@ -95,13 +95,13 @@ Pointer drags edit the tree through two reducer actions, each a pure transform r
 | Group | group body edge band | `MOVE_GROUP` (`beside`) | whole group relocates into a new split |
 | Group | another group / its tab bar | `MOVE_GROUP` (`merge`) | groups combine into one strip |
 | Dock | a sidebar column | `moveLeaf` | dock reorders among the column |
-| Dock | a far screen edge | `moveLeafToEdge` | reveals/extends the left or right sidebar |
+| Dock | a far screen edge with that sidebar absent | `moveLeafToEdge` | reveals/extends the left or right sidebar |
 
 `legalZones(payload, target)` gates which `DropOverlay` highlight renders during the drag — an empty set (e.g. a dock over the center, a group over a left body) means no highlight and a rejected drop. The region invariants are the visual gate here and the authoritative gate in normalization.
 
 ### Kind-Affinity Open Routing
 
-The persisted `panelState.separateKinds` flag (off by default, toggled via **Separate editors and terminals** in the group tab-bar menu) routes type-global opens. `resolveOpenTarget(kind, state)`: with the flag off, every open lands in the resolved target group; with it on, an open lands in the focused group when its active-tab kind matches (or it is empty), else seeks the most-recent OTHER group of that kind (via the kind's MRU), else asks for a NEW center split. Routing runs in the reducer (`OPEN_ROUTED_*`); kind is derived from the live active tab, never stored.
+The persisted `panelState.separateKinds` flag (off by default, toggled via **Separate editors and terminals** in the group tab-bar menu) routes type-global opens. `resolveOpenTarget(kind, state)`: with the flag off, every open lands in the resolved target group; with it on, an open lands in the focused group when its active-tab kind matches (or it is empty), else seeks the most-recent OTHER group of that kind (via the kind's MRU), else asks for a NEW center split. New splits use the center edge nearest the `sessions` dock for terminal groups and the opposite edge for editor groups; if `sessions` is not on either side, the fallback edge is right. Routing runs in the reducer (`OPEN_ROUTED_*`); kind is derived from the live active tab, never stored.
 
 ### Focus / Active-Instance Model
 
@@ -113,11 +113,11 @@ Single-pane showing the file explorer tree.
 
 ### Mobile: Editor
 
-Single-pane showing the editor/preview/diff for the active group's active editor tab.
+Single-pane showing the editor/preview/diff for the active editor instance, even when that instance's group is parked in a desktop sidebar.
 
 ### Mobile: Terminal
 
-Single-pane showing the terminal for the active session.
+Single-pane showing the terminal for the active terminal instance, even when that instance's group is parked in a desktop sidebar.
 
 ## State Transitions
 

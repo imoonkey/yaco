@@ -57,7 +57,7 @@ function HistoryItem({
       <div className="min-w-0 flex-1">
         <div className="line-clamp-2">
           <SearchHighlightedText text={primaryText} positions={primarySnippet?.positions ?? primaryMatch?.positions} className="font-medium" />
-          <span className="text-ui-xs ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
+          <span className="text-ui-sm ml-1.5" style={{ color: 'var(--sol-text-faint)' }}>
             <SearchHighlightedText text={secondaryText} positions={secondarySnippet?.positions ?? secondaryMatch?.positions} />
             {showBranch && (
               <>
@@ -69,13 +69,13 @@ function HistoryItem({
           </span>
         </div>
         {extraSnippet && (
-          <div className="text-ui-xs mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
-            <span className="uppercase text-ui-2xs mr-1" style={{ color: 'var(--sol-muted)' }}>{extraSnippet.label}:</span>
+          <div className="text-ui-sm mt-0.5 truncate" style={{ color: 'var(--sol-text-faint)' }}>
+            <span className="uppercase text-ui-xs mr-1" style={{ color: 'var(--sol-muted)' }}>{extraSnippet.label}:</span>
             <SearchHighlightedText text={extraSnippet.text} positions={extraSnippet.positions} />
           </div>
         )}
       </div>
-      <span className="shrink-0 text-ui-xs mt-0.5" style={{ color: 'var(--sol-text-faint)' }}>
+      <span className="shrink-0 text-ui-sm mt-0.5" style={{ color: 'var(--sol-text-faint)' }}>
         {formatRelativeTime(entry.modified)}
       </span>
     </div>
@@ -129,7 +129,7 @@ export function WorkspaceHistoryList({
   return (
     <>
       {error && (
-        <div className="px-2 py-1 text-ui-xs rounded mx-1 mb-1" style={{ color: 'var(--sol-red)', backgroundColor: 'var(--sol-red-bg, rgba(220,50,47,0.08))' }}>
+        <div className="px-2 py-1 text-ui-sm rounded mx-1 mb-1" style={{ color: 'var(--sol-red)', backgroundColor: 'var(--sol-red-bg, rgba(220,50,47,0.08))' }}>
           {error}
         </div>
       )}

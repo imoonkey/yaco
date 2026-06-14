@@ -350,6 +350,82 @@ function minForChild(node: LayoutNode, axis: SplitAxis): number {
   return axis === 'row' ? min.width : min.height
 }
 
+const SPLIT_HANDLE_PX = 3
+
+function visibleChildren(children: SplitChild[]): SplitChild[] {
+  return children.filter((c) => c.hidden !== true)
+}
+
+function absorberChild(children: SplitChild[]): SplitChild | undefined {
+  const visible = visibleChildren(children)
+  return visible.find((c) => c.grow === true) ?? visible[visible.length - 1]
+}
+
+function actualChildSizes(children: SplitChild[], axis: SplitAxis, containerBasis: number): Map<string, number> {
+  const visible = visibleChildren(children)
+  const sizes = new Map<string, number>()
+  if (!Number.isFinite(containerBasis) || containerBasis <= 0 || visible.length === 0) return sizes
+  const absorber = absorberChild(children)
+  const available = Math.max(0, containerBasis - Math.max(0, visible.length - 1) * SPLIT_HANDLE_PX)
+  let fixedTotal = 0
+  for (const child of visible) {
+    if (child === absorber) continue
+    const size = typeof child.basis === 'number' && Number.isFinite(child.basis)
+      ? child.basis
+      : minForChild(child.node, axis)
+    fixedTotal += size
+    sizes.set(child.node.id, size)
+  }
+  if (absorber) sizes.set(absorber.node.id, Math.max(minForChild(absorber.node, axis), available - fixedTotal))
+  return sizes
+}
+
+function scaleNodeAlongAxis(node: LayoutNode, axis: SplitAxis, fromBasis: number, toBasis: number): LayoutNode {
+  if (
+    node.kind !== 'split'
+    || !Number.isFinite(fromBasis) || !Number.isFinite(toBasis)
+    || fromBasis <= 0 || toBasis <= 0
+    || Math.abs(fromBasis - toBasis) < 0.5
+  ) return node
+
+  if (node.axis !== axis) {
+    return {
+      ...node,
+      children: node.children.map((c) => ({ ...c, node: scaleNodeAlongAxis(c.node, axis, fromBasis, toBasis) })),
+    }
+  }
+
+  const visible = visibleChildren(node.children)
+  const absorber = absorberChild(node.children)
+  const handleBasis = Math.max(0, visible.length - 1) * SPLIT_HANDLE_PX
+  const fromAvailable = Math.max(0, fromBasis - handleBasis)
+  const toAvailable = Math.max(0, toBasis - handleBasis)
+  const ratio = fromAvailable > 0 ? toAvailable / fromAvailable : 1
+  const beforeSizes = actualChildSizes(node.children, node.axis, fromBasis)
+
+  const resized = node.children.map((child) => {
+    if (
+      child.hidden === true
+      || child === absorber
+      || typeof child.basis !== 'number'
+      || !Number.isFinite(child.basis)
+    ) return child
+    const oldSize = beforeSizes.get(child.node.id) ?? child.basis
+    return { ...child, basis: Math.max(oldSize * ratio, minForChild(child.node, node.axis)) }
+  })
+  const afterSizes = actualChildSizes(resized, node.axis, toBasis)
+  return {
+    ...node,
+    children: resized.map((child) => {
+      const from = beforeSizes.get(child.node.id)
+      const to = afterSizes.get(child.node.id)
+      return from !== undefined && to !== undefined
+        ? { ...child, node: scaleNodeAlongAxis(child.node, axis, from, to) }
+        : child
+    }),
+  }
+}
+
 function clampBasis(raw: unknown, node: LayoutNode, axis: SplitAxis): number | undefined {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) return undefined
   return Math.max(raw, minForChild(node, axis))
@@ -768,15 +844,39 @@ export function collapsePanel(
   return withDesktop(layout, desktop)
 }
 
+export type ResizeSplitOptions = {
+  counter?: { childId: string; basis: number }
+  /** The live pixel size of the split container along its axis, including handles. */
+  containerBasis?: number
+}
+
 /** Set the pixel `basis` of a split child. Clamped up to the child's min size. */
 export function resizeSplitChild(
-  layout: WorkspacePanelLayout, splitId: string, childId: string, basis: number,
+  layout: WorkspacePanelLayout, splitId: string, childId: string, basis: number, options: ResizeSplitOptions = {},
 ): WorkspacePanelLayout {
   if (!Number.isFinite(basis)) return layout
-  const desktop = mapSplitOf(layout.desktop, splitId, (axis, children) =>
-    children.map((c) => (c.node.id === childId
-      ? { ...c, basis: Math.max(basis, minForChild(c.node, axis)) }
-      : c)))
+  if (options.counter && !Number.isFinite(options.counter.basis)) return layout
+  const desktop = mapSplitOf(layout.desktop, splitId, (axis, children) => {
+    const updates = new Map<string, number>([[childId, basis]])
+    if (options.counter) updates.set(options.counter.childId, options.counter.basis)
+    const resized = children.map((c) => {
+      const next = updates.get(c.node.id)
+      return next === undefined ? c : { ...c, basis: Math.max(next, minForChild(c.node, axis)) }
+    })
+    const containerBasis = options.containerBasis
+    if (typeof containerBasis !== 'number' || !Number.isFinite(containerBasis) || containerBasis <= 0) {
+      return resized
+    }
+    const beforeSizes = actualChildSizes(children, axis, containerBasis)
+    const afterSizes = actualChildSizes(resized, axis, containerBasis)
+    return resized.map((child) => {
+      const from = beforeSizes.get(child.node.id)
+      const to = afterSizes.get(child.node.id)
+      return from !== undefined && to !== undefined
+        ? { ...child, node: scaleNodeAlongAxis(child.node, axis, from, to) }
+        : child
+    })
+  })
   return withDesktop(layout, desktop)
 }
 
@@ -1083,17 +1183,43 @@ function detachGroupById(node: LayoutNode, id: string): LayoutNode | null {
   return children.length > 0 ? { ...node, children } : null
 }
 
+function firstGroupExcept(node: LayoutNode, excluded: ReadonlySet<string>): TabsNode | null {
+  if (node.kind === 'tabs') return excluded.has(node.id) ? null : node
+  if (node.kind === 'split') {
+    for (const c of node.children) {
+      const hit = firstGroupExcept(c.node, excluded)
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+export type CloseGroupOptions = {
+  /** Automatic tab moves preserve an empty center so a right-sidebar group is not promoted by accident. */
+  preserveLastCenter?: boolean
+}
+
 /** Remove the group `groupId` — the ONLY group remover. Normalization collapses
  *  the surrounding single-child split; `ensureCenterGroup` backstops >=1 group in
  *  the center so removing the last group leaves one empty center group rather than
  *  no working area. No-op if the id is absent or names a non-group node. */
-export function closeGroup(layout: WorkspacePanelLayout, groupId: string): WorkspacePanelLayout {
+export function closeGroup(
+  layout: WorkspacePanelLayout, groupId: string, options: CloseGroupOptions = {},
+): WorkspacePanelLayout {
   if (!hasNodeId(layout.desktop, groupId)) return layout
   // Closing the LAST center group while other (sidebar) groups exist must not let a
   // sidebar group get promoted into the center: empty the center group in place so
   // the center region keeps its (now empty) group, distinct from the sidebar.
   const center = centerOf(layout.desktop)
   if (center && hasNodeId(center, groupId) && groupCount(center) === 1 && groupCount(layout.desktop) > 1) {
+    const target = findGroup(layout.desktop, groupId)
+    if (!options.preserveLastCenter && target?.tabs.length === 0) {
+      const replacement = firstGroupExcept(layout.desktop, new Set([groupId]))
+      if (replacement) {
+        const withoutReplacement = detachGroupById(layout.desktop, replacement.id) ?? layout.desktop
+        return withDesktop(layout, mapTabsNode(withoutReplacement, groupId, () => replacement))
+      }
+    }
     return withDesktop(layout, mapTabsNode(layout.desktop, groupId, (g) => ({ ...g, tabs: [], activeTab: '' })))
   }
   const pruned = detachGroupById(layout.desktop, groupId)
@@ -1266,7 +1392,9 @@ export function moveTabBetweenGroups(
     // the old preview's flag, leaving a stray pinned tab instead of dropping it).
     return moved.preview ? { ...inserted, tabs: dropOldPreview(inserted.tabs, instanceId, protectedPaths) } : inserted
   })
-  if (findGroup(next.desktop, fromGroupId)?.tabs.length === 0) next = closeGroup(next, fromGroupId)
+  if (findGroup(next.desktop, fromGroupId)?.tabs.length === 0) {
+    next = closeGroup(next, fromGroupId, { preserveLastCenter: true })
+  }
   return next
 }
 

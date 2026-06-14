@@ -36,6 +36,7 @@ import {
   newInstanceId,
   groupOf,
   centerOf,
+  regionsOf,
   firstCenterGroupId,
   firstGroupId,
   tabByInstance,
@@ -334,11 +335,18 @@ function mintGroupId(tree: LayoutNode): string {
  *  the command wrapper) seeds a ~50-50 split — a routed `{new}` editor group fills
  *  half the working area like a normal split, not a thin sliver. Returns the grown
  *  layout + the new group id. */
-export function splitCenterGroup(state: InstanceState, basis?: number): [WorkspacePanelLayout, string] {
+type NewGroupPlacement = { target: string; side: SplitSide }
+
+export function splitCenterGroup(
+  state: InstanceState,
+  basis?: number,
+  placement?: NewGroupPlacement,
+): [WorkspacePanelLayout, string] {
   const tree = state.panelLayout.desktop
-  const target = firstCenterGroupId(centerOf(tree)) ?? firstGroupId(tree) ?? ''
+  const target = placement?.target ?? firstCenterGroupId(centerOf(tree)) ?? firstGroupId(tree) ?? ''
+  const side = placement?.side ?? 'right'
   const newGroupId = mintGroupId(tree)
-  return [splitBeside(state.panelLayout, target, 'right', newGroupId, basis), newGroupId]
+  return [splitBeside(state.panelLayout, target, side, newGroupId, basis), newGroupId]
 }
 
 // --- GC + structural helpers ------------------------------------------------
@@ -348,6 +356,41 @@ function pushMru(mru: string[], id: string): string[] {
   if (!id) return mru
   if (mru[0] === id) return mru
   return [id, ...mru.filter((x) => x !== id)]
+}
+
+function containsDockPanel(node: LayoutNode | null, panel: string): boolean {
+  if (!node) return false
+  if (node.kind === 'leaf') return node.panel === panel
+  if (node.kind === 'split') return node.children.some((c) => containsDockPanel(c.node, panel))
+  return false
+}
+
+function centerGroupIds(node: LayoutNode | null, out: string[] = []): string[] {
+  if (!node) return out
+  if (node.kind === 'tabs') out.push(node.id)
+  else if (node.kind === 'split') for (const c of node.children) centerGroupIds(c.node, out)
+  return out
+}
+
+function sessionsDockSide(tree: LayoutNode): 'left' | 'right' | null {
+  const regions = regionsOf(tree)
+  if (containsDockPanel(regions.left, 'sessions')) return 'left'
+  if (containsDockPanel(regions.right, 'sessions')) return 'right'
+  return null
+}
+
+function newGroupPlacement(kind: 'editor' | 'terminal', tree: LayoutNode): NewGroupPlacement {
+  const groups = centerGroupIds(centerOf(tree))
+  const first = groups[0] ?? firstGroupId(tree) ?? ''
+  const last = groups[groups.length - 1] ?? first
+  const sessionsSide = sessionsDockSide(tree)
+  if (sessionsSide === 'left') {
+    return kind === 'terminal' ? { target: first, side: 'left' } : { target: last, side: 'right' }
+  }
+  if (sessionsSide === 'right') {
+    return kind === 'terminal' ? { target: last, side: 'right' } : { target: first, side: 'left' }
+  }
+  return { target: last, side: 'right' }
 }
 
 function pickKeys<T>(rec: Record<string, T>, keep: ReadonlySet<string>): Record<string, T> {
@@ -418,7 +461,7 @@ function routeOpen(
 ): { layout: WorkspacePanelLayout; groupId: string } {
   const r = resolveOpenTarget(kind, state)
   if ('groupId' in r) return { layout: state.panelLayout, groupId: r.groupId }
-  const [layout, groupId] = splitCenterGroup(state, newGroupBasis)
+  const [layout, groupId] = splitCenterGroup(state, newGroupBasis, newGroupPlacement(kind, state.panelLayout.desktop))
   return { layout, groupId }
 }
 
@@ -718,14 +761,14 @@ export function buildInstanceState(initial: PersistedState): InstanceState {
 
 // --- Hook -------------------------------------------------------------------
 
-/** Half the source group's current size along the split axis, read from the live
+/** Half the source node's current size along the split axis, read from the live
  *  DOM so a working-area split STARTS ~50-50 (VSCode-like) instead of a fixed
  *  strip. The model stays geometry-free — `splitGroup` is the call site that
  *  supplies the size. Returns `undefined` when the container is unmeasured
  *  (jsdom / pre-render), so `splitBeside` falls back to DEFAULT_SPLIT_BASIS. */
-function halfGroupBasis(groupId: string, side: SplitSide): number | undefined {
+function halfNodeBasis(nodeId: string, side: SplitSide): number | undefined {
   if (typeof document === 'undefined') return undefined
-  const el = document.querySelector<HTMLElement>(`[data-group-id="${groupId}"]`)
+  const el = document.querySelector<HTMLElement>(`[data-group-id="${nodeId}"], [data-node-id="${nodeId}"]`)
   if (!el) return undefined
   const size = side === 'left' || side === 'right' ? el.clientWidth : el.clientHeight
   return size > 0 ? size / 2 : undefined
@@ -779,9 +822,16 @@ export function useLayoutState(
    *  go-to-line into a {new} target lands in the same place a routed action would. */
   const newCenterGroup = useCallback((): string => {
     const tree = stateRef.current.panelLayout.desktop
-    const target = firstCenterGroupId(centerOf(tree)) ?? firstGroupId(tree) ?? ''
+    const placement = newGroupPlacement('editor', tree)
     const newGroupId = freshGroupId()
-    dispatch({ type: 'SPLIT_GROUP', fromGroupId: target, side: 'right', newGroupId, seed: false, basis: halfGroupBasis(target, 'right') })
+    dispatch({
+      type: 'SPLIT_GROUP',
+      fromGroupId: placement.target,
+      side: placement.side,
+      newGroupId,
+      seed: false,
+      basis: halfNodeBasis(placement.target, placement.side),
+    })
     return newGroupId
   }, [])
 
@@ -835,21 +885,21 @@ export function useLayoutState(
   // the tabId/session, its path-keyed effects, and — read from the live DOM here, since
   // the pure reducer cannot — `newGroupBasis` (half the center group's width) so a
   // `{new}` split starts ~50-50 instead of a thin sliver.
-  const centerSplitBasis = (): number | undefined => {
-    const id = firstCenterGroupId(centerOf(stateRef.current.panelLayout.desktop))
-    return id ? halfGroupBasis(id, 'right') : undefined
+  const routedSplitBasis = (kind: 'editor' | 'terminal'): number | undefined => {
+    const placement = newGroupPlacement(kind, stateRef.current.panelLayout.desktop)
+    return placement.target ? halfNodeBasis(placement.target, placement.side) : undefined
   }
   const openRoutedTab = useCallback((tabId: string) => {
-    dispatch({ type: 'OPEN_ROUTED_TAB', tabId, newGroupBasis: centerSplitBasis() })
+    dispatch({ type: 'OPEN_ROUTED_TAB', tabId, newGroupBasis: routedSplitBasis('editor') })
   }, [])
   const openRoutedDiffTab = useCallback((tabId: string) => {
-    dispatch({ type: 'OPEN_ROUTED_DIFF_TAB', tabId, newGroupBasis: centerSplitBasis() })
+    dispatch({ type: 'OPEN_ROUTED_DIFF_TAB', tabId, newGroupBasis: routedSplitBasis('editor') })
   }, [])
   const openRoutedPreviewTab = useCallback((tabId: string) => {
-    dispatch({ type: 'OPEN_ROUTED_PREVIEW_TAB', tabId, protectedPaths: dirtyPathsRef.current, newGroupBasis: centerSplitBasis() })
+    dispatch({ type: 'OPEN_ROUTED_PREVIEW_TAB', tabId, protectedPaths: dirtyPathsRef.current, newGroupBasis: routedSplitBasis('editor') })
   }, [dirtyPathsRef])
   const openRoutedBoundTerminalTab = useCallback((session: string, preview = false) => {
-    dispatch({ type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB', session, preview, protectedPaths: dirtyPathsRef.current, newGroupBasis: centerSplitBasis() })
+    dispatch({ type: 'OPEN_ROUTED_BOUND_TERMINAL_TAB', session, preview, protectedPaths: dirtyPathsRef.current, newGroupBasis: routedSplitBasis('terminal') })
   }, [dirtyPathsRef])
 
   const pinTab = useCallback((groupId: string, instanceId: string) => {
@@ -874,7 +924,7 @@ export function useLayoutState(
 
   const splitGroup = useCallback((fromGroupId: string, side: SplitSide, seed = true): string => {
     const newGroupId = freshGroupId()
-    dispatch({ type: 'SPLIT_GROUP', fromGroupId, side, newGroupId, seed, basis: halfGroupBasis(fromGroupId, side) })
+    dispatch({ type: 'SPLIT_GROUP', fromGroupId, side, newGroupId, seed, basis: halfNodeBasis(fromGroupId, side) })
     return newGroupId
   }, [])
 
@@ -891,7 +941,7 @@ export function useLayoutState(
    *  editor-grid split-drop, two batched dispatches (no flicker). */
   const moveTabToSplit = useCallback((fromGroupId: string, instanceId: string, targetGroupId: string, side: SplitSide) => {
     const newGroupId = freshGroupId()
-    dispatch({ type: 'SPLIT_GROUP', fromGroupId: targetGroupId, side, newGroupId, seed: false, basis: halfGroupBasis(targetGroupId, side) })
+    dispatch({ type: 'SPLIT_GROUP', fromGroupId: targetGroupId, side, newGroupId, seed: false, basis: halfNodeBasis(targetGroupId, side) })
     dispatch({ type: 'MOVE_TAB', fromGroupId, instanceId, toGroupId: newGroupId, toIndex: 0, protectedPaths: dirtyPathsRef.current })
   }, [dirtyPathsRef])
 

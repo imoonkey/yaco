@@ -40,6 +40,7 @@ type RenderOpts = {
   handleIndex: number
   minBasis?: BasisResolver
   maxBasis?: BasisResolver
+  containerBasis?: () => number
 }
 
 /** Render the hook over a controlled split: resizeSplitChild rewrites the
@@ -48,10 +49,19 @@ type RenderOpts = {
 function renderResize(initial: SplitNode, opts: RenderOpts) {
   return renderHook(() => {
     const [node, setNode] = useState(initial)
-    const resizeSplitChild = useCallback((_splitId: string, childId: string, basis: number) => {
+    const resizeSplitChild = useCallback((
+      _splitId: string,
+      childId: string,
+      basis: number,
+      opts?: { counter?: { childId: string; basis: number } },
+    ) => {
       setNode((prev) => ({
         ...prev,
-        children: prev.children.map((c) => (c.node.id === childId ? { ...c, basis } : c)),
+        children: prev.children.map((c) => {
+          if (c.node.id === childId) return { ...c, basis }
+          if (opts?.counter && c.node.id === opts.counter.childId) return { ...c, basis: opts.counter.basis }
+          return c
+        }),
       }))
     }, [])
     const handle = usePanelResize({
@@ -60,6 +70,7 @@ function renderResize(initial: SplitNode, opts: RenderOpts) {
       resizeSplitChild,
       minBasis: opts.minBasis,
       maxBasis: opts.maxBasis,
+      containerBasis: opts.containerBasis,
     })
     return { handle, node }
   })
@@ -200,6 +211,24 @@ describe('usePanelResize — basis/grow drag math', () => {
     expect(result.current.handle.isDragging).toBe(true)
     mouseUp()
     expect(result.current.handle.isDragging).toBe(false)
+  })
+
+  it('passes the live container basis to the layout command for proportional descendant scaling', () => {
+    const tree = split('row', [fixed('a', 100), grow('b')])
+    const calls: Array<unknown[]> = []
+    const { result } = renderHook(() => usePanelResize({
+      split: tree,
+      handleIndex: 0,
+      resizeSplitChild: (...args) => { calls.push(args) },
+      minBasis: () => 80,
+      containerBasis: () => 903,
+    }))
+
+    act(() => result.current.setBasis(160))
+    expect(calls[0]?.[0]).toBe('split')
+    expect(calls[0]?.[1]).toBe('a')
+    expect(calls[0]?.[2]).toBe(160)
+    expect(calls[0]?.[3]).toMatchObject({ containerBasis: 903 })
   })
 })
 

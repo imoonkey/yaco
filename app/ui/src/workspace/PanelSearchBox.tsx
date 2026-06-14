@@ -33,12 +33,12 @@ export const PanelSearchBox = forwardRef<HTMLInputElement, {
           onChange={event => onChange(event.target.value)}
           placeholder={placeholder}
           aria-label={ariaLabel ?? placeholder}
-          className="min-w-0 flex-1 bg-transparent outline-none text-ui-sm"
+          className="min-w-0 flex-1 bg-transparent outline-none text-ui-md"
           style={{ color: 'var(--sol-text)' }}
           spellCheck={false}
         />
         {hasQuery && countLabel && (
-          <span className="shrink-0 text-ui-2xs tabular-nums" style={{ color: 'var(--sol-text-faint)' }}>
+          <span className="shrink-0 text-ui-xs tabular-nums" style={{ color: 'var(--sol-text-faint)' }}>
             {countLabel}
           </span>
         )}

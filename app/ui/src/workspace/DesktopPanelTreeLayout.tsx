@@ -34,14 +34,15 @@ import {
 } from './desktopTreeSizing'
 import {
   editorInstancesInOrder, terminalInstancesInOrder, regionsOf, centerOf, firstCenterGroupId,
-  firstGroupId, tabsInGroup,
+  firstGroupId, tabsInGroup, sidebarVisibility,
 } from './panelLayoutModel'
 import { useDrag, isPaneDrag, type DragPayload } from './WorkspaceDragContext'
 import { legalZones, sidebarInsertIndex, EDGE_BAND_PX, type Region, type EdgeSide } from './dndGeometry'
 import { paneMarker, type PaneMarker } from './panelInstance'
 import type { LayoutNode, LeafNode, SplitNode } from '../hooks/workspaceTypes'
+import type { ResizeSplitOptions } from './panelLayoutModel'
 
-type ResizeSplitChild = (splitId: string, childId: string, basis: number) => void
+type ResizeSplitChild = (splitId: string, childId: string, basis: number, options?: ResizeSplitOptions) => void
 /** Compute the focus/active marker for a pane (editor/terminal only). */
 type MarkerFor = (type: PanelId, instanceId: string) => PaneMarker
 
@@ -115,6 +116,7 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
   // region row — the sidebars wrap their rendered node in a drop layer, the edge
   // strips reveal/extend a sidebar by `moveLeaf` beside the center.
   const regions = useMemo(() => regionsOf(effectiveRoot), [effectiveRoot])
+  const visibleSidebars = useMemo(() => sidebarVisibility(effectiveRoot), [effectiveRoot])
   const drop = useMemo<SidebarWiring>(() => ({
     leftId: regions.left?.id ?? null,
     rightId: regions.right?.id ?? null,
@@ -200,7 +202,12 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
           taskOverlay={taskOverlay}
           drop={drop}
         />
-        <EdgeStrips centerId={drop.centerId} moveLeafToEdge={drop.moveLeafToEdge} />
+        <EdgeStrips
+          centerId={drop.centerId}
+          leftVisible={visibleSidebars.left}
+          rightVisible={visibleSidebars.right}
+          moveLeafToEdge={drop.moveLeafToEdge}
+        />
       </div>
     </PanelChromeContext.Provider>
   )
@@ -306,6 +313,11 @@ function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, lan
     }
     return Math.max(minBasisPx(child.node, axis), total - othersMin - handlePx)
   }, [items])
+  const containerBasis = useCallback(() => {
+    const el = containerRef.current
+    if (!el) return 0
+    return node.axis === 'row' ? el.clientWidth : el.clientHeight
+  }, [node.axis])
 
   const children: ReactNode[] = []
   items.forEach((item, i) => {
@@ -332,6 +344,7 @@ function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, lan
           handleIndex={i}
           resizeSplitChild={resizeSplitChild}
           maxBasis={maxBasis}
+          containerBasis={containerBasis}
         />,
       )
     }
@@ -352,10 +365,10 @@ function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, lan
   )
 }
 
-function SplitResizeHandle({ split, handleIndex, resizeSplitChild, maxBasis }: {
-  split: SplitNode; handleIndex: number; resizeSplitChild: ResizeSplitChild; maxBasis: BasisResolver
+function SplitResizeHandle({ split, handleIndex, resizeSplitChild, maxBasis, containerBasis }: {
+  split: SplitNode; handleIndex: number; resizeSplitChild: ResizeSplitChild; maxBasis: BasisResolver; containerBasis: () => number
 }) {
-  const handle = usePanelResize({ split, handleIndex, resizeSplitChild, maxBasis })
+  const handle = usePanelResize({ split, handleIndex, resizeSplitChild, maxBasis, containerBasis })
   // No fixed child to drag at this gap (e.g. both sides flex) → no handle.
   if (!handle.target) return null
   return split.axis === 'row'
@@ -371,6 +384,7 @@ function SplitResizeHandle({ split, handleIndex, resizeSplitChild, maxBasis }: {
 // normalize funnel behind the movers is the authoritative second gate.
 
 type SidebarFeedback = { kind: 'line'; top: number } | { kind: 'merge' } | null
+const SIDEBAR_INSERT_LINE_PX = 2
 
 // A sidebar column drop target. A DOCK reorders/inserts among the column's dock
 // rows (`moveLeaf` beside a sibling, index via `sidebarInsertIndex`); on the RIGHT
@@ -408,9 +422,12 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
     e.dataTransfer.dropEffect = 'move'
     if (p.kind !== 'dock') { setFeedback({ kind: 'merge' }); return }
     const { rects } = columnRows()
-    const ctop = ref.current?.getBoundingClientRect().top ?? 0
+    const container = ref.current?.getBoundingClientRect()
+    const ctop = container?.top ?? 0
     const idx = sidebarInsertIndex(rects, e.clientY)
-    const top = (idx < rects.length ? rects[idx].top : (rects[rects.length - 1]?.bottom ?? ctop)) - ctop
+    const rawTop = (idx < rects.length ? rects[idx].top : (rects[rects.length - 1]?.bottom ?? ctop)) - ctop
+    const maxTop = Math.max(0, (container?.height ?? rawTop) - SIDEBAR_INSERT_LINE_PX)
+    const top = Math.max(0, Math.min(rawTop, maxTop))
     setFeedback({ kind: 'line', top })
   }
 
@@ -440,8 +457,8 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
     }
     const anchor = firstDockLeafId(node)
     if (!anchor) return
-    if (p.kind === 'tab') wiring.moveTabToSplit(p.fromGroupId, p.instanceId, anchor, 'below')
-    else wiring.moveGroup(p.groupId, { kind: 'beside', targetId: anchor, side: 'below' })
+    if (p.kind === 'tab') wiring.moveTabToSplit(p.fromGroupId, p.instanceId, anchor, 'above')
+    else wiring.moveGroup(p.groupId, { kind: 'beside', targetId: anchor, side: 'above' })
   }
 
   const onDrop = (e: React.DragEvent) => {
@@ -471,7 +488,11 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
             <div className="absolute inset-0 pointer-events-none" style={{ border: '2px solid var(--sol-accent)', background: 'var(--sol-accent)', opacity: 0.15 }} />
           )}
           {feedback?.kind === 'line' && (
-            <div className="absolute left-0 right-0 pointer-events-none" style={{ top: feedback.top, height: 2, background: 'var(--sol-accent)' }} />
+            <div
+              data-testid="sidebar-insertion-line"
+              className="absolute left-0 right-0 pointer-events-none"
+              style={{ top: feedback.top, height: SIDEBAR_INSERT_LINE_PX, background: 'var(--sol-accent)' }}
+            />
           )}
         </div>
       )}
@@ -486,7 +507,12 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
 // ROOT-edge placement (NOT beside the center, which the funnel would evict back to
 // the left). Rendered only during a dock drag, layered above the sidebars so the
 // very edge wins.
-function EdgeStrips({ centerId, moveLeafToEdge }: { centerId: string | null; moveLeafToEdge: SidebarWiring['moveLeafToEdge'] }) {
+function EdgeStrips({ centerId, leftVisible, rightVisible, moveLeafToEdge }: {
+  centerId: string | null
+  leftVisible: boolean
+  rightVisible: boolean
+  moveLeafToEdge: SidebarWiring['moveLeafToEdge']
+}) {
   const drag = useDrag()
   const [hot, setHot] = useState<EdgeSide | null>(null)
   const payload = drag.payload
@@ -509,5 +535,5 @@ function EdgeStrips({ centerId, moveLeafToEdge }: { centerId: string | null; mov
       onDrop={(e) => { const p = drag.peek(); setHot(null); if (!p || p.kind !== 'dock' || !isPaneDrag(e)) return; e.preventDefault(); moveLeafToEdge(p.instanceId, side); drag.clear() }}
     />
   )
-  return <>{strip('left')}{strip('right')}</>
+  return <>{!leftVisible && strip('left')}{!rightVisible && strip('right')}</>
 }

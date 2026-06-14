@@ -35,12 +35,12 @@ export function GitChangeItem({ change, isActive, onActivate, onFolderClick }: {
       </span>
       <span className="truncate" style={{ color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)' }}>{name}</span>
       {dir && <span
-        className="truncate text-ui-xs hover:underline shrink min-w-0"
+        className="truncate text-ui-sm hover:underline shrink min-w-0"
         style={{ color: 'var(--sol-text-faint)' }}
         onClick={onFolderClick ? (e) => { e.stopPropagation(); onFolderClick(dir) } : undefined}
       >{dir}</span>}
       <span
-        className="ml-auto shrink-0 rounded text-ui-2xs font-bold leading-none"
+        className="ml-auto shrink-0 rounded text-ui-xs font-bold leading-none"
         style={{
           color: statusColor,
           backgroundColor: STATUS_BG[change.status],

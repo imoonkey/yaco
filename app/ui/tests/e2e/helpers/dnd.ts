@@ -35,6 +35,9 @@ export async function dragBegin(page: Page, srcSel: string): Promise<void> {
     Object.defineProperty(ev, 'dataTransfer', { value: dt })
     src.dispatchEvent(ev)
   }, srcSel)
+  // WorkspaceDragContext intentionally notifies drop targets on the next frame so
+  // Chrome does not abort the native drag from same-dispatch DOM mutations.
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())))
 }
 
 /** Dispatch dragenter+dragover over `targetSel` at `frac` (default centre),
