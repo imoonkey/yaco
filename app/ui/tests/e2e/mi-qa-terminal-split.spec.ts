@@ -71,8 +71,8 @@ const terminalTab = (scope: Page | ReturnType<Page['locator']>, name: string) =>
 const allTerminalTabs = (page: Page) =>
   page.locator('[data-testid="group-tab"][data-tab-kind="terminal"]')
 const idlePlaceholder = (page: Page) => page.getByText('Select a session to attach terminal')
-const splitButton = (page: Page, groupId: string) =>
-  group(page, groupId).locator('[data-testid="split-group"]')
+const splitRightButton = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="split-group-right"]')
 const closeGroupButton = (page: Page, groupId: string) =>
   group(page, groupId).locator('[data-testid="close-group"]')
 const emptyArea = (page: Page, groupId: string) =>
@@ -132,8 +132,7 @@ test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / op
     // Split group:1 whose ACTIVE tab is s1's terminal → the terminal MOVES into the
     // new group (FIX 2): the SAME instance (no new PTY) now lives in group:2, and the
     // source group:1 is left empty (its only tab moved out).
-    await splitButton(page, 'group:1').click()
-    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await splitRightButton(page, 'group:1').click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
     const movedTab = terminalTab(group(page, 'group:2'), s1)
     await expect(movedTab, 's1 terminal moved into the new group').toBeVisible({ timeout: 10_000 })
@@ -187,8 +186,7 @@ test.describe('USER-QA: terminal tabs — bind-on-create (3) / close × (4) / op
     await sessionRow(page, s1).click()
     await expect(terminalTab(group(page, 'group:1'), s1)).toBeVisible({ timeout: 15_000 })
     await sessionRow(page, s1).click() // re-click → pinned, so it survives the move
-    await splitButton(page, 'group:1').click()
-    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await splitRightButton(page, 'group:1').click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
     await expect(terminalTab(group(page, 'group:2'), s1), 'terminal moved into the new group').toBeVisible({ timeout: 10_000 })
     await expect(emptyArea(page, 'group:1'), 'the source group:1 is left empty').toBeVisible()

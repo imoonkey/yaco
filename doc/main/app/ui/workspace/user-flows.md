@@ -69,9 +69,9 @@ End-to-end user flows across explorer, changes, editor, and sessions.
 
 ## Flow: Compare Two Files Side-by-Side
 
-1. With a file open, right-click / long-press the group's tab-bar empty area (or click **Split**) → **Split Right** (or `Cmd+\`)
-2. An **empty** group opens beside the active one (axis chosen from geometry — wide splits right, tall splits below; `Cmd+K Cmd+\` for the other axis), and becomes the open target
-3. Open a file in it — from the explorer, or `Cmd+Enter` on an explorer file opens it to the side directly
+1. With a file open, click the group's **split right** icon (or use `Cmd+\` when the group is wide)
+2. A group opens beside the active one, seeded with a duplicate editor tab for the same file, and becomes the open target. The **split down** icon stacks below; right-click / long-press a split icon or the tab-bar empty area for the full Split Up/Down/Left/Right menu.
+3. Open another file in the new group — from the explorer, or `Cmd+Enter` on an explorer file opens it to the side directly
 4. Editing a file open in both groups updates both (shared per-path buffer); each group keeps its own tab strip
 5. Closing the last tab in a non-last group removes that empty group; the layout restores per (project, worktree) on reload
 

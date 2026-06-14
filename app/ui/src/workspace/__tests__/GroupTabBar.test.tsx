@@ -113,12 +113,24 @@ describe('GroupTabBar — select + close', () => {
 })
 
 describe('GroupTabBar — dismiss-safe Split menu', () => {
-  it('opens a 4-sided Split menu from the visible button and stays open until a choice', () => {
+  it('left-clicks the visible split icons to split right and down directly', () => {
     const onSplit = vi.fn()
     renderBar({ tabs: [EDITOR('editor:1', 'src/app.ts')], onSplit })
 
-    fireEvent.click(screen.getByTestId('split-group'))
-    // The menu is open (Bug 2: the opening click does not dismiss it).
+    fireEvent.click(screen.getByRole('button', { name: 'Split group right' }))
+    expect(onSplit).toHaveBeenCalledWith('right')
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Split group down' }))
+    expect(onSplit).toHaveBeenCalledWith('below')
+  })
+
+  it('opens a 4-sided Split menu from a split icon right-click and stays open until a choice', () => {
+    const onSplit = vi.fn()
+    renderBar({ tabs: [EDITOR('editor:1', 'src/app.ts')], onSplit })
+
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Split group right' }))
+    // The menu is open from the icon context route and stays until a choice.
     expect(screen.getByRole('menu')).toBeTruthy()
     for (const name of ['Split Up', 'Split Down', 'Split Left', 'Split Right']) {
       expect(screen.getByRole('menuitem', { name })).toBeTruthy()
@@ -188,14 +200,14 @@ describe('GroupTabBar — dismiss-safe Split menu', () => {
   it('offers Close Group only for an empty group', () => {
     const onCloseGroup = vi.fn()
     renderBar({ tabs: [], onCloseGroup })
-    fireEvent.click(screen.getByTestId('split-group'))
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Split group right' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Close Group' }))
     expect(onCloseGroup).toHaveBeenCalledTimes(1)
 
     // A non-empty group has no Close Group item.
     cleanup()
     renderBar({ tabs: [EDITOR('editor:1', 'src/app.ts')] })
-    fireEvent.click(screen.getByTestId('split-group'))
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Split group right' }))
     expect(screen.queryByRole('menuitem', { name: 'Close Group' })).toBeNull()
   })
 
@@ -401,6 +413,47 @@ describe('GroupTabBar — preview / group emphasis / editor actions', () => {
     expect(onSetEditorPrefs).toHaveBeenCalledWith({ autocompleteEnabled: true })
   })
 
+  it('renders markdown/html view modes as icon buttons and toggles split direction from the middle button', () => {
+    const onSetEditorPrefs = vi.fn()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'notes.md')],
+      activeTab: 'editor:1',
+      editorPrefs: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
+      onSetEditorPrefs,
+    })
+
+    for (const name of ['Edit', 'Split preview right', 'Preview']) {
+      expect(screen.getByRole('button', { name }).textContent).toBe('')
+    }
+
+    fireEvent.click(screen.getByRole('button', { name: 'Split preview right' }))
+    expect(onSetEditorPrefs).toHaveBeenCalledWith({ previewMode: 'split' })
+
+    cleanup()
+    onSetEditorPrefs.mockClear()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'notes.md')],
+      activeTab: 'editor:1',
+      editorPrefs: { previewMode: 'split', splitDirection: 'horizontal', autocompleteEnabled: false },
+      onSetEditorPrefs,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch split preview down' }))
+    expect(onSetEditorPrefs).toHaveBeenCalledWith({ splitDirection: 'vertical' })
+
+    cleanup()
+    onSetEditorPrefs.mockClear()
+    renderBar({
+      tabs: [EDITOR('editor:1', 'notes.md')],
+      activeTab: 'editor:1',
+      editorPrefs: { previewMode: 'split', splitDirection: 'vertical', autocompleteEnabled: false },
+      onSetEditorPrefs,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Switch split preview right' }))
+    expect(onSetEditorPrefs).toHaveBeenCalledWith({ splitDirection: 'horizontal' })
+  })
+
   it('renders NO editor actions when the active tab is a terminal (FIX 4)', () => {
     renderBar({
       tabs: [TERMINAL('terminal:1')], activeTab: 'terminal:1',
@@ -449,7 +502,7 @@ describe('GroupTabBar — Separate-editors-and-terminals toggle (design: separat
   }
 
   const openToggleItem = () => {
-    fireEvent.click(screen.getByTestId('split-group'))
+    fireEvent.contextMenu(screen.getByRole('button', { name: 'Split group right' }))
     return screen.getByRole('menuitemcheckbox', { name: 'Separate editors and terminals' })
   }
 

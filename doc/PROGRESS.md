@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-14: Group split icons and icon-only preview controls
+
+**What changed:**
+- Replaced the group tab bar's single click-to-menu Split button with two direct icon buttons: split right and split down.
+- Kept the full Split Up/Down/Left/Right menu on right-click / long-press for the split icons, tab-bar empty area, and tab title context routes.
+- Converted markdown/html Edit/Split/Preview controls to icon-only buttons. The middle split icon now reflects the current preview split direction and toggles direction when split mode is already active.
+- Updated accessible labels and unit/e2e coverage for direct split right, direct split down, retained split menus, and markdown preview-mode controls.
+
+**Why:**
+- The group-level split affordance and the editor preview split-direction toggle were visually conflated. Direct group split icons make the common right/down actions immediate, while keeping less common split directions in context menus; moving preview direction switching into the editor Split icon keeps it scoped to md/html preview controls.
+
+**Key files:** `app/ui/src/workspace/{GroupTabBar,EditorActions}.tsx`, `app/ui/src/workspace/__tests__/{GroupTabBar,panelDndDropCenter}.test.tsx`, `app/ui/tests/e2e/{mi-qa-editor-split,mi-qa-terminal-split,panel-dnd-routing,workspace-persistence}.spec.ts`, docs under `doc/main/app/{frontend/components,ui/workspace/*}.md`, `plan/all/20260614_group-split-icons/implementation_summary.md`
+**Verification:** `cd app/ui && npm exec vitest -- src/workspace/__tests__/GroupTabBar.test.tsx --run`; `cd app/ui && npm exec vitest -- src/workspace/__tests__/panelDndDropCenter.test.tsx --run`; `cd app/ui && npm run build`; `cd app/ui && npm run lint` (existing hook dependency warnings only); focused Playwright for editor split, html preview, kind-routing toggle, and markdown preview-mode cycling.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-14: Unified compact context menus for group tabs and dock grips
 
 **What changed:**

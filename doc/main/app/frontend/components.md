@@ -235,7 +235,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceEditorColumn.tsx` | 179 | Editor pane: tab bar + breadcrumbs + editor area |
 | `WorkspaceEditorArea.tsx` | 534 | Editor, split view, preview, diff, conflict banner, skeleton loaders |
 | `markdown.ts` | 157 | Markdown rendering, syntax highlighting, lazy mermaid loader |
-| `GroupTabBar.tsx` | mixed tab strip with editor/terminal tabs, tab context menus, Split menu, drag-reorder |
+| `GroupTabBar.tsx` | mixed tab strip with editor/terminal tabs, tab context menus, direct split icons, Split menu, drag-reorder |
 | `PanelFrame.tsx` | framed panel chrome; rightmost dock grip is the drag source and Reset-layout context menu |
 | `WorkspaceTabBar.tsx` | legacy tab strip helper kept for older isolated surfaces |
 | `WorkspaceSearch.tsx` | 220 | File search modal, recent files section |

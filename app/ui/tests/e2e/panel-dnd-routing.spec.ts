@@ -102,7 +102,7 @@ async function setupWithSessions(
 
 /** Flip the kind-routing toggle ON through the REAL split-menu checkbox item. */
 async function enableSeparateKinds(page: Page): Promise<void> {
-  await group(page, 'group:1').getByTestId('split-group').click()
+  await group(page, 'group:1').getByTestId('split-group-right').click({ button: 'right' })
   const item = page.getByRole('menuitemcheckbox', { name: 'Separate editors and terminals' })
   await expect(item).toBeVisible({ timeout: 10_000 })
   await item.click()

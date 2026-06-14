@@ -12,7 +12,7 @@ import {
 } from './helpers/workspace'
 
 // USER-QA for the VSCode tab-group editor flows. Drives the SAME affordances a
-// user touches — the group tab bar's visible Split button and its right-click menu
+// user touches — the group tab bar's visible split icons and its right-click menu
 // (NOT keyboard shortcuts) — and asserts USER-OBSERVABLE outcomes: a second group
 // appears side-by-side (axis row) or stacked (axis col), the original group keeps
 // its file tab, the Split menu STAYS OPEN until a choice is made (the Bug 2
@@ -40,11 +40,12 @@ async function ws(page: Page, request: APIRequestContext): Promise<FixtureProjec
 
 // --- Working-area group affordances (the real DOM contract vt-render shipped) ---
 
-// A group's visible Split button (opens the dismiss-safe Split menu via
-// `openFromTrigger`) and its right-clickable empty area (opens the SAME menu via
-// `menu.bind()`). Both routes survive the document-click dismiss (Bug 2 fix).
-const splitButton = (page: Page, groupId: string) =>
-  group(page, groupId).locator('[data-testid="split-group"]')
+// A group's visible split-right icon splits directly on left-click; right-clicking
+// it opens the same Split menu as the tab-bar context routes.
+const splitRightButton = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="split-group-right"]')
+const splitDownButton = (page: Page, groupId: string) =>
+  group(page, groupId).locator('[data-testid="split-group-down"]')
 const emptyArea = (page: Page, groupId: string) =>
   group(page, groupId).locator('[data-testid="group-empty-area"]')
 // A group's ACTIVE editor tab body (only the active tab has a body wrapper).
@@ -95,7 +96,7 @@ async function expectEvenSplit(
 }
 
 test.describe('USER-QA: editor group split (button + right-click) → seeded adjacent group', () => {
-  test('flow 1: the Split button DUPLICATES the active file into a side-by-side group; the original keeps its file', async ({ page, request }) => {
+  test('flow 1: the split-right icon DUPLICATES the active file into a side-by-side group; the original keeps its file', async ({ page, request }) => {
     const project = await ws(page, request)
     const fileA = uniqueFileName('split_a.ts')
     const fileB = uniqueFileName('split_b.ts')
@@ -109,10 +110,9 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
     await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('ORIGINAL')
     expect(await groupIds(page)).toEqual(['group:1'])
 
-    // The real user gesture: click the group's visible Split button → its menu →
-    // Split Right (a left/right split is a side-by-side, axis 'row').
-    await splitButton(page, 'group:1').click()
-    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    // The real user gesture: click the group's visible split-right icon. A
+    // left/right split is side-by-side, axis 'row'.
+    await splitRightButton(page, 'group:1').click()
 
     // OUTCOME (FIX 2): a SECOND group appears side-by-side — group:1 was NOT closed,
     // and the new group is SEEDED with a DUPLICATE of fileA (same buffer, fresh tab),
@@ -150,11 +150,10 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
     await waitForSSERefresh(page, 3000)
 
     await openFileViaSearch(page, file)
-    await expect(splitButton(page, 'group:1')).toBeVisible()
+    await expect(splitRightButton(page, 'group:1')).toBeVisible()
 
-    // Open the Split menu via the visible button (routed through the dismiss-safe
-    // `openFromTrigger` — NOT the deleted left-click `menu.open` antipattern).
-    await splitButton(page, 'group:1').click()
+    // Open the Split menu via right-click on the visible split icon.
+    await splitRightButton(page, 'group:1').click({ button: 'right' })
 
     // OUTCOME (Bug 2 fix): the menu + its options are VISIBLE and STAY open — the
     // same document-click that opened it must NOT immediately dismiss it.
@@ -178,6 +177,23 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
 
     // The vertical split also STARTS ~50-50 — each group is half the source height.
     await expectEvenSplit(page, 'group:1', 'group:2', 'col')
+
+    await deleteTestFile(page, project.name, file)
+  })
+
+  test('flow 2a: the split-down icon directly stacks the duplicated file below', async ({ page, request }) => {
+    const project = await ws(page, request)
+    const file = uniqueFileName('split_down_icon.ts')
+    await createTestFile(page, project.name, file, 'export const down = 1\n')
+    await waitForSSERefresh(page, 3000)
+
+    await openFileViaSearch(page, file)
+    await expect(tabInGroup(page, 'group:1', file)).toBeVisible({ timeout: 10_000 })
+    await splitDownButton(page, 'group:1').click()
+
+    await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
+    await expect(tabInGroup(page, 'group:2', file)).toBeVisible()
+    expect(await groupSplitAxis(page), 'split-down icon stacks the groups (col)').toBe('col')
 
     await deleteTestFile(page, project.name, file)
   })
@@ -250,8 +266,7 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
     // two instances, one per group) sharing one per-path buffer (FIX 2 seeding).
     await openFileViaSearch(page, file)
     await expect(editorBody(page, 'group:1').locator('.cm-content')).toContainText('export const v')
-    await splitButton(page, 'group:1').click()
-    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await splitRightButton(page, 'group:1').click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
     await expect(tabInGroup(page, 'group:2', file)).toBeVisible({ timeout: 10_000 })
 
@@ -300,20 +315,18 @@ test.describe('USER-QA: editor group split (button + right-click) → seeded adj
     // Fresh workspace: group:1 is empty. Splitting an empty source yields an empty
     // group:2 (nothing to seed) — both groups empty.
     await expect(group(page, 'group:1').getByText('No files open')).toBeVisible({ timeout: 10_000 })
-    await splitButton(page, 'group:1').click()
-    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await splitRightButton(page, 'group:1').click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
     expect(await groupIds(page)).toEqual(['group:1', 'group:2'])
 
     // Close the empty group:2 via its tab-bar "Close Group" item → back to one group.
-    await splitButton(page, 'group:2').click()
+    await splitRightButton(page, 'group:2').click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Close Group' }).click()
     await expect(group(page, 'group:2')).toHaveCount(0, { timeout: 10_000 })
     expect(await groupIds(page)).toEqual(['group:1'])
 
     // Split again; the new empty group is the active target → Cmd+W closes it.
-    await splitButton(page, 'group:1').click()
-    await page.getByRole('menuitem', { name: 'Split Right' }).click()
+    await splitRightButton(page, 'group:1').click()
     await expect(group(page, 'group:2')).toBeVisible({ timeout: 10_000 })
     await page.keyboard.press('Meta+w')
     await expect(group(page, 'group:2')).toHaveCount(0, { timeout: 10_000 })

@@ -399,9 +399,9 @@ test.describe('Keyboard shortcut characterization', () => {
     await page.locator('.overflow-x-auto').locator(`[title="${mdFile}"]`).dblclick()
     await page.waitForTimeout(500)
 
-    // Verify the mode toggle is visible (Edit/Split/Preview buttons)
+    // Verify the icon mode toggle is visible (Edit/Split/Preview buttons by aria-label)
     await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Split', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Split preview right', exact: true })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Preview', exact: true })).toBeVisible()
 
     // Cmd+Shift+V cycles edit -> split -> preview -> edit, exercising the editor

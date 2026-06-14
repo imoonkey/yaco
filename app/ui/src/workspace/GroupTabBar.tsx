@@ -5,16 +5,14 @@
 // each terminal its own tab (provider icon + bound session name, or "Terminal"
 // when unbound). Selecting a tab activates it; each tab carries a close ×.
 //
-// The split affordance has two dismiss-safe routes onto ONE shared menu (Bug 2):
-// a visible split button via `useContextMenu.openFromTrigger` (never the left-click
-// `menu.open` antipattern), and the tab-bar empty area via `menu.bind()`'s
-// `onContextMenu`. The menu stays open until a Split Up/Down/Left/Right (or, for an
-// empty group, Close Group) choice. Within-group drag reorders tabs.
+// The split affordance has direct right/down icon buttons. The shared Split menu
+// stays available from right-click / long-press on those icons, plus the tab-bar
+// empty area and tab title context routes. Within-group drag reorders tabs.
 //
 // Group-native callbacks are wired by `PanelGroup`; session metadata + `isTouch`
 // are read from context here, and `useContextMenu` is instantiated internally.
 import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
-import { X, AlertTriangle, SplitSquareHorizontal } from 'lucide-react'
+import { X, AlertTriangle, Columns2, Rows2 } from 'lucide-react'
 import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
 import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
@@ -245,6 +243,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
   // a cleanup effect.
   const dragging = !!dragPayload
   const showMarkerAt = (i: number) => dragging && dropIndex === i
+  const splitMenuHandlers = menu.bind(() => setContextTab(null))
 
   return (
     <div className="flex items-center shrink-0" style={BAR_STYLE} data-group-tab-bar={groupId}>
@@ -352,10 +351,17 @@ export function GroupTabBar(props: GroupTabBarProps) {
           />
         )}
         {canSplit && (
-          <button type="button" onClick={(e) => { setContextTab(null); menu.openFromTrigger(e) }}
-            data-testid="split-group" title="Split editor group" aria-label="Split editor group" aria-haspopup="menu"
+          <button type="button" onClick={() => onSplit('right')} {...splitMenuHandlers}
+            data-testid="split-group-right" title="Split group right" aria-label="Split group right" aria-haspopup="menu"
             style={SPLIT_BTN_STYLE}>
-            <SplitSquareHorizontal size={13} aria-hidden="true" />
+            <Columns2 size={13} aria-hidden="true" />
+          </button>
+        )}
+        {canSplit && (
+          <button type="button" onClick={() => onSplit('below')} {...splitMenuHandlers}
+            data-testid="split-group-down" title="Split group down" aria-label="Split group down" aria-haspopup="menu"
+            style={SPLIT_BTN_STYLE}>
+            <Rows2 size={13} aria-hidden="true" />
           </button>
         )}
         {/* An empty group offers a VISIBLE Close Group button (FIX B) so the source

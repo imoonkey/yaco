@@ -4,7 +4,7 @@
 // group tab bar on desktop, and in the slim mobile editor action row (no tab bar
 // there); both act on the active editor tab through `onSetEditorPrefs`. Behaviour
 // is identical to the old inline editor-body row — only the location moved.
-import { Sparkles, Columns2, Rows2 } from 'lucide-react'
+import { Sparkles, Columns2, Rows2, Pencil, Eye } from 'lucide-react'
 import { isDiffTab, isFileTab, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import { isBinaryPreviewFile, isPreviewableFile } from '../lib/binaryFiles'
 import type { EditorPrefs } from './context'
@@ -15,43 +15,63 @@ const SUGGESTIONS_BTN: React.CSSProperties = {
   fontSize: 'var(--text-ui-sm)', border: 'none', borderRadius: 3, cursor: 'pointer',
 }
 
-// The markdown/html preview-mode segmented control + its split-direction toggle.
+// The markdown/html preview-mode segmented control. The split button owns the
+// direction toggle when split mode is already active.
 function PreviewModeToggle({ mode, splitDirection, onChange, onDirectionChange, isTouch }: {
   mode: PreviewMode; splitDirection: SplitDirection
   onChange: (m: PreviewMode) => void; onDirectionChange: (d: SplitDirection) => void; isTouch: boolean
 }) {
-  const modes: { value: PreviewMode; label: string }[] = isTouch
-    ? [{ value: 'edit', label: 'Edit' }, { value: 'preview', label: 'Preview' }]
-    : [{ value: 'edit', label: 'Edit' }, { value: 'split', label: 'Split' }, { value: 'preview', label: 'Preview' }]
+  const splitIcon = splitDirection === 'horizontal'
+    ? <Columns2 size={13} aria-hidden="true" />
+    : <Rows2 size={13} aria-hidden="true" />
+  const modes: { value: PreviewMode; label: string; title: string; icon: React.ReactNode }[] = isTouch
+    ? [
+        { value: 'edit', label: 'Edit', title: 'Edit', icon: <Pencil size={13} aria-hidden="true" /> },
+        { value: 'preview', label: 'Preview', title: 'Preview', icon: <Eye size={13} aria-hidden="true" /> },
+      ]
+    : [
+        { value: 'edit', label: 'Edit', title: 'Edit', icon: <Pencil size={13} aria-hidden="true" /> },
+        { value: 'split', label: splitDirection === 'horizontal' ? 'Split preview right' : 'Split preview down', title: splitDirection === 'horizontal' ? 'Split preview right' : 'Split preview down', icon: splitIcon },
+        { value: 'preview', label: 'Preview', title: 'Preview', icon: <Eye size={13} aria-hidden="true" /> },
+      ]
+  const toggleSplitDirection = () => {
+    onDirectionChange(splitDirection === 'horizontal' ? 'vertical' : 'horizontal')
+  }
 
   return (
     <div className="flex items-center gap-1 shrink-0">
       <div className="flex rounded border overflow-hidden" style={{ borderColor: 'var(--sol-border)' }}>
-        {modes.map(({ value, label }) => {
+        {modes.map(({ value, label, title, icon }) => {
           const active = mode === value
+          const click = () => {
+            if (value === 'split' && active) {
+              toggleSplitDirection()
+              return
+            }
+            onChange(value)
+          }
           return (
-            <button key={value} onClick={() => onChange(value)}
-              className="text-ui-xs px-2 py-0.5 cursor-pointer"
+            <button key={value} onClick={click}
+              aria-label={value === 'split' && active
+                ? (splitDirection === 'horizontal' ? 'Switch split preview down' : 'Switch split preview right')
+                : label}
+              aria-pressed={active}
+              title={value === 'split' && active
+                ? (splitDirection === 'horizontal' ? 'Switch split preview down' : 'Switch split preview right')
+                : title}
+              className="flex items-center justify-center cursor-pointer"
               style={{
+                width: 26,
+                height: 22,
                 backgroundColor: active ? 'color-mix(in srgb, var(--sol-blue) 8%, transparent)' : 'var(--sol-bg)',
                 color: active ? 'var(--sol-accent)' : 'var(--sol-text)',
                 borderRight: value !== modes[modes.length - 1].value ? '1px solid var(--sol-border)' : undefined,
               }}>
-              {label}
+              {icon}
             </button>
           )
         })}
       </div>
-      {mode === 'split' && !isTouch && (
-        <button
-          onClick={() => onDirectionChange(splitDirection === 'horizontal' ? 'vertical' : 'horizontal')}
-          className="flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg"
-          style={{ width: 20, height: 20, color: 'var(--sol-text-dim)', transition: 'background-color 120ms' }}
-          title={splitDirection === 'horizontal' ? 'Switch to vertical split' : 'Switch to horizontal split'}
-        >
-          {splitDirection === 'horizontal' ? <Rows2 size={12} /> : <Columns2 size={12} />}
-        </button>
-      )}
     </div>
   )
 }

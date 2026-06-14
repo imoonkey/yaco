@@ -25,11 +25,11 @@ The working area is a grid of **groups**; each group's strip mixes one **editor 
 
 - **Shared buffers.** File content / dirty state live in `useFileState` keyed by **path**, not by tab. The same file open as two editor tabs (in two groups) shows the same content and the same dirty dot; only the tab is duplicated, the buffer is one.
 - **Tab events.** A tab click activates it via `setActiveGroupTab(groupId, instanceId)` and focuses it (`focusPane('editor', id)` on mousedown). `jumpRequest` (go-to-line) and `editorInsert` (voice) carry an `instanceId` and are consumed **iff** it matches — so the same path open in two tabs jumps only the one that was targeted.
-- **Split.** Right-click the group's tab-bar empty area, or click the visible **Split** button (which opens the same dismiss-safe menu), → **Split Up/Down/Left/Right** spawns an adjacent group, **seeded from the source group's active tab**: an editor tab is **duplicated** (a fresh instance on the same `tabId`, sharing the per-path buffer), a terminal tab is **moved** (same instance + binding, no new PTY), an empty source yields an empty group. The new group becomes the open target.
+- **Split.** The group tab bar has two visible split icons: **split right** and **split down**. Left-clicking one directly spawns an adjacent group in that direction, **seeded from the source group's active tab**: an editor tab is **duplicated** (a fresh instance on the same `tabId`, sharing the per-path buffer), a terminal tab is **moved** (same instance + binding, no new PTY), an empty source yields an empty group. Right-click / long-press either split icon, the tab-bar empty area, or a tab title to open the full **Split Up/Down/Left/Right** menu. The new group becomes the open target.
 - **Tab context menu.** Right-click / long-press an editor tab to open a tab-aware menu. File actions render first (`Save` for dirty file tabs, `Close` or `Close Without Saving`), then a divider, then group-level Split actions and the kind-affinity toggle. The tab and menu both carry the native-context-menu suppression marker so iOS does not show its system callout.
 - **Open to the side.** `Cmd+Enter` in the explorer / quick-open splits an **empty** group beside the active one and opens the focused file there (`openToSide`, non-seeding).
 - **Reorder.** Tabs drag-reorder within their group (`reorderGroupTab`); editor and terminal tabs share one freely-orderable strip.
-- **Editor view controls.** The active editor tab's view toggles — the inline-suggestion sparkle, the md/html **edit | split | preview** mode toggle, and the split-direction button — render **right-aligned in the group tab bar** (`EditorActions`), not in the editor body. On mobile (no tab bar) they sit in a slim body action row with the mic. They act on the active editor tab via `setEditorPrefs`.
+- **Editor view controls.** The active editor tab's view toggles — the inline-suggestion sparkle and the md/html icon-only **edit | split | preview** mode toggle — render **right-aligned in the group tab bar** (`EditorActions`), not in the editor body. The middle split icon reflects the current preview split direction; when split mode is active, clicking that same icon toggles direction. On mobile (no tab bar) the controls sit in the projected editor tab row with the mic. They act on the active editor tab via `setEditorPrefs`.
 - **Dirty-close confirm.** "Close Without Saving" on the last tab of a dirty file confirms and clears the draft first; it **no-ops when the same path is open in another tab** (closing one tab while another shows it loses nothing).
 - **Close.** Closing a tab via its `×` removes it (`closeGroupTab`); the active tab falls to its neighbour. Closing the last tab in a non-last group removes the now-empty group (`closeGroup`); the final group stays alive, empty (`ensureFirstGroup`). An empty group is closable via its tab-bar **Close Group** item or `Cmd+W` when it is the active group.
 
@@ -48,7 +48,7 @@ The editor uses CodeMirror 6 with two-tier language loading:
 - Each editor tab shows filename (not full path); a terminal tab shows its session label
 - Active tab has `base3` background, inactive tabs have `base2`
 - Tabs can be clicked to switch and **drag-reordered** within the group
-- The empty area to the right of the tabs is the **Split** trigger (right-click, long-press, or the visible Split button) — opens the Split Up/Down/Left/Right menu
+- The right edge of the bar has **split right** and **split down** icon buttons. Left-click splits directly; right-click / long-press opens the full Split Up/Down/Left/Right menu. The tab-strip empty area also opens that menu by right-click / long-press.
 
 ### Tab States
 
@@ -110,13 +110,13 @@ This ensures preview, editor, and save are never out of sync.
 
 ## Preview Mode
 
-The 3-segment Edit / Split / Preview toggle (or `Cmd+Shift+V` to cycle) appears in the tab bar for **previewable** files — currently `.md`, `.markdown`, `.html`, `.htm` (see `isPreviewableFile` in `ui/src/lib/binaryFiles.ts`). Mode is shared across files via `previewMode` in the workspace layout.
+The 3-icon Edit / Split / Preview toggle (or `Cmd+Shift+V` to cycle) appears in the tab bar for **previewable** files — currently `.md`, `.markdown`, `.html`, `.htm` (see `isPreviewableFile` in `ui/src/lib/binaryFiles.ts`). Mode is shared across files via `previewMode` in the workspace layout.
 
 - **Edit**: CodeMirror editor only
 - **Split**: Editor + live preview side-by-side, with a draggable divider (20%–80%). Two orientations:
   - **Horizontal** (default): editor left, preview right, vertical resize handle
   - **Vertical**: editor top, preview bottom, horizontal resize handle
-  - A direction toggle icon appears next to the mode buttons when split is active
+  - The Split mode icon shows the active orientation; when split mode is active, clicking it toggles between horizontal and vertical
 - **Preview**: Rendered preview only
 
 On touch/mobile devices, Split mode is hidden (only Edit/Preview available).

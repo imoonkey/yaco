@@ -351,11 +351,13 @@ describe('PanelGroup — split control gated to center groups', () => {
 
   it('offers the split control on a CENTER group', () => {
     renderPanelGroup(center, tree)
-    expect(screen.getByTestId('split-group')).toBeTruthy()
+    expect(screen.getByTestId('split-group-right')).toBeTruthy()
+    expect(screen.getByTestId('split-group-down')).toBeTruthy()
   })
 
   it('does NOT offer the split control on a RIGHT-sidebar group (a split there would just merge)', () => {
     renderPanelGroup(right, tree)
-    expect(screen.queryByTestId('split-group')).toBeNull()
+    expect(screen.queryByTestId('split-group-right')).toBeNull()
+    expect(screen.queryByTestId('split-group-down')).toBeNull()
   })
 })
