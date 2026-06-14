@@ -687,3 +687,56 @@ describe('sidebarVisibility — DnD visibility reconcile (HIGH 2 regression)', (
     expect(sidebarVisibility(hidden.desktop).right).toBe(false) // ...but hidden → not visible
   })
 })
+
+describe('moveLeaf — basis preservation on reorder (FIX 1)', () => {
+  // The basis of the dock leaf `panel` anywhere in the tree, or undefined.
+  const basisOf = (node: LayoutNode, panel: string): number | undefined => {
+    if (node.kind === 'split') {
+      for (const c of node.children) {
+        if (c.node.kind === 'leaf' && c.node.panel === panel) return c.basis
+        const hit = basisOf(c.node, panel)
+        if (hit !== undefined) return hit
+      }
+    }
+    return undefined
+  }
+  // left col [projects(120), changes(160), files(grow)] · center group:1 · right sessions(280)
+  const sidebarTree = () => layoutWith({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { node: { kind: 'split', id: 'dock', axis: 'col', children: [
+        { basis: 120, node: dockLeaf('projects') },
+        { basis: 160, node: dockLeaf('changes') },
+        { grow: true, node: dockLeaf('files') },
+      ] } },
+      { grow: true, node: group('group:1', [ed('editor:1', 'src/a.ts')], 'editor:1') },
+      { basis: 280, node: dockLeaf('sessions') },
+    ],
+  })
+
+  it('keeps a reordered dock its OWN basis (order changes, size does not)', () => {
+    // Move `changes` (basis 160) below `files` within the same left sidebar.
+    const out = moveLeaf(sidebarTree(), 'changes', { targetId: 'files', side: 'below' })
+    // It kept 160 — NOT snapped to DEFAULT_SPLIT_BASIS.col (180), the old jarring jump.
+    expect(basisOf(out.desktop, 'changes')).toBe(160)
+    expect(basisOf(out.desktop, 'changes')).not.toBe(DEFAULT_SPLIT_BASIS.col)
+    // The undisturbed sibling keeps its basis too.
+    expect(basisOf(out.desktop, 'projects')).toBe(120)
+  })
+
+  it('carries the dock basis across sidebars (left → right)', () => {
+    // Move `projects` (basis 120) beside the right sessions dock. The moved dock keeps
+    // its 120; the right sidebar COLUMN keeps its overall 280 width (sessions becomes
+    // the column's grow absorber — its 280 rides on the wrapping region child).
+    const out = moveLeaf(sidebarTree(), 'projects', { targetId: 'sessions', side: 'below' })
+    expect(basisOf(out.desktop, 'projects')).toBe(120)
+    const right = regionsOf(out.desktop).right!
+    const rightChild = asSplit(out.desktop).children.find((c) => c.node.id === right.id)
+    expect(rightChild?.basis).toBe(280) // the right region column width is unchanged
+  })
+
+  it('a grow (basis-less) dock takes the default when moved', () => {
+    // `files` is the grow child (no basis); moving it gives it the default strip.
+    const out = moveLeaf(sidebarTree(), 'files', { targetId: 'projects', side: 'above' })
+    expect(basisOf(out.desktop, 'files')).toBe(DEFAULT_SPLIT_BASIS.col)
+  })
+})

@@ -1025,6 +1025,32 @@ function insertBesideNodeById(
   }))
 }
 
+/** Splice `inserted` as a FLAT sibling next to the target node inside the parent
+ *  split that already lays out along `axis`, returning the new tree — else null when
+ *  the target's parent is a different axis (the caller then wraps via
+ *  `insertBesideNodeById`). A flat splice keeps EVERY sibling's own basis intact (no
+ *  wrapper inherits the target's slot basis and clamps the pair), so a sidebar dock
+ *  reorder changes order, never size. */
+function insertLeafAsSibling(
+  node: LayoutNode, targetNodeId: string, inserted: SplitChild, axis: SplitAxis, before: boolean,
+): LayoutNode | null {
+  if (node.kind !== 'split') return null
+  const at = node.children.findIndex((c) => c.node.id === targetNodeId)
+  if (at !== -1 && node.axis === axis) {
+    const idx = before ? at : at + 1
+    return { ...node, children: [...node.children.slice(0, idx), inserted, ...node.children.slice(idx)] }
+  }
+  for (let i = 0; i < node.children.length; i++) {
+    const next = insertLeafAsSibling(node.children[i].node, targetNodeId, inserted, axis, before)
+    if (next) {
+      const children = [...node.children]
+      children[i] = { ...children[i], node: next }
+      return { ...node, children }
+    }
+  }
+  return null
+}
+
 /** Split an EMPTY new group (`newGroupId`) beside the group `targetGroupId`. The
  *  caller picks `side` from live geometry; the new group becomes the open target
  *  via the reducer's `activeGroupId`. No-op when the target id is absent.
@@ -1094,35 +1120,48 @@ export function ensureCenterGroup(layout: WorkspacePanelLayout): WorkspacePanelL
   return withDesktop(layout, graftGroup(layout.desktop, emptyGroup(id)))
 }
 
-function detachLeafById(node: LayoutNode, id: string): { tree: LayoutNode | null; leaf: LeafNode | null } {
+/** Detach the dock leaf `id`, returning the pruned tree, the leaf node, and the
+ *  leaf's ORIGINAL split basis (so a reorder/move can carry the dock's own size
+ *  rather than snapping it to a default — see `moveLeaf`). */
+function detachLeafById(
+  node: LayoutNode, id: string,
+): { tree: LayoutNode | null; leaf: LeafNode | null; basis: number | undefined } {
   if (node.kind === 'leaf') {
-    return node.id === id ? { tree: null, leaf: node } : { tree: node, leaf: null }
+    return node.id === id ? { tree: null, leaf: node, basis: undefined } : { tree: node, leaf: null, basis: undefined }
   }
   if (node.kind === 'split') {
     const children: SplitChild[] = []
     let removed: LeafNode | null = null
+    let removedBasis: number | undefined
     for (const c of node.children) {
       const res = detachLeafById(c.node, id)
-      if (res.leaf) removed = res.leaf
+      if (res.leaf) { removed = res.leaf; removedBasis = res.basis ?? c.basis }
       if (res.tree) children.push({ ...c, node: res.tree })
     }
-    return { tree: children.length > 0 ? { ...node, children } : null, leaf: removed }
+    return { tree: children.length > 0 ? { ...node, children } : null, leaf: removed, basis: removedBasis }
   }
-  return { tree: node, leaf: null }
+  return { tree: node, leaf: null, basis: undefined }
 }
 
 /** Move the dock leaf `instanceId` beside another node, reusing the SAME leaf so
- *  its id + collapsed flag travel. No-op if the leaf or target is absent. */
+ *  its id + collapsed flag travel. The dock keeps its OWN basis (its size at the
+ *  source), so reordering within a sidebar — or moving across sidebars — changes the
+ *  order, not the sizes; only when the dock had no basis (a lone grow child) does it
+ *  take the default. No-op if the leaf or target is absent. */
 export function moveLeaf(
   layout: WorkspacePanelLayout, instanceId: string, placement: LeafPlacement,
 ): WorkspacePanelLayout {
-  const { tree, leaf } = detachLeafById(layout.desktop, instanceId)
+  const { tree, leaf, basis } = detachLeafById(layout.desktop, instanceId)
   if (!leaf) return layout
   const base = tree ?? layout.desktop
   if (!hasNodeId(base, placement.targetId)) return layout
   const axis: SplitAxis = placement.side === 'left' || placement.side === 'right' ? 'row' : 'col'
-  const inserted: SplitChild = { basis: DEFAULT_SPLIT_BASIS[axis], node: leaf }
-  return withDesktop(layout, insertBesideNodeById(base, placement.targetId, inserted, placement.side, `split:${leaf.id}`))
+  const inserted: SplitChild = { basis: basis ?? DEFAULT_SPLIT_BASIS[axis], node: leaf }
+  const before = placement.side === 'left' || placement.side === 'above'
+  // Prefer a FLAT sibling splice (target already lives in a same-axis split) so every
+  // dock keeps its own basis; only wrap a fresh split when the axes differ.
+  const flat = insertLeafAsSibling(base, placement.targetId, inserted, axis, before)
+  return withDesktop(layout, flat ?? insertBesideNodeById(base, placement.targetId, inserted, placement.side, `split:${leaf.id}`))
 }
 
 /** Reveal/extend a sidebar by moving the dock leaf `instanceId` to the root row's
