@@ -54,6 +54,27 @@ Write and discuss the design like Linus Torvalds would.
 
 Files under `final/` must be self-contained, complete documents (designs, analyses, etc.) — readable without referring back to individual discussion files. They should not merely record conflict resolutions or key decisions while omitting consensus details.
 
+### Final Doc Quality Bar
+
+`final/*` reads as a single-author artifact, not a record of the debate — implementable by someone who never opened `discussion/`.
+
+- One top-down narrative, single voice, one term per concept.
+- No alignment seams: no "Aligned Decisions", "Codex/Claude said", "both reviewers split", "Resolved during alignment", or round references. Deliberation and resolved trails live in `discussion/`; only an unresolved Open Question packet names both sides (see Open Questions).
+- Keep design rationale, cut process narration.
+- Every consensus detail present; each open question's assumed default written into the body, so it stays buildable.
+
+This is an approval gate: don't vote `APPROVE` while `final/*` violates it — return `CHANGES` like any other defect.
+
+### Open Questions
+
+Resolve disagreements with evidence first; escalate only what needs the user. Each open question is a decision packet, not a bare question:
+
+- **Question / Impact / Options** — the decision, what it changes downstream, the real alternatives with trade-offs.
+- **Recommendation** — the default `final/*` assumes (also written into the body).
+- **Positions** — each side's lean and the crux, only when Codex and Claude actually diverge.
+
+≤2 short packets inline; ≥3 or any large one → `final/open_questions.md` with one-line pointers in the body (when unsure, use the file). Resolved → fold into the body, delete the packet.
+
 ### status.txt (single-line format)
 
 Single line, space-separated key=value pairs:
@@ -104,7 +125,7 @@ Fields:
 You are the **only one allowed to write** (both `discussion/` and `final/`).
 
 1. Read all discussion files under `discussion/` (ascending by SEQ), especially the other agent's latest file.
-2. If the aligned output needs updating: modify/add `final/*`. Prefer incremental edits over full rewrites — both sides need to see what changed.
+2. If the aligned output needs updating: modify/add `final/*`. Edit incrementally; restructure locally when needed to keep it coherent against the Final Doc Quality Bar.
 3. Create a new discussion file (**always create, never modify old files**):
    * Filename: `{newSEQ}_{YOU}.md` (e.g. `0003_CODEX.md`)
    * Keep it short: this round's conclusions, what changed, unresolved issues, your vote (APPROVE/CHANGES).

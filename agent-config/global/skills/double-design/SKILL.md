@@ -31,8 +31,9 @@ plan/all/<project>/
     0001_CODEX.md
     0002_CLAUDE.md
     ...
-  final/                      # Aligned output
+  final/                      # Aligned output — single-author quality (see /align Final Doc Quality Bar)
     *.md
+    open_questions.md         # Optional: present when ≥3 open questions or any large one (see /align Open Questions)
 ```
 
 ## Process
@@ -78,14 +79,13 @@ The first draft must be conservative:
 
 - Reflect consensus first, not the first mover's preferred design
 - Avoid locking in unresolved choices too early
-- Keep unresolved items in a dedicated `Open Questions` section at the bottom of the final design
-- When an open question is resolved in later rounds, update the self-contained final design above to incorporate the resolution, then remove or rewrite that open question accordingly
+- Hold `final/*` to the `/align` Final Doc Quality Bar and record unresolved items as `/align` Open Question packets from the first draft
 
 Send both agents into `/align` mode with the first mover explicitly assigned. Example below assumes the cross-reviews selected Claude.
 
 ```bash
-yaco agent send claude-design "Run /align. Read all files in plan/all/<project>/initial/. You are CLAUDE. Alignment folder: plan/all/<project>/. Claude is the explicit first mover. If it is your turn, initialize alignment artifacts and write the first draft. That first draft must be conservative: capture consensus, avoid opinionated picks on unresolved questions, and end with an Open Questions section listing every unresolved issue. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question. If it is not your turn, wait." --json
-yaco agent send codex-design  "Run /align. Read all files in plan/all/<project>/initial/. You are CODEX. Alignment folder: plan/all/<project>/. Claude is the explicit first mover. Do not start drafting unless status.txt says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Whenever any open question gets resolved later, update the self-contained final design first, then remove or revise the corresponding open question." --json
+yaco agent send claude-design "Run /align. Read all files in plan/all/<project>/initial/. You are CLAUDE. Alignment folder: plan/all/<project>/. Claude is the explicit first mover. If it is your turn, initialize alignment artifacts and write the first draft. That first draft must be conservative: capture consensus, avoid opinionated picks on unresolved questions, record every unresolved issue as a structured Open Question packet per /align Open Questions, and keep final/ to the /align Final Doc Quality Bar. Whenever an open question is resolved later, fold it into the design and delete the packet. If it is not your turn, wait." --json
+yaco agent send codex-design  "Run /align. Read all files in plan/all/<project>/initial/. You are CODEX. Alignment folder: plan/all/<project>/. Claude is the explicit first mover. Do not start drafting unless status.txt says it is your turn. Review the first draft for missing open questions, premature opinionated decisions, and places where the final design should better reflect actual consensus. Hold final/ to the /align Final Doc Quality Bar and Open Questions to the /align packet schema. Whenever an open question gets resolved later, fold it into the design and delete the packet." --json
 ```
 
 If the cross-reviews pick Codex, swap the role assignment in both prompts. The key invariant is that exactly one side is named the first mover in both messages.
@@ -126,4 +126,4 @@ Hand off to `/implement` when ready.
 - Steps 1 & 2: blocking provider-log waits (`wait --from-start` for fresh starts, `send --wait` for follow-up turns) are safe (bounded tasks, agents will finish)
 - Step 3: never block-wait — manually monitor `status.txt` plus `yaco agent status`, then nudge the side whose turn it is if that session is idle
 - Step 3: the first mover owns the first draft, but that draft should mostly record shared ground plus explicit open questions, not force unresolved choices
-- Final output must remain self-contained throughout alignment; resolving an open question is not complete until the resolved design is reflected in `final/*.md`
+- Final-doc quality and the Open Question packet format are owned by `/align` (Final Doc Quality Bar, Open Questions); the Step 3 prompts already send both agents there. `final/*` stays self-contained — a resolved open question isn't done until folded into the body and its packet deleted.
