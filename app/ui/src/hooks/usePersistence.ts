@@ -17,7 +17,7 @@ import {
   defaultWorkspacePanelLayout, normalizeLayout,
   migrateTreeToGroups, mapEditorMru,
   editorInstancesInOrder, terminalInstancesInOrder,
-  centerOf, firstCenterGroupId, groupOf,
+  centerOf, firstCenterGroupId, groupOf, sidebarVisibility,
 } from '../workspace/panelLayoutModel'
 
 // --- Load helpers ---
@@ -269,6 +269,18 @@ export function loadPersistedState(project: string, worktree?: string | null): P
       layout.showTasks = stored.version === 1 && stored.desktop ? oldTreeTasksActive(stored.desktop) : false
     }
     const loaded: LoadedTree = isNewGroupBlob ? loadGroupBlob(parsed, stored) : migrateOldBlob(parsed, layout)
+
+    // The flat `showSidebar`/`showRightPanel` flags and the tree's `hidden` flags
+    // are persisted independently (and computed independently by the migration), so
+    // a stale or mismatched blob can load with the flag disagreeing with the tree's
+    // actual sidebar presence. The provider mirrors them bidirectionally (flag→tree
+    // and tree→flag) — a mount-time disagreement makes those two effects fight one
+    // render out of phase forever (React "Maximum update depth"). The tree is the
+    // richer, DnD-aware representation, so derive the flags FROM it: load is always
+    // self-consistent, and neither mirror has anything to reconcile on mount.
+    const sidebars = sidebarVisibility(loaded.panelLayout.desktop)
+    layout.showSidebar = sidebars.left
+    layout.showRightPanel = sidebars.right
 
     return {
       terminalBindings: loaded.terminalBindings,

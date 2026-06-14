@@ -1,5 +1,46 @@
 # Progress
 
+## 2026-06-14: Fix workspace white-screen — sidebar visibility-mirror update loop
+
+**What changed:**
+- The flat `showSidebar`/`showRightPanel` flags and the panel tree's `hidden`
+  flags are kept in sync by two provider `useLayoutEffect`s (forward flag→tree,
+  reverse tree→flag). Two fixes make that bidirectional sync provably convergent:
+  - `usePersistence.ts` (`loadPersistedState`): derive the two flags from the
+    canonical tree (`sidebarVisibility`) at load instead of trusting the blob, so
+    the independently-persisted flag and tree can't contradict each other on mount.
+  - `WorkspaceProvider.tsx` (reverse mirror): reconcile a side from the tree only
+    when that flag held **steady since the last run** (a just-changed flag is owned
+    by the forward mirror for that commit). The effect now also depends on the
+    flags and records the post-reconcile value, so its tracking ref advances on
+    flag-only commits (closes a stale-ref gap that left a flag stuck after the
+    reverse mirror's own write followed by a later DnD).
+- Added `persistedVisibilityConsistency.test.tsx` (load reconcile for new-group +
+  migrated old blobs, no mount storm) and `runtimeVisibilityStorm.test.tsx`
+  (batched tree-mutation + flag-flip convergence; consecutive-DnD round trip).
+
+**Why:**
+- A stale/migration-mismatched persisted blob loaded with the flag disagreeing
+  with the tree. On mount the forward and reverse mirrors reached opposite
+  conclusions one render out of phase, inverting sidebar visibility forever →
+  React "Maximum update depth exceeded" → `<WorkspaceProvider>` unmounted →
+  white screen. `localStorage.clear()` only worked by discarding the bad blob.
+- Codex review surfaced two further gaps beyond the initial load-only fix: a
+  runtime batched commit (`clickSession` opens a terminal tab + reveals the right
+  column) re-created the storm, and the steady-flag guard's ref could go stale —
+  both fixed and pinned by the new tests.
+
+**Key files:** `app/ui/src/hooks/usePersistence.ts`,
+`app/ui/src/workspace/WorkspaceProvider.tsx`,
+`app/ui/src/hooks/__tests__/{persistedVisibilityConsistency,runtimeVisibilityStorm}.test.tsx`
+**Verification:** `npx tsc -b` clean, `eslint` clean, `vitest run src` = 960 passed
+(both new regression tests verified to fail without their respective fix).
+**Commit:** (this commit)
+**Next:** Optional, out of scope here — a flag-only reveal of an *absent* sidebar
+leaves a benign (non-storm, reload-healed) flag/tree mismatch; a single-source-of-
+truth for sidebar visibility would retire the mirror pair entirely.
+**Blockers:** None
+
 ## 2026-06-14: Markdown preview renders YAML frontmatter as a metadata table
 
 **What changed:**
