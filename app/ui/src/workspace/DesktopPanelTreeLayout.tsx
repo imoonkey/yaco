@@ -386,12 +386,19 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
   const payload = drag.payload
   const active = !!payload && legalZones({ kind: payload.kind }, { region, kind: 'sidebar' }).size > 0
 
-  // The column's dock rows in document order (viewport rects + node ids). The
-  // group's tab body is not a `data-dock-leaf`, so it never pollutes the index.
-  const dockRows = (): { ids: string[]; rects: DOMRect[] } => {
+  // The column's positional rows in document order (viewport rects + node ids): the
+  // dock leaves AND — when the right sidebar holds one — the group, so a dragged dock
+  // can land ABOVE or BELOW the group, not only among the docks. Each dock carries its
+  // id on `data-node-id`; the group container carries it on `data-group-id`. Ordered
+  // by their on-screen top so the insertion index matches what the user sees.
+  const columnRows = (): { ids: string[]; rects: DOMRect[] } => {
     const el = ref.current
-    const rows = el ? Array.from(el.querySelectorAll<HTMLElement>('[data-dock-leaf]')) : []
-    return { ids: rows.map((r) => r.dataset.nodeId ?? '').filter(Boolean), rects: rows.map((r) => r.getBoundingClientRect()) }
+    const rows = el ? Array.from(el.querySelectorAll<HTMLElement>('[data-dock-leaf], [data-group-id]')) : []
+    const seen = rows
+      .map((r) => ({ id: r.dataset.nodeId ?? r.dataset.groupId ?? '', rect: r.getBoundingClientRect() }))
+      .filter((r) => r.id)
+      .sort((a, b) => a.rect.top - b.rect.top)
+    return { ids: seen.map((r) => r.id), rects: seen.map((r) => r.rect) }
   }
 
   const onDragOver = (e: React.DragEvent) => {
@@ -400,7 +407,7 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (p.kind !== 'dock') { setFeedback({ kind: 'merge' }); return }
-    const { rects } = dockRows()
+    const { rects } = columnRows()
     const ctop = ref.current?.getBoundingClientRect().top ?? 0
     const idx = sidebarInsertIndex(rects, e.clientY)
     const top = (idx < rects.length ? rects[idx].top : (rects[rects.length - 1]?.bottom ?? ctop)) - ctop
@@ -408,7 +415,7 @@ function SidebarDropLayer({ region, node, sizing, wiring, children }: {
   }
 
   const dropDock = (p: Extract<DragPayload, { kind: 'dock' }>, clientY: number) => {
-    const { ids, rects } = dockRows()
+    const { ids, rects } = columnRows()
     if (ids.length === 0) {
       // A docks-less column (right sidebar holding only a group): insert beside it.
       const anchor = firstGroupId(node) ?? node.id

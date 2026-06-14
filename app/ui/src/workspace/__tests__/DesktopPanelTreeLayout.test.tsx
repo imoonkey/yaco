@@ -408,6 +408,43 @@ describe('DesktopPanelTreeLayout — right sidebar tab/group merge', () => {
   })
 })
 
+describe('DesktopPanelTreeLayout — right sidebar dock ↔ group positioning (FIX 4)', () => {
+  // right col[ sessions(150) , group:R ] — a dock AND a group share the right region.
+  const rightDockAndGroup = (): LayoutNode => ({
+    kind: 'split', id: 'root', axis: 'row', children: [
+      { basis: 220, node: dock('files') },
+      { grow: true, node: grp('group:1', 'editor:1') },
+      { basis: 280, node: { kind: 'split', id: 'rcol', axis: 'col', children: [
+        { basis: 150, node: dock('sessions') }, { grow: true, node: grp('group:R', 'editor:9') },
+      ] } },
+    ],
+  })
+
+  it('drops a dock BELOW the right group (the group is a positional row, not just docks)', () => {
+    const m = mountSidebar(rightDockAndGroup(), { kind: 'dock', instanceId: 'projects', panel: 'projects' as never })
+    const transfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
+    // Stack the right column: sessions on top, the group below it. A low drop (y=290)
+    // lands past BOTH rows → below the last row, which is the GROUP (not sessions).
+    stubRect(document.querySelector('[data-dock-leaf="sessions"]')!, { y: 0, top: 0, bottom: 100, height: 100 })
+    stubRect(group('group:R')!, { y: 100, top: 100, bottom: 300, height: 200 })
+    dropAtY(sidebarDrop('right')!, transfer, 290)
+    // The dock lands beside the GROUP — previously impossible (only sessions was an anchor).
+    expect(m.movePane).toHaveBeenCalledWith('projects', { targetId: 'group:R', side: 'below' })
+  })
+
+  it('drops a dock ABOVE the right group (between sessions and the group)', () => {
+    const m = mountSidebar(rightDockAndGroup(), { kind: 'dock', instanceId: 'projects', panel: 'projects' as never })
+    const transfer = paneTransfer()
+    fireEvent.dragStart(screen.getByTestId('pane-source'), { dataTransfer: transfer })
+    stubRect(document.querySelector('[data-dock-leaf="sessions"]')!, { y: 0, top: 0, bottom: 100, height: 100 })
+    stubRect(group('group:R')!, { y: 100, top: 100, bottom: 300, height: 200 })
+    // A drop at y=150 (above the group's vertical midpoint at 200) inserts ABOVE the group.
+    dropAtY(sidebarDrop('right')!, transfer, 150)
+    expect(m.movePane).toHaveBeenCalledWith('projects', { targetId: 'group:R', side: 'above' })
+  })
+})
+
 describe('DesktopPanelTreeLayout — hidden/absent sidebars + edge reveal', () => {
   // root[ left files · center group:1 ]  — right region normalized away (absent).
   const noRight = (): LayoutNode => ({
