@@ -1,9 +1,7 @@
-// EditorActions — the editor body's view controls: the inline-suggestion sparkle
-// (non-diff tabs) plus the md/html preview-mode segmented control and its
-// split-direction toggle (previewable files only). Rendered RIGHT-ALIGNED in the
-// group tab bar on desktop, and in the slim mobile editor action row (no tab bar
-// there); both act on the active editor tab through `onSetEditorPrefs`. Behaviour
-// is identical to the old inline editor-body row — only the location moved.
+// EditorActions — editor view controls: the inline-suggestion sparkle (non-diff
+// tabs) plus the md/html preview-mode segmented control and its split-direction
+// toggle (previewable files only). Rendered right-aligned in the desktop group tab
+// bar and in the mobile projection's editor tab row.
 import { Sparkles, Columns2, Rows2, Pencil, Eye } from 'lucide-react'
 import { isDiffTab, isFileTab, type PreviewMode, type SplitDirection } from '../hooks/workspaceTypes'
 import { isBinaryPreviewFile, isPreviewableFile } from '../lib/binaryFiles'

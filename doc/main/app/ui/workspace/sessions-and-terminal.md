@@ -35,6 +35,8 @@ A derived single `activeSession` (= the active terminal's binding) is kept only 
 
 On desktop, located in the activity column (right panel) below the terminal. On mobile, located in the Files pane below Explorer, Changes, and Tasks. The session UI is defined once in WorkspaceScreen and placed by WorkspaceLayout via slot assignment.
 
+The row active highlight follows what the user can actually see: desktop highlights every session bound to an open terminal tab because multiple terminal tabs can be visible/tiled; mobile highlights only `activeSession`, the one bound to the terminal instance currently projected on the Terminal pane. Other bound terminal tabs remain in the layout model and can be focused later, but they do not read as visible in the mobile Sessions list.
+
 ### Display
 
 Each session row shows:

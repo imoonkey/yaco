@@ -5,12 +5,12 @@
 // group tree via `editorTabByInstance`, and renders that single file/diff. It owns
 // no `openTabs` list and no tab bar.
 //
-// Chrome: UNFRAMED. It still owns its inner action bar (preview-mode + suggestions,
-// mobile mic) and breadcrumbs via `WorkspaceEditorColumn`; the file tab + its close
-// × live in the group tab bar.
+// Chrome: UNFRAMED. It owns breadcrumbs + editor body via `WorkspaceEditorColumn`;
+// desktop file tabs/actions live in the group tab bar, and mobile tabs/actions live
+// in `MobilePanelProjection`.
 //
 // It is a pure consumer of the workspace contexts:
-//   env       — viewport (isMobile/isTouch) + project (name/worktree)
+//   env       — viewport (isMobile) + project (name/worktree)
 //   data      — git.changes (editor gutter diff)
 //   selection — the group tree (its tab payload) + shared per-path file state
 //   layout    — editor prefs (previewMode/splitDirection/splitSize/autocomplete)
@@ -52,7 +52,7 @@ export function EditorPanel() {
   const actions = commands.actions
 
   const { name: projectName, worktree } = env.project
-  const { isMobile, isTouch } = env.viewport
+  const { isMobile } = env.viewport
   const tree = panelLayout.desktop
   // Which editor instance this pane is. Outside a PanelHost (isolation tests) there
   // is no instance context → the active editor instance.
@@ -148,7 +148,6 @@ export function EditorPanel() {
       conflictTabs={conflictTabs}
       files={files}
       layout={{ previewMode, splitDirection, splitSize, autocompleteEnabled }}
-      isTouch={isTouch}
       isMobile={isMobile}
       activeDiff={activeDiff}
       editorDiffHunks={editorDiffHunks}
@@ -156,7 +155,6 @@ export function EditorPanel() {
       editorInsert={myInsert}
       projectName={projectName}
       worktree={worktree}
-      voice={voice.editor}
       instanceId={instanceId}
       onLayoutUpdate={actions.updateLayout}
       onSaveFile={commands.saveFile}

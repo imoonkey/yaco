@@ -55,6 +55,8 @@ Collapsible floating nav (`LandscapeNav` component) to maximize vertical space:
 
 Controlled by PaneSwitch component (`MobilePanelProjection` renders the active dock). The `Files` pane stacks the workspace sidebar sections in order: Explorer, Changes, Tasks, Sessions. The `Editor` and `Terminal` panes **project the active instance** of their type across the whole desktop tree (mobile shows one editor and one terminal — the most-recently-focused live instance, even if its desktop group is parked in the right sidebar — with no split/open-beside affordances).
 
+The mobile Editor pane owns a single top row: editor tabs scroll horizontally on the left, while the mic and editor view actions stay fixed on the right. The editor body itself only renders breadcrumbs and content. The mobile Terminal pane still renders a single active terminal body; terminal tabs can exist in the desktop tree, but the Sessions list highlights only the session bound to the currently visible mobile terminal.
+
 ### Auto-Switching
 
 - Selecting a file in `Files` pane → auto-switches to `Editor`

@@ -29,7 +29,9 @@ import { mobileDockPanels, type MobileDock } from '../panelMeta'
 import { defaultWorkspacePanelLayout } from '../panelLayoutModel'
 import {
   WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceSelectionContext,
+  WorkspaceVoiceContext, DEFAULT_WORKSPACE_VOICE,
   type WorkspaceEnv, type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceSelection, type PanelId,
+  type WorkspaceVoiceSurface,
 } from '../context'
 
 const mobileDockPanelsMock = vi.mocked(mobileDockPanels)
@@ -48,7 +50,13 @@ beforeEach(() => {
   mobileDockPanelsMock.mockImplementation((dock: MobileDock) => REMAP[dock])
 })
 
-function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?: unknown; commands?: Partial<WorkspaceCommands> } = {}): void {
+function renderDock(dock: MobileDock, opts: {
+  panelLayout?: unknown
+  layout?: unknown
+  selection?: unknown
+  commands?: Partial<WorkspaceCommands>
+  voice?: WorkspaceVoiceSurface
+} = {}): void {
   const env = {
     viewport: { isMobile: true, isLandscape: false, isTouch: true },
     notificationBell: null,
@@ -56,7 +64,7 @@ function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?:
   const layoutValue = {
     panelLayout: opts.panelLayout ?? { ...defaultWorkspacePanelLayout(), mobile: { activeDock: dock } },
     mobilePane: 'files',
-    layout: {},
+    layout: opts.layout ?? {},
   } as unknown as WorkspaceLayoutContextValue
   const commands = {
     actions: { setMobilePane: vi.fn() },
@@ -66,6 +74,7 @@ function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?:
     closePane: vi.fn(),
     saveFile: vi.fn(),
     acceptDisk: vi.fn(),
+    setEditorPrefs: vi.fn(),
     ...opts.commands,
   } as unknown as WorkspaceCommands
   const selection = (opts.selection ?? {
@@ -77,13 +86,15 @@ function renderDock(dock: MobileDock, opts: { panelLayout?: unknown; selection?:
   render(
     <WorkspaceEnvContext.Provider value={env}>
       <WorkspaceLayoutContext.Provider value={layoutValue}>
-        <WorkspaceCommandsContext.Provider value={commands}>
-          <WorkspaceSelectionContext.Provider value={selection}>
-            <MobilePanelProjection rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
-          </WorkspaceSelectionContext.Provider>
-        </WorkspaceCommandsContext.Provider>
-      </WorkspaceLayoutContext.Provider>
-    </WorkspaceEnvContext.Provider>,
+          <WorkspaceCommandsContext.Provider value={commands}>
+            <WorkspaceVoiceContext.Provider value={opts.voice ?? DEFAULT_WORKSPACE_VOICE}>
+              <WorkspaceSelectionContext.Provider value={selection}>
+                <MobilePanelProjection rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+              </WorkspaceSelectionContext.Provider>
+            </WorkspaceVoiceContext.Provider>
+          </WorkspaceCommandsContext.Provider>
+        </WorkspaceLayoutContext.Provider>
+      </WorkspaceEnvContext.Provider>,
   )
 }
 
@@ -226,5 +237,60 @@ describe('MobilePanelProjection active instance routing', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: 'Close Without Saving' }))
     expect(acceptDisk).toHaveBeenCalledWith('src/mobile.ts')
     expect(closePane).toHaveBeenCalledWith(EDITOR)
+  })
+
+  it('keeps mobile editor tabs scrollable with actions fixed in the same row', () => {
+    const setEditorPrefs = vi.fn()
+    const EDITOR = 'editor:mobile'
+    const desktop = {
+      kind: 'split', id: 'root', axis: 'row',
+      children: [
+        {
+          grow: true,
+          node: {
+            kind: 'tabs',
+            id: 'group:1',
+            tabs: [
+              { instanceId: EDITOR, kind: 'editor', tabId: 'doc/PROGRESS.md' },
+              { instanceId: 'editor:2', kind: 'editor', tabId: 'doc/main/app/ui/mobile.md' },
+              { instanceId: 'editor:3', kind: 'editor', tabId: 'plan/all/20260612_panel-dnd/implementation_summary.md' },
+            ],
+            activeTab: EDITOR,
+          },
+        },
+      ],
+    }
+    const panelLayout = { ...defaultWorkspacePanelLayout(), desktop, mobile: { activeDock: 'editor' } }
+    mobileDockPanelsMock.mockImplementation((dock: MobileDock) => (dock === 'editor' ? ['editor'] : REMAP[dock]))
+    renderDock('editor', {
+      panelLayout,
+      layout: { previewMode: 'edit', splitDirection: 'horizontal', splitSize: 50, autocompleteEnabled: false },
+      commands: { setEditorPrefs } as Partial<WorkspaceCommands>,
+      selection: {
+        activeGroupId: 'group:1',
+        activeEditorId: EDITOR,
+        activeTerminalId: null,
+        activeEditorTab: { instanceId: EDITOR, kind: 'editor', tabId: 'doc/PROGRESS.md' },
+        editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+      },
+      voice: {
+        ...DEFAULT_WORKSPACE_VOICE,
+        editor: { eligible: true, capability: { status: 'ready', maxUploadBytes: 1 }, state: 'idle', onRecord: vi.fn(), onStop: vi.fn(), onOpen: vi.fn() },
+      },
+    })
+
+    const tabsRow = screen.getByTestId('mobile-editor-tabs')
+    const tabList = screen.getByTestId('mobile-editor-tab-list')
+    const actions = screen.getByTestId('mobile-editor-actions')
+    expect(tabsRow.className).toContain('items-center')
+    expect(tabList.className).toContain('overflow-x-auto')
+    expect(tabList.className).toContain('min-w-0')
+    expect(actions.className).toContain('shrink-0')
+    expect(actions.className).toContain('z-10')
+    expect(screen.getAllByTestId('mobile-editor-tab')).toHaveLength(3)
+    expect(screen.getByRole('button', { name: /Start voice recording/ })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
+    expect(setEditorPrefs).toHaveBeenCalledWith({ autocompleteEnabled: true })
   })
 })

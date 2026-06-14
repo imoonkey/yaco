@@ -30,10 +30,14 @@ import { editorTabsInGroup, terminalTabsInGroup, tabIdToPath, groupOf } from './
 import { tabName, computeDisambigSuffixes } from './tabLabels'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
-import { useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection } from './context'
+import {
+  useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection, useWorkspaceVoiceSurface,
+} from './context'
 import { mobileDockToPane, isDiffTab, isFileTab, type MobilePane, type EditorGroupTab } from '../hooks/workspaceTypes'
 import { Menu, MenuItem } from '../components/Menu'
 import { useContextMenu } from '../components/useContextMenu'
+import { VoiceControl } from '../components/VoiceControl'
+import { EditorActions } from './EditorActions'
 
 export type MobilePanelProjectionProps = {
   rootRef: RefObject<HTMLDivElement | null>
@@ -80,8 +84,9 @@ const MARGIN_TOP = 'max(env(safe-area-inset-top, 0px), 24px)'
 export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCapture }: MobilePanelProjectionProps) {
   const { viewport, notificationBell } = useWorkspaceEnv()
   const { isLandscape, isTouch } = viewport
-  const { panelLayout } = useWorkspaceLayout()
+  const { panelLayout, layout } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
+  const voice = useWorkspaceVoiceSurface()
   const setMobilePane = commands.actions.setMobilePane
   const collapsePanel = commands.collapsePanel
 
@@ -98,6 +103,9 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
     groupEditorTabs.find((t) => t.instanceId === activeEditorId)?.instanceId
     ?? groupEditorTabs[0]?.instanceId
     ?? ''
+  const activeEditorTabId = groupEditorTabs.find((t) => t.instanceId === editorInstanceId)?.tabId ?? ''
+  const showMobileEditorActions = voice.editor.eligible
+    || (!!activeEditorTabId && !isDiffTab(activeEditorTabId))
   const terminalGroupId = activeTerminalId ? groupOf(tree, activeTerminalId) : null
   const groupTerminals = terminalGroupId ? terminalTabsInGroup(tree, terminalGroupId) : []
   const terminalInstanceId =
@@ -125,6 +133,28 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
         commands.acceptDisk(tabIdToPath(tab.tabId))
         commands.closePane(tab.instanceId)
       }}
+      actions={showMobileEditorActions ? (
+        <>
+          {voice.editor.eligible && (
+            <VoiceControl
+              capability={voice.editor.capability}
+              state={voice.editor.state}
+              onRecord={voice.editor.onRecord}
+              onStop={voice.editor.onStop}
+            />
+          )}
+          {activeEditorTabId && (
+            <EditorActions
+              tabId={activeEditorTabId}
+              previewMode={layout.previewMode}
+              splitDirection={layout.splitDirection}
+              autocompleteEnabled={layout.autocompleteEnabled}
+              isTouch={isTouch}
+              onSetEditorPrefs={commands.setEditorPrefs}
+            />
+          )}
+        </>
+      ) : null}
     />
   )
 
@@ -268,7 +298,7 @@ function ActiveDockPanes({ dock, onBrowseFocus, editorInstanceId, terminalInstan
 // regression). Editor tabs only — terminals have their own mobile pane. On touch a
 // clean tab shows its close ×; a dirty tab shows only its dot (no destructive close
 // without a confirm), mirroring the desktop strip's touch behaviour.
-function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onSelect, onClose, onSave, onCloseWithoutSaving }: {
+function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onSelect, onClose, onSave, onCloseWithoutSaving, actions }: {
   tabs: EditorGroupTab[]
   activeInstanceId: string
   dirtyTabs: ReadonlySet<string>
@@ -277,6 +307,7 @@ function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onS
   onClose: (instanceId: string) => void
   onSave: (tabId: string) => void
   onCloseWithoutSaving: (tab: EditorGroupTab) => void
+  actions?: ReactNode
 }) {
   const disambig = useMemo(() => computeDisambigSuffixes(tabs.map((t) => t.tabId)), [tabs])
   const menu = useContextMenu()
@@ -288,53 +319,64 @@ function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onS
   if (tabs.length === 0) return null
   return (
     <div
-      className="flex items-center shrink-0 overflow-x-auto"
+      className="flex items-center shrink-0 min-w-0"
       style={{ height: 34, backgroundColor: 'var(--sol-bg)', borderBottom: '1px solid var(--sol-border)' }}
       data-testid="mobile-editor-tabs"
     >
-      {tabs.map((tab) => {
-        const isActive = tab.instanceId === activeInstanceId
-        const path = tabIdToPath(tab.tabId)
-        const isDirty = dirtyTabs.has(path)
-        const isConflict = conflictTabs.has(path)
-        const isDiff = isDiffTab(tab.tabId)
-        const suffix = disambig.get(tab.tabId)
-        return (
-          <div
-            key={tab.instanceId}
-            data-testid="mobile-editor-tab"
-            data-tab-instance={tab.instanceId}
-            data-tab-active={isActive || undefined}
-            onClick={() => onSelect(tab.tabId, tab.instanceId)}
-            {...menu.bind(() => setContextTab(tab))}
-            title={tab.tabId}
-            className="flex items-center gap-1 px-2 h-full cursor-pointer text-ui-sm shrink-0"
-            style={{
-              borderRight: '1px solid var(--sol-border)',
-              backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)',
-              color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)',
-              borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
-              fontStyle: tab.preview ? 'italic' : undefined,
-            }}
-          >
-            {!isDiff && <FileTypeIcon name={tab.tabId} />}
-            <span className="truncate max-w-[140px]">{tabName(tab.tabId)}</span>
-            {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
-            {isConflict ? (
-              <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={11} /></span>
-            ) : isDirty ? (
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
-            ) : (
-              <button
-                onClick={(e) => { e.stopPropagation(); onClose(tab.instanceId) }}
-                className="w-4 h-4 flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg shrink-0"
-                style={{ color: 'var(--sol-text-dim)' }}
-                aria-label={`Close ${tabName(tab.tabId)}`}
-              ><X size={12} /></button>
-            )}
-          </div>
-        )
-      })}
+      <div data-testid="mobile-editor-tab-list" className="flex-1 min-w-0 h-full flex items-center overflow-x-auto">
+        {tabs.map((tab) => {
+          const isActive = tab.instanceId === activeInstanceId
+          const path = tabIdToPath(tab.tabId)
+          const isDirty = dirtyTabs.has(path)
+          const isConflict = conflictTabs.has(path)
+          const isDiff = isDiffTab(tab.tabId)
+          const suffix = disambig.get(tab.tabId)
+          return (
+            <div
+              key={tab.instanceId}
+              data-testid="mobile-editor-tab"
+              data-tab-instance={tab.instanceId}
+              data-tab-active={isActive || undefined}
+              onClick={() => onSelect(tab.tabId, tab.instanceId)}
+              {...menu.bind(() => setContextTab(tab))}
+              title={tab.tabId}
+              className="flex items-center gap-1 px-2 h-full cursor-pointer text-ui-sm shrink-0"
+              style={{
+                borderRight: '1px solid var(--sol-border)',
+                backgroundColor: isActive ? 'var(--sol-editor-bg)' : 'var(--sol-bg)',
+                color: isActive ? 'var(--sol-text-dark)' : 'var(--sol-text)',
+                borderTop: isActive ? `2px solid ${isConflict || isDiff ? 'var(--sol-warning)' : 'var(--sol-text)'}` : '2px solid transparent',
+                fontStyle: tab.preview ? 'italic' : undefined,
+              }}
+            >
+              {!isDiff && <FileTypeIcon name={tab.tabId} />}
+              <span className="truncate max-w-[140px]">{tabName(tab.tabId)}</span>
+              {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
+              {isConflict ? (
+                <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0" style={{ color: 'var(--sol-warning)' }} title="File changed on disk"><AlertTriangle size={11} /></span>
+              ) : isDirty ? (
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: 'var(--sol-text-dark)' }} />
+              ) : (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onClose(tab.instanceId) }}
+                  className="w-4 h-4 flex items-center justify-center rounded cursor-pointer hover:bg-sol-hover-bg shrink-0"
+                  style={{ color: 'var(--sol-text-dim)' }}
+                  aria-label={`Close ${tabName(tab.tabId)}`}
+                ><X size={12} /></button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {actions && (
+        <div
+          data-testid="mobile-editor-actions"
+          className="relative z-10 h-full flex items-center shrink-0 gap-1 px-1"
+          style={{ borderLeft: '1px solid var(--sol-border)', backgroundColor: 'var(--sol-bg)' }}
+        >
+          {actions}
+        </div>
+      )}
       {menu.position && contextTab && (() => {
         const path = tabIdToPath(contextTab.tabId)
         const dirty = dirtyTabs.has(path)

@@ -81,12 +81,15 @@ export function SessionsPanel() {
     detachActiveSession: commands.detachSession,
   }), [data.sessions, commands.detachSession])
 
-  // A session reads as live when it is bound to a terminal tab. The provider's
-  // group-tab bindings map (instanceId → sessionName) is the authority; project
-  // its VALUES into the set so two open terminal tabs mark BOTH sessions live.
+  // Desktop can show multiple terminal tabs at once, so every bound session reads
+  // as shown. Mobile projects only one terminal body, so only the active terminal's
+  // bound session should read as shown; otherwise rows look open but are not visible.
   const shownSessions = useMemo(
-    () => new Set(Object.values(selection.terminalBindings).filter(Boolean)),
-    [selection.terminalBindings],
+    () => {
+      if (isMobile) return selection.activeSession ? new Set([selection.activeSession]) : new Set<string>()
+      return new Set(Object.values(selection.terminalBindings).filter(Boolean))
+    },
+    [isMobile, selection.activeSession, selection.terminalBindings],
   )
 
   const { sessionsActions, sessionsSearch, sessionsBody } = useWorkspaceSessionSection({

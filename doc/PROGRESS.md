@@ -1,5 +1,22 @@
 # Progress
 
+## 2026-06-14: Mobile terminal highlight and editor tab row
+
+**What changed:**
+- Scoped the mobile Sessions row active highlight to the currently visible active terminal session while preserving desktop's "all bound terminal tabs are shown" semantics.
+- Moved mobile editor mic and view actions into the same projected tab row as mobile editor tabs; tabs scroll horizontally on the left and actions stay fixed on the right.
+- Removed the duplicate mobile editor body action row so the editor body owns only breadcrumbs and content.
+- Added regression coverage for mobile terminal row highlight semantics and the one-row mobile editor tab/actions chrome.
+
+**Why:**
+- Mobile Terminal renders one active terminal body, so marking every previously bound terminal session as blue made hidden sessions look visible. Mobile Editor also had two stacked control rows, causing the action icons to wrap/overlap with tabs.
+
+**Key files:** `app/ui/src/workspace/{MobilePanelProjection,WorkspaceEditorColumn,EditorActions}.tsx`, `app/ui/src/workspace/panels/{SessionsPanel,EditorPanel}.tsx`, `app/ui/src/workspace/__tests__/MobilePanelProjection.test.tsx`, `app/ui/src/workspace/panels/__tests__/{SessionsPanel,EditorPanel}.test.tsx`, `doc/main/app/ui/{mobile,workspace/sessions-and-terminal}.md`, `plan/all/20260612_panel-dnd/implementation_summary.md`
+**Verification:** `cd app/ui && npx vitest run src` (68 files / 922 tests passed, existing jsdom canvas warning); `cd app/ui && npm run build`; `cd app/ui && npm run lint` (existing 16 hook dependency warnings only); `git diff --check`.
+**Commit:** this commit
+**Next:** Optional real-device mobile smoke test.
+**Blockers:** None.
+
 ## 2026-06-14: Group split icons and icon-only preview controls
 
 **What changed:**

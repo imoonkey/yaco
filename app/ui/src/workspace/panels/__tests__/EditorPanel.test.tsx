@@ -290,11 +290,9 @@ describe('EditorPanel — single-tab body (no own tab bar)', () => {
     expect(mockFetchGitCompare).not.toHaveBeenCalled()
   })
 
-  it('toggling Suggestions in the mobile editor action row drives an editor-pref layout update', () => {
-    // Desktop hosts the toggle in the tab bar; mobile keeps it in the body action row.
-    const { actions } = renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, layout: { autocompleteEnabled: false }, isMobile: true })
-    fireEvent.click(screen.getByRole('button', { name: /Suggestions/ }))
-    expect(actions.updateLayout).toHaveBeenCalledWith({ autocompleteEnabled: true })
+  it('on mobile leaves editor actions to the projection tab row, not the body', () => {
+    renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, layout: { autocompleteEnabled: false }, isMobile: true })
+    expect(screen.queryByRole('button', { name: /Suggestions/ })).toBeNull()
   })
 })
 
@@ -401,9 +399,9 @@ describe('EditorPanel — per-pane mic is mobile-only', () => {
     expect(screen.queryByRole('button', { name: /recording/i })).toBeNull()
   })
 
-  it('renders the per-pane mic on mobile when eligible', () => {
+  it('leaves the mobile per-pane mic to the projection tab row', () => {
     renderEditorPanel({ instanceId: 'editor:2', tabId: 'notes.md', files: { 'notes.md': { serverContent: '' } }, voiceEditorEligible: true, isMobile: true })
-    expect(screen.getByRole('button', { name: /recording/i })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /recording/i })).toBeNull()
   })
 })
 

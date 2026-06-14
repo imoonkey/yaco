@@ -65,18 +65,23 @@ const commands = {
 } as unknown as WorkspaceCommands
 
 // terminalBindings (instanceId → sessionName) is the source of truth for which
-// sessions read as live; the panel projects its VALUES into the live marker.
-function makeSelection(terminalBindings: Record<string, string>): WorkspaceSelection {
-  return { terminalBindings } as unknown as WorkspaceSelection
+// sessions read as live; desktop projects all bound VALUES, mobile projects only
+// the active terminal's bound session because only one terminal body is visible.
+function makeSelection(terminalBindings: Record<string, string>, activeTerminalId: string | null = null): WorkspaceSelection {
+  return {
+    terminalBindings,
+    activeTerminalId,
+    activeSession: activeTerminalId ? terminalBindings[activeTerminalId] ?? '' : '',
+  } as unknown as WorkspaceSelection
 }
 
-function Providers({ sessions, terminalBindings, isMobile, children }: {
-  sessions: AgentSession[]; terminalBindings: Record<string, string>; isMobile: boolean; children: ReactNode
+function Providers({ sessions, terminalBindings, activeTerminalId, isMobile, children }: {
+  sessions: AgentSession[]; terminalBindings: Record<string, string>; activeTerminalId: string | null; isMobile: boolean; children: ReactNode
 }) {
   return (
     <WorkspaceEnvContext.Provider value={makeEnv(isMobile)}>
       <WorkspaceDataContext.Provider value={makeData(sessions)}>
-        <WorkspaceSelectionContext.Provider value={makeSelection(terminalBindings)}>
+        <WorkspaceSelectionContext.Provider value={makeSelection(terminalBindings, activeTerminalId)}>
           <WorkspaceCommandsContext.Provider value={commands}>
             {children}
           </WorkspaceCommandsContext.Provider>
@@ -86,9 +91,14 @@ function Providers({ sessions, terminalBindings, isMobile, children }: {
   )
 }
 
-function renderBody(sessions: AgentSession[], terminalBindings: Record<string, string> = {}, isMobile = false) {
+function renderBody(
+  sessions: AgentSession[],
+  terminalBindings: Record<string, string> = {},
+  isMobile = false,
+  activeTerminalId: string | null = null,
+) {
   return render(
-    <Providers sessions={sessions} terminalBindings={terminalBindings} isMobile={isMobile}>
+    <Providers sessions={sessions} terminalBindings={terminalBindings} activeTerminalId={activeTerminalId} isMobile={isMobile}>
       <SessionsPanel />
     </Providers>,
   )
@@ -98,7 +108,7 @@ function renderBody(sessions: AgentSession[], terminalBindings: Record<string, s
 // bridge that publishes the section actions into the shared header.
 function renderFramed(sessions: AgentSession[], terminalBindings: Record<string, string> = {}) {
   return render(
-    <Providers sessions={sessions} terminalBindings={terminalBindings} isMobile={false}>
+    <Providers sessions={sessions} terminalBindings={terminalBindings} activeTerminalId={null} isMobile={false}>
       <PanelFrame
         chrome={sessionsPanelDef.chrome}
         title="Sessions"
@@ -228,6 +238,19 @@ describe('SessionsPanel', () => {
     expect(liveNames.length).toBe(2)
     expect(liveNames.some(t => t?.includes('alpha'))).toBe(true)
     expect(liveNames.some(t => t?.includes('beta'))).toBe(true)
+  })
+
+  it('on mobile marks only the visible active terminal session as live', () => {
+    const { container } = renderBody(
+      [makeSession('alpha', 'idle'), makeSession('beta', 'idle'), makeSession('gamma', 'idle')],
+      { terminal: 'alpha', 'terminal:2': 'beta' },
+      true,
+      'terminal:2',
+    )
+    const liveNames = [...container.querySelectorAll('[data-active]')].map(el => el.textContent)
+    expect(liveNames).toHaveLength(1)
+    expect(liveNames[0]).toContain('beta')
+    expect(liveNames[0]).not.toContain('alpha')
   })
 
   it('does not render a row Open beside button', () => {
