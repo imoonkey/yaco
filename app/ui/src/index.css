@@ -610,6 +610,26 @@ body {
   border-top: 1px solid var(--sol-border);
 }
 
+.markdown-preview .markdown-frontmatter {
+  overflow-x: auto;
+  margin-bottom: 0.9em;
+}
+
+.markdown-preview .markdown-frontmatter table {
+  border: 1px solid var(--sol-border);
+}
+
+.markdown-preview .markdown-frontmatter td {
+  border: 1px solid var(--sol-border);
+  vertical-align: top;
+}
+
+.markdown-preview .markdown-frontmatter > table > tbody > tr > td:first-child {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--sol-preview-heading);
+}
+
 .markdown-preview img,
 .markdown-preview video {
   display: inline-block;

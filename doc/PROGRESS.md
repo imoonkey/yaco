@@ -1,5 +1,32 @@
 # Progress
 
+## 2026-06-14: Markdown preview renders YAML frontmatter as a metadata table
+
+**What changed:**
+- The markdown preview (`app/ui/src/workspace/markdown.ts`) now detects a
+  leading GitHub-style `---` frontmatter fence and renders it as a bordered
+  key/value table (`.markdown-frontmatter`) instead of letting `marked` treat
+  the closing `---` as a setext heading underline (which turned the whole YAML
+  block into one giant `<h1>`).
+- Added `extractFrontmatter()` + a dependency-free indentation-based `parseYaml`
+  handling scalar maps, nested maps (sub-tables), block lists, and inline
+  `[a, b]` flow lists; unknown shapes degrade to plain text. The frontmatter is
+  emitted as its own `.markdown-block` and the body is lexed with the
+  line-counter offset past the fence so Editor↔Preview scroll-sync anchors stay
+  aligned.
+- Added `.markdown-frontmatter` CSS (Solarized vars: full grid border, bold
+  theme-colored key column) and a `markdown.test.ts` vitest spec (11 cases).
+
+**Why:**
+- Frontmatter-carrying docs (e.g. skill `SKILL.md` files) rendered their YAML
+  header as an oversized heading, which looked wrong and unlike GitHub's preview.
+
+**Key files:** `app/ui/src/workspace/markdown.ts`, `app/ui/src/index.css`, `app/ui/src/workspace/markdown.test.ts`, `doc/main/app/ui/workspace/editor-and-preview.md`
+**Verification:** `npx tsc -b` clean, `eslint` clean, `vitest run src/workspace/markdown.test.ts` → 11 passed
+**Commit:** (this commit)
+**Next:** None
+**Blockers:** None
+
 ## 2026-06-14: `yaco align` — internalize the status.txt protocol behind 4 verbs
 
 **What changed:**

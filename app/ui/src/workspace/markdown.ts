@@ -70,6 +70,130 @@ function slugify(text: string): string {
   return text.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-')
 }
 
+type FrontmatterValue = string | FrontmatterValue[] | { [key: string]: FrontmatterValue }
+
+interface YamlLine {
+  indent: number
+  text: string
+}
+
+// Leading YAML frontmatter, GitHub-style: a `---` fence on line 1, closed by a
+// `---` or `...` line. Returns the matched block and how many source lines it
+// spans (1-based, inclusive of both fences) so scroll-sync line numbers stay
+// aligned with the body that follows.
+export function extractFrontmatter(content: string): { raw: string; yaml: string; endLine: number } | null {
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n(?:---|\.\.\.)[ \t]*(?:\r?\n|$)/.exec(content)
+  if (!match) return null
+  const raw = match[0]
+  const endLine = countNewlines(raw.replace(/\r?\n$/, '')) + 1
+  return { raw, yaml: match[1], endLine }
+}
+
+function stripQuotes(value: string): string {
+  const trimmed = value.trim()
+  const quote = trimmed[0]
+  if (trimmed.length >= 2 && (quote === '"' || quote === "'") && trimmed.endsWith(quote)) {
+    return trimmed.slice(1, -1)
+  }
+  return trimmed
+}
+
+function parseScalar(value: string): FrontmatterValue {
+  const trimmed = value.trim()
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    const inner = trimmed.slice(1, -1).trim()
+    return inner ? inner.split(',').map(stripQuotes) : []
+  }
+  return stripQuotes(trimmed)
+}
+
+function keyColonIndex(text: string): number {
+  if (text.endsWith(':')) return text.length - 1
+  return text.indexOf(': ')
+}
+
+function tokenizeYaml(yaml: string): YamlLine[] {
+  const lines: YamlLine[] = []
+  for (const rawLine of yaml.split('\n')) {
+    const line = rawLine.replace(/\t/g, '  ')
+    if (line.trim() === '' || line.trim().startsWith('#')) continue
+    lines.push({ indent: line.length - line.trimStart().length, text: line.trim() })
+  }
+  return lines
+}
+
+// Minimal indentation-based YAML parser covering the shapes that appear in
+// frontmatter: scalar maps, one-or-more levels of nested maps, block lists, and
+// inline `[a, b]` flow lists. Anything it can't model degrades to a plain string.
+function parseYaml(lines: YamlLine[], cursor: { i: number }, indent: number): FrontmatterValue {
+  const map: Record<string, FrontmatterValue> = {}
+  const list: FrontmatterValue[] = []
+  let isList = false
+
+  while (cursor.i < lines.length) {
+    const line = lines[cursor.i]
+    if (line.indent < indent) break
+    if (line.indent > indent) {
+      cursor.i += 1
+      continue
+    }
+
+    if (line.text.startsWith('- ')) {
+      isList = true
+      list.push(parseScalar(line.text.slice(2)))
+      cursor.i += 1
+      continue
+    }
+
+    const colon = keyColonIndex(line.text)
+    if (colon === -1) {
+      cursor.i += 1
+      continue
+    }
+    const key = stripQuotes(line.text.slice(0, colon))
+    const valueText = line.text.slice(colon + 1).trim()
+    cursor.i += 1
+    if (valueText !== '') {
+      map[key] = parseScalar(valueText)
+    } else if (cursor.i < lines.length && lines[cursor.i].indent > indent) {
+      map[key] = parseYaml(lines, cursor, lines[cursor.i].indent)
+    } else {
+      map[key] = ''
+    }
+  }
+
+  return isList ? list : map
+}
+
+function renderFrontmatterValue(value: FrontmatterValue): string {
+  if (typeof value === 'string') return escapeHtml(value)
+  if (Array.isArray(value)) {
+    if (value.every(item => typeof item === 'string')) {
+      return (value as string[]).map(escapeHtml).join(', ')
+    }
+    const rows = value.map(item => `<tr><td>${renderFrontmatterValue(item)}</td></tr>`).join('')
+    return `<table><tbody>${rows}</tbody></table>`
+  }
+  return renderFrontmatterTable(value)
+}
+
+function renderFrontmatterTable(map: Record<string, FrontmatterValue>): string {
+  const rows = Object.entries(map)
+    .map(([key, value]) => `<tr><td>${escapeHtml(key)}</td><td>${renderFrontmatterValue(value)}</td></tr>`)
+    .join('')
+  return `<table><tbody>${rows}</tbody></table>`
+}
+
+function renderFrontmatter(yaml: string): string {
+  const lines = tokenizeYaml(yaml)
+  if (lines.length === 0) return ''
+  const parsed = parseYaml(lines, { i: 0 }, lines[0].indent)
+  const table = Array.isArray(parsed)
+    ? renderFrontmatterValue(parsed)
+    : renderFrontmatterTable(parsed as Record<string, FrontmatterValue>)
+  return `<div class="markdown-frontmatter">${table}</div>`
+}
+
 function createMarkdownRenderer() {
   const renderer = new marked.Renderer()
 
@@ -123,16 +247,28 @@ export function resolveRelativePath(currentFile: string, href: string): string {
 
 export function renderMarkdown(content: string): string {
   const renderer = createMarkdownRenderer()
-  const tokens = marked.lexer(content)
   let html = ''
-  let cursor = 0
+  let body = content
   let currentLine = 1
+
+  const frontmatter = extractFrontmatter(content)
+  if (frontmatter) {
+    const fmHtml = renderFrontmatter(frontmatter.yaml)
+    if (fmHtml) {
+      html += `<div class="markdown-block" data-source-line-start="1" data-source-line-end="${frontmatter.endLine}">${fmHtml}</div>`
+    }
+    body = content.slice(frontmatter.raw.length)
+    currentLine = frontmatter.endLine + 1
+  }
+
+  const tokens = marked.lexer(body)
+  let cursor = 0
 
   for (const token of tokens) {
     const raw = token.raw ?? ''
-    const start = raw ? content.indexOf(raw, cursor) : cursor
+    const start = raw ? body.indexOf(raw, cursor) : cursor
     const resolvedStart = start >= 0 ? start : cursor
-    currentLine += countNewlines(content.slice(cursor, resolvedStart))
+    currentLine += countNewlines(body.slice(cursor, resolvedStart))
 
     if (token.type === 'space') {
       currentLine += countNewlines(raw)
