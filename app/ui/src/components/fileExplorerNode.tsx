@@ -39,7 +39,7 @@ function EditingRow({ node, style, dragHandle, data, pendingNewId, cancelCreate 
     } else {
       input.select()
     }
-  }, [])
+  }, [data.name, data.type, isNew])
 
   return (
     <div style={style} ref={dragHandle}>

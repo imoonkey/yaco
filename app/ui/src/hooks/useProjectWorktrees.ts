@@ -63,7 +63,7 @@ export function useProjectWorktrees(projectName: string | null): WorktreeInfo[] 
     void fetch_(ac.signal)
     const id = setInterval(() => void fetch_(), 60_000)
     return () => { ac.abort(); clearInterval(id) }
-  }, [fetch_])
+  }, [fetch_, projectName])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useSSERefresh('filetree', fetch_)

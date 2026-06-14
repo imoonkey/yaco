@@ -1,5 +1,20 @@
 # Progress
 
+## 2026-06-14: Clear UI lint warnings
+
+**What changed:**
+- Removed the remaining React hook dependency warnings in the UI lint run.
+- Made markdown preview DOM application sensitive to `filePath`/project/worktree changes, so relative image URLs are rebuilt when the rendered HTML string is unchanged but its file context changes.
+
+**Why:**
+- The lint baseline should be warning-free, and the markdown dependency fix closes a real stale-relative-asset edge case rather than only satisfying the hook rule.
+
+**Key files:** `app/ui/src/components/fileExplorerNode.tsx`, `app/ui/src/hooks/{useProjectWorktrees,useWorkspaceState}.ts`, `app/ui/src/workspace/WorkspaceEditorArea.tsx`
+**Verification:** `cd app/ui && npm run lint`; `cd app/ui && npm exec vitest -- src --run`; `cd app/ui && npm run build`; `git diff --check`.
+**Commit:** this commit
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-14: Hide mobile dock grips
 
 **What changed:**

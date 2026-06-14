@@ -103,7 +103,7 @@ export function MarkdownPreview({
   const anchorScrollRef = useRef(false)
   const cancelLerpRef = useRef<(() => void) | null>(null)
   const lastReportedLineRef = useRef(-1)
-  const appliedHtmlRef = useRef('')
+  const appliedDomKeyRef = useRef('')
   const anchorsRef = useRef<CachedAnchor[]>([])
   const onViewportLineRef = useRef(onViewportLine)
   const onRegisterSyncRef = useRef(onRegisterSync)
@@ -160,7 +160,8 @@ export function MarkdownPreview({
   // Rebuild anchor cache after DOM update.
   useLayoutEffect(() => {
     const el = containerRef.current
-    if (!el || html === appliedHtmlRef.current) return
+    const domKey = JSON.stringify([html, filePath ?? null, projectName ?? null, worktree ?? null])
+    if (!el || domKey === appliedDomKeyRef.current) return
 
     // Save <pre> horizontal scroll positions
     const pres = el.querySelectorAll('pre')
@@ -168,7 +169,7 @@ export function MarkdownPreview({
     pres.forEach((pre, i) => { scrollPositions[i] = pre.scrollLeft })
 
     el.innerHTML = html
-    appliedHtmlRef.current = html
+    appliedDomKeyRef.current = domKey
 
     // Rewrite relative <img src> to the server's raw-file route so images
     // embedded in markdown resolve relative to the markdown file, not the
@@ -189,7 +190,7 @@ export function MarkdownPreview({
     el.querySelectorAll('pre').forEach((pre, i) => {
       if (scrollPositions[i] > 0) pre.scrollLeft = scrollPositions[i]
     })
-  }, [html])
+  }, [html, filePath, projectName, worktree])
 
   // Rebuild anchor cache on container resize (block positions change on reflow)
   useEffect(() => {

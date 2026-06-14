@@ -55,6 +55,24 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   useEffect(() => { dirtyPathsRef.current = dirtyTabs })
 
   const ls = useLayoutState(initialLayout, dirtyPathsRef)
+  const {
+    openTab,
+    openPreviewTab,
+    openDiffTab,
+    openRoutedTab,
+    openRoutedDiffTab,
+    openRoutedPreviewTab,
+    openRoutedBoundTerminalTab,
+    resolveEditorTarget,
+    newCenterGroup,
+    panelLayout,
+    pinTab,
+    retargetPaths: retargetLayoutPaths,
+    closeTabsUnder,
+    activeTerminalId,
+    bindTerminal,
+    addRecentFile,
+  } = ls
 
   // Latest layout snapshot for SSE refetch + persistence getters (group shape).
   const layoutValue = {
@@ -122,19 +140,19 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   // its shared-by-path buffer; a diff open does not (diff bodies fetch their own).
   const openFileInGroup = useCallback((groupId: string, path: string): string | null => {
     if (!isFileTab(path)) return null
-    const instanceId = ls.openTab(groupId, path)
-    ls.addRecentFile(path)
+    const instanceId = openTab(groupId, path)
+    addRecentFile(path)
     if (!isBinaryPreviewFile(path)) fetchForTab(path)
     return instanceId
-  }, [ls.openTab, ls.addRecentFile, fetchForTab])
+  }, [openTab, addRecentFile, fetchForTab])
 
   const openDiffInGroup = useCallback((groupId: string, tabId: string) => {
-    ls.openDiffTab(groupId, tabId)
-  }, [ls.openDiffTab])
+    openDiffTab(groupId, tabId)
+  }, [openDiffTab])
 
   const previewDiffInGroup = useCallback((groupId: string, tabId: string) => {
-    ls.openPreviewTab(groupId, tabId)
-  }, [ls.openPreviewTab])
+    openPreviewTab(groupId, tabId)
+  }, [openPreviewTab])
 
   // --- Routed open helpers (kind-aware; design: separateKinds) ---
   // Each dispatches a reducer-owned OPEN_ROUTED_* (the reducer resolves the target
@@ -144,30 +162,30 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   // (no synchronous reducer return); diff opens fetch nothing (the viewer hydrates).
   const openFileRouted = useCallback((path: string) => {
     if (!isFileTab(path)) return
-    ls.openRoutedTab(path)
-    ls.addRecentFile(path)
+    openRoutedTab(path)
+    addRecentFile(path)
     if (!isBinaryPreviewFile(path)) fetchForTab(path)
-  }, [ls.openRoutedTab, ls.addRecentFile, fetchForTab])
+  }, [openRoutedTab, addRecentFile, fetchForTab])
 
   const previewFileRouted = useCallback((path: string) => {
     if (!isFileTab(path)) return
     const loaded = filesRef.current[path]?.serverContent != null
-    ls.openRoutedPreviewTab(path)
-    ls.addRecentFile(path)
+    openRoutedPreviewTab(path)
+    addRecentFile(path)
     if (!loaded && !isBinaryPreviewFile(path)) fetchForTab(path)
-  }, [ls.openRoutedPreviewTab, ls.addRecentFile, fetchForTab, filesRef])
+  }, [openRoutedPreviewTab, addRecentFile, fetchForTab, filesRef])
 
   const openDiffRouted = useCallback((tabId: string) => {
-    ls.openRoutedDiffTab(tabId)
-  }, [ls.openRoutedDiffTab])
+    openRoutedDiffTab(tabId)
+  }, [openRoutedDiffTab])
 
   const previewDiffRouted = useCallback((tabId: string) => {
-    ls.openRoutedPreviewTab(tabId)
-  }, [ls.openRoutedPreviewTab])
+    openRoutedPreviewTab(tabId)
+  }, [openRoutedPreviewTab])
 
   const openBoundTerminalRouted = useCallback((session: string, preview = false) => {
-    ls.openRoutedBoundTerminalTab(session, preview)
-  }, [ls.openRoutedBoundTerminalTab])
+    openRoutedBoundTerminalTab(session, preview)
+  }, [openRoutedBoundTerminalTab])
 
   // Go-to-line stays command-resolved: the PURE resolver picks the editor home (a new
   // center group when none), we open there and RETURN the opened instanceId so the
@@ -175,23 +193,23 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
   // no id race (design: Synchronous results & follow-ups).
   const openFileAtLineRouted = useCallback((path: string): string | null => {
     if (!isFileTab(path)) return null
-    const target = ls.resolveEditorTarget()
-    const groupId = 'groupId' in target ? target.groupId : ls.newCenterGroup()
+    const target = resolveEditorTarget()
+    const groupId = 'groupId' in target ? target.groupId : newCenterGroup()
     return openFileInGroup(groupId, path)
-  }, [ls.resolveEditorTarget, ls.newCenterGroup, openFileInGroup])
+  }, [resolveEditorTarget, newCenterGroup, openFileInGroup])
 
   // A draft promotes a preview tab to pinned: pin every preview editor tab on this
   // path (the shared-buffer edit could surface in more than one pane).
   const pinPreviewsOnPath = useCallback((path: string) => {
-    const tree: LayoutNode = ls.panelLayout.desktop
+    const tree: LayoutNode = panelLayout.desktop
     for (const id of editorInstancesInOrder(tree)) {
       const tab = editorTabByInstance(tree, id)
       if (tab && tab.kind === 'editor' && tab.preview && tabFilePath(tab.tabId) === path) {
         const g = groupOf(tree, id)
-        if (g) ls.pinTab(g, id)
+        if (g) pinTab(g, id)
       }
     }
-  }, [ls.panelLayout.desktop, ls.pinTab])
+  }, [panelLayout.desktop, pinTab])
 
   const updateFileDraft = useCallback((path: string, draft: string) => {
     if (!isFileTab(path)) return
@@ -221,20 +239,20 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
 
   /** Retarget tabs and file state when a file/dir is renamed or moved */
   const retargetPaths = useCallback((oldPath: string, newPath: string) => {
-    ls.retargetPaths(oldPath, newPath)
+    retargetLayoutPaths(oldPath, newPath)
     retargetFile(oldPath, newPath)
-  }, [ls.retargetPaths, retargetFile])
+  }, [retargetLayoutPaths, retargetFile])
 
   /** Close tabs and remove file state when a file/dir is deleted */
   const onDeletePath = useCallback((path: string) => {
-    ls.closeTabsUnder(path)
+    closeTabsUnder(path)
     removeFilesUnder(path)
-  }, [ls.closeTabsUnder, removeFilesUnder])
+  }, [closeTabsUnder, removeFilesUnder])
 
   // Bind the active terminal to a session (compat for the legacy setActiveSession).
   const setActiveSession = useCallback((name: string) => {
-    if (ls.activeTerminalId) ls.bindTerminal(ls.activeTerminalId, name)
-  }, [ls.activeTerminalId, ls.bindTerminal])
+    if (activeTerminalId) bindTerminal(activeTerminalId, name)
+  }, [activeTerminalId, bindTerminal])
 
   return {
     // selection
