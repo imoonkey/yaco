@@ -132,7 +132,7 @@ active session and revealing the terminal surface (right panel desktop / termina
 pane mobile) — Show Terminal re-reveals it when the surface was hidden while the
 handle stayed active. `activeSession`, `liveSessionHandles`, and `onOpenTerminal`
 thread down TaskScreen ← WorkspaceEditorColumn / WorkspaceScreen (both the desktop
-tasks overlay and the mobile tasks pane). No app-server route is added; the UI only
+tasks tab and the mobile tasks pane). No app-server route is added; the UI only
 displays links, opens terminals, and highlights.
 
 Navigation is native vertical scroll (no horizontal infinite canvas, no zoom).
@@ -212,7 +212,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 - Controller: local UI state, API hooks, callbacks, keyboard shortcuts
 - Computes `effectivePath` from `projectPath + worktree` for session cwd and file ops
 - Threads `worktree` param through `useWorkspaceState`, `useFileTree`, `useGitStatus`, and all mutation functions
-- Builds section content (project list with worktree sub-items, explorer, changes, working-area groups, sessions) plus the Tasks overlay as React nodes
+- Builds section content (project list with worktree sub-items, explorer, changes, working-area groups, sessions) as React nodes — the tasks tab renders through the group/PanelHost path, not as a separate slot
 - Passes content slots to `WorkspaceLayout` for placement
 - Delegates domain state to `useWorkspaceState` hook
 - Per-project attention badges (status `active/total` count + the separate actionable badge); owned-idle "↩ your turn" leaf chips; collapsed-parent rollup badges
@@ -223,7 +223,7 @@ Multi-pane workspace editor with file explorer, code editor, terminal, and git i
 
 Receives pre-built content slots from WorkspaceScreen and composes them into desktop/mobile layouts.
 
-**Desktop**: `LeftDock(Projects + Explorer/Search + Changes) | WorkingArea(grid of tab groups, Tasks overlay on Meta+Shift+T) | ActivityColumn(Sessions)`
+**Desktop**: `LeftDock(Projects + Explorer/Search + Changes) | WorkingArea(grid of tab groups; the singleton Tasks tab opens via Meta+Shift+T) | ActivityColumn(Sessions)`
 **Mobile**: `PaneSwitch(Browse | Editor | Tasks | Terminal)` — 4-pane navigation, Tasks renders `TaskScreen` directly in its own pane
 
 ### Extracted modules in `ui/src/workspace/`

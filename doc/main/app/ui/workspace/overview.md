@@ -24,7 +24,7 @@ The Workspace is a multi-pane code editing environment for a single project. It 
 - File explorer with git status
 - A **grid of tab groups** for the working area — one editor tab per open file/diff, one tab per terminal, freely interleaved in each group's strip
 - Git changes panel with diff viewer
-- Tasks overlay that opens the task graph over the working area; task records live across `plan/tasks/**/tasks.json`
+- Tasks tab — a singleton working-area tab (Meta+Shift+T) that renders the task graph; task records live across `plan/tasks/**/tasks.json`
 - Terminal sessions, each a tab bound to one session
 - File search
 
@@ -59,11 +59,11 @@ The working area is a **grid of groups**, exactly like VSCode. A **group** (a `t
 │  │          ││  │ │body │ │ │body│ ││  │               ││
 │  ├──────────┤│  │ └─────┘ │ └────┘ ││  │               ││
 │  │ Changes  ││  └─────────┴────────┘│  │               ││
-│  └──────────┘│  (Tasks overlay ▲)   │  └───────────────┘│
+│  └──────────┘│  (Tasks tab ▲)       │  └───────────────┘│
 └──────────────┴──────────────────────┴───────────────────┘
 ```
 
-A body is whatever the group's active tab renders — a CodeMirror editor / preview / diff for an editor tab, or a terminal for a terminal tab. `Meta+Shift+T` toggles the **Tasks overlay**, which covers the working-area groups (they stay mounted underneath).
+A body is whatever the group's active tab renders — a CodeMirror editor / preview / diff for an editor tab, a terminal for a terminal tab, or the task graph for the singleton tasks tab. `Meta+Shift+T` toggles the **Tasks tab**: absent → open + focus; focused → close; present but unfocused → focus it. It places, splits, moves, and closes like any tab.
 
 ### Panel Behavior
 
@@ -73,7 +73,7 @@ A body is whatever the group's active tab renders — a CodeMirror editor / prev
 | Activity column | `Cmd+Shift+B` | Visible | Yes (horizontal drag) |
 | Explorer/Search section | Click header; search icon switches body; search mode offers quick file search, full text search, and back actions | Open | Yes (vertical drag) |
 | Changes section | Click header | Open | Yes (vertical drag, dynamic max) |
-| Tasks overlay | `Meta+Shift+T` | Closed | No (covers the full working area) |
+| Tasks tab | `Meta+Shift+T` | Closed | Yes (an ordinary group tab — split/move/resize) |
 | Sessions tray | Click header | Open | No (fixed max-height 180px, scrollable) |
 
 ### Empty Working Area

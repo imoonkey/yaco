@@ -1,5 +1,51 @@
 # Progress
 
+## 2026-06-15: Task Graph as a singleton working-area tab
+
+**What changed:**
+- The desktop Task Graph moved from a full-working-area overlay (driven by the
+  flat `layout.showTasks` flag) to a first-class **singleton group tab**, a peer
+  of editor/terminal tabs. `GroupTab` gains a payload-less `{ kind: 'tasks' }`
+  variant + `TASKS_INSTANCE_ID`; `normalizeTab` enforces the singleton
+  (`NormCtx.seenTasks`) and reserves the `'tasks'` id in `seenIds` so an impostor
+  node claiming it is re-minted.
+- Reducer (`useLayoutState.ts`): new `OPEN_TASKS_TAB`; a shared `focusKind(tab)`
+  helper replaces the editor/terminal binary in all four focus-deriving branches
+  (`SET_ACTIVE_GROUP_TAB`, `CLOSE_GROUP_TAB` successor, `MOVE_TAB`, `MOVE_GROUP`)
+  so a tasks tab pushes neither MRU; `reconcileFocus` repoints to the editor when
+  the tasks tab is gone; `activeTabKind` maps tasks → `''` (routing-neutral).
+- Provider: `toggleTasks`/`closeTasks`/`mainShowsTasks` are **focus-based**
+  (`focusedPane.kind === 'tasks'`), implementing absent→create / focused→close /
+  unfocused→focus, revealing a hidden right sidebar on activate;
+  `closeFocusedSurface` splits the tasks/editor arms so Cmd+W from an editor group
+  can't close a tasks tab elsewhere.
+- Renderer: deleted the overlay + `taskOverlay`/`workingAreaId` plumbing from
+  `DesktopPanelTreeLayout.tsx`; `DragPayload.tabKind` widened to `GroupTabKind`;
+  the tab bar shows `ListTodo` + "Tasks" (plain close ×). `WorkspaceScreen`'s
+  `showingTasks` and the `Cmd+\` split now key off the focused tasks surface.
+- Persistence: dropped `showTasks` parse/save and the overlay rehydrate path — the
+  tasks tab persists structurally inside `panelLayout.desktop` like any tab.
+
+**Why:**
+- The task graph was already a registered panel rendering through `PanelHost`
+  identically to editor/terminal; the overlay plumbing was the only thing keeping
+  it special. Folding it into the tab model is a net deletion and gives tasks the
+  full group layout (split / move / coexist) for free.
+
+**Key files:** `app/ui/src/hooks/workspaceTypes.ts`, `hooks/useLayoutState.ts`,
+`hooks/usePersistence.ts`, `workspace/panelLayoutModel.ts`,
+`workspace/WorkspaceProvider.tsx`, `workspace/DesktopPanelTreeLayout.tsx`,
+`workspace/GroupTabBar.tsx`, `workspace/WorkspaceScreen.tsx`,
+`workspace/useWorkspaceKeyboard.ts`, `workspace/panels/TaskGraphPanel.tsx`.
+**Verification:** `tsc -b`, `eslint`, `vitest run src/` (965), tasks e2e
+(`task-graph` + `workspace-tasks-tab`, 26 incl. 2 new tab-cycle/coexist specs).
+Reviewed by Claude code-reviewer + Codex; Codex's normalizer-id-reservation
+finding was fixed (+3 singleton tests). Design + review:
+`plan/all/20260615_task-graph-tab/`.
+**Commit:** 095bcae
+**Next:** None.
+**Blockers:** None.
+
 ## 2026-06-14: Proportional center rescale on sidebar toggle (Cmd+B / Cmd+Shift+B)
 
 **What changed:**

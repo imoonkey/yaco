@@ -122,10 +122,13 @@ type FileState = {
 // One tab in a working-area group. `instanceId` is the identity the aux maps
 // (terminalBindings, MRU, focus) key on; `kind` selects which body renders. An
 // editor tab also carries its `tabId` (a file path OR a `diff:<path>?...` id) plus
-// the `preview`/`pinned` flags — the file/diff IS the tab.
+// the `preview`/`pinned` flags — the file/diff IS the tab. The `tasks` tab is a
+// payload-less SINGLETON (fixed `instanceId === TASKS_INSTANCE_ID === 'tasks'`,
+// at most one tree-wide).
 type GroupTab =
   | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
-  | { instanceId: string; kind: 'terminal' }
+  | { instanceId: string; kind: 'terminal'; preview?: boolean }
+  | { instanceId: string; kind: 'tasks' }
 
 // LEGACY: the old per-editor multi-file view. No longer backs live state — it
 // survives only as the old-shape descriptor the persistence-loader migration
@@ -182,7 +185,7 @@ type WorkspacePanelLayout = {
 }
 ```
 
-A `leaf.panel` is one of the four singleton **dock** panels (`projects`/`files`/`changes`/`sessions`); `editor`/`terminal` exist ONLY as group tabs, and `tasks` is the desktop overlay (driven by `showTasks`) — normalization drops any leaf claiming one.
+A `leaf.panel` is one of the four singleton **dock** panels (`projects`/`files`/`changes`/`sessions`); `editor`/`terminal`/`tasks` exist ONLY as group tabs — normalization drops any leaf claiming one. `tasks` is a payload-less singleton tab (reserved `instanceId` `'tasks'`).
 
 ### Workspace Layout (flat visibility + sizes)
 
@@ -196,7 +199,6 @@ type WorkspaceLayout = {
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
-  showTasks: boolean
   showTextSearch: boolean
   autocompleteEnabled: boolean
   previewMode: PreviewMode

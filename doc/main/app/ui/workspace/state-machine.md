@@ -81,7 +81,7 @@ The desktop layout is a **flexible panel tree** (split / tabs / leaf nodes) — 
 └──────────────────────────────────────────────┘
 ```
 
-Multiple groups tile at once; each group's strip mixes editor and terminal tabs. Each column/group is independently visible/hidden, with resize handles between split children. `Meta+Shift+T` opens the Tasks overlay over the working-area groups.
+Multiple groups tile at once; each group's strip mixes editor, terminal, and (the singleton) tasks tabs. Each column/group is independently visible/hidden, with resize handles between split children. `Meta+Shift+T` opens/focuses/closes the singleton Tasks tab in the resolved target group.
 
 ### Layout Mutations (drag-and-drop)
 
