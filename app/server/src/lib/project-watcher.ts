@@ -209,10 +209,16 @@ export async function watchProject(project: Project): Promise<void> {
       debouncedEmit(channel)
       if (channel === 'filetree') debouncedEmit('git')
 
-      // Change-driven attention: a task-graph write may be a state edge
-      // (task_done/task_blocked). plan/tasks/** is not gitignored, so this
-      // fires before the ignore check above would matter.
-      if (isTaskFile(filename)) notifyAttentionTaskChange()
+      // Task-graph writes get a dedicated 'tasks' channel so the Task Graph view
+      // refreshes on task edits only — not on every unrelated file write, which
+      // would refetch the full task payload and rebuild the whole graph. It also
+      // wakes the change-driven attention engine (a write may be a task_done /
+      // task_blocked state edge). plan/tasks/** is not gitignored, so both fire
+      // regardless of the ignore check above.
+      if (isTaskFile(filename)) {
+        debouncedEmit('tasks')
+        notifyAttentionTaskChange()
+      }
     })
   } catch (err) {
     console.error(`[project-watcher] failed to watch ${project.path}:`, err)

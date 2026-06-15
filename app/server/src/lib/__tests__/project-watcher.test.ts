@@ -112,4 +112,18 @@ describe('project-watcher agent session refreshes', () => {
       expect(mock.emitCalls).toContain('sessions')
     }, { timeout: 3000 })
   })
+
+  it('emits a dedicated tasks refresh when a plan/tasks file changes', async () => {
+    // Pre-create the task dir so the recursive watch already covers it (avoids a
+    // new-subdir watch race), then start the watcher and write the task file.
+    const tasksDir = join(projectDir, 'plan', 'tasks', 'inbox')
+    mkdirSync(tasksDir, { recursive: true })
+    await startProjectWatchers(mock.projects)
+
+    writeFileSync(join(tasksDir, 'tasks.json'), '{}')
+
+    await vi.waitFor(() => {
+      expect(mock.emitCalls).toContain('tasks')
+    }, { timeout: 2000 })
+  })
 })

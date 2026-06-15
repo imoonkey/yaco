@@ -37,11 +37,11 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
   // change). The seq guard above orders GOOD results; this extends the same
   // "refreshes only move data forward" invariant to failures: a transient
   // error/missing from a later refetch must NOT roll the painted graph back to an
-  // error pane. On the tree engine the task view mounts amid an always-on
-  // `filetree` SSE burst, so the graph is refetched repeatedly right after it
-  // paints; a single hiccup (`yaco task list` failing, or a 404 while the project
-  // registry is mid-rewrite) would otherwise blank the panel — and the e2e's 4s
-  // auto-restore probe then fails, its fallback Meta+Shift+t closing the tab.
+  // error pane. On the tree engine the task view can mount amid a `tasks` SSE
+  // burst (rapid task-graph writes), so the graph is refetched repeatedly right
+  // after it paints; a single hiccup (`yaco task list` failing, or a 404 while the
+  // project registry is mid-rewrite) would otherwise blank the panel — and the
+  // e2e's 4s auto-restore probe then fails, its fallback Meta+Shift+t closing the tab.
   const committedGoodRef = useRef(false)
 
   const load = useCallback(async () => {
@@ -85,8 +85,10 @@ export function useTaskGraph(projectName: string): UseTaskGraphResult {
   }, [projectName])
 
   // SSE refreshes call load() directly — they never restart the effect, so an
-  // in-flight fetch finishes and commits instead of being cancelled.
-  useSSERefresh('filetree', () => { void load() })
+  // in-flight fetch finishes and commits instead of being cancelled. The 'tasks'
+  // channel fires only on plan/tasks writes, so unrelated file edits no longer
+  // refetch the payload and rebuild the graph.
+  useSSERefresh('tasks', () => { void load() })
 
   useEffect(() => {
     // New project (or mount): supersede any prior in-flight fetch so its late result
