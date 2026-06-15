@@ -196,11 +196,13 @@ export function SessionItem({
           style={{ left: INDENT_BASE + level * INDENT_STEP + GUIDE_OFFSET, borderLeft: '1px dashed var(--sol-muted)', opacity: 0.6 }}
         />
       ))}
-      {onPin && !isPlaceholder && (
+      {onPin && (
         <button
-          onClick={e => { e.stopPropagation(); onPin() }}
-          className="shrink-0 cursor-pointer hover:opacity-80"
+          onClick={e => { e.stopPropagation(); if (!isPlaceholder) onPin() }}
+          className={`shrink-0 cursor-pointer hover:opacity-80 ${isPlaceholder ? 'invisible pointer-events-none' : ''}`}
           title={pinned ? 'Unpin' : 'Pin to top'}
+          aria-hidden={isPlaceholder || undefined}
+          tabIndex={isPlaceholder ? -1 : undefined}
           style={{ color: pinned ? 'var(--sol-blue)' : 'var(--sol-muted)' }}
         >
           <Pin size={12} style={PIN_ICON_STYLE} />

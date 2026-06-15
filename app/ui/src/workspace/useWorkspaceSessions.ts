@@ -170,6 +170,41 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     return () => clearTimeout(timer)
   }, [projectSessions, pendingStarts])
 
+  // A placeholder's real session can surface in the server list (the sessions-dir
+  // watcher fires when `yaco agent start` writes the state file) BEFORE its start
+  // POST resolves with the handle — so it can't be matched by name yet, and the
+  // synthetic "Starting…" row would briefly double the real one. Bridge with
+  // identity-free correlation: when a session newly appears for a provider that has
+  // a still-nameless pending start, retire that placeholder (one per appearance).
+  //
+  // Provider-coarse on purpose — no shared id exists pre-POST. An unrelated
+  // same-provider session appearing could retire a placeholder a beat early, but
+  // that only drops the optimistic row sooner; the real start still lands as a
+  // normal row, so the terminal state is always correct. Baseline only off a real
+  // (non-null) snapshot and reset it across project switches, so a first load or
+  // project change never reads every existing session as "new".
+  const seenSessions = useRef<{ project: string; names: Set<string> } | null>(null)
+  useEffect(() => {
+    if (sessions === null) return // no server snapshot yet — don't baseline on the [] fallback
+    const baseline = seenSessions.current
+    seenSessions.current = { project: projectName, names: new Set(sessions.map(s => s.name)) }
+    if (!baseline || baseline.project !== projectName) return // fresh baseline → nothing has "appeared"
+    const appeared = sessions.filter(s => !baseline.names.has(s.name))
+    if (appeared.length === 0) return
+    const consume = () => setPendingStarts(prev => {
+      if (!prev.some(p => p.name === null)) return prev
+      const claims = appeared.map(s => s.provider)
+      const next = prev.filter(p => {
+        if (p.name !== null) return true
+        const i = claims.indexOf(p.provider)
+        if (i !== -1) { claims.splice(i, 1); return false }
+        return true
+      })
+      return next.length === prev.length ? prev : next
+    })
+    consume()
+  }, [sessions, projectName])
+
   // Rows for pending starts not yet present in the server list (real handle once
   // known, else the synthetic prefixed id). Status 'starting' buckets them with
   // other in-flight sessions in the ordering below.

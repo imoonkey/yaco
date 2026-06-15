@@ -146,6 +146,53 @@ describe('useWorkspaceSessions optimistic start', () => {
 
     expect(result.current.orderedSessions.some(s => s.name.startsWith(STARTING_SESSION_PREFIX))).toBe(false)
   })
+
+  it('retires a nameless placeholder when its real session appears before the POST resolves (no duplicate row)', async () => {
+    // The sessions-dir watcher can surface the real session in the list before the
+    // start POST returns its handle — so the placeholder (still name-null) can't be
+    // matched by name and must be retired by provider correlation, not left to
+    // double the real row.
+    vi.mocked(startSession).mockReturnValue(new Promise<string>(() => {})) // never resolves
+
+    const { result, rerender } = renderHook(
+      (props) => useWorkspaceSessions(props),
+      { initialProps: makeOpts({ sessions: [] as AgentSession[] }) },
+    )
+
+    act(() => { void result.current.handleNewSession('codex') })
+    expect(result.current.orderedSessions.some(s => s.name.startsWith(STARTING_SESSION_PREFIX))).toBe(true)
+
+    // Server list gains the real codex session while the POST is still in flight.
+    const codexReal: AgentSession = { name: 'codex-real', provider: 'codex', status: 'processing', project: 'test', summary: '' }
+    await act(async () => { rerender(makeOpts({ sessions: [codexReal] })) })
+
+    const names = result.current.orderedSessions.map(s => s.name)
+    expect(names).toEqual(['codex-real'])
+  })
+
+  it('does not consume a placeholder against sessions already present at first load', async () => {
+    // The first real (non-null) server snapshot is a baseline, not a set of
+    // "appearances" — a pre-existing same-provider session must not retire the
+    // placeholder; only a genuinely new session (a later snapshot) does.
+    vi.mocked(startSession).mockReturnValue(new Promise<string>(() => {})) // never resolves
+    const existing: AgentSession = { name: 'codex-existing', provider: 'codex', status: 'idle', project: 'test', summary: '' }
+
+    const { result, rerender } = renderHook(
+      (props) => useWorkspaceSessions(props),
+      { initialProps: makeOpts({ sessions: null }) }, // no snapshot yet
+    )
+
+    act(() => { void result.current.handleNewSession('codex') })
+    // First real snapshot already holds an unrelated codex session — placeholder survives.
+    await act(async () => { rerender(makeOpts({ sessions: [existing] })) })
+    expect(result.current.orderedSessions.some(s => s.name.startsWith(STARTING_SESSION_PREFIX))).toBe(true)
+
+    // A genuinely new codex session then appears → placeholder is retired, no dup.
+    const mine: AgentSession = { name: 'codex-mine', provider: 'codex', status: 'processing', project: 'test', summary: '' }
+    await act(async () => { rerender(makeOpts({ sessions: [existing, mine] })) })
+    const names = result.current.orderedSessions.map(s => s.name).sort()
+    expect(names).toEqual(['codex-existing', 'codex-mine'])
+  })
 })
 
 describe('useWorkspaceSessions markSubtreeRead', () => {
