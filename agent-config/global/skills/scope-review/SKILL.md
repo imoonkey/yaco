@@ -1,6 +1,6 @@
 ---
 name: scope-review
-description: Challenge problem framing and feature scope before design or implementation. Use when the user has a feature idea, rough plan, PRD, or asks whether something is the right problem, the right size, or the right MVP. Prefer this skill before `/ux-design`, `/design`, or `/implement` when scope is still fuzzy.
+description: Challenge problem framing and scope before design. Use when the user has a feature idea, rough plan, or PRD, or asks whether it's the right problem, size, or MVP.
 ---
 
 # Scope Review
@@ -84,12 +84,6 @@ Write down:
 - What risks remain even if this scope succeeds
 
 If a follow-up idea is good but not needed now, put it in **Not now** instead of muddying the recommendation.
-
-### 7. Hand Off Cleanly
-
-- If the request is user-facing, hand off to `/ux-design`
-- If the problem is mostly system/architecture, hand off to `/design`
-- If a design already exists and only needs pressure-testing before coding, hand off to `/eng-plan-review`
 
 ## Review Standard
 

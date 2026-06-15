@@ -1,6 +1,6 @@
 ---
 name: init-all
-description: Initialize a project for all AI agents (Claude Code, Codex, Cursor, Gemini). Generates CLAUDE.md, creates multi-tool symlinks, and bootstraps doc/ as SOTA memory. Use when setting up a new project, onboarding a repo, or when the user says "init all", "initialize project", "set up for codex", or wants multi-agent compatibility.
+description: Set up a project for all AI agents (Claude, Codex, Cursor, Gemini) — CLAUDE.md, multi-tool symlinks, and a doc/ memory base. Use when onboarding a repo or the user says "init all" or "set up for codex".
 metadata:
   yaco-dependent: "true"
 ---

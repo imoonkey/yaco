@@ -27,7 +27,7 @@ Add temporary logging, inspect state, trace execution paths. Confirm or eliminat
 
 ### 4. Fix Root Cause
 
-Fix the CONFIRMED root cause only. One atomic commit per fix. Remove temporary debug instrumentation. If the fix is complicated, then follow /implement skill steps.
+Fix the CONFIRMED root cause only. One atomic commit per fix. Remove temporary debug instrumentation. If the fix is complicated, follow a full plan → build → verify workflow.
 
 ### 5. Validate
 

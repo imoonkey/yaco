@@ -1,8 +1,6 @@
 ---
 name: update-doc
 description: Sync docs with code changes and maintain changelog. Use after architecture/workflow changes, before or after commits.
-metadata:
-  yaco-dependent: "optional"
 ---
 
 # Update Doc
@@ -22,10 +20,6 @@ doc/
     <domain>/              # Subdirectories mirror code architecture
   dev/                     # SOTA memory: dev workflow, build, tooling
   PROGRESS.md              # History trace
-  todo/                    # Active projects
-    <project>/             # Per-project design docs, notes, status
-  archive/
-    YYYYMMDD_<project>/    # Completed projects (archived with date)
 
 .claude/
   skills/
@@ -117,23 +111,3 @@ Stage only the files touched by this `/update-doc` run — don't sweep in unrela
 git add <files you created or updated in steps 2–4>
 git commit -m "docs: <short description of what changed>"
 ```
-
-## YACO compatibility
-
-Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
-`yaco.toml` path overrides), `/update-doc` does two extra things between steps
-4 and 5:
-
-- **Update project implementation summary.** If changes correspond to a
-  `plan/all/<project>/` bundle, write or update
-  `plan/all/<project>/implementation_summary.md` — a concise summary of
-  what was implemented, key decisions made, and current state.
-- **Archive completed bundles.** When archiving a completed project, check
-  whether `plan/tasks/**/tasks.json` has the matching terminal project task
-  and archive it via `yaco task archive <id> --json` (or `/yaco-task`).
-  The command marks the terminal subtree with `workset=archive`; project docs
-  live under `plan/all/**`, with `plan/archive/*` as a symlink view. Move the
-  project symlink view from `plan/active/<project>` or `plan/backlog/<project>`
-  to `plan/archive/YYYYMMDD_<project>`, using the archive date.
-
-Outside YACO, follow the project's own design-doc and archive conventions.

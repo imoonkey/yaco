@@ -1,6 +1,6 @@
 ---
 name: eng-plan-review
-description: Review an implementation plan before coding. Use after `/design` or any rough implementation plan when the work touches multiple files, introduces new data flow, changes state transitions, adds integrations, or needs tighter engineering rigor before `/implement`.
+description: Review an implementation plan before coding — for work that touches multiple files, changes data flow or state, or adds integrations. Use after `/design` or on any rough plan.
 ---
 
 # Engineering Plan Review
@@ -95,14 +95,14 @@ Separate:
 
 Only raise questions that materially change the build. Avoid noisy nits.
 
-### 7. End with a Clean Handoff
+### 7. End with a Verdict
 
-After the review:
+State a clear verdict and the reason:
 
-- If the plan needs reframing, send it back to `/scope-review`
-- If the UX is still ambiguous, send it back to `/ux-design`
-- If the system design is under-specified, send it back to `/design`
-- If the plan is ready, hand off to `/implement`
+- **Ready** — the plan is sound enough to start building.
+- **Send back** — name which earlier stage must redo work (scope, UX, or system design) and why.
+
+Report the verdict; let the caller decide what runs next.
 
 ## Review Standard
 
@@ -111,9 +111,3 @@ After the review:
 - Reuse over reinvention
 - Concrete failure modes over generic caution
 - Testable plans over aspirational plans
-
-## Example Prompts
-
-- "Review this implementation plan before I start coding."
-- "This refactor touches auth, jobs, and billing. Pressure-test the plan."
-- "I have a design doc. Tell me what is missing before `/implement`."

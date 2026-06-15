@@ -40,7 +40,7 @@ High standards like kernel code. Find:
 
 4. **Fix small issues** inline
 
-5. **Create design docs** for big issues
+5. **Flag big issues** for follow-up
 
 ## Severity Levels
 
@@ -91,4 +91,3 @@ High standards like kernel code. Find:
 ## Reference
 
 - Treat project docs as context (code is source-of-truth)
-- Update docs after fixing issues

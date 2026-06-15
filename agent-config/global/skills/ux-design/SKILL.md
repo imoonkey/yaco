@@ -63,4 +63,4 @@ Re-read against the original goal:
 
 If gaps exist, iterate steps 2-6.
 
-After approval, hand off to `/design` (system), then `/eng-plan-review`, then `/implement`.
+After approval, hand off to `/design`.

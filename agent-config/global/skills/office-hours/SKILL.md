@@ -1,8 +1,6 @@
 ---
 name: office-hours
-description: YC-style office hours for problem definition before design. Two modes — Startup (rigorous diagnostic with forcing questions) and Builder (enthusiastic design partner). Produces a design doc, not code. Use before `/scope-review` or `/design` when the problem itself is unclear.
-metadata:
-  yaco-dependent: "optional"
+description: YC-style office hours to define the problem before design. Two modes — Startup (diagnostic) and Builder (design partner). Produces a design doc. Use when the problem is still unclear.
 ---
 
 # YC Office Hours
@@ -440,13 +438,3 @@ Present the design doc path to the user. Summarize what was decided.
 **Builder mode:** End with "Here's what to build first" — concrete next step.
 
 Offer handoff: "Ready to implement? Use `/design` to refine the architecture, then `/implement` to build it."
-
----
-
-## YACO compatibility
-
-Inside a YACO project (cwd registered in `~/.yaco/projects.json`, with optional
-`yaco.toml` path overrides), write the design doc under
-`plan/all/<bundle>/` so it threads into the rest of the YACO workflow; keep
-`plan/active/<bundle>` as a symlink view while it is active.
-Outside YACO, follow the project's own design-doc convention.

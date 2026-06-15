@@ -1,6 +1,6 @@
 ---
 name: yaco-task
-description: Create and manage the project task graph through the yaco task CLI. Use when the user wants to plan milestones, break work into tasks, reorganize the task hierarchy, update progress, or when /design produces subtasks.
+description: Create and manage the project task graph via the `yaco task` CLI — plan milestones, break work into tasks, reorganize, update progress, or absorb subtasks from /design.
 metadata:
   yaco-dependent: "true"
 ---
@@ -148,11 +148,11 @@ separate commands.
 All descendants must also be terminal. Non-terminal work that should leave the
 current workset belongs in `workset=backlog`, not `archive`.
 
-When archiving a top-level bundle, follow the `update-doc` skill's YACO archive
-convention for doc views: real docs stay under `plan/all/<bundle>/`, and the
-view symlink moves to the dated `plan/archive/YYYYMMDD_<bundle>` name. If the
-bundle task store is moved under the archive task-store area, use that same
-dated name: `plan/tasks/archive/YYYYMMDD_<bundle>/tasks.json`.
+When archiving a top-level bundle, follow `/yaco-paths` for the archive
+procedure — the bundle's docs stay under `<plan>/all/<bundle>/` and the view
+symlink moves to the dated `<archive>/YYYYMMDD_<bundle>` name. If the bundle's
+task store is relocated to an archive area, reuse that dated name (e.g.
+`<tasks>/archive/YYYYMMDD_<bundle>/tasks.json`).
 
 Task ID is a stable slug (e.g., `editor-sync`, `workspace-state`). Parent provides namespace grouping. Title is renamable.
 

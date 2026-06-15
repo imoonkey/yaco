@@ -1,6 +1,6 @@
 ---
 name: qa
-description: E2E and integration QA. Analyze changes, derive affected user flows, verify with stack-appropriate tools (Playwright, HTTP calls, CLI tests), fix-verify loop. Use after implementation to validate behavior from the user's perspective. Unit tests belong in /tdd and /verify.
+description: E2E and integration QA — derive the user flows a change affects and verify them (Playwright, HTTP, CLI) in a fix-verify loop. Use after implementation; unit tests → /tdd, /verify.
 ---
 
 # QA
@@ -17,7 +17,7 @@ Verify changes work from the user's perspective. Integration tests, E2E, browser
 
 ## When to Use
 
-- After `/implement` — validate the feature actually works end-to-end
+- After implementation — validate the feature actually works end-to-end
 - Before PR — confirm no user-facing regressions
 - After deploy — smoke test critical flows
 
@@ -45,7 +45,7 @@ Identify: what files changed, what features they touch, what user-facing behavio
 
 List the user flows (actions a user would take) that touch the changed code. Examples:
 - "User signs in → sees dashboard → data loads"
-- "User runs `yaco agent start claude` → worker spawns in tmux"
+- "User runs `tool deploy --env staging` → exits 0, prints the deploy URL"
 - "API receives POST /items → validates → returns 201"
 
 ### 3. Verify Each Flow
