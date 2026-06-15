@@ -46,6 +46,8 @@ Each session row shows:
 - For a `blocked` session, a small orange reason badge next to the name reads what it is waiting on: `permission` → "needs approval", `question` → "has a question", `trust` → "needs trust review" (also surfaced via `title`/`aria-label`). The orange `animate-pulse` dot reads as *needs-you* attention, deliberately distinct from processing's cyan glow.
 - Summary line (dimmed, below name) — the first *meaningful* user message from Claude/Codex conversation logs (slash commands restored to their original `/name args` input). Empty if session just started, JSONL not yet flushed, or provider is shell.
 
+**Optimistic placeholder.** Clicking a New-session button inserts a placeholder row instantly (before the server returns the real handle), keyed by a synthetic `__starting__:<provider>:<n>` name so the list never sits empty during the ~1-3s CLI cold-start. The row shows a friendly **"Starting…"** label (not the raw synthetic id) and suppresses pin/kill/rename actions; it reconciles into the real session row once the handle lands, or ages out (TTL) if the start never materializes. Placeholders are detected by the name prefix, not status, so a *real* server session reporting `starting` with a proper name still renders normally. -> See: `useWorkspaceSessions.ts` (`STARTING_SESSION_PREFIX`, `pendingStarts`).
+
 ### Ordering
 
 Sessions display in three tiers with dividers between non-empty tiers:
@@ -105,7 +107,7 @@ Plain terms use case-insensitive substring matching with AND semantics across wh
 | Start Shell | Click Shell button | `POST /api/sessions/start { provider: 'shell' }` |
 | Select session | Click session row | `clickSession` — focus the terminal tab already showing it, else create a new terminal tab bound on create (flat focus-or-create; never rebinds) |
 | Open beside | Right-click / long-press → "Open beside" | `openBeside` — focus if shown, else split an empty group and create a bound terminal tab in it (1-per-session) |
-| Kill session | Click Kill button on row | `POST /api/sessions/:handle/close`; its terminal pane(s) close via the reconcile when the session leaves the live set |
+| Kill session | Click Kill button on row | `POST /api/sessions/:handle/close`; the row is **hidden optimistically on click** (the endpoint blocks on a ~1.4s cold `yaco agent kill` spawn), then dropped for real once the session leaves the live list — a failed kill un-hides it, a TTL bounds any stuck/reused name. Its terminal pane(s) close via the reconcile when the session leaves the live set |
 | Rename session | Right-click → Rename (inline edit) | `POST /api/sessions/:handle/rename { name, cwd }`; the CLI renames state/tmux immediately and input-gates provider-native `/rename` so it never merges into a user's draft |
 | Reorder session | Drag pinned session row vertically | Reorders within pinned section (client-side only, not persisted) |
 | Refresh sessions | Click refresh in the Sessions header | Live tab re-fetches `GET /api/sessions?project=<name>`; History tab re-fetches `GET /api/sessions/history?project=<name>`. The refresh icon is the far-right header action and spins until the request settles. |
@@ -183,7 +185,7 @@ Before the server creates a tmux shell or starts a new yaco agent child process,
 | Action | Shortcut | Effect |
 |--------|----------|--------|
 | Close pane | `Cmd+W` (terminal focused) or header × | `closePane(id)` — closes the WebSocket and removes the pane; the session keeps running |
-| Kill | Kill button on session row | `POST /api/sessions/:handle/close`, session terminated; bound terminal pane(s) close via the reconcile |
+| Kill | Kill button on session row | `POST /api/sessions/:handle/close`, session terminated; the row hides optimistically on click (-> [Actions](#actions)), bound terminal pane(s) close via the reconcile |
 
 ## Clipboard
 

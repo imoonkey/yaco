@@ -1,3 +1,34 @@
+## 2026-06-15: Session-list UX — friendly starting label + optimistic close
+
+**What changed:**
+- The optimistic placeholder row shown the instant you click "new session" no
+  longer renders its synthetic `__starting__:<provider>:<n>` id as the name — it
+  shows a friendly **"Starting…"** label and suppresses pin/kill/rename actions
+  so the raw id can't leak (incl. through the rename input). Discriminated by the
+  name prefix, not `status`, so a real server session reporting `starting` with a
+  proper name still renders normally.
+- Killing a session hides its row **immediately** instead of waiting out the
+  ~1.4s cold `yaco agent kill` spawn that blocks `POST /:handle/close`. Hidden
+  names live in a `closingNames` map filtered out of `orderedSessions`;
+  visibility stays driven by the server list (the set only subtracts, so clearing
+  is synchronized with the committed list — no reappear flash), a failed kill
+  un-hides at once, and a TTL bounds any stuck/reused name.
+
+**Why:**
+- Investigation (two reported issues): the raw `__starting__:claude:0` text was
+  internal coding, not user-friendly; and close felt laggy because the UI awaited
+  the full blocking kill round-trip with no optimistic update.
+- Codex review (two rounds) hardened the close path: reused-name-masked-forever
+  (dropped name-absence inference), blind restore-on-failure, the
+  superseded-refresh reappear flash (`usePolling` seq-guard drops our refresh when
+  the kill's own SSE races it), and placeholder pin leakage.
+
+**Key files:** `app/ui/src/workspace/WorkspaceSessionList.tsx`, `app/ui/src/workspace/useWorkspaceSessions.ts`
+**Verification:** `tsc -b` + `npm run lint` clean; full `vitest run src/` green (978/978).
+**Commit:** 183292a
+**Next:** Server-side close is still a blocking ~1.4s CLI spawn — optional follow-up to make it non-blocking / bypass the cold `yaco` dispatch for faster real teardown.
+**Blockers:** None
+
 ## 2026-06-14: Diff viewer syntax highlighting
 
 Added per-line syntax highlighting to the diff viewer (`DiffTab`). New
