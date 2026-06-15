@@ -15,10 +15,8 @@ import { useWorkspaceState, isFileTab } from '../hooks/useWorkspaceState'
 import { mobilePaneToDock, TASKS_INSTANCE_ID, type LayoutNode } from '../hooks/workspaceTypes'
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
 import { useFileTree, useHistory } from '../hooks/useApi'
-import { useSSERefresh } from '../hooks/useSSE'
 import { useWorkspaceData } from './resources'
 import { resolveSessionClick, resolveOpenBeside, stepSessionMisses } from './useWorkspaceSessions'
-import { markStale as markSearchIndexStale } from './quickOpenIndex'
 import {
   collapsePanel as modelCollapsePanel,
   resizeSplitChild as modelResizeSplitChild,
@@ -175,11 +173,6 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // old screen kept these alive at screen level; the panels now CONSUME them via
   // WorkspacePanelResourcesContext (with an own-hook fallback for isolation tests).
   const fileTreeHook = useFileTree(projectName, worktree)
-  const markStaleForProject = useCallback(
-    () => markSearchIndexStale(projectName, worktree),
-    [projectName, worktree],
-  )
-  useSSERefresh('filetree', markStaleForProject)
   const history = useHistory(projectName)
 
   // After a session kill/rename the sessions resource refreshes history. Stable

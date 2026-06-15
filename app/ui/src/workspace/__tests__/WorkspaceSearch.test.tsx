@@ -13,7 +13,6 @@ const FILE: SearchEntry = { name: 'a.ts', path: 'src/a.ts', type: 'file' }
 // Serve the index synchronously from cache so no async fetch races the keydown.
 vi.mock('../quickOpenIndex', () => ({
   getCached: () => [FILE],
-  isCacheStale: () => false,
   fetchIndex: () => Promise.resolve([FILE]),
 }))
 

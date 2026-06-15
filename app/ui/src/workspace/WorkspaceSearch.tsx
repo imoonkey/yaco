@@ -3,7 +3,7 @@ import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { DialogShell } from '../components/DialogShell'
 
 import { fuzzySearch, namePositions, type FuzzyResult } from '../lib/fuzzySearch'
-import { getCached, isCacheStale, fetchIndex } from './quickOpenIndex'
+import { getCached, fetchIndex } from './quickOpenIndex'
 
 export type { SearchEntry } from '../lib/fuzzySearch'
 
@@ -25,6 +25,8 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onOpe
 
   // Fetch or background-refresh index. The synchronous setState calls load cached
   // data and drive the loading flag; fresh results arrive via the async fetchIndex.
+  // Every open re-fetches (the index is a cheap `git ls-files`), so a file created
+  // since the last open is searchable immediately — no stale-flag bookkeeping.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const controller = new AbortController()
@@ -33,11 +35,9 @@ export function FileSearch({ projectName, worktree, recentFiles, onSelect, onOpe
     if (cached) {
       setFiles(cached)
       setLoading(false)
-      if (isCacheStale(projectName, includeIgnored, worktree)) {
-        fetchIndex(projectName, includeIgnored, controller.signal, worktree)
-          .then(data => setFiles(data))
-          .catch(() => {})
-      }
+      fetchIndex(projectName, includeIgnored, controller.signal, worktree)
+        .then(data => setFiles(data))
+        .catch(() => {})
     } else {
       setLoading(true)
       fetchIndex(projectName, includeIgnored, controller.signal, worktree)
