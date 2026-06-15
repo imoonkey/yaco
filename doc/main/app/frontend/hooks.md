@@ -253,7 +253,7 @@ Fetches all task worksets via the task API and builds the graph model. The serve
 
 Behavior:
 - Fetches via `GET /api/tasks/:project`
-- SSE `filetree` channel triggers automatic refresh when task files change on disk
+- SSE `tasks` channel triggers automatic refresh when task files change (dedicated channel, not the broad `filetree` — so unrelated file writes don't refetch the task payload)
 - Returns `TaskGraphModel` (normalized tasks, computed layout, search index)
 
 ## useViewport.ts

@@ -1,5 +1,37 @@
 # Progress
 
+## 2026-06-15: Workspace perf/correctness — Cmd+P freshness, Task Graph SSE channel, optimistic sessions
+
+**What changed:**
+- **Cmd+P file index** now background-refetches on *every* open (cheap `git ls-files`),
+  instead of relying on a `stale` flag set by a `filetree` SSE between opens. Removed
+  the `markStale`/`isCacheStale` mechanism (and its `filetree` wiring in
+  `WorkspaceProvider`); `quickOpenIndex` dropped its in-flight `fetching` dedup so a
+  rapid close/reopen can't early-return stale entries.
+- **Task Graph** (and the Gantt / detail views via `useTaskData`) moved off the broad
+  `filetree` SSE onto a new dedicated **`tasks`** channel. `project-watcher` emits
+  `tasks` for `plan/tasks/**` writes; task-mutation routes emit `tasks` via
+  `invalidateTasksCache`. Unrelated file writes no longer refetch the ~570KB / 400+
+  task payload and rebuild the whole graph.
+- **New sessions** show an optimistic `starting` placeholder row the instant the user
+  clicks (`STARTING_SESSION_PREFIX`), reconciled by handle once the server list catches
+  up (or a 60s TTL timer). `clickSession`/`openBeside`/`rename`/`kill` ignore placeholder
+  names. The server emits a `sessions` SSE on every mutation (`invalidateSessionsCache`)
+  so all clients repaint without waiting on the 30s poll or the debounce-prone watcher.
+
+**Why:**
+- All three were user-reported slowness after the multipane/tab refactor. Measured: the
+  task endpoint was fine (~0.3s server) — the cost was client-side rebuilds triggered by
+  `filetree` SSE storms; the Cmd+P staleness was a missed-signal in the stale-flag chain;
+  the session lag was the per-session `yaco` CLI cold-start (worse for claude than codex)
+  with no optimistic feedback.
+
+**Key files:** `app/ui/src/workspace/{quickOpenIndex,WorkspaceSearch,WorkspaceProvider,useWorkspaceSessions}.tsx?`, `app/ui/src/hooks/useTaskGraph.ts`, `app/ui/src/tasks/hooks/useTaskData.ts`, `app/server/src/lib/project-watcher.ts`, `app/server/src/routes/{tasks,sessions}.ts`
+**Verification:** app/ui 974 unit + app/server 605 unit pass; `tsc -b` + eslint clean; impacted Playwright e2e (file-search, task-graph, workspace-tasks-tab, session-search) pass; live SSE probe confirmed the watcher emits `tasks`/`filetree` on file writes. Independent claude + codex reviews; findings folded into the last commit.
+**Commit:** c4ddbf9..36813d1
+**Next:** Optional — classify a project's configured `yaco.toml [paths].tasks` in the watcher so custom task paths also drive the `tasks` channel (currently default `plan/tasks/**` only; custom paths fall back to the 60s poll).
+**Blockers:** None
+
 ## 2026-06-15: Task Graph as a singleton working-area tab
 
 **What changed:**
