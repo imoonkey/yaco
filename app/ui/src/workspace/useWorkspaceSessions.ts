@@ -1,9 +1,21 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { startSession, closeSession as closeRemoteSession, renameSession } from '../hooks/useApi'
 import { usePinnedSessions } from '../hooks/usePinnedSessions'
 import { collectSubtree } from './sessionLineage'
 import type { AgentSession, SessionProvider } from '../types'
 import type { AttentionBadge } from '../hooks/useAttention'
+
+/** Synthetic name prefix for an optimistic "starting" row shown the instant the
+ *  user clicks "new session", before the server has spawned the agent (a fresh
+ *  `yaco` CLI cold-starts per session, ~1-3s, longer for claude than codex).
+ *  clickSession ignores these names — there is no terminal to bind to yet. */
+export const STARTING_SESSION_PREFIX = '__starting__:'
+
+/** Drop an optimistic pending start that never reconciled into a real session
+ *  (e.g. the session was killed mid-bootstrap), so the placeholder can't linger. */
+const PENDING_START_TTL_MS = 60_000
+
+type PendingStart = { id: string; provider: SessionProvider; name: string | null; startedAt: number }
 
 // --- Pure session routing (design: VSCode Tab Groups — flat resolver) --------
 //
@@ -97,6 +109,44 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const projectSessions = useMemo(() => sessions ?? [], [sessions])
   const pinnedSet = useMemo(() => new Set(pinnedSessions), [pinnedSessions])
 
+  // Optimistic "starting" rows: shown the instant the user clicks new-session so
+  // the list doesn't sit empty for the seconds the CLI takes to spawn the agent.
+  // A pending start carries the real handle once POST resolves; it's dropped once
+  // that handle shows up in the server list (reconciled) or after a TTL (safety).
+  const [pendingStarts, setPendingStarts] = useState<PendingStart[]>([])
+  const pendingSeq = useRef(0)
+
+  useEffect(() => {
+    // Reconcile against the latest server list: drop a pending start once its real
+    // handle has landed (or it aged out). The updater returns `prev` unchanged when
+    // nothing was pruned, so this can't cascade renders.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPendingStarts(prev => {
+      const now = Date.now()
+      const next = prev.filter(p =>
+        !(p.name && projectSessions.some(s => s.name === p.name)) &&
+        now - p.startedAt < PENDING_START_TTL_MS,
+      )
+      return next.length === prev.length ? prev : next
+    })
+  }, [projectSessions])
+
+  // Rows for pending starts not yet present in the server list (real handle once
+  // known, else the synthetic prefixed id). Status 'starting' buckets them with
+  // other in-flight sessions in the ordering below.
+  const pendingRows = useMemo<AgentSession[]>(() =>
+    pendingStarts
+      .filter(p => !(p.name && projectSessions.some(s => s.name === p.name)))
+      .map(p => ({
+        name: p.name ?? p.id,
+        provider: p.provider,
+        status: 'starting' as const,
+        project: projectName,
+        summary: '',
+      })),
+    [pendingStarts, projectSessions, projectName],
+  )
+
   // Rollup badge for a session subtree (count + worst-tier color). Separate from
   // the self-only status dot — never used to recolor it.
   const getSessionBadge = useCallback((sessionName: string): AttentionBadge | null => {
@@ -113,9 +163,10 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   // crashed leads the unpinned set — a dead session is the most urgent to surface
   // (red outranks orange in the attention precedence) and must never be dropped.
   const orderedSessions = useMemo(() => {
-    const byName = new Map(projectSessions.map(s => [s.name, s]))
+    const all = [...projectSessions, ...pendingRows]
+    const byName = new Map(all.map(s => [s.name, s]))
     const pinned = pinnedSessions.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
-    const unpinned = projectSessions.filter(s => !pinnedSet.has(s.name))
+    const unpinned = all.filter(s => !pinnedSet.has(s.name))
     const crashed = unpinned.filter(s => s.status === 'crashed')
     const blocked = unpinned.filter(s => s.status === 'blocked')
     const processing = unpinned.filter(s => s.status === 'processing' || s.status === 'starting')
@@ -131,17 +182,21 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     processing.sort(byAttention)
     idle.sort(byAttention)
     return [...pinned, ...crashed, ...blocked, ...processing, ...idle]
-  }, [projectSessions, pinnedSessions, pinnedSet, getSessionBadge])
+  }, [projectSessions, pendingRows, pinnedSessions, pinnedSet, getSessionBadge])
 
   const handleNewSession = useCallback(async (provider: SessionProvider) => {
+    const id = `${STARTING_SESSION_PREFIX}${provider}:${pendingSeq.current++}`
+    setPendingStarts(prev => [...prev, { id, provider, name: null, startedAt: Date.now() }])
     try {
       const name = await startSession(provider, projectPath)
+      setPendingStarts(prev => prev.map(p => (p.id === id ? { ...p, name } : p)))
       // Show the new session through the create-or-focus-or-bind path so it always
       // lands in a live terminal pane (creating one if none exist), never a no-op
       // bind that would then focus a dead terminal id.
       onAttachSession(name)
       void refreshSessions()
     } catch (err) {
+      setPendingStarts(prev => prev.filter(p => p.id !== id))
       console.error('Failed to start session:', err)
     }
   }, [projectPath, onAttachSession, refreshSessions])
@@ -150,7 +205,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   // provider's reconcile when the session leaves the live set (design: §3.7) — no
   // separate detach here.
   const killSession = useCallback(async (sessionName: string) => {
-    if (!sessionName) return
+    if (!sessionName || sessionName.startsWith(STARTING_SESSION_PREFIX)) return
     try {
       await closeRemoteSession(sessionName)
       void refreshSessions()

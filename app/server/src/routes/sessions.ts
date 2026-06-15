@@ -7,6 +7,7 @@ import { invalidateSummaryCache, resolveSessionSummaries } from '../lib/session-
 import { closeShellSession, listShellSessions, startShellSession } from '../lib/terminal'
 import { extractWorktreeSlug } from '../lib/worktree'
 import { isPathDescendantOrEqual } from '../lib/agent'
+import { emitRefresh } from '../lib/notify'
 
 const app = new Hono()
 
@@ -15,10 +16,13 @@ const sessionsInflight = new Map<string, Promise<unknown[]>>()
 
 /** Drop any in-flight cached responses so the next GET reads fresh state, and
  *  drop cached session summaries so a rename or restart re-resolves labels.
- *  Sessions GET aggregates across all projects, so any mutation invalidates everything. */
+ *  Sessions GET aggregates across all projects, so any mutation invalidates everything.
+ *  Also push an SSE 'sessions' refresh so every client repaints immediately rather
+ *  than waiting on the 30s poll or the (debounce-prone) sessions-dir file watcher. */
 function invalidateSessionsCache(): void {
   sessionsInflight.clear()
   invalidateSummaryCache()
+  emitRefresh('sessions')
 }
 
 async function buildSessionsResponse(projectName: string | null): Promise<unknown[]> {

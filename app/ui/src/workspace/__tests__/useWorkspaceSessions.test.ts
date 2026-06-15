@@ -5,8 +5,9 @@ import {
   useWorkspaceSessions,
   resolveSessionClick,
   resolveOpenBeside,
+  STARTING_SESSION_PREFIX,
 } from '../useWorkspaceSessions'
-import { renameSession } from '../../hooks/useApi'
+import { renameSession, startSession } from '../../hooks/useApi'
 import type { AgentSession } from '../../types'
 
 vi.mock('../../hooks/useApi', () => ({
@@ -101,6 +102,49 @@ describe('useWorkspaceSessions orderedSessions', () => {
     const names = result.current.orderedSessions.map((s) => s.name)
     expect(names).toContain('boom') // regression: crashed must not be dropped from the list
     expect(names.indexOf('boom')).toBeLessThan(names.indexOf('calm')) // crashed leads idle
+  })
+})
+
+describe('useWorkspaceSessions optimistic start', () => {
+  afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+  it('shows a starting placeholder immediately and reconciles it when the real session lands', async () => {
+    // POST resolves with the real handle, but the list won't include it until a
+    // later poll — the placeholder must bridge that gap, then disappear.
+    let resolveStart: (name: string) => void = () => {}
+    vi.mocked(startSession).mockReturnValue(new Promise<string>((res) => { resolveStart = res }))
+
+    const opts = makeOpts({ sessions: [] as AgentSession[] })
+    const { result, rerender } = renderHook((props) => useWorkspaceSessions(props), { initialProps: opts })
+
+    // Click new-session: a starting placeholder appears synchronously.
+    act(() => { void result.current.handleNewSession('codex') })
+    const placeholder = result.current.orderedSessions.find(s => s.name.startsWith(STARTING_SESSION_PREFIX))
+    expect(placeholder).toBeTruthy()
+    expect(placeholder!.status).toBe('starting')
+    expect(placeholder!.provider).toBe('codex')
+
+    // POST resolves with the real handle; the optimistic row adopts it (still
+    // 'starting') and bridges until the server list catches up.
+    await act(async () => { resolveStart('codex-real') })
+    const bridged = result.current.orderedSessions.find(s => s.name === 'codex-real')
+    expect(bridged?.status).toBe('starting')
+
+    // Server poll now includes the real session → placeholder reconciles away.
+    rerender(makeOpts({ sessions: [makeSession('codex-real', 'processing')] }))
+    const names = result.current.orderedSessions.map(s => s.name)
+    expect(names).toContain('codex-real')
+    expect(names.some(n => n.startsWith(STARTING_SESSION_PREFIX))).toBe(false)
+  })
+
+  it('drops the placeholder if the start fails', async () => {
+    vi.mocked(startSession).mockRejectedValue(new Error('boom'))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { result } = renderHook((props) => useWorkspaceSessions(props), { initialProps: makeOpts() })
+    await act(async () => { await result.current.handleNewSession('codex') })
+
+    expect(result.current.orderedSessions.some(s => s.name.startsWith(STARTING_SESSION_PREFIX))).toBe(false)
   })
 })
 

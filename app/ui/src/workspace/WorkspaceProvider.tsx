@@ -16,7 +16,7 @@ import { mobilePaneToDock, TASKS_INSTANCE_ID, type LayoutNode } from '../hooks/w
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
 import { useFileTree, useHistory } from '../hooks/useApi'
 import { useWorkspaceData } from './resources'
-import { resolveSessionClick, resolveOpenBeside, stepSessionMisses } from './useWorkspaceSessions'
+import { resolveSessionClick, resolveOpenBeside, stepSessionMisses, STARTING_SESSION_PREFIX } from './useWorkspaceSessions'
 import {
   collapsePanel as modelCollapsePanel,
   resizeSplitChild as modelResizeSplitChild,
@@ -305,6 +305,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // terminal tab bound on create in the target group (flat resolver — a session
   // click is focus | create; it never rebinds an existing terminal).
   const clickSession = useCallback((name: string) => {
+    if (name.startsWith(STARTING_SESSION_PREFIX)) return // optimistic placeholder — no terminal to bind yet
     const action = resolveSessionClick(name, latestRef.current.terminalBindings)
     if (action.kind === 'focus') {
       const groupId = groupForInstance(action.terminalId)
@@ -319,6 +320,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   // openBeside: 1-per-session — focus if shown, else split an empty (non-seeding)
   // group and create a bound, PINNED terminal tab in it.
   const openBeside = useCallback((name: string) => {
+    if (name.startsWith(STARTING_SESSION_PREFIX)) return // optimistic placeholder — no terminal to bind yet
     const { terminalBindings: bindings } = latestRef.current
     const action = resolveOpenBeside(name, bindings)
     if (action.kind === 'focus') {
