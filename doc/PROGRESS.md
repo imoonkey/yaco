@@ -1,5 +1,46 @@
 # Progress
 
+## 2026-06-15: Editor file-sync — no lost edits, no phantom disk-conflict banner
+
+**What changed:**
+- **`SAVE_SUCCESS` no longer discards the live buffer.** Saving is async; keystrokes
+  typed between `Cmd+S` and the response were being cleared when the draft was reset to
+  the saved snapshot (deterministic data loss — "typed text disappeared"). It now goes
+  `clean` only when the buffer still equals the persisted bytes; otherwise the newer
+  draft stays `dirty` over the freshly-written revision.
+- **Conflict detection is content-based, not mtime-based.** `SERVER_SYNC` previously
+  raised `conflict` whenever the refetched file mtime differed from `baseRevision` — so
+  the editor's *own* save, echoed back through the fs watcher with a new mtime, was
+  flagged as an external disk change ("disk version ≠ my version" banner after save).
+  Now it conflicts only when disk **content** actually diverges; a same-content mtime
+  echo is absorbed, and when disk converges to the live buffer the file returns to
+  `clean`. In `conflict` state a same-content echo never refreshes the save token, so a
+  plain `Cmd+S` can't silently overwrite disk before an explicit Keep-Mine/Accept-Disk.
+- **Unsaved drafts survive deletion.** `dirtyTabs` and the shared-buffer GC now key off
+  `draft != null`, so a `missing` file (deleted on disk while dirty) can't have its
+  draft silently GC'd on tab close.
+- **Halved the refetch storm.** Dropped the editor's duplicate `git` SSE subscription;
+  working-tree content changes always arrive on `filetree`. Drafts persist to
+  localStorage, so typing never hits disk — the lag was the double full-tab refetch on
+  every watched write (frequent under agent activity).
+
+**Why:** Editing felt laggy, typed text vanished, and saves raised a false
+disk-conflict banner — all from using file mtime as the sync signal and clearing the
+draft on every save (cf. VSCode: version-id/etag dirty tracking, own-write suppression,
+never clobber the unsaved buffer).
+
+**Key files:** `app/ui/src/hooks/fileStateMachine.ts`, `app/ui/src/hooks/useFileState.ts`,
+`app/ui/src/hooks/__tests__/fileStateMachine.test.ts` (new)
+**Verification:** `fileStateMachine.test.ts` (10) + `sharedBufferGc` + `EditorPanel`
+regression (20) pass; `tsc -b` and eslint clean. Reviewed by Codex — conflict-token
+guard, conflict→clean convergence, and the `SERVER_MISSING` data-loss edge are
+review-driven additions.
+**Commit:** 41d82be (+ docs)
+**Next:** Optional follow-up — targeted SSE refresh (carry the changed path in the
+event so only the affected tab refetches) and a content-hash/monotonic revision token
+to replace mtime entirely.
+**Blockers:** None
+
 ## 2026-06-15: Workspace perf/correctness — Cmd+P freshness, Task Graph SSE channel, optimistic sessions
 
 **What changed:**

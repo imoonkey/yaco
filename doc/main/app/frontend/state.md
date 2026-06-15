@@ -104,7 +104,7 @@ Each open file path has a `FileState`:
 | `viewportLine` | `number` | Source line at top of editor viewport |
 | `status` | `FileStatus` | `clean`, `dirty`, `saving`, `conflict`, `missing` |
 
-**Conflict detection**: on mount and SSE (`filetree`/`git`) events, the hook refetches server content for open file tabs. If `baseRevision` doesn't match the server's current revision, status becomes `'conflict'`. User can `forceSave()` (overwrite) or `acceptDisk()` (discard local changes).
+**Conflict detection** (content-based, not mtime): on mount and SSE `filetree` events, the hook refetches server content for open file tabs. A conflict is raised only when the refetched **disk content actually diverges** from the buffer's base — `baseRevision` (the file mtime) is just an optimistic-concurrency token for the save `PUT`, not the conflict signal. So the editor's own save echoed back through the watcher (identical content, new mtime) is absorbed silently, and when disk converges to the live buffer the file returns to `clean`. While in `conflict`, a same-content mtime echo never refreshes the save token, preserving the Keep-Mine/Accept-Disk guard. User resolves with `forceSave()` (overwrite) or `acceptDisk()` (discard local changes). A save never discards edits typed while it was in flight — `SAVE_SUCCESS` only clears the draft when the buffer still equals the persisted bytes.
 
 ## localStorage Persistence
 
@@ -126,7 +126,7 @@ Key: `yaco-workspace:<project>` (or `yaco-workspace:<project>:wt:<slug>` when a 
 
 Key: `yaco-drafts:<project>` (or `…:wt:<slug>`).
 
-Only dirty drafts are persisted (with baseRevision for conflict detection). On quota exceeded, oldest drafts are evicted. Clean files are re-fetched from server on mount.
+Only dirty drafts are persisted (with `baseRevision` as the save token for reconciliation on reload). On quota exceeded, oldest drafts are evicted. Clean files are re-fetched from server on mount.
 
 ## In-Memory State
 

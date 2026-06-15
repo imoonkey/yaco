@@ -66,7 +66,7 @@ type FileStatus = 'clean' | 'dirty' | 'saving' | 'conflict' | 'missing'
 type FileState = {
   serverContent: string | null
   draft: string | null        // null = clean (show disk content)
-  baseRevision: number | null // server revision for conflict detection
+  baseRevision: number | null // file mtime — optimistic-concurrency token for save
   viewportLine: number        // source line for editor/preview sync
   status: FileStatus
   editedAt: number
@@ -84,7 +84,7 @@ type GroupTab =
 - **Target + active-instance routing**: an open/session resolves the target group (`activeGroupId` → focused tab's group → first group); type-global commands act on `resolveActiveEditor`/`resolveActiveTerminal` (MRU head → first in document order). Both editors and terminals may be zero.
 - **Shared buffers**: `files` keyed by path, so two editor tabs on one file stay in sync. `gcBuffers` keeps a buffer iff referenced by an open editor tab (`allEditorTabPaths`) or dirty — close/reset never silently loses unsaved work.
 - **Hydration**: on mount, fetches server content only for open file tabs to detect conflicts.
-- **SSE refetch**: listens on `filetree` and `git` channels to refetch open file tabs; AbortController cancels in-flight fetches when a new SSE refresh arrives.
+- **SSE refetch**: listens on the `filetree` channel to refetch open file tabs; AbortController cancels in-flight fetches when a new SSE refresh arrives. (Working-tree content writes always route through `filetree`; the duplicate `git` subscription was dropped to halve the per-change refetch.) Conflict is content-based — a refetch raises `conflict` only when disk content actually diverges from the buffer's base, so the editor's own save echoed back (same content, new mtime) doesn't false-flag.
 - **Draft persistence**: dirty drafts for real files saved with 500ms debounce; on quota exceeded, evicts oldest. Layout saved with 300ms debounce.
 - **Stable derived state**: `dirtyTabs`/`conflictTabs` memoized on a sorted content signature so each Set keeps a stable reference until membership changes.
 - **Force save / accept disk**: `forceSave()` writes without revision check; `acceptDisk()` discards local draft and reloads server content.
