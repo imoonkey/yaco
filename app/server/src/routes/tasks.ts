@@ -109,6 +109,10 @@ const tasksInflight = new Map<string, Promise<TasksResponse | CliFailure>>()
 
 function invalidateTasksCache(projectPath: string): void {
   tasksInflight.delete(projectPath)
+  // Push the dedicated 'tasks' channel so the Task Graph / Gantt / detail views
+  // (which subscribe to 'tasks', not 'filetree') repaint immediately on an
+  // app-initiated mutation, without waiting on the file watcher or 60s poll.
+  emitRefresh('tasks')
 }
 
 async function buildTasksResponse(projectPath: string): Promise<TasksResponse | CliFailure> {

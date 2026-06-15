@@ -39,7 +39,9 @@ export function useTaskData(projectName: string): UseTaskDataResult {
   const [tick, setTick] = useState(0)
 
   const refresh = useCallback(() => setTick(t => t + 1), [])
-  useSSERefresh('filetree', refresh)
+  // 'tasks' fires only on plan/tasks writes (not every file change), so the task
+  // payload isn't refetched on unrelated edits — same channel as useTaskGraph.
+  useSSERefresh('tasks', refresh)
 
   useEffect(() => {
     let cancelled = false

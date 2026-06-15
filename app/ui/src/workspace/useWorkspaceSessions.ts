@@ -119,9 +119,10 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   useEffect(() => {
     // Reconcile against the latest server list: drop a pending start once its real
     // handle has landed (or it aged out). The updater returns `prev` unchanged when
-    // nothing was pruned, so this can't cascade renders.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPendingStarts(prev => {
+    // nothing was pruned, so this can't cascade renders. An explicit timer ensures a
+    // placeholder whose session never materializes still expires even if the server
+    // list goes quiet (e.g. the agent crashed right after POST resolved).
+    const prune = () => setPendingStarts(prev => {
       const now = Date.now()
       const next = prev.filter(p =>
         !(p.name && projectSessions.some(s => s.name === p.name)) &&
@@ -129,7 +130,11 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
       )
       return next.length === prev.length ? prev : next
     })
-  }, [projectSessions])
+    prune()
+    if (pendingStarts.length === 0) return
+    const timer = setTimeout(prune, PENDING_START_TTL_MS)
+    return () => clearTimeout(timer)
+  }, [projectSessions, pendingStarts])
 
   // Rows for pending starts not yet present in the server list (real handle once
   // known, else the synthetic prefixed id). Status 'starting' buckets them with
@@ -216,6 +221,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   }, [refreshSessions, onSessionChange])
 
   const handleRenameSession = useCallback(async (oldName: string, newName: string) => {
+    if (oldName.startsWith(STARTING_SESSION_PREFIX)) return // placeholder has no server-side session yet
     try {
       await renameSession(oldName, newName)
       setPinnedSessions(prev => prev.map(n => n === oldName ? newName : n))
