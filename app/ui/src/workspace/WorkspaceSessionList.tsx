@@ -6,6 +6,7 @@ import { Menu, MenuItem } from '../components/Menu'
 import { useContextMenu } from '../components/useContextMenu'
 import { BadgeCount } from '../components/BadgeCount'
 import { sanitizeSummary } from './sanitizeSummary'
+import { STARTING_SESSION_PREFIX } from './useWorkspaceSessions'
 import { SearchHighlightedText } from './SearchHighlightedText'
 import { fieldMatch, type SearchMatch } from './sessionSearch'
 import type { AgentSession, BlockReason, SessionStatus } from '../types'
@@ -139,6 +140,14 @@ export function SessionItem({
     }
   }
 
+  // A placeholder row is the optimistic stand-in shown the instant the user clicks
+  // "new session": its name is still a synthetic `__starting__:<provider>:<n>` id
+  // (the server hasn't returned the real handle). The provider icon + pulsing dot
+  // already say which agent is spinning up, so the visible label is a friendly
+  // "Starting…" until the real session reconciles. (A real server session can also
+  // report 'starting' status with a proper name — that one renders normally.)
+  const isPlaceholder = session.name.startsWith(STARTING_SESSION_PREFIX)
+  const displayName = isPlaceholder ? 'Starting…' : session.name
   const summary = sanitizeSummary(session.summary, session.name)
   const blockLabel = session.status === 'blocked' && session.blockReason
     ? BLOCK_REASON_LABEL[session.blockReason]
@@ -187,7 +196,7 @@ export function SessionItem({
           style={{ left: INDENT_BASE + level * INDENT_STEP + GUIDE_OFFSET, borderLeft: '1px dashed var(--sol-muted)', opacity: 0.6 }}
         />
       ))}
-      {onPin && (
+      {onPin && !isPlaceholder && (
         <button
           onClick={e => { e.stopPropagation(); onPin() }}
           className="shrink-0 cursor-pointer hover:opacity-80"
@@ -237,7 +246,11 @@ export function SessionItem({
       ) : (
         <div className="min-w-0 flex-1">
           <div className="line-clamp-2">
-            <SearchHighlightedText text={session.name} positions={nameMatch?.positions} className="font-medium" />
+            {isPlaceholder ? (
+              <span className="font-medium" style={{ color: 'var(--sol-text-faint)' }}>{displayName}</span>
+            ) : (
+              <SearchHighlightedText text={session.name} positions={nameMatch?.positions} className="font-medium" />
+            )}
             {shortcutIndex != null && (
               <span
                 className="text-ui-sm tabular-nums px-1 rounded ml-1.5 align-middle"
@@ -310,19 +323,21 @@ export function SessionItem({
       )}
       <span className="flex items-center gap-1 shrink-0">
         {rollupBadge && <BadgeCount count={rollupBadge.count} color={rollupBadge.color} />}
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            onKill()
-          }}
-          className="shrink-0 inline-flex items-center justify-center w-[18px] h-[20px] rounded-md cursor-pointer text-[var(--sol-text-faint)] transition-colors hover:text-[var(--sol-red)] focus-visible:text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8 focus-visible:bg-[var(--sol-red)]/8"
-          title={`Kill ${session.name}`}
-          aria-label={`Kill session ${session.name}`}
-        >
-          <CircleX size={15} strokeWidth={1.8} aria-hidden="true" />
-        </button>
+        {!isPlaceholder && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onKill()
+            }}
+            className="shrink-0 inline-flex items-center justify-center w-[18px] h-[20px] rounded-md cursor-pointer text-[var(--sol-text-faint)] transition-colors hover:text-[var(--sol-red)] focus-visible:text-[var(--sol-red)] hover:bg-[var(--sol-red)]/8 focus-visible:bg-[var(--sol-red)]/8"
+            title={`Kill ${displayName}`}
+            aria-label={`Kill session ${displayName}`}
+          >
+            <CircleX size={15} strokeWidth={1.8} aria-hidden="true" />
+          </button>
+        )}
       </span>
-      {menu.position && (onRename || onOpenBeside || (hasChildren && onMarkSubtreeRead)) && (
+      {!isPlaceholder && menu.position && (onRename || onOpenBeside || (hasChildren && onMarkSubtreeRead)) && (
         <Menu position={menu.position} exiting={menu.exiting} armed={menu.armed} focusOnOpen={menu.focusOnOpen} onExitDone={menu.onExitDone}>
           {onRename && <MenuItem label="Rename" onClick={startRename} />}
           {onOpenBeside && <MenuItem label="Open beside" onClick={() => { menu.close(); onOpenBeside() }} />}

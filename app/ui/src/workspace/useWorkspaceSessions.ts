@@ -15,6 +15,11 @@ export const STARTING_SESSION_PREFIX = '__starting__:'
  *  (e.g. the session was killed mid-bootstrap), so the placeholder can't linger. */
 const PENDING_START_TTL_MS = 60_000
 
+/** Safety bound on an optimistic kill-hide: if a killed row hasn't left the server
+ *  list within this window the kill silently failed or the name was reused, so stop
+ *  hiding it — a phantom must never linger. */
+const CLOSING_SESSION_TTL_MS = 10_000
+
 type PendingStart = { id: string; provider: SessionProvider; name: string | null; startedAt: number }
 
 // --- Pure session routing (design: VSCode Tab Groups — flat resolver) --------
@@ -116,6 +121,35 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   const [pendingStarts, setPendingStarts] = useState<PendingStart[]>([])
   const pendingSeq = useRef(0)
 
+  // Sessions hidden optimistically while their kill is in flight (name → click time),
+  // so the row vanishes on click instead of waiting out the slow cold `yaco agent
+  // kill` spawn (~1.4s). A name leaves this set when the kill drops it from the
+  // server list (normal case, pruned below), the kill throws (restored in
+  // killSession's catch), or it ages out — so a reused name can never stay masked.
+  // Visibility is driven by projectSessions; this set only ever subtracts, so
+  // clearing it is synchronized with the committed list (no reappear flash).
+  const [closingNames, setClosingNames] = useState<Map<string, number>>(() => new Map())
+
+  useEffect(() => {
+    // Drop a name once its row has left the server list (kill landed) or aged out.
+    // The updater returns `prev` unchanged when nothing pruned, so it can't cascade
+    // renders; the timer expires a hide whose row never disappears (silent failure).
+    const prune = () => setClosingNames(prev => {
+      if (prev.size === 0) return prev
+      const now = Date.now()
+      const live = new Set(projectSessions.map(s => s.name))
+      const next = new Map<string, number>()
+      for (const [name, at] of prev) {
+        if (live.has(name) && now - at < CLOSING_SESSION_TTL_MS) next.set(name, at)
+      }
+      return next.size === prev.size ? prev : next
+    })
+    prune()
+    if (closingNames.size === 0) return
+    const timer = setTimeout(prune, CLOSING_SESSION_TTL_MS)
+    return () => clearTimeout(timer)
+  }, [projectSessions, closingNames])
+
   useEffect(() => {
     // Reconcile against the latest server list: drop a pending start once its real
     // handle has landed (or it aged out). The updater returns `prev` unchanged when
@@ -168,7 +202,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   // crashed leads the unpinned set — a dead session is the most urgent to surface
   // (red outranks orange in the attention precedence) and must never be dropped.
   const orderedSessions = useMemo(() => {
-    const all = [...projectSessions, ...pendingRows]
+    const all = [...projectSessions, ...pendingRows].filter(s => !closingNames.has(s.name))
     const byName = new Map(all.map(s => [s.name, s]))
     const pinned = pinnedSessions.map(n => byName.get(n)).filter((s): s is NonNullable<typeof s> => !!s)
     const unpinned = all.filter(s => !pinnedSet.has(s.name))
@@ -187,7 +221,7 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
     processing.sort(byAttention)
     idle.sort(byAttention)
     return [...pinned, ...crashed, ...blocked, ...processing, ...idle]
-  }, [projectSessions, pendingRows, pinnedSessions, pinnedSet, getSessionBadge])
+  }, [projectSessions, pendingRows, pinnedSessions, pinnedSet, getSessionBadge, closingNames])
 
   const handleNewSession = useCallback(async (provider: SessionProvider) => {
     const id = `${STARTING_SESSION_PREFIX}${provider}:${pendingSeq.current++}`
@@ -211,11 +245,22 @@ export function useWorkspaceSessions(opts: UseWorkspaceSessionsOpts) {
   // separate detach here.
   const killSession = useCallback(async (sessionName: string) => {
     if (!sessionName || sessionName.startsWith(STARTING_SESSION_PREFIX)) return
+    // Hide the row immediately; the kill round-trip is a slow cold CLI spawn. The
+    // prune effect drops it once the kill removes it from the server list.
+    setClosingNames(prev => new Map(prev).set(sessionName, Date.now()))
     try {
       await closeRemoteSession(sessionName)
       void refreshSessions()
       onSessionChange?.()
     } catch (err) {
+      // Kill failed — the session is still live, so un-hide it at once rather than
+      // wait out the TTL, letting the row reappear.
+      setClosingNames(prev => {
+        if (!prev.has(sessionName)) return prev
+        const next = new Map(prev)
+        next.delete(sessionName)
+        return next
+      })
       console.error('Failed to close session:', err)
     }
   }, [refreshSessions, onSessionChange])
