@@ -1,10 +1,16 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, Component, type ReactNode } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Component, type ReactNode } from 'react'
 import { Editor } from '../components/Editor'
 import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
 import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath, loadMermaid } from './markdown'
+import { useThrottledValue } from '../hooks/useThrottledValue'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
+
+// Preview/diff are derived views: recompute them at most ~8/s while typing instead
+// of on every keystroke (VSCode throttles its preview the same way). The live
+// `draft` still feeds the CodeMirror editor and every correctness path unchanged.
+const PREVIEW_THROTTLE_MS = 120
 import type { PreviewMode, SplitDirection } from '../hooks/useWorkspaceState'
 import { DiffTab } from './diff/DiffTab'
 import { isImageFile, isPdfFile, rawFileUrl } from '../lib/binaryFiles'
@@ -111,7 +117,7 @@ export function MarkdownPreview({
     onViewportLineRef.current = onViewportLine
     onRegisterSyncRef.current = onRegisterSync
   })
-  const rawHtml = renderMarkdown(content)
+  const rawHtml = useMemo(() => renderMarkdown(content), [content])
   const [html, setHtml] = useState(rawHtml)
 
   // When content changes, process mermaid async then update HTML.
@@ -432,6 +438,13 @@ export function WorkspaceEditorArea({
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
 
+  // Throttled mirror of the live buffer, fed to the preview only. The CM editor
+  // keeps the live `activeFileContent`; the preview lags ≤120ms (VSCode behaviour),
+  // so a large document is parsed at most ~8/s under sustained typing. Keyed on the
+  // file path so a tab switch adopts the new file's content immediately (no stale
+  // cross-file preview frame).
+  const previewContent = useThrottledValue(activeFileContent ?? '', PREVIEW_THROTTLE_MS, activeFilePath)
+
   // --- Scroll sync channel ---
   // Editor and Preview register LERP scroll functions here; each side calls
   // the other's function directly from its scroll handler — bypasses React.
@@ -550,10 +563,10 @@ export function WorkspaceEditorArea({
   )
 
   const previewElement = isHtml ? (
-    <HtmlPreview content={activeFileContent ?? ''} />
+    <HtmlPreview content={previewContent} />
   ) : (
     <MarkdownPreview
-      content={activeFileContent ?? ''}
+      content={previewContent}
       filePath={activeTab ?? undefined}
       projectName={projectName}
       worktree={worktree}

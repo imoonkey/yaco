@@ -17,7 +17,9 @@ vi.mock('../PanelHost', () => ({
 import { PanelGroup } from '../PanelGroup'
 import {
   WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceSelectionContext,
+  WorkspaceEditorTabsContext,
   type WorkspaceEnv, type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceSelection,
+  type WorkspaceEditorTabs,
 } from '../context'
 import type { PaneMarker } from '../panelInstance'
 import type { GroupTab, LayoutNode, TabsNode } from '../../hooks/workspaceTypes'
@@ -32,13 +34,17 @@ function renderGroup(group: TabsNode, opts: { tree?: LayoutNode; dirtyTabs?: str
   const commands = {
     selectTab: vi.fn(), closePane: vi.fn(), splitGroup: vi.fn(),
     reorderGroupTab: vi.fn(), closeGroup: vi.fn(), setActiveGroup: vi.fn(),
-    setEditorPrefs: vi.fn(), acceptDisk: vi.fn(),
+    setEditorPrefs: vi.fn(), acceptDisk: vi.fn(), saveFile: vi.fn(),
+    actions: { filesRef: { current: {} } },
   } as unknown as WorkspaceCommands
   const selection = {
     activeGroupId: group.id,
     terminalBindings: {},
-    editor: { dirtyTabs: new Set(opts.dirtyTabs ?? []), conflictTabs: new Set<string>() },
   } as unknown as WorkspaceSelection
+  const editorTabs: WorkspaceEditorTabs = {
+    dirtyTabs: new Set(opts.dirtyTabs ?? []),
+    conflictTabs: new Set<string>(),
+  }
   const layoutValue = {
     layout: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
     panelLayout: { desktop: tree },
@@ -50,7 +56,9 @@ function renderGroup(group: TabsNode, opts: { tree?: LayoutNode; dirtyTabs?: str
       <WorkspaceLayoutContext.Provider value={layoutValue}>
         <WorkspaceCommandsContext.Provider value={commands}>
           <WorkspaceSelectionContext.Provider value={selection}>
-            <PanelGroup group={group} sizing={{}} isMain markerFor={markerFor} />
+            <WorkspaceEditorTabsContext.Provider value={editorTabs}>
+              <PanelGroup group={group} sizing={{}} isMain markerFor={markerFor} />
+            </WorkspaceEditorTabsContext.Provider>
           </WorkspaceSelectionContext.Provider>
         </WorkspaceCommandsContext.Provider>
       </WorkspaceLayoutContext.Provider>

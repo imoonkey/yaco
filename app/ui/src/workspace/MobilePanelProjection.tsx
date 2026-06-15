@@ -31,7 +31,8 @@ import { tabName, computeDisambigSuffixes } from './tabLabels'
 import { FileTypeIcon } from '../components/fileExplorerIcons'
 import { mobileDockPanels, type MobileDock } from './panelMeta'
 import {
-  useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection, useWorkspaceVoiceSurface,
+  useWorkspaceEnv, useWorkspaceLayout, useWorkspaceCommands, useWorkspaceSelection,
+  useWorkspaceEditorTabs, useWorkspaceVoiceSurface,
 } from './context'
 import { mobileDockToPane, isDiffTab, isFileTab, type MobilePane, type EditorGroupTab } from '../hooks/workspaceTypes'
 import { Menu, MenuItem } from '../components/Menu'
@@ -95,7 +96,7 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
   // Mobile shows the active editor/terminal instance across the full desktop tree.
   // A desktop group may live in a sidebar, but session/file clicks on mobile still
   // activate that instance and the mobile pane must follow it.
-  const { activeEditorId, activeTerminalId, editor } = useWorkspaceSelection()
+  const { activeEditorId, activeTerminalId } = useWorkspaceSelection()
   const tree = panelLayout.desktop
   const editorGroupId = activeEditorId ? groupOf(tree, activeEditorId) : null
   const groupEditorTabs = editorGroupId ? editorTabsInGroup(tree, editorGroupId) : []
@@ -120,13 +121,11 @@ export function MobilePanelProjection({ rootRef, searchOverlay, onInteractionCap
     <MobileEditorTabs
       tabs={groupEditorTabs}
       activeInstanceId={editorInstanceId}
-      dirtyTabs={editor.dirtyTabs}
-      conflictTabs={editor.conflictTabs}
       onSelect={(tabId, instanceId) => commands.selectTab(tabId, instanceId)}
       onClose={(instanceId) => commands.closePane(instanceId)}
       onSave={(tabId) => {
         const path = tabIdToPath(tabId)
-        const file = editor.files[path]
+        const file = commands.actions.filesRef.current[path]
         if (file) void commands.saveFile(path, file.draft ?? file.serverContent ?? '')
       }}
       onCloseWithoutSaving={(tab) => {
@@ -298,17 +297,19 @@ function ActiveDockPanes({ dock, onBrowseFocus, editorInstanceId, terminalInstan
 // regression). Editor tabs only — terminals have their own mobile pane. On touch a
 // clean tab shows its close ×; a dirty tab shows only its dot (no destructive close
 // without a confirm), mirroring the desktop strip's touch behaviour.
-function MobileEditorTabs({ tabs, activeInstanceId, dirtyTabs, conflictTabs, onSelect, onClose, onSave, onCloseWithoutSaving, actions }: {
+function MobileEditorTabs({ tabs, activeInstanceId, onSelect, onClose, onSave, onCloseWithoutSaving, actions }: {
   tabs: EditorGroupTab[]
   activeInstanceId: string
-  dirtyTabs: ReadonlySet<string>
-  conflictTabs: ReadonlySet<string>
   onSelect: (tabId: string, instanceId: string) => void
   onClose: (instanceId: string) => void
   onSave: (tabId: string) => void
   onCloseWithoutSaving: (tab: EditorGroupTab) => void
   actions?: ReactNode
 }) {
+  // Dirty/conflict membership is subscribed HERE (the tab-strip leaf), not passed by
+  // the projection wrapper — so a keystroke (which never flips membership) re-renders
+  // neither the wrapper nor this strip.
+  const { dirtyTabs, conflictTabs } = useWorkspaceEditorTabs()
   const disambig = useMemo(() => computeDisambigSuffixes(tabs.map((t) => t.tabId)), [tabs])
   const menu = useContextMenu()
   const [contextTab, setContextTab] = useState<EditorGroupTab | null>(null)

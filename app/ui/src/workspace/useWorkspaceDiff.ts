@@ -2,6 +2,12 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { fetchGitBaseline, fetchGitDiff } from '../hooks/useApi'
 import { buildEditorBufferDiff } from '../lib/editorBufferDiff'
 import { parseDiff, type DiffHunk, type ParsedFileDiff } from '../lib/parseDiff'
+import { useThrottledValue } from '../hooks/useThrottledValue'
+
+// The editor gutter recomputes from the live buffer; throttle that input so a large
+// document isn't re-diffed on every keystroke (the diff-TAB path is unaffected — it
+// keys off the diff tab id + git state, not the live buffer). Matches the preview.
+const EDITOR_DIFF_THROTTLE_MS = 120
 
 export type DiffState = {
   raw: string | null
@@ -190,13 +196,17 @@ export function useWorkspaceDiff(opts: UseWorkspaceDiffOpts) {
   // Diff tab consumes this (look up by cache key which includes refs)
   const activeDiff = activeDiffCacheKey ? cache[activeDiffCacheKey] ?? null : null
 
-  // Editor gutter consumes this
+  // Editor gutter consumes this. The buffer content is throttled so a large file is
+  // re-diffed at most ~8/s while typing, not per keystroke; the live `draft` (and
+  // every save/sync path) is unchanged. A null buffer is passed through untouched so
+  // the "no content yet" guard still fires immediately.
+  const throttledContent = useThrottledValue(activeFileContent, EDITOR_DIFF_THROTTLE_MS, activeFilePath)
   const editorDiffHunks = useMemo<DiffHunk[]>(() => {
-    if (!activeFilePath || !editorBaselineKey || activeFileContent == null) return []
+    if (!activeFilePath || !editorBaselineKey || throttledContent == null) return []
     const baseline = baselineCache[editorBaselineKey]
     if (!baseline?.loaded) return []
-    return buildEditorBufferDiff(activeFilePath, baseline.content, activeFileContent, baseline.exists).hunks
-  }, [activeFilePath, activeFileContent, editorBaselineKey, baselineCache])
+    return buildEditorBufferDiff(activeFilePath, baseline.content, throttledContent, baseline.exists).hunks
+  }, [activeFilePath, throttledContent, editorBaselineKey, baselineCache])
 
   const clearDiff = (key: string) => {
     setCache(prev => {

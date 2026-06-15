@@ -29,6 +29,7 @@ import type { GitChange } from '../../types'
 import type { CompareContext } from '../diff/DiffTab'
 import {
   useWorkspaceEnv, useWorkspaceDataContext, useWorkspaceSelection,
+  useWorkspaceEditorBuffers, useWorkspaceEditorTabs,
   useWorkspaceLayout, useWorkspaceCommands, useWorkspaceVoiceSurface,
 } from '../context'
 import { usePanelInstance } from '../panelInstance'
@@ -46,6 +47,8 @@ export function EditorPanel() {
   const env = useWorkspaceEnv()
   const data = useWorkspaceDataContext()
   const selection = useWorkspaceSelection()
+  const { files, jumpRequest } = useWorkspaceEditorBuffers()
+  const { conflictTabs } = useWorkspaceEditorTabs()
   const { layout, panelLayout } = useWorkspaceLayout()
   const commands = useWorkspaceCommands()
   const voice = useWorkspaceVoiceSurface()
@@ -61,7 +64,6 @@ export function EditorPanel() {
   // NOT the tab bar, NOT another instance's tab.
   const myTab = editorTabByInstance(tree, instanceId)
   const activeTab = myTab?.tabId ?? null
-  const { files, conflictTabs, jumpRequest } = selection.editor
   const { previewMode, splitDirection, splitSize, autocompleteEnabled } = layout
   // Derived tab state (mirrors the inline editor body).
   const activeFilePath = isFileTab(activeTab) ? activeTab : null

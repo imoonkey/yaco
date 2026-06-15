@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { useSSERefresh } from './useSSE'
 import { API, appendWorktree } from './useApi'
 import { ApiError } from '../lib/apiError'
@@ -59,7 +59,9 @@ export function useFileState(
   const worktreeRef = useRef(worktree)
   const filesRef = useRef(files)
   // Mirror latest values for async fetch/SSE callbacks that read without re-subscribing.
-  useEffect(() => {
+  // useLayoutEffect (not passive) so a tab-bar Save handler reading `filesRef.current`
+  // sees the committed draft before the next user event, never one render stale.
+  useLayoutEffect(() => {
     projectRef.current = projectName
     worktreeRef.current = worktree
     filesRef.current = files

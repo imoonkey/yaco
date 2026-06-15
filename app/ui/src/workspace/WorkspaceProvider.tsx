@@ -39,9 +39,11 @@ import type { WorkspaceVisibilityReport, AttachSessionIntent } from './visibilit
 import type { AttentionBadge, AttentionTaskIds } from '../hooks/useAttention'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
+  WorkspaceEditorBuffersContext, WorkspaceEditorTabsContext,
   WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceControllersContext,
   WorkspacePanelResourcesContext,
   type WorkspaceEnv, type WorkspaceSelection, type WorkspaceLayoutContextValue,
+  type WorkspaceEditorBuffers, type WorkspaceEditorTabs,
   type WorkspaceCommands, type WorkspaceControllers, type WorkspaceRawActions,
   type WorkspaceControllerRegistry, type FileRevealIntent, type WorkspacePanelResources,
   type FocusTarget, type JumpRequest, type PanelId, type EditorPrefs,
@@ -124,7 +126,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
   const ws = useWorkspaceState(projectName, worktree)
   const {
     activeGroupId, activeEditorTab, activeEditorTabId, activeEditorPath, activeSession,
-    mobilePane, layout, panelLayout, setPanelLayout, files, dirtyTabs, conflictTabs, recentFiles,
+    mobilePane, layout, panelLayout, setPanelLayout, files, filesRef, dirtyTabs, conflictTabs, recentFiles,
     terminalBindings, editorMru, terminalMru, focusedPane,
     activeEditorId, activeTerminalId,
     // group dispatchers + resolution
@@ -475,11 +477,12 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     openPreviewDiffTabByIdIn: (instanceId: string, tabId: string) => previewDiffInGroup(groupForInstance(instanceId), tabId),
     setJumpRequest,
     setShowSearch,
+    filesRef,
   }), [
     activeGroupTabInstance, setActiveGroupTab, setMobilePane, updateLayout,
     openFileRouted, previewFileRouted, openDiffRouted, previewDiffRouted,
     openFileInGroup, openDiffInGroup, previewDiffInGroup,
-    groupForInstance,
+    groupForInstance, filesRef,
   ])
 
   // --- Commands ---
@@ -767,14 +770,23 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     terminalBindings, editorMru, terminalMru, focusedPane,
     activeEditorId, activeTerminalId,
     selectedFilePath, explorerFocusedPath, focusTarget, recentFiles, showSearch,
-    editor: { files, dirtyTabs, conflictTabs, jumpRequest },
   }), [
     activeGroupId, activeEditorTab, activeEditorTabId, activeEditorPath, activeSession,
     terminalBindings, editorMru, terminalMru, focusedPane,
     activeEditorId, activeTerminalId,
     selectedFilePath, explorerFocusedPath, focusTarget, recentFiles, showSearch,
-    files, dirtyTabs, conflictTabs, jumpRequest,
   ])
+
+  // Per-keystroke editor buffers — only the editor body subtree subscribes, so a
+  // keystroke never reconciles a sibling terminal or the cool selection consumers.
+  const editorBuffers = useMemo<WorkspaceEditorBuffers>(
+    () => ({ files, jumpRequest }), [files, jumpRequest],
+  )
+  // Tab membership state — flips only on a clean→dirty / conflict change, so the
+  // tab-bar leaves that subscribe re-render only then (not per keystroke).
+  const editorTabs = useMemo<WorkspaceEditorTabs>(
+    () => ({ dirtyTabs, conflictTabs }), [dirtyTabs, conflictTabs],
+  )
 
   const layoutValue = useMemo<WorkspaceLayoutContextValue>(() => ({
     layout, mobilePane, panelLayout,
@@ -788,7 +800,11 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
             <WorkspaceCommandsContext.Provider value={commands}>
               <WorkspaceLayoutContext.Provider value={layoutValue}>
                 <WorkspaceSelectionContext.Provider value={selection}>
-                  {children}
+                  <WorkspaceEditorTabsContext.Provider value={editorTabs}>
+                    <WorkspaceEditorBuffersContext.Provider value={editorBuffers}>
+                      {children}
+                    </WorkspaceEditorBuffersContext.Provider>
+                  </WorkspaceEditorTabsContext.Provider>
                 </WorkspaceSelectionContext.Provider>
               </WorkspaceLayoutContext.Provider>
             </WorkspaceCommandsContext.Provider>

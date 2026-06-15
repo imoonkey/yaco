@@ -20,9 +20,11 @@ import {
 import { fetchGitBaseline, fetchGitCompare, fetchGitDiff } from '../../../hooks/useApi'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceSelectionContext,
+  WorkspaceEditorBuffersContext, WorkspaceEditorTabsContext,
   WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceVoiceContext,
   DEFAULT_WORKSPACE_VOICE,
   type WorkspaceEnv, type WorkspaceData, type WorkspaceSelection,
+  type WorkspaceEditorBuffers, type WorkspaceEditorTabs,
   type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceRawActions,
   type WorkspaceVoiceSurface, type VoiceControlState,
 } from '../../context'
@@ -202,13 +204,15 @@ function buildContexts(input: EditorPanelHarnessInput) {
     focusTarget: 'editor',
     recentFiles: [],
     showSearch: false,
-    editor: {
-      files,
-      dirtyTabs: new Set<string>(),
-      conflictTabs: new Set<string>(input.conflictTabs ?? []),
-      jumpRequest: input.jumpRequest ?? null,
-    },
   } as unknown as WorkspaceSelection
+
+  // Editor hot state, split out of `selection` (per the render-isolation refactor):
+  // the body reads files/jumpRequest from buffers, conflictTabs from tabs.
+  const editorBuffers: WorkspaceEditorBuffers = { files, jumpRequest: input.jumpRequest ?? null }
+  const editorTabs: WorkspaceEditorTabs = {
+    dirtyTabs: new Set<string>(),
+    conflictTabs: new Set<string>(input.conflictTabs ?? []),
+  }
 
   const layoutValue = {
     layout: { ...DEFAULT_LAYOUT, ...input.layout },
@@ -227,7 +231,7 @@ function buildContexts(input: EditorPanelHarnessInput) {
     editorInsert: input.editorInsert ?? null,
   }
 
-  return { commands, actions, env, data, selection, layoutValue, voiceSurface, id }
+  return { commands, actions, env, data, selection, editorBuffers, editorTabs, layoutValue, voiceSurface, id }
 }
 
 function wrapProviders(
@@ -240,7 +244,11 @@ function wrapProviders(
           <WorkspaceLayoutContext.Provider value={ctx.layoutValue}>
             <WorkspaceVoiceContext.Provider value={ctx.voiceSurface}>
               <WorkspaceSelectionContext.Provider value={ctx.selection}>
-                {body}
+                <WorkspaceEditorTabsContext.Provider value={ctx.editorTabs}>
+                  <WorkspaceEditorBuffersContext.Provider value={ctx.editorBuffers}>
+                    {body}
+                  </WorkspaceEditorBuffersContext.Provider>
+                </WorkspaceEditorTabsContext.Provider>
               </WorkspaceSelectionContext.Provider>
             </WorkspaceVoiceContext.Provider>
           </WorkspaceLayoutContext.Provider>

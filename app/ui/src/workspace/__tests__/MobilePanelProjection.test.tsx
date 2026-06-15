@@ -29,10 +29,11 @@ import { mobileDockPanels, type MobileDock } from '../panelMeta'
 import { defaultWorkspacePanelLayout } from '../panelLayoutModel'
 import {
   WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceSelectionContext,
-  WorkspaceVoiceContext, DEFAULT_WORKSPACE_VOICE,
+  WorkspaceEditorTabsContext, WorkspaceVoiceContext, DEFAULT_WORKSPACE_VOICE,
   type WorkspaceEnv, type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceSelection, type PanelId,
-  type WorkspaceVoiceSurface,
+  type WorkspaceEditorTabs, type WorkspaceVoiceSurface,
 } from '../context'
+import type { FileState } from '../../hooks/workspaceTypes'
 
 const mobileDockPanelsMock = vi.mocked(mobileDockPanels)
 
@@ -56,6 +57,8 @@ function renderDock(dock: MobileDock, opts: {
   selection?: unknown
   commands?: Partial<WorkspaceCommands>
   voice?: WorkspaceVoiceSurface
+  editorTabs?: WorkspaceEditorTabs
+  files?: Record<string, FileState>
 } = {}): void {
   const env = {
     viewport: { isMobile: true, isLandscape: false, isTouch: true },
@@ -67,7 +70,6 @@ function renderDock(dock: MobileDock, opts: {
     layout: opts.layout ?? {},
   } as unknown as WorkspaceLayoutContextValue
   const commands = {
-    actions: { setMobilePane: vi.fn() },
     collapsePanel: vi.fn(),
     setFocusTarget: vi.fn(),
     selectTab: vi.fn(),
@@ -76,12 +78,15 @@ function renderDock(dock: MobileDock, opts: {
     acceptDisk: vi.fn(),
     setEditorPrefs: vi.fn(),
     ...opts.commands,
+    // The save handler reads live content off actions.filesRef; merge after the spread
+    // so a commands override can still pass its own actions if needed.
+    actions: { setMobilePane: vi.fn(), filesRef: { current: opts.files ?? {} }, ...(opts.commands as { actions?: object })?.actions },
   } as unknown as WorkspaceCommands
   const selection = (opts.selection ?? {
     activeEditorId: 'editor',
     activeTerminalId: 'terminal',
-    editor: { files: {}, dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
   }) as unknown as WorkspaceSelection
+  const editorTabs: WorkspaceEditorTabs = opts.editorTabs ?? { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() }
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   render(
     <WorkspaceEnvContext.Provider value={env}>
@@ -89,7 +94,9 @@ function renderDock(dock: MobileDock, opts: {
           <WorkspaceCommandsContext.Provider value={commands}>
             <WorkspaceVoiceContext.Provider value={opts.voice ?? DEFAULT_WORKSPACE_VOICE}>
               <WorkspaceSelectionContext.Provider value={selection}>
-                <MobilePanelProjection rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+                <WorkspaceEditorTabsContext.Provider value={editorTabs}>
+                  <MobilePanelProjection rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+                </WorkspaceEditorTabsContext.Provider>
               </WorkspaceSelectionContext.Provider>
             </WorkspaceVoiceContext.Provider>
           </WorkspaceCommandsContext.Provider>
@@ -202,25 +209,22 @@ describe('MobilePanelProjection active instance routing', () => {
     renderDock('editor', {
       panelLayout,
       commands: { saveFile, acceptDisk, closePane } as Partial<WorkspaceCommands>,
+      files: {
+        'src/mobile.ts': {
+          serverContent: 'server',
+          draft: 'draft',
+          baseRevision: 1,
+          viewportLine: 1,
+          status: 'dirty',
+          editedAt: 1,
+        } as FileState,
+      },
+      editorTabs: { dirtyTabs: new Set<string>(['src/mobile.ts']), conflictTabs: new Set<string>() },
       selection: {
         activeGroupId: 'group:1',
         activeEditorId: EDITOR,
         activeTerminalId: null,
         activeEditorTab: { instanceId: EDITOR, kind: 'editor', tabId: 'src/mobile.ts' },
-        editor: {
-          files: {
-            'src/mobile.ts': {
-              serverContent: 'server',
-              draft: 'draft',
-              baseRevision: 1,
-              viewportLine: 1,
-              status: 'dirty',
-              editedAt: 1,
-            },
-          },
-          dirtyTabs: new Set<string>(['src/mobile.ts']),
-          conflictTabs: new Set<string>(),
-        },
       },
     })
 

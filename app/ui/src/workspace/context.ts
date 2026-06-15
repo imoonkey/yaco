@@ -87,14 +87,22 @@ export type WorkspaceEnv = {
   markAllRead: (projectName: string) => void
 }
 
-// --- Selection ------------------------------------------------------------
+// --- Editor (split out of selection so a keystroke re-renders only the editor
+//     body, never the 9 cool selection consumers). `buffers` changes per keystroke
+//     (the editor body subscribes); `tabs` changes only on membership flip (the
+//     tab-bar leaf subscribes). ------------------------------------------------
 
-export type WorkspaceEditorState = {
+export type WorkspaceEditorBuffers = {
   files: Record<string, FileState>
-  dirtyTabs: Set<string>
-  conflictTabs: Set<string>
   jumpRequest: JumpRequest | null
 }
+
+export type WorkspaceEditorTabs = {
+  dirtyTabs: Set<string>
+  conflictTabs: Set<string>
+}
+
+// --- Selection ------------------------------------------------------------
 
 export type WorkspaceSelection = {
   // The active terminal's bound session (the routing rule's single value).
@@ -123,7 +131,6 @@ export type WorkspaceSelection = {
   focusTarget: FocusTarget
   recentFiles: string[]
   showSearch: boolean
-  editor: WorkspaceEditorState
 }
 
 // --- Layout ---------------------------------------------------------------
@@ -179,6 +186,11 @@ export type WorkspaceRawActions = {
   openPreviewDiffTabByIdIn: (instanceId: string, tabId: string) => void
   setJumpRequest: (req: JumpRequest | null) => void
   setShowSearch: (value: boolean | ((prev: boolean) => boolean)) => void
+  // The live per-path file state ref (draft updates every keystroke). A tab-bar save
+  // handler reads `filesRef.current[path]` so the strip (which subscribes only to the
+  // tabs context) never has to subscribe to per-keystroke `files` — draft is still
+  // live, so this is the same content the editor body holds.
+  filesRef: MutableRefObject<Record<string, FileState>>
 }
 
 export type WorkspaceCommands = {
@@ -384,6 +396,11 @@ export type WorkspaceControllerRegistry = {
 export const WorkspaceEnvContext = createContext<WorkspaceEnv | null>(null)
 export const WorkspaceDataContext = createContext<WorkspaceData | null>(null)
 export const WorkspaceSelectionContext = createContext<WorkspaceSelection | null>(null)
+// Editor hot state, split off `selection` so a keystroke re-renders only these
+// subtrees. `buffers` changes per keystroke (editor body); `tabs` only on a
+// dirty/conflict membership flip (the tab-bar leaf).
+export const WorkspaceEditorBuffersContext = createContext<WorkspaceEditorBuffers | null>(null)
+export const WorkspaceEditorTabsContext = createContext<WorkspaceEditorTabs | null>(null)
 export const WorkspaceLayoutContext = createContext<WorkspaceLayoutContextValue | null>(null)
 export const WorkspaceCommandsContext = createContext<WorkspaceCommands | null>(null)
 export const WorkspaceControllersContext =
@@ -409,6 +426,10 @@ export const useWorkspaceDataContext = (): WorkspaceData =>
   useRequired(WorkspaceDataContext, 'useWorkspaceDataContext')
 export const useWorkspaceSelection = (): WorkspaceSelection =>
   useRequired(WorkspaceSelectionContext, 'useWorkspaceSelection')
+export const useWorkspaceEditorBuffers = (): WorkspaceEditorBuffers =>
+  useRequired(WorkspaceEditorBuffersContext, 'useWorkspaceEditorBuffers')
+export const useWorkspaceEditorTabs = (): WorkspaceEditorTabs =>
+  useRequired(WorkspaceEditorTabsContext, 'useWorkspaceEditorTabs')
 export const useWorkspaceLayout = (): WorkspaceLayoutContextValue =>
   useRequired(WorkspaceLayoutContext, 'useWorkspaceLayout')
 export const useWorkspaceCommands = (): WorkspaceCommands =>

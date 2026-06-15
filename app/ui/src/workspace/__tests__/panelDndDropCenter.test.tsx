@@ -21,9 +21,9 @@ import { GroupTabBar, type GroupTabBarProps } from '../GroupTabBar'
 import { PanelGroup } from '../PanelGroup'
 import {
   WorkspaceEnvContext, WorkspaceDataContext, WorkspaceLayoutContext,
-  WorkspaceCommandsContext, WorkspaceSelectionContext,
+  WorkspaceCommandsContext, WorkspaceSelectionContext, WorkspaceEditorTabsContext,
   type WorkspaceEnv, type WorkspaceData, type WorkspaceLayoutContextValue,
-  type WorkspaceCommands, type WorkspaceSelection,
+  type WorkspaceCommands, type WorkspaceSelection, type WorkspaceEditorTabs,
 } from '../context'
 import { useDrag, type DragPayload } from '../WorkspaceDragContext'
 import {
@@ -209,7 +209,7 @@ describe('DropOverlay — illegal drops render nothing and are rejected', () => 
 function renderTwoBars(g1: Partial<GroupTabBarProps>, g2: Partial<GroupTabBarProps>) {
   const base = (over: Partial<GroupTabBarProps>): GroupTabBarProps => ({
     groupId: 'g', region: 'center', tabs: [], activeTab: '', isActiveGroup: true,
-    dirtyTabs: new Set(), conflictTabs: new Set(), terminalBindings: {}, pathsOpenElsewhere: new Set(),
+    terminalBindings: {}, pathsOpenElsewhere: new Set(),
     onSelectTab: vi.fn(), onCloseTab: vi.fn(), onSplit: vi.fn(),
     onMoveTab: vi.fn(), onPinTab: vi.fn(), onMoveGroup: vi.fn(),
     onCloseGroup: vi.fn(), onActivateGroup: vi.fn(), onDiscardDirty: vi.fn(), ...over,
@@ -218,9 +218,12 @@ function renderTwoBars(g1: Partial<GroupTabBarProps>, g2: Partial<GroupTabBarPro
   const p2 = base({ groupId: 'g2', ...g2 })
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
   const data = { sessions: { projectSessions: [] } } as unknown as WorkspaceData
+  const editorTabs: WorkspaceEditorTabs = { dirtyTabs: new Set(), conflictTabs: new Set() }
   const wrap = (ui: ReactNode) => (
     <WorkspaceEnvContext.Provider value={env}>
-      <WorkspaceDataContext.Provider value={data}>{ui}</WorkspaceDataContext.Provider>
+      <WorkspaceDataContext.Provider value={data}>
+        <WorkspaceEditorTabsContext.Provider value={editorTabs}>{ui}</WorkspaceEditorTabsContext.Provider>
+      </WorkspaceDataContext.Provider>
     </WorkspaceEnvContext.Provider>
   )
   render(wrap(
@@ -313,11 +316,12 @@ function renderPanelGroup(group: TabsNode, tree: LayoutNode) {
     selectTab: vi.fn(), closePane: vi.fn(), splitGroup: vi.fn(), reorderGroupTab: vi.fn(),
     closeGroup: vi.fn(), setActiveGroup: vi.fn(), setEditorPrefs: vi.fn(), acceptDisk: vi.fn(),
     moveTab: vi.fn(), moveTabToSplit: vi.fn(), moveGroup: vi.fn(),
+    actions: { filesRef: { current: {} } },
   } as unknown as WorkspaceCommands
   const selection = {
     activeGroupId: group.id, terminalBindings: {},
-    editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
   } as unknown as WorkspaceSelection
+  const editorTabs: WorkspaceEditorTabs = { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() }
   const layoutValue = {
     layout: { previewMode: 'edit', splitDirection: 'horizontal', autocompleteEnabled: false },
     panelLayout: { desktop: tree },
@@ -331,7 +335,9 @@ function renderPanelGroup(group: TabsNode, tree: LayoutNode) {
         <WorkspaceLayoutContext.Provider value={layoutValue}>
           <WorkspaceCommandsContext.Provider value={commands}>
             <WorkspaceSelectionContext.Provider value={selection}>
-              <PanelGroup group={group} sizing={{}} isMain markerFor={markerFor} />
+              <WorkspaceEditorTabsContext.Provider value={editorTabs}>
+                <PanelGroup group={group} sizing={{}} isMain markerFor={markerFor} />
+              </WorkspaceEditorTabsContext.Provider>
             </WorkspaceSelectionContext.Provider>
           </WorkspaceCommandsContext.Provider>
         </WorkspaceLayoutContext.Provider>

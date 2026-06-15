@@ -12,9 +12,9 @@ import { useState, type ReactNode } from 'react'
 import { GroupTabBar, type GroupTabBarProps } from '../GroupTabBar'
 import {
   WorkspaceEnvContext, WorkspaceDataContext,
-  WorkspaceLayoutContext, WorkspaceCommandsContext,
+  WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceEditorTabsContext,
   type WorkspaceEnv, type WorkspaceData,
-  type WorkspaceLayoutContextValue, type WorkspaceCommands,
+  type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceEditorTabs,
 } from '../context'
 import type { GroupTab } from '../../hooks/workspaceTypes'
 
@@ -28,18 +28,24 @@ const EDITOR = (instanceId: string, tabId: string, extra: Partial<GroupTab> = {}
 const TERMINAL = (instanceId: string, extra: Partial<GroupTab> = {}): GroupTab =>
   ({ instanceId, kind: 'terminal', ...extra }) as GroupTab
 
+// dirtyTabs/conflictTabs moved off props into WorkspaceEditorTabsContext (GroupTabBar
+// subscribes to it directly now). The harness still accepts them via `over` for call-
+// site ergonomics and forwards them to the context provider.
 function renderBar(
-  over: Partial<GroupTabBarProps> = {},
+  over: Partial<GroupTabBarProps> & { dirtyTabs?: Set<string>; conflictTabs?: Set<string> } = {},
   ctx: { sessions?: { name: string; provider: string }[]; isTouch?: boolean } = {},
 ) {
+  const { dirtyTabs, conflictTabs, ...propOver } = over
+  const editorTabs: WorkspaceEditorTabs = {
+    dirtyTabs: dirtyTabs ?? new Set<string>(),
+    conflictTabs: conflictTabs ?? new Set<string>(),
+  }
   const props: GroupTabBarProps = {
     groupId: 'g1',
     region: 'center',
     tabs: [],
     activeTab: '',
     isActiveGroup: true,
-    dirtyTabs: new Set(),
-    conflictTabs: new Set(),
     terminalBindings: {},
     pathsOpenElsewhere: new Set(),
     onSelectTab: vi.fn(),
@@ -52,7 +58,7 @@ function renderBar(
     onActivateGroup: vi.fn(),
     onDiscardDirty: vi.fn(),
     onSaveTab: vi.fn(),
-    ...over,
+    ...propOver,
   }
   const env = {
     viewport: { isMobile: false, isLandscape: false, isTouch: ctx.isTouch ?? false },
@@ -60,7 +66,9 @@ function renderBar(
   const data = { sessions: { projectSessions: ctx.sessions ?? [] } } as unknown as WorkspaceData
   const wrap = (ui: ReactNode) => (
     <WorkspaceEnvContext.Provider value={env}>
-      <WorkspaceDataContext.Provider value={data}>{ui}</WorkspaceDataContext.Provider>
+      <WorkspaceDataContext.Provider value={data}>
+        <WorkspaceEditorTabsContext.Provider value={editorTabs}>{ui}</WorkspaceEditorTabsContext.Provider>
+      </WorkspaceDataContext.Provider>
     </WorkspaceEnvContext.Provider>
   )
   return { ...render(wrap(<GroupTabBar {...props} />)), props }
@@ -543,16 +551,19 @@ describe('GroupTabBar — Separate-editors-and-terminals toggle (design: separat
       const data = { sessions: { projectSessions: [] } } as unknown as WorkspaceData
       const props = {
         groupId: 'g1', region: 'center', tabs: [EDITOR('editor:1', 'src/app.ts')], activeTab: 'editor:1',
-        isActiveGroup: true, dirtyTabs: new Set<string>(), conflictTabs: new Set<string>(), terminalBindings: {},
+        isActiveGroup: true, terminalBindings: {},
         pathsOpenElsewhere: new Set<string>(), onSelectTab: vi.fn(), onCloseTab: vi.fn(), onSplit: vi.fn(),
         onMoveTab: vi.fn(), onPinTab: vi.fn(), onMoveGroup: vi.fn(), onCloseGroup: vi.fn(), onActivateGroup: vi.fn(), onDiscardDirty: vi.fn(),
       } as GroupTabBarProps
+      const editorTabs: WorkspaceEditorTabs = { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() }
       return (
         <WorkspaceEnvContext.Provider value={env}>
           <WorkspaceDataContext.Provider value={data}>
             <WorkspaceLayoutContext.Provider value={layout}>
               <WorkspaceCommandsContext.Provider value={commands}>
-                <GroupTabBar {...props} />
+                <WorkspaceEditorTabsContext.Provider value={editorTabs}>
+                  <GroupTabBar {...props} />
+                </WorkspaceEditorTabsContext.Provider>
               </WorkspaceCommandsContext.Provider>
             </WorkspaceLayoutContext.Provider>
           </WorkspaceDataContext.Provider>

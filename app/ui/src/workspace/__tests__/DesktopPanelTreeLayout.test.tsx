@@ -25,10 +25,17 @@ vi.mock('../PanelHost', () => ({
 import { DesktopPanelTreeLayout } from '../DesktopPanelTreeLayout'
 import {
   WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, WorkspaceSelectionContext,
+  WorkspaceEditorTabsContext,
   type WorkspaceEnv, type WorkspaceLayoutContextValue, type WorkspaceCommands, type WorkspaceSelection,
+  type WorkspaceEditorTabs,
 } from '../context'
 import { useDrag, type DragPayload } from '../WorkspaceDragContext'
 import type { LayoutNode, FocusedPane } from '../../hooks/workspaceTypes'
+
+// The split-out editor tabs context (GroupTabBar subscribes to it directly) and the
+// live files ref the group's save handler reads — both empty for these structural tests.
+const EDITOR_TABS: WorkspaceEditorTabs = { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() }
+const EMPTY_FILES_REF = { current: {} }
 
 // A dock leaf + three groups: one editor-active, one empty, one terminal-active.
 function tree(): LayoutNode {
@@ -51,6 +58,7 @@ function renderTree(focusedPane: FocusedPane = { kind: 'editor', instanceId: 'ed
   const commands = {
     collapsePanel: vi.fn(), resizeSplitChild: vi.fn(),
     selectTab: vi.fn(), closePane: vi.fn(), splitEditor: vi.fn(),
+    actions: { filesRef: EMPTY_FILES_REF },
   } as unknown as WorkspaceCommands
   const selection = {
     focusedPane,
@@ -58,7 +66,6 @@ function renderTree(focusedPane: FocusedPane = { kind: 'editor', instanceId: 'ed
     activeTerminalId: 'terminal:1',
     activeGroupId: 'group:1',
     terminalBindings: {},
-    editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
   } as unknown as WorkspaceSelection
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   render(
@@ -66,7 +73,9 @@ function renderTree(focusedPane: FocusedPane = { kind: 'editor', instanceId: 'ed
       <WorkspaceLayoutContext.Provider value={layoutValue}>
         <WorkspaceCommandsContext.Provider value={commands}>
           <WorkspaceSelectionContext.Provider value={selection}>
-            <DesktopPanelTreeLayout rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+            <WorkspaceEditorTabsContext.Provider value={EDITOR_TABS}>
+              <DesktopPanelTreeLayout rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+            </WorkspaceEditorTabsContext.Provider>
           </WorkspaceSelectionContext.Provider>
         </WorkspaceCommandsContext.Provider>
       </WorkspaceLayoutContext.Provider>
@@ -159,11 +168,12 @@ function renderColumned(withTasks = false): void {
   const commands = {
     collapsePanel: vi.fn(), resizeSplitChild: vi.fn(),
     selectTab: vi.fn(), closePane: vi.fn(), splitEditor: vi.fn(),
+    actions: { filesRef: EMPTY_FILES_REF },
   } as unknown as WorkspaceCommands
   const selection = {
     focusedPane: { kind: 'editor', instanceId: 'editor:1' },
     activeEditorId: 'editor:1', activeTerminalId: null, activeGroupId: 'group:1',
-    terminalBindings: {}, editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+    terminalBindings: {},
   } as unknown as WorkspaceSelection
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   render(
@@ -171,7 +181,9 @@ function renderColumned(withTasks = false): void {
       <WorkspaceLayoutContext.Provider value={layoutValue}>
         <WorkspaceCommandsContext.Provider value={commands}>
           <WorkspaceSelectionContext.Provider value={selection}>
-            <DesktopPanelTreeLayout rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+            <WorkspaceEditorTabsContext.Provider value={EDITOR_TABS}>
+              <DesktopPanelTreeLayout rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+            </WorkspaceEditorTabsContext.Provider>
           </WorkspaceSelectionContext.Provider>
         </WorkspaceCommandsContext.Provider>
       </WorkspaceLayoutContext.Provider>
@@ -243,11 +255,11 @@ function mountSidebar(desktop: LayoutNode, source?: DragPayload): Movers {
     panelLayout: { version: 1, desktop, mobile: { activeDock: 'browse' }, panelState: {} },
   } as unknown as WorkspaceLayoutContextValue
   const movers: Movers = { movePane: vi.fn(), moveLeafToEdge: vi.fn(), moveTab: vi.fn(), moveGroup: vi.fn(), moveTabToSplit: vi.fn() }
-  const commands = { collapsePanel: vi.fn(), resizeSplitChild: vi.fn(), ...movers } as unknown as WorkspaceCommands
+  const commands = { collapsePanel: vi.fn(), resizeSplitChild: vi.fn(), actions: { filesRef: EMPTY_FILES_REF }, ...movers } as unknown as WorkspaceCommands
   const selection = {
     focusedPane: { kind: 'editor', instanceId: 'editor:1' } as FocusedPane,
     activeEditorId: 'editor:1', activeTerminalId: null, activeGroupId: 'group:1',
-    terminalBindings: {}, editor: { dirtyTabs: new Set<string>(), conflictTabs: new Set<string>() },
+    terminalBindings: {},
   } as unknown as WorkspaceSelection
   const rootRef = { current: null } as RefObject<HTMLDivElement | null>
   const ui: ReactNode = (
@@ -255,8 +267,10 @@ function mountSidebar(desktop: LayoutNode, source?: DragPayload): Movers {
       <WorkspaceLayoutContext.Provider value={layoutValue}>
         <WorkspaceCommandsContext.Provider value={commands}>
           <WorkspaceSelectionContext.Provider value={selection}>
-            <DesktopPanelTreeLayout rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
-            {source && <PaneDragSource payload={source} />}
+            <WorkspaceEditorTabsContext.Provider value={EDITOR_TABS}>
+              <DesktopPanelTreeLayout rootRef={rootRef} searchOverlay={null} onInteractionCapture={() => {}} />
+              {source && <PaneDragSource payload={source} />}
+            </WorkspaceEditorTabsContext.Provider>
           </WorkspaceSelectionContext.Provider>
         </WorkspaceCommandsContext.Provider>
       </WorkspaceLayoutContext.Provider>

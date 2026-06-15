@@ -14,7 +14,7 @@
 import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
 import { X, AlertTriangle, Columns2, Rows2, FileDiff, ListTodo } from 'lucide-react'
 import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
-import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
+import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, useWorkspaceEditorTabs, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
 import { tabIdToPath } from './panelLayoutModel'
 import { tabName, computeDisambigSuffixes, tabCloseLabel } from './tabLabels'
@@ -42,10 +42,6 @@ export type GroupTabBarProps = {
   /** True when this is the active/open-target group: its tab labels render in the
    *  stronger foreground; inactive groups render dimmer (VSCode group emphasis). */
   isActiveGroup: boolean
-  /** Dirty editor tabIds (file path or diff id) — the dirty dot + dirty-close confirm. */
-  dirtyTabs: ReadonlySet<string>
-  /** Editor tabIds whose file changed on disk — the conflict marker. */
-  conflictTabs: ReadonlySet<string>
   /** instanceId → bound session name for terminal tabs (absent ⇒ unbound "Terminal"). */
   terminalBindings: Record<string, string>
   /** Underlying file paths open in 2+ editor tabs tree-wide — dirty-close is loss-free for these. */
@@ -111,10 +107,15 @@ const SPLIT_ITEMS: { label: string; side: SplitSide }[] = [
 
 export function GroupTabBar(props: GroupTabBarProps) {
   const {
-    groupId, region, tabs, activeTab, isActiveGroup, dirtyTabs, conflictTabs, terminalBindings,
+    groupId, region, tabs, activeTab, isActiveGroup, terminalBindings,
     pathsOpenElsewhere, onSelectTab, onCloseTab, onSplit, onMoveTab, onPinTab, onMoveGroup,
     onCloseGroup, canCloseGroup, onActivateGroup, onDiscardDirty, onSaveTab, editorPrefs, onSetEditorPrefs,
   } = props
+
+  // Dirty/conflict membership is subscribed HERE (the tab-bar leaf), not passed by
+  // PanelGroup — so a clean→dirty flip re-renders only this strip, and a keystroke
+  // (which never touches membership) re-renders nothing in the group wrapper.
+  const { dirtyTabs, conflictTabs } = useWorkspaceEditorTabs()
 
   const menu = useContextMenu()
   // Source + drop handlers use the NON-subscribing controls so a tab/group dragstart

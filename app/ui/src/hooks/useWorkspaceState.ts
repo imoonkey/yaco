@@ -273,6 +273,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     panelLayout: ls.panelLayout,
     setPanelLayout: ls.setPanelLayout,
     files,
+    filesRef,
     dirtyTabs,
     conflictTabs,
     recentFiles: ls.recentFiles,

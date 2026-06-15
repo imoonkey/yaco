@@ -117,12 +117,15 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
     commands.acceptDisk(path)
   }, [commands])
 
+  // Save a tab's live content. Reads `filesRef.current` (the draft updates every
+  // keystroke) inside the handler, so PanelGroup never subscribes to the
+  // per-keystroke buffers context — it must not re-render on a keystroke.
   const onSaveTab = useCallback((tabId: string) => {
     const path = tabIdToPath(tabId)
-    const file = selection.editor.files[path]
+    const file = commands.actions.filesRef.current[path]
     if (!file) return
     void commands.saveFile(path, file.draft ?? file.serverContent ?? '')
-  }, [commands, selection.editor.files])
+  }, [commands])
 
   const activeTabNode = group.tabs.find((t) => t.instanceId === group.activeTab) ?? null
   const marker = activeTabNode ? markerFor(activeTabNode.kind, activeTabNode.instanceId) : null
@@ -141,8 +144,6 @@ export function PanelGroup({ group, sizing, isMain, markerFor }: PanelGroupProps
         tabs={group.tabs}
         activeTab={group.activeTab}
         isActiveGroup={isActiveGroup}
-        dirtyTabs={selection.editor.dirtyTabs}
-        conflictTabs={selection.editor.conflictTabs}
         terminalBindings={selection.terminalBindings}
         pathsOpenElsewhere={pathsOpenElsewhere}
         editorPrefs={{
