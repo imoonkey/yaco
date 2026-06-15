@@ -1,3 +1,33 @@
+## 2026-06-15: Session-list starting-row alignment + placeholder/real dedup
+
+**What changed:**
+- "Starting" placeholder rows keep the pin button's layout box (rendered
+  `invisible pointer-events-none`, click guarded) instead of omitting it, so the
+  row no longer shifts left vs normal rows and a placeholder still can't be pinned.
+- Killed the transient duplicate where a "Starting…" placeholder and the real
+  session showed at once. The sessions-dir watcher surfaces the real session in
+  the list the moment `yaco agent start` writes its state file — *before* the
+  start POST resolves with the handle, so the placeholder can't be matched by
+  name. A new `seenSessions`-diff effect retires a still-nameless placeholder when
+  a session newly appears for the same provider.
+
+**Why:**
+- Follow-ups to the optimistic session-list work (friendly label + optimistic
+  close, commit 183292a). The pin gate from that change caused the misalignment;
+  the watcher-beats-POST race caused the double row.
+- Codex review hardened the dedup: it now baselines only off a real (non-null)
+  server snapshot and resets across project switches, so a first load / project
+  change never reads existing sessions as "new" and wrongly consumes a
+  placeholder. Correlation is provider-coarse by necessity (no shared id exists
+  pre-POST) — worst case drops the optimistic row a beat early; the real start
+  still lands correctly.
+
+**Key files:** `app/ui/src/workspace/WorkspaceSessionList.tsx`, `app/ui/src/workspace/useWorkspaceSessions.ts`
+**Verification:** `tsc -b` + `npm run lint` clean; full `vitest run src/` green (985/985, +2 dedup/baseline tests).
+**Commit:** 3c09557
+**Next:** Issue under investigation — session row lingers ~3-4s after an in-terminal `/exit` before leaving the list.
+**Blockers:** None
+
 ## 2026-06-15: Session-list UX — friendly starting label + optimistic close
 
 **What changed:**
