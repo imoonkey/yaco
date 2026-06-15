@@ -27,9 +27,9 @@
   with no optimistic feedback.
 
 **Key files:** `app/ui/src/workspace/{quickOpenIndex,WorkspaceSearch,WorkspaceProvider,useWorkspaceSessions}.tsx?`, `app/ui/src/hooks/useTaskGraph.ts`, `app/ui/src/tasks/hooks/useTaskData.ts`, `app/server/src/lib/project-watcher.ts`, `app/server/src/routes/{tasks,sessions}.ts`
-**Verification:** app/ui 974 unit + app/server 605 unit pass; `tsc -b` + eslint clean; impacted Playwright e2e (file-search, task-graph, workspace-tasks-tab, session-search) pass; live SSE probe confirmed the watcher emits `tasks`/`filetree` on file writes. Independent claude + codex reviews; findings folded into the last commit.
-**Commit:** c4ddbf9..36813d1
-**Next:** Optional — classify a project's configured `yaco.toml [paths].tasks` in the watcher so custom task paths also drive the `tasks` channel (currently default `plan/tasks/**` only; custom paths fall back to the 60s poll).
+**Verification:** app/ui 974 unit + app/server 606 unit pass; `tsc -b` + eslint clean; impacted Playwright e2e (file-search, task-graph, workspace-tasks-tab, session-search) pass; live SSE probe confirmed the watcher emits `tasks`/`filetree` on file writes. Independent claude + codex reviews; findings folded into the last commit.
+**Commit:** c4ddbf9..HEAD
+**Next:** None
 **Blockers:** None
 
 ## 2026-06-15: Task Graph as a singleton working-area tab

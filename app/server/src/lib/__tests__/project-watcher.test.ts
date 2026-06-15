@@ -126,4 +126,19 @@ describe('project-watcher agent session refreshes', () => {
       expect(mock.emitCalls).toContain('tasks')
     }, { timeout: 2000 })
   })
+
+  it('honors a custom yaco.toml [paths].tasks location for the tasks channel', async () => {
+    // Config relocates the task graph to plan/items; a write there must still
+    // drive the dedicated 'tasks' channel (not just the hardcoded plan/tasks).
+    writeFileSync(join(projectDir, 'yaco.toml'), '[paths]\ntasks = "items"\n')
+    const tasksDir = join(projectDir, 'plan', 'items')
+    mkdirSync(tasksDir, { recursive: true })
+    await startProjectWatchers(mock.projects)
+
+    writeFileSync(join(tasksDir, 'tasks.json'), '{}')
+
+    await vi.waitFor(() => {
+      expect(mock.emitCalls).toContain('tasks')
+    }, { timeout: 2000 })
+  })
 })

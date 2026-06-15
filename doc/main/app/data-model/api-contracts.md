@@ -60,7 +60,7 @@ On EventSource reconnect (`open` event), all registered refresh callbacks fire t
 | Trigger | Channel(s) | Source |
 |---------|------------|--------|
 | File create/delete/rename in project | `filetree` | project-watcher.ts |
-| `plan/tasks/**` write (task-graph edit) | `tasks` | project-watcher.ts (on the file write), tasks.ts (`invalidateTasksCache`, on app-initiated mutation) |
+| `plan/tasks/**` write (task-graph edit) | `tasks` | project-watcher.ts (on the file write; honors each project's `yaco.toml [paths].tasks`), tasks.ts (`invalidateTasksCache`, on app-initiated mutation) |
 | `.worktrees/<slug>` top-level change | `worktrees` | project-watcher.ts |
 | `.git/` change | `git` | project-watcher.ts |
 | Session status change | `sessions` | project-watcher.ts (`${YACO_HOME:-~/.yaco}/sessions/*.json`, filtered by `sessionPath`), terminal.ts (Workflow shell lifecycle in `${YACO_HOME:-~/.yaco}/shell-sessions` + tmux), session-reconciler.ts (drift), sessions.ts (`invalidateSessionsCache`, on every mutation) |

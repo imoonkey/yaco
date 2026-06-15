@@ -8,7 +8,7 @@ import { getProjectGitignore, clearGitignoreCache } from './gitignore'
 import { AGENT_SESSIONS_DIR } from './constants'
 import { isPathDescendantOrEqual } from './agent'
 import { notifyAttentionSessionChange, notifyAttentionTaskChange } from './attention-runtime'
-import { projectsFile as yacoProjectsFile } from '@yaco/cli/core/paths'
+import { projectsFile as yacoProjectsFile, readYacoProjectPaths } from '@yaco/cli/core/paths'
 
 const DEBOUNCE_MS = 200
 /** How often to retry arming the sessions-dir watcher when the dir is absent at
@@ -25,6 +25,10 @@ let sessionsDirRearmTimer: ReturnType<typeof setTimeout> | null = null
 const projectWatchers = new Map<string, FSWatcher>()
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const projectIgnores = new Map<string, Ignore | null>()
+// Per-project matcher for task-graph files, derived from each project's configured
+// `yaco.toml [paths].tasks` (default `plan/tasks`) so custom task locations also
+// drive the `tasks` channel — not just the default path.
+const projectTaskFileRe = new Map<string, RegExp>()
 const sessionPathCache = new Map<string, string>()
 
 /** Ignore patterns — no refresh signal for these */
@@ -46,13 +50,36 @@ function routeChange(filename: string): string | null {
   return 'filetree'
 }
 
-/** True when a changed repo-relative filename is a task-graph file (default
- *  `plan/tasks/**`). A task-state write must wake the attention engine so
- *  `task_done`/`task_blocked` edges are change-driven (not 60s-sampled). The
- *  default path is matched directly; a yaco.toml `[paths].tasks` override is
- *  covered by the engine's 60s safety tick. */
-function isTaskFile(filename: string): boolean {
-  return /(^|\/)plan\/tasks\/.*\.json$/.test(filename)
+/** Build a matcher for a project's repo-relative tasks path. A configured tasks
+ *  *directory* matches nested `*.json`; a `*.json` file path matches itself. The
+ *  `(^|/)` anchor also catches the same path nested inside a worktree. */
+function taskFileMatcher(tasksRel: string): RegExp {
+  const escaped = tasksRel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return tasksRel.endsWith('.json')
+    ? new RegExp(`(^|/)${escaped}$`)
+    : new RegExp(`(^|/)${escaped}/.*\\.json$`)
+}
+
+/** Fallback matcher for the default `plan/tasks` location. */
+const DEFAULT_TASK_FILE_RE = taskFileMatcher('plan/tasks')
+
+/** Resolve and cache a project's task-file matcher from its `yaco.toml`. Synchronous
+ *  + guarded so a missing/malformed config never aborts watcher setup. */
+function armTaskFileMatcher(projectPath: string): void {
+  try {
+    projectTaskFileRe.set(projectPath, taskFileMatcher(readYacoProjectPaths(projectPath).tasks))
+  } catch (e) {
+    console.warn(`[project-watcher] failed to read tasks path for ${projectPath}, using default:`, e)
+    projectTaskFileRe.set(projectPath, DEFAULT_TASK_FILE_RE)
+  }
+}
+
+/** True when a changed repo-relative filename is a task-graph file for `projectPath`
+ *  (its configured `[paths].tasks`, default `plan/tasks/**`). A task-state write must
+ *  wake the attention engine so `task_done`/`task_blocked` edges are change-driven
+ *  (not 60s-sampled), and drives the dedicated `tasks` SSE channel. */
+function isTaskFile(filename: string, projectPath: string): boolean {
+  return (projectTaskFileRe.get(projectPath) ?? DEFAULT_TASK_FILE_RE).test(filename)
 }
 
 function debouncedEmit(channel: string): void {
@@ -186,6 +213,9 @@ export async function watchProject(project: Project): Promise<void> {
   // No ignore loaded yet → no filtering until the async load below resolves
   // (a few extra refresh events at most, never missed ones).
   projectIgnores.set(project.path, null)
+  // Resolve the project's configured tasks path up front (sync) so task writes
+  // route to the `tasks` channel from the first event.
+  armTaskFileMatcher(project.path)
 
   let watcher: FSWatcher
   try {
@@ -215,7 +245,7 @@ export async function watchProject(project: Project): Promise<void> {
       // wakes the change-driven attention engine (a write may be a task_done /
       // task_blocked state edge). plan/tasks/** is not gitignored, so both fire
       // regardless of the ignore check above.
-      if (isTaskFile(filename)) {
+      if (isTaskFile(filename, project.path)) {
         debouncedEmit('tasks')
         notifyAttentionTaskChange()
       }
@@ -244,6 +274,7 @@ export function unwatchProject(path: string): void {
     projectWatchers.delete(path)
   }
   projectIgnores.delete(path)
+  projectTaskFileRe.delete(path)
 }
 
 /** Start recursive fs.watch for each project */
@@ -269,5 +300,6 @@ export function stopProjectWatchers(): void {
   for (const timer of debounceTimers.values()) clearTimeout(timer)
   debounceTimers.clear()
   projectIgnores.clear()
+  projectTaskFileRe.clear()
   sessionPathCache.clear()
 }
