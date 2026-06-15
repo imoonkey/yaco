@@ -12,7 +12,7 @@ import {
   useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode,
 } from 'react'
 import { useWorkspaceState, isFileTab } from '../hooks/useWorkspaceState'
-import { mobilePaneToDock, type LayoutNode } from '../hooks/workspaceTypes'
+import { mobilePaneToDock, TASKS_INSTANCE_ID, type LayoutNode } from '../hooks/workspaceTypes'
 import { useIsMobile, useIsLandscape, useIsTouch } from '../hooks/useIsMobile'
 import { useFileTree, useHistory } from '../hooks/useApi'
 import { useSSERefresh } from '../hooks/useSSE'
@@ -28,6 +28,8 @@ import {
   setDockVisible as modelSetDockVisible,
   setActivityVisible as modelSetActivityVisible,
   sidebarVisibility,
+  groupOf,
+  regionsOf,
   setActiveDock as modelSetActiveDock,
   movePanel as modelMovePanel,
   splitPanel as modelSplitPanel,
@@ -130,6 +132,7 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     // group dispatchers + resolution
     focusPane, bindTerminal, movePane, moveLeafToEdge,
     splitGroup, openBoundTerminalTab, closeGroupTab, closeGroup, setActiveGroupTab, setActiveGroup,
+    openTasksTab,
     pinTab, reorderGroupTab, moveTab, moveTabToSplit, moveGroup,
     openFileInGroup, openDiffInGroup, previewDiffInGroup,
     openFileRouted, previewFileRouted, openDiffRouted, previewDiffRouted,
@@ -621,24 +624,40 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
 
   const showQuickOpen = useCallback(() => { setShowSearch(true) }, [])
 
-  // Tasks is a dock leaf now. Desktop toggles the flat `showTasks` flag (the dock
-  // leaf's visibility is downstream — vt-render); mobile toggles the tasks dock.
+  // Tasks is a singleton working-area tab now. `mainShowsTasks` means the tasks
+  // tab is the FOCUSED surface — NOT merely that one exists somewhere — so Cmd+W
+  // from an editor group never closes a tasks tab living elsewhere. Mobile keeps
+  // the 4-pane dock projection.
   const mainShowsTasks = useCallback((): boolean => {
-    const { isMobile: mobile, mobilePane: pane, layout: lay } = latestRef.current
-    return mobile ? pane === 'tasks' : lay.showTasks
+    const { isMobile: mobile, mobilePane: pane, focusTarget: focus } = latestRef.current
+    return mobile ? pane === 'tasks' : focus === 'tasks'
   }, [])
 
   const closeTasks = useCallback(() => {
     if (latestRef.current.isMobile) { setMobilePane('editor'); return }
-    updateLayout({ showTasks: false })
-  }, [setMobilePane, updateLayout])
+    const g = groupOf(latestRef.current.panelLayout.desktop, TASKS_INSTANCE_ID)
+    if (g) closeGroupTab(g, TASKS_INSTANCE_ID)
+  }, [setMobilePane, closeGroupTab])
 
+  // Cmd+Shift+T — "无则建 / 有则聚焦或关闭": absent → create+focus; present &
+  // focused → close; present & unfocused → activate + focus (revealing a hidden
+  // right sidebar so focusing the tab never disables editor voice with no visible
+  // tasks surface — the same policy terminals follow).
   const toggleTasks = useCallback(() => {
+    if (latestRef.current.isMobile) {
+      if (mainShowsTasks()) setMobilePane('editor'); else setMobilePane('tasks')
+      return
+    }
     if (mainShowsTasks()) { closeTasks(); return }
-    if (latestRef.current.isMobile) { setMobilePane('tasks'); return }
-    updateLayout({ showTasks: true })
-    setFocusTarget('editor')
-  }, [setMobilePane, updateLayout, mainShowsTasks, closeTasks, setFocusTarget])
+    const tree = latestRef.current.panelLayout.desktop
+    const g = groupOf(tree, TASKS_INSTANCE_ID)
+    if (!g) { openTasksTab(resolveTarget()); return }
+    setActiveGroupTab(g, TASKS_INSTANCE_ID)
+    const right = regionsOf(tree).right
+    if (right && groupOf(right, TASKS_INSTANCE_ID) && !latestRef.current.layout.showRightPanel) {
+      updateLayout({ showRightPanel: true })
+    }
+  }, [setMobilePane, updateLayout, mainShowsTasks, closeTasks, openTasksTab, setActiveGroupTab, resolveTarget])
 
   const closeFocusedSurface = useCallback((): boolean => {
     const { showSearch: search, focusTarget: focus, activeEditorTabId: tab, activeTerminalId: tid, activeGroupId: gid, panelLayout: pl } = latestRef.current
@@ -655,15 +674,13 @@ export function WorkspaceProvider(props: WorkspaceProviderProps) {
     // closed between render and keypress (tid null), which would close a file tab.
     if (focus === 'terminal') { if (tid) closePane(tid); return true }
     if (focus === 'session' && detachSession()) return true
-    if (focus === 'editor' || focus === 'tasks') {
-      // Tasks showing → return to the editor (syncs the legacy sidebar toggle off).
-      if (mainShowsTasks()) { closeTasks(); return true }
-      if (tab) { closeTab(tab); return true }
-    }
+    // Tasks is the focused surface → close the tasks tab.
+    if (focus === 'tasks') { closeTasks(); return true }
+    if (focus === 'editor' && tab) { closeTab(tab); return true }
     if (tab) { closeTab(tab); return true }
     if (detachSession()) return true
     return true
-  }, [detachSession, closeTab, mainShowsTasks, closeTasks, closePane, closeGroup])
+  }, [detachSession, closeTab, closeTasks, closePane, closeGroup])
 
   // Layout commands. These mutate the panel-layout tree through the pure
   // `panelLayoutModel` edits (the tree renderer reads the result). Dock/activity

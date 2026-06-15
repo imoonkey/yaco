@@ -3,9 +3,10 @@
 // the renderer relies on. Pure data/logic: no React, no rendering.
 //
 // The working area is a grid of GROUPS (tabs nodes). A group holds an ordered,
-// mixed strip of editor/terminal tabs, each carrying its own `instanceId`; an
-// editor tab also carries its `tabId` (a file path or a `diff:` id). The five
-// dock panels (projects/files/changes/sessions/tasks) stay singleton leaves.
+// mixed strip of editor/terminal/tasks tabs, each carrying its own `instanceId`;
+// an editor tab also carries its `tabId` (a file path or a `diff:` id); the tasks
+// tab is a SINGLETON (one tree-wide, fixed instanceId, no payload). The four dock
+// panels (projects/files/changes/sessions) stay singleton leaves.
 //
 // Invariants enforced:
 //   - unique ids — every group id, tab instanceId, and dock leaf id is unique
@@ -37,14 +38,13 @@ import type {
   LayoutNode, LeafNode, SplitChild, SplitNode, TabsNode, GroupTab, EditorGroupTab, TerminalGroupTab, EditorView,
   SplitAxis, PanelState, WorkspacePanelLayout, PreviewMode,
 } from '../hooks/workspaceTypes'
-import { parseDiffTab, isFileTab } from '../hooks/workspaceTypes'
+import { parseDiffTab, isFileTab, TASKS_INSTANCE_ID } from '../hooks/workspaceTypes'
 
 // --- Canonical sets ---------------------------------------------------------
 
 /** Every registered panel id. Existence + the per-panel min size (read from
  *  `panelMeta`) are validated against this set. `editor`/`terminal`/`tasks` are
- *  registry body ids (a group tab or the desktop tasks overlay renders one), NOT
- *  dock leaves. */
+ *  registry body ids (a group tab renders one), NOT dock leaves. */
 export const PANEL_IDS: readonly PanelId[] = [
   'projects', 'files', 'changes', 'sessions', 'editor', 'terminal', 'tasks',
 ]
@@ -56,8 +56,7 @@ export function isPanelId(value: unknown): value is PanelId {
 }
 
 /** The panels that live as singleton dock leaves. `editor`/`terminal`/`tasks` are
- *  not here — editor/terminal are group tabs, and tasks is the desktop overlay
- *  (driven by `showTasks`); the dock-leaf guard drops any leaf claiming one. */
+ *  not here — they are group tabs; the dock-leaf guard drops any leaf claiming one. */
 export const DOCK_PANELS: ReadonlySet<PanelId> = new Set<PanelId>([
   'projects', 'files', 'changes', 'sessions',
 ])
@@ -95,8 +94,8 @@ function emptyGroup(id: string): TabsNode {
 
 /** The default desktop tree: a left dock column (projects/files/changes), one
  *  empty working group in the middle (grows; opening a file creates the first
- *  tab here), and a right activity column (sessions). Tasks is the desktop
- *  overlay (driven by `showTasks`), not a dock leaf. Mirrors VSCode's empty
+ *  tab here), and a right activity column (sessions). Tasks is a singleton group
+ *  tab, opened on demand (Cmd+Shift+T), not seeded here. Mirrors VSCode's empty
  *  editor area. */
 export function defaultDesktopTree(): LayoutNode {
   return {
@@ -322,6 +321,8 @@ type NormCtx = {
   seenIds: Set<string>
   // A dock panel may appear at most once.
   seenDockTypes: Set<PanelId>
+  // The tasks tab is a singleton — a second one anywhere in the tree is dropped.
+  seenTasks: boolean
   nextId: (kind: string) => string
 }
 
@@ -447,16 +448,24 @@ function normalizeLeaf(raw: Record<string, unknown>, ctx: NormCtx): LeafNode | n
   return node
 }
 
-function isGroupTabKind(value: unknown): value is 'editor' | 'terminal' {
-  return value === 'editor' || value === 'terminal'
+function isGroupTabKind(value: unknown): value is GroupTab['kind'] {
+  return value === 'editor' || value === 'terminal' || value === 'tasks'
 }
 
 /** Normalize one group tab, re-id'ing an instanceId collision (payload kept) and
- *  synthesizing a missing instanceId. Returns null for a malformed tab (bad kind,
+ *  synthesizing a missing instanceId. The tasks tab is a SINGLETON: a second one
+ *  anywhere is dropped, and its id is forced to the reserved `TASKS_INSTANCE_ID`
+ *  (no payload). Returns null for a malformed tab (bad kind, a duplicate tasks tab,
  *  or an editor tab missing a string `tabId`). */
 function normalizeTab(raw: unknown, ctx: NormCtx): GroupTab | null {
   const r = asRecord(raw)
   if (!isGroupTabKind(r.kind)) return null
+  if (r.kind === 'tasks') {
+    if (ctx.seenTasks) return null
+    ctx.seenTasks = true
+    ctx.seenIds.add(TASKS_INSTANCE_ID)
+    return { instanceId: TASKS_INSTANCE_ID, kind: 'tasks' }
+  }
   let instanceId = idOf(r.instanceId, ctx, r.kind)
   if (ctx.seenIds.has(instanceId)) instanceId = freshId(ctx.seenIds, r.kind, 2)
   if (r.kind === 'terminal') {
@@ -491,7 +500,7 @@ function normalizeGroup(raw: Record<string, unknown>, ctx: NormCtx): TabsNode {
     const oldInstanceId = asRecord(rawTab).instanceId
     const tab = normalizeTab(rawTab, ctx)
     if (!tab) continue
-    if (tab.preview) {
+    if (tab.kind !== 'tasks' && tab.preview) {
       if (previewSeen) delete tab.preview
       else previewSeen = true
     }
@@ -610,7 +619,7 @@ function pruneNodes(
 function enforceSinglePreview(tabs: GroupTab[]): GroupTab[] {
   let seen = false
   return tabs.map((t) => {
-    if (!t.preview) return t
+    if (t.kind === 'tasks' || !t.preview) return t
     if (seen) { const { preview: _preview, ...rest } = t; return rest as GroupTab }
     seen = true
     return t
@@ -734,8 +743,12 @@ export function normalizeRegions(root: LayoutNode): LayoutNode {
 export function normalizeDesktopTree(input: unknown): LayoutNode {
   let counter = 0
   const ctx: NormCtx = {
-    seenIds: new Set<string>(),
+    // Reserve the singleton tasks id up front so a non-tasks node (editor/terminal
+    // tab, group, or dock leaf) claiming `'tasks'` in a crafted/corrupt blob is
+    // re-minted to a fresh id — the reserved id stays available for the tasks tab.
+    seenIds: new Set<string>([TASKS_INSTANCE_ID]),
     seenDockTypes: new Set<PanelId>(),
+    seenTasks: false,
     nextId: (kind: string): string => `${kind}-${counter++}`,
   }
   return normalizeRegions(normalizeNode(input, ctx) ?? defaultDesktopTree())
@@ -1371,9 +1384,9 @@ function insertTab(group: TabsNode, tab: GroupTab, at: number): TabsNode {
   return { ...group, tabs: [...group.tabs.slice(0, i), tab, ...group.tabs.slice(i)], activeTab: tab.instanceId }
 }
 
-/** Clear a tab's preview flag (pin it) — editor or terminal. */
+/** Clear a tab's preview flag (pin it) — editor or terminal; tasks is never preview. */
 export function pinned(tab: GroupTab): GroupTab {
-  return tab.preview ? { ...tab, preview: false } : tab
+  return tab.kind !== 'tasks' && tab.preview ? { ...tab, preview: false } : tab
 }
 
 /** Drop the strip's current droppable preview tab (other than `keep`) so at most ONE
@@ -1382,7 +1395,7 @@ export function pinned(tab: GroupTab): GroupTab {
 export function dropOldPreview(
   tabs: GroupTab[], keep: string, protectedPaths: ReadonlySet<string>,
 ): GroupTab[] {
-  const old = tabs.find((t) => t.preview && t.instanceId !== keep)
+  const old = tabs.find((t) => t.kind !== 'tasks' && t.preview && t.instanceId !== keep)
   if (!old) return tabs
   const protectedEditor = old.kind === 'editor' && isFileTab(old.tabId) && protectedPaths.has(old.tabId)
   return protectedEditor ? tabs.map((t) => (t === old ? pinned(t) : t)) : tabs.filter((t) => t !== old)
@@ -1414,7 +1427,7 @@ export function moveTabBetweenGroups(
     const inserted = insertTab(g, moved, toIndex)
     // Re-enforce one preview BEFORE normalization (which would otherwise just demote
     // the old preview's flag, leaving a stray pinned tab instead of dropping it).
-    return moved.preview ? { ...inserted, tabs: dropOldPreview(inserted.tabs, instanceId, protectedPaths) } : inserted
+    return moved.kind !== 'tasks' && moved.preview ? { ...inserted, tabs: dropOldPreview(inserted.tabs, instanceId, protectedPaths) } : inserted
   })
   if (findGroup(next.desktop, fromGroupId)?.tabs.length === 0) {
     next = closeGroup(next, fromGroupId, { preserveLastCenter: true })
@@ -1546,7 +1559,7 @@ function collectOldInstanceIds(node: unknown, out: Set<string>): void {
  *  returned unchanged. An old editor leaf / the old main-tabs `editor` entry
  *  expands into a group of per-file tabs; a terminal leaf becomes a group holding
  *  one terminal tab (its instanceId preserved); the old `tasks` tab is dropped
- *  (tasks is the desktop overlay now, not a dock leaf). */
+ *  (no migration of overlay open-state — the user reopens it with Cmd+Shift+T). */
 export function migrateTreeToGroups(
   oldNode: unknown, oldViews?: Record<string, EditorView>,
 ): MigrationResult {
@@ -1569,7 +1582,7 @@ export function migrateTreeToGroups(
         return { kind: 'tabs', id: minter.group(), tabs: [{ instanceId, kind: 'terminal' }], activeTab: instanceId }
       }
       // Dock leaf: keep verbatim. A non-dock panel (e.g. an old `tasks` leaf — tasks
-      // is the desktop overlay now, not a leaf) is dropped.
+      // is a group tab now, reopened with Cmd+Shift+T) is dropped.
       if (!isDockPanel(raw.panel)) return null
       const node: LeafNode = { kind: 'leaf', id: typeof raw.id === 'string' ? raw.id : raw.panel, panel: raw.panel }
       if (raw.collapsed === true) node.collapsed = true
@@ -1584,7 +1597,7 @@ export function migrateTreeToGroups(
       // Old main-tabs node: the `editor` entry becomes this slot's group; other
       // DOCK panels are lifted to the dock; a missing editor entry yields an
       // empty group so the working-area slot is preserved. A `tasks` entry is
-      // dropped (tasks is the desktop overlay now, not a dock leaf).
+      // dropped (tasks is a group tab now, reopened with Cmd+Shift+T).
       const panels = Array.isArray(raw.panels) ? raw.panels.filter(isPanelId) : []
       for (const p of panels) if (isDockPanel(p)) dockGrafts.push(p)
       if (panels.includes('editor')) return expandEditorView('editor', oldViews, minter, idMap)

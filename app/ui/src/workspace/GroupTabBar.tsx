@@ -12,7 +12,7 @@
 // Group-native callbacks are wired by `PanelGroup`; session metadata + `isTouch`
 // are read from context here, and `useContextMenu` is instantiated internally.
 import { Fragment, useCallback, useContext, useMemo, useRef, useState } from 'react'
-import { X, AlertTriangle, Columns2, Rows2, FileDiff } from 'lucide-react'
+import { X, AlertTriangle, Columns2, Rows2, FileDiff, ListTodo } from 'lucide-react'
 import { isDiffTab, isFileTab } from '../hooks/useWorkspaceState'
 import { WorkspaceDataContext, WorkspaceEnvContext, WorkspaceLayoutContext, WorkspaceCommandsContext, type GroupPlacement, type SplitSide, type EditorPrefs } from './context'
 import type { GroupTab, PreviewMode, SplitDirection } from '../hooks/workspaceTypes'
@@ -260,15 +260,16 @@ export function GroupTabBar(props: GroupTabBarProps) {
         {tabs.map((tab, index) => {
           const isActive = tab.instanceId === activeTab
           const isEditor = tab.kind === 'editor'
+          const isTasks = tab.kind === 'tasks'
           const isDirty = isEditor && dirtyTabs.has(tabIdToPath(tab.tabId))
           const isConflict = isEditor && conflictTabs.has(tabIdToPath(tab.tabId))
           const isDiff = isEditor && isDiffTab(tab.tabId)
-          const isPreview = !!tab.preview
+          const isPreview = tab.kind !== 'tasks' && !!tab.preview
           const suffix = isEditor ? disambig.get(tab.tabId) : undefined
-          const session = !isEditor ? terminalBindings[tab.instanceId] : undefined
+          const session = tab.kind === 'terminal' ? terminalBindings[tab.instanceId] : undefined
           const provider = session ? sessions.find((s) => s.name === session)?.provider : undefined
-          const label = isEditor ? tabName(tab.tabId) : (session || 'Terminal')
-          const closeLabel = isEditor ? tabCloseLabel(tab.tabId) : 'Close terminal'
+          const label = isEditor ? tabName(tab.tabId) : isTasks ? 'Tasks' : (session || 'Terminal')
+          const closeLabel = isEditor ? tabCloseLabel(tab.tabId) : isTasks ? 'Close tasks' : 'Close terminal'
           // VSCode group emphasis (FIX C): the ACTIVE group reads in a strong
           // foreground at medium weight (its active tab strongest, the rest standard);
           // INACTIVE groups are uniformly muted in a distinctly fainter token — so it
@@ -288,7 +289,7 @@ export function GroupTabBar(props: GroupTabBarProps) {
                 onDragStart={(e) => dragControls.start(e, { kind: 'tab', fromGroupId: groupId, instanceId: tab.instanceId, tabKind: tab.kind })}
                 onDragEnd={dragControls.clear}
                 onClick={() => onSelectTab(tab.instanceId)}
-                onDoubleClick={() => { if (tab.preview) onPinTab(tab.instanceId) }}
+                onDoubleClick={() => { if (isPreview) onPinTab(tab.instanceId) }}
                 {...(showMenu ? menu.bind(() => setContextTab(tab)) : {})}
                 title={isEditor ? tab.tabId : label}
                 className={`group flex items-center gap-1 px-1.5 h-full cursor-pointer text-ui-sm shrink-0 ${isActiveGroup ? 'font-medium' : ''}`}
@@ -306,7 +307,9 @@ export function GroupTabBar(props: GroupTabBarProps) {
                   ? (isDiff
                       ? <FileDiff size={13} aria-hidden="true" className="shrink-0" />
                       : <FileTypeIcon name={tab.tabId} />)
-                  : <ProviderIcon provider={provider ?? 'terminal'} className="w-3.5 h-3.5 shrink-0" />}
+                  : isTasks
+                    ? <ListTodo size={13} aria-hidden="true" className="shrink-0" />
+                    : <ProviderIcon provider={provider ?? 'terminal'} className="w-3.5 h-3.5 shrink-0" />}
                 <span className="truncate max-w-[120px]">{label}</span>
                 {suffix && <span className="text-ui-xs ml-0.5 shrink-0" style={{ color: 'var(--sol-text-faint)' }}>{suffix}</span>}
                 {isConflict ? (

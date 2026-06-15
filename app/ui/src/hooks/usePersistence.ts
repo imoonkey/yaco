@@ -54,19 +54,6 @@ function isGroupShapeTree(node: unknown): boolean {
   return false
 }
 
-/** Did an OLD (pre-overlay) tree have its tasks tab active (the old MAIN_TABS node
- *  with `active: 'tasks'`)? That is the only signal that should open the desktop
- *  Tasks overlay on load — a stale `showTasks: true` (the OLD default, meaning the
- *  tasks tab merely existed) must not auto-open the full-width overlay. */
-function oldTreeTasksActive(node: unknown): boolean {
-  const raw = asRecord(node)
-  if (raw.kind === 'tabs' && Array.isArray(raw.panels)) return raw.active === 'tasks'
-  if (raw.kind === 'split' && Array.isArray(raw.children)) {
-    return raw.children.some((c) => oldTreeTasksActive(asRecord(c).node))
-  }
-  return false
-}
-
 /** Parse the flat `WorkspaceLayout` bag, salvaging every field independently to
  *  its default. `pl` is `parsed.layout` (or `parsed` itself for very old blobs
  *  that stored the fields at the top level). */
@@ -78,7 +65,6 @@ function parseFlatLayout(pl: Record<string, unknown>): WorkspaceLayout {
     showExplorer: typeof pl.showExplorer === 'boolean' ? pl.showExplorer : DEFAULT_LAYOUT.showExplorer,
     showSessions: typeof pl.showSessions === 'boolean' ? pl.showSessions : DEFAULT_LAYOUT.showSessions,
     showChanges: typeof pl.showChanges === 'boolean' ? pl.showChanges : DEFAULT_LAYOUT.showChanges,
-    showTasks: typeof pl.showTasks === 'boolean' ? pl.showTasks : DEFAULT_LAYOUT.showTasks,
     showTextSearch: typeof pl.showTextSearch === 'boolean' ? pl.showTextSearch : DEFAULT_LAYOUT.showTextSearch,
     autocompleteEnabled: typeof pl.autocompleteEnabled === 'boolean' ? pl.autocompleteEnabled : DEFAULT_LAYOUT.autocompleteEnabled,
     previewMode: pl.previewMode === 'edit' || pl.previewMode === 'preview' || pl.previewMode === 'split' ? pl.previewMode
@@ -156,7 +142,7 @@ function hasGroupNode(node: LayoutNode, id: string): boolean {
 /** A synthetic OLD-shape default tree (dock + main editor tabs node + optional
  *  terminal leaf + a sessions activity column) used to migrate a flat blob that
  *  never persisted a tree, so it lands the same dock as a stored old tree would.
- *  Tasks is the desktop overlay now, so it is not a leaf here. */
+ *  Tasks is a group tab now (reopened with Cmd+Shift+T), so it is not a leaf here. */
 function syntheticOldTree(hasTerminal: boolean): Record<string, unknown> {
   const children: unknown[] = [
     { basis: 220, node: { kind: 'split', id: 'dock', axis: 'col', children: [
@@ -262,12 +248,6 @@ export function loadPersistedState(project: string, worktree?: string | null): P
 
     const stored = asRecord(parsed.panelLayout)
     const isNewGroupBlob = stored.version === 1 && isGroupShapeTree(stored.desktop)
-    // Tasks is the desktop overlay now (showTasks). A pre-overlay blob stored
-    // showTasks=true as the OLD default (the tasks tab merely existed), which must
-    // NOT auto-open the full-width overlay — open it only if tasks was actually active.
-    if (!isNewGroupBlob) {
-      layout.showTasks = stored.version === 1 && stored.desktop ? oldTreeTasksActive(stored.desktop) : false
-    }
     const loaded: LoadedTree = isNewGroupBlob ? loadGroupBlob(parsed, stored) : migrateOldBlob(parsed, layout)
 
     // The flat `showSidebar`/`showRightPanel` flags and the tree's `hidden` flags

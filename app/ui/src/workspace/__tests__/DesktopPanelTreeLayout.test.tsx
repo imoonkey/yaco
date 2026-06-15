@@ -45,7 +45,7 @@ function tree(): LayoutNode {
 function renderTree(focusedPane: FocusedPane = { kind: 'editor', instanceId: 'editor:1' }): void {
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
   const layoutValue = {
-    layout: { showTasks: false },
+    layout: {},
     panelLayout: { version: 1, desktop: tree(), mobile: { activeDock: 'browse' }, panelState: {} },
   } as unknown as WorkspaceLayoutContextValue
   const commands = {
@@ -134,25 +134,27 @@ describe('DesktopPanelTreeLayout — group rendering', () => {
   })
 })
 
-// A dock column, one working group, and a sessions activity column — the
-// post-tasks-overlay default shape.
-function columnedTree(): LayoutNode {
+// A dock column, one working group, and a sessions activity column. With
+// `withTasks`, the working group holds the singleton tasks tab.
+function columnedTree(withTasks = false): LayoutNode {
   return {
     kind: 'split', id: 'root', axis: 'row', children: [
       { basis: 220, node: { kind: 'split', id: 'dock', axis: 'col', children: [
         { grow: true, node: { kind: 'leaf', id: 'files', panel: 'files' } },
       ] } },
-      { grow: true, node: { kind: 'tabs', id: 'group:1', tabs: [], activeTab: '' } },
+      { grow: true, node: { kind: 'tabs', id: 'group:1',
+        tabs: withTasks ? [{ instanceId: 'tasks', kind: 'tasks' }] : [],
+        activeTab: withTasks ? 'tasks' : '' } },
       { basis: 280, node: { kind: 'leaf', id: 'sessions', panel: 'sessions' } },
     ],
   }
 }
 
-function renderColumned(showTasks: boolean): void {
+function renderColumned(withTasks = false): void {
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
   const layoutValue = {
-    layout: { showTasks },
-    panelLayout: { version: 1, desktop: columnedTree(), mobile: { activeDock: 'browse' }, panelState: {} },
+    layout: {},
+    panelLayout: { version: 1, desktop: columnedTree(withTasks), mobile: { activeDock: 'browse' }, panelState: {} },
   } as unknown as WorkspaceLayoutContextValue
   const commands = {
     collapsePanel: vi.fn(), resizeSplitChild: vi.fn(),
@@ -177,24 +179,23 @@ function renderColumned(showTasks: boolean): void {
   )
 }
 
-describe('DesktopPanelTreeLayout — landmarks + tasks overlay', () => {
+describe('DesktopPanelTreeLayout — landmarks + tasks tab', () => {
   it('landmarks the dock as Sidebar and the right column as Activity panel by position', () => {
-    renderColumned(false)
+    renderColumned()
     const activity = document.querySelector('[role="complementary"][aria-label="Activity panel"]')
     expect(activity).toBeTruthy()
     expect(activity?.getAttribute('data-panel-leaf')).toBe('sessions')
     expect(document.querySelector('[role="navigation"][aria-label="Sidebar"]')).toBeTruthy()
   })
 
-  it('does not mount the tasks overlay when showTasks is false', () => {
-    renderColumned(false)
+  it('renders no tasks panel when no tasks tab is open', () => {
+    renderColumned()
     expect(document.querySelector('[data-panel-host="tasks"]')).toBeNull()
   })
 
-  it('overlays the tasks workspace over the working area when showTasks is true', () => {
+  it('renders a tasks group tab body through PanelHost', () => {
     renderColumned(true)
     expect(document.querySelector('[data-panel-host="tasks"]')).toBeTruthy()
-    // the working group stays mounted behind the overlay
     expect(group('group:1')).toBeTruthy()
   })
 })
@@ -238,7 +239,7 @@ type Movers = Pick<WorkspaceCommands, 'movePane' | 'moveLeafToEdge' | 'moveTab' 
 function mountSidebar(desktop: LayoutNode, source?: DragPayload): Movers {
   const env = { viewport: { isMobile: false, isLandscape: false, isTouch: false } } as unknown as WorkspaceEnv
   const layoutValue = {
-    layout: { showTasks: false },
+    layout: {},
     panelLayout: { version: 1, desktop, mobile: { activeDock: 'browse' }, panelState: {} },
   } as unknown as WorkspaceLayoutContextValue
   const movers: Movers = { movePane: vi.fn(), moveLeafToEdge: vi.fn(), moveTab: vi.fn(), moveGroup: vi.fn(), moveTabToSplit: vi.fn() }

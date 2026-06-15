@@ -303,6 +303,7 @@ export function useWorkspaceState(projectName: string, worktree?: string | null)
     toggleSeparateKinds: ls.toggleSeparateKinds,
     // group dispatchers + resolution
     openTab: ls.openTab,
+    openTasksTab: ls.openTasksTab,
     openPreviewTab: ls.openPreviewTab,
     openDiffTab: ls.openDiffTab,
     openBoundTerminalTab: ls.openBoundTerminalTab,

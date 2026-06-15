@@ -227,6 +227,53 @@ describe('dock-leaf guard', () => {
   })
 })
 
+// --- tasks tab singleton ----------------------------------------------------
+
+describe('tasks tab singleton', () => {
+  const task = (instanceId = 'tasks') => ({ instanceId, kind: 'tasks' })
+
+  it('drops a second tasks tab (one tree-wide)', () => {
+    const tree = normalizeDesktopTree({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { node: group('g1', [task(), task()], 'tasks') },
+        { node: group('g2', [task()], '') },
+      ],
+    })
+    const allTasks = [...tabsInGroup(tree, 'g1'), ...tabsInGroup(tree, 'g2')].filter((t) => t.kind === 'tasks')
+    expect(allTasks).toHaveLength(1)
+    expect(tabByInstance(tree, 'tasks')?.kind).toBe('tasks')
+  })
+
+  it('re-mints a non-tasks node that claims the reserved id, keeping it for the tasks tab', () => {
+    const tree = normalizeDesktopTree({
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { node: group('g1', [ed('tasks', 'a.ts'), task()], 'tasks') },
+      ],
+    })
+    // 'tasks' resolves to the tasks tab; the editor that claimed it was re-minted.
+    expect(tabByInstance(tree, 'tasks')?.kind).toBe('tasks')
+    const tabs = tabsInGroup(tree, 'g1')
+    const editor = tabs.find((t) => t.kind === 'editor')!
+    expect(editor.instanceId).not.toBe('tasks')
+    // No duplicate ids tree-wide (collectIds dedupes; length === distinct nodes).
+    expect(collectIds(tree).has('tasks')).toBe(true)
+    expect(tabs).toHaveLength(2)
+  })
+
+  it('round-trips idempotently with a tasks tab', () => {
+    const src = {
+      kind: 'split', id: 'root', axis: 'row', children: [
+        { basis: 220, node: { kind: 'leaf', id: 'files', panel: 'files' } },
+        { grow: true, node: group('g', [ed('editor:1', 'a.ts'), task()], 'tasks') },
+      ],
+    }
+    const once = normalizeDesktopTree(src)
+    expect(normalizeDesktopTree(once)).toEqual(once)
+  })
+})
+
 // --- idempotency ------------------------------------------------------------
 
 describe('idempotency', () => {

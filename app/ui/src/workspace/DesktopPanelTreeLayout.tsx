@@ -81,14 +81,14 @@ type Landmark = { role: string; label: string }
 // "Sidebar", the one after it the "Activity panel". Region identity (not a fixed
 // node id) keeps the landmark on the real column after panels move. The
 // working-area `role="main"` lives on the first center group (PanelGroup).
-function computeLandmarks(root: LayoutNode): { landmarks: Record<string, Landmark>; workingAreaId: string | null } {
+function computeLandmarks(root: LayoutNode): Record<string, Landmark> {
   const landmarks: Record<string, Landmark> = {}
-  if (root.kind !== 'split') return { landmarks, workingAreaId: root.id }
+  if (root.kind !== 'split') return landmarks
   const { left, center, right } = regionsOf(root)
-  if (!center) return { landmarks, workingAreaId: null }
+  if (!center) return landmarks
   if (left) landmarks[left.id] = { role: 'navigation', label: 'Sidebar' }
   if (right) landmarks[right.id] = { role: 'complementary', label: 'Activity panel' }
-  return { landmarks, workingAreaId: center.id }
+  return landmarks
 }
 
 export type DesktopPanelTreeLayoutProps = {
@@ -104,7 +104,7 @@ const shieldPaneDrag = (e: React.DragEvent) => { if (isPaneDrag(e)) e.stopPropag
 
 export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCapture }: DesktopPanelTreeLayoutProps) {
   const { isTouch } = useWorkspaceEnv().viewport
-  const { layout, panelLayout } = useWorkspaceLayout()
+  const { panelLayout } = useWorkspaceLayout()
   const { focusedPane, activeEditorId, activeTerminalId } = useWorkspaceSelection()
   const commands = useWorkspaceCommands()
   const collapsePanel = commands.collapsePanel
@@ -140,17 +140,8 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
   // The first center group carries the `role="main"` landmark.
   const mainGroupId = useMemo(() => firstCenterGroupId(centerOf(panelLayout.desktop)), [panelLayout.desktop])
 
-  // Positional Sidebar/Activity landmarks + the working-area region id (the root
-  // child the tasks overlay covers when `showTasks`).
-  const { landmarks, workingAreaId } = useMemo(() => computeLandmarks(effectiveRoot), [effectiveRoot])
-
-  // Tasks (Meta+Shift+T) is a full-working-area overlay over the editor groups —
-  // the task workspace gets the wide region it had in the legacy main area, while
-  // the dock + sessions column stay put. The groups render behind it (kept mounted
-  // so terminals/editors survive an open/close), covered by the absolute overlay.
-  const taskOverlay = layout.showTasks
-    ? <PanelHost id="tasks" instanceId="tasks" />
-    : null
+  // Positional Sidebar/Activity landmarks.
+  const landmarks = useMemo(() => computeLandmarks(effectiveRoot), [effectiveRoot])
 
   // Renderer-published collapse + body sizing for the framed panels, read by each
   // framed PanelHost through PanelChromeContext (same seam the legacy renderer used).
@@ -198,8 +189,6 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
           markerFor={markerFor}
           mainGroupId={mainGroupId}
           landmarks={landmarks}
-          workingAreaId={workingAreaId}
-          taskOverlay={taskOverlay}
           drop={drop}
         />
         <EdgeStrips
@@ -215,9 +204,7 @@ export function DesktopPanelTreeLayout({ rootRef, searchOverlay, onInteractionCa
 
 // A tabs node renders a <PanelGroup> (tab bar + active tab body); a leaf renders a
 // dock panel through <PanelHost>; a split recurses. `mainGroupId` carries the
-// first-group id down so PanelGroup can claim `role="main"`. When `taskOverlay` is
-// set and this node is the working-area region, the groups render behind an
-// absolute overlay holding the tasks workspace.
+// first-group id down so PanelGroup can claim `role="main"`.
 type TreeNodeProps = {
   node: LayoutNode
   sizing: CSSProperties
@@ -225,25 +212,11 @@ type TreeNodeProps = {
   markerFor: MarkerFor
   mainGroupId: string | null
   landmarks: Record<string, Landmark>
-  workingAreaId: string | null
-  taskOverlay: ReactNode | null
   drop: SidebarWiring
 }
 
 function TreeNode(props: TreeNodeProps) {
-  const { node, sizing, workingAreaId, taskOverlay, drop } = props
-  // Overlay the tasks workspace over the working-area region, keeping the groups
-  // mounted behind it.
-  if (taskOverlay && node.id === workingAreaId) {
-    return (
-      <div style={sizing} className="relative flex min-w-0 min-h-0">
-        <TreeNode {...props} sizing={ROOT_SIZING} taskOverlay={null} />
-        <div className="absolute inset-0 flex min-w-0 min-h-0" style={{ zIndex: 10 }} role="region" aria-label="Tasks">
-          {taskOverlay}
-        </div>
-      </div>
-    )
-  }
+  const { node, sizing, drop } = props
   // A rendered sidebar region (the root child before/after the center) wraps its
   // content in the drop layer for dock reorder / cross-sidebar / right-group drops.
   const region: Region | null = node.id === drop.leftId ? 'left' : node.id === drop.rightId ? 'right' : null
@@ -260,10 +233,10 @@ function TreeNode(props: TreeNodeProps) {
 // The split/tabs/leaf switch, factored out of `TreeNode` so the sidebar drop
 // layer can render the region's content without re-triggering the region wrap.
 function renderNode(props: TreeNodeProps): ReactNode {
-  const { node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay, drop } = props
+  const { node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, drop } = props
   const landmark = landmarks[node.id]
   if (node.kind === 'split') {
-    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} landmarks={landmarks} workingAreaId={workingAreaId} taskOverlay={taskOverlay} drop={drop} landmark={landmark} />
+    return <SplitView node={node} sizing={sizing} resizeSplitChild={resizeSplitChild} markerFor={markerFor} mainGroupId={mainGroupId} landmarks={landmarks} drop={drop} landmark={landmark} />
   }
   if (node.kind === 'tabs') {
     return <PanelGroup group={node} sizing={sizing} isMain={node.id === mainGroupId} markerFor={markerFor} />
@@ -290,9 +263,9 @@ function LeafView({ node, sizing, landmark }: { node: LeafNode; sizing: CSSPrope
   )
 }
 
-function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, workingAreaId, taskOverlay, drop, landmark }: {
+function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, landmarks, drop, landmark }: {
   node: SplitNode; sizing: CSSProperties; resizeSplitChild: ResizeSplitChild; markerFor: MarkerFor; mainGroupId: string | null
-  landmarks: Record<string, Landmark>; workingAreaId: string | null; taskOverlay: ReactNode | null; drop: SidebarWiring; landmark?: Landmark
+  landmarks: Record<string, Landmark>; drop: SidebarWiring; landmark?: Landmark
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const canonical = canonicalizeSplit(node)
@@ -330,8 +303,6 @@ function SplitView({ node, sizing, resizeSplitChild, markerFor, mainGroupId, lan
         markerFor={markerFor}
         mainGroupId={mainGroupId}
         landmarks={landmarks}
-        workingAreaId={workingAreaId}
-        taskOverlay={taskOverlay}
         drop={drop}
       />,
     )

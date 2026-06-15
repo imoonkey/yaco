@@ -19,12 +19,13 @@
 // would otherwise make the next innocuous dragover look like a live pane drag).
 import { useSyncExternalStore } from 'react'
 import type { PanelId } from './context'
+import type { GroupTabKind } from '../hooks/workspaceTypes'
 
 /** The custom dataTransfer mime that marks a drag as a workspace pane drag. */
 export const PANE_MIME = 'application/yaco-pane'
 
 export type DragPayload =
-  | { kind: 'tab'; fromGroupId: string; instanceId: string; tabKind: 'editor' | 'terminal' }
+  | { kind: 'tab'; fromGroupId: string; instanceId: string; tabKind: GroupTabKind }
   | { kind: 'group'; groupId: string }
   | { kind: 'dock'; instanceId: string; panel: PanelId }
 

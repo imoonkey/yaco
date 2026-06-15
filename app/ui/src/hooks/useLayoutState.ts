@@ -22,6 +22,7 @@ import {
   type TabsNode,
   isFileTab,
   parseDiffTab,
+  TASKS_INSTANCE_ID,
 } from './workspaceTypes'
 import type { FocusTarget, SplitSide, GroupPlacement } from '../workspace/context'
 import {
@@ -90,6 +91,7 @@ type PanelLayoutUpdate = WorkspacePanelLayout | ((prev: WorkspacePanelLayout) =>
 type Action =
   | { type: 'SET_PANEL_LAYOUT'; update: PanelLayoutUpdate }
   | { type: 'OPEN_TAB'; groupId: string; tab: GroupTab }
+  | { type: 'OPEN_TASKS_TAB'; groupId: string }
   | { type: 'OPEN_PREVIEW_TAB'; groupId: string; tabId: string; newId: string; protectedPaths: ReadonlySet<string> }
   | { type: 'OPEN_DIFF_TAB'; groupId: string; tabId: string; newId: string }
   | { type: 'OPEN_BOUND_TERMINAL_TAB'; groupId: string; session: string; newId: string; preview: boolean; protectedPaths: ReadonlySet<string> }
@@ -280,12 +282,15 @@ function groupById(tree: LayoutNode, id: string): TabsNode | null {
   return hit
 }
 
-/** The kind of a group's ACTIVE tab — a diff tab counts as editor-kind; '' for an
- *  empty/absent group. Kind is ALWAYS derived from the live tab, never stored. */
+/** The kind of a group's ACTIVE tab for OPEN ROUTING — a diff tab counts as
+ *  editor-kind; '' for an empty/absent group OR a tasks-active group. Tasks is
+ *  routing-neutral (neither editor nor terminal): an open from a tasks-active group
+ *  has no kind to separate from, so it lands in/around that group. Kind is ALWAYS
+ *  derived from the live tab, never stored. */
 export function activeTabKind(group: TabsNode | null): 'editor' | 'terminal' | '' {
   if (!group) return ''
   const t = group.tabs.find((x) => x.instanceId === group.activeTab)
-  return t ? t.kind : ''
+  return t && (t.kind === 'editor' || t.kind === 'terminal') ? t.kind : ''
 }
 
 /** Where a kind-`K` open should land. `{ new: true }` asks the caller to spawn a
@@ -358,6 +363,14 @@ function pushMru(mru: string[], id: string): string[] {
   return [id, ...mru.filter((x) => x !== id)]
 }
 
+/** The focus kind of a group tab — the tab's `kind` IS the FocusTarget (editor /
+ *  terminal / tasks); 'editor' when there is no tab. The MRU writes at each call
+ *  site are gated on `kind === 'editor'`/`'terminal'`, so a tasks tab pushes
+ *  neither list. */
+function focusKind(tab: GroupTab | null | undefined): FocusTarget {
+  return tab ? tab.kind : 'editor'
+}
+
 function containsDockPanel(node: LayoutNode | null, panel: string): boolean {
   if (!node) return false
   if (node.kind === 'leaf') return node.panel === panel
@@ -422,6 +435,11 @@ function reconcileFocus(
       ? { kind: 'terminal', instanceId: next }
       : { kind: 'editor', instanceId: resolveActiveEditor(layout.desktop, editorMru) ?? '' }
   }
+  // The tasks tab is a singleton; when it is gone (its group closed, or the tab
+  // closed), repoint focus to the active editor — mirrors the terminal-died path.
+  if (focused.kind === 'tasks' && !groupOf(layout.desktop, focused.instanceId)) {
+    return { kind: 'editor', instanceId: resolveActiveEditor(layout.desktop, editorMru) ?? '' }
+  }
   return focused
 }
 
@@ -485,6 +503,21 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
         ...state, panelLayout,
         editorMru: pushMru(state.editorMru, activeId),
         focusedPane: { kind: 'editor', instanceId: activeId },
+        activeGroupId: action.groupId,
+      })
+    }
+    case 'OPEN_TASKS_TAB': {
+      // The tasks tab is a SINGLETON — no-op if one already exists anywhere. Else
+      // append it to the target group, make it active + focused. No MRU writes
+      // (tasks is neither editor nor terminal).
+      if (groupOf(state.panelLayout.desktop, TASKS_INSTANCE_ID)) return state
+      if (!hasGroupId(state.panelLayout.desktop, action.groupId)) return state
+      const tab: GroupTab = { instanceId: TASKS_INSTANCE_ID, kind: 'tasks' }
+      const panelLayout = mapGroup(state.panelLayout, action.groupId,
+        (g) => ({ ...g, tabs: [...g.tabs, tab], activeTab: TASKS_INSTANCE_ID }))
+      return gcMaps({
+        ...state, panelLayout,
+        focusedPane: { kind: 'tasks', instanceId: TASKS_INSTANCE_ID },
         activeGroupId: action.groupId,
       })
     }
@@ -602,7 +635,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       let next: InstanceState = { ...state, panelLayout }
       if (wasFocused && successor) {
         const sTab = tabByInstance(panelLayout.desktop, successor)
-        const kind: FocusTarget = sTab?.kind === 'terminal' ? 'terminal' : 'editor'
+        const kind = focusKind(sTab)
         next = {
           ...next,
           editorMru: kind === 'editor' ? pushMru(state.editorMru, successor) : state.editorMru,
@@ -621,7 +654,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
     }
     case 'SET_ACTIVE_GROUP_TAB': {
       const tab = tabByInstance(state.panelLayout.desktop, action.instanceId)
-      const kind: FocusTarget = tab?.kind === 'terminal' ? 'terminal' : 'editor'
+      const kind = focusKind(tab)
       const panelLayout = mapGroup(state.panelLayout, action.groupId, (g) =>
         (g.activeTab === action.instanceId ? g : { ...g, activeTab: action.instanceId }))
       return gcMaps({
@@ -677,7 +710,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
         state.panelLayout, action.fromGroupId, action.instanceId, action.toGroupId, action.toIndex, action.protectedPaths,
       )
       if (panelLayout === state.panelLayout) return state
-      const kind: FocusTarget = moved.kind === 'terminal' ? 'terminal' : 'editor'
+      const kind = focusKind(moved)
       return gcMaps({
         ...state, panelLayout,
         editorMru: kind === 'editor' ? pushMru(state.editorMru, action.instanceId) : state.editorMru,
@@ -704,7 +737,7 @@ export function instanceReducer(state: InstanceState, action: Action): InstanceS
       if (!wasActive) return gcMaps({ ...state, panelLayout })
       const active = activeTabOf(panelLayout.desktop, placement.targetGroupId)
       const aTab = active ? tabByInstance(panelLayout.desktop, active) : null
-      const kind: FocusTarget = aTab?.kind === 'terminal' ? 'terminal' : 'editor'
+      const kind = focusKind(aTab)
       return gcMaps({
         ...state, panelLayout,
         editorMru: active && kind === 'editor' ? pushMru(state.editorMru, active) : state.editorMru,
@@ -859,6 +892,12 @@ export function useLayoutState(
     return existing?.instanceId ?? newId
   }, [])
 
+  /** Insert the singleton tasks tab into `groupId` (no-op if one already exists),
+   *  making it active + focused. */
+  const openTasksTab = useCallback((groupId: string) => {
+    dispatch({ type: 'OPEN_TASKS_TAB', groupId })
+  }, [])
+
   /** Returns true when the caller should fetch the file (it is not already open). */
   const openPreviewTab = useCallback((groupId: string, tabId: string): boolean => {
     const grp = tabsInGroup(stateRef.current.panelLayout.desktop, groupId)
@@ -1004,6 +1043,7 @@ export function useLayoutState(
     toggleSeparateKinds,
     // group dispatchers
     openTab,
+    openTasksTab,
     openPreviewTab,
     openDiffTab,
     openBoundTerminalTab,

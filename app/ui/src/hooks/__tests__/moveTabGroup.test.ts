@@ -36,6 +36,8 @@ function makeState(opts: {
 
 const ed = (instanceId: string, tabId: string, extra: Partial<GroupTab> = {}): GroupTab =>
   ({ instanceId, kind: 'editor', tabId, ...extra } as GroupTab)
+/** A tab's preview flag (editor/terminal); tasks tabs carry none. */
+const previewOf = (tab: GroupTab): boolean | undefined => (tab.kind === 'tasks' ? undefined : tab.preview)
 const term = (instanceId: string): GroupTab => ({ instanceId, kind: 'terminal' })
 const grp = (id: string, tabs: GroupTab[]): unknown =>
   ({ kind: 'tabs', id, tabs, activeTab: tabs[0]?.instanceId ?? '' })
@@ -137,7 +139,7 @@ describe('MOVE_TAB', () => {
     const dst = findGroup(s.panelLayout.desktop, 'group:2')!
     // e2 was a clean preview → dropped; the moved preview e1 survives.
     expect(ids(dst.tabs)).toEqual(['e1'])
-    expect(dst.tabs[0].preview).toBe(true)
+    expect(previewOf(dst.tabs[0])).toBe(true)
   })
 
   it('preview travels: a dirty PROTECTED editor preview in the target is pinned (kept)', () => {
@@ -145,8 +147,8 @@ describe('MOVE_TAB', () => {
     s = instanceReducer(s, { type: 'MOVE_TAB', fromGroupId: 'group:1', instanceId: 'e1', toGroupId: 'group:2', toIndex: 0, protectedPaths: new Set(['b.ts']) })
     const dst = findGroup(s.panelLayout.desktop, 'group:2')!
     expect(ids(dst.tabs)).toEqual(['e1', 'e2'])
-    expect(dst.tabs.find((t) => t.instanceId === 'e2')!.preview).toBeUndefined()
-    expect(dst.tabs.find((t) => t.instanceId === 'e1')!.preview).toBe(true)
+    expect(previewOf(dst.tabs.find((t) => t.instanceId === 'e2')!)).toBeUndefined()
+    expect(previewOf(dst.tabs.find((t) => t.instanceId === 'e1')!)).toBe(true)
   })
 
   it('a center source that empties closes only when another center group exists', () => {

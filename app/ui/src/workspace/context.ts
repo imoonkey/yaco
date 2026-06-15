@@ -252,8 +252,8 @@ export type WorkspaceCommands = {
   showQuickOpen: () => void
   closeFocusedSurface: () => boolean
 
-  // Tasks (real main-tabs panel): toggle activates the tasks panel or returns to
-  // the editor; close always returns to the editor.
+  // Tasks (singleton working-area tab): toggle is "无则建/有则聚焦或关闭" — absent →
+  // open+focus; focused → close; present-but-unfocused → focus. close removes it.
   toggleTasks: () => void
   closeTasks: () => void
 

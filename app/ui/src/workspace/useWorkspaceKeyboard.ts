@@ -109,7 +109,7 @@ export function useWorkspaceKeyboard(opts: UseWorkspaceKeyboardOpts) {
     // The split spawns an EMPTY group; activeGroupId (= the focused tab's group)
     // is the resolved target, and the new empty group becomes the next open target.
     const splitFocusedPane = (orthogonal: boolean) => {
-      if (focusedPane.kind !== 'editor' && focusedPane.kind !== 'terminal') return
+      if (focusedPane.kind !== 'editor' && focusedPane.kind !== 'terminal' && focusedPane.kind !== 'tasks') return
       const el = document.querySelector<HTMLElement>(`[data-instance-id="${focusedPane.instanceId}"]`)
       if (!el) return
       const base = splitSideFromGeometry(el.offsetWidth, el.offsetHeight)

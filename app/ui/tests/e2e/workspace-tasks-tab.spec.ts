@@ -6,8 +6,9 @@ import {
 } from './helpers/workspace'
 
 // The Tasks area is a single task workspace (one stacked graph + toolbar), opened
-// as an overlay via Cmd/Ctrl+Shift+T. There is no Board/List/Graph/Archive pane
-// switching — workset is a filter on one workspace, not a separate surface.
+// as a singleton working-area TAB via Cmd/Ctrl+Shift+T — a peer of editor/terminal
+// tabs. There is no Board/List/Graph/Archive pane switching — workset is a filter
+// on one workspace, not a separate surface.
 
 // Seed a task graph with one active root and one archived root so the archive
 // chip has something to reveal, plus a package.json the quick-open spec opens.
@@ -33,8 +34,8 @@ test.describe('Workspace Tasks', () => {
     await fixture.dispose()
   })
 
-  // Tasks is a toggled full-width overlay (showTasks), opened via Cmd/Ctrl+Shift+T —
-  // not a persistent dock leaf. This pins that opening it renders the live graph.
+  // Tasks is a singleton working-area tab, opened via Cmd/Ctrl+Shift+T. This pins
+  // that opening it renders the live graph.
   test('opening Tasks renders the single task workspace with its live graph', async ({ page }) => {
     await page.keyboard.press('Meta+Shift+t')
     await expect(search(page)).toBeVisible({ timeout: 10_000 })
@@ -42,6 +43,42 @@ test.describe('Workspace Tasks', () => {
     // It reflects the live task graph (the seeded active root renders a node).
     await expect(page.locator('[data-layer="nodes"] g[role="button"][aria-label^="Task:"]').first())
       .toBeVisible({ timeout: 15_000 })
+  })
+
+  // Cmd+Shift+T is "无则建/有则聚焦或关闭": absent → opens a singleton "Tasks" group
+  // tab (focused); pressing again while focused closes it. The tab is a real,
+  // closable peer of editor/terminal tabs (ListTodo + "Tasks", plain ×).
+  test('Cmd+Shift+T opens a closable Tasks tab and toggles it closed', async ({ page }) => {
+    const tasksTab = page.locator('[data-testid="group-tab"][data-tab-kind="tasks"]')
+    await expect(tasksTab).toHaveCount(0)
+
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(tasksTab).toHaveCount(1)
+    await expect(tasksTab).toContainText('Tasks')
+    await expect(page.locator('[data-layer="nodes"]')).toBeVisible({ timeout: 15_000 })
+
+    // Focused → pressing again closes the tab (and removes the graph surface).
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(tasksTab).toHaveCount(0)
+    await expect(page.locator('[data-layer="nodes"]')).toHaveCount(0)
+  })
+
+  // Tasks is an ordinary tab: it coexists with an editor tab in the same group and
+  // closes from its own × without touching the editor tab.
+  test('Tasks tab coexists with an editor tab and closes from its ×', async ({ page }) => {
+    await openFileViaSearch(page, 'package.json')
+    await expect(page.locator('[data-testid="group-tab"]')).toHaveCount(1)
+
+    await page.keyboard.press('Meta+Shift+t')
+    await expect(page.locator('[data-testid="group-tab"]')).toHaveCount(2)
+    const tasksTab = page.locator('[data-testid="group-tab"][data-tab-kind="tasks"]')
+    await expect(tasksTab).toHaveCount(1)
+
+    // Close the tasks tab via its own × — the editor tab survives.
+    await tasksTab.hover()
+    await tasksTab.getByRole('button', { name: 'Close tasks' }).click()
+    await expect(tasksTab).toHaveCount(0)
+    await expect(page.locator('[data-testid="group-tab"][data-tab-kind="editor"]')).toHaveCount(1)
   })
 
   // Regression (T7 H1 legacy): re-opening the already-active file must still leave

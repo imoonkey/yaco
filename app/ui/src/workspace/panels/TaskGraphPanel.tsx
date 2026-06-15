@@ -13,10 +13,10 @@
 //   - closeTasks                (commands)        → onClose
 //
 // Chrome is `unframed`: the task graph owns its own toolbar/detail chrome, so
-// there is no shared section header. It is the active panel of the main tabs
-// node (Cmd+Shift+T activates it); an editor-bg flex column focused on mouse-down
-// (`setFocusTarget('editor')`), holding the suspended task screen whose `onClose`
-// returns the main region to the editor (`closeTasks`).
+// there is no shared section header. It renders as the body of a singleton tasks
+// group tab (Cmd+Shift+T opens/focuses it); an editor-bg flex column focused on
+// mouse-down (`setFocusTarget('tasks')`), holding the suspended task screen whose
+// `onClose` closes the tasks tab (`closeTasks`).
 import { lazy, Suspense, useCallback } from 'react'
 import { TASKS_FILE_PATH } from '../../hooks/useTaskGraph'
 import {
@@ -55,9 +55,10 @@ export function TaskGraphPanel() {
   // Tasks → file: opening the task file is just `openFile` of the fixed path,
   // matching today's `nav.handleOpenTasksFile`.
   const handleOpenTasksFile = useCallback(() => openFile(TASKS_FILE_PATH), [openFile])
-  // Mouse-down focuses the surface, matching the old editor column's
-  // `onFocusEditor` so close/keyboard routing stays equivalent.
-  const handleFocus = useCallback(() => setFocusTarget('editor'), [setFocusTarget])
+  // Mouse-down focuses the tasks surface, so `focusedPane.kind === 'tasks'` agrees
+  // with the tab's focus kind — keeping `showingTasks` (voice gating) and Cmd+W
+  // routing correct (a stale `'editor'` focus would break both).
+  const handleFocus = useCallback(() => setFocusTarget('tasks'), [setFocusTarget])
   // Closing the tasks workspace returns the main region to the editor (design:
   // TaskScreen.onClose returns to editor).
   const handleClose = useCallback(() => { closeTasks() }, [closeTasks])

@@ -95,11 +95,11 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
   const [editorInsert, setEditorInsert] = useState<VoiceInsert | null>(null)
   const [terminalSend, setTerminalSend] = useState<VoiceInsert | null>(null)
 
-  // Tasks is a full-working-area overlay: on mobile it owns the single active
-  // pane, on desktop the `showTasks` flag toggles an overlay over the editor
-  // groups (Meta+Shift+T). Either way the editor is hidden behind it, so voice
-  // routing keys off `showingTasks` to mark the editor non-interactable.
-  const showingTasks = isMobile ? mobilePane === 'tasks' : layout.showTasks
+  // Tasks is a singleton working-area tab. On mobile it owns the single active
+  // pane; on desktop voice routing keys off whether tasks is the FOCUSED surface
+  // (an editor can be visible in another group beside it), marking the editor
+  // non-interactable only then.
+  const showingTasks = isMobile ? mobilePane === 'tasks' : focusedPane.kind === 'tasks'
 
   // Derived tab state the voice routing keys off — null while tasks is showing.
   const activeFilePath = !showingTasks && isFileTab(activeEditorTabId) ? activeEditorTabId : null

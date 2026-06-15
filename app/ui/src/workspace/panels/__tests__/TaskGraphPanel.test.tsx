@@ -115,13 +115,13 @@ describe('TaskGraphPanel — container chrome (unframed desktop tasks pane)', ()
     expect(container.querySelector('.section-header-bar')).toBeNull()
   })
 
-  it('focuses the surface on mouse-down (onMouseDown → setFocusTarget("editor"))', async () => {
+  it('focuses the surface on mouse-down (onMouseDown → setFocusTarget("tasks"))', async () => {
     const { container } = renderTaskGraphPanel(<TaskGraphPanel />)
     await screen.findByTestId('task-graph-panel-screen')
 
     const root = container.firstElementChild as HTMLElement
     fireEvent.mouseDown(root)
-    expect(taskGraphPanelSetFocusTarget).toHaveBeenCalledWith('editor')
+    expect(taskGraphPanelSetFocusTarget).toHaveBeenCalledWith('tasks')
   })
 })
 

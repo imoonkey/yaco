@@ -39,7 +39,6 @@ export type WorkspaceLayout = {
   showExplorer: boolean
   showSessions: boolean
   showChanges: boolean
-  showTasks: boolean
   showTextSearch: boolean
   autocompleteEnabled: boolean
   previewMode: PreviewMode
@@ -109,7 +108,6 @@ export const DEFAULT_LAYOUT: WorkspaceLayout = {
   showExplorer: true,
   showSessions: true,
   showChanges: true,
-  showTasks: false,
   showTextSearch: false,
   autocompleteEnabled: false,
   previewMode: 'edit',
@@ -210,7 +208,12 @@ export type SplitNode = {
   children: SplitChild[]
 }
 
-export type GroupTabKind = 'editor' | 'terminal'
+export type GroupTabKind = 'editor' | 'terminal' | 'tasks'
+
+/** The fixed instanceId of the singleton tasks tab. Tasks carries no per-instance
+ *  state (no `tabId`, no bound session), so at most one tasks tab exists tree-wide
+ *  and its identity is constant — enforced by `normalizeTab`. */
+export const TASKS_INSTANCE_ID = 'tasks'
 
 /** One tab in a working-area group. `instanceId` is the identity the per-instance
  *  AUX maps key on (`terminalBindings`, MRU, focus). `kind` selects which body
@@ -225,6 +228,7 @@ export type GroupTabKind = 'editor' | 'terminal'
 export type GroupTab =
   | { instanceId: string; kind: 'editor'; tabId: string; preview?: boolean; pinned?: boolean }
   | { instanceId: string; kind: 'terminal'; preview?: boolean }
+  | { instanceId: string; kind: 'tasks' }
 
 export type EditorGroupTab = Extract<GroupTab, { kind: 'editor' }>
 export type TerminalGroupTab = Extract<GroupTab, { kind: 'terminal' }>

@@ -19,6 +19,8 @@ import type { LayoutNode, SplitNode, TabsNode, GroupTab, WorkspacePanelLayout } 
 const ed = (instanceId: string, tabId: string, extra: Record<string, unknown> = {}): GroupTab =>
   ({ instanceId, kind: 'editor', tabId, ...extra } as GroupTab)
 const term = (instanceId: string): GroupTab => ({ instanceId, kind: 'terminal' })
+/** A tab's preview flag (editor/terminal); tasks tabs carry none. */
+const previewOf = (tab: GroupTab): boolean | undefined => (tab.kind === 'tasks' ? undefined : tab.preview)
 const grp = (id: string, tabs: GroupTab[]): unknown =>
   ({ kind: 'tabs', id, tabs, activeTab: tabs[0]?.instanceId ?? '' })
 const leaf = (panel: string): unknown => ({ kind: 'leaf', id: panel, panel })
@@ -134,7 +136,7 @@ describe('moveTabBetweenGroups', () => {
     const pinned = moveTabBetweenGroups(l, 'group:1', 'e1', 'group:2', 0, new Set(['b.ts']))
     const dst = findGroup(pinned.desktop, 'group:2')!
     expect(ids(dst.tabs)).toEqual(['e1', 'e2'])
-    expect(dst.tabs.find((t) => t.instanceId === 'e2')!.preview).toBeUndefined()
+    expect(previewOf(dst.tabs.find((t) => t.instanceId === 'e2')!)).toBeUndefined()
   })
 })
 
@@ -153,7 +155,7 @@ describe('mergeGroups', () => {
   it('keeps exactly one preview across the merged strip (first wins)', () => {
     const l = twoCenterGroups([ed('e1', 'a.ts', { preview: true })], [ed('e2', 'b.ts', { preview: true })])
     const dst = findGroup(mergeGroups(l, 'group:1', 'group:2').desktop, 'group:2')!
-    expect(dst.tabs.filter((t) => t.preview).map((t) => t.instanceId)).toEqual(['e2'])
+    expect(dst.tabs.filter((t) => previewOf(t)).map((t) => t.instanceId)).toEqual(['e2'])
   })
 
   it('is a no-op on a self-merge or an absent group', () => {
