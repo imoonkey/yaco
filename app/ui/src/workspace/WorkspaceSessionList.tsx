@@ -22,7 +22,11 @@ const GUIDE_OFFSET = 7
 
 // Static style constants extracted from render
 const INACTIVE_COLOR: React.CSSProperties = { color: 'var(--sol-text)' }
-const SESSION_TRANSITION: React.CSSProperties = { transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1)' }
+// Focused row (the active terminal's session): an inset left accent bar marks
+// "you are here". Inset box-shadow draws inside the radius with no layout shift,
+// so it never nudges the indent guides or row text.
+const FOCUS_ACCENT: React.CSSProperties = { boxShadow: 'inset 2px 0 0 0 var(--sol-blue)' }
+const SESSION_TRANSITION: React.CSSProperties = { transition: 'background-color 120ms cubic-bezier(0.2, 0, 0, 1), box-shadow 120ms cubic-bezier(0.2, 0, 0, 1)' }
 const RENAME_INPUT_STYLE: React.CSSProperties = { borderColor: 'var(--sol-accent)', color: 'inherit' }
 const PIN_ICON_STYLE: React.CSSProperties = { transform: 'rotate(45deg)', transformOrigin: 'center' }
 
@@ -47,6 +51,7 @@ const BLOCK_REASON_LABEL: Record<BlockReason, string> = {
 export function SessionItem({
   session,
   isActive,
+  focused,
   pinned,
   dragging,
   depth = 0,
@@ -70,6 +75,9 @@ export function SessionItem({
 }: {
   session: AgentSession
   isActive: boolean
+  /** This session is bound to the FOCUSED terminal (the one you're driving).
+   *  A strict subset of isActive; drives the deeper wash + left accent bar. */
+  focused?: boolean
   pinned?: boolean
   dragging?: boolean
   depth?: number
@@ -114,8 +122,8 @@ export function SessionItem({
   }, [renaming])
 
   useEffect(() => {
-    if (isActive) itemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-  }, [isActive])
+    if (focused) itemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [focused])
 
   const startRename = () => {
     menu.close()
@@ -149,17 +157,28 @@ export function SessionItem({
   const summaryPositions = summarySnippet?.positions ?? summaryMatch?.positions
   const worktreeText = worktreeSnippet?.text ?? session.worktree ?? ''
 
+  // Three visual tiers by background depth: closed (hover only) → open in a
+  // terminal (faint blue wash) → focused (deeper wash + left accent bar). Open
+  // and focused share the blue text; the wash alpha and accent bar separate them.
+  const rowTone = focused
+    ? 'bg-[var(--sol-blue)]/20 text-[var(--sol-blue)]'
+    : isActive
+      ? 'bg-[var(--sol-blue)]/10 text-[var(--sol-blue)]'
+      : 'hover:bg-sol-hover-bg'
+
   return (
     <div ref={itemRef} onClick={renaming ? undefined : onClick}
       data-active={isActive || undefined}
+      data-focused={focused || undefined}
+      aria-current={focused ? 'true' : undefined}
       draggable={!!onDragStart && !renaming}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
       {...menu.bind()}
-      className={`group relative flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md ${isActive ? 'bg-[var(--sol-blue)]/15 text-[var(--sol-blue)]' : 'hover:bg-sol-hover-bg'}`}
-      style={{ ...(isActive ? undefined : INACTIVE_COLOR), opacity: dragging ? 0.55 : 1, ...(depth > 0 ? { paddingLeft: INDENT_BASE + depth * INDENT_STEP } : null), ...SESSION_TRANSITION }}>
+      className={`group relative flex items-center gap-2 px-2 py-0.5 rounded cursor-pointer text-ui-md ${rowTone}`}
+      style={{ ...((isActive || focused) ? undefined : INACTIVE_COLOR), ...(focused ? FOCUS_ACCENT : null), opacity: dragging ? 0.55 : 1, ...(depth > 0 ? { paddingLeft: INDENT_BASE + depth * INDENT_STEP } : null), ...SESSION_TRANSITION }}>
       {depth > 0 && Array.from({ length: depth }, (_, level) => (
         <span
           key={level}

@@ -36,6 +36,7 @@ function Harness({ sessions }: { sessions: AgentSession[] }) {
   const { sessionsBody } = useWorkspaceSessionSection({
     sessionsMgr: makeSessionsMgr(sessions),
     shownSessions: new Set<string>(),
+    focusedSession: '',
     isMobile: false,
     history: { data: [] as HistorySession[], loading: false, refresh: vi.fn<() => Promise<void>>() },
     projectPath: '/test',

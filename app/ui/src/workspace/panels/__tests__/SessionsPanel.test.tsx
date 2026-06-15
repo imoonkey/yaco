@@ -240,6 +240,22 @@ describe('SessionsPanel', () => {
     expect(liveNames.some(t => t?.includes('beta'))).toBe(true)
   })
 
+  it('marks only the focused terminal session as focused, others stay open-not-focused', () => {
+    const { container } = renderBody(
+      [makeSession('alpha', 'idle'), makeSession('beta', 'idle'), makeSession('gamma', 'idle')],
+      { terminal: 'alpha', 'terminal:2': 'beta' },
+      false,
+      'terminal:2',
+    )
+    // Both bound sessions read as open (live)...
+    expect(container.querySelectorAll('[data-active]').length).toBe(2)
+    // ...but only the focused terminal's session is focused.
+    const focused = [...container.querySelectorAll('[data-focused]')]
+    expect(focused.length).toBe(1)
+    expect(focused[0].textContent).toContain('beta')
+    expect(focused[0].getAttribute('aria-current')).toBe('true')
+  })
+
   it('on mobile marks only the visible active terminal session as live', () => {
     const { container } = renderBody(
       [makeSession('alpha', 'idle'), makeSession('beta', 'idle'), makeSession('gamma', 'idle')],

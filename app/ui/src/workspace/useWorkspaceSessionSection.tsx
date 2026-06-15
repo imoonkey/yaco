@@ -30,6 +30,8 @@ interface UseWorkspaceSessionSectionOpts {
   sessionsMgr: SessionsMgr
   /** Session names currently bound to a terminal tab → these rows read as live. */
   shownSessions: Set<string>
+  /** Session bound to the FOCUSED terminal → that row gets the focused tier. */
+  focusedSession: string
   isMobile: boolean
   history: { data: HistorySession[] | null; loading: boolean; refresh: () => Promise<void> }
   projectPath: string
@@ -59,7 +61,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
   sessionsBody: ReactNode
 } {
   const {
-    sessionsMgr, shownSessions, isMobile, history,
+    sessionsMgr, shownSessions, focusedSession, isMobile, history,
     clickSession, openBeside, refreshSessions,
   } = opts
 
@@ -234,7 +236,7 @@ export function useWorkspaceSessionSection(opts: UseWorkspaceSessionSectionOpts)
     const shortcutIndex = cmdCtrlHeld && idx >= 0 && idx < 9 ? idx + 1 : null
     const isCollapsed = collapsedSessions.has(s.name)
     return (
-      <SessionItem key={`session:${s.name}`} session={s} isActive={shownSessions.has(s.name)} pinned={isPinned} depth={depth}
+      <SessionItem key={`session:${s.name}`} session={s} isActive={shownSessions.has(s.name)} focused={!!focusedSession && s.name === focusedSession} pinned={isPinned} depth={depth}
         hasChildren={hasChildren}
         collapsed={isCollapsed}
         onToggleCollapse={() => toggleCollapse(s.name)}

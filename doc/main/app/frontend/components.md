@@ -50,9 +50,9 @@ App (384 lines)
         ├── Menu — compact shared context menu: keyboard nav (Arrow/Enter/Home/End), long-press (350ms), iOS native-callout suppression
         ├── Terminal (528 lines)
         │   └── TerminalKeyBar (268 lines) — touch-only
-        ├── SessionItem — status dots (processing/starting/idle/blocked) + blocked reason badge + parent collapse toggle
+        ├── SessionItem — status dots (processing/starting/idle/blocked) + blocked reason badge + parent collapse toggle + open/focused row emphasis
         ├── WorkspaceHistoryList (114 lines)
-        ├── WorkspaceSessionList (271 lines) — SessionItem with worktree badge
+        ├── WorkspaceSessionList (336 lines) — SessionItem with worktree badge
         ├── GitChangeItem
         ├── FileSearch — recent files section, search cap banner
         ├── ShortcutSheet — ? key opens shortcut cheatsheet
@@ -242,7 +242,7 @@ Receives pre-built content slots from WorkspaceScreen and composes them into des
 | `WorkspaceTextSearch.tsx` | 489 | Full-text search with result cap banner |
 | `PanelSearchBox.tsx` | 59 | Shared panel search input used by text search and Sessions search |
 | `ShortcutSheet.tsx` | ~80 | Keyboard shortcut cheatsheet (? key) |
-| `WorkspaceSessionList.tsx` | 271 | SessionItem with status dots (processing/starting/idle/blocked) + blocked reason badge + parent collapse toggle |
+| `WorkspaceSessionList.tsx` | 336 | SessionItem with status dots (processing/starting/idle/blocked) + blocked reason badge + parent collapse toggle + three-tier row emphasis (closed / open in a terminal / focused terminal, by blue-wash depth + inset left accent bar) |
 | `WorkspaceHistoryList.tsx` | 114 | History tab items |
 | `useWorkspaceSidebarResize.ts` | 88 | Sidebar resize state + max computation |
 | `useWorkspaceSessionSection.tsx` | 326 | Session tab/search state, list rendering, drag, resume, history JSX |

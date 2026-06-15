@@ -95,6 +95,7 @@ export function SessionsPanel() {
   const { sessionsActions, sessionsSearch, sessionsBody } = useWorkspaceSessionSection({
     sessionsMgr,
     shownSessions,
+    focusedSession: selection.activeSession,
     isMobile,
     history,
     projectPath: effectivePath,
