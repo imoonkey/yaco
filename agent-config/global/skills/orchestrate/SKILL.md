@@ -1,13 +1,13 @@
 ---
 name: orchestrate
-description: Execute active tasks from plan/tasks/**/tasks.json using yaco agent workers. Use when the user wants to run, advance, or check on task execution.
+description: Execute active tasks from the project task graph using yaco agent workers. Use when the user wants to run, advance, or check on task execution.
 metadata:
   yaco-dependent: "true"
 ---
 
-Read `plan/tasks/**/tasks.json` via `yaco task`, dispatch `yaco agent` workers
-against session state in `~/.yaco/sessions/`, and drive the worktree
-lifecycle via `yaco worktree`.
+Read the task graph via `yaco task`, dispatch `yaco agent` workers, and drive
+the worktree lifecycle via `yaco worktree`. These commands resolve their paths
+(task graph, worktrees) from yaco.toml — see `/yaco-paths`; don't hardcode `plan/`.
 
 Every `yaco` invocation in this skill MUST pass `--json` so output flows
 through the `{ok,data}/{ok,error}` envelope and stays parseable from
@@ -30,7 +30,7 @@ Each task executes in a **resolved cwd** based on the optional `worktree` field:
 
 | `worktree` field | CWD | Branch |
 |-----------------|-----|--------|
-| Present (e.g. `"auth-v2"`) | `<repo>/.worktrees/<slug>/` | `task/<slug>` |
+| Present (e.g. `"auth-v2"`) | `<worktrees>/<slug>/` | `task/<slug>` |
 | Absent | Main checkout | Current branch |
 
 To resolve a worktree cwd:
@@ -39,12 +39,12 @@ To resolve a worktree cwd:
 worktree_path="$(yaco worktree create <slug> --json | jq -r .data.path)"
 ```
 
-`yaco worktree create` creates `<repo>/.worktrees/<slug>/` on branch
+`yaco worktree create` creates `<worktrees>/<slug>/` (resolved from yaco.toml; default `<repo>/.worktrees`) on branch
 `task/<slug>`, runs the repo's own `scripts/worktree-provision.sh` if
 present, and reuses existing worktrees. Without `--json` it prints the
 worktree path on stdout.
 
-**Cross-repo worktrees:** If task `scope` includes paths in multiple repos, create a worktree in each repo using the same slug. Each repo manages its own `.worktrees/` directory independently.
+**Cross-repo worktrees:** If task `scope` includes paths in multiple repos, create a worktree in each repo using the same slug. Each repo manages its own `<worktrees>/` directory independently.
 
 ### Two-Level Parallelism
 
