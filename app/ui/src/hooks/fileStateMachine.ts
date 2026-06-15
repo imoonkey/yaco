@@ -23,15 +23,33 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
       return state.status === 'missing' ? state : { ...state, status: 'missing' }
 
     case 'SERVER_SYNC': {
-      // Dirty/conflict with draft: check revision divergence
+      // Dirty/conflict with draft: a conflict is about CONTENT divergence, not
+      // mtime. Comparing the file's mtime (our revision token) alone flags our
+      // own save echoed back through the file watcher as a phantom disk change.
       if (state.draft != null && state.status !== 'clean') {
-        if (state.baseRevision != null && state.baseRevision !== event.revision) {
-          if (state.status === 'conflict' && state.serverContent === event.content) return state
-          return { ...state, serverContent: event.content, status: 'conflict' }
+        // Disk content unchanged vs our base — only the mtime moved (typically
+        // our own write coming back via the watcher). Absorb the new revision so
+        // the next save doesn't spuriously 409. Never while in conflict: there
+        // the stale base revision is the guard that forces an explicit
+        // Keep-Mine / Accept-Disk choice before a plain Ctrl+S overwrites disk.
+        if (state.serverContent === event.content) {
+          if (state.status === 'conflict') return state
+          return state.baseRevision === event.revision ? state : { ...state, baseRevision: event.revision }
         }
-        // Revision matches — update server content if changed
-        if (state.serverContent === event.content && state.baseRevision === event.revision) return state
-        return { ...state, serverContent: event.content, baseRevision: event.revision }
+        // Disk now equals our live buffer — buffer and disk agree, so we're back
+        // in sync; clears any stale conflict/dirty for this path.
+        if (state.draft === event.content) {
+          return {
+            serverContent: event.content,
+            draft: null,
+            baseRevision: event.revision,
+            viewportLine: state.viewportLine,
+            status: 'clean',
+            editedAt: state.editedAt,
+          }
+        }
+        // Disk content genuinely diverged under an unsaved draft — real conflict.
+        return { ...state, serverContent: event.content, status: 'conflict' }
       }
 
       // Clean file: adopt server content
@@ -67,7 +85,14 @@ export function fileTransition(state: FileState, event: FileEvent): FileState {
       return { ...state, status: 'saving' }
 
     case 'SAVE_SUCCESS':
-      return { ...state, serverContent: event.content, draft: null, baseRevision: event.revision, status: 'clean' }
+      // Edits typed while the save was in flight must survive — saving never
+      // discards the live buffer (cf. VSCode). Only go clean when the buffer
+      // still equals the bytes we persisted; otherwise keep the newer draft
+      // dirty over the freshly-written revision.
+      if (state.draft == null || state.draft === event.content) {
+        return { ...state, serverContent: event.content, draft: null, baseRevision: event.revision, status: 'clean' }
+      }
+      return { ...state, serverContent: event.content, baseRevision: event.revision, status: 'dirty' }
 
     case 'SAVE_CONFLICT':
       return { ...state, status: 'conflict' }

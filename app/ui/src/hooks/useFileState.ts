@@ -113,8 +113,11 @@ export function useFileState(
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Working-tree file content changes always arrive on the 'filetree' channel
+  // (the watcher emits 'git' in addition, but only for .git-internal writes that
+  // never alter open file contents). Subscribing to both double-fired a full
+  // refetch of every open tab per disk change; 'filetree' alone is sufficient.
   useSSERefresh('filetree', refetchOpenFiles)
-  useSSERefresh('git', refetchOpenFiles)
 
   // --- Derived: dirty/conflict tab sets ---
   // Key each Set on a content signature so its identity only changes when membership
@@ -124,7 +127,9 @@ export function useFileState(
     const dirty: string[] = []
     const conflict: string[] = []
     for (const [path, state] of Object.entries(files)) {
-      if (state.status === 'dirty' || state.status === 'saving' || state.status === 'conflict') dirty.push(path)
+      // draft != null also covers 'missing' (a dirty file deleted on disk) so an
+      // unsaved buffer is never dropped from the dirty set on its way to GC.
+      if (state.draft != null || state.status === 'dirty' || state.status === 'saving' || state.status === 'conflict') dirty.push(path)
       if (state.status === 'conflict') conflict.push(path)
     }
     dirty.sort()
@@ -165,8 +170,10 @@ export function useFileState(
       let changed = false
       const next: Record<string, FileState> = {}
       for (const [path, state] of Object.entries(prev)) {
-        const dirty = state.status === 'dirty' || state.status === 'saving' || state.status === 'conflict'
-        if (keepPaths.has(path) || dirty) next[path] = state
+        // Retain anything still holding unsaved work — including a 'missing' file
+        // (deleted on disk) whose draft would otherwise be silently GC'd on close.
+        const unsaved = state.draft != null || state.status === 'dirty' || state.status === 'saving' || state.status === 'conflict'
+        if (keepPaths.has(path) || unsaved) next[path] = state
         else changed = true
       }
       return changed ? next : prev
