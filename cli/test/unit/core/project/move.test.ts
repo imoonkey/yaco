@@ -604,9 +604,10 @@ describe("claude jsonl mtime preservation", () => {
     process.env["YACO_HOME"] = fix.yacoHome;
     const oldDir = stageClaudeProject(fix, fix.oldPath, ["aaaaaaaa-0000-0000-0000-000000000001"]);
     const file = join(oldDir, "aaaaaaaa-0000-0000-0000-000000000001.jsonl");
-    // Set mtime to 7 days ago.
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
-    utimesSync(file, sevenDaysAgo, sevenDaysAgo);
+    // Set mtime before the staged messages so the "preserve file mtime" branch
+    // remains stable regardless of the wall-clock date when this test runs.
+    const beforeMessages = new Date("2026-06-03T00:00:00.000Z");
+    utimesSync(file, beforeMessages, beforeMessages);
     const beforeMtime = statSync(file).mtimeMs;
 
     const plan = planMove({
