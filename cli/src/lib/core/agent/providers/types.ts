@@ -9,7 +9,7 @@
  *  Optional capabilities may be omitted: a provider can start as a usable
  *  tmux-backed TUI and gain richer reconstruction later. */
 
-import type { BlockReason, SessionState } from "../model.ts";
+import type { BlockReason, SessionState, SpawnedBy } from "../model.ts";
 import type { SessionIdResult } from "../session-id.ts";
 
 /** Provider hook event name (e.g. "SessionStart"). Open-ended so future
@@ -134,6 +134,18 @@ export interface HistorySession {
   live?: boolean;
   /** Handle of the live YACO session sharing this sessionId, else null. */
   liveSessionName?: string | null;
+  /** Spawn source, filled by history enrichment when known. */
+  spawnedBy?: SpawnedBy | null;
+  /** Parent session handle breadcrumb, filled by history enrichment when known. */
+  parentSession?: string | null;
+}
+
+/** Canonical JSON payload for `yaco agent history --json`. */
+export interface HistoryWindow {
+  rows: HistorySession[];
+  returned: number;
+  truncated: boolean;
+  oldestUpdatedAt: string | null;
 }
 
 /** A per-live-session display label. */

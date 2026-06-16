@@ -173,13 +173,51 @@ describe("finalizeHistory", () => {
     return { sessionId, provider: "claude", title: null, summary: "x", created: updatedAt, updatedAt, messageCount: null, gitBranch: null };
   }
 
-  it("sorts newest-first and caps at 200", () => {
+  it("sorts newest-first and returns the default 200-row window metadata", () => {
     const many = Array.from({ length: 250 }, (_, i) =>
       row(`s-${i}`, new Date(2026, 0, 1, 0, i).toISOString()),
     );
     const out = finalizeHistory(many, []);
-    expect(out).toHaveLength(200);
-    expect(out[0]!.sessionId).toBe("s-249");
+    expect(out.rows).toHaveLength(200);
+    expect(out.returned).toBe(200);
+    expect(out.truncated).toBe(true);
+    expect(out.rows[0]!.sessionId).toBe("s-249");
+    expect(out.oldestUpdatedAt).toBe(out.rows.at(-1)!.updatedAt);
+  });
+
+  it("honors --limit above the default without truncation", () => {
+    const many = Array.from({ length: 250 }, (_, i) =>
+      row(`s-${i}`, new Date(2026, 0, 1, 0, i).toISOString()),
+    );
+    const out = finalizeHistory(many, [], { limit: 300 });
+    expect(out.rows).toHaveLength(250);
+    expect(out.returned).toBe(250);
+    expect(out.truncated).toBe(false);
+    expect(out.oldestUpdatedAt).toBe(out.rows.at(-1)!.updatedAt);
+  });
+
+  it("filters --since after provider merge and before applying the limit", () => {
+    const many = Array.from({ length: 250 }, (_, i) =>
+      row(`s-${i}`, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()),
+    );
+    const cutoff = new Date(Date.UTC(2026, 0, 1, 0, 30));
+
+    const highLimit = finalizeHistory(many, [], { since: cutoff, limit: 300 });
+    expect(highLimit.rows).toHaveLength(220);
+    expect(highLimit.returned).toBe(220);
+    expect(highLimit.truncated).toBe(false);
+    expect(highLimit.rows.at(-1)!.sessionId).toBe("s-30");
+
+    const defaultLimit = finalizeHistory(many, [], { since: cutoff });
+    expect(defaultLimit.rows).toHaveLength(200);
+    expect(defaultLimit.returned).toBe(200);
+    expect(defaultLimit.truncated).toBe(true);
+    expect(defaultLimit.rows.at(-1)!.sessionId).toBe("s-50");
+  });
+
+  it("returns an empty window with null oldestUpdatedAt", () => {
+    const out = finalizeHistory([], []);
+    expect(out).toEqual({ rows: [], returned: 0, truncated: false, oldestUpdatedAt: null });
   });
 
   it("tags live sessions by sessionId and leaves others untagged", () => {
@@ -188,8 +226,8 @@ describe("finalizeHistory", () => {
       { handle: "pending", provider: "codex", sessionPath: PROJECT, pid: 2, sessionId: "pending:awaiting-first-prompt", status: "idle", createdAt: "" },
     ];
     const out = finalizeHistory([row("live-id", "2026-06-04T00:00:00Z"), row("ghost", "2026-06-03T00:00:00Z")], live);
-    const tagged = out.find((r) => r.sessionId === "live-id")!;
-    const ghost = out.find((r) => r.sessionId === "ghost")!;
+    const tagged = out.rows.find((r) => r.sessionId === "live-id")!;
+    const ghost = out.rows.find((r) => r.sessionId === "ghost")!;
     expect(tagged.live).toBe(true);
     expect(tagged.liveSessionName).toBe("worker");
     expect(ghost.live).toBe(false);
@@ -208,9 +246,11 @@ describe("runHistory command", () => {
       pid: 4242, sessionId: "claude-1", status: "idle", createdAt: "2026-06-04T10:00:00.000Z",
     });
 
-    const rows = await runHistory(PROJECT);
-    expect(rows.map((r) => r.sessionId)).toEqual(["claude-1", "cx-1"]);
-    expect(rows.find((r) => r.sessionId === "claude-1")!.liveSessionName).toBe("live-claude");
-    expect(rows.find((r) => r.sessionId === "cx-1")!.live).toBe(false);
+    const result = await runHistory(PROJECT);
+    expect(result.rows.map((r) => r.sessionId)).toEqual(["claude-1", "cx-1"]);
+    expect(result.returned).toBe(2);
+    expect(result.truncated).toBe(false);
+    expect(result.rows.find((r) => r.sessionId === "claude-1")!.liveSessionName).toBe("live-claude");
+    expect(result.rows.find((r) => r.sessionId === "cx-1")!.live).toBe(false);
   });
 });

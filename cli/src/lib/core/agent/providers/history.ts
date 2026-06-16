@@ -15,10 +15,10 @@ import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { encodeClaudeCwd } from "../../project/encode.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../model.ts";
-import type { HistorySession, ProviderHistory, SummaryResult } from "./types.ts";
+import type { HistorySession, HistoryWindow, ProviderHistory, SummaryResult } from "./types.ts";
 
-/** History row cap after merging every provider. */
-const HISTORY_CAP = 200;
+/** Default history row limit after filtering the merged provider rows. */
+export const DEFAULT_HISTORY_LIMIT = 200;
 /** Bytes read from the head of each Claude JSONL (first user message + start). */
 const HEAD_BYTES = 16384;
 /** Bytes read from the tail of each Claude JSONL (last custom-title + mtime). */
@@ -457,19 +457,32 @@ export function codexHistory(): ProviderHistory {
 export function finalizeHistory(
   rows: HistorySession[],
   liveSessions: readonly SessionState[],
-): HistorySession[] {
+  options: { limit?: number; since?: Date } = {},
+): HistoryWindow {
+  const limit = options.limit ?? DEFAULT_HISTORY_LIMIT;
+  const cutoff = options.since?.getTime();
   const sorted = [...rows].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
-  const capped = sorted.slice(0, HISTORY_CAP);
+  const matching = cutoff === undefined
+    ? sorted
+    : sorted.filter((row) => new Date(row.updatedAt).getTime() >= cutoff);
+  const windowRows = matching.slice(0, limit);
 
   const liveBySessionId = new Map<string, string>();
   for (const s of liveSessions) {
     if (s.sessionId && s.sessionId !== PENDING_SESSION_ID) liveBySessionId.set(s.sessionId, s.handle);
   }
 
-  return capped.map((row) => {
+  const enriched = windowRows.map((row) => {
     const handle = liveBySessionId.get(row.sessionId) ?? null;
     return { ...row, live: handle !== null, liveSessionName: handle };
   });
+
+  return {
+    rows: enriched,
+    returned: enriched.length,
+    truncated: matching.length > limit,
+    oldestUpdatedAt: enriched.at(-1)?.updatedAt ?? null,
+  };
 }

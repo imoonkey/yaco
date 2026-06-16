@@ -131,7 +131,19 @@ describe("agent history/summaries data envelopes", () => {
   it("`agent history --path <unknown> --json` returns an empty list envelope", () => {
     const { status, data } = runJson(["agent", "history", "--path", "/no/such/project/xyz", "--json"], hermetic);
     expect(status).toBe(0);
-    expect(data).toEqual({ ok: true, data: [] });
+    expect(data).toEqual({
+      ok: true,
+      data: { rows: [], returned: 0, truncated: false, oldestUpdatedAt: null },
+    });
+  });
+
+  it("`agent history --json` bare call returns the canonical window object", () => {
+    const { status, data } = runJson(["agent", "history", "--json"], hermetic);
+    expect(status).toBe(0);
+    expect(data).toEqual({
+      ok: true,
+      data: { rows: [], returned: 0, truncated: false, oldestUpdatedAt: null },
+    });
   });
 
   it("`agent summaries --path <unknown> --json` returns an empty list envelope", () => {
@@ -167,8 +179,83 @@ describe("agent history/summaries data envelopes", () => {
     expect(r.status).toBe(0);
     expect(r.stderr).toBe("");
     expect(r.stdout.length).toBeGreaterThan(180_000);
-    const envelope = JSON.parse(r.stdout) as { ok: boolean; data: unknown[] };
+    const envelope = JSON.parse(r.stdout) as {
+      ok: boolean;
+      data: { rows: unknown[]; returned: number; truncated: boolean; oldestUpdatedAt: string | null };
+    };
     expect(envelope.ok).toBe(true);
-    expect(envelope.data).toHaveLength(200);
+    expect(envelope.data.rows).toHaveLength(200);
+    expect(envelope.data.returned).toBe(200);
+    expect(envelope.data.truncated).toBe(true);
+    expect(envelope.data.oldestUpdatedAt).toBe(envelope.data.rows.at(-1) && (envelope.data.rows.at(-1) as { updatedAt: string }).updatedAt);
+  });
+
+  it("`agent history --limit 300 --json` can return beyond the default window", () => {
+    const projectPath = join(sandbox, "limit-project");
+    const projectDir = join(sandbox, ".claude", "projects", encodeClaudeCwd(projectPath));
+    mkdirSync(projectDir, { recursive: true });
+
+    for (let i = 0; i < 220; i++) {
+      const sessionId = `11111111-1111-4111-8111-${String(i).padStart(12, "0")}`;
+      const timestamp = new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString();
+      writeFileSync(
+        join(projectDir, `${sessionId}.jsonl`),
+        JSON.stringify({ type: "user", timestamp, message: { content: `prompt ${i}` } }) + "\n",
+      );
+    }
+
+    const { status, data } = runJson(["agent", "history", "--path", projectPath, "--limit", "300", "--json"], hermetic);
+    expect(status).toBe(0);
+    const envelope = data as { ok: boolean; data: { rows: unknown[]; returned: number; truncated: boolean } };
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data.rows).toHaveLength(220);
+    expect(envelope.data.returned).toBe(220);
+    expect(envelope.data.truncated).toBe(false);
+  });
+
+  it("`agent history --since` filters before the default limit", () => {
+    const projectPath = join(sandbox, "since-project");
+    const projectDir = join(sandbox, ".claude", "projects", encodeClaudeCwd(projectPath));
+    mkdirSync(projectDir, { recursive: true });
+
+    for (let i = 0; i < 250; i++) {
+      const sessionId = `22222222-2222-4222-8222-${String(i).padStart(12, "0")}`;
+      const timestamp = new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString();
+      writeFileSync(
+        join(projectDir, `${sessionId}.jsonl`),
+        JSON.stringify({ type: "user", timestamp, message: { content: `prompt ${i}` } }) + "\n",
+      );
+    }
+
+    const cutoff = new Date(Date.UTC(2026, 0, 1, 0, 30)).toISOString();
+    const { status, data } = runJson(["agent", "history", "--path", projectPath, "--since", cutoff, "--json"], hermetic);
+    expect(status).toBe(0);
+    const envelope = data as { ok: boolean; data: { rows: Array<{ sessionId: string }>; returned: number; truncated: boolean } };
+    expect(envelope.ok).toBe(true);
+    expect(envelope.data.rows).toHaveLength(200);
+    expect(envelope.data.returned).toBe(200);
+    expect(envelope.data.truncated).toBe(true);
+    expect(envelope.data.rows.at(-1)!.sessionId.endsWith("000000000050")).toBe(true);
+  });
+
+  it.each([
+    [["agent", "history", "--bogus", "--json"], "unknown flag"],
+    [["agent", "history", "extra", "--json"], "unexpected argument"],
+    [["agent", "history", "--since", "30d", "--json"], "--since requires"],
+    [["agent", "history", "--limit", "--json"], "--limit requires"],
+    [["agent", "history", "--limit", "abc", "--json"], "--limit requires"],
+    [["agent", "history", "--limit", "-1", "--json"], "--limit requires"],
+    [["agent", "history", "--limit", "0", "--json"], "--limit requires"],
+  ])("`%s` exits with USAGE", (args, snippet) => {
+    const r = spawnSync("bun", ["run", BIN, ...args], {
+      encoding: "utf-8",
+      env: { ...process.env, NO_COLOR: "1", ...hermetic },
+    });
+    expect(r.status).toBe(2);
+    expect(r.stdout.trim()).toBe("");
+    const err = JSON.parse((r.stderr ?? "").trim()) as { ok: boolean; error: { code: string; message: string } };
+    expect(err.ok).toBe(false);
+    expect(err.error.code).toBe("USAGE");
+    expect(err.error.message).toContain(snippet);
   });
 });

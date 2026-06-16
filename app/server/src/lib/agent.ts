@@ -72,6 +72,15 @@ export interface CliHistorySession {
   archived?: boolean
   live?: boolean
   liveSessionName?: string | null
+  spawnedBy?: 'user:web' | 'user:terminal' | 'agent' | null
+  parentSession?: string | null
+}
+
+interface CliHistoryWindow {
+  rows: CliHistorySession[]
+  returned: number
+  truncated: boolean
+  oldestUpdatedAt: string | null
 }
 
 /** A per-live-session display label from `yaco agent summaries --path <p> --json`,
@@ -302,7 +311,10 @@ export async function fetchHistory(projectPath: string): Promise<CliHistorySessi
     YACO_AGENT_STATUS_TIMEOUT_MS,
     'agent history',
   )
-  return Array.isArray(data) ? (data as CliHistorySession[]) : []
+  if (data && typeof data === 'object' && Array.isArray((data as Partial<CliHistoryWindow>).rows)) {
+    return (data as CliHistoryWindow).rows
+  }
+  return []
 }
 
 /** Fetch per-live-session summary labels from `yaco agent summaries --path <p>

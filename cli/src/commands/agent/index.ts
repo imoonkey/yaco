@@ -31,7 +31,7 @@ import { markCrashed } from "./mark-crashed.ts";
 import { rename } from "./rename.ts";
 import { status, list } from "./status.ts";
 import { whoami } from "./whoami.ts";
-import { runHistory, renderHistory } from "./history.ts";
+import { HISTORY_USAGE, parseHistoryArgs, runHistory, renderHistory } from "./history.ts";
 import { runSummaries, renderSummaries } from "./summaries.ts";
 import { runProviders, renderProviders } from "./providers.ts";
 import { runOutputCursor, runOutputFollow, parseOutputFollowArgs, OUTPUT_FOLLOW_USAGE } from "./output.ts";
@@ -58,7 +58,7 @@ Usage:
   yaco agent list [--all] [--path <p>] [--reconcile] [--json]
   yaco agent status <name> [--reconcile] [--json]
   yaco agent whoami [--json]
-  yaco agent history --path <project-path> [--json]
+  yaco agent history [--path <project-path>] [--since <iso>] [--limit <n>] [--json]
   yaco agent summaries --path <project-path> [--json]
   yaco agent providers [--json]
   yaco agent output-cursor <name> [--json]
@@ -490,13 +490,13 @@ export async function handleAgent(
     }
 
     case "history": {
-      if (rest.includes("--help") || rest.includes("-h")) {
-        return ok({ help: "yaco agent history --path <project-path> [--json]\n" });
+      const nonGlobal = rest.filter((a) => a !== "--json");
+      if (nonGlobal.length === 1 && (nonGlobal[0] === "--help" || nonGlobal[0] === "-h")) {
+        return ok({ help: `${HISTORY_USAGE}\n` });
       }
-      const parsed = parseSubArgs(rest);
-      const projectPath = parsed.options.path ?? process.cwd();
-      const sessions = await runHistory(projectPath);
-      return dual(parsed.options.json || opts.json, sessions, () => renderHistory(sessions));
+      const parsed = parseHistoryArgs(rest);
+      const result = await runHistory(parsed.projectPath, { limit: parsed.limit, since: parsed.since });
+      return dual(parsed.json || opts.json, result, () => renderHistory(result.rows));
     }
 
     case "summaries": {
