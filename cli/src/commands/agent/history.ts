@@ -12,7 +12,7 @@ import { listByPath } from "../../lib/core/agent/session-state.ts";
 import type { HistorySession, HistoryWindow } from "../../lib/core/agent/providers/types.ts";
 
 export const HISTORY_USAGE =
-  "yaco agent history [--path <project-path>] [--since <iso-timestamp>] [--limit <n>] [--json]";
+  "yaco agent history [--path <project-path>] [--since <iso-timestamp-with-timezone>] [--limit <n>] [--json]";
 
 export interface HistoryArgs {
   projectPath: string;
@@ -46,11 +46,11 @@ function parseLimitValue(value: string | undefined): number {
 function parseSinceValue(value: string | undefined): Date {
   const raw = requireValue("--since", value);
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw)) {
-    throw usage(`--since requires an ISO-8601 timestamp (got: ${raw})`);
+    throw usage(`--since requires a full ISO-8601 timestamp with timezone, e.g. 2026-06-15T00:00:00Z (got: ${raw})`);
   }
   const since = new Date(raw);
   if (Number.isNaN(since.getTime())) {
-    throw usage(`--since requires an ISO-8601 timestamp (got: ${raw})`);
+    throw usage(`--since requires a full ISO-8601 timestamp with timezone, e.g. 2026-06-15T00:00:00Z (got: ${raw})`);
   }
   return since;
 }

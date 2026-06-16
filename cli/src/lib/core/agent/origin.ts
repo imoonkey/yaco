@@ -65,7 +65,6 @@ export function recordOriginIfResolved(state: SessionState): void {
   const path = originPathForSessionId(state.sessionId);
   if (!path) return;
 
-  mkdirSync(originsDir(), { recursive: true });
   const record: OriginRecord = {
     sessionId: state.sessionId,
     spawnedBy: state.spawnedBy,
@@ -75,9 +74,10 @@ export function recordOriginIfResolved(state: SessionState): void {
   };
 
   try {
+    mkdirSync(originsDir(), { recursive: true });
     writeFileSync(path, JSON.stringify(record), { flag: "wx" });
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === "EEXIST") return;
-    throw e;
+  } catch {
+    // First-write-wins races (EEXIST) and operational errors alike should only
+    // lose the non-authoritative breadcrumb, never the live agent lifecycle.
   }
 }

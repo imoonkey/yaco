@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { relative } from "node:path";
 import { tmpdir } from "node:os";
 import { originsDir } from "../../../../src/lib/core/paths/yaco-home.ts";
@@ -87,5 +87,17 @@ describe("recordOriginIfResolved", () => {
     expect(existsSync(path!)).toBe(true);
     expect(readFileSync(path!, "utf-8")).toContain(sessionId);
     expect(readOriginForSessionId(sessionId)?.sessionId).toBe(sessionId);
+  });
+
+  it("does not throw when the origin directory cannot be created", () => {
+    const blocked = `${sandbox}/blocked-file`;
+    writeFileSync(blocked, "not a directory");
+    process.env["YACO_HOME"] = blocked;
+
+    expect(() => recordOriginIfResolved(state({ sessionId: "mkdir-fails" }))).not.toThrow();
+  });
+
+  it("does not throw when the origin record write fails", () => {
+    expect(() => recordOriginIfResolved(state({ sessionId: "x".repeat(5000) }))).not.toThrow();
   });
 });

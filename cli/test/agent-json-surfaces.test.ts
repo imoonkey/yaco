@@ -187,7 +187,8 @@ describe("agent history/summaries data envelopes", () => {
     expect(envelope.data.rows).toHaveLength(200);
     expect(envelope.data.returned).toBe(200);
     expect(envelope.data.truncated).toBe(true);
-    expect(envelope.data.oldestUpdatedAt).toBe(envelope.data.rows.at(-1) && (envelope.data.rows.at(-1) as { updatedAt: string }).updatedAt);
+    const oldest = envelope.data.rows.at(-1) as { updatedAt: string } | undefined;
+    expect(envelope.data.oldestUpdatedAt).toBe(oldest?.updatedAt ?? null);
   });
 
   it("`agent history --limit 300 --json` can return beyond the default window", () => {

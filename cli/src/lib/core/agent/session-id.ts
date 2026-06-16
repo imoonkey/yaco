@@ -145,7 +145,7 @@ function scanCodexRollouts(sessionCreatedMs: number): RolloutMatch | null {
               }
               if (delayMs < bestDelay) {
                 bestDelay = delayMs;
-                bestId = m[1];
+                bestId = m[1]!;
                 bestPath = filePath;
               }
             } catch { continue; }

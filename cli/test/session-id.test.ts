@@ -44,7 +44,8 @@ describe("resolveSessionId — claude (live)", () => {
     try {
       const files = readdirSync(dir).filter((f: string) => f.endsWith(".json"));
       if (files.length > 0) {
-        const data = JSON.parse(readFileSync(join(dir, files[0]), "utf-8"));
+        const file = files[0]!;
+        const data = JSON.parse(readFileSync(join(dir, file), "utf-8"));
         if (data.pid && data.sessionId) {
           const result = resolveSessionId(data.pid, "claude");
           expect(result?.sessionId).toBe(data.sessionId);
