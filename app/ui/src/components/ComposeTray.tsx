@@ -103,14 +103,19 @@ export function ComposeTray({
   }, [])
   useEffect(() => { autoSize() }, [editText, autoSize])
 
-  // Focus and place the caret when settling into compose: after a take, just
-  // past the inserted text (pendingSelRef); on first open, at the end. DOM-only
-  // (no setState), and keyed on prevAppendKey so it never fights live typing.
+  // Move focus into the tray the moment it opens — including while a take is in
+  // flight — so the modal, not a background terminal, owns the keyboard. Without
+  // this the xterm keeps focus during recording and swallows Esc (it writes \x1b
+  // to the PTY and stops propagation), so DialogShell never sees it: Esc would
+  // leak into the terminal instead of closing the tray. On composing/recoverable
+  // also place the caret: after a take, just past the inserted text
+  // (pendingSelRef); on first open, at the end. DOM-only (no setState), keyed on
+  // prevAppendKey so it never fights live typing.
   useEffect(() => {
-    if (state !== 'composing' && state !== 'recoverable') return
     const el = textareaRef.current
     if (!el) return
     el.focus()
+    if (state !== 'composing' && state !== 'recoverable') return
     const pos = pendingSelRef.current ?? el.value.length
     el.setSelectionRange(pos, pos)
     caretRef.current = { start: pos, end: pos }

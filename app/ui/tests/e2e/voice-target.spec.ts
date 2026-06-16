@@ -139,4 +139,29 @@ test.describe('Compose tray target selector — re-point routes the insert', () 
     await expect(composeInput(page)).toBeHidden({ timeout: 5_000 })
     await expect(homePane(page).locator('.cm-content')).toContainText('transcript', { timeout: 10_000 })
   })
+
+  test('Esc while recording closes the tray instead of leaking to the terminal', async ({ page, request }) => {
+    await stubVoice(page)
+    fixture = await createFixtureProject(request)
+    const s = await startShell(request, fixture.path)
+    await waitServed(request, fixture.name)
+    await page.goto('/')
+    await waitForAppReady(page)
+    await selectProject(page, fixture.name)
+
+    // Bind + focus a terminal, then start a take into it via the nav mic. The take
+    // stays in flight (no Stop) — the regression is that the background terminal,
+    // not the tray, used to keep focus, so Esc reached the PTY and killed the job.
+    await openSessionBeside(page, s)
+    await expect(terminalPane(page)).toHaveAttribute('data-focused', 'true', { timeout: 15_000 })
+    await page.getByRole('button', { name: 'Start voice recording' }).click()
+    await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible({ timeout: 5_000 })
+
+    // The modal owns the keyboard while recording: focus is in the tray, not xterm.
+    await expect(composeInput(page)).toBeFocused()
+
+    // Esc is captured by the tray (closes it), never reaching the terminal.
+    await page.keyboard.press('Escape')
+    await expect(composeInput(page)).toBeHidden({ timeout: 5_000 })
+  })
 })
