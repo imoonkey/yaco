@@ -11,10 +11,9 @@
   (`voiceStateMachine`) re-points the open run; `useVoice.retarget(ctx)` exposes it, and the
   tray selector drives it via `WorkspaceScreen.retargetVoice` → `targetContextOf`.
   `handleVoiceConfirm` still routes through `voice.target`, which `RETARGET` updates.
-  Re-pointing is phase-gated to `composing`/`error` (incl. recoverable) and the tray locks
-  the dropdown while a take is in flight — an unretargeted take still lands where it started.
-- **Retiring a lost target is now recoverable for free:** picking a valid instance clears
-  `targetLost` (recoverable → composing).
+  The selector is re-pointable for the whole open lifecycle — even while recording,
+  since routing only binds at Insert — and picking a valid instance also recovers a
+  lost target (recoverable → composing).
 - **Removed the nav-side override + focus-epoch machinery** (`advanceFocusEpoch`,
   `FocusEpochState`, `VoiceTargetOverride`, the `override` arg on `resolveVoiceTarget`, and
   the `voiceSurface` mirror in `useWorkspaceVoice`) — its only consumer was the nav dropdown.
@@ -28,10 +27,11 @@ chrome — the tray is where the user reads the draft and decides where it goes.
 transcript only routes to an editor/terminal at **Insert** (recording just fills the draft
 buffer), the frozen-at-record binding was stricter than needed; re-pointing the run is a
 small, well-contained state-machine addition. Decisions confirmed with the user (mic stays
-in nav; selector re-routes Insert). Reviewed by Codex (1 round): the only finding — an
-in-flight retarget bypassable through a lingering open menu — was fixed by phase-gating the
-reducer and force-closing the menu when locked. `tsc -b` + eslint clean, 993 UI unit tests
-pass, retarget→Insert e2e green.
+in nav; selector re-routes Insert). Codex review flagged an in-flight-retarget lock as
+bypassable through a lingering open menu — resolved by dropping the lock entirely: since
+the draft only routes at Insert, re-pointing mid-take is harmless, so there is nothing to
+guard. `tsc -b` + eslint clean, UI unit tests pass, retarget→Insert + Esc-while-recording
+e2e green.
 
 ## 2026-06-15: Editor render isolation — smooth typing in large files
 

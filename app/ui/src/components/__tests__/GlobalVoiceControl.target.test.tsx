@@ -196,12 +196,12 @@ describe('voiceStateMachine — RETARGET re-points the open run', () => {
     expect(state).toBe(INITIAL_STATE)
   })
 
-  it('is ignored while a take is in flight (the bound target is kept)', () => {
+  it('re-points a take that is still in flight (routing only binds at Insert)', () => {
     let state = voiceReducer(INITIAL_STATE, { type: 'START_RECORD', target: EDITOR, runId: 1 })
     state = voiceReducer(state, { type: 'PERMISSION_GRANTED', startedAt: 1, runId: 1 }) // recording
-    const after = voiceReducer(state, { type: 'RETARGET', target: TERMINAL })
-    expect(after).toBe(state)
-    expect(selectTarget(after.phase)?.instanceId).toBe('editor:2')
+    state = voiceReducer(state, { type: 'RETARGET', target: TERMINAL })
+    expect(selectInteractionState(state.phase)).toBe('recording')
+    expect(selectTarget(state.phase)?.instanceId).toBe('terminal:3')
   })
 })
 

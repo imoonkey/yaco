@@ -18,12 +18,10 @@ type TargetSelectorProps = {
   target: VoiceInstance | null
   /** Eligible instances the dropdown offers. */
   instances: VoiceInstance[]
-  /** A take is in flight — re-pointing is locked until it lands. */
-  disabled: boolean
   onSelect: (inst: VoiceInstance) => void
 }
 
-export function TargetSelector({ target, instances, disabled, onSelect }: TargetSelectorProps) {
+export function TargetSelector({ target, instances, onSelect }: TargetSelectorProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLSpanElement>(null)
 
@@ -37,12 +35,10 @@ export function TargetSelector({ target, instances, disabled, onSelect }: Target
     return () => document.removeEventListener('mousedown', onDown, true)
   }, [open])
 
-  // A take starting mid-open (e.g. F5 quick-record) must not leave the menu
-  // clickable — force it closed while locked so the in-flight lock holds. Render-
-  // phase reset (the codebase's derived-state pattern), not an effect.
-  if (open && disabled) setOpen(false)
-
-  const canChoose = !disabled && instances.length > 0
+  // Re-pointing is allowed for the whole open lifecycle — even while recording —
+  // because the draft only routes to a pane at Insert (RETARGET just moves where
+  // it will land). The only gate is having somewhere to point.
+  const canChoose = instances.length > 0
   const pick = (inst: VoiceInstance) => { onSelect(inst); setOpen(false) }
 
   return (

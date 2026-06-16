@@ -208,7 +208,6 @@ export function ComposeTray({
           <TargetSelector
             target={target}
             instances={instances}
-            disabled={takeInFlight}
             onSelect={onSelectTarget}
           />
           <button style={CLOSE_BTN_STYLE} onClick={handleClose} aria-label="Close"><X size={14} /></button>

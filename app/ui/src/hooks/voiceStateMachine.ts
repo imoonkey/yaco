@@ -101,12 +101,13 @@ export function voiceReducer(state: VoiceReducerState, event: VoiceEvent): Voice
       return state
 
     case 'RETARGET':
-      // The tray's target selector re-points the open run. Allowed only while
-      // composing/error (recoverable's phase is 'composing'); an in-flight take
-      // keeps its bound target. Clearing targetLost recovers a lost run — the
-      // user picked from the live-eligible list, and the detection effect
-      // re-flags if the new target is somehow still invalid.
-      if (phase.phase !== 'composing' && phase.phase !== 'error') return state
+      // The tray's target selector re-points the open run at any phase but idle
+      // (the tray is closed). The transcript only routes at Insert, so changing
+      // the target mid-take — even while recording — is safe: it just moves where
+      // the draft will land. Clearing targetLost recovers a lost run (the user
+      // picked from the live-eligible list; the detection effect re-flags if the
+      // new target is somehow still invalid).
+      if (phase.phase === 'idle') return state
       return { ...state, phase: { ...phase, target: event.target, targetLost: false } }
 
     case 'PERMISSION_GRANTED':

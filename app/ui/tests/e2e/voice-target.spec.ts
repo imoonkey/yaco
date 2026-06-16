@@ -159,6 +159,8 @@ test.describe('Compose tray target selector — re-point routes the insert', () 
 
     // The modal owns the keyboard while recording: focus is in the tray, not xterm.
     await expect(composeInput(page)).toBeFocused()
+    // …and the target selector stays interactive mid-take (routing binds at Insert).
+    await expect(insertTarget(page)).toBeEnabled()
 
     // Esc is captured by the tray (closes it), never reaching the terminal.
     await page.keyboard.press('Escape')

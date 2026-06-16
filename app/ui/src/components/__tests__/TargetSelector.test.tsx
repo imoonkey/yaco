@@ -17,7 +17,6 @@ function renderSelector(over: Partial<Parameters<typeof TargetSelector>[0]> = {}
   const props = {
     target: EDITOR_A as VoiceInstance | null,
     instances: [EDITOR_A, EDITOR_B, TERM],
-    disabled: false,
     onSelect,
     ...over,
   }
@@ -42,22 +41,6 @@ describe('TargetSelector — the tray target dropdown', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Insert target: s1' }))
     expect(screen.getByRole('menuitemradio', { name: 's1' }).getAttribute('aria-checked')).toBe('true')
     expect(screen.getByRole('menuitemradio', { name: 'a.ts' }).getAttribute('aria-checked')).toBe('false')
-  })
-
-  it('locks the dropdown while a take is in flight', () => {
-    renderSelector({ disabled: true })
-    const btn = screen.getByRole('button', { name: 'Insert target: a.ts' }) as HTMLButtonElement
-    expect(btn.disabled).toBe(true)
-    fireEvent.click(btn)
-    expect(screen.queryByRole('menu')).toBeNull()
-  })
-
-  it('closes an open menu when a take starts (disabled flips true)', () => {
-    const { rerender } = renderSelector()
-    fireEvent.click(screen.getByRole('button', { name: 'Insert target: a.ts' }))
-    expect(screen.queryByRole('menu')).not.toBeNull()
-    rerender(<TargetSelector target={EDITOR_A} instances={[EDITOR_A, EDITOR_B, TERM]} disabled onSelect={onSelect} />)
-    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('shows "No target" and disables the button when nothing is eligible', () => {
