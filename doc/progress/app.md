@@ -1,3 +1,27 @@
+## 2026-06-16: Tint /discuss Q&A blocks in markdown preview
+
+**What changed:**
+- Custom `renderer.blockquote` in `ui/src/workspace/markdown.ts` detects the
+  `/discuss` skill markers (`**Q{n}**` / `**A{n}**`) at render time and tags
+  blockquotes `discuss-q` / `discuss-a`, plus `discuss-new` when the marker
+  carries `<mark>` (the newest round). `.markdown-preview` in `index.css` gives
+  questions a blue wash and replies a harmonizing cyan one, and renders the
+  newest round as a page-background cutout with a high-contrast magenta rim (so
+  nothing heavy sits behind its text). 5 unit tests in `markdown.test.ts`.
+
+**Why:**
+- The `/discuss` workflow leaves multi-round Q&A inline in a doc; over several
+  rounds the gray blockquote wall is hard to scan. Tinting Q vs A vs newest makes
+  rounds legible from the preview pane. Render-time class injection (not HTML in
+  the source) keeps the markdown clean `>` / `>>` and avoids the per-block
+  wrapper-div clipping that pure-HTML tinting hit.
+
+**Key files:** `ui/src/workspace/markdown.ts`, `ui/src/index.css`, `ui/src/workspace/markdown.test.ts`
+**Verification:** `npx vitest run src/workspace/markdown.test.ts` (16 passed), `npx tsc -b` clean, eslint clean
+**Commit:** 1e31a56
+**Next:** None
+**Blockers:** None
+
 ## 2026-06-15: Session-list starting-row alignment + placeholder/real dedup
 
 **What changed:**
