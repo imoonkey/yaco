@@ -5,8 +5,8 @@ import { useVoice } from '../hooks/useVoice'
 import { isPreviewableFile } from '../lib/binaryFiles'
 import { ComposeTray } from '../components/ComposeTray'
 import {
-  GlobalVoiceControl, resolveVoiceTarget, instanceFromTarget, isEditorVoiceEligible, editorVoiceTab, advanceFocusEpoch,
-  type VoiceInstance, type VoiceTargetOverride, type FocusEpochState,
+  GlobalVoiceControl, resolveVoiceTarget, instanceFromTarget, targetContextOf,
+  type VoiceInstance,
 } from '../components/GlobalVoiceControl'
 import { FileSearch } from './WorkspaceSearch'
 import type { SearchEntry } from './WorkspaceSearch'
@@ -132,33 +132,9 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
   const editorIds = useMemo(() => editorInstancesInOrder(panelLayout.desktop), [panelLayout.desktop])
   const terminalIds = useMemo(() => terminalInstancesInOrder(panelLayout.desktop), [panelLayout.desktop])
 
-  // Focus epoch: ticks on every transition of focus onto an eligible pane (using
-  // the same eligibility predicate as the resolver). Keyed off the transition,
-  // not the pane id, so leaving an eligible pane and returning to it still ticks.
-  const focusKey = `${focusedPane.kind}:${focusedPane.instanceId}`
-  const focusedEligible =
-    focusedPane.kind === 'editor'
-      ? isEditorVoiceEligible(editorVoiceTab(panelLayout.desktop, focusedPane.instanceId), previewMode, showingTasks)
-      : focusedPane.kind === 'terminal'
-        ? !!selection.terminalBindings[focusedPane.instanceId]
-        : false
-  const [focusState, setFocusState] = useState<FocusEpochState>({ epoch: 0, lastFocusKey: focusKey })
-  const nextFocusState = advanceFocusEpoch(focusState, focusKey, focusedEligible)
-  if (nextFocusState !== focusState) setFocusState(nextFocusState)
-  const focusEpoch = nextFocusState.epoch
-
-  // A dropdown pick overrides the focus default until the focus epoch advances
-  // past the value captured at pick time — i.e. focus next lands on an eligible
-  // pane (including a return to the very pane the override was chosen from).
-  const [override, setOverride] = useState<(VoiceTargetOverride & { epoch: number }) | null>(null)
-  const focusEpochRef = useRef(focusEpoch)
-  useEffect(() => { focusEpochRef.current = focusEpoch })
-  if (override && focusEpoch > override.epoch) setOverride(null)
-
-  const pickVoiceTarget = useCallback((inst: VoiceInstance) => {
-    setOverride({ kind: inst.kind, instanceId: inst.instanceId, epoch: focusEpochRef.current })
-  }, [])
-
+  // Eligible instances + the focus default. The mic records into this default;
+  // the tray's TargetSelector re-points the open run from here (no nav-side
+  // override — the binding now happens in the tray, at Insert).
   const voiceTarget = useMemo(() => resolveVoiceTarget({
     editorIds, terminalIds,
     tree: panelLayout.desktop,
@@ -167,8 +143,7 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
     activeEditorId: selection.activeEditorId,
     activeTerminalId: selection.activeTerminalId,
     recentMultiKind,
-    override: override ? { kind: override.kind, instanceId: override.instanceId } : null,
-  }), [editorIds, terminalIds, panelLayout.desktop, selection.terminalBindings, previewMode, showingTasks, selection.activeEditorId, selection.activeTerminalId, recentMultiKind, override])
+  }), [editorIds, terminalIds, panelLayout.desktop, selection.terminalBindings, previewMode, showingTasks, selection.activeEditorId, selection.activeTerminalId, recentMultiKind])
 
   // The mic records into the live idle target; read it from a ref so the handler
   // identity stays stable as the target recomputes each render.
@@ -176,13 +151,15 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
   useEffect(() => { idleTargetRef.current = voiceTarget.target })
   const recordVoiceTarget = useCallback(() => {
     const t = idleTargetRef.current
-    if (!t) return
-    voice.record(t.kind === 'editor'
-      ? { surface: 'editor', filePath: t.filePath, instanceId: t.instanceId }
-      : { surface: 'terminal', sessionName: t.sessionName, instanceId: t.instanceId })
+    if (t) voice.record(targetContextOf(t))
   }, [voice])
 
-  // While a take is in flight the target is frozen — show that, not the live default.
+  // The tray selector re-points the open run at another instance.
+  const retargetVoice = useCallback((inst: VoiceInstance) => {
+    voice.retarget(targetContextOf(inst))
+  }, [voice])
+
+  // While a take is in flight the target is the run's; show that, not the live default.
   const voiceDisplayTarget = voice.state === 'idle' ? voiceTarget.target : instanceFromTarget(voice.target)
 
   // Publish the voice surface to the editor/terminal panels. Eligibility for the
@@ -238,7 +215,9 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
         onInteractionCapture={() => { void lockCloseShortcut() }}
       />
       <ComposeTray
-        surface={voiceBridge.voiceSurface}
+        target={voiceDisplayTarget}
+        instances={voiceTarget.instances}
+        onSelectTarget={retargetVoice}
         state={voice.state}
         elapsedMs={voice.elapsedMs}
         appendText={voice.appendText}
@@ -259,9 +238,6 @@ function WorkspaceScreen({ voiceSlot }: { voiceSlot?: HTMLElement | null }) {
           capability={voice.capability}
           state={voice.state}
           target={voiceDisplayTarget}
-          instances={voiceTarget.instances}
-          locked={voice.state !== 'idle'}
-          onSelect={pickVoiceTarget}
           onRecord={recordVoiceTarget}
           onStop={voice.stop}
         />,

@@ -2,18 +2,23 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { X, Mic, Square, LoaderCircle, Wand } from 'lucide-react'
 import { toast } from 'sonner'
 import { DialogShell } from './DialogShell'
+import { TargetSelector } from './TargetSelector'
+import type { VoiceInstance } from './GlobalVoiceControl'
 import { writeTextToClipboard } from '../lib/clipboard'
-import type { VoiceSurface, InteractionState, CapabilityState, AppendText, FormatResult } from '../hooks/useVoice'
+import type { InteractionState, CapabilityState, AppendText, FormatResult } from '../hooks/useVoice'
 
 // The one compose surface for terminal/editor text entry: type, paste, or
 // record (one take at a time, inserted at the caret). Insert sends the draft to
-// the run's frozen target; ⌘/Ctrl+Enter is the send key (plain Enter is a
-// newline, so IME candidate-selection Enter never mis-fires). Format polishes
-// the whole draft via the LLM formatter (Undo via the toast action). The tray
-// only closes via the X / Esc — never an outside click — and stashes the draft
-// on the clipboard on any close so a glitched insert can't lose it.
+// the run's target (chosen via the header TargetSelector); ⌘/Ctrl+Enter is the
+// send key (plain Enter is a newline, so IME candidate-selection Enter never
+// mis-fires). Format polishes the whole draft via the LLM formatter (Undo via
+// the toast action). The tray only closes via the X / Esc — never an outside
+// click — and stashes the draft on the clipboard on any close so a glitched
+// insert can't lose it.
 export function ComposeTray({
-  surface,
+  target,
+  instances,
+  onSelectTarget,
   state,
   elapsedMs,
   appendText,
@@ -28,7 +33,9 @@ export function ComposeTray({
   onRetry,
   onFormat,
 }: {
-  surface: VoiceSurface
+  target: VoiceInstance | null
+  instances: VoiceInstance[]
+  onSelectTarget: (inst: VoiceInstance) => void
   state: InteractionState
   elapsedMs: number
   appendText: AppendText | null
@@ -191,11 +198,14 @@ export function ComposeTray({
       }}
     >
       <div>
-        {/* Header — surface is frozen for the run */}
+        {/* Header — the target selector re-points where Insert sends the draft */}
         <div style={HEADER_STYLE}>
-          <span className="font-medium" style={SURFACE_LABEL_STYLE}>
-            Compose → {surface === 'terminal' ? 'Terminal' : 'Editor'}
-          </span>
+          <TargetSelector
+            target={target}
+            instances={instances}
+            disabled={takeInFlight}
+            onSelect={onSelectTarget}
+          />
           <button style={CLOSE_BTN_STYLE} onClick={handleClose} aria-label="Close"><X size={14} /></button>
         </div>
 
@@ -329,12 +339,6 @@ const HEADER_STYLE: React.CSSProperties = {
   marginBottom: 10,
   fontSize: 'var(--text-ui-md)',
   color: 'var(--sol-text)',
-}
-
-const SURFACE_LABEL_STYLE: React.CSSProperties = {
-  fontSize: 'var(--text-ui-md)',
-  color: 'var(--sol-text)',
-  padding: '2px 4px',
 }
 
 const CLOSE_BTN_STYLE: React.CSSProperties = {

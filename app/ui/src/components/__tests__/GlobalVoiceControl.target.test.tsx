@@ -3,15 +3,15 @@
 // Pure logic for the desktop global voice control (mi-voice-global, design §G):
 //   - which editor/terminal instances are eligible voice targets,
 //   - the default-from-focus target precedence (recentMultiKind → other → first),
-//   - the dropdown override, and
-//   - the frozen-target → display instance mapping.
+//   - the chosen-instance → record/retarget context mapping, and
+//   - the run-target → display instance mapping.
 import { describe, it, expect } from 'vitest'
 import {
-  resolveVoiceTarget, instanceFromTarget, isEditorVoiceEligible, advanceFocusEpoch,
+  resolveVoiceTarget, instanceFromTarget, targetContextOf, isEditorVoiceEligible,
   type ResolveVoiceTargetArgs,
 } from '../GlobalVoiceControl'
 import {
-  voiceReducer, INITIAL_STATE, selectTarget, type VoiceTargetContext,
+  voiceReducer, INITIAL_STATE, selectTarget, selectInteractionState, type VoiceTargetContext,
 } from '../../hooks/voiceStateMachine'
 import { type LayoutNode, type GroupTab } from '../../hooks/workspaceTypes'
 
@@ -37,7 +37,6 @@ function base(overrides: Partial<ResolveVoiceTargetArgs> = {}): ResolveVoiceTarg
     activeEditorId: 'editor:2',
     activeTerminalId: 'terminal',
     recentMultiKind: 'editor',
-    override: null,
     ...overrides,
   }
 }
@@ -124,15 +123,14 @@ describe('resolveVoiceTarget — default from focus', () => {
   })
 })
 
-describe('resolveVoiceTarget — override', () => {
-  it('honours an override that points at an eligible instance, ignoring focus', () => {
-    const args = base({ recentMultiKind: 'terminal', override: { kind: 'editor', instanceId: 'editor' } })
-    expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'editor', instanceId: 'editor' })
+describe('targetContextOf — chosen instance → record/retarget context', () => {
+  it('maps an editor instance to an editor context', () => {
+    expect(targetContextOf({ kind: 'editor', instanceId: 'editor:2', label: 'a.ts', filePath: 'src/a.ts' }))
+      .toEqual({ surface: 'editor', filePath: 'src/a.ts', instanceId: 'editor:2' })
   })
-
-  it('ignores a stale override (instance closed / no longer eligible) and uses the focus default', () => {
-    const args = base({ recentMultiKind: 'editor', override: { kind: 'editor', instanceId: 'ghost' } })
-    expect(resolveVoiceTarget(args).target).toMatchObject({ kind: 'editor', instanceId: 'editor:2' })
+  it('maps a terminal instance to a terminal context', () => {
+    expect(targetContextOf({ kind: 'terminal', instanceId: 'terminal:2', label: 's1', sessionName: 's1' }))
+      .toEqual({ surface: 'terminal', sessionName: 's1', instanceId: 'terminal:2' })
   })
 })
 
@@ -174,27 +172,36 @@ describe('isEditorVoiceEligible — shared editable-target predicate', () => {
   })
 })
 
-describe('advanceFocusEpoch — override-clear gate', () => {
-  it('does not tick while focus stays on the same pane', () => {
-    const s0 = { epoch: 0, lastFocusKey: 'editor:editor' }
-    expect(advanceFocusEpoch(s0, 'editor:editor', true)).toBe(s0)
+describe('voiceStateMachine — RETARGET re-points the open run', () => {
+  const EDITOR: VoiceTargetContext = { surface: 'editor', filePath: 'a.ts', instanceId: 'editor:2' }
+  const TERMINAL: VoiceTargetContext = { surface: 'terminal', sessionName: 's9', instanceId: 'terminal:3' }
+
+  it('changes the run target while composing', () => {
+    let state = voiceReducer(INITIAL_STATE, { type: 'OPEN', target: EDITOR })
+    state = voiceReducer(state, { type: 'RETARGET', target: TERMINAL })
+    expect(selectTarget(state.phase)?.instanceId).toBe('terminal:3')
+    expect(selectTarget(state.phase)?.surface).toBe('terminal')
   })
-  it('ticks on a transition onto an eligible pane, not onto an ineligible one', () => {
-    const eligible = advanceFocusEpoch({ epoch: 0, lastFocusKey: 'explorer:explorer' }, 'editor:editor', true)
-    expect(eligible).toEqual({ epoch: 1, lastFocusKey: 'editor:editor' })
-    const ineligible = advanceFocusEpoch({ epoch: 1, lastFocusKey: 'editor:editor' }, 'explorer:explorer', false)
-    expect(ineligible).toEqual({ epoch: 1, lastFocusKey: 'explorer:explorer' })
+
+  it('recovers a lost run: clears targetLost (recoverable → composing)', () => {
+    let state = voiceReducer(INITIAL_STATE, { type: 'OPEN', target: EDITOR })
+    state = voiceReducer(state, { type: 'TARGET_LOST' })
+    expect(selectInteractionState(state.phase)).toBe('recoverable')
+    state = voiceReducer(state, { type: 'RETARGET', target: TERMINAL })
+    expect(selectInteractionState(state.phase)).toBe('composing')
   })
-  it('advances past a captured epoch when focus leaves an eligible pane and RETURNS to it (the bug)', () => {
-    // Override picked while focused on editor A → captures epoch 1.
-    let s = advanceFocusEpoch({ epoch: 0, lastFocusKey: null }, 'editor:editor', true)
-    expect(s.epoch).toBe(1)
-    const overrideEpoch = s.epoch
-    // Blur to a non-eligible pane (no tick), then re-focus the SAME editor A (ticks).
-    s = advanceFocusEpoch(s, 'explorer:explorer', false)
-    s = advanceFocusEpoch(s, 'editor:editor', true)
-    expect(s.epoch).toBe(2)
-    expect(s.epoch > overrideEpoch).toBe(true) // → override clears
+
+  it('is ignored while idle (no open run to re-point)', () => {
+    const state = voiceReducer(INITIAL_STATE, { type: 'RETARGET', target: EDITOR })
+    expect(state).toBe(INITIAL_STATE)
+  })
+
+  it('is ignored while a take is in flight (the bound target is kept)', () => {
+    let state = voiceReducer(INITIAL_STATE, { type: 'START_RECORD', target: EDITOR, runId: 1 })
+    state = voiceReducer(state, { type: 'PERMISSION_GRANTED', startedAt: 1, runId: 1 }) // recording
+    const after = voiceReducer(state, { type: 'RETARGET', target: TERMINAL })
+    expect(after).toBe(state)
+    expect(selectTarget(after.phase)?.instanceId).toBe('editor:2')
   })
 })
 
@@ -207,7 +214,7 @@ describe('voiceStateMachine — instanceId frozen at record start', () => {
     state = voiceReducer(state, { type: 'STOP', runId: 1 })
     state = voiceReducer(state, { type: 'TRANSCRIBED', runId: 1 })
     expect(selectTarget(state.phase)?.instanceId).toBe('editor:2')
-    // A second take from composing ignores the event's target — instanceId stays frozen.
+    // A second take from composing reuses the run's target — instanceId stays put.
     const again = voiceReducer(state, {
       type: 'START_RECORD', target: { surface: 'terminal', sessionName: 's9', instanceId: 'terminal:3' }, runId: 2,
     })

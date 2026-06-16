@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 import type { UseVoiceReturn } from '../hooks/useVoice'
 import type { LayoutNode, PreviewMode } from '../hooks/workspaceTypes'
 import type { FocusTarget, InsertRequest } from './context'
@@ -60,16 +60,6 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
   const editorVoiceEligible = !!activeFilePath && !activeDiffTab && !(isPreviewable && previewMode === 'preview')
   const terminalVoiceEligible = !!attachedSession
 
-  const [voiceSurface, setVoiceSurface] = useState<'editor' | 'terminal'>('terminal')
-
-  // Mirror the run's frozen target surface for the tray header. Synced from
-  // voice.target; never toggled mid-run.
-  const [prevSurface, setPrevSurface] = useState(voice.target?.surface)
-  if (voice.target?.surface && voice.target.surface !== prevSurface) {
-    setPrevSurface(voice.target.surface)
-    setVoiceSurface(voice.target.surface)
-  }
-
   // Open the compose tray (idle: type / paste, with the in-tray Record button),
   // bound to the active instance.
   const openEditorCompose = useCallback(() => {
@@ -128,7 +118,6 @@ export function useWorkspaceVoice(opts: UseWorkspaceVoiceOpts) {
   }, [voice, tree, terminalBindings, previewMode, showingTasks])
 
   return {
-    voiceSurface,
     editorVoiceEligible,
     terminalVoiceEligible,
     openEditorCompose,

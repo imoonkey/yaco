@@ -46,8 +46,10 @@ export interface UseVoiceReturn {
   /** Open the tray idle (type / paste) for a surface. */
   open: (ctx: VoiceTargetContext) => void
   /** Start a take. From idle requires `ctx`; from composing/error reuses the
-   *  frozen target. Ignored while a take is already in flight. */
+   *  run's current target. Ignored while a take is already in flight. */
   record: (ctx?: VoiceTargetContext) => void
+  /** Re-point the open run at another instance (the tray's target selector). */
+  retarget: (ctx: VoiceTargetContext) => void
   /** End the current take → transcribe. */
   stop: () => void
   /** Re-send the cached take after a transcription failure. */
@@ -228,6 +230,10 @@ export function useVoice(): UseVoiceReturn {
     dispatch({ type: 'OPEN', target: ctx })
   }, [])
 
+  const retarget = useCallback((ctx: VoiceTargetContext) => {
+    dispatch({ type: 'RETARGET', target: ctx })
+  }, [])
+
   const record = useCallback((ctx?: VoiceTargetContext) => {
     if (capability.status !== 'ready') return
     const phase = phaseRef.current
@@ -350,6 +356,6 @@ export function useVoice(): UseVoiceReturn {
     target: selectTarget(phase),
     errorMessage: selectErrorMessage(phase),
     notice: selectNotice(phase),
-    open, record, stop, retry, format, confirm, copy, discard, markTargetLost,
+    open, record, retarget, stop, retry, format, confirm, copy, discard, markTargetLost,
   }
 }

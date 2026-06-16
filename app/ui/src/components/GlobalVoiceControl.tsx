@@ -1,16 +1,17 @@
 /* eslint-disable react-refresh/only-export-components -- the pure target resolver
    ships in this file alongside its sole consumer so it can be unit-tested directly */
-// GlobalVoiceControl — the desktop workspace's single voice control, portaled by
+// GlobalVoiceControl — the desktop workspace's single voice mic, portaled by
 // WorkspaceScreen into an App-owned top-bar slot beside the notification bell
-// (design: Multi-Instance Panels §G). It is a mic + a target indicator + a target
-// dropdown. The screen owns the one `useVoice`; this component is presentational
-// and drives it through the passed handlers.
+// (design: Multi-Instance Panels §G). It is a mic that records into the live
+// idle target; the target *indicator* and its selector live in the ComposeTray
+// (see TargetSelector). The screen owns the one `useVoice`; this component is
+// presentational and drives it through the passed handlers.
 //
 // The target logic is pure (`resolveVoiceTarget`) so it is unit-tested without a
-// DOM: a voice take always has an unambiguous instance, the default follows focus,
-// and an explicit dropdown pick overrides it until focus moves again.
-import { useEffect, useRef, useState } from 'react'
-import { ChevronDown, FileText, LoaderCircle, Mic, Square, SquareTerminal } from 'lucide-react'
+// DOM: a voice take always has an unambiguous instance, and the default follows
+// focus (recently-focused kind's active instance, else the other kind's, else
+// the first eligible in order).
+import { LoaderCircle, Mic, Square } from 'lucide-react'
 import type { CapabilityState, InteractionState, VoiceTargetContext } from '../hooks/useVoice'
 import { isFileTab, type GroupTab, type LayoutNode, type PreviewMode } from '../hooks/workspaceTypes'
 import { isPreviewableFile } from '../lib/binaryFiles'
@@ -34,8 +35,6 @@ export type VoiceInstance = {
   sessionName?: string
 }
 
-export type VoiceTargetOverride = { kind: VoiceInstanceKind; instanceId: string }
-
 export type ResolveVoiceTargetArgs = {
   editorIds: string[]
   terminalIds: string[]
@@ -47,7 +46,6 @@ export type ResolveVoiceTargetArgs = {
   activeEditorId: string
   activeTerminalId: string | null
   recentMultiKind: VoiceInstanceKind
-  override: VoiceTargetOverride | null
 }
 
 const basename = (path: string): string => path.split('/').pop() || path
@@ -68,9 +66,8 @@ export function isEditorVoiceEligible(
 }
 
 /** Eligible instances (editors first, both in document order) + the resolved
- *  target: an explicit override if it still points at an eligible instance, else
- *  the default from focus — the recently-focused kind's active instance, else the
- *  other kind's, else the first eligible in order. */
+ *  default target from focus: the recently-focused kind's active instance, else
+ *  the other kind's, else the first eligible in order. */
 export function resolveVoiceTarget(args: ResolveVoiceTargetArgs): {
   instances: VoiceInstance[]
   target: VoiceInstance | null
@@ -96,14 +93,13 @@ export function resolveVoiceTarget(args: ResolveVoiceTargetArgs): {
   const activeOf = (kind: VoiceInstanceKind) => kind === 'editor' ? args.activeEditorId : args.activeTerminalId
   const otherKind: VoiceInstanceKind = args.recentMultiKind === 'editor' ? 'terminal' : 'editor'
 
-  const defaultTarget =
+  const target =
     find(args.recentMultiKind, activeOf(args.recentMultiKind))
     ?? find(otherKind, activeOf(otherKind))
     ?? instances[0]
     ?? null
 
-  const override = args.override ? find(args.override.kind, args.override.instanceId) : null
-  return { instances, target: override ?? defaultTarget }
+  return { instances, target }
 }
 
 /** The frozen run target → the instance the indicator shows while a take is in
@@ -118,18 +114,12 @@ export function instanceFromTarget(target: VoiceTargetContext | null): VoiceInst
   return { kind: 'terminal', instanceId: target.instanceId, label: sessionName, sessionName }
 }
 
-export type FocusEpochState = { epoch: number; lastFocusKey: string | null }
-
-/** Advance the focus epoch: it ticks once on every *transition* of focus onto an
- *  eligible (editor/terminal) pane. Because the tick keys off the transition, not
- *  the pane identity, leaving a pane and returning to it advances the epoch too —
- *  so a dropdown override (which captures the epoch at pick time) clears when the
- *  epoch moves past it, even when focus returns to the same anchor pane. */
-export function advanceFocusEpoch(
-  prev: FocusEpochState, focusKey: string, focusedEligible: boolean,
-): FocusEpochState {
-  if (focusKey === prev.lastFocusKey) return prev.lastFocusKey === null ? { ...prev, lastFocusKey: focusKey } : prev
-  return { epoch: focusedEligible ? prev.epoch + 1 : prev.epoch, lastFocusKey: focusKey }
+/** A chosen instance → the record/retarget context that routes a take to it (the
+ *  inverse of `instanceFromTarget`). */
+export function targetContextOf(inst: VoiceInstance): VoiceTargetContext {
+  return inst.kind === 'editor'
+    ? { surface: 'editor', filePath: inst.filePath, instanceId: inst.instanceId }
+    : { surface: 'terminal', sessionName: inst.sessionName, instanceId: inst.instanceId }
 }
 
 // --- Component ------------------------------------------------------------
@@ -152,49 +142,24 @@ const MIC_LABEL: Record<Visual, string> = {
   ready: 'Start voice recording',
 }
 
-function InstanceIcon({ kind }: { kind: VoiceInstanceKind }) {
-  return kind === 'editor'
-    ? <FileText size={13} aria-hidden="true" />
-    : <SquareTerminal size={13} aria-hidden="true" />
-}
-
 type GlobalVoiceControlProps = {
   capability: CapabilityState
   state: InteractionState
-  /** The instance the indicator names + the mic records into (the live default /
-   *  override while idle, the frozen run target while a take is in flight). */
+  /** The live idle target the mic records into; null disables the mic. The target
+   *  indicator + its selector live in the ComposeTray (TargetSelector). */
   target: VoiceInstance | null
-  /** Eligible instances offered by the dropdown. */
-  instances: VoiceInstance[]
-  /** A take is in flight / composing — the target is frozen, so the dropdown locks. */
-  locked: boolean
-  onSelect: (inst: VoiceInstance) => void
   onRecord: () => void
   onStop: () => void
 }
 
 export function GlobalVoiceControl({
-  capability, state, target, instances, locked, onSelect, onRecord, onStop,
+  capability, state, target, onRecord, onStop,
 }: GlobalVoiceControlProps) {
-  const [open, setOpen] = useState(false)
-  const containerRef = useRef<HTMLSpanElement>(null)
-
-  // Close the dropdown on an outside click (matches the bell/quick-open chrome).
-  useEffect(() => {
-    if (!open) return
-    const onDown = (e: MouseEvent) => {
-      if (!containerRef.current?.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown, true)
-    return () => document.removeEventListener('mousedown', onDown, true)
-  }, [open])
-
   const visual = resolveVisual(state)
   const ready = capability.status === 'ready'
   const unavailable = capability.status === 'unavailable' ? capability.message : undefined
   const hasTarget = !!target
   const micDisabled = !ready || (visual === 'ready' && !hasTarget)
-  const canChoose = !locked && instances.length > 0
 
   const handleMic = () => {
     if (visual === 'recording') onStop()
@@ -202,67 +167,23 @@ export function GlobalVoiceControl({
     // 'processing' — a take is in flight; ignore.
   }
 
-  const pick = (inst: VoiceInstance) => { onSelect(inst); setOpen(false) }
-
   return (
-    <span ref={containerRef} className="relative inline-flex items-center gap-1">
-      <button
-        className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded disabled:opacity-40 disabled:cursor-default"
-        onClick={handleMic}
-        disabled={micDisabled}
-        aria-label={MIC_LABEL[visual]}
-        aria-busy={visual === 'processing'}
-        title={unavailable}
-        style={visual === 'recording'
-          ? { color: 'var(--sol-red)', animation: 'recording-scale 1.2s ease-in-out infinite' }
-          : undefined}
-      >
-        {visual === 'processing'
-          ? <LoaderCircle size={15} aria-hidden="true" style={{ animation: 'voice-spin 0.8s linear infinite' }} />
-          : visual === 'recording'
-            ? <Square size={12} aria-hidden="true" fill="currentColor" />
-            : <Mic size={15} aria-hidden="true" />}
-      </button>
-
-      <button
-        className="flex items-center gap-1 h-7 px-1.5 rounded cursor-pointer text-ui-sm border border-[var(--sol-border)] hover:bg-[var(--sol-subtle-bg)] disabled:opacity-40 disabled:cursor-default max-w-[160px]"
-        onClick={() => canChoose && setOpen(v => !v)}
-        disabled={!canChoose}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={target ? `Voice target: ${target.label}` : 'No voice target'}
-        style={{ color: 'var(--sol-text-dim)' }}
-      >
-        {target
-          ? <><InstanceIcon kind={target.kind} /><span className="truncate">{target.label}</span></>
-          : <span className="truncate" style={{ color: 'var(--sol-muted)' }}>No target</span>}
-        <ChevronDown size={12} aria-hidden="true" style={{ flexShrink: 0 }} />
-      </button>
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 top-8 z-50 min-w-[180px] rounded-md border border-[var(--sol-border)] py-1 shadow-[var(--elevation-2)]"
-          style={{ background: 'var(--sol-editor-bg)' }}
-        >
-          {instances.map(inst => {
-            const selected = !!target && target.kind === inst.kind && target.instanceId === inst.instanceId
-            return (
-              <button
-                key={`${inst.kind}:${inst.instanceId}`}
-                role="menuitemradio"
-                aria-checked={selected}
-                className="flex w-full items-center gap-2 px-2.5 py-1 text-left text-ui-sm cursor-pointer hover:bg-[var(--sol-subtle-bg)]"
-                style={{ color: selected ? 'var(--sol-blue)' : 'var(--sol-text)' }}
-                onClick={() => pick(inst)}
-              >
-                <InstanceIcon kind={inst.kind} />
-                <span className="truncate">{inst.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </span>
+    <button
+      className="chrome-icon-btn flex items-center justify-center cursor-pointer w-7 h-7 rounded disabled:opacity-40 disabled:cursor-default"
+      onClick={handleMic}
+      disabled={micDisabled}
+      aria-label={MIC_LABEL[visual]}
+      aria-busy={visual === 'processing'}
+      title={unavailable}
+      style={visual === 'recording'
+        ? { color: 'var(--sol-red)', animation: 'recording-scale 1.2s ease-in-out infinite' }
+        : undefined}
+    >
+      {visual === 'processing'
+        ? <LoaderCircle size={15} aria-hidden="true" style={{ animation: 'voice-spin 0.8s linear infinite' }} />
+        : visual === 'recording'
+          ? <Square size={12} aria-hidden="true" fill="currentColor" />
+          : <Mic size={15} aria-hidden="true" />}
+    </button>
   )
 }

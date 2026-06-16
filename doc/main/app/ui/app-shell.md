@@ -32,11 +32,11 @@ Top bar (hidden on mobile via `useIsMobile()` conditional rendering, 40px height
 
 ### Global Voice Control
 
-On desktop, voice is a single control in the top bar (`GlobalVoiceControl`) — a mic + a target indicator + a target dropdown — rendered left of the notification bell. Voice state lives inside the workspace provider (`useVoice` is at `WorkspaceScreen`), but the top bar is App-level chrome, so `App.tsx` exposes a stable ref'd `<span>` slot (`voiceSlot`) and `WorkspaceScreen` `createPortal`s the control into it. The slot is App-owned, so it survives workspace remounts.
+On desktop, voice is a single **mic** in the top bar (`GlobalVoiceControl`), rendered left of the notification bell. Voice state lives inside the workspace provider (`useVoice` is at `WorkspaceScreen`), but the top bar is App-level chrome, so `App.tsx` exposes a stable ref'd `<span>` slot (`voiceSlot`) and `WorkspaceScreen` `createPortal`s the mic into it. The slot is App-owned, so it survives workspace remounts. The **target selector** (icon + instance label + dropdown) lives in the `ComposeTray` header (`TargetSelector`), not the top bar.
 
-- **Target** = an explicit dropdown override, else the default from focus (the recently-focused kind's active instance if eligible, else the other type's, else the first eligible in order). An override clears when focus next lands on an eligible pane.
+- **Target** = the default from focus (the recently-focused kind's active instance if eligible, else the other type's, else the first eligible in order). The mic records into this default; the `ComposeTray` selector re-points the open run from it.
 - **Eligibility**: an editor is a target iff its active tab is an editable file (not a diff, not a previewable file in preview mode, and not while the Tasks tab is the focused surface); a terminal is a target iff bound. The mic is disabled when nothing is eligible.
-- A take's target instance is **frozen at record start**, so the transcript can only land where it was started even if focus moves. On mobile the per-pane mic is used instead (the single active pane is unambiguous). -> See: [workspace/sessions-and-terminal.md](workspace/sessions-and-terminal.md) and `ui/src/components/GlobalVoiceControl.tsx`.
+- A take's target **binds at Insert**, not at record: the tray's selector re-points the open run (`RETARGET`), so the transcript routes to whichever instance is chosen at confirm. Re-pointing is locked while a take is in flight (recording/transcribing); an unretargeted take still lands where it was started even if focus moves. On mobile the per-pane mic is used instead (the single active pane is unambiguous). -> See: [workspace/sessions-and-terminal.md](workspace/sessions-and-terminal.md), `ui/src/components/GlobalVoiceControl.tsx`, and `ui/src/components/TargetSelector.tsx`.
 
 ### Clock
 

@@ -6,10 +6,10 @@ export interface VoiceTargetContext {
   surface: VoiceSurface
   filePath?: string
   sessionName?: string
-  // Which editor/terminal instance the take is bound to. Frozen with the rest of
-  // the target at record start (the reducer never re-targets a live run), so a
-  // confirmed transcript routes back to the exact pane it was dictated into even
-  // when the active instance has since changed (design: §G).
+  // Which editor/terminal instance the take is bound to. Set at record/open and
+  // re-pointed only by RETARGET (the tray's target selector), so a confirmed
+  // transcript routes to whichever pane is chosen at Insert time even when the
+  // active instance has since changed (design: §G).
   instanceId?: string
 }
 
@@ -46,6 +46,7 @@ export type VoicePhase =
 export type VoiceEvent =
   | { type: 'OPEN'; target: VoiceTargetContext } // open the tray idle (type / paste)
   | { type: 'START_RECORD'; target: VoiceTargetContext; runId: number } // begin a take
+  | { type: 'RETARGET'; target: VoiceTargetContext } // re-point the open run (tray selector)
   | { type: 'PERMISSION_GRANTED'; startedAt: number; runId: number }
   | { type: 'PERMISSION_DENIED'; message: string; runId: number }
   | { type: 'STOP'; runId: number } // user ended the take → transcribe
@@ -94,10 +95,19 @@ export function voiceReducer(state: VoiceReducerState, event: VoiceEvent): Voice
     case 'START_RECORD':
       if (phase.phase === 'idle') return beginRun(event.target, false, event.runId)
       if (phase.phase === 'composing' || phase.phase === 'error') {
-        // Target is frozen for the compose session; ignore the event's target.
+        // A re-record reuses the run's current target; change it via RETARGET.
         return beginRun(phase.target, phase.targetLost, event.runId)
       }
       return state
+
+    case 'RETARGET':
+      // The tray's target selector re-points the open run. Allowed only while
+      // composing/error (recoverable's phase is 'composing'); an in-flight take
+      // keeps its bound target. Clearing targetLost recovers a lost run — the
+      // user picked from the live-eligible list, and the detection effect
+      // re-flags if the new target is somehow still invalid.
+      if (phase.phase !== 'composing' && phase.phase !== 'error') return state
+      return { ...state, phase: { ...phase, target: event.target, targetLost: false } }
 
     case 'PERMISSION_GRANTED':
       if (phase.phase !== 'requesting_permission' || event.runId !== phase.runId) return state
