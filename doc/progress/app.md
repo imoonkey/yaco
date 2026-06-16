@@ -25,7 +25,7 @@
 **Key files:** `app/ui/src/workspace/WorkspaceSessionList.tsx`, `app/ui/src/workspace/useWorkspaceSessions.ts`
 **Verification:** `tsc -b` + `npm run lint` clean; full `vitest run src/` green (985/985, +2 dedup/baseline tests).
 **Commit:** 3c09557
-**Next:** Issue under investigation — session row lingers ~3-4s after an in-terminal `/exit` before leaving the list.
+**Next:** Deferred — session row lingers ~3-4s after an in-terminal `/exit`. Measured: the yaco chain is *not* the bottleneck (state file removed + `GET /api/sessions` updated + `sessions` SSE pushed, all within ~1.2s of `/exit` for a light session). The delay is the agent process taking that long to fully exit (heavier real sessions). A real fix would have the `SessionEnd` hook (fires ~0.3s after `/exit`) *remove* the session instead of just flipping status to `idle` — but it needs reason-gating (Claude fires `SessionEnd` on `/clear` too, where the session continues), `reason` plumbed into the handler, codex parity, and a new "remove" outcome in the write-or-noop hook reducer (deletion is reserved for kill/reconcile today).
 **Blockers:** None
 
 ## 2026-06-15: Session-list UX — friendly starting label + optimistic close
