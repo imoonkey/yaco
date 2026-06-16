@@ -79,3 +79,33 @@ describe('renderMarkdown frontmatter', () => {
     expect(html).toContain('<h1 id="hello">Hello</h1>')
   })
 })
+
+describe('renderMarkdown discuss blocks', () => {
+  it('tags a Q-marked blockquote with discuss-q', () => {
+    const html = renderMarkdown('> **Q1** a question\n')
+    expect(html).toContain('class="discuss-q"')
+  })
+
+  it('tags a nested A-marked reply with discuss-a alongside its question', () => {
+    const html = renderMarkdown('> **Q1** q\n>\n>> **A1** an answer\n')
+    expect(html).toContain('class="discuss-q"')
+    expect(html).toContain('class="discuss-a"')
+  })
+
+  it('flags a <mark>-led answer (newest round) with discuss-new', () => {
+    const html = renderMarkdown('> **Q1** q\n>\n>> <mark>**A1**</mark> latest\n')
+    expect(html).toContain('class="discuss-a discuss-new"')
+    expect(html).toContain('<mark>')
+  })
+
+  it('matches decimal follow-up markers', () => {
+    const html = renderMarkdown('> **Q2.1** follow-up\n')
+    expect(html).toContain('class="discuss-q"')
+  })
+
+  it('leaves a plain blockquote unclassed', () => {
+    const html = renderMarkdown('> just a normal quote\n')
+    expect(html).toContain('<blockquote>')
+    expect(html).not.toContain('discuss-')
+  })
+})

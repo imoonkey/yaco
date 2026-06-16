@@ -210,6 +210,19 @@ function createMarkdownRenderer() {
     return `<div class="table-scroll">${original}</div>`
   }
 
+  // `/discuss` convention: a blockquote whose leading marker is **Q{n}** (the
+  // user's question) or **A{n}** (a nested reply). A <mark> on that marker flags
+  // the newest round — tag the whole box `discuss-new` so the preview can tint
+  // the entire region, not just the marker. Plain quotes match nothing.
+  renderer.blockquote = (token: Tokens.Blockquote) => {
+    const html = marked.Renderer.prototype.blockquote.call(renderer, token)
+    const marker = /^<blockquote>\s*<p>(<mark>)?<strong>(Q|A)\d/.exec(html)
+    if (!marker) return html
+    const base = marker[2] === 'Q' ? 'discuss-q' : 'discuss-a'
+    const cls = marker[1] ? `${base} discuss-new` : base
+    return html.replace('<blockquote>', `<blockquote class="${cls}">`)
+  }
+
   renderer.heading = ({ text, depth }: Tokens.Heading) => {
     const id = slugify(text)
     return `<h${depth} id="${escapeHtml(id)}">${text}</h${depth}>\n`

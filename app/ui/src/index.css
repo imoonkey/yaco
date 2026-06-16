@@ -489,6 +489,49 @@ body {
   border-radius: 2px;
 }
 
+/* `/discuss` blocks: tint questions, replies, and the newest round so multi-round
+   Q&A is scannable in preview. Questions and replies wear harmonizing blue / cyan
+   washes; the newest round is a cutout (page background punched through the tinted
+   question) with a high-contrast magenta rim, so it stands out without a heavy fill
+   behind its text. Source stays plain `>` / `>>`; the classes are added at render
+   time (see renderer.blockquote in workspace/markdown.ts). */
+.markdown-preview blockquote.discuss-q,
+.markdown-preview blockquote.discuss-a,
+.markdown-preview blockquote.discuss-new {
+  color: var(--sol-editor-fg);
+  padding: 4px 12px;
+  margin-bottom: 12px;
+}
+/* Question — calm blue inquiry */
+.markdown-preview blockquote.discuss-q {
+  border-left-color: var(--sol-blue);
+  background: color-mix(in srgb, var(--sol-blue) 7%, transparent);
+}
+/* Reply — cyan, harmonizes with the blue questions */
+.markdown-preview blockquote.discuss-a {
+  border-left-color: var(--sol-cyan);
+  background: color-mix(in srgb, var(--sol-cyan) 8%, transparent);
+}
+/* Newest round (its marker carries <mark>): punch a cutout — opaque editor
+   background so it reads as a "hole" through the tinted question box, with the
+   accent rule as its rim. After discuss-q/discuss-a to win. */
+.markdown-preview blockquote.discuss-new {
+  border-left-color: var(--sol-magenta);
+  border-left-width: 6px;
+  background: var(--sol-editor-bg);
+}
+.markdown-preview mark {
+  background: color-mix(in srgb, var(--sol-yellow) 32%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 0.25em;
+}
+/* The whole box already signals "newest", so don't double-highlight the marker. */
+.markdown-preview blockquote.discuss-new mark {
+  background: transparent;
+  padding: 0;
+}
+
 .markdown-preview code {
   color: var(--sol-code-fg);
   background: var(--sol-code-bg);
