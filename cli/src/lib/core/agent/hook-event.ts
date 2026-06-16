@@ -5,6 +5,7 @@
  *  wires stdin / live tmux into this function — everything testable lives here.
  */
 import { execSync } from "child_process";
+import { isResolvedSessionId, recordOriginIfResolved } from "./origin.ts";
 import { readState, writeState } from "./session-state.ts";
 import { hasSession } from "./tmux.ts";
 import { PENDING_SESSION_ID, setStatus, type HookEvent, type SessionState } from "./model.ts";
@@ -193,9 +194,13 @@ export function runHookEventForHandle(
     state = refreshed;
   }
 
+  const hadResolvedId = isResolvedSessionId(state.sessionId);
   const next = processHookEvent(handle, state, eventName, input);
   if (!next) return;
   writeState(next);
+  if (!hadResolvedId && (eventName === "SessionStart" || eventName === "UserPromptSubmit")) {
+    recordOriginIfResolved(next);
+  }
 }
 
 /** End-to-end: parse stdin JSON, look up the live handle, apply the event,

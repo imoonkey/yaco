@@ -17,10 +17,12 @@ import {
 import { encodeClaudeCwd } from "../src/lib/core/project/encode.ts";
 import { runHistory } from "../src/commands/agent/history.ts";
 import { writeState } from "../src/lib/core/agent/session-state.ts";
+import { recordOriginIfResolved } from "../src/lib/core/agent/origin.ts";
 import type { SessionState } from "../src/lib/core/agent/model.ts";
 
 const ORIGINAL_HOME = process.env["HOME"];
 const ORIGINAL_AGENT_DIR = process.env["YACO_AGENT_SESSIONS_DIR"];
+const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
 
 let sandbox: string;
 const PROJECT = "/repo/demo";
@@ -74,6 +76,7 @@ function epochSec(iso: string): number {
 beforeEach(() => {
   sandbox = mkdtempSync(join(tmpdir(), "yaco-history-"));
   process.env["HOME"] = sandbox;
+  process.env["YACO_HOME"] = join(sandbox, ".yaco");
   process.env["YACO_AGENT_SESSIONS_DIR"] = join(sandbox, "sessions");
   mkdirSync(process.env["YACO_AGENT_SESSIONS_DIR"], { recursive: true });
 });
@@ -83,6 +86,8 @@ afterEach(() => {
   else process.env["HOME"] = ORIGINAL_HOME;
   if (ORIGINAL_AGENT_DIR === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
   else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL_AGENT_DIR;
+  if (ORIGINAL_YACO_HOME === undefined) delete process.env["YACO_HOME"];
+  else process.env["YACO_HOME"] = ORIGINAL_YACO_HOME;
   rmSync(sandbox, { recursive: true, force: true });
 });
 
@@ -222,16 +227,73 @@ describe("finalizeHistory", () => {
 
   it("tags live sessions by sessionId and leaves others untagged", () => {
     const live: SessionState[] = [
-      { handle: "worker", provider: "claude", sessionPath: PROJECT, pid: 1, sessionId: "live-id", status: "idle", createdAt: "" },
-      { handle: "pending", provider: "codex", sessionPath: PROJECT, pid: 2, sessionId: "pending:awaiting-first-prompt", status: "idle", createdAt: "" },
+      {
+        handle: "worker", provider: "claude", sessionPath: PROJECT,
+        pid: 1, sessionId: "live-id", status: "idle", createdAt: "",
+        spawnedBy: "agent", parentSession: "boss",
+      },
+      {
+        handle: "pending", provider: "codex", sessionPath: PROJECT,
+        pid: 2, sessionId: "pending:awaiting-first-prompt", status: "idle", createdAt: "",
+        spawnedBy: "agent", parentSession: "ignored",
+      },
     ];
     const out = finalizeHistory([row("live-id", "2026-06-04T00:00:00Z"), row("ghost", "2026-06-03T00:00:00Z")], live);
     const tagged = out.rows.find((r) => r.sessionId === "live-id")!;
     const ghost = out.rows.find((r) => r.sessionId === "ghost")!;
     expect(tagged.live).toBe(true);
     expect(tagged.liveSessionName).toBe("worker");
+    expect(tagged.spawnedBy).toBe("agent");
+    expect(tagged.parentSession).toBe("boss");
     expect(ghost.live).toBe(false);
     expect(ghost.liveSessionName).toBeNull();
+    expect(ghost.spawnedBy).toBeNull();
+    expect(ghost.parentSession).toBeNull();
+  });
+
+  it("treats live resumed sessions as unknown origin", () => {
+    const live: SessionState[] = [
+      {
+        handle: "resumed", provider: "claude", sessionPath: PROJECT,
+        pid: 1, sessionId: "resumed-id", status: "idle", createdAt: "",
+        spawnedBy: "agent", parentSession: "boss", resumedFrom: "resumed-id",
+      },
+    ];
+    const out = finalizeHistory([row("resumed-id", "2026-06-04T00:00:00Z")], live);
+    expect(out.rows[0]).toMatchObject({
+      live: true,
+      liveSessionName: "resumed",
+      spawnedBy: null,
+      parentSession: null,
+    });
+  });
+
+  it("point-reads durable origins for window rows and emits explicit nulls when absent", () => {
+    recordOriginIfResolved({
+      handle: "first-handle",
+      provider: "claude",
+      sessionPath: PROJECT,
+      pid: 1,
+      sessionId: "durable-id",
+      status: "idle",
+      createdAt: "2026-06-01T00:00:00.000Z",
+      spawnedBy: "agent",
+      parentSession: "parent",
+    });
+
+    const out = finalizeHistory([
+      row("unknown-id", "2026-06-05T00:00:00Z"),
+      row("durable-id", "2026-06-04T00:00:00Z"),
+    ], []);
+
+    expect(out.rows.find((r) => r.sessionId === "durable-id")).toMatchObject({
+      spawnedBy: "agent",
+      parentSession: "parent",
+    });
+    expect(out.rows.find((r) => r.sessionId === "unknown-id")).toMatchObject({
+      spawnedBy: null,
+      parentSession: null,
+    });
   });
 });
 

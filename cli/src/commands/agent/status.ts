@@ -1,6 +1,7 @@
 import { capturePane, isTmuxAvailable, checkSessionAlive, getAgentPid, isProcessAlive } from "../../lib/core/agent/tmux.ts";
 import { isIdle } from "../../lib/core/agent/providers/idle.ts";
 import { getProvider, hasProvider, listProviders } from "../../lib/core/agent/providers/index.ts";
+import { isResolvedSessionId, recordOriginIfResolved } from "../../lib/core/agent/origin.ts";
 import { readState, writeState, isStale, deleteState, cleanupOrphanBreadcrumbs, listStateHandles, listByPath } from "../../lib/core/agent/session-state.ts";
 import { validateName, setStatus, PENDING_SESSION_ID, type SessionState, type RuntimeSessionState } from "../../lib/core/agent/model.ts";
 import { resolveProjectForPath, toSessionRow, type AgentSessionRow, type ProjectRef } from "../../lib/core/agent/index.ts";
@@ -184,12 +185,18 @@ export function resolveSession(handle: string, cachedAlive?: boolean | null): Ru
  *  status correction the pure pass computed. Used by `list --reconcile` and the
  *  app server's 60s reconcile loop. */
 export function reconcileSession(handle: string, cachedAlive?: boolean | null): RuntimeSessionState | null {
+  const before = readState(handle);
   const detail = resolveDetail(handle, cachedAlive);
   if (detail.dead) {
     if (isTmuxAvailable()) deleteState(handle);
     return null;
   }
-  if (detail.persist) writeState(detail.persist);
+  if (detail.persist) {
+    writeState(detail.persist);
+    if (!isResolvedSessionId(before?.sessionId) && isResolvedSessionId(detail.persist.sessionId)) {
+      recordOriginIfResolved(detail.persist);
+    }
+  }
   return detail.state;
 }
 

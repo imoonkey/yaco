@@ -37,6 +37,8 @@ export interface SessionState {
   spawnedBy?: SpawnedBy;
   /** Parent session handle. Present only when spawnedBy === "agent". */
   parentSession?: string;
+  /** Provider session id passed to --resume. Origin is unknown for resumed threads. */
+  resumedFrom?: string;
 }
 
 /** SessionState extended with runtime-only status values (never persisted). */

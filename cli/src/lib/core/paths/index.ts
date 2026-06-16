@@ -9,6 +9,7 @@ export {
   getYacoHome,
   projectsFile,
   sessionsDir,
+  originsDir,
   uiStateDir,
   shellSessionsDir,
   channelsDir,

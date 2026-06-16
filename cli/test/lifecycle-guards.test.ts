@@ -11,16 +11,20 @@ import { stateDir } from "../src/lib/core/agent/session-state.ts";
 // CI box (no YACO_AGENT_SESSIONS_DIR / YACO_HOME set) doesn't drop test state into
 // the real ~/.yaco/sessions root. Mirrors state.test.ts.
 const ORIGINAL_YACO_AGENT_SESSIONS_DIR = process.env.YACO_AGENT_SESSIONS_DIR;
+const ORIGINAL_YACO_HOME = process.env.YACO_HOME;
 let testStateDir: string;
 
 beforeAll(() => {
   testStateDir = mkdtempSync(join(tmpdir(), "multmux-guards-test-"));
   process.env.YACO_AGENT_SESSIONS_DIR = testStateDir;
+  process.env.YACO_HOME = join(testStateDir, "home");
 });
 
 afterAll(() => {
   if (ORIGINAL_YACO_AGENT_SESSIONS_DIR === undefined) delete process.env.YACO_AGENT_SESSIONS_DIR;
   else process.env.YACO_AGENT_SESSIONS_DIR = ORIGINAL_YACO_AGENT_SESSIONS_DIR;
+  if (ORIGINAL_YACO_HOME === undefined) delete process.env.YACO_HOME;
+  else process.env.YACO_HOME = ORIGINAL_YACO_HOME;
   rmSync(testStateDir, { recursive: true, force: true });
 });
 
@@ -147,6 +151,7 @@ import {
   listStateHandles,
   type SessionState,
 } from "../src/lib/core/agent/session-state.ts";
+import { readOriginForSessionId } from "../src/lib/core/agent/origin.ts";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -806,6 +811,51 @@ describe("start --json contract guarantees", () => {
     expect(state.sessionId.length).toBeGreaterThan(0);
   });
 
+  it("records origin when startup sync resolves a real sessionId", () => {
+    const handle = `${TEST_PREFIX}-origin-start`;
+    trackHandle(handle);
+
+    mockConfig.checkSessionAlive = [true];
+    mockConfig.hasSession = [false, false, true];
+    mockConfig.captureOutput = "❯ ";
+    mockConfig.agentPid = 42005;
+    mockConfig.resolveSessionIdResult = { sessionId: "origin-start-id" };
+
+    const originalAgentHandle = process.env.YACO_AGENT_HANDLE;
+    let state: SessionState | undefined;
+    try {
+      delete process.env.YACO_AGENT_HANDLE;
+      state = start("claude", ["--name", handle]);
+    } finally {
+      if (originalAgentHandle === undefined) delete process.env.YACO_AGENT_HANDLE;
+      else process.env.YACO_AGENT_HANDLE = originalAgentHandle;
+    }
+
+    expect(state!.sessionId).toBe("origin-start-id");
+    expect(readOriginForSessionId("origin-start-id")).toMatchObject({
+      sessionId: "origin-start-id",
+      spawnedBy: "user:terminal",
+      parentSession: null,
+      firstHandle: handle,
+    });
+  });
+
+  it("does not record origin for --resume starts", () => {
+    const handle = `${TEST_PREFIX}-origin-resume`;
+    trackHandle(handle);
+
+    mockConfig.checkSessionAlive = [true];
+    mockConfig.hasSession = [false, false, true];
+    mockConfig.captureOutput = "❯ ";
+    mockConfig.agentPid = 42006;
+
+    const state = start("claude", ["--name", handle, "--resume", "resume-thread-id"]);
+
+    expect(state.sessionId).toBe("resume-thread-id");
+    expect(state.resumedFrom).toBe("resume-thread-id");
+    expect(readOriginForSessionId("resume-thread-id")).toBeNull();
+  });
+
   it("returns pending sentinel when sessionId cannot be resolved", () => {
     const handle = `${TEST_PREFIX}-json-pending`;
     trackHandle(handle);
@@ -837,6 +887,8 @@ describe("Codex sessionId resolution strategy", () => {
       sessionId: "pending:awaiting-first-prompt",
       status: "idle",
       pid: 43100,
+      spawnedBy: "agent",
+      parentSession: "parent-codex",
     }));
 
     mockConfig.checkSessionAlive = [true];
@@ -850,6 +902,12 @@ describe("Codex sessionId resolution strategy", () => {
     expect(resolveSessionIdCalls).toBeGreaterThan(0);
     expect(resolved!.sessionId).toBe("codex-thread-xyz");
     expect(readState(handle)?.sessionId).toBe("codex-thread-xyz");
+    expect(readOriginForSessionId("codex-thread-xyz")).toMatchObject({
+      sessionId: "codex-thread-xyz",
+      spawnedBy: "agent",
+      parentSession: "parent-codex",
+      firstHandle: handle,
+    });
   });
 });
 

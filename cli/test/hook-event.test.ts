@@ -16,6 +16,7 @@ import {
 } from "../src/lib/core/agent/hook-event.ts";
 import { handleHookEvent } from "../src/commands/agent/hook-event.ts";
 import { writeState, readState, statePath } from "../src/lib/core/agent/session-state.ts";
+import { readOriginForSessionId } from "../src/lib/core/agent/origin.ts";
 import type { SessionState } from "../src/lib/core/agent/model.ts";
 import { isOk, isErr } from "../src/lib/core/result.ts";
 
@@ -252,6 +253,64 @@ describe("yaco agent hook-event CLI handler", () => {
       expect(e?.code).toBe("USAGE");
     }
     expect(threw).toBe(true);
+  });
+});
+
+describe("hook-event origin recording", () => {
+  const ORIGINAL_AGENT_DIR = process.env["YACO_AGENT_SESSIONS_DIR"];
+  const ORIGINAL_YACO_HOME = process.env["YACO_HOME"];
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "yaco-hook-origin-"));
+    process.env["YACO_AGENT_SESSIONS_DIR"] = join(dir, "sessions");
+    process.env["YACO_HOME"] = join(dir, "home");
+    mkdirSync(process.env["YACO_AGENT_SESSIONS_DIR"], { recursive: true });
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_AGENT_DIR === undefined) delete process.env["YACO_AGENT_SESSIONS_DIR"];
+    else process.env["YACO_AGENT_SESSIONS_DIR"] = ORIGINAL_AGENT_DIR;
+    if (ORIGINAL_YACO_HOME === undefined) delete process.env["YACO_HOME"];
+    else process.env["YACO_HOME"] = ORIGINAL_YACO_HOME;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("records origin when a hook backfills a real session id", () => {
+    const handle = "origin-hook";
+    writeState(makeState({
+      handle,
+      sessionId: "pending:awaiting-first-prompt",
+      spawnedBy: "agent",
+      parentSession: "parent",
+    }));
+
+    runHookEventForHandle(handle, "UserPromptSubmit", {
+      hook_event_name: "UserPromptSubmit",
+      session_id: "hook-real-id",
+    });
+
+    expect(readOriginForSessionId("hook-real-id")).toMatchObject({
+      sessionId: "hook-real-id",
+      spawnedBy: "agent",
+      parentSession: "parent",
+      firstHandle: handle,
+    });
+  });
+
+  it("does not record origin on hook writes after the id was already resolved", () => {
+    const handle = "origin-existing";
+    writeState(makeState({
+      handle,
+      status: "processing",
+      sessionId: "already-real",
+      spawnedBy: "agent",
+      parentSession: "parent",
+    }));
+
+    runHookEventForHandle(handle, "Stop", { hook_event_name: "Stop" });
+
+    expect(readOriginForSessionId("already-real")).toBeNull();
   });
 });
 

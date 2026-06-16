@@ -30,6 +30,11 @@ export function sessionsDir(): string {
   return join(getYacoHome(), "sessions");
 }
 
+/** ${YACO_HOME}/agent/origins — durable per-provider-session origin records. */
+export function originsDir(): string {
+  return join(getYacoHome(), "agent", "origins");
+}
+
 /** ${YACO_HOME}/ui-state — notification inbox, pinned sessions, watermarks. */
 export function uiStateDir(): string {
   return join(getYacoHome(), "ui-state");

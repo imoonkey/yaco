@@ -24,6 +24,7 @@ import {
   type SpawnedBy,
 } from "../../lib/core/agent/model.ts";
 import { ensureHooks, buildWrappedCommand } from "../../lib/core/agent/lifecycle.ts";
+import { recordOriginIfResolved } from "../../lib/core/agent/origin.ts";
 import { deleteState, readState, writeState, listStateHandles, resolveRenamedHandle } from "../../lib/core/agent/session-state.ts";
 
 const READY_TIMEOUT_MS = 30000;
@@ -361,6 +362,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
     status: "starting",
     createdAt,
     statusEnteredAt: createdAt, // entered "starting" now; advances on each transition
+    ...(resumeId ? { resumedFrom: resumeId } : {}),
     ...lineage,
   };
   writeState(state);
@@ -426,6 +428,7 @@ export function start(provider: string, passthroughArgs: string[] | string, name
   }
 
   const synced = syncStateAfterStart(resolvedName, pid, ready, sessionId);
+  if (synced) recordOriginIfResolved(synced);
 
   // G9: If session died during bootstrap, throw instead of returning phantom state
   if (checkSessionAlive(resolvedName) === false) {

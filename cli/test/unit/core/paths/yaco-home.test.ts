@@ -13,6 +13,7 @@ import {
   channelScopeDir,
   channelsDir,
   getYacoHome,
+  originsDir,
   projectEventsFile,
   projectsFile,
   sessionsDir,
@@ -63,6 +64,10 @@ describe("path helpers under a YACO_HOME fixture", () => {
 
   it("sessionsDir resolves under YACO_HOME", () => {
     expect(sessionsDir()).toBe(`${FIXTURE}/sessions`);
+  });
+
+  it("originsDir resolves under YACO_HOME/agent", () => {
+    expect(originsDir()).toBe(`${FIXTURE}/agent/origins`);
   });
 
   it("uiStateDir resolves under YACO_HOME", () => {

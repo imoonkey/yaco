@@ -14,6 +14,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import { encodeClaudeCwd } from "../../project/encode.ts";
+import { readOriginForSessionId } from "../origin.ts";
 import { PENDING_SESSION_ID, type SessionState } from "../model.ts";
 import type { HistorySession, HistoryWindow, ProviderHistory, SummaryResult } from "./types.ts";
 
@@ -469,14 +470,26 @@ export function finalizeHistory(
     : sorted.filter((row) => new Date(row.updatedAt).getTime() >= cutoff);
   const windowRows = matching.slice(0, limit);
 
-  const liveBySessionId = new Map<string, string>();
+  const liveBySessionId = new Map<string, SessionState>();
   for (const s of liveSessions) {
-    if (s.sessionId && s.sessionId !== PENDING_SESSION_ID) liveBySessionId.set(s.sessionId, s.handle);
+    if (s.sessionId && s.sessionId !== PENDING_SESSION_ID) liveBySessionId.set(s.sessionId, s);
   }
 
   const enriched = windowRows.map((row) => {
-    const handle = liveBySessionId.get(row.sessionId) ?? null;
-    return { ...row, live: handle !== null, liveSessionName: handle };
+    const live = liveBySessionId.get(row.sessionId);
+    const handle = live?.handle ?? null;
+    const liveOrigin = live && !live.resumedFrom && live.spawnedBy
+      ? { spawnedBy: live.spawnedBy, parentSession: live.parentSession ?? null }
+      : null;
+    const durableOrigin = liveOrigin ? null : readOriginForSessionId(row.sessionId);
+    const origin = liveOrigin ?? durableOrigin;
+    return {
+      ...row,
+      live: handle !== null,
+      liveSessionName: handle,
+      spawnedBy: origin?.spawnedBy ?? null,
+      parentSession: origin?.parentSession ?? null,
+    };
   });
 
   return {
