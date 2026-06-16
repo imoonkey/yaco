@@ -19,7 +19,7 @@ State management patterns across the frontend.
 
 ## Architecture
 
-No global state library (no Redux, Zustand, or Context). State lives in components and hooks, exposed to panels through the five workspace contexts (`env` / `data` / `selection` / `layout` / `commands`) defined in `workspace/context.ts`.
+No global state library (no Redux, Zustand). State lives in components and hooks, exposed to panels through the workspace contexts defined in `workspace/context.ts`: `env` / `data` / `selection` / `layout` / `commands`, plus two **editor** contexts split off `selection` for render isolation — `editorBuffers` (`{ files, jumpRequest }`, changes every keystroke; only the editor body subtree subscribes) and `editorTabs` (`{ dirtyTabs, conflictTabs }`, changes only on a dirty/conflict membership flip; the tab-bar leaves `GroupTabBar`/`MobileEditorTabs` subscribe). Keeping the per-keystroke `files` out of `selection` is what stops a keystroke from re-rendering terminals/sessions/tree (the 9 "cool" selection consumers) — see [editor-and-preview](../ui/workspace/editor-and-preview.md).
 
 ### State Categories
 

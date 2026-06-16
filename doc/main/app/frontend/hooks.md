@@ -87,6 +87,7 @@ type GroupTab =
 - **SSE refetch**: listens on the `filetree` channel to refetch open file tabs; AbortController cancels in-flight fetches when a new SSE refresh arrives. (Working-tree content writes always route through `filetree`; the duplicate `git` subscription was dropped to halve the per-change refetch.) Conflict is content-based — a refetch raises `conflict` only when disk content actually diverges from the buffer's base, so the editor's own save echoed back (same content, new mtime) doesn't false-flag.
 - **Draft persistence**: dirty drafts for real files saved with 500ms debounce; on quota exceeded, evicts oldest. Layout saved with 300ms debounce.
 - **Stable derived state**: `dirtyTabs`/`conflictTabs` memoized on a sorted content signature so each Set keeps a stable reference until membership changes.
+- **Render isolation**: `files`/`jumpRequest` and `dirtyTabs`/`conflictTabs` are exposed via the dedicated `editorBuffers`/`editorTabs` contexts (not `selection`), so a keystroke re-renders only the editor body, not terminals/sessions/tree. `filesRef` (the live per-path state, mirrored in a `useLayoutEffect`) lets tab-bar save handlers read the current draft without subscribing to per-keystroke `files`. -> See: [state.md](state.md#architecture).
 - **Force save / accept disk**: `forceSave()` writes without revision check; `acceptDisk()` discards local draft and reloads server content.
 
 ### Exported Types
@@ -228,6 +229,19 @@ type/paste with no recording at all.
 An unmount effect flips `mountedRef` and `release()`s the live session; the `runId` + live-phase guards drop every stale-run resolution.
 
 Tested in `__tests__/useVoice.test.tsx` (fake capture session + mocked `fetch`): record→transcribe→format→append, retry-from-cache after a transcribe failure, `/format` failure → raw append, no-speech, unmount cleanup.
+
+## useThrottledValue.ts / useDebouncedValue.ts
+
+Render-only gates for an expensive derived view of a live value. Both take an optional
+`resetKey` (the open file path) so a tab switch adopts the new value immediately with no
+delay (never a stale cross-file frame); both leave the live value untouched.
+
+- `useThrottledValue(value, ms, resetKey?)` — leading + trailing throttle (emits during a
+  burst, ≤ once per `ms`). Feeds the editor **diff gutter** (`useWorkspaceDiff`, 120ms).
+- `useDebouncedValue(value, ms, resetKey?)` — emits only after `ms` of quiet (zero emits
+  mid-burst). Feeds the **markdown/HTML preview** (`WorkspaceEditorArea`, 180ms): the
+  preview re-parses + re-lays-out the whole document, so it must not run mid-keystroke on
+  a large file — it refreshes when typing pauses. -> See: [editor-and-preview.md](../ui/workspace/editor-and-preview.md#draft-as-single-source-of-truth).
 
 ## useIsMobile.ts (39 lines)
 

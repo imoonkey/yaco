@@ -1,5 +1,46 @@
 # Progress
 
+## 2026-06-15: Editor render isolation — smooth typing in large files
+
+**What changed:**
+- **Split editor state out of `WorkspaceSelectionContext`** into two dedicated contexts:
+  `editorBuffers` (`{files, jumpRequest}`, per-keystroke — only the editor body subtree
+  subscribes) and `editorTabs` (`{dirtyTabs, conflictTabs}`, membership-only — the
+  `GroupTabBar`/`MobileEditorTabs` leaves subscribe). The `selection` memo no longer
+  depends on `files`, so a keystroke no longer re-renders terminals/sessions/tree (9 of
+  12 selection consumers were re-rendering for nothing). Tab-bar save handlers read the
+  live `filesRef` (mirrored via `useLayoutEffect`) in the click handler — no render
+  subscription, no registry; `draft` stays live every keystroke.
+- **Preview switched from throttle to debounce.** New `useDebouncedValue` (180ms,
+  render-on-pause) feeds the markdown/HTML preview; the editor diff gutter keeps
+  `useThrottledValue` (120ms). Both keyed on the file path (immediate adopt on tab
+  switch) and memoize `renderMarkdown` (kills a double-parse). The preview re-parses +
+  re-lays-out the whole document, so a throttle (which still fires mid-burst) left a
+  420KB file laggy with the preview open; a debounce does zero preview work while typing.
+- `editorContextIsolation.test.tsx` locks the invariant (a keystroke re-renders the
+  editor body but the terminal/tab-bar stand-ins 0×); throttle/debounce hooks unit-tested.
+
+**Why:** Typing in a 420KB markdown file was laggy and stalled the adjacent terminal —
+purely client-side React: the hot `files` state sat in the shared selection context, and
+the preview re-rendered the whole document on every keystroke. Measurement (preview
+closed = smooth, open = laggy) localized the residual to the preview pipeline, so the
+deferred document-out-of-React **model extraction** (a live-buffer registry, designed in
+`plan/all/20260615_editor-render-isolation/`) was NOT needed — the preview debounce was
+the right, KISS lever (mirrors how VSCode throttles its preview). No save / conflict /
+persistence change. Reviewed by Codex (3 design rounds + 1 implementation round; the
+file-switch throttle reset and `filesRef` `useLayoutEffect` came from that review).
+
+**Key files:** `app/ui/src/workspace/context.ts`, `WorkspaceProvider.tsx`,
+`{EditorPanel,PanelGroup,GroupTabBar,MobilePanelProjection,WorkspaceEditorArea}.tsx`,
+`useWorkspaceDiff.ts`, `hooks/{useThrottledValue,useDebouncedValue,useFileState,useWorkspaceState}.ts`
+**Verification:** `tsc -b` + eslint clean; 988 unit tests pass (scoped `src/`); manual —
+420KB split-mode with a terminal open: terminal unaffected, typing much improved.
+**Commit:** 335268a, 22e65e0 (design bundle: feef-era `plan/all/20260615_editor-render-isolation/`)
+**Next:** Optional, measurement-gated — if huge-file editing stays bothersome, the
+single-parse cost per pause remains; incremental/virtualized preview or the model
+extraction would be the next lever.
+**Blockers:** None
+
 ## 2026-06-15: Editor file-sync — no lost edits, no phantom disk-conflict banner
 
 **What changed:**

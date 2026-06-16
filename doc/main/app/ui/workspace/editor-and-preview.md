@@ -101,12 +101,13 @@ Dirty drafts are persisted to localStorage (`yaco-drafts:<project>`, keyed by pa
 
 ### Draft as Single Source of Truth
 
-Both the editor and markdown preview read from the same `draft` value:
-- Editor: uses `draft ?? fetchedContent` as its document
-- Preview: renders `draft ?? fetchedContent` as markdown
-- Save: writes `draft ?? fetchedContent` to server
+Both the editor and markdown preview derive from the same `draft` value (`draft ?? fetchedContent`):
+- Editor: uses it as its CodeMirror document — updated **live, every keystroke**.
+- Preview: renders it as markdown/HTML, but from a **debounced** copy (`useDebouncedValue`, ~180ms render-on-pause) — the preview re-parses + re-lays-out the *whole* document, so doing that mid-keystroke blocks input on a large file. It refreshes once typing pauses.
+- Editor diff gutter: from a **throttled** copy (`useThrottledValue`, 120ms) of the same value.
+- Save: writes the live `draft` to the server.
 
-This ensures preview, editor, and save are never out of sync.
+Both the debounce and throttle are keyed on the file path so a tab switch adopts the new file's content immediately (no stale cross-file frame). They are render-only gates — the live `draft` still drives the editor, save, conflict, and persistence paths, so those are never out of sync. (Perf: keeping the live `draft` out of `selection` + debouncing the preview is what stopped typing in a 420KB file from lagging and stalling the adjacent terminal — see [state.md](../../frontend/state.md#architecture) and [PROGRESS](../../../PROGRESS.md).)
 
 ## Preview Mode
 
