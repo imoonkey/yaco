@@ -4,13 +4,15 @@ import type { DiffHunk } from '../lib/parseDiff'
 import type { ParsedFileDiff } from '../lib/parseDiff'
 import type { CompareContext } from './diff/DiffTab'
 import { escapeHtml, clampLine, renderMarkdown, resolveRelativePath, loadMermaid } from './markdown'
-import { useThrottledValue } from '../hooks/useThrottledValue'
+import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { VResizeHandle, HResizeHandle } from './ResizeHandle'
 
-// Preview/diff are derived views: recompute them at most ~8/s while typing instead
-// of on every keystroke (VSCode throttles its preview the same way). The live
-// `draft` still feeds the CodeMirror editor and every correctness path unchanged.
-const PREVIEW_THROTTLE_MS = 120
+// The preview is a derived view rendered by re-parsing + re-laying-out the WHOLE
+// document, so on a large file even a throttled (mid-typing) render blocks input.
+// Debounce it instead: the preview updates only when typing pauses, so there is zero
+// preview work during a burst. The live `draft` still feeds the CodeMirror editor and
+// every correctness path unchanged. (Tuned so it feels immediate on a pause.)
+const PREVIEW_DEBOUNCE_MS = 180
 import type { PreviewMode, SplitDirection } from '../hooks/useWorkspaceState'
 import { DiffTab } from './diff/DiffTab'
 import { isImageFile, isPdfFile, rawFileUrl } from '../lib/binaryFiles'
@@ -438,12 +440,11 @@ export function WorkspaceEditorArea({
   const splitContainerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
 
-  // Throttled mirror of the live buffer, fed to the preview only. The CM editor
-  // keeps the live `activeFileContent`; the preview lags ≤120ms (VSCode behaviour),
-  // so a large document is parsed at most ~8/s under sustained typing. Keyed on the
-  // file path so a tab switch adopts the new file's content immediately (no stale
-  // cross-file preview frame).
-  const previewContent = useThrottledValue(activeFileContent ?? '', PREVIEW_THROTTLE_MS, activeFilePath)
+  // Debounced mirror of the live buffer, fed to the preview only. The CM editor keeps
+  // the live `activeFileContent`; the preview re-renders only after typing pauses
+  // (~180ms), so a large document is never re-parsed/re-laid-out mid-keystroke. Keyed
+  // on the file path so a tab switch adopts the new file's content immediately.
+  const previewContent = useDebouncedValue(activeFileContent ?? '', PREVIEW_DEBOUNCE_MS, activeFilePath)
 
   // --- Scroll sync channel ---
   // Editor and Preview register LERP scroll functions here; each side calls
