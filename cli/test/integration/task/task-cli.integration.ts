@@ -493,8 +493,9 @@ describe("task attach / detach (agents link delta)", () => {
 });
 
 describe("configured tasks path (yc-task-ts bug fix)", () => {
-  it("honors yaco.toml [paths].tasks instead of hardcoded plan/tasks.json", () => {
+  it("honors yaco.toml [paths].tasks file overrides instead of default plan/tasks", () => {
     const repo = mkRepo({ tasksFile: "custom/dir/tasks.json" });
+    const expectedTasksFile = join(repo, "plan/custom/dir/tasks.json");
     const r = runYaco(repo, [
       "task",
       "set",
@@ -504,13 +505,18 @@ describe("configured tasks path (yc-task-ts bug fix)", () => {
       "--json",
     ]);
     expect(r.status).toBe(0);
-    expect(existsSync(join(repo, "custom/dir/tasks.json"))).toBe(true);
+    const data = parseJson(r.stdout).data as { tasksFile: string; tasksPath: string };
+    expect(data.tasksFile).toBe(expectedTasksFile);
+    expect(data.tasksPath).toBe(expectedTasksFile);
+    expect(existsSync(expectedTasksFile)).toBe(true);
     expect(existsSync(defaultTasksFile(repo, "x"))).toBe(false);
   });
 
-  it("honors yaco.toml [paths].tasks directory overrides", () => {
+  it("honors yaco.toml [paths].tasks directory overrides under the plan root", () => {
     const repo = mkRepo({ tasksFile: "custom/tasks" });
-    runYaco(repo, [
+    const expectedTasksPath = join(repo, "plan/custom/tasks");
+    const expectedTasksFile = join(expectedTasksPath, "x", "tasks.json");
+    const r = runYaco(repo, [
       "task",
       "set",
       "x",
@@ -518,7 +524,11 @@ describe("configured tasks path (yc-task-ts bug fix)", () => {
       JSON.stringify({ title: "t", description: "d", acceptCriteria: "ok" }),
       "--json",
     ]);
-    expect(existsSync(join(repo, "custom/tasks/x/tasks.json"))).toBe(true);
+    expect(r.status).toBe(0);
+    const data = parseJson(r.stdout).data as { tasksFile: string; tasksPath: string };
+    expect(data.tasksFile).toBe(expectedTasksFile);
+    expect(data.tasksPath).toBe(expectedTasksPath);
+    expect(existsSync(expectedTasksFile)).toBe(true);
     expect(existsSync(defaultTasksFile(repo, "x"))).toBe(false);
   });
 });
