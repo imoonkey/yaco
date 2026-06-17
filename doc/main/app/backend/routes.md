@@ -38,7 +38,7 @@ HTTP API endpoint reference. All routes are prefixed with `/api`.
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/sessions` | All sessions (yaco agent + Workflow-managed shell). Optional `?project=<name>` filter. Agent sessions read `${YACO_HOME:-~/.yaco}/sessions/*.json` (yaco agent state root); shell sessions read `${YACO_HOME:-~/.yaco}/shell-sessions/*.json` and verify tmux liveness. Response includes `worktree` field for agent sessions (slug extracted from `sessionPath`) |
-| GET | `/api/sessions/history` | Session history (Claude JSONL + Codex SQLite). Required `?project=<name>`. Returns `HistorySession[]` sorted by modified DESC, capped at 200, with live session tagging |
+| GET | `/api/sessions/history` | Session history (Claude JSONL + Codex SQLite). Required `?project=<name>`. Returns `HistorySession[]` (app shape — the server unwraps the CLI's windowed envelope) sorted by modified DESC, default 200-row window, with live session tagging |
 | POST | `/api/sessions/start` | Start session (`{ provider, name?, cwd, prompt?, resumeId? }`, `provider` is a catalog id string or `shell`). Project resolved by longest-prefix match (supports worktree cwds). `shell` uses the shell-session path; any other provider is validated against the CLI provider catalog (`yaco agent providers --json`) inside `startAgentSession` and rejected if unknown. When `resumeId` present: idempotency preflight uses same descendant match, passes `--resume` through to `yaco agent start`. Returns resolved handle (not echoed name) |
 | POST | `/api/sessions/:handle/pause` | Send `/stop` to session |
 | POST | `/api/sessions/:handle/resume` | Resume with optional prompt |

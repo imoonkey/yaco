@@ -1,6 +1,6 @@
 # Command Surface Matrix
 
-> Last updated: 2026-06-11 (agent-messages: `agent messages` history-inventory read)
+> Last updated: 2026-06-17 (`agent history` windowing: strict parser + `--since`/`--limit` + windowed `{rows,…}` object + origin/`tokens` enrichment)
 
 The canonical map of the `yaco` command surface. The CLI is consumed by AI
 agents as much as by humans, so the surface is organized into CRUD-shaped

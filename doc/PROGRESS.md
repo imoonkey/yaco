@@ -1,5 +1,34 @@
 # Progress
 
+## 2026-06-17: `agent history` — windowed contract, origin enrichment, token size signal
+
+**What changed:**
+- `yaco agent history` got a **strict subcommand parser** (unknown flag / bad value / stray positional → `USAGE`), **`--since <iso>`** (ISO-8601 only; filters after the provider merge, before the limit slice) and **`--limit <n>`** (default 200, replaces the old `HISTORY_CAP` magic constant). `--json` now **always returns a windowed object** `{rows, returned, truncated, oldestUpdatedAt}` — never a bare array; `truncated` is a real machine-readable signal. App-side `fetchHistory` reads `data.rows` in the same patch (route/UI keep the array shape).
+- **Origin (G5):** rows carry `spawnedBy`/`parentSession` from the existing sessionId live-tag join, plus a durable per-sessionId index at `${YACO_HOME}/agent/origins/<id>.json` (exclusive-create first-write-wins, written on first real-id resolution from `start`/`hook-event`/`reconcileSession` — never at spawn or on `--resume`); `null` when unknowable.
+- **Replaced always-null `messageCount` with `tokens`** — last-turn total token count read from the log tail (Claude sums `input+cache_creation+cache_read+output` of the last `message.usage`; Codex reads `last_token_usage.total_tokens` from the `rollout_path` tail). UI shows `· N tok`.
+
+**Why:**
+- The `self-improve` scan needs a complete 30-day cross-project window; the old silent 200-cap + ignored `--since` lost data, and untagged agent fan-out inflated "repeated workflow" counts. `messageCount` was 100% null in practice (no Claude `sessions-index.json` exists anywhere; Codex hardcoded null), so it became a real cheap session-size signal instead.
+
+**Key files:** cli/src/commands/agent/history.ts, cli/src/lib/core/agent/providers/{history,types}.ts, cli/src/lib/core/agent/origin.ts, cli/src/lib/core/paths/yaco-home.ts, app/server/src/lib/{agent,history}.ts, app/ui/src/workspace/WorkspaceHistoryList.tsx
+**Verification:** cli 1004 unit + `tsc -b`; app/server 614; app/ui `tsc -b` + sessionSearch 15 + eslint; design via codex `eng-plan-review` ×4 + claude code-review (impl); live smoke (Claude/Codex rows carry real `tokens`). Binary rebuilt + deployed via the build step.
+**Commit:** 341334f..0b57dae
+**Next:** G3 (`messageCount` cheap-populate — superseded by `tokens`) and G4 (`history --all` cross-project) remain deferred; the skill's per-project loop covers G4.
+**Blockers:** None
+
+## 2026-06-17: self-improve skill activated
+
+**What changed:**
+- Activated the **`self-improve`** skill (`agent-config/global/skills/`): scans `yaco agent history` across all registered projects, clusters first user prompts to find repeated manual workflows, emits a **shortlist first** (shortlist-before-build), and creates only greenlit assets.
+- Refined against the live history CLI — uses `--since`/`--limit` + the windowed object and reads `spawnedBy` off rows directly, dropping the old client-side workarounds.
+
+**Why:** harvest repeated manual work into reusable skills/subagents/automations; the discipline is restraint (most candidates are skipped).
+**Key files:** agent-config/global/skills/self-improve/SKILL.md
+**Verification:** ran once end-to-end — produced a clean shortlist, correctly dropped orchestrator fan-out and cross-checked existing skills.
+**Commit:** 9283bbe
+**Next:** re-scan now that the window is complete (yaco/quant history was previously cap-truncated inside the 30-day window).
+**Blockers:** None
+
 ## 2026-06-15: Voice target selector moved into the compose tray
 
 **What changed:**

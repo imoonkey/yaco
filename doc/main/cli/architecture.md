@@ -254,7 +254,7 @@ CLI surfaces consumed by `app/server` (all `--json` except the NDJSON stream):
 | Surface | Shape | Server consumer |
 |---|---|---|
 | `yaco agent providers --json` | provider catalog `{id,label,executable}` | provider-start validation; drops the old closed `'claude'\|'codex'` union and `inferAgentProvider` heuristic |
-| `yaco agent history --path <p> --json` | project-scoped `HistorySession[]`, live rows tagged by YACO `sessionId` | History tab |
+| `yaco agent history --path <p> [--since <iso>] [--limit <n>] --json` | windowed `HistoryWindow` `{rows, returned, truncated, oldestUpdatedAt}` (always an object, not a bare array); rows tagged live by YACO `sessionId` and enriched with `spawnedBy`/`parentSession` origin + `tokens`. Strict parser: unknown flag / bad value / stray positional → `USAGE`. `--since` is ISO-8601 only and filters (after provider merge, before the `--limit` slice, default 200); `truncated` = the limit dropped rows | History tab |
 | `yaco agent summaries --path <p> --json` | per-live-session `{handle,sessionId,provider,label}` | session-list labels (app-side cache; misses only) |
 | `yaco agent output-cursor <h> --json` | opaque `{token,offset,sourceMtimeMs}` | pre-send reply cursor |
 | `yaco agent output-follow <h> --cursor <t> --offset <b> --json` | persistent NDJSON `event`/`end` stream | channel reply streaming (one subprocess per turn) |
