@@ -150,12 +150,72 @@ function parseFirstUserMessage(head: string): string | null {
   return firstMeaningfulMessage(texts);
 }
 
+// -- Token usage (last-turn "session size" signal) --
+
+/** Last assistant turn's total tokens from a Claude JSONL slice: input plus the
+ *  cache_creation/cache_read context (Claude reports cached tokens in separate
+ *  fields disjoint from `input_tokens`, so all are summed) plus output. Scans
+ *  backward for the last line carrying a usage record; a partial leading line
+ *  from a tail read just fails to parse and is skipped. */
+function parseLastClaudeTokens(text: string): number | null {
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line || !line.includes('"usage"')) continue;
+    try {
+      const o = JSON.parse(line) as { message?: { usage?: Record<string, unknown> }; usage?: Record<string, unknown> };
+      const u = o.message?.usage ?? o.usage;
+      if (!u || typeof u["output_tokens"] !== "number") continue;
+      const n = (k: string): number => (typeof u[k] === "number" ? (u[k] as number) : 0);
+      const total =
+        n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens") + n("output_tokens");
+      return total > 0 ? total : null;
+    } catch { continue; }
+  }
+  return null;
+}
+
+/** Last turn's total tokens from a Codex rollout JSONL slice. Codex folds the
+ *  cached context into `input_tokens` and reports `total_tokens` (= input +
+ *  output) directly, so the provided value is used as-is. */
+function parseLastCodexTokens(text: string): number | null {
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    if (!line || !line.includes("last_token_usage")) continue;
+    try {
+      const o = JSON.parse(line) as { payload?: { info?: { last_token_usage?: { total_tokens?: unknown } } } };
+      const t = o.payload?.info?.last_token_usage?.total_tokens;
+      if (typeof t === "number") return t > 0 ? t : null;
+    } catch { continue; }
+  }
+  return null;
+}
+
+/** Tail-read a Codex rollout file (path from the threads table) for its last
+ *  token-usage record — a bounded read mirroring the Claude JSONL tail. */
+async function codexRolloutTokens(rolloutPath: string | null): Promise<number | null> {
+  if (!rolloutPath) return null;
+  try {
+    const st = await stat(rolloutPath);
+    if (st.size === 0) return null;
+    const readLen = Math.min(st.size, TAIL_BYTES);
+    const fh = await open(rolloutPath, "r");
+    try {
+      const buf = Buffer.alloc(readLen);
+      const res = await fh.read(buf, 0, readLen, st.size - readLen);
+      return parseLastCodexTokens(buf.toString("utf-8", 0, res.bytesRead));
+    } finally {
+      await fh.close();
+    }
+  } catch { return null; }
+}
+
 // -- Claude provider history --
 
 interface ClaudeIndexEntry {
   sessionId: string;
   summary?: string;
-  messageCount?: number;
   gitBranch?: string;
   created?: string;
   modified?: string;
@@ -219,6 +279,7 @@ async function claudeList(projectPath: string): Promise<HistorySession[]> {
     let summary: string | null = null;
     let createdFromLog: string | null = null;
     let modifiedFromLog: string | null = null;
+    let tokens: number | null = null;
     try {
       const fh = await open(filePath, "r");
       try {
@@ -229,14 +290,18 @@ async function claudeList(projectPath: string): Promise<HistorySession[]> {
         createdFromLog = parseFirstTimestamp(head);
         modifiedFromLog = parseLastTimestamp(head);
 
-        if (size > TAIL_BYTES) {
-          const tailBuf = Buffer.alloc(TAIL_BYTES);
-          const tailRes = await fh.read(tailBuf, 0, TAIL_BYTES, size - TAIL_BYTES);
-          const tail = tailBuf.toString("utf-8", 0, tailRes.bytesRead);
-          title = parseLastTitle(tail);
-          modifiedFromLog = parseLastTimestamp(tail) ?? modifiedFromLog;
+        // End slice: the last TAIL_BYTES (or the whole file when smaller) so the
+        // last title / timestamp / usage record is always reachable.
+        let endText = head;
+        if (size > HEAD_BYTES) {
+          const readLen = Math.min(size, TAIL_BYTES);
+          const tailBuf = Buffer.alloc(readLen);
+          const tailRes = await fh.read(tailBuf, 0, readLen, size - readLen);
+          endText = tailBuf.toString("utf-8", 0, tailRes.bytesRead);
         }
-        if (!title) title = parseLastTitle(head);
+        title = parseLastTitle(endText) ?? parseLastTitle(head);
+        modifiedFromLog = parseLastTimestamp(endText) ?? modifiedFromLog;
+        tokens = parseLastClaudeTokens(endText);
       } finally {
         await fh.close();
       }
@@ -249,7 +314,7 @@ async function claudeList(projectPath: string): Promise<HistorySession[]> {
       summary: entry?.summary || summary || "(no prompt)",
       created: entry?.created || createdFromLog || created,
       updatedAt: entry?.modified || modifiedFromLog || modified,
-      messageCount: entry?.messageCount ?? null,
+      tokens,
       gitBranch: entry?.gitBranch ?? null,
     };
   }));
@@ -296,6 +361,7 @@ interface CodexThreadRow {
   created_at: number;
   updated_at: number;
   git_branch: string | null;
+  rollout_path: string | null;
 }
 
 function codexDbPath(): string {
@@ -340,7 +406,7 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
     try {
       rows = db
         .query<CodexThreadRow, [string]>(
-          `SELECT id, title, first_user_message, created_at, updated_at, git_branch
+          `SELECT id, title, first_user_message, created_at, updated_at, git_branch, rollout_path
            FROM threads WHERE cwd = ? AND archived = 0
            ORDER BY updated_at DESC`,
         )
@@ -353,16 +419,16 @@ async function codexList(projectPath: string): Promise<HistorySession[]> {
 
   const threadNames = await loadCodexThreadNames();
 
-  return rows.map((row) => ({
+  return Promise.all(rows.map(async (row) => ({
     sessionId: row.id,
     provider: "codex",
     title: threadNames.get(row.id) ?? null,
     summary: row.first_user_message || "(no prompt)",
     created: epochToISO(row.created_at),
     updatedAt: epochToISO(row.updated_at),
-    messageCount: null,
+    tokens: await codexRolloutTokens(row.rollout_path),
     gitBranch: row.git_branch ?? null,
-  }));
+  })));
 }
 
 /** Find a Codex session's rollout JSONL (today and 7 days back) and return the

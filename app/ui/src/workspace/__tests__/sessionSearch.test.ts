@@ -21,7 +21,7 @@ function historySession(overrides: Partial<HistorySession>): HistorySession {
     summary: 'Improved session list keyboard handling',
     created: '2026-06-07T10:00:00.000Z',
     modified: '2026-06-08T09:30:00.000Z',
-    messageCount: 12,
+    tokens: 12,
     gitBranch: 'task/session-search',
     liveSessionName: null,
     ...overrides,
@@ -131,7 +131,7 @@ describe('filterHistorySessions', () => {
 
   it('matches live session handles for resumed history rows', () => {
     const history = [
-      historySession({ id: 'old', liveSessionName: null, messageCount: 7 }),
+      historySession({ id: 'old', liveSessionName: null, tokens: 7 }),
       historySession({ id: 'active', liveSessionName: 'codex-live-7' }),
     ]
 
@@ -160,7 +160,7 @@ describe('filterHistorySessions', () => {
 
   it('returns match positions and a live handle snippet for history matches', () => {
     const history = [
-      historySession({ id: 'old', liveSessionName: null, messageCount: 7 }),
+      historySession({ id: 'old', liveSessionName: null, tokens: 7 }),
       historySession({ id: 'active', liveSessionName: 'codex-live-7' }),
     ]
 

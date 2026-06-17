@@ -118,9 +118,12 @@ export interface ProviderSessionId {
 /** One row in the History tab for a project, live or historical.
  *
  *  Each adapter owns its own title source, summary (first user message),
- *  timestamps, message-count semantics, and archive flag. `live`/
- *  `liveSessionName` are filled generically by the history command, tagging
- *  rows whose `sessionId` matches a live YACO session. */
+ *  timestamps, and archive flag. `tokens` is the last turn's total token count
+ *  (input incl. cached context + output) as a cheap "how big was this session"
+ *  signal, read from the tail of the provider's session log; `null` when no
+ *  usage record is reachable. `live`/`liveSessionName` are filled generically by
+ *  the history command, tagging rows whose `sessionId` matches a live YACO
+ *  session. */
 export interface HistorySession {
   sessionId: string;
   provider: string;
@@ -128,7 +131,7 @@ export interface HistorySession {
   summary: string;
   created: string;
   updatedAt: string;
-  messageCount: number | null;
+  tokens: number | null;
   gitBranch: string | null;
   archived?: boolean;
   live?: boolean;

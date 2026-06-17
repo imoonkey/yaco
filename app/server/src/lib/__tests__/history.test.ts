@@ -31,7 +31,7 @@ function makeRow(overrides: Partial<CliHistorySession> = {}): CliHistorySession 
     summary: 'Fix the auth bug',
     created: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-02T00:00:00.000Z',
-    messageCount: null,
+    tokens: null,
     gitBranch: null,
     ...overrides,
   }
@@ -57,7 +57,7 @@ describe('getHistory', () => {
         summary: 'Build the new API',
         created: '2026-01-01T10:00:00.000Z',
         updatedAt: '2026-01-01T10:05:00.000Z',
-        messageCount: 42,
+        tokens: 42,
         gitBranch: 'feature/auth',
       }),
     ])
@@ -71,7 +71,7 @@ describe('getHistory', () => {
       summary: 'Build the new API',
       created: '2026-01-01T10:00:00.000Z',
       modified: '2026-01-01T10:05:00.000Z',
-      messageCount: 42,
+      tokens: 42,
       gitBranch: 'feature/auth',
       liveSessionName: null,
     })

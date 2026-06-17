@@ -68,7 +68,7 @@ export interface HistorySession {
   summary: string
   created: string
   modified: string
-  messageCount: number | null
+  tokens: number | null
   gitBranch: string | null
   liveSessionName: string | null
 }

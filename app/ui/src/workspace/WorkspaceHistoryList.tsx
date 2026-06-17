@@ -8,6 +8,13 @@ import type { HistorySession } from '../types'
 
 let resumeCounter = 0
 
+/** Compact token count for the history row: "920", "44k", "1.3M". */
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`
+  return `${(n / 1_000_000).toFixed(1)}M`
+}
+
 function HistoryItem({
   entry,
   isResuming,
@@ -65,7 +72,7 @@ function HistoryItem({
                 <SearchHighlightedText text={branchText!} positions={branchSnippet?.positions ?? branchMatch?.positions} />
               </>
             )}
-            {entry.messageCount != null && ` · ${entry.messageCount} msgs`}
+            {entry.tokens != null && ` · ${formatTokens(entry.tokens)} tok`}
           </span>
         </div>
         {extraSnippet && (

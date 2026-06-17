@@ -11,7 +11,7 @@ export interface HistorySession {
   summary: string
   created: string
   modified: string
-  messageCount: number | null
+  tokens: number | null
   gitBranch: string | null
   liveSessionName: string | null
 }
@@ -40,7 +40,7 @@ export async function getHistory(
     summary: row.summary,
     created: row.created,
     modified: row.updatedAt,
-    messageCount: row.messageCount,
+    tokens: row.tokens,
     gitBranch: row.gitBranch,
     liveSessionName: liveMap.get(row.sessionId) ?? null,
   }))

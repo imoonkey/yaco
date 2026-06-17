@@ -53,7 +53,7 @@ describe('fetchHistory', () => {
       summary: 'Fix tests',
       created: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:01:00.000Z',
-      messageCount: null,
+      tokens: null,
       gitBranch: null,
       live: false,
       liveSessionName: null,

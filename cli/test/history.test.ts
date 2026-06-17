@@ -46,6 +46,7 @@ interface CodexFixtureRow {
   branch?: string | null;
   cwd: string;
   archived?: number;
+  rollout?: string | null;
 }
 
 function createCodexDb(rows: CodexFixtureRow[]): void {
@@ -56,15 +57,15 @@ function createCodexDb(rows: CodexFixtureRow[]): void {
     `CREATE TABLE threads (
        id TEXT PRIMARY KEY, title TEXT, first_user_message TEXT,
        created_at INTEGER, updated_at INTEGER, git_branch TEXT,
-       cwd TEXT, archived INTEGER DEFAULT 0
+       cwd TEXT, archived INTEGER DEFAULT 0, rollout_path TEXT
      )`,
   );
   const stmt = db.prepare(
-    `INSERT INTO threads (id, title, first_user_message, created_at, updated_at, git_branch, cwd, archived)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO threads (id, title, first_user_message, created_at, updated_at, git_branch, cwd, archived, rollout_path)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const r of rows) {
-    stmt.run(r.id, r.title ?? null, r.first ?? null, r.created, r.updated, r.branch ?? null, r.cwd, r.archived ?? 0);
+    stmt.run(r.id, r.title ?? null, r.first ?? null, r.created, r.updated, r.branch ?? null, r.cwd, r.archived ?? 0, r.rollout ?? null);
   }
   db.close();
 }
@@ -107,6 +108,32 @@ describe("claude history list", () => {
     expect(row.summary).toBe("Fix the failing auth test");
     expect(row.title).toBe("Auth fix");
     expect(row.updatedAt).toBe("2026-06-04T10:05:00.000Z");
+  });
+
+  it("sums the last assistant usage into tokens (input + cache_creation + cache_read + output)", async () => {
+    writeClaudeSession("claude-tok", [
+      userLine("hi", "2026-06-04T10:00:00.000Z"),
+      {
+        type: "assistant",
+        timestamp: "2026-06-04T10:01:00.000Z",
+        message: {
+          usage: {
+            input_tokens: 1,
+            cache_creation_input_tokens: 466,
+            cache_read_input_tokens: 435901,
+            output_tokens: 294,
+          },
+        },
+      },
+    ]);
+    const rows = await claudeHistory().list(PROJECT, []);
+    expect(rows[0]!.tokens).toBe(1 + 466 + 435901 + 294);
+  });
+
+  it("leaves tokens null when no usage record is present", async () => {
+    writeClaudeSession("claude-notok", [userLine("hi", "2026-06-04T10:00:00.000Z")]);
+    const rows = await claudeHistory().list(PROJECT, []);
+    expect(rows[0]!.tokens).toBeNull();
   });
 
   it("restores a leading slash command to /command args", async () => {
@@ -153,6 +180,30 @@ describe("codex history list", () => {
     expect(rows[0]!.gitBranch).toBe("main");
   });
 
+  it("reads tokens from the rollout tail (total_tokens, used as-is)", async () => {
+    const rolloutPath = join(sandbox, "rollout-cx-tok.jsonl");
+    writeFileSync(
+      rolloutPath,
+      JSON.stringify({
+        type: "event_msg",
+        payload: { info: { last_token_usage: { input_tokens: 317209, cached_input_tokens: 316800, output_tokens: 170, total_tokens: 317379 } } },
+      }) + "\n",
+    );
+    createCodexDb([
+      { id: "cx-tok", first: "task", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T09:00:00Z"), cwd: PROJECT, rollout: rolloutPath },
+    ]);
+    const rows = await codexHistory().list(PROJECT, []);
+    expect(rows[0]!.tokens).toBe(317379);
+  });
+
+  it("leaves tokens null when the rollout path is absent", async () => {
+    createCodexDb([
+      { id: "cx-noroll", first: "task", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T09:00:00Z"), cwd: PROJECT },
+    ]);
+    const rows = await codexHistory().list(PROJECT, []);
+    expect(rows[0]!.tokens).toBeNull();
+  });
+
   it("prefers session_index.jsonl thread name as the title", async () => {
     createCodexDb([
       { id: "cx-1", first: "hello", created: epochSec("2026-06-03T00:00:00Z"), updated: epochSec("2026-06-03T00:00:00Z"), cwd: PROJECT },
@@ -175,7 +226,7 @@ describe("codex history list", () => {
 
 describe("finalizeHistory", () => {
   function row(sessionId: string, updatedAt: string): import("../src/lib/core/agent/providers/types.ts").HistorySession {
-    return { sessionId, provider: "claude", title: null, summary: "x", created: updatedAt, updatedAt, messageCount: null, gitBranch: null };
+    return { sessionId, provider: "claude", title: null, summary: "x", created: updatedAt, updatedAt, tokens: null, gitBranch: null };
   }
 
   it("sorts newest-first and returns the default 200-row window metadata", () => {

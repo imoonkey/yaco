@@ -67,7 +67,7 @@ export interface CliHistorySession {
   summary: string
   created: string
   updatedAt: string
-  messageCount: number | null
+  tokens: number | null
   gitBranch: string | null
   archived?: boolean
   live?: boolean
@@ -282,6 +282,58 @@ export async function captureSession(handle: string, lines: number): Promise<str
   // Defensive: capture should always wrap in {text}; if it ever changes,
   // surface whatever stringifies cleanly rather than silently dropping it.
   return typeof data === 'string' ? data : JSON.stringify(data ?? '')
+}
+
+/** One row of `yaco agent messages <h> --role assistant --json` (meta mode). */
+interface MessageMetaRow {
+  index: number
+  role: 'user' | 'assistant'
+  types: string[]
+  chars: number
+}
+
+/** Full message from `yaco agent messages <h> --index <i> --json`. */
+interface MessageFullRow extends MessageMetaRow {
+  ts: string | null
+  text: string
+}
+
+/** Last `n` assistant **prose** messages (full text), oldest-first, read from
+ *  the provider JSONL via `yaco agent messages` — never PTY capture. Filters to
+ *  `--role assistant --type text` so the rows are what the agent actually said,
+ *  not thinking/tool-call entries. Two-step: meta for stable indices, then one
+ *  `--index` fetch per kept row. Empty when there is no assistant prose yet. */
+export async function lastAssistantMessages(
+  handle: string,
+  n: number,
+): Promise<{ index: number; text: string }[]> {
+  validateSessionName(handle)
+  const meta = await runYacoAgentJson(
+    ['agent', 'messages', handle, '--role', 'assistant', '--type', 'text', '--json'],
+    YACO_AGENT_COMMAND_TIMEOUT_MS,
+    'agent messages',
+  )
+  if (!Array.isArray(meta) || meta.length === 0) return []
+  const picked = (meta as MessageMetaRow[]).slice(-Math.max(1, n))
+  return Promise.all(
+    picked.map(async (m) => {
+      const row = (await runYacoAgentJson(
+        ['agent', 'messages', handle, '--index', String(m.index), '--json'],
+        YACO_AGENT_COMMAND_TIMEOUT_MS,
+        'agent messages',
+      )) as MessageFullRow
+      return { index: m.index, text: row.text }
+    }),
+  )
+}
+
+/** Forward arbitrary `yaco agent messages` flags in TEXT mode and return the
+ *  CLI's rendered output verbatim (meta table / full message / summary). The
+ *  handle is fixed by position so caller-supplied args can only navigate, not
+ *  retarget; the CLI's strict allowlist parser rejects unknown flags. */
+export async function inspectSessionMessages(handle: string, args: string[]): Promise<string> {
+  validateSessionName(handle)
+  return spawnOutput(YACO_PATH, ['agent', 'messages', handle, ...args], YACO_AGENT_COMMAND_TIMEOUT_MS)
 }
 
 const STATE_POLL_MS = 200
