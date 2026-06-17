@@ -115,7 +115,7 @@ const { createRouter } = await import('../channels/router')
 const { createBindingStore } = await import('../channels/state')
 
 const store = createBindingStore('test-stream')
-await store.setBinding('conv-1', {
+await store.addSession('conv-1', {
   project: 'alpha',
   session: SESSION_HANDLE,
   boundAt: '2026-05-08T00:00:00Z',
@@ -137,7 +137,7 @@ describe('channel passthrough streaming', () => {
     streamScripts.length = 0
   })
 
-  it('streams multiple onReply calls per agent turn with ⏳/✅ prefixes', async () => {
+  it('streams multiple onReply calls per agent turn with [name] ⏳/✅ prefixes', async () => {
     const replies: string[] = []
     let resolveDone: () => void
     const done = new Promise<void>(r => { resolveDone = r })
@@ -145,7 +145,7 @@ describe('channel passthrough streaming', () => {
     const onReply = vi.fn(async (reply: { kind: string; text?: string }) => {
       if (reply.kind === 'text' && reply.text) {
         replies.push(reply.text)
-        if (reply.text.startsWith('✅')) resolveDone()
+        if (reply.text.includes('✅')) resolveDone()
       }
     })
 
@@ -176,9 +176,9 @@ describe('channel passthrough streaming', () => {
     ])
 
     expect(replies).toEqual([
-      '⏳ Looking up the file',
-      '⏳ Patching now',
-      '✅ All done — fixed line 42.',
+      `[${SESSION_HANDLE}] ⏳ Looking up the file`,
+      `[${SESSION_HANDLE}] ⏳ Patching now`,
+      `[${SESSION_HANDLE}] ✅ All done — fixed line 42.`,
     ])
   }, 12_000)
 
@@ -193,7 +193,7 @@ describe('channel passthrough streaming', () => {
     const onReply = vi.fn(async (reply: { kind: string; text?: string }) => {
       if (reply.kind === 'text' && reply.text) {
         order.push(reply.text)
-        if (order.filter(t => t.startsWith('✅')).length >= 2) resolveDone()
+        if (order.filter(t => t.includes('✅')).length >= 2) resolveDone()
       }
     })
 
@@ -220,11 +220,52 @@ describe('channel passthrough streaming', () => {
     ])
 
     // Critical assertion: A's events arrive before B's (per-session lock).
-    const aFinalIdx = order.indexOf('✅ A-final')
-    const bFinalIdx = order.indexOf('✅ B-final')
+    const aFinalIdx = order.indexOf(`[${SESSION_HANDLE}] ✅ A-final`)
+    const bFinalIdx = order.indexOf(`[${SESSION_HANDLE}] ✅ B-final`)
     expect(aFinalIdx).toBeGreaterThanOrEqual(0)
     expect(bFinalIdx).toBeGreaterThan(aFinalIdx)
   }, 15_000)
+
+  it('labels concurrent replies from two subscribed sessions by handle', async () => {
+    sendCalls.length = 0
+    streamScripts.length = 0
+    const replies: string[] = []
+
+    let resolveDone: () => void
+    const done = new Promise<void>(r => { resolveDone = r })
+    const onReply = vi.fn(async (reply: { kind: string; text?: string }) => {
+      if (reply.kind === 'text' && reply.text?.includes('✅')) {
+        replies.push(reply.text)
+        if (replies.length >= 2) resolveDone()
+      }
+    })
+
+    // One conversation subscribed to BOTH sessions, switching active between
+    // sends. Each session's reply must carry its own [handle] label.
+    const mstore = createBindingStore('test-multi')
+    await mstore.addSession('conv-m', { project: 'alpha', session: SESSION_HANDLE, boundAt: '2026-05-08T00:00:00Z' })
+    const mrouter = createRouter(mstore)
+
+    streamScripts.push([{ ev: final('done'), delayMs: 40 }])
+    streamScripts.push([{ ev: final('done'), delayMs: 40 }])
+
+    await mrouter.handleMessage({ conversationId: 'conv-m' }, 'to first', onReply)
+    // Subscribe + activate the second session (first stays subscribed).
+    await mstore.addSession('conv-m', { project: 'alpha', session: SHARED_HANDLE, boundAt: '2026-05-08T00:00:00Z' })
+    await mrouter.handleMessage({ conversationId: 'conv-m' }, 'to second', onReply)
+
+    expect(sendCalls.map(s => s.handle)).toEqual([SESSION_HANDLE, SHARED_HANDLE])
+
+    await Promise.race([
+      done,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout waiting for both finals')), 8000)),
+    ])
+
+    expect([...replies].sort()).toEqual([
+      `[${SESSION_HANDLE}] ✅ done`,
+      `[${SHARED_HANDLE}] ✅ done`,
+    ])
+  }, 12_000)
 })
 
 describe('cross-router follower singleton', () => {
@@ -239,8 +280,8 @@ describe('cross-router follower singleton', () => {
     // must keep them sequential — peak concurrency 1.
     const storeA = createBindingStore('rtr-a')
     const storeB = createBindingStore('rtr-b')
-    await storeA.setBinding('cA', { project: 'alpha', session: SHARED_HANDLE, boundAt: '2026-05-08T00:00:00Z' })
-    await storeB.setBinding('cB', { project: 'alpha', session: SHARED_HANDLE, boundAt: '2026-05-08T00:00:00Z' })
+    await storeA.addSession('cA', { project: 'alpha', session: SHARED_HANDLE, boundAt: '2026-05-08T00:00:00Z' })
+    await storeB.addSession('cB', { project: 'alpha', session: SHARED_HANDLE, boundAt: '2026-05-08T00:00:00Z' })
     const routerA = createRouter(storeA)
     const routerB = createRouter(storeB)
 
@@ -248,7 +289,7 @@ describe('cross-router follower singleton', () => {
     let resolveDone: () => void
     const done = new Promise<void>(r => { resolveDone = r })
     const onReply = vi.fn(async (reply: { kind: string; text?: string }) => {
-      if (reply.kind === 'text' && reply.text?.startsWith('✅')) {
+      if (reply.kind === 'text' && reply.text?.includes('✅')) {
         finals++
         if (finals >= 2) resolveDone()
       }

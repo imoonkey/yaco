@@ -1,3 +1,49 @@
+## 2026-06-17: Channels — multi-session binding + CLI-aligned message reads
+
+**What changed:**
+- Channel binding store (`channels/state.ts`) went from one session per
+  conversation to a subscription set plus one active send target:
+  `{ sessions: Binding[]; active }`. New API `getActive`/`listSessions`/
+  `addSession`/`setActive`/`removeSession`/`clearAll`.
+- Shared router (`channels/router.ts`): `/use s` now subscribes **and** activates
+  without dropping prior sessions (re-selecting just promotes); plain text targets
+  the active session; every reply is prefixed `[<session>]` so concurrent
+  sessions stay attributable. `/exit [n|name|all]`; `/who`/`/sessions` mark active
+  `*`, other subscriptions `+`.
+- Message reads aligned to `yaco agent messages` (JSONL, never PTY): `/last [n]`
+  → last n assistant **prose** messages (`--role assistant --type text` then
+  `--index`) via `agent.lastAssistantMessages`; new `/messages` (`/m`) forwards
+  arbitrary `messages` flags verbatim via `agent.inspectSessionMessages`;
+  `/capture` (`/cap`) keeps raw-pane capture as a debug-only escape hatch.
+- Dropped the unused legacy `getBinding/setBinding/...` re-exports from
+  `wechat/state.ts`.
+
+**Why:**
+- A single binding meant you couldn't drive several agents at once and couldn't
+  tell interleaved replies apart; the active-target + `[name]`-label model fixes
+  both without touching the per-handle reply-stream lock. The old `/last`
+  captured raw tmux pane chrome — the JSONL message surface is structured and
+  readable, and `/messages` exposes the full CLI navigation for power use.
+- Gotcha surfaced during verification: a session whose project dir was renamed
+  (`workflow`→`yaco`) has its Claude log stranded under the old cwd-encoded dir,
+  so `messages` resolves a truncated stub. Legacy-only; `yaco project move`
+  consolidates. New sessions resolve correctly.
+
+**Key files:** `app/server/src/lib/channels/state.ts`,
+`app/server/src/lib/channels/router.ts`,
+`app/server/src/lib/agent.ts` (`lastAssistantMessages`/`inspectSessionMessages`),
+`app/server/src/lib/wechat/state.ts`; design `plan/all/wechat/design.md` (+`cn/`);
+ref `doc/main/app/backend/libs.md` § channels.
+**Verification:** `cd app/server && npm test` (614 passed, incl. new
+multi-session add/switch/exit, store, and concurrent `[name]`-label coverage);
+smoke-tested `yaco agent messages` JSON shapes and live `/last` over WhatsApp.
+**Commit:** _this change_ (router/state/tests/design); `agent.ts` +
+`doc/main/app/backend/libs.md` landed earlier in the parallel `agent-history`
+commit sweep (0b57dae/34c88e3).
+**Next:** optional — a final/turn dimension on `yaco agent messages` so `/last`
+can return only end_turn answers (it currently includes interim narration).
+**Blockers:** None
+
 ## 2026-06-16: Tint /discuss Q&A blocks in markdown preview
 
 **What changed:**

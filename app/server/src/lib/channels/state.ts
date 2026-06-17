@@ -9,7 +9,15 @@ export interface Binding {
   boundAt: string
 }
 
-export type BindingFile = Record<string, Binding>
+/** Per-conversation subscription set plus the one active send target. Plain
+ *  text goes to `active`; replies stream from every subscribed session, each
+ *  labeled by name so concurrent turns stay unambiguous. */
+export interface ConversationBindings {
+  sessions: Binding[]
+  active: string | null
+}
+
+export type BindingFile = Record<string, ConversationBindings>
 
 /** Per-channel binding store backed by ${YACO_HOME}/channels/<scope>/state.json.
  *  Module-private cache + serialized writes to avoid concurrent fs races. */
@@ -50,21 +58,68 @@ export function createBindingStore(scope: string) {
   }
 
   return {
-    async getBinding(conversationId: string): Promise<Binding | undefined> {
-      return (await load())[conversationId]
+    /** The active send target, or undefined when nothing is subscribed. */
+    async getActive(conversationId: string): Promise<Binding | undefined> {
+      const conv = (await load())[conversationId]
+      if (!conv || !conv.active) return undefined
+      return conv.sessions.find(s => s.session === conv.active)
     },
-    async setBinding(conversationId: string, binding: Binding): Promise<void> {
+
+    /** Every subscribed session for the conversation (active or not). */
+    async listSessions(conversationId: string): Promise<Binding[]> {
+      return (await load())[conversationId]?.sessions ?? []
+    },
+
+    /** Subscribe (dedupe by session name, refreshing project/boundAt) and make
+     *  it the active target. */
+    async addSession(conversationId: string, binding: Binding): Promise<void> {
       const state = await load()
-      state[conversationId] = binding
+      const conv = state[conversationId] ?? { sessions: [], active: null }
+      conv.sessions = conv.sessions.filter(s => s.session !== binding.session)
+      conv.sessions.push(binding)
+      conv.active = binding.session
+      state[conversationId] = conv
       await persist()
     },
-    async clearBinding(conversationId: string): Promise<void> {
+
+    /** Promote an already-subscribed session to active. Returns false if it
+     *  isn't subscribed. */
+    async setActive(conversationId: string, session: string): Promise<boolean> {
+      const state = await load()
+      const conv = state[conversationId]
+      if (!conv || !conv.sessions.some(s => s.session === session)) return false
+      conv.active = session
+      await persist()
+      return true
+    },
+
+    /** Unsubscribe one session. If it was active, promote the most-recently
+     *  added remaining session (or null). Returns the removed binding, or
+     *  undefined when it wasn't subscribed. */
+    async removeSession(conversationId: string, session: string): Promise<Binding | undefined> {
+      const state = await load()
+      const conv = state[conversationId]
+      if (!conv) return undefined
+      const idx = conv.sessions.findIndex(s => s.session === session)
+      if (idx < 0) return undefined
+      const [removed] = conv.sessions.splice(idx, 1)
+      if (conv.active === session) {
+        conv.active = conv.sessions.at(-1)?.session ?? null
+      }
+      if (conv.sessions.length === 0) delete state[conversationId]
+      await persist()
+      return removed
+    },
+
+    /** Drop the whole conversation (all subscriptions). */
+    async clearAll(conversationId: string): Promise<void> {
       const state = await load()
       if (!(conversationId in state)) return
       delete state[conversationId]
       await persist()
     },
-    async listBindings(): Promise<BindingFile> {
+
+    async listConversations(): Promise<BindingFile> {
       return { ...(await load()) }
     },
   }

@@ -127,9 +127,9 @@ describe('dispatch', () => {
     expect(out).toContain('claude-1')
   })
 
-  it('/who unbound responds with hint', async () => {
+  it('/who with nothing subscribed responds with hint', async () => {
     const out = await dispatchText({ conversationId: 'wx-unbound' }, { name: 'who', args: [] })
-    expect(out).toMatch(/unbound/)
+    expect(out).toMatch(/no sessions subscribed/)
   })
 
   it('/use s defers when no current project', async () => {
@@ -143,9 +143,11 @@ describe('dispatch', () => {
     expect(out).toMatch(/session not found/)
   })
 
-  it('/exit and /last respond when not bound; /new shows usage without args', async () => {
-    expect(await dispatchText({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/not bound/)
-    expect(await dispatchText({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/not bound/)
+  it('/exit and /last respond when nothing subscribed; /new shows usage without args', async () => {
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'exit', args: [] })).toMatch(/no sessions subscribed/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'last', args: [] })).toMatch(/no active session/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'messages', args: [] })).toMatch(/no active session/)
+    expect(await dispatchText({ conversationId: 'wx' }, { name: 'capture', args: [] })).toMatch(/no active session/)
     expect(await dispatchText({ conversationId: 'wx' }, { name: 'new', args: [] })).toMatch(/usage/)
     // The channel no longer hard-codes a claude/codex union: an unknown provider
     // is not rejected here, it proceeds to the project/catalog checks downstream.
@@ -182,7 +184,7 @@ describe('dispatch', () => {
     const { dispatch: scopedDispatch, _resetRouterState: scopedReset } = await import('../wechat/router')
     const { startAgentSession } = await import('../agent')
     const { acquireTap } = await import('../channels/pty-tap')
-    const { getBinding } = await import('../wechat/state')
+    const { wechatStore } = await import('../wechat/state')
 
     scopedReset()
     await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'use', args: ['alpha'] })
@@ -190,11 +192,11 @@ describe('dispatch', () => {
     // constrains providers to claude/codex — it forwards the id verbatim.
     const out = await scopedDispatch({ conversationId: 'wx-newhappy' }, { name: 'new', args: ['gemini', 'mysess'] })
 
-    expect(out.kind === 'text' && out.text).toMatch(/started \+ bound to alpha\/mysess/)
+    expect(out.kind === 'text' && out.text).toMatch(/started \+ active: alpha\/mysess/)
     expect(startAgentSession).toHaveBeenCalledWith('gemini', 'mysess', expect.any(String))
     expect(acquireTap).toHaveBeenCalledWith('mysess')
-    const binding = await getBinding('wx-newhappy')
-    expect(binding).toEqual(expect.objectContaining({ project: 'alpha', session: 'mysess' }))
+    const active = await wechatStore.getActive('wx-newhappy')
+    expect(active).toEqual(expect.objectContaining({ project: 'alpha', session: 'mysess' }))
 
     vi.doUnmock('../agent')
     vi.doUnmock('../channels/pty-tap')
@@ -203,7 +205,7 @@ describe('dispatch', () => {
   it('unknown slash command falls through to passthrough (not "unknown command")', async () => {
     const out = await passthroughText({ conversationId: 'wx-unknown-slash' }, '/foo bar baz')
     expect(out).not.toContain('unknown command')
-    expect(out).toMatch(/unbound — run \/help/)
+    expect(out).toMatch(/no active session — run \/help/)
   })
 
   it('/file emits a file attachment for a text file', async () => {
@@ -265,5 +267,95 @@ describe('dispatch', () => {
     await dispatchText({ conversationId: 'wx-file-t-bin' }, { name: 'use', args: ['alpha'] })
     const out = await dispatchText({ conversationId: 'wx-file-t-bin' }, { name: 'file', args: ['-t', 'inline.bin'] })
     expect(out).toMatch(/binary file .* drop -t/)
+  })
+
+  it('multi-session: subscribe two, switch active without dropping, /exit promotes', async () => {
+    vi.resetModules()
+    vi.doMock('../channels/pty-tap', async (orig) => {
+      const actual = await orig<typeof import('../channels/pty-tap')>()
+      return {
+        ...actual,
+        acquireTap: vi.fn(async () => undefined),
+        releaseTap: vi.fn(async () => undefined),
+        hasTap: vi.fn(() => true),
+      }
+    })
+    // A second session in project alpha so a conversation can subscribe to two.
+    await writeFile(join(agentDir.value, 'codex-2.json'), JSON.stringify({
+      handle: 'codex-2', provider: 'codex', sessionPath: projectAPath, pid: 2,
+      sessionId: 'sess-2', status: 'idle', createdAt: '2026-05-08T00:00:00Z',
+    }))
+
+    const { dispatch: d, _resetRouterState: reset } = await import('../wechat/router')
+    const { acquireTap } = await import('../channels/pty-tap')
+    const { wechatStore } = await import('../wechat/state')
+    reset()
+    const conv = 'wx-multi'
+
+    await d({ conversationId: conv }, { name: 'use', args: ['alpha'] })
+    const r1 = await d({ conversationId: conv }, { name: 'use', args: ['s', 'claude-1'] })
+    expect(r1.kind === 'text' && r1.text).toMatch(/subscribed \+ active: alpha\/claude-1/)
+    const r2 = await d({ conversationId: conv }, { name: 'use', args: ['s', 'codex-2'] })
+    expect(r2.kind === 'text' && r2.text).toMatch(/subscribed \+ active: alpha\/codex-2/)
+
+    expect((await wechatStore.listSessions(conv)).map(s => s.session)).toEqual(['claude-1', 'codex-2'])
+    expect((await wechatStore.getActive(conv))?.session).toBe('codex-2')
+
+    const who = await d({ conversationId: conv }, { name: 'who', args: [] })
+    if (who.kind !== 'text') throw new Error('expected text')
+    expect(who.text).toMatch(/\* alpha\/codex-2/)
+    expect(who.text).toMatch(/\+ alpha\/claude-1/)
+
+    // Re-activating an already-subscribed session promotes it without a new tap.
+    acquireTap.mockClear()
+    const r3 = await d({ conversationId: conv }, { name: 'use', args: ['s', 'claude-1'] })
+    expect(r3.kind === 'text' && r3.text).toMatch(/^active: alpha\/claude-1/)
+    expect(acquireTap).not.toHaveBeenCalled()
+    expect((await wechatStore.getActive(conv))?.session).toBe('claude-1')
+
+    const ex = await d({ conversationId: conv }, { name: 'exit', args: [] })
+    expect(ex.kind === 'text' && ex.text).toMatch(/unsubscribed alpha\/claude-1.*active now alpha\/codex-2/)
+    expect((await wechatStore.listSessions(conv)).map(s => s.session)).toEqual(['codex-2'])
+
+    const exAll = await d({ conversationId: conv }, { name: 'exit', args: ['all'] })
+    expect(exAll.kind === 'text' && exAll.text).toMatch(/unsubscribed all 1 session/)
+    expect(await wechatStore.getActive(conv)).toBeUndefined()
+
+    await rm(join(agentDir.value, 'codex-2.json'), { force: true })
+    vi.doUnmock('../channels/pty-tap')
+  })
+
+  it('/last and /messages read the active session via yaco agent messages (mocked)', async () => {
+    vi.resetModules()
+    vi.doMock('../channels/pty-tap', async (orig) => {
+      const actual = await orig<typeof import('../channels/pty-tap')>()
+      return { ...actual, acquireTap: vi.fn(async () => undefined), hasTap: vi.fn(() => true) }
+    })
+    vi.doMock('../agent', async (orig) => {
+      const actual = await orig<typeof import('../agent')>()
+      return {
+        ...actual,
+        lastAssistantMessages: vi.fn(async () => [{ index: 7, text: 'the final answer' }]),
+        inspectSessionMessages: vi.fn(async (handle: string, args: string[]) => `SUMMARY for ${handle} ${args.join(' ')}`),
+      }
+    })
+
+    const { dispatch: d, _resetRouterState: reset } = await import('../wechat/router')
+    const { lastAssistantMessages, inspectSessionMessages } = await import('../agent')
+    reset()
+    const conv = 'wx-msgs'
+    await d({ conversationId: conv }, { name: 'use', args: ['alpha'] })
+    await d({ conversationId: conv }, { name: 'use', args: ['s', 'claude-1'] })
+
+    const last = await d({ conversationId: conv }, { name: 'last', args: [] })
+    expect(last.kind === 'text' && last.text).toBe('the final answer')
+    expect(lastAssistantMessages).toHaveBeenCalledWith('claude-1', 1)
+
+    const msgs = await d({ conversationId: conv }, { name: 'messages', args: ['--summary'] })
+    expect(msgs.kind === 'text' && msgs.text).toMatch(/SUMMARY for claude-1 --summary/)
+    expect(inspectSessionMessages).toHaveBeenCalledWith('claude-1', ['--summary'])
+
+    vi.doUnmock('../agent')
+    vi.doUnmock('../channels/pty-tap')
   })
 })
