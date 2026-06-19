@@ -34,6 +34,10 @@ function task(partial: Partial<LiveTask> & Pick<LiveTask, 'id' | 'state'>): Live
   return { project: 'proj', agents: [], ...partial }
 }
 
+/** A fixed, deterministic "now" for the projector's freshness guard. Individual
+ *  tests override `nowMs`/`dismissedActGen` via `partial`. */
+const DEFAULT_NOW_MS = Date.parse('2026-06-19T12:00:00.000Z')
+
 function input(partial: Partial<ProjectionInput>): ProjectionInput {
   return {
     events: [],
@@ -41,6 +45,8 @@ function input(partial: Partial<ProjectionInput>): ProjectionInput {
     tasks: [],
     pins: {},
     watermarks: { projectReadAt: {}, sessionReadAt: {} },
+    nowMs: DEFAULT_NOW_MS,
+    dismissedActGen: new Set(),
     ...partial,
   }
 }
@@ -128,22 +134,23 @@ describe('ACT — open derived from live status', () => {
   })
 })
 
-// ── ACT dedup: task_blocked + bound session_blocked → one item w/ count ──────
+// ── ACT no-dedup: each live condition is its own independently-dismissible row ─
 
-describe('ACT dedup (spec §8)', () => {
-  it('task_blocked + bound session_blocked collapse to one task-primary item with a count', () => {
+describe('ACT — no dedup fold (each condition is its own row)', () => {
+  it('a task_blocked and a bound session_blocked are two independent rows', () => {
     const snap = projectAttention(
       input({
         sessions: [sess({ name: 'a', status: 'blocked', statusEnteredAt: 'T1' })],
         tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: 'T1', agents: ['a'] })],
       }),
     )
-    expect(snap.needsYou).toHaveLength(1)
-    expect(snap.needsYou[0].type).toBe('task_blocked')
-    expect(snap.needsYou[0].count).toBe(2) // task + folded session
+    expect(snap.needsYou).toHaveLength(2)
+    expect(snap.needsYou.map((i) => i.type).sort()).toEqual(['session_blocked', 'task_blocked'])
+    // No row folds a count: each is a single, distinct generation.
+    expect(snap.needsYou.every((i) => i.count === 1)).toBe(true)
   })
 
-  it('multiple bound blocked sessions → still one task item, higher count', () => {
+  it('multiple bound blocked sessions stay distinct rows beside the task row', () => {
     const snap = projectAttention(
       input({
         sessions: [
@@ -153,11 +160,12 @@ describe('ACT dedup (spec §8)', () => {
         tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: 'T1', agents: ['a', 'b'] })],
       }),
     )
-    expect(snap.needsYou).toHaveLength(1)
-    expect(snap.needsYou[0].count).toBe(3)
+    expect(snap.needsYou).toHaveLength(3)
+    expect(snap.needsYou.filter((i) => i.type === 'session_blocked')).toHaveLength(2)
+    expect(snap.needsYou.filter((i) => i.type === 'task_blocked')).toHaveLength(1)
   })
 
-  it('a session_blocked NOT bound to a blocked task stays its own row', () => {
+  it('a session_blocked NOT bound to a blocked task is still its own row', () => {
     const snap = projectAttention(
       input({
         sessions: [sess({ name: 'lonely', status: 'blocked', statusEnteredAt: 'T1' })],
@@ -165,6 +173,203 @@ describe('ACT dedup (spec §8)', () => {
       }),
     )
     expect(snap.needsYou).toHaveLength(2)
+  })
+})
+
+// ── ACT disposition pass: dismiss tombstone + owner routing (design §core) ────
+
+describe('ACT disposition — dismiss tombstone (ACKED)', () => {
+  const T_BLOCK = '2026-06-19T11:59:00.000Z'
+  const blockedGen = sessionGenerationId('session_blocked', 'proj', 's', T_BLOCK)
+  const blockEvent = ev({
+    id: blockedGen,
+    ts: T_BLOCK,
+    kind: 'session_blocked',
+    sessionId: 's',
+    payload: { sessionName: 's', blockReason: 'question' },
+  })
+
+  it('dismissing a generation drops it from needsYou and surfaces it once in Recent', () => {
+    const snap = projectAttention(
+      input({
+        events: [blockEvent],
+        sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' })],
+        dismissedActGen: new Set([blockedGen]),
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.filter((r) => r.generation === blockedGen)).toHaveLength(1)
+    expect(snap.global).toEqual({ count: 0, color: null })
+  })
+
+  it('without the tombstone the same live condition pages (NEEDS_YOU, not Recent)', () => {
+    const snap = projectAttention(
+      input({
+        events: [blockEvent],
+        sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' })],
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(1)
+    expect(snap.recent.some((r) => r.generation === blockedGen)).toBe(false)
+  })
+
+  it('a re-entry (new generation id) re-surfaces even though the prior was future-dated + dismissed', () => {
+    // Prior generation was future-dated (clock skew) and dismissed; a watermark
+    // would also suppress the re-entry. The tombstone is exact-generation, so the
+    // session re-blocking at a new statusEnteredAt mints a fresh id that pages.
+    const futureGen = sessionGenerationId('session_blocked', 'proj', 's', '2026-06-20T00:00:00.000Z')
+    const reEntryAt = '2026-06-19T11:59:30.000Z'
+    const reEntryGen = sessionGenerationId('session_blocked', 'proj', 's', reEntryAt)
+    const snap = projectAttention(
+      input({
+        sessions: [sess({ name: 's', status: 'blocked', statusEnteredAt: reEntryAt, spawnedBy: 'user:web' })],
+        dismissedActGen: new Set([futureGen]),
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(1)
+    expect(snap.needsYou[0].generation).toBe(reEntryGen)
+  })
+})
+
+describe('ACT disposition — owner routing for delegated session_blocked', () => {
+  const T_BLOCK = '2026-06-19T11:59:00.000Z'
+  const ENTERED = Date.parse(T_BLOCK)
+
+  // A delegated child block under a parent in some state, with an overridable clock.
+  const delegated = (parent: LiveSession | null, nowMs: number) =>
+    projectAttention(
+      input({
+        nowMs,
+        sessions: [
+          sess({ name: 'child', status: 'blocked', statusEnteredAt: T_BLOCK, spawnedBy: 'agent', parentSession: 'parent' }),
+          ...(parent ? [parent] : []),
+        ],
+      }),
+    )
+
+  it('fresh `processing` same-project parent SUPPRESSES — shown nowhere', () => {
+    const childGen = sessionGenerationId('session_blocked', 'proj', 'child', T_BLOCK)
+    const snap = projectAttention(
+      input({
+        nowMs: ENTERED + 1_000, // 1s after the block → fresh
+        // A durable block event exists; SUPPRESSED must keep it out of Recent too.
+        events: [ev({ id: childGen, ts: T_BLOCK, kind: 'session_blocked', sessionId: 'child', payload: { sessionName: 'child' } })],
+        sessions: [
+          sess({ name: 'child', status: 'blocked', statusEnteredAt: T_BLOCK, spawnedBy: 'agent', parentSession: 'parent' }),
+          sess({ name: 'parent', status: 'processing', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' }),
+        ],
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.some((r) => r.generation === childGen)).toBe(false)
+    expect(snap.global).toEqual({ count: 0, color: null })
+  })
+
+  it('escalates when the parent is gone (missing → fail open)', () => {
+    const snap = delegated(null, ENTERED + 1_000)
+    expect(snap.needsYou).toHaveLength(1)
+    expect(snap.needsYou[0].type).toBe('session_blocked')
+  })
+
+  it('escalates when the parent is idle (not processing)', () => {
+    const parent = sess({ name: 'parent', status: 'idle', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' })
+    expect(delegated(parent, ENTERED + 1_000).needsYou).toHaveLength(1)
+  })
+
+  it('escalates when the parent is starting (processing-only suppression)', () => {
+    const parent = sess({ name: 'parent', status: 'starting', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' })
+    expect(delegated(parent, ENTERED + 1_000).needsYou).toHaveLength(1)
+  })
+
+  it('escalates when the block is grace-expired under a processing parent', () => {
+    const parent = sess({ name: 'parent', status: 'processing', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' })
+    const GRACE_MS = 10 * 60 * 1000
+    expect(delegated(parent, ENTERED + GRACE_MS + 1).needsYou).toHaveLength(1)
+  })
+
+  it('escalates when the block is future-dated under a processing parent (enteredMs > nowMs)', () => {
+    const parent = sess({ name: 'parent', status: 'processing', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' })
+    expect(delegated(parent, ENTERED - 1_000).needsYou).toHaveLength(1)
+  })
+
+  it('escalates when statusEnteredAt is unparseable under a fresh processing parent (fail open)', () => {
+    // An unparseable statusEnteredAt must NOT compute as fresh (item.tsMs would
+    // collapse it to 0 and, with nowMs=0, spuriously suppress). It pages.
+    const snap = projectAttention(
+      input({
+        nowMs: 0,
+        sessions: [
+          sess({ name: 'child', status: 'blocked', statusEnteredAt: 'not-a-date', spawnedBy: 'agent', parentSession: 'parent' }),
+          sess({ name: 'parent', status: 'processing', statusEnteredAt: 'not-a-date', spawnedBy: 'user:web' }),
+        ],
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(1)
+    expect(snap.needsYou[0].type).toBe('session_blocked')
+  })
+
+  it('escalates when the immediate parent is in a different project (cross-project → fail open)', () => {
+    // Same parent NAME but registered under another project: the same-project
+    // lookup misses, so the block fails open and pages.
+    const snap = projectAttention(
+      input({
+        nowMs: ENTERED + 1_000,
+        sessions: [
+          sess({ name: 'child', status: 'blocked', statusEnteredAt: T_BLOCK, spawnedBy: 'agent', parentSession: 'parent' }),
+          { project: 'other', name: 'parent', status: 'processing', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' },
+        ],
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(1)
+  })
+})
+
+describe('ACT disposition — always-page conditions', () => {
+  const T_BLOCK = '2026-06-19T11:59:00.000Z'
+
+  it('a pinned delegated block, a crash, and a task_blocked all page (NEEDS_YOU)', () => {
+    const snap = projectAttention(
+      input({
+        // Pin promotes the delegated child to OWNED even with a fresh processing parent.
+        nowMs: Date.parse(T_BLOCK) + 1_000,
+        pins: { proj: new Set(['child']) },
+        sessions: [
+          sess({ name: 'child', status: 'blocked', statusEnteredAt: T_BLOCK, spawnedBy: 'agent', parentSession: 'parent' }),
+          sess({ name: 'parent', status: 'processing', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' }),
+          sess({ name: 'crashed', status: 'crashed', statusEnteredAt: T_BLOCK, exitCode: 1, spawnedBy: 'agent' }),
+        ],
+        tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: T_BLOCK })],
+      }),
+    )
+    const types = snap.needsYou.map((i) => i.type).sort()
+    expect(types).toEqual(['session_blocked', 'session_crashed', 'task_blocked'])
+  })
+
+  it('a delegated crash pages even under a fresh processing parent (crash always SURFACE)', () => {
+    const snap = projectAttention(
+      input({
+        nowMs: Date.parse(T_BLOCK) + 1_000,
+        sessions: [
+          sess({ name: 'child', status: 'crashed', statusEnteredAt: T_BLOCK, exitCode: 2, spawnedBy: 'agent', parentSession: 'parent' }),
+          sess({ name: 'parent', status: 'processing', statusEnteredAt: T_BLOCK, spawnedBy: 'user:web' }),
+        ],
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(1)
+    expect(snap.needsYou[0].type).toBe('session_crashed')
+  })
+
+  it('a dismissed task_blocked falls to Recent once (ACKED), not needsYou', () => {
+    const gen = taskGenerationId('task_blocked', 'proj', 'uxr', T_BLOCK)
+    const snap = projectAttention(
+      input({
+        events: [ev({ id: gen, ts: T_BLOCK, kind: 'task_blocked', taskId: 'uxr', payload: { taskId: 'uxr' } })],
+        tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: T_BLOCK })],
+        dismissedActGen: new Set([gen]),
+      }),
+    )
+    expect(snap.needsYou).toHaveLength(0)
+    expect(snap.recent.filter((r) => r.generation === gen)).toHaveLength(1)
   })
 })
 

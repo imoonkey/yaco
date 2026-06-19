@@ -47,7 +47,9 @@ export interface AttentionItem {
   message: string
   /** Numeric server time (ms) the generation was minted — ISO `ts` parsed once. */
   tsMs: number
-  /** Count folded into this item by dedup (bound sessions on a task item). 1 normally. */
+  /** Always `1`. The ACT dedup fold was removed (design §"No dedup fold"): every
+   *  condition is its own row, and multi-agent summarization is handled by the
+   *  badge rollup. Retained for the snapshot shape / REVIEW symmetry. */
   count: number
   /** True when this projection newly surfaces the item as a runtime edge the
    *  client should toast/OS-notify. Set by the ENGINE at projection time, not
@@ -122,6 +124,16 @@ export interface ProjectionInput {
   /** project → set of pinned session names. */
   pins: Record<string, Set<string>>
   watermarks: Watermarks
+  /** Server time (ms) injected by the engine/cold-feed so the projector stays
+   *  pure (it reads no wall clock). Optional: defaults to `0` in `projectAttention`,
+   *  which fails the `enteredMs <= nowMs` freshness guard → delegated blocks
+   *  fail open to SURFACE (safe). T2 wires the real clock at the call sites. */
+  nowMs?: number
+  /** Per-generation ACT dismiss tombstones (`<type>:<proj>::<key>:<enteredAt>`).
+   *  A dismissed generation is ACKED → muted in Recent, never in `needsYou`. A
+   *  re-entry mints a new generation id, so it always re-surfaces. Optional:
+   *  defaults to an empty set in `projectAttention`. T2 reads the store here. */
+  dismissedActGen?: Set<string>
 }
 
 // ── Generation ids (spec §4, §5.1) ──────────────────────────────────────────
@@ -248,7 +260,23 @@ function buildLiveIndex(input: ProjectionInput): LiveIndex {
   return { sessionByKey, taskByKey }
 }
 
-// ── ACT projection (open ⟺ live condition true; spec §5.2, §11.2) ───────────
+// ── ACT projection (single disposition pass; design §"Single disposition pass") ─
+
+/** A live ACT condition is classified once into one of three dispositions, and
+ *  everything downstream (needsYou, what stays out of Recent) derives from it. */
+type ActDisposition = 'NEEDS_YOU' | 'SUPPRESSED' | 'ACKED'
+
+/** Owner-routing verdict for a live ACT condition. */
+type OwnerVerdict = 'SURFACE' | 'SUPPRESS'
+
+interface ClassifiedAct {
+  item: AttentionItem
+  disposition: ActDisposition
+}
+
+/** A delegated block is the parent coordinator's job for this long; past it the
+ *  question escalates to the human (the parent may be stale/ignoring). */
+const GRACE_MS = 10 * 60 * 1000 // 10 min
 
 /** Open ACT items derived purely from the live snapshot. Generation is derived
  *  from the live `statusEnteredAt`/`stateEnteredAt` so it matches the durable
@@ -298,49 +326,63 @@ function buildOpenAct(input: ProjectionInput): AttentionItem[] {
   return items
 }
 
-/** Dedup ACT (spec §8): a `task_blocked` collapses any bound `session_blocked`
- *  (sessions in the task's `agents`) into one task-primary item with a count.
- *  Matching is over the live task's normalized `agents`. */
-function dedupAct(items: AttentionItem[]): AttentionItem[] {
-  const taskBlockedAgents = new Map<string, Set<string>>() // project → bound session names
-  for (const it of items) {
-    if (it.type === 'task_blocked' && it.subject.kind === 'task') {
-      const set = taskBlockedAgents.get(it.subject.project) ?? new Set<string>()
-      for (const a of it.subject.sessionNames) set.add(a)
-      taskBlockedAgents.set(it.subject.project, set)
-    }
-  }
+/** Owner routing for a live ACT condition (design §"Owner routing"):
+ *  - `session_crashed` ⇒ always SURFACE (page the human).
+ *  - `task_blocked` ⇒ SURFACE (tasks carry no owner/parent — page unless ACKED).
+ *  - `session_blocked` ⇒ pinned/owned SURFACE; a delegated block SUPPRESSES only
+ *    while its immediate same-project parent is `processing` AND the block is
+ *    fresh (`enteredMs <= nowMs && age < GRACE_MS`); otherwise it escalates
+ *    (SURFACE). Missing/cross-project parent and future-dated blocks fail open. */
+function ownerDisposition(
+  item: AttentionItem,
+  input: ProjectionInput,
+  live: LiveIndex,
+  nowMs: number,
+): OwnerVerdict {
+  if (item.type === 'session_crashed') return 'SURFACE'
+  if (item.type === 'task_blocked') return 'SURFACE'
+  if (item.subject.kind !== 'session') return 'SURFACE' // session_blocked only below
+  const proj = item.subject.project
+  const name = item.subject.sessionName
+  const session = live.sessionByKey.get(liveKey(proj, name))
+  if (!session) return 'SURFACE' // item came from live; fail open if it vanished
 
-  const out: AttentionItem[] = []
-  const collapsedInto = new Map<string, number>() // task generation → folded session count
-  for (const it of items) {
-    if (
-      it.type === 'session_blocked' &&
-      it.subject.kind === 'session' &&
-      taskBlockedAgents.get(it.subject.project)?.has(it.subject.sessionName)
-    ) {
-      // Fold this bound session-block into the task-primary item's count.
-      for (const t of items) {
-        if (
-          t.type === 'task_blocked' &&
-          t.subject.kind === 'task' &&
-          t.subject.project === it.subject.project &&
-          t.subject.sessionNames.includes(it.subject.sessionName)
-        ) {
-          collapsedInto.set(t.generation, (collapsedInto.get(t.generation) ?? 0) + 1)
-          break
-        }
-      }
-      continue // drop the standalone session_blocked row
-    }
-    out.push(it)
-  }
+  const pinned = isPinned(input.pins, proj, name)
+  if (ownerClass(session, pinned) === 'OWNED') return 'SURFACE' // pin ⇒ treat as mine
 
-  for (const it of out) {
-    const folded = collapsedInto.get(it.generation)
-    if (folded) it.count += folded
-  }
-  return out
+  // Delegated block: the immediate, same-project parent owns it while live + fresh.
+  const parentName = session.parentSession
+  if (!parentName) return 'SURFACE' // no parent → fail open
+  const parent = live.sessionByKey.get(liveKey(proj, parentName))
+  if (!parent) return 'SURFACE' // missing / cross-project parent → fail open
+
+  // Parse from the live session, not item.tsMs (which collapses a parse failure
+  // to 0). An unparseable statusEnteredAt is NOT fresh → escalate (fail open).
+  const enteredMs = Date.parse(session.statusEnteredAt ?? '')
+  const fresh =
+    Number.isFinite(enteredMs) && enteredMs <= nowMs && nowMs - enteredMs < GRACE_MS // future-dated/unparseable ⇒ not fresh
+  if (parent.status === 'processing' && fresh) return 'SUPPRESS'
+  return 'SURFACE' // parent gone / idle / starting / grace-expired / future-dated / unparseable
+}
+
+/** Classify every live ACT condition once. `acked` is exact-generation membership
+ *  in the dismiss tombstone set, so a re-entry (new generation id) re-surfaces. */
+function classifyAct(
+  input: ProjectionInput,
+  live: LiveIndex,
+  nowMs: number,
+  dismissedActGen: Set<string>,
+): ClassifiedAct[] {
+  return buildOpenAct(input).map((item) => {
+    const acked = dismissedActGen.has(item.generation)
+    const verdict = ownerDisposition(item, input, live, nowMs)
+    const disposition: ActDisposition = acked
+      ? 'ACKED' // user dismissed this exact generation → muted past-tense Recent row
+      : verdict === 'SUPPRESS'
+        ? 'SUPPRESSED' // parent is on it → shown nowhere while live
+        : 'NEEDS_YOU' // owned / escalated / crashed → bell "Needs you"
+    return { item, disposition }
+  })
 }
 
 // ── REVIEW projection (unread ⟺ gen.tsMs > max(watermarks); spec §5.3) ──────
@@ -460,11 +502,12 @@ function buildReview(input: ProjectionInput, live: LiveIndex): { ready: Attentio
 
 /** Every durable event becomes a history row (newest first). FYI (delegated
  *  idle) lives only here. Clear hides read/resolved/FYI rows with
- *  `tsMs ≤ recentClearedAt[proj]`; open ACT + unacked REVIEW are unaffected
- *  (handled by the caller, which keeps them out of `recent`). */
+ *  `tsMs ≤ recentClearedAt[proj]`. `liveOutOfRecent` holds out every ACT
+ *  generation that is currently NEEDS_YOU or SUPPRESSED (shown live / nowhere);
+ *  an ACKED-but-still-live condition is NOT in it, so it shows once in Recent. */
 function buildHistory(
   input: ProjectionInput,
-  openActGenerations: Set<string>,
+  liveOutOfRecent: Set<string>,
   readyGenerations: Set<string>,
 ): AttentionItem[] {
   const recentClearedAt = input.watermarks.recentClearedAt ?? {}
@@ -487,8 +530,9 @@ function buildHistory(
       subject = { kind: 'task', project: ev.projectId, taskId: m.taskId, sessionNames: m.agents ?? [] }
     }
 
-    // Open ACT and unacked REVIEW are NOT history rows (shown live above).
-    if (openActGenerations.has(generation) || readyGenerations.has(generation)) continue
+    // Live NEEDS_YOU/SUPPRESSED ACT and unacked REVIEW are NOT history rows
+    // (shown live above / held out while live). ACKED-live falls through here.
+    if (liveOutOfRecent.has(generation) || readyGenerations.has(generation)) continue
     // A superseded older idle stays in history; the latest unacked idle is in `ready`.
 
     // Clear: hide read/resolved/FYI history with tsMs ≤ recentClearedAt[proj].
@@ -608,17 +652,25 @@ function buildBadges(
 /** Project the full attention snapshot. Pure: same input ⇒ same output. */
 export function projectAttention(input: ProjectionInput): AttentionSnapshot {
   const live = buildLiveIndex(input)
+  // Safe defaults so the server compiles before T2 wires the clock + store.
+  // nowMs=0 fails the freshness guard → delegated blocks fail open (SURFACE).
+  const nowMs = input.nowMs ?? 0
+  const dismissedActGen = input.dismissedActGen ?? new Set<string>()
 
-  const rawAct = buildOpenAct(input)
-  const needsYou = dedupAct(rawAct)
+  // Single disposition pass: one classifier per live ACT condition. No dedup fold
+  // — every condition is its own independently-dismissible row (design §"No dedup fold").
+  const classified = classifyAct(input, live, nowMs, dismissedActGen)
+  const needsYou = classified.filter((c) => c.disposition === 'NEEDS_YOU').map((c) => c.item)
+  // Held out of Recent while live: NEEDS_YOU (shown above) ∪ SUPPRESSED (shown
+  // nowhere). ACKED is excluded → an acked-live condition shows once in Recent.
+  const liveOutOfRecent = new Set(
+    classified.filter((c) => c.disposition !== 'ACKED').map((c) => c.item.generation),
+  )
+
   const { ready } = buildReview(input, live)
-
-  // Every open ACT generation (incl. session_blocks folded into a task by
-  // dedup) is "live" and must not also appear in history.
-  const openActGenerations = new Set(rawAct.map((i) => i.generation))
   const readyGenerations = new Set(ready.map((i) => i.generation))
 
-  const recent = buildHistory(input, openActGenerations, readyGenerations)
+  const recent = buildHistory(input, liveOutOfRecent, readyGenerations)
 
   const { badgesByProject, badgesBySession, global } = buildBadges(
     needsYou,
