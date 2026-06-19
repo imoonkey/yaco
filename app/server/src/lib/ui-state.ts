@@ -172,3 +172,55 @@ export async function mergeUnreadWatermarks(patch: UnreadWatermarksPatch): Promi
     return current
   })
 }
+
+const DISMISSED_ACT_GEN_FILE = 'dismissed-act-generations.json'
+
+/** Read the on-disk tombstone array into a Set (non-strings filtered defensively).
+ *  Not locked itself — the mutators call it inside the shared write lock. */
+async function readDismissedSet(): Promise<Set<string>> {
+  const raw = await readJson<unknown>(DISMISSED_ACT_GEN_FILE, [])
+  if (!Array.isArray(raw)) return new Set()
+  return new Set(raw.filter((g): g is string => typeof g === 'string'))
+}
+
+async function writeDismissedSet(set: Set<string>): Promise<void> {
+  await mkdir(UI_STATE_DIR, { recursive: true })
+  await writeFile(join(UI_STATE_DIR, DISMISSED_ACT_GEN_FILE), JSON.stringify([...set].sort(), null, 2), 'utf-8')
+}
+
+/** Per-generation ACT dismiss tombstones (design §"ACT dismiss is a generation
+ *  tombstone"). A JSON array of generation ids on disk, surfaced as a `Set` in
+ *  memory. A dismissed generation is ACKED by the projector (muted in Recent,
+ *  never in `needsYou`); a re-entry mints a new id and re-surfaces. The store is
+ *  mutated only by the LOCKED `add`/`remove` ops below — never a blind whole-set
+ *  overwrite — so an engine prune and a concurrent `/dismiss` add commute. */
+export async function getDismissedActGenerations(): Promise<Set<string>> {
+  return readDismissedSet()
+}
+
+/** Add `generation` under the shared write lock (read CURRENT on-disk set → union
+ *  → write). T4's `POST /attention/dismiss` calls this; it cannot be clobbered by
+ *  a concurrent prune because the prune only subtracts ids it proved dead. */
+export async function addDismissedActGeneration(generation: string): Promise<void> {
+  await withLock(async () => {
+    const current = await readDismissedSet()
+    if (current.has(generation)) return
+    current.add(generation)
+    await writeDismissedSet(current)
+  })
+}
+
+/** Remove `dead` under the shared write lock (read CURRENT on-disk set → subtract
+ *  → write). The engine passes the ids it PROVED dead this snapshot; `current \
+ *  dead` preserves every other id, so a concurrently-added still-live tombstone
+ *  survives. No-op (no write) when nothing in `dead` is present. */
+export async function removeDismissedActGenerations(dead: Iterable<string>): Promise<void> {
+  const deadSet = new Set(dead)
+  if (deadSet.size === 0) return
+  await withLock(async () => {
+    const current = await readDismissedSet()
+    let changed = false
+    for (const g of deadSet) if (current.delete(g)) changed = true
+    if (changed) await writeDismissedSet(current)
+  })
+}

@@ -20,6 +20,9 @@ const {
   setPinnedSessions,
   getUnreadWatermarks,
   mergeUnreadWatermarks,
+  getDismissedActGenerations,
+  addDismissedActGeneration,
+  removeDismissedActGenerations,
 } = await import('../ui-state')
 
 const uiStateDir = join(homeDir.value, '.yaco', 'ui-state')
@@ -242,5 +245,60 @@ describe('ui-state: corruption recovery', () => {
       'utf-8',
     )
     expect(await getPinnedSessions('proj')).toEqual([])
+  })
+})
+
+describe('ui-state: dismissed ACT generations (locked add/remove)', () => {
+  const FILE = join(uiStateDir, 'dismissed-act-generations.json')
+
+  beforeEach(async () => {
+    await rm(uiStateDir, { recursive: true, force: true })
+  })
+  afterAll(async () => {
+    await rm(homeDir.value, { recursive: true, force: true })
+  })
+
+  it('defaults to an empty set when unset', async () => {
+    expect(await getDismissedActGenerations()).toEqual(new Set())
+  })
+
+  it('add unions and dedups; persists as a sorted JSON array', async () => {
+    await addDismissedActGeneration('g:b')
+    await addDismissedActGeneration('g:a')
+    await addDismissedActGeneration('g:b') // dedup
+    expect(await getDismissedActGenerations()).toEqual(new Set(['g:a', 'g:b']))
+    expect(await readJson(FILE.split('/').pop()!, [])).toEqual(['g:a', 'g:b']) // sorted on disk
+  })
+
+  it('remove subtracts only the given ids, leaving the rest', async () => {
+    await addDismissedActGeneration('g:a')
+    await addDismissedActGeneration('g:b')
+    await addDismissedActGeneration('g:c')
+    await removeDismissedActGenerations(['g:a', 'g:missing'])
+    expect(await getDismissedActGenerations()).toEqual(new Set(['g:b', 'g:c']))
+  })
+
+  it('add then remove of a DIFFERENT id preserves the add (locked RMW commute)', async () => {
+    // Models the prune/add race at the store layer: an add and a remove of a
+    // disjoint dead id must commute — current \ {dead} keeps the added id.
+    await addDismissedActGeneration('g:live')
+    await removeDismissedActGenerations(['g:dead'])
+    expect(await getDismissedActGenerations()).toEqual(new Set(['g:live']))
+  })
+
+  it('remove of an empty / fully-absent set does not write the file', async () => {
+    const { stat } = await import('fs/promises')
+    await removeDismissedActGenerations([])
+    await removeDismissedActGenerations(['g:absent'])
+    await expect(stat(FILE)).rejects.toThrow() // never created
+  })
+
+  it('tolerates a non-array file by treating it as empty', async () => {
+    const { writeFile } = await import('fs/promises')
+    await mkdir(uiStateDir, { recursive: true })
+    await writeFile(FILE, JSON.stringify({ not: 'an array' }), 'utf-8')
+    expect(await getDismissedActGenerations()).toEqual(new Set())
+    await addDismissedActGeneration('g:a')
+    expect(await getDismissedActGenerations()).toEqual(new Set(['g:a']))
   })
 })

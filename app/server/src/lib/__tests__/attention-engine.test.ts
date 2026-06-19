@@ -6,7 +6,7 @@ import type { YacoEvent, EventInput } from '../eventsLog'
 
 /** A controllable harness: mutable snapshot inputs, an in-memory event log,
  *  a fake clock, and the last broadcast snapshot. */
-function harness(initial?: { sessions?: LiveSession[]; tasks?: LiveTask[]; pins?: Record<string, Set<string>>; watermarks?: Watermarks; events?: YacoEvent[] }) {
+function harness(initial?: { sessions?: LiveSession[]; tasks?: LiveTask[]; pins?: Record<string, Set<string>>; watermarks?: Watermarks; events?: YacoEvent[]; dismissedActGen?: string[] }) {
   const state = {
     sessions: initial?.sessions ?? [],
     tasks: initial?.tasks ?? [],
@@ -15,6 +15,11 @@ function harness(initial?: { sessions?: LiveSession[]; tasks?: LiveTask[]; pins?
     nowMs: 1_000_000,
     events: new Map<string, YacoEvent[]>(),
     appended: [] as { projectId: string; input: EventInput }[],
+    dismissedActGen: new Set<string>(initial?.dismissedActGen ?? []),
+    /** One-shot hook fired right AFTER readDismissedActGen snapshots the store, to
+     *  model a concurrent /dismiss add landing between the engine's read and its
+     *  locked remove. */
+    onReadDismissed: undefined as (() => void) | undefined,
     lastSnapshot: null as AttentionSnapshot | null,
     broadcasts: 0,
   }
@@ -31,6 +36,12 @@ function harness(initial?: { sessions?: LiveSession[]; tasks?: LiveTask[]; pins?
     readWatermarks: async () => state.watermarks,
     listProjects: async () => [...new Set([...state.events.keys(), ...state.sessions.map((s) => s.project), ...state.tasks.map((t) => t.project)])],
     readEvents: async (projectId) => state.events.get(projectId) ?? [],
+    // Snapshot the CURRENT store (a copy, like a real fs read), then let the test
+    // simulate a concurrent add landing right after the read.
+    readDismissedActGen: async () => { const snap = new Set(state.dismissedActGen); state.onReadDismissed?.(); return snap },
+    // Model the LOCKED remove: subtract `dead` from the CURRENT on-disk set (not a
+    // stale snapshot), so a concurrently-added live id survives.
+    removeDismissedActGen: async (dead) => { for (const g of dead) state.dismissedActGen.delete(g) },
     appendEvent: async (projectId, input) => {
       const list = state.events.get(projectId) ?? []
       const existing = input.id ? list.find((e) => e.id === input.id) : undefined
@@ -179,6 +190,85 @@ describe('engine — ACT auto-resolves', () => {
     state.sessions = []
     await engine.recompute()
     expect(state.lastSnapshot?.needsYou).toHaveLength(0)
+  })
+})
+
+// ── Dismiss tombstone store (prune-to-live) ──────────────────────────────────
+
+describe('engine — dismissedActGen tombstone store is pruned to live rawAct', () => {
+  it('a dismissed generation is ACKED while live (out of needsYou) and kept in the store', async () => {
+    const enteredAt = ISO(900_000)
+    const generation = `task_blocked:proj::uxr:${enteredAt}`
+    const { state, engine } = harness({
+      tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: enteredAt })],
+      dismissedActGen: [generation],
+    })
+    await engine.start()
+    // Dismissed → not surfaced; the condition is still live, so the tombstone stays.
+    expect(state.lastSnapshot?.needsYou.some((i) => i.type === 'task_blocked')).toBe(false)
+    expect(state.dismissedActGen.has(generation)).toBe(true)
+  })
+
+  it('drops a tombstone once its ACT condition resolves (prune-to-live)', async () => {
+    const enteredAt = ISO(900_000)
+    const generation = `task_blocked:proj::uxr:${enteredAt}`
+    const { state, engine } = harness({
+      tasks: [task({ id: 'uxr', state: 'blocked', stateEnteredAt: enteredAt })],
+      dismissedActGen: [generation],
+    })
+    await engine.start()
+    expect(state.dismissedActGen.has(generation)).toBe(true)
+
+    // Task leaves blocked → the condition is no longer in live rawAct → the engine
+    // prunes the tombstone from the persisted store on the next recompute.
+    state.tasks = [task({ id: 'uxr', state: 'running', stateEnteredAt: ISO(900_001) })]
+    await engine.recompute()
+    expect(state.dismissedActGen.has(generation)).toBe(false)
+    expect(state.dismissedActGen.size).toBe(0)
+  })
+
+  it('leaves a tombstone for an unrelated still-live generation untouched while pruning a resolved one', async () => {
+    const aAt = ISO(900_000)
+    const bAt = ISO(900_500)
+    const genA = `task_blocked:proj::a:${aAt}`
+    const genB = `task_blocked:proj::b:${bAt}`
+    const { state, engine } = harness({
+      tasks: [task({ id: 'a', state: 'blocked', stateEnteredAt: aAt }), task({ id: 'b', state: 'blocked', stateEnteredAt: bAt })],
+      dismissedActGen: [genA, genB],
+    })
+    await engine.start()
+
+    // a resolves, b stays blocked → only genA is pruned.
+    state.tasks = [task({ id: 'a', state: 'running', stateEnteredAt: ISO(900_001) }), task({ id: 'b', state: 'blocked', stateEnteredAt: bAt })]
+    await engine.recompute()
+    expect(state.dismissedActGen.has(genA)).toBe(false)
+    expect(state.dismissedActGen.has(genB)).toBe(true)
+  })
+
+  it('a concurrent /dismiss add (still-live) survives a prune that drops a dead id', async () => {
+    // Race: the engine reads {gDead}, then a /dismiss for the still-live gLive
+    // lands on disk, then the engine removes its proven-dead set {gDead}. The
+    // LOCKED subtract (current \ dead) must preserve gLive — the exact bug the
+    // milestone fixes (a user's dismiss vanishing).
+    const deadAt = ISO(800_000)
+    const liveAt = ISO(900_000)
+    const gDead = `task_blocked:proj::old:${deadAt}`
+    const gLive = `task_blocked:proj::cur:${liveAt}`
+    const { state, engine } = harness({
+      tasks: [task({ id: 'old', state: 'blocked', stateEnteredAt: deadAt })],
+      dismissedActGen: [gDead],
+    })
+    await engine.start() // boot: old is live, gDead stays (not pruned)
+    expect(state.dismissedActGen.has(gDead)).toBe(true)
+
+    // old resolves, cur becomes blocked (gLive is now the live condition).
+    state.tasks = [task({ id: 'cur', state: 'blocked', stateEnteredAt: liveAt })]
+    // A /dismiss for gLive lands AFTER the engine snapshots the store this recompute.
+    state.onReadDismissed = () => { state.dismissedActGen.add(gLive); state.onReadDismissed = undefined }
+    await engine.recompute()
+
+    expect(state.dismissedActGen.has(gLive)).toBe(true) // concurrent add preserved
+    expect(state.dismissedActGen.has(gDead)).toBe(false) // proven-dead id pruned
   })
 })
 

@@ -15,7 +15,7 @@ import { readYacoProjectPaths } from '@yaco/cli/core/paths'
 import { loadTaskStore } from '@yaco/cli/core/task'
 import { loadProjects } from './projects'
 import { readAllSessionsFromStateFiles } from './agent'
-import { getPinnedSessions, getUnreadWatermarks } from './ui-state'
+import { getPinnedSessions, getUnreadWatermarks, getDismissedActGenerations, removeDismissedActGenerations } from './ui-state'
 import { broadcastAttention } from './notify'
 import { readEvents, type YacoEvent } from './eventsLog'
 import { AttentionEngine } from './attention-engine'
@@ -101,11 +101,12 @@ async function readWatermarks(): Promise<Watermarks> {
  *  engine's `attention` SSE push keeps the client fresh afterward (spec §2.1). */
 export async function currentAttentionSnapshot(): Promise<AttentionSnapshot> {
   const projects = await loadProjects()
-  const [sessions, tasks, pins, watermarks] = await Promise.all([
+  const [sessions, tasks, pins, watermarks, dismissedActGen] = await Promise.all([
     readSessions(),
     readTasks(),
     readPins(),
     readWatermarks(),
+    getDismissedActGenerations(),
   ])
 
   // Read events for every known project plus any project surfaced by a live
@@ -118,7 +119,9 @@ export async function currentAttentionSnapshot(): Promise<AttentionSnapshot> {
     for (const e of await readEvents(projectId)) events.push(e)
   }
 
-  const input: ProjectionInput = { events, sessions, tasks, pins, watermarks }
+  // Cold-feed clock (the engine uses its injectable `deps.now()`). The stored
+  // tombstones are passed as-is; the engine owns pruning the persisted store.
+  const input: ProjectionInput = { events, sessions, tasks, pins, watermarks, nowMs: Date.now(), dismissedActGen }
   return projectAttention(input)
 }
 
@@ -134,6 +137,8 @@ export async function startAttentionEngine(): Promise<void> {
     readWatermarks,
     listProjects: async () => (await loadProjects()).map((p) => p.name),
     broadcast: broadcastAttention,
+    readDismissedActGen: getDismissedActGenerations,
+    removeDismissedActGen: removeDismissedActGenerations,
   })
   await engine.start()
 }

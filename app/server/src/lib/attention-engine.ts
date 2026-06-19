@@ -49,6 +49,10 @@ export const IDLE_CONFIRM_COUNT = 2
 /** 60s safety tick — a recompute backstop in case a watcher event is missed. */
 export const SAFETY_TICK_MS = 60_000
 
+/** ACT generation types that can carry a dismiss tombstone (REVIEW idle/done can
+ *  not be dismissed). Used to prune the tombstone store to live `rawAct`. */
+const ACT_GENERATION_TYPES = new Set<AttentionType>(['session_blocked', 'session_crashed', 'task_blocked'])
+
 // ── Injectable dependencies (real ones default to fs/SSE) ───────────────────
 
 export interface AttentionEngineDeps {
@@ -61,6 +65,11 @@ export interface AttentionEngineDeps {
   listProjects: () => Promise<string[]>
   readEvents: (projectId: string) => Promise<YacoEvent[]>
   appendEvent: (projectId: string, input: EventInput) => Promise<YacoEvent>
+  /** Per-generation ACT dismiss tombstones (`ui-state/dismissed-act-generations.json`). */
+  readDismissedActGen: () => Promise<Set<string>>
+  /** Remove proven-dead tombstones under the store lock (subtract from CURRENT
+   *  on-disk set), so a concurrent `/dismiss` add of a still-live id is preserved. */
+  removeDismissedActGen: (dead: Set<string>) => Promise<void>
   broadcast: (snapshot: AttentionSnapshot) => void
   now: () => number
 }
@@ -110,6 +119,8 @@ export class AttentionEngine {
       listProjects: deps.listProjects ?? (async () => []),
       readEvents: deps.readEvents ?? defaultReadEvents,
       appendEvent: deps.appendEvent ?? defaultAppendEvent,
+      readDismissedActGen: deps.readDismissedActGen ?? (async () => new Set()),
+      removeDismissedActGen: deps.removeDismissedActGen ?? (async () => {}),
       broadcast: deps.broadcast ?? defaultBroadcast,
       now: deps.now ?? (() => Date.now()),
     }
@@ -208,13 +219,43 @@ export class AttentionEngine {
   }
 
   private async readSnapshot(): Promise<ProjectionInput> {
-    const [sessions, tasks, pins, watermarks] = await Promise.all([
+    const [sessions, tasks, pins, watermarks, storedDismissed] = await Promise.all([
       this.deps.readSessions(),
       this.deps.readTasks(),
       this.deps.readPins(),
       this.deps.readWatermarks(),
+      this.deps.readDismissedActGen(),
     ])
-    return { sessions, tasks, pins, watermarks, events: [] }
+    // nowMs flows to project()/__projectOnce()/boot via the returned input so the
+    // pure projector reads no wall clock (design §T2). Prune the tombstone store
+    // to the conditions still live in rawAct each recompute (keeps it bounded).
+    const input: ProjectionInput = { sessions, tasks, pins, watermarks, events: [], nowMs: this.deps.now() }
+    const dismissedActGen = await this.pruneDismissedToLive(input, storedDismissed)
+    return { ...input, dismissedActGen }
+  }
+
+  /** Drop every tombstone whose ACT condition is no longer live in `rawAct` (a
+   *  resolved condition can never recur under the same generation id) and return
+   *  the still-live subset for this recompute's projection. Computes the DEAD set
+   *  explicitly from what it read and removes ONLY those under the store lock — it
+   *  never overwrites the whole set — so a concurrent `/dismiss` add of a
+   *  still-live generation (never in `dead`) is preserved. Reuses the projector's
+   *  `openAndReviewGenerations` so "what is live" has a single source of truth. */
+  private async pruneDismissedToLive(input: ProjectionInput, stored: Set<string>): Promise<Set<string>> {
+    if (stored.size === 0) return stored
+    const liveActGenerations = new Set(
+      openAndReviewGenerations(input)
+        .filter((c) => ACT_GENERATION_TYPES.has(c.type))
+        .map((c) => c.generation),
+    )
+    const dead = new Set<string>()
+    const pruned = new Set<string>()
+    for (const gen of stored) {
+      if (liveActGenerations.has(gen)) pruned.add(gen)
+      else dead.add(gen)
+    }
+    if (dead.size > 0) await this.deps.removeDismissedActGen(dead)
+    return pruned
   }
 
   /** Diff the live snapshot vs the cache and produce durable edge events. */
