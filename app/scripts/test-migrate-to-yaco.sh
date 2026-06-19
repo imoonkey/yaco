@@ -37,6 +37,18 @@ assert_contains() {
   if grep -q -- "$2" "$3"; then pass "$1: contains '$2'"; else fail "$1: '$2' not found in $3"; fi
 }
 
+# ---- regression gate: dead notifications.json store must not return ---------
+# The legacy ui-state/notifications.json notification store was removed from the
+# runtime; live notifications flow over SSE (routes/notifications.ts + useSSE.ts).
+# Fail if a reference to the dead store creeps back into runtime source.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if grep -rn "notifications.json" \
+     "$REPO_ROOT/app/server/src" "$REPO_ROOT/app/ui/src" "$REPO_ROOT/cli/src" 2>/dev/null; then
+  fail "dead notifications.json store referenced in runtime source"
+else
+  pass "no dead notifications.json store in runtime source"
+fi
+
 # ---- temp HOME -------------------------------------------------------------
 
 TMP=$(mktemp -d)
@@ -141,9 +153,6 @@ cat > "$WORKFLOW_HOME/projects.json" <<JSON
 ]
 JSON
 
-cat > "$WORKFLOW_HOME/ui-state/notifications.json" <<'JSON'
-{"inbox": [{"id": "n1"}], "read": []}
-JSON
 cat > "$WORKFLOW_HOME/ui-state/pinned-sessions.json" <<'JSON'
 {}
 JSON
@@ -201,7 +210,6 @@ if [ -f "$YACO_HOME/projects.json" ]; then
 fi
 
 # Acceptance: ui-state, shell-sessions, sessions moved
-assert_file "$YACO_HOME/ui-state/notifications.json"
 assert_file "$YACO_HOME/ui-state/pinned-sessions.json"
 assert_file "$YACO_HOME/shell-sessions/sh-1.json"
 assert_file "$YACO_HOME/sessions/w-a.json"
@@ -340,9 +348,6 @@ HOME2_ENV=( HOME="$TMP2" YACO_HOME="$TMP2/.yaco" WORKFLOW_HOME="$TMP2/.workflow"
 mkdir -p "$TMP2/.workflow/ui-state" "$TMP2/.multmux/sessions"
 cat > "$TMP2/.workflow/projects.json" <<JSON
 [{"name":"x","path":"$TMP2"}]
-JSON
-cat > "$TMP2/.workflow/ui-state/notifications.json" <<'JSON'
-{}
 JSON
 RUN3_LOG="$TMP/run3.log"
 env "${HOME2_ENV[@]}" MIGRATE_SKIP_PREFLIGHT=1 "$MIGRATE" --yes --dry-run > "$RUN3_LOG" 2>&1
