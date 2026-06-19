@@ -33,6 +33,7 @@ ${YACO_HOME:-~/.yaco}/
   ui-state/                  # cross-device shared UI state
     pinned-sessions.json     # per-project ordered session pins
     unread-watermarks.json   # attention ack/clear watermarks (REVIEW + Recent-cleared)
+    dismissed-act-generations.json  # per-generation ACT dismiss tombstones (pruned to live)
   channels/                  # messaging channel scopes (WhatsApp, WeChat, …)
     <scope>/                 # one directory per channel scope
       auth.json              # credentials / login state
@@ -113,6 +114,10 @@ Monotonic attention ack/clear watermarks (Facet B REVIEW + Recent-cleared). Four
 
 A REVIEW generation is **unread** iff `gen.tsMs > max(projectReadAt[project], keyReadAt[scopeKey])`. Every write goes through `mergeUnreadWatermarks`, which merges **monotonic-max** (a lower or clock-skewed incoming value never lowers the stored one). Timestamps are **server-stamped** — the client never sends `Date.now()`; ack derives the cutoff server-side and clamps to now. Mutex-protected writes via `server/src/lib/ui-state.ts`.
 
+### `${YACO_HOME}/ui-state/dismissed-act-generations.json`
+
+A flat string set of dismissed **ACT** generation ids (`{ generations: string[] }`). An ACT condition is muted iff its exact `generation` is a member — a **per-generation tombstone**, not a watermark. A watermark can't express this: a future-dated/clock-skewed `statusEnteredAt` written as a cutoff would also suppress a later, correctly-dated re-entry; exact-id membership means a re-entry (new `statusEnteredAt` ⇒ new generation id) always re-surfaces. The engine **prunes the set to live `rawAct` generations each recompute** (a resolved condition's id can never recur, so its tombstone is dropped) — keeping the store bounded. Locked read-modify-write add/remove (`addDismissedActGeneration` / `removeDismissedActGenerations`) so a concurrent `/dismiss` and an engine prune can't clobber each other.
+
 `plan/progress.json`, `plan/active/<bundle>/progress.json`, and `plan/active/<bundle>/workstream.json` are no longer runtime inputs. The one-time migration script converts/removes them; server runtime reads `events.jsonl` only.
 
 ## In-Browser State
@@ -179,6 +184,7 @@ State is split between server files (shared across devices via REST + SSE) and `
 
 **Shared (server, `${YACO_HOME}/ui-state/`):**
 - Attention ack/clear watermarks (REVIEW read state + Recent-cleared cutoffs)
+- Dismissed ACT generations (per-generation tombstones; pruned to live each recompute)
 - Pinned sessions and their order, keyed by project
 
 **Per-device (`localStorage`):**
@@ -194,6 +200,7 @@ State is split between server files (shared across devices via REST + SSE) and `
 | `GET`    | `/api/attention/feed?limit=&before=` | Bounded/paginated Recent history + the full live snapshot (needsYou/ready/badges). Cursor is the opaque composite `nextBefore` |
 | `POST`   | `/api/attention/ack` | `{ scope: 'project'\|'session'\|'task', project, key? }` — server-stamped, monotonic-max ack |
 | `POST`   | `/api/attention/clear` | `{ project }` — set the project's monotonic `recentClearedAt` |
+| `POST`   | `/api/attention/dismiss` | `{ project, kind: 'session'\|'task', key, generation }` — tombstone one ACT generation; exact live `needsYou` match required (204 match, 409 stale). Writes no watermark |
 | `GET`    | `/api/ui-state/pinned-sessions?project=<p>` | Read pinned sessions for a project |
 | `PUT`    | `/api/ui-state/pinned-sessions?project=<p>` | Replace pinned sessions for a project |
 | `GET`    | `/api/ui-state/unread-watermarks` | Read all attention watermark maps |

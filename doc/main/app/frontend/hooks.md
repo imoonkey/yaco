@@ -185,13 +185,14 @@ Hidden-tab-safe Facet B consumer — the single client entry point for the bell,
 badges, and interrupts. Mirrors the server `AttentionSnapshot` shape (does not
 import across packages).
 
-**Export**: `useAttention(activeTarget, onItemClick?)` → `{ snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask, clear, requestPermission, permission }`
+**Export**: `useAttention(activeTarget, onItemClick?)` → `{ snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask, dismissNeedsYou, clear, requestPermission, permission }`
 
 Behavior:
 - Cold mount: `GET /api/attention/feed` for the initial snapshot + first Recent page; `loadMore()` pages older history via the opaque composite `nextBefore` cursor.
 - Live: subscribes to the `attention` SSE event directly (hidden-safe) and replaces the snapshot.
 - Interrupts: a newly-seen `interrupt` item fires `toast.custom` (visible) or one `new Notification` (hidden, permission-granted only); a burst collapses to one summary; dedup by generation so reconnect/re-projection never re-toasts.
-- Active-viewing guard: `visible && document.hasFocus() && attached to target` → suppress the interrupt and auto-ack the subject's own generation (session ack vs. task ack).
+- Active-viewing guard: `visible && document.hasFocus() && attached to target` → suppress the interrupt; auto-ack **only when `group==='ready'`** — a viewed REVIEW acks, a viewed ACT (crash/block) is never auto-dismissed (it needs an explicit ✕).
+- `dismissNeedsYou(row)`: POST `/attention/dismiss` with the row's `{project,kind,key,generation}`; 204 → optimistic drop + badge−1, 409 → silent refetch (row resolved/re-entered).
 - OS permission requested **only on a user gesture** (`requestPermission`, fired by the first bell open), never on mount.
 
 Replaces the deleted `useNotifications` (inbox + per-tab dedup + on-mount permission) and `useSessionUnreadState` (capped unread counts + visibility auto-advance). The ack watermark store moved server-side as the REVIEW ack. The multi-instance workspace still reports an active-viewing target (the focused terminal's session + whether that terminal is on screen) via `WorkspaceProvider`'s visibility report, which `App.tsx` feeds into this guard — see [app-shell.md](../ui/app-shell.md).

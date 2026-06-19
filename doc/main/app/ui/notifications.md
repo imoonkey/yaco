@@ -49,7 +49,7 @@ therefore computed in different places:
         │  events.jsonl (durable│   projection.ts (pure)       │   │
         │   edge/generation log)│ • push `attention` SSE       │   │
         │  60s safety tick      └──────────────────────────────┘   │
-        │  GET /attention/feed   POST /attention/ack   POST /clear │
+        │  GET /feed  POST /ack /clear /dismiss(gen-exact)         │
         └──────────────────────────────────────────────────────────┘
                  │ SSE: `attention` (push, hidden-safe), `refresh`, `ui-state:changed`
                  ▼
@@ -99,22 +99,36 @@ for cold `GET /feed` mounts.
 Pure (no fs/clock/SSE), server-owned, never imported by the client (the client
 mirrors the JSON shape). Builds `AttentionSnapshot`:
 
-- **ACT** (`needsYou`) — open `critical`/`action` items derived live: a session
-  `blocked`/`crashed` or task `blocked`. Never stored open/resolved; when status
-  leaves the condition the item simply isn't produced (drops to history). Task
-  ACT auto-resolves the instant the task leaves `blocked`.
+- **ACT** (`needsYou`) — live session `blocked`/`crashed` or task `blocked`, run
+  through one **disposition pass** per condition: `ACKED` if the user dismissed
+  that exact `generation` (tombstone), else `SUPPRESSED` if a delegated block is
+  owned by a fresh live parent (see Owner routing), else `NEEDS_YOU`. Only
+  `NEEDS_YOU` reaches the bell; `SUPPRESSED` shows nowhere while live; `ACKED` and
+  resolved both fall to Recent. **No dedup fold** — a task block and its bound
+  blocked worker are two independent, individually-dismissible rows. Open/resolved
+  is still derived live (no stored open flag); only the explicit user dismiss is
+  stored (the per-generation tombstone, -> See: [../data-model/persistence.md](../data-model/persistence.md)).
 - **REVIEW** (`ready`) — unacked `handoff` items: `gen.tsMs > max(projectReadAt,
   keyReadAt)`. Only **OWNED** idle is REVIEW; DELEGATED idle is FYI (history
   only). Per session, only the newest idle generation is an actionable Ready row
   (supersede in the projector; older idles stay in history).
 - **Recent** (`recent`) — read/resolved/FYI history, newest first, with rows
-  `tsMs ≤ recentClearedAt[proj]` hidden (clear watermark).
+  `tsMs ≤ recentClearedAt[proj]` hidden (clear watermark). Every ACT-typed Recent
+  row (`session_blocked`/`session_crashed`/`task_blocked`) renders muted
+  past-tense (`tier:'fyi'`) unconditionally — live `NEEDS_YOU`/`SUPPRESSED`
+  generations are held out of Recent, so any ACT row that reaches it is
+  acked-while-live or resolved (never an open question).
 - **Badges** — `badgesByProject`, `badgesBySession` (collapsed-parent subtree
-  rollup), and `global` = open ACT + unacked REVIEW; tier precedence red → orange
-  → yellow.
+  rollup), and `global` = surfaced `needsYou` + unacked REVIEW; tier precedence
+  red → orange → yellow. No ACT fold → each dismissible row counts.
 - **Owner routing** — `ownerClass`: `spawnedBy='user:*'` or pinned → OWNED;
   `spawnedBy='agent'` → DELEGATED; unknown → OWNED (fail-safe: notify). Computed
-  at projection time, so a later pin reclassifies.
+  at projection time, so a later pin reclassifies. For **ACT** this drives
+  `SUPPRESS`: a `session_crashed` and a `task_blocked` always page; a delegated
+  `session_blocked` is suppressed only while its immediate same-project parent is
+  live + `processing` + the block's age `< GRACE_MS` (10 min) + not future-dated —
+  otherwise it fails open and pages (pinned ⇒ OWNED ⇒ pages). `nowMs` is injected
+  by the engine/cold-feed so the projector stays pure.
 
 ## SSE Delivery — `notify.ts`
 
@@ -146,11 +160,16 @@ event, and no `notifications:changed` event anymore.
   reconnect/re-projection never re-toasts.
 - **Active-viewing guard** → `document.visibilityState === 'visible' &&
   document.hasFocus() && attached to the target`; when true the target's
-  interrupt is suppressed and its generation auto-acked (live dot unaffected).
+  interrupt (toast/OS) is suppressed. Auto-ack is **`group==='ready'` only** — a
+  viewed REVIEW acks, but a viewed ACT (crash/block) is never auto-dismissed
+  (it requires an explicit ✕). Live dot unaffected.
 - **OS permission** is requested **only on a user gesture** (the first bell
   interaction via `requestPermission()`), never on mount.
 - Returns `{ snapshot, nextBefore, loadMore, ackProject, ackSession, ackTask,
-  clear, requestPermission, permission }`.
+  dismissNeedsYou, clear, requestPermission, permission }`. `dismissNeedsYou(row)`
+  POSTs `/attention/dismiss` with the row's `{project,kind,key,generation}`; on
+  204 it optimistically drops the row + decrements the badge, on 409 it silently
+  refetches (the row resolved/re-entered between render and click).
 
 The deleted `useSessionUnreadState` (capped unread counts + visibility
 auto-advance) and the inbox role of `useNotifications` are gone — their watermark
@@ -163,16 +182,22 @@ bell + badge + panel; manages its own open/close.
 
 - Used in desktop header (App.tsx) and mobile header (`notificationBell` slot).
 - Badge = `snapshot.global` (count + tier color) via `BadgeCount`.
-- Props: `{ snapshot, onItemClick, ackSession, ackTask, clear, requestPermission, size? }`.
+- Props: `{ snapshot, onItemClick, ackSession, ackTask, dismissNeedsYou, clear, requestPermission, size? }`.
 - The first bell open is the user gesture that may request OS permission.
 - Opening/clicking a **Ready** (handoff) item acks it (a REVIEW the user has now
-  seen). **Needs-you** items self-resolve from live status, so they are not acked.
+  seen). A **Needs-you** (ACT) row carries a ✕ that dismisses that generation
+  (`dismissNeedsYou`, `stopPropagation` so the row body still routes); clicking
+  the row body only navigates — it does not ack/dismiss. **Mark all read**
+  dismisses every surfaced Needs-you row by its generation and acks each Ready row
+  by subject — never `ackProject`/`recentClearedAt`, so it can't pre-suppress a
+  later-escalating delegated block; drives the badge to zero and shows even in a
+  Needs-you-only snapshot.
 
 `NotificationPanel` (`ui/src/components/NotificationPanel.tsx`) — dropdown with
 three sections: **Needs you** (`needsYou`), **Ready** (`ready`), **Recent**
-(`recent`). Open ACT rows carry no ✕ (they self-resolve). "Clear" sets the clear
-watermark for every project that has a Recent row. Click-outside / Escape to
-dismiss.
+(`recent`). Each Needs-you (ACT) row carries a ✕ (generation dismiss). "Clear"
+sets the clear watermark for every project that has a Recent row. Click-outside /
+Escape to dismiss.
 
 ## Surface Chips & Badges
 
@@ -185,6 +210,9 @@ dismiss.
   which is separate from the dot.
 - **Project row** → `active/total` status count **and** the actionable attention
   badge (`badgesByProject`), kept separate.
+- **Task "blocked" chip** (task graph, `App.tsx`) derives from live `needsYou` +
+  current task state — **not** from Recent. A dismissed or resolved `task_blocked`
+  (now a muted past-tense Recent row) no longer lights the chip.
 
 Colors come from `ui/src/lib/attentionColors.ts` (no hardcoded `--sol`).
 

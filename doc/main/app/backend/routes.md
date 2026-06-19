@@ -87,6 +87,7 @@ A **colocated repo** is a depth-1 child directory that is its own git repo but i
 | GET | `/api/attention/feed?limit=&before=` | Live attention snapshot + bounded/paginated Recent history. `limit` default 50, max 200; `before` is the opaque composite cursor; response carries `nextBefore` |
 | POST | `/api/attention/ack` | `{ scope: 'project'\|'session'\|'task', project, key? }` — server-stamped, monotonic-max ack (rejects/clamps a future or lower value). 204 |
 | POST | `/api/attention/clear` | `{ project }` — set the project's monotonic `recentClearedAt`. 204 |
+| POST | `/api/attention/dismiss` | `{ project, kind: 'session'\|'task', key, generation }` — tombstone one ACT generation. Requires an exact live `needsYou` match on project+kind+key+generation; **204** match, **409** stale/resolved, 400 bad body. Writes no watermark |
 
 ### WebSocket
 

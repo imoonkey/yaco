@@ -1,3 +1,47 @@
+## 2026-06-19: Clearable & owner-routed ACT notifications
+
+**What changed:**
+- ACT notifications (session `blocked`/`crashed`, task `blocked`) are now
+  user-dismissible. The projector runs **one disposition pass** per live ACT
+  condition → `ACKED` (user dismissed that exact generation) / `SUPPRESSED`
+  (delegated block owned by a fresh live parent) / `NEEDS_YOU`; only `NEEDS_YOU`
+  reaches the bell. Dropped the `session_blocked → task_blocked` dedup fold — a
+  task block and its bound blocked worker are two independent, individually
+  dismissible rows.
+- **Owner routing** for delegated `session_blocked`: SUPPRESSED only while the
+  immediate same-project parent is live + `processing` + age `< GRACE_MS` (10 min)
+  + not future-dated; otherwise fails open and pages. Crash + `task_blocked`
+  always page; pinned ⇒ owned ⇒ pages.
+- New store `ui-state/dismissed-act-generations.json` — per-generation tombstones,
+  pruned to live `rawAct` each recompute, locked read-modify-write add/remove.
+  `nowMs` injected into the projector (engine `readSnapshot` / cold feed) so it
+  stays pure.
+- New route `POST /attention/dismiss {project,kind,key,generation}` — exact live
+  `needsYou` match required (204 / 409 stale), writes no watermark; the generic
+  `/ack` clamp is unchanged.
+- Bell: per-row ✕ (generation dismiss, `stopPropagation`), mark-all-read dismisses
+  surfaced needs-you by generation + acks ready by subject (never `ackProject`/
+  `recentClearedAt`), active-view auto-ack restricted to `group==='ready'`, task
+  "blocked" chip derives from live `needsYou` not Recent, every ACT-typed Recent
+  row muted past-tense (`tier:'fyi'`).
+- Removed the legacy `notifications.json` ui-state store references; added a
+  runtime grep gate in `test-migrate-to-yaco.sh`.
+
+**Why:**
+- Live `quant` run (2026-06-18) exposed two failures: an un-clearable stuck badge
+  (11 `task_blocked` items with no ack/dismiss after the owning run finished) and
+  a flood of delegated sub-agent questions a parent coordinator was already
+  answering. Axiom change: ACT is an attention inbox the user owns (dismiss =
+  "seen", a per-generation tombstone, not "resolved"), and a delegated block is
+  the parent's job until it can't do it. Converged over 3 codex eng-plan-review
+  rounds (design `plan/all/notif-act-clearable/design.md`).
+
+**Key files:** `server/src/lib/attention-projection.ts`, `attention-engine.ts`, `attention-runtime.ts`, `ui-state.ts`, `server/src/routes/attention.ts`, `ui/src/components/NotificationPanel.tsx`, `NotificationBell.tsx`, `App.tsx`, `ui/src/hooks/useAttention.ts`
+**Verification:** `cd app/server && npm test` (653) ✓; `cd app/ui && npm test` (999, new `vitest run src/` script) ✓; `app/ui` `tsc -b` + lint ✓; each task codex-reviewed.
+**Commit:** `4992932..a8ed2a4` (T1–T7)
+**Next:** optional T8 cascade-kill (`yaco agent kill` cascades the `parentSession` subtree + reconcile GC for confirmed-dead blocked/crashed); data residue — resolve the 11 stale `quant` blocked tasks.
+**Blockers:** None
+
 ## 2026-06-17: Channels — multi-session binding + CLI-aligned message reads
 
 **What changed:**
